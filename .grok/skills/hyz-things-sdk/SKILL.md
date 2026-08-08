@@ -120,6 +120,18 @@ Report:
 - Known limitations, especially omitted prebuilts, the intentionally minimal tools repository, and untested hardware behavior.
 - Any external action still requiring approval.
 
+## Adaptive maintenance
+
+Treat this skill and its references as maintained project guidance, not as a fixed implementation recipe.
+
+1. **Follow the user's current task scope.** The roadmap defines the preferred integration order, but an explicitly requested, isolated experiment may evaluate a later phase without automatically starting earlier phases.
+2. **Trust inspected workspace state over stale guidance.** When the workspace differs from this skill, inspect the actual repositories, manifest, branches, toolchain, and build state before acting. Do not force the workspace to match outdated documentation.
+3. **Make the smallest necessary correction.** Diagnose the owning layer before adding workarounds, copying files, changing SDK configuration, restoring omitted components, or expanding the repository set.
+4. **Maintain durable project facts.** Update this skill or its references when development establishes a lasting change to repository ownership, manifest composition, branch policy, supported board/toolchain configuration, reproducible build entry points, selected runtime architecture/embedder, or long-term workflow.
+5. **Keep task details in project documentation.** Put setup procedures and reusable troubleshooting in `<workspace>/docs`. Do not place transient logs, device serials, process IDs, local proxy values, generated output paths, or one-off failures in the skill.
+6. **Do not weaken guardrails silently.** If a discovered requirement conflicts with a non-negotiable rule, stop and ask the user. Never silently relax baseline immutability, build authorization, external-action approval, or user-work preservation.
+7. **Close the feedback loop.** At the end of a task, compare the result with the roadmap and references. Update only the sections made stale by durable findings; do not mark an integration phase complete from a prototype alone.
+
 ## Product roadmap
 
 Follow [references/sdk-roadmap.md](references/sdk-roadmap.md). The immediate order is reproducible branch/manifest setup, Buildroot-generated toolchain, board profile `hyz_things`, router/media enablement, Rust services, then a measured Flutter embedder decision. Do not combine all stages into one unreviewable change.

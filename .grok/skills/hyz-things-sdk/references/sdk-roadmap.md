@@ -1,6 +1,8 @@
 # hyz_things SDK roadmap
 
-Implement this roadmap as small cross-repository integrations. Do not start later phases until the previous phase has a reproducible manifest and documented verification.
+Implement this roadmap as small cross-repository integrations. Do not start later integration phases until the previous phase has a reproducible manifest and documented verification.
+
+The roadmap defines the preferred product integration order, not a prohibition on explicitly requested isolated prototypes. A prototype does not complete a phase until its source, build integration, manifest state, and documented verification are reproducible.
 
 ## Phase 0 — Product source control
 
