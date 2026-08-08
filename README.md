@@ -13,9 +13,12 @@ Ninja, Clang/LLD, and the normal Buildroot host packages.
 ```sh
 git clone https://github.com/hyz-rk3568-sdk/hyz-things.git
 cd hyz-things
-make sdk
-make upgrade
+make
 ```
+
+On the first run, `make` bootstraps and syncs the pinned SDK automatically.
+Later builds reuse the existing SDK checkout; run `make sdk` explicitly when you
+intend to synchronize it.
 
 `make upgrade` performs these stages in dependency order:
 

@@ -44,6 +44,12 @@ $(REPO):
 	chmod 0755 "$(REPO).tmp"
 	mv "$(REPO).tmp" "$(REPO)"
 
+sdk/build.sh: $(REPO)
+	@mkdir -p sdk
+	cd sdk && "$(REPO)" init -u "$(MANIFEST_URL)" -m "$(MANIFEST)"
+	cd sdk && "$(REPO)" sync -c -j"$(JOBS)"
+	@test -x $@
+
 sdk: $(REPO)
 	@if [[ ! -d sdk/.repo ]]; then \
 	  mkdir -p sdk; \
@@ -51,13 +57,12 @@ sdk: $(REPO)
 	fi
 	cd sdk && "$(REPO)" sync -c -j"$(JOBS)"
 
-configure:
-	@test -x sdk/build.sh || { echo 'SDK is missing; run make sdk first.' >&2; exit 1; }
+configure: sdk/build.sh
 	cd sdk && ./build.sh $(BOARD)_defconfig
 
 toolchain: configure
 	cd sdk && ./build.sh buildroot-make:toolchain
-	rust: toolchain
+rust: toolchain
 	rustup target add $(RUST_TARGET)
 	CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="$(TOOLCHAIN_PREFIX)gcc" \
 	CC_aarch64_unknown_linux_gnu="$(TOOLCHAIN_PREFIX)gcc" \
