@@ -141,6 +141,10 @@ check:
 	cargo test --locked --manifest-path apps/rust/hello_world/Cargo.toml
 	cargo test --locked --manifest-path apps/rust/ota/Cargo.toml
 	sh -n product/rootfs-overlay/etc/init.d/S95hyz-app
+	sh -n sdk/buildroot/board/rockchip/hyz_things/post-build.sh
+	bash -n sdk/device/rockchip/common/post-hooks/20-info.sh
+	grep -q '^RK_PACKAGE_FILE="package-file-hyz-ota"$$' sdk/device/rockchip/.chips/rk3566_rk3568/hyz_things_rk3568_defconfig
+	! grep -q '^userdata[[:space:]]' sdk/device/rockchip/.chips/rk3566_rk3568/package-file-hyz-ota
 	$(MAKE) -C sdk/buildroot O="$(BR_OUT)" $(BR_BOARD)_defconfig
 	grep -q '^BR2_PACKAGE_RKUPDATE=y' "$(BR_OUT)/.config"
 	grep -q '^BR2_PACKAGE_WESTON=y' "$(BR_OUT)/.config"

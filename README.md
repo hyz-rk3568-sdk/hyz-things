@@ -35,6 +35,18 @@ uses `hyz-things.xml`.
 7. Packs a Rockchip update image as `output/upgrade.fw` and writes
    `output/upgrade.fw.sha256`.
 
+The product profile reports itself to ADB as `product:hyz_things`,
+`model:HYZ_RK3568`, and `device:rk3568`. It keeps one Simplified Chinese
+regular font face and omits the kernel `System.map` from the runtime image. The OTA package
+also deliberately excludes `userdata.img`, so an update does not reformat the
+existing userdata partition; factory firmware generation still creates that
+partition image.
+
+The verified conservative profile produces a roughly 334 MiB update image
+instead of the original 400 MiB image. Wi-Fi and Bluetooth remain in the
+broad `ALL_AP` compatibility configuration until the exact production module
+has been confirmed on hardware.
+
 Useful smaller targets are listed by `make help`. `make check` runs unit,
 format, shell, and Buildroot configuration checks without building firmware.
 
