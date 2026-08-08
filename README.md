@@ -1,0 +1,75 @@
+# hyz_things
+
+Product workspace for the ATK RK3568 board. The product repository owns the
+one-command build, Rust/Flutter applications, rootfs overlay, and release
+contract. Rockchip vendor sources remain separate repositories pinned by an
+Android `repo` manifest.
+
+## Build from a clean clone
+
+Host requirements: Linux x86-64, Git, curl, Python 3, GNU Make, Rustup, CMake,
+Ninja, Clang/LLD, and the normal Buildroot host packages.
+
+```sh
+git clone https://github.com/hyz-rk3568-sdk/hyz-things.git
+cd hyz-things
+make sdk
+make upgrade
+```
+
+`make upgrade` performs these stages in dependency order:
+
+1. Selects `hyz_things_rk3568_defconfig`.
+2. Builds the Buildroot AArch64 glibc toolchain.
+3. Cross-builds the Rust Hello World and Rust OTA client.
+4. Cross-builds the Sony eLinux Arm64/Wayland Flutter Hello World.
+5. Stages the applications and startup service into the product rootfs overlay.
+6. Builds Buildroot rootfs, kernel, and loader/boot images.
+7. Packs a Rockchip update image as `output/upgrade.fw` and writes
+   `output/upgrade.fw.sha256`.
+
+Useful smaller targets are listed by `make help`. `make check` runs unit,
+format, shell, and Buildroot configuration checks without building firmware.
+
+The Sony Flutter toolchain is pinned to `3.27.1`. Initial setup details and
+proxy recovery notes remain in [`docs/flutter-elinux-setup.md`](docs/flutter-elinux-setup.md).
+
+## Minimal OTA test
+
+Serve the two release files from any HTTP server:
+
+```sh
+cd output
+python3 -m http.server 8000
+```
+
+On the RK3568 target, download and verify with the Rust client:
+
+```sh
+SHA256=$(wget -qO- http://SERVER:8000/upgrade.fw.sha256 | awk '{print $1}')
+hyz-ota download http://SERVER:8000/upgrade.fw "$SHA256"
+```
+
+Install without automatic reboot first:
+
+```sh
+hyz-ota install /userdata/upgrade.fw "$SHA256"
+```
+
+Or download, verify, install, and reboot in one command:
+
+```sh
+hyz-ota apply http://SERVER:8000/upgrade.fw "$SHA256" --reboot
+```
+
+`hyz-ota` uses `ureq` with Rustls for HTTP(S), `sha2` for streaming SHA-256,
+checks the Rockchip `RKFW` header, and only then invokes Rockchip
+`updateEngine`.
+
+## Current safety boundary
+
+This is a bring-up OTA chain, not the final production updater. SHA-256 protects
+against transfer corruption but is not publisher authentication because an
+attacker controlling the server could replace both files. Before field use,
+add signed release metadata, anti-rollback state, A/B or recovery boot,
+health-confirmed activation, and power-loss/fault-injection tests.

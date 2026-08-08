@@ -1,0 +1,14 @@
+# Local SDK workspace and generated artifacts
+sdk/
+output/
+.tools/
+
+# Application build products
+apps/rust/**/target/
+apps/flutter/**/.dart_tool/
+apps/flutter/**/build/
+target/
+
+# Local credentials and generated configuration
+.env
+*.local
