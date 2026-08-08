@@ -20,7 +20,9 @@ make
 
 On the first run, `make` bootstraps and syncs the pinned SDK automatically.
 Later builds reuse the existing SDK checkout; run `make sdk` explicitly when you
-intend to synchronize it.
+intend to synchronize it. For the exact component commits used by the verified
+firmware build, run `make MANIFEST=hyz-things-release.xml`; normal development
+uses `hyz-things.xml`.
 
 `make upgrade` performs these stages in dependency order:
 
