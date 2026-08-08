@@ -1,6 +1,6 @@
 # SDK repository map
 
-The SDK workspace contains 19 private component repositories. Paths are relative to `sdk/`.
+The SDK workspace contains 20 private component repositories. Paths are relative to `sdk/`.
 
 ## Core
 
@@ -15,6 +15,7 @@ The SDK workspace contains 19 private component repositories. Paths are relative
 | `external/rktoolkit` | `linux-external-rktoolkit` | Rockchip low-level userspace helpers used by the base rootfs |
 | `external/rkscript` | `linux-external-rkscript` | Mount, USB gadget, udev, and boot helper services |
 | `external/rkupdate` | `linux-external-rkupdate` | Rockchip update image parser and target-side writer |
+| `external/recovery` | `linux-external-recovery` | Source-controlled Linux recovery environment used for non-A/B OTA |
 | `tools` | `linux-tools` | Minimal host-side `Linux_Pack_Firmware` tools only |
 
 ## Media

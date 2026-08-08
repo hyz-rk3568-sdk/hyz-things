@@ -18,11 +18,12 @@ cd hyz-things
 make
 ```
 
-On the first run, `make` bootstraps and syncs the pinned SDK automatically.
-Later builds reuse the existing SDK checkout; run `make sdk` explicitly when you
-intend to synchronize it. For the exact component commits used by the verified
-firmware build, run `make MANIFEST=hyz-things-release.xml`; normal development
-uses `hyz-things.xml`.
+On the first run, `make` bootstraps and syncs the development SDK manifest
+automatically. Later builds reuse the existing SDK checkout; run `make sdk`
+explicitly when you intend to synchronize it. For the exact component commits
+used by a verified firmware build, run
+`make MANIFEST=hyz-things-release.xml`; normal development uses
+`hyz-things.xml`.
 
 `make upgrade` performs these stages in dependency order:
 
@@ -31,9 +32,10 @@ uses `hyz-things.xml`.
 3. Cross-builds the Rust Hello World and Rust OTA client.
 4. Cross-builds the Sony eLinux Arm64/Wayland Flutter Hello World.
 5. Stages the applications and startup service into the product rootfs overlay.
-6. Builds Buildroot rootfs, kernel, and loader/boot images.
-7. Packs a Rockchip update image as `output/upgrade.fw` and writes
-   `output/upgrade.fw.sha256`.
+6. Builds Buildroot rootfs, kernel, loader/boot, and the source-controlled
+   `output/recovery.img` with its SHA-256 file.
+7. Packs the normal Rockchip OTA without `recovery.img` as
+   `output/upgrade.fw` and writes `output/upgrade.fw.sha256`.
 
 The product profile reports itself to ADB as `product:hyz_things`,
 `model:HYZ_RK3568`, and `device:rk3568`. It keeps one Simplified Chinese
@@ -46,6 +48,26 @@ The verified conservative profile produces a roughly 334 MiB update image
 instead of the original 400 MiB image. Wi-Fi and Bluetooth remain in the
 broad `ALL_AP` compatibility configuration until the exact production module
 has been confirmed on hardware.
+
+### Recovery OTA policy
+
+Recovery is built from the manifest-controlled `external/recovery` component
+on every full firmware build, but the normal `output/upgrade.fw` deliberately
+does not update it. This avoids rewriting the recovery environment for routine
+application, rootfs, or kernel releases.
+
+When recovery itself or its firmware compatibility changes, build both OTA
+variants explicitly:
+
+```sh
+make upgrade-recovery
+```
+
+This first produces the normal `output/upgrade.fw`, then creates
+`output/upgrade-recovery.fw` and its SHA-256 file from a separate package list
+that includes `recovery.img`. Both OTA variants exclude `userdata.img`.
+Publish the recovery variant only as an intentional infrastructure update;
+do not substitute it for routine OTA releases.
 
 Useful smaller targets are listed by `make help`. `make check` runs unit,
 format, shell, and Buildroot configuration checks without building firmware.

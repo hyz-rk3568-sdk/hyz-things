@@ -4,7 +4,7 @@ description: Plan and perform development in the hyz_things RK3568 Android-repo 
 when-to-use: Use for requests such as 修改SDK, 改Buildroot, 改内核, 添加hyz_things配置, 集成Rust或Flutter, repo分支管理, SDK编译, 固件发布, or /hyz-things-sdk.
 argument-hint: SDK task or component
 user-invocable: true
-compatibility: Requires Android repo, git, gh, and the 19-project hyz-rk3568-sdk workspace.
+compatibility: Requires Android repo, git, gh, and the 20-project hyz-rk3568-sdk workspace.
 metadata:
   author: hyz
   short-description: Safely develop the hyz_things RK3568 SDK
@@ -52,7 +52,7 @@ repo manifest -r -o .repo/before-task.xml
 
 The manifest currently creates `kernel/make.sh` as a linkfile, so it may appear as the single untracked kernel path. Treat only that exact symlink (`make.sh -> kernel_build.sh`) as expected; investigate every other change.
 
-Check that the requested source repository is among the 19 manifest projects. If a needed dependency is absent, stop and explain whether it should become a new private component repository and manifest project.
+Check that the requested source repository is among the 20 manifest projects. If a needed dependency is absent, stop and explain whether it should become a new private component repository and manifest project.
 
 ### 2. Classify the change
 
