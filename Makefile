@@ -18,6 +18,10 @@ MANIFEST_URL ?= https://github.com/hyz-rk3568-sdk/manifests.git
 MANIFEST ?= hyz-things.xml
 JOBS ?= $(shell nproc)
 
+# Buildroot rejects whitespace in PATH. Keep builds independent from WSL's
+# injected Windows paths and unrelated user toolchains.
+BUILD_PATH := $(HOME)/.cargo/bin:$(HOME)/.local/bin:$(HOME)/cmake/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH := $(BUILD_PATH)
 export RK_TOOLCHAIN_PREFIX := $(TOOLCHAIN_PREFIX)
 
 .PHONY: help sdk configure toolchain rust flutter apps overlay rootfs kernel loader firmware upgrade check clean
