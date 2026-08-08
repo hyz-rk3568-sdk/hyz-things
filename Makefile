@@ -44,7 +44,7 @@ $(REPO):
 	chmod 0755 "$(REPO).tmp"
 	mv "$(REPO).tmp" "$(REPO)"
 
-sdk/build.sh: $(REPO)
+sdk/build.sh: | $(REPO)
 	@mkdir -p sdk
 	cd sdk && "$(REPO)" init -u "$(MANIFEST_URL)" -m "$(MANIFEST)"
 	cd sdk && "$(REPO)" sync -c -j"$(JOBS)"
