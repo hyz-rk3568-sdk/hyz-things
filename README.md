@@ -104,13 +104,25 @@ hyz-ota apply http://SERVER:8000/upgrade.fw "$SHA256" --reboot
 ```
 
 `hyz-ota` uses `ureq` with Rustls for HTTP(S), `sha2` for streaming SHA-256,
-checks the Rockchip `RKFW` header, and only then invokes Rockchip
-`updateEngine`.
+and validates the Rockchip `RKFW` header. Routine recovery-free packages are
+staged by writing and reading back Rockchip's 1088-byte bootloader control
+block at the 16 KiB offset of `misc`; recovery then flashes the fixed
+non-A/B partition mask. The explicit recovery image path uses a separate
+command so updating recovery is never accidental:
+
+```sh
+hyz-ota install-recovery /userdata/upgrade-recovery.fw "$SHA256"
+```
+
+That command invokes Rockchip `updateEngine` to install recovery first and
+rejects its misleading zero exit status unless the resulting BCB exactly
+matches the requested package.
 
 ## Current safety boundary
 
 This is a bring-up OTA chain, not the final production updater. SHA-256 protects
 against transfer corruption but is not publisher authentication because an
 attacker controlling the server could replace both files. Before field use,
-add signed release metadata, anti-rollback state, A/B or recovery boot,
-health-confirmed activation, and power-loss/fault-injection tests.
+add signed release metadata, anti-rollback state, A/B support or another
+rollback strategy, health-confirmed activation, and power-loss/fault-injection
+tests.
