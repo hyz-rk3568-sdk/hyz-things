@@ -7,8 +7,10 @@ Android `repo` manifest.
 
 ## Build from a clean clone
 
-Host requirements: Linux x86-64, Git, curl, Python 3, GNU Make, Rustup, CMake,
-Ninja, Clang/LLD, and the normal Buildroot host packages.
+Host requirements: Linux x86-64, Git, curl, Python 3, GNU Make, Rustup,
+Ninja, Clang/LLD, and the normal Buildroot host packages. The build creates its
+own compatible CMake, flex, lz4, and dtc under the Buildroot host directory; a
+system Python 2 installation is not required.
 
 ```sh
 git clone https://github.com/hyz-rk3568-sdk/hyz-things.git

@@ -20,7 +20,7 @@ JOBS ?= $(shell nproc)
 
 # Buildroot rejects whitespace in PATH. Keep builds independent from WSL's
 # injected Windows paths and unrelated user toolchains.
-BUILD_PATH := $(HOME)/.cargo/bin:$(HOME)/.local/bin:$(HOME)/cmake/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+BUILD_PATH := $(BR_HOST)/bin:$(HOME)/.cargo/bin:$(HOME)/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH := $(BUILD_PATH)
 export RK_TOOLCHAIN_PREFIX := $(TOOLCHAIN_PREFIX)
 
@@ -61,7 +61,7 @@ configure: sdk/build.sh
 	cd sdk && ./build.sh $(BOARD)_defconfig
 
 toolchain: configure
-	cd sdk && ./build.sh buildroot-make:toolchain
+	cd sdk && ./build.sh buildroot-make:toolchain:host-flex:host-lz4:host-dtc
 rust: toolchain
 	rustup target add $(RUST_TARGET)
 	CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="$(TOOLCHAIN_PREFIX)gcc" \
@@ -146,6 +146,7 @@ check:
 	grep -q '^BR2_PACKAGE_WESTON=y' "$(BR_OUT)/.config"
 	! grep -qE '^BR2_PACKAGE_CHROMIUM.*=y$$' "$(BR_OUT)/.config"
 	! grep -qE '^BR2_PACKAGE_RKNPU.*=y$$' "$(BR_OUT)/.config"
+	! grep -qE '^BR2_PACKAGE_(FIBOCOM_DIAL_TOOL|QUECTEL_QCONNECTMANAGER)=y$$' "$(BR_OUT)/.config"
 
 clean:
 	rm -rf "$(OVERLAY)" "$(OUTPUT)/upgrade.fw" "$(OUTPUT)/upgrade.fw.sha256"
