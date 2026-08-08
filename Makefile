@@ -161,8 +161,12 @@ check:
 	cargo test --locked --manifest-path apps/rust/hello_world/Cargo.toml
 	cargo test --locked --manifest-path apps/rust/ota/Cargo.toml
 	sh -n product/rootfs-overlay/etc/init.d/S95hyz-app
+	grep -q '^WIDTH=1080$$' product/rootfs-overlay/etc/init.d/S95hyz-app
+	grep -q '^HEIGHT=1920$$' product/rootfs-overlay/etc/init.d/S95hyz-app
+	grep -q 'wait_for_wayland' product/rootfs-overlay/etc/init.d/S95hyz-app
 	sh -n sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	bash -n sdk/device/rockchip/common/post-hooks/20-info.sh
+	grep -q '^RK_KERNEL_DTS_NAME="rk3568-atk-evb1-mipi-dsi-1080p"$$' sdk/device/rockchip/.chips/rk3566_rk3568/hyz_things_rk3568_defconfig
 	grep -q '^RK_PACKAGE_FILE="package-file-hyz-ota"$$' sdk/device/rockchip/.chips/rk3566_rk3568/hyz_things_rk3568_defconfig
 	grep -q '^RK_RECOVERY_BASE_CFG="rk3568"$$' sdk/device/rockchip/.chips/rk3566_rk3568/hyz_things_rk3568_defconfig
 	! grep -q '^recovery[[:space:]]' sdk/device/rockchip/.chips/rk3566_rk3568/package-file-hyz-ota

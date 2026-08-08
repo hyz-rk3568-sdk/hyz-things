@@ -15,7 +15,7 @@ The release bundle is generated at:
 apps/flutter/hello_world/build/elinux/arm64/release/bundle/
 ```
 
-The deployment script validates that the ADB target is AArch64 Buildroot, copies the bundle to `/tmp/hyz_things/flutter_hello`, and launches an `800x480` window on `/run/wayland-0`.
+The production startup service waits for `/run/wayland-0` and launches the application at the ATK 5.5-inch MIPI panel's native `1080x1920` resolution.
 
 Stop the deployed application with:
 

@@ -5,15 +5,32 @@ BUNDLE=/opt/hyz/flutter/current
 PIDFILE=/var/run/$NAME.pid
 LOGFILE=/var/log/$NAME.log
 PROGRAM=$BUNDLE/hyz_flutter_hello
+XDG_RUNTIME_DIR=/run
+WAYLAND_DISPLAY=wayland-0
+WIDTH=1080
+HEIGHT=1920
+
+wait_for_wayland() {
+    counter=0
+    while [ ! -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ] && [ "$counter" -lt 100 ]; do
+        sleep 0.1
+        counter=$((counter + 1))
+    done
+    [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]
+}
 
 start() {
     [ -x "$PROGRAM" ] || return 0
     mkdir -p /var/log
+    if ! wait_for_wayland; then
+        echo "Wayland socket did not become ready: $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" >>"$LOGFILE"
+        return 1
+    fi
     echo "Starting $NAME"
-    XDG_RUNTIME_DIR=/run WAYLAND_DISPLAY=wayland-0 \
+    XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" WAYLAND_DISPLAY="$WAYLAND_DISPLAY" \
         LD_LIBRARY_PATH="$BUNDLE/lib" \
         start-stop-daemon -S -b -m -p "$PIDFILE" -x "$PROGRAM" -- \
-        --bundle="$BUNDLE" --width=800 --height=480 \
+        --bundle="$BUNDLE" --width="$WIDTH" --height="$HEIGHT" \
         --title="hyz_things" --app-id="dev.hyz.things" \
         >>"$LOGFILE" 2>&1
 }

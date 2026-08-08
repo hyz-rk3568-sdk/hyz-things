@@ -72,8 +72,14 @@ do not substitute it for routine OTA releases.
 Useful smaller targets are listed by `make help`. `make check` runs unit,
 format, shell, and Buildroot configuration checks without building firmware.
 
-The Sony Flutter toolchain is pinned to `3.27.1`. Initial setup details and
-proxy recovery notes remain in [`docs/flutter-elinux-setup.md`](docs/flutter-elinux-setup.md).
+The Sony Flutter toolchain is pinned to `3.27.1`. The hardware profile uses
+the ATK 5.5-inch `1080x1920` MIPI-DSI panel target
+`rk3568-atk-evb1-mipi-dsi-1080p`; the Flutter service waits for Weston before
+opening a native-resolution Wayland surface. Initial setup details and proxy
+recovery notes remain in [`docs/flutter-elinux-setup.md`](docs/flutter-elinux-setup.md).
+The panel's accepted low-gray brightness boundary is recorded as a stopped
+known issue in
+[`docs/display-low-gray-known-issue.md`](docs/display-low-gray-known-issue.md).
 
 ## Minimal OTA test
 
