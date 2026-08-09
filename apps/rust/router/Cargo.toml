@@ -1,0 +1,68 @@
+[package]
+name = "hyz-router"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+build = "build.rs"
+
+[features]
+default = ["native"]
+native = [
+  "dep:async-trait",
+  "dep:axum",
+  "dep:mime_guess",
+  "dep:serde_json",
+  "dep:sha2",
+  "dep:tar",
+  "dep:tokio",
+  "dep:ureq",
+]
+web = [
+  "dep:gloo-net",
+  "dep:gloo-timers",
+  "dep:js-sys",
+  "dep:wasm-bindgen-futures",
+  "dep:web-sys",
+  "dep:yew",
+]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+async-trait = { version = "0.1", optional = true }
+axum = { version = "0.8", optional = true }
+mime_guess = { version = "2", optional = true }
+serde_json = { version = "1", optional = true }
+sha2 = { version = "0.11.0", optional = true }
+tar = { version = "0.4", optional = true }
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"], optional = true }
+ureq = { version = "3.3.0", default-features = false, features = ["rustls"], optional = true }
+
+gloo-net = { version = "0.6", features = ["json"], optional = true }
+gloo-timers = { version = "0.3", features = ["futures"], optional = true }
+js-sys = { version = "0.3", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+web-sys = { version = "0.3", features = ["HtmlInputElement", "HtmlSelectElement"], optional = true }
+yew = { version = "0.21", features = ["csr"], optional = true }
+
+[build-dependencies]
+tar = "0.4"
+
+[dev-dependencies]
+serde_json = "1"
+
+[[bin]]
+name = "hyz-router"
+path = "src/main.rs"
+required-features = ["native"]
+
+[[bin]]
+name = "router-web"
+path = "src/web/main.rs"
+required-features = ["web"]
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = true

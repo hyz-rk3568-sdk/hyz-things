@@ -1,0 +1,10 @@
+pub const MIHOMO_EXECUTABLE: &str = "/usr/bin/mihomo";
+pub const MIHOMO_DATA_DIR: &str = "/userdata/hyz-router/mihomo";
+pub const MIHOMO_STATE_DIR: &str = "/run/hyz-mihomo";
+pub const MIHOMO_SOURCE_CONFIG: &str = "/userdata/hyz-router/mihomo/config.yaml";
+pub const MIHOMO_RUNTIME_CONFIG: &str = "/run/hyz-mihomo/config.yaml";
+pub const MIHOMO_CONTROLLER_SECRET: &str = "/run/hyz-mihomo/controller.secret";
+pub const MIHOMO_CONTROLLER_ADDRESS: &str = "127.0.0.1:9090";
+pub const MIHOMO_LOG: &str = "/run/hyz-mihomo/mihomo.log";
+pub const MIHOMO_CHECK_LOG: &str = "/run/hyz-mihomo/config-check.log";
+pub const MIHOMO_WATCHER_LOG: &str = "/run/hyz-mihomo/watcher.log";
