@@ -3,18 +3,16 @@ SHELL := /bin/bash
 
 BOARD := hyz_things_rk3568
 BR_BOARD := rockchip_hyz_things
-RECOVERY_BR_BOARD := rockchip_rk3568_recovery
 BR_OUT := $(CURDIR)/sdk/buildroot/output/$(BR_BOARD)
-RECOVERY_BR_OUT := $(CURDIR)/sdk/buildroot/output/$(RECOVERY_BR_BOARD)
 BR_HOST := $(BR_OUT)/host
 TOOLCHAIN_PREFIX := $(BR_HOST)/bin/aarch64-buildroot-linux-gnu-
 RUST_TARGET := aarch64-unknown-linux-gnu
+ROUTER_APP := $(CURDIR)/apps/rust/router
+ROUTER_FRONTEND_BUNDLE := $(CURDIR)/target/frontend-bundle/router-frontend.tar
+ROUTER_TRUNK := $(CURDIR)/.tools/trunk/bin/trunk
+ROUTER_BINARY := $(ROUTER_APP)/target/$(RUST_TARGET)/release/hyz-router
 OUTPUT := $(CURDIR)/output
 OVERLAY := $(OUTPUT)/rootfs-overlay
-FLUTTER_ELINUX := $(CURDIR)/.tools/flutter-elinux/bin/flutter-elinux
-FLUTTER_APP := $(CURDIR)/apps/flutter/hello_world
-FLUTTER_BUNDLE := $(FLUTTER_APP)/build/elinux/arm64/release/bundle
-LLVM_SHIM := $(CURDIR)/.tools/llvm
 REPO := $(CURDIR)/.tools/repo
 MANIFEST_URL ?= https://github.com/hyz-rk3568-sdk/manifests.git
 MANIFEST ?= hyz-things.xml
@@ -27,20 +25,23 @@ BUILD_PATH := $(BR_HOST)/bin:$(HOME)/.cargo/bin:$(HOME)/.local/bin:/usr/local/sb
 export PATH := $(BUILD_PATH)
 export RK_TOOLCHAIN_PREFIX := $(TOOLCHAIN_PREFIX)
 
-.PHONY: help sdk configure toolchain rust flutter apps overlay rootfs kernel loader recovery firmware upgrade upgrade-recovery check clean
+.PHONY: help sdk configure toolchain router-app apps overlay rootfs kernel loader recovery firmware upgrade upgrade-recovery check check-static clean
 
 help:
 	@printf '%s\n' \
 	  'make sdk        Clone/sync the pinned SDK manifest' \
 	  'make toolchain  Configure Buildroot and build the AArch64 toolchain' \
-	  'make apps       Build Rust hello, Rust OTA, and Flutter hello' \
-	  'make rootfs     Stage applications and build the Buildroot rootfs' \
+	  'make router-app Build the unified hyz-router ELF and embedded Yew UI' \
+	  'make apps       Build the single product application (hyz-router)' \
+	  'make overlay    Stage only hyz-router and product metadata' \
+	  'make rootfs     Stage hyz-router and build the Buildroot rootfs' \
 	  'make kernel     Build the RK3568 kernel with the Buildroot compiler' \
 	  'make recovery   Build the source-controlled recovery image' \
 	  'make firmware   Build loader, kernel, recovery, rootfs, and partition images' \
 	  'make upgrade    Build the normal OTA without recovery (default)' \
 	  'make upgrade-recovery  Also build an explicit OTA containing recovery' \
-	  'make check      Run fast static/unit/configuration checks'
+	  'make check-static  Run source/configuration checks without compiling' \
+	  'make check      Run router formatting, tests, strict Clippy, and static checks'
 
 $(REPO):
 	@mkdir -p "$(dir $(REPO))"
@@ -67,57 +68,26 @@ configure: sdk/build.sh
 
 toolchain: configure
 	cd sdk && ./build.sh buildroot-make:toolchain:host-flex:host-lz4:host-dtc
-rust: toolchain
-	rustup target add $(RUST_TARGET)
+
+router-app: toolchain
+	test -x "$(ROUTER_TRUNK)" || { echo 'repository-local Trunk 0.21.14 is required under .tools/trunk.' >&2; exit 1; }
+	rustup target add $(RUST_TARGET) wasm32-unknown-unknown
+	PATH="$(dir $(ROUTER_TRUNK)):$(PATH)" bash "$(ROUTER_APP)/tools/build-frontend-bundle.sh"
+	test -s "$(ROUTER_FRONTEND_BUNDLE)"
+	ROUTER_FRONTEND_ARCHIVE="$(ROUTER_FRONTEND_BUNDLE)" \
 	CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="$(TOOLCHAIN_PREFIX)gcc" \
 	CC_aarch64_unknown_linux_gnu="$(TOOLCHAIN_PREFIX)gcc" \
 	  cargo build --locked --release --target $(RUST_TARGET) \
-	  --manifest-path apps/rust/hello_world/Cargo.toml
-	CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="$(TOOLCHAIN_PREFIX)gcc" \
-	CC_aarch64_unknown_linux_gnu="$(TOOLCHAIN_PREFIX)gcc" \
-	  cargo build --locked --release --target $(RUST_TARGET) \
-	  --manifest-path apps/rust/ota/Cargo.toml
+	  --manifest-path "$(ROUTER_APP)/Cargo.toml" \
+	  --bin hyz-router --features native
 
-$(FLUTTER_ELINUX):
-	@mkdir -p .tools
-	git clone --branch 3.27.1 --depth 1 \
-	  https://github.com/sony/flutter-elinux.git .tools/flutter-elinux
-	"$(FLUTTER_ELINUX)" config --no-analytics
-
-flutter: toolchain $(FLUTTER_ELINUX)
-	@mkdir -p "$(LLVM_SHIM)/bin" "$(OUTPUT)/logs"
-	@CLANG=$$(command -v clang-20 || command -v clang); \
-	 CXX=$$(command -v clang++-20 || command -v clang++); \
-	 LLD=$$(command -v ld.lld-20 || command -v ld.lld); \
-	 test -n "$$CLANG" -a -n "$$CXX" -a -n "$$LLD" || \
-	   { echo 'clang, clang++, and ld.lld are required.' >&2; exit 1; }; \
-	 ln -sfn "$$CLANG" "$(LLVM_SHIM)/bin/clang"; \
-	 ln -sfn "$$CXX" "$(LLVM_SHIM)/bin/clang++"; \
-	 ln -sfn "$$LLD" "$(LLVM_SHIM)/bin/ld.lld"
-	cd "$(FLUTTER_APP)" && "$(FLUTTER_ELINUX)" build elinux --release \
-	  --target-arch=arm64 \
-	  --target-backend-type=wayland \
-	  --target-compiler-triple=aarch64-buildroot-linux-gnu \
-	  --target-sysroot="$(BR_HOST)/aarch64-buildroot-linux-gnu/sysroot" \
-	  --target-toolchain="$(LLVM_SHIM)" \
-	  --target-compiler-flags="--gcc-toolchain=$(BR_HOST) -fuse-ld=lld -Wno-unused-command-line-argument" \
-	  2>&1 | tee "$(OUTPUT)/logs/flutter-build-arm64-wayland.log"
-
-apps: rust flutter
+apps: router-app
 
 overlay: apps
 	rm -rf "$(OVERLAY)"
 	mkdir -p "$(OVERLAY)"
 	cp -a product/rootfs-overlay/. "$(OVERLAY)/"
-	install -D -m 0755 \
-	  apps/rust/hello_world/target/$(RUST_TARGET)/release/hyz-rust-hello \
-	  "$(OVERLAY)/usr/bin/hyz-rust-hello"
-	install -D -m 0755 \
-	  apps/rust/ota/target/$(RUST_TARGET)/release/hyz-ota \
-	  "$(OVERLAY)/usr/bin/hyz-ota"
-	mkdir -p "$(OVERLAY)/opt/hyz/flutter/current"
-	cp -a "$(FLUTTER_BUNDLE)/." "$(OVERLAY)/opt/hyz/flutter/current/"
-	chmod 0755 "$(OVERLAY)/etc/init.d/S95hyz-app"
+	install -D -m 0755 "$(ROUTER_BINARY)" "$(OVERLAY)/usr/bin/hyz-router"
 	printf 'hyz_things %s\n' "$${VERSION:-development}" > "$(OVERLAY)/etc/hyz-version"
 
 rootfs: configure overlay
@@ -155,20 +125,72 @@ upgrade-recovery: upgrade
 	@printf 'Recovery firmware: %s\nSHA-256: ' "$(OUTPUT)/upgrade-recovery.fw"
 	@cut -d' ' -f1 "$(OUTPUT)/upgrade-recovery.fw.sha256"
 
-check:
-	cargo fmt --manifest-path apps/rust/hello_world/Cargo.toml -- --check
-	cargo fmt --manifest-path apps/rust/ota/Cargo.toml -- --check
-	cargo test --locked --manifest-path apps/rust/hello_world/Cargo.toml
-	cargo test --locked --manifest-path apps/rust/ota/Cargo.toml
-	sh -n product/rootfs-overlay/etc/init.d/S95hyz-app
-	grep -q '^WIDTH=1080$$' product/rootfs-overlay/etc/init.d/S95hyz-app
-	grep -q '^HEIGHT=1920$$' product/rootfs-overlay/etc/init.d/S95hyz-app
-	grep -q 'wait_for_wayland' product/rootfs-overlay/etc/init.d/S95hyz-app
+check: check-static
+	cargo fmt --manifest-path "$(ROUTER_APP)/Cargo.toml" --all -- --check
+	cargo test --locked --manifest-path "$(ROUTER_APP)/Cargo.toml" --features native
+	cargo clippy --locked --manifest-path "$(ROUTER_APP)/Cargo.toml" \
+	  --all-targets --features native -- -D warnings
+
+check-static:
+	sh -n "$(ROUTER_APP)/tools/build-frontend-bundle.sh"
+	python3 -c 'from pathlib import Path; p = Path("$(ROUTER_APP)/tools/externalize-trunk-bootstrap.py"); compile(p.read_bytes(), str(p), "exec")'
+	grep -q 'router-bootstrap\.js' "$(ROUTER_APP)/tools/externalize-trunk-bootstrap.py"
+	grep -q 'bootstrap_version' "$(ROUTER_APP)/tools/externalize-trunk-bootstrap.py"
+	grep -q 'path == "router-bootstrap.js"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
+	grep -q 'static_asset_path' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
+	! grep -R -q 'unsafe-inline' "$(ROUTER_APP)/src" "$(ROUTER_APP)/frontend" "$(ROUTER_APP)/tools"
+	grep -q "script-src 'self' 'wasm-unsafe-eval'" "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
+	! grep -q "script-src 'self' 'unsafe-eval'" "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
+	grep -q 'Ipv4Addr::new(192, 168, 8, 1)' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
+	grep -q '"/api/v1/control/display"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
+	grep -q '"/api/v1/control/proxy/delay"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
+	grep -q '"/api/v1/control/proxy/delays"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
+	grep -q 'MIHOMO_CONTROLLER_ADDRESS: &str = "127.0.0.1:9090"' "$(ROUTER_APP)/src/adapters/outbound/paths.rs"
+	! grep -R -qE '127\.0\.0\.1:9090|controller\.secret' "$(ROUTER_APP)/src/web" "$(ROUTER_APP)/frontend"
+	grep -q 'default-brightness-level = <0>' sdk/kernel/arch/arm64/boot/dts/rockchip/rk3568-atk-evb1-mipi-dsi-1080p.dts
+	! grep -qE '&(dsi1|dsi1_panel|backlight1)[[:space:]]*\{[[:space:]]*status = "disabled"' sdk/kernel/arch/arm64/boot/dts/rockchip/rk3568-atk-evb1-mipi-dsi-1080p.dts
+	! grep -R -E -q 'TcpListener::bind\([^)]*(UNSPECIFIED|\[0,[[:space:]]*0,[[:space:]]*0,[[:space:]]*0\])|Ipv4Addr::UNSPECIFIED|CorsLayer::permissive|/usr/sbin/hyz-mihomo' "$(ROUTER_APP)/src"
+	! grep -R -q 'Command::new("sh")\|Command::new("bash")' "$(ROUTER_APP)/src"
+	test ! -d "$(ROUTER_APP)/adapter-linux"
 	sh -n sdk/buildroot/board/rockchip/hyz_things/post-build.sh
+	grep -q 'TARGET_DIR/usr/bin/hyz-ota' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
+	grep -q 'TARGET_DIR/usr/sbin/hyz-router' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
+	grep -q 'TARGET_DIR/usr/share/metacubexd' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
+	sh -n sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	grep -q '^DAEMON=/usr/bin/hyz-router$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	grep -q '^START_TIMEOUT_SECONDS=300$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	grep -q '^START_EXEC_GRACE_ATTEMPTS=10$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	grep -q '^START_RETRY_BACKOFF_MAX=30$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	grep -q 'deadline=.*START_TIMEOUT_SECONDS' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	grep -q 'retrying after attempt' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	! grep -q 'START_LAUNCH_ATTEMPTS\|START_ATTEMPTS' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	grep -q 'stale ownership requires explicit recovery' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	! grep -qE 'hyz-mihomo (explicit|tun|disable)|hyz-mihomo removes' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/hyz-router/mihomo-config.yaml.example
+	grep -q 'hyz-router proxy tun' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/hyz-router/mihomo-config.yaml.example
+	test ! -e sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-mihomo
+	test ! -e sdk/buildroot/board/rockchip/hyz_things/fs-overlay/usr/sbin/hyz-router
+	test ! -e sdk/buildroot/board/rockchip/hyz_things/fs-overlay/usr/sbin/hyz-mihomo
+	test ! -e sdk/buildroot/board/rockchip/hyz_things/fs-overlay/usr/share/udhcpc/default.script.d/50-hyz-wlan-metric
+	grep -q 'BR2_ROOTFS_OVERLAY+="board/rockchip/hyz_things/fs-overlay ../../output/rootfs-overlay"' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q '^BR2_PACKAGE_MIHOMO=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	sdk/buildroot/utils/check-package \
+	  sdk/buildroot/package/mihomo/Config.in \
+	  sdk/buildroot/package/mihomo/mihomo.mk \
+	  sdk/buildroot/package/mihomo/mihomo.hash
+	grep -q '^MIHOMO_VERSION = 1\.19\.29$$' sdk/buildroot/package/mihomo/mihomo.mk
+	@for symbol in BRIDGE TUN IP_ADVANCED_ROUTER IP_MULTIPLE_TABLES \
+	  NETFILTER_XT_TARGET_MARK NETFILTER_XT_MATCH_MARK NETFILTER_XT_MATCH_SOCKET \
+	  NETFILTER_XT_MATCH_COMMENT NETFILTER_XT_TARGET_TPROXY \
+	  NETFILTER_XT_TARGET_REDIRECT IP_NF_MANGLE; do \
+		grep -q "^CONFIG_$$symbol=y$$" sdk/kernel/arch/arm64/configs/rockchip_linux_defconfig || exit 1; \
+	done
 	bash -n sdk/device/rockchip/common/post-hooks/20-info.sh
 	grep -q '^RK_KERNEL_DTS_NAME="rk3568-atk-evb1-mipi-dsi-1080p"$$' sdk/device/rockchip/.chips/rk3566_rk3568/hyz_things_rk3568_defconfig
 	grep -q '^RK_PACKAGE_FILE="package-file-hyz-ota"$$' sdk/device/rockchip/.chips/rk3566_rk3568/hyz_things_rk3568_defconfig
 	grep -q '^RK_RECOVERY_BASE_CFG="rk3568"$$' sdk/device/rockchip/.chips/rk3566_rk3568/hyz_things_rk3568_defconfig
+	grep -q '^BR2_PACKAGE_RECOVERY=y$$' sdk/buildroot/configs/rockchip/base/recovery.config
+	grep -q '^BR2_PACKAGE_RKUPDATE=y$$' sdk/buildroot/configs/rockchip/base/recovery.config
+	! grep -qE '^BR2_PACKAGE_(FIBOCOM_DIAL_TOOL|QUECTEL_QCONNECTMANAGER)=y$$' sdk/buildroot/configs/rockchip/base/recovery.config
 	! grep -q '^recovery[[:space:]]' sdk/device/rockchip/.chips/rk3566_rk3568/package-file-hyz-ota
 	! grep -q '^userdata[[:space:]]' sdk/device/rockchip/.chips/rk3566_rk3568/package-file-hyz-ota
 	grep -q '^recovery[[:space:]]*recovery.img$$' sdk/device/rockchip/.chips/rk3566_rk3568/$(RECOVERY_PACKAGE)
@@ -177,18 +199,6 @@ check:
 	test "$$(grep -c '<project ' sdk/.repo/manifests/hyz-things.xml)" -eq 20
 	test "$$(grep -c '<project ' sdk/.repo/manifests/hyz-things-release.xml)" -eq 20
 	test "$$(grep -cE 'revision="[0-9a-f]{40}"' sdk/.repo/manifests/hyz-things-release.xml)" -eq 20
-	grep -q 'name="linux-external-recovery" path="external/recovery"' sdk/.repo/manifests/hyz-things.xml
-	grep -q 'name="linux-external-recovery" path="external/recovery"' sdk/.repo/manifests/hyz-things-release.xml
-	$(MAKE) -C sdk/buildroot O="$(BR_OUT)" $(BR_BOARD)_defconfig
-	grep -q '^BR2_PACKAGE_RKUPDATE=y' "$(BR_OUT)/.config"
-	grep -q '^BR2_PACKAGE_WESTON=y' "$(BR_OUT)/.config"
-	! grep -qE '^BR2_PACKAGE_CHROMIUM.*=y$$' "$(BR_OUT)/.config"
-	! grep -qE '^BR2_PACKAGE_RKNPU.*=y$$' "$(BR_OUT)/.config"
-	! grep -qE '^BR2_PACKAGE_(FIBOCOM_DIAL_TOOL|QUECTEL_QCONNECTMANAGER)=y$$' "$(BR_OUT)/.config"
-	$(MAKE) -C sdk/buildroot O="$(RECOVERY_BR_OUT)" $(RECOVERY_BR_BOARD)_defconfig
-	grep -q '^BR2_PACKAGE_RECOVERY=y$$' "$(RECOVERY_BR_OUT)/.config"
-	grep -q '^BR2_PACKAGE_RKUPDATE=y$$' "$(RECOVERY_BR_OUT)/.config"
-	! grep -qE '^BR2_PACKAGE_(FIBOCOM_DIAL_TOOL|QUECTEL_QCONNECTMANAGER)=y$$' "$(RECOVERY_BR_OUT)/.config"
 
 clean:
 	rm -rf "$(OVERLAY)" \
