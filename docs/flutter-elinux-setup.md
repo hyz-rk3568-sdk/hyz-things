@@ -1,5 +1,7 @@
 # Sony flutter-elinux 初始化与 Hello World
 
+> **历史文档：** Flutter Hello World 已从 active source 和 `make apps` 删除，当前产品只安装统一 `/usr/bin/hyz-router`。以下内容仅保留早期显示/工具链实验的复现记录，不是当前构建步骤。
+
 本文只说明两件事：
 
 1. 在 `hyz_things` 工作区初始化固定版本的 Sony `flutter-elinux`。
