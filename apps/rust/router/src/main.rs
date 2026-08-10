@@ -34,12 +34,10 @@ use hyz_router::{
         shutdown::ShutdownApplication,
         status::ReadStatus,
         subscription::SubscriptionApplication,
-        wifi::{ApPrepareRequest, StaCandidateRequest, WifiApplication},
+        wifi::WifiApplication,
     },
     domain::{
-        admin::SecretString,
         network::NetworkDesired,
-        network_config::{WifiCountry, WifiPassphrase, WifiSsid},
         proxy::{ProxyDesired, ProxyMode},
     },
 };
@@ -51,7 +49,7 @@ use std::{
 };
 use tokio::sync::{watch, Mutex};
 
-const USAGE: &str = "Usage:\n  hyz-router daemon\n  hyz-router status [--json]\n  hyz-router router enable|disable\n  hyz-router proxy explicit|tun|disable\n  hyz-router wifi status|scan\n  hyz-router wifi sta apply <ssid> <passphrase>\n  hyz-router wifi ap prepare <ssid> <passphrase> <country>\n  hyz-router wifi ap apply|confirm|cancel\n  hyz-router subscription get [--json]\n  hyz-router subscription set <https-url>\n  hyz-router subscription refresh\n  hyz-router ota ...";
+const USAGE: &str = "Usage:\n  hyz-router daemon\n  hyz-router status [--json]\n  hyz-router router enable|disable\n  hyz-router proxy explicit|tun|disable\n  hyz-router wifi status|scan\n  hyz-router wifi ap apply|confirm|cancel\n  hyz-router subscription get [--json]\n  hyz-router subscription refresh\n  hyz-router ota ...";
 
 struct ProductionRuntime {
     router: Arc<LinuxRouterPlatform>,
@@ -590,35 +588,6 @@ async fn run(args: Vec<String>) -> Result<(), Box<dyn Error>> {
         [group, action] if group == "wifi" && action == "scan" => {
             print_wifi_result(request(ControlOperation::WifiScan {}).await?)?;
         }
-        [group, role, action, ssid, passphrase]
-            if group == "wifi" && role == "sta" && action == "apply" =>
-        {
-            let wifi_request = StaCandidateRequest {
-                ssid: WifiSsid::new(ssid.clone())?,
-                passphrase: WifiPassphrase::new(passphrase.clone())?,
-            };
-            print_wifi_result(
-                request(ControlOperation::WifiStaApply {
-                    request: wifi_request,
-                })
-                .await?,
-            )?;
-        }
-        [group, role, action, ssid, passphrase, country]
-            if group == "wifi" && role == "ap" && action == "prepare" =>
-        {
-            let wifi_request = ApPrepareRequest {
-                ssid: WifiSsid::new(ssid.clone())?,
-                passphrase: WifiPassphrase::new(passphrase.clone())?,
-                country: parse_wifi_country(country)?,
-            };
-            print_wifi_result(
-                request(ControlOperation::WifiApPrepare {
-                    request: wifi_request,
-                })
-                .await?,
-            )?;
-        }
         [group, role, action] if group == "wifi" && role == "ap" => {
             let operation = match action.as_str() {
                 "apply" => ControlOperation::WifiApApply {},
@@ -633,15 +602,6 @@ async fn run(args: Vec<String>) -> Result<(), Box<dyn Error>> {
         }
         [group, action, flag] if group == "subscription" && action == "get" && flag == "--json" => {
             print_subscription(request(ControlOperation::SubscriptionGet {}).await?, true)?;
-        }
-        [group, action, url] if group == "subscription" && action == "set" => {
-            print_subscription(
-                request(ControlOperation::SubscriptionSet {
-                    url: SecretString::new(url.clone()),
-                })
-                .await?,
-                false,
-            )?;
         }
         [group, action] if group == "subscription" && action == "refresh" => {
             print_subscription(
@@ -940,26 +900,6 @@ fn print_wifi_result(result: ControlResult) -> Result<(), Box<dyn Error>> {
         _ => return Err("daemon returned an unexpected Wi-Fi response".into()),
     }
     Ok(())
-}
-
-fn parse_wifi_country(value: &str) -> Result<WifiCountry, Box<dyn Error>> {
-    match value.to_ascii_uppercase().as_str() {
-        "AU" => Ok(WifiCountry::Au),
-        "BR" => Ok(WifiCountry::Br),
-        "CA" => Ok(WifiCountry::Ca),
-        "CN" => Ok(WifiCountry::Cn),
-        "DE" => Ok(WifiCountry::De),
-        "FR" => Ok(WifiCountry::Fr),
-        "GB" => Ok(WifiCountry::Gb),
-        "IN" => Ok(WifiCountry::In),
-        "JP" => Ok(WifiCountry::Jp),
-        "KR" => Ok(WifiCountry::Kr),
-        "NZ" => Ok(WifiCountry::Nz),
-        "SG" => Ok(WifiCountry::Sg),
-        "TW" => Ok(WifiCountry::Tw),
-        "US" => Ok(WifiCountry::Us),
-        _ => Err("unsupported Wi-Fi country code".into()),
-    }
 }
 
 fn expect_completed(result: ControlResult) -> Result<String, Box<dyn Error>> {
