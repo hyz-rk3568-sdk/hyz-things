@@ -14,7 +14,7 @@ use hyz_router::domain::{
     },
 };
 use wasm_bindgen_futures::spawn_local;
-use web_sys::{HtmlInputElement, HtmlSelectElement};
+use web_sys::{HtmlInputElement, HtmlSelectElement, RequestCredentials};
 use yew::prelude::*;
 
 const STATUS_ENDPOINT: &str = "/api/v1/status";
@@ -23,8 +23,172 @@ const DISPLAY_ENDPOINT: &str = "/api/v1/control/display";
 const PROXY_MODE_ENDPOINT: &str = "/api/v1/control/proxy/mode";
 const PROXY_SELECTION_ENDPOINT: &str = "/api/v1/control/proxy/selection";
 const PROXY_DELAYS_ENDPOINT: &str = "/api/v1/control/proxy/delays";
+const AUTH_LOGIN_ENDPOINT: &str = "/api/v1/auth/login";
+const AUTH_LOGOUT_ENDPOINT: &str = "/api/v1/auth/logout";
+const AUTH_SESSION_ENDPOINT: &str = "/api/v1/auth/session";
+const AUTH_PASSWORD_ENDPOINT: &str = "/api/v1/auth/password";
+const NETWORK_CONFIG_ENDPOINT: &str = "/api/v1/network/config";
+const NETWORK_PENDING_ENDPOINT: &str = "/api/v1/network/pending";
+const STA_SCAN_ENDPOINT: &str = "/api/v1/control/network/sta/scan";
+const STA_APPLY_ENDPOINT: &str = "/api/v1/control/network/sta/apply";
+const AP_PREPARE_ENDPOINT: &str = "/api/v1/control/network/ap/prepare";
+const AP_APPLY_ENDPOINT: &str = "/api/v1/control/network/ap/apply";
+const AP_CONFIRM_ENDPOINT: &str = "/api/v1/control/network/ap/confirm";
+const AP_CANCEL_ENDPOINT: &str = "/api/v1/control/network/ap/cancel";
+const SUBSCRIPTION_ENDPOINT: &str = "/api/v1/proxy/subscription";
+const SUBSCRIPTION_SOURCE_ENDPOINT: &str = "/api/v1/control/proxy/subscription/source";
+const SUBSCRIPTION_REFRESH_ENDPOINT: &str = "/api/v1/control/proxy/subscription/refresh";
+const AP_CONFIRM_TIMEOUT_MS: u64 = 120_000;
 const POLL_DELAY_MS: u32 = 2_000;
 const MISSING: &str = "—";
+
+#[derive(Clone, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuthSessionDto {
+    authenticated: bool,
+    must_change: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+enum WifiCountryDto {
+    #[serde(rename = "AU")]
+    Au,
+    #[serde(rename = "BR")]
+    Br,
+    #[serde(rename = "CA")]
+    Ca,
+    #[serde(rename = "CN")]
+    Cn,
+    #[serde(rename = "DE")]
+    De,
+    #[serde(rename = "FR")]
+    Fr,
+    #[serde(rename = "GB")]
+    Gb,
+    #[serde(rename = "IN")]
+    In,
+    #[serde(rename = "JP")]
+    Jp,
+    #[serde(rename = "KR")]
+    Kr,
+    #[serde(rename = "NZ")]
+    Nz,
+    #[serde(rename = "SG")]
+    Sg,
+    #[serde(rename = "TW")]
+    Tw,
+    #[serde(rename = "US")]
+    Us,
+}
+
+impl WifiCountryDto {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Au => "AU",
+            Self::Br => "BR",
+            Self::Ca => "CA",
+            Self::Cn => "CN",
+            Self::De => "DE",
+            Self::Fr => "FR",
+            Self::Gb => "GB",
+            Self::In => "IN",
+            Self::Jp => "JP",
+            Self::Kr => "KR",
+            Self::Nz => "NZ",
+            Self::Sg => "SG",
+            Self::Tw => "TW",
+            Self::Us => "US",
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NetworkConfigDto {
+    version: u8,
+    ap_ssid: String,
+    sta_ssid: String,
+    country: WifiCountryDto,
+}
+
+#[derive(Clone, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PendingConfigDto {
+    version: u8,
+    staged_at_unix_ms: u64,
+    config: NetworkConfigDto,
+}
+
+#[derive(Clone, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NetworkPendingDto {
+    pending: Option<PendingConfigDto>,
+    applied: bool,
+}
+
+#[derive(Clone, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WifiScanDto {
+    ssid: String,
+    bssid: String,
+    frequency_mhz: u16,
+    signal_dbm: i16,
+    secured: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum SubscriptionStateDto {
+    Idle,
+    Fetching,
+    Active,
+    Failed,
+}
+
+#[derive(Clone, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SubscriptionDto {
+    configured: bool,
+    state: SubscriptionStateDto,
+}
+
+#[derive(serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct EmptyRequest {}
+
+#[derive(serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct LoginRequest {
+    password: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct PasswordRequest {
+    current_password: String,
+    new_password: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct StaRequest {
+    ssid: String,
+    passphrase: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct ApRequest {
+    ssid: String,
+    passphrase: String,
+    country: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct SubscriptionSourceRequest {
+    url: String,
+}
 
 #[derive(Clone, PartialEq, Default)]
 struct AppState {
@@ -35,6 +199,15 @@ struct AppState {
     control_notice: Option<String>,
     control_busy: bool,
     loading: bool,
+    session_checked: bool,
+    session: Option<AuthSessionDto>,
+    settings_notice: Option<String>,
+    settings_busy: bool,
+    network: Option<NetworkConfigDto>,
+    pending_network: Option<NetworkPendingDto>,
+    scan_entries: Vec<WifiScanDto>,
+    subscription: Option<SubscriptionDto>,
+    ap_applied_local: bool,
 }
 
 enum Action {
@@ -44,6 +217,14 @@ enum Action {
     ControlStarted,
     ControlFinished(Result<String, String>),
     ProxyDelaysFinished(Result<Vec<ProxyGroup>, String>),
+    SessionFinished(Result<AuthSessionDto, String>),
+    AuthFinished(Result<(AuthSessionDto, String), String>),
+    SettingsStarted,
+    SettingsFinished(Result<(NetworkConfigDto, NetworkPendingDto, SubscriptionDto), String>),
+    SettingsMutationFinished(Result<String, String>),
+    ScanFinished(Result<Vec<WifiScanDto>, String>),
+    SettingsNotice(String),
+    ApApplyDispatched,
 }
 
 impl Reducible for AppState {
@@ -102,6 +283,94 @@ impl Reducible for AppState {
                 }
                 next.into()
             }
+            Action::SessionFinished(result) => {
+                let mut next = (*self).clone();
+                next.session_checked = true;
+                match result {
+                    Ok(session) => {
+                        next.session = Some(session);
+                        next.settings_notice = None;
+                    }
+                    Err(error) => {
+                        next.session = None;
+                        next.settings_notice = Some(format!("无法检查登录状态：{error}"));
+                    }
+                }
+                next.into()
+            }
+            Action::AuthFinished(result) => {
+                let mut next = (*self).clone();
+                next.settings_busy = false;
+                match result {
+                    Ok((session, message)) => {
+                        if !session.authenticated {
+                            next.network = None;
+                            next.pending_network = None;
+                            next.subscription = None;
+                            next.scan_entries.clear();
+                        }
+                        next.session = Some(session);
+                        next.settings_notice = Some(message);
+                    }
+                    Err(error) => next.settings_notice = Some(format!("操作失败：{error}")),
+                }
+                next.into()
+            }
+            Action::SettingsStarted => Self {
+                settings_busy: true,
+                settings_notice: None,
+                ..(*self).clone()
+            }
+            .into(),
+            Action::SettingsFinished(result) => {
+                let mut next = (*self).clone();
+                next.settings_busy = false;
+                match result {
+                    Ok((network, pending, subscription)) => {
+                        next.network = Some(network);
+                        if pending.pending.is_none() {
+                            next.ap_applied_local = false;
+                        }
+                        next.pending_network = Some(pending);
+                        next.subscription = Some(subscription);
+                    }
+                    Err(error) => {
+                        next.settings_notice = Some(format!("设置数据读取失败：{error}"));
+                    }
+                }
+                next.into()
+            }
+            Action::SettingsMutationFinished(result) => Self {
+                settings_busy: false,
+                settings_notice: Some(match result {
+                    Ok(message) => message,
+                    Err(error) => format!("操作失败：{error}"),
+                }),
+                ..(*self).clone()
+            }
+            .into(),
+            Action::ScanFinished(result) => {
+                let mut next = (*self).clone();
+                next.settings_busy = false;
+                match result {
+                    Ok(entries) => {
+                        next.scan_entries = entries;
+                        next.settings_notice = Some("STA 扫描已完成".to_owned());
+                    }
+                    Err(error) => next.settings_notice = Some(format!("扫描失败：{error}")),
+                }
+                next.into()
+            }
+            Action::SettingsNotice(message) => Self {
+                settings_notice: Some(message),
+                ..(*self).clone()
+            }
+            .into(),
+            Action::ApApplyDispatched => Self {
+                ap_applied_local: true,
+                ..(*self).clone()
+            }
+            .into(),
         }
     }
 }
@@ -160,16 +429,38 @@ fn app() -> Html {
 
     {
         let state = state.clone();
-        let delay_refresh_started = delay_refresh_started.clone();
-        let refresh = state.panel.as_ref().and_then(|bootstrap| {
-            bootstrap
-                .panel
-                .proxy_groups
-                .data
-                .as_ref()
-                .filter(|groups| !groups.is_empty())
-                .map(|_| bootstrap.csrf_token.clone())
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                let session = fetch_json::<AuthSessionDto>(AUTH_SESSION_ENDPOINT, "登录状态").await;
+                let authenticated = session
+                    .as_ref()
+                    .is_ok_and(|session| session.authenticated && !session.must_change);
+                state.dispatch(Action::SessionFinished(session));
+                if authenticated {
+                    dispatch_settings_refresh(state.clone());
+                }
+            });
+            || ()
         });
+    }
+
+    {
+        let state = state.clone();
+        let delay_refresh_started = delay_refresh_started.clone();
+        let refresh = state
+            .session
+            .as_ref()
+            .filter(|session| session.authenticated && !session.must_change)
+            .and_then(|_| state.panel.as_ref())
+            .and_then(|bootstrap| {
+                bootstrap
+                    .panel
+                    .proxy_groups
+                    .data
+                    .as_ref()
+                    .filter(|groups| !groups.is_empty())
+                    .map(|_| bootstrap.csrf_token.clone())
+            });
         use_effect_with(refresh, move |csrf| {
             if let Some(csrf) = csrf.as_ref().filter(|_| !*delay_refresh_started) {
                 delay_refresh_started.set(true);
@@ -197,7 +488,6 @@ fn app() -> Html {
             {render_notice(&state)}
             if let Some(snapshot) = &state.snapshot {
                 {render_dashboard(snapshot)}
-                {render_control_panel(&state, brightness.clone())}
                 {render_issues(snapshot)}
             } else if state.loading {
                 <section class="loading-grid" aria-label="正在加载">
@@ -209,6 +499,10 @@ fn app() -> Html {
                     <h2>{"暂时无法读取状态"}</h2>
                     <p>{"面板会自动重试，无需刷新页面。"}</p>
                 </section>
+            }
+            <Settings state={state.clone()} />
+            if state.session.as_ref().is_some_and(|session| session.authenticated && !session.must_change) {
+                {render_control_panel(&state, brightness.clone())}
             }
             <footer>{"数据约每 2 秒自动刷新 · 写操作仅接受同源令牌保护的类型化请求"}</footer>
         </main>
@@ -226,6 +520,7 @@ async fn fetch_json<T: serde::de::DeserializeOwned>(
     label: &str,
 ) -> Result<T, String> {
     let response = Request::get(endpoint)
+        .credentials(RequestCredentials::SameOrigin)
         .header("Accept", "application/json")
         .send()
         .await
@@ -251,6 +546,7 @@ fn dispatch_control<T>(
     state.dispatch(Action::ControlStarted);
     spawn_local(async move {
         let request = match Request::post(endpoint)
+            .credentials(RequestCredentials::SameOrigin)
             .header("Accept", "application/json")
             .header("X-HYZ-CSRF", &csrf_token)
             .json(&body)
@@ -282,6 +578,7 @@ fn dispatch_delay_refresh(state: UseReducerHandle<AppState>, csrf_token: String)
     state.dispatch(Action::ControlStarted);
     spawn_local(async move {
         let request = match Request::post(PROXY_DELAYS_ENDPOINT)
+            .credentials(RequestCredentials::SameOrigin)
             .header("Accept", "application/json")
             .header("X-HYZ-CSRF", &csrf_token)
             .json(&ProxyDelayRefreshRequest {})
@@ -306,6 +603,526 @@ fn dispatch_delay_refresh(state: UseReducerHandle<AppState>, csrf_token: String)
         };
         state.dispatch(Action::ProxyDelaysFinished(result));
     });
+}
+
+async fn post_json<T: serde::Serialize>(
+    endpoint: &str,
+    csrf: &str,
+    body: &T,
+    label: &str,
+) -> Result<gloo_net::http::Response, String> {
+    let request = Request::post(endpoint)
+        .credentials(RequestCredentials::SameOrigin)
+        .header("Accept", "application/json")
+        .header("X-HYZ-CSRF", csrf)
+        .json(body)
+        .map_err(|error| format!("无法编码{label}请求：{error}"))?;
+    let response = request
+        .send()
+        .await
+        .map_err(|error| format!("无法连接{label}接口：{error}"))?;
+    if response.ok() {
+        Ok(response)
+    } else {
+        Err(format!("{label}接口返回 HTTP {}", response.status()))
+    }
+}
+
+async fn post_json_response<T: serde::Serialize, R: serde::de::DeserializeOwned>(
+    endpoint: &str,
+    csrf: &str,
+    body: &T,
+    label: &str,
+) -> Result<R, String> {
+    post_json(endpoint, csrf, body, label)
+        .await?
+        .json::<R>()
+        .await
+        .map_err(|error| format!("{label}响应格式无效：{error}"))
+}
+
+async fn fetch_settings_data(
+) -> Result<(NetworkConfigDto, NetworkPendingDto, SubscriptionDto), String> {
+    let network = fetch_json::<NetworkConfigDto>(NETWORK_CONFIG_ENDPOINT, "网络配置").await?;
+    let pending =
+        fetch_json::<NetworkPendingDto>(NETWORK_PENDING_ENDPOINT, "待确认网络配置").await?;
+    let subscription = fetch_json::<SubscriptionDto>(SUBSCRIPTION_ENDPOINT, "订阅状态").await?;
+    Ok((network, pending, subscription))
+}
+
+fn dispatch_settings_refresh(state: UseReducerHandle<AppState>) {
+    state.dispatch(Action::SettingsStarted);
+    spawn_local(async move {
+        state.dispatch(Action::SettingsFinished(fetch_settings_data().await));
+    });
+}
+
+fn dispatch_auth<T: serde::Serialize + 'static>(
+    state: UseReducerHandle<AppState>,
+    endpoint: &'static str,
+    csrf: String,
+    body: T,
+    success: &'static str,
+) {
+    state.dispatch(Action::SettingsStarted);
+    spawn_local(async move {
+        let result = post_json_response::<_, AuthSessionDto>(endpoint, &csrf, &body, "认证")
+            .await
+            .map(|session| (session, success.to_owned()));
+        let refresh = result
+            .as_ref()
+            .is_ok_and(|(session, _)| session.authenticated && !session.must_change);
+        state.dispatch(Action::AuthFinished(result));
+        if refresh {
+            dispatch_settings_refresh(state.clone());
+        }
+    });
+}
+
+fn dispatch_settings_mutation<T: serde::Serialize + 'static>(
+    state: UseReducerHandle<AppState>,
+    endpoint: &'static str,
+    csrf: String,
+    body: T,
+    label: &'static str,
+    success: &'static str,
+) {
+    state.dispatch(Action::SettingsStarted);
+    spawn_local(async move {
+        let result = post_json(endpoint, &csrf, &body, label).await;
+        if result.is_ok() {
+            state.dispatch(Action::SettingsFinished(fetch_settings_data().await));
+        }
+        state.dispatch(Action::SettingsMutationFinished(
+            result.map(|_| success.to_owned()),
+        ));
+    });
+}
+
+fn dispatch_scan(state: UseReducerHandle<AppState>, csrf: String) {
+    state.dispatch(Action::SettingsStarted);
+    spawn_local(async move {
+        let result = post_json_response::<_, Vec<WifiScanDto>>(
+            STA_SCAN_ENDPOINT,
+            &csrf,
+            &EmptyRequest {},
+            "STA 扫描",
+        )
+        .await;
+        state.dispatch(Action::ScanFinished(result));
+    });
+}
+
+fn dispatch_subscription_source(state: UseReducerHandle<AppState>, csrf: String, url: String) {
+    state.dispatch(Action::SettingsStarted);
+    spawn_local(async move {
+        let result = async {
+            post_json(
+                SUBSCRIPTION_SOURCE_ENDPOINT,
+                &csrf,
+                &SubscriptionSourceRequest { url },
+                "订阅来源保存",
+            )
+            .await?;
+            post_json(
+                SUBSCRIPTION_REFRESH_ENDPOINT,
+                &csrf,
+                &EmptyRequest {},
+                "订阅更新",
+            )
+            .await?;
+            Ok::<_, String>(())
+        }
+        .await;
+        if result.is_ok() {
+            state.dispatch(Action::SettingsFinished(fetch_settings_data().await));
+        }
+        state.dispatch(Action::SettingsMutationFinished(
+            result.map(|_| "订阅来源已保存并更新".to_owned()),
+        ));
+    });
+}
+
+#[derive(Properties, PartialEq)]
+struct SettingsProps {
+    state: UseReducerHandle<AppState>,
+}
+
+#[function_component(Settings)]
+fn settings(props: &SettingsProps) -> Html {
+    let state = &props.state;
+    let login_password = use_node_ref();
+    let current_password = use_node_ref();
+    let new_password = use_node_ref();
+    let confirm_password = use_node_ref();
+    let sta_ssid = use_node_ref();
+    let sta_password = use_node_ref();
+    let ap_ssid = use_node_ref();
+    let ap_password = use_node_ref();
+    let ap_country = use_node_ref();
+    let subscription_url = use_node_ref();
+    let now_ms = use_state(|| js_sys::Date::now() as u64);
+
+    {
+        let now_ms = now_ms.clone();
+        use_effect_with((), move |_| {
+            let cancelled = Rc::new(Cell::new(false));
+            let task_cancelled = cancelled.clone();
+            spawn_local(async move {
+                while !task_cancelled.get() {
+                    TimeoutFuture::new(1_000).await;
+                    now_ms.set(js_sys::Date::now() as u64);
+                }
+            });
+            move || cancelled.set(true)
+        });
+    }
+
+    let csrf = state
+        .panel
+        .as_ref()
+        .map(|panel| panel.csrf_token.clone())
+        .unwrap_or_default();
+    let session = state.session.as_ref();
+    let authenticated = session.is_some_and(|session| session.authenticated);
+    let must_change = session.is_some_and(|session| session.must_change);
+    let busy = state.settings_busy;
+
+    let login = {
+        let state = state.clone();
+        let csrf = csrf.clone();
+        let input = login_password.clone();
+        Callback::from(move |event: SubmitEvent| {
+            event.prevent_default();
+            let Some(input) = input.cast::<HtmlInputElement>() else {
+                return;
+            };
+            let password = input.value();
+            input.set_value("");
+            dispatch_auth(
+                state.clone(),
+                AUTH_LOGIN_ENDPOINT,
+                csrf.clone(),
+                LoginRequest { password },
+                "已登录",
+            );
+        })
+    };
+    let logout = {
+        let state = state.clone();
+        let csrf = csrf.clone();
+        Callback::from(move |_| {
+            dispatch_auth(
+                state.clone(),
+                AUTH_LOGOUT_ENDPOINT,
+                csrf.clone(),
+                EmptyRequest {},
+                "已退出登录",
+            )
+        })
+    };
+    let change_password = {
+        let state = state.clone();
+        let csrf = csrf.clone();
+        let current = current_password.clone();
+        let new = new_password.clone();
+        let confirm = confirm_password.clone();
+        Callback::from(move |event: SubmitEvent| {
+            event.prevent_default();
+            let (Some(current), Some(new), Some(confirm)) = (
+                current.cast::<HtmlInputElement>(),
+                new.cast::<HtmlInputElement>(),
+                confirm.cast::<HtmlInputElement>(),
+            ) else {
+                return;
+            };
+            let current_value = current.value();
+            let new_value = new.value();
+            let confirm_value = confirm.value();
+            current.set_value("");
+            new.set_value("");
+            confirm.set_value("");
+            if !(12..=1_024).contains(&new_value.len()) {
+                state.dispatch(Action::SettingsNotice(
+                    "新密码长度必须为 12–1024 字节".to_owned(),
+                ));
+                return;
+            }
+            if !(12..=1_024).contains(&new_value.len()) {
+                state.dispatch(Action::SettingsNotice(
+                    "新密码长度必须为 12–1024 字节".to_owned(),
+                ));
+                return;
+            }
+            if new_value != confirm_value {
+                state.dispatch(Action::SettingsNotice("两次输入的新密码不一致".to_owned()));
+                return;
+            }
+            dispatch_auth(
+                state.clone(),
+                AUTH_PASSWORD_ENDPOINT,
+                csrf.clone(),
+                PasswordRequest {
+                    current_password: current_value,
+                    new_password: new_value,
+                },
+                "密码已更新",
+            );
+        })
+    };
+    let scan = {
+        let state = state.clone();
+        let csrf = csrf.clone();
+        Callback::from(move |_| dispatch_scan(state.clone(), csrf.clone()))
+    };
+    let apply_sta = {
+        let state = state.clone();
+        let csrf = csrf.clone();
+        let ssid = sta_ssid.clone();
+        let password = sta_password.clone();
+        Callback::from(move |event: SubmitEvent| {
+            event.prevent_default();
+            let (Some(ssid), Some(password)) = (
+                ssid.cast::<HtmlInputElement>(),
+                password.cast::<HtmlInputElement>(),
+            ) else {
+                return;
+            };
+            let request = StaRequest {
+                ssid: ssid.value(),
+                passphrase: password.value(),
+            };
+            password.set_value("");
+            dispatch_settings_mutation(
+                state.clone(),
+                STA_APPLY_ENDPOINT,
+                csrf.clone(),
+                request,
+                "STA 应用",
+                "STA 配置已应用",
+            );
+        })
+    };
+    let prepare_ap = {
+        let state = state.clone();
+        let csrf = csrf.clone();
+        let ssid = ap_ssid.clone();
+        let password = ap_password.clone();
+        let country = ap_country.clone();
+        Callback::from(move |event: SubmitEvent| {
+            event.prevent_default();
+            let (Some(ssid), Some(password), Some(country)) = (
+                ssid.cast::<HtmlInputElement>(),
+                password.cast::<HtmlInputElement>(),
+                country.cast::<HtmlSelectElement>(),
+            ) else {
+                return;
+            };
+            let request = ApRequest {
+                ssid: ssid.value(),
+                passphrase: password.value(),
+                country: country.value(),
+            };
+            password.set_value("");
+            dispatch_settings_mutation(
+                state.clone(),
+                AP_PREPARE_ENDPOINT,
+                csrf.clone(),
+                request,
+                "AP 准备",
+                "AP 配置已准备，请确认断线风险后应用",
+            );
+        })
+    };
+    let ap_action = |endpoint: &'static str, label: &'static str, success: &'static str| {
+        let state = state.clone();
+        let csrf = csrf.clone();
+        Callback::from(move |_| {
+            if endpoint == AP_APPLY_ENDPOINT {
+                state.dispatch(Action::ApApplyDispatched);
+            }
+            dispatch_settings_mutation(
+                state.clone(),
+                endpoint,
+                csrf.clone(),
+                EmptyRequest {},
+                label,
+                success,
+            );
+        })
+    };
+    let save_subscription = {
+        let state = state.clone();
+        let csrf = csrf.clone();
+        let input = subscription_url.clone();
+        Callback::from(move |event: SubmitEvent| {
+            event.prevent_default();
+            let Some(input) = input.cast::<HtmlInputElement>() else {
+                return;
+            };
+            let url = input.value();
+            input.set_value("");
+            dispatch_subscription_source(state.clone(), csrf.clone(), url);
+        })
+    };
+    let refresh_subscription = {
+        let state = state.clone();
+        let csrf = csrf.clone();
+        Callback::from(move |_| {
+            dispatch_settings_mutation(
+                state.clone(),
+                SUBSCRIPTION_REFRESH_ENDPOINT,
+                csrf.clone(),
+                EmptyRequest {},
+                "订阅更新",
+                "订阅已更新",
+            )
+        })
+    };
+
+    html! {
+        <section class="settings" aria-labelledby="settings-title">
+            <div class="section-head settings-head">
+                <div><p class="eyebrow">{"ADMIN"}</p><h2 id="settings-title">{"管理设置"}</h2></div>
+                if authenticated {
+                    <div class="session-actions"><span>{"admin"}</span><button type="button" onclick={logout} disabled={busy || csrf.is_empty()}>{"退出登录"}</button></div>
+                } else {
+                    <span>{"状态面板无需登录，设置需要管理员身份"}</span>
+                }
+            </div>
+            if let Some(notice) = &state.settings_notice {
+                <div class="control-feedback" role="status" aria-live="polite">{notice}</div>
+            }
+            if !state.session_checked {
+                <div class="control-empty">{"正在检查登录状态…"}</div>
+            } else if !authenticated {
+                <form class="auth-form" onsubmit={login} autocomplete="on">
+                    <label><span>{"用户名"}</span><input value="admin" readonly=true autocomplete="username" /></label>
+                    <label><span>{"密码"}</span><input ref={login_password} type="password" required=true autocomplete="current-password" /></label>
+                    <button class="primary" type="submit" disabled={busy || csrf.is_empty()}>{if busy { "登录中…" } else { "登录" }}</button>
+                </form>
+            } else if must_change {
+                <div class="forced-password">
+                    <div class="risk-banner bad" role="alert"><strong>{"必须先修改默认密码"}</strong><span>{"新密码至少 12 字节，不能继续使用默认密码。完成前其他设置保持锁定。"}</span></div>
+                    <form class="form-grid" onsubmit={change_password} autocomplete="on">
+                        <label><span>{"当前密码"}</span><input ref={current_password} type="password" required=true autocomplete="current-password" /></label>
+                        <label><span>{"新密码"}</span><input ref={new_password} type="password" required=true maxlength="1024" autocomplete="new-password" /></label>
+                        <label><span>{"确认新密码"}</span><input ref={confirm_password} type="password" required=true maxlength="1024" autocomplete="new-password" /></label>
+                        <div class="form-actions"><button class="primary" type="submit" disabled={busy || csrf.is_empty()}>{"修改密码"}</button></div>
+                    </form>
+                </div>
+            } else {
+                <div class="settings-grid">
+                    <article class="settings-card network-current">
+                        <div class="control-title"><h3>{"当前网络"}</h3><span>{state.network.as_ref().map_or("读取中", |_| "已提交配置")}</span></div>
+                        if let Some(network) = &state.network {
+                            <dl><div class="metric"><dt>{"AP"}</dt><dd>{&network.ap_ssid}</dd></div><div class="metric"><dt>{"STA"}</dt><dd>{&network.sta_ssid}</dd></div><div class="metric"><dt>{"国家 / 地区"}</dt><dd>{network.country.as_str()}</dd></div></dl>
+                        }
+                    </article>
+                    <article class="settings-card">
+                        <div class="control-title"><h3>{"上游 Wi-Fi (STA)"}</h3><button type="button" onclick={scan} disabled={busy}>{if busy { "处理中…" } else { "扫描" }}</button></div>
+                        if !state.scan_entries.is_empty() {
+                            <div class="scan-list" aria-label="扫描到的 Wi-Fi">
+                                {for state.scan_entries.iter().map(|entry| {
+                                    let input = sta_ssid.clone();
+                                    let ssid = entry.ssid.clone();
+                                    let choose = Callback::from(move |_| { if let Some(input) = input.cast::<HtmlInputElement>() { input.set_value(&ssid); } });
+                                    html! { <button type="button" class="scan-entry" onclick={choose} disabled={busy}><strong>{&entry.ssid}</strong><span>{format!("{} MHz · {} dBm · {}", entry.frequency_mhz, entry.signal_dbm, if entry.secured { "加密" } else { "开放" })}</span></button> }
+                                })}
+                            </div>
+                        }
+                        <form class="form-grid compact" onsubmit={apply_sta} autocomplete="off">
+                            <label><span>{"SSID"}</span><input ref={sta_ssid} required=true maxlength="32" autocomplete="off" /></label>
+                            <label><span>{"密码"}</span><input ref={sta_password} type="password" required=true minlength="8" maxlength="63" autocomplete="new-password" /></label>
+                            <div class="risk-note warn">{"若 STA 与当前 AP 信道不同，设备可能重启 AP 跟随信道，管理连接会短暂断开。"}</div>
+                            <div class="form-actions"><button class="primary" type="submit" disabled={busy}>{"应用 STA"}</button></div>
+                        </form>
+                    </article>
+                    <article class="settings-card ap-card">
+                        <div class="control-title"><h3>{"下游 Wi-Fi (AP)"}</h3><span>{"两阶段变更"}</span></div>
+                        {render_ap_settings(state, &ap_ssid, &ap_password, &ap_country, prepare_ap, ap_action, *now_ms, busy)}
+                    </article>
+                    <article class="settings-card">
+                        <div class="control-title"><h3>{"代理订阅"}</h3><span>{"来源只写"}</span></div>
+                        if let Some(subscription) = &state.subscription {
+                            <div class="subscription-summary"><span>{if subscription.configured { "已配置" } else { "未配置" }}</span><strong class={subscription_tone(subscription.state)}>{subscription_state_label(subscription.state)}</strong></div>
+                        }
+                        <form class="form-grid compact" onsubmit={save_subscription} autocomplete="off">
+                            <label><span>{"订阅 URL"}</span><input ref={subscription_url} type="url" required=true placeholder="https://…" autocomplete="off" autocapitalize="none" spellcheck="false" /></label>
+                            <small>{"已保存的 URL 永不回显；输入只用于本次提交。"}</small>
+                            <div class="form-actions"><button class="primary" type="submit" disabled={busy}>{"保存并立即更新"}</button><button type="button" onclick={refresh_subscription} disabled={busy || !state.subscription.as_ref().is_some_and(|value| value.configured)}>{"手动刷新"}</button></div>
+                        </form>
+                    </article>
+                </div>
+            }
+        </section>
+    }
+}
+
+fn render_ap_settings(
+    state: &AppState,
+    ap_ssid: &NodeRef,
+    ap_password: &NodeRef,
+    ap_country: &NodeRef,
+    prepare: Callback<SubmitEvent>,
+    ap_action: impl Fn(&'static str, &'static str, &'static str) -> Callback<MouseEvent>,
+    now_ms: u64,
+    busy: bool,
+) -> Html {
+    let pending = state
+        .pending_network
+        .as_ref()
+        .and_then(|value| value.pending.as_ref());
+    let applied = state.ap_applied_local
+        || state
+            .pending_network
+            .as_ref()
+            .is_some_and(|value| value.applied);
+    if let Some(pending) = pending {
+        let deadline = pending
+            .staged_at_unix_ms
+            .saturating_add(AP_CONFIRM_TIMEOUT_MS);
+        let seconds = deadline.saturating_sub(now_ms).div_ceil(1_000);
+        html! {
+            <div class="pending-ap">
+                <dl><div class="metric"><dt>{"候选 AP"}</dt><dd>{&pending.config.ap_ssid}</dd></div><div class="metric"><dt>{"国家 / 地区"}</dt><dd>{pending.config.country.as_str()}</dd></div></dl>
+                if applied {
+                    <div class="risk-banner warn" role="alert"><strong>{format!("等待确认 · {seconds} 秒")}</strong><span>{"请连接新的 AP 后确认。倒计时结束会自动回滚；如无法使用新配置，请取消。"}</span></div>
+                    <div class="form-actions"><button class="primary" type="button" onclick={ap_action(AP_CONFIRM_ENDPOINT, "AP 确认", "AP 配置已确认")} disabled={busy}>{"确认保留"}</button><button type="button" onclick={ap_action(AP_CANCEL_ENDPOINT, "AP 取消", "AP 配置已取消并回滚")} disabled={busy}>{"取消并回滚"}</button></div>
+                } else {
+                    <div class="risk-banner bad" role="alert"><strong>{"应用会立即断开当前 AP 连接"}</strong><span>{"请先记住新 SSID 和密码。应用后连接新 AP，再回到本页确认；未确认会自动回滚。"}</span></div>
+                    <div class="form-actions"><button class="danger" type="button" onclick={ap_action(AP_APPLY_ENDPOINT, "AP 应用", "AP 正在切换，请连接新 AP 后确认")} disabled={busy}>{"我已了解，立即应用"}</button><button type="button" onclick={ap_action(AP_CANCEL_ENDPOINT, "AP 取消", "AP 候选配置已取消")} disabled={busy}>{"取消"}</button></div>
+                }
+            </div>
+        }
+    } else {
+        html! {
+            <form class="form-grid compact" onsubmit={prepare} autocomplete="off">
+                <label><span>{"SSID"}</span><input ref={ap_ssid.clone()} required=true maxlength="32" autocomplete="off" /></label>
+                <label><span>{"密码"}</span><input ref={ap_password.clone()} type="password" required=true minlength="8" maxlength="63" autocomplete="new-password" /></label>
+                <label><span>{"国家 / 地区"}</span><select ref={ap_country.clone()}><option value="CN">{"中国 (CN)"}</option><option value="US">{"美国 (US)"}</option><option value="JP">{"日本 (JP)"}</option><option value="SG">{"新加坡 (SG)"}</option><option value="TW">{"中国台湾 (TW)"}</option><option value="AU">{"澳大利亚 (AU)"}</option><option value="BR">{"巴西 (BR)"}</option><option value="CA">{"加拿大 (CA)"}</option><option value="DE">{"德国 (DE)"}</option><option value="FR">{"法国 (FR)"}</option><option value="GB">{"英国 (GB)"}</option><option value="IN">{"印度 (IN)"}</option><option value="KR">{"韩国 (KR)"}</option><option value="NZ">{"新西兰 (NZ)"}</option></select></label>
+                <div class="form-actions"><button class="primary" type="submit" disabled={busy}>{"准备 AP 变更"}</button></div>
+            </form>
+        }
+    }
+}
+
+fn subscription_state_label(state: SubscriptionStateDto) -> &'static str {
+    match state {
+        SubscriptionStateDto::Idle => "空闲",
+        SubscriptionStateDto::Fetching => "更新中",
+        SubscriptionStateDto::Active => "已生效",
+        SubscriptionStateDto::Failed => "更新失败",
+    }
+}
+
+fn subscription_tone(state: SubscriptionStateDto) -> &'static str {
+    match state {
+        SubscriptionStateDto::Active => "good",
+        SubscriptionStateDto::Fetching => "warn",
+        SubscriptionStateDto::Failed => "bad",
+        SubscriptionStateDto::Idle => "neutral",
+    }
 }
 
 fn current_time() -> String {
