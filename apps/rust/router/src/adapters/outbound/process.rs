@@ -151,13 +151,17 @@ impl LinuxRouterPlatform {
     }
 
     pub(crate) fn validate_mihomo_config(&self) -> Result<(), PlatformError> {
+        self.validate_mihomo_config_at(MIHOMO_RUNTIME_CONFIG)
+    }
+
+    pub(crate) fn validate_mihomo_config_at(&self, config: &str) -> Result<(), PlatformError> {
         super::storage::ensure_private_dir(MIHOMO_STATE_DIR)?;
         let log = private_log(MIHOMO_CHECK_LOG)?;
         let stderr = log
             .try_clone()
             .map_err(|error| PlatformError::Io(format!("clone config-check log: {error}")))?;
         let mut child = Command::new(Tool::Mihomo.path())
-            .args(["-t", "-d", MIHOMO_DATA_DIR, "-f", MIHOMO_RUNTIME_CONFIG])
+            .args(["-t", "-d", MIHOMO_DATA_DIR, "-f", config])
             .env_clear()
             .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
             .env("LC_ALL", "C")

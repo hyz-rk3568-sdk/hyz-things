@@ -11,6 +11,7 @@ use crate::{
             ProxyDelayRequest, ProxyDelayResult, ProxyGroup, ProxySelectionRequest,
         },
         status::StatusSnapshot,
+        subscription::{SubscriptionSummary, SubscriptionUrl},
     },
 };
 use async_trait::async_trait;
@@ -67,6 +68,9 @@ pub enum ControlOperation {
     ProxySelection { request: ProxySelectionRequest },
     ProxyDelay { request: ProxyDelayRequest },
     ProxyDelayRefresh { request: ProxyDelayRefreshRequest },
+    SubscriptionGet {},
+    SubscriptionSet { url: String },
+    SubscriptionRefresh {},
     Ota { command: OtaCommand },
     Dhcp { event: DhcpEvent },
     WifiStatus {},
@@ -86,6 +90,7 @@ impl ControlOperation {
                 | Self::PanelStatus { .. }
                 | Self::WifiStatus { .. }
                 | Self::WifiScan { .. }
+                | Self::SubscriptionGet { .. }
                 | Self::Ota {
                     command: OtaCommand::Verify { .. }
                 }
@@ -96,6 +101,8 @@ impl ControlOperation {
             Self::Status { .. }
             | Self::PanelStatus { .. }
             | Self::ProxyDelayRefresh { .. }
+            | Self::SubscriptionGet { .. }
+            | Self::SubscriptionRefresh { .. }
             | Self::Router { .. }
             | Self::Proxy { .. }
             | Self::WifiStatus { .. }
@@ -105,6 +112,8 @@ impl ControlOperation {
             | Self::WifiApApply { .. }
             | Self::WifiApConfirm { .. }
             | Self::WifiApCancel { .. } => Ok(()),
+            Self::SubscriptionSet { url } => SubscriptionUrl::validate(url)
+                .map_err(|_| "subscription URL must be a safe public HTTPS URL"),
             Self::Display { request } => validate_display(request),
             Self::ProxySelection { request } => {
                 if valid_control_name(&request.group) && valid_control_name(&request.proxy) {
@@ -277,6 +286,9 @@ pub enum ControlResult {
     },
     WifiScan {
         entries: Vec<WifiScanEntry>,
+    },
+    Subscription {
+        summary: SubscriptionSummary,
     },
     Completed {
         message: String,

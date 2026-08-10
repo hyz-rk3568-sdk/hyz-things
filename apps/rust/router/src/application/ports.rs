@@ -2,9 +2,10 @@ use crate::domain::{
     admin::AdminCredential,
     network::{NetworkAction, NetworkObserved},
     panel::{DisplayRequest, DisplayStatus, ProxyDelayResult, ProxyGroup, ProxySelectionRequest},
-    proxy::{ProxyAction, ProxyObserved},
+    proxy::{ProxyAction, ProxyMode, ProxyObserved},
+    subscription::{GenerationId, SubscriptionStatus, SubscriptionUrl, ValidatedSubscription},
 };
-use std::{error::Error, fmt, time::Duration};
+use std::{error::Error, fmt, net::SocketAddr, time::Duration};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlatformError {
@@ -104,6 +105,38 @@ pub trait FailOpenPlatformPort: Send + Sync {
     fn remove_fail_open_stale_state(&self, expected: CoreIdentity) -> Result<(), PlatformError>;
     fn sleep_fail_open_retry(&self, duration: Duration);
     fn record_fail_open_retry(&self, _kind: FailOpenRetryKind, _error: &PlatformError) {}
+}
+
+pub trait SubscriptionResolverPort: Send + Sync {
+    fn resolve(&self, host: &str, port: u16) -> Result<Vec<SocketAddr>, PlatformError>;
+}
+
+pub trait SubscriptionTransportPort: Send + Sync {
+    fn fetch(&self, url: &SubscriptionUrl) -> Result<Vec<u8>, PlatformError>;
+}
+
+pub trait SubscriptionStorePort: Send + Sync {
+    fn store_url(&self, url: &SubscriptionUrl) -> Result<(), PlatformError>;
+    fn load_url(&self) -> Result<Option<SubscriptionUrl>, PlatformError>;
+    fn store_subscription_status(&self, status: &SubscriptionStatus) -> Result<(), PlatformError>;
+    fn load_subscription_status(&self) -> Result<Option<SubscriptionStatus>, PlatformError>;
+    fn stage_generation(
+        &self,
+        generation: &GenerationId,
+        subscription: &ValidatedSubscription,
+    ) -> Result<(), PlatformError>;
+    fn activate_generation(&self, generation: &GenerationId) -> Result<(), PlatformError>;
+}
+
+pub trait SubscriptionSourcePort: Send + Sync {
+    fn load_source(&self) -> Result<Vec<u8>, PlatformError>;
+    fn prepare_candidate(
+        &self,
+        current_source: &[u8],
+        subscription: &ValidatedSubscription,
+        mode: ProxyMode,
+    ) -> Result<Vec<u8>, PlatformError>;
+    fn store_source(&self, source: &[u8]) -> Result<(), PlatformError>;
 }
 
 pub trait ClockPort: Send + Sync {

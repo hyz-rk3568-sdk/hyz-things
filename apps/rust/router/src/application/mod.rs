@@ -9,4 +9,5 @@ pub mod reconcile;
 pub mod router;
 pub mod shutdown;
 pub mod status;
+pub mod subscription;
 pub mod wifi;

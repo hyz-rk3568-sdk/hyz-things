@@ -1,7 +1,7 @@
 use super::{
     paths::{
-        MIHOMO_CONTROLLER_ADDRESS, MIHOMO_CONTROLLER_SECRET, MIHOMO_DATA_DIR,
-        MIHOMO_RUNTIME_CONFIG, MIHOMO_SOURCE_CONFIG, MIHOMO_STATE_DIR,
+        MIHOMO_CANDIDATE_CONFIG, MIHOMO_CONTROLLER_ADDRESS, MIHOMO_CONTROLLER_SECRET,
+        MIHOMO_DATA_DIR, MIHOMO_RUNTIME_CONFIG, MIHOMO_SOURCE_CONFIG, MIHOMO_STATE_DIR,
     },
     process::{LinuxRouterPlatform, Tool},
     storage,
@@ -117,22 +117,33 @@ impl LinuxRouterPlatform {
             PlatformError::InvalidState("Mihomo source config is absent".to_owned())
         })?;
         validate_source_config(&source)?;
-        let controlled = match mode {
-            ProxyMode::Tun => CONTROLLED_TUN_ENABLED,
-            ProxyMode::Explicit => CONTROLLED_TUN_DISABLED,
-            ProxyMode::Disabled => {
-                return Err(PlatformError::InvalidState(
-                    "disabled mode has no runtime config".to_owned(),
-                ))
-            }
-        };
-        let mut runtime = replace_top_level_tun_blocks(&source, controlled);
         let controller_secret = new_controller_secret()?;
-        runtime.push_str(&format!(
-            "\nexternal-controller: {MIHOMO_CONTROLLER_ADDRESS}\nsecret: \"{controller_secret}\"\n"
-        ));
+        let runtime = render_runtime_config(&source, mode, &controller_secret)?;
         storage::atomic_write_private(MIHOMO_CONTROLLER_SECRET, controller_secret.as_bytes())?;
         storage::atomic_write_private(MIHOMO_RUNTIME_CONFIG, runtime.as_bytes())
+    }
+
+    pub(crate) fn validate_subscription_candidate(
+        &self,
+        source: &[u8],
+        mode: ProxyMode,
+    ) -> Result<(), PlatformError> {
+        let source = std::str::from_utf8(source).map_err(|_| {
+            PlatformError::InvalidState("candidate source config is not UTF-8".to_owned())
+        })?;
+        let validation_mode = match mode {
+            ProxyMode::Disabled => ProxyMode::Explicit,
+            mode => mode,
+        };
+        let runtime = render_runtime_config(source, validation_mode, "candidate-validation-only")?;
+        storage::atomic_write_private(MIHOMO_CANDIDATE_CONFIG, runtime.as_bytes())?;
+        let result = self.validate_mihomo_config_at(MIHOMO_CANDIDATE_CONFIG);
+        let cleanup = storage::remove_file_durable(MIHOMO_CANDIDATE_CONFIG);
+        match (result, cleanup) {
+            (Err(error), _) => Err(error),
+            (Ok(()), Err(error)) => Err(error),
+            (Ok(()), Ok(())) => Ok(()),
+        }
     }
 
     fn wait_for_tun(&self) -> Result<(), PlatformError> {
@@ -681,6 +692,28 @@ fn new_controller_secret() -> Result<String, PlatformError> {
         secret.push_str(&part);
     }
     Ok(secret)
+}
+
+fn render_runtime_config(
+    source: &str,
+    mode: ProxyMode,
+    controller_secret: &str,
+) -> Result<String, PlatformError> {
+    validate_source_config(source)?;
+    let controlled = match mode {
+        ProxyMode::Tun => CONTROLLED_TUN_ENABLED,
+        ProxyMode::Explicit => CONTROLLED_TUN_DISABLED,
+        ProxyMode::Disabled => {
+            return Err(PlatformError::InvalidState(
+                "disabled mode has no runtime config".to_owned(),
+            ))
+        }
+    };
+    let mut runtime = replace_top_level_tun_blocks(source, controlled);
+    runtime.push_str(&format!(
+        "\nexternal-controller: {MIHOMO_CONTROLLER_ADDRESS}\nsecret: \"{controller_secret}\"\n"
+    ));
+    Ok(runtime)
 }
 
 fn validate_source_config(source: &str) -> Result<(), PlatformError> {

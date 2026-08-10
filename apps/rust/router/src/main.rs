@@ -14,8 +14,12 @@ use hyz_router::{
             ota_cli::{parse_ota_cli, OtaCommand, OTA_USAGE},
         },
         outbound::{
-            admin::AdminFileAdapter, firmware::FirmwareAdapter, LinuxMihomoFailOpenPlatform,
-            LinuxRouterPlatform,
+            admin::AdminFileAdapter,
+            firmware::FirmwareAdapter,
+            subscription::{
+                SubscriptionStore, SystemSubscriptionResolver, UreqSubscriptionTransport,
+            },
+            LinuxMihomoFailOpenPlatform, LinuxRouterPlatform,
         },
     },
     application::{
@@ -29,6 +33,7 @@ use hyz_router::{
         router::RouterApplication,
         shutdown::ShutdownApplication,
         status::ReadStatus,
+        subscription::SubscriptionApplication,
         wifi::{ApPrepareRequest, StaCandidateRequest, WifiApplication},
     },
     domain::{
@@ -45,12 +50,14 @@ use std::{
 };
 use tokio::sync::{watch, Mutex};
 
-const USAGE: &str = "Usage:\n  hyz-router daemon\n  hyz-router status [--json]\n  hyz-router router enable|disable\n  hyz-router proxy explicit|tun|disable\n  hyz-router wifi status|scan\n  hyz-router wifi sta apply <ssid> <passphrase>\n  hyz-router wifi ap prepare <ssid> <passphrase> <country>\n  hyz-router wifi ap apply|confirm|cancel\n  hyz-router ota ...";
+const USAGE: &str = "Usage:\n  hyz-router daemon\n  hyz-router status [--json]\n  hyz-router router enable|disable\n  hyz-router proxy explicit|tun|disable\n  hyz-router wifi status|scan\n  hyz-router wifi sta apply <ssid> <passphrase>\n  hyz-router wifi ap prepare <ssid> <passphrase> <country>\n  hyz-router wifi ap apply|confirm|cancel\n  hyz-router subscription get [--json]\n  hyz-router subscription set <https-url>\n  hyz-router subscription refresh\n  hyz-router ota ...";
 
 struct ProductionRuntime {
     router: Arc<LinuxRouterPlatform>,
     admin: Arc<AdminApplication>,
     firmware: FirmwareAdapter,
+    subscription_store: SubscriptionStore,
+    subscription_transport: UreqSubscriptionTransport,
     router_proxy: Mutex<()>,
     proxy_delay_last: Mutex<Option<Instant>>,
     display: Mutex<()>,
@@ -66,10 +73,13 @@ impl ProductionRuntime {
             admin_adapter,
             router.clone(),
         )?);
+        let resolver = Arc::new(SystemSubscriptionResolver);
         Ok(Self {
             router,
             admin,
             firmware: FirmwareAdapter::default(),
+            subscription_store: SubscriptionStore::default(),
+            subscription_transport: UreqSubscriptionTransport::new(resolver),
             router_proxy: Mutex::new(()),
             proxy_delay_last: Mutex::new(None),
             display: Mutex::new(()),
@@ -295,6 +305,68 @@ impl ControlHandler for ProductionRuntime {
                 .map_err(|_| "proxy delay refresh worker terminated unexpectedly".to_owned())?
                 .map_err(|error| error.to_string())?;
                 Ok(ControlResult::ProxyDelays { groups })
+            }
+            ControlOperation::SubscriptionGet { .. } => {
+                let store = self.subscription_store.clone();
+                let transport = self.subscription_transport.clone();
+                let platform = self.router.clone();
+                let summary = tokio::task::spawn_blocking(move || {
+                    SubscriptionApplication::new(
+                        &store,
+                        &transport,
+                        platform.as_ref(),
+                        platform.as_ref(),
+                        platform.as_ref(),
+                        platform.as_ref(),
+                    )
+                    .summary()
+                })
+                .await
+                .map_err(|_| "subscription summary worker terminated unexpectedly".to_owned())?
+                .map_err(|error| error.to_string())?;
+                Ok(ControlResult::Subscription { summary })
+            }
+            ControlOperation::SubscriptionSet { url } => {
+                let _serial = self.router_proxy.lock().await;
+                let store = self.subscription_store.clone();
+                let transport = self.subscription_transport.clone();
+                let platform = self.router.clone();
+                let summary = tokio::task::spawn_blocking(move || {
+                    SubscriptionApplication::new(
+                        &store,
+                        &transport,
+                        platform.as_ref(),
+                        platform.as_ref(),
+                        platform.as_ref(),
+                        platform.as_ref(),
+                    )
+                    .set_url(url)
+                })
+                .await
+                .map_err(|_| "subscription URL worker terminated unexpectedly".to_owned())?
+                .map_err(|error| error.to_string())?;
+                Ok(ControlResult::Subscription { summary })
+            }
+            ControlOperation::SubscriptionRefresh { .. } => {
+                let _serial = self.router_proxy.lock().await;
+                let store = self.subscription_store.clone();
+                let transport = self.subscription_transport.clone();
+                let platform = self.router.clone();
+                let summary = tokio::task::spawn_blocking(move || {
+                    SubscriptionApplication::new(
+                        &store,
+                        &transport,
+                        platform.as_ref(),
+                        platform.as_ref(),
+                        platform.as_ref(),
+                        platform.as_ref(),
+                    )
+                    .refresh()
+                })
+                .await
+                .map_err(|_| "subscription refresh worker terminated unexpectedly".to_owned())?
+                .map_err(|error| error.to_string())?;
+                Ok(ControlResult::Subscription { summary })
             }
             ControlOperation::Dhcp { event } => {
                 // Deliberately independent of router_proxy: udhcpc callbacks must run while router
@@ -543,6 +615,24 @@ async fn run(args: Vec<String>) -> Result<(), Box<dyn Error>> {
                 _ => return Err(usage_error(USAGE)),
             };
             print_wifi_result(request(operation).await?)?;
+        }
+        [group, action] if group == "subscription" && action == "get" => {
+            print_subscription(request(ControlOperation::SubscriptionGet {}).await?, false)?;
+        }
+        [group, action, flag] if group == "subscription" && action == "get" && flag == "--json" => {
+            print_subscription(request(ControlOperation::SubscriptionGet {}).await?, true)?;
+        }
+        [group, action, url] if group == "subscription" && action == "set" => {
+            print_subscription(
+                request(ControlOperation::SubscriptionSet { url: url.clone() }).await?,
+                false,
+            )?;
+        }
+        [group, action] if group == "subscription" && action == "refresh" => {
+            print_subscription(
+                request(ControlOperation::SubscriptionRefresh {}).await?,
+                false,
+            )?;
         }
         [group, rest @ ..] if group == "ota" => {
             let command = parse_ota_cli(rest.iter().map(String::as_str))
@@ -866,10 +956,29 @@ fn expect_completed(result: ControlResult) -> Result<String, Box<dyn Error>> {
         | ControlResult::ProxyDelays { .. }
         | ControlResult::WifiConfig { .. }
         | ControlResult::WifiPending { .. }
-        | ControlResult::WifiScan { .. } => {
+        | ControlResult::WifiScan { .. }
+        | ControlResult::Subscription { .. } => {
             Err("daemon returned an unexpected mutation response".into())
         }
     }
+}
+
+fn print_subscription(result: ControlResult, json: bool) -> Result<(), Box<dyn Error>> {
+    let ControlResult::Subscription { summary } = result else {
+        return Err("daemon returned an unexpected subscription response".into());
+    };
+    if json {
+        println!("{}", serde_json::to_string(&summary)?);
+    } else {
+        let state = match summary.state {
+            hyz_router::domain::subscription::SubscriptionSummaryState::Idle => "idle",
+            hyz_router::domain::subscription::SubscriptionSummaryState::Fetching => "fetching",
+            hyz_router::domain::subscription::SubscriptionSummaryState::Active => "active",
+            hyz_router::domain::subscription::SubscriptionSummaryState::Failed => "failed",
+        };
+        println!("configured={} state={state}", summary.configured);
+    }
+    Ok(())
 }
 
 fn print_completed(result: ControlResult) -> Result<(), Box<dyn Error>> {

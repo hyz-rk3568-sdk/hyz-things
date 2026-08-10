@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
 use std::collections::HashSet;
 use std::error::Error;
@@ -21,6 +22,11 @@ pub struct SubscriptionUrl(Zeroizing<String>);
 impl SubscriptionUrl {
     pub fn parse(value: String) -> Result<Self, SubscriptionError> {
         let value = Zeroizing::new(value);
+        Self::validate(&value)?;
+        Ok(Self(value))
+    }
+
+    pub fn validate(value: &str) -> Result<(), SubscriptionError> {
         if value.is_empty() || value.len() > MAX_SUBSCRIPTION_URL_BYTES {
             return Err(SubscriptionError::InvalidUrl(
                 "URL length is outside the allowed range",
@@ -35,7 +41,7 @@ impl SubscriptionUrl {
             ));
         }
 
-        let parsed = Url::parse(&value)
+        let parsed = Url::parse(value)
             .map_err(|_| SubscriptionError::InvalidUrl("URL syntax is invalid"))?;
         if parsed.scheme() != "https" {
             return Err(SubscriptionError::InvalidUrl("URL must use HTTPS"));
@@ -57,7 +63,7 @@ impl SubscriptionUrl {
             None => return Err(SubscriptionError::InvalidUrl("URL host is required")),
         }
 
-        Ok(Self(value))
+        Ok(())
     }
 
     /// Writes the URL directly to a sink without exposing a borrow or owned copy.
@@ -115,6 +121,34 @@ impl SubscriptionStatus {
             return Err(SubscriptionError::InvalidStatus);
         }
         Ok(Self::Failed(message))
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SubscriptionSummaryState {
+    Idle,
+    Fetching,
+    Active,
+    Failed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SubscriptionSummary {
+    pub configured: bool,
+    pub state: SubscriptionSummaryState,
+}
+
+impl SubscriptionSummary {
+    pub fn from_status(configured: bool, status: Option<&SubscriptionStatus>) -> Self {
+        let state = match status {
+            None | Some(SubscriptionStatus::Idle) => SubscriptionSummaryState::Idle,
+            Some(SubscriptionStatus::Fetching) => SubscriptionSummaryState::Fetching,
+            Some(SubscriptionStatus::Active(_)) => SubscriptionSummaryState::Active,
+            Some(SubscriptionStatus::Failed(_)) => SubscriptionSummaryState::Failed,
+        };
+        Self { configured, state }
     }
 }
 
