@@ -8,7 +8,7 @@ use std::{
 
 use axum::{
     body::Body,
-    extract::{DefaultBodyLimit, Path, Request, State},
+    extract::{rejection::JsonRejection, DefaultBodyLimit, Path, Request, State},
     http::{header, HeaderMap, HeaderValue, Method, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -21,8 +21,12 @@ use crate::{
     adapters::inbound::control::{
         ControlHandler, ControlOperation, ControlProxyMode, ControlResult,
     },
-    application::status::ReadStatus,
+    application::{
+        admin::{AdminApplication, AdminError},
+        status::ReadStatus,
+    },
     domain::{
+        admin::{AdminAuthorization, AdminLoginRequest, AdminPasswordChangeRequest, SecretString},
         panel::{
             DisplayRequest, PanelBootstrap, ProxyDelayRefreshRequest, ProxyDelayRequest,
             ProxyModeRequest, ProxySelectionRequest,
@@ -36,11 +40,13 @@ const CSP: &str = "default-src 'self'; base-uri 'none'; object-src 'none'; frame
 pub const LAN_ADDRESS: Ipv4Addr = Ipv4Addr::new(192, 168, 8, 1);
 pub const DEFAULT_HTTP_PORT: u16 = 8080;
 pub const DEFAULT_BIND_ATTEMPTS: usize = 15;
+pub const ADMIN_SESSION_COOKIE: &str = "hyz_admin_session";
 
 #[derive(Clone)]
 struct AppState {
     read_status: ReadStatus,
     control: Option<Arc<dyn ControlHandler>>,
+    admin: Option<Arc<AdminApplication>>,
     csrf_token: Arc<str>,
     allowed_origin: Arc<str>,
     assets: AssetStore,
@@ -90,7 +96,7 @@ impl AssetStore {
 
 pub fn app(read_status: ReadStatus) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
-    app_with_assets(read_status, None, "", DEFAULT_HTTP_PORT, assets)
+    app_with_assets(read_status, None, None, "", DEFAULT_HTTP_PORT, assets)
 }
 
 pub fn app_with_control(
@@ -100,12 +106,31 @@ pub fn app_with_control(
     port: u16,
 ) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
-    app_with_assets(read_status, Some(control), &csrf_token, port, assets)
+    app_with_assets(read_status, Some(control), None, &csrf_token, port, assets)
+}
+
+pub fn app_with_admin_control(
+    read_status: ReadStatus,
+    control: Arc<dyn ControlHandler>,
+    admin: Arc<AdminApplication>,
+    csrf_token: String,
+    port: u16,
+) -> Router {
+    let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
+    app_with_assets(
+        read_status,
+        Some(control),
+        Some(admin),
+        &csrf_token,
+        port,
+        assets,
+    )
 }
 
 fn app_with_assets(
     read_status: ReadStatus,
     control: Option<Arc<dyn ControlHandler>>,
+    admin: Option<Arc<AdminApplication>>,
     csrf_token: &str,
     port: u16,
     assets: AssetStore,
@@ -114,6 +139,16 @@ fn app_with_assets(
         .route("/api/v1/health", on(MethodFilter::GET, health))
         .route("/api/v1/status", on(MethodFilter::GET, status))
         .route("/api/v1/panel", on(MethodFilter::GET, panel))
+        .route("/api/v1/admin/login", on(MethodFilter::POST, admin_login))
+        .route("/api/v1/admin/logout", on(MethodFilter::POST, admin_logout))
+        .route(
+            "/api/v1/admin/password",
+            on(MethodFilter::POST, admin_password),
+        )
+        .route(
+            "/api/v1/admin/session",
+            on(MethodFilter::GET, admin_session),
+        )
         .route(
             "/api/v1/control/display",
             on(MethodFilter::POST, control_display),
@@ -142,6 +177,7 @@ fn app_with_assets(
         .with_state(AppState {
             read_status,
             control,
+            admin,
             csrf_token: Arc::from(csrf_token),
             allowed_origin: Arc::from(format!("http://{LAN_ADDRESS}:{port}")),
             assets,
@@ -228,6 +264,205 @@ async fn panel(State(state): State<AppState>) -> Response {
     }
 }
 
+#[derive(Serialize)]
+struct AdminSessionResponse {
+    authenticated: bool,
+    must_change: bool,
+}
+
+pub enum AdminRequirement {
+    Normal,
+    PasswordChangeSession,
+}
+
+async fn admin_login(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<AdminLoginRequest>, JsonRejection>,
+) -> Response {
+    if !authorize_json_origin(&state, &headers) {
+        return authentication_error_json(StatusCode::FORBIDDEN);
+    }
+    let Ok(Json(request)) = payload else {
+        return authentication_error_json(StatusCode::BAD_REQUEST);
+    };
+    let Some(admin) = state.admin.clone() else {
+        return authentication_error_json(StatusCode::SERVICE_UNAVAILABLE);
+    };
+    let result = tokio::task::spawn_blocking(move || admin.login(&request)).await;
+    let login = match result {
+        Ok(Ok(login)) => login,
+        Ok(Err(error)) => return admin_error_json(error),
+        Err(_) => return authentication_error_json(StatusCode::SERVICE_UNAVAILABLE),
+    };
+    let cookie = match session_cookie(login.token.expose()) {
+        Some(cookie) => cookie,
+        None => return authentication_error_json(StatusCode::SERVICE_UNAVAILABLE),
+    };
+    let mut response = Json(AdminSessionResponse {
+        authenticated: true,
+        must_change: login.must_change_password,
+    })
+    .into_response();
+    response.headers_mut().insert(header::SET_COOKIE, cookie);
+    response
+}
+
+async fn admin_logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if !authorize_same_origin_csrf(&state, &headers) {
+        return authentication_error_json(StatusCode::FORBIDDEN);
+    }
+    let token = match require_admin(&state, &headers, AdminRequirement::PasswordChangeSession).await
+    {
+        Ok((token, _)) => token,
+        Err(response) => return response,
+    };
+    let Some(admin) = state.admin.clone() else {
+        return authentication_error_json(StatusCode::SERVICE_UNAVAILABLE);
+    };
+    let result = tokio::task::spawn_blocking(move || admin.logout(&token)).await;
+    match result {
+        Ok(Ok(())) => {
+            let mut response = Json(AdminSessionResponse {
+                authenticated: false,
+                must_change: false,
+            })
+            .into_response();
+            response
+                .headers_mut()
+                .insert(header::SET_COOKIE, expired_session_cookie());
+            response
+        }
+        Ok(Err(error)) => admin_error_json(error),
+        Err(_) => authentication_error_json(StatusCode::SERVICE_UNAVAILABLE),
+    }
+}
+
+async fn admin_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<AdminPasswordChangeRequest>, JsonRejection>,
+) -> Response {
+    if !authorize_same_origin_csrf(&state, &headers) {
+        return authentication_error_json(StatusCode::FORBIDDEN);
+    }
+    let Ok(Json(request)) = payload else {
+        return authentication_error_json(StatusCode::BAD_REQUEST);
+    };
+    let token = match require_admin(&state, &headers, AdminRequirement::PasswordChangeSession).await
+    {
+        Ok((token, _)) => token,
+        Err(response) => return response,
+    };
+    let Some(admin) = state.admin.clone() else {
+        return authentication_error_json(StatusCode::SERVICE_UNAVAILABLE);
+    };
+    let result = tokio::task::spawn_blocking(move || admin.change_password(&token, &request)).await;
+    match result {
+        Ok(Ok(())) => Json(AdminSessionResponse {
+            authenticated: true,
+            must_change: false,
+        })
+        .into_response(),
+        Ok(Err(error)) => admin_error_json(error),
+        Err(_) => authentication_error_json(StatusCode::SERVICE_UNAVAILABLE),
+    }
+}
+
+async fn admin_session(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if state.admin.is_none() {
+        return authentication_error_json(StatusCode::SERVICE_UNAVAILABLE);
+    }
+    let Some(token) = admin_session_token(&headers) else {
+        return Json(AdminSessionResponse {
+            authenticated: false,
+            must_change: false,
+        })
+        .into_response();
+    };
+    let Some(admin) = state.admin.clone() else {
+        return authentication_error_json(StatusCode::SERVICE_UNAVAILABLE);
+    };
+    let result = tokio::task::spawn_blocking(move || admin.session(&token)).await;
+    match result {
+        Ok(Ok(authorization)) => Json(AdminSessionResponse {
+            authenticated: true,
+            must_change: authorization.must_change_password,
+        })
+        .into_response(),
+        Ok(Err(AdminError::InvalidSession)) => Json(AdminSessionResponse {
+            authenticated: false,
+            must_change: false,
+        })
+        .into_response(),
+        Ok(Err(error)) => admin_error_json(error),
+        Err(_) => authentication_error_json(StatusCode::SERVICE_UNAVAILABLE),
+    }
+}
+
+/// Shared authorization boundary for future sensitive administrator routes. Normal routes reject a
+/// bootstrap session; only password-change and logout flows may request `PasswordChangeSession`.
+async fn require_admin(
+    state: &AppState,
+    headers: &HeaderMap,
+    requirement: AdminRequirement,
+) -> Result<(SecretString, AdminAuthorization), Response> {
+    let token = admin_session_token(headers)
+        .ok_or_else(|| authentication_error_json(StatusCode::UNAUTHORIZED))?;
+    let admin = state
+        .admin
+        .clone()
+        .ok_or_else(|| authentication_error_json(StatusCode::SERVICE_UNAVAILABLE))?;
+    let token_for_worker = SecretString::new(token.expose());
+    let result = tokio::task::spawn_blocking(move || match requirement {
+        AdminRequirement::Normal => admin.authorize(&token_for_worker),
+        AdminRequirement::PasswordChangeSession => admin.session(&token_for_worker),
+    })
+    .await;
+    match result {
+        Ok(Ok(authorization)) => Ok((token, authorization)),
+        Ok(Err(error)) => Err(admin_error_json(error)),
+        Err(_) => Err(authentication_error_json(StatusCode::SERVICE_UNAVAILABLE)),
+    }
+}
+
+fn admin_session_token(headers: &HeaderMap) -> Option<SecretString> {
+    let mut found = None;
+    for value in headers.get_all(header::COOKIE).iter() {
+        let value = value.to_str().ok()?;
+        for cookie in value.split(';') {
+            let Some((name, value)) = cookie.trim().split_once('=') else {
+                continue;
+            };
+            if name != ADMIN_SESSION_COOKIE {
+                continue;
+            }
+            if found.is_some()
+                || value.len() != 64
+                || !value.bytes().all(|byte| byte.is_ascii_hexdigit())
+            {
+                return None;
+            }
+            found = Some(SecretString::new(value));
+        }
+    }
+    found
+}
+
+fn session_cookie(token: &str) -> Option<HeaderValue> {
+    HeaderValue::from_str(&format!(
+        "{ADMIN_SESSION_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/"
+    ))
+    .ok()
+}
+
+fn expired_session_cookie() -> HeaderValue {
+    HeaderValue::from_str(&format!(
+        "{ADMIN_SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
+    ))
+    .expect("fixed administrator cookie attributes must be a valid header")
+}
+
 async fn control_display(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -308,6 +543,19 @@ async fn invoke_control(
 }
 
 fn authorize_control(state: &AppState, headers: &HeaderMap) -> bool {
+    authorize_same_origin_csrf(state, headers)
+}
+
+fn authorize_same_origin_csrf(state: &AppState, headers: &HeaderMap) -> bool {
+    let token = headers
+        .get("x-hyz-csrf")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    authorize_json_origin(state, headers)
+        && constant_time_equal(token.as_bytes(), state.csrf_token.as_bytes())
+}
+
+fn authorize_json_origin(state: &AppState, headers: &HeaderMap) -> bool {
     let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
@@ -319,17 +567,12 @@ fn authorize_control(state: &AppState, headers: &HeaderMap) -> bool {
     let fetch_site = headers
         .get("sec-fetch-site")
         .and_then(|value| value.to_str().ok());
-    let token = headers
-        .get("x-hyz-csrf")
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or_default();
     content_type
         .split(';')
         .next()
         .is_some_and(|value| value.trim() == "application/json")
         && origin == state.allowed_origin.as_ref()
         && fetch_site.is_none_or(|value| value == "same-origin")
-        && constant_time_equal(token.as_bytes(), state.csrf_token.as_bytes())
 }
 
 fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
@@ -372,6 +615,30 @@ async fn api_or_method_not_found(request: Request) -> Response {
     } else {
         StatusCode::NOT_FOUND.into_response()
     }
+}
+
+fn admin_error_json(error: AdminError) -> Response {
+    let status = match error {
+        AdminError::RateLimited => StatusCode::TOO_MANY_REQUESTS,
+        AdminError::InvalidNewPassword => StatusCode::BAD_REQUEST,
+        AdminError::PasswordChangeRequired => StatusCode::FORBIDDEN,
+        AdminError::InvalidCredentials | AdminError::InvalidSession => StatusCode::UNAUTHORIZED,
+        AdminError::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+    };
+    authentication_error_json(status)
+}
+
+fn authentication_error_json(status: StatusCode) -> Response {
+    (
+        status,
+        Json(serde_json::json!({
+            "error": {
+                "code": "authentication_failed",
+                "message": "Authentication request rejected"
+            }
+        })),
+    )
+        .into_response()
 }
 
 fn forbidden_json() -> Response {
@@ -489,10 +756,13 @@ fn static_asset_path(path: &str) -> bool {
     )
 }
 
-fn is_control_path(path: &str) -> bool {
+fn is_post_path(path: &str) -> bool {
     matches!(
         path,
-        "/api/v1/control/display"
+        "/api/v1/admin/login"
+            | "/api/v1/admin/logout"
+            | "/api/v1/admin/password"
+            | "/api/v1/control/display"
             | "/api/v1/control/proxy/mode"
             | "/api/v1/control/proxy/selection"
             | "/api/v1/control/proxy/delay"
@@ -501,11 +771,11 @@ fn is_control_path(path: &str) -> bool {
 }
 
 async fn security_headers(request: Request, next: Next) -> Response {
-    // The status surface remains GET-only. Only five exact control paths accept POST, and each
-    // handler independently requires JSON, an exact same-origin Origin, and the per-daemon token.
+    // The status surface remains GET-only. Only exact mutation paths accept POST; every handler
+    // independently enforces its matching Origin/JSON and CSRF/session policy.
     let path = request.uri().path();
-    let allowed = request.method() == Method::GET
-        || request.method() == Method::POST && is_control_path(path);
+    let allowed =
+        request.method() == Method::GET || request.method() == Method::POST && is_post_path(path);
     let reject_api_method = !allowed && path.starts_with("/api/");
     let mut response = if reject_api_method {
         method_not_allowed_json()
@@ -568,5 +838,37 @@ mod tests {
         assert!(static_asset_path("router-old_bg.wasm"));
         assert!(static_asset_path("styles-old.css"));
         assert!(!static_asset_path("dashboard/route"));
+    }
+
+    #[test]
+    fn administrator_cookie_has_fixed_non_tls_attributes_and_strict_parsing() {
+        let token = "a".repeat(64);
+        let cookie = session_cookie(&token).unwrap().to_str().unwrap().to_owned();
+        assert!(cookie.starts_with(&format!("{ADMIN_SESSION_COOKIE}=")));
+        assert!(cookie.contains("; HttpOnly"));
+        assert!(cookie.contains("; SameSite=Strict"));
+        assert!(cookie.contains("; Path=/"));
+        assert!(!cookie.contains("; Secure"));
+
+        let mut headers = HeaderMap::new();
+        headers.insert(header::COOKIE, HeaderValue::from_str(&cookie).unwrap());
+        assert_eq!(admin_session_token(&headers).unwrap().expose(), token);
+        headers.append(
+            header::COOKIE,
+            HeaderValue::from_str(&format!("{ADMIN_SESSION_COOKIE}={token}")).unwrap(),
+        );
+        assert!(admin_session_token(&headers).is_none());
+    }
+
+    #[test]
+    fn post_allowlist_keeps_admin_and_lcd_control_boundaries_exact() {
+        assert!(is_post_path("/api/v1/admin/login"));
+        assert!(is_post_path("/api/v1/admin/logout"));
+        assert!(is_post_path("/api/v1/admin/password"));
+        assert!(is_post_path("/api/v1/control/display"));
+        assert!(is_post_path("/api/v1/control/proxy/mode"));
+        assert!(!is_post_path("/api/v1/admin/session"));
+        assert!(!is_post_path("/api/v1/admin"));
+        assert!(!is_post_path("/api/v1/control"));
     }
 }

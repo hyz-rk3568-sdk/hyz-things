@@ -7,7 +7,7 @@ use std::{
     collections::{HashMap, VecDeque},
     error::Error,
     fmt,
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 use zeroize::Zeroize;
 
@@ -78,18 +78,18 @@ struct AdminState {
     failed_logins: VecDeque<u64>,
 }
 
-pub struct AdminApplication<'a> {
-    store: &'a dyn AdminCredentialStorePort,
-    random: &'a dyn AdminRandomPort,
-    clock: &'a dyn ClockPort,
+pub struct AdminApplication {
+    store: Arc<dyn AdminCredentialStorePort>,
+    random: Arc<dyn AdminRandomPort>,
+    clock: Arc<dyn ClockPort>,
     state: Mutex<AdminState>,
 }
 
-impl<'a> AdminApplication<'a> {
+impl AdminApplication {
     pub fn initialize(
-        store: &'a dyn AdminCredentialStorePort,
-        random: &'a dyn AdminRandomPort,
-        clock: &'a dyn ClockPort,
+        store: Arc<dyn AdminCredentialStorePort>,
+        random: Arc<dyn AdminRandomPort>,
+        clock: Arc<dyn ClockPort>,
     ) -> Result<Self, AdminError> {
         let credential = match store.load_admin_credential()? {
             Some(credential) => {
@@ -98,7 +98,10 @@ impl<'a> AdminApplication<'a> {
             }
             None => {
                 let credential = AdminCredential {
-                    password_hash: hash_password(random, DEFAULT_ADMIN_BOOTSTRAP_PASSWORD)?,
+                    password_hash: hash_password(
+                        random.as_ref(),
+                        DEFAULT_ADMIN_BOOTSTRAP_PASSWORD,
+                    )?,
                     must_change: true,
                 };
                 store.save_admin_credential(&credential)?;
@@ -160,18 +163,23 @@ impl<'a> AdminApplication<'a> {
         })
     }
 
-    /// Authorizes normal administration. Bootstrap sessions are deliberately rejected here and
-    /// can only be used with `change_password`.
-    pub fn authorize(&self, token: &SecretString) -> Result<AdminAuthorization, AdminError> {
+    pub fn session(&self, token: &SecretString) -> Result<AdminAuthorization, AdminError> {
         let now = self.clock.unix_time_millis();
         let mut state = self.lock_state()?;
         authenticate_session(&mut state, token.expose(), now)?;
-        if state.credential.must_change {
+        Ok(AdminAuthorization {
+            must_change_password: state.credential.must_change,
+        })
+    }
+
+    /// Authorizes normal administration. Bootstrap sessions are deliberately rejected here and
+    /// can only be used with `change_password`.
+    pub fn authorize(&self, token: &SecretString) -> Result<AdminAuthorization, AdminError> {
+        let authorization = self.session(token)?;
+        if authorization.must_change_password {
             return Err(AdminError::PasswordChangeRequired);
         }
-        Ok(AdminAuthorization {
-            must_change_password: false,
-        })
+        Ok(authorization)
     }
 
     pub fn change_password(
@@ -192,7 +200,7 @@ impl<'a> AdminApplication<'a> {
             return Err(AdminError::InvalidCredentials);
         }
         let credential = AdminCredential {
-            password_hash: hash_password(self.random, request.new_password.expose())?,
+            password_hash: hash_password(self.random.as_ref(), request.new_password.expose())?,
             must_change: false,
         };
         self.store.save_admin_credential(&credential)?;
@@ -347,7 +355,7 @@ mod tests {
         }
     }
 
-    fn login(app: &AdminApplication<'_>, password: &str) -> AdminLoginResponse {
+    fn login(app: &AdminApplication, password: &str) -> AdminLoginResponse {
         app.login(&AdminLoginRequest {
             password: SecretString::new(password),
         })
@@ -356,8 +364,10 @@ mod tests {
 
     #[test]
     fn bootstrap_is_argon2id_and_only_allows_password_change() {
-        let platform = TestPlatform::default();
-        let app = AdminApplication::initialize(&platform, &platform, &platform).unwrap();
+        let platform = Arc::new(TestPlatform::default());
+        let app =
+            AdminApplication::initialize(platform.clone(), platform.clone(), platform.clone())
+                .unwrap();
         let stored = platform.credential.lock().unwrap().clone().unwrap();
         assert!(stored.password_hash.expose().starts_with("$argon2id$"));
         assert!(stored.must_change);
@@ -390,8 +400,10 @@ mod tests {
 
     #[test]
     fn sessions_enforce_idle_and_absolute_expiry() {
-        let platform = TestPlatform::default();
-        let app = AdminApplication::initialize(&platform, &platform, &platform).unwrap();
+        let platform = Arc::new(TestPlatform::default());
+        let app =
+            AdminApplication::initialize(platform.clone(), platform.clone(), platform.clone())
+                .unwrap();
         let idle = login(&app, DEFAULT_ADMIN_BOOTSTRAP_PASSWORD).token;
         platform
             .now
@@ -423,8 +435,10 @@ mod tests {
 
     #[test]
     fn failed_logins_are_rate_limited_in_a_bounded_window() {
-        let platform = TestPlatform::default();
-        let app = AdminApplication::initialize(&platform, &platform, &platform).unwrap();
+        let platform = Arc::new(TestPlatform::default());
+        let app =
+            AdminApplication::initialize(platform.clone(), platform.clone(), platform.clone())
+                .unwrap();
         for _ in 0..MAX_LOGIN_FAILURES_PER_WINDOW {
             assert!(matches!(
                 app.login(&AdminLoginRequest {
@@ -447,8 +461,10 @@ mod tests {
 
     #[test]
     fn session_storage_is_bounded_and_uses_digest_keys() {
-        let platform = TestPlatform::default();
-        let app = AdminApplication::initialize(&platform, &platform, &platform).unwrap();
+        let platform = Arc::new(TestPlatform::default());
+        let app =
+            AdminApplication::initialize(platform.clone(), platform.clone(), platform.clone())
+                .unwrap();
         let first = login(&app, DEFAULT_ADMIN_BOOTSTRAP_PASSWORD).token;
         let mut newest = None;
         for index in 1..=MAX_ADMIN_SESSIONS {

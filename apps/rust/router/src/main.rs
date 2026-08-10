@@ -8,14 +8,18 @@ use hyz_router::{
             },
             dhcp_hook,
             http::{
-                app_with_control, bind_fixed_lan_with_retry, DEFAULT_BIND_ATTEMPTS,
+                app_with_admin_control, bind_fixed_lan_with_retry, DEFAULT_BIND_ATTEMPTS,
                 DEFAULT_HTTP_PORT,
             },
             ota_cli::{parse_ota_cli, OtaCommand, OTA_USAGE},
         },
-        outbound::{firmware::FirmwareAdapter, LinuxMihomoFailOpenPlatform, LinuxRouterPlatform},
+        outbound::{
+            admin::AdminFileAdapter, firmware::FirmwareAdapter, LinuxMihomoFailOpenPlatform,
+            LinuxRouterPlatform,
+        },
     },
     application::{
+        admin::{AdminApplication, AdminError},
         dhcp::DhcpPlatformPort,
         fail_open::{MihomoFailOpenApplication, WatcherInvocation},
         ota::{InstallMode, OtaService},
@@ -43,6 +47,7 @@ const USAGE: &str = "Usage:\n  hyz-router daemon\n  hyz-router status [--json]\n
 
 struct ProductionRuntime {
     router: Arc<LinuxRouterPlatform>,
+    admin: Arc<AdminApplication>,
     firmware: FirmwareAdapter,
     router_proxy: Mutex<()>,
     proxy_delay_last: Mutex<Option<Instant>>,
@@ -51,15 +56,27 @@ struct ProductionRuntime {
 }
 
 impl ProductionRuntime {
-    fn build() -> Self {
-        Self {
-            router: Arc::new(LinuxRouterPlatform::new()),
+    fn build() -> Result<Self, AdminError> {
+        let router = Arc::new(LinuxRouterPlatform::new());
+        let admin_adapter = Arc::new(AdminFileAdapter::default());
+        let admin = Arc::new(AdminApplication::initialize(
+            admin_adapter.clone(),
+            admin_adapter,
+            router.clone(),
+        )?);
+        Ok(Self {
+            router,
+            admin,
             firmware: FirmwareAdapter::default(),
             router_proxy: Mutex::new(()),
             proxy_delay_last: Mutex::new(None),
             display: Mutex::new(()),
             ota: Mutex::new(()),
-        }
+        })
+    }
+
+    fn admin(&self) -> Arc<AdminApplication> {
+        self.admin.clone()
     }
 
     fn status(&self) -> ReadStatus {
@@ -413,9 +430,19 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    // This is the sole production construction point for privileged outbound adapters.
-    let runtime = Arc::new(ProductionRuntime::build());
+    // This is the sole production construction point for privileged outbound adapters. Admin
+    // credential initialization is fail-closed: HTTP and control services are not exposed if the
+    // root-owned credential record cannot be loaded or bootstrapped.
+    let runtime = match ProductionRuntime::build() {
+        Ok(runtime) => Arc::new(runtime),
+        Err(error) => {
+            remove_control_socket(&ownership)?;
+            ownership.release()?;
+            return Err(error.into());
+        }
+    };
     let http_status = runtime.status();
+    let http_admin = runtime.admin();
     let web_token = match runtime.web_token() {
         Ok(token) => token,
         Err(error) => {
@@ -454,7 +481,14 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
 
     // HTTP binding is the externally visible readiness boundary and occurs only after a strictly
     // confirmed normal or management-only network state has been reached.
-    let http = serve_http(http_status, http_control, web_token, port, shutdown_rx);
+    let http = serve_http(
+        http_status,
+        http_control,
+        http_admin,
+        web_token,
+        port,
+        shutdown_rx,
+    );
     tokio::pin!(http);
 
     enum Trigger {
@@ -488,6 +522,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
 async fn serve_http(
     status: ReadStatus,
     control: Arc<dyn ControlHandler>,
+    admin: Arc<AdminApplication>,
     csrf_token: String,
     port: u16,
     mut shutdown: watch::Receiver<bool>,
@@ -506,7 +541,7 @@ async fn serve_http(
     };
     axum::serve(
         listener,
-        app_with_control(status, control, csrf_token, port),
+        app_with_admin_control(status, control, admin, csrf_token, port),
     )
     .with_graceful_shutdown(async move {
         while !*shutdown.borrow() && shutdown.changed().await.is_ok() {}
