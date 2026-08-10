@@ -5,6 +5,7 @@ use crate::{
         wifi::{ApPrepareRequest, StaCandidateRequest, WifiScanEntry},
     },
     domain::{
+        admin::SecretString,
         network_config::{NetworkConfigSummary, PendingNetworkConfigSummary},
         panel::{
             valid_control_name, DisplayRequest, PanelSnapshot, ProxyDelayRefreshRequest,
@@ -35,7 +36,7 @@ pub const CONTROL_SOCKET: &str = "/run/hyz-router/control.sock";
 pub const CONTROL_RUNTIME_DIR: &str = "/run/hyz-router";
 pub const DAEMON_LOCK_DIR: &str = "/run/hyz-router/daemon.lock";
 const DAEMON_OWNER_FILE: &str = "/run/hyz-router/daemon.lock/owner";
-pub const PROTOCOL_VERSION: u16 = 2;
+pub const PROTOCOL_VERSION: u16 = 3;
 pub const MAX_FRAME_BYTES: usize = 64 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(30 * 60);
@@ -69,11 +70,12 @@ pub enum ControlOperation {
     ProxyDelay { request: ProxyDelayRequest },
     ProxyDelayRefresh { request: ProxyDelayRefreshRequest },
     SubscriptionGet {},
-    SubscriptionSet { url: String },
+    SubscriptionSet { url: SecretString },
     SubscriptionRefresh {},
     Ota { command: OtaCommand },
     Dhcp { event: DhcpEvent },
     WifiStatus {},
+    WifiPending {},
     WifiScan {},
     WifiStaApply { request: StaCandidateRequest },
     WifiApPrepare { request: ApPrepareRequest },
@@ -89,6 +91,7 @@ impl ControlOperation {
             Self::Status { .. }
                 | Self::PanelStatus { .. }
                 | Self::WifiStatus { .. }
+                | Self::WifiPending { .. }
                 | Self::WifiScan { .. }
                 | Self::SubscriptionGet { .. }
                 | Self::Ota {
@@ -106,13 +109,14 @@ impl ControlOperation {
             | Self::Router { .. }
             | Self::Proxy { .. }
             | Self::WifiStatus { .. }
+            | Self::WifiPending { .. }
             | Self::WifiScan { .. }
             | Self::WifiStaApply { .. }
             | Self::WifiApPrepare { .. }
             | Self::WifiApApply { .. }
             | Self::WifiApConfirm { .. }
             | Self::WifiApCancel { .. } => Ok(()),
-            Self::SubscriptionSet { url } => SubscriptionUrl::validate(url)
+            Self::SubscriptionSet { url } => SubscriptionUrl::validate(url.expose())
                 .map_err(|_| "subscription URL must be a safe public HTTPS URL"),
             Self::Display { request } => validate_display(request),
             Self::ProxySelection { request } => {
@@ -283,6 +287,9 @@ pub enum ControlResult {
     },
     WifiPending {
         pending: PendingNetworkConfigSummary,
+    },
+    WifiPendingStatus {
+        pending: Option<PendingNetworkConfigSummary>,
     },
     WifiScan {
         entries: Vec<WifiScanEntry>,

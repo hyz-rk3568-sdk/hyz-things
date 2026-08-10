@@ -81,6 +81,10 @@ impl<'a, P: WifiPlatformPort> WifiApplication<'a, P> {
         self.platform.committed_config()
     }
 
+    pub fn pending(&self) -> Result<Option<PendingNetworkConfigSummary>, PlatformError> {
+        self.platform.pending_ap_candidate()
+    }
+
     pub fn apply_sta(
         &self,
         request: StaCandidateRequest,

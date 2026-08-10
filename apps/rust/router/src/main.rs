@@ -37,6 +37,7 @@ use hyz_router::{
         wifi::{ApPrepareRequest, StaCandidateRequest, WifiApplication},
     },
     domain::{
+        admin::SecretString,
         network::NetworkDesired,
         network_config::{WifiCountry, WifiPassphrase, WifiSsid},
         proxy::{ProxyDesired, ProxyMode},
@@ -340,7 +341,7 @@ impl ControlHandler for ProductionRuntime {
                         platform.as_ref(),
                         platform.as_ref(),
                     )
-                    .set_url(url)
+                    .set_url(url.expose().to_owned())
                 })
                 .await
                 .map_err(|_| "subscription URL worker terminated unexpectedly".to_owned())?
@@ -448,6 +449,17 @@ impl ControlHandler for ProductionRuntime {
                 .map_err(|_| "Wi-Fi status worker terminated unexpectedly".to_owned())?
                 .map_err(|error| error.to_string())?;
                 Ok(ControlResult::WifiConfig { config })
+            }
+            ControlOperation::WifiPending { .. } => {
+                let _serial = self.router_proxy.lock().await;
+                let platform = self.router.clone();
+                let pending = tokio::task::spawn_blocking(move || {
+                    WifiApplication::new(platform.as_ref()).pending()
+                })
+                .await
+                .map_err(|_| "Wi-Fi pending worker terminated unexpectedly".to_owned())?
+                .map_err(|error| error.to_string())?;
+                Ok(ControlResult::WifiPendingStatus { pending })
             }
             ControlOperation::WifiScan { .. } => {
                 let _serial = self.router_proxy.lock().await;
@@ -624,7 +636,10 @@ async fn run(args: Vec<String>) -> Result<(), Box<dyn Error>> {
         }
         [group, action, url] if group == "subscription" && action == "set" => {
             print_subscription(
-                request(ControlOperation::SubscriptionSet { url: url.clone() }).await?,
+                request(ControlOperation::SubscriptionSet {
+                    url: SecretString::new(url.clone()),
+                })
+                .await?,
                 false,
             )?;
         }
@@ -956,6 +971,7 @@ fn expect_completed(result: ControlResult) -> Result<String, Box<dyn Error>> {
         | ControlResult::ProxyDelays { .. }
         | ControlResult::WifiConfig { .. }
         | ControlResult::WifiPending { .. }
+        | ControlResult::WifiPendingStatus { .. }
         | ControlResult::WifiScan { .. }
         | ControlResult::Subscription { .. } => {
             Err("daemon returned an unexpected mutation response".into())

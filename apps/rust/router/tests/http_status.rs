@@ -196,6 +196,22 @@ async fn serves_partial_degraded_status_with_strict_http_policy() {
     assert!(health.contains("\"check\":\"liveness\""));
     assert!(health.contains("\"readiness_assessed\":false"));
 
+    let old_auth_address = server_address(&server, address);
+    let old_auth = tokio::task::spawn_blocking(move || {
+        http_request(old_auth_address, "GET", "/api/v1/admin/session")
+    })
+    .await
+    .expect("join removed administrator alias client");
+    assert!(old_auth.starts_with("HTTP/1.1 404 Not Found\r\n"));
+
+    let auth_address = server_address(&server, address);
+    let auth = tokio::task::spawn_blocking(move || {
+        http_request(auth_address, "GET", "/api/v1/auth/session")
+    })
+    .await
+    .expect("join approved authentication path client");
+    assert!(auth.starts_with("HTTP/1.1 503 Service Unavailable\r\n"));
+
     let root_address = server_address(&server, address);
     let root = tokio::task::spawn_blocking(move || http_request(root_address, "GET", "/"))
         .await

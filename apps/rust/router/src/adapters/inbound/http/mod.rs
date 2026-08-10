@@ -15,7 +15,7 @@ use axum::{
     routing::{get, on, MethodFilter},
     Json, Router,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     adapters::inbound::control::{
@@ -24,14 +24,17 @@ use crate::{
     application::{
         admin::{AdminApplication, AdminError},
         status::ReadStatus,
+        wifi::{ApPrepareRequest, StaCandidateRequest, WifiScanEntry},
     },
     domain::{
         admin::{AdminAuthorization, AdminLoginRequest, AdminPasswordChangeRequest, SecretString},
+        network_config::{NetworkConfigSummary, PendingNetworkConfigSummary},
         panel::{
             DisplayRequest, PanelBootstrap, ProxyDelayRefreshRequest, ProxyDelayRequest,
             ProxyModeRequest, ProxySelectionRequest,
         },
         status::ProxyMode,
+        subscription::SubscriptionSummary,
     },
 };
 
@@ -41,6 +44,7 @@ pub const LAN_ADDRESS: Ipv4Addr = Ipv4Addr::new(192, 168, 8, 1);
 pub const DEFAULT_HTTP_PORT: u16 = 8080;
 pub const DEFAULT_BIND_ATTEMPTS: usize = 15;
 pub const ADMIN_SESSION_COOKIE: &str = "hyz_admin_session";
+const MAX_HTTP_JSON_BODY_BYTES: usize = 4 * 1024;
 
 #[derive(Clone)]
 struct AppState {
@@ -139,15 +143,56 @@ fn app_with_assets(
         .route("/api/v1/health", on(MethodFilter::GET, health))
         .route("/api/v1/status", on(MethodFilter::GET, status))
         .route("/api/v1/panel", on(MethodFilter::GET, panel))
-        .route("/api/v1/admin/login", on(MethodFilter::POST, admin_login))
-        .route("/api/v1/admin/logout", on(MethodFilter::POST, admin_logout))
+        .route("/api/v1/auth/login", on(MethodFilter::POST, admin_login))
+        .route("/api/v1/auth/logout", on(MethodFilter::POST, admin_logout))
         .route(
-            "/api/v1/admin/password",
+            "/api/v1/auth/password",
             on(MethodFilter::POST, admin_password),
         )
+        .route("/api/v1/auth/session", on(MethodFilter::GET, admin_session))
         .route(
-            "/api/v1/admin/session",
-            on(MethodFilter::GET, admin_session),
+            "/api/v1/network/config",
+            on(MethodFilter::GET, network_config),
+        )
+        .route(
+            "/api/v1/network/pending",
+            on(MethodFilter::GET, network_pending),
+        )
+        .route(
+            "/api/v1/control/network/sta/scan",
+            on(MethodFilter::POST, network_sta_scan),
+        )
+        .route(
+            "/api/v1/control/network/sta/apply",
+            on(MethodFilter::POST, network_sta_apply),
+        )
+        .route(
+            "/api/v1/control/network/ap/prepare",
+            on(MethodFilter::POST, network_ap_prepare),
+        )
+        .route(
+            "/api/v1/control/network/ap/apply",
+            on(MethodFilter::POST, network_ap_apply),
+        )
+        .route(
+            "/api/v1/control/network/ap/confirm",
+            on(MethodFilter::POST, network_ap_confirm),
+        )
+        .route(
+            "/api/v1/control/network/ap/cancel",
+            on(MethodFilter::POST, network_ap_cancel),
+        )
+        .route(
+            "/api/v1/proxy/subscription",
+            on(MethodFilter::GET, proxy_subscription),
+        )
+        .route(
+            "/api/v1/control/proxy/subscription/source",
+            on(MethodFilter::POST, proxy_subscription_source),
+        )
+        .route(
+            "/api/v1/control/proxy/subscription/refresh",
+            on(MethodFilter::POST, proxy_subscription_refresh),
         )
         .route(
             "/api/v1/control/display",
@@ -172,7 +217,7 @@ fn app_with_assets(
         .route("/", get(frontend_root))
         .route("/{*path}", get(frontend_asset))
         .fallback(api_or_method_not_found)
-        .layer(DefaultBodyLimit::max(4 * 1024))
+        .layer(DefaultBodyLimit::max(MAX_HTTP_JSON_BODY_BYTES))
         .layer(middleware::from_fn(security_headers))
         .with_state(AppState {
             read_status,
@@ -461,6 +506,286 @@ fn expired_session_cookie() -> HeaderValue {
         "{ADMIN_SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
     ))
     .expect("fixed administrator cookie attributes must be a valid header")
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EmptyJsonRequest {}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SubscriptionSourceRequest {
+    url: SecretString,
+}
+
+#[derive(Serialize)]
+struct NetworkConfigResponse {
+    config: NetworkConfigSummary,
+}
+
+#[derive(Serialize)]
+struct NetworkPendingResponse {
+    pending: Option<PendingNetworkConfigSummary>,
+}
+
+#[derive(Serialize)]
+struct NetworkScanResponse {
+    entries: Vec<WifiScanEntry>,
+}
+
+#[derive(Serialize)]
+struct SubscriptionResponse {
+    subscription: SubscriptionSummary,
+}
+
+#[derive(Clone, Copy)]
+enum SensitiveResult {
+    NetworkConfig,
+    NetworkPending,
+    NetworkPendingStatus,
+    NetworkScan,
+    Subscription,
+}
+
+async fn network_config(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    invoke_sensitive_control(
+        &state,
+        &headers,
+        ControlOperation::WifiStatus {},
+        SensitiveResult::NetworkConfig,
+    )
+    .await
+}
+
+async fn network_pending(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    invoke_sensitive_control(
+        &state,
+        &headers,
+        ControlOperation::WifiPending {},
+        SensitiveResult::NetworkPendingStatus,
+    )
+    .await
+}
+
+async fn network_sta_scan(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
+) -> Response {
+    invoke_empty_sensitive_control(
+        &state,
+        &headers,
+        payload,
+        ControlOperation::WifiScan {},
+        SensitiveResult::NetworkScan,
+    )
+    .await
+}
+
+async fn network_sta_apply(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<StaCandidateRequest>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control(&state, &headers).await {
+        return response;
+    }
+    let Ok(Json(request)) = payload else {
+        return invalid_request_json();
+    };
+    invoke_sensitive_control_authorized(
+        &state,
+        ControlOperation::WifiStaApply { request },
+        SensitiveResult::NetworkConfig,
+    )
+    .await
+}
+
+async fn network_ap_prepare(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<ApPrepareRequest>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control(&state, &headers).await {
+        return response;
+    }
+    let Ok(Json(request)) = payload else {
+        return invalid_request_json();
+    };
+    invoke_sensitive_control_authorized(
+        &state,
+        ControlOperation::WifiApPrepare { request },
+        SensitiveResult::NetworkPending,
+    )
+    .await
+}
+
+async fn network_ap_apply(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
+) -> Response {
+    invoke_empty_sensitive_control(
+        &state,
+        &headers,
+        payload,
+        ControlOperation::WifiApApply {},
+        SensitiveResult::NetworkPending,
+    )
+    .await
+}
+
+async fn network_ap_confirm(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
+) -> Response {
+    invoke_empty_sensitive_control(
+        &state,
+        &headers,
+        payload,
+        ControlOperation::WifiApConfirm {},
+        SensitiveResult::NetworkConfig,
+    )
+    .await
+}
+
+async fn network_ap_cancel(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
+) -> Response {
+    invoke_empty_sensitive_control(
+        &state,
+        &headers,
+        payload,
+        ControlOperation::WifiApCancel {},
+        SensitiveResult::NetworkConfig,
+    )
+    .await
+}
+
+async fn proxy_subscription(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    invoke_sensitive_control(
+        &state,
+        &headers,
+        ControlOperation::SubscriptionGet {},
+        SensitiveResult::Subscription,
+    )
+    .await
+}
+
+async fn proxy_subscription_source(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<SubscriptionSourceRequest>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control(&state, &headers).await {
+        return response;
+    }
+    let Ok(Json(request)) = payload else {
+        return invalid_request_json();
+    };
+    invoke_sensitive_control_authorized(
+        &state,
+        ControlOperation::SubscriptionSet { url: request.url },
+        SensitiveResult::Subscription,
+    )
+    .await
+}
+
+async fn proxy_subscription_refresh(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
+) -> Response {
+    invoke_empty_sensitive_control(
+        &state,
+        &headers,
+        payload,
+        ControlOperation::SubscriptionRefresh {},
+        SensitiveResult::Subscription,
+    )
+    .await
+}
+
+async fn invoke_empty_sensitive_control(
+    state: &AppState,
+    headers: &HeaderMap,
+    payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
+    operation: ControlOperation,
+    expected: SensitiveResult,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control(state, headers).await {
+        return response;
+    }
+    if payload.is_err() {
+        return invalid_request_json();
+    }
+    invoke_sensitive_control_authorized(state, operation, expected).await
+}
+
+async fn invoke_sensitive_control(
+    state: &AppState,
+    headers: &HeaderMap,
+    operation: ControlOperation,
+    expected: SensitiveResult,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control(state, headers).await {
+        return response;
+    }
+    invoke_sensitive_control_authorized(state, operation, expected).await
+}
+
+async fn authorize_sensitive_control(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(), Response> {
+    if !authorize_same_origin_csrf(state, headers) {
+        return Err(forbidden_json());
+    }
+    require_admin(state, headers, AdminRequirement::Normal)
+        .await
+        .map(|_| ())
+}
+
+async fn invoke_sensitive_control_authorized(
+    state: &AppState,
+    operation: ControlOperation,
+    expected: SensitiveResult,
+) -> Response {
+    if operation.validate().is_err() {
+        return invalid_request_json();
+    }
+    let Some(control) = &state.control else {
+        return service_unavailable_json();
+    };
+    match (expected, control.handle(operation).await) {
+        (SensitiveResult::NetworkConfig, Ok(ControlResult::WifiConfig { config })) => {
+            Json(NetworkConfigResponse { config }).into_response()
+        }
+        (SensitiveResult::NetworkPending, Ok(ControlResult::WifiPending { pending })) => {
+            Json(NetworkPendingResponse {
+                pending: Some(pending),
+            })
+            .into_response()
+        }
+        (
+            SensitiveResult::NetworkPendingStatus,
+            Ok(ControlResult::WifiPendingStatus { pending }),
+        ) => Json(NetworkPendingResponse { pending }).into_response(),
+        (SensitiveResult::NetworkScan, Ok(ControlResult::WifiScan { entries })) => {
+            Json(NetworkScanResponse { entries }).into_response()
+        }
+        (SensitiveResult::Subscription, Ok(ControlResult::Subscription { summary })) => {
+            Json(SubscriptionResponse {
+                subscription: summary,
+            })
+            .into_response()
+        }
+        (_, Ok(_)) => service_unavailable_json(),
+        (_, Err(_)) => control_failed_json(),
+    }
 }
 
 async fn control_display(
@@ -759,9 +1084,17 @@ fn static_asset_path(path: &str) -> bool {
 fn is_post_path(path: &str) -> bool {
     matches!(
         path,
-        "/api/v1/admin/login"
-            | "/api/v1/admin/logout"
-            | "/api/v1/admin/password"
+        "/api/v1/auth/login"
+            | "/api/v1/auth/logout"
+            | "/api/v1/auth/password"
+            | "/api/v1/control/network/sta/scan"
+            | "/api/v1/control/network/sta/apply"
+            | "/api/v1/control/network/ap/prepare"
+            | "/api/v1/control/network/ap/apply"
+            | "/api/v1/control/network/ap/confirm"
+            | "/api/v1/control/network/ap/cancel"
+            | "/api/v1/control/proxy/subscription/source"
+            | "/api/v1/control/proxy/subscription/refresh"
             | "/api/v1/control/display"
             | "/api/v1/control/proxy/mode"
             | "/api/v1/control/proxy/selection"
@@ -771,8 +1104,9 @@ fn is_post_path(path: &str) -> bool {
 }
 
 async fn security_headers(request: Request, next: Next) -> Response {
-    // The status surface remains GET-only. Only exact mutation paths accept POST; every handler
-    // independently enforces its matching Origin/JSON and CSRF/session policy.
+    // GET remains globally allowed so exact routes and the API fallback can distinguish 404 from
+    // 405. Sensitive GET handlers still enforce normal administrator session and JSON Origin/CSRF.
+    // Only exact mutation paths accept POST; every POST handler enforces its own policy.
     let path = request.uri().path();
     let allowed =
         request.method() == Method::GET || request.method() == Method::POST && is_post_path(path);
@@ -861,14 +1195,43 @@ mod tests {
     }
 
     #[test]
-    fn post_allowlist_keeps_admin_and_lcd_control_boundaries_exact() {
-        assert!(is_post_path("/api/v1/admin/login"));
-        assert!(is_post_path("/api/v1/admin/logout"));
-        assert!(is_post_path("/api/v1/admin/password"));
+    fn sensitive_json_dtos_reject_unknown_fields_and_redact_subscription_urls() {
+        assert!(serde_json::from_str::<EmptyJsonRequest>(r#"{"unexpected":true}"#).is_err());
+        assert!(serde_json::from_str::<SubscriptionSourceRequest>(
+            r#"{"url":"https://example.com/sub","unexpected":true}"#
+        )
+        .is_err());
+
+        let secret_url = "https://example.com/private-subscription-token";
+        let request = serde_json::from_str::<SubscriptionSourceRequest>(&format!(
+            r#"{{"url":"{secret_url}"}}"#
+        ))
+        .unwrap();
+        let operation = ControlOperation::SubscriptionSet { url: request.url };
+        assert!(!format!("{operation:?}").contains(secret_url));
+        assert_eq!(MAX_HTTP_JSON_BODY_BYTES, 4 * 1024);
+    }
+
+    #[test]
+    fn post_allowlist_keeps_auth_sensitive_and_lan_control_boundaries_exact() {
+        assert!(is_post_path("/api/v1/auth/login"));
+        assert!(is_post_path("/api/v1/auth/logout"));
+        assert!(is_post_path("/api/v1/auth/password"));
+        assert!(is_post_path("/api/v1/control/network/sta/scan"));
+        assert!(is_post_path("/api/v1/control/network/sta/apply"));
+        assert!(is_post_path("/api/v1/control/network/ap/prepare"));
+        assert!(is_post_path("/api/v1/control/network/ap/apply"));
+        assert!(is_post_path("/api/v1/control/network/ap/confirm"));
+        assert!(is_post_path("/api/v1/control/network/ap/cancel"));
+        assert!(is_post_path("/api/v1/control/proxy/subscription/source"));
+        assert!(is_post_path("/api/v1/control/proxy/subscription/refresh"));
         assert!(is_post_path("/api/v1/control/display"));
         assert!(is_post_path("/api/v1/control/proxy/mode"));
-        assert!(!is_post_path("/api/v1/admin/session"));
-        assert!(!is_post_path("/api/v1/admin"));
+        assert!(!is_post_path("/api/v1/auth/session"));
+        assert!(!is_post_path("/api/v1/admin/login"));
+        assert!(!is_post_path("/api/v1/network/config"));
+        assert!(!is_post_path("/api/v1/proxy/subscription"));
+        assert!(!is_post_path("/api/v1/control/network/sta"));
         assert!(!is_post_path("/api/v1/control"));
     }
 }

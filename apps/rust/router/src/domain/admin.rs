@@ -13,7 +13,7 @@ pub const DEFAULT_ADMIN_BOOTSTRAP_PASSWORD: &str = "admin";
 pub const MIN_ADMIN_PASSWORD_BYTES: usize = 12;
 pub const MAX_ADMIN_PASSWORD_BYTES: usize = 1_024;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct SecretString(String);
 
