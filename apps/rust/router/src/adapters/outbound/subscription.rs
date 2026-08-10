@@ -37,6 +37,8 @@ use ureq::{
 use zeroize::Zeroizing;
 
 const O_NOFOLLOW: i32 = 0o400000;
+const SUBSCRIPTION_USER_AGENT: &str = "clash.meta";
+const SUBSCRIPTION_ACCEPT: &str = "application/yaml, text/yaml, text/plain";
 const URL_FILE: &str = "subscription.url";
 const STATUS_FILE: &str = "status";
 const CURRENT_FILE: &str = "current";
@@ -120,6 +122,8 @@ impl UreqSubscriptionTransport {
             .https_only(true)
             .proxy(None)
             .max_redirects(0)
+            .user_agent(SUBSCRIPTION_USER_AGENT)
+            .accept(SUBSCRIPTION_ACCEPT)
             .accept_encoding("")
             .timeout_global(Some(Duration::from_secs(30)))
             .tls_config(TlsConfig::builder().provider(TlsProvider::Rustls).build())
@@ -639,6 +643,30 @@ mod tests {
             std::process::id(),
             TEMPORARY_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ))
+    }
+
+    #[test]
+    fn transport_requests_mihomo_yaml_without_enabling_redirects_or_compression() {
+        let transport = UreqSubscriptionTransport::new(Arc::new(SystemSubscriptionResolver));
+        let config = transport.agent.config();
+
+        match config.user_agent() {
+            ureq::config::AutoHeaderValue::Provided(value) => {
+                assert_eq!(value.as_str(), SUBSCRIPTION_USER_AGENT);
+            }
+            other => panic!("unexpected subscription User-Agent configuration: {other:?}"),
+        }
+        match config.accept() {
+            ureq::config::AutoHeaderValue::Provided(value) => {
+                assert_eq!(value.as_str(), SUBSCRIPTION_ACCEPT);
+            }
+            other => panic!("unexpected subscription Accept configuration: {other:?}"),
+        }
+        assert_eq!(config.max_redirects(), 0);
+        assert!(matches!(
+            config.accept_encoding(),
+            ureq::config::AutoHeaderValue::None
+        ));
     }
 
     #[test]

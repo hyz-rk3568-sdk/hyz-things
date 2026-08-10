@@ -39,6 +39,7 @@ const SUBSCRIPTION_ENDPOINT: &str = "/api/v1/proxy/subscription";
 const SUBSCRIPTION_SOURCE_ENDPOINT: &str = "/api/v1/control/proxy/subscription/source";
 const SUBSCRIPTION_REFRESH_ENDPOINT: &str = "/api/v1/control/proxy/subscription/refresh";
 const POLL_DELAY_MS: u32 = 2_000;
+const NETWORK_APPLY_PAINT_DELAY_MS: u32 = 150;
 const MISSING: &str = "—";
 
 #[derive(Clone, PartialEq, serde::Deserialize)]
@@ -193,6 +194,26 @@ struct PasswordRequest {
 struct StaRequest {
     ssid: String,
     passphrase: String,
+}
+
+enum NetworkApplyIntent {
+    Sta(StaRequest),
+    Ap,
+}
+
+impl NetworkApplyIntent {
+    const fn confirmation(&self) -> (&'static str, &'static str) {
+        match self {
+            Self::Sta(_) => (
+                "应用上游 Wi-Fi？",
+                "STA 切换可能让 AP 跟随新信道并短暂断开管理连接。确认后弹窗会先关闭，再开始应用。",
+            ),
+            Self::Ap => (
+                "应用下游 AP？",
+                "当前 AP 会立即断开。确认后弹窗会先关闭，请随后连接新的 AP，并在倒计时结束前确认保留。",
+            ),
+        }
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -710,6 +731,29 @@ fn dispatch_settings_mutation<T: serde::Serialize + 'static>(
     });
 }
 
+fn dispatch_disruptive_settings_mutation<T: serde::Serialize + 'static>(
+    state: UseReducerHandle<AppState>,
+    endpoint: &'static str,
+    csrf: String,
+    body: T,
+    label: &'static str,
+    success: &'static str,
+) {
+    state.dispatch(Action::SettingsStarted);
+    spawn_local(async move {
+        // The confirmation overlay and expanded form must be painted away before the request can
+        // reconfigure the radio and disconnect this browser.
+        TimeoutFuture::new(NETWORK_APPLY_PAINT_DELAY_MS).await;
+        let result = post_json(endpoint, &csrf, &body, label).await;
+        if result.is_ok() {
+            state.dispatch(Action::SettingsFinished(fetch_settings_data().await));
+        }
+        state.dispatch(Action::SettingsMutationFinished(
+            result.map(|_| success.to_owned()),
+        ));
+    });
+}
+
 fn dispatch_scan(state: UseReducerHandle<AppState>, csrf: String) {
     state.dispatch(Action::SettingsStarted);
     spawn_local(async move {
@@ -753,6 +797,19 @@ struct SettingsProps {
     state: UseReducerHandle<AppState>,
 }
 
+struct ApSettingsRefs<'a> {
+    ssid: &'a NodeRef,
+    password: &'a NodeRef,
+    country: &'a NodeRef,
+}
+
+struct ApSettingsActions {
+    prepare: Callback<SubmitEvent>,
+    apply: Callback<MouseEvent>,
+    confirm: Callback<MouseEvent>,
+    cancel: Callback<MouseEvent>,
+}
+
 #[function_component(Settings)]
 fn settings(props: &SettingsProps) -> Html {
     let state = &props.state;
@@ -766,6 +823,10 @@ fn settings(props: &SettingsProps) -> Html {
     let ap_password = use_node_ref();
     let ap_country = use_node_ref();
     let subscription_url = use_node_ref();
+    let sta_expanded = use_state(|| false);
+    let ap_expanded = use_state(|| false);
+    let network_confirmation_open = use_state(|| false);
+    let network_apply_intent = use_mut_ref(|| None::<NetworkApplyIntent>);
 
     let csrf = state
         .panel
@@ -865,8 +926,8 @@ fn settings(props: &SettingsProps) -> Html {
         Callback::from(move |_| dispatch_scan(state.clone(), csrf.clone()))
     };
     let apply_sta = {
-        let state = state.clone();
-        let csrf = csrf.clone();
+        let intent = network_apply_intent.clone();
+        let confirmation_open = network_confirmation_open.clone();
         let ssid = sta_ssid.clone();
         let password = sta_password.clone();
         Callback::from(move |event: SubmitEvent| {
@@ -882,14 +943,8 @@ fn settings(props: &SettingsProps) -> Html {
                 passphrase: password.value(),
             };
             password.set_value("");
-            dispatch_settings_mutation(
-                state.clone(),
-                STA_APPLY_ENDPOINT,
-                csrf.clone(),
-                request,
-                "STA 应用",
-                "STA 配置已应用",
-            );
+            *intent.borrow_mut() = Some(NetworkApplyIntent::Sta(request));
+            confirmation_open.set(true);
         })
     };
     let prepare_ap = {
@@ -937,6 +992,110 @@ fn settings(props: &SettingsProps) -> Html {
             );
         })
     };
+    let confirm_ap = ap_action(AP_CONFIRM_ENDPOINT, "AP 确认", "AP 配置已确认");
+    let cancel_ap = ap_action(AP_CANCEL_ENDPOINT, "AP 取消", "AP 配置已取消并回滚");
+    let request_ap_apply = {
+        let intent = network_apply_intent.clone();
+        let confirmation_open = network_confirmation_open.clone();
+        Callback::from(move |_| {
+            *intent.borrow_mut() = Some(NetworkApplyIntent::Ap);
+            confirmation_open.set(true);
+        })
+    };
+    let confirm_network_apply = {
+        let state = state.clone();
+        let csrf = csrf.clone();
+        let intent = network_apply_intent.clone();
+        let confirmation_open = network_confirmation_open.clone();
+        let sta_expanded = sta_expanded.clone();
+        let ap_expanded = ap_expanded.clone();
+        Callback::from(move |_| {
+            confirmation_open.set(false);
+            let Some(intent) = intent.borrow_mut().take() else {
+                return;
+            };
+            match intent {
+                NetworkApplyIntent::Sta(request) => {
+                    sta_expanded.set(false);
+                    dispatch_disruptive_settings_mutation(
+                        state.clone(),
+                        STA_APPLY_ENDPOINT,
+                        csrf.clone(),
+                        request,
+                        "STA 应用",
+                        "STA 配置已应用",
+                    );
+                }
+                NetworkApplyIntent::Ap => {
+                    ap_expanded.set(false);
+                    dispatch_disruptive_settings_mutation(
+                        state.clone(),
+                        AP_APPLY_ENDPOINT,
+                        csrf.clone(),
+                        EmptyRequest {},
+                        "AP 应用",
+                        "AP 正在切换，请连接新 AP 后确认",
+                    );
+                }
+            }
+        })
+    };
+    let cancel_network_apply = {
+        let intent = network_apply_intent.clone();
+        let confirmation_open = network_confirmation_open.clone();
+        Callback::from(move |_| {
+            intent.borrow_mut().take();
+            confirmation_open.set(false);
+        })
+    };
+    let toggle_sta = {
+        let expanded = sta_expanded.clone();
+        Callback::from(move |_| expanded.set(!*expanded))
+    };
+    let toggle_ap = {
+        let expanded = ap_expanded.clone();
+        Callback::from(move |_| expanded.set(!*expanded))
+    };
+    let network_confirmation = if *network_confirmation_open {
+        network_apply_intent
+            .borrow()
+            .as_ref()
+            .map(NetworkApplyIntent::confirmation)
+    } else {
+        None
+    };
+    let sta_summary = state.network.as_ref().map_or_else(
+        || "读取中".to_owned(),
+        |network| format!("当前 · {}", network.sta_ssid),
+    );
+    let ap_summary = state
+        .pending_network
+        .as_ref()
+        .and_then(|pending| {
+            pending
+                .pending
+                .as_ref()
+                .map(|candidate| (pending.applied, candidate))
+        })
+        .map_or_else(
+            || {
+                state.network.as_ref().map_or_else(
+                    || "读取中".to_owned(),
+                    |network| format!("当前 · {}", network.ap_ssid),
+                )
+            },
+            |(applied, candidate)| {
+                format!(
+                    "{} · {}",
+                    if applied {
+                        "等待确认"
+                    } else {
+                        "候选待应用"
+                    },
+                    candidate.config.ap_ssid
+                )
+            },
+        );
     let save_subscription = {
         let state = state.clone();
         let csrf = csrf.clone();
@@ -1000,34 +1159,48 @@ fn settings(props: &SettingsProps) -> Html {
                 </div>
             } else {
                 <div class="settings-grid">
-                    <article class="settings-card network-current">
-                        <div class="control-title"><h3>{"当前网络"}</h3><span>{state.network.as_ref().map_or("读取中", |_| "已提交配置")}</span></div>
-                        if let Some(network) = &state.network {
-                            <dl><div class="metric"><dt>{"AP"}</dt><dd>{&network.ap_ssid}</dd></div><div class="metric"><dt>{"STA"}</dt><dd>{&network.sta_ssid}</dd></div><div class="metric"><dt>{"国家 / 地区"}</dt><dd>{network.country.as_str()}</dd></div></dl>
-                        }
-                    </article>
-                    <article class="settings-card">
-                        <div class="control-title"><h3>{"上游 Wi-Fi (STA)"}</h3><button type="button" onclick={scan} disabled={busy}>{if busy { "处理中…" } else { "扫描" }}</button></div>
-                        if !state.scan_entries.is_empty() {
-                            <div class="scan-list" aria-label="扫描到的 Wi-Fi">
-                                {for state.scan_entries.iter().map(|entry| {
-                                    let input = sta_ssid.clone();
-                                    let ssid = entry.ssid.clone();
-                                    let choose = Callback::from(move |_| { if let Some(input) = input.cast::<HtmlInputElement>() { input.set_value(&ssid); } });
-                                    html! { <button type="button" class="scan-entry" onclick={choose} disabled={busy}><strong>{&entry.ssid}</strong><span>{format!("{} MHz · {} dBm · {}", entry.frequency_mhz, entry.signal_dbm, if entry.secured { "加密" } else { "开放" })}</span></button> }
-                                })}
+                    <article class="settings-card settings-disclosure">
+                        <button class="settings-toggle" type="button" onclick={toggle_sta} aria-expanded={sta_expanded.to_string()} aria-controls="sta-settings-detail">
+                            <span><strong>{"上游 Wi-Fi (STA)"}</strong><small>{sta_summary}</small></span>
+                            <span class="disclosure-action">{if *sta_expanded { "收起" } else { "展开" }}</span>
+                        </button>
+                        if *sta_expanded {
+                            <div id="sta-settings-detail" class="settings-detail">
+                                <div class="detail-toolbar"><small>{"扫描附近网络，或手工填写新的上游 Wi-Fi。"}</small><button type="button" onclick={scan} disabled={busy}>{if busy { "处理中…" } else { "扫描" }}</button></div>
+                                if !state.scan_entries.is_empty() {
+                                    <div class="scan-list" aria-label="扫描到的 Wi-Fi">
+                                        {for state.scan_entries.iter().map(|entry| {
+                                            let input = sta_ssid.clone();
+                                            let ssid = entry.ssid.clone();
+                                            let choose = Callback::from(move |_| { if let Some(input) = input.cast::<HtmlInputElement>() { input.set_value(&ssid); } });
+                                            html! { <button type="button" class="scan-entry" onclick={choose} disabled={busy}><strong>{&entry.ssid}</strong><span>{format!("{} MHz · {} dBm · {}", entry.frequency_mhz, entry.signal_dbm, if entry.secured { "加密" } else { "开放" })}</span></button> }
+                                        })}
+                                    </div>
+                                }
+                                <form class="form-grid compact" onsubmit={apply_sta} autocomplete="off">
+                                    <label><span>{"SSID"}</span><input ref={sta_ssid} required=true maxlength="32" autocomplete="off" /></label>
+                                    <label><span>{"密码"}</span><input ref={sta_password} type="password" required=true minlength="8" maxlength="63" autocomplete="new-password" /></label>
+                                    <div class="risk-note warn">{"若 STA 与当前 AP 信道不同，设备可能重启 AP 跟随信道，管理连接会短暂断开。"}</div>
+                                    <div class="form-actions"><button class="primary" type="submit" disabled={busy}>{"检查并应用 STA"}</button></div>
+                                </form>
                             </div>
                         }
-                        <form class="form-grid compact" onsubmit={apply_sta} autocomplete="off">
-                            <label><span>{"SSID"}</span><input ref={sta_ssid} required=true maxlength="32" autocomplete="off" /></label>
-                            <label><span>{"密码"}</span><input ref={sta_password} type="password" required=true minlength="8" maxlength="63" autocomplete="new-password" /></label>
-                            <div class="risk-note warn">{"若 STA 与当前 AP 信道不同，设备可能重启 AP 跟随信道，管理连接会短暂断开。"}</div>
-                            <div class="form-actions"><button class="primary" type="submit" disabled={busy}>{"应用 STA"}</button></div>
-                        </form>
                     </article>
-                    <article class="settings-card ap-card">
-                        <div class="control-title"><h3>{"下游 Wi-Fi (AP)"}</h3><span>{"两阶段变更"}</span></div>
-                        {render_ap_settings(state, &ap_ssid, &ap_password, &ap_country, prepare_ap, ap_action, busy)}
+                    <article class="settings-card settings-disclosure ap-card">
+                        <button class="settings-toggle" type="button" onclick={toggle_ap} aria-expanded={ap_expanded.to_string()} aria-controls="ap-settings-detail">
+                            <span><strong>{"下游 Wi-Fi (AP)"}</strong><small>{ap_summary}</small></span>
+                            <span class="disclosure-action">{if *ap_expanded { "收起" } else { "展开" }}</span>
+                        </button>
+                        if *ap_expanded {
+                            <div id="ap-settings-detail" class="settings-detail">
+                                {render_ap_settings(
+                                    state,
+                                    ApSettingsRefs { ssid: &ap_ssid, password: &ap_password, country: &ap_country },
+                                    ApSettingsActions { prepare: prepare_ap, apply: request_ap_apply, confirm: confirm_ap, cancel: cancel_ap },
+                                    busy,
+                                )}
+                            </div>
+                        }
                     </article>
                     <article class="settings-card">
                         <div class="control-title"><h3>{"代理订阅"}</h3><span>{"来源只写"}</span></div>
@@ -1042,17 +1215,23 @@ fn settings(props: &SettingsProps) -> Html {
                     </article>
                 </div>
             }
+            if let Some((title, message)) = network_confirmation {
+                <div class="confirmation-backdrop" role="presentation">
+                    <div class="confirmation-dialog" role="dialog" aria-modal="true" aria-labelledby="network-confirmation-title" aria-describedby="network-confirmation-message">
+                        <div><p class="eyebrow">{"NETWORK CHANGE"}</p><h3 id="network-confirmation-title">{title}</h3></div>
+                        <p id="network-confirmation-message">{message}</p>
+                        <div class="confirmation-actions"><button type="button" autofocus=true onclick={cancel_network_apply}>{"返回检查"}</button><button class="danger" type="button" onclick={confirm_network_apply}>{"确认并开始应用"}</button></div>
+                    </div>
+                </div>
+            }
         </section>
     }
 }
 
 fn render_ap_settings(
     state: &AppState,
-    ap_ssid: &NodeRef,
-    ap_password: &NodeRef,
-    ap_country: &NodeRef,
-    prepare: Callback<SubmitEvent>,
-    ap_action: impl Fn(&'static str, &'static str, &'static str) -> Callback<MouseEvent>,
+    refs: ApSettingsRefs<'_>,
+    actions: ApSettingsActions,
     busy: bool,
 ) -> Html {
     let pending = state
@@ -1071,24 +1250,29 @@ fn render_ap_settings(
             .unwrap_or(0);
         html! {
             <div class="pending-ap">
-                <dl><div class="metric"><dt>{"候选 AP"}</dt><dd>{&pending.config.ap_ssid}</dd></div><div class="metric"><dt>{"国家 / 地区"}</dt><dd>{pending.config.country.as_str()}</dd></div></dl>
+                <div class="candidate-summary"><span>{"候选 AP"}</span><strong>{&pending.config.ap_ssid}</strong><small>{format!("国家 / 地区 · {}", pending.config.country.as_str())}</small></div>
                 if applied {
                     <div class="risk-banner warn" role="alert"><strong>{format!("等待确认 · 后端剩余约 {seconds} 秒")}</strong><span>{"请连接新的 AP 后确认。剩余时间以路由器为准，重新打开页面会刷新；到期会自动回滚。"}</span></div>
-                    <div class="form-actions"><button class="primary" type="button" onclick={ap_action(AP_CONFIRM_ENDPOINT, "AP 确认", "AP 配置已确认")} disabled={busy}>{"确认保留"}</button><button type="button" onclick={ap_action(AP_CANCEL_ENDPOINT, "AP 取消", "AP 配置已取消并回滚")} disabled={busy}>{"取消并回滚"}</button></div>
+                    <div class="form-actions"><button class="primary" type="button" onclick={actions.confirm.clone()} disabled={busy}>{"确认保留"}</button><button type="button" onclick={actions.cancel.clone()} disabled={busy}>{"取消并回滚"}</button></div>
                 } else {
                     <div class="risk-banner bad" role="alert"><strong>{"应用会立即断开当前 AP 连接"}</strong><span>{"请先记住新 SSID 和密码。应用后连接新 AP，再回到本页确认；未确认会自动回滚。"}</span></div>
-                    <div class="form-actions"><button class="danger" type="button" onclick={ap_action(AP_APPLY_ENDPOINT, "AP 应用", "AP 正在切换，请连接新 AP 后确认")} disabled={busy}>{"我已了解，立即应用"}</button><button type="button" onclick={ap_action(AP_CANCEL_ENDPOINT, "AP 取消", "AP 候选配置已取消")} disabled={busy}>{"取消"}</button></div>
+                    <div class="form-actions"><button class="danger" type="button" onclick={actions.apply.clone()} disabled={busy}>{"检查风险并应用"}</button><button type="button" onclick={actions.cancel.clone()} disabled={busy}>{"取消"}</button></div>
                 }
             </div>
         }
     } else {
         html! {
-            <form class="form-grid compact" onsubmit={prepare} autocomplete="off">
-                <label><span>{"SSID"}</span><input ref={ap_ssid.clone()} required=true maxlength="32" autocomplete="off" /></label>
-                <label><span>{"密码"}</span><input ref={ap_password.clone()} type="password" required=true minlength="8" maxlength="63" autocomplete="new-password" /></label>
-                <label><span>{"国家 / 地区"}</span><select ref={ap_country.clone()}><option value="CN">{"中国 (CN)"}</option><option value="US">{"美国 (US)"}</option><option value="JP">{"日本 (JP)"}</option><option value="SG">{"新加坡 (SG)"}</option><option value="TW">{"中国台湾 (TW)"}</option><option value="AU">{"澳大利亚 (AU)"}</option><option value="BR">{"巴西 (BR)"}</option><option value="CA">{"加拿大 (CA)"}</option><option value="DE">{"德国 (DE)"}</option><option value="FR">{"法国 (FR)"}</option><option value="GB">{"英国 (GB)"}</option><option value="IN">{"印度 (IN)"}</option><option value="KR">{"韩国 (KR)"}</option><option value="NZ">{"新西兰 (NZ)"}</option></select></label>
-                <div class="form-actions"><button class="primary" type="submit" disabled={busy}>{"准备 AP 变更"}</button></div>
-            </form>
+            <>
+                if let Some(network) = &state.network {
+                    <div class="detail-current"><span>{"当前配置"}</span><strong>{&network.ap_ssid}</strong><small>{format!("国家 / 地区 · {}", network.country.as_str())}</small></div>
+                }
+                <form class="form-grid compact" onsubmit={actions.prepare} autocomplete="off">
+                <label><span>{"SSID"}</span><input ref={refs.ssid.clone()} required=true maxlength="32" autocomplete="off" /></label>
+                <label><span>{"密码"}</span><input ref={refs.password.clone()} type="password" required=true minlength="8" maxlength="63" autocomplete="new-password" /></label>
+                <label><span>{"国家 / 地区"}</span><select ref={refs.country.clone()}><option value="CN">{"中国 (CN)"}</option><option value="US">{"美国 (US)"}</option><option value="JP">{"日本 (JP)"}</option><option value="SG">{"新加坡 (SG)"}</option><option value="TW">{"中国台湾 (TW)"}</option><option value="AU">{"澳大利亚 (AU)"}</option><option value="BR">{"巴西 (BR)"}</option><option value="CA">{"加拿大 (CA)"}</option><option value="DE">{"德国 (DE)"}</option><option value="FR">{"法国 (FR)"}</option><option value="GB">{"英国 (GB)"}</option><option value="IN">{"印度 (IN)"}</option><option value="KR">{"韩国 (KR)"}</option><option value="NZ">{"新西兰 (NZ)"}</option></select></label>
+                    <div class="form-actions"><button class="primary" type="submit" disabled={busy}>{"准备 AP 变更"}</button></div>
+                </form>
+            </>
         }
     }
 }

@@ -254,11 +254,6 @@ pub fn parse_mihomo_subscription(input: &[u8]) -> Result<ValidatedSubscription, 
         .ok_or(SubscriptionError::InvalidShape(
             "top level must be a mapping",
         ))?;
-    if top.len() != 1 {
-        return Err(SubscriptionError::InvalidShape(
-            "top level must contain only proxies",
-        ));
-    }
     let proxies = top
         .get(Value::String("proxies".to_owned()))
         .and_then(Value::as_sequence)
@@ -483,22 +478,25 @@ mod tests {
     }
 
     #[test]
-    fn parser_keeps_only_proxies() {
+    fn parser_extracts_only_proxies_from_full_config() {
         let parsed = parse_mihomo_subscription(
-            b"proxies:\n  - name: node-a\n    type: ss\n    server: 1.1.1.1\n",
+            b"mixed-port: 7890\nexternal-controller: 0.0.0.0:9090\nproxies:\n  - name: node-a\n    type: ss\n    server: 1.1.1.1\nproxy-groups:\n  - name: unsafe-group\n    type: select\n    proxies: [node-a]\nrules: [MATCH,node-a]\n",
         )
         .unwrap();
         assert_eq!(parsed.proxy_count(), 1);
         let output: Value = serde_yaml::from_slice(parsed.as_bytes()).unwrap();
-        assert_eq!(output.as_mapping().unwrap().len(), 1);
-        assert!(output.get("proxies").is_some());
+        let output = output.as_mapping().unwrap();
+        assert_eq!(output.len(), 1);
+        assert!(output.contains_key(Value::String("proxies".to_owned())));
+        assert!(!output.contains_key(Value::String("external-controller".to_owned())));
+        assert!(!output.contains_key(Value::String("proxy-groups".to_owned())));
+        assert!(!output.contains_key(Value::String("rules".to_owned())));
     }
 
     #[test]
     fn parser_rejects_shape_duplicates_and_yaml_features() {
         for input in [
             "proxies: []\n",
-            "proxies:\n  - name: a\nother: true\n",
             "proxies:\n  - name: a\n  - name: a\n",
             "proxies:\n  - name: &name a\n",
             "proxies:\n  - name: !custom a\n",

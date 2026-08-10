@@ -83,6 +83,23 @@ footer { padding: 24px 2px 4px; color: #61738a; font-size: 10px; text-align: cen
 .settings-card { min-width: 0; padding: 17px; border: 1px solid rgba(148,173,205,.12); border-radius: 14px; background: rgba(18,34,54,.72); }
 .settings-card h3 { margin: 0; font-size: 14px; }
 .settings-card small { color: var(--muted); font-size: 10px; line-height: 1.5; }
+.settings-disclosure { padding: 0; overflow: hidden; }
+.settings-toggle { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; min-height: 72px; padding: 16px 17px; border: 0; border-radius: 0; background: transparent; text-align: left; }
+.settings-toggle > span:first-child { display: grid; min-width: 0; gap: 6px; }
+.settings-toggle strong { font-size: 14px; }
+.settings-toggle small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.disclosure-action { flex: 0 0 auto; color: var(--cyan); font-size: 10px; }
+.settings-detail { padding: 0 17px 17px; border-top: 1px solid rgba(148,173,205,.1); }
+.detail-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 0; }
+.candidate-summary, .detail-current { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 5px 14px; align-items: baseline; padding: 13px 0; }
+.candidate-summary span, .candidate-summary small, .detail-current span, .detail-current small { color: var(--muted); font-size: 10px; }
+.candidate-summary strong, .detail-current strong { overflow: hidden; color: #dce8f6; font: 600 12px/1.45 ui-monospace,Consolas,monospace; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.candidate-summary small, .detail-current small { grid-column: 1/-1; text-align: right; }
+.confirmation-backdrop { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(2,8,16,.78); backdrop-filter: blur(6px); }
+.confirmation-dialog { display: grid; width: min(440px,100%); gap: 18px; padding: 22px; border: 1px solid rgba(255,117,130,.3); border-radius: 16px; background: #101f33; box-shadow: 0 24px 80px rgba(0,0,0,.5); }
+.confirmation-dialog h3 { margin: 0; font-size: 18px; }
+.confirmation-dialog p { margin: 0; color: #bdc8d6; font-size: 12px; line-height: 1.65; }
+.confirmation-actions { display: flex; justify-content: flex-end; gap: 9px; }
 .session-actions { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; }
 .auth-form { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; gap: 12px; align-items: end; max-width: 760px; }
 .form-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
@@ -102,9 +119,8 @@ button.danger { border-color: rgba(255,117,130,.38); background: rgba(255,117,13
 .scan-entry span { flex: 0 0 auto; color: var(--muted); font-size: 9px; font-weight: 500; }
 .subscription-summary { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; padding: 10px 12px; border: 1px solid rgba(148,173,205,.1); border-radius: 10px; color: var(--muted); font-size: 11px; }
 .pending-ap { display: grid; gap: 13px; }
-.network-current .metric { grid-template-columns: minmax(86px,.7fr) minmax(0,1.8fr); }
 noscript { display: block; padding: 40px; color: white; text-align: center; }
 @media (max-width: 900px) { .dashboard, .loading-grid, .control-grid, .settings-grid { grid-template-columns: 1fr; gap: 12px; } .proxy-group { grid-template-columns: 1fr; } }
-@media (max-width: 700px) { .shell { padding-left: 14px; padding-right: 14px; } .hero, .section-head { align-items: flex-start; flex-direction: column; margin-bottom: 20px; } .overall { width: 100%; } .notice { align-items: flex-start; flex-direction: column; gap: 5px; } .settings, .controls { padding: 15px; } .auth-form, .form-grid, .form-grid.compact { grid-template-columns: 1fr; } .auth-form button { width: 100%; } .session-actions { width: 100%; justify-content: space-between; } .scan-entry { align-items: flex-start; flex-direction: column; gap: 4px; } }
-@media (max-width: 420px) { .form-actions button { flex: 1 1 100%; } .settings-card { padding: 14px; } }
+@media (max-width: 700px) { .shell { padding-left: 14px; padding-right: 14px; } .hero, .section-head { align-items: flex-start; flex-direction: column; margin-bottom: 20px; } .overall { width: 100%; } .notice { align-items: flex-start; flex-direction: column; gap: 5px; } .settings, .controls { padding: 15px; } .auth-form, .form-grid, .form-grid.compact { grid-template-columns: 1fr; } .auth-form button { width: 100%; } .session-actions { width: 100%; justify-content: space-between; } .scan-entry { align-items: flex-start; flex-direction: column; gap: 4px; } .detail-toolbar { align-items: flex-start; flex-direction: column; } .confirmation-actions { flex-direction: column-reverse; } .confirmation-actions button { width: 100%; } }
+@media (max-width: 420px) { .form-actions button { flex: 1 1 100%; } .settings-card:not(.settings-disclosure) { padding: 14px; } }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }

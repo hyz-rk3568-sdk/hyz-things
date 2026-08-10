@@ -35,7 +35,7 @@
 - `p2p0` 下游显式代理基础联网和规则命中通过，但弱信号下只有约 `1.055 Mbps`，视频性能未通过；
 - 仅 `br-lan` 入站的 TUN 模式、持久 `explicit`/`tun`/`disabled` 控制、策略路由、排除规则和核心退出清理已通过 recovery-free OTA、重启持久性、手机 TCP/UDP、视频、router restart 与核心 `SIGKILL` 普通 NAT 回退验证；
 - 统一 Web UI 的状态、LCD/代理模式、节点选择和受控延迟刷新已完成板端功能验证；S81 已改为总 deadline 内封顶退避，并通过最终 recovery-free OTA 的冷启动和 restart 验证；
-- 管理员认证、强制首次改密、typed AP/STA 设置、两阶段 AP 回滚和 write-only Mihomo HTTPS 订阅更新已经进入统一 Rust ELF；错误 STA 自动恢复、AP 未确认超时回滚及无秘密摘要已通过板测，成功切换真实 STA、实际改密和凭据型订阅刷新仍待操作者输入本地凭据；
+- 管理员认证、强制首次改密、typed AP/STA 设置、两阶段 AP 回滚和 write-only Mihomo HTTPS 订阅更新已经进入统一 Rust ELF；错误 STA 自动恢复、AP 未确认超时回滚、无秘密摘要以及凭据型订阅刷新已通过板测，成功切换另一组真实 STA 和管理员实际改密仍待操作者输入本地凭据；
 - DNS 接管、8 小时路由+代理稳定性、节点全部失效/live-hang 自动回退仍未完成，因此代理 Epic 仍不得整体标记完成。
 
 变化的是上游接入方式，不是 LAN 拓扑。完整基础产品必须支持：
