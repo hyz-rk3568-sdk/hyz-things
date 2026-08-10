@@ -38,7 +38,6 @@ const AP_CANCEL_ENDPOINT: &str = "/api/v1/control/network/ap/cancel";
 const SUBSCRIPTION_ENDPOINT: &str = "/api/v1/proxy/subscription";
 const SUBSCRIPTION_SOURCE_ENDPOINT: &str = "/api/v1/control/proxy/subscription/source";
 const SUBSCRIPTION_REFRESH_ENDPOINT: &str = "/api/v1/control/proxy/subscription/refresh";
-const AP_CONFIRM_TIMEOUT_MS: u64 = 120_000;
 const POLL_DELAY_MS: u32 = 2_000;
 const MISSING: &str = "—";
 
@@ -115,7 +114,8 @@ struct NetworkConfigDto {
 #[serde(deny_unknown_fields)]
 struct PendingConfigDto {
     version: u8,
-    staged_at_unix_ms: u64,
+    #[serde(rename = "staged_at_unix_ms")]
+    _staged_at_unix_ms: u64,
     config: NetworkConfigDto,
 }
 
@@ -124,6 +124,7 @@ struct PendingConfigDto {
 struct NetworkPendingDto {
     pending: Option<PendingConfigDto>,
     applied: bool,
+    remaining_seconds: Option<u64>,
 }
 
 #[derive(Clone, PartialEq, serde::Deserialize)]
@@ -150,6 +151,24 @@ enum SubscriptionStateDto {
 struct SubscriptionDto {
     configured: bool,
     state: SubscriptionStateDto,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NetworkConfigResponseDto {
+    config: NetworkConfigDto,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NetworkScanResponseDto {
+    entries: Vec<WifiScanDto>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SubscriptionResponseDto {
+    subscription: SubscriptionDto,
 }
 
 #[derive(serde::Serialize)]
@@ -207,7 +226,6 @@ struct AppState {
     pending_network: Option<NetworkPendingDto>,
     scan_entries: Vec<WifiScanDto>,
     subscription: Option<SubscriptionDto>,
-    ap_applied_local: bool,
 }
 
 enum Action {
@@ -224,7 +242,6 @@ enum Action {
     SettingsMutationFinished(Result<String, String>),
     ScanFinished(Result<Vec<WifiScanDto>, String>),
     SettingsNotice(String),
-    ApApplyDispatched,
 }
 
 impl Reducible for AppState {
@@ -328,9 +345,6 @@ impl Reducible for AppState {
                 match result {
                     Ok((network, pending, subscription)) => {
                         next.network = Some(network);
-                        if pending.pending.is_none() {
-                            next.ap_applied_local = false;
-                        }
                         next.pending_network = Some(pending);
                         next.subscription = Some(subscription);
                     }
@@ -363,11 +377,6 @@ impl Reducible for AppState {
             }
             Action::SettingsNotice(message) => Self {
                 settings_notice: Some(message),
-                ..(*self).clone()
-            }
-            .into(),
-            Action::ApApplyDispatched => Self {
-                ap_applied_local: true,
                 ..(*self).clone()
             }
             .into(),
@@ -501,9 +510,7 @@ fn app() -> Html {
                 </section>
             }
             <Settings state={state.clone()} />
-            if state.session.as_ref().is_some_and(|session| session.authenticated && !session.must_change) {
-                {render_control_panel(&state, brightness.clone())}
-            }
+            {render_control_panel(&state, brightness.clone())}
             <footer>{"数据约每 2 秒自动刷新 · 写操作仅接受同源令牌保护的类型化请求"}</footer>
         </main>
     }
@@ -643,10 +650,14 @@ async fn post_json_response<T: serde::Serialize, R: serde::de::DeserializeOwned>
 
 async fn fetch_settings_data(
 ) -> Result<(NetworkConfigDto, NetworkPendingDto, SubscriptionDto), String> {
-    let network = fetch_json::<NetworkConfigDto>(NETWORK_CONFIG_ENDPOINT, "网络配置").await?;
+    let network = fetch_json::<NetworkConfigResponseDto>(NETWORK_CONFIG_ENDPOINT, "网络配置")
+        .await?
+        .config;
     let pending =
         fetch_json::<NetworkPendingDto>(NETWORK_PENDING_ENDPOINT, "待确认网络配置").await?;
-    let subscription = fetch_json::<SubscriptionDto>(SUBSCRIPTION_ENDPOINT, "订阅状态").await?;
+    let subscription = fetch_json::<SubscriptionResponseDto>(SUBSCRIPTION_ENDPOINT, "订阅状态")
+        .await?
+        .subscription;
     Ok((network, pending, subscription))
 }
 
@@ -702,13 +713,14 @@ fn dispatch_settings_mutation<T: serde::Serialize + 'static>(
 fn dispatch_scan(state: UseReducerHandle<AppState>, csrf: String) {
     state.dispatch(Action::SettingsStarted);
     spawn_local(async move {
-        let result = post_json_response::<_, Vec<WifiScanDto>>(
+        let result = post_json_response::<_, NetworkScanResponseDto>(
             STA_SCAN_ENDPOINT,
             &csrf,
             &EmptyRequest {},
             "STA 扫描",
         )
-        .await;
+        .await
+        .map(|response| response.entries);
         state.dispatch(Action::ScanFinished(result));
     });
 }
@@ -721,14 +733,7 @@ fn dispatch_subscription_source(state: UseReducerHandle<AppState>, csrf: String,
                 SUBSCRIPTION_SOURCE_ENDPOINT,
                 &csrf,
                 &SubscriptionSourceRequest { url },
-                "订阅来源保存",
-            )
-            .await?;
-            post_json(
-                SUBSCRIPTION_REFRESH_ENDPOINT,
-                &csrf,
-                &EmptyRequest {},
-                "订阅更新",
+                "订阅来源保存和更新",
             )
             .await?;
             Ok::<_, String>(())
@@ -761,22 +766,6 @@ fn settings(props: &SettingsProps) -> Html {
     let ap_password = use_node_ref();
     let ap_country = use_node_ref();
     let subscription_url = use_node_ref();
-    let now_ms = use_state(|| js_sys::Date::now() as u64);
-
-    {
-        let now_ms = now_ms.clone();
-        use_effect_with((), move |_| {
-            let cancelled = Rc::new(Cell::new(false));
-            let task_cancelled = cancelled.clone();
-            spawn_local(async move {
-                while !task_cancelled.get() {
-                    TimeoutFuture::new(1_000).await;
-                    now_ms.set(js_sys::Date::now() as u64);
-                }
-            });
-            move || cancelled.set(true)
-        });
-    }
 
     let csrf = state
         .panel
@@ -938,9 +927,6 @@ fn settings(props: &SettingsProps) -> Html {
         let state = state.clone();
         let csrf = csrf.clone();
         Callback::from(move |_| {
-            if endpoint == AP_APPLY_ENDPOINT {
-                state.dispatch(Action::ApApplyDispatched);
-            }
             dispatch_settings_mutation(
                 state.clone(),
                 endpoint,
@@ -1000,6 +986,7 @@ fn settings(props: &SettingsProps) -> Html {
                     <label><span>{"用户名"}</span><input value="admin" readonly=true autocomplete="username" /></label>
                     <label><span>{"密码"}</span><input ref={login_password} type="password" required=true autocomplete="current-password" /></label>
                     <button class="primary" type="submit" disabled={busy || csrf.is_empty()}>{if busy { "登录中…" } else { "登录" }}</button>
+                    <small>{"新设备首次登录密码为 admin；登录后必须立即修改。"}</small>
                 </form>
             } else if must_change {
                 <div class="forced-password">
@@ -1040,7 +1027,7 @@ fn settings(props: &SettingsProps) -> Html {
                     </article>
                     <article class="settings-card ap-card">
                         <div class="control-title"><h3>{"下游 Wi-Fi (AP)"}</h3><span>{"两阶段变更"}</span></div>
-                        {render_ap_settings(state, &ap_ssid, &ap_password, &ap_country, prepare_ap, ap_action, *now_ms, busy)}
+                        {render_ap_settings(state, &ap_ssid, &ap_password, &ap_country, prepare_ap, ap_action, busy)}
                     </article>
                     <article class="settings-card">
                         <div class="control-title"><h3>{"代理订阅"}</h3><span>{"来源只写"}</span></div>
@@ -1066,28 +1053,27 @@ fn render_ap_settings(
     ap_country: &NodeRef,
     prepare: Callback<SubmitEvent>,
     ap_action: impl Fn(&'static str, &'static str, &'static str) -> Callback<MouseEvent>,
-    now_ms: u64,
     busy: bool,
 ) -> Html {
     let pending = state
         .pending_network
         .as_ref()
         .and_then(|value| value.pending.as_ref());
-    let applied = state.ap_applied_local
-        || state
+    let applied = state
+        .pending_network
+        .as_ref()
+        .is_some_and(|value| value.applied);
+    if let Some(pending) = pending {
+        let seconds = state
             .pending_network
             .as_ref()
-            .is_some_and(|value| value.applied);
-    if let Some(pending) = pending {
-        let deadline = pending
-            .staged_at_unix_ms
-            .saturating_add(AP_CONFIRM_TIMEOUT_MS);
-        let seconds = deadline.saturating_sub(now_ms).div_ceil(1_000);
+            .and_then(|value| value.remaining_seconds)
+            .unwrap_or(0);
         html! {
             <div class="pending-ap">
                 <dl><div class="metric"><dt>{"候选 AP"}</dt><dd>{&pending.config.ap_ssid}</dd></div><div class="metric"><dt>{"国家 / 地区"}</dt><dd>{pending.config.country.as_str()}</dd></div></dl>
                 if applied {
-                    <div class="risk-banner warn" role="alert"><strong>{format!("等待确认 · {seconds} 秒")}</strong><span>{"请连接新的 AP 后确认。倒计时结束会自动回滚；如无法使用新配置，请取消。"}</span></div>
+                    <div class="risk-banner warn" role="alert"><strong>{format!("等待确认 · 后端剩余约 {seconds} 秒")}</strong><span>{"请连接新的 AP 后确认。剩余时间以路由器为准，重新打开页面会刷新；到期会自动回滚。"}</span></div>
                     <div class="form-actions"><button class="primary" type="button" onclick={ap_action(AP_CONFIRM_ENDPOINT, "AP 确认", "AP 配置已确认")} disabled={busy}>{"确认保留"}</button><button type="button" onclick={ap_action(AP_CANCEL_ENDPOINT, "AP 取消", "AP 配置已取消并回滚")} disabled={busy}>{"取消并回滚"}</button></div>
                 } else {
                     <div class="risk-banner bad" role="alert"><strong>{"应用会立即断开当前 AP 连接"}</strong><span>{"请先记住新 SSID 和密码。应用后连接新 AP，再回到本页确认；未确认会自动回滚。"}</span></div>

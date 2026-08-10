@@ -526,6 +526,8 @@ struct NetworkConfigResponse {
 #[derive(Serialize)]
 struct NetworkPendingResponse {
     pending: Option<PendingNetworkConfigSummary>,
+    applied: bool,
+    remaining_seconds: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -731,10 +733,22 @@ async fn invoke_sensitive_control(
     operation: ControlOperation,
     expected: SensitiveResult,
 ) -> Response {
-    if let Err(response) = authorize_sensitive_control(state, headers).await {
+    if let Err(response) = authorize_sensitive_read(state, headers).await {
         return response;
     }
     invoke_sensitive_control_authorized(state, operation, expected).await
+}
+
+async fn authorize_sensitive_read(state: &AppState, headers: &HeaderMap) -> Result<(), Response> {
+    let fetch_site = headers
+        .get("sec-fetch-site")
+        .and_then(|value| value.to_str().ok());
+    if fetch_site.is_some_and(|value| value != "same-origin") {
+        return Err(forbidden_json());
+    }
+    require_admin(state, headers, AdminRequirement::Normal)
+        .await
+        .map(|_| ())
 }
 
 async fn authorize_sensitive_control(
@@ -767,13 +781,24 @@ async fn invoke_sensitive_control_authorized(
         (SensitiveResult::NetworkPending, Ok(ControlResult::WifiPending { pending })) => {
             Json(NetworkPendingResponse {
                 pending: Some(pending),
+                applied: false,
+                remaining_seconds: None,
             })
             .into_response()
         }
         (
             SensitiveResult::NetworkPendingStatus,
-            Ok(ControlResult::WifiPendingStatus { pending }),
-        ) => Json(NetworkPendingResponse { pending }).into_response(),
+            Ok(ControlResult::WifiPendingStatus {
+                pending,
+                applied,
+                remaining_seconds,
+            }),
+        ) => Json(NetworkPendingResponse {
+            pending,
+            applied,
+            remaining_seconds,
+        })
+        .into_response(),
         (SensitiveResult::NetworkScan, Ok(ControlResult::WifiScan { entries })) => {
             Json(NetworkScanResponse { entries }).into_response()
         }

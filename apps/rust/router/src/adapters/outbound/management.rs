@@ -6,7 +6,7 @@ use super::{
 use crate::{
     application::{
         dhcp::{DhcpEvent, DhcpPlatformPort, DHCP_HOOK_ROLE_ENV},
-        ports::PlatformError,
+        ports::{ClockPort, PlatformError},
         wifi::{WifiPlatformPort, WifiScanEntry},
     },
     domain::{
@@ -764,7 +764,13 @@ impl WifiPlatformPort for super::process::LinuxRouterPlatform {
         let store = NetworkConfigStore::default();
         let mut config = committed_network_config()?;
         config.sta = candidate;
-        store.persist(&config).map_err(network_config_error)?;
+        if let Err(error) = store.persist(&config).map_err(network_config_error) {
+            // rename may already have committed even if the following parent-directory fsync
+            // failed. Read back before deciding whether the runtime must be rolled back.
+            if store.read().map_err(network_config_error)?.as_ref() != Some(&config) {
+                return Err(error);
+            }
+        }
         Ok(config.summary())
     }
 
@@ -799,7 +805,7 @@ impl WifiPlatformPort for super::process::LinuxRouterPlatform {
 
     fn apply_ap_candidate(
         &self,
-        applied_at_unix_ms: u64,
+        _applied_at_unix_ms: u64,
     ) -> Result<PendingNetworkConfigSummary, PlatformError> {
         let store = NetworkConfigStore::default();
         if storage::read_small_optional(AP_PENDING_APPLIED_RECORD, 64)?.is_some() {
@@ -813,15 +819,25 @@ impl WifiPlatformPort for super::process::LinuxRouterPlatform {
             .ok_or_else(|| {
                 PlatformError::InvalidState("no AP transaction is pending".to_owned())
             })?;
-        let pending = PendingNetworkConfigV1::new(applied_at_unix_ms, prepared.config);
-        store
-            .persist_pending(&pending)
-            .map_err(network_config_error)?;
-        if let Err(error) = self.restart_management_services(&pending.config) {
+        if let Err(error) = self.restart_management_services(&prepared.config) {
             let rollback = self.restart_management_services(&committed_network_config()?);
             if let Err(rollback) = rollback {
                 return Err(PlatformError::InvalidState(format!(
                     "AP apply failed: {error}; committed rollback also failed: {rollback}"
+                )));
+            }
+            return Err(error);
+        }
+        // The confirmation window starts only after hostapd and the management LAN are ready.
+        let pending = PendingNetworkConfigV1::new(self.unix_time_millis(), prepared.config);
+        if let Err(error) = store
+            .persist_pending(&pending)
+            .map_err(network_config_error)
+        {
+            let rollback = self.restart_management_services(&committed_network_config()?);
+            if let Err(rollback) = rollback {
+                return Err(PlatformError::InvalidState(format!(
+                    "recording AP readiness failed: {error}; committed rollback also failed: {rollback}"
                 )));
             }
             return Err(error);
@@ -854,9 +870,13 @@ impl WifiPlatformPort for super::process::LinuxRouterPlatform {
                 PlatformError::InvalidState("no AP transaction is pending".to_owned())
             })?;
         // Canonical persistence is the commit point and is never reached before apply readiness.
-        store
-            .persist(&pending.config)
-            .map_err(network_config_error)?;
+        if let Err(error) = store.persist(&pending.config).map_err(network_config_error) {
+            // A failed parent-directory fsync occurs after rename. Treat an exact read-back as
+            // committed so timeout/cancel cannot incorrectly restore the already-replaced state.
+            if store.read().map_err(network_config_error)?.as_ref() != Some(&pending.config) {
+                return Err(error);
+            }
+        }
         store.remove_pending().map_err(network_config_error)?;
         storage::remove_file_durable(AP_PENDING_APPLIED_RECORD)?;
         Ok(pending.config.summary())

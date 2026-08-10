@@ -21,7 +21,7 @@ src/main.rs                 唯一 production composition root
 
 `router-web` 只在宿主机构建阶段产生 WASM/静态资源并嵌入 `hyz-router`，不会作为第二个板端程序安装。旧的 `apps/router-panel/{shared,server,adapter-linux,frontend}` 多 crate 方案已被否决并从源码删除；状态契约、HTTP 行为和 UI 已迁入本包。独立 MetaCubeXD 静态包也已删除，产品只保留这一套 Web UI。
 
-**源码、rootfs 与 recovery-free OTA 已完成统一 cutover，并已在 RK3568 完成功能验证。** 最新安装的 Web 稳定性 OTA 在冷启动时因旧 S81 固定五次 launch 上限提前停止，显式启动后路由、TUN 和 Web 均恢复正常；源码已改为封顶指数退避，但该 init-only 修正尚未重新构建或安装。因此当前不能把最新源码标记为自动冷启动验收通过。`make apps` 只构建统一 `hyz-router`，`make overlay` 只安装 `/usr/bin/hyz-router` 和产品元数据；Buildroot board overlay 只保留最小 `S81hyz-router` 及 Mihomo 无凭据示例。旧 shell 路由/Mihomo wrapper、S82、独立 DHCP hook、独立 OTA 和 hello demos 已从最终 rootfs 删除。
+**源码、rootfs 与 recovery-free OTA 已完成统一 cutover，并已在 RK3568 完成功能验证。** 最新安装的 Web 稳定性 OTA 在冷启动时因旧 S81 固定五次 launch 上限提前停止，显式启动后路由、TUN 和 Web 均恢复正常；源码已改为封顶指数退避，但该 init-only 修正尚未重新构建或安装。当前源码又新增了管理员认证、AP/STA 设置和 Mihomo 手动订阅更新；这批设置功能同样尚未编译、OTA 或板测。因此当前不能把最新源码标记为自动冷启动或设置功能验收通过。`make apps` 只构建统一 `hyz-router`，`make overlay` 只安装 `/usr/bin/hyz-router` 和产品元数据；Buildroot board overlay 只保留最小 `S81hyz-router` 及 Mihomo 无凭据示例。旧 shell 路由/Mihomo wrapper、S82、独立 DHCP hook、独立 OTA 和 hello demos 已从最终 rootfs 删除。
 
 ## Composition root
 
@@ -45,7 +45,7 @@ hyz-router ota verify|download|install|install-recovery|apply ...
 
 `daemon` 是正常控制路径中唯一构造完整生产 adapter 的角色。普通 CLI 和同一 ELF 的 udhcpc hook 都是 `/run/hyz-router/control.sock` 客户端；socket 位于 root-only `0700` 目录，文件模式 `0600`，并用 Linux peer credentials 再次要求 UID 0。Mihomo watcher 是唯一的最小特权例外：它由同一 composition root 装配，只能按已记录的 core PID/start/exe/argv 身份执行 fail-open，不提供公开 CLI、HTTP 或 control operation。
 
-OTA、router enable/disable 和任意配置内容仍不通过 LAN API 暴露。Web 只新增五个固定、类型化的本地操作：LCD 背光、产品代理模式、已验证组内节点选择、固定目标当前路径延迟测试和 provider 全节点延迟刷新；它们在同一 daemon 内复用 application/control handler，不接受命令、路径、URL、timeout、provider 名或原始 Mihomo JSON。
+OTA 和 router enable/disable 仍不通过 LAN API 暴露。匿名 LAN 页面保留 LCD、产品代理模式、已验证组内节点选择和受限测速操作；AP/STA 凭据与订阅来源则只通过固定 typed API 暴露给已完成强制改密的管理员 session。浏览器不能提交命令、路径、原始 wpa_supplicant/hostapd/Mihomo 配置、provider 名、测试 URL 或 timeout。凭据和订阅 URL 不回显，也不允许通过 CLI 参数输入，避免进入进程列表。
 
 ## 六边形依赖规则
 
@@ -60,19 +60,24 @@ OTA、router enable/disable 和任意配置内容仍不通过 LAN API 暴露。W
 
 ## Web 状态与受限本地控制
 
-HTTP 固定绑定 `192.168.8.1:8080`，不会回退到 `0.0.0.0`：
+HTTP 固定绑定 `192.168.8.1:8080`，不会回退到 `0.0.0.0`。匿名状态与原受限控制接口保持不变，设置面新增以下精确接口：
 
-- `GET /api/v1/health`
-- `GET /api/v1/status`
-- `GET /api/v1/panel`
-- `POST /api/v1/control/display`
-- `POST /api/v1/control/proxy/{mode,selection,delay,delays}`
+- `POST /api/v1/auth/{login,logout,password}` 与 `GET /api/v1/auth/session`；
+- `GET /api/v1/network/{config,pending}`；
+- `POST /api/v1/control/network/sta/{scan,apply}`；
+- `POST /api/v1/control/network/ap/{prepare,apply,confirm,cancel}`；
+- `GET /api/v1/proxy/subscription`；
+- `POST /api/v1/control/proxy/subscription/{source,refresh}`。
 
-没有 CORS。未知 `/api/*` 返回 JSON 404，不进入 SPA fallback；除上述五个精确控制路径外，API 非 GET 方法一律拒绝。每个 POST 都要求小尺寸 typed JSON、精确管理 origin、自定义 CSRF header 和 daemon 启动时生成的随机 token；因此普通跨站表单、foreign origin 和未知字段不能触发操作。token 用于同源 CSRF 防护，不是管理员认证：管理 AP/LAN 上能直接读取面板的客户端属于当前信任边界，也能操作背光和代理。若管理 LAN 将来包含不可信客户端，必须先增加独立认证和 HTTPS，不能把 Mihomo controller secret 当作浏览器凭据。
+没有 CORS。未知 `/api/*` 返回 JSON 404，不进入 SPA fallback；API method/path 使用精确 allowlist。所有 mutation 都要求小尺寸 typed JSON、精确管理 origin、自定义 CSRF header；AP/STA/订阅接口还要求管理员 session。固定用户名为 `admin`，公开 bootstrap 密码仅用于首次进入，持久层只保存 Argon2id PHC hash，并在完成强制改密前拒绝设置操作。session 只驻留内存，使用 `HttpOnly; SameSite=Strict; Path=/` cookie、15 分钟 idle/8 小时 absolute TTL 和有界登录限速；密码变化会撤销其他 session。
+
+用户明确选择继续使用 HTTP，因此 cookie 不能设置 `Secure`，管理 LAN 上能嗅探流量的客户端仍可能获得密码、Wi-Fi 凭据、订阅 URL 或 session。这是已接受但未消除的机密性风险；WPA2 只能降低无线接入风险，不能替代 HTTPS。共享默认密码也存在首次抢占风险，首次上线应立即改密。CSRF token 不是认证：匿名 LCD/代理操作仍沿用原 LAN 信任边界，只有凭据和持久设置额外受管理员认证保护。
 
 响应继续带 CSP、frame deny、nosniff、referrer、permissions、COOP/CORP 等安全头。Trunk 生成的 inline module bootstrap 会在 deterministic bundle 阶段被严格提取成同源 `/router-bootstrap.js`，因此不需要 nonce 或 `'unsafe-inline'`。Yew 启动需要浏览器编译同源 WASM，所以 `script-src` 精确允许 `'self' 'wasm-unsafe-eval'`；后者只开放 WebAssembly 编译，不开放普通 JavaScript `eval`。
 
 Yew 页面显示系统、WAN、LAN/AP、转发/NAT、Mihomo/TUN、`wlan0` WAN 累计流量、LCD 背光、实际使用的代理组、当前节点、逐项延迟/超时和从节点名称保守推断的国家/地区。Mihomo 内置但在当前 rule 模式不承载流量的 `GLOBAL` 组被过滤；没有数据的状态卡、控制卡和代理区域直接隐藏，不显示“不可用”占位。页面首次进入或浏览器完整刷新时只触发一次受限 provider 全量测速，约两秒的状态轮询不会测速；手动按钮可再次刷新，五秒内重复请求返回缓存成功结果而不是 409。provider history 只合并经过名称、数量和字段白名单校验的 `delay`/`alive`，浏览器不能指定 provider、测试 URL 或 timeout。代理节点、组名和地区属于 LAN-visible operational metadata；API 不返回 server/port、订阅 URL、密码、UUID、controller secret、原始 history 或 Mihomo JSON。写操作期间控件禁用，状态失败时保留最近成功快照。
+
+设置区在管理员登录后提供 STA 扫描/手工切换、AP SSID/密码/国家码和 write-only Mihomo 订阅来源。typed Wi-Fi 配置使用 PBKDF2 派生的 64-hex PSK和固定 renderer，不拼接 raw 配置。STA 只有在关联、DHCP metric-600 route 与同信道 AP readiness 都确认后才提交，失败恢复 committed generation；当前 renderer 只支持 2.4 GHz 并发，5 GHz 候选会 fail-closed。AP 采用 prepare → apply → 重新连接 → confirm，两分钟未确认则恢复旧 AP，daemon 重启发现 pending 也恢复 committed 配置。订阅只接受 HTTPS 公网目标，关闭 redirect/环境代理，连接前校验并 pin 全部 DNS 结果；响应受 4 MiB 上限约束，只接受顶层唯一 `proxies` 的严格 YAML，Mihomo 候选验证和 live readiness 成功后才切 current generation。GET 只显示是否配置与通用状态，不返回来源、host、代次或节点数。
 
 LCD 的 DTS `default-brightness-level = <0>` 让 U-Boot/Linux 冷启动默认保持零 PWM，但 panel/DSI 仍注册，因此 Web 可以点亮。黑屏操作把 brightness 设为 0 并 powerdown；面板连接的是共享 always-on `vcc5v0_sys`，软件不能让 LCD 连接器 5V 物理归零。
 

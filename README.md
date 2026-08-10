@@ -38,20 +38,21 @@ used by a verified firmware build, run
 
 The control plane is consolidated as one hexagonal Rust package at
 `apps/rust/router`, with one native `hyz-router` composition root for the
-root-only daemon/control socket, LAN-only Axum/Yew status and narrowly typed display/proxy
-controls, OTA, DHCP, router,
-and Mihomo/TUN lifecycle. The same ELF also provides the internal udhcpc and
-detached fail-open watcher roles. `make apps` now builds this single product
-application, and `make overlay` stages it only as `/usr/bin/hyz-router`; the
-Buildroot board overlay supplies the minimal `S81hyz-router` init script. The
-legacy shell router/Mihomo wrappers, separate DHCP hook, standalone OTA app,
-and Rust/Flutter hello demos have been removed from active source staging.
-The unified runtime and embedded Web UI have been built, installed through
-recovery-free OTA, and functionally validated on RK3568. The latest installed
-Web-stability image required an explicit service start because its init script
-exhausted a fixed five-launch limit before Wi-Fi became ready. Source now uses
-capped exponential relaunch backoff, but that init-only correction has not been
-built or installed; automatic cold-boot acceptance therefore remains open.
+root-only daemon/control socket, LAN-only Axum/Yew status, typed display/proxy
+controls, administrator-protected AP/STA and subscription settings, OTA, DHCP,
+router, and Mihomo/TUN lifecycle. Wi-Fi changes use committed/pending generations
+and rollback; subscription refresh accepts only constrained HTTPS/public targets,
+sanitizes strict provider YAML, validates a Mihomo candidate, and cuts over last.
+The same ELF also provides the internal udhcpc and detached fail-open watcher
+roles. `make apps` builds this single product application, and `make overlay`
+stages it only as `/usr/bin/hyz-router`; the Buildroot board overlay supplies the
+minimal `S81hyz-router` init script. The legacy shell router/Mihomo wrappers,
+separate DHCP hook, standalone OTA app, and Rust/Flutter hello demos have been
+removed from active source staging. The previously unified runtime and embedded
+Web UI were installed through recovery-free OTA and functionally validated on
+RK3568. The new administrator/settings implementation and the capped init retry
+backoff are source-only: neither has been compiled, installed, or hardware-tested.
+Automatic cold-boot and settings acceptance therefore remain open.
 
 The product profile reports itself to ADB as `product:hyz_things`,
 `model:HYZ_RK3568`, and `device:rk3568`. It keeps one Simplified Chinese

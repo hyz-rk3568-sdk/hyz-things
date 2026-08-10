@@ -36,7 +36,7 @@ pub const CONTROL_SOCKET: &str = "/run/hyz-router/control.sock";
 pub const CONTROL_RUNTIME_DIR: &str = "/run/hyz-router";
 pub const DAEMON_LOCK_DIR: &str = "/run/hyz-router/daemon.lock";
 const DAEMON_OWNER_FILE: &str = "/run/hyz-router/daemon.lock/owner";
-pub const PROTOCOL_VERSION: u16 = 3;
+pub const PROTOCOL_VERSION: u16 = 5;
 pub const MAX_FRAME_BYTES: usize = 64 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(30 * 60);
@@ -290,6 +290,8 @@ pub enum ControlResult {
     },
     WifiPendingStatus {
         pending: Option<PendingNetworkConfigSummary>,
+        applied: bool,
+        remaining_seconds: Option<u64>,
     },
     WifiScan {
         entries: Vec<WifiScanEntry>,

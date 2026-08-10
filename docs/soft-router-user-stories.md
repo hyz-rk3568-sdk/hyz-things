@@ -39,6 +39,7 @@
 - `p2p0` 下游显式代理基础联网和规则命中通过，但弱信号下只有约 `1.055 Mbps`，视频性能未通过；
 - 仅 `br-lan` 入站的 TUN 模式、持久 `explicit`/`tun`/`disabled` 控制、策略路由、排除规则和核心退出清理已通过 recovery-free OTA、重启持久性、手机 TCP/UDP、视频、router restart 与核心 `SIGKILL` 普通 NAT 回退验证；
 - 统一 Web UI 的状态、LCD/代理模式、节点选择和受控延迟刷新已完成板端功能验证；最新 Web 稳定性 OTA 暴露旧 S81 固定 launch 次数窗口不足，源码退避修正尚未构建安装；
+- 管理员认证、强制首次改密、typed AP/STA 设置、两阶段 AP 回滚和 write-only Mihomo HTTPS 订阅更新已经进入统一 Rust 源码，但尚未编译、OTA 或板测；HTTP 管理 LAN 的机密性风险与共享 bootstrap 密码的首次抢占风险由当前产品决策明确接受；
 - DNS 接管、自动冷启动复验、2 小时稳定性、节点全部失效/live-hang 自动回退仍未完成，因此代理 Epic 仍不得整体标记完成。
 
 ## 2. 产品目标

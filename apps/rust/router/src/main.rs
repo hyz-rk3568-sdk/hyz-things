@@ -34,7 +34,7 @@ use hyz_router::{
         shutdown::ShutdownApplication,
         status::ReadStatus,
         subscription::SubscriptionApplication,
-        wifi::WifiApplication,
+        wifi::{WifiApplication, AP_CONFIRM_TIMEOUT_SECS},
     },
     domain::{
         network::NetworkDesired,
@@ -331,15 +331,16 @@ impl ControlHandler for ProductionRuntime {
                 let transport = self.subscription_transport.clone();
                 let platform = self.router.clone();
                 let summary = tokio::task::spawn_blocking(move || {
-                    SubscriptionApplication::new(
+                    let subscription = SubscriptionApplication::new(
                         &store,
                         &transport,
                         platform.as_ref(),
                         platform.as_ref(),
                         platform.as_ref(),
                         platform.as_ref(),
-                    )
-                    .set_url(url.expose().to_owned())
+                    );
+                    subscription.set_url(url.expose().to_owned())?;
+                    subscription.refresh()
                 })
                 .await
                 .map_err(|_| "subscription URL worker terminated unexpectedly".to_owned())?
@@ -451,13 +452,30 @@ impl ControlHandler for ProductionRuntime {
             ControlOperation::WifiPending { .. } => {
                 let _serial = self.router_proxy.lock().await;
                 let platform = self.router.clone();
-                let pending = tokio::task::spawn_blocking(move || {
-                    WifiApplication::new(platform.as_ref()).pending()
+                let (pending, applied) = tokio::task::spawn_blocking(move || {
+                    WifiApplication::new(platform.as_ref()).pending_status()
                 })
                 .await
                 .map_err(|_| "Wi-Fi pending worker terminated unexpectedly".to_owned())?
                 .map_err(|error| error.to_string())?;
-                Ok(ControlResult::WifiPendingStatus { pending })
+                let remaining_seconds = if applied {
+                    pending.as_ref().map(|pending| {
+                        let deadline = pending
+                            .staged_at_unix_ms
+                            .saturating_add(AP_CONFIRM_TIMEOUT_SECS * 1_000);
+                        deadline
+                            .saturating_sub(self.router.unix_time_millis())
+                            .saturating_add(999)
+                            / 1_000
+                    })
+                } else {
+                    None
+                };
+                Ok(ControlResult::WifiPendingStatus {
+                    pending,
+                    applied,
+                    remaining_seconds,
+                })
             }
             ControlOperation::WifiScan { .. } => {
                 let _serial = self.router_proxy.lock().await;
