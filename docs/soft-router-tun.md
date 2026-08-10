@@ -2,7 +2,7 @@
 
 ## 状态
 
-> 本文记录的是已经完成板测的旧 shell runtime 和对应命令，保留用于数据面 parity 历史基线。当前源码已由统一 `/usr/bin/hyz-router` 接管 proxy 生命周期，旧 `/usr/sbin/hyz-mihomo` 不再进入 rootfs staging；统一运行时的构建、OTA、功能板测和仍待完成的自动冷启动复验见 [`router-panel.md`](router-panel.md)，本文不再代表当前运行命令。
+> 本文记录的是已经完成板测的旧 shell runtime 和对应命令，保留用于数据面 parity 历史基线。当前源码已由统一 `/usr/bin/hyz-router` 接管 proxy 生命周期，旧 `/usr/sbin/hyz-mihomo` 不再进入 rootfs staging；统一运行时的构建、OTA、功能板测和仍待完成的自动冷启动复验见 [`router.md`](router.md)，本文不再代表当前运行命令。
 
 源码、最终 recovery-free OTA 和板端 TUN 数据面均已完成验证。首轮 OTA 板测发现 watcher 会随启动它的 ADB shell 退出、`status` PID 被辅助函数覆盖；最终源码改为 `nohup setsid` 独立 watcher 并修复变量名，重新打包、安装和重启后通过持久 TUN、崩溃回退与手机 TCP/UDP 实测。
 

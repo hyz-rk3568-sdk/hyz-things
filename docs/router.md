@@ -13,7 +13,7 @@ apps/rust/router -> /usr/bin/hyz-router
 ```text
 src/domain/                 纯状态、值对象与不变量
 src/application/            用例与 outbound ports
-src/adapters/inbound/       Axum、CLI，后续 root-only local control
+src/adapters/inbound/       Axum、CLI、root-only local control、udhcpc hook
 src/adapters/outbound/      network、proxy、process、storage、firmware、system
 src/web/                    同一包内的 Yew wasm build target
 src/main.rs                 唯一 production composition root
@@ -22,6 +22,134 @@ src/main.rs                 唯一 production composition root
 `router-web` 只在宿主机构建阶段产生 WASM/静态资源并嵌入 `hyz-router`，不会作为第二个板端程序安装。旧的 `apps/router-panel/{shared,server,adapter-linux,frontend}` 多 crate 方案已被否决并从源码删除；状态契约、HTTP 行为和 UI 已迁入本包。独立 MetaCubeXD 静态包也已删除，产品只保留这一套 Web UI。
 
 **源码、rootfs 与 recovery-free OTA 已完成统一 cutover，并已在 RK3568 完成功能验证。** 2026-08-11 安装的设置事务 OTA 已通过完整冷启动、错误 STA 候选自动恢复、AP 未确认超时回滚、SysV restart 和并发 start 串行化验证；daemon 及其子进程不再继承 init action lock。管理员认证基础行为此前已在同一统一 ELF 上验证。成功切换到另一组真实 STA、管理员实际改密以及凭据型订阅刷新仍需由操作者在面板中输入本地凭据完成，不能标记为已验收。`make apps` 只构建统一 `hyz-router`，`make overlay` 只安装 `/usr/bin/hyz-router` 和产品元数据；Buildroot board overlay 只保留最小 `S81hyz-router` 及 Mihomo 无凭据示例。旧 shell 路由/Mihomo wrapper、S82、独立 DHCP hook、独立 OTA 和 hello demos 已从最终 rootfs 删除。
+
+## 架构图
+
+### 运行时与外部边界
+
+```mermaid
+flowchart LR
+    Browser["管理 LAN 浏览器"]
+    RootCLI["root CLI"]
+    UdHCPC["udhcpc hook"]
+    Signal["SIGTERM / Ctrl-C"]
+
+    subgraph ELF["单一板端 ELF：/usr/bin/hyz-router"]
+        Web["嵌入式 Yew / WASM"]
+        HTTP["Axum<br/>192.168.8.1:8080（默认）"]
+        Socket["root-only Unix control<br/>/run/hyz-router/control.sock"]
+        Runtime["ProductionRuntime<br/>唯一 composition root"]
+        UseCases["Application use cases<br/>router · proxy · panel · status · OTA · shutdown"]
+        Ports["Outbound ports"]
+        Linux["LinuxRouterPlatform"]
+        Firmware["FirmwareAdapter"]
+        Watcher["最小 Mihomo fail-open watcher"]
+
+        Web --> HTTP
+        HTTP --> Runtime
+        Socket --> Runtime
+        Runtime --> UseCases
+        UseCases --> Ports
+        Ports --> Linux
+        Ports --> Firmware
+        Runtime -. "按严格身份启动" .-> Watcher
+    end
+
+    Browser -->|"同源 GET / 受限 POST"| HTTP
+    RootCLI -->|"版本化 JSON frame"| Socket
+    UdHCPC -->|"类型化 DHCP event"| Socket
+    Signal --> Runtime
+
+    Linux --> Net["Linux 网络与服务<br/>br-lan · wlan0 · iptables<br/>WPA · hostapd · dnsmasq · Mihomo"]
+    Firmware --> OTA["OTA 平台<br/>staging · BCB · updateEngine · reboot"]
+    Watcher -->|"core 异常时撤销 TUN 拦截"| Net
+```
+
+浏览器控制在进程内经过同一个 `ControlHandler`，不连接 root-only socket；CLI 和 udhcpc hook 只作为 socket 客户端存在。完整生产 adapter 只由 daemon 的 composition root 构造，watcher 只拥有撤销 TUN 拦截所需的最小能力。
+
+### 包内六边形架构
+
+```mermaid
+flowchart TB
+    Web["Yew / WASM 浏览器客户端"]
+
+    subgraph Driving["Driving adapters · adapters/inbound"]
+        CLI["CLI / Unix control"]
+        DHCP["udhcpc hook"]
+        HTTP["Axum HTTP"]
+        Lifecycle["daemon lifecycle / signal"]
+    end
+
+    Inbound["Typed inbound boundary<br/>ControlOperation · application use-case methods"]
+
+    subgraph Core["Core"]
+        Application["application<br/>router · proxy · panel · status · OTA · shutdown"]
+        Domain["domain<br/>desired / observed state · actions · invariants"]
+        Application --> Domain
+    end
+
+    Outbound["Outbound ports<br/>RouterPlatformPort · SystemProbePort · ClockPort<br/>FirmwarePlatformPort · status ports"]
+
+    subgraph Driven["Driven adapters · adapters/outbound"]
+        Linux["LinuxRouterPlatform<br/>network · process · proxy · storage · panel"]
+        Firmware["FirmwareAdapter"]
+    end
+
+    External["Linux / product platform<br/>kernel · procfs/sysfs · fixed executables · block devices"]
+    Main["src/main.rs<br/>composition root"]
+
+    Web -->|"HTTP at runtime"| HTTP
+    CLI --> Inbound
+    DHCP --> Inbound
+    HTTP --> Inbound
+    Lifecycle --> Inbound
+    Inbound --> Application
+    Application --> Outbound
+    Outbound --> Linux
+    Outbound --> Firmware
+    Linux --> External
+    Firmware --> External
+
+    Main -. "wires" .-> Inbound
+    Main -. "constructs" .-> Linux
+    Main -. "constructs" .-> Firmware
+```
+
+实线表示运行时调用方向：外部请求从 driving adapter 进入类型化边界，核心用例通过 outbound port 请求平台能力，核心本身不反向依赖 adapter。虚线只表示 `main.rs` 在启动时完成装配，不是业务调用。Yew 只在浏览器中通过 HTTP 使用 native 服务，不与 `adapters/inbound` 建立 Rust 编译依赖。
+
+源码依赖保持向内：`domain` 不依赖框架和 Linux；`application` 只依赖 domain 和自身定义的 outbound ports；outbound adapter 实现这些 ports。当前 inbound boundary 中既有 `ControlOperation`/`ControlHandler`，也有 application use-case 的类型化方法，因此它是一个逻辑边界，不代表必须为每个入口再创建微型 trait。
+
+### Daemon 启动与就绪边界
+
+```mermaid
+sequenceDiagram
+    participant Init as init/S81
+    participant Daemon as hyz-router daemon
+    participant Control as Unix control
+    participant Network as RouterApplication
+    participant Proxy as ProxyApplication
+    participant HTTP as Axum
+
+    Init->>Daemon: 以 root 启动
+    Daemon->>Daemon: 获取 daemon ownership
+    Daemon->>Control: 绑定并开始服务 control.sock
+    Note over Control,Network: udhcpc 回调此时可独立提交 WAN lease，避免与启动事务死锁
+    Daemon->>Network: reconcile management-only
+    Network-->>Daemon: 严格复核管理 LAN/AP/DNS
+    Daemon->>Network: reconcile forwarding
+    alt WAN 和转发就绪
+        Network-->>Daemon: 普通 NAT 已确认
+        Daemon->>Proxy: 恢复持久代理模式
+    else 转发或代理恢复失败，但降级成功
+        Network-->>Daemon: 回到 management-only
+    else 无法确认安全状态
+        Daemon->>Daemon: 清理自有资源并退出失败
+    end
+    Daemon->>HTTP: 仅在已确认 normal 或 management-only 后绑定 LAN 地址
+    HTTP-->>Init: Web 可见，进入对外就绪状态
+```
+
+control socket 可服务不等于 HTTP 已就绪。HTTP 绑定是对管理 LAN 暴露的最终 readiness boundary；任何 `unknown`、外部所有权或复核失败都不会被提升为 ready。
 
 ## Composition root
 
@@ -60,7 +188,7 @@ OTA 和 router enable/disable 仍不通过 LAN API 暴露。匿名 LAN 页面保
 
 ## Web 状态与受限本地控制
 
-HTTP 固定绑定 `192.168.8.1:8080`，不会回退到 `0.0.0.0`。匿名状态与原受限控制接口保持不变，设置面新增以下精确接口：
+HTTP 默认绑定 `192.168.8.1:8080`；`HYZ_ROUTER_HTTP_PORT` 可覆盖端口，但监听 IP 始终固定为 `192.168.8.1`，不会回退到 `0.0.0.0`。匿名状态与原受限控制接口保持不变，设置面新增以下精确接口：
 
 - `POST /api/v1/auth/{login,logout,password}` 与 `GET /api/v1/auth/session`；
 - `GET /api/v1/network/{config,pending}`；
@@ -110,7 +238,7 @@ Rust candidate 当前覆盖：
 - proxy mode 持久化最后提交；
 - strict observed readiness，unknown/foreign 绝不当作 ready。
 
-Host 与板端 parity 已完成：统一包唯一的 `Cargo.lock`、99 项 native 测试、native/WASM 严格 Clippy、Trunk release bundle、连续两次一致的 deterministic tar、嵌入真实前端的 AArch64 ELF、Buildroot rootfs、kernel 和 recovery-free OTA 均已通过。统一运行时的 Web LCD/代理控制、节点切换与恢复、延迟、真实 Mihomo core 崩溃 fail-open、普通 NAT 和 TUN 恢复已完成板测。早期候选固件曾通过 S81 clean relaunch 冷启动；最新 Web 稳定性固件则暴露固定 launch 次数窗口不足，自动冷启动需待退避版 S81 进入后续固件后重新验收。
+Host 与板端 parity 已完成：统一包唯一的 `Cargo.lock`、native 测试套件、native/WASM 严格 Clippy、Trunk release bundle、连续两次一致的 deterministic tar、嵌入真实前端的 AArch64 ELF、Buildroot rootfs、kernel 和 recovery-free OTA 均已通过。统一运行时的 Web LCD/代理控制、节点切换与恢复、延迟、真实 Mihomo core 崩溃 fail-open、普通 NAT 和 TUN 恢复已完成板测。2026-08-10 Web 稳定性固件曾暴露 S81 固定 launch 次数窗口不足；2026-08-11 设置事务固件已安装封顶指数退避版 S81，并通过自动冷启动与 SysV restart 验收。
 
 仍保留以下边界：
 
