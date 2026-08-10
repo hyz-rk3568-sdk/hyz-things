@@ -29,9 +29,11 @@ use hyz_router::{
         router::RouterApplication,
         shutdown::ShutdownApplication,
         status::ReadStatus,
+        wifi::{ApPrepareRequest, StaCandidateRequest, WifiApplication},
     },
     domain::{
         network::NetworkDesired,
+        network_config::{WifiCountry, WifiPassphrase, WifiSsid},
         proxy::{ProxyDesired, ProxyMode},
     },
 };
@@ -43,7 +45,7 @@ use std::{
 };
 use tokio::sync::{watch, Mutex};
 
-const USAGE: &str = "Usage:\n  hyz-router daemon\n  hyz-router status [--json]\n  hyz-router router enable|disable\n  hyz-router proxy explicit|tun|disable\n  hyz-router ota ...";
+const USAGE: &str = "Usage:\n  hyz-router daemon\n  hyz-router status [--json]\n  hyz-router router enable|disable\n  hyz-router proxy explicit|tun|disable\n  hyz-router wifi status|scan\n  hyz-router wifi sta apply <ssid> <passphrase>\n  hyz-router wifi ap prepare <ssid> <passphrase> <country>\n  hyz-router wifi ap apply|confirm|cancel\n  hyz-router ota ...";
 
 struct ProductionRuntime {
     router: Arc<LinuxRouterPlatform>,
@@ -108,6 +110,9 @@ impl ProductionRuntime {
         // Router/proxy commands may connect while initialization runs, but only DHCP bypasses this
         // guard. That lets udhcpc install its route without deadlocking the startup transaction.
         let _serial = self.router_proxy.lock().await;
+        WifiApplication::new(self.router.as_ref())
+            .recover()
+            .map_err(|error| format!("recover interrupted AP transaction: {error}"))?;
         if let Err(error) = self
             .reconcile_network(NetworkDesired::management_only())
             .await
@@ -176,6 +181,16 @@ impl ProductionRuntime {
             }
         }
         Ok(())
+    }
+
+    async fn expire_pending_ap(&self) -> Result<bool, String> {
+        let _serial = self.router_proxy.lock().await;
+        let now = self.router.unix_time_millis();
+        let platform = self.router.clone();
+        tokio::task::spawn_blocking(move || WifiApplication::new(platform.as_ref()).expire_ap(now))
+            .await
+            .map_err(|_| "Wi-Fi timeout worker terminated unexpectedly".to_owned())?
+            .map_err(|error| error.to_string())
     }
 
     async fn shutdown(&self) -> Result<(), String> {
@@ -351,6 +366,85 @@ impl ControlHandler for ProductionRuntime {
                     result.actions_applied
                 )))
             }
+            ControlOperation::WifiStatus { .. } => {
+                let _serial = self.router_proxy.lock().await;
+                let platform = self.router.clone();
+                let config = tokio::task::spawn_blocking(move || {
+                    WifiApplication::new(platform.as_ref()).committed()
+                })
+                .await
+                .map_err(|_| "Wi-Fi status worker terminated unexpectedly".to_owned())?
+                .map_err(|error| error.to_string())?;
+                Ok(ControlResult::WifiConfig { config })
+            }
+            ControlOperation::WifiScan { .. } => {
+                let _serial = self.router_proxy.lock().await;
+                let platform = self.router.clone();
+                let entries = tokio::task::spawn_blocking(move || {
+                    WifiApplication::new(platform.as_ref()).scan()
+                })
+                .await
+                .map_err(|_| "Wi-Fi scan worker terminated unexpectedly".to_owned())?
+                .map_err(|error| error.to_string())?;
+                Ok(ControlResult::WifiScan { entries })
+            }
+            ControlOperation::WifiStaApply { request } => {
+                let _serial = self.router_proxy.lock().await;
+                let platform = self.router.clone();
+                let config = tokio::task::spawn_blocking(move || {
+                    WifiApplication::new(platform.as_ref()).apply_sta(request)
+                })
+                .await
+                .map_err(|_| "Wi-Fi STA worker terminated unexpectedly".to_owned())?
+                .map_err(|error| error.to_string())?;
+                Ok(ControlResult::WifiConfig { config })
+            }
+            ControlOperation::WifiApPrepare { request } => {
+                let _serial = self.router_proxy.lock().await;
+                let staged_at = self.router.unix_time_millis();
+                let platform = self.router.clone();
+                let pending = tokio::task::spawn_blocking(move || {
+                    WifiApplication::new(platform.as_ref()).prepare_ap(request, staged_at)
+                })
+                .await
+                .map_err(|_| "Wi-Fi AP prepare worker terminated unexpectedly".to_owned())?
+                .map_err(|error| error.to_string())?;
+                Ok(ControlResult::WifiPending { pending })
+            }
+            ControlOperation::WifiApApply { .. } => {
+                let _serial = self.router_proxy.lock().await;
+                let applied_at = self.router.unix_time_millis();
+                let platform = self.router.clone();
+                let pending = tokio::task::spawn_blocking(move || {
+                    WifiApplication::new(platform.as_ref()).apply_ap(applied_at)
+                })
+                .await
+                .map_err(|_| "Wi-Fi AP apply worker terminated unexpectedly".to_owned())?
+                .map_err(|error| error.to_string())?;
+                Ok(ControlResult::WifiPending { pending })
+            }
+            ControlOperation::WifiApConfirm { .. } => {
+                let _serial = self.router_proxy.lock().await;
+                let platform = self.router.clone();
+                let config = tokio::task::spawn_blocking(move || {
+                    WifiApplication::new(platform.as_ref()).confirm_ap()
+                })
+                .await
+                .map_err(|_| "Wi-Fi AP confirm worker terminated unexpectedly".to_owned())?
+                .map_err(|error| error.to_string())?;
+                Ok(ControlResult::WifiConfig { config })
+            }
+            ControlOperation::WifiApCancel { .. } => {
+                let _serial = self.router_proxy.lock().await;
+                let platform = self.router.clone();
+                let config = tokio::task::spawn_blocking(move || {
+                    WifiApplication::new(platform.as_ref()).cancel_ap()
+                })
+                .await
+                .map_err(|_| "Wi-Fi AP cancel worker terminated unexpectedly".to_owned())?
+                .map_err(|error| error.to_string())?;
+                Ok(ControlResult::WifiConfig { config })
+            }
             ControlOperation::Ota { command } => {
                 let _serial = self.ota.lock().await;
                 let firmware = self.firmware.clone();
@@ -405,6 +499,50 @@ async fn run(args: Vec<String>) -> Result<(), Box<dyn Error>> {
                 _ => return Err(usage_error(USAGE)),
             };
             print_completed(request(ControlOperation::Proxy { mode }).await?)?;
+        }
+        [group, action] if group == "wifi" && action == "status" => {
+            print_wifi_result(request(ControlOperation::WifiStatus {}).await?)?;
+        }
+        [group, action] if group == "wifi" && action == "scan" => {
+            print_wifi_result(request(ControlOperation::WifiScan {}).await?)?;
+        }
+        [group, role, action, ssid, passphrase]
+            if group == "wifi" && role == "sta" && action == "apply" =>
+        {
+            let wifi_request = StaCandidateRequest {
+                ssid: WifiSsid::new(ssid.clone())?,
+                passphrase: WifiPassphrase::new(passphrase.clone())?,
+            };
+            print_wifi_result(
+                request(ControlOperation::WifiStaApply {
+                    request: wifi_request,
+                })
+                .await?,
+            )?;
+        }
+        [group, role, action, ssid, passphrase, country]
+            if group == "wifi" && role == "ap" && action == "prepare" =>
+        {
+            let wifi_request = ApPrepareRequest {
+                ssid: WifiSsid::new(ssid.clone())?,
+                passphrase: WifiPassphrase::new(passphrase.clone())?,
+                country: parse_wifi_country(country)?,
+            };
+            print_wifi_result(
+                request(ControlOperation::WifiApPrepare {
+                    request: wifi_request,
+                })
+                .await?,
+            )?;
+        }
+        [group, role, action] if group == "wifi" && role == "ap" => {
+            let operation = match action.as_str() {
+                "apply" => ControlOperation::WifiApApply {},
+                "confirm" => ControlOperation::WifiApConfirm {},
+                "cancel" => ControlOperation::WifiApCancel {},
+                _ => return Err(usage_error(USAGE)),
+            };
+            print_wifi_result(request(operation).await?)?;
         }
         [group, rest @ ..] if group == "ota" => {
             let command = parse_ota_cli(rest.iter().map(String::as_str))
@@ -479,6 +617,25 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         return Err(message.into());
     }
 
+    let timeout_runtime = runtime.clone();
+    let mut timeout_shutdown = shutdown_rx.clone();
+    let wifi_timeout = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(1));
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    if let Err(error) = timeout_runtime.expire_pending_ap().await {
+                        eprintln!("hyz-router: AP transaction timeout rollback failed: {error}");
+                    }
+                }
+                changed = timeout_shutdown.changed() => {
+                    let _ = changed;
+                    break;
+                }
+            }
+        }
+    });
+
     // HTTP binding is the externally visible readiness boundary and occurs only after a strictly
     // confirmed normal or management-only network state has been reached.
     let http = serve_http(
@@ -509,8 +666,9 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
             combine_service_results(join_control(control.await), http_result)
         }
     };
-    // Control accepts are stopped and every in-flight operation (including OTA) has drained before
-    // runtime-owned packet paths and child processes are removed. Persisted desired mode remains.
+    let _ = wifi_timeout.await;
+    // Control accepts and the timeout task are stopped and every in-flight operation (including
+    // OTA) has drained before runtime-owned packet paths and child processes are removed.
     let cleanup = runtime.shutdown().await;
     let result = combine_runtime_results(services, cleanup);
 
@@ -663,13 +821,52 @@ fn completed(message: impl Into<String>) -> ControlResult {
     }
 }
 
+fn print_wifi_result(result: ControlResult) -> Result<(), Box<dyn Error>> {
+    match result {
+        ControlResult::WifiConfig { config } => {
+            println!("{}", serde_json::to_string_pretty(&config)?);
+        }
+        ControlResult::WifiPending { pending } => {
+            println!("{}", serde_json::to_string_pretty(&pending)?);
+        }
+        ControlResult::WifiScan { entries } => {
+            println!("{}", serde_json::to_string_pretty(&entries)?);
+        }
+        _ => return Err("daemon returned an unexpected Wi-Fi response".into()),
+    }
+    Ok(())
+}
+
+fn parse_wifi_country(value: &str) -> Result<WifiCountry, Box<dyn Error>> {
+    match value.to_ascii_uppercase().as_str() {
+        "AU" => Ok(WifiCountry::Au),
+        "BR" => Ok(WifiCountry::Br),
+        "CA" => Ok(WifiCountry::Ca),
+        "CN" => Ok(WifiCountry::Cn),
+        "DE" => Ok(WifiCountry::De),
+        "FR" => Ok(WifiCountry::Fr),
+        "GB" => Ok(WifiCountry::Gb),
+        "IN" => Ok(WifiCountry::In),
+        "JP" => Ok(WifiCountry::Jp),
+        "KR" => Ok(WifiCountry::Kr),
+        "NZ" => Ok(WifiCountry::Nz),
+        "SG" => Ok(WifiCountry::Sg),
+        "TW" => Ok(WifiCountry::Tw),
+        "US" => Ok(WifiCountry::Us),
+        _ => Err("unsupported Wi-Fi country code".into()),
+    }
+}
+
 fn expect_completed(result: ControlResult) -> Result<String, Box<dyn Error>> {
     match result {
         ControlResult::Completed { message } => Ok(message),
         ControlResult::Status { .. }
         | ControlResult::PanelStatus { .. }
         | ControlResult::ProxyDelay { .. }
-        | ControlResult::ProxyDelays { .. } => {
+        | ControlResult::ProxyDelays { .. }
+        | ControlResult::WifiConfig { .. }
+        | ControlResult::WifiPending { .. }
+        | ControlResult::WifiScan { .. } => {
             Err("daemon returned an unexpected mutation response".into())
         }
     }

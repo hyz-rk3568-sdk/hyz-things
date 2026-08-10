@@ -76,6 +76,30 @@ impl<'de> Deserialize<'de> for WifiSsid {
 
 pub struct WifiPassphrase(Zeroizing<String>);
 
+impl Clone for WifiPassphrase {
+    fn clone(&self) -> Self {
+        Self(Zeroizing::new(self.0.to_string()))
+    }
+}
+
+impl Serialize for WifiPassphrase {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for WifiPassphrase {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::new(String::deserialize(deserializer)?).map_err(de::Error::custom)
+    }
+}
+
 impl WifiPassphrase {
     pub fn new(value: impl Into<String>) -> Result<Self, WifiConfigError> {
         let value = Zeroizing::new(value.into());

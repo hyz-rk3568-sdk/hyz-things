@@ -1,7 +1,11 @@
 use super::ota_cli::OtaCommand;
 use crate::{
-    application::dhcp::DhcpEvent,
+    application::{
+        dhcp::DhcpEvent,
+        wifi::{ApPrepareRequest, StaCandidateRequest, WifiScanEntry},
+    },
     domain::{
+        network_config::{NetworkConfigSummary, PendingNetworkConfigSummary},
         panel::{
             valid_control_name, DisplayRequest, PanelSnapshot, ProxyDelayRefreshRequest,
             ProxyDelayRequest, ProxyDelayResult, ProxyGroup, ProxySelectionRequest,
@@ -30,7 +34,7 @@ pub const CONTROL_SOCKET: &str = "/run/hyz-router/control.sock";
 pub const CONTROL_RUNTIME_DIR: &str = "/run/hyz-router";
 pub const DAEMON_LOCK_DIR: &str = "/run/hyz-router/daemon.lock";
 const DAEMON_OWNER_FILE: &str = "/run/hyz-router/daemon.lock/owner";
-pub const PROTOCOL_VERSION: u16 = 1;
+pub const PROTOCOL_VERSION: u16 = 2;
 pub const MAX_FRAME_BYTES: usize = 64 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(30 * 60);
@@ -65,6 +69,13 @@ pub enum ControlOperation {
     ProxyDelayRefresh { request: ProxyDelayRefreshRequest },
     Ota { command: OtaCommand },
     Dhcp { event: DhcpEvent },
+    WifiStatus {},
+    WifiScan {},
+    WifiStaApply { request: StaCandidateRequest },
+    WifiApPrepare { request: ApPrepareRequest },
+    WifiApApply {},
+    WifiApConfirm {},
+    WifiApCancel {},
 }
 
 impl ControlOperation {
@@ -73,6 +84,8 @@ impl ControlOperation {
             self,
             Self::Status { .. }
                 | Self::PanelStatus { .. }
+                | Self::WifiStatus { .. }
+                | Self::WifiScan { .. }
                 | Self::Ota {
                     command: OtaCommand::Verify { .. }
                 }
@@ -84,7 +97,14 @@ impl ControlOperation {
             | Self::PanelStatus { .. }
             | Self::ProxyDelayRefresh { .. }
             | Self::Router { .. }
-            | Self::Proxy { .. } => Ok(()),
+            | Self::Proxy { .. }
+            | Self::WifiStatus { .. }
+            | Self::WifiScan { .. }
+            | Self::WifiStaApply { .. }
+            | Self::WifiApPrepare { .. }
+            | Self::WifiApApply { .. }
+            | Self::WifiApConfirm { .. }
+            | Self::WifiApCancel { .. } => Ok(()),
             Self::Display { request } => validate_display(request),
             Self::ProxySelection { request } => {
                 if valid_control_name(&request.group) && valid_control_name(&request.proxy) {
@@ -237,11 +257,30 @@ pub struct ControlResponse {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ControlResult {
-    Status { snapshot: Box<StatusSnapshot> },
-    PanelStatus { snapshot: Box<PanelSnapshot> },
-    ProxyDelay { result: ProxyDelayResult },
-    ProxyDelays { groups: Vec<ProxyGroup> },
-    Completed { message: String },
+    Status {
+        snapshot: Box<StatusSnapshot>,
+    },
+    PanelStatus {
+        snapshot: Box<PanelSnapshot>,
+    },
+    ProxyDelay {
+        result: ProxyDelayResult,
+    },
+    ProxyDelays {
+        groups: Vec<ProxyGroup>,
+    },
+    WifiConfig {
+        config: NetworkConfigSummary,
+    },
+    WifiPending {
+        pending: PendingNetworkConfigSummary,
+    },
+    WifiScan {
+        entries: Vec<WifiScanEntry>,
+    },
+    Completed {
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

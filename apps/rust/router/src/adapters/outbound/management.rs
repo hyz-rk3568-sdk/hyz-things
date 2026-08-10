@@ -1,10 +1,21 @@
-use super::{process::process_start_time, storage};
+use super::{
+    network_config::{render_hostapd_on_channel, render_wpa_supplicant, NetworkConfigStore},
+    process::process_start_time,
+    storage,
+};
 use crate::{
     application::{
         dhcp::{DhcpEvent, DhcpPlatformPort, DHCP_HOOK_ROLE_ENV},
         ports::PlatformError,
+        wifi::{WifiPlatformPort, WifiScanEntry},
     },
-    domain::network::{LAN_MEMBER, WAN_INTERFACE},
+    domain::{
+        network::{LAN_MEMBER, WAN_INTERFACE},
+        network_config::{
+            ApConfig, NetworkConfigSummary, NetworkConfigV1, PendingNetworkConfigSummary,
+            PendingNetworkConfigV1, StaConfig, WifiSsid,
+        },
+    },
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -19,13 +30,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const WPA_CONFIG: &str = "/userdata/hyz-router/wpa_supplicant.conf";
-pub const HOSTAPD_SOURCE_CONFIG: &str = "/userdata/hyz-router/hostapd-sta-ap.conf";
+pub const WPA_RUNTIME_CONFIG: &str = "/run/hyz-router/wpa_supplicant.rust.conf";
 pub const HOSTAPD_RUNTIME_CONFIG: &str = "/run/hyz-router/hostapd.rust.conf";
 pub const DNSMASQ_RUNTIME_CONFIG: &str = "/run/hyz-router/dnsmasq.rust.conf";
 pub const ROUTER_EXECUTABLE: &str = "/usr/bin/hyz-router";
 const RESOLV_CONFIG: &str = "/etc/resolv.conf";
 const DHCP_OWNERSHIP_RECORD: &str = "/run/hyz-router/udhcpc.lease-generation.json";
+const AP_PENDING_APPLIED_RECORD: &str = "/run/hyz-router/ap-pending-applied-v1";
 const PROCESS_WAIT: Duration = Duration::from_secs(5);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 const MAX_CONFIG_SIZE: usize = 1024 * 1024;
@@ -158,7 +169,14 @@ impl ManagementService {
 
     pub(crate) const fn argv(self) -> &'static [&'static str] {
         match self {
-            Self::WpaSupplicant => &["-i", WAN_INTERFACE, "-D", "nl80211,wext", "-c", WPA_CONFIG],
+            Self::WpaSupplicant => &[
+                "-i",
+                WAN_INTERFACE,
+                "-D",
+                "nl80211,wext",
+                "-c",
+                WPA_RUNTIME_CONFIG,
+            ],
             Self::Udhcpc => &["-f", "-i", WAN_INTERFACE, "-s", ROUTER_EXECUTABLE],
             Self::Hostapd => &[HOSTAPD_RUNTIME_CONFIG],
             Self::Dnsmasq => &[
@@ -276,14 +294,15 @@ impl ServiceIdentity {
 
 impl super::process::LinuxRouterPlatform {
     pub(crate) fn ensure_management_services(&self) -> Result<(), PlatformError> {
-        validate_private_source(WPA_CONFIG)?;
-        validate_private_source(HOSTAPD_SOURCE_CONFIG)?;
+        self.restart_management_services(&committed_network_config()?)
+    }
 
+    fn restart_management_services(&self, config: &NetworkConfigV1) -> Result<(), PlatformError> {
         wait_for_interface_presence(WAN_INTERFACE, Duration::from_secs(20))?;
         wait_for_interface_presence(LAN_MEMBER, Duration::from_secs(20))?;
         self.stop_owned_management_services()?;
         self.refuse_foreign_management_processes()?;
-        prepare_runtime_configs()?;
+        prepare_runtime_configs(config, 6)?;
 
         let mut started = Vec::new();
         let result = (|| {
@@ -296,6 +315,9 @@ impl super::process::LinuxRouterPlatform {
             self.start_service(ManagementService::Udhcpc)?;
             started.push(ManagementService::Udhcpc);
 
+            if let Some(channel) = self.current_sta_channel()? {
+                prepare_runtime_configs(config, channel)?;
+            }
             run_ip(&["link", "set", "dev", LAN_MEMBER, "up"])?;
             self.start_service(ManagementService::Hostapd)?;
             started.push(ManagementService::Hostapd);
@@ -507,6 +529,37 @@ impl super::process::LinuxRouterPlatform {
         wait_until(timeout, || self.hostapd_enabled(), "AP enablement")
     }
 
+    fn current_sta_channel(&self) -> Result<Option<u8>, PlatformError> {
+        let status =
+            self.run_management_probe("/usr/sbin/wpa_cli", &["-i", WAN_INTERFACE, "status"])?;
+        let frequency = status.lines().find_map(|line| {
+            line.strip_prefix("freq=")
+                .and_then(|value| value.parse::<u16>().ok())
+        });
+        frequency
+            .map(|frequency| {
+                frequency_to_channel(frequency).ok_or_else(|| {
+                    PlatformError::InvalidState(format!(
+                        "associated STA frequency {frequency} MHz cannot be shared by the 2.4 GHz AP"
+                    ))
+                })
+            })
+            .transpose()
+    }
+
+    fn follow_sta_channel(&self, config: &NetworkConfigV1) -> Result<(), PlatformError> {
+        let channel = self.current_sta_channel()?.ok_or_else(|| {
+            PlatformError::ProbeFailed(
+                "ready STA did not report an associated frequency".to_owned(),
+            )
+        })?;
+        self.stop_service(ManagementService::Hostapd)?;
+        let hostapd = render_hostapd_on_channel(&config.ap, channel);
+        storage::atomic_write_private(HOSTAPD_RUNTIME_CONFIG, hostapd.as_bytes())?;
+        self.start_service(ManagementService::Hostapd)?;
+        self.wait_for_hostapd(Duration::from_secs(15))
+    }
+
     pub(crate) fn wait_for_sta_route(&self, timeout: Duration) -> Result<(), PlatformError> {
         wait_until(
             timeout,
@@ -642,12 +695,289 @@ impl DhcpPlatformPort for super::process::LinuxRouterPlatform {
     }
 }
 
-fn prepare_runtime_configs() -> Result<(), PlatformError> {
-    let source = storage::read_small_optional(HOSTAPD_SOURCE_CONFIG, MAX_CONFIG_SIZE)?
-        .ok_or_else(|| PlatformError::InvalidState("hostapd source config is absent".to_owned()))?;
-    let hostapd = render_hostapd_config(&source)?;
+impl WifiPlatformPort for super::process::LinuxRouterPlatform {
+    fn recover_interrupted_ap_transaction(&self) -> Result<(), PlatformError> {
+        let store = NetworkConfigStore::default();
+        if store
+            .read_pending()
+            .map_err(network_config_error)?
+            .is_some()
+        {
+            // Runtime files and processes are recreated from committed state during startup. A
+            // durable pending record can therefore never become committed merely by a restart.
+            committed_network_config()?;
+            store.remove_pending().map_err(network_config_error)?;
+        }
+        storage::remove_file_durable(AP_PENDING_APPLIED_RECORD)
+    }
+
+    fn scan(&self) -> Result<Vec<WifiScanEntry>, PlatformError> {
+        let response =
+            self.run_management_probe("/usr/sbin/wpa_cli", &["-i", WAN_INTERFACE, "scan"])?;
+        if !response.lines().any(|line| line == "OK") {
+            return Err(PlatformError::CommandFailed(
+                "wpa_cli rejected the Wi-Fi scan".to_owned(),
+            ));
+        }
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let output = self.run_management_probe(
+                "/usr/sbin/wpa_cli",
+                &["-i", WAN_INTERFACE, "scan_results"],
+            )?;
+            let entries = parse_scan_results(&output)?;
+            if !entries.is_empty() || Instant::now() >= deadline {
+                return Ok(entries);
+            }
+            thread::sleep(Duration::from_millis(250));
+        }
+    }
+
+    fn committed_config(&self) -> Result<NetworkConfigSummary, PlatformError> {
+        Ok(committed_network_config()?.summary())
+    }
+
+    fn apply_sta_candidate(&self, candidate: &StaConfig) -> Result<(), PlatformError> {
+        let mut config = committed_network_config()?;
+        config.sta = candidate.clone();
+        if let Err(error) = self.restart_management_services(&config) {
+            let _ = self.restart_management_services(&committed_network_config()?);
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn sta_candidate_ready(&self, candidate: &StaConfig) -> Result<bool, PlatformError> {
+        if self.wait_for_sta_route(Duration::from_secs(30)).is_err() {
+            return Ok(false);
+        }
+        let mut config = committed_network_config()?;
+        config.sta = candidate.clone();
+        self.follow_sta_channel(&config)?;
+        Ok(self.owned_sta_address_and_route_ready()? && self.hostapd_enabled()?)
+    }
+
+    fn commit_sta_candidate(
+        &self,
+        candidate: StaConfig,
+    ) -> Result<NetworkConfigSummary, PlatformError> {
+        let store = NetworkConfigStore::default();
+        let mut config = committed_network_config()?;
+        config.sta = candidate;
+        store.persist(&config).map_err(network_config_error)?;
+        Ok(config.summary())
+    }
+
+    fn rollback_sta_candidate(&self) -> Result<(), PlatformError> {
+        self.restart_management_services(&committed_network_config()?)
+    }
+
+    fn prepare_ap_candidate(
+        &self,
+        candidate: ApConfig,
+        staged_at_unix_ms: u64,
+    ) -> Result<PendingNetworkConfigSummary, PlatformError> {
+        let store = NetworkConfigStore::default();
+        if store
+            .read_pending()
+            .map_err(network_config_error)?
+            .is_some()
+        {
+            return Err(PlatformError::Conflict(
+                "an AP transaction is already pending".to_owned(),
+            ));
+        }
+        let mut config = committed_network_config()?;
+        config.ap = candidate;
+        let pending = PendingNetworkConfigV1::new(staged_at_unix_ms, config);
+        store
+            .persist_pending(&pending)
+            .map_err(network_config_error)?;
+        storage::remove_file_durable(AP_PENDING_APPLIED_RECORD)?;
+        Ok(pending.summary())
+    }
+
+    fn apply_ap_candidate(
+        &self,
+        applied_at_unix_ms: u64,
+    ) -> Result<PendingNetworkConfigSummary, PlatformError> {
+        let store = NetworkConfigStore::default();
+        if storage::read_small_optional(AP_PENDING_APPLIED_RECORD, 64)?.is_some() {
+            return Err(PlatformError::Conflict(
+                "pending AP candidate has already been applied".to_owned(),
+            ));
+        }
+        let prepared = store
+            .read_pending()
+            .map_err(network_config_error)?
+            .ok_or_else(|| {
+                PlatformError::InvalidState("no AP transaction is pending".to_owned())
+            })?;
+        let pending = PendingNetworkConfigV1::new(applied_at_unix_ms, prepared.config);
+        store
+            .persist_pending(&pending)
+            .map_err(network_config_error)?;
+        if let Err(error) = self.restart_management_services(&pending.config) {
+            let rollback = self.restart_management_services(&committed_network_config()?);
+            if let Err(rollback) = rollback {
+                return Err(PlatformError::InvalidState(format!(
+                    "AP apply failed: {error}; committed rollback also failed: {rollback}"
+                )));
+            }
+            return Err(error);
+        }
+        if let Err(error) = storage::atomic_write_private(AP_PENDING_APPLIED_RECORD, b"applied\n") {
+            let rollback = self.restart_management_services(&committed_network_config()?);
+            if let Err(rollback) = rollback {
+                return Err(PlatformError::InvalidState(format!(
+                    "recording applied AP candidate failed: {error}; committed rollback also failed: {rollback}"
+                )));
+            }
+            return Err(error);
+        }
+        Ok(pending.summary())
+    }
+
+    fn confirm_ap_candidate(&self) -> Result<NetworkConfigSummary, PlatformError> {
+        if storage::read_small_optional(AP_PENDING_APPLIED_RECORD, 64)?.as_deref()
+            != Some("applied\n")
+        {
+            return Err(PlatformError::InvalidState(
+                "AP candidate has not been successfully applied".to_owned(),
+            ));
+        }
+        let store = NetworkConfigStore::default();
+        let pending = store
+            .read_pending()
+            .map_err(network_config_error)?
+            .ok_or_else(|| {
+                PlatformError::InvalidState("no AP transaction is pending".to_owned())
+            })?;
+        // Canonical persistence is the commit point and is never reached before apply readiness.
+        store
+            .persist(&pending.config)
+            .map_err(network_config_error)?;
+        store.remove_pending().map_err(network_config_error)?;
+        storage::remove_file_durable(AP_PENDING_APPLIED_RECORD)?;
+        Ok(pending.config.summary())
+    }
+
+    fn cancel_ap_candidate(&self) -> Result<NetworkConfigSummary, PlatformError> {
+        let store = NetworkConfigStore::default();
+        let committed = committed_network_config()?;
+        if store
+            .read_pending()
+            .map_err(network_config_error)?
+            .is_none()
+        {
+            return Err(PlatformError::InvalidState(
+                "no AP transaction is pending".to_owned(),
+            ));
+        }
+        self.restart_management_services(&committed)?;
+        store.remove_pending().map_err(network_config_error)?;
+        storage::remove_file_durable(AP_PENDING_APPLIED_RECORD)?;
+        Ok(committed.summary())
+    }
+
+    fn pending_ap_candidate(&self) -> Result<Option<PendingNetworkConfigSummary>, PlatformError> {
+        Ok(NetworkConfigStore::default()
+            .read_pending()
+            .map_err(network_config_error)?
+            .map(|pending| pending.summary()))
+    }
+
+    fn ap_candidate_applied(&self) -> Result<bool, PlatformError> {
+        Ok(
+            storage::read_small_optional(AP_PENDING_APPLIED_RECORD, 64)?.as_deref()
+                == Some("applied\n"),
+        )
+    }
+}
+
+fn parse_scan_results(output: &str) -> Result<Vec<WifiScanEntry>, PlatformError> {
+    let mut entries = Vec::new();
+    for line in output.lines().skip(1) {
+        let mut fields = line.splitn(5, '\t');
+        let (Some(bssid), Some(frequency), Some(signal), Some(flags), Some(ssid)) = (
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+        ) else {
+            continue;
+        };
+        let Ok(ssid) = WifiSsid::new(ssid) else {
+            continue;
+        };
+        if bssid.len() != 17
+            || !bssid.bytes().enumerate().all(|(index, byte)| {
+                if matches!(index, 2 | 5 | 8 | 11 | 14) {
+                    byte == b':'
+                } else {
+                    byte.is_ascii_hexdigit()
+                }
+            })
+        {
+            continue;
+        }
+        let frequency_mhz = frequency.parse::<u16>().map_err(|_| {
+            PlatformError::ProbeFailed("wpa_cli scan frequency is invalid".to_owned())
+        })?;
+        let signal_dbm = signal
+            .parse::<i16>()
+            .map_err(|_| PlatformError::ProbeFailed("wpa_cli scan signal is invalid".to_owned()))?;
+        entries.push(WifiScanEntry {
+            ssid,
+            bssid: bssid.to_owned(),
+            frequency_mhz,
+            signal_dbm,
+            secured: flags.contains("WPA"),
+        });
+    }
+    entries.sort_by(|left, right| right.signal_dbm.cmp(&left.signal_dbm));
+    entries.dedup_by(|left, right| left.ssid == right.ssid && left.bssid == right.bssid);
+    Ok(entries)
+}
+
+fn prepare_runtime_configs(config: &NetworkConfigV1, channel: u8) -> Result<(), PlatformError> {
+    if !(1..=14).contains(&channel) {
+        return Err(PlatformError::InvalidState(
+            "STA frequency does not map to a supported 2.4 GHz AP channel".to_owned(),
+        ));
+    }
+    let wpa = render_wpa_supplicant(&config.sta);
+    let hostapd = render_hostapd_on_channel(&config.ap, channel);
+    storage::atomic_write_private(WPA_RUNTIME_CONFIG, wpa.as_bytes())?;
     storage::atomic_write_private(HOSTAPD_RUNTIME_CONFIG, hostapd.as_bytes())?;
     storage::atomic_write_private(DNSMASQ_RUNTIME_CONFIG, DNSMASQ_CONFIG.as_bytes())
+}
+
+fn committed_network_config() -> Result<NetworkConfigV1, PlatformError> {
+    NetworkConfigStore::default()
+        .read_or_migrate()
+        .map_err(network_config_error)?
+        .ok_or_else(|| {
+            PlatformError::InvalidState(
+                "canonical network-config-v1 is absent and legacy migration was unavailable"
+                    .to_owned(),
+            )
+        })
+}
+
+fn network_config_error(error: super::network_config::NetworkConfigError) -> PlatformError {
+    PlatformError::InvalidState(error.to_string())
+}
+
+fn frequency_to_channel(frequency_mhz: u16) -> Option<u8> {
+    match frequency_mhz {
+        2_412..=2_472 if (frequency_mhz - 2_407) % 5 == 0 => {
+            Some(((frequency_mhz - 2_407) / 5) as u8)
+        }
+        2_484 => Some(14),
+        _ => None,
+    }
 }
 
 pub(crate) fn render_hostapd_config(source: &str) -> Result<String, PlatformError> {
@@ -1227,7 +1557,14 @@ mod tests {
     fn service_argv_are_exact_golden_values() {
         assert_eq!(
             ManagementService::WpaSupplicant.argv(),
-            &["-i", "wlan0", "-D", "nl80211,wext", "-c", WPA_CONFIG,]
+            &[
+                "-i",
+                "wlan0",
+                "-D",
+                "nl80211,wext",
+                "-c",
+                WPA_RUNTIME_CONFIG,
+            ]
         );
         assert_eq!(
             ManagementService::Udhcpc.argv(),

@@ -78,6 +78,11 @@ impl NetworkConfigStore {
         write_json(self.pending_path, pending)
     }
 
+    pub fn remove_pending(&self) -> Result<(), NetworkConfigError> {
+        storage::remove_file_durable(self.pending_path)
+            .map_err(|error| NetworkConfigError::Io(error.to_string()))
+    }
+
     /// Imports legacy files only when both files have one unambiguous SSID, credential, and
     /// country. Legacy files are never modified. Ambiguous or partial input requires an operator.
     pub fn read_or_migrate(&self) -> Result<Option<NetworkConfigV1>, NetworkConfigError> {
@@ -166,6 +171,10 @@ pub fn render_wpa_supplicant(config: &StaConfig) -> Zeroizing<String> {
 }
 
 pub fn render_hostapd(config: &ApConfig) -> Zeroizing<String> {
+    render_hostapd_on_channel(config, 6)
+}
+
+pub fn render_hostapd_on_channel(config: &ApConfig, channel: u8) -> Zeroizing<String> {
     let ssid = encode_hex(config.ssid.as_bytes());
     let psk = config.psk.to_hex();
     Zeroizing::new(format!(
@@ -175,7 +184,7 @@ pub fn render_hostapd(config: &ApConfig) -> Zeroizing<String> {
          country_code={}\n\
          ieee80211d=1\n\
          hw_mode=g\n\
-         channel=6\n\
+         channel={channel}\n\
          auth_algs=1\n\
          wpa=2\n\
          wpa_key_mgmt=WPA-PSK\n\
