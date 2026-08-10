@@ -118,7 +118,7 @@ fail-open boundaries are documented in
 recovery-free OTA hashes and board-validated TCP/UDP/fail-open results. The
 LAN-only Axum/Yew status and constrained display/proxy controls, API boundary,
 TDD coverage and remaining validation work are documented in
-[`docs/router-panel.md`](docs/router-panel.md).
+[`docs/router.md`](docs/router.md).
 
 ## Minimal OTA test
 
