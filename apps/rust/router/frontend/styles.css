@@ -90,6 +90,8 @@ footer { padding: 24px 2px 4px; color: #61738a; font-size: 10px; text-align: cen
 .settings-toggle small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .disclosure-action { flex: 0 0 auto; color: var(--cyan); font-size: 10px; }
 .settings-detail { padding: 0 17px 17px; border-top: 1px solid rgba(148,173,205,.1); }
+.login-disclosure { max-width: 760px; }
+.login-detail { padding-top: 16px; }
 .detail-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 0; }
 .candidate-summary, .detail-current { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 5px 14px; align-items: baseline; padding: 13px 0; }
 .candidate-summary span, .candidate-summary small, .detail-current span, .detail-current small { color: var(--muted); font-size: 10px; }

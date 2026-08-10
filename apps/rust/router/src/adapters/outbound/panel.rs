@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
+    sync::{Mutex, OnceLock},
     time::Duration,
 };
 
@@ -23,7 +24,10 @@ const BACKLIGHT_DIR: &str = "/sys/class/backlight/backlight1";
 const CONTROLLER_RESPONSE_LIMIT: usize = 2 * 1024 * 1024;
 const DELAY_TEST_URL: &str = "https://www.gstatic.com/generate_204";
 const DELAY_TIMEOUT_MS: u32 = 5_000;
+const MAX_DELAY_GROUP_CALLS: usize = 16;
 type ProxyMetadata = (Option<u32>, Option<bool>);
+type DelayCache = HashMap<String, ProxyMetadata>;
+static DELAY_CACHE: OnceLock<Mutex<DelayCache>> = OnceLock::new();
 
 impl PanelPlatformPort for LinuxRouterPlatform {
     fn display_status(&self) -> Result<DisplayStatus, PlatformError> {
@@ -73,7 +77,9 @@ impl PanelPlatformPort for LinuxRouterPlatform {
     fn proxy_groups(&self) -> Result<Vec<ProxyGroup>, PlatformError> {
         let proxies = controller_json("GET", "/proxies", None)?;
         let providers = controller_json("GET", "/providers/proxies", None).ok();
-        parse_proxy_groups(&proxies, providers.as_ref())
+        let mut groups = parse_proxy_groups(&proxies, providers.as_ref())?;
+        apply_cached_delays(&mut groups)?;
+        Ok(groups)
     }
 
     fn select_proxy(&self, request: &ProxySelectionRequest) -> Result<(), PlatformError> {
@@ -139,15 +145,25 @@ impl PanelPlatformPort for LinuxRouterPlatform {
     }
 
     fn refresh_proxy_delays(&self) -> Result<Vec<ProxyGroup>, PlatformError> {
-        let providers = controller_json("GET", "/providers/proxies", None)?;
-        for provider in refreshable_provider_names(&providers)? {
+        let mut groups = self.proxy_groups()?;
+        let refresh_groups = delay_refresh_group_indices(&groups)?;
+        let mut tested = HashSet::new();
+        let mut measured = HashMap::new();
+
+        for index in refresh_groups {
+            let group = &groups[index];
+            tested.extend(group.options.iter().map(|option| option.name.clone()));
             let path = format!(
-                "/providers/proxies/{}/healthcheck",
-                percent_encode(&provider)
+                "/group/{}/delay?timeout={DELAY_TIMEOUT_MS}&url={}",
+                percent_encode(&group.name),
+                percent_encode(DELAY_TEST_URL)
             );
-            controller_json("GET", &path, None)?;
+            merge_group_delay_response(&controller_json("GET", &path, None)?, &mut measured)?;
         }
-        self.proxy_groups()
+
+        apply_group_delay_measurements(&mut groups, &tested, &measured);
+        cache_group_delays(&groups)?;
+        Ok(groups)
     }
 }
 
@@ -263,29 +279,146 @@ fn controller_json(method: &str, path: &str, body: Option<&str>) -> Result<Value
         .map_err(|_| PlatformError::ProbeFailed("Mihomo controller JSON is invalid".to_owned()))
 }
 
-fn refreshable_provider_names(value: &Value) -> Result<Vec<String>, PlatformError> {
-    let providers = value
-        .get("providers")
-        .and_then(Value::as_object)
-        .ok_or_else(|| {
-            PlatformError::ProbeFailed("Mihomo providers object is absent".to_owned())
-        })?;
-    if providers.len() > MAX_PROXY_GROUPS {
-        return Err(PlatformError::ProbeFailed(
-            "Mihomo provider count exceeds limit".to_owned(),
+fn delay_refresh_group_indices(groups: &[ProxyGroup]) -> Result<Vec<usize>, PlatformError> {
+    let mut remaining = groups
+        .iter()
+        .flat_map(|group| group.options.iter().map(|option| option.name.clone()))
+        .collect::<HashSet<_>>();
+    let mut selected = Vec::new();
+    let mut used = HashSet::new();
+
+    while !remaining.is_empty() {
+        let Some((index, gain)) = groups
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !used.contains(index))
+            .map(|(index, group)| {
+                let gain = group
+                    .options
+                    .iter()
+                    .filter(|option| remaining.contains(&option.name))
+                    .count();
+                (index, gain)
+            })
+            .max_by_key(|(_, gain)| *gain)
+        else {
+            break;
+        };
+        if gain == 0 {
+            break;
+        }
+        if selected.len() >= MAX_DELAY_GROUP_CALLS {
+            return Err(PlatformError::InvalidState(
+                "proxy groups require too many bounded delay requests".to_owned(),
+            ));
+        }
+        used.insert(index);
+        selected.push(index);
+        for option in &groups[index].options {
+            remaining.remove(&option.name);
+        }
+    }
+    if !remaining.is_empty() {
+        return Err(PlatformError::InvalidState(
+            "proxy delay request plan did not cover every displayed option".to_owned(),
         ));
     }
-    Ok(providers
+    Ok(selected)
+}
+
+fn merge_group_delay_response(
+    value: &Value,
+    measured: &mut HashMap<String, u32>,
+) -> Result<(), PlatformError> {
+    let delays = value.as_object().ok_or_else(|| {
+        PlatformError::ProbeFailed("Mihomo group delay response is not an object".to_owned())
+    })?;
+    if delays.len() > MAX_PROXY_OPTIONS {
+        return Err(PlatformError::ProbeFailed(
+            "Mihomo group delay response exceeds limit".to_owned(),
+        ));
+    }
+    for (name, delay) in delays {
+        if !valid_control_name(name) {
+            return Err(PlatformError::ProbeFailed(
+                "Mihomo group delay response contains an invalid name".to_owned(),
+            ));
+        }
+        if let Some(delay) = delay
+            .as_u64()
+            .and_then(|delay| u32::try_from(delay).ok())
+            .filter(|delay| *delay > 0)
+        {
+            measured.insert(name.clone(), delay);
+        }
+    }
+    Ok(())
+}
+
+fn apply_group_delay_measurements(
+    groups: &mut [ProxyGroup],
+    tested: &HashSet<String>,
+    measured: &HashMap<String, u32>,
+) {
+    for group in groups {
+        for option in &mut group.options {
+            if tested.contains(&option.name) {
+                option.delay_ms = measured.get(&option.name).copied();
+                option.alive = Some(option.delay_ms.is_some());
+            }
+        }
+    }
+}
+
+fn apply_cached_delays(groups: &mut [ProxyGroup]) -> Result<(), PlatformError> {
+    let mut cache = DELAY_CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .map_err(|_| PlatformError::InvalidState("proxy delay cache is poisoned".to_owned()))?;
+    if cache.is_empty() {
+        return Ok(());
+    }
+    if !merge_cached_delays(groups, &cache) {
+        cache.clear();
+    }
+    Ok(())
+}
+
+fn merge_cached_delays(groups: &mut [ProxyGroup], cache: &DelayCache) -> bool {
+    let visible = groups
         .iter()
-        .filter(|(_, provider)| {
-            matches!(
-                provider.get("vehicleType").and_then(Value::as_str),
-                Some("File" | "HTTP")
-            )
+        .flat_map(|group| group.options.iter().map(|option| option.name.as_str()))
+        .collect::<HashSet<_>>();
+    if visible.len() != cache.len() || !visible.iter().all(|name| cache.contains_key(*name)) {
+        return false;
+    }
+    for group in groups {
+        for option in &mut group.options {
+            if let Some((delay, alive)) = cache.get(&option.name) {
+                option.delay_ms = *delay;
+                option.alive = *alive;
+            }
+        }
+    }
+    true
+}
+
+fn cache_group_delays(groups: &[ProxyGroup]) -> Result<(), PlatformError> {
+    let refreshed = groups
+        .iter()
+        .flat_map(|group| {
+            group
+                .options
+                .iter()
+                .map(|option| (option.name.clone(), (option.delay_ms, option.alive)))
         })
-        .filter(|(name, _)| valid_control_name(name))
-        .map(|(name, _)| name.to_owned())
-        .collect())
+        .collect::<DelayCache>();
+    let mut cache = DELAY_CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .map_err(|_| PlatformError::InvalidState("proxy delay cache is poisoned".to_owned()))?;
+    *cache = refreshed;
+    Ok(())
 }
 
 fn parse_provider_metadata(value: &Value) -> Result<HashMap<String, ProxyMetadata>, PlatformError> {
@@ -507,6 +640,86 @@ fn region_label(code: &str) -> String {
 mod tests {
     use super::*;
 
+    fn group(name: &str, options: &[&str]) -> ProxyGroup {
+        ProxyGroup {
+            name: name.to_owned(),
+            kind: ProxyGroupKind::Selector,
+            selectable: true,
+            selected: None,
+            options: options
+                .iter()
+                .map(|name| ProxyOption {
+                    name: (*name).to_owned(),
+                    region: None,
+                    delay_ms: None,
+                    alive: None,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn group_delay_plan_covers_inline_items_with_bounded_deduplication() {
+        let groups = vec![
+            group("ALL", &["a", "b", "c"]),
+            group("SUBSET", &["b", "c"]),
+            group("OTHER", &["d"]),
+        ];
+        let selected = delay_refresh_group_indices(&groups).unwrap();
+        let names = selected
+            .into_iter()
+            .map(|index| groups[index].name.as_str())
+            .collect::<HashSet<_>>();
+        assert_eq!(names, HashSet::from(["ALL", "OTHER"]));
+    }
+
+    #[test]
+    fn group_delay_response_marks_measured_items_and_missing_items_as_timeout() {
+        let mut groups = vec![group("ALL", &["a", "b", "c"])];
+        let tested = HashSet::from(["a".to_owned(), "b".to_owned(), "c".to_owned()]);
+        let mut measured = HashMap::new();
+        merge_group_delay_response(&serde_json::json!({"a": 42, "b": 0}), &mut measured).unwrap();
+        apply_group_delay_measurements(&mut groups, &tested, &measured);
+
+        assert_eq!(groups[0].options[0].delay_ms, Some(42));
+        assert_eq!(groups[0].options[0].alive, Some(true));
+        assert_eq!(groups[0].options[1].delay_ms, None);
+        assert_eq!(groups[0].options[1].alive, Some(false));
+        assert_eq!(groups[0].options[2].delay_ms, None);
+        assert_eq!(groups[0].options[2].alive, Some(false));
+    }
+
+    #[test]
+    fn cached_group_delays_survive_follow_up_catalog_reads() {
+        let mut groups = vec![group("ALL", &["a", "b"]), group("SUBSET", &["b"])];
+        let cache = HashMap::from([
+            ("a".to_owned(), (Some(42), Some(true))),
+            ("b".to_owned(), (None, Some(false))),
+        ]);
+
+        assert!(merge_cached_delays(&mut groups, &cache));
+        assert_eq!(groups[0].options[0].delay_ms, Some(42));
+        assert_eq!(groups[0].options[0].alive, Some(true));
+        assert_eq!(groups[0].options[1].delay_ms, None);
+        assert_eq!(groups[0].options[1].alive, Some(false));
+        assert_eq!(groups[1].options[0].alive, Some(false));
+    }
+
+    #[test]
+    fn cached_group_delays_are_rejected_when_catalog_changes() {
+        let mut groups = vec![group("ALL", &["new-a", "new-b"])];
+        let cache = HashMap::from([
+            ("old-a".to_owned(), (Some(42), Some(true))),
+            ("old-b".to_owned(), (None, Some(false))),
+        ]);
+
+        assert!(!merge_cached_delays(&mut groups, &cache));
+        assert!(groups[0]
+            .options
+            .iter()
+            .all(|option| option.delay_ms.is_none() && option.alive.is_none()));
+    }
+
     #[test]
     fn proxy_catalog_exposes_only_sanitized_group_fields() {
         let value = serde_json::json!({
@@ -555,10 +768,6 @@ mod tests {
         assert_eq!(groups[0].options[0].alive, Some(true));
         assert_eq!(groups[0].options[1].delay_ms, None);
         assert_eq!(groups[0].options[1].alive, Some(false));
-        assert_eq!(
-            refreshable_provider_names(&providers).unwrap(),
-            ["subscription"]
-        );
     }
 
     #[test]

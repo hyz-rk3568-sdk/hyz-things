@@ -203,9 +203,9 @@ HTTP 默认绑定 `192.168.8.1:8080`；`HYZ_ROUTER_HTTP_PORT` 可覆盖端口，
 
 响应继续带 CSP、frame deny、nosniff、referrer、permissions、COOP/CORP 等安全头。Trunk 生成的 inline module bootstrap 会在 deterministic bundle 阶段被严格提取成同源 `/router-bootstrap.js`，因此不需要 nonce 或 `'unsafe-inline'`。Yew 启动需要浏览器编译同源 WASM，所以 `script-src` 精确允许 `'self' 'wasm-unsafe-eval'`；后者只开放 WebAssembly 编译，不开放普通 JavaScript `eval`。
 
-Yew 页面显示系统、WAN、LAN/AP、转发/NAT、Mihomo/TUN、`wlan0` WAN 累计流量、LCD 背光、实际使用的代理组、当前节点、逐项延迟/超时和从节点名称保守推断的国家/地区。Mihomo 内置但在当前 rule 模式不承载流量的 `GLOBAL` 组被过滤；没有数据的状态卡、控制卡和代理区域直接隐藏，不显示“不可用”占位。页面首次进入或浏览器完整刷新时只触发一次受限 provider 全量测速，约两秒的状态轮询不会测速；手动按钮可再次刷新，五秒内重复请求返回缓存成功结果而不是 409。provider history 只合并经过名称、数量和字段白名单校验的 `delay`/`alive`，浏览器不能指定 provider、测试 URL 或 timeout。代理节点、组名和地区属于 LAN-visible operational metadata；API 不返回 server/port、订阅 URL、密码、UUID、controller secret、原始 history 或 Mihomo JSON。写操作期间控件禁用，状态失败时保留最近成功快照。
+Yew 页面显示系统、WAN、LAN/AP、转发/NAT、Mihomo/TUN、`wlan0` WAN 累计流量、LCD 背光、实际使用的代理组、当前节点、逐项延迟/超时和从节点名称保守推断的国家/地区。Mihomo 内置但在当前 rule 模式不承载流量的 `GLOBAL` 组被过滤；没有数据的状态卡、控制卡和代理区域直接隐藏，不显示“不可用”占位。页面首次进入或浏览器完整刷新时只触发一次受限组级全量测速，约两秒的状态轮询不会测速；手动按钮可再次刷新，五秒内重复请求返回缓存成功结果而不是 409。组级测速覆盖 inline proxies；响应直接合并到每个显示项，缺失项标记为超时，并在节点目录不变时由 daemon 进程内缓存保留最近结果。provider history 仍只作为初始数据来源，且只合并经过名称、数量和字段白名单校验的 `delay`/`alive`，浏览器不能指定 provider、代理组、测试 URL 或 timeout。代理节点、组名和地区属于 LAN-visible operational metadata；API 不返回 server/port、订阅 URL、密码、UUID、controller secret、原始 history 或 Mihomo JSON。写操作期间控件禁用，状态失败时保留最近成功快照。
 
-设置区在管理员登录后提供 STA 扫描/手工切换、AP SSID/密码/国家码和 write-only Mihomo 订阅来源。AP/STA 面板默认折叠，按需展开；STA 或 AP 应用先经过统一确认弹窗，确认后先关闭弹窗并折叠详情，等待浏览器完成渲染后才发送可能中断管理连接的请求。typed Wi-Fi 配置使用 PBKDF2 派生的 64-hex PSK和固定 renderer，不拼接 raw 配置。STA 只有在关联、DHCP metric-600 route 与同信道 AP readiness 都确认后才提交，失败恢复 committed generation；当前 renderer 只支持 2.4 GHz 并发，5 GHz 候选会 fail-closed。AP 采用 prepare → apply → 重新连接 → confirm，两分钟未确认则恢复旧 AP，daemon 重启发现 pending 也恢复 committed 配置。订阅只接受 HTTPS 公网目标，关闭 redirect/环境代理，使用固定 `clash.meta` User-Agent 请求 YAML，连接前校验并 pin 全部 DNS 结果；响应受 4 MiB 上限约束，必须包含唯一顶层 `proxies`，其他 Clash 配置字段会被丢弃，只有经过严格限制的节点数组进入本地候选。Mihomo 候选验证和 live readiness 成功后才切 current generation。GET 只显示是否配置与通用状态，不返回来源、host、代次或节点数。
+设置区在未登录时只显示默认折叠的管理员登录摘要，按需展开登录表单；登录后提供 STA 扫描/手工切换、AP SSID/密码/国家码和 write-only Mihomo 订阅来源。AP/STA 面板默认折叠，按需展开；STA 或 AP 应用先经过统一确认弹窗，确认后先关闭弹窗并折叠详情，等待浏览器完成渲染后才发送可能中断管理连接的请求。typed Wi-Fi 配置使用 PBKDF2 派生的 64-hex PSK和固定 renderer，不拼接 raw 配置。STA 只有在关联、DHCP metric-600 route 与同信道 AP readiness 都确认后才提交，失败恢复 committed generation；当前 renderer 只支持 2.4 GHz 并发，5 GHz 候选会 fail-closed。AP 采用 prepare → apply → 重新连接 → confirm，两分钟未确认则恢复旧 AP，daemon 重启发现 pending 也恢复 committed 配置。订阅只接受 HTTPS 公网目标，关闭 redirect/环境代理，使用固定 `clash.meta` User-Agent 请求 YAML，连接前校验并 pin 全部 DNS 结果；响应受 4 MiB 上限约束，必须包含唯一顶层 `proxies`，其他 Clash 配置字段会被丢弃，只有经过严格限制的节点数组进入本地候选。Mihomo 候选验证和 live readiness 成功后才切 current generation。GET 只显示是否配置与通用状态，不返回来源、host、代次或节点数。
 
 LCD 的 DTS `default-brightness-level = <0>` 让 U-Boot/Linux 冷启动默认保持零 PWM，但 panel/DSI 仍注册，因此 Web 可以点亮。黑屏操作把 brightness 设为 0 并 powerdown；面板连接的是共享 always-on `vcc5v0_sys`，软件不能让 LCD 连接器 5V 物理归零。
 
@@ -344,3 +344,22 @@ OTA 再次经 `rkImageMaker` 和 `afptool` 解包；成员只有 bootloader、U-
 订阅下载现在以固定 `clash.meta` User-Agent 和 YAML Accept 请求格式。完整 Clash YAML 仍经过文档大小、深度、节点数量、重复键、引用/tag 和字段形状限制，只提取唯一顶层 `proxies`；controller、规则、代理组和其他服务端字段不会进入本地 source。板端使用已保存的 write-only 来源刷新成功，公开摘要由 `failed` 变为 `active`，至少一个不可变 generation 已提交，TUN core、精确 iptables 链、mark rule 和 table 110 默认路由保持 ready。验证过程未读取或输出 URL/token、节点内容或 provider 数据。
 
 设置页不再常驻展示“当前网络 + STA + AP”多块表格：STA/AP 各自显示一行当前摘要并默认折叠，点击后按需展开。STA 应用和 AP apply 共用确认弹窗；确认回调先关闭弹窗、折叠详情并等待 150 ms 浏览器渲染窗口，再发起可能断开管理连接的请求。板端已确认版本化 WASM/CSS 资源及折叠/弹窗样式进入安装 ELF；使用真实凭据触发断网操作后的主观视觉时序仍由操作者在浏览器完成最终验收。本轮忽略的本地审计资料位于 `output/audit/subscription-wifi-ui-20260811/`。
+
+## 2026-08-11 节点测速与登录折叠 OTA
+
+最终安装的 recovery-free OTA：
+
+| 产物 | SHA-256 |
+| --- | --- |
+| `output/upgrade.fw`（379,544,138 bytes） | `5c04aa6bf90b3c9cff53c8016641ae5f27b9cb4c26f7a9dd6f772e976d460fd4` |
+| 打包 `boot.img` | `7e86de4e901d2c672aaf0c62f56fd6e6fee60439ca0fec45f1efd85bcd7a665b` |
+| 打包 `rootfs.img` | `134fda8a276656fbc5ab5efd8701e1b2ff628ee9c17d4237e660795146581430` |
+| 打包 `oem.img` | `43c0fbe5e3dfae23f4bebf4f6c36071015880e661cb9d9bc55a034e8cf16973a` |
+| `/usr/bin/hyz-router` | `057c9b8252b9f18ff0c60884a2c721c6f2d2e176cbd076c1137b28d6ceb9b830` |
+| `/etc/init.d/S81hyz-router` | `a3c4741821adb3db8c3f997dbd5c0c45a2db31be529ae43e08829f56e5c165cd` |
+
+OTA 经 `rkImageMaker`/`afptool` 解包，成员仍只有 bootloader、U-Boot、misc、boot、rootfs 和 oem，不含 recovery/userdata；构建 ELF 与 rootfs 内 ELF 逐字节一致。安装后 STA、AP、转发、TUN 和 Mihomo 均恢复 ready，板端 ELF 哈希与打包值一致。
+
+全量测速改用 Mihomo 组级 delay API，因此订阅导入的 inline proxies 也会逐项测量。调用规划按覆盖率贪心去重并限制最多 16 个组请求；返回值直接合并进显示项，未返回的项明确标记为超时。最近一次完整结果按当前节点名称集合保存在 daemon 进程内缓存中；节点目录变化时缓存失效，避免把旧节点结果映射到新目录。板端匿名统计验证手动响应覆盖 16/16 项（15 项数值、1 项超时），随后重新读取 panel 仍覆盖 16/16，未记录节点名或 provider 数据。
+
+页面首次获得非空代理组后会在无管理员 session 时自动触发一次同源 CSRF 保护的全量测速；管理员登录表单改为默认折叠、按需展开，登出时重新折叠。已安装 ELF 与包含这些前端变更的构建产物一致。

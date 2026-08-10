@@ -477,20 +477,15 @@ fn app() -> Html {
     {
         let state = state.clone();
         let delay_refresh_started = delay_refresh_started.clone();
-        let refresh = state
-            .session
-            .as_ref()
-            .filter(|session| session.authenticated && !session.must_change)
-            .and_then(|_| state.panel.as_ref())
-            .and_then(|bootstrap| {
-                bootstrap
-                    .panel
-                    .proxy_groups
-                    .data
-                    .as_ref()
-                    .filter(|groups| !groups.is_empty())
-                    .map(|_| bootstrap.csrf_token.clone())
-            });
+        let refresh = state.panel.as_ref().and_then(|bootstrap| {
+            bootstrap
+                .panel
+                .proxy_groups
+                .data
+                .as_ref()
+                .filter(|groups| !groups.is_empty())
+                .map(|_| bootstrap.csrf_token.clone())
+        });
         use_effect_with(refresh, move |csrf| {
             if let Some(csrf) = csrf.as_ref().filter(|_| !*delay_refresh_started) {
                 delay_refresh_started.set(true);
@@ -823,6 +818,7 @@ fn settings(props: &SettingsProps) -> Html {
     let ap_password = use_node_ref();
     let ap_country = use_node_ref();
     let subscription_url = use_node_ref();
+    let login_expanded = use_state(|| false);
     let sta_expanded = use_state(|| false);
     let ap_expanded = use_state(|| false);
     let network_confirmation_open = use_state(|| false);
@@ -861,7 +857,9 @@ fn settings(props: &SettingsProps) -> Html {
     let logout = {
         let state = state.clone();
         let csrf = csrf.clone();
+        let login_expanded = login_expanded.clone();
         Callback::from(move |_| {
+            login_expanded.set(false);
             dispatch_auth(
                 state.clone(),
                 AUTH_LOGOUT_ENDPOINT,
@@ -1048,6 +1046,10 @@ fn settings(props: &SettingsProps) -> Html {
             confirmation_open.set(false);
         })
     };
+    let toggle_login = {
+        let expanded = login_expanded.clone();
+        Callback::from(move |_| expanded.set(!*expanded))
+    };
     let toggle_sta = {
         let expanded = sta_expanded.clone();
         Callback::from(move |_| expanded.set(!*expanded))
@@ -1141,12 +1143,20 @@ fn settings(props: &SettingsProps) -> Html {
             if !state.session_checked {
                 <div class="control-empty">{"正在检查登录状态…"}</div>
             } else if !authenticated {
-                <form class="auth-form" onsubmit={login} autocomplete="on">
-                    <label><span>{"用户名"}</span><input value="admin" readonly=true autocomplete="username" /></label>
-                    <label><span>{"密码"}</span><input ref={login_password} type="password" required=true autocomplete="current-password" /></label>
-                    <button class="primary" type="submit" disabled={busy || csrf.is_empty()}>{if busy { "登录中…" } else { "登录" }}</button>
-                    <small>{"新设备首次登录密码为 admin；登录后必须立即修改。"}</small>
-                </form>
+                <article class="settings-card settings-disclosure login-disclosure">
+                    <button class="settings-toggle" type="button" onclick={toggle_login} aria-expanded={login_expanded.to_string()} aria-controls="admin-login-detail">
+                        <span><strong>{"管理员登录"}</strong><small>{"设置保持锁定，状态面板仍可直接查看"}</small></span>
+                        <span class="disclosure-action">{if *login_expanded { "收起" } else { "展开" }}</span>
+                    </button>
+                    if *login_expanded {
+                        <form id="admin-login-detail" class="auth-form settings-detail login-detail" onsubmit={login} autocomplete="on">
+                            <label><span>{"用户名"}</span><input value="admin" readonly=true autocomplete="username" /></label>
+                            <label><span>{"密码"}</span><input ref={login_password} type="password" required=true autocomplete="current-password" /></label>
+                            <button class="primary" type="submit" disabled={busy || csrf.is_empty()}>{if busy { "登录中…" } else { "登录" }}</button>
+                            <small>{"新设备首次登录密码为 admin；登录后必须立即修改。"}</small>
+                        </form>
+                    }
+                </article>
             } else if must_change {
                 <div class="forced-password">
                     <div class="risk-banner bad" role="alert"><strong>{"必须先修改默认密码"}</strong><span>{"新密码至少 12 字节，不能继续使用默认密码。完成前其他设置保持锁定。"}</span></div>
