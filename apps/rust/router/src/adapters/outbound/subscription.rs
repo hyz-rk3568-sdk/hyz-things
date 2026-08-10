@@ -528,7 +528,7 @@ fn read_optional_private(
     path: &Path,
     maximum: usize,
 ) -> Result<Option<Vec<u8>>, SubscriptionStorageError> {
-    let mut file = match OpenOptions::new()
+    let file = match OpenOptions::new()
         .read(true)
         .custom_flags(O_NOFOLLOW)
         .open(path)

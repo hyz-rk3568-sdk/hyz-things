@@ -10,6 +10,8 @@ use zeroize::Zeroizing;
 
 pub const NETWORK_CONFIG_PATH: &str = "/userdata/hyz-router/network-config-v1.json";
 pub const PENDING_NETWORK_CONFIG_PATH: &str = "/userdata/hyz-router/network-config-pending-v1.json";
+pub const STA_ROLLBACK_CONFIG_PATH: &str =
+    "/userdata/hyz-router/network-config-sta-rollback-v1.json";
 pub const LEGACY_WPA_CONFIG_PATH: &str = "/userdata/hyz-router/wpa_supplicant.conf";
 pub const LEGACY_HOSTAPD_CONFIG_PATH: &str = "/userdata/hyz-router/hostapd-sta-ap.conf";
 const MAX_NETWORK_CONFIG_SIZE: usize = 16 * 1024;
@@ -37,6 +39,7 @@ impl Error for NetworkConfigError {}
 pub struct NetworkConfigStore {
     config_path: &'static str,
     pending_path: &'static str,
+    sta_rollback_path: &'static str,
     legacy_wpa_path: &'static str,
     legacy_hostapd_path: &'static str,
 }
@@ -46,6 +49,7 @@ impl Default for NetworkConfigStore {
         Self {
             config_path: NETWORK_CONFIG_PATH,
             pending_path: PENDING_NETWORK_CONFIG_PATH,
+            sta_rollback_path: STA_ROLLBACK_CONFIG_PATH,
             legacy_wpa_path: LEGACY_WPA_CONFIG_PATH,
             legacy_hostapd_path: LEGACY_HOSTAPD_CONFIG_PATH,
         }
@@ -80,6 +84,25 @@ impl NetworkConfigStore {
 
     pub fn remove_pending(&self) -> Result<(), NetworkConfigError> {
         storage::remove_file_durable(self.pending_path)
+            .map_err(|error| NetworkConfigError::Io(error.to_string()))
+    }
+
+    pub fn read_sta_rollback(&self) -> Result<Option<NetworkConfigV1>, NetworkConfigError> {
+        read_json(self.sta_rollback_path)
+    }
+
+    pub fn persist_sta_rollback(
+        &self,
+        committed: &NetworkConfigV1,
+    ) -> Result<(), NetworkConfigError> {
+        committed
+            .validate_version()
+            .map_err(|error| NetworkConfigError::Invalid(error.to_string()))?;
+        write_json(self.sta_rollback_path, committed)
+    }
+
+    pub fn remove_sta_rollback(&self) -> Result<(), NetworkConfigError> {
+        storage::remove_file_durable(self.sta_rollback_path)
             .map_err(|error| NetworkConfigError::Io(error.to_string()))
     }
 
@@ -161,12 +184,13 @@ pub fn render_wpa_supplicant(config: &StaConfig) -> Zeroizing<String> {
          update_config=0\n\
          network={{\n\
          \tssid={ssid}\n\
-         \tpsk={psk}\n\
+         \tpsk={}\n\
          \tkey_mgmt=WPA-PSK\n\
          \tproto=RSN\n\
          \tpairwise=CCMP\n\
          \tgroup=CCMP\n\
-         }}\n"
+         }}\n",
+        psk.as_str()
     ))
 }
 
@@ -180,6 +204,7 @@ pub fn render_hostapd_on_channel(config: &ApConfig, channel: u8) -> Zeroizing<St
     Zeroizing::new(format!(
         "interface=p2p0\n\
          driver=nl80211\n\
+         ctrl_interface=/var/run/hostapd\n\
          ssid2={ssid}\n\
          country_code={}\n\
          ieee80211d=1\n\
@@ -189,8 +214,9 @@ pub fn render_hostapd_on_channel(config: &ApConfig, channel: u8) -> Zeroizing<St
          wpa=2\n\
          wpa_key_mgmt=WPA-PSK\n\
          rsn_pairwise=CCMP\n\
-         wpa_psk={psk}\n",
-        config.country.as_str()
+         wpa_psk={}\n",
+        config.country.as_str(),
+        psk.as_str()
     ))
 }
 
@@ -407,6 +433,7 @@ mod tests {
         let hostapd = render_hostapd(&config.ap);
 
         assert!(wpa.contains("ssid=535441\n"));
+        assert!(hostapd.contains("ctrl_interface=/var/run/hostapd\n"));
         assert!(hostapd.contains("ssid2=415020e7958c\n"));
         assert!(hostapd.contains("country_code=US\n"));
         assert!(!wpa.contains('"'));

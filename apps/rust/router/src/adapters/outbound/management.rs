@@ -23,7 +23,7 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     net::Ipv4Addr,
-    os::unix::fs::{MetadataExt, OpenOptionsExt},
+    os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
@@ -38,8 +38,9 @@ const RESOLV_CONFIG: &str = "/etc/resolv.conf";
 const DHCP_OWNERSHIP_RECORD: &str = "/run/hyz-router/udhcpc.lease-generation.json";
 const AP_PENDING_APPLIED_RECORD: &str = "/run/hyz-router/ap-pending-applied-v1";
 const PROCESS_WAIT: Duration = Duration::from_secs(5);
+const STA_CHANNEL_WAIT: Duration = Duration::from_secs(45);
+const AP_READY_WAIT: Duration = Duration::from_secs(30);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
-const MAX_CONFIG_SIZE: usize = 1024 * 1024;
 const MAX_RESOLV_SIZE: usize = 64 * 1024;
 
 pub const DNSMASQ_CONFIG: &str = "# DHCP and DNS proxy for the isolated br-lan LAN.\n\
@@ -294,12 +295,20 @@ impl ServiceIdentity {
 
 impl super::process::LinuxRouterPlatform {
     pub(crate) fn ensure_management_services(&self) -> Result<(), PlatformError> {
-        self.restart_management_services(&committed_network_config()?)
+        self.restart_management_services(&committed_network_config()?, false)
     }
 
-    fn restart_management_services(&self, config: &NetworkConfigV1) -> Result<(), PlatformError> {
+    fn restart_management_services(
+        &self,
+        config: &NetworkConfigV1,
+        attach_after_start: bool,
+    ) -> Result<(), PlatformError> {
         wait_for_interface_presence(WAN_INTERFACE, Duration::from_secs(20))?;
         wait_for_interface_presence(LAN_MEMBER, Duration::from_secs(20))?;
+        // RTL8852BS can reject beacon programming when p2p0 remains enslaved while hostapd is
+        // recreated. Detach before every transaction and attach only after AP readiness. A failed
+        // candidate therefore leaves a clean detached interface for the committed rollback.
+        self.detach_ap()?;
         self.stop_owned_management_services()?;
         self.refuse_foreign_management_processes()?;
         prepare_runtime_configs(config, 6)?;
@@ -315,17 +324,19 @@ impl super::process::LinuxRouterPlatform {
             self.start_service(ManagementService::Udhcpc)?;
             started.push(ManagementService::Udhcpc);
 
-            if let Some(channel) = self.current_sta_channel()? {
-                prepare_runtime_configs(config, channel)?;
-            }
-            run_ip(&["link", "set", "dev", LAN_MEMBER, "up"])?;
-            self.start_service(ManagementService::Hostapd)?;
+            // RTL8852BS concurrent mode shares one radio channel. Give an available committed STA
+            // a bounded association window before AP startup, but keep LAN fallback independent
+            // from DHCP/default-route readiness.
+            let channel = self.wait_for_sta_channel(STA_CHANNEL_WAIT)?.unwrap_or(6);
+            self.start_hostapd_on_channel(&config.ap, channel)?;
             started.push(ManagementService::Hostapd);
-            self.wait_for_hostapd(Duration::from_secs(15))?;
 
             self.start_service(ManagementService::Dnsmasq)?;
             started.push(ManagementService::Dnsmasq);
             self.wait_for_identity(ManagementService::Dnsmasq, PROCESS_WAIT)?;
+            if attach_after_start {
+                self.attach_ap()?;
+            }
 
             if !self.management_services_ready()? {
                 return Err(PlatformError::ProbeFailed(
@@ -334,12 +345,31 @@ impl super::process::LinuxRouterPlatform {
             }
             Ok(())
         })();
-        if result.is_err() {
-            for service in started.into_iter().rev() {
-                let _ = self.stop_service(service);
+        match result {
+            Ok(()) => Ok(()),
+            Err(primary) => {
+                // This action is not recorded by the outer reconciler when it fails, so it must
+                // complete its own compensation. Detach before stopping hostapd and retain every
+                // exact identity record whose process cannot be stopped.
+                let mut cleanup_errors = Vec::new();
+                if let Err(error) = self.detach_ap() {
+                    cleanup_errors.push(format!("detach AP: {error}"));
+                }
+                for service in started.into_iter().rev() {
+                    if let Err(error) = self.stop_service(service) {
+                        cleanup_errors.push(format!("stop {}: {error}", service.label()));
+                    }
+                }
+                if cleanup_errors.is_empty() {
+                    Err(primary)
+                } else {
+                    Err(PlatformError::InvalidState(format!(
+                        "management restart failed: {primary}; exact cleanup also failed: {}",
+                        cleanup_errors.join("; ")
+                    )))
+                }
             }
         }
-        result
     }
 
     pub(crate) fn management_services_ready(&self) -> Result<bool, PlatformError> {
@@ -525,8 +555,65 @@ impl super::process::LinuxRouterPlatform {
         )
     }
 
-    fn wait_for_hostapd(&self, timeout: Duration) -> Result<(), PlatformError> {
-        wait_until(timeout, || self.hostapd_enabled(), "AP enablement")
+    fn wait_for_hostapd(&self, channel: u8, timeout: Duration) -> Result<(), PlatformError> {
+        wait_until(
+            timeout,
+            || self.hostapd_enabled_on_channel(channel),
+            "AP enablement on the associated STA channel",
+        )
+    }
+
+    fn start_hostapd_on_channel(
+        &self,
+        config: &ApConfig,
+        channel: u8,
+    ) -> Result<(), PlatformError> {
+        let mut first_error = None;
+        for attempt in 0..2 {
+            self.stop_service(ManagementService::Hostapd)?;
+            run_ip(&["link", "set", "dev", LAN_MEMBER, "down"])?;
+            let hostapd = render_hostapd_on_channel(config, channel);
+            storage::atomic_write_private(HOSTAPD_RUNTIME_CONFIG, hostapd.as_bytes())?;
+            run_ip(&["link", "set", "dev", LAN_MEMBER, "up"])?;
+            let result = self
+                .start_service(ManagementService::Hostapd)
+                .and_then(|()| self.wait_for_hostapd(channel, AP_READY_WAIT));
+            match result {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    if let Err(cleanup) = self.stop_service(ManagementService::Hostapd) {
+                        return Err(PlatformError::InvalidState(format!(
+                            "hostapd attempt failed: {error}; exact process cleanup also failed: {cleanup}"
+                        )));
+                    }
+                    if attempt == 0 {
+                        first_error = Some(error);
+                    } else {
+                        return Err(PlatformError::ProbeFailed(format!(
+                            "hostapd failed after one clean retry: first={}; second={error}",
+                            first_error.as_ref().expect("first hostapd error recorded")
+                        )));
+                    }
+                }
+            }
+        }
+        unreachable!("fixed hostapd retry loop returns on every second attempt")
+    }
+
+    fn wait_for_sta_channel(&self, timeout: Duration) -> Result<Option<u8>, PlatformError> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            match self.current_sta_channel() {
+                Ok(Some(channel)) => return Ok(Some(channel)),
+                Ok(None) => {}
+                Err(error) if is_management_probe_timeout(&error) => {}
+                Err(error) => return Err(error),
+            }
+            if Instant::now() >= deadline {
+                return Ok(None);
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
     }
 
     fn current_sta_channel(&self) -> Result<Option<u8>, PlatformError> {
@@ -547,17 +634,30 @@ impl super::process::LinuxRouterPlatform {
             .transpose()
     }
 
-    fn follow_sta_channel(&self, config: &NetworkConfigV1) -> Result<(), PlatformError> {
+    fn sta_associated_with(
+        &self,
+        candidate: &StaConfig,
+        expected_channel: u8,
+    ) -> Result<bool, PlatformError> {
+        let status =
+            self.run_management_probe("/usr/sbin/wpa_cli", &["-i", WAN_INTERFACE, "status"])?;
+        Ok(sta_status_ready(
+            &status,
+            candidate.ssid.as_str(),
+            expected_channel,
+        ))
+    }
+
+    fn follow_sta_channel(&self, config: &NetworkConfigV1) -> Result<u8, PlatformError> {
         let channel = self.current_sta_channel()?.ok_or_else(|| {
             PlatformError::ProbeFailed(
                 "ready STA did not report an associated frequency".to_owned(),
             )
         })?;
-        self.stop_service(ManagementService::Hostapd)?;
-        let hostapd = render_hostapd_on_channel(&config.ap, channel);
-        storage::atomic_write_private(HOSTAPD_RUNTIME_CONFIG, hostapd.as_bytes())?;
-        self.start_service(ManagementService::Hostapd)?;
-        self.wait_for_hostapd(Duration::from_secs(15))
+        self.detach_ap()?;
+        self.start_hostapd_on_channel(&config.ap, channel)?;
+        self.attach_ap()?;
+        Ok(channel)
     }
 
     pub(crate) fn wait_for_sta_route(&self, timeout: Duration) -> Result<(), PlatformError> {
@@ -569,9 +669,28 @@ impl super::process::LinuxRouterPlatform {
     }
 
     fn hostapd_enabled(&self) -> Result<bool, PlatformError> {
-        let output =
-            self.run_management_probe("/usr/bin/hostapd_cli", &["-i", LAN_MEMBER, "status"])?;
-        Ok(output.lines().any(|line| line == "state=ENABLED"))
+        let output = match self
+            .run_management_probe("/usr/bin/hostapd_cli", &["-i", LAN_MEMBER, "status"])
+        {
+            Ok(output) => output,
+            // hostapd_cli can block while the driver is applying its regulatory/channel update.
+            // The outer AP readiness deadline remains authoritative; one bounded probe timeout is
+            // transient "not enabled yet", not proof that management startup is unsafe.
+            Err(error) if is_management_probe_timeout(&error) => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        Ok(hostapd_status_ready(&output, None))
+    }
+
+    fn hostapd_enabled_on_channel(&self, channel: u8) -> Result<bool, PlatformError> {
+        let output = match self
+            .run_management_probe("/usr/bin/hostapd_cli", &["-i", LAN_MEMBER, "status"])
+        {
+            Ok(output) => output,
+            Err(error) if is_management_probe_timeout(&error) => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        Ok(hostapd_status_ready(&output, Some(channel)))
     }
 
     pub(crate) fn owned_sta_address_and_route_ready(&self) -> Result<bool, PlatformError> {
@@ -698,6 +817,13 @@ impl DhcpPlatformPort for super::process::LinuxRouterPlatform {
 impl WifiPlatformPort for super::process::LinuxRouterPlatform {
     fn recover_interrupted_ap_transaction(&self) -> Result<(), PlatformError> {
         let store = NetworkConfigStore::default();
+        if let Some(committed) = store.read_sta_rollback().map_err(network_config_error)? {
+            // A durable pre-transaction snapshot is authoritative until candidate persistence and
+            // journal removal both complete. Startup restores it before recreating any runtime
+            // service, resolving crashes and ambiguous rename/fsync outcomes fail-closed.
+            persist_network_config_verified(&store, &committed)?;
+            store.remove_sta_rollback().map_err(network_config_error)?;
+        }
         if store
             .read_pending()
             .map_err(network_config_error)?
@@ -737,14 +863,37 @@ impl WifiPlatformPort for super::process::LinuxRouterPlatform {
         Ok(committed_network_config()?.summary())
     }
 
+    fn begin_sta_candidate(&self) -> Result<NetworkConfigV1, PlatformError> {
+        let store = NetworkConfigStore::default();
+        if store
+            .read_sta_rollback()
+            .map_err(network_config_error)?
+            .is_some()
+        {
+            return Err(PlatformError::Conflict(
+                "an interrupted STA transaction requires recovery".to_owned(),
+            ));
+        }
+        if store
+            .read_pending()
+            .map_err(network_config_error)?
+            .is_some()
+        {
+            return Err(PlatformError::Conflict(
+                "an AP transaction is already pending".to_owned(),
+            ));
+        }
+        let committed = committed_network_config()?;
+        store
+            .persist_sta_rollback(&committed)
+            .map_err(network_config_error)?;
+        Ok(committed)
+    }
+
     fn apply_sta_candidate(&self, candidate: &StaConfig) -> Result<(), PlatformError> {
         let mut config = committed_network_config()?;
         config.sta = candidate.clone();
-        if let Err(error) = self.restart_management_services(&config) {
-            let _ = self.restart_management_services(&committed_network_config()?);
-            return Err(error);
-        }
-        Ok(())
+        self.restart_management_services(&config, true)
     }
 
     fn sta_candidate_ready(&self, candidate: &StaConfig) -> Result<bool, PlatformError> {
@@ -753,8 +902,21 @@ impl WifiPlatformPort for super::process::LinuxRouterPlatform {
         }
         let mut config = committed_network_config()?;
         config.sta = candidate.clone();
-        self.follow_sta_channel(&config)?;
-        Ok(self.owned_sta_address_and_route_ready()? && self.hostapd_enabled()?)
+        let channel = self.follow_sta_channel(&config)?;
+        // Require two coherent post-restart observations so a driver disconnect cannot be hidden
+        // briefly by a stale DHCP address/default route while udhcpc processes deconfiguration.
+        for observation in 0..2 {
+            if !self.sta_associated_with(candidate, channel)?
+                || !self.hostapd_enabled_on_channel(channel)?
+                || !self.owned_sta_address_and_route_ready()?
+            {
+                return Ok(false);
+            }
+            if observation == 0 {
+                thread::sleep(Duration::from_millis(500));
+            }
+        }
+        Ok(true)
     }
 
     fn commit_sta_candidate(
@@ -762,20 +924,58 @@ impl WifiPlatformPort for super::process::LinuxRouterPlatform {
         candidate: StaConfig,
     ) -> Result<NetworkConfigSummary, PlatformError> {
         let store = NetworkConfigStore::default();
-        let mut config = committed_network_config()?;
+        let committed = store
+            .read_sta_rollback()
+            .map_err(network_config_error)?
+            .ok_or_else(|| {
+                PlatformError::InvalidState("STA rollback journal is absent".to_owned())
+            })?;
+        let mut config = committed.clone();
         config.sta = candidate;
-        if let Err(error) = store.persist(&config).map_err(network_config_error) {
-            // rename may already have committed even if the following parent-directory fsync
-            // failed. Read back before deciding whether the runtime must be rolled back.
-            if store.read().map_err(network_config_error)?.as_ref() != Some(&config) {
-                return Err(error);
-            }
+        persist_network_config_verified(&store, &config)?;
+        if let Err(removal) = store.remove_sta_rollback().map_err(network_config_error) {
+            // An unlink followed by a failed directory fsync is ambiguous. Recreate the old
+            // journal and restore the canonical file before reporting failure; the application
+            // still owns the in-memory snapshot and will restore runtime services next.
+            let journal = store
+                .persist_sta_rollback(&committed)
+                .map_err(network_config_error);
+            let persistence = persist_network_config_verified(&store, &committed);
+            return match (journal, persistence) {
+                (Ok(()), Ok(())) => Err(removal),
+                (journal, persistence) => Err(PlatformError::InvalidState(format!(
+                    "STA commit journal removal failed: {removal}; journal restoration={journal:?}; canonical restoration={persistence:?}"
+                ))),
+            };
         }
         Ok(config.summary())
     }
 
-    fn rollback_sta_candidate(&self) -> Result<(), PlatformError> {
-        self.restart_management_services(&committed_network_config()?)
+    fn rollback_sta_candidate(&self, committed: &NetworkConfigV1) -> Result<(), PlatformError> {
+        let store = NetworkConfigStore::default();
+        let persistence = persist_network_config_verified(&store, committed);
+        let runtime = self
+            .restart_management_services(committed, true)
+            .and_then(|()| self.wait_for_sta_route(Duration::from_secs(30)))
+            .and_then(|()| {
+                if self.management_services_ready()? && self.owned_sta_address_and_route_ready()? {
+                    Ok(())
+                } else {
+                    Err(PlatformError::UnsafeToCutOver(
+                        "committed STA/AP restoration did not pass strict readiness".to_owned(),
+                    ))
+                }
+            });
+        match (persistence, runtime) {
+            (Ok(()), Ok(())) => store
+                .remove_sta_rollback()
+                .map_err(network_config_error),
+            (Err(persistence), Ok(())) => Err(persistence),
+            (Ok(()), Err(runtime)) => Err(runtime),
+            (Err(persistence), Err(runtime)) => Err(PlatformError::InvalidState(format!(
+                "committed persistence restoration failed: {persistence}; runtime restoration also failed: {runtime}"
+            ))),
+        }
     }
 
     fn prepare_ap_candidate(
@@ -784,6 +984,7 @@ impl WifiPlatformPort for super::process::LinuxRouterPlatform {
         staged_at_unix_ms: u64,
     ) -> Result<PendingNetworkConfigSummary, PlatformError> {
         let store = NetworkConfigStore::default();
+        refuse_outstanding_sta_transaction(&store)?;
         if store
             .read_pending()
             .map_err(network_config_error)?
@@ -808,6 +1009,7 @@ impl WifiPlatformPort for super::process::LinuxRouterPlatform {
         _applied_at_unix_ms: u64,
     ) -> Result<PendingNetworkConfigSummary, PlatformError> {
         let store = NetworkConfigStore::default();
+        refuse_outstanding_sta_transaction(&store)?;
         if storage::read_small_optional(AP_PENDING_APPLIED_RECORD, 64)?.is_some() {
             return Err(PlatformError::Conflict(
                 "pending AP candidate has already been applied".to_owned(),
@@ -819,8 +1021,8 @@ impl WifiPlatformPort for super::process::LinuxRouterPlatform {
             .ok_or_else(|| {
                 PlatformError::InvalidState("no AP transaction is pending".to_owned())
             })?;
-        if let Err(error) = self.restart_management_services(&prepared.config) {
-            let rollback = self.restart_management_services(&committed_network_config()?);
+        if let Err(error) = self.restart_management_services(&prepared.config, true) {
+            let rollback = self.restart_management_services(&committed_network_config()?, true);
             if let Err(rollback) = rollback {
                 return Err(PlatformError::InvalidState(format!(
                     "AP apply failed: {error}; committed rollback also failed: {rollback}"
@@ -834,7 +1036,7 @@ impl WifiPlatformPort for super::process::LinuxRouterPlatform {
             .persist_pending(&pending)
             .map_err(network_config_error)
         {
-            let rollback = self.restart_management_services(&committed_network_config()?);
+            let rollback = self.restart_management_services(&committed_network_config()?, true);
             if let Err(rollback) = rollback {
                 return Err(PlatformError::InvalidState(format!(
                     "recording AP readiness failed: {error}; committed rollback also failed: {rollback}"
@@ -843,7 +1045,7 @@ impl WifiPlatformPort for super::process::LinuxRouterPlatform {
             return Err(error);
         }
         if let Err(error) = storage::atomic_write_private(AP_PENDING_APPLIED_RECORD, b"applied\n") {
-            let rollback = self.restart_management_services(&committed_network_config()?);
+            let rollback = self.restart_management_services(&committed_network_config()?, true);
             if let Err(rollback) = rollback {
                 return Err(PlatformError::InvalidState(format!(
                     "recording applied AP candidate failed: {error}; committed rollback also failed: {rollback}"
@@ -863,6 +1065,7 @@ impl WifiPlatformPort for super::process::LinuxRouterPlatform {
             ));
         }
         let store = NetworkConfigStore::default();
+        refuse_outstanding_sta_transaction(&store)?;
         let pending = store
             .read_pending()
             .map_err(network_config_error)?
@@ -884,6 +1087,7 @@ impl WifiPlatformPort for super::process::LinuxRouterPlatform {
 
     fn cancel_ap_candidate(&self) -> Result<NetworkConfigSummary, PlatformError> {
         let store = NetworkConfigStore::default();
+        refuse_outstanding_sta_transaction(&store)?;
         let committed = committed_network_config()?;
         if store
             .read_pending()
@@ -894,7 +1098,7 @@ impl WifiPlatformPort for super::process::LinuxRouterPlatform {
                 "no AP transaction is pending".to_owned(),
             ));
         }
-        self.restart_management_services(&committed)?;
+        self.restart_management_services(&committed, true)?;
         store.remove_pending().map_err(network_config_error)?;
         storage::remove_file_durable(AP_PENDING_APPLIED_RECORD)?;
         Ok(committed.summary())
@@ -986,6 +1190,35 @@ fn committed_network_config() -> Result<NetworkConfigV1, PlatformError> {
         })
 }
 
+fn refuse_outstanding_sta_transaction(store: &NetworkConfigStore) -> Result<(), PlatformError> {
+    if store
+        .read_sta_rollback()
+        .map_err(network_config_error)?
+        .is_some()
+    {
+        return Err(PlatformError::Conflict(
+            "an interrupted STA transaction requires recovery before AP mutation".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn persist_network_config_verified(
+    store: &NetworkConfigStore,
+    config: &NetworkConfigV1,
+) -> Result<(), PlatformError> {
+    let Err(write_error) = store.persist(config).map_err(network_config_error) else {
+        return Ok(());
+    };
+    match store.read().map_err(network_config_error) {
+        Ok(Some(actual)) if actual == *config => Ok(()),
+        Ok(_) => Err(write_error),
+        Err(read_error) => Err(PlatformError::InvalidState(format!(
+            "network config persistence was ambiguous: {write_error}; read-back also failed: {read_error}"
+        ))),
+    }
+}
+
 fn network_config_error(error: super::network_config::NetworkConfigError) -> PlatformError {
     PlatformError::InvalidState(error.to_string())
 }
@@ -998,44 +1231,6 @@ fn frequency_to_channel(frequency_mhz: u16) -> Option<u8> {
         2_484 => Some(14),
         _ => None,
     }
-}
-
-pub(crate) fn render_hostapd_config(source: &str) -> Result<String, PlatformError> {
-    if source.as_bytes().contains(&0) {
-        return Err(PlatformError::InvalidState(
-            "hostapd source config contains NUL".to_owned(),
-        ));
-    }
-    let mut output = String::new();
-    for line in source.lines() {
-        let trimmed = line.trim_start();
-        if trimmed
-            .split_once('=')
-            .is_some_and(|(key, _)| key.trim_end() == "bridge")
-        {
-            continue;
-        }
-        output.push_str(line);
-        output.push('\n');
-    }
-    output.push_str("bridge=br-lan\n");
-    Ok(output)
-}
-
-fn validate_private_source(path: &str) -> Result<(), PlatformError> {
-    let metadata = fs::symlink_metadata(path)
-        .map_err(|error| PlatformError::Io(format!("inspect required private config: {error}")))?;
-    if !metadata.file_type().is_file() || metadata.uid() != 0 || metadata.mode() & 0o077 != 0 {
-        return Err(PlatformError::InvalidState(
-            "required management config is not a root-owned private regular file".to_owned(),
-        ));
-    }
-    if metadata.len() > MAX_CONFIG_SIZE as u64 {
-        return Err(PlatformError::InvalidState(
-            "required management config exceeds size limit".to_owned(),
-        ));
-    }
-    Ok(())
 }
 
 fn expected_command_line(service: ManagementService) -> Result<Vec<String>, PlatformError> {
@@ -1274,6 +1469,37 @@ pub(crate) fn wait_for_interface_presence(
         timeout,
         || Ok(Path::new("/sys/class/net").join(interface).exists()),
         "required network interface",
+    )
+}
+
+fn sta_status_ready(output: &str, expected_ssid: &str, expected_channel: u8) -> bool {
+    let expected_ssid = format!("ssid={expected_ssid}");
+    let completed = output.lines().any(|line| line == "wpa_state=COMPLETED");
+    let matching_ssid = output.lines().any(|line| line == expected_ssid);
+    let matching_channel = output.lines().any(|line| {
+        line.strip_prefix("freq=")
+            .and_then(|value| value.parse::<u16>().ok())
+            .and_then(frequency_to_channel)
+            == Some(expected_channel)
+    });
+    completed && matching_ssid && matching_channel
+}
+
+fn hostapd_status_ready(output: &str, expected_channel: Option<u8>) -> bool {
+    if !output.lines().any(|line| line == "state=ENABLED") {
+        return false;
+    }
+    expected_channel.is_none_or(|channel| {
+        let expected = format!("channel={channel}");
+        output.lines().any(|line| line == expected)
+    })
+}
+
+fn is_management_probe_timeout(error: &PlatformError) -> bool {
+    matches!(
+        error,
+        PlatformError::ProbeFailed(detail)
+            if detail == "management probe exceeded its deadline"
     )
 }
 
@@ -1574,6 +1800,108 @@ mod tests {
     use super::*;
 
     #[test]
+    fn ap_mutations_refuse_an_outstanding_sta_rollback_journal() {
+        let source = include_str!("management.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert_eq!(
+            source
+                .matches("refuse_outstanding_sta_transaction(&store)?")
+                .count(),
+            4
+        );
+    }
+
+    #[test]
+    fn only_the_fixed_management_timeout_is_transient_during_readiness() {
+        assert!(is_management_probe_timeout(&PlatformError::ProbeFailed(
+            "management probe exceeded its deadline".to_owned()
+        )));
+        assert!(!is_management_probe_timeout(&PlatformError::ProbeFailed(
+            "other probe failure".to_owned()
+        )));
+        assert!(!is_management_probe_timeout(&PlatformError::Conflict(
+            "management probe exceeded its deadline".to_owned()
+        )));
+    }
+
+    #[test]
+    fn sta_status_requires_candidate_completed_on_expected_channel() {
+        let ready = "ssid=candidate\nfreq=2437\nwpa_state=COMPLETED\n";
+        assert!(sta_status_ready(ready, "candidate", 6));
+        assert!(!sta_status_ready(ready, "other", 6));
+        assert!(!sta_status_ready(ready, "candidate", 11));
+        assert!(!sta_status_ready(
+            "ssid=candidate\nfreq=2437\nwpa_state=DISCONNECTED\n",
+            "candidate",
+            6
+        ));
+        assert!(!sta_status_ready(
+            "ssid=candidate\nfreq=invalid\nwpa_state=COMPLETED\n",
+            "candidate",
+            6
+        ));
+    }
+
+    #[test]
+    fn hostapd_status_requires_enabled_state_and_expected_channel() {
+        let enabled = "state=ENABLED\nchannel=6\n";
+        assert!(hostapd_status_ready(enabled, None));
+        assert!(hostapd_status_ready(enabled, Some(6)));
+        assert!(!hostapd_status_ready(enabled, Some(11)));
+        assert!(!hostapd_status_ready(
+            "state=DISABLED\nchannel=6\n",
+            Some(6)
+        ));
+        assert!(!hostapd_status_ready(
+            "state=ENABLED\nchannel=six\n",
+            Some(6)
+        ));
+        assert!(!hostapd_status_ready("state=ENABLED\n", Some(6)));
+        assert!(!hostapd_status_ready(
+            "state=ENABLED-extra\nchannel=6\n",
+            None
+        ));
+    }
+
+    #[test]
+    fn management_restart_detaches_before_hostapd_and_reattaches_after_readiness() {
+        let source = include_str!("management.rs");
+        assert!(source
+            .contains("self.restart_management_services(&committed_network_config()?, false)"));
+        let body = source
+            .split_once("fn restart_management_services")
+            .unwrap()
+            .1
+            .split_once("pub(crate) fn management_services_ready")
+            .unwrap()
+            .0;
+        let detach = body.find("self.detach_ap()?").unwrap();
+        let stop = body.find("self.stop_owned_management_services()?").unwrap();
+        let hostapd = body.find("self.start_hostapd_on_channel").unwrap();
+        let attach = body.find("self.attach_ap()?").unwrap();
+        assert!(detach < stop && stop < hostapd && hostapd < attach);
+        let cleanup = body.split_once("Err(primary) =>").unwrap().1;
+        assert!(cleanup.find("self.detach_ap()").unwrap() < cleanup.find("for service").unwrap());
+
+        let helper = source
+            .split_once("fn start_hostapd_on_channel")
+            .unwrap()
+            .1
+            .split_once("fn wait_for_sta_channel")
+            .unwrap()
+            .0;
+        let start = helper
+            .find(".start_service(ManagementService::Hostapd)")
+            .unwrap();
+        let ready = helper
+            .find("self.wait_for_hostapd(channel, AP_READY_WAIT)")
+            .unwrap();
+        assert!(start < ready);
+    }
+
+    #[test]
     fn service_argv_are_exact_golden_values() {
         assert_eq!(
             ManagementService::WpaSupplicant.argv(),
@@ -1617,15 +1945,6 @@ mod tests {
         assert_eq!(
             ServiceIdentity::decode(encoded, ManagementService::WpaSupplicant).unwrap(),
             identity
-        );
-    }
-
-    #[test]
-    fn hostapd_render_removes_every_bridge_assignment_and_appends_owned_bridge() {
-        let source = "interface=p2p0\nbridge=old0\n  bridge = old1\nssid=test\n";
-        assert_eq!(
-            render_hostapd_config(source).unwrap(),
-            "interface=p2p0\nssid=test\nbridge=br-lan\n"
         );
     }
 

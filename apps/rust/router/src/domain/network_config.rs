@@ -103,7 +103,7 @@ impl<'de> Deserialize<'de> for WifiPassphrase {
 impl WifiPassphrase {
     pub fn new(value: impl Into<String>) -> Result<Self, WifiConfigError> {
         let value = Zeroizing::new(value.into());
-        if !(8..=63).contains(&value.as_bytes().len()) {
+        if !(8..=63).contains(&value.len()) {
             return Err(WifiConfigError::new(
                 "WPA2 passphrase must contain 8-63 ASCII characters",
             ));

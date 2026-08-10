@@ -688,8 +688,10 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         let _ = shutdown_tx.send(true);
         let control_result = join_control(control.await);
         let cleanup_result = runtime.shutdown().await;
-        remove_control_socket(&ownership)?;
-        ownership.release()?;
+        if cleanup_result.is_ok() {
+            remove_control_socket(&ownership)?;
+            ownership.release()?;
+        }
         let mut message = error;
         if let Err(control_error) = control_result {
             message.push_str(&format!("; control shutdown failed: {control_error}"));
@@ -753,10 +755,16 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     // Control accepts and the timeout task are stopped and every in-flight operation (including
     // OTA) has drained before runtime-owned packet paths and child processes are removed.
     let cleanup = runtime.shutdown().await;
+    let cleanup_succeeded = cleanup.is_ok();
     let result = combine_runtime_results(services, cleanup);
 
-    remove_control_socket(&ownership)?;
-    ownership.release()?;
+    // A failed strict cleanup intentionally leaves the root-owned daemon lock and control socket
+    // as durable evidence. SysV stop must fail and automatic restart must remain blocked until an
+    // operator investigates residual processes, routes, firewall state, and ownership records.
+    if cleanup_succeeded {
+        remove_control_socket(&ownership)?;
+        ownership.release()?;
+    }
     result.map_err(|error| Box::new(error) as Box<dyn Error>)
 }
 
@@ -1013,6 +1021,23 @@ mod source_boundaries {
         assert!(disabled_guard < proxy && proxy < router);
         assert!(branch.contains("mode: ProxyMode::Disabled"));
         assert!(branch.contains("NetworkDesired::management_only()"));
+    }
+
+    #[test]
+    fn failed_strict_cleanup_retains_daemon_ownership_evidence() {
+        let production = include_str!("main.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let shutdown = production
+            .rsplit_once("runtime.shutdown().await")
+            .unwrap()
+            .1;
+        let guard = shutdown.find("if cleanup_succeeded").unwrap();
+        let socket = shutdown.find("remove_control_socket(&ownership)").unwrap();
+        let release = shutdown.find("ownership.release()").unwrap();
+        assert!(guard < socket && socket < release);
+        assert!(production.contains("let cleanup_succeeded = cleanup.is_ok()"));
     }
 
     #[test]

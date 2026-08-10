@@ -21,7 +21,7 @@ src/main.rs                 唯一 production composition root
 
 `router-web` 只在宿主机构建阶段产生 WASM/静态资源并嵌入 `hyz-router`，不会作为第二个板端程序安装。旧的 `apps/router-panel/{shared,server,adapter-linux,frontend}` 多 crate 方案已被否决并从源码删除；状态契约、HTTP 行为和 UI 已迁入本包。独立 MetaCubeXD 静态包也已删除，产品只保留这一套 Web UI。
 
-**源码、rootfs 与 recovery-free OTA 已完成统一 cutover，并已在 RK3568 完成功能验证。** 最新安装的 Web 稳定性 OTA 在冷启动时因旧 S81 固定五次 launch 上限提前停止，显式启动后路由、TUN 和 Web 均恢复正常；源码已改为封顶指数退避，但该 init-only 修正尚未重新构建或安装。当前源码又新增了管理员认证、AP/STA 设置和 Mihomo 手动订阅更新；这批设置功能同样尚未编译、OTA 或板测。因此当前不能把最新源码标记为自动冷启动或设置功能验收通过。`make apps` 只构建统一 `hyz-router`，`make overlay` 只安装 `/usr/bin/hyz-router` 和产品元数据；Buildroot board overlay 只保留最小 `S81hyz-router` 及 Mihomo 无凭据示例。旧 shell 路由/Mihomo wrapper、S82、独立 DHCP hook、独立 OTA 和 hello demos 已从最终 rootfs 删除。
+**源码、rootfs 与 recovery-free OTA 已完成统一 cutover，并已在 RK3568 完成功能验证。** 2026-08-11 安装的设置事务 OTA 已通过完整冷启动、错误 STA 候选自动恢复、AP 未确认超时回滚、SysV restart 和并发 start 串行化验证；daemon 及其子进程不再继承 init action lock。管理员认证基础行为此前已在同一统一 ELF 上验证。成功切换到另一组真实 STA、管理员实际改密以及凭据型订阅刷新仍需由操作者在面板中输入本地凭据完成，不能标记为已验收。`make apps` 只构建统一 `hyz-router`，`make overlay` 只安装 `/usr/bin/hyz-router` 和产品元数据；Buildroot board overlay 只保留最小 `S81hyz-router` 及 Mihomo 无凭据示例。旧 shell 路由/Mihomo wrapper、S82、独立 DHCP hook、独立 OTA 和 hello demos 已从最终 rootfs 删除。
 
 ## Composition root
 
@@ -168,6 +168,32 @@ OTA 解包成员只有 bootloader、U-Boot、misc、boot、rootfs 和 oem，不�
 
 本轮 Web 修复使用按 bundle 内容生成的版本化 `/router-bootstrap.js?v=<hash>`，bootstrap 和 SPA HTML 返回 `no-store`，缺失的旧 `.js`、`.wasm`、`.css` 等静态资源返回 404 而不是 SPA HTML。板端验证确认版本化 bootstrap、严格 CSP、正确 WASM MIME/magic、provider 全量测速入口、节点选择持久化和 Web API 均正常。真实 provider、节点名称、数量、延迟分布、余额和控制 token 属于本地运行数据，不写入本文或 Git。
 
-最新 OTA 冷启动时，Wi-Fi 完整就绪晚于旧 S81 的固定五次 launch 窗口；脚本在约 143 秒停止，而约 168 秒后的显式 `start` 立即成功。恢复后 router/TUN 状态、Web、版本化 bootstrap、静态资源 404 和选择持久化均持续正常，因此 ELF 与 Web 修复本身有效，但自动冷启动未通过。源码现已删除固定 launch 次数上限，并在 clean exit 后采用 `1、2、4、8、16、30…秒`的封顶指数退避，同时保留 readiness 总边界和 stale ownership 拒绝策略。该 init-only 修正没有构建、没有 OTA、没有板端安装，必须在后续固件中单独完成冷启动验收。
+该 Web 稳定性 OTA 冷启动时，Wi-Fi 完整就绪晚于当时 S81 的固定五次 launch 窗口；脚本在约 143 秒停止，而约 168 秒后的显式 `start` 立即成功。恢复后 router/TUN 状态、Web、版本化 bootstrap、静态资源 404 和选择持久化均持续正常，因此 ELF 与 Web 修复本身有效，但该轮自动冷启动未通过。后续设置事务 OTA 已删除固定 launch 次数上限，采用总 deadline 内 `1、2、4、8、16、30…秒`的封顶指数退避，并完成冷启动与 restart 验收，见下节。
 
 本轮审计资料位于忽略的 `output/audit/router-web-stability-20260810/`，其中可能包含设备运行元数据，仅供本地验证，不提交或发布。
+
+## 2026-08-11 设置事务与 init 生命周期板测
+
+最终安装的 recovery-free OTA：
+
+| 产物 | SHA-256 |
+| --- | --- |
+| `output/upgrade.fw`（379,544,138 bytes） | `c1d0cc5ad957d6f0626bd780394a31e45f54d18f88ddd96ab73aba38df57489d` |
+| 打包 `boot.img` | `51c15ea143283b4d660a7523b7ebe09a36f8b634ede54e2d3266aae271995c90` |
+| 打包 `rootfs.img` | `50b5a72b2f711800f75bdb1a4155bcdec40e66c71d9f84026faf6dca00cce25b` |
+| 打包 `oem.img` | `d6ccd8190cb4990c57e09814f30b03e524bc0a59c0abeb4a066cd81e0cc97182` |
+| `/usr/bin/hyz-router` | `a53cb8e00717dcc10eb4c683729a03c0351fce18a05e2ef2cec9f3ac74f84786` |
+| `/etc/init.d/S81hyz-router` | `a3c4741821adb3db8c3f997dbd5c0c45a2db31be529ae43e08829f56e5c165cd` |
+
+OTA 再次经 `rkImageMaker` 和 `afptool` 解包；成员只有 bootloader、U-Boot、misc、boot、rootfs 和 oem，不含 recovery/userdata。rootfs 内 ELF/init 与构建输入逐字节一致，且没有生成的 STA rollback journal。
+
+板端结果：
+
+- 冷启动最终达到 STA `COMPLETED`、AP `ENABLED`、metric 600 默认路由、`br-lan`、HTTP health 和无网络事务锁的完整 readiness；
+- 不存在的 STA 候选在约 114.5 秒后返回失败，canonical 配置哈希不变，旧 STA/路由/AP/bridge 自动恢复，无 journal 残留且无需重启板卡；
+- 临时 AP 候选成功 prepare/apply；未 confirm 后由 120 秒任务自动恢复，canonical 哈希一致，pending/applied 记录清除；
+- 首版 init action lock 虽能串行入口，但 FD 被 daemon 继承，导致 restart 和 OTA 关机 stop 等待。最终脚本在启动 daemon 时显式 `9>&-`，板端确认所有进程均未持有该锁；
+- 最终 SysV restart 在 21 秒内完成，前后 STA/AP/route/HTTP readiness 正常；两次并发 idempotent start 均成功；
+- 最终无 STA/AP transaction、OTA staging 或 init-lock holder 残留。
+
+板端当前没有配置新式 write-only 订阅 URL，因此只验证了摘要不返回 URL/token，未执行真实刷新。成功切换到另一组真实 STA、AP confirm 后长期使用、管理员实际改密和订阅刷新必须由操作者在面板输入本地凭据后继续验证。真实 SSID、密码、订阅 URL/token 和 provider 数据均未写入日志或版本库。最终本地审计资料位于忽略的 `output/audit/init-fd-close-20260810/`。

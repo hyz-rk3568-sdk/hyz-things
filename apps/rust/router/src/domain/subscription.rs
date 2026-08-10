@@ -3,6 +3,7 @@ use serde_yaml::{Mapping, Value};
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
+#[cfg(feature = "native")]
 use std::io::{self, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use url::{Host, Url};
@@ -67,6 +68,7 @@ impl SubscriptionUrl {
     }
 
     /// Writes the URL directly to a sink without exposing a borrow or owned copy.
+    #[cfg(feature = "native")]
     pub(crate) fn write_secret(&self, writer: &mut impl Write) -> io::Result<()> {
         writer.write_all(self.0.as_bytes())
     }
@@ -74,6 +76,7 @@ impl SubscriptionUrl {
 
 impl fmt::Debug for SubscriptionUrl {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let _secret_length = self.0.len();
         formatter.write_str("SubscriptionUrl([REDACTED])")
     }
 }
@@ -257,7 +260,7 @@ pub fn parse_mihomo_subscription(input: &[u8]) -> Result<ValidatedSubscription, 
         ));
     }
     let proxies = top
-        .get(&Value::String("proxies".to_owned()))
+        .get(Value::String("proxies".to_owned()))
         .and_then(Value::as_sequence)
         .ok_or(SubscriptionError::InvalidShape(
             "proxies must be a non-empty array",
@@ -272,7 +275,7 @@ pub fn parse_mihomo_subscription(input: &[u8]) -> Result<ValidatedSubscription, 
             "each proxy must be a mapping",
         ))?;
         let name = mapping
-            .get(&Value::String("name".to_owned()))
+            .get(Value::String("name".to_owned()))
             .and_then(Value::as_str)
             .ok_or(SubscriptionError::InvalidShape(
                 "each proxy must have a string name",

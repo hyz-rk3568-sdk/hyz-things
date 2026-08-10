@@ -42,10 +42,7 @@ impl LinuxRouterPlatform {
             NetworkAction::RemoveLanAddress => {
                 self.ip(&["address", "del", LAN_ADDRESS, "dev", LAN_BRIDGE])
             }
-            NetworkAction::AttachAp => {
-                wait_for_interface_presence(LAN_MEMBER, Duration::from_secs(20))?;
-                self.ip(&["link", "set", "dev", LAN_MEMBER, "master", LAN_BRIDGE])
-            }
+            NetworkAction::AttachAp => self.attach_ap(),
             NetworkAction::DetachAp => self.detach_ap(),
             NetworkAction::EnsureManagementServices => self.ensure_management_services(),
             NetworkAction::StopManagementServices => self.stop_owned_management_services(),
@@ -102,7 +99,12 @@ impl LinuxRouterPlatform {
         result
     }
 
-    fn detach_ap(&self) -> Result<(), PlatformError> {
+    pub(crate) fn attach_ap(&self) -> Result<(), PlatformError> {
+        wait_for_interface_presence(LAN_MEMBER, Duration::from_secs(20))?;
+        self.ip(&["link", "set", "dev", LAN_MEMBER, "master", LAN_BRIDGE])
+    }
+
+    pub(crate) fn detach_ap(&self) -> Result<(), PlatformError> {
         let master = match fs::read_link(format!("/sys/class/net/{LAN_MEMBER}/master")) {
             Ok(master) => master,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),

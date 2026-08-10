@@ -151,6 +151,8 @@ check-static:
 	! grep -qE '&(dsi1|dsi1_panel|backlight1)[[:space:]]*\{[[:space:]]*status = "disabled"' sdk/kernel/arch/arm64/boot/dts/rockchip/rk3568-atk-evb1-mipi-dsi-1080p.dts
 	! grep -R -E -q 'TcpListener::bind\([^)]*(UNSPECIFIED|\[0,[[:space:]]*0,[[:space:]]*0,[[:space:]]*0\])|Ipv4Addr::UNSPECIFIED|CorsLayer::permissive|/usr/sbin/hyz-mihomo' "$(ROUTER_APP)/src"
 	! grep -R -q 'Command::new("sh")\|Command::new("bash")' "$(ROUTER_APP)/src"
+	grep -q 'network-config-sta-rollback-v1.json' "$(ROUTER_APP)/src/adapters/outbound/network_config.rs"
+	grep -q 'let cleanup_succeeded = cleanup.is_ok()' "$(ROUTER_APP)/src/main.rs"
 	test ! -d "$(ROUTER_APP)/adapter-linux"
 	sh -n sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	grep -q 'TARGET_DIR/usr/bin/hyz-ota' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
@@ -161,7 +163,15 @@ check-static:
 	grep -q '^START_TIMEOUT_SECONDS=300$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q '^START_EXEC_GRACE_ATTEMPTS=10$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q '^START_RETRY_BACKOFF_MAX=30$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	grep -q '^STOP_CLEANUP_TIMEOUT_SECONDS=30$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	grep -q '^FLOCK=/usr/bin/flock$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	grep -q '^ACTION_LOCKFILE=/run/hyz-router-init.lock$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	grep -q 'lock_action && stop_daemon && start_daemon' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	grep -q -- '-- daemon 9>&-' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q 'deadline=.*START_TIMEOUT_SECONDS' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	grep -q 'daemon left running' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	grep -q 'wait_for_runtime_cleanup' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	! grep -q 'TERM/1810/KILL/5 || true' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q 'retrying after attempt' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	! grep -q 'START_LAUNCH_ATTEMPTS\|START_ATTEMPTS' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q 'stale ownership requires explicit recovery' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
