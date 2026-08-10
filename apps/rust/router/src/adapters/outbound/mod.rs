@@ -2,6 +2,7 @@ pub mod admin;
 pub mod firmware;
 pub mod management;
 pub mod network;
+pub mod network_config;
 pub mod panel;
 pub mod paths;
 pub mod process;
