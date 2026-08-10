@@ -9,6 +9,7 @@ pub mod process;
 pub mod proxy;
 pub mod status;
 pub mod storage;
+pub mod subscription;
 pub mod system;
 
 pub use process::{LinuxMihomoFailOpenPlatform, LinuxRouterPlatform};
