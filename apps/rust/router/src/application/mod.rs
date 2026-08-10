@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod dhcp;
 pub mod fail_open;
 pub mod ota;

@@ -58,6 +58,14 @@ pub(crate) fn require_private_root_file(path: &str) -> Result<(), PlatformError>
     Ok(())
 }
 
+pub(crate) fn require_private_root_file_optional(path: &str) -> Result<(), PlatformError> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => require_private_root_file(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(PlatformError::Io(format!("inspect {path}: {error}"))),
+    }
+}
+
 pub(crate) fn read_private_small_optional(
     path: &str,
     maximum: usize,

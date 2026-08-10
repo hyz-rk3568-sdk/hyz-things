@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod firmware;
 pub mod management;
 pub mod network;

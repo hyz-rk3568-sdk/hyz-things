@@ -1,4 +1,5 @@
 use crate::domain::{
+    admin::AdminCredential,
     network::{NetworkAction, NetworkObserved},
     panel::{DisplayRequest, DisplayStatus, ProxyDelayResult, ProxyGroup, ProxySelectionRequest},
     proxy::{ProxyAction, ProxyObserved},
@@ -34,6 +35,15 @@ impl fmt::Display for PlatformError {
 }
 
 impl Error for PlatformError {}
+
+pub trait AdminCredentialStorePort: Send + Sync {
+    fn load_admin_credential(&self) -> Result<Option<AdminCredential>, PlatformError>;
+    fn save_admin_credential(&self, credential: &AdminCredential) -> Result<(), PlatformError>;
+}
+
+pub trait AdminRandomPort: Send + Sync {
+    fn fill_random(&self, destination: &mut [u8]) -> Result<(), PlatformError>;
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LifecycleLease {
