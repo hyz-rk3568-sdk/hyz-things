@@ -890,10 +890,15 @@ fn dispatch_subscription_source(state: UseReducerHandle<AppState>, csrf: String,
     });
 }
 
-fn focus_after_render(node: NodeRef) {
+fn reveal_and_focus_after_render(reveal_node: NodeRef, focus_node: NodeRef) {
     spawn_local(async move {
         TimeoutFuture::new(0).await;
-        if let Some(element) = node.cast::<HtmlElement>() {
+        if let Some(element) = reveal_node.cast::<HtmlElement>() {
+            // Mobile Safari can reject focus after the async render boundary. Scrolling is
+            // explicit so an inline confirmation inserted above the viewport remains visible.
+            element.scroll_into_view();
+        }
+        if let Some(element) = focus_node.cast::<HtmlElement>() {
             let _ = element.focus();
         }
     });
@@ -934,6 +939,7 @@ fn settings(props: &SettingsProps) -> Html {
     let ap_country = use_node_ref();
     let ap_toggle = use_node_ref();
     let ap_apply_button = use_node_ref();
+    let network_confirmation_panel = use_node_ref();
     let confirmation_cancel_button = use_node_ref();
     let subscription_url = use_node_ref();
     let login_expanded = use_state(|| false);
@@ -943,10 +949,14 @@ fn settings(props: &SettingsProps) -> Html {
     let network_apply_intent = use_mut_ref(|| None::<NetworkApplyIntent>);
 
     {
+        let network_confirmation_panel = network_confirmation_panel.clone();
         let confirmation_cancel_button = confirmation_cancel_button.clone();
         use_effect_with(*network_confirmation_open, move |open| {
             if *open {
-                focus_after_render(confirmation_cancel_button);
+                reveal_and_focus_after_render(
+                    network_confirmation_panel,
+                    confirmation_cancel_button,
+                );
             }
             || ()
         });
@@ -1139,7 +1149,7 @@ fn settings(props: &SettingsProps) -> Html {
             match intent {
                 NetworkApplyIntent::Sta(request) => {
                     sta_expanded.set(false);
-                    focus_after_render(sta_toggle.clone());
+                    reveal_and_focus_after_render(sta_toggle.clone(), sta_toggle.clone());
                     dispatch_disruptive_settings_mutation(
                         state.clone(),
                         STA_APPLY_ENDPOINT,
@@ -1151,7 +1161,7 @@ fn settings(props: &SettingsProps) -> Html {
                 }
                 NetworkApplyIntent::Ap => {
                     ap_expanded.set(false);
-                    focus_after_render(ap_toggle.clone());
+                    reveal_and_focus_after_render(ap_toggle.clone(), ap_toggle.clone());
                     dispatch_disruptive_settings_mutation(
                         state.clone(),
                         AP_APPLY_ENDPOINT,
@@ -1176,7 +1186,7 @@ fn settings(props: &SettingsProps) -> Html {
                 None => return,
             };
             confirmation_open.set(false);
-            focus_after_render(focus_target);
+            reveal_and_focus_after_render(focus_target.clone(), focus_target);
         })
     };
     let toggle_login = {
@@ -1280,7 +1290,7 @@ fn settings(props: &SettingsProps) -> Html {
                 <div class={FEEDBACK} role="status" aria-live="polite" aria-atomic="true">{notice}</div>
             }
             if let Some((title, message)) = network_confirmation {
-                <section id="network-confirmation-panel" class={CONFIRMATION_PANEL} role="region" aria-live="assertive" aria-atomic="true" aria-labelledby="network-confirmation-title" aria-describedby="network-confirmation-message">
+                <section ref={network_confirmation_panel} id="network-confirmation-panel" class={CONFIRMATION_PANEL} role="region" aria-live="assertive" aria-atomic="true" aria-labelledby="network-confirmation-title" aria-describedby="network-confirmation-message">
                     <div>
                         <p class={EYEBROW}>{"NETWORK CHANGE"}</p>
                         <h3 id="network-confirmation-title" class={CONFIRMATION_TITLE}>{title}</h3>

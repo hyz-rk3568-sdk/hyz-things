@@ -181,8 +181,27 @@ test('supports the administrator, STA, AP, and write-only subscription journey',
   await expect(staApply).toBeFocused();
 
   await staRegion.getByLabel('密码').fill('guest-password');
+  await page.evaluate(() => {
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function () {
+      document.documentElement.dataset.networkConfirmationScrolled = 'true';
+      original.call(this);
+    };
+  });
   await staApply.click();
   staConfirmation = page.getByRole('region', { name: '应用上游 Wi-Fi？' });
+  await expect
+    .poll(() =>
+      staConfirmation.evaluate(element => {
+        const bounds = element.getBoundingClientRect();
+        return bounds.top >= 0 && bounds.top < window.innerHeight;
+      }),
+    )
+    .toBe(true);
+  await expect(page.locator('html')).toHaveAttribute(
+    'data-network-confirmation-scrolled',
+    'true',
+  );
   await staConfirmation.getByRole('button', { name: '确认并开始应用' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'STA 配置已应用' })).toBeVisible();
 

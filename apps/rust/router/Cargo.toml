@@ -54,7 +54,7 @@ gloo-net = { version = "0.6", features = ["json"], optional = true }
 gloo-timers = { version = "0.3", features = ["futures"], optional = true }
 js-sys = { version = "0.3", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
-web-sys = { version = "0.3", features = ["HtmlElement", "HtmlInputElement", "HtmlSelectElement", "RequestCredentials"], optional = true }
+web-sys = { version = "0.3", features = ["Element", "HtmlElement", "HtmlInputElement", "HtmlSelectElement", "RequestCredentials"], optional = true }
 yew = { version = "0.21", features = ["csr"], optional = true }
 
 [build-dependencies]
