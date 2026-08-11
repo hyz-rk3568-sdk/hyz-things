@@ -12,10 +12,10 @@ use crate::{
         wifi::{WifiPlatformPort, WifiScanEntry},
     },
     domain::{
-        network::{LAN_MEMBER, WAN_INTERFACE},
+        network::{LAN_BRIDGE, LAN_MEMBER, WAN_INTERFACE},
         network_config::{
             ApConfig, NetworkConfigSummary, NetworkConfigV1, PendingNetworkConfigSummary,
-            PendingNetworkConfigV1, StaConfig, WifiSsid,
+            PendingNetworkConfigV1, StaConfig, WifiCountry, WifiSsid,
         },
     },
 };
@@ -307,6 +307,7 @@ impl super::process::LinuxRouterPlatform {
     ) -> Result<(), PlatformError> {
         wait_for_interface_presence(WAN_INTERFACE, Duration::from_secs(20))?;
         wait_for_interface_presence(LAN_MEMBER, Duration::from_secs(20))?;
+        let restore_attachment = attach_after_start || ap_attached_to_lan()?;
         // RTL8852BS can reject beacon programming when p2p0 remains enslaved while hostapd is
         // recreated. Detach before every transaction and attach only after AP readiness. A failed
         // candidate therefore leaves a clean detached interface for the committed rollback.
@@ -338,7 +339,7 @@ impl super::process::LinuxRouterPlatform {
             self.start_service(ManagementService::Dnsmasq)?;
             started.push(ManagementService::Dnsmasq);
             self.wait_for_identity(ManagementService::Dnsmasq, PROCESS_WAIT)?;
-            if attach_after_start {
+            if restore_attachment {
                 self.attach_ap()?;
             }
 
@@ -567,7 +568,7 @@ impl super::process::LinuxRouterPlatform {
         wait_until(
             timeout,
             || self.hostapd_enabled_on_channel(channel),
-            "AP enablement on the associated STA channel",
+            "AP enablement with the exact radio profile on the associated STA channel",
         )
     }
 
@@ -576,6 +577,7 @@ impl super::process::LinuxRouterPlatform {
         config: &ApConfig,
         channel: ApRadioChannel,
     ) -> Result<(), PlatformError> {
+        apply_wifi_country(config.country)?;
         let mut first_error = None;
         for attempt in 0..2 {
             self.stop_service(ManagementService::Hostapd)?;
@@ -1179,6 +1181,53 @@ fn parse_scan_results(output: &str) -> Result<Vec<WifiScanEntry>, PlatformError>
     Ok(entries)
 }
 
+fn apply_wifi_country(country: WifiCountry) -> Result<(), PlatformError> {
+    run_bounded(
+        "/usr/sbin/iw",
+        &["reg", "set", country.as_str()],
+        Duration::from_secs(3),
+    )?;
+    let output = run_bounded("/usr/sbin/iw", &["reg", "get"], Duration::from_secs(3))?;
+    let observed = self_managed_country(&output).ok_or_else(|| {
+        PlatformError::ProbeFailed(
+            "iw reg get did not report exactly one self-managed phy#0 country".to_owned(),
+        )
+    })?;
+    if observed == country.as_str() || observed == "00" {
+        Ok(())
+    } else {
+        Err(PlatformError::Conflict(format!(
+            "self-managed phy retained foreign country {observed} after requesting {}",
+            country.as_str()
+        )))
+    }
+}
+
+fn self_managed_country(output: &str) -> Option<&str> {
+    let mut matches = output
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| (line.trim() == "phy#0 (self-managed)").then_some(index));
+    let index = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    let country_line = output
+        .lines()
+        .skip(index + 1)
+        .find(|line| !line.trim().is_empty())?;
+    let country = country_line
+        .trim()
+        .strip_prefix("country ")?
+        .split_once(':')?
+        .0;
+    (country.len() == 2
+        && country
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit()))
+    .then_some(country)
+}
+
 fn prepare_runtime_configs(
     config: &NetworkConfigV1,
     channel: ApRadioChannel,
@@ -1476,6 +1525,23 @@ fn signal(pid: u32, signal: &str) -> Result<(), PlatformError> {
     }
 }
 
+fn ap_attached_to_lan() -> Result<bool, PlatformError> {
+    let master = Path::new("/sys/class/net").join(LAN_MEMBER).join("master");
+    match fs::read_link(&master) {
+        Ok(target) if target.file_name().and_then(|name| name.to_str()) == Some(LAN_BRIDGE) => {
+            Ok(true)
+        }
+        Ok(target) => Err(PlatformError::Conflict(format!(
+            "managed AP interface has foreign master {}",
+            target.display()
+        ))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(PlatformError::ProbeFailed(format!(
+            "inspect managed AP bridge attachment: {error}"
+        ))),
+    }
+}
+
 pub(crate) fn wait_for_interface_presence(
     interface: &'static str,
     timeout: Duration,
@@ -1501,13 +1567,48 @@ fn sta_status_ready(output: &str, expected_ssid: &str, expected_channel: ApRadio
 }
 
 fn hostapd_status_ready(output: &str, expected_channel: Option<ApRadioChannel>) -> bool {
-    if !output.lines().any(|line| line == "state=ENABLED") {
+    if unique_status_value(output, "state") != Some("ENABLED") {
         return false;
     }
-    expected_channel.is_none_or(|channel| {
-        let expected = format!("channel={}", channel.number());
-        output.lines().any(|line| line == expected)
-    })
+    let Some(channel) = expected_channel else {
+        return true;
+    };
+    if unique_status_value(output, "channel").and_then(|value| value.parse::<u8>().ok())
+        != Some(channel.number())
+        || unique_status_value(output, "secondary_channel")
+            .and_then(|value| value.parse::<i8>().ok())
+            != Some(channel.secondary_channel())
+        || unique_status_value(output, "ieee80211n") != Some("1")
+        || unique_status_value(output, "ieee80211ac")
+            != Some(if channel.ieee80211ac() { "1" } else { "0" })
+    {
+        return false;
+    }
+    match channel.vht_geometry() {
+        Some((width, center)) => {
+            unique_status_value(output, "vht_oper_chwidth")
+                .and_then(|value| value.parse::<u8>().ok())
+                == Some(width)
+                && unique_status_value(output, "vht_oper_centr_freq_seg0_idx")
+                    .and_then(|value| value.parse::<u8>().ok())
+                    == Some(center)
+        }
+        None => {
+            unique_status_value(output, "vht_oper_chwidth").is_none()
+                && unique_status_value(output, "vht_oper_centr_freq_seg0_idx").is_none()
+        }
+    }
+}
+
+fn unique_status_value<'a>(output: &'a str, key: &str) -> Option<&'a str> {
+    let prefix = format!("{key}=");
+    let mut values = output.lines().filter_map(|line| line.strip_prefix(&prefix));
+    let value = values.next()?;
+    if values.next().is_some() {
+        None
+    } else {
+        Some(value)
+    }
 }
 
 fn is_management_probe_timeout(error: &PlatformError) -> bool {
@@ -1879,30 +1980,72 @@ mod tests {
     }
 
     #[test]
-    fn hostapd_status_requires_enabled_state_and_expected_channel() {
+    fn hostapd_status_requires_exact_ht_and_vht_radio_profile() {
         let channel_6 = ApRadioChannel::ghz2(6).unwrap();
-        let channel_11 = ApRadioChannel::ghz2(11).unwrap();
-        let enabled = "state=ENABLED\nchannel=6\n";
-        assert!(hostapd_status_ready(enabled, None));
-        assert!(hostapd_status_ready(enabled, Some(channel_6)));
-        assert!(!hostapd_status_ready(enabled, Some(channel_11)));
+        let channel_161 = ApRadioChannel::ghz5(161).unwrap();
+        let ghz2 = "state=ENABLED\nchannel=6\nsecondary_channel=0\nieee80211n=1\nieee80211ac=0\n";
+        let ghz5 = "state=ENABLED\nchannel=161\nsecondary_channel=-1\nieee80211n=1\nieee80211ac=1\nvht_oper_chwidth=1\nvht_oper_centr_freq_seg0_idx=155\n";
+        assert!(hostapd_status_ready(ghz2, None));
+        assert!(hostapd_status_ready(ghz2, Some(channel_6)));
+        assert!(hostapd_status_ready(ghz5, Some(channel_161)));
         assert!(!hostapd_status_ready(
-            "state=DISABLED\nchannel=6\n",
+            &ghz2.replace("ieee80211n=1", "ieee80211n=0"),
             Some(channel_6)
         ));
         assert!(!hostapd_status_ready(
-            "state=ENABLED\nchannel=six\n",
+            &ghz5.replace("ieee80211ac=1", "ieee80211ac=0"),
+            Some(channel_161)
+        ));
+        assert!(!hostapd_status_ready(
+            &ghz5.replace(
+                "vht_oper_centr_freq_seg0_idx=155",
+                "vht_oper_centr_freq_seg0_idx=42"
+            ),
+            Some(channel_161)
+        ));
+        assert!(!hostapd_status_ready(
+            &format!("{ghz5}channel=161\n"),
+            Some(channel_161)
+        ));
+        assert!(!hostapd_status_ready(
+            "state=DISABLED\nchannel=6\nsecondary_channel=0\nieee80211n=1\nieee80211ac=0\n",
             Some(channel_6)
         ));
-        assert!(!hostapd_status_ready("state=ENABLED\n", Some(channel_6)));
-        assert!(!hostapd_status_ready(
-            "state=ENABLED-extra\nchannel=6\n",
+    }
+
+    #[test]
+    fn country_request_accepts_exact_or_driver_world_readback_and_precedes_hostapd() {
+        let exact = "global\ncountry 00: DFS-UNSET\n\nphy#0 (self-managed)\ncountry NZ: DFS-ETSI\n\t(2402 - 2482 @ 40), (N/A, 20), (N/A)\n";
+        let driver_world = exact.replace("country NZ: DFS-ETSI", "country 00: DFS-UNSET");
+        assert_eq!(self_managed_country(exact), Some("NZ"));
+        assert_eq!(self_managed_country(&driver_world), Some("00"));
+        assert_eq!(
+            self_managed_country(&exact.replace("phy#0 (self-managed)", "phy#0")),
             None
-        ));
-        assert!(hostapd_status_ready(
-            "state=ENABLED\nchannel=161\n",
-            ApRadioChannel::ghz5(161)
-        ));
+        );
+        assert_eq!(
+            self_managed_country(&format!(
+                "{exact}\nphy#0 (self-managed)\ncountry NZ: DFS-ETSI\n"
+            )),
+            None
+        );
+
+        let source = include_str!("management.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let helper = source
+            .split_once("fn start_hostapd_on_channel")
+            .unwrap()
+            .1
+            .split_once("fn wait_for_sta_channel")
+            .unwrap()
+            .0;
+        assert!(helper.find("apply_wifi_country").unwrap() < helper.find("start_service").unwrap());
+        assert!(source.contains("[\"reg\", \"set\", country.as_str()]"));
+        assert!(source.contains("[\"reg\", \"get\"]"));
+        assert!(!source.contains("set txpower"));
+        assert!(!source.contains("rtw_tx_pwr_lmt_enable"));
     }
 
     #[test]
@@ -1917,11 +2060,12 @@ mod tests {
             .split_once("pub(crate) fn management_services_ready")
             .unwrap()
             .0;
+        let preserve = body.find("let restore_attachment").unwrap();
         let detach = body.find("self.detach_ap()?").unwrap();
         let stop = body.find("self.stop_owned_management_services()?").unwrap();
         let hostapd = body.find("self.start_hostapd_on_channel").unwrap();
-        let attach = body.find("self.attach_ap()?").unwrap();
-        assert!(detach < stop && stop < hostapd && hostapd < attach);
+        let attach = body.find("if restore_attachment").unwrap();
+        assert!(preserve < detach && detach < stop && stop < hostapd && hostapd < attach);
         let cleanup = body.split_once("Err(primary) =>").unwrap().1;
         assert!(cleanup.find("self.detach_ap()").unwrap() < cleanup.find("for service").unwrap());
 
