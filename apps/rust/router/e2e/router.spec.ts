@@ -231,6 +231,49 @@ test('supports the administrator, STA, AP, and write-only subscription journey',
   expect(state.network.ap_ssid).toBe('HYZ-New-AP');
   expect(state.pending_network).toBeNull();
 
+  const devicePolicies = page.getByRole('article', { name: '设备代理' });
+  await expect(devicePolicies.getByText('e2e-phone')).toBeVisible();
+  const devicePolicy = devicePolicies.getByRole('combobox', { name: '02:00:00:00:00:10 代理策略' });
+  await devicePolicy.selectOption('direct');
+  await expect(page.getByRole('status').filter({ hasText: '设备代理策略已保存' })).toBeVisible();
+  expect((await readHarnessState(request)).device_policies).toMatchObject({
+    config: { generation: 1, entries: [{ mac: '02:00:00:00:00:10', policy: 'direct' }] },
+  });
+  const raced = await readHarnessState(request);
+  raced.device_policies.config.generation = 2;
+  const raceUpdate = await request.put(`${harnessOrigin}/state`, { data: raced });
+  expect(raceUpdate.ok()).toBeTruthy();
+  await devicePolicy.selectOption('proxy');
+  await expect(page.getByRole('status').filter({ hasText: '设备策略更新未完成（HTTP 409）' })).toBeVisible();
+
+  await page.reload();
+  await page.getByRole('button', { name: '网络设置', exact: true }).click();
+  await expect(page.getByRole('article', { name: '设备代理' }).getByRole('combobox')).toHaveValue('direct');
+  await page.getByRole('article', { name: '设备代理' }).getByRole('combobox').selectOption('proxy');
+  await expect(page.getByRole('status').filter({ hasText: '设备代理策略已保存' })).toBeVisible();
+  expect((await readHarnessState(request)).device_policies.config.entries).toEqual([]);
+
+  const offline = await readHarnessState(request);
+  offline.device_policies.config.generation += 1;
+  offline.device_policies.config.entries = [{
+    mac: '02:00:00:00:00:20',
+    label: 'offline-tablet',
+    policy: 'proxy',
+  }];
+  offline.device_policies.clients.push({
+    mac: '02:00:00:00:00:20',
+    lease_address: null,
+    hostname: null,
+    associated: false,
+    policy: 'proxy',
+  });
+  expect((await request.put(`${harnessOrigin}/state`, { data: offline })).ok()).toBeTruthy();
+  await page.reload();
+  await page.getByRole('button', { name: '网络设置', exact: true }).click();
+  await page.getByRole('button', { name: '移除 02:00:00:00:00:20 的设备策略' }).click();
+  await expect(page.getByRole('status').filter({ hasText: '设备代理策略已保存' })).toBeVisible();
+  expect((await readHarnessState(request)).device_policies.config.entries).toEqual([]);
+
   const subscription = page.getByRole('article', { name: '代理订阅' });
   const subscriptionInput = subscription.getByLabel('订阅 URL');
   await subscriptionInput.fill('https://example.com/router-e2e.yaml');

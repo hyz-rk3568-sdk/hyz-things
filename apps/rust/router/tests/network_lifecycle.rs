@@ -41,6 +41,7 @@ fn stopped_proxy() -> ProxyObserved {
         policy_route_present: Probe::Known(false),
         interception_entry_present: Probe::Known(false),
         ordinary_nat_confirmed: Probe::Known(true),
+        active_direct_macs: Probe::Known(Default::default()),
     }
 }
 
@@ -193,10 +194,12 @@ fn tun_plan_is_cleanup_first_interception_last_and_mode_commit_last() {
         policy_route_present: Probe::Known(true),
         interception_entry_present: Probe::Known(true),
         ordinary_nat_confirmed: Probe::Known(false),
+        active_direct_macs: Probe::Known(Default::default()),
     };
     let actions = proxy_plan(
         &ProxyDesired {
             mode: ProxyMode::Tun,
+            direct_macs: Default::default(),
         },
         &observed,
         &network(
@@ -250,6 +253,7 @@ fn tun_plan_refuses_unconfirmed_router_readiness() {
     let error = proxy_plan(
         &ProxyDesired {
             mode: ProxyMode::Tun,
+            direct_macs: Default::default(),
         },
         &stopped_proxy(),
         &unready,
@@ -544,13 +548,21 @@ fn tun_readiness_requires_exact_watcher_identity() {
         policy_route_present: Probe::Known(true),
         interception_entry_present: Probe::Known(true),
         ordinary_nat_confirmed: Probe::Known(false),
+        active_direct_macs: Probe::Known(Default::default()),
     };
     let desired = ProxyDesired {
         mode: ProxyMode::Tun,
+        direct_macs: Default::default(),
     };
     assert!(!observed.ready_for(&desired));
     observed.watcher_identity_valid = Probe::Known(true);
     assert!(observed.ready_for(&desired));
+    observed.active_direct_macs =
+        Probe::Known(["02:00:00:00:00:01".parse().unwrap()].into_iter().collect());
+    assert!(!observed.ready_for(&desired));
+    observed.active_direct_macs = Probe::Unknown("malformed dynamic rules".to_owned());
+    assert!(!observed.ready_for(&desired));
+    observed.active_direct_macs = Probe::Known(Default::default());
     observed.watcher_identity_valid = Probe::Unknown("stale record".to_owned());
     assert!(!observed.ready_for(&desired));
 }
@@ -560,6 +572,7 @@ fn explicit_and_disabled_readiness_require_watcher_absence() {
     let mut disabled = stopped_proxy();
     let disabled_desired = ProxyDesired {
         mode: ProxyMode::Disabled,
+        direct_macs: Default::default(),
     };
     assert!(disabled.ready_for(&disabled_desired));
     disabled.watcher_identity_valid = Probe::Known(true);
@@ -571,6 +584,7 @@ fn explicit_and_disabled_readiness_require_watcher_absence() {
     explicit.runtime_config_valid = Probe::Known(true);
     let explicit_desired = ProxyDesired {
         mode: ProxyMode::Explicit,
+        direct_macs: Default::default(),
     };
     assert!(explicit.ready_for(&explicit_desired));
     explicit.watcher_identity_valid = Probe::Known(true);
@@ -589,12 +603,15 @@ fn missing_mode_file_defaults_to_explicit_but_not_disabled_or_tun() {
     );
     assert!(observed.ready_for(&ProxyDesired {
         mode: ProxyMode::Explicit,
+        direct_macs: Default::default(),
     }));
     assert!(!observed.ready_for(&ProxyDesired {
         mode: ProxyMode::Disabled,
+        direct_macs: Default::default(),
     }));
     assert!(!observed.ready_for(&ProxyDesired {
         mode: ProxyMode::Tun,
+        direct_macs: Default::default(),
     }));
 }
 
@@ -604,6 +621,7 @@ fn unknown_probe_fields_are_never_ready() {
     assert!(
         !ProxyObserved::unknown("probe failed").ready_for(&ProxyDesired {
             mode: ProxyMode::Disabled,
+            direct_macs: Default::default(),
         })
     );
 }

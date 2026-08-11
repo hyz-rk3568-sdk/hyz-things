@@ -99,6 +99,14 @@ impl<'a> SubscriptionApplication<'a> {
                 ))
             }
         };
+        let direct_macs = match observed.active_direct_macs.clone() {
+            Probe::Known(macs) => macs,
+            Probe::Unknown(reason) => {
+                return Err(PlatformError::ProbeFailed(format!(
+                    "active device policy is unknown: {reason}"
+                )))
+            }
+        };
         let old_source = self.source.load_source()?;
         let candidate = self
             .source
@@ -125,14 +133,22 @@ impl<'a> SubscriptionApplication<'a> {
         let proxy = || ProxyApplication::new(self.platform, self.probe, self.clock);
         proxy().reconcile(&ProxyDesired {
             mode: ProxyMode::Disabled,
+            direct_macs: direct_macs.clone(),
         })?;
         let cutover = self
             .source
             .store_source(&candidate)
-            .and_then(|()| proxy().reconcile(&ProxyDesired { mode }).map(|_| ()))
+            .and_then(|()| {
+                proxy()
+                    .reconcile(&ProxyDesired {
+                        mode,
+                        direct_macs: direct_macs.clone(),
+                    })
+                    .map(|_| ())
+            })
             .and_then(|()| self.store.activate_generation(&generation));
         if let Err(cutover_error) = cutover {
-            let restore = self.restore_live_source(&old_source, mode);
+            let restore = self.restore_live_source(&old_source, mode, &direct_macs);
             return match restore {
                 Ok(()) => Err(cutover_error),
                 Err(restore_error) => Err(PlatformError::UnsafeToCutOver(format!(
@@ -143,13 +159,22 @@ impl<'a> SubscriptionApplication<'a> {
         Ok(generation)
     }
 
-    fn restore_live_source(&self, old_source: &[u8], mode: ProxyMode) -> Result<(), PlatformError> {
+    fn restore_live_source(
+        &self,
+        old_source: &[u8],
+        mode: ProxyMode,
+        direct_macs: &std::collections::BTreeSet<crate::domain::device_policy::LanDeviceMac>,
+    ) -> Result<(), PlatformError> {
         ProxyApplication::new(self.platform, self.probe, self.clock).reconcile(&ProxyDesired {
             mode: ProxyMode::Disabled,
+            direct_macs: direct_macs.clone(),
         })?;
         self.source.store_source(old_source)?;
         ProxyApplication::new(self.platform, self.probe, self.clock)
-            .reconcile(&ProxyDesired { mode })
+            .reconcile(&ProxyDesired {
+                mode,
+                direct_macs: direct_macs.clone(),
+            })
             .map(|_| ())
     }
 }

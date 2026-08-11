@@ -13,12 +13,14 @@ use hyz_router::{
     },
     application::{
         admin::AdminApplication,
+        device_policy::DevicePolicySnapshot,
         ports::{AdminCredentialStorePort, AdminRandomPort, ClockPort, PlatformError},
         status::{ReadStatus, StatusRouterPlatformPort, StatusSystemProbePort},
         wifi::{WifiScanEntry, AP_CONFIRM_TIMEOUT_SECS},
     },
     domain::{
         admin::AdminCredential,
+        device_policy::{DevicePolicyConfigV1, DeviceRoutePolicy, LanClientObservation},
         network_config::{
             NetworkConfigSummary, PendingNetworkConfigSummary, WifiCountry, WifiSsid,
             NETWORK_CONFIG_VERSION,
@@ -69,6 +71,7 @@ struct HarnessState {
     pending_network_applied: bool,
     scan_entries: Vec<WifiScanEntry>,
     subscription: SubscriptionSummary,
+    device_policies: DevicePolicySnapshot,
 }
 
 impl Default for HarnessState {
@@ -161,6 +164,17 @@ impl Default for HarnessState {
             subscription: SubscriptionSummary {
                 configured: true,
                 state: SubscriptionSummaryState::Active,
+            },
+            device_policies: DevicePolicySnapshot {
+                config: DevicePolicyConfigV1::empty(),
+                clients: vec![LanClientObservation {
+                    mac: "02:00:00:00:00:10".parse().unwrap(),
+                    lease_address: Some("192.168.8.10".parse().unwrap()),
+                    hostname: Some("e2e-phone".to_owned()),
+                    associated: true,
+                    policy: DeviceRoutePolicy::Proxy,
+                }],
+                effective: true,
             },
         }
     }
@@ -375,6 +389,38 @@ impl ControlHandler for HarnessBackend {
                 state.pending_network_applied = false;
                 Ok(ControlResult::WifiConfig {
                     config: state.network.clone(),
+                })
+            }
+            ControlOperation::DevicePoliciesGet {} => Ok(ControlResult::DevicePolicies {
+                snapshot: state.device_policies.clone(),
+            }),
+            ControlOperation::DevicePoliciesSet { request } => {
+                if request.expected_generation != state.device_policies.config.generation {
+                    return Err("device policy generation conflict".to_owned());
+                }
+                let candidate = request.candidate().map_err(str::to_owned)?;
+                for client in &mut state.device_policies.clients {
+                    client.policy = candidate.policy_for(client.mac);
+                }
+                for entry in &candidate.entries {
+                    if !state
+                        .device_policies
+                        .clients
+                        .iter()
+                        .any(|client| client.mac == entry.mac)
+                    {
+                        state.device_policies.clients.push(LanClientObservation {
+                            mac: entry.mac,
+                            lease_address: None,
+                            hostname: None,
+                            associated: false,
+                            policy: entry.policy,
+                        });
+                    }
+                }
+                state.device_policies.config = candidate;
+                Ok(ControlResult::DevicePolicies {
+                    snapshot: state.device_policies.clone(),
                 })
             }
             ControlOperation::SubscriptionGet {} => Ok(ControlResult::Subscription {
@@ -606,6 +652,11 @@ fn validate_harness_state(state: &HarnessState) -> HarnessResult<()> {
     validate_component("proxy groups", &state.panel.proxy_groups)?;
     if state.network.version != NETWORK_CONFIG_VERSION {
         return Err("network summary version is unsupported".to_owned());
+    }
+    if state.device_policies.config.version
+        != hyz_router::domain::device_policy::DEVICE_POLICY_VERSION
+    {
+        return Err("device policy version is unsupported".to_owned());
     }
     if state.pending_network_applied && state.pending_network.is_none() {
         return Err("an applied network candidate must be present".to_owned());

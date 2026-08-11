@@ -1,11 +1,13 @@
 use super::ota_cli::OtaCommand;
 use crate::{
     application::{
+        device_policy::DevicePolicySnapshot,
         dhcp::DhcpEvent,
         wifi::{ApPrepareRequest, StaCandidateRequest, WifiScanEntry},
     },
     domain::{
         admin::SecretString,
+        device_policy::DevicePolicyUpdateRequest,
         network_config::{NetworkConfigSummary, PendingNetworkConfigSummary},
         panel::{
             valid_control_name, DisplayRequest, PanelSnapshot, ProxyDelayRefreshRequest,
@@ -36,7 +38,7 @@ pub const CONTROL_SOCKET: &str = "/run/hyz-router/control.sock";
 pub const CONTROL_RUNTIME_DIR: &str = "/run/hyz-router";
 pub const DAEMON_LOCK_DIR: &str = "/run/hyz-router/daemon.lock";
 const DAEMON_OWNER_FILE: &str = "/run/hyz-router/daemon.lock/owner";
-pub const PROTOCOL_VERSION: u16 = 5;
+pub const PROTOCOL_VERSION: u16 = 6;
 pub const MAX_FRAME_BYTES: usize = 64 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(30 * 60);
@@ -72,6 +74,8 @@ pub enum ControlOperation {
     SubscriptionGet {},
     SubscriptionSet { url: SecretString },
     SubscriptionRefresh {},
+    DevicePoliciesGet {},
+    DevicePoliciesSet { request: DevicePolicyUpdateRequest },
     Ota { command: OtaCommand },
     Dhcp { event: DhcpEvent },
     WifiStatus {},
@@ -94,6 +98,7 @@ impl ControlOperation {
                 | Self::WifiPending { .. }
                 | Self::WifiScan { .. }
                 | Self::SubscriptionGet { .. }
+                | Self::DevicePoliciesGet { .. }
                 | Self::Ota {
                     command: OtaCommand::Verify { .. }
                 }
@@ -106,6 +111,7 @@ impl ControlOperation {
             | Self::ProxyDelayRefresh { .. }
             | Self::SubscriptionGet { .. }
             | Self::SubscriptionRefresh { .. }
+            | Self::DevicePoliciesGet { .. }
             | Self::Router { .. }
             | Self::Proxy { .. }
             | Self::WifiStatus { .. }
@@ -116,6 +122,11 @@ impl ControlOperation {
             | Self::WifiApApply { .. }
             | Self::WifiApConfirm { .. }
             | Self::WifiApCancel { .. } => Ok(()),
+            Self::DevicePoliciesSet { request } => request
+                .clone()
+                .candidate()
+                .map(|_| ())
+                .map_err(|_| "device policy request is invalid"),
             Self::SubscriptionSet { url } => SubscriptionUrl::validate(url.expose())
                 .map_err(|_| "subscription URL must be a safe public HTTPS URL"),
             Self::Display { request } => validate_display(request),
@@ -295,6 +306,9 @@ pub enum ControlResult {
     },
     WifiScan {
         entries: Vec<WifiScanEntry>,
+    },
+    DevicePolicies {
+        snapshot: DevicePolicySnapshot,
     },
     Subscription {
         summary: SubscriptionSummary,
@@ -756,6 +770,15 @@ mod tests {
         let request = ControlRequest::new(ControlOperation::Status {});
         let encoded = serde_json::to_vec(&request).unwrap();
         assert!(encoded.len() < MAX_FRAME_BYTES);
+        assert_eq!(PROTOCOL_VERSION, 6);
+        let policy = ControlOperation::DevicePoliciesSet {
+            request: DevicePolicyUpdateRequest {
+                expected_generation: 0,
+                entries: Vec::new(),
+            },
+        };
+        assert!(policy.mutates());
+        assert!(policy.validate().is_ok());
         assert_eq!(
             serde_json::from_slice::<ControlRequest>(&encoded).unwrap(),
             request

@@ -208,6 +208,7 @@ pub fn proxy_plan(
                 ProxyAction::WaitForTunInterface,
                 ProxyAction::CreateTunChains {
                     token: token.to_owned(),
+                    direct_macs: desired.direct_macs.clone(),
                 },
                 ProxyAction::InstallTunForwardHook {
                     token: token.to_owned(),

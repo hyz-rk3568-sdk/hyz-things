@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod device_policy;
 pub mod network;
 pub mod network_config;
 pub mod ota;

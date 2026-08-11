@@ -6,9 +6,9 @@ use super::{
     process::{LinuxRouterPlatform, Tool},
     storage,
     system::{
-        chain_output_is_exact, exact_chain_references, exact_default_gateway, expected_chain_rules,
-        expected_interception_rule, normalized_chain_rules, policy_route_state_is_exact,
-        policy_rule_state_is_exact,
+        chain_output_is_exact, exact_chain_references, exact_default_gateway,
+        expected_chain_rules_with_direct, expected_interception_rule, normalized_chain_rules,
+        parse_direct_mac_rules, policy_route_state_is_exact, policy_rule_state_is_exact,
     },
 };
 use crate::{
@@ -40,7 +40,9 @@ impl LinuxRouterPlatform {
             ProxyAction::ValidateRuntimeConfig => self.validate_mihomo_config(),
             ProxyAction::StartCore => self.start_mihomo(),
             ProxyAction::WaitForTunInterface => self.wait_for_tun(),
-            ProxyAction::CreateTunChains { token } => self.create_tun_chains(token),
+            ProxyAction::CreateTunChains { token, direct_macs } => {
+                self.create_tun_chains(token, direct_macs)
+            }
             ProxyAction::InstallTunForwardHook { token } => self.install_tun_hook(token),
             ProxyAction::InstallPolicyRoute => self.proxy_ip(&[
                 "-4",
@@ -247,7 +249,24 @@ impl LinuxRouterPlatform {
             let output = self
                 .run(Tool::Iptables, &strings(&["-w", "-t", table, "-S", chain]))?
                 .stdout;
-            let expected = expected_chain_rules(chain, token, gateway);
+            let direct_macs = if chain == MIHOMO_MANGLE_CHAIN {
+                let parsed = parse_direct_mac_rules(&output, chain).ok_or_else(|| {
+                    PlatformError::Conflict("live direct MAC rules are malformed".to_owned())
+                })?;
+                if !self
+                    .allowed_direct_mac_sets()?
+                    .iter()
+                    .any(|allowed| allowed == &parsed)
+                {
+                    return Err(PlatformError::Conflict(
+                        "live direct MAC rules do not match committed or pending policy".to_owned(),
+                    ));
+                }
+                parsed
+            } else {
+                std::collections::BTreeSet::new()
+            };
+            let expected = expected_chain_rules_with_direct(chain, token, gateway, &direct_macs);
             if !chain_output_is_exact(&output, chain, &expected) {
                 return Err(PlatformError::Conflict(format!(
                     "live {table}/{chain} body is not the exact owned installer body"
@@ -373,7 +392,11 @@ impl LinuxRouterPlatform {
         ])
     }
 
-    fn create_tun_chains(&self, token: &str) -> Result<(), PlatformError> {
+    fn create_tun_chains(
+        &self,
+        token: &str,
+        direct_macs: &std::collections::BTreeSet<crate::domain::device_policy::LanDeviceMac>,
+    ) -> Result<(), PlatformError> {
         storage::validate_token(token)?;
         let route = self
             .run(
@@ -489,6 +512,22 @@ impl LinuxRouterPlatform {
                     "RETURN",
                 ])?;
             }
+            for mac in direct_macs {
+                let mac = mac.to_string();
+                self.proxy_iptables(&[
+                    "-w",
+                    "-t",
+                    "mangle",
+                    "-A",
+                    MIHOMO_MANGLE_CHAIN,
+                    "-m",
+                    "mac",
+                    "--mac-source",
+                    &mac,
+                    "-j",
+                    "RETURN",
+                ])?;
+            }
             for protocol in ["tcp", "udp"] {
                 self.proxy_iptables(&[
                     "-w",
@@ -555,14 +594,20 @@ impl LinuxRouterPlatform {
             )
         })();
         if result.is_err() {
-            self.rollback_created_tun_chains(token, gateway, filter_created);
+            self.rollback_created_tun_chains(token, gateway, filter_created, direct_macs);
         }
         result
     }
 
-    fn rollback_created_tun_chains(&self, token: &str, gateway: &str, filter_created: bool) {
+    fn rollback_created_tun_chains(
+        &self,
+        token: &str,
+        gateway: &str,
+        filter_created: bool,
+        direct_macs: &std::collections::BTreeSet<crate::domain::device_policy::LanDeviceMac>,
+    ) {
         let remove_rules = |table: &str, chain: &str, gateway: Option<&str>| {
-            for rule in expected_chain_rules(chain, token, gateway)
+            for rule in expected_chain_rules_with_direct(chain, token, gateway, direct_macs)
                 .into_iter()
                 .rev()
             {

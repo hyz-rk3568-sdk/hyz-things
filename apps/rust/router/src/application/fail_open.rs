@@ -330,6 +330,7 @@ mod tests {
             policy_route_present: Probe::Known(owned),
             interception_entry_present: Probe::Known(owned),
             ordinary_nat_confirmed: Probe::Known(!owned),
+            active_direct_macs: Probe::Known(Default::default()),
         }
     }
 

@@ -1,6 +1,10 @@
 //! Mihomo lifecycle model. Readiness is deliberately stricter than liveness.
 
-use super::network::{OwnedResource, Probe};
+use super::{
+    device_policy::LanDeviceMac,
+    network::{OwnedResource, Probe},
+};
+use std::collections::BTreeSet;
 
 pub const MIHOMO_TUN_INTERFACE: &str = "hyz-mihomo";
 pub const MIHOMO_MANGLE_CHAIN: &str = "HYZ_MIHOMO_PRE";
@@ -32,6 +36,7 @@ impl ProxyMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProxyDesired {
     pub mode: ProxyMode,
+    pub direct_macs: BTreeSet<LanDeviceMac>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,6 +51,7 @@ pub struct ProxyObserved {
     pub policy_route_present: Probe<bool>,
     pub interception_entry_present: Probe<bool>,
     pub ordinary_nat_confirmed: Probe<bool>,
+    pub active_direct_macs: Probe<BTreeSet<LanDeviceMac>>,
 }
 
 impl ProxyObserved {
@@ -61,7 +67,8 @@ impl ProxyObserved {
             policy_rule_present: Probe::Unknown(reason.clone()),
             policy_route_present: Probe::Unknown(reason.clone()),
             interception_entry_present: Probe::Unknown(reason.clone()),
-            ordinary_nat_confirmed: Probe::Unknown(reason),
+            ordinary_nat_confirmed: Probe::Unknown(reason.clone()),
+            active_direct_macs: Probe::Unknown(reason),
         }
     }
 
@@ -108,6 +115,7 @@ impl ProxyObserved {
                     && self.policy_rule_present == Probe::Known(true)
                     && self.policy_route_present == Probe::Known(true)
                     && self.interception_entry_present == Probe::Known(true)
+                    && self.active_direct_macs == Probe::Known(desired.direct_macs.clone())
             }
         }
     }
@@ -115,24 +123,43 @@ impl ProxyObserved {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProxyAction {
-    RemoveInterceptionEntry { token: String },
+    RemoveInterceptionEntry {
+        token: String,
+    },
     RemovePolicyRule,
     RemovePolicyRoute,
-    RemoveTunForwardHook { token: String },
-    RemoveTunChains { token: String },
+    RemoveTunForwardHook {
+        token: String,
+    },
+    RemoveTunChains {
+        token: String,
+    },
     StopWatcher,
     StopCore,
-    WriteRuntimeConfig { mode: ProxyMode },
+    WriteRuntimeConfig {
+        mode: ProxyMode,
+    },
     ValidateRuntimeConfig,
     StartCore,
     WaitForTunInterface,
-    CreateTunChains { token: String },
-    InstallTunForwardHook { token: String },
+    CreateTunChains {
+        token: String,
+        direct_macs: BTreeSet<LanDeviceMac>,
+    },
+    InstallTunForwardHook {
+        token: String,
+    },
     InstallPolicyRoute,
     InstallPolicyRule,
-    InstallInterceptionEntry { token: String },
+    InstallInterceptionEntry {
+        token: String,
+    },
     StartWatcher,
     WaitForWatcher,
-    CommitMode { mode: ProxyMode },
-    RestorePersistedMode { mode: Option<ProxyMode> },
+    CommitMode {
+        mode: ProxyMode,
+    },
+    RestorePersistedMode {
+        mode: Option<ProxyMode>,
+    },
 }

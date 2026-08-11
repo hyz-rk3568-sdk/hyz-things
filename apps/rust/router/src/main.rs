@@ -24,11 +24,12 @@ use hyz_router::{
     },
     application::{
         admin::{AdminApplication, AdminError},
+        device_policy::DevicePolicyApplication,
         dhcp::DhcpPlatformPort,
         fail_open::{MihomoFailOpenApplication, WatcherInvocation},
         ota::{InstallMode, OtaService},
         panel::PanelApplication,
-        ports::{ClockPort, PlatformError, SystemProbePort},
+        ports::{ClockPort, DevicePolicyStorePort, PlatformError, SystemProbePort},
         proxy::ProxyApplication,
         router::RouterApplication,
         shutdown::ShutdownApplication,
@@ -136,6 +137,11 @@ impl ProductionRuntime {
                 .await
             {
                 Ok(()) => {
+                    self.recover_device_policy().await.map_err(|recovery_error| {
+                        format!(
+                            "startup reached management-only mode after forwarding failed ({error}), but interrupted device-policy recovery failed: {recovery_error}"
+                        )
+                    })?;
                     eprintln!(
                         "hyz-router: startup forwarding is unavailable ({error}); continuing in strictly confirmed management-only mode"
                     );
@@ -151,6 +157,8 @@ impl ProductionRuntime {
             }
         }
 
+        self.recover_device_policy().await?;
+
         let platform = self.router.clone();
         let proxy = tokio::task::spawn_blocking(move || {
             let observed = platform.observe_proxy()?;
@@ -162,8 +170,9 @@ impl ProductionRuntime {
                     )));
                 }
             };
+            let direct_macs = platform.load_device_policy()?.direct_macs();
             ProxyApplication::new(platform.as_ref(), platform.as_ref(), platform.as_ref())
-                .reconcile(&ProxyDesired { mode })
+                .reconcile(&ProxyDesired { mode, direct_macs })
                 .map(|_| ())
         })
         .await
@@ -190,6 +199,23 @@ impl ProductionRuntime {
             }
         }
         Ok(())
+    }
+
+    async fn recover_device_policy(&self) -> Result<(), String> {
+        let platform = self.router.clone();
+        tokio::task::spawn_blocking(move || {
+            DevicePolicyApplication::new(
+                platform.as_ref(),
+                platform.as_ref(),
+                platform.as_ref(),
+                platform.as_ref(),
+                platform.as_ref(),
+            )
+            .recover()
+        })
+        .await
+        .map_err(|_| "startup device-policy recovery worker terminated unexpectedly".to_owned())?
+        .map_err(|error| format!("recover interrupted device-policy transaction: {error}"))
     }
 
     async fn expire_pending_ap(&self) -> Result<bool, String> {
@@ -305,6 +331,41 @@ impl ControlHandler for ProductionRuntime {
                 .map_err(|error| error.to_string())?;
                 Ok(ControlResult::ProxyDelays { groups })
             }
+            ControlOperation::DevicePoliciesGet { .. } => {
+                let platform = self.router.clone();
+                let snapshot = tokio::task::spawn_blocking(move || {
+                    DevicePolicyApplication::new(
+                        platform.as_ref(),
+                        platform.as_ref(),
+                        platform.as_ref(),
+                        platform.as_ref(),
+                        platform.as_ref(),
+                    )
+                    .snapshot()
+                })
+                .await
+                .map_err(|_| "device-policy discovery worker terminated unexpectedly".to_owned())?
+                .map_err(|error| error.to_string())?;
+                Ok(ControlResult::DevicePolicies { snapshot })
+            }
+            ControlOperation::DevicePoliciesSet { request } => {
+                let _serial = self.router_proxy.lock().await;
+                let platform = self.router.clone();
+                let snapshot = tokio::task::spawn_blocking(move || {
+                    DevicePolicyApplication::new(
+                        platform.as_ref(),
+                        platform.as_ref(),
+                        platform.as_ref(),
+                        platform.as_ref(),
+                        platform.as_ref(),
+                    )
+                    .update(request)
+                })
+                .await
+                .map_err(|_| "device-policy worker terminated unexpectedly".to_owned())?
+                .map_err(|error| error.to_string())?;
+                Ok(ControlResult::DevicePolicies { snapshot })
+            }
             ControlOperation::SubscriptionGet { .. } => {
                 let store = self.subscription_store.clone();
                 let transport = self.subscription_transport.clone();
@@ -395,6 +456,7 @@ impl ControlHandler for ProductionRuntime {
                         )
                         .reconcile(&ProxyDesired {
                             mode: ProxyMode::Disabled,
+                            direct_macs: platform.load_device_policy()?.direct_macs(),
                         })?;
                         actions_applied += proxy.actions_applied;
                     }
@@ -427,8 +489,9 @@ impl ControlHandler for ProductionRuntime {
                         ControlProxyMode::Tun => ProxyMode::Tun,
                         ControlProxyMode::Disabled => ProxyMode::Disabled,
                     };
+                    let direct_macs = platform.load_device_policy()?.direct_macs();
                     ProxyApplication::new(platform.as_ref(), platform.as_ref(), platform.as_ref())
-                        .reconcile(&ProxyDesired { mode })
+                        .reconcile(&ProxyDesired { mode, direct_macs })
                 })
                 .await
                 .map_err(|_| "proxy worker terminated unexpectedly".to_owned())?
@@ -939,6 +1002,7 @@ fn expect_completed(result: ControlResult) -> Result<String, Box<dyn Error>> {
         | ControlResult::WifiPending { .. }
         | ControlResult::WifiPendingStatus { .. }
         | ControlResult::WifiScan { .. }
+        | ControlResult::DevicePolicies { .. }
         | ControlResult::Subscription { .. } => {
             Err("daemon returned an unexpected mutation response".into())
         }
@@ -1000,6 +1064,24 @@ mod source_boundaries {
         let initialize = production.find("runtime.initialize().await").unwrap();
         let http = production.find("let http = serve_http").unwrap();
         assert!(control < initialize && initialize < http);
+    }
+
+    #[test]
+    fn management_only_startup_recovers_device_policy_before_http_readiness() {
+        let production = include_str!("main.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let fallback = production
+            .split("if let Err(error) = self.reconcile_network(NetworkDesired::forwarding()).await")
+            .nth(1)
+            .unwrap()
+            .split("self.recover_device_policy().await?;")
+            .next()
+            .unwrap();
+        let recovery = fallback.find("self.recover_device_policy().await").unwrap();
+        let ready = fallback.find("return Ok(())").unwrap();
+        assert!(recovery < ready);
     }
 
     #[test]

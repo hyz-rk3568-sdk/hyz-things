@@ -106,6 +106,7 @@ mod tests {
             policy_route_present: Probe::Known(true),
             interception_entry_present: Probe::Known(true),
             ordinary_nat_confirmed: Probe::Known(false),
+            active_direct_macs: Probe::Known(Default::default()),
         }
     }
 

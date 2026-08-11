@@ -54,68 +54,72 @@ impl<'a> ProxyApplication<'a> {
 
     pub fn reconcile(&self, desired: &ProxyDesired) -> Result<ProxyReconcileResult, PlatformError> {
         let lease = self.platform.acquire_lifecycle_lock()?;
-        let result = (|| {
-            let network = self.probe.observe_network()?;
-            let observed = self.probe.observe_proxy()?;
-            let previous_mode = match &observed.persisted_mode {
-                Probe::Known(mode) => *mode,
-                Probe::Unknown(ref reason) => {
-                    return Err(PlatformError::ProbeFailed(format!(
-                        "persisted proxy mode is unknown: {reason}"
-                    )))
-                }
-            };
-            let token = self.clock.ownership_token("hyz-mihomo")?;
-            let actions = proxy_plan(desired, &observed, &network, &token)?;
-            let mut applied = Vec::new();
-            for action in &actions {
-                if let ProxyAction::CommitMode { mode } = action {
-                    let mut precommit = match self.probe.observe_proxy() {
-                        Ok(observed) => observed,
-                        Err(error) => {
-                            self.rollback(&applied, previous_mode);
-                            return Err(error);
-                        }
-                    };
-                    precommit.persisted_mode = crate::domain::network::Probe::Known(Some(*mode));
-                    if !precommit.ready_for(desired) {
-                        self.rollback(&applied, previous_mode);
-                        return Err(PlatformError::UnsafeToCutOver(
-                            "proxy data plane was not ready at persistent-mode commit point"
-                                .to_owned(),
-                        ));
-                    }
-                }
-                if let Err(error) = self.platform.apply_proxy(action) {
-                    self.rollback(&applied, previous_mode);
-                    return Err(error);
-                }
-                applied.push(action.clone());
-            }
-            let observed = match self.probe.observe_proxy() {
-                Ok(observed) => observed,
-                Err(error) => {
-                    self.rollback(&applied, previous_mode);
-                    return Err(error);
-                }
-            };
-            if !observed.ready_for(desired) {
-                self.rollback(&applied, previous_mode);
-                return Err(PlatformError::UnsafeToCutOver(
-                    "proxy actions completed but strict readiness probe failed".to_owned(),
-                ));
-            }
-            Ok(ProxyReconcileResult {
-                observed,
-                actions_applied: actions.len(),
-            })
-        })();
+        let result = self.reconcile_locked(desired);
         let release = self.platform.release_lifecycle_lock(&lease);
         match (result, release) {
             (Err(error), _) => Err(error),
             (Ok(_), Err(error)) => Err(error),
             (Ok(result), Ok(())) => Ok(result),
         }
+    }
+
+    pub(super) fn reconcile_locked(
+        &self,
+        desired: &ProxyDesired,
+    ) -> Result<ProxyReconcileResult, PlatformError> {
+        let network = self.probe.observe_network()?;
+        let observed = self.probe.observe_proxy()?;
+        let previous_mode = match &observed.persisted_mode {
+            Probe::Known(mode) => *mode,
+            Probe::Unknown(ref reason) => {
+                return Err(PlatformError::ProbeFailed(format!(
+                    "persisted proxy mode is unknown: {reason}"
+                )))
+            }
+        };
+        let token = self.clock.ownership_token("hyz-mihomo")?;
+        let actions = proxy_plan(desired, &observed, &network, &token)?;
+        let mut applied = Vec::new();
+        for action in &actions {
+            if let ProxyAction::CommitMode { mode } = action {
+                let mut precommit = match self.probe.observe_proxy() {
+                    Ok(observed) => observed,
+                    Err(error) => {
+                        self.rollback(&applied, previous_mode);
+                        return Err(error);
+                    }
+                };
+                precommit.persisted_mode = Probe::Known(Some(*mode));
+                if !precommit.ready_for(desired) {
+                    self.rollback(&applied, previous_mode);
+                    return Err(PlatformError::UnsafeToCutOver(
+                        "proxy data plane was not ready at persistent-mode commit point".to_owned(),
+                    ));
+                }
+            }
+            if let Err(error) = self.platform.apply_proxy(action) {
+                self.rollback(&applied, previous_mode);
+                return Err(error);
+            }
+            applied.push(action.clone());
+        }
+        let observed = match self.probe.observe_proxy() {
+            Ok(observed) => observed,
+            Err(error) => {
+                self.rollback(&applied, previous_mode);
+                return Err(error);
+            }
+        };
+        if !observed.ready_for(desired) {
+            self.rollback(&applied, previous_mode);
+            return Err(PlatformError::UnsafeToCutOver(
+                "proxy actions completed but strict readiness probe failed".to_owned(),
+            ));
+        }
+        Ok(ProxyReconcileResult {
+            observed,
+            actions_applied: actions.len(),
+        })
     }
 }
 
@@ -131,7 +135,7 @@ fn rollback_compensation(action: &ProxyAction) -> Option<ProxyAction> {
         ProxyAction::InstallTunForwardHook { token } => Some(ProxyAction::RemoveTunForwardHook {
             token: token.clone(),
         }),
-        ProxyAction::CreateTunChains { token } => Some(ProxyAction::RemoveTunChains {
+        ProxyAction::CreateTunChains { token, .. } => Some(ProxyAction::RemoveTunChains {
             token: token.clone(),
         }),
         ProxyAction::StartWatcher => Some(ProxyAction::StopWatcher),

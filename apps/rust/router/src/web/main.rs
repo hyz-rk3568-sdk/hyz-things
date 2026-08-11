@@ -42,6 +42,8 @@ const AP_CANCEL_ENDPOINT: &str = "/api/v1/control/network/ap/cancel";
 const SUBSCRIPTION_ENDPOINT: &str = "/api/v1/proxy/subscription";
 const SUBSCRIPTION_SOURCE_ENDPOINT: &str = "/api/v1/control/proxy/subscription/source";
 const SUBSCRIPTION_REFRESH_ENDPOINT: &str = "/api/v1/control/proxy/subscription/refresh";
+const DEVICE_POLICIES_ENDPOINT: &str = "/api/v1/proxy/device-policies";
+const DEVICE_POLICIES_UPDATE_ENDPOINT: &str = "/api/v1/control/proxy/device-policies";
 const POLL_DELAY_MS: u32 = 2_000;
 const NETWORK_APPLY_PAINT_DELAY_MS: u32 = 150;
 const MISSING: &str = "—";
@@ -151,6 +153,54 @@ enum SubscriptionStateDto {
     Failed,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum DevicePolicyDto {
+    Direct,
+    Proxy,
+}
+
+#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DevicePolicyEntryDto {
+    mac: String,
+    label: String,
+    policy: DevicePolicyDto,
+}
+
+#[derive(Clone, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DevicePolicyConfigDto {
+    version: u8,
+    generation: u64,
+    entries: Vec<DevicePolicyEntryDto>,
+}
+
+#[derive(Clone, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LanClientDto {
+    mac: String,
+    lease_address: Option<String>,
+    hostname: Option<String>,
+    associated: bool,
+    policy: DevicePolicyDto,
+}
+
+#[derive(Clone, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DevicePolicySnapshotDto {
+    config: DevicePolicyConfigDto,
+    clients: Vec<LanClientDto>,
+    effective: bool,
+}
+
+#[derive(serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct DevicePolicyUpdateDto {
+    expected_generation: u64,
+    entries: Vec<DevicePolicyEntryDto>,
+}
+
 #[derive(Clone, PartialEq, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SubscriptionDto {
@@ -253,6 +303,7 @@ struct AppState {
     pending_network: Option<NetworkPendingDto>,
     scan_entries: Vec<WifiScanDto>,
     subscription: Option<SubscriptionDto>,
+    device_policies: Option<DevicePolicySnapshotDto>,
 }
 
 #[derive(Clone, Copy)]
@@ -271,7 +322,17 @@ enum Action {
     SessionFinished(Result<AuthSessionDto, String>),
     AuthFinished(Result<(AuthSessionDto, String), String>),
     SettingsStarted,
-    SettingsFinished(Result<(NetworkConfigDto, NetworkPendingDto, SubscriptionDto), String>),
+    SettingsFinished(
+        Result<
+            (
+                NetworkConfigDto,
+                NetworkPendingDto,
+                SubscriptionDto,
+                DevicePolicySnapshotDto,
+            ),
+            String,
+        >,
+    ),
     SettingsMutationFinished(Result<String, String>),
     ScanFinished(Result<Vec<WifiScanDto>, String>),
     SettingsNotice(String),
@@ -374,6 +435,7 @@ impl Reducible for AppState {
                             next.network = None;
                             next.pending_network = None;
                             next.subscription = None;
+                            next.device_policies = None;
                             next.scan_entries.clear();
                         }
                         next.session = Some(session);
@@ -393,10 +455,11 @@ impl Reducible for AppState {
                 let mut next = (*self).clone();
                 next.settings_busy = false;
                 match result {
-                    Ok((network, pending, subscription)) => {
+                    Ok((network, pending, subscription, device_policies)) => {
                         next.network = Some(network);
                         next.pending_network = Some(pending);
                         next.subscription = Some(subscription);
+                        next.device_policies = Some(device_policies);
                     }
                     Err(error) => {
                         next.settings_notice = Some(format!("设置数据读取失败：{error}"));
@@ -767,8 +830,15 @@ async fn post_json_response<T: serde::Serialize, R: serde::de::DeserializeOwned>
         .map_err(|error| format!("{label}响应格式无效：{error}"))
 }
 
-async fn fetch_settings_data(
-) -> Result<(NetworkConfigDto, NetworkPendingDto, SubscriptionDto), String> {
+async fn fetch_settings_data() -> Result<
+    (
+        NetworkConfigDto,
+        NetworkPendingDto,
+        SubscriptionDto,
+        DevicePolicySnapshotDto,
+    ),
+    String,
+> {
     let network = fetch_json::<NetworkConfigResponseDto>(NETWORK_CONFIG_ENDPOINT, "网络配置")
         .await?
         .config;
@@ -777,7 +847,9 @@ async fn fetch_settings_data(
     let subscription = fetch_json::<SubscriptionResponseDto>(SUBSCRIPTION_ENDPOINT, "订阅状态")
         .await?
         .subscription;
-    Ok((network, pending, subscription))
+    let device_policies =
+        fetch_json::<DevicePolicySnapshotDto>(DEVICE_POLICIES_ENDPOINT, "设备代理策略").await?;
+    Ok((network, pending, subscription, device_policies))
 }
 
 fn dispatch_settings_refresh(state: UseReducerHandle<AppState>) {
@@ -1389,6 +1461,7 @@ fn settings(props: &SettingsProps) -> Html {
                             </div>
                         }
                     </article>
+                    <DevicePolicies state={state.clone()} csrf={csrf.clone()} />
                     <article class={INNER_CARD} aria-labelledby="subscription-title">
                         <div class={CONTROL_TITLE}><h3 id="subscription-title" class={CONTROL_HEADING}>{"代理订阅"}</h3><span class={CONTROL_META}>{"来源只写"}</span></div>
                         if let Some(subscription) = &state.subscription {
@@ -1403,6 +1476,145 @@ fn settings(props: &SettingsProps) -> Html {
                 </div>
             }
         </section>
+    }
+}
+
+fn dispatch_device_policy_update(
+    state: UseReducerHandle<AppState>,
+    csrf: String,
+    generation: u64,
+    entries: Vec<DevicePolicyEntryDto>,
+) {
+    state.dispatch(Action::SettingsStarted);
+    spawn_local(async move {
+        let result = post_json(
+            DEVICE_POLICIES_UPDATE_ENDPOINT,
+            &csrf,
+            &DevicePolicyUpdateDto {
+                expected_generation: generation,
+                entries,
+            },
+            "设备代理策略",
+        )
+        .await;
+        if result.is_ok() {
+            state.dispatch(Action::SettingsFinished(fetch_settings_data().await));
+        }
+        let message = result
+            .map(|_| "设备代理策略已保存".to_owned())
+            .map_err(|error| {
+                if error.contains("HTTP 409") {
+                    "设备策略更新未完成（HTTP 409）；请重新加载并核对当前配置后重试".to_owned()
+                } else {
+                    error
+                }
+            });
+        state.dispatch(Action::SettingsMutationFinished(message));
+    });
+}
+
+#[derive(Properties, PartialEq)]
+struct DevicePoliciesProps {
+    state: UseReducerHandle<AppState>,
+    csrf: String,
+}
+
+#[function_component(DevicePolicies)]
+fn device_policies(props: &DevicePoliciesProps) -> Html {
+    let manual_mac = use_node_ref();
+    let manual_label = use_node_ref();
+    let Some(snapshot) = props.state.device_policies.as_ref() else {
+        return html! { <article class={INNER_CARD} aria-label="设备代理"><span class={HELP_TEXT}>{"正在读取设备代理策略…"}</span></article> };
+    };
+    let generation = snapshot.config.generation;
+    let configured = snapshot.config.entries.clone();
+    let add = {
+        let state = props.state.clone();
+        let csrf = props.csrf.clone();
+        let mac = manual_mac.clone();
+        let label = manual_label.clone();
+        let entries = configured.clone();
+        Callback::from(move |event: SubmitEvent| {
+            event.prevent_default();
+            let (Some(mac), Some(label)) = (
+                mac.cast::<HtmlInputElement>(),
+                label.cast::<HtmlInputElement>(),
+            ) else {
+                return;
+            };
+            let mut next = entries.clone();
+            next.retain(|entry| entry.mac.to_ascii_lowercase() != mac.value().to_ascii_lowercase());
+            next.push(DevicePolicyEntryDto {
+                mac: mac.value(),
+                label: label.value(),
+                policy: DevicePolicyDto::Proxy,
+            });
+            dispatch_device_policy_update(state.clone(), csrf.clone(), generation, next);
+        })
+    };
+    html! {
+        <article class={INNER_CARD} aria-labelledby="device-policies-title">
+            <div class={CONTROL_TITLE}>
+                <h3 id="device-policies-title" class={CONTROL_HEADING}>{"设备代理"}</h3>
+                <span class={CONTROL_META}>{format!("配置代次 {}", generation)}</span>
+            </div>
+            if !snapshot.effective {
+                <div class={RISK_NOTE} role="note">{"策略已保存但当前透明代理未启用；仅在全局 TUN 模式生效。"}</div>
+            }
+            <p class={HELP_TEXT}>{"未配置设备默认使用代理。手机私有/随机 MAC 改变后会被识别为新设备；MAC 是家庭 LAN 标识，不是强认证。"}</p>
+            <div class="grid gap-3">
+                {for snapshot.clients.iter().map(|client| {
+                    let state = props.state.clone();
+                    let csrf = props.csrf.clone();
+                    let mac = client.mac.clone();
+                    let entries = configured.clone();
+                    let label = configured.iter().find(|entry| entry.mac == client.mac)
+                        .map(|entry| entry.label.clone())
+                        .or_else(|| client.hostname.clone())
+                        .unwrap_or_default();
+                    let is_configured = configured.iter().any(|entry| entry.mac == client.mac);
+                    let policy_label = label.clone();
+                    let policy_mac = mac.clone();
+                    let policy_entries = entries.clone();
+                    let policy_state = state.clone();
+                    let policy_csrf = csrf.clone();
+                    let onchange = Callback::from(move |event: Event| {
+                        let select: HtmlSelectElement = event.target_unchecked_into();
+                        let policy = if select.value() == "direct" { DevicePolicyDto::Direct } else { DevicePolicyDto::Proxy };
+                        let mut next = policy_entries.clone();
+                        next.retain(|entry| entry.mac != policy_mac);
+                        if policy == DevicePolicyDto::Direct {
+                            next.push(DevicePolicyEntryDto { mac: policy_mac.clone(), label: policy_label.clone(), policy });
+                        }
+                        dispatch_device_policy_update(policy_state.clone(), policy_csrf.clone(), generation, next);
+                    });
+                    let remove = Callback::from(move |_| {
+                        let mut next = entries.clone();
+                        next.retain(|entry| entry.mac != mac);
+                        dispatch_device_policy_update(state.clone(), csrf.clone(), generation, next);
+                    });
+                    html! {
+                        <div class="grid min-w-0 gap-2 rounded-box border border-base-content/10 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                            <div class="min-w-0"><strong class="block truncate">{if label.is_empty() { client.mac.clone() } else { label.clone() }}</strong><small class="block truncate font-mono text-base-content/65">{format!("{} · {} · {}", client.mac, client.lease_address.as_deref().unwrap_or("无租约 IP"), if client.associated { "在线" } else { "离线" })}</small></div>
+                            <div class="flex min-w-0 flex-wrap gap-2">
+                                <select class={SELECT} aria-label={format!("{} 代理策略", client.mac)} onchange={onchange} disabled={props.state.settings_busy}>
+                                    <option value="proxy" selected={client.policy == DevicePolicyDto::Proxy}>{"代理"}</option>
+                                    <option value="direct" selected={client.policy == DevicePolicyDto::Direct}>{"直连"}</option>
+                                </select>
+                                if is_configured {
+                                    <button class={BUTTON_GHOST} type="button" onclick={remove} disabled={props.state.settings_busy} aria-label={format!("移除 {} 的设备策略", client.mac)}>{"移除配置"}</button>
+                                }
+                            </div>
+                        </div>
+                    }
+                })}
+            </div>
+            <form class={FORM_GRID_COMPACT} onsubmit={add} autocomplete="off">
+                <label class={FIELD}><span class={FIELD_LABEL}>{"手工添加 MAC"}</span><input class={INPUT} ref={manual_mac} required=true placeholder="02:00:00:00:00:01" maxlength="17" autocapitalize="none" spellcheck="false" /></label>
+                <label class={FIELD}><span class={FIELD_LABEL}>{"显示名"}</span><input class={INPUT} ref={manual_label} maxlength="32" /></label>
+                <div class={FORM_ACTIONS}><button class={BUTTON_PRIMARY} type="submit" disabled={props.state.settings_busy}>{"添加或更新为代理"}</button></div>
+            </form>
+        </article>
     }
 }
 

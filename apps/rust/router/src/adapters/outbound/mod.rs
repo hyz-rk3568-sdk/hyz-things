@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod device_policy;
 pub mod firmware;
 pub mod management;
 pub mod network;

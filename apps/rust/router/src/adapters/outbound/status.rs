@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     application::{
-        ports::SystemProbePort,
+        ports::{DevicePolicyStorePort, SystemProbePort},
         status::{StatusRouterPlatformPort, StatusSystemProbePort},
     },
     domain::{
@@ -188,12 +188,23 @@ fn read_proxy_status(platform: &LinuxRouterPlatform) -> Component<ProxyStatus> {
         Err(_) => return unavailable("proxy_probe_failed", "Proxy status is unavailable"),
     };
 
-    proxy_status_from_observed(&observed, fs::metadata(MIHOMO_SOURCE_CONFIG).is_ok())
+    let desired_direct_macs = match platform.load_device_policy() {
+        Ok(config) => Probe::Known(config.direct_macs()),
+        Err(error) => Probe::Unknown(error.to_string()),
+    };
+    proxy_status_from_observed(
+        &observed,
+        fs::metadata(MIHOMO_SOURCE_CONFIG).is_ok(),
+        desired_direct_macs,
+    )
 }
 
 fn proxy_status_from_observed(
     observed: &ProxyObserved,
     configured: bool,
+    desired_direct_macs: Probe<
+        std::collections::BTreeSet<crate::domain::device_policy::LanDeviceMac>,
+    >,
 ) -> Component<ProxyStatus> {
     let desired_mode = match &observed.persisted_mode {
         Probe::Known(Some(mode)) => Some(*mode),
@@ -217,10 +228,17 @@ fn proxy_status_from_observed(
                 && observed.watcher_identity_valid == Probe::Known(false)
                 && observed.tun_resources_absent()
         }
-        _ => observed.ready_for(&ProxyDesired { mode }),
+        _ => match &desired_direct_macs {
+            Probe::Known(direct_macs) => observed.ready_for(&ProxyDesired {
+                mode,
+                direct_macs: direct_macs.clone(),
+            }),
+            Probe::Unknown(_) => false,
+        },
     });
     let state = match desired_mode {
         None => ProxyState::Unknown,
+        Some(_) if matches!(desired_direct_macs, Probe::Unknown(_)) => ProxyState::Unknown,
         Some(DomainProxyMode::Disabled) if ready => ProxyState::Disabled,
         Some(_) if ready => ProxyState::Running,
         Some(_) if proxy_observation_has_unknown(observed) => ProxyState::Unknown,
@@ -256,6 +274,7 @@ fn proxy_observation_has_unknown(observed: &ProxyObserved) -> bool {
         || matches!(&observed.policy_route_present, Probe::Unknown(_))
         || matches!(&observed.interception_entry_present, Probe::Unknown(_))
         || matches!(&observed.ordinary_nat_confirmed, Probe::Unknown(_))
+        || matches!(&observed.active_direct_macs, Probe::Unknown(_))
 }
 
 fn read_system_stats() -> Component<SystemStats> {
@@ -424,6 +443,7 @@ mod tests {
             policy_route_present: Probe::Known(mode == DomainProxyMode::Tun),
             interception_entry_present: Probe::Known(mode == DomainProxyMode::Tun),
             ordinary_nat_confirmed: Probe::Known(mode != DomainProxyMode::Tun),
+            active_direct_macs: Probe::Known(Default::default()),
         }
     }
 
@@ -447,17 +467,36 @@ mod tests {
 
     #[test]
     fn running_requires_full_effective_mode_readiness() {
-        let ready = proxy_status_from_observed(&proxy_observed(DomainProxyMode::Tun), true);
+        let ready = proxy_status_from_observed(
+            &proxy_observed(DomainProxyMode::Tun),
+            true,
+            Probe::Known(Default::default()),
+        );
         assert_eq!(ready.data.unwrap().state, ProxyState::Running);
 
         let mut incomplete = proxy_observed(DomainProxyMode::Tun);
         incomplete.policy_route_present = Probe::Known(false);
-        let incomplete = proxy_status_from_observed(&incomplete, true);
+        let incomplete =
+            proxy_status_from_observed(&incomplete, true, Probe::Known(Default::default()));
         assert_eq!(
             incomplete.state,
             crate::domain::status::ComponentState::Degraded
         );
         assert_eq!(incomplete.data.unwrap().state, ProxyState::Error);
+    }
+
+    #[test]
+    fn committed_device_policy_mismatch_or_unreadable_config_degrades_status() {
+        let observed = proxy_observed(DomainProxyMode::Tun);
+        let direct = ["02:00:00:00:00:01".parse().unwrap()].into_iter().collect();
+        let mismatch = proxy_status_from_observed(&observed, true, Probe::Known(direct));
+        assert_eq!(mismatch.data.unwrap().state, ProxyState::Error);
+        let unreadable = proxy_status_from_observed(
+            &observed,
+            true,
+            Probe::Unknown("committed policy unreadable".to_owned()),
+        );
+        assert_eq!(unreadable.data.unwrap().state, ProxyState::Unknown);
     }
 
     #[test]
@@ -467,7 +506,7 @@ mod tests {
         observed.watcher_identity_valid = Probe::Known(false);
         observed.ordinary_nat_confirmed = Probe::Known(false);
 
-        let status = proxy_status_from_observed(&observed, true);
+        let status = proxy_status_from_observed(&observed, true, Probe::Known(Default::default()));
         assert_eq!(
             status.state,
             crate::domain::status::ComponentState::Available
@@ -477,7 +516,8 @@ mod tests {
         assert_eq!(data.ordinary_nat_fallback, Some(false));
 
         observed.process_identity_valid = Probe::Known(true);
-        let residual_core = proxy_status_from_observed(&observed, true);
+        let residual_core =
+            proxy_status_from_observed(&observed, true, Probe::Known(Default::default()));
         assert_eq!(
             residual_core.state,
             crate::domain::status::ComponentState::Degraded
@@ -489,7 +529,7 @@ mod tests {
     fn unknown_proxy_ownership_is_unknown_and_degraded() {
         let mut observed = proxy_observed(DomainProxyMode::Tun);
         observed.tun_firewall = Probe::Unknown("ownership probe failed".to_owned());
-        let status = proxy_status_from_observed(&observed, true);
+        let status = proxy_status_from_observed(&observed, true, Probe::Known(Default::default()));
         assert_eq!(
             status.state,
             crate::domain::status::ComponentState::Degraded

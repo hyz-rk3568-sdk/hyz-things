@@ -1,5 +1,6 @@
 use crate::domain::{
     admin::AdminCredential,
+    device_policy::{DevicePolicyConfigV1, LanClientObservation},
     network::{NetworkAction, NetworkObserved},
     panel::{DisplayRequest, DisplayStatus, ProxyDelayResult, ProxyGroup, ProxySelectionRequest},
     proxy::{ProxyAction, ProxyMode, ProxyObserved},
@@ -36,6 +37,27 @@ impl fmt::Display for PlatformError {
 }
 
 impl Error for PlatformError {}
+
+pub trait DevicePolicyStorePort: Send + Sync {
+    fn load_device_policy(&self) -> Result<DevicePolicyConfigV1, PlatformError>;
+    fn load_pending_device_policy(
+        &self,
+    ) -> Result<Option<(DevicePolicyConfigV1, DevicePolicyConfigV1)>, PlatformError>;
+    fn stage_device_policy(
+        &self,
+        previous: &DevicePolicyConfigV1,
+        candidate: &DevicePolicyConfigV1,
+    ) -> Result<(), PlatformError>;
+    fn commit_device_policy(&self, candidate: &DevicePolicyConfigV1) -> Result<(), PlatformError>;
+    fn clear_pending_device_policy(&self) -> Result<(), PlatformError>;
+}
+
+pub trait LanClientDiscoveryPort: Send + Sync {
+    fn discover_lan_clients(
+        &self,
+        config: &DevicePolicyConfigV1,
+    ) -> Result<Vec<LanClientObservation>, PlatformError>;
+}
 
 pub trait AdminCredentialStorePort: Send + Sync {
     fn load_admin_credential(&self) -> Result<Option<AdminCredential>, PlatformError>;

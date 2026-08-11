@@ -28,6 +28,7 @@ use crate::{
     },
     domain::{
         admin::{AdminAuthorization, AdminLoginRequest, AdminPasswordChangeRequest, SecretString},
+        device_policy::DevicePolicyUpdateRequest,
         network_config::{NetworkConfigSummary, PendingNetworkConfigSummary},
         panel::{
             DisplayRequest, PanelBootstrap, ProxyDelayRefreshRequest, ProxyDelayRequest,
@@ -243,6 +244,14 @@ fn app_with_assets(
         .route(
             "/api/v1/control/network/ap/cancel",
             on(MethodFilter::POST, network_ap_cancel),
+        )
+        .route(
+            "/api/v1/proxy/device-policies",
+            on(MethodFilter::GET, proxy_device_policies),
+        )
+        .route(
+            "/api/v1/control/proxy/device-policies",
+            on(MethodFilter::POST, proxy_device_policies_update),
         )
         .route(
             "/api/v1/proxy/subscription",
@@ -608,6 +617,7 @@ enum SensitiveResult {
     NetworkPending,
     NetworkPendingStatus,
     NetworkScan,
+    DevicePolicies,
     Subscription,
 }
 
@@ -725,6 +735,35 @@ async fn network_ap_cancel(
         payload,
         ControlOperation::WifiApCancel {},
         SensitiveResult::NetworkConfig,
+    )
+    .await
+}
+
+async fn proxy_device_policies(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    invoke_sensitive_control(
+        &state,
+        &headers,
+        ControlOperation::DevicePoliciesGet {},
+        SensitiveResult::DevicePolicies,
+    )
+    .await
+}
+
+async fn proxy_device_policies_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<DevicePolicyUpdateRequest>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control(&state, &headers).await {
+        return response;
+    }
+    let Ok(Json(request)) = payload else {
+        return invalid_request_json();
+    };
+    invoke_sensitive_control_authorized(
+        &state,
+        ControlOperation::DevicePoliciesSet { request },
+        SensitiveResult::DevicePolicies,
     )
     .await
 }
@@ -863,6 +902,9 @@ async fn invoke_sensitive_control_authorized(
         .into_response(),
         (SensitiveResult::NetworkScan, Ok(ControlResult::WifiScan { entries })) => {
             Json(NetworkScanResponse { entries }).into_response()
+        }
+        (SensitiveResult::DevicePolicies, Ok(ControlResult::DevicePolicies { snapshot })) => {
+            Json(snapshot).into_response()
         }
         (SensitiveResult::Subscription, Ok(ControlResult::Subscription { summary })) => {
             Json(SubscriptionResponse {
@@ -1180,6 +1222,7 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/control/network/ap/apply"
             | "/api/v1/control/network/ap/confirm"
             | "/api/v1/control/network/ap/cancel"
+            | "/api/v1/control/proxy/device-policies"
             | "/api/v1/control/proxy/subscription/source"
             | "/api/v1/control/proxy/subscription/refresh"
             | "/api/v1/control/display"
@@ -1284,6 +1327,10 @@ mod tests {
     #[test]
     fn sensitive_json_dtos_reject_unknown_fields_and_redact_subscription_urls() {
         assert!(serde_json::from_str::<EmptyJsonRequest>(r#"{"unexpected":true}"#).is_err());
+        assert!(serde_json::from_str::<DevicePolicyUpdateRequest>(
+            r#"{"expected_generation":0,"entries":[],"command":"iptables"}"#
+        )
+        .is_err());
         assert!(serde_json::from_str::<SubscriptionSourceRequest>(
             r#"{"url":"https://example.com/sub","unexpected":true}"#
         )
@@ -1337,6 +1384,7 @@ mod tests {
         assert!(is_post_path("/api/v1/control/network/ap/apply"));
         assert!(is_post_path("/api/v1/control/network/ap/confirm"));
         assert!(is_post_path("/api/v1/control/network/ap/cancel"));
+        assert!(is_post_path("/api/v1/control/proxy/device-policies"));
         assert!(is_post_path("/api/v1/control/proxy/subscription/source"));
         assert!(is_post_path("/api/v1/control/proxy/subscription/refresh"));
         assert!(is_post_path("/api/v1/control/display"));
@@ -1344,6 +1392,7 @@ mod tests {
         assert!(!is_post_path("/api/v1/auth/session"));
         assert!(!is_post_path("/api/v1/admin/login"));
         assert!(!is_post_path("/api/v1/network/config"));
+        assert!(!is_post_path("/api/v1/proxy/device-policies"));
         assert!(!is_post_path("/api/v1/proxy/subscription"));
         assert!(!is_post_path("/api/v1/control/network/sta"));
         assert!(!is_post_path("/api/v1/control"));

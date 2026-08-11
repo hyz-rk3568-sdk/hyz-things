@@ -5,10 +5,11 @@ use super::{
 };
 use crate::{
     application::ports::{
-        ClockPort, CoreIdentity, CoreRecordState, FailOpenPlatformPort, FailOpenRetryKind,
-        LifecycleLease, PlatformError, RouterPlatformPort, SystemProbePort,
+        ClockPort, CoreIdentity, CoreRecordState, DevicePolicyStorePort, FailOpenPlatformPort,
+        FailOpenRetryKind, LifecycleLease, PlatformError, RouterPlatformPort, SystemProbePort,
     },
     domain::{
+        device_policy::LanDeviceMac,
         network::{
             NetworkAction, NetworkObserved, OwnedResource, Probe, LAN_ADDRESS, LAN_BRIDGE,
             LAN_MEMBER, ROUTER_FILTER_CHAIN, ROUTER_NAT_CHAIN, WAN_INTERFACE,
@@ -20,6 +21,7 @@ use crate::{
     },
 };
 use std::{
+    collections::BTreeSet,
     fs,
     path::Path,
     time::{SystemTime, UNIX_EPOCH},
@@ -295,6 +297,7 @@ impl SystemProbePort for LinuxRouterPlatform {
             | (_, _, _, Probe::Unknown(reason)) => Probe::Unknown(reason.clone()),
             _ => Probe::Known(false),
         };
+        let active_direct_macs = self.observe_active_direct_macs(&tun_firewall);
         Ok(ProxyObserved {
             persisted_mode,
             process_identity_valid,
@@ -306,6 +309,7 @@ impl SystemProbePort for LinuxRouterPlatform {
             policy_route_present,
             interception_entry_present,
             ordinary_nat_confirmed,
+            active_direct_macs,
         })
     }
 }
@@ -378,6 +382,45 @@ impl LinuxRouterPlatform {
             Probe::Known(OwnedResource::Owned {
                 token: token.to_owned(),
             })
+        }
+    }
+
+    pub(crate) fn allowed_direct_mac_sets(
+        &self,
+    ) -> Result<Vec<BTreeSet<LanDeviceMac>>, PlatformError> {
+        let committed = self.load_device_policy()?;
+        let mut allowed = vec![committed.direct_macs()];
+        if let Some((previous, candidate)) = self.load_pending_device_policy()? {
+            allowed.push(previous.direct_macs());
+            allowed.push(candidate.direct_macs());
+        }
+        allowed.sort();
+        allowed.dedup();
+        Ok(allowed)
+    }
+
+    fn observe_active_direct_macs(
+        &self,
+        ownership: &Probe<OwnedResource>,
+    ) -> Probe<BTreeSet<LanDeviceMac>> {
+        match ownership {
+            Probe::Known(OwnedResource::Absent) => Probe::Known(BTreeSet::new()),
+            Probe::Known(OwnedResource::Owned { .. }) => self
+                .iptables_output(&["-w", "-t", "mangle", "-S", MIHOMO_MANGLE_CHAIN])
+                .and_then(|output| {
+                    parse_direct_mac_rules(&output, MIHOMO_MANGLE_CHAIN).map_or_else(
+                        || {
+                            Probe::Unknown(
+                                "direct MAC rules are malformed or noncanonical".to_owned(),
+                            )
+                        },
+                        Probe::Known,
+                    )
+                }),
+            Probe::Known(OwnedResource::Foreign) => {
+                Probe::Unknown("direct MAC rules belong to foreign TUN chains".to_owned())
+            }
+            Probe::Unknown(reason) => Probe::Unknown(reason.clone()),
         }
     }
 
@@ -554,7 +597,24 @@ impl LinuxRouterPlatform {
         } else {
             None
         };
-        let expected = expected_chain_rules(chain, token, gateway.as_deref());
+        let direct_macs = if chain == MIHOMO_MANGLE_CHAIN {
+            let parsed = match parse_direct_mac_rules(&output.stdout, chain) {
+                Some(macs) => macs,
+                None => return Probe::Known(OwnedResource::Foreign),
+            };
+            let allowed = match self.allowed_direct_mac_sets() {
+                Ok(allowed) => allowed,
+                Err(error) => return Probe::Unknown(error.to_string()),
+            };
+            if !direct_mac_set_is_allowed(&parsed, &allowed) {
+                return Probe::Known(OwnedResource::Foreign);
+            }
+            parsed
+        } else {
+            BTreeSet::new()
+        };
+        let expected =
+            expected_chain_rules_with_direct(chain, token, gateway.as_deref(), &direct_macs);
         if !chain_output_is_exact(&output.stdout, chain, &expected) {
             Probe::Known(OwnedResource::Foreign)
         } else {
@@ -604,6 +664,15 @@ pub(crate) fn expected_chain_rules(
     chain: &str,
     token: &str,
     gateway: Option<&str>,
+) -> Vec<Vec<String>> {
+    expected_chain_rules_with_direct(chain, token, gateway, &BTreeSet::new())
+}
+
+pub(crate) fn expected_chain_rules_with_direct(
+    chain: &str,
+    token: &str,
+    gateway: Option<&str>,
+    direct_macs: &BTreeSet<LanDeviceMac>,
 ) -> Vec<Vec<String>> {
     let mut rules = Vec::new();
     let mut push = |body: &[&str]| {
@@ -686,6 +755,10 @@ pub(crate) fn expected_chain_rules(
                     "-p", protocol, "-m", protocol, "--dport", "53", "-j", "RETURN",
                 ]);
             }
+            for mac in direct_macs {
+                let mac = mac.to_string();
+                push(&["-m", "mac", "--mac-source", &mac, "-j", "RETURN"]);
+            }
             for protocol in ["tcp", "udp"] {
                 push(&["-p", protocol, "-j", "MARK", "--set-xmark", MIHOMO_MARK]);
             }
@@ -725,6 +798,32 @@ pub(crate) fn expected_chain_rules(
         _ => {}
     }
     rules
+}
+
+fn direct_mac_set_is_allowed(
+    parsed: &BTreeSet<LanDeviceMac>,
+    allowed: &[BTreeSet<LanDeviceMac>],
+) -> bool {
+    allowed.iter().any(|macs| macs == parsed)
+}
+
+pub(crate) fn parse_direct_mac_rules(output: &str, chain: &str) -> Option<BTreeSet<LanDeviceMac>> {
+    let rules = normalized_chain_rules(output, chain)?;
+    let mut macs = BTreeSet::new();
+    for rule in rules {
+        if rule.len() == 8
+            && rule[0] == "-A"
+            && rule[1] == chain
+            && rule[2..5] == ["-m", "mac", "--mac-source"]
+            && rule[6..] == ["-j", "RETURN"]
+        {
+            let mac = rule[5].parse().ok()?;
+            if !macs.insert(mac) {
+                return None;
+            }
+        }
+    }
+    Some(macs)
 }
 
 pub(crate) fn normalized_chain_rules(output: &str, chain: &str) -> Option<Vec<Vec<String>>> {
@@ -961,6 +1060,53 @@ fn strings(values: &[&str]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn direct_mac_rules_are_sorted_before_mark_and_strictly_parsed() {
+        let direct_macs = [
+            "02:00:00:00:00:02".parse().unwrap(),
+            "02:00:00:00:00:01".parse().unwrap(),
+        ]
+        .into_iter()
+        .collect();
+        let rules = expected_chain_rules_with_direct(
+            MIHOMO_MANGLE_CHAIN,
+            "owned",
+            Some("192.0.2.1"),
+            &direct_macs,
+        );
+        let first_mac = rules
+            .iter()
+            .position(|rule| rule.iter().any(|word| word == "--mac-source"))
+            .unwrap();
+        let first_mark = rules
+            .iter()
+            .position(|rule| rule.iter().any(|word| word == "MARK"))
+            .unwrap();
+        assert!(first_mac < first_mark);
+        let mut output = format!("-N {MIHOMO_MANGLE_CHAIN}\n");
+        for rule in &rules {
+            output.push_str(&format!("{}\n", rule.join(" ")));
+        }
+        assert_eq!(
+            parse_direct_mac_rules(&output, MIHOMO_MANGLE_CHAIN),
+            Some(direct_macs.clone())
+        );
+        assert!(direct_mac_set_is_allowed(
+            &direct_macs,
+            std::slice::from_ref(&direct_macs)
+        ));
+        let edited = ["02:00:00:00:00:03".parse().unwrap()].into_iter().collect();
+        assert!(!direct_mac_set_is_allowed(
+            &edited,
+            std::slice::from_ref(&direct_macs)
+        ));
+        assert!(parse_direct_mac_rules(
+            &format!("{output}-A {MIHOMO_MANGLE_CHAIN} -m mac --mac-source 02:00:00:00:00:01 -j RETURN\n"),
+            MIHOMO_MANGLE_CHAIN,
+        )
+        .is_none());
+    }
 
     #[test]
     fn absent_kernel_policy_table_is_known_false_but_other_probe_failures_are_unknown() {
