@@ -5,6 +5,10 @@ output/
 
 # Application build products
 apps/rust/**/target/
+apps/rust/**/node_modules/
+apps/rust/**/playwright-report/
+apps/rust/**/test-results/
+apps/rust/router/frontend/router.css
 apps/flutter/**/.dart_tool/
 apps/flutter/**/build/
 target/

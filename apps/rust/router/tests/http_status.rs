@@ -291,6 +291,52 @@ async fn control_posts_require_exact_origin_token_and_typed_json() {
     assert!(!panel.contains("controller.secret"));
 
     let origin = format!("http://192.168.8.1:{}", address.port());
+
+    let login_without_token_address = server_address(&server, address);
+    let login_without_token_origin = origin.clone();
+    let login_without_token = tokio::task::spawn_blocking(move || {
+        http_json_request(
+            login_without_token_address,
+            "/api/v1/auth/login",
+            &login_without_token_origin,
+            None,
+            r#"{"password":"admin"}"#,
+        )
+    })
+    .await
+    .expect("join login missing-token client");
+    assert!(login_without_token.starts_with("HTTP/1.1 403 Forbidden\r\n"));
+
+    let login_wrong_token_address = server_address(&server, address);
+    let login_wrong_token_origin = origin.clone();
+    let login_wrong_token = tokio::task::spawn_blocking(move || {
+        http_json_request(
+            login_wrong_token_address,
+            "/api/v1/auth/login",
+            &login_wrong_token_origin,
+            Some("wrong-token"),
+            r#"{"password":"admin"}"#,
+        )
+    })
+    .await
+    .expect("join login wrong-token client");
+    assert!(login_wrong_token.starts_with("HTTP/1.1 403 Forbidden\r\n"));
+
+    let login_valid_token_address = server_address(&server, address);
+    let login_valid_token_origin = origin.clone();
+    let login_valid_token = tokio::task::spawn_blocking(move || {
+        http_json_request(
+            login_valid_token_address,
+            "/api/v1/auth/login",
+            &login_valid_token_origin,
+            Some("csrf-test"),
+            r#"{"password":"admin"}"#,
+        )
+    })
+    .await
+    .expect("join login valid-token client");
+    assert!(login_valid_token.starts_with("HTTP/1.1 503 Service Unavailable\r\n"));
+
     let missing_token_address = server_address(&server, address);
     let missing_token_origin = origin.clone();
     let missing_token = tokio::task::spawn_blocking(move || {

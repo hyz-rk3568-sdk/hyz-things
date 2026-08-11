@@ -8,6 +8,7 @@ build = "build.rs"
 
 [features]
 default = ["native"]
+e2e = ["native"]
 native = [
   "dep:argon2",
   "dep:async-trait",
@@ -71,6 +72,11 @@ required-features = ["native"]
 name = "router-web"
 path = "src/web/main.rs"
 required-features = ["web"]
+
+[[bin]]
+name = "router-web-e2e"
+path = "src/e2e/main.rs"
+required-features = ["e2e"]
 
 [profile.release]
 codegen-units = 1

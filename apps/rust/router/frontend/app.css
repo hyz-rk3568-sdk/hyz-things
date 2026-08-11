@@ -1,0 +1,25 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: dracula --default;
+}
+@source "../src/web/**/*.rs";
+
+@layer base {
+  html {
+    @apply min-w-80 bg-base-300;
+  }
+
+  body {
+    @apply m-0 min-h-screen bg-base-300 font-sans text-base-content antialiased;
+  }
+
+  button,
+  input,
+  select {
+    @apply focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary;
+  }
+
+  noscript {
+    @apply block p-10 text-center text-base-content;
+  }
+}

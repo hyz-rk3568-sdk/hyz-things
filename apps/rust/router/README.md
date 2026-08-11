@@ -35,7 +35,7 @@ tools/                      可复现前端 bundle 工具
 
 ## 构建与检查
 
-最低 Rust 版本为 `1.85`。native 实现只支持 Linux。
+最低 Rust 版本为 `1.85`，前端工具要求 Node.js `20` 或更新版本。native 实现只支持 Linux。
 
 在本目录执行默认 native 检查：
 
@@ -44,14 +44,23 @@ cargo test --locked
 cargo clippy --locked --all-targets -- -D warnings
 ```
 
-直接执行 `cargo build --locked --release` 时，如果没有前端 bundle，`build.rs` 会嵌入安全占位页。需要真实管理页面时，先生成 deterministic bundle，再构建 native ELF：
+直接执行 `cargo build --locked --release` 时，如果没有前端 bundle，`build.rs` 会嵌入安全占位页。真实管理页面使用 Tailwind CSS 4 + daisyUI 5，默认采用 daisyUI `dracula` 主题；主题与全局样式入口位于 `frontend/app.css`，HTML 的主题声明和浏览器主题色位于 `frontend/index.html`。Node 依赖只在开发机或 CI 上生成静态 CSS，不会进入设备运行环境。首次准备前端工具：
 
 ```sh
+npm ci
+npm exec playwright install chromium
 rustup target add wasm32-unknown-unknown
 cargo install trunk --locked --version 0.21.14 --root ../../../.tools/trunk
+```
+
+生成 deterministic bundle，再构建 native ELF：
+
+```sh
 PATH="../../../.tools/trunk/bin:$PATH" ./tools/build-frontend-bundle.sh
 cargo build --locked --release
 ```
+
+`node_modules/`、Playwright 浏览器和测试报告都只用于本地/CI，不提交、不打包进前端 tar，也不安装到 RK3568。
 
 前端产物默认写入仓库根目录的 `target/frontend-bundle/router-frontend.tar`。也可以通过 `ROUTER_FRONTEND_ARCHIVE=/absolute/path/router-frontend.tar` 指定已有归档。生产 AArch64 构建、Buildroot 安装和固件集成应从仓库根目录使用：
 
@@ -59,7 +68,29 @@ cargo build --locked --release
 make router-app
 ```
 
-不要提交 `target/`、前端 bundle、交叉编译输出或设备运行数据。
+不要提交 `target/`、前端 bundle、`node_modules/`、Playwright 输出、交叉编译输出或设备运行数据。
+
+## 浏览器端到端测试
+
+Playwright 启动一个仅绑定 `127.0.0.1` 的 `router-web-e2e` Axum harness。页面、静态资源、CSP、HTTP routes、CSRF/Origin 校验和 `AdminApplication` 都使用真实实现；状态、面板、Wi-Fi 和订阅操作通过内存 fake ports/`ControlHandler` 提供，不会执行 Linux 命令或修改宿主机网络。
+
+```sh
+npm ci
+npm exec playwright install chromium
+PATH="../../../.tools/trunk/bin:$PATH" npm run test:e2e
+```
+
+需要人工预览 fake 后端页面时，持续运行：
+
+```sh
+PATH="../../../.tools/trunk/bin:$PATH" ./tools/start-e2e-server.sh
+```
+
+默认页面地址为 `http://127.0.0.1:3190`，测试控制接口为 `http://127.0.0.1:3191`；可通过 `ROUTER_E2E_WEB_PORT` 和 `ROUTER_E2E_CONTROL_PORT` 覆盖。该服务仅绑定 loopback，使用 fake ports，不执行 Linux 网络命令；结束预览时终止该前台进程。
+
+也可以从仓库根目录执行 `make router-e2e`。该命令会构建 Yew/WASM 前端和 host-only Rust harness；它不会启动生产 daemon、Buildroot、交叉编译或固件构建。
+
+Harness 默认按 Playwright 进程选择一对 loopback 端口，避免不同 checkout/并发任务固定争用；也可通过 `ROUTER_E2E_WEB_PORT` 和 `ROUTER_E2E_CONTROL_PORT` 显式固定。测试控制接口只存在于非默认 `e2e` feature 的 loopback harness 中，不属于产品 LAN API。
 
 ## 运行与 CLI
 

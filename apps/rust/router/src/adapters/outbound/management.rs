@@ -1160,7 +1160,7 @@ fn parse_scan_results(output: &str) -> Result<Vec<WifiScanEntry>, PlatformError>
             secured: flags.contains("WPA"),
         });
     }
-    entries.sort_by(|left, right| right.signal_dbm.cmp(&left.signal_dbm));
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.signal_dbm));
     entries.dedup_by(|left, right| left.ssid == right.ssid && left.bssid == right.bssid);
     Ok(entries)
 }

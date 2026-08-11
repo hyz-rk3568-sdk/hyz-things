@@ -1,0 +1,19 @@
+{
+  "name": "hyz-router-web",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build:css": "tailwindcss -i ./frontend/app.css -o ./frontend/router.css --minify",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.12.1",
+    "@playwright/test": "1.62.1",
+    "@tailwindcss/cli": "4.3.3",
+    "daisyui": "5.7.16",
+    "tailwindcss": "4.3.3"
+  }
+}

@@ -100,7 +100,14 @@ impl AssetStore {
 
 pub fn app(read_status: ReadStatus) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
-    app_with_assets(read_status, None, None, "", DEFAULT_HTTP_PORT, assets)
+    app_with_assets(
+        read_status,
+        None,
+        None,
+        "",
+        format!("http://{LAN_ADDRESS}:{DEFAULT_HTTP_PORT}"),
+        assets,
+    )
 }
 
 pub fn app_with_control(
@@ -110,7 +117,14 @@ pub fn app_with_control(
     port: u16,
 ) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
-    app_with_assets(read_status, Some(control), None, &csrf_token, port, assets)
+    app_with_assets(
+        read_status,
+        Some(control),
+        None,
+        &csrf_token,
+        format!("http://{LAN_ADDRESS}:{port}"),
+        assets,
+    )
 }
 
 pub fn app_with_admin_control(
@@ -126,9 +140,57 @@ pub fn app_with_admin_control(
         Some(control),
         Some(admin),
         &csrf_token,
-        port,
+        format!("http://{LAN_ADDRESS}:{port}"),
         assets,
     )
+}
+
+#[cfg(feature = "e2e")]
+pub fn app_with_loopback_runtime_frontend(
+    read_status: ReadStatus,
+    control: Arc<dyn ControlHandler>,
+    admin: Arc<AdminApplication>,
+    csrf_token: String,
+    exact_loopback_origin: String,
+    frontend_tar: &[u8],
+) -> io::Result<Router> {
+    validate_exact_loopback_origin(&exact_loopback_origin)?;
+    let assets = AssetStore::from_tar(frontend_tar)?;
+    Ok(app_with_assets(
+        read_status,
+        Some(control),
+        Some(admin),
+        &csrf_token,
+        exact_loopback_origin,
+        assets,
+    ))
+}
+
+#[cfg(feature = "e2e")]
+fn validate_exact_loopback_origin(origin: &str) -> io::Result<()> {
+    let parsed = url::Url::parse(origin).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "e2e HTTP origin must be an exact loopback origin",
+        )
+    })?;
+    let valid = parsed.scheme() == "http"
+        && parsed.host_str() == Some("127.0.0.1")
+        && parsed.port().is_some_and(|port| port != 0)
+        && parsed.username().is_empty()
+        && parsed.password().is_none()
+        && parsed.path() == "/"
+        && parsed.query().is_none()
+        && parsed.fragment().is_none()
+        && origin == format!("http://127.0.0.1:{}", parsed.port().unwrap());
+    if valid {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "e2e HTTP origin must be exactly http://127.0.0.1:<non-zero-port>",
+        ))
+    }
 }
 
 fn app_with_assets(
@@ -136,7 +198,7 @@ fn app_with_assets(
     control: Option<Arc<dyn ControlHandler>>,
     admin: Option<Arc<AdminApplication>>,
     csrf_token: &str,
-    port: u16,
+    allowed_origin: String,
     assets: AssetStore,
 ) -> Router {
     Router::new()
@@ -224,7 +286,7 @@ fn app_with_assets(
             control,
             admin,
             csrf_token: Arc::from(csrf_token),
-            allowed_origin: Arc::from(format!("http://{LAN_ADDRESS}:{port}")),
+            allowed_origin: Arc::from(allowed_origin),
             assets,
         })
 }
@@ -325,7 +387,7 @@ async fn admin_login(
     headers: HeaderMap,
     payload: Result<Json<AdminLoginRequest>, JsonRejection>,
 ) -> Response {
-    if !authorize_json_origin(&state, &headers) {
+    if !authorize_same_origin_csrf(&state, &headers) {
         return authentication_error_json(StatusCode::FORBIDDEN);
     }
     let Ok(Json(request)) = payload else {
@@ -1235,6 +1297,33 @@ mod tests {
         let operation = ControlOperation::SubscriptionSet { url: request.url };
         assert!(!format!("{operation:?}").contains(secret_url));
         assert_eq!(MAX_HTTP_JSON_BODY_BYTES, 4 * 1024);
+    }
+
+    #[cfg(feature = "e2e")]
+    #[test]
+    fn e2e_origin_is_exact_loopback_and_runtime_tar_requires_index() {
+        assert!(validate_exact_loopback_origin("http://127.0.0.1:18080").is_ok());
+        assert!(validate_exact_loopback_origin("http://127.0.0.1:18080/").is_err());
+        assert!(validate_exact_loopback_origin("http://localhost:18080").is_err());
+        assert!(validate_exact_loopback_origin("http://0.0.0.0:18080").is_err());
+        assert!(validate_exact_loopback_origin("https://127.0.0.1:18080").is_err());
+        assert!(validate_exact_loopback_origin("http://127.0.0.1:0").is_err());
+
+        let mut builder = tar::Builder::new(Vec::new());
+        let mut header = tar::Header::new_gnu();
+        let index = b"<!doctype html><title>runtime e2e</title>";
+        header.set_size(index.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "index.html", index.as_slice())
+            .unwrap();
+        let archive = builder.into_inner().unwrap();
+        let assets = AssetStore::from_tar(&archive).unwrap();
+        assert_eq!(assets.get("index.html").unwrap().as_ref(), &index[..]);
+
+        let empty_archive = tar::Builder::new(Vec::new()).into_inner().unwrap();
+        assert!(AssetStore::from_tar(&empty_archive).is_err());
     }
 
     #[test]

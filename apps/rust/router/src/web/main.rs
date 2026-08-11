@@ -1,5 +1,7 @@
 #![cfg(feature = "web")]
 
+mod ui;
+
 use std::{cell::Cell, rc::Rc};
 
 use gloo_net::http::Request;
@@ -16,6 +18,8 @@ use hyz_router::domain::{
 use wasm_bindgen_futures::spawn_local;
 use web_sys::{HtmlInputElement, HtmlSelectElement, RequestCredentials};
 use yew::prelude::*;
+
+use ui::*;
 
 const STATUS_ENDPOINT: &str = "/api/v1/status";
 const PANEL_ENDPOINT: &str = "/api/v1/panel";
@@ -416,10 +420,10 @@ enum Tone {
 impl Tone {
     fn class(self) -> &'static str {
         match self {
-            Self::Good => "good",
-            Self::Warn => "warn",
-            Self::Bad => "bad",
-            Self::Neutral => "neutral",
+            Self::Good => "text-success",
+            Self::Warn => "text-warning",
+            Self::Bad => "text-error",
+            Self::Neutral => "text-base-content/60",
         }
     }
 }
@@ -498,16 +502,19 @@ fn app() -> Html {
     let updated = state.last_update.as_deref().unwrap_or("尚未更新");
 
     html! {
-        <main class="shell">
-            <header class="hero">
+        <main class={PAGE}>
+            <header class={HERO}>
                 <div>
-                    <p class="eyebrow">{"HYZ ROUTER · 本地控制面"}</p>
-                    <h1>{"网络状态"}</h1>
-                    <p class="subtitle">{"集中查看设备、链路与透明代理运行情况"}</p>
+                    <p class={EYEBROW}>{"HYZ ROUTER · 本地控制面"}</p>
+                    <h1 class={PAGE_TITLE}>{"网络状态"}</h1>
+                    <p class={SUBTITLE}>{"集中查看设备、链路与透明代理运行情况"}</p>
                 </div>
-                <div class={classes!("overall", overall_tone.class())} role="status" aria-live="polite">
-                    <span class="status-dot" aria-hidden="true"></span>
-                    <div><strong>{overall_text}</strong><small>{format!("最后更新：{updated}")}</small></div>
+                <div class={classes!(OVERALL, overall_tone.class())} role="status" aria-live="polite" aria-atomic="true">
+                    <span class={STATUS_DOT} aria-hidden="true"></span>
+                    <div class={OVERALL_COPY}>
+                        <strong class={OVERALL_TITLE}>{overall_text}</strong>
+                        <small class={OVERALL_META}>{format!("最后更新：{updated}")}</small>
+                    </div>
                 </div>
             </header>
             {render_notice(&state)}
@@ -515,19 +522,20 @@ fn app() -> Html {
                 {render_dashboard(snapshot)}
                 {render_issues(snapshot)}
             } else if state.loading {
-                <section class="loading-grid" aria-label="正在加载">
-                    {for (0..3).map(|_| html! { <div class="skeleton"></div> })}
+                <section class={LOADING_GRID} aria-labelledby="loading-title" aria-busy="true">
+                    <h2 id="loading-title" class="sr-only">{"正在加载路由器状态"}</h2>
+                    {for (0..3).map(|_| html! { <div class={SKELETON} aria-hidden="true"></div> })}
                 </section>
             } else {
-                <section class="empty-state">
-                    <span class="empty-icon">{"!"}</span>
-                    <h2>{"暂时无法读取状态"}</h2>
-                    <p>{"面板会自动重试，无需刷新页面。"}</p>
+                <section class={EMPTY_STATE} role="alert" aria-labelledby="empty-title">
+                    <span class={EMPTY_ICON} aria-hidden="true">{"!"}</span>
+                    <h2 id="empty-title" class={EMPTY_TITLE}>{"暂时无法读取状态"}</h2>
+                    <p class={EMPTY_COPY}>{"面板会自动重试，无需刷新页面。"}</p>
                 </section>
             }
             <Settings state={state.clone()} />
             {render_control_panel(&state, brightness.clone())}
-            <footer>{"数据约每 2 秒自动刷新 · 写操作仅接受同源令牌保护的类型化请求"}</footer>
+            <footer class={FOOTER}>{"数据约每 2 秒自动刷新 · 写操作仅接受同源令牌保护的类型化请求"}</footer>
         </main>
     }
 }
@@ -896,12 +904,6 @@ fn settings(props: &SettingsProps) -> Html {
                 ));
                 return;
             }
-            if !(12..=1_024).contains(&new_value.len()) {
-                state.dispatch(Action::SettingsNotice(
-                    "新密码长度必须为 12–1024 字节".to_owned(),
-                ));
-                return;
-            }
             if new_value != confirm_value {
                 state.dispatch(Action::SettingsNotice("两次输入的新密码不一致".to_owned()));
                 return;
@@ -1128,81 +1130,115 @@ fn settings(props: &SettingsProps) -> Html {
     };
 
     html! {
-        <section class="settings" aria-labelledby="settings-title">
-            <div class="section-head settings-head">
-                <div><p class="eyebrow">{"ADMIN"}</p><h2 id="settings-title">{"管理设置"}</h2></div>
+        <section class={SECTION} aria-labelledby="settings-title" aria-busy={busy.to_string()}>
+            <div class={SECTION_HEAD_CENTERED}>
+                <div>
+                    <p class={EYEBROW}>{"ADMIN"}</p>
+                    <h2 id="settings-title" class={SECTION_TITLE}>{"管理设置"}</h2>
+                </div>
                 if authenticated {
-                    <div class="session-actions"><span>{"admin"}</span><button type="button" onclick={logout} disabled={busy || csrf.is_empty()}>{"退出登录"}</button></div>
+                    <div class={SESSION_ACTIONS}>
+                        <span>{"管理员 · admin"}</span>
+                        <button class={BUTTON_GHOST} type="button" onclick={logout} disabled={busy || csrf.is_empty()}>{"退出登录"}</button>
+                    </div>
                 } else {
-                    <span>{"状态面板无需登录，设置需要管理员身份"}</span>
+                    <span class={SECTION_META}>{"状态面板无需登录，设置需要管理员身份"}</span>
                 }
             </div>
             if let Some(notice) = &state.settings_notice {
-                <div class="control-feedback" role="status" aria-live="polite">{notice}</div>
+                <div class={FEEDBACK} role="status" aria-live="polite" aria-atomic="true">{notice}</div>
+            }
+            if let Some((title, message)) = network_confirmation {
+                <section id="network-confirmation-panel" class={CONFIRMATION_PANEL} role="region" aria-labelledby="network-confirmation-title" aria-describedby="network-confirmation-message">
+                    <div>
+                        <p class={EYEBROW}>{"NETWORK CHANGE"}</p>
+                        <h3 id="network-confirmation-title" class={CONFIRMATION_TITLE}>{title}</h3>
+                    </div>
+                    <p id="network-confirmation-message" class={CONFIRMATION_COPY}>{message}</p>
+                    <div class={CONFIRMATION_ACTIONS}>
+                        <button class={BUTTON} type="button" onclick={cancel_network_apply}>{"返回检查"}</button>
+                        <button class={BUTTON_ERROR} type="button" onclick={confirm_network_apply}>{"确认并开始应用"}</button>
+                    </div>
+                </section>
             }
             if !state.session_checked {
-                <div class="control-empty">{"正在检查登录状态…"}</div>
+                <div class={SETTINGS_EMPTY} role="status">{"正在检查登录状态…"}</div>
             } else if !authenticated {
-                <article class="settings-card settings-disclosure login-disclosure">
-                    <button class="settings-toggle" type="button" onclick={toggle_login} aria-expanded={login_expanded.to_string()} aria-controls="admin-login-detail">
-                        <span><strong>{"管理员登录"}</strong><small>{"设置保持锁定，状态面板仍可直接查看"}</small></span>
-                        <span class="disclosure-action">{if *login_expanded { "收起" } else { "展开" }}</span>
+                <article class={LOGIN_DISCLOSURE}>
+                    <button id="admin-login-toggle" class={DISCLOSURE_TOGGLE} type="button" onclick={toggle_login} aria-expanded={login_expanded.to_string()} aria-controls="admin-login-detail">
+                        <span class={DISCLOSURE_COPY}>
+                            <strong class={DISCLOSURE_TITLE}>{"管理员登录"}</strong>
+                            <small class={DISCLOSURE_SUMMARY}>{"设置保持锁定，状态面板仍可直接查看"}</small>
+                        </span>
+                        <span class={DISCLOSURE_ACTION} aria-hidden="true">{if *login_expanded { "收起" } else { "展开" }}</span>
                     </button>
                     if *login_expanded {
-                        <form id="admin-login-detail" class="auth-form settings-detail login-detail" onsubmit={login} autocomplete="on">
-                            <label><span>{"用户名"}</span><input value="admin" readonly=true autocomplete="username" /></label>
-                            <label><span>{"密码"}</span><input ref={login_password} type="password" required=true autocomplete="current-password" /></label>
-                            <button class="primary" type="submit" disabled={busy || csrf.is_empty()}>{if busy { "登录中…" } else { "登录" }}</button>
-                            <small>{"新设备首次登录密码为 admin；登录后必须立即修改。"}</small>
+                        <form id="admin-login-detail" class={AUTH_FORM} role="region" aria-labelledby="admin-login-toggle" onsubmit={login} autocomplete="on">
+                            <label class={FIELD}>
+                                <span class={FIELD_LABEL}>{"用户名"}</span>
+                                <input class={READONLY_INPUT} value="admin" readonly=true autocomplete="username" />
+                            </label>
+                            <label class={FIELD}>
+                                <span class={FIELD_LABEL}>{"密码"}</span>
+                                <input class={INPUT} ref={login_password} type="password" required=true autocomplete="current-password" />
+                            </label>
+                            <button class={BUTTON_BLOCK_MOBILE} type="submit" disabled={busy || csrf.is_empty()}>{if busy { "登录中…" } else { "登录" }}</button>
+                            <small class={HELP_TEXT}>{"新设备首次登录密码为 admin；登录后必须立即修改。"}</small>
                         </form>
                     }
                 </article>
             } else if must_change {
-                <div class="forced-password">
-                    <div class="risk-banner bad" role="alert"><strong>{"必须先修改默认密码"}</strong><span>{"新密码至少 12 字节，不能继续使用默认密码。完成前其他设置保持锁定。"}</span></div>
-                    <form class="form-grid" onsubmit={change_password} autocomplete="on">
-                        <label><span>{"当前密码"}</span><input ref={current_password} type="password" required=true autocomplete="current-password" /></label>
-                        <label><span>{"新密码"}</span><input ref={new_password} type="password" required=true maxlength="1024" autocomplete="new-password" /></label>
-                        <label><span>{"确认新密码"}</span><input ref={confirm_password} type="password" required=true maxlength="1024" autocomplete="new-password" /></label>
-                        <div class="form-actions"><button class="primary" type="submit" disabled={busy || csrf.is_empty()}>{"修改密码"}</button></div>
+                <div class={FORCED_PASSWORD}>
+                    <div class={classes!(RISK_ALERT, "alert-error", "border-error/20")} role="alert">
+                        <div>
+                            <strong>{"必须先修改默认密码"}</strong>
+                            <p class={RISK_COPY}>{"新密码至少 12 字节，不能继续使用默认密码。完成前其他设置保持锁定。"}</p>
+                        </div>
+                    </div>
+                    <form class={FORM_GRID} onsubmit={change_password} autocomplete="on" aria-describedby="password-policy">
+                        <label class={FIELD}><span class={FIELD_LABEL}>{"当前密码"}</span><input class={INPUT} ref={current_password} type="password" required=true autocomplete="current-password" /></label>
+                        <label class={FIELD}><span class={FIELD_LABEL}>{"新密码"}</span><input class={INPUT} ref={new_password} type="password" required=true maxlength="1024" autocomplete="new-password" /></label>
+                        <label class={FIELD}><span class={FIELD_LABEL}>{"确认新密码"}</span><input class={INPUT} ref={confirm_password} type="password" required=true maxlength="1024" autocomplete="new-password" /></label>
+                        <p id="password-policy" class="sr-only">{"新密码长度必须为 12 至 1024 字节，且两次输入必须一致。"}</p>
+                        <div class={FORM_ACTIONS}><button class={BUTTON_PRIMARY} type="submit" disabled={busy || csrf.is_empty()}>{"修改密码"}</button></div>
                     </form>
                 </div>
             } else {
-                <div class="settings-grid">
-                    <article class="settings-card settings-disclosure">
-                        <button class="settings-toggle" type="button" onclick={toggle_sta} aria-expanded={sta_expanded.to_string()} aria-controls="sta-settings-detail">
-                            <span><strong>{"上游 Wi-Fi (STA)"}</strong><small>{sta_summary}</small></span>
-                            <span class="disclosure-action">{if *sta_expanded { "收起" } else { "展开" }}</span>
+                <div class={SETTINGS_GRID}>
+                    <article class={DISCLOSURE}>
+                        <button id="sta-settings-toggle" class={DISCLOSURE_TOGGLE} type="button" onclick={toggle_sta} aria-expanded={sta_expanded.to_string()} aria-controls="sta-settings-detail">
+                            <span class={DISCLOSURE_COPY}><strong class={DISCLOSURE_TITLE}>{"上游 Wi-Fi (STA)"}</strong><small class={DISCLOSURE_SUMMARY}>{sta_summary}</small></span>
+                            <span class={DISCLOSURE_ACTION} aria-hidden="true">{if *sta_expanded { "收起" } else { "展开" }}</span>
                         </button>
                         if *sta_expanded {
-                            <div id="sta-settings-detail" class="settings-detail">
-                                <div class="detail-toolbar"><small>{"扫描附近网络，或手工填写新的上游 Wi-Fi。"}</small><button type="button" onclick={scan} disabled={busy}>{if busy { "处理中…" } else { "扫描" }}</button></div>
+                            <div id="sta-settings-detail" class={DISCLOSURE_DETAIL} role="region" aria-labelledby="sta-settings-toggle">
+                                <div class={DETAIL_TOOLBAR}><small class={HELP_TEXT}>{"扫描附近网络，或手工填写新的上游 Wi-Fi。"}</small><button class={BUTTON} type="button" onclick={scan} disabled={busy}>{if busy { "处理中…" } else { "扫描" }}</button></div>
                                 if !state.scan_entries.is_empty() {
-                                    <div class="scan-list" aria-label="扫描到的 Wi-Fi">
+                                    <div class={SCAN_LIST} role="group" aria-label="扫描到的 Wi-Fi">
                                         {for state.scan_entries.iter().map(|entry| {
                                             let input = sta_ssid.clone();
                                             let ssid = entry.ssid.clone();
                                             let choose = Callback::from(move |_| { if let Some(input) = input.cast::<HtmlInputElement>() { input.set_value(&ssid); } });
-                                            html! { <button type="button" class="scan-entry" onclick={choose} disabled={busy}><strong>{&entry.ssid}</strong><span>{format!("{} MHz · {} dBm · {}", entry.frequency_mhz, entry.signal_dbm, if entry.secured { "加密" } else { "开放" })}</span></button> }
+                                            html! { <button type="button" class={SCAN_ENTRY} onclick={choose} disabled={busy} aria-label={format!("选择网络 {}", entry.ssid)}><strong class={SCAN_NAME}>{&entry.ssid}</strong><span class={SCAN_META}>{format!("{} MHz · {} dBm · {}", entry.frequency_mhz, entry.signal_dbm, if entry.secured { "加密" } else { "开放" })}</span></button> }
                                         })}
                                     </div>
                                 }
-                                <form class="form-grid compact" onsubmit={apply_sta} autocomplete="off">
-                                    <label><span>{"SSID"}</span><input ref={sta_ssid} required=true maxlength="32" autocomplete="off" /></label>
-                                    <label><span>{"密码"}</span><input ref={sta_password} type="password" required=true minlength="8" maxlength="63" autocomplete="new-password" /></label>
-                                    <div class="risk-note warn">{"若 STA 与当前 AP 信道不同，设备可能重启 AP 跟随信道，管理连接会短暂断开。"}</div>
-                                    <div class="form-actions"><button class="primary" type="submit" disabled={busy}>{"检查并应用 STA"}</button></div>
+                                <form class={FORM_GRID_COMPACT} onsubmit={apply_sta} autocomplete="off">
+                                    <label class={FIELD}><span class={FIELD_LABEL}>{"SSID"}</span><input class={INPUT} ref={sta_ssid} required=true maxlength="32" autocomplete="off" /></label>
+                                    <label class={FIELD}><span class={FIELD_LABEL}>{"密码"}</span><input class={INPUT} ref={sta_password} type="password" required=true minlength="8" maxlength="63" autocomplete="new-password" /></label>
+                                    <div class={RISK_NOTE} role="note">{"若 STA 与当前 AP 信道不同，设备可能重启 AP 跟随信道，管理连接会短暂断开。"}</div>
+                                    <div class={FORM_ACTIONS}><button class={BUTTON_PRIMARY} type="submit" disabled={busy}>{"检查并应用 STA"}</button></div>
                                 </form>
                             </div>
                         }
                     </article>
-                    <article class="settings-card settings-disclosure ap-card">
-                        <button class="settings-toggle" type="button" onclick={toggle_ap} aria-expanded={ap_expanded.to_string()} aria-controls="ap-settings-detail">
-                            <span><strong>{"下游 Wi-Fi (AP)"}</strong><small>{ap_summary}</small></span>
-                            <span class="disclosure-action">{if *ap_expanded { "收起" } else { "展开" }}</span>
+                    <article class={DISCLOSURE}>
+                        <button id="ap-settings-toggle" class={DISCLOSURE_TOGGLE} type="button" onclick={toggle_ap} aria-expanded={ap_expanded.to_string()} aria-controls="ap-settings-detail">
+                            <span class={DISCLOSURE_COPY}><strong class={DISCLOSURE_TITLE}>{"下游 Wi-Fi (AP)"}</strong><small class={DISCLOSURE_SUMMARY}>{ap_summary}</small></span>
+                            <span class={DISCLOSURE_ACTION} aria-hidden="true">{if *ap_expanded { "收起" } else { "展开" }}</span>
                         </button>
                         if *ap_expanded {
-                            <div id="ap-settings-detail" class="settings-detail">
+                            <div id="ap-settings-detail" class={DISCLOSURE_DETAIL} role="region" aria-labelledby="ap-settings-toggle">
                                 {render_ap_settings(
                                     state,
                                     ApSettingsRefs { ssid: &ap_ssid, password: &ap_password, country: &ap_country },
@@ -1212,26 +1248,17 @@ fn settings(props: &SettingsProps) -> Html {
                             </div>
                         }
                     </article>
-                    <article class="settings-card">
-                        <div class="control-title"><h3>{"代理订阅"}</h3><span>{"来源只写"}</span></div>
+                    <article class={INNER_CARD} aria-labelledby="subscription-title">
+                        <div class={CONTROL_TITLE}><h3 id="subscription-title" class={CONTROL_HEADING}>{"代理订阅"}</h3><span class={CONTROL_META}>{"来源只写"}</span></div>
                         if let Some(subscription) = &state.subscription {
-                            <div class="subscription-summary"><span>{if subscription.configured { "已配置" } else { "未配置" }}</span><strong class={subscription_tone(subscription.state)}>{subscription_state_label(subscription.state)}</strong></div>
+                            <div class={SUMMARY}><span>{if subscription.configured { "已配置" } else { "未配置" }}</span><strong class={subscription_tone(subscription.state)}>{subscription_state_label(subscription.state)}</strong></div>
                         }
-                        <form class="form-grid compact" onsubmit={save_subscription} autocomplete="off">
-                            <label><span>{"订阅 URL"}</span><input ref={subscription_url} type="url" required=true placeholder="https://…" autocomplete="off" autocapitalize="none" spellcheck="false" /></label>
-                            <small>{"已保存的 URL 永不回显；输入只用于本次提交。"}</small>
-                            <div class="form-actions"><button class="primary" type="submit" disabled={busy}>{"保存并立即更新"}</button><button type="button" onclick={refresh_subscription} disabled={busy || !state.subscription.as_ref().is_some_and(|value| value.configured)}>{"手动刷新"}</button></div>
+                        <form class={FORM_GRID_COMPACT} onsubmit={save_subscription} autocomplete="off">
+                            <label class={FIELD}><span class={FIELD_LABEL}>{"订阅 URL"}</span><input class={INPUT} ref={subscription_url} type="url" required=true placeholder="https://…" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="subscription-secret-note" /></label>
+                            <small id="subscription-secret-note" class={HELP_TEXT}>{"已保存的 URL 永不回显；输入只用于本次提交。"}</small>
+                            <div class={FORM_ACTIONS}><button class={BUTTON_PRIMARY} type="submit" disabled={busy}>{"保存并立即更新"}</button><button class={BUTTON} type="button" onclick={refresh_subscription} disabled={busy || !state.subscription.as_ref().is_some_and(|value| value.configured)}>{"手动刷新"}</button></div>
                         </form>
                     </article>
-                </div>
-            }
-            if let Some((title, message)) = network_confirmation {
-                <div class="confirmation-backdrop" role="presentation">
-                    <div class="confirmation-dialog" role="dialog" aria-modal="true" aria-labelledby="network-confirmation-title" aria-describedby="network-confirmation-message">
-                        <div><p class="eyebrow">{"NETWORK CHANGE"}</p><h3 id="network-confirmation-title">{title}</h3></div>
-                        <p id="network-confirmation-message">{message}</p>
-                        <div class="confirmation-actions"><button type="button" autofocus=true onclick={cancel_network_apply}>{"返回检查"}</button><button class="danger" type="button" onclick={confirm_network_apply}>{"确认并开始应用"}</button></div>
-                    </div>
                 </div>
             }
         </section>
@@ -1259,14 +1286,22 @@ fn render_ap_settings(
             .and_then(|value| value.remaining_seconds)
             .unwrap_or(0);
         html! {
-            <div class="pending-ap">
-                <div class="candidate-summary"><span>{"候选 AP"}</span><strong>{&pending.config.ap_ssid}</strong><small>{format!("国家 / 地区 · {}", pending.config.country.as_str())}</small></div>
+            <div class={PENDING_AP}>
+                <div class={CONFIG_SUMMARY}>
+                    <span class={CONFIG_LABEL}>{"候选 AP"}</span>
+                    <strong class={CONFIG_VALUE}>{&pending.config.ap_ssid}</strong>
+                    <small class={CONFIG_META}>{format!("国家 / 地区 · {}", pending.config.country.as_str())}</small>
+                </div>
                 if applied {
-                    <div class="risk-banner warn" role="alert"><strong>{format!("等待确认 · 后端剩余约 {seconds} 秒")}</strong><span>{"请连接新的 AP 后确认。剩余时间以路由器为准，重新打开页面会刷新；到期会自动回滚。"}</span></div>
-                    <div class="form-actions"><button class="primary" type="button" onclick={actions.confirm.clone()} disabled={busy}>{"确认保留"}</button><button type="button" onclick={actions.cancel.clone()} disabled={busy}>{"取消并回滚"}</button></div>
+                    <div class={classes!(RISK_ALERT, "alert-warning", "border-warning/20")} role="alert">
+                        <div><strong>{format!("等待确认 · 后端剩余约 {seconds} 秒")}</strong><p class={RISK_COPY}>{"请连接新的 AP 后确认。剩余时间以路由器为准，重新打开页面会刷新；到期会自动回滚。"}</p></div>
+                    </div>
+                    <div class={FORM_ACTIONS}><button class={BUTTON_PRIMARY} type="button" onclick={actions.confirm.clone()} disabled={busy}>{"确认保留"}</button><button class={BUTTON} type="button" onclick={actions.cancel.clone()} disabled={busy}>{"取消并回滚"}</button></div>
                 } else {
-                    <div class="risk-banner bad" role="alert"><strong>{"应用会立即断开当前 AP 连接"}</strong><span>{"请先记住新 SSID 和密码。应用后连接新 AP，再回到本页确认；未确认会自动回滚。"}</span></div>
-                    <div class="form-actions"><button class="danger" type="button" onclick={actions.apply.clone()} disabled={busy}>{"检查风险并应用"}</button><button type="button" onclick={actions.cancel.clone()} disabled={busy}>{"取消"}</button></div>
+                    <div class={classes!(RISK_ALERT, "alert-error", "border-error/20")} role="alert">
+                        <div><strong>{"应用会立即断开当前 AP 连接"}</strong><p class={RISK_COPY}>{"请先记住新 SSID 和密码。应用后连接新 AP，再回到本页确认；未确认会自动回滚。"}</p></div>
+                    </div>
+                    <div class={FORM_ACTIONS}><button class={BUTTON_ERROR} type="button" onclick={actions.apply.clone()} disabled={busy}>{"检查风险并应用"}</button><button class={BUTTON} type="button" onclick={actions.cancel.clone()} disabled={busy}>{"取消"}</button></div>
                 }
             </div>
         }
@@ -1274,13 +1309,13 @@ fn render_ap_settings(
         html! {
             <>
                 if let Some(network) = &state.network {
-                    <div class="detail-current"><span>{"当前配置"}</span><strong>{&network.ap_ssid}</strong><small>{format!("国家 / 地区 · {}", network.country.as_str())}</small></div>
+                    <div class={CONFIG_SUMMARY}><span class={CONFIG_LABEL}>{"当前配置"}</span><strong class={CONFIG_VALUE}>{&network.ap_ssid}</strong><small class={CONFIG_META}>{format!("国家 / 地区 · {}", network.country.as_str())}</small></div>
                 }
-                <form class="form-grid compact" onsubmit={actions.prepare} autocomplete="off">
-                <label><span>{"SSID"}</span><input ref={refs.ssid.clone()} required=true maxlength="32" autocomplete="off" /></label>
-                <label><span>{"密码"}</span><input ref={refs.password.clone()} type="password" required=true minlength="8" maxlength="63" autocomplete="new-password" /></label>
-                <label><span>{"国家 / 地区"}</span><select ref={refs.country.clone()}><option value="CN">{"中国 (CN)"}</option><option value="US">{"美国 (US)"}</option><option value="JP">{"日本 (JP)"}</option><option value="SG">{"新加坡 (SG)"}</option><option value="TW">{"中国台湾 (TW)"}</option><option value="AU">{"澳大利亚 (AU)"}</option><option value="BR">{"巴西 (BR)"}</option><option value="CA">{"加拿大 (CA)"}</option><option value="DE">{"德国 (DE)"}</option><option value="FR">{"法国 (FR)"}</option><option value="GB">{"英国 (GB)"}</option><option value="IN">{"印度 (IN)"}</option><option value="KR">{"韩国 (KR)"}</option><option value="NZ">{"新西兰 (NZ)"}</option></select></label>
-                    <div class="form-actions"><button class="primary" type="submit" disabled={busy}>{"准备 AP 变更"}</button></div>
+                <form class={FORM_GRID_COMPACT} onsubmit={actions.prepare} autocomplete="off">
+                    <label class={FIELD}><span class={FIELD_LABEL}>{"SSID"}</span><input class={INPUT} ref={refs.ssid.clone()} required=true maxlength="32" autocomplete="off" /></label>
+                    <label class={FIELD}><span class={FIELD_LABEL}>{"密码"}</span><input class={INPUT} ref={refs.password.clone()} type="password" required=true minlength="8" maxlength="63" autocomplete="new-password" /></label>
+                    <label class={FIELD}><span class={FIELD_LABEL}>{"国家 / 地区"}</span><select class={SELECT} ref={refs.country.clone()}><option value="CN">{"中国 (CN)"}</option><option value="US">{"美国 (US)"}</option><option value="JP">{"日本 (JP)"}</option><option value="SG">{"新加坡 (SG)"}</option><option value="TW">{"中国台湾 (TW)"}</option><option value="AU">{"澳大利亚 (AU)"}</option><option value="BR">{"巴西 (BR)"}</option><option value="CA">{"加拿大 (CA)"}</option><option value="DE">{"德国 (DE)"}</option><option value="FR">{"法国 (FR)"}</option><option value="GB">{"英国 (GB)"}</option><option value="IN">{"印度 (IN)"}</option><option value="KR">{"韩国 (KR)"}</option><option value="NZ">{"新西兰 (NZ)"}</option></select></label>
+                    <div class={FORM_ACTIONS}><button class={BUTTON_PRIMARY} type="submit" disabled={busy}>{"准备 AP 变更"}</button></div>
                 </form>
             </>
         }
@@ -1298,10 +1333,10 @@ fn subscription_state_label(state: SubscriptionStateDto) -> &'static str {
 
 fn subscription_tone(state: SubscriptionStateDto) -> &'static str {
     match state {
-        SubscriptionStateDto::Active => "good",
-        SubscriptionStateDto::Fetching => "warn",
-        SubscriptionStateDto::Failed => "bad",
-        SubscriptionStateDto::Idle => "neutral",
+        SubscriptionStateDto::Active => "text-success",
+        SubscriptionStateDto::Fetching => "text-warning",
+        SubscriptionStateDto::Failed => "text-error",
+        SubscriptionStateDto::Idle => "text-base-content/60",
     }
 }
 
@@ -1328,10 +1363,14 @@ fn overall_status(state: &AppState) -> (&'static str, Tone) {
 fn render_notice(state: &AppState) -> Html {
     match (&state.poll_error, &state.snapshot) {
         (Some(error), Some(_)) => html! {
-            <div class="notice warn" role="alert"><strong>{"刷新失败，正在展示最近一次数据"}</strong><span>{error}</span></div>
+            <div class={classes!(NOTICE, "alert-warning", "border-warning/20")} role="alert">
+                <strong>{"刷新失败，正在展示最近一次数据"}</strong><span class={NOTICE_COPY}>{error}</span>
+            </div>
         },
         (Some(error), None) => html! {
-            <div class="notice bad" role="alert"><strong>{"状态服务不可用"}</strong><span>{error}</span></div>
+            <div class={classes!(NOTICE, "alert-error", "border-error/20")} role="alert">
+                <strong>{"状态服务不可用"}</strong><span class={NOTICE_COPY}>{error}</span>
+            </div>
         },
         _ => Html::default(),
     }
@@ -1473,7 +1512,8 @@ fn render_dashboard(snapshot: &StatusSnapshot) -> Html {
     ];
 
     html! {
-        <section class="dashboard" aria-label="路由器状态卡片">
+        <section class={DASHBOARD} aria-labelledby="dashboard-title">
+            <h2 id="dashboard-title" class="sr-only">{"路由器状态"}</h2>
             if router.data.is_some() {
                 {status_card("路由 / LAN", "NET", component_card_status(router), router_rows, "wan")}
             }
@@ -1573,34 +1613,37 @@ fn render_control_panel(
     };
 
     html! {
-        <section class="controls" aria-label="本地控制">
-            <div class="section-head"><div><p class="eyebrow">{"CONTROL"}</p><h2>{"设备与代理控制"}</h2></div><span>{"仅限管理 LAN · 同源令牌保护"}</span></div>
-            <div class={classes!("control-feedback", state.control_notice.is_none().then_some("empty"))} role="status" aria-live="polite">
+        <section class={SECTION} aria-labelledby="controls-title" aria-busy={busy.to_string()}>
+            <div class={SECTION_HEAD}>
+                <div><p class={EYEBROW}>{"CONTROL"}</p><h2 id="controls-title" class={SECTION_TITLE}>{"设备与代理控制"}</h2></div>
+                <span class={SECTION_META}>{"仅限管理 LAN · 同源令牌保护"}</span>
+            </div>
+            <div class={classes!(FEEDBACK, state.control_notice.is_none().then_some("invisible"))} role="status" aria-live="polite" aria-atomic="true">
                 {state.control_notice.as_deref().unwrap_or("等待操作")}
             </div>
-            <div class="control-grid">
+            <div class={CONTROL_GRID}>
                 if display.is_some() {
-                    <article class="control-card">
-                        <div class="control-title"><h3>{"LCD 背光"}</h3><span>{display_label}</span></div>
-                        <label class="range-row" for="brightness"><span>{"点亮亮度"}</span><strong>{*brightness}</strong></label>
-                        <input id="brightness" type="range" min="1" max={max_brightness.to_string()} value={(*brightness).min(max_brightness).to_string()} oninput={on_brightness} disabled={busy} />
-                        <div class="button-row"><button class="primary" onclick={display_on} disabled={busy}>{"点亮"}</button><button onclick={display_off} disabled={busy}>{"黑屏"}</button></div>
-                        <small>{"黑屏会将 PWM 亮度设为 0；面板 5V 是共享电源，无法单独物理断开。"}</small>
+                    <article class={INNER_CARD} aria-labelledby="display-control-title">
+                        <div class={CONTROL_TITLE}><h3 id="display-control-title" class={CONTROL_HEADING}>{"LCD 背光"}</h3><span class={CONTROL_META}>{display_label}</span></div>
+                        <label class={RANGE_LABEL} for="brightness"><span>{"点亮亮度"}</span><strong>{*brightness}</strong></label>
+                        <input class={RANGE} id="brightness" type="range" min="1" max={max_brightness.to_string()} value={(*brightness).min(max_brightness).to_string()} oninput={on_brightness} disabled={busy} />
+                        <div class={BUTTON_ROW}><button class={BUTTON_PRIMARY} type="button" onclick={display_on} disabled={busy}>{"点亮"}</button><button class={BUTTON} type="button" onclick={display_off} disabled={busy}>{"黑屏"}</button></div>
+                        <small class={HELP_TEXT}>{"黑屏会将 PWM 亮度设为 0；面板 5V 是共享电源，无法单独物理断开。"}</small>
                     </article>
                 }
                 if proxy_available {
-                    <article class="control-card">
-                        <div class="control-title"><h3>{"Mihomo 模式"}</h3><span>{"切换时按 fail-open 顺序收敛"}</span></div>
-                        <div class="mode-buttons">
-                            <button onclick={proxy_mode_button(ProxyMode::Tun, "已切换到 TUN 模式")} disabled={busy}>{"TUN"}</button>
-                            <button onclick={proxy_mode_button(ProxyMode::Explicit, "已切换到显式代理")} disabled={busy}>{"显式代理"}</button>
-                            <button onclick={proxy_mode_button(ProxyMode::Disabled, "Mihomo 已停用")} disabled={busy}>{"停用"}</button>
+                    <article class={INNER_CARD} aria-labelledby="proxy-mode-title">
+                        <div class={CONTROL_TITLE}><h3 id="proxy-mode-title" class={CONTROL_HEADING}>{"Mihomo 模式"}</h3><span class={CONTROL_META}>{"切换时按 fail-open 顺序收敛"}</span></div>
+                        <div class={BUTTON_ROW} role="group" aria-label="Mihomo 运行模式">
+                            <button class={BUTTON} type="button" onclick={proxy_mode_button(ProxyMode::Tun, "已切换到 TUN 模式")} disabled={busy}>{"TUN"}</button>
+                            <button class={BUTTON} type="button" onclick={proxy_mode_button(ProxyMode::Explicit, "已切换到显式代理")} disabled={busy}>{"显式代理"}</button>
+                            <button class={BUTTON} type="button" onclick={proxy_mode_button(ProxyMode::Disabled, "Mihomo 已停用")} disabled={busy}>{"停用"}</button>
                         </div>
-                        <small>{"停用代理不会删除订阅配置；普通 NAT 在路由启用时保持可用。"}</small>
+                        <small class={HELP_TEXT}>{"停用代理不会删除订阅配置；普通 NAT 在路由启用时保持可用。"}</small>
                     </article>
                 }
             </div>
-            <div class="proxy-groups">
+            <div class={PROXY_GROUPS}>
                 {render_proxy_groups(&bootstrap.panel.proxy_groups, state, &csrf, busy)}
             </div>
         </section>
@@ -1626,42 +1669,42 @@ fn render_proxy_groups(
     };
     html! {
         <>
-            <div class="proxy-toolbar">
-            <span>{"进入页面时自动测速一次"}</span>
-            <button onclick={refresh_delays} disabled={busy}>{if busy { "测速中…" } else { "重新测速全部节点" }}</button>
-        </div>
-        {for groups.iter().map(|group| {
-            let group_name = group.name.clone();
-            let selection_state = state.clone();
-            let selection_csrf = csrf.to_owned();
-            let on_selection = Callback::from(move |event: Event| {
-                let select: HtmlSelectElement = event.target_unchecked_into();
-                dispatch_control(
-                    selection_state.clone(),
-                    PROXY_SELECTION_ENDPOINT,
-                    selection_csrf.clone(),
-                    ProxySelectionRequest { group: group_name.clone(), proxy: select.value() },
-                    "代理节点已切换".to_owned(),
-                );
-            });
-            let selected = group.selected.clone();
-            html! {
-                <article class="proxy-group" key={group.name.clone()}>
-                    <div><h3>{&group.name}</h3><span>{group_kind_label(group)}</span></div>
-                    <select value={selected.clone().unwrap_or_default()} onchange={on_selection} disabled={busy || !group.selectable} aria-label={format!("{} 节点", group.name)}>
-                        {for group.options.iter().map(|option| {
-                            let delay = option
-                                .delay_ms
-                                .map(|delay| format!("{delay} ms"))
-                                .or_else(|| (option.alive == Some(false)).then(|| "超时".to_owned()));
-                            let details = [option.region.clone(), delay].into_iter().flatten().collect::<Vec<_>>().join(" · ");
-                            let label = if details.is_empty() { option.name.clone() } else { format!("{} · {details}", option.name) };
-                            html! { <option key={option.name.clone()} value={option.name.clone()} selected={group.selected.as_deref() == Some(option.name.as_str())}>{label}</option> }
-                        })}
-                    </select>
-                </article>
-            }
-        })}
+            <div class={PROXY_TOOLBAR}>
+                <span>{"进入页面时自动测速一次"}</span>
+                <button class={BUTTON} type="button" onclick={refresh_delays} disabled={busy}>{if busy { "测速中…" } else { "重新测速全部节点" }}</button>
+            </div>
+            {for groups.iter().map(|group| {
+                let group_name = group.name.clone();
+                let selection_state = state.clone();
+                let selection_csrf = csrf.to_owned();
+                let on_selection = Callback::from(move |event: Event| {
+                    let select: HtmlSelectElement = event.target_unchecked_into();
+                    dispatch_control(
+                        selection_state.clone(),
+                        PROXY_SELECTION_ENDPOINT,
+                        selection_csrf.clone(),
+                        ProxySelectionRequest { group: group_name.clone(), proxy: select.value() },
+                        "代理节点已切换".to_owned(),
+                    );
+                });
+                let selected = group.selected.clone();
+                html! {
+                    <article class={PROXY_GROUP} key={group.name.clone()}>
+                        <div class={PROXY_NAME_WRAP}><h3 class={PROXY_NAME}>{&group.name}</h3><span class={PROXY_KIND}>{group_kind_label(group)}</span></div>
+                        <select class={SELECT} value={selected.clone().unwrap_or_default()} onchange={on_selection} disabled={busy || !group.selectable} aria-label={format!("{} 节点", group.name)}>
+                            {for group.options.iter().map(|option| {
+                                let delay = option
+                                    .delay_ms
+                                    .map(|delay| format!("{delay} ms"))
+                                    .or_else(|| (option.alive == Some(false)).then(|| "超时".to_owned()));
+                                let details = [option.region.clone(), delay].into_iter().flatten().collect::<Vec<_>>().join(" · ");
+                                let label = if details.is_empty() { option.name.clone() } else { format!("{} · {details}", option.name) };
+                                html! { <option key={option.name.clone()} value={option.name.clone()} selected={group.selected.as_deref() == Some(option.name.as_str())}>{label}</option> }
+                            })}
+                        </select>
+                    </article>
+                }
+            })}
         </>
     }
 }
@@ -1691,7 +1734,14 @@ fn render_issues(snapshot: &StatusSnapshot) -> Html {
     if issues.is_empty() {
         Html::default()
     } else {
-        html! { <section class="warnings"><strong>{"状态提示"}</strong><ul>{for issues.into_iter().map(|issue| html! { <li>{issue}</li> })}</ul></section> }
+        html! {
+            <section class={WARNINGS} aria-labelledby="issues-title">
+                <div>
+                    <strong id="issues-title">{"状态提示"}</strong>
+                    <ul class={WARNINGS_LIST}>{for issues.into_iter().map(|issue| html! { <li>{issue}</li> })}</ul>
+                </div>
+            </section>
+        }
     }
 }
 
@@ -1702,10 +1752,21 @@ fn status_card(
     rows: Vec<(&'static str, String)>,
     accent: &'static str,
 ) -> Html {
+    let (card_accent, icon_accent) = match accent {
+        "wan" => (ACCENT_WAN, ICON_WAN),
+        "proxy" => (ACCENT_PROXY, ICON_PROXY),
+        _ => (ACCENT_SYSTEM, ICON_SYSTEM),
+    };
     html! {
-        <article class={classes!("card", format!("accent-{accent}"))}>
-            <div class="card-head"><span class="card-icon">{icon}</span><h2>{title}</h2><span class={classes!("pill", status.1.class())}><span class="status-dot"></span>{status.0}</span></div>
-            <dl>{for rows.into_iter().map(|(label, value)| html! { <div class="metric"><dt>{label}</dt><dd title={value.clone()}>{value}</dd></div> })}</dl>
+        <article class={classes!(STATUS_CARD, card_accent)}>
+            <div class={STATUS_CARD_BODY}>
+                <div class={STATUS_CARD_HEAD}>
+                    <span class={classes!(STATUS_ICON, icon_accent)} aria-hidden="true">{icon}</span>
+                    <h2 class={STATUS_TITLE}>{title}</h2>
+                    <span class={classes!(STATUS_BADGE, status.1.class())}><span class={STATUS_DOT_SMALL} aria-hidden="true"></span>{status.0}</span>
+                </div>
+                <dl class={METRIC_LIST}>{for rows.into_iter().map(|(label, value)| html! { <div class={METRIC}><dt class={METRIC_LABEL}>{label}</dt><dd class={METRIC_VALUE} title={value.clone()}>{value}</dd></div> })}</dl>
+            </div>
         </article>
     }
 }

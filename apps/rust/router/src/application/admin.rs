@@ -217,6 +217,22 @@ impl AdminApplication {
         Ok(())
     }
 
+    /// Restores the in-memory and persisted administrator state used by the host-only web harness.
+    /// This seam is absent from production builds.
+    #[cfg(feature = "e2e")]
+    pub fn reset_e2e_bootstrap(&self) -> Result<(), AdminError> {
+        let credential = AdminCredential {
+            password_hash: hash_password(self.random.as_ref(), DEFAULT_ADMIN_BOOTSTRAP_PASSWORD)?,
+            must_change: true,
+        };
+        let mut state = self.lock_state()?;
+        self.store.save_admin_credential(&credential)?;
+        state.credential = credential;
+        state.sessions.clear();
+        state.failed_logins.clear();
+        Ok(())
+    }
+
     fn lock_state(&self) -> Result<std::sync::MutexGuard<'_, AdminState>, AdminError> {
         self.state.lock().map_err(|_| {
             AdminError::Unavailable(PlatformError::InvalidState(
@@ -457,6 +473,62 @@ mod tests {
             .now
             .store(LOGIN_RATE_WINDOW_MILLIS, Ordering::Relaxed);
         login(&app, DEFAULT_ADMIN_BOOTSTRAP_PASSWORD);
+    }
+
+    #[cfg(feature = "e2e")]
+    #[test]
+    fn e2e_reset_restores_bootstrap_credential_and_clears_authentication_state() {
+        let platform = Arc::new(TestPlatform::default());
+        let app =
+            AdminApplication::initialize(platform.clone(), platform.clone(), platform.clone())
+                .unwrap();
+        let bootstrap = login(&app, DEFAULT_ADMIN_BOOTSTRAP_PASSWORD);
+        app.change_password(
+            &bootstrap.token,
+            &AdminPasswordChangeRequest {
+                current_password: SecretString::new(DEFAULT_ADMIN_BOOTSTRAP_PASSWORD),
+                new_password: SecretString::new("replacement-passphrase"),
+            },
+        )
+        .unwrap();
+        for _ in 0..MAX_LOGIN_FAILURES_PER_WINDOW {
+            assert!(matches!(
+                app.login(&AdminLoginRequest {
+                    password: SecretString::new("wrong-password"),
+                }),
+                Err(AdminError::InvalidCredentials)
+            ));
+        }
+        assert!(matches!(
+            app.login(&AdminLoginRequest {
+                password: SecretString::new("replacement-passphrase"),
+            }),
+            Err(AdminError::RateLimited)
+        ));
+
+        app.reset_e2e_bootstrap().unwrap();
+
+        {
+            let state = app.state.lock().unwrap();
+            assert!(state.sessions.is_empty());
+            assert!(state.failed_logins.is_empty());
+            assert!(state.credential.must_change);
+        }
+        assert!(matches!(
+            app.session(&bootstrap.token),
+            Err(AdminError::InvalidSession)
+        ));
+        assert!(matches!(
+            app.login(&AdminLoginRequest {
+                password: SecretString::new("replacement-passphrase"),
+            }),
+            Err(AdminError::InvalidCredentials)
+        ));
+        let reset = login(&app, DEFAULT_ADMIN_BOOTSTRAP_PASSWORD);
+        assert!(reset.must_change_password);
+        let stored = platform.credential.lock().unwrap().clone().unwrap();
+        assert!(stored.must_change);
+        assert!(stored.password_hash.expose().starts_with("$argon2id$"));
     }
 
     #[test]

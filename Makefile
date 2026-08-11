@@ -25,12 +25,14 @@ BUILD_PATH := $(BR_HOST)/bin:$(HOME)/.cargo/bin:$(HOME)/.local/bin:/usr/local/sb
 export PATH := $(BUILD_PATH)
 export RK_TOOLCHAIN_PREFIX := $(TOOLCHAIN_PREFIX)
 
-.PHONY: help sdk configure toolchain router-app apps overlay rootfs kernel loader recovery firmware upgrade upgrade-recovery check check-static clean
+.PHONY: help sdk configure toolchain router-frontend router-e2e router-app apps overlay rootfs kernel loader recovery firmware upgrade upgrade-recovery check check-static clean
 
 help:
 	@printf '%s\n' \
 	  'make sdk        Clone/sync the pinned SDK manifest' \
 	  'make toolchain  Configure Buildroot and build the AArch64 toolchain' \
+	  'make router-frontend  Build the deterministic Yew/Tailwind frontend bundle' \
+	  'make router-e2e  Run the host-only Axum/Playwright browser tests' \
 	  'make router-app Build the unified hyz-router ELF and embedded Yew UI' \
 	  'make apps       Build the single product application (hyz-router)' \
 	  'make overlay    Stage only hyz-router and product metadata' \
@@ -69,11 +71,19 @@ configure: sdk/build.sh
 toolchain: configure
 	cd sdk && ./build.sh buildroot-make:toolchain:host-flex:host-lz4:host-dtc
 
-router-app: toolchain
+router-frontend:
 	test -x "$(ROUTER_TRUNK)" || { echo 'repository-local Trunk 0.21.14 is required under .tools/trunk.' >&2; exit 1; }
-	rustup target add $(RUST_TARGET) wasm32-unknown-unknown
+	test -x "$(ROUTER_APP)/node_modules/.bin/tailwindcss" || { echo 'run npm ci in apps/rust/router first.' >&2; exit 1; }
+	rustup target add wasm32-unknown-unknown
 	PATH="$(dir $(ROUTER_TRUNK)):$(PATH)" bash "$(ROUTER_APP)/tools/build-frontend-bundle.sh"
 	test -s "$(ROUTER_FRONTEND_BUNDLE)"
+
+router-e2e:
+	test -x "$(ROUTER_TRUNK)" || { echo 'repository-local Trunk 0.21.14 is required under .tools/trunk.' >&2; exit 1; }
+	cd "$(ROUTER_APP)" && PATH="$(dir $(ROUTER_TRUNK)):$(PATH)" npm run test:e2e
+
+router-app: toolchain router-frontend
+	rustup target add $(RUST_TARGET)
 	ROUTER_FRONTEND_ARCHIVE="$(ROUTER_FRONTEND_BUNDLE)" \
 	CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="$(TOOLCHAIN_PREFIX)gcc" \
 	CC_aarch64_unknown_linux_gnu="$(TOOLCHAIN_PREFIX)gcc" \
@@ -133,6 +143,12 @@ check: check-static
 
 check-static:
 	sh -n "$(ROUTER_APP)/tools/build-frontend-bundle.sh"
+	sh -n "$(ROUTER_APP)/tools/start-e2e-server.sh"
+	python3 -m json.tool "$(ROUTER_APP)/package.json" >/dev/null
+	python3 -m json.tool "$(ROUTER_APP)/package-lock.json" >/dev/null
+	grep -q '"lockfileVersion"' "$(ROUTER_APP)/package-lock.json"
+	grep -q '@plugin "daisyui"' "$(ROUTER_APP)/frontend/app.css"
+	grep -q '@source "../src/web/\*\*/\*.rs"' "$(ROUTER_APP)/frontend/app.css"
 	python3 -c 'from pathlib import Path; p = Path("$(ROUTER_APP)/tools/externalize-trunk-bootstrap.py"); compile(p.read_bytes(), str(p), "exec")'
 	grep -q 'router-bootstrap\.js' "$(ROUTER_APP)/tools/externalize-trunk-bootstrap.py"
 	grep -q 'bootstrap_version' "$(ROUTER_APP)/tools/externalize-trunk-bootstrap.py"

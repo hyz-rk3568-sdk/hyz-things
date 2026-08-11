@@ -42,6 +42,7 @@ pub struct ReadStatus {
     system_probe: Arc<dyn StatusSystemProbePort>,
     clock: Arc<dyn ClockPort>,
     cache: Arc<Mutex<Option<CachedSnapshot>>>,
+    cache_ttl: Duration,
 }
 
 impl ReadStatus {
@@ -50,11 +51,30 @@ impl ReadStatus {
         system_probe: Arc<dyn StatusSystemProbePort>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
+        Self::with_cache_ttl(router_platform, system_probe, clock, STATUS_CACHE_TTL)
+    }
+
+    #[cfg(feature = "e2e")]
+    pub fn new_uncached(
+        router_platform: Arc<dyn StatusRouterPlatformPort>,
+        system_probe: Arc<dyn StatusSystemProbePort>,
+        clock: Arc<dyn ClockPort>,
+    ) -> Self {
+        Self::with_cache_ttl(router_platform, system_probe, clock, Duration::ZERO)
+    }
+
+    fn with_cache_ttl(
+        router_platform: Arc<dyn StatusRouterPlatformPort>,
+        system_probe: Arc<dyn StatusSystemProbePort>,
+        clock: Arc<dyn ClockPort>,
+        cache_ttl: Duration,
+    ) -> Self {
         Self {
             router_platform,
             system_probe,
             clock,
             cache: Arc::new(Mutex::new(None)),
+            cache_ttl,
         }
     }
 
@@ -63,7 +83,7 @@ impl ReadStatus {
         // coalesce into one bounded probe instead of spawning parallel root commands.
         let mut cache = self.cache.lock().await;
         if let Some(cached) = cache.as_ref() {
-            if cached.collected_at.elapsed() < STATUS_CACHE_TTL {
+            if cached.collected_at.elapsed() < self.cache_ttl {
                 return cached.snapshot.clone();
             }
         }
@@ -144,6 +164,18 @@ mod tests {
         assert!(snapshot.router.data.is_some());
         assert!(snapshot.proxy.data.is_none());
         assert_eq!(snapshot.observed_at_unix_ms, 42);
+    }
+
+    #[cfg(feature = "e2e")]
+    #[tokio::test]
+    async fn e2e_uncached_reader_observes_each_harness_state_change() {
+        let fake = Arc::new(Fake::default());
+        let status = ReadStatus::new_uncached(fake.clone(), fake.clone(), fake.clone());
+
+        status.execute().await;
+        status.execute().await;
+
+        assert_eq!(fake.router_reads.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
