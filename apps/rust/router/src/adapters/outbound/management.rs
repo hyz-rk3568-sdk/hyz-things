@@ -1,5 +1,7 @@
 use super::{
-    network_config::{render_hostapd_on_channel, render_wpa_supplicant, NetworkConfigStore},
+    network_config::{
+        render_hostapd_on_channel, render_wpa_supplicant, ApRadioChannel, NetworkConfigStore,
+    },
     process::process_start_time,
     storage,
 };
@@ -311,7 +313,7 @@ impl super::process::LinuxRouterPlatform {
         self.detach_ap()?;
         self.stop_owned_management_services()?;
         self.refuse_foreign_management_processes()?;
-        prepare_runtime_configs(config, 6)?;
+        prepare_runtime_configs(config, ApRadioChannel::DEFAULT)?;
 
         let mut started = Vec::new();
         let result = (|| {
@@ -327,7 +329,9 @@ impl super::process::LinuxRouterPlatform {
             // RTL8852BS concurrent mode shares one radio channel. Give an available committed STA
             // a bounded association window before AP startup, but keep LAN fallback independent
             // from DHCP/default-route readiness.
-            let channel = self.wait_for_sta_channel(STA_CHANNEL_WAIT)?.unwrap_or(6);
+            let channel = self
+                .wait_for_sta_channel(STA_CHANNEL_WAIT)?
+                .unwrap_or(ApRadioChannel::DEFAULT);
             self.start_hostapd_on_channel(&config.ap, channel)?;
             started.push(ManagementService::Hostapd);
 
@@ -555,7 +559,11 @@ impl super::process::LinuxRouterPlatform {
         )
     }
 
-    fn wait_for_hostapd(&self, channel: u8, timeout: Duration) -> Result<(), PlatformError> {
+    fn wait_for_hostapd(
+        &self,
+        channel: ApRadioChannel,
+        timeout: Duration,
+    ) -> Result<(), PlatformError> {
         wait_until(
             timeout,
             || self.hostapd_enabled_on_channel(channel),
@@ -566,7 +574,7 @@ impl super::process::LinuxRouterPlatform {
     fn start_hostapd_on_channel(
         &self,
         config: &ApConfig,
-        channel: u8,
+        channel: ApRadioChannel,
     ) -> Result<(), PlatformError> {
         let mut first_error = None;
         for attempt in 0..2 {
@@ -600,7 +608,10 @@ impl super::process::LinuxRouterPlatform {
         unreachable!("fixed hostapd retry loop returns on every second attempt")
     }
 
-    fn wait_for_sta_channel(&self, timeout: Duration) -> Result<Option<u8>, PlatformError> {
+    fn wait_for_sta_channel(
+        &self,
+        timeout: Duration,
+    ) -> Result<Option<ApRadioChannel>, PlatformError> {
         let deadline = Instant::now() + timeout;
         loop {
             match self.current_sta_channel() {
@@ -616,7 +627,7 @@ impl super::process::LinuxRouterPlatform {
         }
     }
 
-    fn current_sta_channel(&self) -> Result<Option<u8>, PlatformError> {
+    fn current_sta_channel(&self) -> Result<Option<ApRadioChannel>, PlatformError> {
         let status =
             self.run_management_probe("/usr/sbin/wpa_cli", &["-i", WAN_INTERFACE, "status"])?;
         let frequency = status.lines().find_map(|line| {
@@ -625,9 +636,9 @@ impl super::process::LinuxRouterPlatform {
         });
         frequency
             .map(|frequency| {
-                frequency_to_channel(frequency).ok_or_else(|| {
+                frequency_to_ap_channel(frequency).ok_or_else(|| {
                     PlatformError::InvalidState(format!(
-                        "associated STA frequency {frequency} MHz cannot be shared by the 2.4 GHz AP"
+                        "associated STA frequency {frequency} MHz is not a supported non-DFS AP channel"
                     ))
                 })
             })
@@ -637,7 +648,7 @@ impl super::process::LinuxRouterPlatform {
     fn sta_associated_with(
         &self,
         candidate: &StaConfig,
-        expected_channel: u8,
+        expected_channel: ApRadioChannel,
     ) -> Result<bool, PlatformError> {
         let status =
             self.run_management_probe("/usr/sbin/wpa_cli", &["-i", WAN_INTERFACE, "status"])?;
@@ -648,7 +659,10 @@ impl super::process::LinuxRouterPlatform {
         ))
     }
 
-    fn follow_sta_channel(&self, config: &NetworkConfigV1) -> Result<u8, PlatformError> {
+    fn follow_sta_channel(
+        &self,
+        config: &NetworkConfigV1,
+    ) -> Result<ApRadioChannel, PlatformError> {
         let channel = self.current_sta_channel()?.ok_or_else(|| {
             PlatformError::ProbeFailed(
                 "ready STA did not report an associated frequency".to_owned(),
@@ -682,7 +696,7 @@ impl super::process::LinuxRouterPlatform {
         Ok(hostapd_status_ready(&output, None))
     }
 
-    fn hostapd_enabled_on_channel(&self, channel: u8) -> Result<bool, PlatformError> {
+    fn hostapd_enabled_on_channel(&self, channel: ApRadioChannel) -> Result<bool, PlatformError> {
         let output = match self
             .run_management_probe("/usr/bin/hostapd_cli", &["-i", LAN_MEMBER, "status"])
         {
@@ -1165,12 +1179,10 @@ fn parse_scan_results(output: &str) -> Result<Vec<WifiScanEntry>, PlatformError>
     Ok(entries)
 }
 
-fn prepare_runtime_configs(config: &NetworkConfigV1, channel: u8) -> Result<(), PlatformError> {
-    if !(1..=14).contains(&channel) {
-        return Err(PlatformError::InvalidState(
-            "STA frequency does not map to a supported 2.4 GHz AP channel".to_owned(),
-        ));
-    }
+fn prepare_runtime_configs(
+    config: &NetworkConfigV1,
+    channel: ApRadioChannel,
+) -> Result<(), PlatformError> {
     let wpa = render_wpa_supplicant(&config.sta);
     let hostapd = render_hostapd_on_channel(&config.ap, channel);
     storage::atomic_write_private(WPA_RUNTIME_CONFIG, wpa.as_bytes())?;
@@ -1223,12 +1235,15 @@ fn network_config_error(error: super::network_config::NetworkConfigError) -> Pla
     PlatformError::InvalidState(error.to_string())
 }
 
-fn frequency_to_channel(frequency_mhz: u16) -> Option<u8> {
+fn frequency_to_ap_channel(frequency_mhz: u16) -> Option<ApRadioChannel> {
     match frequency_mhz {
         2_412..=2_472 if (frequency_mhz - 2_407) % 5 == 0 => {
-            Some(((frequency_mhz - 2_407) / 5) as u8)
+            ApRadioChannel::ghz2(((frequency_mhz - 2_407) / 5) as u8)
         }
-        2_484 => Some(14),
+        2_484 => ApRadioChannel::ghz2(14),
+        5_180..=5_240 | 5_745..=5_825 if (frequency_mhz - 5_000) % 5 == 0 => {
+            ApRadioChannel::ghz5(((frequency_mhz - 5_000) / 5) as u8)
+        }
         _ => None,
     }
 }
@@ -1472,25 +1487,25 @@ pub(crate) fn wait_for_interface_presence(
     )
 }
 
-fn sta_status_ready(output: &str, expected_ssid: &str, expected_channel: u8) -> bool {
+fn sta_status_ready(output: &str, expected_ssid: &str, expected_channel: ApRadioChannel) -> bool {
     let expected_ssid = format!("ssid={expected_ssid}");
     let completed = output.lines().any(|line| line == "wpa_state=COMPLETED");
     let matching_ssid = output.lines().any(|line| line == expected_ssid);
     let matching_channel = output.lines().any(|line| {
         line.strip_prefix("freq=")
             .and_then(|value| value.parse::<u16>().ok())
-            .and_then(frequency_to_channel)
+            .and_then(frequency_to_ap_channel)
             == Some(expected_channel)
     });
     completed && matching_ssid && matching_channel
 }
 
-fn hostapd_status_ready(output: &str, expected_channel: Option<u8>) -> bool {
+fn hostapd_status_ready(output: &str, expected_channel: Option<ApRadioChannel>) -> bool {
     if !output.lines().any(|line| line == "state=ENABLED") {
         return false;
     }
     expected_channel.is_none_or(|channel| {
-        let expected = format!("channel={channel}");
+        let expected = format!("channel={}", channel.number());
         output.lines().any(|line| line == expected)
     })
 }
@@ -1827,41 +1842,66 @@ mod tests {
     }
 
     #[test]
+    fn supported_ap_frequencies_map_to_typed_non_dfs_channels() {
+        assert_eq!(frequency_to_ap_channel(2_437), ApRadioChannel::ghz2(6));
+        assert_eq!(frequency_to_ap_channel(5_180), ApRadioChannel::ghz5(36));
+        assert_eq!(frequency_to_ap_channel(5_805), ApRadioChannel::ghz5(161));
+        assert_eq!(frequency_to_ap_channel(5_825), ApRadioChannel::ghz5(165));
+        assert_eq!(frequency_to_ap_channel(5_260), None);
+        assert_eq!(frequency_to_ap_channel(5_500), None);
+        assert_eq!(frequency_to_ap_channel(5_845), None);
+    }
+
+    #[test]
     fn sta_status_requires_candidate_completed_on_expected_channel() {
+        let channel_6 = ApRadioChannel::ghz2(6).unwrap();
+        let channel_11 = ApRadioChannel::ghz2(11).unwrap();
+        let channel_161 = ApRadioChannel::ghz5(161).unwrap();
         let ready = "ssid=candidate\nfreq=2437\nwpa_state=COMPLETED\n";
-        assert!(sta_status_ready(ready, "candidate", 6));
-        assert!(!sta_status_ready(ready, "other", 6));
-        assert!(!sta_status_ready(ready, "candidate", 11));
+        assert!(sta_status_ready(ready, "candidate", channel_6));
+        assert!(!sta_status_ready(ready, "other", channel_6));
+        assert!(!sta_status_ready(ready, "candidate", channel_11));
         assert!(!sta_status_ready(
             "ssid=candidate\nfreq=2437\nwpa_state=DISCONNECTED\n",
             "candidate",
-            6
+            channel_6
         ));
         assert!(!sta_status_ready(
             "ssid=candidate\nfreq=invalid\nwpa_state=COMPLETED\n",
             "candidate",
-            6
+            channel_6
+        ));
+        assert!(sta_status_ready(
+            "ssid=candidate\nfreq=5805\nwpa_state=COMPLETED\n",
+            "candidate",
+            channel_161
         ));
     }
 
     #[test]
     fn hostapd_status_requires_enabled_state_and_expected_channel() {
+        let channel_6 = ApRadioChannel::ghz2(6).unwrap();
+        let channel_11 = ApRadioChannel::ghz2(11).unwrap();
         let enabled = "state=ENABLED\nchannel=6\n";
         assert!(hostapd_status_ready(enabled, None));
-        assert!(hostapd_status_ready(enabled, Some(6)));
-        assert!(!hostapd_status_ready(enabled, Some(11)));
+        assert!(hostapd_status_ready(enabled, Some(channel_6)));
+        assert!(!hostapd_status_ready(enabled, Some(channel_11)));
         assert!(!hostapd_status_ready(
             "state=DISABLED\nchannel=6\n",
-            Some(6)
+            Some(channel_6)
         ));
         assert!(!hostapd_status_ready(
             "state=ENABLED\nchannel=six\n",
-            Some(6)
+            Some(channel_6)
         ));
-        assert!(!hostapd_status_ready("state=ENABLED\n", Some(6)));
+        assert!(!hostapd_status_ready("state=ENABLED\n", Some(channel_6)));
         assert!(!hostapd_status_ready(
             "state=ENABLED-extra\nchannel=6\n",
             None
+        ));
+        assert!(hostapd_status_ready(
+            "state=ENABLED\nchannel=161\n",
+            ApRadioChannel::ghz5(161)
         ));
     }
 

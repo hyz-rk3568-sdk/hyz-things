@@ -194,11 +194,66 @@ pub fn render_wpa_supplicant(config: &StaConfig) -> Zeroizing<String> {
     ))
 }
 
-pub fn render_hostapd(config: &ApConfig) -> Zeroizing<String> {
-    render_hostapd_on_channel(config, 6)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ApRadioBand {
+    Ghz2,
+    Ghz5,
 }
 
-pub fn render_hostapd_on_channel(config: &ApConfig, channel: u8) -> Zeroizing<String> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ApRadioChannel {
+    band: ApRadioBand,
+    number: u8,
+}
+
+impl ApRadioChannel {
+    pub(crate) const DEFAULT: Self = Self {
+        band: ApRadioBand::Ghz2,
+        number: 6,
+    };
+
+    pub(crate) const fn ghz2(number: u8) -> Option<Self> {
+        if number >= 1 && number <= 14 {
+            Some(Self {
+                band: ApRadioBand::Ghz2,
+                number,
+            })
+        } else {
+            None
+        }
+    }
+
+    pub(crate) const fn ghz5(number: u8) -> Option<Self> {
+        if matches!(number, 36 | 40 | 44 | 48 | 149 | 153 | 157 | 161 | 165) {
+            Some(Self {
+                band: ApRadioBand::Ghz5,
+                number,
+            })
+        } else {
+            None
+        }
+    }
+
+    pub(crate) const fn number(self) -> u8 {
+        self.number
+    }
+
+    const fn hostapd_mode(self) -> char {
+        match self.band {
+            ApRadioBand::Ghz2 => 'g',
+            ApRadioBand::Ghz5 => 'a',
+        }
+    }
+}
+
+pub fn render_hostapd(config: &ApConfig) -> Zeroizing<String> {
+    render_hostapd_on_channel(config, ApRadioChannel::DEFAULT)
+}
+
+pub(crate) fn render_hostapd_on_channel(
+    config: &ApConfig,
+    channel: ApRadioChannel,
+) -> Zeroizing<String> {
     let ssid = encode_hex(config.ssid.as_bytes());
     let psk = config.psk.to_hex();
     Zeroizing::new(format!(
@@ -208,14 +263,16 @@ pub fn render_hostapd_on_channel(config: &ApConfig, channel: u8) -> Zeroizing<St
          ssid2={ssid}\n\
          country_code={}\n\
          ieee80211d=1\n\
-         hw_mode=g\n\
-         channel={channel}\n\
+         hw_mode={}\n\
+         channel={}\n\
          auth_algs=1\n\
          wpa=2\n\
          wpa_key_mgmt=WPA-PSK\n\
          rsn_pairwise=CCMP\n\
          wpa_psk={}\n",
         config.country.as_str(),
+        channel.hostapd_mode(),
+        channel.number(),
         psk.as_str()
     ))
 }
@@ -450,6 +507,23 @@ mod tests {
             assert_eq!(psk.len(), 64);
             assert!(psk.bytes().all(|byte| byte.is_ascii_hexdigit()));
         }
+    }
+
+    #[test]
+    fn hostapd_renderer_selects_the_radio_mode_from_the_typed_channel() {
+        let config = config();
+        let channel_6 = ApRadioChannel::ghz2(6).unwrap();
+        let channel_161 = ApRadioChannel::ghz5(161).unwrap();
+
+        let ghz2 = render_hostapd_on_channel(&config.ap, channel_6);
+        let ghz5 = render_hostapd_on_channel(&config.ap, channel_161);
+
+        assert!(ghz2.contains("hw_mode=g\nchannel=6\n"));
+        assert!(ghz5.contains("hw_mode=a\nchannel=161\n"));
+        assert_eq!(ApRadioChannel::ghz2(0), None);
+        assert_eq!(ApRadioChannel::ghz2(15), None);
+        assert_eq!(ApRadioChannel::ghz5(52), None);
+        assert_eq!(ApRadioChannel::ghz5(165).unwrap().number(), 165);
     }
 
     #[test]
