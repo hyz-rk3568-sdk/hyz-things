@@ -101,6 +101,15 @@ Always perform read-only/static checks first:
 
 Only run builds explicitly authorized by the user. Start with the smallest target, preserve logs outside source repositories, and report exact commands and output paths.
 
+### OTA deployment transport policy
+
+For routine recovery-free OTA installation, use this transport order:
+
+1. Prefer USB wired ADB. Large firmware may be transferred with `adb push`, but verify its SHA-256 again on the board before staging the BCB.
+2. Use network ADB only when wired ADB is unavailable. Do not send the large firmware with network `adb push`; bind a temporary HTTP server to the host's selected LAN address and let `hyz-router ota download` stream and verify it.
+
+Always audit that the normal OTA excludes recovery and userdata, stop the temporary HTTP server immediately after a verified download, expect ADB to disconnect during recovery/reboot, and wait for strict router/proxy/system readiness rather than treating ADB availability as boot success. Follow the full commands and interrupted-transfer handling in [the OTA deployment guide](../../../docs/ota-deployment.md). Never place transient device addresses, serials, ports, or credentials in this skill.
+
 ### 6. Commit and integrate
 
 - Commit separately in each component repository.

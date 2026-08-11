@@ -123,6 +123,8 @@ TDD coverage and remaining validation work are documented in
 
 ## Minimal OTA test
 
+For the preferred USB ADB path, the network ADB fallback, interrupted-transfer handling, package audit, and post-boot readiness checks, follow [`docs/ota-deployment.md`](docs/ota-deployment.md). The minimal HTTP flow is:
+
 Serve the two release files from any HTTP server:
 
 ```sh
@@ -140,7 +142,7 @@ hyz-router ota download http://SERVER:8000/upgrade.fw "$SHA256"
 Install without automatic reboot first:
 
 ```sh
-hyz-router ota install /userdata/upgrade.fw "$SHA256"
+hyz-router ota install /userdata/hyz-router/ota/upgrade.fw "$SHA256"
 ```
 
 Or download, verify, install, and reboot in one command:
