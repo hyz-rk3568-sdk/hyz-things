@@ -1,14 +1,47 @@
-pub const PAGE: &str = "relative mx-auto min-h-screen w-full max-w-7xl px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] sm:px-6 lg:px-8";
-pub const HERO: &str = "flex flex-col gap-5 py-4 sm:flex-row sm:items-end sm:justify-between";
-pub const EYEBROW: &str = "mb-2 text-xs font-bold uppercase tracking-[0.2em] text-primary";
-pub const PAGE_TITLE: &str = "text-3xl font-black tracking-tight text-base-content sm:text-5xl";
-pub const SUBTITLE: &str = "mt-2 text-sm text-base-content/60 sm:text-base";
-pub const OVERALL: &str = "flex min-w-48 items-center gap-3 rounded-box border border-base-content/10 bg-base-200/80 px-4 py-3 shadow-lg shadow-black/10";
+pub const PAGE: &str = "relative mx-auto min-h-screen w-full max-w-7xl px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] sm:px-6 lg:px-8";
+pub const APP_HEADER: &str =
+    "flex flex-col gap-4 py-3 sm:flex-row sm:items-center sm:justify-between";
+pub const BRAND: &str = "flex min-w-0 items-center gap-3";
+pub const BRAND_MARK: &str = "grid size-11 shrink-0 place-items-center rounded-box bg-primary font-mono text-xs font-black tracking-wider text-primary-content shadow-lg shadow-primary/15";
+pub const EYEBROW: &str = "mb-1 text-[0.65rem] font-bold uppercase tracking-[0.2em] text-primary";
+pub const PAGE_TITLE: &str = "text-2xl font-black tracking-tight text-base-content sm:text-3xl";
+pub const SUBTITLE: &str = "mt-1 text-xs text-base-content/65 sm:text-sm";
+pub const OVERALL: &str = "flex min-w-48 items-center gap-3 rounded-box border border-base-content/10 bg-base-200/80 px-4 py-3 shadow-sm";
 pub const OVERALL_COPY: &str = "grid gap-0.5";
 pub const OVERALL_TITLE: &str = "text-sm font-bold";
 pub const OVERALL_META: &str = "text-xs text-base-content/65";
 pub const STATUS_DOT: &str = "size-2 shrink-0 rounded-full bg-current";
 pub const STATUS_DOT_SMALL: &str = "size-1.5 shrink-0 rounded-full bg-current";
+
+pub const WORKSPACE_TABS: &str = "tabs tabs-box sticky top-2 z-20 mt-3 grid grid-cols-3 overflow-x-auto border border-base-content/10 bg-base-200/90 p-1 shadow-lg shadow-black/10 backdrop-blur";
+pub const WORKSPACE_TAB: &str = "tab h-10 min-w-24 rounded-field text-xs font-bold sm:text-sm";
+pub const WORKSPACE_TAB_ACTIVE: &str = "tab-active bg-primary text-primary-content";
+pub const WORKSPACE_PANEL: &str = "min-w-0 outline-none";
+
+pub const TOPOLOGY: &str =
+    "card mt-5 gap-4 border border-base-content/10 bg-base-200/70 p-4 shadow-sm sm:p-6";
+pub const TOPOLOGY_FLOW: &str =
+    "grid grid-cols-1 items-stretch gap-2 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-center";
+pub const TOPOLOGY_NODE: &str = "grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-box bg-base-100/60 p-4 ring-1 ring-base-content/10";
+pub const TOPOLOGY_ICON: &str = "grid size-9 place-items-center rounded-box border border-current/25 bg-current/5 font-mono text-[0.6rem] font-black";
+pub const TOPOLOGY_COPY: &str = "grid min-w-0 gap-1";
+pub const TOPOLOGY_TITLE: &str = "text-sm font-bold";
+pub const TOPOLOGY_DETAIL: &str = "truncate text-xs text-base-content/65";
+pub const TOPOLOGY_LINK: &str =
+    "grid place-items-center text-lg font-black max-lg:rotate-90 lg:px-1";
+pub const TOPOLOGY_PROXY_ROW: &str =
+    "mt-1 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 lg:mx-auto lg:w-full lg:max-w-md";
+pub const TOPOLOGY_BRANCH: &str = "grid size-8 place-items-center text-xl text-secondary";
+
+pub const KPI_GRID: &str = "mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4";
+pub const KPI_CARD: &str =
+    "grid min-w-0 gap-1 rounded-box border border-base-content/10 bg-base-100/50 p-4 shadow-sm";
+pub const KPI_LABEL: &str =
+    "text-[0.65rem] font-bold uppercase tracking-wider text-base-content/65";
+pub const KPI_VALUE: &str = "truncate font-mono text-sm font-black text-base-content sm:text-base";
+pub const KPI_META: &str = "text-[0.65rem] text-base-content/65";
+pub const VIEW_HEADING: &str =
+    "mt-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between";
 
 pub const NOTICE: &str = "alert mb-5 items-start border text-sm shadow-sm sm:grid-cols-[auto_1fr]";
 pub const NOTICE_COPY: &str = "text-base-content/70";
@@ -29,7 +62,11 @@ pub const SECTION_TITLE: &str = "text-xl font-black tracking-tight";
 pub const SECTION_META: &str = "text-xs text-base-content/65";
 pub const FEEDBACK: &str =
     "alert min-h-12 border border-base-content/10 bg-base-100/50 text-xs text-base-content/70";
-pub const CONTROL_GRID: &str = "grid grid-cols-1 gap-4 lg:grid-cols-2";
+pub const PROXY_SUMMARY: &str = "grid grid-cols-1 gap-4 sm:grid-cols-3";
+pub const PROXY_STAT: &str =
+    "grid min-h-28 content-center gap-2 rounded-box border border-base-content/10 bg-base-100/50 p-5 shadow-sm";
+pub const PROXY_STAT_LABEL: &str = "text-xs font-semibold tracking-wide text-base-content/65";
+pub const PROXY_STAT_VALUE: &str = "font-mono text-2xl font-black tracking-tight text-base-content";
 pub const INNER_CARD: &str =
     "card min-w-0 gap-4 border border-base-content/10 bg-base-100/60 p-4 shadow-sm sm:p-5";
 pub const CONTROL_TITLE: &str =
@@ -102,8 +139,7 @@ pub const CONFIRMATION_TITLE: &str = "text-lg font-black";
 pub const CONFIRMATION_COPY: &str = "text-sm leading-relaxed text-base-content/70";
 pub const CONFIRMATION_ACTIONS: &str = "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end";
 
-pub const STATUS_CARD: &str =
-    "card min-w-0 border border-base-content/10 bg-base-200/80 shadow-xl shadow-black/10";
+pub const STATUS_CARD: &str = "card min-w-0 border border-base-content/10 bg-base-100/45 shadow-sm";
 pub const STATUS_CARD_BODY: &str = "card-body gap-4 p-5";
 pub const STATUS_CARD_HEAD: &str = "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3";
 pub const STATUS_ICON: &str = "grid size-9 place-items-center rounded-box border border-current/20 bg-current/5 font-mono text-[0.65rem] font-black";

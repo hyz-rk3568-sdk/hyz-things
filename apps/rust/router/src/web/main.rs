@@ -16,7 +16,7 @@ use hyz_router::domain::{
     },
 };
 use wasm_bindgen_futures::spawn_local;
-use web_sys::{HtmlInputElement, HtmlSelectElement, RequestCredentials};
+use web_sys::{HtmlElement, HtmlInputElement, HtmlSelectElement, RequestCredentials};
 use yew::prelude::*;
 
 use ui::*;
@@ -240,8 +240,10 @@ struct AppState {
     panel: Option<PanelBootstrap>,
     last_update: Option<String>,
     poll_error: Option<String>,
-    control_notice: Option<String>,
-    control_busy: bool,
+    display_notice: Option<String>,
+    display_busy: bool,
+    proxy_notice: Option<String>,
+    proxy_busy: bool,
     loading: bool,
     session_checked: bool,
     session: Option<AuthSessionDto>,
@@ -253,12 +255,18 @@ struct AppState {
     subscription: Option<SubscriptionDto>,
 }
 
+#[derive(Clone, Copy)]
+enum ControlArea {
+    Display,
+    Proxy,
+}
+
 enum Action {
     Started,
     Success(Box<StatusSnapshot>, Box<PanelBootstrap>, String),
     Failure(String),
-    ControlStarted,
-    ControlFinished(Result<String, String>),
+    ControlStarted(ControlArea),
+    ControlFinished(ControlArea, Result<String, String>),
     ProxyDelaysFinished(Result<Vec<ProxyGroup>, String>),
     SessionFinished(Result<AuthSessionDto, String>),
     AuthFinished(Result<(AuthSessionDto, String), String>),
@@ -294,33 +302,50 @@ impl Reducible for AppState {
                 ..(*self).clone()
             }
             .into(),
-            Action::ControlStarted => Self {
-                control_busy: true,
-                control_notice: None,
-                ..(*self).clone()
+            Action::ControlStarted(area) => {
+                let mut next = (*self).clone();
+                match area {
+                    ControlArea::Display => {
+                        next.display_busy = true;
+                        next.display_notice = None;
+                    }
+                    ControlArea::Proxy => {
+                        next.proxy_busy = true;
+                        next.proxy_notice = None;
+                    }
+                }
+                next.into()
             }
-            .into(),
-            Action::ControlFinished(result) => Self {
-                control_busy: false,
-                control_notice: Some(match result {
+            Action::ControlFinished(area, result) => {
+                let mut next = (*self).clone();
+                let notice = Some(match result {
                     Ok(message) => message,
                     Err(error) => format!("操作失败：{error}"),
-                }),
-                ..(*self).clone()
+                });
+                match area {
+                    ControlArea::Display => {
+                        next.display_busy = false;
+                        next.display_notice = notice;
+                    }
+                    ControlArea::Proxy => {
+                        next.proxy_busy = false;
+                        next.proxy_notice = notice;
+                    }
+                }
+                next.into()
             }
-            .into(),
             Action::ProxyDelaysFinished(result) => {
                 let mut next = (*self).clone();
-                next.control_busy = false;
+                next.proxy_busy = false;
                 match result {
                     Ok(groups) => {
                         if let Some(bootstrap) = &mut next.panel {
                             bootstrap.panel.proxy_groups = Component::available(groups);
                         }
-                        next.control_notice = Some("节点延迟已更新".to_owned());
+                        next.proxy_notice = Some("节点延迟已更新".to_owned());
                     }
                     Err(error) => {
-                        next.control_notice = Some(format!("测速失败：{error}"));
+                        next.proxy_notice = Some(format!("测速失败：{error}"));
                     }
                 }
                 next.into()
@@ -428,11 +453,45 @@ impl Tone {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WorkspaceView {
+    Overview,
+    Proxy,
+    Network,
+}
+
+impl WorkspaceView {
+    const fn tab_id(self) -> &'static str {
+        match self {
+            Self::Overview => "overview-tab",
+            Self::Proxy => "proxy-tab",
+            Self::Network => "network-tab",
+        }
+    }
+
+    const fn panel_id(self) -> &'static str {
+        match self {
+            Self::Overview => "overview-panel",
+            Self::Proxy => "proxy-panel",
+            Self::Network => "network-panel",
+        }
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Overview => "总览",
+            Self::Proxy => "代理",
+            Self::Network => "网络设置",
+        }
+    }
+}
+
 #[function_component(App)]
 fn app() -> Html {
     let state = use_reducer(AppState::default);
     let brightness = use_state(|| 128u16);
     let delay_refresh_started = use_state(|| false);
+    let active_view = use_state(|| WorkspaceView::Overview);
 
     {
         let state = state.clone();
@@ -500,14 +559,30 @@ fn app() -> Html {
 
     let (overall_text, overall_tone) = overall_status(&state);
     let updated = state.last_update.as_deref().unwrap_or("尚未更新");
+    let select_overview = {
+        let active_view = active_view.clone();
+        Callback::from(move |_| active_view.set(WorkspaceView::Overview))
+    };
+    let select_proxy = {
+        let active_view = active_view.clone();
+        Callback::from(move |_| active_view.set(WorkspaceView::Proxy))
+    };
+    let select_network = {
+        let active_view = active_view.clone();
+        Callback::from(move |_| active_view.set(WorkspaceView::Network))
+    };
+    let active = *active_view;
 
     html! {
         <main class={PAGE}>
-            <header class={HERO}>
-                <div>
-                    <p class={EYEBROW}>{"HYZ ROUTER · 本地控制面"}</p>
-                    <h1 class={PAGE_TITLE}>{"网络状态"}</h1>
-                    <p class={SUBTITLE}>{"集中查看设备、链路与透明代理运行情况"}</p>
+            <header class={APP_HEADER}>
+                <div class={BRAND}>
+                    <span class={BRAND_MARK} aria-hidden="true">{"HYZ"}</span>
+                    <div>
+                        <p class={EYEBROW}>{"LOCAL CONTROL PLANE"}</p>
+                        <h1 class={PAGE_TITLE}>{"HYZ Router"}</h1>
+                        <p class={SUBTITLE}>{"单设备网络、代理与无线管理"}</p>
+                    </div>
                 </div>
                 <div class={classes!(OVERALL, overall_tone.class())} role="status" aria-live="polite" aria-atomic="true">
                     <span class={STATUS_DOT} aria-hidden="true"></span>
@@ -518,23 +593,41 @@ fn app() -> Html {
                 </div>
             </header>
             {render_notice(&state)}
-            if let Some(snapshot) = &state.snapshot {
-                {render_dashboard(snapshot)}
-                {render_issues(snapshot)}
-            } else if state.loading {
-                <section class={LOADING_GRID} aria-labelledby="loading-title" aria-busy="true">
-                    <h2 id="loading-title" class="sr-only">{"正在加载路由器状态"}</h2>
-                    {for (0..3).map(|_| html! { <div class={SKELETON} aria-hidden="true"></div> })}
-                </section>
-            } else {
-                <section class={EMPTY_STATE} role="alert" aria-labelledby="empty-title">
-                    <span class={EMPTY_ICON} aria-hidden="true">{"!"}</span>
-                    <h2 id="empty-title" class={EMPTY_TITLE}>{"暂时无法读取状态"}</h2>
-                    <p class={EMPTY_COPY}>{"面板会自动重试，无需刷新页面。"}</p>
-                </section>
-            }
-            <Settings state={state.clone()} />
-            {render_control_panel(&state, brightness.clone())}
+            <nav class={WORKSPACE_TABS} aria-label="管理视图">
+                <button id={WorkspaceView::Overview.tab_id()} class={classes!(WORKSPACE_TAB, (active == WorkspaceView::Overview).then_some(WORKSPACE_TAB_ACTIVE))} type="button" aria-pressed={(active == WorkspaceView::Overview).to_string()} aria-controls={WorkspaceView::Overview.panel_id()} onclick={select_overview}>{WorkspaceView::Overview.label()}</button>
+                <button id={WorkspaceView::Proxy.tab_id()} class={classes!(WORKSPACE_TAB, (active == WorkspaceView::Proxy).then_some(WORKSPACE_TAB_ACTIVE))} type="button" aria-pressed={(active == WorkspaceView::Proxy).to_string()} aria-controls={WorkspaceView::Proxy.panel_id()} onclick={select_proxy}>{WorkspaceView::Proxy.label()}</button>
+                <button id={WorkspaceView::Network.tab_id()} class={classes!(WORKSPACE_TAB, (active == WorkspaceView::Network).then_some(WORKSPACE_TAB_ACTIVE))} type="button" aria-pressed={(active == WorkspaceView::Network).to_string()} aria-controls={WorkspaceView::Network.panel_id()} onclick={select_network}>{WorkspaceView::Network.label()}</button>
+            </nav>
+            <section id={WorkspaceView::Overview.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={WorkspaceView::Overview.tab_id()} hidden={active != WorkspaceView::Overview}>
+                if let Some(snapshot) = &state.snapshot {
+                    {render_topology(snapshot)}
+                    {render_kpis(snapshot)}
+                    {render_issues(snapshot)}
+                    <div class={VIEW_HEADING}>
+                        <div><p class={EYEBROW}>{"DETAILS"}</p><h2 class={SECTION_TITLE}>{"运行详情"}</h2></div>
+                        <span class={SECTION_META}>{"保留最近一次成功快照"}</span>
+                    </div>
+                    {render_dashboard(snapshot)}
+                } else if state.loading {
+                    <section class={LOADING_GRID} aria-labelledby="loading-title" aria-busy="true">
+                        <h2 id="loading-title" class="sr-only">{"正在加载路由器状态"}</h2>
+                        {for (0..3).map(|_| html! { <div class={SKELETON} aria-hidden="true"></div> })}
+                    </section>
+                } else {
+                    <section class={EMPTY_STATE} role="alert" aria-labelledby="empty-title">
+                        <span class={EMPTY_ICON} aria-hidden="true">{"!"}</span>
+                        <h2 id="empty-title" class={EMPTY_TITLE}>{"暂时无法读取状态"}</h2>
+                        <p class={EMPTY_COPY}>{"面板会自动重试，无需刷新页面。"}</p>
+                    </section>
+                }
+                {render_display_control(&state, brightness.clone())}
+            </section>
+            <section id={WorkspaceView::Proxy.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={WorkspaceView::Proxy.tab_id()} hidden={active != WorkspaceView::Proxy}>
+                {render_proxy_control(&state)}
+            </section>
+            <section id={WorkspaceView::Network.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={WorkspaceView::Network.tab_id()} hidden={active != WorkspaceView::Network}>
+                <Settings state={state.clone()} />
+            </section>
             <footer class={FOOTER}>{"数据约每 2 秒自动刷新 · 写操作仅接受同源令牌保护的类型化请求"}</footer>
         </main>
     }
@@ -567,6 +660,7 @@ async fn fetch_json<T: serde::de::DeserializeOwned>(
 
 fn dispatch_control<T>(
     state: UseReducerHandle<AppState>,
+    area: ControlArea,
     endpoint: &'static str,
     csrf_token: String,
     body: T,
@@ -574,7 +668,7 @@ fn dispatch_control<T>(
 ) where
     T: serde::Serialize + 'static,
 {
-    state.dispatch(Action::ControlStarted);
+    state.dispatch(Action::ControlStarted(area));
     spawn_local(async move {
         let request = match Request::post(endpoint)
             .credentials(RequestCredentials::SameOrigin)
@@ -584,9 +678,10 @@ fn dispatch_control<T>(
         {
             Ok(request) => request,
             Err(error) => {
-                state.dispatch(Action::ControlFinished(Err(format!(
-                    "无法编码请求：{error}"
-                ))));
+                state.dispatch(Action::ControlFinished(
+                    area,
+                    Err(format!("无法编码请求：{error}")),
+                ));
                 return;
             }
         };
@@ -595,7 +690,7 @@ fn dispatch_control<T>(
             Ok(response) => Err(format!("控制接口返回 HTTP {}", response.status())),
             Err(error) => Err(format!("无法连接控制接口：{error}")),
         };
-        state.dispatch(Action::ControlFinished(result));
+        state.dispatch(Action::ControlFinished(area, result));
     });
 }
 
@@ -606,7 +701,7 @@ enum DelayRefreshControlResponse {
 }
 
 fn dispatch_delay_refresh(state: UseReducerHandle<AppState>, csrf_token: String) {
-    state.dispatch(Action::ControlStarted);
+    state.dispatch(Action::ControlStarted(ControlArea::Proxy));
     spawn_local(async move {
         let request = match Request::post(PROXY_DELAYS_ENDPOINT)
             .credentials(RequestCredentials::SameOrigin)
@@ -744,8 +839,8 @@ fn dispatch_disruptive_settings_mutation<T: serde::Serialize + 'static>(
 ) {
     state.dispatch(Action::SettingsStarted);
     spawn_local(async move {
-        // The confirmation overlay and expanded form must be painted away before the request can
-        // reconfigure the radio and disconnect this browser.
+        // The inline confirmation panel and expanded form must be painted away before the request
+        // can reconfigure the radio and disconnect this browser.
         TimeoutFuture::new(NETWORK_APPLY_PAINT_DELAY_MS).await;
         let result = post_json(endpoint, &csrf, &body, label).await;
         if result.is_ok() {
@@ -795,6 +890,15 @@ fn dispatch_subscription_source(state: UseReducerHandle<AppState>, csrf: String,
     });
 }
 
+fn focus_after_render(node: NodeRef) {
+    spawn_local(async move {
+        TimeoutFuture::new(0).await;
+        if let Some(element) = node.cast::<HtmlElement>() {
+            let _ = element.focus();
+        }
+    });
+}
+
 #[derive(Properties, PartialEq)]
 struct SettingsProps {
     state: UseReducerHandle<AppState>,
@@ -804,6 +908,7 @@ struct ApSettingsRefs<'a> {
     ssid: &'a NodeRef,
     password: &'a NodeRef,
     country: &'a NodeRef,
+    apply_button: &'a NodeRef,
 }
 
 struct ApSettingsActions {
@@ -822,15 +927,30 @@ fn settings(props: &SettingsProps) -> Html {
     let confirm_password = use_node_ref();
     let sta_ssid = use_node_ref();
     let sta_password = use_node_ref();
+    let sta_toggle = use_node_ref();
+    let sta_apply_button = use_node_ref();
     let ap_ssid = use_node_ref();
     let ap_password = use_node_ref();
     let ap_country = use_node_ref();
+    let ap_toggle = use_node_ref();
+    let ap_apply_button = use_node_ref();
+    let confirmation_cancel_button = use_node_ref();
     let subscription_url = use_node_ref();
     let login_expanded = use_state(|| false);
     let sta_expanded = use_state(|| false);
     let ap_expanded = use_state(|| false);
     let network_confirmation_open = use_state(|| false);
     let network_apply_intent = use_mut_ref(|| None::<NetworkApplyIntent>);
+
+    {
+        let confirmation_cancel_button = confirmation_cancel_button.clone();
+        use_effect_with(*network_confirmation_open, move |open| {
+            if *open {
+                focus_after_render(confirmation_cancel_button);
+            }
+            || ()
+        });
+    }
 
     let csrf = state
         .panel
@@ -1009,6 +1129,8 @@ fn settings(props: &SettingsProps) -> Html {
         let confirmation_open = network_confirmation_open.clone();
         let sta_expanded = sta_expanded.clone();
         let ap_expanded = ap_expanded.clone();
+        let sta_toggle = sta_toggle.clone();
+        let ap_toggle = ap_toggle.clone();
         Callback::from(move |_| {
             confirmation_open.set(false);
             let Some(intent) = intent.borrow_mut().take() else {
@@ -1017,6 +1139,7 @@ fn settings(props: &SettingsProps) -> Html {
             match intent {
                 NetworkApplyIntent::Sta(request) => {
                     sta_expanded.set(false);
+                    focus_after_render(sta_toggle.clone());
                     dispatch_disruptive_settings_mutation(
                         state.clone(),
                         STA_APPLY_ENDPOINT,
@@ -1028,6 +1151,7 @@ fn settings(props: &SettingsProps) -> Html {
                 }
                 NetworkApplyIntent::Ap => {
                     ap_expanded.set(false);
+                    focus_after_render(ap_toggle.clone());
                     dispatch_disruptive_settings_mutation(
                         state.clone(),
                         AP_APPLY_ENDPOINT,
@@ -1043,9 +1167,16 @@ fn settings(props: &SettingsProps) -> Html {
     let cancel_network_apply = {
         let intent = network_apply_intent.clone();
         let confirmation_open = network_confirmation_open.clone();
+        let sta_apply_button = sta_apply_button.clone();
+        let ap_apply_button = ap_apply_button.clone();
         Callback::from(move |_| {
-            intent.borrow_mut().take();
+            let focus_target = match intent.borrow_mut().take() {
+                Some(NetworkApplyIntent::Sta(_)) => sta_apply_button.clone(),
+                Some(NetworkApplyIntent::Ap) => ap_apply_button.clone(),
+                None => return,
+            };
             confirmation_open.set(false);
+            focus_after_render(focus_target);
         })
     };
     let toggle_login = {
@@ -1149,14 +1280,14 @@ fn settings(props: &SettingsProps) -> Html {
                 <div class={FEEDBACK} role="status" aria-live="polite" aria-atomic="true">{notice}</div>
             }
             if let Some((title, message)) = network_confirmation {
-                <section id="network-confirmation-panel" class={CONFIRMATION_PANEL} role="region" aria-labelledby="network-confirmation-title" aria-describedby="network-confirmation-message">
+                <section id="network-confirmation-panel" class={CONFIRMATION_PANEL} role="region" aria-live="assertive" aria-atomic="true" aria-labelledby="network-confirmation-title" aria-describedby="network-confirmation-message">
                     <div>
                         <p class={EYEBROW}>{"NETWORK CHANGE"}</p>
                         <h3 id="network-confirmation-title" class={CONFIRMATION_TITLE}>{title}</h3>
                     </div>
                     <p id="network-confirmation-message" class={CONFIRMATION_COPY}>{message}</p>
                     <div class={CONFIRMATION_ACTIONS}>
-                        <button class={BUTTON} type="button" onclick={cancel_network_apply}>{"返回检查"}</button>
+                        <button ref={confirmation_cancel_button} class={BUTTON} type="button" onclick={cancel_network_apply}>{"返回检查"}</button>
                         <button class={BUTTON_ERROR} type="button" onclick={confirm_network_apply}>{"确认并开始应用"}</button>
                     </div>
                 </section>
@@ -1206,7 +1337,7 @@ fn settings(props: &SettingsProps) -> Html {
             } else {
                 <div class={SETTINGS_GRID}>
                     <article class={DISCLOSURE}>
-                        <button id="sta-settings-toggle" class={DISCLOSURE_TOGGLE} type="button" onclick={toggle_sta} aria-expanded={sta_expanded.to_string()} aria-controls="sta-settings-detail">
+                        <button id="sta-settings-toggle" ref={sta_toggle} class={DISCLOSURE_TOGGLE} type="button" onclick={toggle_sta} aria-expanded={sta_expanded.to_string()} aria-controls="sta-settings-detail">
                             <span class={DISCLOSURE_COPY}><strong class={DISCLOSURE_TITLE}>{"上游 Wi-Fi (STA)"}</strong><small class={DISCLOSURE_SUMMARY}>{sta_summary}</small></span>
                             <span class={DISCLOSURE_ACTION} aria-hidden="true">{if *sta_expanded { "收起" } else { "展开" }}</span>
                         </button>
@@ -1227,13 +1358,13 @@ fn settings(props: &SettingsProps) -> Html {
                                     <label class={FIELD}><span class={FIELD_LABEL}>{"SSID"}</span><input class={INPUT} ref={sta_ssid} required=true maxlength="32" autocomplete="off" /></label>
                                     <label class={FIELD}><span class={FIELD_LABEL}>{"密码"}</span><input class={INPUT} ref={sta_password} type="password" required=true minlength="8" maxlength="63" autocomplete="new-password" /></label>
                                     <div class={RISK_NOTE} role="note">{"若 STA 与当前 AP 信道不同，设备可能重启 AP 跟随信道，管理连接会短暂断开。"}</div>
-                                    <div class={FORM_ACTIONS}><button class={BUTTON_PRIMARY} type="submit" disabled={busy}>{"检查并应用 STA"}</button></div>
+                                    <div class={FORM_ACTIONS}><button ref={sta_apply_button} class={BUTTON_PRIMARY} type="submit" disabled={busy}>{"检查并应用 STA"}</button></div>
                                 </form>
                             </div>
                         }
                     </article>
                     <article class={DISCLOSURE}>
-                        <button id="ap-settings-toggle" class={DISCLOSURE_TOGGLE} type="button" onclick={toggle_ap} aria-expanded={ap_expanded.to_string()} aria-controls="ap-settings-detail">
+                        <button id="ap-settings-toggle" ref={ap_toggle} class={DISCLOSURE_TOGGLE} type="button" onclick={toggle_ap} aria-expanded={ap_expanded.to_string()} aria-controls="ap-settings-detail">
                             <span class={DISCLOSURE_COPY}><strong class={DISCLOSURE_TITLE}>{"下游 Wi-Fi (AP)"}</strong><small class={DISCLOSURE_SUMMARY}>{ap_summary}</small></span>
                             <span class={DISCLOSURE_ACTION} aria-hidden="true">{if *ap_expanded { "收起" } else { "展开" }}</span>
                         </button>
@@ -1241,7 +1372,7 @@ fn settings(props: &SettingsProps) -> Html {
                             <div id="ap-settings-detail" class={DISCLOSURE_DETAIL} role="region" aria-labelledby="ap-settings-toggle">
                                 {render_ap_settings(
                                     state,
-                                    ApSettingsRefs { ssid: &ap_ssid, password: &ap_password, country: &ap_country },
+                                    ApSettingsRefs { ssid: &ap_ssid, password: &ap_password, country: &ap_country, apply_button: &ap_apply_button },
                                     ApSettingsActions { prepare: prepare_ap, apply: request_ap_apply, confirm: confirm_ap, cancel: cancel_ap },
                                     busy,
                                 )}
@@ -1301,7 +1432,7 @@ fn render_ap_settings(
                     <div class={classes!(RISK_ALERT, "alert-error", "border-error/20")} role="alert">
                         <div><strong>{"应用会立即断开当前 AP 连接"}</strong><p class={RISK_COPY}>{"请先记住新 SSID 和密码。应用后连接新 AP，再回到本页确认；未确认会自动回滚。"}</p></div>
                     </div>
-                    <div class={FORM_ACTIONS}><button class={BUTTON_ERROR} type="button" onclick={actions.apply.clone()} disabled={busy}>{"检查风险并应用"}</button><button class={BUTTON} type="button" onclick={actions.cancel.clone()} disabled={busy}>{"取消"}</button></div>
+                    <div class={FORM_ACTIONS}><button ref={refs.apply_button.clone()} class={BUTTON_ERROR} type="button" onclick={actions.apply.clone()} disabled={busy}>{"检查风险并应用"}</button><button class={BUTTON} type="button" onclick={actions.cancel.clone()} disabled={busy}>{"取消"}</button></div>
                 }
             </div>
         }
@@ -1373,6 +1504,157 @@ fn render_notice(state: &AppState) -> Html {
             </div>
         },
         _ => Html::default(),
+    }
+}
+
+fn render_topology(snapshot: &StatusSnapshot) -> Html {
+    let router = snapshot.router.data.as_ref();
+    let proxy = snapshot.proxy.data.as_ref();
+    let internet_tone = match router {
+        Some(router)
+            if router.sta_state == Some(LinkState::Up)
+                && router.default_route_present == Some(true) =>
+        {
+            Tone::Good
+        }
+        Some(router) if router.sta_state == Some(LinkState::Connecting) => Tone::Warn,
+        Some(router)
+            if router.sta_state == Some(LinkState::Down)
+                || router.default_route_present == Some(false) =>
+        {
+            Tone::Bad
+        }
+        _ => Tone::Neutral,
+    };
+    let sta_detail = router.map_or_else(
+        || "等待链路数据".to_owned(),
+        |router| {
+            let ssid = router.sta_ssid.as_deref().unwrap_or(MISSING);
+            router.sta_signal_dbm.map_or_else(
+                || ssid.to_owned(),
+                |signal| format!("{ssid} · {signal} dBm"),
+            )
+        },
+    );
+    let router_detail = router.map_or_else(
+        || "等待转发状态".to_owned(),
+        |router| {
+            format!(
+                "转发 {} · NAT {}",
+                router
+                    .ipv4_forwarding
+                    .map(format_bool)
+                    .unwrap_or_else(missing),
+                router
+                    .masquerade_enabled
+                    .map(format_bool)
+                    .unwrap_or_else(missing)
+            )
+        },
+    );
+    let ap_detail = router.map_or_else(
+        || "等待 LAN 状态".to_owned(),
+        |router| {
+            format!(
+                "{} · {} 台客户端",
+                router.lan_address.as_deref().unwrap_or(MISSING),
+                router.ap_client_count.unwrap_or(0)
+            )
+        },
+    );
+    let proxy_detail = proxy.map_or_else(
+        || "代理状态不可用".to_owned(),
+        |proxy| {
+            format!(
+                "{} · {}",
+                proxy_mode_label(proxy.mode),
+                proxy_state_label(proxy.state)
+            )
+        },
+    );
+
+    html! {
+        <section class={TOPOLOGY} aria-labelledby="topology-title">
+            <div class={SECTION_HEAD_CENTERED}>
+                <div><p class={EYEBROW}>{"PATH"}</p><h2 id="topology-title" class={SECTION_TITLE}>{"网络拓扑"}</h2></div>
+                <span class={SECTION_META}>{"从上游连接到管理 LAN 的实时路径"}</span>
+            </div>
+            <div class={TOPOLOGY_FLOW}>
+                {topology_node("WAN", "互联网", router.and_then(|value| value.sta_address.clone()).unwrap_or_else(|| "等待 WAN 地址".to_owned()), internet_tone)}
+                {topology_link(internet_tone)}
+                {topology_node("STA", "上游 Wi-Fi", sta_detail, component_tone(&snapshot.router))}
+                {topology_link(component_tone(&snapshot.router))}
+                {topology_node("RTR", "Router / NAT", router_detail, component_tone(&snapshot.router))}
+                {topology_link(component_tone(&snapshot.router))}
+                {topology_node("LAN", "AP / LAN", ap_detail, component_tone(&snapshot.router))}
+            </div>
+            <div class={TOPOLOGY_PROXY_ROW}>
+                <span class={TOPOLOGY_BRANCH} aria-hidden="true">{"↳"}</span>
+                {topology_node("TUN", "Mihomo / TUN", proxy_detail, component_tone(&snapshot.proxy))}
+            </div>
+        </section>
+    }
+}
+
+fn topology_node(icon: &'static str, title: &'static str, detail: String, tone: Tone) -> Html {
+    html! {
+        <article class={TOPOLOGY_NODE}>
+            <span class={classes!(TOPOLOGY_ICON, tone.class())} aria-hidden="true">{icon}</span>
+            <span class={TOPOLOGY_COPY}><strong class={TOPOLOGY_TITLE}>{title}</strong><small class={TOPOLOGY_DETAIL} title={detail.clone()}>{detail}</small></span>
+        </article>
+    }
+}
+
+fn topology_link(tone: Tone) -> Html {
+    html! { <span class={classes!(TOPOLOGY_LINK, tone.class())} aria-hidden="true">{"→"}</span> }
+}
+
+fn component_tone<T>(component: &Component<T>) -> Tone {
+    match component.state {
+        ComponentState::Available => Tone::Good,
+        ComponentState::Degraded => Tone::Warn,
+        ComponentState::Unavailable => Tone::Bad,
+    }
+}
+
+fn render_kpis(snapshot: &StatusSnapshot) -> Html {
+    let router = snapshot.router.data.as_ref();
+    let proxy = snapshot.proxy.data.as_ref();
+    let wan = router
+        .and_then(|value| value.sta_address.clone())
+        .unwrap_or_else(missing);
+    let sta = router.map_or_else(missing, |router| {
+        let ssid = router.sta_ssid.as_deref().unwrap_or(MISSING);
+        router.sta_signal_dbm.map_or_else(
+            || ssid.to_owned(),
+            |signal| format!("{ssid} · {signal} dBm"),
+        )
+    });
+    let proxy_mode = proxy
+        .map(|value| proxy_mode_label(value.mode).to_owned())
+        .unwrap_or_else(missing);
+    let clients = router
+        .and_then(|value| value.ap_client_count)
+        .map(|value| format!("{value} 台"))
+        .unwrap_or_else(missing);
+
+    html! {
+        <section class={KPI_GRID} aria-label="关键网络指标">
+            {kpi("WAN IPv4", wan, "上游地址")}
+            {kpi("上游 Wi-Fi", sta, "当前连接")}
+            {kpi("代理模式", proxy_mode, "Mihomo")}
+            {kpi("AP 客户端", clients, "下游设备")}
+        </section>
+    }
+}
+
+fn kpi(label: &'static str, value: String, meta: &'static str) -> Html {
+    html! {
+        <article class={KPI_CARD}>
+            <span class={KPI_LABEL}>{label}</span>
+            <strong class={KPI_VALUE} title={value.clone()}>{value}</strong>
+            <small class={KPI_META}>{meta}</small>
+        </article>
     }
 }
 
@@ -1527,7 +1809,7 @@ fn render_dashboard(snapshot: &StatusSnapshot) -> Html {
     }
 }
 
-fn render_control_panel(
+fn render_display_control(
     state: &UseReducerHandle<AppState>,
     brightness: UseStateHandle<u16>,
 ) -> Html {
@@ -1535,12 +1817,8 @@ fn render_control_panel(
         return Html::default();
     };
     let csrf = bootstrap.csrf_token.clone();
-    let busy = state.control_busy;
+    let busy = state.display_busy;
     let display = bootstrap.panel.display.data.as_ref();
-    let proxy_available = state
-        .snapshot
-        .as_ref()
-        .is_some_and(|snapshot| snapshot.proxy.data.is_some());
     let max_brightness = display.map_or(255, |display| display.max_brightness.max(1));
     let display_label = display.map_or_else(
         || "显示状态不可用".to_owned(),
@@ -1572,6 +1850,7 @@ fn render_control_panel(
         Callback::from(move |_| {
             dispatch_control(
                 state.clone(),
+                ControlArea::Display,
                 DISPLAY_ENDPOINT,
                 csrf.clone(),
                 DisplayRequest {
@@ -1588,6 +1867,7 @@ fn render_control_panel(
         Callback::from(move |_| {
             dispatch_control(
                 state.clone(),
+                ControlArea::Display,
                 DISPLAY_ENDPOINT,
                 csrf.clone(),
                 DisplayRequest {
@@ -1598,12 +1878,46 @@ fn render_control_panel(
             )
         })
     };
+
+    html! {
+        if display.is_some() {
+            <section class={SECTION} aria-labelledby="display-controls-title" aria-busy={busy.to_string()}>
+                <div class={SECTION_HEAD}>
+                    <div><p class={EYEBROW}>{"QUICK CONTROL"}</p><h2 id="display-controls-title" class={SECTION_TITLE}>{"设备快捷控制"}</h2></div>
+                    <span class={SECTION_META}>{"仅限管理 LAN · 同源令牌保护"}</span>
+                </div>
+                <div class={classes!(FEEDBACK, state.display_notice.is_none().then_some("invisible"))} role="status" aria-live="polite" aria-atomic="true">
+                    {state.display_notice.as_deref().unwrap_or("等待操作")}
+                </div>
+                <article class={INNER_CARD} aria-labelledby="display-control-title">
+                    <div class={CONTROL_TITLE}><h3 id="display-control-title" class={CONTROL_HEADING}>{"LCD 背光"}</h3><span class={CONTROL_META}>{display_label}</span></div>
+                    <label class={RANGE_LABEL} for="brightness"><span>{"点亮亮度"}</span><strong>{*brightness}</strong></label>
+                    <input class={RANGE} id="brightness" type="range" min="1" max={max_brightness.to_string()} value={(*brightness).min(max_brightness).to_string()} oninput={on_brightness} disabled={busy} />
+                    <div class={BUTTON_ROW}><button class={BUTTON_PRIMARY} type="button" onclick={display_on} disabled={busy}>{"点亮"}</button><button class={BUTTON} type="button" onclick={display_off} disabled={busy}>{"黑屏"}</button></div>
+                    <small class={HELP_TEXT}>{"黑屏会将 PWM 亮度设为 0；面板 5V 是共享电源，无法单独物理断开。"}</small>
+                </article>
+            </section>
+        }
+    }
+}
+
+fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
+    let Some(bootstrap) = state.panel.as_ref() else {
+        return Html::default();
+    };
+    let csrf = bootstrap.csrf_token.clone();
+    let busy = state.proxy_busy;
+    let proxy_status = state
+        .snapshot
+        .as_ref()
+        .and_then(|snapshot| snapshot.proxy.data.as_ref());
     let proxy_mode_button = |mode: ProxyMode, message: &'static str| {
         let state = state.clone();
         let csrf = csrf.clone();
         Callback::from(move |_| {
             dispatch_control(
                 state.clone(),
+                ControlArea::Proxy,
                 PROXY_MODE_ENDPOINT,
                 csrf.clone(),
                 ProxyModeRequest { mode },
@@ -1613,36 +1927,32 @@ fn render_control_panel(
     };
 
     html! {
-        <section class={SECTION} aria-labelledby="controls-title" aria-busy={busy.to_string()}>
+        <section class={classes!(SECTION, "gap-6")} aria-labelledby="proxy-controls-title" aria-busy={busy.to_string()}>
             <div class={SECTION_HEAD}>
-                <div><p class={EYEBROW}>{"CONTROL"}</p><h2 id="controls-title" class={SECTION_TITLE}>{"设备与代理控制"}</h2></div>
-                <span class={SECTION_META}>{"仅限管理 LAN · 同源令牌保护"}</span>
+                <div><p class={EYEBROW}>{"PROXY"}</p><h2 id="proxy-controls-title" class={SECTION_TITLE}>{"代理路径与节点"}</h2></div>
+                <span class={SECTION_META}>{"模式切换按 fail-open 顺序收敛"}</span>
             </div>
-            <div class={classes!(FEEDBACK, state.control_notice.is_none().then_some("invisible"))} role="status" aria-live="polite" aria-atomic="true">
-                {state.control_notice.as_deref().unwrap_or("等待操作")}
+            <div class={classes!(FEEDBACK, state.proxy_notice.is_none().then_some("invisible"))} role="status" aria-live="polite" aria-atomic="true">
+                {state.proxy_notice.as_deref().unwrap_or("等待操作")}
             </div>
-            <div class={CONTROL_GRID}>
-                if display.is_some() {
-                    <article class={INNER_CARD} aria-labelledby="display-control-title">
-                        <div class={CONTROL_TITLE}><h3 id="display-control-title" class={CONTROL_HEADING}>{"LCD 背光"}</h3><span class={CONTROL_META}>{display_label}</span></div>
-                        <label class={RANGE_LABEL} for="brightness"><span>{"点亮亮度"}</span><strong>{*brightness}</strong></label>
-                        <input class={RANGE} id="brightness" type="range" min="1" max={max_brightness.to_string()} value={(*brightness).min(max_brightness).to_string()} oninput={on_brightness} disabled={busy} />
-                        <div class={BUTTON_ROW}><button class={BUTTON_PRIMARY} type="button" onclick={display_on} disabled={busy}>{"点亮"}</button><button class={BUTTON} type="button" onclick={display_off} disabled={busy}>{"黑屏"}</button></div>
-                        <small class={HELP_TEXT}>{"黑屏会将 PWM 亮度设为 0；面板 5V 是共享电源，无法单独物理断开。"}</small>
-                    </article>
-                }
-                if proxy_available {
-                    <article class={INNER_CARD} aria-labelledby="proxy-mode-title">
-                        <div class={CONTROL_TITLE}><h3 id="proxy-mode-title" class={CONTROL_HEADING}>{"Mihomo 模式"}</h3><span class={CONTROL_META}>{"切换时按 fail-open 顺序收敛"}</span></div>
-                        <div class={BUTTON_ROW} role="group" aria-label="Mihomo 运行模式">
-                            <button class={BUTTON} type="button" onclick={proxy_mode_button(ProxyMode::Tun, "已切换到 TUN 模式")} disabled={busy}>{"TUN"}</button>
-                            <button class={BUTTON} type="button" onclick={proxy_mode_button(ProxyMode::Explicit, "已切换到显式代理")} disabled={busy}>{"显式代理"}</button>
-                            <button class={BUTTON} type="button" onclick={proxy_mode_button(ProxyMode::Disabled, "Mihomo 已停用")} disabled={busy}>{"停用"}</button>
-                        </div>
-                        <small class={HELP_TEXT}>{"停用代理不会删除订阅配置；普通 NAT 在路由启用时保持可用。"}</small>
-                    </article>
-                }
-            </div>
+            if let Some(proxy) = proxy_status {
+                <div class={PROXY_SUMMARY} aria-label="代理状态概览">
+                    <article class={PROXY_STAT}><span class={PROXY_STAT_LABEL}>{"当前状态"}</span><strong class={PROXY_STAT_VALUE}>{proxy_state_label(proxy.state)}</strong></article>
+                    <article class={PROXY_STAT}><span class={PROXY_STAT_LABEL}>{"运行模式"}</span><strong class={PROXY_STAT_VALUE}>{proxy_mode_label(proxy.mode)}</strong></article>
+                    <article class={PROXY_STAT}><span class={PROXY_STAT_LABEL}>{"配置状态"}</span><strong class={PROXY_STAT_VALUE}>{proxy.configured.map(|configured| if configured { "已就绪" } else { "未配置" }).unwrap_or(MISSING)}</strong></article>
+                </div>
+                <article class={INNER_CARD} aria-labelledby="proxy-mode-title">
+                    <div class={CONTROL_TITLE}><h3 id="proxy-mode-title" class={CONTROL_HEADING}>{"Mihomo 模式"}</h3><span class={CONTROL_META}>{"停用后保留订阅配置"}</span></div>
+                    <div class={BUTTON_ROW} role="group" aria-label="Mihomo 运行模式">
+                        <button class={BUTTON} type="button" onclick={proxy_mode_button(ProxyMode::Tun, "已切换到 TUN 模式")} disabled={busy}>{"TUN"}</button>
+                        <button class={BUTTON} type="button" onclick={proxy_mode_button(ProxyMode::Explicit, "已切换到显式代理")} disabled={busy}>{"显式代理"}</button>
+                        <button class={BUTTON} type="button" onclick={proxy_mode_button(ProxyMode::Disabled, "Mihomo 已停用")} disabled={busy}>{"停用"}</button>
+                    </div>
+                    <small class={HELP_TEXT}>{"普通 NAT 在路由启用时保持可用；浏览器不能直连 Mihomo controller。"}</small>
+                </article>
+            } else {
+                <div class={SETTINGS_EMPTY} role="status">{"代理状态暂不可用"}</div>
+            }
             <div class={PROXY_GROUPS}>
                 {render_proxy_groups(&bootstrap.panel.proxy_groups, state, &csrf, busy)}
             </div>
@@ -1681,6 +1991,7 @@ fn render_proxy_groups(
                     let select: HtmlSelectElement = event.target_unchecked_into();
                     dispatch_control(
                         selection_state.clone(),
+                        ControlArea::Proxy,
                         PROXY_SELECTION_ENDPOINT,
                         selection_csrf.clone(),
                         ProxySelectionRequest { group: group_name.clone(), proxy: select.value() },

@@ -203,9 +203,9 @@ HTTP 默认绑定 `192.168.8.1:8080`；`HYZ_ROUTER_HTTP_PORT` 可覆盖端口，
 
 响应继续带 CSP、frame deny、nosniff、referrer、permissions、COOP/CORP 等安全头。Trunk 生成的 inline module bootstrap 会在 deterministic bundle 阶段被严格提取成同源 `/router-bootstrap.js`，因此不需要 nonce 或 `'unsafe-inline'`。Yew 启动需要浏览器编译同源 WASM，所以 `script-src` 精确允许 `'self' 'wasm-unsafe-eval'`；后者只开放 WebAssembly 编译，不开放普通 JavaScript `eval`。
 
-Yew 页面显示系统、WAN、LAN/AP、转发/NAT、Mihomo/TUN、`wlan0` WAN 累计流量、LCD 背光、实际使用的代理组、当前节点、逐项延迟/超时和从节点名称保守推断的国家/地区。Mihomo 内置但在当前 rule 模式不承载流量的 `GLOBAL` 组被过滤；没有数据的状态卡、控制卡和代理区域直接隐藏，不显示“不可用”占位。页面首次进入或浏览器完整刷新时只触发一次受限组级全量测速，约两秒的状态轮询不会测速；手动按钮可再次刷新，五秒内重复请求返回缓存成功结果而不是 409。组级测速覆盖 inline proxies；响应直接合并到每个显示项，缺失项标记为超时，并在节点目录不变时由 daemon 进程内缓存保留最近结果。provider history 仍只作为初始数据来源，且只合并经过名称、数量和字段白名单校验的 `delay`/`alive`，浏览器不能指定 provider、代理组、测试 URL 或 timeout。代理节点、组名和地区属于 LAN-visible operational metadata；API 不返回 server/port、订阅 URL、密码、UUID、controller secret、原始 history 或 Mihomo JSON。写操作期间控件禁用，状态失败时保留最近成功快照。
+Yew 页面采用 `总览 / 代理 / 网络设置` 三个页内 tab；总览以实时链路拓扑和四项关键指标优先呈现 WAN、STA、Router/NAT、AP/LAN 与 Mihomo/TUN 的关系，再显示系统、WAN、LAN/AP、转发/NAT、Mihomo/TUN、`wlan0` WAN 累计流量、LCD 背光、实际使用的代理组、当前节点、逐项延迟/超时和从节点名称保守推断的国家/地区。Mihomo 内置但在当前 rule 模式不承载流量的 `GLOBAL` 组被过滤；没有数据的状态卡、控制卡和代理区域直接隐藏，不显示“不可用”占位。页面首次进入或浏览器完整刷新时只触发一次受限组级全量测速，约两秒的状态轮询不会测速；手动按钮可再次刷新，五秒内重复请求返回缓存成功结果而不是 409。组级测速覆盖 inline proxies；响应直接合并到每个显示项，缺失项标记为超时，并在节点目录不变时由 daemon 进程内缓存保留最近结果。provider history 仍只作为初始数据来源，且只合并经过名称、数量和字段白名单校验的 `delay`/`alive`，浏览器不能指定 provider、代理组、测试 URL 或 timeout。代理节点、组名和地区属于 LAN-visible operational metadata；API 不返回 server/port、订阅 URL、密码、UUID、controller secret、原始 history 或 Mihomo JSON。写操作期间控件禁用，状态失败时保留最近成功快照。
 
-设置区在未登录时只显示默认折叠的管理员登录摘要，按需展开登录表单；登录后提供 STA 扫描/手工切换、AP SSID/密码/国家码和 write-only Mihomo 订阅来源。AP/STA 面板默认折叠，按需展开；STA 或 AP 应用先在管理设置区显示内嵌风险确认 panel，不使用模态弹窗或页面遮罩。确认后先移除确认 panel 并折叠详情，等待浏览器完成渲染后才发送可能中断管理连接的请求。typed Wi-Fi 配置使用 PBKDF2 派生的 64-hex PSK和固定 renderer，不拼接 raw 配置。STA 只有在关联、DHCP metric-600 route 与同信道 AP readiness 都确认后才提交，失败恢复 committed generation；当前 renderer 只支持 2.4 GHz 并发，5 GHz 候选会 fail-closed。AP 采用 prepare → apply → 重新连接 → confirm，两分钟未确认则恢复旧 AP，daemon 重启发现 pending 也恢复 committed 配置。订阅只接受 HTTPS 公网目标，关闭 redirect/环境代理，使用固定 `clash.meta` User-Agent 请求 YAML，连接前校验并 pin 全部 DNS 结果；响应受 4 MiB 上限约束，必须包含唯一顶层 `proxies`，其他 Clash 配置字段会被丢弃，只有经过严格限制的节点数组进入本地候选。Mihomo 候选验证和 live readiness 成功后才切 current generation。GET 只显示是否配置与通用状态，不返回来源、host、代次或节点数。
+网络设置页签在未登录时只显示默认折叠的管理员登录摘要，按需展开登录表单；登录后提供 STA 扫描/手工切换、AP SSID/密码/国家码和 write-only Mihomo 订阅来源。AP/STA 面板默认折叠，按需展开；STA 或 AP 应用先在管理设置区显示内嵌风险确认 panel，不使用模态弹窗或页面遮罩。确认后先移除确认 panel 并折叠详情，等待浏览器完成渲染后才发送可能中断管理连接的请求。typed Wi-Fi 配置使用 PBKDF2 派生的 64-hex PSK和固定 renderer，不拼接 raw 配置。STA 只有在关联、DHCP metric-600 route 与同信道 AP readiness 都确认后才提交，失败恢复 committed generation；当前 renderer 只支持 2.4 GHz 并发，5 GHz 候选会 fail-closed。AP 采用 prepare → apply → 重新连接 → confirm，两分钟未确认则恢复旧 AP，daemon 重启发现 pending 也恢复 committed 配置。订阅只接受 HTTPS 公网目标，关闭 redirect/环境代理，使用固定 `clash.meta` User-Agent 请求 YAML，连接前校验并 pin 全部 DNS 结果；响应受 4 MiB 上限约束，必须包含唯一顶层 `proxies`，其他 Clash 配置字段会被丢弃，只有经过严格限制的节点数组进入本地候选。Mihomo 候选验证和 live readiness 成功后才切 current generation。GET 只显示是否配置与通用状态，不返回来源、host、代次或节点数。
 
 LCD 的 DTS `default-brightness-level = <0>` 让 U-Boot/Linux 冷启动默认保持零 PWM，但 panel/DSI 仍注册，因此 Web 可以点亮。黑屏操作把 brightness 设为 0 并 powerdown；面板连接的是共享 always-on `vcc5v0_sys`，软件不能让 LCD 连接器 5V 物理归零。
 
@@ -268,7 +268,7 @@ Host 与板端 parity 已完成：统一包唯一的 `Cargo.lock`、native 测�
 - partial degraded aggregation 与并发状态读取合并；
 - real random-port Axum/security/fallback；
 - 非默认 `e2e` feature 的 loopback-only Axum harness：真实 HTTP/CSP/CSRF/Origin/管理员应用，状态、面板、Wi-Fi 与订阅通过 application ports/typed `ControlHandler` fake 注入，不构造生产 outbound adapter；
-- Playwright Chromium 浏览器流程：匿名状态与控制、bootstrap 强制改密、STA/AP 事务及内嵌非模态风险确认 panel、write-only 订阅、可访问性与窄屏无横向溢出；
+- Playwright Chromium 浏览器流程：总览/代理/网络设置页签导航、链路拓扑和关键指标、匿名状态与控制、bootstrap 强制改密、STA/AP 事务及内嵌非模态风险确认 panel、write-only 订阅、可访问性与窄屏无横向溢出；
 - Tailwind CSS 4 + daisyUI 5 `dracula` 默认主题的 locked npm 静态 CSS 生成，以及 deterministic bundle 的 CSP-compatible external bootstrap；
 - Yew formatting/state 与单一 WAN 流量口径；
 - network/proxy action order、rollback、unknown non-readiness；
