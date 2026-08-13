@@ -13,7 +13,7 @@ pub const OVERALL_META: &str = "text-xs text-base-content/65";
 pub const STATUS_DOT: &str = "size-2 shrink-0 rounded-full bg-current";
 pub const STATUS_DOT_SMALL: &str = "size-1.5 shrink-0 rounded-full bg-current";
 
-pub const WORKSPACE_TABS: &str = "tabs tabs-box sticky top-2 z-20 mt-3 grid grid-cols-3 overflow-x-auto border border-base-content/10 bg-base-200/90 p-1 shadow-lg shadow-black/10 backdrop-blur";
+pub const WORKSPACE_TABS: &str = "tabs tabs-box sticky top-2 z-20 mt-3 grid grid-cols-2 overflow-x-auto border border-base-content/10 bg-base-200/90 p-1 shadow-lg shadow-black/10 backdrop-blur";
 pub const WORKSPACE_TAB: &str = "tab h-10 min-w-24 rounded-field text-xs font-bold sm:text-sm";
 pub const WORKSPACE_TAB_ACTIVE: &str = "tab-active bg-primary text-primary-content";
 pub const WORKSPACE_PANEL: &str = "min-w-0 outline-none";
@@ -62,11 +62,6 @@ pub const SECTION_TITLE: &str = "text-xl font-black tracking-tight";
 pub const SECTION_META: &str = "text-xs text-base-content/65";
 pub const FEEDBACK: &str =
     "alert min-h-12 border border-base-content/10 bg-base-100/50 text-xs text-base-content/70";
-pub const PROXY_SUMMARY: &str = "grid grid-cols-1 gap-4 sm:grid-cols-3";
-pub const PROXY_STAT: &str =
-    "grid min-h-28 content-center gap-2 rounded-box border border-base-content/10 bg-base-100/50 p-5 shadow-sm";
-pub const PROXY_STAT_LABEL: &str = "text-xs font-semibold tracking-wide text-base-content/65";
-pub const PROXY_STAT_VALUE: &str = "font-mono text-2xl font-black tracking-tight text-base-content";
 pub const INNER_CARD: &str =
     "card min-w-0 gap-4 border border-base-content/10 bg-base-100/60 p-4 shadow-sm sm:p-5";
 pub const CONTROL_TITLE: &str =

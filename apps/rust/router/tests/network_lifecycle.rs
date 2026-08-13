@@ -3,7 +3,7 @@
 use hyz_router::{
     application::{
         ports::{ClockPort, LifecycleLease, PlatformError, RouterPlatformPort, SystemProbePort},
-        reconcile::{forwarding_plan, network_plan, proxy_plan},
+        reconcile::{forwarding_plan, management_plan, network_plan, proxy_plan},
         router::RouterApplication,
     },
     domain::{
@@ -177,6 +177,48 @@ fn disabled_readiness_requires_forwarding_false_and_firewall_absent() {
     )
     .ready_for(&desired));
     assert!(network(false, OwnedResource::Absent).ready_for(&desired));
+}
+
+#[test]
+fn foreign_bridge_is_neither_ready_nor_mutated() {
+    let mut observed = network(false, OwnedResource::Absent);
+    observed.bridge = Probe::Known(OwnedResource::Foreign);
+
+    assert!(!observed.management_ready());
+    assert!(matches!(
+        management_plan(&observed, "new"),
+        Err(PlatformError::Conflict(_))
+    ));
+}
+
+#[test]
+fn foreign_firewall_is_neither_ready_nor_removed() {
+    let observed = network(false, OwnedResource::Foreign);
+
+    assert!(!observed.ready_for(&NetworkDesired::management_only()));
+    assert!(matches!(
+        forwarding_plan(&NetworkDesired::management_only(), &observed, "new"),
+        Err(PlatformError::Conflict(_))
+    ));
+}
+
+#[test]
+fn stale_or_unknown_route_and_ownership_cannot_enable_forwarding() {
+    let mut unknown_route = network(false, OwnedResource::Absent);
+    unknown_route.wan_default_route_present = Probe::Unknown("stale route record".to_owned());
+    assert!(!unknown_route.ready_for(&NetworkDesired::forwarding()));
+    assert!(matches!(
+        forwarding_plan(&NetworkDesired::forwarding(), &unknown_route, "new"),
+        Err(PlatformError::UnsafeToCutOver(_))
+    ));
+
+    let mut unknown_firewall = network(true, OwnedResource::Absent);
+    unknown_firewall.router_firewall = Probe::Unknown("stale firewall marker".to_owned());
+    assert!(!unknown_firewall.ready_for(&NetworkDesired::forwarding()));
+    assert!(matches!(
+        forwarding_plan(&NetworkDesired::forwarding(), &unknown_firewall, "new"),
+        Err(PlatformError::ProbeFailed(_))
+    ));
 }
 
 #[test]
@@ -375,6 +417,46 @@ fn fake_port_disables_forwarding_before_removing_firewall() {
         ]
     );
     assert_eq!(*fake.releases.lock().expect("releases"), 1);
+}
+
+#[test]
+fn repeated_recovery_reconcile_does_not_accumulate_resources_or_actions() {
+    let dirty = network(
+        true,
+        OwnedResource::Owned {
+            token: "router-old".to_owned(),
+        },
+    );
+    let clean = network(false, OwnedResource::Absent);
+    let fake = Fake::with_observations(vec![
+        dirty.clone(),
+        dirty,
+        clean.clone(),
+        clean.clone(),
+        clean.clone(),
+        clean,
+    ]);
+    let application = RouterApplication::new(&fake, &fake, &fake);
+
+    let recovered = application
+        .reconcile(&NetworkDesired::management_only())
+        .expect("first recovery reconcile");
+    let stable = application
+        .reconcile(&NetworkDesired::management_only())
+        .expect("idempotent recovery reconcile");
+
+    assert_eq!(recovered.actions_applied, 2);
+    assert_eq!(stable.actions_applied, 0);
+    assert_eq!(
+        *fake.actions.lock().expect("actions"),
+        vec![
+            NetworkAction::DisableIpv4Forwarding,
+            NetworkAction::RemoveRouterFirewall {
+                token: "router-old".to_owned(),
+            },
+        ]
+    );
+    assert_eq!(*fake.releases.lock().expect("releases"), 2);
 }
 
 #[test]

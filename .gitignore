@@ -2,6 +2,7 @@
 sdk/
 output/
 .tools/
+artifacts/
 
 # Application build products
 apps/rust/**/target/

@@ -301,6 +301,25 @@ mod tests {
     }
 
     #[test]
+    fn default_proxy_entries_may_persist_a_stable_display_label() {
+        let config = DevicePolicyConfigV1::new(
+            1,
+            vec![DevicePolicyEntry {
+                mac: "02:00:00:00:00:01".parse().unwrap(),
+                label: LanDeviceLabel::new("我的 iPhone").unwrap(),
+                policy: DeviceRoutePolicy::Proxy,
+            }],
+        )
+        .unwrap();
+        assert_eq!(config.entries[0].label.as_str(), "我的 iPhone");
+        assert_eq!(
+            config.policy_for("02:00:00:00:00:01".parse().unwrap()),
+            DeviceRoutePolicy::Proxy
+        );
+        assert!(config.direct_macs().is_empty());
+    }
+
+    #[test]
     fn json_rejects_unknown_fields_bad_version_and_noncanonical_order() {
         assert!(serde_json::from_str::<DevicePolicyConfigV1>(
             r#"{"version":2,"generation":0,"entries":[]}"#

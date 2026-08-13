@@ -403,7 +403,7 @@ impl Reducible for AppState {
                         if let Some(bootstrap) = &mut next.panel {
                             bootstrap.panel.proxy_groups = Component::available(groups);
                         }
-                        next.proxy_notice = Some("节点延迟已更新".to_owned());
+                        next.proxy_notice = None;
                     }
                     Err(error) => {
                         next.proxy_notice = Some(format!("测速失败：{error}"));
@@ -519,7 +519,6 @@ impl Tone {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum WorkspaceView {
     Overview,
-    Proxy,
     Network,
 }
 
@@ -527,7 +526,6 @@ impl WorkspaceView {
     const fn tab_id(self) -> &'static str {
         match self {
             Self::Overview => "overview-tab",
-            Self::Proxy => "proxy-tab",
             Self::Network => "network-tab",
         }
     }
@@ -535,7 +533,6 @@ impl WorkspaceView {
     const fn panel_id(self) -> &'static str {
         match self {
             Self::Overview => "overview-panel",
-            Self::Proxy => "proxy-panel",
             Self::Network => "network-panel",
         }
     }
@@ -543,7 +540,6 @@ impl WorkspaceView {
     const fn label(self) -> &'static str {
         match self {
             Self::Overview => "总览",
-            Self::Proxy => "代理",
             Self::Network => "网络设置",
         }
     }
@@ -626,10 +622,6 @@ fn app() -> Html {
         let active_view = active_view.clone();
         Callback::from(move |_| active_view.set(WorkspaceView::Overview))
     };
-    let select_proxy = {
-        let active_view = active_view.clone();
-        Callback::from(move |_| active_view.set(WorkspaceView::Proxy))
-    };
     let select_network = {
         let active_view = active_view.clone();
         Callback::from(move |_| active_view.set(WorkspaceView::Network))
@@ -658,7 +650,6 @@ fn app() -> Html {
             {render_notice(&state)}
             <nav class={WORKSPACE_TABS} aria-label="管理视图">
                 <button id={WorkspaceView::Overview.tab_id()} class={classes!(WORKSPACE_TAB, (active == WorkspaceView::Overview).then_some(WORKSPACE_TAB_ACTIVE))} type="button" aria-pressed={(active == WorkspaceView::Overview).to_string()} aria-controls={WorkspaceView::Overview.panel_id()} onclick={select_overview}>{WorkspaceView::Overview.label()}</button>
-                <button id={WorkspaceView::Proxy.tab_id()} class={classes!(WORKSPACE_TAB, (active == WorkspaceView::Proxy).then_some(WORKSPACE_TAB_ACTIVE))} type="button" aria-pressed={(active == WorkspaceView::Proxy).to_string()} aria-controls={WorkspaceView::Proxy.panel_id()} onclick={select_proxy}>{WorkspaceView::Proxy.label()}</button>
                 <button id={WorkspaceView::Network.tab_id()} class={classes!(WORKSPACE_TAB, (active == WorkspaceView::Network).then_some(WORKSPACE_TAB_ACTIVE))} type="button" aria-pressed={(active == WorkspaceView::Network).to_string()} aria-controls={WorkspaceView::Network.panel_id()} onclick={select_network}>{WorkspaceView::Network.label()}</button>
             </nav>
             <section id={WorkspaceView::Overview.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={WorkspaceView::Overview.tab_id()} hidden={active != WorkspaceView::Overview}>
@@ -671,6 +662,9 @@ fn app() -> Html {
                         <span class={SECTION_META}>{"保留最近一次成功快照"}</span>
                     </div>
                     {render_dashboard(snapshot)}
+                    if let Some(panel) = &state.panel {
+                        {render_proxy_groups_read_only(&panel.panel.proxy_groups)}
+                    }
                 } else if state.loading {
                     <section class={LOADING_GRID} aria-labelledby="loading-title" aria-busy="true">
                         <h2 id="loading-title" class="sr-only">{"正在加载路由器状态"}</h2>
@@ -684,9 +678,6 @@ fn app() -> Html {
                     </section>
                 }
                 {render_display_control(&state, brightness.clone())}
-            </section>
-            <section id={WorkspaceView::Proxy.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={WorkspaceView::Proxy.tab_id()} hidden={active != WorkspaceView::Proxy}>
-                {render_proxy_control(&state)}
             </section>
             <section id={WorkspaceView::Network.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={WorkspaceView::Network.tab_id()} hidden={active != WorkspaceView::Network}>
                 <Settings state={state.clone()} />
@@ -1417,7 +1408,9 @@ fn settings(props: &SettingsProps) -> Html {
                     </form>
                 </div>
             } else {
-                <div class={SETTINGS_GRID}>
+                <>
+                    {render_proxy_control(state)}
+                    <div class={SETTINGS_GRID}>
                     <article class={DISCLOSURE}>
                         <button id="sta-settings-toggle" ref={sta_toggle} class={DISCLOSURE_TOGGLE} type="button" onclick={toggle_sta} aria-expanded={sta_expanded.to_string()} aria-controls="sta-settings-detail">
                             <span class={DISCLOSURE_COPY}><strong class={DISCLOSURE_TITLE}>{"上游 Wi-Fi (STA)"}</strong><small class={DISCLOSURE_SUMMARY}>{sta_summary}</small></span>
@@ -1473,7 +1466,8 @@ fn settings(props: &SettingsProps) -> Html {
                             <div class={FORM_ACTIONS}><button class={BUTTON_PRIMARY} type="submit" disabled={busy}>{"保存并立即更新"}</button><button class={BUTTON} type="button" onclick={refresh_subscription} disabled={busy || !state.subscription.as_ref().is_some_and(|value| value.configured)}>{"手动刷新"}</button></div>
                         </form>
                     </article>
-                </div>
+                    </div>
+                </>
             }
         </section>
     }
@@ -1543,7 +1537,7 @@ fn device_policies(props: &DevicePoliciesProps) -> Html {
                 return;
             };
             let mut next = entries.clone();
-            next.retain(|entry| entry.mac.to_ascii_lowercase() != mac.value().to_ascii_lowercase());
+            next.retain(|entry| !entry.mac.eq_ignore_ascii_case(&mac.value()));
             next.push(DevicePolicyEntryDto {
                 mac: mac.value(),
                 label: label.value(),
@@ -1561,52 +1555,16 @@ fn device_policies(props: &DevicePoliciesProps) -> Html {
             if !snapshot.effective {
                 <div class={RISK_NOTE} role="note">{"策略已保存但当前透明代理未启用；仅在全局 TUN 模式生效。"}</div>
             }
-            <p class={HELP_TEXT}>{"未配置设备默认使用代理。手机私有/随机 MAC 改变后会被识别为新设备；MAC 是家庭 LAN 标识，不是强认证。"}</p>
+            <p class={HELP_TEXT}>{"未配置设备默认使用代理。可为每个 MAC 保存稳定显示名；手机私有/随机 MAC 改变后仍会被识别为新设备。MAC 是家庭 LAN 标识，不是强认证。"}</p>
             <div class="grid gap-3">
-                {for snapshot.clients.iter().map(|client| {
-                    let state = props.state.clone();
-                    let csrf = props.csrf.clone();
-                    let mac = client.mac.clone();
-                    let entries = configured.clone();
-                    let label = configured.iter().find(|entry| entry.mac == client.mac)
-                        .map(|entry| entry.label.clone())
-                        .or_else(|| client.hostname.clone())
-                        .unwrap_or_default();
-                    let is_configured = configured.iter().any(|entry| entry.mac == client.mac);
-                    let policy_label = label.clone();
-                    let policy_mac = mac.clone();
-                    let policy_entries = entries.clone();
-                    let policy_state = state.clone();
-                    let policy_csrf = csrf.clone();
-                    let onchange = Callback::from(move |event: Event| {
-                        let select: HtmlSelectElement = event.target_unchecked_into();
-                        let policy = if select.value() == "direct" { DevicePolicyDto::Direct } else { DevicePolicyDto::Proxy };
-                        let mut next = policy_entries.clone();
-                        next.retain(|entry| entry.mac != policy_mac);
-                        if policy == DevicePolicyDto::Direct {
-                            next.push(DevicePolicyEntryDto { mac: policy_mac.clone(), label: policy_label.clone(), policy });
-                        }
-                        dispatch_device_policy_update(policy_state.clone(), policy_csrf.clone(), generation, next);
-                    });
-                    let remove = Callback::from(move |_| {
-                        let mut next = entries.clone();
-                        next.retain(|entry| entry.mac != mac);
-                        dispatch_device_policy_update(state.clone(), csrf.clone(), generation, next);
-                    });
-                    html! {
-                        <div class="grid min-w-0 gap-2 rounded-box border border-base-content/10 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                            <div class="min-w-0"><strong class="block truncate">{if label.is_empty() { client.mac.clone() } else { label.clone() }}</strong><small class="block truncate font-mono text-base-content/65">{format!("{} · {} · {}", client.mac, client.lease_address.as_deref().unwrap_or("无租约 IP"), if client.associated { "在线" } else { "离线" })}</small></div>
-                            <div class="flex min-w-0 flex-wrap gap-2">
-                                <select class={SELECT} aria-label={format!("{} 代理策略", client.mac)} onchange={onchange} disabled={props.state.settings_busy}>
-                                    <option value="proxy" selected={client.policy == DevicePolicyDto::Proxy}>{"代理"}</option>
-                                    <option value="direct" selected={client.policy == DevicePolicyDto::Direct}>{"直连"}</option>
-                                </select>
-                                if is_configured {
-                                    <button class={BUTTON_GHOST} type="button" onclick={remove} disabled={props.state.settings_busy} aria-label={format!("移除 {} 的设备策略", client.mac)}>{"移除配置"}</button>
-                                }
-                            </div>
-                        </div>
-                    }
+                {for snapshot.clients.iter().cloned().map(|client| html! {
+                    <DevicePolicyRow
+                        state={props.state.clone()}
+                        csrf={props.csrf.clone()}
+                        generation={generation}
+                        configured={configured.clone()}
+                        client={client}
+                    />
                 })}
             </div>
             <form class={FORM_GRID_COMPACT} onsubmit={add} autocomplete="off">
@@ -1614,6 +1572,141 @@ fn device_policies(props: &DevicePoliciesProps) -> Html {
                 <label class={FIELD}><span class={FIELD_LABEL}>{"显示名"}</span><input class={INPUT} ref={manual_label} maxlength="32" /></label>
                 <div class={FORM_ACTIONS}><button class={BUTTON_PRIMARY} type="submit" disabled={props.state.settings_busy}>{"添加或更新为代理"}</button></div>
             </form>
+        </article>
+    }
+}
+
+#[derive(Properties, PartialEq)]
+struct DevicePolicyRowProps {
+    state: UseReducerHandle<AppState>,
+    csrf: String,
+    generation: u64,
+    configured: Vec<DevicePolicyEntryDto>,
+    client: LanClientDto,
+}
+
+#[function_component(DevicePolicyRow)]
+fn device_policy_row(props: &DevicePolicyRowProps) -> Html {
+    let persisted_label = props
+        .configured
+        .iter()
+        .find(|entry| entry.mac == props.client.mac)
+        .map(|entry| entry.label.clone())
+        .unwrap_or_default();
+    let initial_label = if persisted_label.is_empty() {
+        props.client.hostname.clone().unwrap_or_default()
+    } else {
+        persisted_label.clone()
+    };
+    let label = use_state(|| initial_label.clone());
+    {
+        let label = label.clone();
+        use_effect_with(initial_label, move |current| {
+            label.set(current.clone());
+            || ()
+        });
+    }
+
+    let on_label_input = {
+        let label = label.clone();
+        Callback::from(move |event: InputEvent| {
+            let input: HtmlInputElement = event.target_unchecked_into();
+            label.set(input.value());
+        })
+    };
+    let save_label = {
+        let state = props.state.clone();
+        let csrf = props.csrf.clone();
+        let mac = props.client.mac.clone();
+        let entries = props.configured.clone();
+        let label = label.clone();
+        let policy = props.client.policy;
+        let generation = props.generation;
+        Callback::from(move |_| {
+            let saved_label = label.trim().to_owned();
+            let mut next = entries.clone();
+            next.retain(|entry| entry.mac != mac);
+            if !saved_label.is_empty() || policy == DevicePolicyDto::Direct {
+                next.push(DevicePolicyEntryDto {
+                    mac: mac.clone(),
+                    label: saved_label,
+                    policy,
+                });
+            }
+            dispatch_device_policy_update(state.clone(), csrf.clone(), generation, next);
+        })
+    };
+    let change_policy = {
+        let state = props.state.clone();
+        let csrf = props.csrf.clone();
+        let mac = props.client.mac.clone();
+        let entries = props.configured.clone();
+        let label = label.clone();
+        let generation = props.generation;
+        Callback::from(move |event: Event| {
+            let select: HtmlSelectElement = event.target_unchecked_into();
+            let policy = if select.value() == "direct" {
+                DevicePolicyDto::Direct
+            } else {
+                DevicePolicyDto::Proxy
+            };
+            let saved_label = label.trim().to_owned();
+            let mut next = entries.clone();
+            next.retain(|entry| entry.mac != mac);
+            if policy == DevicePolicyDto::Direct || !saved_label.is_empty() {
+                next.push(DevicePolicyEntryDto {
+                    mac: mac.clone(),
+                    label: saved_label,
+                    policy,
+                });
+            }
+            dispatch_device_policy_update(state.clone(), csrf.clone(), generation, next);
+        })
+    };
+    let clear = {
+        let state = props.state.clone();
+        let csrf = props.csrf.clone();
+        let mac = props.client.mac.clone();
+        let entries = props.configured.clone();
+        let generation = props.generation;
+        Callback::from(move |_| {
+            let mut next = entries.clone();
+            next.retain(|entry| entry.mac != mac);
+            dispatch_device_policy_update(state.clone(), csrf.clone(), generation, next);
+        })
+    };
+    let is_configured = props
+        .configured
+        .iter()
+        .any(|entry| entry.mac == props.client.mac);
+    let display_name = if label.is_empty() {
+        props.client.mac.clone()
+    } else {
+        (*label).clone()
+    };
+
+    html! {
+        <article class="grid min-w-0 gap-3 rounded-box border border-base-content/10 p-3">
+            <div class="min-w-0">
+                <strong class="block truncate">{display_name}</strong>
+                <small class="block truncate font-mono text-base-content/65">{format!("{} · {} · {}", props.client.mac, props.client.lease_address.as_deref().unwrap_or("无租约 IP"), if props.client.associated { "在线" } else { "离线" })}</small>
+            </div>
+            <div class="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end">
+                <label class={FIELD}>
+                    <span class={FIELD_LABEL}>{"显示名"}</span>
+                    <input class={INPUT} value={(*label).clone()} oninput={on_label_input} maxlength="32" aria-label={format!("{} 显示名", props.client.mac)} />
+                </label>
+                <button class={BUTTON} type="button" onclick={save_label} disabled={props.state.settings_busy}>{"保存名称"}</button>
+                <select class={SELECT} aria-label={format!("{} 代理策略", props.client.mac)} onchange={change_policy} disabled={props.state.settings_busy}>
+                    <option value="proxy" selected={props.client.policy == DevicePolicyDto::Proxy}>{"代理"}</option>
+                    <option value="direct" selected={props.client.policy == DevicePolicyDto::Direct}>{"直连"}</option>
+                </select>
+            </div>
+            if is_configured {
+                <div class={FORM_ACTIONS}>
+                    <button class={BUTTON_GHOST} type="button" onclick={clear} disabled={props.state.settings_busy} aria-label={format!("清除 {} 的名称和设备策略", props.client.mac)}>{"清除名称和自定义策略"}</button>
+                </div>
+            }
         </article>
     }
 }
@@ -2129,10 +2222,6 @@ fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
     };
     let csrf = bootstrap.csrf_token.clone();
     let busy = state.proxy_busy;
-    let proxy_status = state
-        .snapshot
-        .as_ref()
-        .and_then(|snapshot| snapshot.proxy.data.as_ref());
     let proxy_mode_button = |mode: ProxyMode, message: &'static str| {
         let state = state.clone();
         let csrf = csrf.clone();
@@ -2154,29 +2243,65 @@ fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
                 <div><p class={EYEBROW}>{"PROXY"}</p><h2 id="proxy-controls-title" class={SECTION_TITLE}>{"代理路径与节点"}</h2></div>
                 <span class={SECTION_META}>{"模式切换按 fail-open 顺序收敛"}</span>
             </div>
-            <div class={classes!(FEEDBACK, state.proxy_notice.is_none().then_some("invisible"))} role="status" aria-live="polite" aria-atomic="true">
-                {state.proxy_notice.as_deref().unwrap_or("等待操作")}
-            </div>
-            if let Some(proxy) = proxy_status {
-                <div class={PROXY_SUMMARY} aria-label="代理状态概览">
-                    <article class={PROXY_STAT}><span class={PROXY_STAT_LABEL}>{"当前状态"}</span><strong class={PROXY_STAT_VALUE}>{proxy_state_label(proxy.state)}</strong></article>
-                    <article class={PROXY_STAT}><span class={PROXY_STAT_LABEL}>{"运行模式"}</span><strong class={PROXY_STAT_VALUE}>{proxy_mode_label(proxy.mode)}</strong></article>
-                    <article class={PROXY_STAT}><span class={PROXY_STAT_LABEL}>{"配置状态"}</span><strong class={PROXY_STAT_VALUE}>{proxy.configured.map(|configured| if configured { "已就绪" } else { "未配置" }).unwrap_or(MISSING)}</strong></article>
+            <article class={INNER_CARD} aria-labelledby="proxy-mode-title">
+                <div class={CONTROL_TITLE}><h3 id="proxy-mode-title" class={CONTROL_HEADING}>{"Mihomo 模式"}</h3><span class={CONTROL_META}>{"停用后保留订阅配置"}</span></div>
+                <div class={BUTTON_ROW} role="group" aria-label="Mihomo 运行模式">
+                    <button class={BUTTON} type="button" onclick={proxy_mode_button(ProxyMode::Tun, "已切换到 TUN 模式")} disabled={busy}>{"TUN"}</button>
+                    <button class={BUTTON} type="button" onclick={proxy_mode_button(ProxyMode::Explicit, "已切换到显式代理")} disabled={busy}>{"显式代理"}</button>
+                    <button class={BUTTON} type="button" onclick={proxy_mode_button(ProxyMode::Disabled, "Mihomo 已停用")} disabled={busy}>{"停用"}</button>
                 </div>
-                <article class={INNER_CARD} aria-labelledby="proxy-mode-title">
-                    <div class={CONTROL_TITLE}><h3 id="proxy-mode-title" class={CONTROL_HEADING}>{"Mihomo 模式"}</h3><span class={CONTROL_META}>{"停用后保留订阅配置"}</span></div>
-                    <div class={BUTTON_ROW} role="group" aria-label="Mihomo 运行模式">
-                        <button class={BUTTON} type="button" onclick={proxy_mode_button(ProxyMode::Tun, "已切换到 TUN 模式")} disabled={busy}>{"TUN"}</button>
-                        <button class={BUTTON} type="button" onclick={proxy_mode_button(ProxyMode::Explicit, "已切换到显式代理")} disabled={busy}>{"显式代理"}</button>
-                        <button class={BUTTON} type="button" onclick={proxy_mode_button(ProxyMode::Disabled, "Mihomo 已停用")} disabled={busy}>{"停用"}</button>
-                    </div>
-                    <small class={HELP_TEXT}>{"普通 NAT 在路由启用时保持可用；浏览器不能直连 Mihomo controller。"}</small>
-                </article>
-            } else {
-                <div class={SETTINGS_EMPTY} role="status">{"代理状态暂不可用"}</div>
-            }
+                <small class={HELP_TEXT}>{"普通 NAT 在路由启用时保持可用；浏览器不能直连 Mihomo controller。"}</small>
+            </article>
             <div class={PROXY_GROUPS}>
                 {render_proxy_groups(&bootstrap.panel.proxy_groups, state, &csrf, busy)}
+            </div>
+        </section>
+    }
+}
+
+fn render_proxy_groups_read_only(component: &Component<Vec<ProxyGroup>>) -> Html {
+    let Some(groups) = component.data.as_ref() else {
+        return Html::default();
+    };
+    if groups.is_empty() {
+        return Html::default();
+    }
+    html! {
+        <section class={SECTION} aria-labelledby="proxy-readonly-title">
+            <div class={SECTION_HEAD}>
+                <div><p class={EYEBROW}>{"PROXY STATUS"}</p><h2 id="proxy-readonly-title" class={SECTION_TITLE}>{"当前代理与延迟"}</h2></div>
+                <span class={SECTION_META}>{"只读 · 修改需管理员登录"}</span>
+            </div>
+            <div class={PROXY_GROUPS}>
+                {for groups.iter().map(|group| {
+                    let selected = group.selected.as_deref().unwrap_or(MISSING);
+                    html! {
+                        <article class={PROXY_GROUP} key={group.name.clone()}>
+                            <div class={PROXY_NAME_WRAP}>
+                                <div><h3 class={PROXY_NAME}>{&group.name}</h3><small class={HELP_TEXT}>{format!("当前选择 · {selected}")}</small></div>
+                                <span class={PROXY_KIND}>{group_kind_label(group)}</span>
+                            </div>
+                            <dl class={METRIC_LIST}>
+                                {for group.options.iter().map(|option| {
+                                    let state = option.delay_ms.map_or_else(
+                                        || if option.alive == Some(false) { "超时".to_owned() } else { "未测速".to_owned() },
+                                        |delay| format!("{delay} ms"),
+                                    );
+                                    let name = option.region.as_ref().map_or_else(
+                                        || option.name.clone(),
+                                        |region| format!("{} · {region}", option.name),
+                                    );
+                                    html! {
+                                        <div class={METRIC} key={option.name.clone()}>
+                                            <dt class={METRIC_LABEL}>{name}</dt>
+                                            <dd class={METRIC_VALUE}>{if group.selected.as_deref() == Some(option.name.as_str()) { format!("当前 · {state}") } else { state }}</dd>
+                                        </div>
+                                    }
+                                })}
+                            </dl>
+                        </article>
+                    }
+                })}
             </div>
         </section>
     }

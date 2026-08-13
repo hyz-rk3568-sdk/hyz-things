@@ -146,6 +146,14 @@
 | 管理 UI | `hyz-router` 内嵌 Yew 页面，不安装第三方 Dashboard |
 | 扩展方式 | 修改并发布本仓库代码，不提供插件或容器扩展平台 |
 
+Tailscale 模式术语固定如下：
+
+- **RouterOnly**：Tailscale 只到软路由本机，是安全基础和故障降级模式；不允许转发到 LAN 或 WAN。
+- **LanSubnetAccess**：Tailscale 可以经过软路由访问固定 `192.168.8.0/24`，是远程访问未安装 Tailscale 的 LAN 设备的最终使用模式。
+- **Exit Node**：远程客户端通过软路由访问互联网；本产品第一版明确不提供。
+
+RouterOnly ready 不代表 LAN subnet 已开放，LanSubnetAccess 也不代表软路由成为 Exit Node。详细设计见 [`soft-router-tailscale-plan.md`](soft-router-tailscale-plan.md)。
+
 ## 4. 当前实现状态
 
 当前实现是完整产品的 Wi-Fi-only 增量：
@@ -168,7 +176,7 @@ LAN = br-lan = p2p0
 当前尚未完成：
 
 - `eth1` 加入 `br-lan`；
-- DHCP 地址池从当前 `.100-.199` 扩展到 `.100-.249`，并验证现有 lease 兼容；
+- DHCP 地址池源码已从 `.100-.199` 扩展到 `.100-.249`，host golden/边界与 lease 不删除契约测试已通过；现有 lease 兼容和边界分配仍待板端验证；
 - `eth0` DHCP；
 - 有线和 Wi-Fi 默认路由共存与自动切换；
 - 每个 uplink 独立的 DHCP、route 和 DNS ownership；
@@ -249,7 +257,7 @@ LAN = br-lan = p2p0
 1. 创建 runtime-owned `br-lan` 并配置 `192.168.8.1/24`。
 2. `eth1` 和 `p2p0` 都加入 `br-lan`。
 3. `eth0` 和 `wlan0` 永不加入 `br-lan`。
-4. dnsmasq 只在 `br-lan` 提供 `192.168.8.100-192.168.8.249` 地址池；从当前 `.100-.199` 扩展时保留合法现有 lease，并验收 `.200` 与 `.249` 边界地址。
+4. dnsmasq 只在 `br-lan` 提供 `192.168.8.100-192.168.8.249` 地址池；从此前 `.100-.199` 扩展时保留合法现有 lease，并验收 `.200` 与 `.249` 边界地址。
 5. DHCP 下发网关和 DNS `192.168.8.1`。
 6. AP 失败不影响 `eth1`，`eth1` 失败不停止 AP。
 7. WAN 切换不改变 LAN 地址、不重启 LAN DHCP、不清除有效 lease。
@@ -639,6 +647,8 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 - [ ] 验证 Ethernet DHCP、Wi-Fi fallback、PPPoE、上联切换、OTA、规则更新和 8 小时稳定性。
 
 ### P4：集成 Tailscale RouterOnly
+
+详细设计、实施阶段和验收矩阵见 [`soft-router-tailscale-plan.md`](soft-router-tailscale-plan.md)。本轮目标是在 RouterOnly 安全基础通过后，于同一交付周期继续完成固定 LAN subnet access。
 
 - [ ] 固定 Tailscale ARM64 版本、校验值、许可证、Buildroot/rootfs 输入以及 TUN 和所需内核能力。
 - [ ] 定义 `Disabled` 与 `RouterOnly` typed mode，通过固定 executable、typed argv 和受身份约束的 `tailscaled` adapter 管理生命周期。

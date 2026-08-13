@@ -12,7 +12,7 @@ test.beforeEach(async ({ request }) => {
   await resetHarness(request);
 });
 
-test('renders the dashboard and applies anonymous typed controls', async ({ page, request }) => {
+test('renders the dashboard and applies the anonymous display control', async ({ page, request }) => {
   const browserErrors: string[] = [];
   page.on('console', message => {
     if (message.type() === 'error') browserErrors.push(message.text());
@@ -34,14 +34,17 @@ test('renders the dashboard and applies anonymous typed controls', async ({ page
   await page.getByRole('button', { name: '点亮', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: '背光已开启' })).toBeVisible();
 
-  await page.getByRole('button', { name: '代理', exact: true }).click();
-  await expect(page.getByRole('button', { name: '代理', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('heading', { name: '代理路径与节点' })).toBeVisible();
-  await page.getByRole('button', { name: '显式代理' }).click();
-  await expect(page.getByRole('status').filter({ hasText: '已切换到显式代理' })).toBeVisible();
-
-  await page.getByRole('combobox', { name: '自动选择 节点' }).selectOption('新加坡');
-  await expect(page.getByRole('status').filter({ hasText: '代理节点已切换' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '代理', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Mihomo / TUN' })).toBeVisible();
+  const readonlyProxy = page.getByRole('region', { name: '当前代理与延迟' });
+  await expect(readonlyProxy.getByText('当前选择 · 东京')).toBeVisible();
+  await expect
+    .poll(async () => (await readHarnessState(request)).panel.proxy_groups.data[0].options[0].delay_ms)
+    .toBe(40);
+  await expect(readonlyProxy.getByText('当前 · 40 ms')).toBeVisible();
+  await expect(readonlyProxy.getByText('新加坡 · 新加坡')).toBeVisible();
+  await expect(readonlyProxy.getByRole('combobox')).toHaveCount(0);
+  await expect(readonlyProxy.getByRole('button')).toHaveCount(0);
 
   const state = await readHarnessState(request);
   expect(state.panel.display.data).toMatchObject({
@@ -49,8 +52,8 @@ test('renders the dashboard and applies anonymous typed controls', async ({ page
     brightness: 180,
     actual_brightness: 180,
   });
-  expect(state.proxy.data.mode).toBe('explicit');
-  expect(state.panel.proxy_groups.data[0].selected).toBe('新加坡');
+  expect(state.proxy.data.mode).toBe('tun');
+  expect(state.panel.proxy_groups.data[0].selected).toBe('东京');
 
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
@@ -105,6 +108,17 @@ test('serves the generated bundle through the strict production-shaped HTTP boun
 
   const panel = await request.get('/api/v1/panel');
   const csrf = ((await panel.json()) as { csrf_token: string }).csrf_token;
+  const anonymousProxyMode = await request.post('/api/v1/control/proxy/mode', {
+    headers: { Origin: webOrigin, 'X-HYZ-CSRF': csrf },
+    data: { mode: 'explicit' },
+  });
+  expect(anonymousProxyMode.status()).toBe(401);
+  const anonymousProxySelection = await request.post('/api/v1/control/proxy/selection', {
+    headers: { Origin: webOrigin, 'X-HYZ-CSRF': csrf },
+    data: { group: '自动选择', proxy: '新加坡' },
+  });
+  expect(anonymousProxySelection.status()).toBe(401);
+
   const foreignOrigin = await request.post('/api/v1/control/display', {
     headers: {
       Origin: 'http://evil.example',
@@ -158,6 +172,15 @@ test('supports the administrator, STA, AP, and write-only subscription journey',
   await page.getByLabel('确认新密码').fill('router-e2e-password');
   await page.getByRole('button', { name: '修改密码' }).click();
   await expect(page.getByRole('button', { name: '上游 Wi-Fi (STA)' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '代理路径与节点' })).toBeVisible();
+  await page.getByRole('button', { name: '显式代理' }).click();
+  await expect
+    .poll(async () => (await readHarnessState(request)).proxy.data.mode)
+    .toBe('explicit');
+  await page.getByRole('combobox', { name: '自动选择 节点' }).selectOption('新加坡');
+  await expect
+    .poll(async () => (await readHarnessState(request)).panel.proxy_groups.data[0].selected)
+    .toBe('新加坡');
 
   await page.getByRole('button', { name: '上游 Wi-Fi (STA)' }).click();
   const staRegion = page.getByRole('region', { name: '上游 Wi-Fi (STA)' });
@@ -233,14 +256,28 @@ test('supports the administrator, STA, AP, and write-only subscription journey',
 
   const devicePolicies = page.getByRole('article', { name: '设备代理' });
   await expect(devicePolicies.getByText('e2e-phone')).toBeVisible();
+  const deviceName = devicePolicies.getByLabel('02:00:00:00:00:10 显示名');
+  await deviceName.fill('我的 iPhone');
+  await devicePolicies.getByRole('button', { name: '保存名称' }).click();
+  await expect(page.getByRole('status').filter({ hasText: '设备代理策略已保存' })).toBeVisible();
+  expect((await readHarnessState(request)).device_policies).toMatchObject({
+    config: {
+      generation: 1,
+      entries: [{ mac: '02:00:00:00:00:10', label: '我的 iPhone', policy: 'proxy' }],
+    },
+  });
+
   const devicePolicy = devicePolicies.getByRole('combobox', { name: '02:00:00:00:00:10 代理策略' });
   await devicePolicy.selectOption('direct');
   await expect(page.getByRole('status').filter({ hasText: '设备代理策略已保存' })).toBeVisible();
   expect((await readHarnessState(request)).device_policies).toMatchObject({
-    config: { generation: 1, entries: [{ mac: '02:00:00:00:00:10', policy: 'direct' }] },
+    config: {
+      generation: 2,
+      entries: [{ mac: '02:00:00:00:00:10', label: '我的 iPhone', policy: 'direct' }],
+    },
   });
   const raced = await readHarnessState(request);
-  raced.device_policies.config.generation = 2;
+  raced.device_policies.config.generation = 3;
   const raceUpdate = await request.put(`${harnessOrigin}/state`, { data: raced });
   expect(raceUpdate.ok()).toBeTruthy();
   await devicePolicy.selectOption('proxy');
@@ -248,8 +285,17 @@ test('supports the administrator, STA, AP, and write-only subscription journey',
 
   await page.reload();
   await page.getByRole('button', { name: '网络设置', exact: true }).click();
-  await expect(page.getByRole('article', { name: '设备代理' }).getByRole('combobox')).toHaveValue('direct');
-  await page.getByRole('article', { name: '设备代理' }).getByRole('combobox').selectOption('proxy');
+  const reloadedPolicies = page.getByRole('article', { name: '设备代理' });
+  await expect(reloadedPolicies.getByRole('combobox')).toHaveValue('direct');
+  await expect(reloadedPolicies.getByLabel('02:00:00:00:00:10 显示名')).toHaveValue('我的 iPhone');
+  await reloadedPolicies.getByRole('combobox').selectOption('proxy');
+  await expect(page.getByRole('status').filter({ hasText: '设备代理策略已保存' })).toBeVisible();
+  expect((await readHarnessState(request)).device_policies.config.entries).toEqual([
+    { mac: '02:00:00:00:00:10', label: '我的 iPhone', policy: 'proxy' },
+  ]);
+  await reloadedPolicies
+    .getByRole('button', { name: '清除 02:00:00:00:00:10 的名称和设备策略' })
+    .click();
   await expect(page.getByRole('status').filter({ hasText: '设备代理策略已保存' })).toBeVisible();
   expect((await readHarnessState(request)).device_policies.config.entries).toEqual([]);
 
@@ -270,7 +316,7 @@ test('supports the administrator, STA, AP, and write-only subscription journey',
   expect((await request.put(`${harnessOrigin}/state`, { data: offline })).ok()).toBeTruthy();
   await page.reload();
   await page.getByRole('button', { name: '网络设置', exact: true }).click();
-  await page.getByRole('button', { name: '移除 02:00:00:00:00:20 的设备策略' }).click();
+  await page.getByRole('button', { name: '清除 02:00:00:00:00:20 的名称和设备策略' }).click();
   await expect(page.getByRole('status').filter({ hasText: '设备代理策略已保存' })).toBeVisible();
   expect((await readHarnessState(request)).device_policies.config.entries).toEqual([]);
 
@@ -294,10 +340,7 @@ test('fits a narrow management screen without horizontal overflow', async ({ pag
   await expect(page.getByRole('heading', { name: '路由 / LAN' })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
-  await page.getByRole('button', { name: '代理', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: '自动选择 节点' })).toBeVisible();
-  await expectNoHorizontalOverflow(page);
-
+  await expect(page.getByRole('button', { name: '代理', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: '网络设置', exact: true }).click();
   await expect(page.getByRole('button', { name: '管理员登录' })).toBeVisible();
   await expectNoHorizontalOverflow(page);

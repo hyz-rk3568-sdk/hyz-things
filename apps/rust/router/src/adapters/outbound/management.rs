@@ -53,7 +53,7 @@ except-interface=lo\n\
 domain-needed\n\
 bogus-priv\n\
 dhcp-authoritative\n\
-dhcp-range=192.168.8.100,192.168.8.199,255.255.255.0,10m\n\
+dhcp-range=192.168.8.100,192.168.8.249,255.255.255.0,10m\n\
 dhcp-option=3,192.168.8.1\n\
 dhcp-option=6,192.168.8.1\n\
 dhcp-leasefile=/run/hyz-router/dnsmasq.leases\n";
@@ -2141,6 +2141,62 @@ mod tests {
                 "/tests/fixtures/dnsmasq.conf"
             ))
         );
+    }
+
+    #[test]
+    fn dnsmasq_dynamic_pool_has_the_exact_inclusive_boundaries() {
+        let range = DNSMASQ_CONFIG
+            .lines()
+            .find_map(|line| line.strip_prefix("dhcp-range="))
+            .expect("fixed DHCP range");
+        let mut fields = range.split(',');
+        let start = fields
+            .next()
+            .expect("range start")
+            .parse::<Ipv4Addr>()
+            .expect("IPv4 range start");
+        let end = fields
+            .next()
+            .expect("range end")
+            .parse::<Ipv4Addr>()
+            .expect("IPv4 range end");
+        assert_eq!(fields.next(), Some("255.255.255.0"));
+        assert_eq!(fields.next(), Some("10m"));
+        assert_eq!(fields.next(), None);
+
+        let in_pool = |address: &str| {
+            let address = address.parse::<Ipv4Addr>().expect("test IPv4 address");
+            u32::from(start) <= u32::from(address) && u32::from(address) <= u32::from(end)
+        };
+        assert!(in_pool("192.168.8.100"));
+        assert!(in_pool("192.168.8.249"));
+        assert!(!in_pool("192.168.8.99"));
+        assert!(!in_pool("192.168.8.250"));
+    }
+
+    #[test]
+    fn dnsmasq_config_keeps_the_fixed_gateway_dns_and_lease_path() {
+        assert!(DNSMASQ_CONFIG.contains("dhcp-option=3,192.168.8.1\n"));
+        assert!(DNSMASQ_CONFIG.contains("dhcp-option=6,192.168.8.1\n"));
+        assert!(DNSMASQ_CONFIG.contains("dhcp-leasefile=/run/hyz-router/dnsmasq.leases\n"));
+    }
+
+    #[test]
+    fn runtime_config_prepare_does_not_delete_the_dnsmasq_lease_file() {
+        let source = include_str!("management.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production management source");
+        let prepare = source
+            .split_once("fn prepare_runtime_configs(")
+            .expect("runtime config prepare function")
+            .1
+            .split_once("fn committed_network_config(")
+            .expect("end of runtime config prepare function")
+            .0;
+        assert!(prepare.contains("atomic_write_private(DNSMASQ_RUNTIME_CONFIG"));
+        assert!(!prepare.contains("remove_file"));
+        assert!(!prepare.contains("dnsmasq.leases"));
     }
 
     #[test]

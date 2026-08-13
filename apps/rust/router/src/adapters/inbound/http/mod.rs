@@ -930,13 +930,16 @@ async fn control_proxy_mode(
     headers: HeaderMap,
     Json(request): Json<ProxyModeRequest>,
 ) -> Response {
+    if let Err(response) = authorize_sensitive_control(&state, &headers).await {
+        return response;
+    }
     let mode = match request.mode {
         ProxyMode::Explicit => ControlProxyMode::Explicit,
         ProxyMode::Tun => ControlProxyMode::Tun,
         ProxyMode::Disabled => ControlProxyMode::Disabled,
         ProxyMode::Unknown => return invalid_request_json(),
     };
-    invoke_control(&state, &headers, ControlOperation::Proxy { mode }).await
+    invoke_control_authorized(&state, ControlOperation::Proxy { mode }).await
 }
 
 async fn control_proxy_selection(
@@ -944,12 +947,10 @@ async fn control_proxy_selection(
     headers: HeaderMap,
     Json(request): Json<ProxySelectionRequest>,
 ) -> Response {
-    invoke_control(
-        &state,
-        &headers,
-        ControlOperation::ProxySelection { request },
-    )
-    .await
+    if let Err(response) = authorize_sensitive_control(&state, &headers).await {
+        return response;
+    }
+    invoke_control_authorized(&state, ControlOperation::ProxySelection { request }).await
 }
 
 async fn control_proxy_delay(
@@ -981,6 +982,10 @@ async fn invoke_control(
     if !authorize_control(state, headers) {
         return forbidden_json();
     }
+    invoke_control_authorized(state, operation).await
+}
+
+async fn invoke_control_authorized(state: &AppState, operation: ControlOperation) -> Response {
     if operation.validate().is_err() {
         return invalid_request_json();
     }
@@ -1371,6 +1376,35 @@ mod tests {
 
         let empty_archive = tar::Builder::new(Vec::new()).into_inner().unwrap();
         assert!(AssetStore::from_tar(&empty_archive).is_err());
+    }
+
+    #[test]
+    fn proxy_mode_and_selection_require_normal_administrator_authorization() {
+        let source = include_str!("mod.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production HTTP source");
+        for (start, end) in [
+            (
+                "async fn control_proxy_mode(",
+                "async fn control_proxy_selection(",
+            ),
+            (
+                "async fn control_proxy_selection(",
+                "async fn control_proxy_delay(",
+            ),
+        ] {
+            let body = source
+                .split_once(start)
+                .expect("proxy control handler")
+                .1
+                .split_once(end)
+                .expect("end of proxy control handler")
+                .0;
+            assert!(body.contains("authorize_sensitive_control(&state, &headers).await"));
+            assert!(body.contains("invoke_control_authorized"));
+            assert!(!body.contains("invoke_control(&state, &headers"));
+        }
     }
 
     #[test]
