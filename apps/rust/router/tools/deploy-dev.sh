@@ -120,10 +120,14 @@ if desired == "lan_subnet_access":
 print(data.get("ipv4") or "")
 PY
 )
-    device_shell "wget -q -T 3 -O /dev/null http://192.168.8.1:8080/api/v1/health" >/dev/null
-    if [[ -n "$tailscale_ip" ]]; then
-        "$CURL" --fail --silent --show-error --max-time 8 \
-            "http://$tailscale_ip:8080/api/v1/health" >/dev/null
+    if ! device_shell "wget -q -T 3 -O /dev/null http://192.168.8.1:8080/api/v1/health" >/dev/null; then
+        printf 'LAN management listener did not pass its health check\n' >&2
+        return 1
+    fi
+    if [[ -n "$tailscale_ip" ]] && ! "$CURL" --fail --silent --show-error --max-time 15 \
+        "http://$tailscale_ip:8080/api/v1/health" >/dev/null; then
+        printf 'Tailscale management listener did not pass its health check\n' >&2
+        return 1
     fi
     rm -f "$status_file"
     trap - RETURN
