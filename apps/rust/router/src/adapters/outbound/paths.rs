@@ -9,3 +9,15 @@ pub const MIHOMO_CONTROLLER_ADDRESS: &str = "127.0.0.1:9090";
 pub const MIHOMO_LOG: &str = "/run/hyz-mihomo/mihomo.log";
 pub const MIHOMO_CHECK_LOG: &str = "/run/hyz-mihomo/config-check.log";
 pub const MIHOMO_WATCHER_LOG: &str = "/run/hyz-mihomo/watcher.log";
+
+pub const TAILSCALED_EXECUTABLE: &str = "/usr/bin/tailscaled";
+pub const TAILSCALE_EXECUTABLE: &str = "/usr/bin/tailscale";
+pub const TAILSCALE_DATA_DIR: &str = "/userdata/hyz-router/tailscale";
+pub const TAILSCALE_STATE_FILE: &str = "/userdata/hyz-router/tailscale/tailscaled.state";
+pub const TAILSCALE_MODE_FILE: &str = "/userdata/hyz-router/tailscale/mode";
+pub const TAILSCALE_RUNTIME_DIR: &str = "/run/hyz-tailscale";
+pub const TAILSCALE_SOCKET: &str = "/run/hyz-tailscale/tailscaled.sock";
+pub const TAILSCALE_PID_RECORD: &str = "/run/hyz-tailscale/tailscaled.pid";
+pub const TAILSCALE_LOG: &str = "/run/hyz-tailscale/tailscaled.log";
+pub const TAILSCALE_FIREWALL_OWNER: &str = "/run/hyz-tailscale/firewall.owner";
+pub const TAILSCALE_SUBNET_FIREWALL_OWNER: &str = "/run/hyz-tailscale/subnet-firewall.owner";

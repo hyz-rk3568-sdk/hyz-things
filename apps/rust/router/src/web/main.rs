@@ -13,7 +13,9 @@ use hyz_router::domain::{
     },
     status::{
         Component, ComponentState, LinkState, ProxyMode, ProxyState, SnapshotState, StatusSnapshot,
+        TailscaleConnectionType, TailscaleErrorCategory, TailscaleStatus,
     },
+    tailscale::{TailscaleBackendState, TailscaleMode},
 };
 use wasm_bindgen_futures::spawn_local;
 use web_sys::{HtmlElement, HtmlInputElement, HtmlSelectElement, RequestCredentials};
@@ -44,6 +46,10 @@ const SUBSCRIPTION_SOURCE_ENDPOINT: &str = "/api/v1/control/proxy/subscription/s
 const SUBSCRIPTION_REFRESH_ENDPOINT: &str = "/api/v1/control/proxy/subscription/refresh";
 const DEVICE_POLICIES_ENDPOINT: &str = "/api/v1/proxy/device-policies";
 const DEVICE_POLICIES_UPDATE_ENDPOINT: &str = "/api/v1/control/proxy/device-policies";
+const TAILSCALE_ENDPOINT: &str = "/api/v1/tailscale";
+const TAILSCALE_MODE_ENDPOINT: &str = "/api/v1/control/tailscale/mode";
+const TAILSCALE_LOGIN_ENDPOINT: &str = "/api/v1/control/tailscale/login";
+const TAILSCALE_LOGOUT_ENDPOINT: &str = "/api/v1/control/tailscale/logout";
 const POLL_DELAY_MS: u32 = 2_000;
 const NETWORK_APPLY_PAINT_DELAY_MS: u32 = 150;
 const MISSING: &str = "—";
@@ -284,6 +290,25 @@ struct SubscriptionSourceRequest {
     url: String,
 }
 
+#[derive(serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct TailscaleModeRequestDto {
+    mode: TailscaleMode,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TailscaleResponseDto {
+    tailscale: TailscaleStatus,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TailscaleMutationResponseDto {
+    tailscale: TailscaleStatus,
+    login_url: Option<String>,
+}
+
 #[derive(Clone, PartialEq, Default)]
 struct AppState {
     snapshot: Option<StatusSnapshot>,
@@ -304,6 +329,8 @@ struct AppState {
     scan_entries: Vec<WifiScanDto>,
     subscription: Option<SubscriptionDto>,
     device_policies: Option<DevicePolicySnapshotDto>,
+    tailscale: Option<TailscaleStatus>,
+    tailscale_login_url: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -329,10 +356,12 @@ enum Action {
                 NetworkPendingDto,
                 SubscriptionDto,
                 DevicePolicySnapshotDto,
+                TailscaleStatus,
             ),
             String,
         >,
     ),
+    TailscaleMutationFinished(Result<(TailscaleStatus, Option<String>, String), String>),
     SettingsMutationFinished(Result<String, String>),
     ScanFinished(Result<Vec<WifiScanDto>, String>),
     SettingsNotice(String),
@@ -436,6 +465,8 @@ impl Reducible for AppState {
                             next.pending_network = None;
                             next.subscription = None;
                             next.device_policies = None;
+                            next.tailscale = None;
+                            next.tailscale_login_url = None;
                             next.scan_entries.clear();
                         }
                         next.session = Some(session);
@@ -455,14 +486,30 @@ impl Reducible for AppState {
                 let mut next = (*self).clone();
                 next.settings_busy = false;
                 match result {
-                    Ok((network, pending, subscription, device_policies)) => {
+                    Ok((network, pending, subscription, device_policies, tailscale)) => {
                         next.network = Some(network);
                         next.pending_network = Some(pending);
                         next.subscription = Some(subscription);
                         next.device_policies = Some(device_policies);
+                        next.tailscale = Some(tailscale);
                     }
                     Err(error) => {
                         next.settings_notice = Some(format!("设置数据读取失败：{error}"));
+                    }
+                }
+                next.into()
+            }
+            Action::TailscaleMutationFinished(result) => {
+                let mut next = (*self).clone();
+                next.settings_busy = false;
+                match result {
+                    Ok((tailscale, login_url, message)) => {
+                        next.tailscale = Some(tailscale);
+                        next.tailscale_login_url = login_url;
+                        next.settings_notice = Some(message);
+                    }
+                    Err(error) => {
+                        next.settings_notice = Some(format!("操作失败：{error}"));
                     }
                 }
                 next.into()
@@ -827,6 +874,7 @@ async fn fetch_settings_data() -> Result<
         NetworkPendingDto,
         SubscriptionDto,
         DevicePolicySnapshotDto,
+        TailscaleStatus,
     ),
     String,
 > {
@@ -840,7 +888,10 @@ async fn fetch_settings_data() -> Result<
         .subscription;
     let device_policies =
         fetch_json::<DevicePolicySnapshotDto>(DEVICE_POLICIES_ENDPOINT, "设备代理策略").await?;
-    Ok((network, pending, subscription, device_policies))
+    let tailscale = fetch_json::<TailscaleResponseDto>(TAILSCALE_ENDPOINT, "Tailscale 状态")
+        .await?
+        .tailscale;
+    Ok((network, pending, subscription, device_policies, tailscale))
 }
 
 fn dispatch_settings_refresh(state: UseReducerHandle<AppState>) {
@@ -889,6 +940,27 @@ fn dispatch_settings_mutation<T: serde::Serialize + 'static>(
         state.dispatch(Action::SettingsMutationFinished(
             result.map(|_| success.to_owned()),
         ));
+    });
+}
+
+fn dispatch_tailscale_mutation<T: serde::Serialize + 'static>(
+    state: UseReducerHandle<AppState>,
+    endpoint: &'static str,
+    csrf: String,
+    body: T,
+    success: &'static str,
+) {
+    state.dispatch(Action::SettingsStarted);
+    spawn_local(async move {
+        let result = post_json_response::<_, TailscaleMutationResponseDto>(
+            endpoint,
+            &csrf,
+            &body,
+            "Tailscale",
+        )
+        .await
+        .map(|response| (response.tailscale, response.login_url, success.to_owned()));
+        state.dispatch(Action::TailscaleMutationFinished(result));
     });
 }
 
@@ -1343,7 +1415,7 @@ fn settings(props: &SettingsProps) -> Html {
                 if authenticated {
                     <div class={SESSION_ACTIONS}>
                         <span>{"管理员 · admin"}</span>
-                        <button class={BUTTON_GHOST} type="button" onclick={logout} disabled={busy || csrf.is_empty()}>{"退出登录"}</button>
+                        <button class="btn btn-ghost btn-sm text-base-content" type="button" onclick={logout} disabled={busy || csrf.is_empty()}>{"退出登录"}</button>
                     </div>
                 } else {
                     <span class={SECTION_META}>{"状态面板无需登录，设置需要管理员身份"}</span>
@@ -1410,6 +1482,7 @@ fn settings(props: &SettingsProps) -> Html {
             } else {
                 <>
                     {render_proxy_control(state)}
+                    {render_tailscale_control(state, &csrf)}
                     <div class={SETTINGS_GRID}>
                     <article class={DISCLOSURE}>
                         <button id="sta-settings-toggle" ref={sta_toggle} class={DISCLOSURE_TOGGLE} type="button" onclick={toggle_sta} aria-expanded={sta_expanded.to_string()} aria-controls="sta-settings-detail">
@@ -2216,6 +2289,167 @@ fn render_display_control(
     }
 }
 
+fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf: &str) -> Html {
+    let Some(tailscale) = state.tailscale.as_ref() else {
+        return html! {
+            <section class={SECTION} aria-labelledby="tailscale-title">
+                <div class={SECTION_HEAD}><div><p class={EYEBROW}>{"REMOTE LAN"}</p><h2 id="tailscale-title" class={SECTION_TITLE}>{"Tailscale 远程 LAN"}</h2></div></div>
+                <div class={SETTINGS_EMPTY} role="status">{"正在读取 Tailscale 状态…"}</div>
+            </section>
+        };
+    };
+    let busy = state.settings_busy;
+    let enable = {
+        let state = state.clone();
+        let csrf = csrf.to_owned();
+        Callback::from(move |_| {
+            dispatch_tailscale_mutation(
+                state.clone(),
+                TAILSCALE_MODE_ENDPOINT,
+                csrf.clone(),
+                TailscaleModeRequestDto {
+                    mode: TailscaleMode::LanSubnetAccess,
+                },
+                "已请求启用远程 LAN 访问",
+            )
+        })
+    };
+    let disable = {
+        let state = state.clone();
+        let csrf = csrf.to_owned();
+        Callback::from(move |_| {
+            dispatch_tailscale_mutation(
+                state.clone(),
+                TAILSCALE_MODE_ENDPOINT,
+                csrf.clone(),
+                TailscaleModeRequestDto {
+                    mode: TailscaleMode::Disabled,
+                },
+                "Tailscale 已停用，设备认证已保留",
+            )
+        })
+    };
+    let request_login = {
+        let state = state.clone();
+        let csrf = csrf.to_owned();
+        Callback::from(move |_| {
+            dispatch_tailscale_mutation(
+                state.clone(),
+                TAILSCALE_LOGIN_ENDPOINT,
+                csrf.clone(),
+                EmptyRequest {},
+                "已取得一次性登录链接",
+            )
+        })
+    };
+    let logout = {
+        let state = state.clone();
+        let csrf = csrf.to_owned();
+        Callback::from(move |_| {
+            dispatch_tailscale_mutation(
+                state.clone(),
+                TAILSCALE_LOGOUT_ENDPOINT,
+                csrf.clone(),
+                EmptyRequest {},
+                "Tailscale 已注销并停用",
+            )
+        })
+    };
+    let desired = tailscale
+        .desired_mode
+        .map(tailscale_mode_label)
+        .unwrap_or("未知");
+    let effective = tailscale
+        .effective_mode
+        .map(tailscale_mode_label)
+        .unwrap_or("尚未就绪");
+    let connection = tailscale_connection_label(tailscale);
+    let needs_login = tailscale.backend_state == TailscaleBackendState::NeedsLogin
+        || tailscale.authenticated == Some(false)
+            && tailscale.desired_mode != Some(TailscaleMode::Disabled);
+    let lan_access_ready = tailscale.effective_mode == Some(TailscaleMode::LanSubnetAccess)
+        && tailscale.backend_state == TailscaleBackendState::Running
+        && tailscale.authenticated == Some(true)
+        && tailscale.route_advertised == Some(true)
+        && tailscale.local_firewall_ready == Some(true);
+    let disabled_ready = tailscale.desired_mode == Some(TailscaleMode::Disabled)
+        && tailscale.effective_mode == Some(TailscaleMode::Disabled)
+        && tailscale.backend_state == TailscaleBackendState::Stopped;
+    let enable_label = if lan_access_ready {
+        "远程 LAN 访问已启用"
+    } else {
+        "启用远程 LAN 访问"
+    };
+    let disable_label = if disabled_ready {
+        "Tailscale 已停用"
+    } else {
+        "停用（保留认证）"
+    };
+
+    html! {
+        <section class={SECTION} aria-labelledby="tailscale-title" aria-busy={busy.to_string()}>
+            <div class={SECTION_HEAD}>
+                <div><p class={EYEBROW}>{"REMOTE LAN"}</p><h2 id="tailscale-title" class={SECTION_TITLE}>{"Tailscale 远程 LAN"}</h2></div>
+                <span class={SECTION_META}>{"固定 192.168.8.0/24 · 不提供 Exit Node"}</span>
+            </div>
+            <article class={INNER_CARD} role="region" aria-label="Tailscale 远程 LAN 状态">
+                <div class={CONTROL_TITLE}><h3 class={CONTROL_HEADING}>{"LAN Access"}</h3><span class={CONTROL_META}>{format!("期望 {desired} · 当前 {effective}")}</span></div>
+                <dl class={METRIC_LIST}>
+                    <div class={METRIC}><dt class={METRIC_LABEL}>{"认证"}</dt><dd class={METRIC_VALUE}>{tailscale.authenticated.map(|value| if value { "已认证" } else { "需要登录" }).unwrap_or("未知")}</dd></div>
+                    <div class={METRIC}><dt class={METRIC_LABEL}>{"Tailscale IPv4"}</dt><dd class={METRIC_VALUE}>{tailscale.ipv4.map(|value| value.to_string()).unwrap_or_else(missing)}</dd></div>
+                    <div class={METRIC}><dt class={METRIC_LABEL}>{"连接"}</dt><dd class={METRIC_VALUE}>{connection}</dd></div>
+                    <div class={METRIC}><dt class={METRIC_LABEL}>{"本地路由 / 防火墙"}</dt><dd class={METRIC_VALUE}>{format!("路由 {} · 防火墙 {}", tailscale.route_advertised.map(format_bool).unwrap_or_else(missing), tailscale.local_firewall_ready.map(format_bool).unwrap_or_else(missing))}</dd></div>
+                </dl>
+                if needs_login {
+                    <div class={classes!(RISK_ALERT, "alert-warning", "border-warning/20")} role="alert">
+                        <div>
+                            <strong>{"需要完成 Tailscale 登录"}</strong>
+                            <p class={RISK_COPY}>{"登录链接只在本次管理员写操作响应中返回，不会保存或出现在状态 GET 中。"}</p>
+                        </div>
+                    </div>
+                    if let Some(login_url) = &state.tailscale_login_url {
+                        <div class={BUTTON_ROW}>
+                            <a class={BUTTON_PRIMARY} href={login_url.clone()} target="_blank" rel="noopener noreferrer">{"打开一次性 Tailscale 登录链接"}</a>
+                            <button class={BUTTON} type="button" onclick={enable.clone()} disabled={busy}>{"已完成登录，继续启用"}</button>
+                        </div>
+                    } else {
+                        <button class={BUTTON_PRIMARY} type="button" onclick={request_login.clone()} disabled={busy}>{"取得一次性登录链接"}</button>
+                    }
+                }
+                if lan_access_ready {
+                    <div class={classes!(RISK_ALERT, "alert-success", "border-success/20")} role="status">
+                        <div>
+                            <strong>{"本机远程 LAN 访问已启用"}</strong>
+                            <p class={RISK_COPY}>{"Tailscale 已认证，固定子网路由和本地防火墙均已就绪。"}</p>
+                        </div>
+                    </div>
+                }
+                if let Some(category) = tailscale.error_category {
+                    <div class={RISK_NOTE} role="note">{format!("错误类别：{}", tailscale_error_label(category))}</div>
+                }
+                <div class={BUTTON_ROW} role="group" aria-label="Tailscale 操作">
+                    <button
+                        class={if lan_access_ready { BUTTON } else { BUTTON_PRIMARY }}
+                        type="button"
+                        onclick={enable}
+                        disabled={busy || lan_access_ready}
+                        aria-pressed={lan_access_ready.to_string()}
+                    >{enable_label}</button>
+                    <button
+                        class={BUTTON}
+                        type="button"
+                        onclick={disable}
+                        disabled={busy || disabled_ready}
+                        aria-pressed={disabled_ready.to_string()}
+                    >{disable_label}</button>
+                    <button class={BUTTON_ERROR} type="button" onclick={logout} disabled={busy}>{"注销并移除认证"}</button>
+                </div>
+                <small class={HELP_TEXT}>{"仅支持固定 RouterOnly / LAN Access 安全模式；浏览器不能输入 URL、auth key、子网、端口或控制参数。"}</small>
+            </article>
+        </section>
+    }
+}
+
 fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
     let Some(bootstrap) = state.panel.as_ref() else {
         return Html::default();
@@ -2383,6 +2617,7 @@ fn render_issues(snapshot: &StatusSnapshot) -> Html {
     let issues: Vec<&str> = [
         snapshot.router.issue.as_ref(),
         snapshot.proxy.issue.as_ref(),
+        snapshot.tailscale.issue.as_ref(),
         snapshot.system.issue.as_ref(),
     ]
     .into_iter()
@@ -2443,6 +2678,36 @@ fn link_state_label(state: LinkState) -> &'static str {
         LinkState::Down => "已断开",
         LinkState::Connecting => "连接中",
         LinkState::Unknown => "未知",
+    }
+}
+
+fn tailscale_mode_label(mode: TailscaleMode) -> &'static str {
+    match mode {
+        TailscaleMode::Disabled => "已停用",
+        TailscaleMode::RouterOnly => "RouterOnly（仅路由器）",
+        TailscaleMode::LanSubnetAccess => "LAN Access",
+    }
+}
+
+fn tailscale_connection_label(status: &TailscaleStatus) -> String {
+    match status.connection.kind {
+        TailscaleConnectionType::Direct => "Direct".to_owned(),
+        TailscaleConnectionType::PeerRelay => "Peer Relay".to_owned(),
+        TailscaleConnectionType::Derp => status
+            .connection
+            .derp_region
+            .as_ref()
+            .map_or_else(|| "DERP".to_owned(), |region| format!("DERP · {region}")),
+        TailscaleConnectionType::Unknown => "未知".to_owned(),
+    }
+}
+
+fn tailscale_error_label(category: TailscaleErrorCategory) -> &'static str {
+    match category {
+        TailscaleErrorCategory::ProbeFailed => "状态探测失败",
+        TailscaleErrorCategory::Conflict => "状态冲突",
+        TailscaleErrorCategory::NotReady => "尚未就绪",
+        TailscaleErrorCategory::OperationFailed => "操作失败",
     }
 }
 

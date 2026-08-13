@@ -2,7 +2,7 @@
 
 ## 状态
 
-**代码阶段已完成；板端验收仍待目标设备。**
+**代码阶段已完成；2026-08-13 已完成首轮板端部分验收，完整矩阵仍待继续。**
 
 创建日期：2026-08-12。代码阶段验证日期：2026-08-13。
 
@@ -125,13 +125,15 @@ dhcp-range=192.168.8.100,192.168.8.249,255.255.255.0,10m
 
 | 项目 | 结果 |
 | --- | --- |
-| Git revision | 待记录 |
-| `upgrade.fw` SHA-256 | 待记录 |
-| rootfs SHA-256 | 待记录 |
-| `/usr/bin/hyz-router` SHA-256 | 待记录 |
-| `S81hyz-router` SHA-256 | 待记录 |
-| OTA 成员审计 | 待执行 |
-| 安装后一致性 | 待执行 |
+| Git revision | `8f8db58897bcc704f1c530ace4e204508b258d35` |
+| `upgrade.fw` SHA-256 | `0184426d62ba651f815c2c7b49b0795ef8549731178cb1d3777467b41769bb82`（379,544,138 bytes） |
+| boot SHA-256 | `03f499a6ff7d052be218ba283b0339618e027ef12327a4aa40ac92ba2baf32fc` |
+| rootfs SHA-256 | `f353f13f885099bcb65fb5c941ece99e449dfac535a5a9fcbf411140151ae37c` |
+| oem SHA-256 | `d18a778d157476c46a76528f7ee9b7b2f77fb8b07d6910fca4b4b7ce52780039` |
+| `/usr/bin/hyz-router` SHA-256 | `85c9c8902a3793093592bef951b1cb73ba68e2a2bcabd8f3d24b77d356d27ed2` |
+| `S81hyz-router` SHA-256 | `a3c4741821adb3db8c3f997dbd5c0c45a2db31be529ae43e08829f56e5c165cd` |
+| OTA 成员审计 | 通过；实际 payload 为 bootloader、U-Boot、misc、boot、rootfs、oem，不含 recovery、userdata |
+| 安装后一致性 | 通过；板端 ELF 与 rootfs 内 ELF 哈希一致，运行时包含 `.100-.249` DHCP 配置 |
 
 ## 6. 板端测试拓扑与前置条件
 
@@ -177,12 +179,12 @@ dhcp-range=192.168.8.100,192.168.8.249,255.255.255.0,10m
 
 | 场景 | 结果 | 备注 |
 | --- | --- | --- |
-| 旧 lease 保留 | 待执行 | |
-| `.100` 下边界 | 待执行 | |
-| `.200` 新扩展范围 | 待执行 | |
-| `.249` 上边界 | 待执行 | |
-| `.250` 池外拒绝 | 待执行 | |
-| 网关/DNS 下发 | 待执行 | |
+| 旧 lease 保留 | 通过 | OTA 前后观察到旧范围 lease；随后在 USB ADB 下以不输出 MAC/hostname 的脱敏身份摘要复测 daemon restart，`.134` 旧范围 lease 与 `.220` 扩展范围 lease 的身份摘要前后完全一致 |
+| `.100` 下边界 | 待执行 | host 边界测试已通过，板端尚未取得 `.100` lease |
+| `.200` 新扩展范围 | 部分通过 | 板端实际取得 `.220`，证明 `.200-.249` 扩展区间可分配；精确 `.200` 尚未取得 |
+| `.249` 上边界 | 待执行 | 需预置合法 lease 或受控测试客户端 |
+| `.250` 池外拒绝 | 待执行 | 需受控边界分配测试 |
+| 网关/DNS 下发 | 部分通过 | runtime 配置确认网关和 DNS 均为 `192.168.8.1`，尚未从两个客户端侧留证 |
 
 ## 8. Management-only 故障验收
 
@@ -219,10 +221,21 @@ dhcp-range=192.168.8.100,192.168.8.249,255.255.255.0,10m
 
 | 场景 | 管理面 | DHCP/DNS | forwarding 安全状态 | 自动恢复 | 结果 |
 | --- | --- | --- | --- | --- | --- |
+| typed `router disable` / `enable` | HTTP 200 | hostapd、dnsmasq 各保持单实例 | disable 后 `ip_forward=0` 且 runtime-owned router firewall hook 为 0 | enable 后 metric `600` route、NAT/FORWARD 恢复；随后显式恢复原 TUN 模式 | 通过 |
 | WAN route 消失 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 | 上游 AP 关闭/恢复 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 | forwarding 提交失败 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 | 重复故障/恢复 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+
+### 8.5 首轮板测的 network ADB 误判与 USB ADB 复测
+
+2026-08-13 首轮使用网络 ADB 执行 `/etc/init.d/S81hyz-router restart` 时，命令在 `Stopping hyz-router:` 后失去上游连接。后续确认这是观察通道选择不当：网络 ADB 依赖 `wlan0`，而 daemon stop 会主动清理 STA，因此网络 transport 断开不能证明 stop 卡死。
+
+改用固定 USB ADB serial 后连续执行两次 SysV restart，均得到 `Stopping hyz-router: OK` 和 `Starting hyz-router: OK`，单次耗时约 21 秒且返回码为 0。整机 uptime 连续增长，daemon PID 正常更换；每次恢复后 STA、metric `600` 默认路由、AP、LAN attachment、IPv4 forwarding、普通 NAT、Mihomo TUN、HTTP 和 router/proxy/system readiness 均正常。关键子进程数量未累积，init action lock 无持有者，runtime ownership 无异常残留。
+
+当前 BusyBox 1.36.0 源码明确说明 `start-stop-daemon` 接受但忽略 `-R <param>`，因此脚本中的 `-R TERM/1810/KILL/5` 在本固件上不是 1810 秒等待策略。首轮关于“超长 TERM 等待窗口”的判断已由源码和 USB 板测推翻，不需要据此修改 init 脚本。
+
+本次先在 AP 无客户端时执行两次 restart，空 lease 文件摘要保持一致。随后接入两个客户端并得到两条合法 lease：一条位于旧范围 `.134`，一条位于扩展范围 `.220`。使用只包含客户端身份与租约地址、且不输出原始 MAC/hostname 的不可逆摘要比较，restart 前后摘要完全一致，两条 lease 均被保留。该次 restart 输出 stop/start OK、返回码为 0，恢复后仍有两条 lease；状态采样时已有一个客户端重新关联，另一个 lease 仍合法保留。
 
 ## 9. DNS/HTTPS、换信道和多客户端持续流量
 

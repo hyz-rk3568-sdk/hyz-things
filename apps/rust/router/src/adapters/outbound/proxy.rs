@@ -7,8 +7,9 @@ use super::{
     storage,
     system::{
         chain_output_is_exact, exact_chain_references, exact_default_gateway,
-        expected_chain_rules_with_direct, expected_interception_rule, normalized_chain_rules,
-        parse_direct_mac_rules, policy_route_state_is_exact, policy_rule_state_is_exact,
+        expected_chain_rules_with_direct, expected_interception_rule, forward_hook_order_is_exact,
+        normalized_chain_rules, owned_forward_hook_is_exact, parse_direct_mac_rules,
+        policy_route_state_is_exact, policy_rule_state_is_exact,
     },
 };
 use crate::{
@@ -355,11 +356,19 @@ impl LinuxRouterPlatform {
                 &strings(&["-w", "-t", "filter", "-S", "FORWARD"]),
             )?
             .stdout;
-        if normalized_chain_rules(&forward, "FORWARD").and_then(|rules| rules.first().cloned())
-            != Some(expected)
-        {
+        let tailscale_present = owned_forward_hook_is_exact(
+            &forward,
+            storage::TAILSCALE_FIREWALL_OWNER,
+            crate::domain::tailscale::TAILSCALE_FORWARD_CHAIN,
+        )?;
+        let router_present = owned_forward_hook_is_exact(
+            &forward,
+            storage::ROUTER_FIREWALL_OWNER,
+            crate::domain::network::ROUTER_FILTER_CHAIN,
+        )?;
+        if !forward_hook_order_is_exact(&forward, true, tailscale_present, router_present) {
             return Err(PlatformError::Conflict(
-                "TUN FORWARD hook is not first".to_owned(),
+                "FORWARD hooks are not in exact Mihomo, Tailscale, router order".to_owned(),
             ));
         }
         Ok(())
@@ -627,6 +636,34 @@ impl LinuxRouterPlatform {
 
     fn install_tun_hook(&self, token: &str) -> Result<(), PlatformError> {
         storage::validate_token(token)?;
+        let forward = self
+            .run(
+                Tool::Iptables,
+                &strings(&["-w", "-t", "filter", "-S", "FORWARD"]),
+            )?
+            .stdout;
+        if !exact_chain_references(&forward, MIHOMO_FILTER_CHAIN)
+            .is_some_and(|references| references.is_empty())
+        {
+            return Err(PlatformError::Conflict(
+                "Mihomo FORWARD hook already exists or is unparseable".to_owned(),
+            ));
+        }
+        let tailscale_present = owned_forward_hook_is_exact(
+            &forward,
+            storage::TAILSCALE_FIREWALL_OWNER,
+            crate::domain::tailscale::TAILSCALE_FORWARD_CHAIN,
+        )?;
+        let router_present = owned_forward_hook_is_exact(
+            &forward,
+            storage::ROUTER_FIREWALL_OWNER,
+            crate::domain::network::ROUTER_FILTER_CHAIN,
+        )?;
+        if !forward_hook_order_is_exact(&forward, false, tailscale_present, router_present) {
+            return Err(PlatformError::Conflict(
+                "existing FORWARD hooks are not in Tailscale, router order".to_owned(),
+            ));
+        }
         self.proxy_iptables(&[
             "-w",
             "-t",

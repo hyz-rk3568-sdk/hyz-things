@@ -1,6 +1,7 @@
 #![cfg(feature = "native")]
 
 use hyz_router::{
+    adapters::outbound::system::forward_hook_order_is_exact,
     application::{
         ports::{ClockPort, LifecycleLease, PlatformError, RouterPlatformPort, SystemProbePort},
         reconcile::{forwarding_plan, management_plan, network_plan, proxy_plan},
@@ -709,12 +710,51 @@ fn unknown_probe_fields_are_never_ready() {
 }
 
 #[test]
+fn shared_forward_hook_order_covers_install_remove_and_restart_combinations() {
+    let cases = [
+        (false, false, false, ""),
+        (false, false, true, "-A FORWARD -j HYZ_ROUTER_FWD\n"),
+        (
+            true,
+            false,
+            true,
+            "-A FORWARD -j HYZ_MIHOMO_FWD\n-A FORWARD -j HYZ_ROUTER_FWD\n",
+        ),
+        (
+            false,
+            true,
+            true,
+            "-A FORWARD -j HYZ_TS_FWD\n-A FORWARD -j HYZ_ROUTER_FWD\n",
+        ),
+        (
+            true,
+            true,
+            true,
+            "-A FORWARD -j HYZ_MIHOMO_FWD\n-A FORWARD -j HYZ_TS_FWD\n-A FORWARD -j HYZ_ROUTER_FWD\n",
+        ),
+    ];
+    for (mihomo, tailscale, router, rules) in cases {
+        assert!(forward_hook_order_is_exact(
+            rules, mihomo, tailscale, router
+        ));
+    }
+    for invalid in [
+        "-A FORWARD -j HYZ_ROUTER_FWD\n-A FORWARD -j HYZ_TS_FWD\n",
+        "-A FORWARD -j HYZ_TS_FWD\n-A FORWARD -j HYZ_MIHOMO_FWD\n-A FORWARD -j HYZ_ROUTER_FWD\n",
+        "-A FORWARD -j HYZ_MIHOMO_FWD\n-A FORWARD -j HYZ_TS_FWD\n-A FORWARD -j HYZ_TS_FWD\n-A FORWARD -j HYZ_ROUTER_FWD\n",
+    ] {
+        assert!(!forward_hook_order_is_exact(invalid, true, true, true));
+    }
+}
+
+#[test]
 fn outbound_sources_do_not_reference_legacy_wrappers_or_shell_eval() {
     let source = [
         include_str!("../src/adapters/outbound/management.rs"),
         include_str!("../src/adapters/outbound/process.rs"),
         include_str!("../src/adapters/outbound/network.rs"),
         include_str!("../src/adapters/outbound/proxy.rs"),
+        include_str!("../src/adapters/outbound/tailscale.rs"),
         include_str!("../src/adapters/outbound/system.rs"),
         include_str!("../src/adapters/inbound/dhcp_hook.rs"),
     ]

@@ -17,6 +17,8 @@ REPO := $(CURDIR)/.tools/repo
 MANIFEST_URL ?= https://github.com/hyz-rk3568-sdk/manifests.git
 MANIFEST ?= hyz-things.xml
 RECOVERY_PACKAGE := package-file-hyz-ota-with-recovery
+ADB ?= adb
+ADB_SERIAL ?=
 JOBS ?= $(shell nproc)
 
 # Buildroot rejects whitespace in PATH. Keep builds independent from WSL's
@@ -25,7 +27,7 @@ BUILD_PATH := $(BR_HOST)/bin:$(HOME)/.cargo/bin:$(HOME)/.local/bin:/usr/local/sb
 export PATH := $(BUILD_PATH)
 export RK_TOOLCHAIN_PREFIX := $(TOOLCHAIN_PREFIX)
 
-.PHONY: help sdk configure toolchain router-frontend router-e2e router-app apps overlay rootfs kernel loader recovery firmware upgrade upgrade-recovery check check-static clean
+.PHONY: help sdk configure toolchain router-frontend router-e2e router-app router-deploy-dev router-revert-dev apps overlay rootfs kernel loader recovery firmware upgrade upgrade-recovery check check-static clean
 
 help:
 	@printf '%s\n' \
@@ -34,6 +36,8 @@ help:
 	  'make router-frontend  Build the deterministic Yew/Tailwind frontend bundle' \
 	  'make router-e2e  Run the host-only Axum/Playwright browser tests' \
 	  'make router-app Build the unified hyz-router ELF and embedded Yew UI' \
+	  'make router-deploy-dev  Build and activate only hyz-router over USB ADB' \
+	  'make router-revert-dev  Gracefully restore the firmware hyz-router ELF' \
 	  'make apps       Build the single product application (hyz-router)' \
 	  'make overlay    Stage only hyz-router and product metadata' \
 	  'make rootfs     Stage hyz-router and build the Buildroot rootfs' \
@@ -93,6 +97,12 @@ router-app: toolchain router-frontend
 
 apps: router-app
 
+router-deploy-dev: router-app
+	ADB="$(ADB)" ADB_SERIAL="$(ADB_SERIAL)" bash "$(ROUTER_APP)/tools/deploy-dev.sh" deploy "$(ROUTER_BINARY)"
+
+router-revert-dev:
+	ADB="$(ADB)" ADB_SERIAL="$(ADB_SERIAL)" bash "$(ROUTER_APP)/tools/deploy-dev.sh" revert
+
 overlay: apps
 	rm -rf "$(OVERLAY)"
 	mkdir -p "$(OVERLAY)"
@@ -143,6 +153,10 @@ check: check-static
 
 check-static:
 	sh -n "$(ROUTER_APP)/tools/build-frontend-bundle.sh"
+	bash -n "$(ROUTER_APP)/tools/deploy-dev.sh"
+	grep -q 'remote_action stop' "$(ROUTER_APP)/tools/deploy-dev.sh"
+	grep -q "mount -o bind" "$(ROUTER_APP)/tools/deploy-dev.sh"
+	! grep -q 'rm -rf /run/hyz-router/daemon.lock\|kill -9\|pkill' "$(ROUTER_APP)/tools/deploy-dev.sh"
 	sh -n "$(ROUTER_APP)/tools/start-e2e-server.sh"
 	python3 -m json.tool "$(ROUTER_APP)/package.json" >/dev/null
 	python3 -m json.tool "$(ROUTER_APP)/package-lock.json" >/dev/null
@@ -162,6 +176,17 @@ check-static:
 	grep -q '"/api/v1/control/proxy/delay"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
 	grep -q '"/api/v1/control/proxy/delays"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
 	grep -q 'MIHOMO_CONTROLLER_ADDRESS: &str = "127.0.0.1:9090"' "$(ROUTER_APP)/src/adapters/outbound/paths.rs"
+	grep -q 'TAILSCALED_EXECUTABLE: &str = "/usr/bin/tailscaled"' "$(ROUTER_APP)/src/adapters/outbound/paths.rs"
+	grep -q 'TAILSCALE_EXECUTABLE: &str = "/usr/bin/tailscale"' "$(ROUTER_APP)/src/adapters/outbound/paths.rs"
+	grep -q 'TAILSCALE_STATE_FILE: &str = "/userdata/hyz-router/tailscale/tailscaled.state"' "$(ROUTER_APP)/src/adapters/outbound/paths.rs"
+	grep -q 'TAILSCALE_SOCKET: &str = "/run/hyz-tailscale/tailscaled.sock"' "$(ROUTER_APP)/src/adapters/outbound/paths.rs"
+	grep -q 'TAILSCALE_INTERFACE: &str = "tailscale0"' "$(ROUTER_APP)/src/domain/tailscale.rs"
+	grep -q 'TAILSCALE_LAN_ROUTE: &str = "192.168.8.0/24"' "$(ROUTER_APP)/src/domain/tailscale.rs"
+	grep -q 'TAILSCALE_UDP_PORT: u16 = 41_641' "$(ROUTER_APP)/src/domain/tailscale.rs"
+	grep -q 'TAILSCALE_MANAGEMENT_HTTP_PORT: u16 = 8080' "$(ROUTER_APP)/src/domain/tailscale.rs"
+	! grep -qE 'pub (login_server|auth_key|subnet|advertise_routes|exit_node|argv|tag):' \
+	  "$(ROUTER_APP)/src/adapters/inbound/control.rs" \
+	  "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
 	! grep -R -qE '127\.0\.0\.1:9090|controller\.secret' "$(ROUTER_APP)/src/web" "$(ROUTER_APP)/frontend"
 	grep -q 'default-brightness-level = <0>' sdk/kernel/arch/arm64/boot/dts/rockchip/rk3568-atk-evb1-mipi-dsi-1080p.dts
 	! grep -qE '&(dsi1|dsi1_panel|backlight1)[[:space:]]*\{[[:space:]]*status = "disabled"' sdk/kernel/arch/arm64/boot/dts/rockchip/rk3568-atk-evb1-mipi-dsi-1080p.dts
@@ -173,6 +198,7 @@ check-static:
 	sh -n sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	grep -q 'TARGET_DIR/usr/bin/hyz-ota' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	grep -q 'TARGET_DIR/usr/sbin/hyz-router' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
+	grep -q 'TARGET_DIR/etc/init.d/S82tailscaled' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	grep -q 'TARGET_DIR/usr/share/metacubexd' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	sh -n sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q '^DAEMON=/usr/bin/hyz-router$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
@@ -199,12 +225,22 @@ check-static:
 	test ! -e sdk/buildroot/board/rockchip/hyz_things/fs-overlay/usr/share/udhcpc/default.script.d/50-hyz-wlan-metric
 	grep -q 'BR2_ROOTFS_OVERLAY+="board/rockchip/hyz_things/fs-overlay ../../output/rootfs-overlay"' sdk/buildroot/configs/rockchip/hyz_things.config
 	grep -q '^BR2_PACKAGE_MIHOMO=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q '^BR2_PACKAGE_TAILSCALE=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
 	sdk/buildroot/utils/check-package \
 	  sdk/buildroot/package/mihomo/Config.in \
 	  sdk/buildroot/package/mihomo/mihomo.mk \
-	  sdk/buildroot/package/mihomo/mihomo.hash
+	  sdk/buildroot/package/mihomo/mihomo.hash \
+	  sdk/buildroot/package/tailscale/Config.in \
+	  sdk/buildroot/package/tailscale/tailscale.mk \
+	  sdk/buildroot/package/tailscale/tailscale.hash
 	grep -q '^MIHOMO_VERSION = 1\.19\.29$$' sdk/buildroot/package/mihomo/mihomo.mk
-	@for symbol in BRIDGE TUN IP_ADVANCED_ROUTER IP_MULTIPLE_TABLES \
+	grep -q '^TAILSCALE_VERSION = 1\.102\.2$$' sdk/buildroot/package/tailscale/tailscale.mk
+	grep -F -q '$$(TARGET_DIR)/usr/bin/tailscale' sdk/buildroot/package/tailscale/tailscale.mk
+	grep -F -q '$$(TARGET_DIR)/usr/bin/tailscaled' sdk/buildroot/package/tailscale/tailscale.mk
+	! grep -qE 'etc/init\.d|userdata|auth.?key|tailscale.*(web|config)' sdk/buildroot/package/tailscale/tailscale.mk
+	test ! -e sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82tailscaled
+	@for symbol in BRIDGE TUN IP_ADVANCED_ROUTER IP_MULTIPLE_TABLES NF_CONNTRACK \
+	  IP_NF_FILTER IP_NF_NAT IP_NF_TARGET_MASQUERADE \
 	  NETFILTER_XT_TARGET_MARK NETFILTER_XT_MATCH_MARK NETFILTER_XT_MATCH_MAC \
 	  NETFILTER_XT_MATCH_SOCKET NETFILTER_XT_MATCH_COMMENT NETFILTER_XT_TARGET_TPROXY \
 	  NETFILTER_XT_TARGET_REDIRECT IP_NF_MANGLE; do \

@@ -5,6 +5,7 @@ use crate::domain::{
     panel::{DisplayRequest, DisplayStatus, ProxyDelayResult, ProxyGroup, ProxySelectionRequest},
     proxy::{ProxyAction, ProxyMode, ProxyObserved},
     subscription::{GenerationId, SubscriptionStatus, SubscriptionUrl, ValidatedSubscription},
+    tailscale::{TailscaleAction, TailscaleLoginUrl, TailscaleObserved},
 };
 use std::{error::Error, fmt, net::SocketAddr, time::Duration};
 
@@ -84,6 +85,18 @@ pub trait RouterPlatformPort: Send + Sync {
 pub trait SystemProbePort: Send + Sync {
     fn observe_network(&self) -> Result<NetworkObserved, PlatformError>;
     fn observe_proxy(&self) -> Result<ProxyObserved, PlatformError>;
+}
+
+pub trait TailscalePlatformPort: Send + Sync {
+    fn acquire_tailscale_lock(&self) -> Result<LifecycleLease, PlatformError>;
+    fn release_tailscale_lock(&self, lease: &LifecycleLease) -> Result<(), PlatformError>;
+    fn apply_tailscale(&self, action: &TailscaleAction) -> Result<(), PlatformError>;
+    fn request_login(&self) -> Result<TailscaleLoginUrl, PlatformError>;
+    fn logout(&self) -> Result<(), PlatformError>;
+}
+
+pub trait TailscaleProbePort: Send + Sync {
+    fn observe_tailscale(&self) -> Result<TailscaleObserved, PlatformError>;
 }
 
 pub trait PanelPlatformPort: Send + Sync {

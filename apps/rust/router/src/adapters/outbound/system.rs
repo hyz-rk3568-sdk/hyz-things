@@ -18,6 +18,7 @@ use crate::{
             ProxyAction, ProxyMode, ProxyObserved, MIHOMO_FILTER_CHAIN, MIHOMO_MANGLE_CHAIN,
             MIHOMO_MARK, MIHOMO_ROUTE_TABLE, MIHOMO_RULE_PRIORITY, MIHOMO_TUN_INTERFACE,
         },
+        tailscale::TAILSCALE_FORWARD_CHAIN,
     },
 };
 use std::{
@@ -446,7 +447,7 @@ impl LinuxRouterPlatform {
                 Probe::Known(OwnedResource::Owned { token: right }),
             ) if left == right => match (
                 self.observe_hook("filter", "FORWARD", left.as_str(), MIHOMO_FILTER_CHAIN),
-                self.observe_tun_hook_order(),
+                self.observe_shared_forward_hook_order(),
             ) {
                 (Probe::Known(true), Probe::Known(true)) => {
                     Probe::Known(OwnedResource::Owned { token: left })
@@ -506,20 +507,41 @@ impl LinuxRouterPlatform {
     }
 
     fn observe_router_hook_order(&self) -> Probe<bool> {
-        let filter = self.iptables_output(&["-w", "-t", "filter", "-S", "FORWARD"]);
+        let forward = self.observe_shared_forward_hook_order();
         let nat = self.iptables_output(&["-w", "-t", "nat", "-S", "POSTROUTING"]);
-        match (filter, nat) {
-            (Probe::Known(filter), Probe::Known(nat)) => Probe::Known(
-                hook_order_is_installer_consistent(&filter, false)
-                    && owned_jump_is_first(&nat, "POSTROUTING", ROUTER_NAT_CHAIN),
-            ),
+        match (forward, nat) {
+            (Probe::Known(forward), Probe::Known(nat)) => {
+                Probe::Known(forward && owned_jump_is_first(&nat, "POSTROUTING", ROUTER_NAT_CHAIN))
+            }
             (Probe::Unknown(reason), _) | (_, Probe::Unknown(reason)) => Probe::Unknown(reason),
         }
     }
 
-    fn observe_tun_hook_order(&self) -> Probe<bool> {
-        self.iptables_output(&["-w", "-t", "filter", "-S", "FORWARD"])
-            .map(|output| hook_order_is_installer_consistent(&output, true))
+    fn observe_shared_forward_hook_order(&self) -> Probe<bool> {
+        let output = match self.iptables_output(&["-w", "-t", "filter", "-S", "FORWARD"]) {
+            Probe::Known(output) => output,
+            Probe::Unknown(reason) => return Probe::Unknown(reason),
+        };
+        let mihomo =
+            owned_forward_hook_is_exact(&output, storage::TUN_FIREWALL_OWNER, MIHOMO_FILTER_CHAIN);
+        let tailscale = owned_forward_hook_is_exact(
+            &output,
+            storage::TAILSCALE_FIREWALL_OWNER,
+            TAILSCALE_FORWARD_CHAIN,
+        );
+        let router = owned_forward_hook_is_exact(
+            &output,
+            storage::ROUTER_FIREWALL_OWNER,
+            ROUTER_FILTER_CHAIN,
+        );
+        match (mihomo, tailscale, router) {
+            (Ok(mihomo), Ok(tailscale), Ok(router)) => Probe::Known(forward_hook_order_is_exact(
+                &output, mihomo, tailscale, router,
+            )),
+            (Err(error), _, _) | (_, Err(error), _) | (_, _, Err(error)) => {
+                Probe::Unknown(error.to_string())
+            }
+        }
     }
 
     fn observe_hook(&self, table: &str, parent: &str, comment: &str, jump: &str) -> Probe<bool> {
@@ -994,27 +1016,79 @@ pub(crate) fn exact_chain_references(output: &str, jump: &str) -> Option<Vec<Vec
         })
 }
 
-fn hook_order_is_installer_consistent(output: &str, require_tun: bool) -> bool {
+pub(crate) fn owned_forward_hook_is_exact(
+    output: &str,
+    marker_path: &str,
+    chain: &str,
+) -> Result<bool, PlatformError> {
+    let marker = storage::read_private_small_optional(marker_path, 128)?;
+    let references = exact_chain_references(output, chain).ok_or_else(|| {
+        PlatformError::ProbeFailed(format!("cannot parse {chain} FORWARD references"))
+    })?;
+    match marker {
+        Some(token) => {
+            let token = token.trim();
+            storage::validate_token(token)?;
+            let expected = words(&[
+                "-A",
+                "FORWARD",
+                "-m",
+                "comment",
+                "--comment",
+                token,
+                "-j",
+                chain,
+            ]);
+            if references != [expected] {
+                return Err(PlatformError::Conflict(format!(
+                    "{chain} FORWARD hook is not exact and unique"
+                )));
+            }
+            Ok(true)
+        }
+        None if references.is_empty() => Ok(false),
+        None => Err(PlatformError::Conflict(format!(
+            "unowned {chain} FORWARD references are present"
+        ))),
+    }
+}
+
+pub fn forward_hook_order_is_exact(
+    output: &str,
+    mihomo_present: bool,
+    tailscale_present: bool,
+    router_present: bool,
+) -> bool {
     let Some(rules) = normalized_chain_rules(output, "FORWARD") else {
         return false;
     };
-    let targets = |jump: &str| {
-        rules
+    let expected = [
+        (mihomo_present, MIHOMO_FILTER_CHAIN),
+        (tailscale_present, TAILSCALE_FORWARD_CHAIN),
+        (router_present, ROUTER_FILTER_CHAIN),
+    ]
+    .into_iter()
+    .filter_map(|(present, chain)| present.then_some(chain))
+    .collect::<Vec<_>>();
+    for (_, chain) in [
+        (mihomo_present, MIHOMO_FILTER_CHAIN),
+        (tailscale_present, TAILSCALE_FORWARD_CHAIN),
+        (router_present, ROUTER_FILTER_CHAIN),
+    ] {
+        let positions = rules
             .iter()
             .enumerate()
-            .filter(|(_, rule)| rule.windows(2).any(|pair| pair == ["-j", jump]))
+            .filter(|(_, rule)| rule.windows(2).any(|pair| pair == ["-j", chain]))
             .map(|(index, _)| index)
-            .collect::<Vec<_>>()
-    };
-    let router = targets(ROUTER_FILTER_CHAIN);
-    let tun = targets(MIHOMO_FILTER_CHAIN);
-    if router.len() != 1 || tun.len() > 1 {
-        return false;
+            .collect::<Vec<_>>();
+        let wanted = expected.iter().position(|expected| *expected == chain);
+        match wanted {
+            Some(position) if positions == [position] => {}
+            None if positions.is_empty() => {}
+            _ => return false,
+        }
     }
-    match tun.first() {
-        Some(tun) => *tun == 0 && router[0] == 1,
-        None => !require_tun && router[0] == 0,
-    }
+    true
 }
 
 fn owned_jump_is_first(output: &str, parent: &str, jump: &str) -> bool {
@@ -1129,9 +1203,41 @@ mod tests {
     }
 
     #[test]
-    fn normalized_rules_require_exact_tokens_and_installer_hook_order() {
-        let output = "-P FORWARD ACCEPT\n-A FORWARD -m comment --comment t -j HYZ_MIHOMO_FWD\n-A FORWARD -m comment --comment r -j HYZ_ROUTER_FWD\n-A FORWARD -j UNRELATED\n";
-        assert!(hook_order_is_installer_consistent(output, true));
+    fn normalized_rules_require_exact_tokens_and_shared_hook_order() {
+        let unrelated = "-A FORWARD -j UNRELATED\n";
+        for (mihomo, tailscale, router, managed) in [
+            (false, false, false, ""),
+            (
+                false,
+                false,
+                true,
+                "-A FORWARD -m comment --comment r -j HYZ_ROUTER_FWD\n",
+            ),
+            (
+                true,
+                false,
+                true,
+                "-A FORWARD -m comment --comment m -j HYZ_MIHOMO_FWD\n-A FORWARD -m comment --comment r -j HYZ_ROUTER_FWD\n",
+            ),
+            (
+                false,
+                true,
+                true,
+                "-A FORWARD -m comment --comment t -j HYZ_TS_FWD\n-A FORWARD -m comment --comment r -j HYZ_ROUTER_FWD\n",
+            ),
+            (
+                true,
+                true,
+                true,
+                "-A FORWARD -m comment --comment m -j HYZ_MIHOMO_FWD\n-A FORWARD -m comment --comment t -j HYZ_TS_FWD\n-A FORWARD -m comment --comment r -j HYZ_ROUTER_FWD\n",
+            ),
+        ] {
+            let output = format!("-P FORWARD ACCEPT\n{managed}{unrelated}");
+            assert!(
+                forward_hook_order_is_exact(&output, mihomo, tailscale, router),
+                "{output}"
+            );
+        }
         assert_ne!(
             normalized_rule(
                 "-A FORWARD -m comment --comment \"hyz-mihomo-forward:t\" -s 1.2.3.4 -j HYZ_MIHOMO_FWD",
@@ -1141,10 +1247,13 @@ mod tests {
                 "-j", MIHOMO_FILTER_CHAIN,
             ])),
         );
-        assert!(!hook_order_is_installer_consistent(
-            &format!("{output}-A FORWARD -j HYZ_ROUTER_FWD\n"),
-            true,
-        ));
+        for invalid in [
+            "-A FORWARD -j HYZ_ROUTER_FWD\n-A FORWARD -j HYZ_TS_FWD\n",
+            "-A FORWARD -j HYZ_TS_FWD\n-A FORWARD -j HYZ_MIHOMO_FWD\n-A FORWARD -j HYZ_ROUTER_FWD\n",
+            "-A FORWARD -j HYZ_MIHOMO_FWD\n-A FORWARD -j HYZ_TS_FWD\n-A FORWARD -j HYZ_TS_FWD\n-A FORWARD -j HYZ_ROUTER_FWD\n",
+        ] {
+            assert!(!forward_hook_order_is_exact(invalid, true, true, true));
+        }
     }
 
     #[test]

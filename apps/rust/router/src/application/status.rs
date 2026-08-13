@@ -8,8 +8,17 @@ use tokio::sync::Mutex;
 
 use crate::{
     application::ports::ClockPort,
-    domain::status::{
-        Component, ProxyStatus, RouterStatus, SnapshotState, StatusSnapshot, SystemStats,
+    domain::{
+        network::{OwnedResource, Probe},
+        status::{
+            Component, Issue, ProxyStatus, RouterStatus, SnapshotState, StatusSnapshot,
+            SystemStats, TailscaleConnectionStatus, TailscaleConnectionType,
+            TailscaleErrorCategory, TailscaleRouteApproval, TailscaleStatus,
+        },
+        tailscale::{
+            TailscaleBackendState, TailscaleConnectionKind, TailscaleDesired, TailscaleMode,
+            TailscaleObserved, TailscaleReadiness,
+        },
     },
 };
 
@@ -28,6 +37,146 @@ pub trait StatusSystemProbePort: Send + Sync {
     async fn read_system_stats(&self) -> Component<SystemStats>;
 }
 
+#[async_trait]
+pub trait StatusTailscalePlatformPort: Send + Sync {
+    async fn read_tailscale_status(&self) -> Component<TailscaleStatus>;
+}
+
+struct UnavailableTailscaleStatus;
+
+#[async_trait]
+impl StatusTailscalePlatformPort for UnavailableTailscaleStatus {
+    async fn read_tailscale_status(&self) -> Component<TailscaleStatus> {
+        Component::unavailable(Issue::new(
+            "tailscale_status_unavailable",
+            "Tailscale status is not connected to the runtime",
+        ))
+    }
+}
+
+pub fn tailscale_status_from_observed(
+    observed: &TailscaleObserved,
+    ordinary_router_ready: bool,
+) -> TailscaleStatus {
+    let desired_mode = match &observed.persisted_mode {
+        Probe::Known(mode) => *mode,
+        Probe::Unknown(_) => None,
+    };
+    let effective_mode = desired_mode.and_then(|mode| {
+        match observed.readiness(&TailscaleDesired { mode }, ordinary_router_ready) {
+            TailscaleReadiness::Ready { effective_mode } => Some(effective_mode),
+            TailscaleReadiness::NeedsLogin | TailscaleReadiness::NotReady => None,
+        }
+    });
+    let backend_state = match &observed.backend_state {
+        Probe::Known(state) => *state,
+        Probe::Unknown(_) => TailscaleBackendState::Unknown,
+    };
+    let authenticated = known_copy(&observed.authenticated);
+    let ipv4 = match &observed.ipv4 {
+        Probe::Known(address) => *address,
+        Probe::Unknown(_) => None,
+    };
+    let route_advertised = known_copy(&observed.route_advertised);
+    let local_firewall_ready = match (
+        &observed.router_firewall,
+        &observed.subnet_firewall,
+        effective_mode,
+    ) {
+        (Probe::Known(OwnedResource::Owned { .. }), _, Some(mode))
+            if mode != TailscaleMode::LanSubnetAccess =>
+        {
+            Some(true)
+        }
+        (
+            Probe::Known(OwnedResource::Owned { .. }),
+            Probe::Known(OwnedResource::Owned { .. }),
+            Some(TailscaleMode::LanSubnetAccess),
+        ) => Some(true),
+        (Probe::Unknown(_), _, _) | (_, Probe::Unknown(_), _) => None,
+        _ => Some(false),
+    };
+    let connection = match &observed.connection {
+        Probe::Known(TailscaleConnectionKind::Direct) => TailscaleConnectionStatus {
+            kind: TailscaleConnectionType::Direct,
+            derp_region: None,
+        },
+        Probe::Known(TailscaleConnectionKind::PeerRelay) => TailscaleConnectionStatus {
+            kind: TailscaleConnectionType::PeerRelay,
+            derp_region: None,
+        },
+        Probe::Known(TailscaleConnectionKind::Derp(region)) => TailscaleConnectionStatus {
+            kind: TailscaleConnectionType::Derp,
+            derp_region: Some(region.clone()),
+        },
+        Probe::Known(TailscaleConnectionKind::Unknown) | Probe::Unknown(_) => {
+            TailscaleConnectionStatus {
+                kind: TailscaleConnectionType::Unknown,
+                derp_region: None,
+            }
+        }
+    };
+    let has_unknown = matches!(&observed.persisted_mode, Probe::Unknown(_))
+        || matches!(&observed.process, Probe::Unknown(_))
+        || matches!(&observed.socket, Probe::Unknown(_))
+        || matches!(&observed.interface, Probe::Unknown(_))
+        || matches!(&observed.backend_state, Probe::Unknown(_))
+        || matches!(&observed.authenticated, Probe::Unknown(_))
+        || matches!(&observed.ipv4, Probe::Unknown(_))
+        || matches!(&observed.route_advertised, Probe::Unknown(_))
+        || matches!(&observed.router_firewall, Probe::Unknown(_))
+        || matches!(&observed.subnet_firewall, Probe::Unknown(_))
+        || matches!(&observed.management_listener, Probe::Unknown(_))
+        || matches!(&observed.management_listener_ipv4, Probe::Unknown(_));
+    let degraded_to_router_only = desired_mode == Some(TailscaleMode::LanSubnetAccess)
+        && effective_mode == Some(TailscaleMode::RouterOnly);
+    TailscaleStatus {
+        desired_mode,
+        effective_mode,
+        backend_state,
+        authenticated,
+        ipv4,
+        route_advertised,
+        local_firewall_ready,
+        route_approval: TailscaleRouteApproval::UnknownExternalApprovalRequired,
+        connection,
+        error_category: if has_unknown {
+            Some(TailscaleErrorCategory::ProbeFailed)
+        } else if degraded_to_router_only
+            || (desired_mode.is_some() && effective_mode.is_none() && authenticated != Some(false))
+        {
+            Some(TailscaleErrorCategory::NotReady)
+        } else {
+            None
+        },
+    }
+}
+
+pub fn tailscale_status_component_from_observed(
+    observed: &TailscaleObserved,
+    ordinary_router_ready: bool,
+) -> Component<TailscaleStatus> {
+    let status = tailscale_status_from_observed(observed, ordinary_router_ready);
+    if status.error_category.is_none() {
+        Component::available(status)
+    } else {
+        Component::degraded(
+            status,
+            Issue::new(
+                "tailscale_not_ready",
+                "Tailscale state does not satisfy strict readiness",
+            ),
+        )
+    }
+}
+
+fn known_copy<T: Copy>(probe: &Probe<T>) -> Option<T> {
+    match probe {
+        Probe::Known(value) => Some(*value),
+        Probe::Unknown(_) => None,
+    }
+}
+
 const STATUS_CACHE_TTL: Duration = Duration::from_secs(2);
 
 #[derive(Clone)]
@@ -39,6 +188,7 @@ struct CachedSnapshot {
 #[derive(Clone)]
 pub struct ReadStatus {
     router_platform: Arc<dyn StatusRouterPlatformPort>,
+    tailscale_platform: Arc<dyn StatusTailscalePlatformPort>,
     system_probe: Arc<dyn StatusSystemProbePort>,
     clock: Arc<dyn ClockPort>,
     cache: Arc<Mutex<Option<CachedSnapshot>>>,
@@ -51,7 +201,28 @@ impl ReadStatus {
         system_probe: Arc<dyn StatusSystemProbePort>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
-        Self::with_cache_ttl(router_platform, system_probe, clock, STATUS_CACHE_TTL)
+        Self::with_cache_ttl(
+            router_platform,
+            Arc::new(UnavailableTailscaleStatus),
+            system_probe,
+            clock,
+            STATUS_CACHE_TTL,
+        )
+    }
+
+    pub fn new_with_tailscale(
+        router_platform: Arc<dyn StatusRouterPlatformPort>,
+        tailscale_platform: Arc<dyn StatusTailscalePlatformPort>,
+        system_probe: Arc<dyn StatusSystemProbePort>,
+        clock: Arc<dyn ClockPort>,
+    ) -> Self {
+        Self::with_cache_ttl(
+            router_platform,
+            tailscale_platform,
+            system_probe,
+            clock,
+            STATUS_CACHE_TTL,
+        )
     }
 
     #[cfg(feature = "e2e")]
@@ -60,17 +231,41 @@ impl ReadStatus {
         system_probe: Arc<dyn StatusSystemProbePort>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
-        Self::with_cache_ttl(router_platform, system_probe, clock, Duration::ZERO)
+        Self::with_cache_ttl(
+            router_platform,
+            Arc::new(UnavailableTailscaleStatus),
+            system_probe,
+            clock,
+            Duration::ZERO,
+        )
+    }
+
+    #[cfg(feature = "e2e")]
+    pub fn new_uncached_with_tailscale(
+        router_platform: Arc<dyn StatusRouterPlatformPort>,
+        tailscale_platform: Arc<dyn StatusTailscalePlatformPort>,
+        system_probe: Arc<dyn StatusSystemProbePort>,
+        clock: Arc<dyn ClockPort>,
+    ) -> Self {
+        Self::with_cache_ttl(
+            router_platform,
+            tailscale_platform,
+            system_probe,
+            clock,
+            Duration::ZERO,
+        )
     }
 
     fn with_cache_ttl(
         router_platform: Arc<dyn StatusRouterPlatformPort>,
+        tailscale_platform: Arc<dyn StatusTailscalePlatformPort>,
         system_probe: Arc<dyn StatusSystemProbePort>,
         clock: Arc<dyn ClockPort>,
         cache_ttl: Duration,
     ) -> Self {
         Self {
             router_platform,
+            tailscale_platform,
             system_probe,
             clock,
             cache: Arc::new(Mutex::new(None)),
@@ -88,12 +283,17 @@ impl ReadStatus {
             }
         }
 
-        let (router, proxy, system) = tokio::join!(
+        let (router, proxy, tailscale, system) = tokio::join!(
             self.router_platform.read_router_status(),
             self.router_platform.read_proxy_status(),
+            self.tailscale_platform.read_tailscale_status(),
             self.system_probe.read_system_stats(),
         );
-        let state = if router.is_available() && proxy.is_available() && system.is_available() {
+        let state = if router.is_available()
+            && proxy.is_available()
+            && tailscale.is_available()
+            && system.is_available()
+        {
             SnapshotState::Ok
         } else {
             SnapshotState::Degraded
@@ -104,6 +304,7 @@ impl ReadStatus {
             observed_at_unix_ms: self.clock.unix_time_millis(),
             router,
             proxy,
+            tailscale,
             system,
         };
         *cache = Some(CachedSnapshot {

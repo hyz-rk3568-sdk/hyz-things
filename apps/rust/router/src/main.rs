@@ -8,8 +8,8 @@ use hyz_router::{
             },
             dhcp_hook,
             http::{
-                app_with_admin_control, bind_fixed_lan_with_retry, DEFAULT_BIND_ATTEMPTS,
-                DEFAULT_HTTP_PORT,
+                app_with_admin_control, app_with_admin_control_at_address,
+                bind_fixed_lan_with_retry, DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
             },
             ota_cli::{parse_ota_cli, OtaCommand, OTA_USAGE},
         },
@@ -19,7 +19,7 @@ use hyz_router::{
             subscription::{
                 SubscriptionStore, SystemSubscriptionResolver, UreqSubscriptionTransport,
             },
-            LinuxMihomoFailOpenPlatform, LinuxRouterPlatform,
+            LinuxMihomoFailOpenPlatform, LinuxRouterPlatform, LinuxTailscalePlatform,
         },
     },
     application::{
@@ -29,44 +29,294 @@ use hyz_router::{
         fail_open::{MihomoFailOpenApplication, WatcherInvocation},
         ota::{InstallMode, OtaService},
         panel::PanelApplication,
-        ports::{ClockPort, DevicePolicyStorePort, PlatformError, SystemProbePort},
+        ports::{
+            ClockPort, DevicePolicyStorePort, LifecycleLease, PlatformError, SystemProbePort,
+            TailscalePlatformPort, TailscaleProbePort,
+        },
         proxy::ProxyApplication,
         router::RouterApplication,
         shutdown::ShutdownApplication,
-        status::ReadStatus,
+        status::{
+            tailscale_status_component_from_observed, ReadStatus, StatusTailscalePlatformPort,
+        },
         subscription::SubscriptionApplication,
+        tailscale::{TailscaleApplication, TailscaleReconcileState},
         wifi::{WifiApplication, AP_CONFIRM_TIMEOUT_SECS},
     },
     domain::{
-        network::NetworkDesired,
+        network::{NetworkDesired, OwnedResource, Probe},
         proxy::{ProxyDesired, ProxyMode},
+        status::{Component, Issue, TailscaleStatus},
+        tailscale::{
+            TailscaleAction, TailscaleDesired, TailscaleLoginUrl, TailscaleMode, TailscaleObserved,
+            TAILSCALE_MANAGEMENT_HTTP_PORT,
+        },
     },
 };
 use std::{
     error::Error,
+    net::{Ipv4Addr, SocketAddr},
     path::Path,
-    sync::Arc,
+    sync::{Arc, Mutex as StdMutex, Weak},
     time::{Duration, Instant},
 };
-use tokio::sync::{watch, Mutex};
+use tokio::sync::{oneshot, watch, Mutex as AsyncMutex};
 
 const USAGE: &str = "Usage:\n  hyz-router daemon\n  hyz-router status [--json]\n  hyz-router router enable|disable\n  hyz-router proxy explicit|tun|disable\n  hyz-router wifi status|scan\n  hyz-router wifi ap apply|confirm|cancel\n  hyz-router subscription get [--json]\n  hyz-router subscription refresh\n  hyz-router ota ...";
 
+#[derive(Clone)]
+struct ProductionTailscalePlatform {
+    linux: LinuxTailscalePlatform,
+    listener: Arc<StdMutex<Option<RunningTailscaleListener>>>,
+    http: Arc<StdMutex<Option<TailscaleHttpConfig>>>,
+    router: Arc<LinuxRouterPlatform>,
+}
+
+struct TailscaleHttpConfig {
+    runtime: tokio::runtime::Handle,
+    owner: Weak<ProductionRuntime>,
+    csrf_token: String,
+    port: u16,
+}
+
+struct RunningTailscaleListener {
+    token: String,
+    ipv4: Ipv4Addr,
+    shutdown: Option<oneshot::Sender<()>>,
+    task: tokio::task::JoinHandle<std::io::Result<()>>,
+}
+
+impl ProductionTailscalePlatform {
+    fn new(router: Arc<LinuxRouterPlatform>) -> Self {
+        Self {
+            linux: LinuxTailscalePlatform::new(),
+            listener: Arc::new(StdMutex::new(None)),
+            http: Arc::new(StdMutex::new(None)),
+            router,
+        }
+    }
+
+    fn attach_http(
+        &self,
+        owner: Weak<ProductionRuntime>,
+        csrf_token: String,
+        port: u16,
+        runtime: tokio::runtime::Handle,
+    ) -> Result<(), PlatformError> {
+        let mut config = self.http.lock().map_err(|_| {
+            PlatformError::InvalidState("Tailscale HTTP config lock poisoned".to_owned())
+        })?;
+        if config.is_some() {
+            return Err(PlatformError::Conflict(
+                "Tailscale HTTP composition is already attached".to_owned(),
+            ));
+        }
+        *config = Some(TailscaleHttpConfig {
+            runtime,
+            owner,
+            csrf_token,
+            port,
+        });
+        Ok(())
+    }
+
+    fn start_listener(&self, token: &str, ipv4: Ipv4Addr) -> Result<(), PlatformError> {
+        let mut state = self.listener.lock().map_err(|_| {
+            PlatformError::InvalidState("Tailscale listener lock poisoned".to_owned())
+        })?;
+        if state.is_some() {
+            return Err(PlatformError::Conflict(
+                "Tailscale management listener already exists".to_owned(),
+            ));
+        }
+        let config = self.http.lock().map_err(|_| {
+            PlatformError::InvalidState("Tailscale HTTP config lock poisoned".to_owned())
+        })?;
+        let config = config.as_ref().ok_or_else(|| {
+            PlatformError::InvalidState("Tailscale HTTP composition is not attached".to_owned())
+        })?;
+        if config.port != TAILSCALE_MANAGEMENT_HTTP_PORT {
+            return Err(PlatformError::InvalidState(format!(
+                "Tailscale management listener requires fixed HTTP port {TAILSCALE_MANAGEMENT_HTTP_PORT}"
+            )));
+        }
+        let owner = config.owner.upgrade().ok_or_else(|| {
+            PlatformError::InvalidState("Tailscale HTTP runtime owner is unavailable".to_owned())
+        })?;
+        let address = SocketAddr::from((ipv4, config.port));
+        let listener = std::net::TcpListener::bind(address).map_err(|error| {
+            PlatformError::Io(format!(
+                "bind exact Tailscale HTTP listener {address}: {error}"
+            ))
+        })?;
+        listener.set_nonblocking(true).map_err(|error| {
+            PlatformError::Io(format!("configure Tailscale HTTP listener: {error}"))
+        })?;
+        let listener = {
+            let _enter = config.runtime.enter();
+            tokio::net::TcpListener::from_std(listener).map_err(|error| {
+                PlatformError::Io(format!("adopt exact Tailscale HTTP listener: {error}"))
+            })?
+        };
+        let (shutdown, stopped) = oneshot::channel();
+        let status = owner.status();
+        let control: Arc<dyn ControlHandler> = owner.clone();
+        let admin = owner.admin();
+        let app = app_with_admin_control_at_address(
+            status,
+            control,
+            admin,
+            config.csrf_token.clone(),
+            ipv4,
+            config.port,
+        );
+        let task = config.runtime.spawn(async move {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(async move {
+                    let _ = stopped.await;
+                })
+                .await
+        });
+        *state = Some(RunningTailscaleListener {
+            token: token.to_owned(),
+            ipv4,
+            shutdown: Some(shutdown),
+            task,
+        });
+        Ok(())
+    }
+
+    fn stop_listener(&self, token: &str) -> Result<(), PlatformError> {
+        let mut state = self.listener.lock().map_err(|_| {
+            PlatformError::InvalidState("Tailscale listener lock poisoned".to_owned())
+        })?;
+        let mut running = state.take().ok_or_else(|| {
+            PlatformError::Conflict("Tailscale management listener is absent".to_owned())
+        })?;
+        if running.token != token {
+            *state = Some(running);
+            return Err(PlatformError::Conflict(
+                "refusing to stop a Tailscale listener with a different ownership token".to_owned(),
+            ));
+        }
+        if let Some(shutdown) = running.shutdown.take() {
+            let _ = shutdown.send(());
+        }
+        // Dropping the join handle detaches the graceful drain. The listening socket stops
+        // accepting immediately, while an in-flight request from this listener may finish its
+        // response without deadlocking the lifecycle operation that initiated the stop.
+        drop(running.task);
+        drop(state);
+        Ok(())
+    }
+
+    fn listener_observation(&self) -> (Probe<OwnedResource>, Probe<Option<Ipv4Addr>>) {
+        match self.listener.lock() {
+            Ok(state) => match state.as_ref() {
+                None => (Probe::Known(OwnedResource::Absent), Probe::Known(None)),
+                Some(listener) if listener.task.is_finished() => {
+                    let reason = "Tailscale management listener terminated unexpectedly".to_owned();
+                    (Probe::Unknown(reason.clone()), Probe::Unknown(reason))
+                }
+                Some(listener) => (
+                    Probe::Known(OwnedResource::Owned {
+                        token: listener.token.clone(),
+                    }),
+                    Probe::Known(Some(listener.ipv4)),
+                ),
+            },
+            Err(_) => {
+                let reason = "Tailscale listener lock poisoned".to_owned();
+                (Probe::Unknown(reason.clone()), Probe::Unknown(reason))
+            }
+        }
+    }
+}
+
+impl TailscalePlatformPort for ProductionTailscalePlatform {
+    fn acquire_tailscale_lock(&self) -> Result<LifecycleLease, PlatformError> {
+        self.linux.acquire_tailscale_lock()
+    }
+
+    fn release_tailscale_lock(&self, lease: &LifecycleLease) -> Result<(), PlatformError> {
+        self.linux.release_tailscale_lock(lease)
+    }
+
+    fn apply_tailscale(&self, action: &TailscaleAction) -> Result<(), PlatformError> {
+        match action {
+            TailscaleAction::StartManagementListener { token, ipv4 } => {
+                self.start_listener(token, *ipv4)
+            }
+            TailscaleAction::StopManagementListener { token } => self.stop_listener(token),
+            _ => self.linux.apply_tailscale(action),
+        }
+    }
+
+    fn request_login(&self) -> Result<TailscaleLoginUrl, PlatformError> {
+        self.linux.request_login()
+    }
+
+    fn logout(&self) -> Result<(), PlatformError> {
+        self.linux.logout()
+    }
+}
+
+impl TailscaleProbePort for ProductionTailscalePlatform {
+    fn observe_tailscale(&self) -> Result<TailscaleObserved, PlatformError> {
+        let mut observed = self.linux.observe_tailscale()?;
+        let (listener, listener_ipv4) = self.listener_observation();
+        observed.management_listener = listener;
+        observed.management_listener_ipv4 = listener_ipv4;
+        Ok(observed)
+    }
+}
+
+#[async_trait::async_trait]
+impl StatusTailscalePlatformPort for ProductionTailscalePlatform {
+    async fn read_tailscale_status(&self) -> Component<TailscaleStatus> {
+        let tailscale = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let observed = tailscale
+                .observe_tailscale()
+                .map_err(|error| error.to_string())?;
+            let network = tailscale
+                .router
+                .observe_network()
+                .map_err(|error| error.to_string())?;
+            Ok::<_, String>(tailscale_status_component_from_observed(
+                &observed,
+                network.ready_for(&NetworkDesired::forwarding()),
+            ))
+        })
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .unwrap_or_else(|| {
+            Component::unavailable(Issue::new(
+                "tailscale_probe_failed",
+                "Tailscale status is unavailable",
+            ))
+        })
+    }
+}
+
 struct ProductionRuntime {
     router: Arc<LinuxRouterPlatform>,
+    tailscale: Arc<ProductionTailscalePlatform>,
     admin: Arc<AdminApplication>,
     firmware: FirmwareAdapter,
     subscription_store: SubscriptionStore,
     subscription_transport: UreqSubscriptionTransport,
-    router_proxy: Mutex<()>,
-    proxy_delay_last: Mutex<Option<Instant>>,
-    display: Mutex<()>,
-    ota: Mutex<()>,
+    router_proxy: AsyncMutex<()>,
+    proxy_delay_last: AsyncMutex<Option<Instant>>,
+    display: AsyncMutex<()>,
+    ota: AsyncMutex<()>,
 }
 
 impl ProductionRuntime {
     fn build() -> Result<Self, AdminError> {
         let router = Arc::new(LinuxRouterPlatform::new());
+        let tailscale = Arc::new(ProductionTailscalePlatform::new(router.clone()));
         let admin_adapter = Arc::new(AdminFileAdapter::default());
         let admin = Arc::new(AdminApplication::initialize(
             admin_adapter.clone(),
@@ -76,14 +326,15 @@ impl ProductionRuntime {
         let resolver = Arc::new(SystemSubscriptionResolver);
         Ok(Self {
             router,
+            tailscale,
             admin,
             firmware: FirmwareAdapter::default(),
             subscription_store: SubscriptionStore::default(),
             subscription_transport: UreqSubscriptionTransport::new(resolver),
-            router_proxy: Mutex::new(()),
-            proxy_delay_last: Mutex::new(None),
-            display: Mutex::new(()),
-            ota: Mutex::new(()),
+            router_proxy: AsyncMutex::new(()),
+            proxy_delay_last: AsyncMutex::new(None),
+            display: AsyncMutex::new(()),
+            ota: AsyncMutex::new(()),
         })
     }
 
@@ -92,11 +343,156 @@ impl ProductionRuntime {
     }
 
     fn status(&self) -> ReadStatus {
-        ReadStatus::new(
+        ReadStatus::new_with_tailscale(
             self.router.clone(),
+            self.tailscale.clone(),
             self.router.clone(),
             self.router.clone(),
         )
+    }
+
+    async fn tailscale_desired(&self) -> Result<TailscaleDesired, PlatformError> {
+        let tailscale = self.tailscale.clone();
+        let observed = tokio::task::spawn_blocking(move || tailscale.observe_tailscale())
+            .await
+            .map_err(|_| {
+                PlatformError::CommandFailed(
+                    "Tailscale desired-mode probe terminated unexpectedly".to_owned(),
+                )
+            })??;
+        match observed.persisted_mode {
+            Probe::Known(Some(mode)) => Ok(TailscaleDesired { mode }),
+            Probe::Known(None) => Ok(TailscaleDesired::disabled()),
+            Probe::Unknown(reason) => Err(PlatformError::ProbeFailed(format!(
+                "persisted Tailscale mode is unknown: {reason}"
+            ))),
+        }
+    }
+
+    async fn reconcile_tailscale(
+        &self,
+        desired: TailscaleDesired,
+    ) -> Result<(TailscaleStatus, Option<TailscaleLoginUrl>), PlatformError> {
+        let tailscale = self.tailscale.clone();
+        let router = self.router.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            TailscaleApplication::new(
+                tailscale.as_ref(),
+                tailscale.as_ref(),
+                router.as_ref(),
+                router.as_ref(),
+            )
+            .reconcile(&desired)
+        })
+        .await
+        .map_err(|_| {
+            PlatformError::CommandFailed("Tailscale worker terminated unexpectedly".to_owned())
+        })??;
+        let login_url = match result.state {
+            TailscaleReconcileState::Ready { .. } => None,
+            TailscaleReconcileState::NeedsLogin { login_url } => Some(login_url),
+        };
+        let status = self.tailscale.read_tailscale_status().await;
+        let status = status.data.ok_or_else(|| {
+            PlatformError::ProbeFailed("Tailscale status is unavailable after reconcile".to_owned())
+        })?;
+        Ok((status, login_url))
+    }
+
+    async fn reconcile_persisted_tailscale(
+        &self,
+    ) -> Result<(TailscaleStatus, Option<TailscaleLoginUrl>), PlatformError> {
+        let desired = self.tailscale_desired().await?;
+        self.reconcile_tailscale(desired).await
+    }
+
+    async fn reconcile_running_tailscale_best_effort(&self, context: &str) {
+        let tailscale = self.tailscale.clone();
+        let authenticated = tokio::task::spawn_blocking(move || {
+            tailscale
+                .observe_tailscale()
+                .map(|observed| observed.authenticated == Probe::Known(true))
+        })
+        .await;
+        if !matches!(authenticated, Ok(Ok(true))) {
+            return;
+        }
+        if let Err(error) = self.reconcile_persisted_tailscale().await {
+            eprintln!(
+                "hyz-router: {context} succeeded but authenticated Tailscale reconcile failed: {error}"
+            );
+        }
+    }
+
+    async fn shutdown_tailscale(&self) -> Result<(), PlatformError> {
+        let tailscale = self.tailscale.clone();
+        let router = self.router.clone();
+        tokio::task::spawn_blocking(move || {
+            TailscaleApplication::new(
+                tailscale.as_ref(),
+                tailscale.as_ref(),
+                router.as_ref(),
+                router.as_ref(),
+            )
+            .shutdown()
+            .map(|_| ())
+        })
+        .await
+        .map_err(|_| {
+            PlatformError::CommandFailed(
+                "Tailscale shutdown worker terminated unexpectedly".to_owned(),
+            )
+        })?
+    }
+
+    async fn degrade_tailscale_to_router_only(&self) -> Result<(), PlatformError> {
+        let tailscale = self.tailscale.clone();
+        let router = self.router.clone();
+        tokio::task::spawn_blocking(move || {
+            TailscaleApplication::new(
+                tailscale.as_ref(),
+                tailscale.as_ref(),
+                router.as_ref(),
+                router.as_ref(),
+            )
+            .degrade_to_router_only()
+            .map(|_| ())
+        })
+        .await
+        .map_err(|_| {
+            PlatformError::CommandFailed(
+                "Tailscale degradation worker terminated unexpectedly".to_owned(),
+            )
+        })?
+    }
+
+    async fn logout_tailscale(&self) -> Result<TailscaleStatus, PlatformError> {
+        let tailscale = self.tailscale.clone();
+        let router = self.router.clone();
+        tokio::task::spawn_blocking(move || {
+            TailscaleApplication::new(
+                tailscale.as_ref(),
+                tailscale.as_ref(),
+                router.as_ref(),
+                router.as_ref(),
+            )
+            .logout()
+        })
+        .await
+        .map_err(|_| {
+            PlatformError::CommandFailed(
+                "Tailscale logout worker terminated unexpectedly".to_owned(),
+            )
+        })??;
+        self.tailscale
+            .read_tailscale_status()
+            .await
+            .data
+            .ok_or_else(|| {
+                PlatformError::ProbeFailed(
+                    "Tailscale status is unavailable after logout".to_owned(),
+                )
+            })
     }
 
     fn web_token(&self) -> Result<String, PlatformError> {
@@ -123,29 +519,25 @@ impl ProductionRuntime {
         WifiApplication::new(self.router.as_ref())
             .recover()
             .map_err(|error| format!("recover interrupted AP transaction: {error}"))?;
-        if let Err(error) = self
-            .reconcile_network(NetworkDesired::management_only())
+        self.reconcile_network(NetworkDesired::management_only())
             .await
-        {
-            return Err(format!(
-                "startup management reconciliation failed and network safety is unconfirmed: {error}"
-            ));
-        }
-        if let Err(error) = self.reconcile_network(NetworkDesired::forwarding()).await {
-            match self
+            .map_err(|error| {
+                format!(
+                    "startup management reconciliation failed and network safety is unconfirmed: {error}"
+                )
+            })?;
+
+        let forwarding_ready = match self.reconcile_network(NetworkDesired::forwarding()).await {
+            Ok(()) => true,
+            Err(error) => match self
                 .reconcile_network(NetworkDesired::management_only())
                 .await
             {
                 Ok(()) => {
-                    self.recover_device_policy().await.map_err(|recovery_error| {
-                        format!(
-                            "startup reached management-only mode after forwarding failed ({error}), but interrupted device-policy recovery failed: {recovery_error}"
-                        )
-                    })?;
                     eprintln!(
                         "hyz-router: startup forwarding is unavailable ({error}); continuing in strictly confirmed management-only mode"
                     );
-                    return Ok(());
+                    false
                 }
                 Err(degraded_error) => {
                     return Err(startup_failure(
@@ -154,48 +546,61 @@ impl ProductionRuntime {
                         degraded_error,
                     ));
                 }
-            }
-        }
+            },
+        };
 
         self.recover_device_policy().await?;
 
-        let platform = self.router.clone();
-        let proxy = tokio::task::spawn_blocking(move || {
-            let observed = platform.observe_proxy()?;
-            let mode = match observed.effective_persisted_mode() {
-                hyz_router::domain::network::Probe::Known(mode) => mode,
-                hyz_router::domain::network::Probe::Unknown(reason) => {
-                    return Err(PlatformError::ProbeFailed(format!(
-                        "effective persisted proxy mode is unknown: {reason}"
-                    )));
-                }
-            };
-            let direct_macs = platform.load_device_policy()?.direct_macs();
-            ProxyApplication::new(platform.as_ref(), platform.as_ref(), platform.as_ref())
-                .reconcile(&ProxyDesired { mode, direct_macs })
-                .map(|_| ())
-        })
-        .await
-        .map_err(|_| "startup proxy worker terminated unexpectedly".to_owned())?;
+        if forwarding_ready {
+            let platform = self.router.clone();
+            let proxy = tokio::task::spawn_blocking(move || {
+                let observed = platform.observe_proxy()?;
+                let mode = match observed.effective_persisted_mode() {
+                    Probe::Known(mode) => mode,
+                    Probe::Unknown(reason) => {
+                        return Err(PlatformError::ProbeFailed(format!(
+                            "effective persisted proxy mode is unknown: {reason}"
+                        )));
+                    }
+                };
+                let direct_macs = platform.load_device_policy()?.direct_macs();
+                ProxyApplication::new(platform.as_ref(), platform.as_ref(), platform.as_ref())
+                    .reconcile(&ProxyDesired { mode, direct_macs })
+                    .map(|_| ())
+            })
+            .await
+            .map_err(|_| "startup proxy worker terminated unexpectedly".to_owned())?;
 
-        if let Err(error) = proxy {
-            match self
-                .reconcile_network(NetworkDesired::management_only())
-                .await
-            {
-                Ok(()) => {
-                    eprintln!(
-                        "hyz-router: persisted proxy mode is unavailable ({error}); continuing in management-only mode"
-                    );
-                    return Ok(());
+            if let Err(error) = proxy {
+                match self
+                    .reconcile_network(NetworkDesired::management_only())
+                    .await
+                {
+                    Ok(()) => {
+                        eprintln!(
+                            "hyz-router: persisted proxy mode is unavailable ({error}); continuing in management-only mode"
+                        );
+                    }
+                    Err(degraded_error) => {
+                        return Err(startup_failure(
+                            "persisted proxy-mode restoration",
+                            error,
+                            degraded_error,
+                        ));
+                    }
                 }
-                Err(degraded_error) => {
-                    return Err(startup_failure(
-                        "persisted proxy-mode restoration",
-                        error,
-                        degraded_error,
-                    ));
-                }
+            }
+        }
+
+        if let Err(error) = self.reconcile_persisted_tailscale().await {
+            let cleanup = self.shutdown_tailscale().await;
+            match cleanup {
+                Ok(()) => eprintln!(
+                    "hyz-router: persisted Tailscale mode is unavailable ({error}); router and Mihomo state remain unchanged"
+                ),
+                Err(cleanup_error) => eprintln!(
+                    "hyz-router: persisted Tailscale mode is unavailable ({error}); Tailscale-only cleanup also failed: {cleanup_error}; router and Mihomo state remain unchanged"
+                ),
             }
         }
         Ok(())
@@ -230,6 +635,9 @@ impl ProductionRuntime {
 
     async fn shutdown(&self) -> Result<(), String> {
         let _serial = self.router_proxy.lock().await;
+        self.shutdown_tailscale()
+            .await
+            .map_err(|error| format!("Tailscale-first shutdown failed: {error}"))?;
         let platform = self.router.clone();
         tokio::task::spawn_blocking(move || {
             ShutdownApplication::new(platform.as_ref(), platform.as_ref())
@@ -429,6 +837,51 @@ impl ControlHandler for ProductionRuntime {
                 .map_err(|error| error.to_string())?;
                 Ok(ControlResult::Subscription { summary })
             }
+            ControlOperation::TailscaleGet { .. } => {
+                let status = self
+                    .tailscale
+                    .read_tailscale_status()
+                    .await
+                    .data
+                    .ok_or_else(|| "Tailscale status is unavailable".to_owned())?;
+                Ok(ControlResult::Tailscale { status })
+            }
+            ControlOperation::TailscaleMode { mode } => {
+                let _serial = self.router_proxy.lock().await;
+                let (status, login_url) = self
+                    .reconcile_tailscale(TailscaleDesired { mode })
+                    .await
+                    .map_err(|error| error.to_string())?;
+                Ok(ControlResult::TailscaleMutation { status, login_url })
+            }
+            ControlOperation::TailscaleLogin { .. } => {
+                let _serial = self.router_proxy.lock().await;
+                let desired = self
+                    .tailscale_desired()
+                    .await
+                    .map_err(|error| error.to_string())?;
+                if desired.mode == TailscaleMode::Disabled {
+                    return Err(
+                        "select RouterOnly or LAN subnet access before requesting login".to_owned(),
+                    );
+                }
+                let (status, login_url) = self
+                    .reconcile_tailscale(desired)
+                    .await
+                    .map_err(|error| error.to_string())?;
+                Ok(ControlResult::TailscaleMutation { status, login_url })
+            }
+            ControlOperation::TailscaleLogout { .. } => {
+                let _serial = self.router_proxy.lock().await;
+                let status = self
+                    .logout_tailscale()
+                    .await
+                    .map_err(|error| error.to_string())?;
+                Ok(ControlResult::TailscaleMutation {
+                    status,
+                    login_url: None,
+                })
+            }
             ControlOperation::Dhcp { event } => {
                 // Deliberately independent of router_proxy: udhcpc callbacks must run while router
                 // startup waits for the DHCP-owned metric-600 route. The DHCP port never acquires
@@ -438,10 +891,19 @@ impl ControlHandler for ProductionRuntime {
                     .await
                     .map_err(|_| "DHCP worker terminated unexpectedly".to_owned())?
                     .map_err(|error| error.to_string())?;
+                self.reconcile_running_tailscale_best_effort("DHCP/WAN update")
+                    .await;
                 Ok(completed("DHCP event applied"))
             }
             ControlOperation::Router { enabled } => {
                 let _serial = self.router_proxy.lock().await;
+                if !enabled {
+                    // The Tailscale LAN path must close while ordinary forwarding is still
+                    // confirmed. Its persisted desired mode is intentionally preserved.
+                    self.degrade_tailscale_to_router_only()
+                        .await
+                        .map_err(|error| error.to_string())?;
+                }
                 let platform = self.router.clone();
                 let actions_applied = tokio::task::spawn_blocking(move || {
                     let mut actions_applied = 0;
@@ -476,6 +938,11 @@ impl ControlHandler for ProductionRuntime {
                 .await
                 .map_err(|_| "router worker terminated unexpectedly".to_owned())?
                 .map_err(|error| error.to_string())?;
+                if let Err(error) = self.reconcile_persisted_tailscale().await {
+                    eprintln!(
+                        "hyz-router: router reconciliation succeeded but Tailscale remains degraded: {error}"
+                    );
+                }
                 Ok(completed(format!(
                     "router reconciled; actions={actions_applied}"
                 )))
@@ -735,6 +1202,16 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
             return Err(error.into());
         }
     };
+    if let Err(error) = runtime.tailscale.attach_http(
+        Arc::downgrade(&runtime),
+        web_token.clone(),
+        port,
+        tokio::runtime::Handle::current(),
+    ) {
+        remove_control_socket(&ownership)?;
+        ownership.release()?;
+        return Err(error.into());
+    }
     let control_runtime: Arc<dyn ControlHandler> = runtime.clone();
     let http_control = control_runtime.clone();
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -751,6 +1228,11 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         let _ = shutdown_tx.send(true);
         let control_result = join_control(control.await);
         let cleanup_result = runtime.shutdown().await;
+        if let Err(cleanup_error) = &cleanup_result {
+            let _ = runtime.router.record_shutdown_failure(&format!(
+                "startup cleanup failed after initialization error ({error}): {cleanup_error}"
+            ));
+        }
         if cleanup_result.is_ok() {
             remove_control_socket(&ownership)?;
             ownership.release()?;
@@ -764,6 +1246,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         }
         return Err(message.into());
     }
+    runtime.router.clear_shutdown_failure_log()?;
 
     let timeout_runtime = runtime.clone();
     let mut timeout_shutdown = shutdown_rx.clone();
@@ -818,6 +1301,11 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     // Control accepts and the timeout task are stopped and every in-flight operation (including
     // OTA) has drained before runtime-owned packet paths and child processes are removed.
     let cleanup = runtime.shutdown().await;
+    if let Err(error) = &cleanup {
+        let _ = runtime
+            .router
+            .record_shutdown_failure(&format!("runtime shutdown failed: {error}"));
+    }
     let cleanup_succeeded = cleanup.is_ok();
     let result = combine_runtime_results(services, cleanup);
 
@@ -1003,7 +1491,9 @@ fn expect_completed(result: ControlResult) -> Result<String, Box<dyn Error>> {
         | ControlResult::WifiPendingStatus { .. }
         | ControlResult::WifiScan { .. }
         | ControlResult::DevicePolicies { .. }
-        | ControlResult::Subscription { .. } => {
+        | ControlResult::Subscription { .. }
+        | ControlResult::Tailscale { .. }
+        | ControlResult::TailscaleMutation { .. } => {
             Err("daemon returned an unexpected mutation response".into())
         }
     }
@@ -1067,21 +1557,26 @@ mod source_boundaries {
     }
 
     #[test]
-    fn management_only_startup_recovers_device_policy_before_http_readiness() {
+    fn management_only_startup_recovers_policy_then_reconciles_tailscale() {
         let production = include_str!("main.rs")
             .split("#[cfg(test)]")
             .next()
             .unwrap();
-        let fallback = production
-            .split("if let Err(error) = self.reconcile_network(NetworkDesired::forwarding()).await")
+        let initialize = production
+            .split("async fn initialize(&self)")
             .nth(1)
             .unwrap()
-            .split("self.recover_device_policy().await?;")
+            .split("async fn recover_device_policy")
             .next()
             .unwrap();
-        let recovery = fallback.find("self.recover_device_policy().await").unwrap();
-        let ready = fallback.find("return Ok(())").unwrap();
-        assert!(recovery < ready);
+        let fallback = initialize.find("false").unwrap();
+        let recovery = initialize
+            .find("self.recover_device_policy().await?;")
+            .unwrap();
+        let tailscale = initialize
+            .find("self.reconcile_persisted_tailscale().await")
+            .unwrap();
+        assert!(fallback < recovery && recovery < tailscale);
     }
 
     #[test]
@@ -1098,11 +1593,41 @@ mod source_boundaries {
             .next()
             .unwrap();
         let disabled_guard = branch.find("if !enabled").unwrap();
+        let tailscale = branch.find("degrade_tailscale_to_router_only").unwrap();
         let proxy = branch.find("ProxyApplication::new").unwrap();
         let router = branch.find("RouterApplication::new").unwrap();
-        assert!(disabled_guard < proxy && proxy < router);
+        assert!(disabled_guard < tailscale && tailscale < proxy && proxy < router);
         assert!(branch.contains("mode: ProxyMode::Disabled"));
         assert!(branch.contains("NetworkDesired::management_only()"));
+    }
+
+    #[test]
+    fn tailscale_listener_is_exact_and_shutdown_precedes_proxy_network_cleanup() {
+        let production = include_str!("main.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let listener = production
+            .split("fn start_listener")
+            .nth(1)
+            .unwrap()
+            .split("fn stop_listener")
+            .next()
+            .unwrap();
+        assert!(listener.contains("SocketAddr::from((ipv4, config.port))"));
+        assert!(!listener.contains("0.0.0.0"));
+        assert!(listener.contains("app_with_admin_control_at_address"));
+
+        let shutdown = production
+            .split("async fn shutdown(&self)")
+            .nth(1)
+            .unwrap()
+            .split("fn startup_failure")
+            .next()
+            .unwrap();
+        let tailscale = shutdown.find("self.shutdown_tailscale()").unwrap();
+        let proxy_network = shutdown.find("ShutdownApplication::new").unwrap();
+        assert!(tailscale < proxy_network);
     }
 
     #[test]

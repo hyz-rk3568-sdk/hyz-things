@@ -332,6 +332,80 @@ test('supports the administrator, STA, AP, and write-only subscription journey',
   expect(accessibility.violations).toEqual([]);
 });
 
+test('supports the administrator Tailscale login, approval, disable, and logout flow', async ({
+  page,
+  request,
+}) => {
+  const initial = await readHarnessState(request);
+  initial.tailscale.data.authenticated = false;
+  initial.tailscale.data.backend_state = 'stopped';
+  initial.tailscale.data.desired_mode = 'disabled';
+  initial.tailscale.data.effective_mode = 'disabled';
+  expect((await request.put(`${harnessOrigin}/state`, { data: initial })).ok()).toBeTruthy();
+
+  await page.goto('/');
+  await page.getByRole('button', { name: '网络设置', exact: true }).click();
+  await page.getByRole('button', { name: '管理员登录' }).click();
+  await page.getByLabel('密码').fill('admin');
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await page.getByLabel('当前密码').fill('admin');
+  await page.getByLabel('新密码', { exact: true }).fill('router-e2e-password');
+  await page.getByLabel('确认新密码').fill('router-e2e-password');
+  await page.getByRole('button', { name: '修改密码' }).click();
+
+  const tailscale = page.getByRole('region', { name: 'Tailscale 远程 LAN 状态' });
+  await tailscale.getByRole('button', { name: '启用远程 LAN 访问' }).click();
+  const loginLink = tailscale.getByRole('link', { name: '打开一次性 Tailscale 登录链接' });
+  await expect(loginLink).toHaveAttribute('href', 'https://login.tailscale.com/a/router-e2e');
+  await expect(loginLink).toHaveAttribute('target', '_blank');
+  await expect(loginLink).toHaveAttribute('rel', 'noopener noreferrer');
+  await expect(tailscale.getByText('路由批准', { exact: true })).toHaveCount(0);
+  await expect(tailscale.getByText(/外部确认/)).toHaveCount(0);
+
+  const authenticated = await readHarnessState(request);
+  authenticated.tailscale.data.authenticated = true;
+  authenticated.tailscale.data.backend_state = 'running';
+  expect((await request.put(`${harnessOrigin}/state`, { data: authenticated })).ok()).toBeTruthy();
+  await tailscale.getByRole('button', { name: '已完成登录，继续启用' }).click();
+  await expect(tailscale.getByText('本机远程 LAN 访问已启用')).toBeVisible();
+  await expect(tailscale.getByText('路由批准', { exact: true })).toHaveCount(0);
+  await expect(tailscale.getByText(/外部确认/)).toHaveCount(0);
+  await expect(tailscale.getByText(/当前 LAN Access/)).toBeVisible();
+  await expect(tailscale.getByText('Direct', { exact: true })).toBeVisible();
+  const enabledButton = tailscale.getByRole('button', { name: '远程 LAN 访问已启用' });
+  await expect(enabledButton).toBeDisabled();
+  await expect(enabledButton).toHaveAttribute('aria-pressed', 'true');
+  expect((await readHarnessState(request)).tailscale.data).toMatchObject({
+    authenticated: true,
+    desired_mode: 'lan_subnet_access',
+    effective_mode: 'lan_subnet_access',
+    route_advertised: true,
+    local_firewall_ready: true,
+  });
+  await page.setViewportSize({ width: 360, height: 800 });
+  await expect(enabledButton).toBeVisible();
+  await expect(tailscale.getByText('路由批准', { exact: true })).toHaveCount(0);
+  await expect(tailscale.getByText(/外部确认/)).toHaveCount(0);
+  await expectNoHorizontalOverflow(page);
+
+  await tailscale.getByRole('button', { name: '停用（保留认证）' }).click();
+  const disabledButton = tailscale.getByRole('button', { name: 'Tailscale 已停用' });
+  await expect(disabledButton).toBeDisabled();
+  await expect(disabledButton).toHaveAttribute('aria-pressed', 'true');
+  expect((await readHarnessState(request)).tailscale.data).toMatchObject({
+    authenticated: true,
+    desired_mode: 'disabled',
+    effective_mode: 'disabled',
+  });
+
+  await tailscale.getByRole('button', { name: '注销并移除认证' }).click();
+  expect((await readHarnessState(request)).tailscale.data).toMatchObject({
+    authenticated: false,
+    desired_mode: 'disabled',
+    effective_mode: 'disabled',
+  });
+});
+
 test('fits a narrow management screen without horizontal overflow', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   await page.goto('/');

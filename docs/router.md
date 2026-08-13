@@ -23,7 +23,7 @@ src/main.rs                 唯一 production composition root
 
 **源码、rootfs 与 recovery-free OTA 已完成统一 cutover，并已在 RK3568 完成功能验证。** 2026-08-11 安装的设置事务 OTA 已通过完整冷启动、错误 STA 候选自动恢复、AP 未确认超时回滚、SysV restart 和并发 start 串行化验证；daemon 及其子进程不再继承 init action lock。管理员认证基础行为此前已在同一统一 ELF 上验证。成功切换到另一组真实 STA、管理员实际改密以及凭据型订阅刷新仍需由操作者在面板中输入本地凭据完成，不能标记为已验收。`make apps` 只构建统一 `hyz-router`，`make overlay` 只安装 `/usr/bin/hyz-router` 和产品元数据；Buildroot board overlay 只保留最小 `S81hyz-router` 及 Mihomo 无凭据示例。旧 shell 路由/Mihomo wrapper、S82、独立 DHCP hook、独立 OTA 和 hello demos 已从最终 rootfs 删除。
 
-Tailscale 固定 LAN 远程访问尚未实现；已确认的 domain/application、进程身份、防火墙 ownership、Web 登录流程、SDK 集成和板端验收方案见 [`soft-router-tailscale-plan.md`](soft-router-tailscale-plan.md)。
+**Tailscale 固定 LAN 远程访问已完成代码实现和静态检查，尚未完成 Rust/frontend 构建、自动测试、固件集成和板端/Tailnet 验收。** 当前实现包含独立 typed lifecycle、固定 `tailscaled` 身份与 CLI、`netfilter-mode=off` 下的产品 owned INPUT/FORWARD/NAT、Mihomo → Tailscale → ordinary router hook 顺序、精确 Tailscale IPv4 HTTP listener、管理员登录/启用/停用/注销 Web 流程，以及固定 Tailscale `1.102.2` ARM64 Buildroot 包。完整验收矩阵见 [`soft-router-tailscale-plan.md`](soft-router-tailscale-plan.md)。
 
 ## 架构图
 
@@ -90,10 +90,11 @@ flowchart TB
         Application --> Domain
     end
 
-    Outbound["Outbound ports<br/>RouterPlatformPort · SystemProbePort · ClockPort<br/>FirmwarePlatformPort · status ports"]
+    Outbound["Outbound ports<br/>RouterPlatformPort · TailscalePlatformPort<br/>SystemProbePort · TailscaleProbePort · ClockPort<br/>FirmwarePlatformPort · status ports"]
 
     subgraph Driven["Driven adapters · adapters/outbound"]
         Linux["LinuxRouterPlatform<br/>network · process · proxy · storage · panel"]
+        Tailscale["LinuxTailscalePlatform<br/>exact process · CLI · owned firewall"]
         Firmware["FirmwareAdapter"]
     end
 
@@ -108,8 +109,10 @@ flowchart TB
     Inbound --> Application
     Application --> Outbound
     Outbound --> Linux
+    Outbound --> Tailscale
     Outbound --> Firmware
     Linux --> External
+    Tailscale --> External
     Firmware --> External
 
     Main -. "wires" .-> Inbound
@@ -158,10 +161,11 @@ control socket 可服务不等于 HTTP 已就绪。HTTP 绑定是对管理 LAN �
 `src/main.rs` 是唯一装配点，构造：
 
 - `LinuxRouterPlatform`：typed `ip`/legacy `iptables`、管理网络进程身份、网络和 Mihomo 状态；
+- `LinuxTailscalePlatform`：固定 `/usr/bin/tailscaled` 与 `/usr/bin/tailscale`、PID/start/exe/argv/socket/interface 身份、持久 mode/state 以及 Tailscale owned firewall；
 - `LinuxMihomoFailOpenPlatform`：同一 ELF 的隐藏 watcher 角色，仅负责 PID/start 绑定的 TUN fail-open；
 - `FirmwareAdapter`：OTA 下载、RKFW/SHA-256、BCB、`updateEngine`、reboot；
-- `ReadStatus`：router/proxy/system 的部分成功聚合；
-- Axum server、root-only local control 与嵌入 Yew assets。
+- `ReadStatus`：router/proxy/tailscale/system 的部分成功聚合；
+- LAN Axum server、按严格观测地址启停的 Tailscale Axum server、root-only local control 与嵌入 Yew assets。
 
 候选命令为：
 
@@ -186,18 +190,20 @@ OTA 和 router enable/disable 仍不通过 LAN API 暴露。匿名 LAN 页面只
 5. 只有 `main.rs` 可以构造生产 adapter。
 6. adapter 不接受来自 HTTP 的命令字符串；外部程序只能通过固定 executable 和 typed argv 调用，禁止 `sh -c`。
 
-当前核心能力边界保持粗粒度：`RouterPlatformPort`、`FirmwarePlatformPort`、`SystemProbePort` 和 `ClockPort`，避免重新演变成大量微型 crate/traits。
+当前生命周期能力由独立 typed ports 表达：普通网络/Mihomo 使用 `RouterPlatformPort` 与 `SystemProbePort`，Tailscale 使用 `TailscalePlatformPort` 与 `TailscaleProbePort`；二者在 Linux adapter 中共享 `/run/hyz-network.lock`，避免并发修改统一 iptables hook。`FirmwarePlatformPort`、状态 ports 和 `ClockPort` 保持各自边界。
 
 ## Web 状态与受限本地控制
 
-HTTP 默认绑定 `192.168.8.1:8080`；`HYZ_ROUTER_HTTP_PORT` 可覆盖端口，但监听 IP 始终固定为 `192.168.8.1`，不会回退到 `0.0.0.0`。匿名状态与原受限控制接口保持不变，设置面新增以下精确接口：
+HTTP 默认保留固定 LAN listener `192.168.8.1:8080`；`HYZ_ROUTER_HTTP_PORT` 可覆盖端口，但 LAN 监听 IP 始终固定。已认证的 RouterOnly/LanSubnetAccess 还可在严格观测到的单个 Tailscale IPv4 上启动同端口的第二个 exact listener，并为该地址建立独立 exact origin；地址变化时先停旧 listener，再绑定新地址。两个 listener 都不会回退到 `0.0.0.0`。匿名状态与原受限控制接口保持不变，设置面包含以下精确接口：
 
 - `POST /api/v1/auth/{login,logout,password}` 与 `GET /api/v1/auth/session`；
 - `GET /api/v1/network/{config,pending}`；
 - `POST /api/v1/control/network/sta/{scan,apply}`；
 - `POST /api/v1/control/network/ap/{prepare,apply,confirm,cancel}`；
 - `GET /api/v1/proxy/subscription`；
-- `POST /api/v1/control/proxy/subscription/{source,refresh}`。
+- `POST /api/v1/control/proxy/subscription/{source,refresh}`；
+- `GET /api/v1/tailscale`；
+- `POST /api/v1/control/tailscale/{mode,login,logout}`。
 
 没有 CORS。未知 `/api/*` 返回 JSON 404，不进入 SPA fallback；API method/path 使用精确 allowlist。所有 mutation 都要求小尺寸 typed JSON、精确管理 origin、自定义 CSRF header；AP/STA、代理模式、节点选择、设备别名/策略和订阅接口还要求管理员 session。固定用户名为 `admin`，公开 bootstrap 密码仅用于首次进入，持久层只保存 Argon2id PHC hash，并在完成强制改密前拒绝设置操作。session 只驻留内存，使用 `HttpOnly; SameSite=Strict; Path=/` cookie、15 分钟 idle/8 小时 absolute TTL 和有界登录限速；密码变化会撤销其他 session。
 
@@ -222,7 +228,7 @@ LCD 的 DTS `default-brightness-level = <0>` 让 U-Boot/Linux 冷启动默认保
 - forwarding：IPv4 forwarding 和普通 NAT；
 - proxy：`explicit`、`tun`、`disabled`。
 
-`router disable` 的模型只移除 forwarding/NAT/TUN，保留管理 LAN 和页面。
+`router disable` 的模型先把 Tailscale LAN path 降到 RouterOnly，再移除 Mihomo interception 和 ordinary forwarding/NAT；管理 LAN、页面、Tailscale 认证状态和持久 desired mode 保留。恢复 forwarding 后会重新 reconcile 持久 Tailscale intent。
 
 Rust candidate 当前覆盖：
 

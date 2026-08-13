@@ -3,7 +3,8 @@ use super::{
     process::{LinuxRouterPlatform, Tool},
     storage,
     system::{
-        chain_output_is_exact, exact_chain_references, expected_chain_rules, normalized_chain_rules,
+        chain_output_is_exact, exact_chain_references, expected_chain_rules,
+        forward_hook_order_is_exact, normalized_chain_rules, owned_forward_hook_is_exact,
     },
 };
 use crate::{
@@ -222,52 +223,52 @@ impl LinuxRouterPlatform {
                 &strings(&["-w", "-t", "filter", "-S", "FORWARD"]),
             )?
             .stdout;
-        let forward_rules = normalized_chain_rules(&forward, "FORWARD").ok_or_else(|| {
-            PlatformError::ProbeFailed("cannot parse FORWARD chain rules".to_owned())
-        })?;
-        let mihomo_token = storage::read_private_small_optional(storage::TUN_FIREWALL_OWNER, 128)?;
-        let proxy_hooks = if let Some(token) = mihomo_token {
-            let token = token.trim();
-            storage::validate_token(token)?;
-            let expected = strings(&[
-                "-A",
-                "FORWARD",
-                "-m",
-                "comment",
-                "--comment",
-                token,
-                "-j",
-                crate::domain::proxy::MIHOMO_FILTER_CHAIN,
-            ]);
-            let references =
-                exact_chain_references(&forward, crate::domain::proxy::MIHOMO_FILTER_CHAIN)
-                    .ok_or_else(|| {
-                        PlatformError::ProbeFailed(
-                            "cannot parse Mihomo FORWARD references".to_owned(),
-                        )
-                    })?;
-            if references != [expected.clone()] || forward_rules.first() != Some(&expected) {
-                return Err(PlatformError::Conflict(
-                    "Mihomo FORWARD hook is not exact, unique, and first".to_owned(),
-                ));
+        let owned_hook = |marker: &str, chain: &str| -> Result<bool, PlatformError> {
+            let token = storage::read_private_small_optional(marker, 128)?;
+            let references = exact_chain_references(&forward, chain).ok_or_else(|| {
+                PlatformError::ProbeFailed(format!("cannot parse {chain} FORWARD references"))
+            })?;
+            match token {
+                Some(token) => {
+                    let token = token.trim();
+                    storage::validate_token(token)?;
+                    let expected = strings(&[
+                        "-A",
+                        "FORWARD",
+                        "-m",
+                        "comment",
+                        "--comment",
+                        token,
+                        "-j",
+                        chain,
+                    ]);
+                    if references != [expected] {
+                        return Err(PlatformError::Conflict(format!(
+                            "{chain} FORWARD hook is not exact and unique"
+                        )));
+                    }
+                    Ok(true)
+                }
+                None if references.is_empty() => Ok(false),
+                None => Err(PlatformError::Conflict(format!(
+                    "unowned {chain} FORWARD references make router insertion unsafe"
+                ))),
             }
-            vec![1]
-        } else {
-            let references =
-                exact_chain_references(&forward, crate::domain::proxy::MIHOMO_FILTER_CHAIN)
-                    .ok_or_else(|| {
-                        PlatformError::ProbeFailed(
-                            "cannot parse Mihomo FORWARD references".to_owned(),
-                        )
-                    })?;
-            if !references.is_empty() {
-                return Err(PlatformError::Conflict(
-                    "unowned Mihomo FORWARD references make router insertion unsafe".to_owned(),
-                ));
-            }
-            Vec::new()
         };
-        let router_position = proxy_hooks.first().map_or(1, |position| position + 1);
+        let mihomo_present = owned_hook(
+            storage::TUN_FIREWALL_OWNER,
+            crate::domain::proxy::MIHOMO_FILTER_CHAIN,
+        )?;
+        let tailscale_present = owned_hook(
+            storage::TAILSCALE_FIREWALL_OWNER,
+            crate::domain::tailscale::TAILSCALE_FORWARD_CHAIN,
+        )?;
+        if !forward_hook_order_is_exact(&forward, mihomo_present, tailscale_present, false) {
+            return Err(PlatformError::Conflict(
+                "managed FORWARD hooks are not in Mihomo, Tailscale order".to_owned(),
+            ));
+        }
+        let router_position = 1 + usize::from(mihomo_present) + usize::from(tailscale_present);
         self.iptables(&["-w", "-t", "filter", "-N", ROUTER_FILTER_CHAIN])?;
         let mut filter_hook_created = false;
         let mut nat_chain_created = false;
@@ -604,38 +605,25 @@ impl LinuxRouterPlatform {
                 &strings(&["-w", "-t", "nat", "-S", "POSTROUTING"]),
             )?
             .stdout;
-        let forward = normalized_chain_rules(&forward, "FORWARD")
-            .ok_or_else(|| PlatformError::ProbeFailed("cannot parse FORWARD rules".to_owned()))?;
-        let expected_position =
-            match storage::read_private_small_optional(storage::TUN_FIREWALL_OWNER, 128)? {
-                Some(mihomo_token) => {
-                    let mihomo_token = mihomo_token.trim();
-                    storage::validate_token(mihomo_token)?;
-                    let mihomo_hook = strings(&[
-                        "-A",
-                        "FORWARD",
-                        "-m",
-                        "comment",
-                        "--comment",
-                        mihomo_token,
-                        "-j",
-                        crate::domain::proxy::MIHOMO_FILTER_CHAIN,
-                    ]);
-                    if forward.first() != Some(&mihomo_hook) {
-                        return Err(PlatformError::Conflict(
-                            "Mihomo interception hook is not exact and first".to_owned(),
-                        ));
-                    }
-                    1
-                }
-                None => 0,
-            };
+        let mihomo_present = owned_forward_hook_is_exact(
+            &forward,
+            storage::TUN_FIREWALL_OWNER,
+            crate::domain::proxy::MIHOMO_FILTER_CHAIN,
+        )?;
+        let tailscale_present = owned_forward_hook_is_exact(
+            &forward,
+            storage::TAILSCALE_FIREWALL_OWNER,
+            crate::domain::tailscale::TAILSCALE_FORWARD_CHAIN,
+        )?;
+        if !forward_hook_order_is_exact(&forward, mihomo_present, tailscale_present, true) {
+            return Err(PlatformError::Conflict(
+                "FORWARD hooks are not in exact Mihomo, Tailscale, router order".to_owned(),
+            ));
+        }
         let postrouting = normalized_chain_rules(&postrouting, "POSTROUTING").ok_or_else(|| {
             PlatformError::ProbeFailed("cannot parse POSTROUTING rules".to_owned())
         })?;
-        if forward.get(expected_position) != Some(&filter_hook)
-            || postrouting.first() != Some(&nat_hook)
-        {
+        if postrouting.first() != Some(&nat_hook) {
             return Err(PlatformError::Conflict(
                 "router hooks are not in exact installer order".to_owned(),
             ));

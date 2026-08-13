@@ -1,6 +1,6 @@
 use super::paths::{
     MIHOMO_CHECK_LOG, MIHOMO_CONTROLLER_SECRET, MIHOMO_DATA_DIR, MIHOMO_EXECUTABLE, MIHOMO_LOG,
-    MIHOMO_RUNTIME_CONFIG, MIHOMO_STATE_DIR, MIHOMO_WATCHER_LOG,
+    MIHOMO_RUNTIME_CONFIG, MIHOMO_STATE_DIR, MIHOMO_WATCHER_LOG, TAILSCALE_EXECUTABLE,
 };
 use crate::application::{
     fail_open::WatcherInvocation,
@@ -20,6 +20,8 @@ use std::{
 pub const NETWORK_LOCK: &str = "/run/hyz-network.lock";
 pub const MIHOMO_PID_RECORD: &str = "/run/hyz-mihomo/core.pid";
 pub const MIHOMO_WATCHER_RECORD: &str = "/run/hyz-mihomo/watch.pid";
+const SHUTDOWN_LOG: &str = "/run/hyz-router/shutdown.log";
+const MAX_SHUTDOWN_LOG: usize = 8 * 1024;
 const MAX_COMMAND_OUTPUT: usize = 64 * 1024;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_RECORD_SIZE: usize = 4096;
@@ -37,6 +39,7 @@ pub(crate) enum Tool {
     WpaCli,
     HostapdCli,
     Mihomo,
+    Tailscale,
     Kill,
 }
 
@@ -48,6 +51,7 @@ impl Tool {
             Self::WpaCli => "/usr/sbin/wpa_cli",
             Self::HostapdCli => "/usr/bin/hostapd_cli",
             Self::Mihomo => MIHOMO_EXECUTABLE,
+            Self::Tailscale => TAILSCALE_EXECUTABLE,
             Self::Kill => "/bin/kill",
         }
     }
@@ -79,6 +83,20 @@ impl LinuxMihomoFailOpenPlatform {
 impl LinuxRouterPlatform {
     pub const fn new() -> Self {
         Self
+    }
+
+    pub fn clear_shutdown_failure_log(&self) -> Result<(), PlatformError> {
+        super::storage::remove_file_durable(SHUTDOWN_LOG)
+    }
+
+    pub fn record_shutdown_failure(&self, message: &str) -> Result<(), PlatformError> {
+        let mut log = private_log(SHUTDOWN_LOG)?;
+        let message = message.chars().take(MAX_SHUTDOWN_LOG).collect::<String>();
+        log.write_all(message.as_bytes())
+            .and_then(|()| log.write_all(b"\n"))
+            .map_err(|error| PlatformError::Io(format!("write shutdown log: {error}")))?;
+        log.sync_all()
+            .map_err(|error| PlatformError::Io(format!("sync shutdown log: {error}")))
     }
 
     pub(crate) fn run(&self, tool: Tool, args: &[String]) -> Result<FixedOutput, PlatformError> {
@@ -616,7 +634,7 @@ fn watcher_argv(invocation: WatcherInvocation) -> Vec<Vec<u8>> {
         .collect()
 }
 
-fn process_identity_matches(
+pub(crate) fn process_identity_matches(
     identity: CoreIdentity,
     executable: &Path,
     argv: &[Vec<u8>],
@@ -649,6 +667,13 @@ fn read_cmdline(pid: u32) -> Result<Vec<Vec<u8>>, PlatformError> {
             )))
         }
     };
+    decode_cmdline(&bytes)
+}
+
+fn decode_cmdline(bytes: &[u8]) -> Result<Vec<Vec<u8>>, PlatformError> {
+    if bytes.is_empty() {
+        return Ok(Vec::new());
+    }
     if bytes.last() != Some(&0) {
         return Err(PlatformError::ProbeFailed(
             "process command line lacks NUL terminator".to_owned(),
@@ -660,7 +685,7 @@ fn read_cmdline(pid: u32) -> Result<Vec<Vec<u8>>, PlatformError> {
         .collect())
 }
 
-fn count_executable_processes(executable: &Path) -> Result<usize, PlatformError> {
+pub(crate) fn count_executable_processes(executable: &Path) -> Result<usize, PlatformError> {
     let entries = fs::read_dir("/proc")
         .map_err(|error| PlatformError::ProbeFailed(format!("scan /proc: {error}")))?;
     let mut count = 0;
@@ -759,7 +784,29 @@ pub(crate) fn append_fail_open_retry_log(message: &str) -> Result<(), PlatformEr
         .map_err(|error| PlatformError::Io(format!("append watcher log: {error}")))
 }
 
-fn wait_for_identity_disappearance(
+pub(crate) fn wait_for_identity_match(
+    attempts: usize,
+    poll: Duration,
+    mut identity_matches: impl FnMut() -> Result<bool, PlatformError>,
+) -> Result<bool, PlatformError> {
+    let mut last_error = None;
+    for attempt in 0..attempts {
+        match identity_matches() {
+            Ok(true) => return Ok(true),
+            Ok(false) => last_error = None,
+            Err(error) => last_error = Some(error),
+        }
+        if attempt + 1 < attempts && !poll.is_zero() {
+            thread::sleep(poll);
+        }
+    }
+    match last_error {
+        Some(error) => Err(error),
+        None => Ok(false),
+    }
+}
+
+pub(crate) fn wait_for_identity_disappearance(
     attempts: usize,
     poll: Duration,
     mut identity_matches: impl FnMut() -> Result<bool, PlatformError>,
@@ -884,6 +931,10 @@ pub(crate) fn reap_in_background(mut child: std::process::Child, label: &'static
 }
 
 pub(crate) fn process_start_time(pid: u32) -> Result<Option<u64>, PlatformError> {
+    Ok(process_stat_identity(pid)?.map(|identity| identity.0))
+}
+
+pub(crate) fn process_stat_identity(pid: u32) -> Result<Option<(u64, u8)>, PlatformError> {
     let stat = match fs::read_to_string(format!("/proc/{pid}/stat")) {
         Ok(value) => value,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -896,18 +947,36 @@ pub(crate) fn process_start_time(pid: u32) -> Result<Option<u64>, PlatformError>
     let end = stat.rfind(')').ok_or_else(|| {
         PlatformError::ProbeFailed("malformed process stat without comm terminator".to_owned())
     })?;
-    let start_time = stat[end + 1..]
-        .split_whitespace()
-        .nth(19)
+    let mut fields = stat[end + 1..].split_whitespace();
+    let state = fields
+        .next()
+        .and_then(|value| value.as_bytes().first().copied())
+        .ok_or_else(|| PlatformError::ProbeFailed("malformed process state".to_owned()))?;
+    let start_time = fields
+        .nth(18)
         .and_then(|value| value.parse::<u64>().ok())
         .ok_or_else(|| PlatformError::ProbeFailed("malformed process start time".to_owned()))?;
-    Ok(Some(start_time))
+    Ok(Some((start_time, state)))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::VecDeque;
+
+    #[test]
+    fn empty_zombie_cmdline_is_a_non_match_not_a_probe_error() {
+        assert_eq!(decode_cmdline(&[]).unwrap(), Vec::<Vec<u8>>::new());
+        assert!(decode_cmdline(b"/usr/bin/mihomo").is_err());
+        assert_eq!(
+            decode_cmdline(b"/usr/bin/mihomo\0-d\0/data\0").unwrap(),
+            [
+                b"/usr/bin/mihomo".to_vec(),
+                b"-d".to_vec(),
+                b"/data".to_vec()
+            ]
+        );
+    }
 
     #[test]
     fn normal_stop_removes_secret_and_runtime_config() {
@@ -935,6 +1004,31 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(removed, [MIHOMO_CONTROLLER_SECRET, MIHOMO_RUNTIME_CONFIG]);
+    }
+
+    #[test]
+    fn identity_match_retries_transient_probe_failure_and_incomplete_identity() {
+        let mut probes = VecDeque::from([
+            Err(PlatformError::ProbeFailed(
+                "process command line lacks NUL terminator".to_owned(),
+            )),
+            Ok(false),
+            Ok(true),
+        ]);
+        assert_eq!(
+            wait_for_identity_match(3, Duration::ZERO, || probes.pop_front().unwrap()),
+            Ok(true)
+        );
+    }
+
+    #[test]
+    fn identity_match_returns_final_probe_failure_after_bound() {
+        assert!(matches!(
+            wait_for_identity_match(2, Duration::ZERO, || Err(PlatformError::ProbeFailed(
+                "unreadable identity".to_owned()
+            ))),
+            Err(PlatformError::ProbeFailed(_))
+        ));
     }
 
     #[test]

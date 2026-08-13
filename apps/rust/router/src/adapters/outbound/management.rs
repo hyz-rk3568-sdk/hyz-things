@@ -1315,6 +1315,15 @@ fn resolved_executable(service: ManagementService) -> Result<PathBuf, PlatformEr
 fn read_process_argv(pid: u32) -> Result<Vec<String>, PlatformError> {
     let bytes = fs::read(format!("/proc/{pid}/cmdline"))
         .map_err(|error| PlatformError::ProbeFailed(format!("read process argv: {error}")))?;
+    decode_process_argv(&bytes)
+}
+
+fn decode_process_argv(bytes: &[u8]) -> Result<Vec<String>, PlatformError> {
+    // A process may become a zombie between the executable and argv probes. Linux then exposes an
+    // empty cmdline; treat that as a non-match so the caller can confirm exit by PID/start time.
+    if bytes.is_empty() {
+        return Ok(Vec::new());
+    }
     if bytes.len() > 16 * 1024 || bytes.last() != Some(&0) {
         return Err(PlatformError::ProbeFailed(
             "process argv has invalid framing".to_owned(),
@@ -1914,6 +1923,16 @@ fn invalid_dhcp_ownership() -> PlatformError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_zombie_cmdline_is_a_non_matching_argv_not_invalid_framing() {
+        assert_eq!(decode_process_argv(&[]).unwrap(), Vec::<String>::new());
+        assert!(decode_process_argv(b"/usr/sbin/dnsmasq").is_err());
+        assert_eq!(
+            decode_process_argv(b"/usr/sbin/dnsmasq\0--no-daemon\0").unwrap(),
+            ["/usr/sbin/dnsmasq", "--no-daemon"]
+        );
+    }
 
     #[test]
     fn ap_mutations_refuse_an_outstanding_sta_rollback_journal() {

@@ -166,6 +166,9 @@ async fn serves_partial_degraded_status_with_strict_http_policy() {
     assert!(status.contains("\"state\":\"degraded\""));
     assert!(status.contains("\"observed_at_unix_ms\":123"));
     assert!(status.contains("\"proxy\":{\"state\":\"unavailable\""));
+    assert!(status.contains("\"tailscale\":{\"state\":\"unavailable\""));
+    assert!(!status.contains("login_url"));
+    assert!(!status.contains("auth_key"));
     assert!(status.contains("\"system\":{\"state\":\"degraded\""));
 
     let api_address = server_address(&server, address);
@@ -290,6 +293,14 @@ async fn control_posts_require_exact_origin_token_and_typed_json() {
     assert!(panel.contains("\"max_brightness\":255"));
     assert!(!panel.contains("controller.secret"));
 
+    let tailscale_get_address = server_address(&server, address);
+    let tailscale_get = tokio::task::spawn_blocking(move || {
+        http_request(tailscale_get_address, "GET", "/api/v1/tailscale")
+    })
+    .await
+    .expect("join anonymous Tailscale GET client");
+    assert!(tailscale_get.starts_with("HTTP/1.1 401 Unauthorized\r\n"));
+
     let origin = format!("http://192.168.8.1:{}", address.port());
 
     let login_without_token_address = server_address(&server, address);
@@ -399,6 +410,21 @@ async fn control_posts_require_exact_origin_token_and_typed_json() {
     assert!(delays.starts_with("HTTP/1.1 200 OK\r\n"));
     assert!(delays.contains(r#""kind":"proxy_delays""#));
     assert!(delays.contains(r#""groups":[]"#));
+
+    let tailscale_mode_address = server_address(&server, address);
+    let tailscale_mode_origin = origin.clone();
+    let tailscale_mode = tokio::task::spawn_blocking(move || {
+        http_json_request(
+            tailscale_mode_address,
+            "/api/v1/control/tailscale/mode",
+            &tailscale_mode_origin,
+            Some("csrf-test"),
+            r#"{"mode":"lan_subnet_access"}"#,
+        )
+    })
+    .await
+    .expect("join anonymous Tailscale mode client");
+    assert!(tailscale_mode.starts_with("HTTP/1.1 401 Unauthorized\r\n"));
 
     let unknown_address = server_address(&server, address);
     let unknown = tokio::task::spawn_blocking(move || {

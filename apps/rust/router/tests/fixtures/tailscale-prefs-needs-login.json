@@ -1,0 +1,10 @@
+{
+  "ControlURL": "",
+  "RouteAll": false,
+  "CorpDNS": true,
+  "RunSSH": false,
+  "NetfilterMode": 2,
+  "ExitNodeID": "",
+  "ExitNodeIP": "",
+  "AdvertiseRoutes": null
+}

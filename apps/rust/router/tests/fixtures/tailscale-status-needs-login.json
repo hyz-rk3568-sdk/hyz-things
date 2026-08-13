@@ -1,0 +1,18 @@
+{
+  "Version": "1.102.2-tredacted",
+  "TUN": true,
+  "BackendState": "NeedsLogin",
+  "AuthURL": "https://login.tailscale.com/a/redacted",
+  "TailscaleIPs": null,
+  "Self": {
+    "ID": "",
+    "HostName": "hyz-router",
+    "DNSName": "",
+    "OS": "linux",
+    "Online": false,
+    "Relay": "",
+    "PeerRelay": ""
+  },
+  "Peer": null,
+  "User": null
+}

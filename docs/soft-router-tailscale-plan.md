@@ -2,7 +2,17 @@
 
 ## 状态
 
-**已确认设计，尚未实现。**
+**代码、主机检查、recovery-free OTA 集成、实际 Tailnet 登录、认证冷启动、Web 等价启用、Tailnet 路由批准、子网路径和路由器管理页面远端访问已完成；Grants、远端 LAN SSH 服务访问和长时间稳定性仍待执行。**
+
+2026-08-13 在 RK3568 目标板通过 USB ADB 安装并验证最新 recovery-free OTA：`output/upgrade.fw` SHA-256 为 `32c34b7e056d4103460296d7b9b34fded57a68579ee8f93615ee214af304594e`，大小 `435118666` bytes；包成员仅为 bootloader、U-Boot、misc、boot、rootfs 和 oem，不含 recovery 或 userdata。打包 `/usr/bin/hyz-router` SHA-256 `0d6cb1a0c8c298aa4ea923d9a19c0202820ea0d5bb41bb9ba4bd640535f9a20e` 与构建输入、Buildroot 安装副本和板端完全一致；且不存在独立 `S82tailscaled`。该版 Web 会依据严格 ready 状态显示“远程 LAN 访问已启用”和绿色本机就绪提示，不再展示设备无法可靠判断的 Tailnet 路由批准字段或黄色外部确认提示。
+
+真实 Tailscale `1.102.2` 板测确认：未认证状态使用 `TailscaleIPs: null`、`AdvertiseRoutes: null`，`ControlURL` 在初始状态可能为空；控制面注册还可能短时返回 HTTP 502 或不完整 JSON。登录链接实现先复用安全 `NeedsLogin` 状态中的现有官方 `AuthURL`，仅当 URL 为空时执行固定 typed 登录命令，并对 URL 发布进行最长 60 秒有界等待；非官方 URL 或其他状态立即拒绝。连续两次 typed 登录请求、请求前后的 native status 均返回同一地址摘要，节点密钥生成计数保持 `1 -> 1`，证明获取链接不会刷新 node key 或使当前链接失效；验证输出未记录 URL token。
+
+登录后的 Web“启用”曾因目标板 `iptables -S` 会重排网络/interface 参数、补充 `-m tcp`/`-m udp`，并将 conntrack 状态规范化为 `NEW,RELATED,ESTABLISHED` 和 `RELATED,ESTABLISHED`，导致 exact ownership 将产品自身规则误判为 foreign 并返回 HTTP 409。最终规则生成器和目标输出 golden test 使用完整目标板规范形式；认证冷启动只在 backend 稳定为 `NeedsLogin` 或 `Running` 后继续。最终 OTA 重启后持久认证保留，`desired_mode`/`effective_mode` 均为 `LanSubnetAccess`，backend 为 `Running`，Tailscale IPv4 为 `100.89.103.59`，固定 `192.168.8.0/24` route 已发布，INPUT/FORWARD/NAT 规则和远程 HTTP listener 均严格 ready。再次执行 Web 等价 typed 启用请求返回 `Ok`，不再返回 409。
+
+开发机的真实 Tailnet 路径访问 `http://100.89.103.59:8080` 和 MagicDNS `http://hyz-things.tail54db37.ts.net:8080` 均返回 HTTP 200、完整安全响应头和管理页；TCP 22 不可达，保持无 SSH/Tailscale SSH 的产品边界。Tailnet 管理端批准 `192.168.8.0/24` 后，开发机到 `192.168.8.1` 的路由切换到 Tailscale 路径，访问 `http://192.168.8.1:8080` 返回 HTTP 200，证明子网路由已可用。路由器本机请求自身 Tailscale IPv4 会命中来源防伪边界而超时，不作为远端可达性判据。设备端仍不尝试推断管理后台批准状态，Web 只展示本机可验证状态。
+
+主机 `make check` 已通过 142 个 library tests、6 个 composition/source-boundary tests、3 个 HTTP tests、26 个 network lifecycle tests、12 个 OTA tests、19 个 Tailscale lifecycle tests 和严格 Clippy。登录 URL token 未写入文档、Git 或普通验证输出；临时控制客户端已从板端删除。
 
 本计划优先交付固定 LAN 远程访问：手机或电脑安装 Tailscale 后，通过软路由访问 `192.168.8.0/24` 中未安装 Tailscale 的设备。实现仍先建立 `RouterOnly` 安全基础，再在同一交付周期增加 `LanSubnetAccess`。
 

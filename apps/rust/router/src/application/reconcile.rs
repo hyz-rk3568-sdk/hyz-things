@@ -1,3 +1,10 @@
+#[path = "tailscale_reconcile.rs"]
+mod tailscale_reconcile;
+pub use tailscale_reconcile::{
+    tailscale_bootstrap_plan, tailscale_plan, tailscale_router_only_runtime_plan,
+    tailscale_shutdown_plan,
+};
+
 use crate::{
     application::ports::PlatformError,
     domain::{

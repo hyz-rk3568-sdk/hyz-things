@@ -11,4 +11,5 @@ pub mod router;
 pub mod shutdown;
 pub mod status;
 pub mod subscription;
+pub mod tailscale;
 pub mod wifi;

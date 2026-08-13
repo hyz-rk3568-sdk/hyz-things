@@ -1,0 +1,20 @@
+{
+  "ControlURL": "https://controlplane.tailscale.com",
+  "RouteAll": false,
+  "ExitNodeID": "",
+  "ExitNodeIP": "",
+  "ExitNodeAllowLANAccess": false,
+  "CorpDNS": false,
+  "RunSSH": false,
+  "RunWebClient": false,
+  "WantRunning": true,
+  "LoggedOut": false,
+  "ShieldsUp": false,
+  "AdvertiseTags": null,
+  "Hostname": "hyz-router",
+  "AdvertiseRoutes": ["192.168.8.0/24"],
+  "AdvertiseServices": null,
+  "NoSNAT": false,
+  "NoStatefulFiltering": true,
+  "NetfilterMode": 0
+}

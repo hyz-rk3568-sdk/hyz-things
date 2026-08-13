@@ -183,7 +183,7 @@ LAN = br-lan = p2p0
 - PPPoE、可选 VLAN、`ppp0` 防火墙和 MTU/MSS；
 - 家庭网络黑匣子的结构化事件、指标、断网时间线和诊断快照；
 - 本地 DNS 过滤、家庭域名和按客户端策略；
-- Tailscale RouterOnly 与固定 LAN subnet access；
+- Tailscale RouterOnly 与固定 LAN subnet access 已完成代码实现和静态检查；Rust/frontend 构建、自动测试、固件集成及板端/Tailnet 验收仍待执行；
 - 完整基础产品及上述可选能力的稳定性和端到端测试矩阵。
 
 历史和板端验证记录：
@@ -650,29 +650,29 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 
 详细设计、实施阶段和验收矩阵见 [`soft-router-tailscale-plan.md`](soft-router-tailscale-plan.md)。本轮目标是在 RouterOnly 安全基础通过后，于同一交付周期继续完成固定 LAN subnet access。
 
-- [ ] 固定 Tailscale ARM64 版本、校验值、许可证、Buildroot/rootfs 输入以及 TUN 和所需内核能力。
-- [ ] 定义 `Disabled` 与 `RouterOnly` typed mode，通过固定 executable、typed argv 和受身份约束的 `tailscaled` adapter 管理生命周期。
-- [ ] 将 node state 保存到 root-only `/userdata/hyz-router/tailscale/`，不得进入 Git、argv、普通日志、HTTP 状态或诊断包。
-- [ ] 使用一次性浏览器登录 URL 完成 tailnet 认证；不在管理页面保存或回显 reusable auth key。
-- [ ] RouterOnly 只允许 `tailscale0` 访问固定管理 HTTP/API 和明确启用的路由器服务，不允许转发到 `br-lan` 或 WAN。
-- [ ] 路由器自身保持 `accept-dns=false`，Tailscale 不得覆盖 active uplink resolver ownership 或本地 DNS 决策。
-- [ ] 为 `tailscale0` 安装独立、最小、runtime-owned 防火墙规则，不把该接口等同于可信 LAN。
-- [ ] Tailscale 登录、控制面、DERP 或进程失败不得影响 LAN、DHCP、DNS、普通 NAT、uplink fallback、management-only 或 router readiness。
-- [ ] Tailscale 连接策略遵循“尽可能 direct，但 relay 永远可用”：direct 只作为性能优化，不作为远程访问 readiness 条件；存在可达 DERP 或 Peer Relay 时，direct 失败必须自动回退 relay。
-- [ ] 为公网 IPv6/IPv4 direct 使用固定、typed UDP 监听端口和精确 WAN INPUT 规则；未满足 direct 条件时不得因此判定 Tailscale 不可用。
-- [ ] 状态只显示 enabled、authenticated、`direct`/`peer-relay`/`DERP` 连接类型和错误类别，不返回 node key、auth key、完整登录 URL 历史或 peer secret。
+- [x] 固定 Tailscale `1.102.2` ARM64 版本、校验值、许可证、Buildroot 输入以及 TUN 和所需内核能力静态断言。
+- [x] 定义 `Disabled` 与 `RouterOnly` typed mode，通过固定 executable、typed argv 和受身份约束的 `tailscaled` adapter 管理生命周期。
+- [x] 将 node state 保存到 root-only `/userdata/hyz-router/tailscale/`，不得进入 Git、argv、普通日志、HTTP 状态或诊断包。
+- [x] 使用一次性浏览器登录 URL 完成 tailnet 认证流程；不在管理页面保存或回显 reusable auth key。
+- [x] RouterOnly 只允许 `tailscale0` 访问固定管理 HTTP/API，不允许转发到 `br-lan` 或 WAN。
+- [x] 路由器自身保持 `accept-dns=false`，Tailscale 不得覆盖 active uplink resolver ownership 或本地 DNS 决策。
+- [x] 为 `tailscale0` 安装独立、最小、runtime-owned 防火墙规则，不把该接口等同于可信 LAN。
+- [x] Tailscale 登录、控制面、DERP 或进程失败不得影响 LAN、DHCP、DNS、普通 NAT、uplink fallback、management-only 或 router readiness；代码包含独立降级和保守清理路径。
+- [x] Tailscale 连接策略不把 direct 作为 readiness 条件；当前固定状态 schema 无法证明活动 peer 路径时保守显示 `unknown`，不猜测 direct/relay。
+- [x] 为公网 IPv6/IPv4 direct 使用固定 UDP `41641` 和精确 WAN INPUT 规则；未满足 direct 条件时不得因此判定 Tailscale 不可用。
+- [x] 状态只显示 enabled、authenticated、可证明的连接类型和错误类别，不返回 node key、auth key、完整登录 URL 历史或 peer secret。
 - [ ] 验证首次登录、注销、重启、失去公网、上联切换、OTA 保留、恢复出厂清理和 8 小时稳定性。
 
 ### P5：增加 Tailscale LAN subnet access
 
-- [ ] 在 RouterOnly 稳定后增加 `LanSubnetAccess` typed mode，只允许发布固定 `192.168.8.0/24`，不接受任意 subnet。
-- [ ] 明确记录 tailnet 侧 route approval 和 ACL/grants 前置条件，设备不得假设发布即代表已授权。
-- [ ] 仅在该模式严格 ready 时允许 `tailscale0 -> br-lan` 转发，并安装固定 FORWARD/conntrack 规则。
-- [ ] 默认拒绝 `br-lan -> tailscale0` 主动新连接，并继续拒绝 `tailscale0 -> WAN`；第一版不提供 exit node。
+- [x] 增加 `LanSubnetAccess` typed mode，只允许发布固定 `192.168.8.0/24`，不接受任意 subnet。
+- [x] Web 和状态明确记录 tailnet 侧 route approval 和 Grants 前置条件，设备不把本地发布视为已授权。
+- [x] 仅在普通 router forwarding/NAT 和本地 Tailscale firewall 严格 ready 时允许 `tailscale0 -> br-lan` 转发，并安装固定 FORWARD/conntrack 规则。
+- [x] 默认拒绝 `br-lan -> tailscale0` 主动新连接，并继续拒绝 `tailscale0 -> WAN`；第一版不提供 exit node。
 - [ ] 将 Tailscale 远程客户端访问本地 DNS 中心和 `home.arpa` 作为独立受控选项，不改变路由器自身 DNS。
-- [ ] mode disable、注销、进程退出和 shutdown 后不得残留 subnet route、forwarding rule 或监听端口。
-- [ ] 验证远程管理、LAN 设备访问、DNS、ACL 拒绝、WAN 切换、控制面离线和故障回退。
-- [ ] 证明 Tailscale subnet 功能失败不会改变 Complete Router Baseline 或 RouterOnly 的安全边界。
+- [x] mode disable、注销、进程退出和 shutdown 的代码路径清理 subnet route、forwarding rule 和监听端口，并保留严格 ownership 检查。
+- [ ] 验证远程管理、LAN 设备访问、DNS、ACL/Grants 拒绝、WAN 切换、控制面离线和故障回退。
+- [ ] 板端证明 Tailscale subnet 功能失败不会改变 Complete Router Baseline 或 RouterOnly 的安全边界。
 
 ### P6：让代理适配多 uplink
 

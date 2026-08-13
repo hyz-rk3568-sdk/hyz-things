@@ -15,7 +15,10 @@ use hyz_router::{
         admin::AdminApplication,
         device_policy::DevicePolicySnapshot,
         ports::{AdminCredentialStorePort, AdminRandomPort, ClockPort, PlatformError},
-        status::{ReadStatus, StatusRouterPlatformPort, StatusSystemProbePort},
+        status::{
+            ReadStatus, StatusRouterPlatformPort, StatusSystemProbePort,
+            StatusTailscalePlatformPort,
+        },
         wifi::{WifiScanEntry, AP_CONFIRM_TIMEOUT_SECS},
     },
     domain::{
@@ -30,9 +33,11 @@ use hyz_router::{
         },
         status::{
             Component, InterfaceStats, LinkState, ProxyMode, ProxyState, ProxyStatus, RouterStatus,
-            SystemStats,
+            SystemStats, TailscaleConnectionStatus, TailscaleConnectionType,
+            TailscaleRouteApproval, TailscaleStatus,
         },
         subscription::{SubscriptionSummary, SubscriptionSummaryState},
+        tailscale::{TailscaleBackendState, TailscaleLoginUrl, TailscaleMode},
     },
 };
 use serde::{Deserialize, Serialize};
@@ -64,6 +69,7 @@ struct HarnessState {
     observed_at_unix_ms: u64,
     router: Component<RouterStatus>,
     proxy: Component<ProxyStatus>,
+    tailscale: Component<TailscaleStatus>,
     system: Component<SystemStats>,
     panel: PanelSnapshot,
     network: NetworkConfigSummary,
@@ -118,6 +124,21 @@ impl Default for HarnessState {
                 mode: ProxyMode::Tun,
                 configured: Some(true),
                 ordinary_nat_fallback: Some(false),
+            }),
+            tailscale: Component::available(TailscaleStatus {
+                desired_mode: Some(TailscaleMode::Disabled),
+                effective_mode: Some(TailscaleMode::Disabled),
+                backend_state: TailscaleBackendState::Stopped,
+                authenticated: Some(true),
+                ipv4: None,
+                route_advertised: Some(false),
+                local_firewall_ready: Some(false),
+                route_approval: TailscaleRouteApproval::UnknownExternalApprovalRequired,
+                connection: TailscaleConnectionStatus {
+                    kind: TailscaleConnectionType::Unknown,
+                    derp_region: None,
+                },
+                error_category: None,
             }),
             system: Component::available(SystemStats {
                 uptime_seconds: Some(3_600),
@@ -444,6 +465,77 @@ impl ControlHandler for HarnessBackend {
                     summary: state.subscription.clone(),
                 })
             }
+            ControlOperation::TailscaleGet {} => Ok(ControlResult::Tailscale {
+                status: tailscale_status(&state)?.clone(),
+            }),
+            ControlOperation::TailscaleMode { mode } => {
+                let status = tailscale_status_mut(&mut state)?;
+                status.desired_mode = Some(mode);
+                let login_url = if mode == TailscaleMode::Disabled {
+                    status.effective_mode = Some(TailscaleMode::Disabled);
+                    status.backend_state = TailscaleBackendState::Stopped;
+                    status.ipv4 = None;
+                    status.route_advertised = Some(false);
+                    status.local_firewall_ready = Some(false);
+                    status.connection = TailscaleConnectionStatus {
+                        kind: TailscaleConnectionType::Unknown,
+                        derp_region: None,
+                    };
+                    None
+                } else if status.authenticated == Some(false) {
+                    status.effective_mode = None;
+                    status.backend_state = TailscaleBackendState::NeedsLogin;
+                    status.ipv4 = None;
+                    status.route_advertised = Some(false);
+                    status.local_firewall_ready = Some(false);
+                    Some(
+                        TailscaleLoginUrl::new("https://login.tailscale.com/a/router-e2e").unwrap(),
+                    )
+                } else {
+                    status.backend_state = TailscaleBackendState::Running;
+                    status.ipv4 = Some("100.64.0.10".parse().unwrap());
+                    status.local_firewall_ready = Some(true);
+                    status.effective_mode = Some(mode);
+                    status.route_advertised = Some(mode == TailscaleMode::LanSubnetAccess);
+                    status.connection = TailscaleConnectionStatus {
+                        kind: TailscaleConnectionType::Direct,
+                        derp_region: None,
+                    };
+                    None
+                };
+                Ok(ControlResult::TailscaleMutation {
+                    status: status.clone(),
+                    login_url,
+                })
+            }
+            ControlOperation::TailscaleLogin {} => {
+                let status = tailscale_status_mut(&mut state)?;
+                let login_url = (status.authenticated == Some(false)).then(|| {
+                    TailscaleLoginUrl::new("https://login.tailscale.com/a/router-e2e").unwrap()
+                });
+                Ok(ControlResult::TailscaleMutation {
+                    status: status.clone(),
+                    login_url,
+                })
+            }
+            ControlOperation::TailscaleLogout {} => {
+                let status = tailscale_status_mut(&mut state)?;
+                status.desired_mode = Some(TailscaleMode::Disabled);
+                status.effective_mode = Some(TailscaleMode::Disabled);
+                status.backend_state = TailscaleBackendState::Stopped;
+                status.authenticated = Some(false);
+                status.ipv4 = None;
+                status.route_advertised = Some(false);
+                status.local_firewall_ready = Some(false);
+                status.connection = TailscaleConnectionStatus {
+                    kind: TailscaleConnectionType::Unknown,
+                    derp_region: None,
+                };
+                Ok(ControlResult::TailscaleMutation {
+                    status: status.clone(),
+                    login_url: None,
+                })
+            }
             ControlOperation::Router { .. }
             | ControlOperation::Ota { .. }
             | ControlOperation::Dhcp { .. } => {
@@ -464,6 +556,15 @@ impl StatusRouterPlatformPort for HarnessBackend {
     async fn read_proxy_status(&self) -> Component<ProxyStatus> {
         self.state()
             .map(|state| state.proxy.clone())
+            .unwrap_or_else(|error| Component::unavailable(harness_issue(error)))
+    }
+}
+
+#[async_trait]
+impl StatusTailscalePlatformPort for HarnessBackend {
+    async fn read_tailscale_status(&self) -> Component<TailscaleStatus> {
+        self.state()
+            .map(|state| state.tailscale.clone())
             .unwrap_or_else(|error| Component::unavailable(harness_issue(error)))
     }
 }
@@ -566,7 +667,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         backend.clone(),
         backend.clone(),
     )?);
-    let read_status = ReadStatus::new_uncached(backend.clone(), backend.clone(), backend.clone());
+    let read_status = ReadStatus::new_uncached_with_tailscale(
+        backend.clone(),
+        backend.clone(),
+        backend.clone(),
+        backend.clone(),
+    );
     let web_control: Arc<dyn ControlHandler> = backend.clone();
     let web_app = app_with_loopback_runtime_frontend(
         read_status,
@@ -647,6 +753,7 @@ async fn reset_harness_state(
 fn validate_harness_state(state: &HarnessState) -> HarnessResult<()> {
     validate_component("router", &state.router)?;
     validate_component("proxy", &state.proxy)?;
+    validate_component("tailscale", &state.tailscale)?;
     validate_component("system", &state.system)?;
     validate_component("display", &state.panel.display)?;
     validate_component("proxy groups", &state.panel.proxy_groups)?;
@@ -706,6 +813,22 @@ fn validate_component<T>(label: &str, component: &Component<T>) -> HarnessResult
     } else {
         Err(format!("{label} component state is inconsistent"))
     }
+}
+
+fn tailscale_status(state: &HarnessState) -> HarnessResult<&TailscaleStatus> {
+    state
+        .tailscale
+        .data
+        .as_ref()
+        .ok_or_else(|| "Tailscale status is unavailable".to_owned())
+}
+
+fn tailscale_status_mut(state: &mut HarnessState) -> HarnessResult<&mut TailscaleStatus> {
+    state
+        .tailscale
+        .data
+        .as_mut()
+        .ok_or_else(|| "Tailscale status is unavailable".to_owned())
 }
 
 fn proxy_groups_mut(state: &mut HarnessState) -> HarnessResult<&mut Vec<ProxyGroup>> {

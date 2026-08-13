@@ -1,4 +1,7 @@
 use serde::{Deserialize, Serialize};
+use std::net::Ipv4Addr;
+
+use super::tailscale::{TailscaleBackendState, TailscaleMode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -78,7 +81,58 @@ pub struct StatusSnapshot {
     pub observed_at_unix_ms: u64,
     pub router: Component<RouterStatus>,
     pub proxy: Component<ProxyStatus>,
+    pub tailscale: Component<TailscaleStatus>,
     pub system: Component<SystemStats>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TailscaleRouteApproval {
+    Approved,
+    UnknownExternalApprovalRequired,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TailscaleConnectionType {
+    Direct,
+    PeerRelay,
+    Derp,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TailscaleConnectionStatus {
+    pub kind: TailscaleConnectionType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub derp_region: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TailscaleErrorCategory {
+    ProbeFailed,
+    Conflict,
+    NotReady,
+    OperationFailed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TailscaleStatus {
+    pub desired_mode: Option<TailscaleMode>,
+    pub effective_mode: Option<TailscaleMode>,
+    pub backend_state: TailscaleBackendState,
+    pub authenticated: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ipv4: Option<Ipv4Addr>,
+    pub route_advertised: Option<bool>,
+    pub local_firewall_ready: Option<bool>,
+    pub route_approval: TailscaleRouteApproval,
+    pub connection: TailscaleConnectionStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_category: Option<TailscaleErrorCategory>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -195,6 +249,21 @@ mod tests {
                 "proxy_unavailable",
                 "Proxy status is unavailable",
             )),
+            tailscale: Component::available(TailscaleStatus {
+                desired_mode: Some(TailscaleMode::LanSubnetAccess),
+                effective_mode: Some(TailscaleMode::RouterOnly),
+                backend_state: TailscaleBackendState::Running,
+                authenticated: Some(true),
+                ipv4: Some("100.64.0.10".parse().unwrap()),
+                route_advertised: Some(true),
+                local_firewall_ready: Some(true),
+                route_approval: TailscaleRouteApproval::UnknownExternalApprovalRequired,
+                connection: TailscaleConnectionStatus {
+                    kind: TailscaleConnectionType::Derp,
+                    derp_region: Some("sfo".to_owned()),
+                },
+                error_category: None,
+            }),
             system: Component::available(SystemStats {
                 uptime_seconds: Some(120),
                 cpu_temperature_millidegrees: Some(45_000),
@@ -209,6 +278,9 @@ mod tests {
         let json = serde_json::to_string(&snapshot).expect("serialize snapshot");
         assert!(!json.contains("password"));
         assert!(!json.contains("subscription"));
+        assert!(!json.contains("login_url"));
+        assert!(!json.contains("auth_key"));
+        assert!(!json.contains("node_key"));
         let decoded: StatusSnapshot = serde_json::from_str(&json).expect("deserialize snapshot");
         assert_eq!(decoded, snapshot);
     }

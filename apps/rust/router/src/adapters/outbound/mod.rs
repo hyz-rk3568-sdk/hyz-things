@@ -12,5 +12,7 @@ pub mod status;
 pub mod storage;
 pub mod subscription;
 pub mod system;
+pub mod tailscale;
 
 pub use process::{LinuxMihomoFailOpenPlatform, LinuxRouterPlatform};
+pub use tailscale::LinuxTailscalePlatform;

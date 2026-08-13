@@ -69,7 +69,11 @@ fn apply_proxy_actions(
     actions: &[ProxyAction],
 ) -> Result<(), PlatformError> {
     for action in actions {
-        platform.apply_proxy(action)?;
+        platform.apply_proxy(action).map_err(|error| {
+            PlatformError::CommandFailed(format!(
+                "shutdown proxy action {action:?} failed: {error}"
+            ))
+        })?;
     }
     Ok(())
 }
@@ -79,7 +83,11 @@ fn apply_network_actions(
     actions: &[NetworkAction],
 ) -> Result<(), PlatformError> {
     for action in actions {
-        platform.apply_network(action)?;
+        platform.apply_network(action).map_err(|error| {
+            PlatformError::CommandFailed(format!(
+                "shutdown network action {action:?} failed: {error}"
+            ))
+        })?;
     }
     Ok(())
 }

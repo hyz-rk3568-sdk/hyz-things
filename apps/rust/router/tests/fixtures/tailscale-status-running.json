@@ -1,0 +1,17 @@
+{
+  "Version": "1.84.2-tf0a12c1e8-g6b2f6f630",
+  "TUN": true,
+  "BackendState": "Running",
+  "TailscaleIPs": ["100.64.0.7", "fd7a:115c:a1e0::7"],
+  "Self": {
+    "ID": "nredacted",
+    "HostName": "hyz-router",
+    "DNSName": "hyz-router.example.ts.net.",
+    "OS": "linux",
+    "Online": true,
+    "Relay": "hkg",
+    "PeerRelay": ""
+  },
+  "Peer": {},
+  "User": {}
+}

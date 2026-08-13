@@ -13,8 +13,9 @@ use crate::{
             valid_control_name, DisplayRequest, PanelSnapshot, ProxyDelayRefreshRequest,
             ProxyDelayRequest, ProxyDelayResult, ProxyGroup, ProxySelectionRequest,
         },
-        status::StatusSnapshot,
+        status::{StatusSnapshot, TailscaleStatus},
         subscription::{SubscriptionSummary, SubscriptionUrl},
+        tailscale::{TailscaleLoginUrl, TailscaleMode},
     },
 };
 use async_trait::async_trait;
@@ -38,7 +39,7 @@ pub const CONTROL_SOCKET: &str = "/run/hyz-router/control.sock";
 pub const CONTROL_RUNTIME_DIR: &str = "/run/hyz-router";
 pub const DAEMON_LOCK_DIR: &str = "/run/hyz-router/daemon.lock";
 const DAEMON_OWNER_FILE: &str = "/run/hyz-router/daemon.lock/owner";
-pub const PROTOCOL_VERSION: u16 = 6;
+pub const PROTOCOL_VERSION: u16 = 7;
 pub const MAX_FRAME_BYTES: usize = 64 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(30 * 60);
@@ -76,6 +77,10 @@ pub enum ControlOperation {
     SubscriptionRefresh {},
     DevicePoliciesGet {},
     DevicePoliciesSet { request: DevicePolicyUpdateRequest },
+    TailscaleGet {},
+    TailscaleMode { mode: TailscaleMode },
+    TailscaleLogin {},
+    TailscaleLogout {},
     Ota { command: OtaCommand },
     Dhcp { event: DhcpEvent },
     WifiStatus {},
@@ -99,6 +104,7 @@ impl ControlOperation {
                 | Self::WifiScan { .. }
                 | Self::SubscriptionGet { .. }
                 | Self::DevicePoliciesGet { .. }
+                | Self::TailscaleGet { .. }
                 | Self::Ota {
                     command: OtaCommand::Verify { .. }
                 }
@@ -112,6 +118,10 @@ impl ControlOperation {
             | Self::SubscriptionGet { .. }
             | Self::SubscriptionRefresh { .. }
             | Self::DevicePoliciesGet { .. }
+            | Self::TailscaleGet { .. }
+            | Self::TailscaleMode { .. }
+            | Self::TailscaleLogin { .. }
+            | Self::TailscaleLogout { .. }
             | Self::Router { .. }
             | Self::Proxy { .. }
             | Self::WifiStatus { .. }
@@ -312,6 +322,14 @@ pub enum ControlResult {
     },
     Subscription {
         summary: SubscriptionSummary,
+    },
+    Tailscale {
+        status: TailscaleStatus,
+    },
+    TailscaleMutation {
+        status: TailscaleStatus,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        login_url: Option<TailscaleLoginUrl>,
     },
     Completed {
         message: String,
@@ -770,7 +788,7 @@ mod tests {
         let request = ControlRequest::new(ControlOperation::Status {});
         let encoded = serde_json::to_vec(&request).unwrap();
         assert!(encoded.len() < MAX_FRAME_BYTES);
-        assert_eq!(PROTOCOL_VERSION, 6);
+        assert_eq!(PROTOCOL_VERSION, 7);
         let policy = ControlOperation::DevicePoliciesSet {
             request: DevicePolicyUpdateRequest {
                 expected_generation: 0,
@@ -779,6 +797,24 @@ mod tests {
         };
         assert!(policy.mutates());
         assert!(policy.validate().is_ok());
+        let tailscale_get = ControlOperation::TailscaleGet {};
+        assert!(!tailscale_get.mutates());
+        assert!(tailscale_get.validate().is_ok());
+        for operation in [
+            ControlOperation::TailscaleMode {
+                mode: TailscaleMode::Disabled,
+            },
+            ControlOperation::TailscaleLogin {},
+            ControlOperation::TailscaleLogout {},
+        ] {
+            assert!(operation.mutates());
+            assert!(operation.validate().is_ok());
+            let json = serde_json::to_string(&ControlRequest::new(operation)).unwrap();
+            assert!(!json.contains("url"));
+            assert!(!json.contains("auth_key"));
+            assert!(!json.contains("subnet"));
+            assert!(!json.contains("port"));
+        }
         assert_eq!(
             serde_json::from_slice::<ControlRequest>(&encoded).unwrap(),
             request

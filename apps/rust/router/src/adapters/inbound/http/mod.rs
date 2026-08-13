@@ -34,8 +34,9 @@ use crate::{
             DisplayRequest, PanelBootstrap, ProxyDelayRefreshRequest, ProxyDelayRequest,
             ProxyModeRequest, ProxySelectionRequest,
         },
-        status::ProxyMode,
+        status::{ProxyMode, TailscaleStatus},
         subscription::SubscriptionSummary,
+        tailscale::TailscaleMode,
     },
 };
 
@@ -135,13 +136,24 @@ pub fn app_with_admin_control(
     csrf_token: String,
     port: u16,
 ) -> Router {
+    app_with_admin_control_at_address(read_status, control, admin, csrf_token, LAN_ADDRESS, port)
+}
+
+pub fn app_with_admin_control_at_address(
+    read_status: ReadStatus,
+    control: Arc<dyn ControlHandler>,
+    admin: Arc<AdminApplication>,
+    csrf_token: String,
+    address: Ipv4Addr,
+    port: u16,
+) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
     app_with_assets(
         read_status,
         Some(control),
         Some(admin),
         &csrf_token,
-        format!("http://{LAN_ADDRESS}:{port}"),
+        format!("http://{address}:{port}"),
         assets,
     )
 }
@@ -256,6 +268,19 @@ fn app_with_assets(
         .route(
             "/api/v1/proxy/subscription",
             on(MethodFilter::GET, proxy_subscription),
+        )
+        .route("/api/v1/tailscale", on(MethodFilter::GET, tailscale_status))
+        .route(
+            "/api/v1/control/tailscale/mode",
+            on(MethodFilter::POST, tailscale_mode),
+        )
+        .route(
+            "/api/v1/control/tailscale/login",
+            on(MethodFilter::POST, tailscale_login),
+        )
+        .route(
+            "/api/v1/control/tailscale/logout",
+            on(MethodFilter::POST, tailscale_logout),
         )
         .route(
             "/api/v1/control/proxy/subscription/source",
@@ -611,6 +636,24 @@ struct SubscriptionResponse {
     subscription: SubscriptionSummary,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TailscaleModeRequest {
+    mode: TailscaleMode,
+}
+
+#[derive(Serialize)]
+struct TailscaleResponse {
+    tailscale: TailscaleStatus,
+}
+
+#[derive(Serialize)]
+struct TailscaleMutationResponse {
+    tailscale: TailscaleStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    login_url: Option<String>,
+}
+
 #[derive(Clone, Copy)]
 enum SensitiveResult {
     NetworkConfig,
@@ -619,6 +662,7 @@ enum SensitiveResult {
     NetworkScan,
     DevicePolicies,
     Subscription,
+    Tailscale,
 }
 
 async fn network_config(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -778,6 +822,100 @@ async fn proxy_subscription(State(state): State<AppState>, headers: HeaderMap) -
     .await
 }
 
+async fn tailscale_status(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    invoke_sensitive_control(
+        &state,
+        &headers,
+        ControlOperation::TailscaleGet {},
+        SensitiveResult::Tailscale,
+    )
+    .await
+}
+
+async fn tailscale_mode(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<TailscaleModeRequest>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control(&state, &headers).await {
+        return response;
+    }
+    let Ok(Json(request)) = payload else {
+        return invalid_request_json();
+    };
+    invoke_tailscale_mutation_authorized(
+        &state,
+        ControlOperation::TailscaleMode { mode: request.mode },
+    )
+    .await
+}
+
+async fn tailscale_login(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
+) -> Response {
+    invoke_empty_tailscale_mutation(
+        &state,
+        &headers,
+        payload,
+        ControlOperation::TailscaleLogin {},
+    )
+    .await
+}
+
+async fn tailscale_logout(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
+) -> Response {
+    invoke_empty_tailscale_mutation(
+        &state,
+        &headers,
+        payload,
+        ControlOperation::TailscaleLogout {},
+    )
+    .await
+}
+
+async fn invoke_empty_tailscale_mutation(
+    state: &AppState,
+    headers: &HeaderMap,
+    payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
+    operation: ControlOperation,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control(state, headers).await {
+        return response;
+    }
+    if payload.is_err() {
+        return invalid_request_json();
+    }
+    invoke_tailscale_mutation_authorized(state, operation).await
+}
+
+async fn invoke_tailscale_mutation_authorized(
+    state: &AppState,
+    operation: ControlOperation,
+) -> Response {
+    if operation.validate().is_err() {
+        return invalid_request_json();
+    }
+    let Some(control) = &state.control else {
+        return service_unavailable_json();
+    };
+    match control.handle(operation).await {
+        Ok(ControlResult::TailscaleMutation { status, login_url }) => {
+            Json(TailscaleMutationResponse {
+                tailscale: status,
+                login_url: login_url.map(|url| url.as_str().to_owned()),
+            })
+            .into_response()
+        }
+        Ok(_) => service_unavailable_json(),
+        Err(_) => control_failed_json(),
+    }
+}
+
 async fn proxy_subscription_source(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -911,6 +1049,9 @@ async fn invoke_sensitive_control_authorized(
                 subscription: summary,
             })
             .into_response()
+        }
+        (SensitiveResult::Tailscale, Ok(ControlResult::Tailscale { status })) => {
+            Json(TailscaleResponse { tailscale: status }).into_response()
         }
         (_, Ok(_)) => service_unavailable_json(),
         (_, Err(_)) => control_failed_json(),
@@ -1230,6 +1371,9 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/control/proxy/device-policies"
             | "/api/v1/control/proxy/subscription/source"
             | "/api/v1/control/proxy/subscription/refresh"
+            | "/api/v1/control/tailscale/mode"
+            | "/api/v1/control/tailscale/login"
+            | "/api/v1/control/tailscale/logout"
             | "/api/v1/control/display"
             | "/api/v1/control/proxy/mode"
             | "/api/v1/control/proxy/selection"
@@ -1341,6 +1485,15 @@ mod tests {
         )
         .is_err());
 
+        assert!(serde_json::from_str::<TailscaleModeRequest>(
+            r#"{"mode":"lan_subnet_access","login_url":"https://example.com"}"#
+        )
+        .is_err());
+        assert!(
+            serde_json::from_str::<TailscaleModeRequest>(r#"{"mode":"lan_subnet_access"}"#).is_ok()
+        );
+        assert!(serde_json::from_str::<EmptyJsonRequest>(r#"{"auth_key":"secret"}"#).is_err());
+
         let secret_url = "https://example.com/private-subscription-token";
         let request = serde_json::from_str::<SubscriptionSourceRequest>(&format!(
             r#"{{"url":"{secret_url}"}}"#
@@ -1421,6 +1574,9 @@ mod tests {
         assert!(is_post_path("/api/v1/control/proxy/device-policies"));
         assert!(is_post_path("/api/v1/control/proxy/subscription/source"));
         assert!(is_post_path("/api/v1/control/proxy/subscription/refresh"));
+        assert!(is_post_path("/api/v1/control/tailscale/mode"));
+        assert!(is_post_path("/api/v1/control/tailscale/login"));
+        assert!(is_post_path("/api/v1/control/tailscale/logout"));
         assert!(is_post_path("/api/v1/control/display"));
         assert!(is_post_path("/api/v1/control/proxy/mode"));
         assert!(!is_post_path("/api/v1/auth/session"));
@@ -1428,6 +1584,8 @@ mod tests {
         assert!(!is_post_path("/api/v1/network/config"));
         assert!(!is_post_path("/api/v1/proxy/device-policies"));
         assert!(!is_post_path("/api/v1/proxy/subscription"));
+        assert!(!is_post_path("/api/v1/tailscale"));
+        assert!(!is_post_path("/api/v1/control/tailscale"));
         assert!(!is_post_path("/api/v1/control/network/sta"));
         assert!(!is_post_path("/api/v1/control"));
     }

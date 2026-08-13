@@ -7,3 +7,4 @@ pub mod panel;
 pub mod proxy;
 pub mod status;
 pub mod subscription;
+pub mod tailscale;
