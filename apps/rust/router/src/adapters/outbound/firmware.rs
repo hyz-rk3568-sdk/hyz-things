@@ -7,15 +7,20 @@ use std::fs::{self, File, Metadata, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command, ExitStatus};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const TEMPORARY_ATTEMPTS: u64 = 128;
 const LOCK_ATTEMPTS: usize = 3;
 const STAGED_FIRMWARE_NAME: &str = "upgrade.fw";
 const LOCK_OWNER_NAME: &str = "owner";
 const O_NOFOLLOW: i32 = 0o400000;
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+const UPDATE_ENGINE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+const REBOOT_TIMEOUT: Duration = Duration::from_secs(30);
+const COMMAND_POLL: Duration = Duration::from_millis(20);
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug)]
@@ -287,15 +292,26 @@ impl FirmwarePlatformPort for FirmwareAdapter {
         Ok(firmware)
     }
 
-    fn download_to_staging_temporary(&self, source: &str) -> Result<Self::Firmware, PlatformError> {
+    fn download_to_staging_temporary(
+        &self,
+        source: &str,
+        deadline: Instant,
+    ) -> Result<Self::Firmware, PlatformError> {
         validate_source_url(source)?;
         self.ensure_staging_directory()?;
         let (path, mut target) = create_unique_temporary(&self.config.staging_directory)?;
         let cleanup = TemporaryCleanup::new(path.clone());
 
-        let mut response = ureq::get(source)
+        let timeout = remaining_timeout(deadline, DOWNLOAD_TIMEOUT, "firmware download")?;
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_global(Some(timeout))
+            .max_redirects(0)
+            .build()
+            .into();
+        let mut response = agent
+            .get(source)
             .call()
-            .map_err(|_| PlatformError::new("firmware download request failed"))?;
+            .map_err(|_| PlatformError::new("firmware download request failed or timed out"))?;
         let mut body = response.body_mut().as_reader();
         io::copy(&mut body, &mut target)
             .map_err(|_| PlatformError::new("firmware download body failed"))?;
@@ -418,7 +434,11 @@ impl FirmwarePlatformPort for FirmwareAdapter {
         self.write_bcb(message)
     }
 
-    fn stage_with_update_engine(&self, firmware: &Self::Firmware) -> Result<(), PlatformError> {
+    fn stage_with_update_engine(
+        &self,
+        firmware: &Self::Firmware,
+        deadline: Instant,
+    ) -> Result<(), PlatformError> {
         self.revalidate_committed(firmware)?;
         if !self.config.update_engine.is_file() {
             return Err(PlatformError::new(format!(
@@ -426,11 +446,13 @@ impl FirmwarePlatformPort for FirmwareAdapter {
                 self.config.update_engine.display()
             )));
         }
-        let status = Command::new(&self.config.update_engine)
+        let timeout = remaining_timeout(deadline, UPDATE_ENGINE_TIMEOUT, "updateEngine")?;
+        let mut child = Command::new(&self.config.update_engine)
             .arg(format!("--image_url={}", firmware.path.display()))
             .arg("--update")
-            .status()
+            .spawn()
             .map_err(|error| platform_error("start Rockchip updateEngine", error))?;
+        let status = wait_for_command(&mut child, timeout, "updateEngine")?;
         if status.success() {
             Ok(())
         } else {
@@ -440,10 +462,12 @@ impl FirmwarePlatformPort for FirmwareAdapter {
         }
     }
 
-    fn reboot(&self) -> Result<(), PlatformError> {
-        let status = Command::new(&self.config.reboot)
-            .status()
+    fn reboot(&self, deadline: Instant) -> Result<(), PlatformError> {
+        let timeout = remaining_timeout(deadline, REBOOT_TIMEOUT, "reboot")?;
+        let mut child = Command::new(&self.config.reboot)
+            .spawn()
             .map_err(|error| platform_error("request reboot", error))?;
+        let status = wait_for_command(&mut child, timeout, "reboot")?;
         if status.success() {
             Ok(())
         } else {
@@ -451,6 +475,56 @@ impl FirmwarePlatformPort for FirmwareAdapter {
                 "reboot command exited with {status}"
             )))
         }
+    }
+}
+
+fn remaining_timeout(
+    deadline: Instant,
+    phase_limit: Duration,
+    label: &str,
+) -> Result<Duration, PlatformError> {
+    let remaining = deadline
+        .saturating_duration_since(Instant::now())
+        .min(phase_limit);
+    if remaining.is_zero() {
+        Err(PlatformError::new(format!(
+            "{label} could not start because the OTA deadline expired"
+        )))
+    } else {
+        Ok(remaining)
+    }
+}
+
+fn wait_for_command(
+    child: &mut Child,
+    timeout: Duration,
+    label: &str,
+) -> Result<ExitStatus, PlatformError> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| platform_error(format!("wait for {label}"), error))?
+        {
+            return Ok(status);
+        }
+        if Instant::now() >= deadline {
+            let kill = child.kill();
+            let wait = child.wait();
+            return match (kill, wait) {
+                (_, Ok(_)) => Err(PlatformError::new(format!(
+                    "{label} exceeded its fixed deadline and was killed"
+                ))),
+                (Err(kill_error), Err(wait_error)) => Err(PlatformError::new(format!(
+                    "{label} exceeded its fixed deadline; kill failed: {kill_error}; wait failed: {wait_error}"
+                ))),
+                (Ok(()), Err(wait_error)) => Err(platform_error(
+                    format!("wait for killed {label}"),
+                    wait_error,
+                )),
+            };
+        }
+        thread::sleep(COMMAND_POLL);
     }
 }
 
@@ -725,7 +799,11 @@ fn platform_error(context: impl AsRef<str>, error: io::Error) -> PlatformError {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_source_url;
+    use super::{remaining_timeout, validate_source_url, wait_for_command};
+    use std::{
+        process::Command,
+        time::{Duration, Instant},
+    };
 
     #[test]
     fn source_url_rejects_userinfo_without_reflecting_it() {
@@ -735,6 +813,29 @@ mod tests {
         assert!(!error.contains("operator"));
         assert!(!error.contains("query-secret"));
         assert!(!error.contains("also-secret"));
+    }
+
+    #[test]
+    fn external_phase_timeout_is_capped_by_the_remaining_ota_deadline() {
+        assert!(remaining_timeout(Instant::now(), Duration::from_secs(30), "test phase").is_err());
+        let timeout = remaining_timeout(
+            Instant::now() + Duration::from_secs(60),
+            Duration::from_secs(5),
+            "test phase",
+        )
+        .unwrap();
+        assert!(timeout <= Duration::from_secs(5));
+        assert!(timeout > Duration::ZERO);
+    }
+
+    #[test]
+    fn timed_out_command_is_killed_and_reaped_before_returning() {
+        let mut child = Command::new("/bin/sleep").arg("2").spawn().unwrap();
+        let error =
+            wait_for_command(&mut child, Duration::from_millis(20), "test command").unwrap_err();
+
+        assert!(error.to_string().contains("was killed"));
+        assert!(child.try_wait().unwrap().is_some());
     }
 
     #[test]

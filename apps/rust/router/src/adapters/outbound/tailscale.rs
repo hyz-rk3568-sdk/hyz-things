@@ -46,7 +46,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 const MAX_IDENTITY_RECORD: usize = 8 * 1024;
@@ -54,9 +54,9 @@ const MAX_PREFS_JSON: usize = 64 * 1024;
 const MAX_STATUS_JSON: usize = 256 * 1024;
 const START_IDENTITY_ATTEMPTS: usize = 60;
 const START_IDENTITY_POLL: Duration = Duration::from_millis(50);
-const BACKEND_WAIT_ATTEMPTS: usize = 1_200;
+const BACKEND_WAIT_TIMEOUT: Duration = Duration::from_secs(60);
 const BACKEND_WAIT_POLL: Duration = Duration::from_millis(50);
-const LOGIN_URL_WAIT_ATTEMPTS: usize = 1_200;
+const LOGIN_URL_WAIT_TIMEOUT: Duration = Duration::from_secs(60);
 const LOGIN_URL_WAIT_POLL: Duration = Duration::from_millis(50);
 const EXIT_ATTEMPTS: usize = 60;
 const EXIT_POLL: Duration = Duration::from_millis(50);
@@ -113,6 +113,38 @@ impl LinuxTailscalePlatform {
         let mut fixed = vec!["--socket".to_owned(), TAILSCALE_SOCKET.to_owned()];
         fixed.extend(args.iter().map(|value| (*value).to_owned()));
         self.platform.run_probe(Tool::Tailscale, &fixed)
+    }
+
+    fn tailscale_until(
+        &self,
+        args: &[&str],
+        deadline: Instant,
+    ) -> Result<super::process::FixedOutput, PlatformError> {
+        let timeout = remaining_command_timeout(deadline).ok_or_else(|| {
+            PlatformError::UnsafeToCutOver(
+                "Tailscale operation reached its absolute deadline".to_owned(),
+            )
+        })?;
+        let mut fixed = vec!["--socket".to_owned(), TAILSCALE_SOCKET.to_owned()];
+        fixed.extend(args.iter().map(|value| (*value).to_owned()));
+        self.platform
+            .run_with_timeout(Tool::Tailscale, &fixed, timeout)
+    }
+
+    fn tailscale_probe_until(
+        &self,
+        args: &[&str],
+        deadline: Instant,
+    ) -> Result<super::process::FixedOutput, PlatformError> {
+        let timeout = remaining_command_timeout(deadline).ok_or_else(|| {
+            PlatformError::UnsafeToCutOver(
+                "Tailscale probe reached its absolute deadline".to_owned(),
+            )
+        })?;
+        let mut fixed = vec!["--socket".to_owned(), TAILSCALE_SOCKET.to_owned()];
+        fixed.extend(args.iter().map(|value| (*value).to_owned()));
+        self.platform
+            .run_probe_with_timeout(Tool::Tailscale, &fixed, timeout)
     }
 
     fn iptables(&self, args: &[&str]) -> Result<(), PlatformError> {
@@ -210,14 +242,15 @@ impl LinuxTailscalePlatform {
     }
 
     fn wait_for_backend(&self) -> Result<(), PlatformError> {
-        for _ in 0..BACKEND_WAIT_ATTEMPTS {
+        let deadline = Instant::now() + BACKEND_WAIT_TIMEOUT;
+        loop {
             let identity = self.exact_identity()?.ok_or_else(|| {
                 PlatformError::InvalidState(
                     "tailscaled exited before its local API became ready".to_owned(),
                 )
             })?;
             if socket_owned_by_root(TAILSCALE_SOCKET)? {
-                let status = self.tailscale_probe(&["status", "--json"])?;
+                let status = self.tailscale_probe_until(&["status", "--json"], deadline)?;
                 if status.success {
                     let parsed = parse_status_json(&status.stdout)?;
                     if backend_is_stable(parsed.backend) && identity.matches_live_process()? {
@@ -227,11 +260,13 @@ impl LinuxTailscalePlatform {
                     }
                 }
             }
-            thread::sleep(BACKEND_WAIT_POLL);
+            if !sleep_until(deadline, BACKEND_WAIT_POLL) {
+                return Err(PlatformError::UnsafeToCutOver(
+                    "tailscaled local API did not become ready before the fixed deadline"
+                        .to_owned(),
+                ));
+            }
         }
-        Err(PlatformError::UnsafeToCutOver(
-            "tailscaled local API did not become ready before the fixed deadline".to_owned(),
-        ))
     }
 
     fn record_runtime_nodes(&self, identity: &TailscaledIdentity) -> Result<(), PlatformError> {
@@ -381,8 +416,9 @@ impl LinuxTailscalePlatform {
             return Ok(url);
         }
         self.tailscale_probe(&login_args())?;
-        wait_for_login_url(LOGIN_URL_WAIT_ATTEMPTS, LOGIN_URL_WAIT_POLL, || {
-            self.tailscale(&["status", "--json"])
+        let deadline = Instant::now() + LOGIN_URL_WAIT_TIMEOUT;
+        wait_for_login_url_until(deadline, LOGIN_URL_WAIT_POLL, || {
+            self.tailscale_until(&["status", "--json"], deadline)
                 .map(|status| status.stdout)
         })
     }
@@ -1522,6 +1558,41 @@ fn parse_status_login_url(input: &str) -> Result<Option<TailscaleLoginUrl>, Plat
         })
 }
 
+fn remaining_command_timeout(deadline: Instant) -> Option<Duration> {
+    let remaining = deadline
+        .saturating_duration_since(Instant::now())
+        .min(Duration::from_secs(3));
+    (!remaining.is_zero()).then_some(remaining)
+}
+
+fn sleep_until(deadline: Instant, poll: Duration) -> bool {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        return false;
+    }
+    thread::sleep(poll.min(remaining));
+    Instant::now() < deadline
+}
+
+fn wait_for_login_url_until(
+    deadline: Instant,
+    poll: Duration,
+    mut read_status: impl FnMut() -> Result<String, PlatformError>,
+) -> Result<TailscaleLoginUrl, PlatformError> {
+    loop {
+        if let Some(url) = parse_status_login_url(&read_status()?)? {
+            return Ok(url);
+        }
+        if !sleep_until(deadline, poll) {
+            return Err(PlatformError::UnsafeToCutOver(
+                "Tailscale did not publish an official login URL before the fixed deadline"
+                    .to_owned(),
+            ));
+        }
+    }
+}
+
+#[cfg(test)]
 fn wait_for_login_url(
     attempts: usize,
     poll: Duration,
@@ -2246,6 +2317,14 @@ mod tests {
             &STATUS_NEEDS_LOGIN.replace("\"TailscaleIPs\": null", "\"TailscaleIPs\": {}")
         )
         .is_err());
+    }
+
+    #[test]
+    fn long_poll_commands_use_only_the_remaining_absolute_deadline() {
+        assert!(remaining_command_timeout(Instant::now()).is_none());
+        let timeout = remaining_command_timeout(Instant::now() + Duration::from_secs(60)).unwrap();
+        assert!(timeout <= Duration::from_secs(3));
+        assert!(timeout > Duration::ZERO);
     }
 
     #[test]

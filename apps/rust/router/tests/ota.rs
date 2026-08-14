@@ -15,6 +15,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::Instant;
 
 const EXPECTED_DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TEMPORARY: &str = "/staging/.upgrade.part";
@@ -117,6 +118,7 @@ impl FirmwarePlatformPort for FakeFirmwarePlatform {
     fn download_to_staging_temporary(
         &self,
         _source: &str,
+        _deadline: Instant,
     ) -> Result<Self::Firmware, PlatformError> {
         self.call("download");
         Ok(FakeFirmware::new(TEMPORARY, 20))
@@ -186,7 +188,11 @@ impl FirmwarePlatformPort for FakeFirmwarePlatform {
         Ok(())
     }
 
-    fn stage_with_update_engine(&self, firmware: &Self::Firmware) -> Result<(), PlatformError> {
+    fn stage_with_update_engine(
+        &self,
+        firmware: &Self::Firmware,
+        _deadline: Instant,
+    ) -> Result<(), PlatformError> {
         self.call(format!(
             "update-engine:{}:{}",
             firmware.path.to_string_lossy(),
@@ -203,7 +209,7 @@ impl FirmwarePlatformPort for FakeFirmwarePlatform {
         Ok(())
     }
 
-    fn reboot(&self) -> Result<(), PlatformError> {
+    fn reboot(&self, _deadline: Instant) -> Result<(), PlatformError> {
         self.call("reboot");
         Ok(())
     }

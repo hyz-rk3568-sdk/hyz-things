@@ -60,7 +60,12 @@ use std::{
     sync::{Arc, Mutex as StdMutex, Weak},
     time::{Duration, Instant},
 };
-use tokio::sync::{mpsc, oneshot, watch, Mutex as AsyncMutex};
+use tokio::{
+    sync::{mpsc, oneshot, watch, Mutex as AsyncMutex},
+    time::{timeout_at, Instant as TokioInstant},
+};
+
+const DAEMON_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2 * 60);
 
 const USAGE: &str = "Usage:\n  hyz-router daemon\n  hyz-router status [--json]\n  hyz-router router enable|disable\n  hyz-router proxy explicit|tun|disable\n  hyz-router wifi status|scan\n  hyz-router wifi ap apply|confirm|cancel\n  hyz-router subscription get [--json]\n  hyz-router subscription refresh\n  hyz-router ota ...";
 
@@ -1211,8 +1216,30 @@ async fn run(args: Vec<String>) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+struct ShutdownSignals {
+    interrupt: tokio::signal::unix::Signal,
+    terminate: tokio::signal::unix::Signal,
+}
+
+impl ShutdownSignals {
+    fn install() -> std::io::Result<Self> {
+        Ok(Self {
+            interrupt: tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?,
+            terminate: tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?,
+        })
+    }
+
+    async fn recv(&mut self) {
+        tokio::select! {
+            _ = self.interrupt.recv() => {}
+            _ = self.terminate.recv() => {}
+        }
+    }
+}
+
 async fn run_daemon() -> Result<(), Box<dyn Error>> {
     require_root("daemon")?;
+    let mut signals = ShutdownSignals::install()?;
     let port = std::env::var("HYZ_ROUTER_HTTP_PORT")
         .map(|value| value.parse::<u16>())
         .unwrap_or(Ok(DEFAULT_HTTP_PORT))?;
@@ -1268,10 +1295,38 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         control_runtime,
         shutdown_rx.clone(),
     ));
-    if let Err(error) = runtime.initialize().await {
+    let initialize_runtime = runtime.clone();
+    let mut initialize = tokio::spawn(async move { initialize_runtime.initialize().await });
+    let (initialize_result, startup_deadline) = tokio::select! {
+        result = &mut initialize => (join_initialize(result), None),
+        _ = signals.recv() => {
+            let deadline = TokioInstant::now() + DAEMON_SHUTDOWN_TIMEOUT;
+            let _ = shutdown_tx.send(true);
+            let result = match timeout_at(deadline, &mut initialize).await {
+                Ok(result) => join_initialize(result),
+                Err(_) => {
+                    return Err("daemon shutdown deadline expired while initialization was still active; ownership evidence retained".into());
+                }
+            };
+            (result, Some(deadline))
+        }
+    };
+    if let Err(error) = initialize_result {
+        let deadline =
+            startup_deadline.unwrap_or_else(|| TokioInstant::now() + DAEMON_SHUTDOWN_TIMEOUT);
         let _ = shutdown_tx.send(true);
-        let control_result = join_control(control.await);
-        let cleanup_result = runtime.shutdown().await;
+        let control_result = match timeout_at(deadline, &mut control).await {
+            Ok(result) => join_control(result),
+            Err(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "control drain exceeded the daemon shutdown deadline",
+            )),
+        };
+        let cleanup_result = if control_result.is_ok() {
+            shutdown_runtime_before(runtime.clone(), deadline).await
+        } else {
+            Err("runtime cleanup skipped because control operations did not drain".to_owned())
+        };
         if let Err(cleanup_error) = &cleanup_result {
             let _ = runtime.router.record_shutdown_failure(&format!(
                 "startup cleanup failed after initialization error ({error}): {cleanup_error}"
@@ -1292,9 +1347,37 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     }
     runtime.router.clear_shutdown_failure_log()?;
 
+    if let Some(deadline) = startup_deadline {
+        let _ = shutdown_tx.send(true);
+        let control_result = match timeout_at(deadline, &mut control).await {
+            Ok(result) => join_control(result),
+            Err(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "control drain exceeded the daemon shutdown deadline",
+            )),
+        };
+        let cleanup = if control_result.is_ok() {
+            shutdown_runtime_before(runtime.clone(), deadline).await
+        } else {
+            Err("runtime cleanup skipped because control operations did not drain".to_owned())
+        };
+        if let Err(error) = &cleanup {
+            let _ = runtime
+                .router
+                .record_shutdown_failure(&format!("runtime shutdown failed: {error}"));
+        }
+        let cleanup_succeeded = cleanup.is_ok();
+        let result = combine_runtime_results(control_result, cleanup);
+        if cleanup_succeeded {
+            remove_control_socket(&ownership)?;
+            ownership.release()?;
+        }
+        return result.map_err(|error| Box::new(error) as Box<dyn Error>);
+    }
+
     let timeout_runtime = runtime.clone();
     let mut timeout_shutdown = shutdown_rx.clone();
-    let wifi_timeout = tokio::spawn(async move {
+    let mut wifi_timeout = tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(1));
         loop {
             tokio::select! {
@@ -1313,15 +1396,14 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
 
     // HTTP binding is the externally visible readiness boundary and occurs only after a strictly
     // confirmed normal or management-only network state has been reached.
-    let http = serve_http(
+    let mut http = tokio::spawn(serve_http(
         http_status,
         http_control,
         http_admin,
         web_token,
         port,
         shutdown_rx,
-    );
-    tokio::pin!(http);
+    ));
 
     enum Trigger {
         Signal,
@@ -1330,21 +1412,52 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     }
     let trigger = tokio::select! {
         result = &mut control => Trigger::Control(join_control(result)),
-        result = &mut http => Trigger::Http(result),
-        _ = shutdown_signal() => Trigger::Signal,
+        result = &mut http => Trigger::Http(join_http(result)),
+        _ = signals.recv() => Trigger::Signal,
     };
+    let deadline = TokioInstant::now() + DAEMON_SHUTDOWN_TIMEOUT;
     let _ = shutdown_tx.send(true);
-    let services = match trigger {
-        Trigger::Signal => combine_service_results(join_control(control.await), http.await),
-        Trigger::Control(control_result) => combine_service_results(control_result, http.await),
-        Trigger::Http(http_result) => {
-            combine_service_results(join_control(control.await), http_result)
+    let drain = async {
+        match trigger {
+            Trigger::Signal => {
+                let (control, http) = tokio::join!(&mut control, &mut http);
+                combine_service_results(join_control(control), join_http(http))
+            }
+            Trigger::Control(control_result) => {
+                combine_service_results(control_result, join_http((&mut http).await))
+            }
+            Trigger::Http(http_result) => {
+                combine_service_results(join_control((&mut control).await), http_result)
+            }
         }
     };
-    let _ = wifi_timeout.await;
-    // Control accepts and the timeout task are stopped and every in-flight operation (including
-    // OTA) has drained before runtime-owned packet paths and child processes are removed.
-    let cleanup = runtime.shutdown().await;
+    let services = match timeout_at(deadline, drain).await {
+        Ok(result) => result,
+        Err(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "HTTP/control drain exceeded the daemon shutdown deadline",
+        )),
+    };
+    let timeout_task = match timeout_at(deadline, &mut wifi_timeout).await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(error)) => Err(std::io::Error::other(format!(
+            "AP timeout task terminated unexpectedly: {error}"
+        ))),
+        Err(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "AP timeout task drain exceeded the daemon shutdown deadline",
+        )),
+    };
+    let services = combine_service_results(services, timeout_task);
+
+    // Runtime cleanup starts only after all request handlers have drained. If drain misses the
+    // absolute deadline, the process exits with ownership evidence intact instead of cancelling a
+    // blocking mutation and releasing its lock while the blocking worker is still running.
+    let cleanup = if services.is_ok() {
+        shutdown_runtime_before(runtime.clone(), deadline).await
+    } else {
+        Err("runtime cleanup skipped because HTTP/control operations did not drain".to_owned())
+    };
     if let Err(error) = &cleanup {
         let _ = runtime
             .router
@@ -1393,12 +1506,44 @@ async fn serve_http(
     .await
 }
 
+fn join_initialize(
+    result: Result<Result<(), String>, tokio::task::JoinError>,
+) -> Result<(), String> {
+    result.unwrap_or_else(|error| {
+        Err(format!(
+            "initialization task terminated unexpectedly: {error}"
+        ))
+    })
+}
+
+async fn shutdown_runtime_before(
+    runtime: Arc<ProductionRuntime>,
+    deadline: TokioInstant,
+) -> Result<(), String> {
+    let mut cleanup = tokio::spawn(async move { runtime.shutdown().await });
+    match timeout_at(deadline, &mut cleanup).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => Err(format!(
+            "runtime cleanup task terminated unexpectedly: {error}"
+        )),
+        Err(_) => Err("runtime cleanup exceeded the daemon shutdown deadline".to_owned()),
+    }
+}
+
 fn join_control(
     result: Result<std::io::Result<()>, tokio::task::JoinError>,
 ) -> std::io::Result<()> {
     result.unwrap_or_else(|error| {
         Err(std::io::Error::other(format!(
             "control service terminated unexpectedly: {error}"
+        )))
+    })
+}
+
+fn join_http(result: Result<std::io::Result<()>, tokio::task::JoinError>) -> std::io::Result<()> {
+    result.unwrap_or_else(|error| {
+        Err(std::io::Error::other(format!(
+            "HTTP service terminated unexpectedly: {error}"
         )))
     })
 }
@@ -1570,22 +1715,6 @@ fn usage_error(message: &'static str) -> Box<dyn Error> {
     std::io::Error::new(std::io::ErrorKind::InvalidInput, message).into()
 }
 
-async fn shutdown_signal() {
-    let ctrl_c = async {
-        let _ = tokio::signal::ctrl_c().await;
-    };
-    let terminate = async {
-        if let Ok(mut signal) =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-        {
-            signal.recv().await;
-        } else {
-            std::future::pending::<()>().await;
-        }
-    };
-    tokio::select! { _ = ctrl_c => {}, _ = terminate => {} }
-}
-
 #[cfg(test)]
 mod source_boundaries {
     #[test]
@@ -1595,9 +1724,31 @@ mod source_boundaries {
             .next()
             .unwrap();
         let control = production.find("tokio::spawn(serve_control").unwrap();
-        let initialize = production.find("runtime.initialize().await").unwrap();
-        let http = production.find("let http = serve_http").unwrap();
+        let initialize = production.find("initialize_runtime.initialize()").unwrap();
+        let http = production.find("tokio::spawn(serve_http").unwrap();
         assert!(control < initialize && initialize < http);
+    }
+
+    #[test]
+    fn shutdown_signals_and_drains_share_one_absolute_deadline() {
+        let production = include_str!("main.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let install = production.find("ShutdownSignals::install()").unwrap();
+        let initialize = production.find("initialize_runtime.initialize()").unwrap();
+        assert!(install < initialize);
+        assert!(production.contains("timeout_at(deadline, &mut initialize)"));
+        assert!(production.contains("timeout_at(deadline, drain)"));
+        assert!(production.contains("shutdown_runtime_before(runtime.clone(), deadline)"));
+        assert!(!production.contains(".abort()"));
+        let ota = include_str!("application/ota.rs");
+        assert!(ota.contains("OTA_OPERATION_TIMEOUT: Duration = Duration::from_secs(90)"));
+        assert!(ota.contains("download_to_staging_temporary(source, deadline)"));
+        assert!(ota.contains("stage_with_update_engine(firmware, deadline)"));
+        assert!(ota.contains("reboot(deadline)"));
+        assert!(production
+            .contains("runtime cleanup skipped because HTTP/control operations did not drain"));
     }
 
     #[test]
@@ -1681,7 +1832,7 @@ mod source_boundaries {
             .next()
             .unwrap();
         let shutdown = production
-            .rsplit_once("runtime.shutdown().await")
+            .rsplit_once("let cleanup_succeeded = cleanup.is_ok()")
             .unwrap()
             .1;
         let guard = shutdown.find("if cleanup_succeeded").unwrap();

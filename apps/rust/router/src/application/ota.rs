@@ -5,6 +5,9 @@ use crate::domain::ota::{
 use std::error::Error;
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+const OTA_OPERATION_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FirmwareIdentity {
@@ -29,7 +32,11 @@ pub trait FirmwarePlatformPort {
         &self,
         source: &mut Self::Firmware,
     ) -> Result<Self::Firmware, PlatformError>;
-    fn download_to_staging_temporary(&self, source: &str) -> Result<Self::Firmware, PlatformError>;
+    fn download_to_staging_temporary(
+        &self,
+        source: &str,
+        deadline: Instant,
+    ) -> Result<Self::Firmware, PlatformError>;
     fn commit_staged(&self, firmware: &mut Self::Firmware) -> Result<(), PlatformError>;
     fn discard_staged(&self, firmware: &Self::Firmware) -> Result<(), PlatformError>;
     fn read_firmware_prefix(&self, firmware: &mut Self::Firmware)
@@ -44,8 +51,12 @@ pub trait FirmwarePlatformPort {
         firmware: &Self::Firmware,
         message: &BootloaderMessage,
     ) -> Result<(), PlatformError>;
-    fn stage_with_update_engine(&self, firmware: &Self::Firmware) -> Result<(), PlatformError>;
-    fn reboot(&self) -> Result<(), PlatformError>;
+    fn stage_with_update_engine(
+        &self,
+        firmware: &Self::Firmware,
+        deadline: Instant,
+    ) -> Result<(), PlatformError>;
+    fn reboot(&self, deadline: Instant) -> Result<(), PlatformError>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -99,8 +110,9 @@ where
 
     pub fn download(&self, source: &str, expected: &str) -> Result<PathBuf, OtaError> {
         let expected = Sha256Digest::parse(expected)?;
+        let deadline = Instant::now() + OTA_OPERATION_TIMEOUT;
         let _lock = self.platform.acquire_mutation_lock()?;
-        let firmware = self.download_locked(source, expected)?;
+        let firmware = self.download_locked(source, expected, deadline)?;
         Ok(firmware.path().to_path_buf())
     }
 
@@ -112,6 +124,7 @@ where
         reboot: bool,
     ) -> Result<PathBuf, OtaError> {
         let expected = Sha256Digest::parse(expected)?;
+        let deadline = Instant::now() + OTA_OPERATION_TIMEOUT;
         let _lock = self.platform.acquire_mutation_lock()?;
         let mut source = self.platform.open_firmware(firmware)?;
         let mut staged = self.platform.copy_to_staging_temporary(&mut source)?;
@@ -119,22 +132,26 @@ where
             let _ = self.platform.discard_staged(&staged);
             return Err(error);
         }
-        self.install_committed(&staged, mode, reboot)
+        self.install_committed(&staged, mode, reboot, deadline)
     }
 
     pub fn apply(&self, source: &str, expected: &str, reboot: bool) -> Result<PathBuf, OtaError> {
         let expected = Sha256Digest::parse(expected)?;
+        let deadline = Instant::now() + OTA_OPERATION_TIMEOUT;
         let _lock = self.platform.acquire_mutation_lock()?;
-        let firmware = self.download_locked(source, expected)?;
-        self.install_committed(&firmware, InstallMode::RecoveryFree, reboot)
+        let firmware = self.download_locked(source, expected, deadline)?;
+        self.install_committed(&firmware, InstallMode::RecoveryFree, reboot, deadline)
     }
 
     fn download_locked(
         &self,
         source: &str,
         expected: Sha256Digest,
+        deadline: Instant,
     ) -> Result<P::Firmware, OtaError> {
-        let mut temporary = self.platform.download_to_staging_temporary(source)?;
+        let mut temporary = self
+            .platform
+            .download_to_staging_temporary(source, deadline)?;
         if let Err(error) = self.verify_and_commit(&mut temporary, expected) {
             let _ = self.platform.discard_staged(&temporary);
             return Err(error);
@@ -158,6 +175,7 @@ where
         firmware: &P::Firmware,
         mode: InstallMode,
         reboot: bool,
+        deadline: Instant,
     ) -> Result<PathBuf, OtaError> {
         self.platform.sync_firmware(firmware)?;
 
@@ -180,14 +198,14 @@ where
             }
             InstallMode::IncludeRecovery => {
                 self.platform.revalidate_firmware(firmware)?;
-                self.platform.stage_with_update_engine(firmware)?;
+                self.platform.stage_with_update_engine(firmware, deadline)?;
             }
         }
 
         let staged = self.platform.read_bcb()?;
         verify_bcb_exact(&message, &staged)?;
         if reboot {
-            self.platform.reboot()?;
+            self.platform.reboot(deadline)?;
         }
         Ok(firmware.path().to_path_buf())
     }

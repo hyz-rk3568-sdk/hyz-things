@@ -100,7 +100,16 @@ impl LinuxRouterPlatform {
     }
 
     pub(crate) fn run(&self, tool: Tool, args: &[String]) -> Result<FixedOutput, PlatformError> {
-        let output = self.run_probe(tool, args)?;
+        self.run_with_timeout(tool, args, COMMAND_TIMEOUT)
+    }
+
+    pub(crate) fn run_with_timeout(
+        &self,
+        tool: Tool,
+        args: &[String],
+        timeout: Duration,
+    ) -> Result<FixedOutput, PlatformError> {
+        let output = self.run_probe_with_timeout(tool, args, timeout)?;
         if !output.success {
             return Err(PlatformError::CommandFailed(format!(
                 "{} failed: {}",
@@ -116,6 +125,15 @@ impl LinuxRouterPlatform {
         tool: Tool,
         args: &[String],
     ) -> Result<FixedOutput, PlatformError> {
+        self.run_probe_with_timeout(tool, args, COMMAND_TIMEOUT)
+    }
+
+    pub(crate) fn run_probe_with_timeout(
+        &self,
+        tool: Tool,
+        args: &[String],
+        timeout: Duration,
+    ) -> Result<FixedOutput, PlatformError> {
         let mut child = Command::new(tool.path())
             .args(args)
             .env_clear()
@@ -128,7 +146,7 @@ impl LinuxRouterPlatform {
             .map_err(|error| {
                 PlatformError::Io(format!("could not start fixed command: {error}"))
             })?;
-        let deadline = Instant::now() + COMMAND_TIMEOUT;
+        let deadline = Instant::now() + timeout;
         loop {
             if child
                 .try_wait()
@@ -141,7 +159,7 @@ impl LinuxRouterPlatform {
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(PlatformError::CommandFailed(
-                    "fixed command exceeded three-second deadline".to_owned(),
+                    "fixed command exceeded its deadline".to_owned(),
                 ));
             }
             thread::sleep(Duration::from_millis(20));
