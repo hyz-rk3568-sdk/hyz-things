@@ -53,11 +53,12 @@ use hyz_router::{
         },
     },
 };
+use socket2::{Domain, Protocol, Socket, Type};
 use std::{
     error::Error,
     net::{Ipv4Addr, SocketAddr},
     path::Path,
-    sync::{Arc, Mutex as StdMutex, Weak},
+    sync::{mpsc, Arc, Mutex as StdMutex, Weak},
     time::{Duration, Instant},
 };
 use tokio::{
@@ -84,11 +85,80 @@ struct TailscaleHttpConfig {
     port: u16,
 }
 
+const TAILSCALE_ACCEPT_STOP_TIMEOUT: Duration = Duration::from_secs(1);
+const TAILSCALE_GRACEFUL_JOIN_TIMEOUT: Duration = Duration::from_millis(250);
+const TAILSCALE_ABORT_REAP_TIMEOUT: Duration = Duration::from_secs(1);
+
 struct RunningTailscaleListener {
     token: String,
     ipv4: Ipv4Addr,
+    runtime: tokio::runtime::Handle,
     shutdown: Option<oneshot::Sender<()>>,
+    accept_stopped: mpsc::Receiver<()>,
     task: tokio::task::JoinHandle<std::io::Result<()>>,
+}
+
+fn bind_exact_tailscale_listener(address: SocketAddr) -> std::io::Result<std::net::TcpListener> {
+    let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
+    socket.set_reuse_address(true)?;
+    socket.set_nonblocking(true)?;
+    socket.bind(&address.into())?;
+    socket.listen(128)?;
+    Ok(socket.into())
+}
+
+struct ConfirmedTailscaleListener {
+    listener: tokio::net::TcpListener,
+    accept_stopped: Option<mpsc::Sender<()>>,
+}
+
+impl Drop for ConfirmedTailscaleListener {
+    fn drop(&mut self) {
+        if let Some(accept_stopped) = self.accept_stopped.take() {
+            let _ = accept_stopped.send(());
+        }
+    }
+}
+
+impl axum::serve::Listener for ConfirmedTailscaleListener {
+    type Io = tokio::net::TcpStream;
+    type Addr = SocketAddr;
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        axum::serve::Listener::accept(&mut self.listener).await
+    }
+
+    fn local_addr(&self) -> std::io::Result<Self::Addr> {
+        self.listener.local_addr()
+    }
+}
+
+impl RunningTailscaleListener {
+    fn wait_for_task(
+        &mut self,
+        timeout: Duration,
+    ) -> Option<Result<std::io::Result<()>, tokio::task::JoinError>> {
+        let runtime = self.runtime.clone();
+        runtime.block_on(async { tokio::time::timeout(timeout, &mut self.task).await.ok() })
+    }
+
+    fn log_completion(result: Result<std::io::Result<()>, tokio::task::JoinError>) {
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                eprintln!("hyz-router: Tailscale management listener failed: {error}");
+            }
+            Err(error) if error.is_cancelled() => {}
+            Err(error) => {
+                eprintln!("hyz-router: Tailscale management listener task failed: {error}");
+            }
+        }
+    }
+
+    fn reap_finished(mut self) {
+        let runtime = self.runtime.clone();
+        Self::log_completion(runtime.block_on(&mut self.task));
+    }
 }
 
 impl ProductionTailscalePlatform {
@@ -149,13 +219,10 @@ impl ProductionTailscalePlatform {
             PlatformError::InvalidState("Tailscale HTTP runtime owner is unavailable".to_owned())
         })?;
         let address = SocketAddr::from((ipv4, config.port));
-        let listener = std::net::TcpListener::bind(address).map_err(|error| {
+        let listener = bind_exact_tailscale_listener(address).map_err(|error| {
             PlatformError::Io(format!(
                 "bind exact Tailscale HTTP listener {address}: {error}"
             ))
-        })?;
-        listener.set_nonblocking(true).map_err(|error| {
-            PlatformError::Io(format!("configure Tailscale HTTP listener: {error}"))
         })?;
         let listener = {
             let _enter = config.runtime.enter();
@@ -164,6 +231,11 @@ impl ProductionTailscalePlatform {
             })?
         };
         let (shutdown, stopped) = oneshot::channel();
+        let (accept_stopped, accept_stopped_rx) = mpsc::channel();
+        let listener = ConfirmedTailscaleListener {
+            listener,
+            accept_stopped: Some(accept_stopped),
+        };
         let status = owner.status();
         let control: Arc<dyn ControlHandler> = owner.clone();
         let admin = owner.admin();
@@ -175,7 +247,8 @@ impl ProductionTailscalePlatform {
             ipv4,
             config.port,
         );
-        let task = config.runtime.spawn(async move {
+        let runtime = config.runtime.clone();
+        let task = runtime.spawn(async move {
             axum::serve(listener, app)
                 .with_graceful_shutdown(async move {
                     let _ = stopped.await;
@@ -185,7 +258,9 @@ impl ProductionTailscalePlatform {
         *state = Some(RunningTailscaleListener {
             token: token.to_owned(),
             ipv4,
+            runtime,
             shutdown: Some(shutdown),
+            accept_stopped: accept_stopped_rx,
             task,
         });
         Ok(())
@@ -204,36 +279,80 @@ impl ProductionTailscalePlatform {
                 "refusing to stop a Tailscale listener with a different ownership token".to_owned(),
             ));
         }
+        drop(state);
+
         if let Some(shutdown) = running.shutdown.take() {
             let _ = shutdown.send(());
+        } else {
+            running.task.abort();
         }
-        // Dropping the join handle detaches the graceful drain. The listening socket stops
-        // accepting immediately, while an in-flight request from this listener may finish its
-        // response without deadlocking the lifecycle operation that initiated the stop.
-        drop(running.task);
-        drop(state);
-        Ok(())
+
+        let accept_confirmed = running
+            .accept_stopped
+            .recv_timeout(TAILSCALE_ACCEPT_STOP_TIMEOUT)
+            .is_ok();
+        if accept_confirmed {
+            if let Some(result) = running.wait_for_task(TAILSCALE_GRACEFUL_JOIN_TIMEOUT) {
+                RunningTailscaleListener::log_completion(result);
+                return Ok(());
+            }
+        }
+
+        running.task.abort();
+        if let Some(result) = running.wait_for_task(TAILSCALE_ABORT_REAP_TIMEOUT) {
+            RunningTailscaleListener::log_completion(result);
+            let accept_confirmed = accept_confirmed || running.accept_stopped.try_recv().is_ok();
+            return if accept_confirmed {
+                Ok(())
+            } else {
+                Err(PlatformError::UnsafeToCutOver(
+                    "Tailscale management listener stopped without accept-loop confirmation"
+                        .to_owned(),
+                ))
+            };
+        }
+
+        let mut state = match self.listener.lock() {
+            Ok(state) => state,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *state = Some(running);
+        Err(PlatformError::UnsafeToCutOver(
+            "Tailscale management listener task did not stop within the bounded abort/reap window"
+                .to_owned(),
+        ))
     }
 
     fn listener_observation(&self) -> (Probe<OwnedResource>, Probe<Option<Ipv4Addr>>) {
-        match self.listener.lock() {
-            Ok(state) => match state.as_ref() {
-                None => (Probe::Known(OwnedResource::Absent), Probe::Known(None)),
-                Some(listener) if listener.task.is_finished() => {
-                    let reason = "Tailscale management listener terminated unexpectedly".to_owned();
-                    (Probe::Unknown(reason.clone()), Probe::Unknown(reason))
-                }
-                Some(listener) => (
-                    Probe::Known(OwnedResource::Owned {
-                        token: listener.token.clone(),
-                    }),
-                    Probe::Known(Some(listener.ipv4)),
-                ),
-            },
+        let mut state = match self.listener.lock() {
+            Ok(state) => state,
             Err(_) => {
                 let reason = "Tailscale listener lock poisoned".to_owned();
+                return (Probe::Unknown(reason.clone()), Probe::Unknown(reason));
+            }
+        };
+        if state
+            .as_ref()
+            .is_some_and(|listener| listener.task.is_finished())
+        {
+            let listener = state.take().expect("finished listener must exist");
+            drop(state);
+            listener.reap_finished();
+            return (Probe::Known(OwnedResource::Absent), Probe::Known(None));
+        }
+        match state.as_ref() {
+            None => (Probe::Known(OwnedResource::Absent), Probe::Known(None)),
+            Some(listener) if listener.shutdown.is_none() => {
+                let reason =
+                    "Tailscale management listener termination is not confirmed".to_owned();
                 (Probe::Unknown(reason.clone()), Probe::Unknown(reason))
             }
+            Some(listener) => (
+                Probe::Known(OwnedResource::Owned {
+                    token: listener.token.clone(),
+                }),
+                Probe::Known(Some(listener.ipv4)),
+            ),
         }
     }
 }
@@ -1717,6 +1836,15 @@ fn usage_error(message: &'static str) -> Box<dyn Error> {
 
 #[cfg(test)]
 mod source_boundaries {
+    use super::*;
+    use axum::{routing::get, Router};
+    use tokio::{io::AsyncWriteExt, sync::Notify};
+
+    fn test_listener_platform(listener: RunningTailscaleListener) -> ProductionTailscalePlatform {
+        let platform = ProductionTailscalePlatform::new(Arc::new(LinuxRouterPlatform::new()));
+        *platform.listener.lock().unwrap() = Some(listener);
+        platform
+    }
     #[test]
     fn daemon_serves_control_before_initialization_and_http_afterward() {
         let production = include_str!("main.rs")
@@ -1823,6 +1951,116 @@ mod source_boundaries {
         let tailscale = shutdown.find("self.shutdown_tailscale()").unwrap();
         let proxy_network = shutdown.find("ShutdownApplication::new").unwrap();
         assert!(tailscale < proxy_network);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn tailscale_listener_stop_is_bounded_reaped_and_allows_exact_rebind() {
+        let entered = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let app = Router::new().route(
+            "/",
+            get({
+                let entered = entered.clone();
+                let release = release.clone();
+                move || {
+                    let entered = entered.clone();
+                    let release = release.clone();
+                    async move {
+                        entered.notify_one();
+                        release.notified().await;
+                        "stopped"
+                    }
+                }
+            }),
+        );
+        let listener =
+            bind_exact_tailscale_listener(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).unwrap();
+        let address = listener.local_addr().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+        let (shutdown, stopped) = oneshot::channel();
+        let (accept_stopped, accept_stopped_rx) = mpsc::channel();
+        let listener = ConfirmedTailscaleListener {
+            listener,
+            accept_stopped: Some(accept_stopped),
+        };
+        let runtime = tokio::runtime::Handle::current();
+        let task = runtime.spawn(async move {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(async move {
+                    let _ = stopped.await;
+                })
+                .await
+        });
+        let platform = Arc::new(test_listener_platform(RunningTailscaleListener {
+            token: "listener-owned".to_owned(),
+            ipv4: Ipv4Addr::LOCALHOST,
+            runtime,
+            shutdown: Some(shutdown),
+            accept_stopped: accept_stopped_rx,
+            task,
+        }));
+
+        let mut request = tokio::net::TcpStream::connect(address).await.unwrap();
+        request
+            .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(1), entered.notified())
+            .await
+            .unwrap();
+
+        let stopping = platform.clone();
+        let stopped = tokio::task::spawn_blocking(move || stopping.stop_listener("listener-owned"));
+        tokio::time::timeout(Duration::from_secs(3), stopped)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let rebound = bind_exact_tailscale_listener(address).unwrap();
+        assert!(platform.listener.lock().unwrap().is_none());
+
+        release.notify_waiters();
+        drop(request);
+        drop(rebound);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn finished_owned_listener_task_is_reaped_and_observed_as_absent() {
+        let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let (accept_stopped, accept_stopped_rx) = mpsc::channel();
+        let listener = ConfirmedTailscaleListener {
+            listener,
+            accept_stopped: Some(accept_stopped),
+        };
+        let runtime = tokio::runtime::Handle::current();
+        let task = runtime.spawn(async move {
+            drop(listener);
+            Err(std::io::Error::other("injected listener failure"))
+        });
+        while !task.is_finished() {
+            tokio::task::yield_now().await;
+        }
+        let platform = Arc::new(test_listener_platform(RunningTailscaleListener {
+            token: "listener-owned".to_owned(),
+            ipv4: Ipv4Addr::LOCALHOST,
+            runtime,
+            shutdown: None,
+            accept_stopped: accept_stopped_rx,
+            task,
+        }));
+
+        let observing = platform.clone();
+        let observation = tokio::task::spawn_blocking(move || observing.listener_observation())
+            .await
+            .unwrap();
+        assert_eq!(
+            observation,
+            (Probe::Known(OwnedResource::Absent), Probe::Known(None))
+        );
+        assert!(platform.listener.lock().unwrap().is_none());
     }
 
     #[test]

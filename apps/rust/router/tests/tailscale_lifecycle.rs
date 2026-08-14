@@ -388,6 +388,33 @@ fn foreign_unknown_and_partial_runtime_state_are_never_mutated() {
         Err(PlatformError::Conflict(_))
     ));
 
+    let mut foreign_listener = router_only(Some(TailscaleMode::RouterOnly));
+    foreign_listener.management_listener = Probe::Known(OwnedResource::Foreign);
+    foreign_listener.management_listener_ipv4 =
+        Probe::Unknown("foreign Tailscale listener address is not trusted".to_owned());
+    assert!(matches!(
+        tailscale_plan(
+            &TailscaleDesired::disabled(),
+            &foreign_listener,
+            &network_ready(),
+            "new"
+        ),
+        Err(PlatformError::Conflict(_))
+    ));
+
+    let mut unknown_listener = router_only(Some(TailscaleMode::RouterOnly));
+    unknown_listener.management_listener =
+        Probe::Unknown("Tailscale listener ownership is unconfirmed".to_owned());
+    assert!(matches!(
+        tailscale_plan(
+            &TailscaleDesired::disabled(),
+            &unknown_listener,
+            &network_ready(),
+            "new"
+        ),
+        Err(PlatformError::ProbeFailed(_))
+    ));
+
     let mut stale_with_replaced_socket = exited_owned(Some(TailscaleMode::RouterOnly));
     stale_with_replaced_socket.socket = Probe::Known(OwnedResource::Foreign);
     assert!(matches!(
