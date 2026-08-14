@@ -7,7 +7,7 @@ use crate::{
         reconcile::proxy_plan,
     },
     domain::{
-        network::Probe,
+        network::{OwnedResource, Probe},
         proxy::{ProxyAction, ProxyDesired, ProxyFeaturesV1, ProxyObserved},
         tailscale::{
             TailscaleAction, TailscaleDesired, TailscaleEnvironment, TailscaleMode,
@@ -91,6 +91,21 @@ impl<'a> ProxyApplication<'a> {
         let actions = proxy_plan(desired, &observed, &network, &token)?;
         let mut applied = Vec::new();
         for action in &actions {
+            if let ProxyAction::InstallInterceptionEntry { token } = action {
+                let preinterception = match self.probe.observe_proxy() {
+                    Ok(observed) => observed,
+                    Err(error) => {
+                        self.rollback(&applied, previous);
+                        return Err(error);
+                    }
+                };
+                if !preinterception.ready_for_interception(token, &desired.direct_macs) {
+                    self.rollback(&applied, previous);
+                    return Err(PlatformError::UnsafeToCutOver(
+                        "Mihomo TUN ownership changed before interception commit".to_owned(),
+                    ));
+                }
+            }
             if let ProxyAction::CommitFeatures { features } = action {
                 let mut precommit = match self.probe.observe_proxy() {
                     Ok(observed) => observed,
@@ -206,20 +221,12 @@ impl<'a> ProxyFeatureCoordinator<'a> {
         commit_features: bool,
     ) -> Result<ProxyFeatureReconcileResult, PlatformError> {
         let lease = self.platform.acquire_lifecycle_lock()?;
-        let tailscale_lease = match self.tailscale.acquire_tailscale_lock() {
-            Ok(lease) => lease,
-            Err(error) => {
-                let _ = self.platform.release_lifecycle_lock(&lease);
-                return Err(error);
-            }
-        };
         let result = self.reconcile_locked(desired, commit_features);
-        let tailscale_release = self.tailscale.release_tailscale_lock(&tailscale_lease);
         let release = self.platform.release_lifecycle_lock(&lease);
-        match (result, tailscale_release, release) {
-            (Err(error), _, _) => Err(error),
-            (Ok(_), Err(error), _) | (Ok(_), Ok(()), Err(error)) => Err(error),
-            (Ok(result), Ok(()), Ok(())) => Ok(result),
+        match (result, release) {
+            (Err(error), _) => Err(error),
+            (Ok(_), Err(error)) => Err(error),
+            (Ok(result), Ok(())) => Ok(result),
         }
     }
 
@@ -256,10 +263,21 @@ impl<'a> ProxyFeatureCoordinator<'a> {
                 )))
             }
         };
+        let network = self.probe.observe_network()?;
+        let observed = self.probe.observe_proxy()?;
+        let token = self.clock.ownership_token("hyz-mihomo")?;
+        let mut actions = proxy_plan(desired, &observed, &network, &token)?;
+        let commit = actions
+            .pop()
+            .filter(|action| matches!(action, ProxyAction::CommitFeatures { .. }));
+        let core_restart = actions
+            .iter()
+            .any(|action| matches!(action, ProxyAction::StopCore));
+        let move_tailscale_direct = current_environment == TailscaleEnvironment::MihomoExplicit
+            && (target_environment == TailscaleEnvironment::Direct || core_restart);
+
         let mut tailscale_actions_applied = 0;
-        if current_environment == TailscaleEnvironment::MihomoExplicit
-            && target_environment == TailscaleEnvironment::Direct
-        {
+        if move_tailscale_direct {
             match self.restart_tailscale(&initial_tailscale, TailscaleEnvironment::Direct) {
                 Ok(applied) => tailscale_actions_applied += applied,
                 Err(error) => {
@@ -269,18 +287,32 @@ impl<'a> ProxyFeatureCoordinator<'a> {
             }
         }
 
-        let network = self.probe.observe_network()?;
-        let observed = self.probe.observe_proxy()?;
-        let token = self.clock.ownership_token("hyz-mihomo")?;
-        let mut actions = proxy_plan(desired, &observed, &network, &token)?;
-        let commit = actions
-            .pop()
-            .filter(|action| matches!(action, ProxyAction::CommitFeatures { .. }));
         let mut proxy_actions_applied = 0;
         for action in &actions {
+            if let ProxyAction::InstallInterceptionEntry { token } = action {
+                let preinterception = match self.probe.observe_proxy() {
+                    Ok(observed) => observed,
+                    Err(error) => {
+                        let _ = self.restore_proxy(previous, &desired.direct_macs);
+                        if current_environment != target_environment || move_tailscale_direct {
+                            let _ = self.restore_tailscale_environment(current_environment);
+                        }
+                        return Err(error);
+                    }
+                };
+                if !preinterception.ready_for_interception(token, &desired.direct_macs) {
+                    let _ = self.restore_proxy(previous, &desired.direct_macs);
+                    if current_environment != target_environment || move_tailscale_direct {
+                        let _ = self.restore_tailscale_environment(current_environment);
+                    }
+                    return Err(PlatformError::UnsafeToCutOver(
+                        "Mihomo TUN ownership changed before interception commit".to_owned(),
+                    ));
+                }
+            }
             if let Err(error) = self.platform.apply_proxy(action) {
                 let _ = self.restore_proxy(previous, &desired.direct_macs);
-                if current_environment != target_environment {
+                if current_environment != target_environment || move_tailscale_direct {
                     let _ = self.restore_tailscale_environment(current_environment);
                 }
                 return Err(error);
@@ -288,12 +320,13 @@ impl<'a> ProxyFeatureCoordinator<'a> {
             proxy_actions_applied += 1;
         }
 
-        if current_environment == TailscaleEnvironment::Direct
-            && target_environment == TailscaleEnvironment::MihomoExplicit
+        if target_environment == TailscaleEnvironment::MihomoExplicit
+            && (current_environment == TailscaleEnvironment::Direct || move_tailscale_direct)
         {
             let observed = self.probe.observe_proxy()?;
             if !observed.core_ready() {
                 let _ = self.restore_proxy(previous, &desired.direct_macs);
+                let _ = self.restore_tailscale_environment(current_environment);
                 return Err(PlatformError::UnsafeToCutOver(
                     "Mihomo core and fixed mixed port are not ready for tailscaled".to_owned(),
                 ));
@@ -303,6 +336,7 @@ impl<'a> ProxyFeatureCoordinator<'a> {
                 .restart_tailscale(&tailscale_observed, TailscaleEnvironment::MihomoExplicit)
                 .inspect_err(|_| {
                     let _ = self.restore_proxy(previous, &desired.direct_macs);
+                    let _ = self.restore_tailscale_environment(current_environment);
                 })?;
         }
 
@@ -394,11 +428,55 @@ impl<'a> ProxyFeatureCoordinator<'a> {
         environment: TailscaleEnvironment,
     ) -> Result<usize, PlatformError> {
         let new_token = self.clock.ownership_token("hyz-tailscale")?;
+        let listener_token = match &observed.management_listener {
+            Probe::Known(OwnedResource::Owned { token }) => Some(token.clone()),
+            Probe::Known(OwnedResource::Absent) => None,
+            Probe::Known(OwnedResource::Foreign) => {
+                return Err(PlatformError::Conflict(
+                    "refusing to restart tailscaled while its management listener is foreign"
+                        .to_owned(),
+                ))
+            }
+            Probe::Unknown(reason) => {
+                return Err(PlatformError::ProbeFailed(format!(
+                    "Tailscale management listener is unknown: {reason}"
+                )))
+            }
+        };
+        let mut applied = 0;
+        if let Some(token) = listener_token {
+            self.tailscale
+                .apply_tailscale(&TailscaleAction::StopManagementListener { token })?;
+            applied += 1;
+        }
         let actions = tailscale_environment_plan(observed, environment, &new_token)?;
         for action in &actions {
             self.tailscale.apply_tailscale(action)?;
+            applied += 1;
         }
-        Ok(actions.len())
+        let restarted = self.tailscale_probe.observe_tailscale()?;
+        if persisted_tailscale_mode(&restarted)? != TailscaleMode::Disabled {
+            let ipv4 = match restarted.ipv4 {
+                Probe::Known(Some(ipv4)) => ipv4,
+                Probe::Known(None) => {
+                    return Err(PlatformError::UnsafeToCutOver(
+                        "tailscaled restarted without a management IPv4".to_owned(),
+                    ))
+                }
+                Probe::Unknown(reason) => {
+                    return Err(PlatformError::ProbeFailed(format!(
+                        "Tailscale IPv4 is unknown after backend restart: {reason}"
+                    )))
+                }
+            };
+            self.tailscale
+                .apply_tailscale(&TailscaleAction::StartManagementListener {
+                    token: new_token,
+                    ipv4,
+                })?;
+            applied += 1;
+        }
+        Ok(applied)
     }
 
     fn restore_tailscale_environment(
@@ -607,7 +685,7 @@ mod tests {
             watcher_identity_valid: Probe::Known(false),
             runtime_config_valid: Probe::Known(core),
             mixed_port_ready: Probe::Known(core),
-            tun_interface_present: Probe::Known(false),
+            tun_interface: Probe::Known(OwnedResource::Absent),
             tun_firewall: Probe::Known(OwnedResource::Absent),
             policy_rule_present: Probe::Known(false),
             policy_route_present: Probe::Known(false),
@@ -621,6 +699,7 @@ mod tests {
         proxy: Mutex<ProxyObserved>,
         tailscale: Mutex<crate::domain::tailscale::TailscaleObserved>,
         events: Mutex<Vec<String>>,
+        replace_tun_before_interception: bool,
     }
 
     impl CoordinatorFake {
@@ -631,7 +710,13 @@ mod tests {
                 proxy: Mutex::new(coordinator_proxy(features)),
                 tailscale: Mutex::new(tailscale),
                 events: Mutex::new(Vec::new()),
+                replace_tun_before_interception: false,
             }
+        }
+
+        fn with_tun_replacement(mut self) -> Self {
+            self.replace_tun_before_interception = true;
+            self
         }
 
         fn lease(path: &'static str) -> LifecycleLease {
@@ -681,6 +766,25 @@ mod tests {
                 }
                 ProxyAction::StartCore => observed.process_identity_valid = Probe::Known(true),
                 ProxyAction::WaitForMixedPort => observed.mixed_port_ready = Probe::Known(true),
+                ProxyAction::WaitForTunInterface { token } => {
+                    observed.tun_interface = Probe::Known(OwnedResource::Owned {
+                        token: token.clone(),
+                    })
+                }
+                ProxyAction::CreateTunChains { token, direct_macs } => {
+                    observed.tun_firewall = Probe::Known(OwnedResource::Owned {
+                        token: token.clone(),
+                    });
+                    observed.active_direct_macs = Probe::Known(direct_macs.clone());
+                }
+                ProxyAction::InstallPolicyRoute => {
+                    observed.policy_route_present = Probe::Known(true)
+                }
+                ProxyAction::InstallPolicyRule => observed.policy_rule_present = Probe::Known(true),
+                ProxyAction::InstallInterceptionEntry { .. } => {
+                    observed.interception_entry_present = Probe::Known(true)
+                }
+                ProxyAction::StartWatcher => observed.watcher_identity_valid = Probe::Known(true),
                 ProxyAction::StopCore => {
                     observed.process_identity_valid = Probe::Known(false);
                     observed.mixed_port_ready = Probe::Known(false);
@@ -718,7 +822,14 @@ mod tests {
         }
 
         fn observe_proxy(&self) -> Result<ProxyObserved, PlatformError> {
-            Ok(self.proxy.lock().unwrap().clone())
+            let mut observed = self.proxy.lock().unwrap();
+            if self.replace_tun_before_interception
+                && observed.policy_rule_present == Probe::Known(true)
+                && observed.interception_entry_present == Probe::Known(false)
+            {
+                observed.tun_interface = Probe::Known(OwnedResource::Foreign);
+            }
+            Ok(observed.clone())
         }
     }
 
@@ -769,6 +880,16 @@ mod tests {
                 TailscaleAction::ClearAdvertisedRoute => {
                     observed.route_advertised = Probe::Known(false)
                 }
+                TailscaleAction::StopManagementListener { .. } => {
+                    observed.management_listener = Probe::Known(OwnedResource::Absent);
+                    observed.management_listener_ipv4 = Probe::Known(None);
+                }
+                TailscaleAction::StartManagementListener { token, ipv4 } => {
+                    observed.management_listener = Probe::Known(OwnedResource::Owned {
+                        token: token.clone(),
+                    });
+                    observed.management_listener_ipv4 = Probe::Known(Some(*ipv4));
+                }
                 _ => {}
             }
             Ok(())
@@ -802,6 +923,25 @@ mod tests {
     }
 
     #[test]
+    fn coordinator_reprobes_exact_tun_ownership_before_interception_commit() {
+        let fake = CoordinatorFake::new(ProxyFeaturesV1::disabled(), TailscaleEnvironment::Direct)
+            .with_tun_replacement();
+        let error = ProxyFeatureCoordinator::new(&fake, &fake, &fake, &fake, &fake)
+            .reconcile(&ProxyDesired {
+                lan_tun_enabled: true,
+                tailscale_explicit_proxy_enabled: false,
+                direct_macs: Default::default(),
+            })
+            .expect_err("foreign replacement must block interception");
+
+        assert!(matches!(error, PlatformError::UnsafeToCutOver(_)));
+        assert!(!fake
+            .events()
+            .iter()
+            .any(|event| event.contains("InstallInterceptionEntry")));
+    }
+
+    #[test]
     fn coordinator_enables_core_before_proxy_environment_and_commits_last() {
         let fake = CoordinatorFake::new(ProxyFeaturesV1::disabled(), TailscaleEnvironment::Direct);
         ProxyFeatureCoordinator::new(&fake, &fake, &fake, &fake, &fake)
@@ -816,15 +956,72 @@ mod tests {
             .iter()
             .position(|event| event == "proxy:WaitForMixedPort")
             .unwrap();
+        let stop_listener = events
+            .iter()
+            .position(|event| event.contains("tailscale:StopManagementListener"))
+            .unwrap();
+        let stop_backend = events
+            .iter()
+            .position(|event| event.contains("tailscale:StopBackend"))
+            .unwrap();
         let proxied = events
             .iter()
             .position(|event| event.contains("environment: MihomoExplicit"))
+            .unwrap();
+        let start_listener = events
+            .iter()
+            .position(|event| event.contains("tailscale:StartManagementListener"))
             .unwrap();
         let commit = events
             .iter()
             .position(|event| event.contains("proxy:CommitFeatures"))
             .unwrap();
-        assert!(mixed < proxied && proxied < commit);
+        assert!(mixed < stop_listener && stop_listener < stop_backend);
+        assert!(stop_backend < proxied && proxied < start_listener && start_listener < commit);
+        assert!(!events
+            .iter()
+            .any(|event| event.starts_with("tailscale:lock")));
+        assert!(!events
+            .iter()
+            .any(|event| event.starts_with("tailscale:release")));
+    }
+
+    #[test]
+    fn coordinator_moves_tailscale_direct_around_shared_core_restart() {
+        let fake = CoordinatorFake::new(
+            ProxyFeaturesV1::new(false, true),
+            TailscaleEnvironment::MihomoExplicit,
+        );
+        ProxyFeatureCoordinator::new(&fake, &fake, &fake, &fake, &fake)
+            .reconcile(&ProxyDesired {
+                lan_tun_enabled: true,
+                tailscale_explicit_proxy_enabled: true,
+                direct_macs: Default::default(),
+            })
+            .unwrap();
+        let events = fake.events();
+        let direct = events
+            .iter()
+            .position(|event| event.contains("environment: Direct"))
+            .unwrap();
+        let stop_core = events
+            .iter()
+            .position(|event| event == "proxy:StopCore")
+            .unwrap();
+        let start_core = events
+            .iter()
+            .position(|event| event == "proxy:StartCore")
+            .unwrap();
+        let proxied = events
+            .iter()
+            .rposition(|event| event.contains("environment: MihomoExplicit"))
+            .unwrap();
+        let commit = events
+            .iter()
+            .position(|event| event.contains("proxy:CommitFeatures"))
+            .unwrap();
+        assert!(direct < stop_core && stop_core < start_core);
+        assert!(start_core < proxied && proxied < commit);
     }
 
     #[test]

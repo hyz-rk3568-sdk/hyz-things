@@ -429,7 +429,13 @@ mod tests {
             watcher_identity_valid: Probe::Known(tun),
             runtime_config_valid: Probe::Known(core),
             mixed_port_ready: Probe::Known(core),
-            tun_interface_present: Probe::Known(tun),
+            tun_interface: Probe::Known(if tun {
+                OwnedResource::Owned {
+                    token: "proxy".to_owned(),
+                }
+            } else {
+                OwnedResource::Absent
+            }),
             tun_firewall: Probe::Known(if tun {
                 OwnedResource::Owned {
                     token: "owned".to_owned(),

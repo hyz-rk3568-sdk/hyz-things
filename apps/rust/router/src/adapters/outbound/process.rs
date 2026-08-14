@@ -1,15 +1,22 @@
-use super::paths::{
-    MIHOMO_CHECK_LOG, MIHOMO_CONTROLLER_SECRET, MIHOMO_DATA_DIR, MIHOMO_EXECUTABLE, MIHOMO_LOG,
-    MIHOMO_RUNTIME_CONFIG, MIHOMO_STATE_DIR, MIHOMO_WATCHER_LOG, TAILSCALE_EXECUTABLE,
+use super::{
+    paths::{
+        MIHOMO_CHECK_LOG, MIHOMO_CONTROLLER_SECRET, MIHOMO_DATA_DIR, MIHOMO_EXECUTABLE, MIHOMO_LOG,
+        MIHOMO_RUNTIME_CONFIG, MIHOMO_STATE_DIR, MIHOMO_TUN_IDENTITY, MIHOMO_WATCHER_LOG,
+        TAILSCALE_EXECUTABLE,
+    },
+    proxy::mihomo_tun_ifindex,
 };
-use crate::application::{
-    fail_open::WatcherInvocation,
-    ports::{CoreIdentity, CoreRecordState, PlatformError},
+use crate::{
+    application::{
+        fail_open::WatcherInvocation,
+        ports::{CoreIdentity, CoreRecordState, PlatformError},
+    },
+    domain::proxy::MIHOMO_TUN_INTERFACE,
 };
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Write},
+    io::{self, Read, Write},
     os::unix::{ffi::OsStrExt, fs::OpenOptionsExt, process::CommandExt},
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -213,6 +220,11 @@ impl LinuxRouterPlatform {
         if self.mihomo_identity()?.is_some() {
             return Ok(());
         }
+        if mihomo_tun_ifindex()?.is_some() || self.read_mihomo_tun_identity()?.is_some() {
+            return Err(PlatformError::Conflict(
+                "stale or foreign hyz-mihomo interface identity blocks Mihomo startup".to_owned(),
+            ));
+        }
         super::storage::ensure_private_dir(MIHOMO_DATA_DIR)?;
         super::storage::ensure_private_dir(MIHOMO_STATE_DIR)?;
         let runtime_config =
@@ -282,7 +294,27 @@ impl LinuxRouterPlatform {
 
     pub(crate) fn stop_mihomo(&self) -> Result<(), PlatformError> {
         let Some(identity) = self.mihomo_identity()? else {
+            if mihomo_tun_ifindex()?.is_some() || self.read_mihomo_tun_identity()?.is_some() {
+                return Err(PlatformError::Conflict(
+                    "refusing Mihomo cleanup with stale or foreign TUN identity".to_owned(),
+                ));
+            }
             return remove_mihomo_runtime_credentials();
+        };
+        let tun_owned = match (self.read_mihomo_tun_identity()?, mihomo_tun_ifindex()?) {
+            (None, None) => false,
+            (Some(tun), Some(ifindex))
+                if tun.core == identity.core
+                    && tun.ifindex == ifindex
+                    && mihomo_process_holds_tun(identity.core)? =>
+            {
+                true
+            }
+            _ => {
+                return Err(PlatformError::Conflict(
+                    "refusing to stop Mihomo while hyz-mihomo ownership is mismatched".to_owned(),
+                ))
+            }
         };
         self.run(
             Tool::Kill,
@@ -291,8 +323,7 @@ impl LinuxRouterPlatform {
         if wait_for_identity_disappearance(IDENTITY_EXIT_ATTEMPTS, IDENTITY_EXIT_POLL, || {
             identity.matches_process_only()
         })? {
-            super::storage::remove_file_durable(MIHOMO_PID_RECORD)?;
-            remove_mihomo_runtime_credentials()?;
+            finish_mihomo_stop(tun_owned)?;
             return Ok(());
         }
         self.run(
@@ -302,8 +333,7 @@ impl LinuxRouterPlatform {
         if wait_for_identity_disappearance(IDENTITY_EXIT_ATTEMPTS, IDENTITY_EXIT_POLL, || {
             identity.matches_process_only()
         })? {
-            super::storage::remove_file_durable(MIHOMO_PID_RECORD)?;
-            remove_mihomo_runtime_credentials()
+            finish_mihomo_stop(tun_owned)
         } else {
             Err(PlatformError::Conflict(
                 "exact Mihomo identity remained live after TERM and KILL; retaining its record"
@@ -703,6 +733,59 @@ fn decode_cmdline(bytes: &[u8]) -> Result<Vec<Vec<u8>>, PlatformError> {
         .collect())
 }
 
+const MAX_PROCESS_FD_ENTRIES: usize = 4096;
+const MAX_PROCESS_FDINFO_SIZE: usize = 4096;
+
+pub(crate) fn mihomo_process_holds_tun(core: CoreIdentity) -> Result<bool, PlatformError> {
+    if process_start_time(core.pid)? != Some(core.start_time) {
+        return Ok(false);
+    }
+    let directory = format!("/proc/{}/fdinfo", core.pid);
+    let entries = match fs::read_dir(&directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => {
+            return Err(PlatformError::ProbeFailed(format!(
+                "scan Mihomo fdinfo: {error}"
+            )))
+        }
+    };
+    let expected = format!("iff:\t{MIHOMO_TUN_INTERFACE}");
+    let mut found = false;
+    for (index, entry) in entries.enumerate() {
+        if index >= MAX_PROCESS_FD_ENTRIES {
+            return Err(PlatformError::ProbeFailed(
+                "Mihomo fdinfo entry count exceeds its bound".to_owned(),
+            ));
+        }
+        let entry = entry.map_err(|error| {
+            PlatformError::ProbeFailed(format!("inspect Mihomo fdinfo: {error}"))
+        })?;
+        let file = match File::open(entry.path()) {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(PlatformError::ProbeFailed(format!(
+                    "open Mihomo fdinfo: {error}"
+                )))
+            }
+        };
+        let mut bytes = Vec::with_capacity(512);
+        file.take((MAX_PROCESS_FDINFO_SIZE + 1) as u64)
+            .read_to_end(&mut bytes)
+            .map_err(|error| PlatformError::ProbeFailed(format!("read Mihomo fdinfo: {error}")))?;
+        if bytes.len() > MAX_PROCESS_FDINFO_SIZE {
+            return Err(PlatformError::ProbeFailed(
+                "Mihomo fdinfo exceeds its bound".to_owned(),
+            ));
+        }
+        let text = std::str::from_utf8(&bytes)
+            .map_err(|_| PlatformError::ProbeFailed("Mihomo fdinfo is not UTF-8".to_owned()))?;
+        found |= text.lines().any(|line| line == expected);
+    }
+    Ok(found && process_start_time(core.pid)? == Some(core.start_time))
+}
+
 pub(crate) fn count_executable_processes(executable: &Path) -> Result<usize, PlatformError> {
     let entries = fs::read_dir("/proc")
         .map_err(|error| PlatformError::ProbeFailed(format!("scan /proc: {error}")))?;
@@ -722,6 +805,19 @@ pub(crate) fn count_executable_processes(executable: &Path) -> Result<usize, Pla
         }
     }
     Ok(count)
+}
+
+fn finish_mihomo_stop(tun_owned: bool) -> Result<(), PlatformError> {
+    if mihomo_tun_ifindex()?.is_some() {
+        return Err(PlatformError::Conflict(
+            "hyz-mihomo remained or was replaced after exact core exit".to_owned(),
+        ));
+    }
+    if tun_owned {
+        super::storage::remove_file_durable(MIHOMO_TUN_IDENTITY)?;
+    }
+    super::storage::remove_file_durable(MIHOMO_PID_RECORD)?;
+    remove_mihomo_runtime_credentials()
 }
 
 fn remove_mihomo_runtime_credentials() -> Result<(), PlatformError> {

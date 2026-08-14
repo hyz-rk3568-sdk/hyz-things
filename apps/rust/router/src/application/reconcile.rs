@@ -233,7 +233,9 @@ pub fn proxy_plan(
         }
         if !observed.lan_tun_ready(&desired.direct_macs) || tun_change {
             actions.extend([
-                ProxyAction::WaitForTunInterface,
+                ProxyAction::WaitForTunInterface {
+                    token: token.to_owned(),
+                },
                 ProxyAction::CreateTunChains {
                     token: token.to_owned(),
                     direct_macs: desired.direct_macs.clone(),
@@ -266,6 +268,19 @@ fn require_known_proxy_ownership(observed: &ProxyObserved) -> Result<(), Platfor
             return Err(PlatformError::ProbeFailed(format!(
                 "{label} identity is unknown: {reason}"
             )));
+        }
+    }
+    match &observed.tun_interface {
+        Probe::Known(OwnedResource::Absent | OwnedResource::Owned { .. }) => {}
+        Probe::Known(OwnedResource::Foreign) => {
+            return Err(PlatformError::Conflict(
+                "refusing foreign hyz-mihomo interface".to_owned(),
+            ))
+        }
+        Probe::Unknown(reason) => {
+            return Err(PlatformError::ProbeFailed(format!(
+                "Mihomo TUN interface ownership is unknown: {reason}"
+            )))
         }
     }
     Ok(())
@@ -416,6 +431,19 @@ pub fn network_shutdown_ready(observed: &NetworkObserved, forwarding_target: boo
 }
 
 fn cleanup_tun_plan(observed: &ProxyObserved) -> Result<Vec<ProxyAction>, PlatformError> {
+    match &observed.tun_interface {
+        Probe::Known(OwnedResource::Absent | OwnedResource::Owned { .. }) => {}
+        Probe::Known(OwnedResource::Foreign) => {
+            return Err(PlatformError::Conflict(
+                "refusing to route to or clean a foreign hyz-mihomo interface".to_owned(),
+            ))
+        }
+        Probe::Unknown(reason) => {
+            return Err(PlatformError::ProbeFailed(format!(
+                "cannot prove Mihomo TUN interface cleanup is safe: {reason}"
+            )))
+        }
+    }
     let token = match &observed.tun_firewall {
         Probe::Known(OwnedResource::Owned { token }) => Some(token.clone()),
         Probe::Known(OwnedResource::Absent) => None,

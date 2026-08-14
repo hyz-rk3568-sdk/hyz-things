@@ -107,7 +107,9 @@ mod tests {
             watcher_identity_valid: Probe::Known(true),
             runtime_config_valid: Probe::Known(true),
             mixed_port_ready: Probe::Known(true),
-            tun_interface_present: Probe::Known(true),
+            tun_interface: Probe::Known(OwnedResource::Owned {
+                token: "old".to_owned(),
+            }),
             tun_firewall: Probe::Known(OwnedResource::Owned {
                 token: "proxy-owned".to_owned(),
             }),
@@ -211,7 +213,7 @@ mod tests {
         assert!(!proxy_shutdown_ready(&proxy));
         proxy.process_identity_valid = Probe::Known(false);
         proxy.watcher_identity_valid = Probe::Known(false);
-        proxy.tun_interface_present = Probe::Known(false);
+        proxy.tun_interface = Probe::Known(OwnedResource::Absent);
         proxy.tun_firewall = Probe::Known(OwnedResource::Absent);
         proxy.policy_rule_present = Probe::Known(false);
         proxy.policy_route_present = Probe::Known(false);

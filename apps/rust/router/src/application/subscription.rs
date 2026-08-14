@@ -155,7 +155,7 @@ impl<'a> SubscriptionApplication<'a> {
                 self.clock,
             )
         };
-        proxy().reconcile(&ProxyDesired {
+        proxy().reconcile_runtime_preserving_features(&ProxyDesired {
             lan_tun_enabled: false,
             tailscale_explicit_proxy_enabled: false,
             direct_macs: direct_macs.clone(),
@@ -165,7 +165,7 @@ impl<'a> SubscriptionApplication<'a> {
             .store_source(&candidate)
             .and_then(|()| {
                 proxy()
-                    .reconcile(&ProxyDesired {
+                    .reconcile_runtime_preserving_features(&ProxyDesired {
                         lan_tun_enabled: features.lan_tun_enabled,
                         tailscale_explicit_proxy_enabled: features.tailscale_explicit_proxy_enabled,
                         direct_macs: direct_macs.clone(),
@@ -198,7 +198,7 @@ impl<'a> SubscriptionApplication<'a> {
             self.tailscale_probe,
             self.clock,
         )
-        .reconcile(&ProxyDesired {
+        .reconcile_runtime_preserving_features(&ProxyDesired {
             lan_tun_enabled: false,
             tailscale_explicit_proxy_enabled: false,
             direct_macs: direct_macs.clone(),
@@ -211,7 +211,7 @@ impl<'a> SubscriptionApplication<'a> {
             self.tailscale_probe,
             self.clock,
         )
-        .reconcile(&ProxyDesired {
+        .reconcile_runtime_preserving_features(&ProxyDesired {
             lan_tun_enabled: features.lan_tun_enabled,
             tailscale_explicit_proxy_enabled: features.tailscale_explicit_proxy_enabled,
             direct_macs: direct_macs.clone(),

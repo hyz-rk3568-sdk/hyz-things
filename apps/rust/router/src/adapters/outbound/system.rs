@@ -1,6 +1,12 @@
 use super::{
-    paths::{MIHOMO_CONTROLLER_SECRET, MIHOMO_FEATURES_FILE, MIHOMO_RUNTIME_CONFIG},
-    process::{FixedOutput, LinuxMihomoFailOpenPlatform, LinuxRouterPlatform, Tool, NETWORK_LOCK},
+    paths::{
+        MIHOMO_CONTROLLER_SECRET, MIHOMO_FEATURES_FILE, MIHOMO_RUNTIME_CONFIG, MIHOMO_TUN_IDENTITY,
+    },
+    process::{
+        mihomo_process_holds_tun, FixedOutput, LinuxMihomoFailOpenPlatform, LinuxRouterPlatform,
+        Tool, NETWORK_LOCK,
+    },
+    proxy::mihomo_tun_ifindex,
     storage,
 };
 use crate::{
@@ -106,6 +112,7 @@ impl FailOpenPlatformPort for LinuxMihomoFailOpenPlatform {
         }
         storage::remove_file_durable(super::process::MIHOMO_PID_RECORD)?;
         storage::remove_file_durable(super::process::MIHOMO_WATCHER_RECORD)?;
+        storage::remove_file_durable(MIHOMO_TUN_IDENTITY)?;
         storage::remove_file_durable(MIHOMO_CONTROLLER_SECRET)?;
         storage::remove_file_durable(MIHOMO_RUNTIME_CONFIG)
     }
@@ -221,9 +228,7 @@ impl SystemProbePort for LinuxRouterPlatform {
                 Ok(None) => Probe::Known(false),
                 Err(error) => Probe::Unknown(error.to_string()),
             };
-        let tun_interface_present = Probe::Known(
-            fs::metadata(format!("/sys/class/net/{MIHOMO_TUN_INTERFACE}/tun_flags")).is_ok(),
-        );
+        let tun_interface = self.observe_mihomo_tun_interface();
         let tun_firewall = self.observe_tun_firewall();
         let policy_rule_present = self
             .ip_output(&["-4", "rule", "show"])
@@ -307,7 +312,7 @@ impl SystemProbePort for LinuxRouterPlatform {
             watcher_identity_valid,
             runtime_config_valid,
             mixed_port_ready,
-            tun_interface_present,
+            tun_interface,
             tun_firewall,
             policy_rule_present,
             policy_route_present,
@@ -404,6 +409,42 @@ impl ClockPort for LinuxRouterPlatform {
 }
 
 impl LinuxRouterPlatform {
+    fn observe_mihomo_tun_interface(&self) -> Probe<OwnedResource> {
+        let actual = match mihomo_tun_ifindex() {
+            Ok(actual) => actual,
+            Err(PlatformError::Conflict(_)) => return Probe::Known(OwnedResource::Foreign),
+            Err(error) => return Probe::Unknown(error.to_string()),
+        };
+        let recorded = match self.read_mihomo_tun_identity() {
+            Ok(recorded) => recorded,
+            Err(error) => return Probe::Unknown(error.to_string()),
+        };
+        match (actual, recorded) {
+            (None, None) => Probe::Known(OwnedResource::Absent),
+            (Some(_), None) => Probe::Known(OwnedResource::Foreign),
+            (None, Some(_)) => {
+                Probe::Unknown("Mihomo TUN identity exists but interface is absent".to_owned())
+            }
+            (Some(ifindex), Some(recorded)) => match self.mihomo_identity() {
+                Ok(Some(core))
+                    if core.core == recorded.core
+                        && ifindex == recorded.ifindex
+                        && matches!(mihomo_process_holds_tun(core.core), Ok(true)) =>
+                {
+                    Probe::Known(OwnedResource::Owned {
+                        token: recorded.token,
+                    })
+                }
+                Ok(Some(core)) => match mihomo_process_holds_tun(core.core) {
+                    Err(error) => Probe::Unknown(error.to_string()),
+                    Ok(_) => Probe::Known(OwnedResource::Foreign),
+                },
+                Ok(None) => Probe::Known(OwnedResource::Foreign),
+                Err(error) => Probe::Unknown(error.to_string()),
+            },
+        }
+    }
+
     fn observe_bridge(&self) -> Probe<OwnedResource> {
         let interface = Path::new("/sys/class/net").join(LAN_BRIDGE);
         let marker = match storage::read_small_optional(storage::BRIDGE_OWNER, 256) {

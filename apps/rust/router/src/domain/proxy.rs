@@ -81,7 +81,7 @@ pub struct ProxyObserved {
     pub watcher_identity_valid: Probe<bool>,
     pub runtime_config_valid: Probe<bool>,
     pub mixed_port_ready: Probe<bool>,
-    pub tun_interface_present: Probe<bool>,
+    pub tun_interface: Probe<OwnedResource>,
     pub tun_firewall: Probe<OwnedResource>,
     pub policy_rule_present: Probe<bool>,
     pub policy_route_present: Probe<bool>,
@@ -99,7 +99,7 @@ impl ProxyObserved {
             watcher_identity_valid: Probe::Unknown(reason.clone()),
             runtime_config_valid: Probe::Unknown(reason.clone()),
             mixed_port_ready: Probe::Unknown(reason.clone()),
-            tun_interface_present: Probe::Unknown(reason.clone()),
+            tun_interface: Probe::Unknown(reason.clone()),
             tun_firewall: Probe::Unknown(reason.clone()),
             policy_rule_present: Probe::Unknown(reason.clone()),
             policy_route_present: Probe::Unknown(reason.clone()),
@@ -110,7 +110,7 @@ impl ProxyObserved {
     }
 
     pub fn tun_resources_absent(&self) -> bool {
-        self.tun_interface_present == Probe::Known(false)
+        self.tun_interface == Probe::Known(OwnedResource::Absent)
             && self.tun_firewall == Probe::Known(OwnedResource::Absent)
             && self.policy_rule_present == Probe::Known(false)
             && self.policy_route_present == Probe::Known(false)
@@ -126,11 +126,41 @@ impl ProxyObserved {
     pub fn lan_tun_ready(&self, direct_macs: &BTreeSet<LanDeviceMac>) -> bool {
         self.core_ready()
             && self.watcher_identity_valid == Probe::Known(true)
-            && self.tun_interface_present == Probe::Known(true)
+            && matches!(
+                self.tun_interface,
+                Probe::Known(OwnedResource::Owned { .. })
+            )
             && matches!(self.tun_firewall, Probe::Known(OwnedResource::Owned { .. }))
+            && matches!(
+                (&self.tun_interface, &self.tun_firewall),
+                (
+                    Probe::Known(OwnedResource::Owned { token: interface }),
+                    Probe::Known(OwnedResource::Owned { token: firewall }),
+                ) if interface == firewall
+            )
             && self.policy_rule_present == Probe::Known(true)
             && self.policy_route_present == Probe::Known(true)
             && self.interception_entry_present == Probe::Known(true)
+            && self.active_direct_macs == Probe::Known(direct_macs.clone())
+    }
+
+    pub fn ready_for_interception(
+        &self,
+        token: &str,
+        direct_macs: &BTreeSet<LanDeviceMac>,
+    ) -> bool {
+        self.core_ready()
+            && self.tun_interface
+                == Probe::Known(OwnedResource::Owned {
+                    token: token.to_owned(),
+                })
+            && self.tun_firewall
+                == Probe::Known(OwnedResource::Owned {
+                    token: token.to_owned(),
+                })
+            && self.policy_rule_present == Probe::Known(true)
+            && self.policy_route_present == Probe::Known(true)
+            && self.interception_entry_present == Probe::Known(false)
             && self.active_direct_macs == Probe::Known(direct_macs.clone())
     }
 
@@ -194,7 +224,9 @@ pub enum ProxyAction {
     ValidateRuntimeConfig,
     StartCore,
     WaitForMixedPort,
-    WaitForTunInterface,
+    WaitForTunInterface {
+        token: String,
+    },
     CreateTunChains {
         token: String,
         direct_macs: BTreeSet<LanDeviceMac>,

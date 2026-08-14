@@ -2,9 +2,9 @@ use super::{
     paths::{
         MIHOMO_CANDIDATE_CONFIG, MIHOMO_CONTROLLER_ADDRESS, MIHOMO_CONTROLLER_SECRET,
         MIHOMO_DATA_DIR, MIHOMO_FEATURES_FILE, MIHOMO_RUNTIME_CONFIG, MIHOMO_SOURCE_CONFIG,
-        MIHOMO_STATE_DIR,
+        MIHOMO_STATE_DIR, MIHOMO_TUN_IDENTITY,
     },
-    process::{LinuxRouterPlatform, Tool},
+    process::{mihomo_process_holds_tun, LinuxRouterPlatform, Tool},
     storage,
     system::{
         chain_output_is_exact, exact_chain_references, exact_default_gateway,
@@ -14,7 +14,7 @@ use super::{
     },
 };
 use crate::{
-    application::ports::PlatformError,
+    application::ports::{CoreIdentity, PlatformError},
     domain::{
         network::{LAN_BRIDGE, LAN_SUBNET},
         proxy::{
@@ -50,21 +50,12 @@ impl LinuxRouterPlatform {
             ProxyAction::ValidateRuntimeConfig => self.validate_mihomo_config(),
             ProxyAction::StartCore => self.start_mihomo(),
             ProxyAction::WaitForMixedPort => self.wait_for_mixed_port(),
-            ProxyAction::WaitForTunInterface => self.wait_for_tun(),
+            ProxyAction::WaitForTunInterface { token } => self.wait_for_tun(token),
             ProxyAction::CreateTunChains { token, direct_macs } => {
                 self.create_tun_chains(token, direct_macs)
             }
             ProxyAction::InstallTunForwardHook { token } => self.install_tun_hook(token),
-            ProxyAction::InstallPolicyRoute => self.proxy_ip(&[
-                "-4",
-                "route",
-                "add",
-                "default",
-                "dev",
-                MIHOMO_TUN_INTERFACE,
-                "table",
-                &MIHOMO_ROUTE_TABLE.to_string(),
-            ]),
+            ProxyAction::InstallPolicyRoute => self.install_policy_route(),
             ProxyAction::InstallPolicyRule => {
                 self.proxy_ip(&[
                     "-4",
@@ -88,6 +79,7 @@ impl LinuxRouterPlatform {
             }
             ProxyAction::InstallInterceptionEntry { token } => {
                 storage::validate_token(token)?;
+                self.require_owned_mihomo_tun(Some(token))?;
                 self.proxy_iptables(&[
                     "-w",
                     "-t",
@@ -173,9 +165,45 @@ impl LinuxRouterPlatform {
         ))
     }
 
-    fn wait_for_tun(&self) -> Result<(), PlatformError> {
+    fn wait_for_tun(&self, token: &str) -> Result<(), PlatformError> {
+        storage::validate_token(token)?;
+        if self.read_mihomo_tun_identity()?.is_some() {
+            return Err(PlatformError::Conflict(
+                "Mihomo TUN identity already exists before ownership capture".to_owned(),
+            ));
+        }
+        let core = self.mihomo_identity()?.ok_or_else(|| {
+            PlatformError::InvalidState(
+                "cannot capture Mihomo TUN ownership without exact core identity".to_owned(),
+            )
+        })?;
         for _ in 0..60 {
-            if fs::metadata(format!("/sys/class/net/{MIHOMO_TUN_INTERFACE}/tun_flags")).is_ok() {
+            if let Some(ifindex) = mihomo_tun_ifindex()? {
+                if self.mihomo_identity()?.as_ref() != Some(&core)
+                    || !mihomo_process_holds_tun(core.core)?
+                {
+                    return Err(PlatformError::Conflict(
+                        "Mihomo core does not hold the observed TUN interface".to_owned(),
+                    ));
+                }
+                let identity = MihomoTunIdentity {
+                    token: token.to_owned(),
+                    core: core.core,
+                    ifindex,
+                };
+                storage::atomic_write_private(
+                    MIHOMO_TUN_IDENTITY,
+                    identity.serialize().as_bytes(),
+                )?;
+                if self.mihomo_identity()?.as_ref() != Some(&core)
+                    || !mihomo_process_holds_tun(core.core)?
+                    || mihomo_tun_ifindex()? != Some(ifindex)
+                    || self.read_mihomo_tun_identity()?.as_ref() != Some(&identity)
+                {
+                    return Err(PlatformError::UnsafeToCutOver(
+                        "Mihomo TUN ownership changed after identity capture".to_owned(),
+                    ));
+                }
                 return Ok(());
             }
             if self.mihomo_identity()?.is_none() {
@@ -188,6 +216,46 @@ impl LinuxRouterPlatform {
         Err(PlatformError::UnsafeToCutOver(
             "Mihomo TUN interface did not become ready".to_owned(),
         ))
+    }
+
+    fn require_owned_mihomo_tun(
+        &self,
+        expected_token: Option<&str>,
+    ) -> Result<MihomoTunIdentity, PlatformError> {
+        let identity = self.read_mihomo_tun_identity()?.ok_or_else(|| {
+            PlatformError::Conflict("Mihomo TUN ownership identity is absent".to_owned())
+        })?;
+        if expected_token.is_some_and(|token| token != identity.token) {
+            return Err(PlatformError::Conflict(
+                "Mihomo TUN ownership token changed".to_owned(),
+            ));
+        }
+        let core = self.mihomo_identity()?.ok_or_else(|| {
+            PlatformError::Conflict("Mihomo TUN has no exact live core identity".to_owned())
+        })?;
+        if core.core != identity.core
+            || !mihomo_process_holds_tun(core.core)?
+            || mihomo_tun_ifindex()? != Some(identity.ifindex)
+        {
+            return Err(PlatformError::Conflict(
+                "Mihomo TUN interface is stale, replaced, or foreign".to_owned(),
+            ));
+        }
+        Ok(identity)
+    }
+
+    fn install_policy_route(&self) -> Result<(), PlatformError> {
+        self.require_owned_mihomo_tun(None)?;
+        self.proxy_ip(&[
+            "-4",
+            "route",
+            "add",
+            "default",
+            "dev",
+            MIHOMO_TUN_INTERFACE,
+            "table",
+            &MIHOMO_ROUTE_TABLE.to_string(),
+        ])
     }
 
     fn remove_policy_rule(&self) -> Result<(), PlatformError> {
@@ -755,6 +823,110 @@ impl LinuxRouterPlatform {
     }
 }
 
+const MAX_TUN_IDENTITY_SIZE: usize = 512;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MihomoTunIdentity {
+    pub token: String,
+    pub core: CoreIdentity,
+    pub ifindex: u32,
+}
+
+impl MihomoTunIdentity {
+    fn serialize(&self) -> String {
+        format!(
+            "{}\n{}\n{}\n{}\n",
+            self.token, self.core.pid, self.core.start_time, self.ifindex
+        )
+    }
+
+    fn parse(record: &str) -> Result<Self, PlatformError> {
+        let mut lines = record.lines();
+        let token = lines
+            .next()
+            .ok_or_else(|| PlatformError::InvalidState("Mihomo TUN token is absent".to_owned()))?
+            .to_owned();
+        storage::validate_token(&token)?;
+        let pid = parse_nonzero_u32(lines.next(), "Mihomo TUN core PID")?;
+        let start_time = parse_nonzero_u64(lines.next(), "Mihomo TUN core start time")?;
+        let ifindex = parse_nonzero_u32(lines.next(), "Mihomo TUN ifindex")?;
+        if lines.next().is_some() {
+            return Err(PlatformError::InvalidState(
+                "Mihomo TUN identity has unexpected fields".to_owned(),
+            ));
+        }
+        Ok(Self {
+            token,
+            core: CoreIdentity { pid, start_time },
+            ifindex,
+        })
+    }
+}
+
+impl LinuxRouterPlatform {
+    pub(crate) fn read_mihomo_tun_identity(
+        &self,
+    ) -> Result<Option<MihomoTunIdentity>, PlatformError> {
+        let Some(record) =
+            storage::read_private_small_optional(MIHOMO_TUN_IDENTITY, MAX_TUN_IDENTITY_SIZE)?
+        else {
+            return Ok(None);
+        };
+        MihomoTunIdentity::parse(&record).map(Some)
+    }
+}
+
+pub(crate) fn mihomo_tun_ifindex() -> Result<Option<u32>, PlatformError> {
+    let interface = std::path::Path::new("/sys/class/net").join(MIHOMO_TUN_INTERFACE);
+    match fs::symlink_metadata(&interface) {
+        Ok(metadata) if metadata.file_type().is_symlink() || metadata.file_type().is_dir() => {}
+        Ok(_) => {
+            return Err(PlatformError::InvalidState(
+                "Mihomo TUN sysfs node is not an interface".to_owned(),
+            ))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(PlatformError::ProbeFailed(format!(
+                "inspect Mihomo TUN interface: {error}"
+            )))
+        }
+    }
+    if !interface.join("tun_flags").is_file() {
+        return Err(PlatformError::Conflict(
+            "same-name hyz-mihomo interface is not a TUN device".to_owned(),
+        ));
+    }
+    let value = fs::read_to_string(interface.join("ifindex"))
+        .map_err(|error| PlatformError::ProbeFailed(format!("read Mihomo TUN ifindex: {error}")))?;
+    let ifindex = value
+        .trim()
+        .parse::<u32>()
+        .map_err(|_| PlatformError::InvalidState("Mihomo TUN ifindex is malformed".to_owned()))?;
+    if ifindex == 0 {
+        return Err(PlatformError::InvalidState(
+            "Mihomo TUN ifindex is zero".to_owned(),
+        ));
+    }
+    Ok(Some(ifindex))
+}
+
+fn parse_nonzero_u32(value: Option<&str>, label: &str) -> Result<u32, PlatformError> {
+    let value = value
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| *value != 0)
+        .ok_or_else(|| PlatformError::InvalidState(format!("{label} is invalid")))?;
+    Ok(value)
+}
+
+fn parse_nonzero_u64(value: Option<&str>, label: &str) -> Result<u64, PlatformError> {
+    let value = value
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value != 0)
+        .ok_or_else(|| PlatformError::InvalidState(format!("{label} is invalid")))?;
+    Ok(value)
+}
+
 fn new_controller_secret() -> Result<String, PlatformError> {
     let mut secret = String::with_capacity(64);
     for _ in 0..2 {
@@ -925,6 +1097,25 @@ mod tests {
     use crate::adapters::outbound::system::expected_chain_rules;
 
     const SOURCE: &str = "tun:\n  enable: maybe\n  nested:\n    value: 1\n# consumed with tun block\nmode: rule\ntun: { enable: true }\n  child: true\ndns:\n  enable: true\n";
+
+    #[test]
+    fn tun_identity_is_exact_and_bound_to_core_and_ifindex() {
+        let identity = MihomoTunIdentity {
+            token: "hyz-mihomo-test".to_owned(),
+            core: CoreIdentity {
+                pid: 41,
+                start_time: 99,
+            },
+            ifindex: 7,
+        };
+        assert_eq!(
+            MihomoTunIdentity::parse(&identity.serialize()).unwrap(),
+            identity
+        );
+        assert!(MihomoTunIdentity::parse("hyz-mihomo-test\n41\n99\n0\n").is_err());
+        assert!(MihomoTunIdentity::parse("hyz-mihomo-test\n41\n99\n7\nextra\n").is_err());
+        assert!(MihomoTunIdentity::parse("foreign token\n41\n99\n7\n").is_err());
+    }
 
     #[test]
     fn runtime_config_fixes_loopback_mixed_port_and_controls_tun() {

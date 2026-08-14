@@ -37,7 +37,7 @@ fn stopped_proxy() -> ProxyObserved {
         watcher_identity_valid: Probe::Known(false),
         runtime_config_valid: Probe::Known(false),
         mixed_port_ready: Probe::Known(false),
-        tun_interface_present: Probe::Known(false),
+        tun_interface: Probe::Known(OwnedResource::Absent),
         tun_firewall: Probe::Known(OwnedResource::Absent),
         policy_rule_present: Probe::Known(false),
         policy_route_present: Probe::Known(false),
@@ -56,7 +56,13 @@ fn ready_proxy(features: ProxyFeaturesV1) -> ProxyObserved {
         watcher_identity_valid: Probe::Known(tun),
         runtime_config_valid: Probe::Known(core),
         mixed_port_ready: Probe::Known(core),
-        tun_interface_present: Probe::Known(tun),
+        tun_interface: Probe::Known(if tun {
+            OwnedResource::Owned {
+                token: "proxy-old".to_owned(),
+            }
+        } else {
+            OwnedResource::Absent
+        }),
         tun_firewall: Probe::Known(if tun {
             OwnedResource::Owned {
                 token: "proxy-old".to_owned(),
@@ -245,6 +251,42 @@ fn stale_or_unknown_route_and_ownership_cannot_enable_forwarding() {
     assert!(matches!(
         forwarding_plan(&NetworkDesired::forwarding(), &unknown_firewall, "new"),
         Err(PlatformError::ProbeFailed(_))
+    ));
+}
+
+#[test]
+fn foreign_same_name_mihomo_tun_is_neither_ready_nor_routed_or_deleted() {
+    let mut observed = stopped_proxy();
+    observed.tun_interface = Probe::Known(OwnedResource::Foreign);
+    let forwarding = network(
+        true,
+        OwnedResource::Owned {
+            token: "router".to_owned(),
+        },
+    );
+    let desired = ProxyDesired {
+        lan_tun_enabled: true,
+        tailscale_explicit_proxy_enabled: false,
+        direct_macs: Default::default(),
+    };
+
+    assert!(!observed.ready_for(&desired));
+    assert!(matches!(
+        proxy_plan(&desired, &observed, &forwarding, "new"),
+        Err(PlatformError::Conflict(_))
+    ));
+    assert!(matches!(
+        proxy_plan(
+            &ProxyDesired {
+                lan_tun_enabled: false,
+                tailscale_explicit_proxy_enabled: false,
+                direct_macs: Default::default(),
+            },
+            &observed,
+            &forwarding,
+            "new",
+        ),
+        Err(PlatformError::Conflict(_))
     ));
 }
 

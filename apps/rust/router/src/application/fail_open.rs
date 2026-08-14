@@ -324,7 +324,13 @@ mod tests {
             watcher_identity_valid: Probe::Known(owned),
             runtime_config_valid: Probe::Known(owned),
             mixed_port_ready: Probe::Known(owned),
-            tun_interface_present: Probe::Known(false),
+            tun_interface: Probe::Known(if owned {
+                OwnedResource::Owned {
+                    token: "old".to_owned(),
+                }
+            } else {
+                OwnedResource::Absent
+            }),
             tun_firewall: Probe::Known(if owned {
                 OwnedResource::Owned {
                     token: "hyz-mihomo-owned".to_owned(),

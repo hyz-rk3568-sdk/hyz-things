@@ -125,7 +125,7 @@ fn stopped_proxy() -> ProxyObserved {
         watcher_identity_valid: Probe::Known(false),
         runtime_config_valid: Probe::Known(false),
         mixed_port_ready: Probe::Known(false),
-        tun_interface_present: Probe::Known(false),
+        tun_interface: Probe::Known(OwnedResource::Absent),
         tun_firewall: Probe::Known(OwnedResource::Absent),
         policy_rule_present: Probe::Known(false),
         policy_route_present: Probe::Known(false),
