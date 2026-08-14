@@ -310,6 +310,7 @@ struct Fake {
     observations: Mutex<VecDeque<NetworkObserved>>,
     actions: Mutex<Vec<NetworkAction>>,
     releases: Mutex<usize>,
+    lifecycle: Mutex<Vec<&'static str>>,
 }
 
 impl Fake {
@@ -318,12 +319,14 @@ impl Fake {
             observations: Mutex::new(observations.into()),
             actions: Mutex::new(Vec::new()),
             releases: Mutex::new(0),
+            lifecycle: Mutex::new(Vec::new()),
         }
     }
 }
 
 impl RouterPlatformPort for Fake {
     fn acquire_lifecycle_lock(&self) -> Result<LifecycleLease, PlatformError> {
+        self.lifecycle.lock().expect("lifecycle").push("lock");
         Ok(LifecycleLease {
             path: "/run/fake.lock",
             identity: "fake".to_owned(),
@@ -333,6 +336,7 @@ impl RouterPlatformPort for Fake {
     }
 
     fn release_lifecycle_lock(&self, _: &LifecycleLease) -> Result<(), PlatformError> {
+        self.lifecycle.lock().expect("lifecycle").push("release");
         *self.releases.lock().expect("release lock") += 1;
         Ok(())
     }
@@ -508,6 +512,32 @@ fn cold_start_applies_management_then_reprobes_route_before_forwarding() {
             },
             NetworkAction::EnableIpv4Forwarding,
         ]
+    );
+    assert_eq!(
+        *fake.lifecycle.lock().expect("lifecycle"),
+        vec!["lock", "release", "lock", "release"]
+    );
+}
+
+#[test]
+fn route_wait_reacquires_and_rejects_changed_management_state() {
+    let mut without_route = network(false, OwnedResource::Absent);
+    without_route.wan_default_route_present = Probe::Known(false);
+    let mut changed = network(false, OwnedResource::Absent);
+    changed.ap_attached = Probe::Known(false);
+    let fake = Fake::with_observations(vec![without_route.clone(), without_route, changed]);
+
+    let error = RouterApplication::new(&fake, &fake, &fake)
+        .reconcile(&NetworkDesired::forwarding())
+        .expect_err("management state changed while lifecycle lock was released");
+    assert!(matches!(error, PlatformError::UnsafeToCutOver(_)));
+    assert_eq!(
+        *fake.actions.lock().expect("actions"),
+        vec![NetworkAction::WaitForWanRoute]
+    );
+    assert_eq!(
+        *fake.lifecycle.lock().expect("lifecycle"),
+        vec!["lock", "release", "lock", "release"]
     );
 }
 

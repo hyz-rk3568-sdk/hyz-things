@@ -7,7 +7,10 @@ use super::{
 };
 use crate::{
     application::{
-        dhcp::{DhcpEvent, DhcpPlatformPort, DHCP_HOOK_ROLE_ENV},
+        dhcp::{
+            DhcpEvent, DhcpGeneration, DhcpPlatformPort, DhcpTransition, DHCP_GENERATION_ENV,
+            DHCP_HOOK_ROLE_ENV,
+        },
         ports::{ClockPort, PlatformError},
         wifi::{WifiPlatformPort, WifiScanEntry},
     },
@@ -22,12 +25,13 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    fs::{self, OpenOptions},
+    fs::{self, File, OpenOptions},
     io::Write,
     net::Ipv4Addr,
-    os::unix::fs::OpenOptionsExt,
+    os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::atomic::{AtomicU64, Ordering},
     thread,
     time::{Duration, Instant},
 };
@@ -37,6 +41,7 @@ pub const HOSTAPD_RUNTIME_CONFIG: &str = "/run/hyz-router/hostapd.rust.conf";
 pub const DNSMASQ_RUNTIME_CONFIG: &str = "/run/hyz-router/dnsmasq.rust.conf";
 pub const ROUTER_EXECUTABLE: &str = "/usr/bin/hyz-router";
 const RESOLV_CONFIG: &str = "/etc/resolv.conf";
+const DHCP_ACTIVE_GENERATION_RECORD: &str = "/run/hyz-router/udhcpc.active-generation";
 const DHCP_OWNERSHIP_RECORD: &str = "/run/hyz-router/udhcpc.lease-generation.json";
 const AP_PENDING_APPLIED_RECORD: &str = "/run/hyz-router/ap-pending-applied-v1";
 const PROCESS_WAIT: Duration = Duration::from_secs(5);
@@ -44,6 +49,8 @@ const STA_CHANNEL_WAIT: Duration = Duration::from_secs(45);
 const AP_READY_WAIT: Duration = Duration::from_secs(30);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 const MAX_RESOLV_SIZE: usize = 64 * 1024;
+static DHCP_GENERATION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static RESOLVER_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub const DNSMASQ_CONFIG: &str = "# DHCP and DNS proxy for the isolated br-lan LAN.\n\
 interface=br-lan\n\
@@ -62,6 +69,8 @@ dhcp-leasefile=/run/hyz-router/dnsmasq.leases\n";
 #[serde(deny_unknown_fields)]
 struct DhcpOwnership {
     version: u8,
+    #[serde(default)]
+    generation: Option<DhcpGeneration>,
     address: OwnedAddress,
     routes: Vec<OwnedRoute>,
     resolver_entries: Vec<String>,
@@ -83,7 +92,7 @@ struct OwnedRoute {
 }
 
 impl DhcpOwnership {
-    fn from_lease(lease: &crate::application::dhcp::DhcpLease) -> Self {
+    fn from_lease(generation: DhcpGeneration, lease: &crate::application::dhcp::DhcpLease) -> Self {
         let routes = if lease.static_routes.is_empty() {
             lease
                 .routers
@@ -106,7 +115,8 @@ impl DhcpOwnership {
                 .collect()
         };
         Self {
-            version: 1,
+            version: 2,
+            generation: Some(generation),
             address: OwnedAddress {
                 cidr: format!("{}/{}", lease.address, lease.prefix),
                 broadcast: lease.broadcast,
@@ -117,7 +127,10 @@ impl DhcpOwnership {
     }
 
     fn validate(&self) -> Result<(), PlatformError> {
-        if self.version != 1 || self.routes.len() > 64 || self.resolver_entries.len() > 32 {
+        if !matches!((self.version, &self.generation), (1, None) | (2, Some(_)))
+            || self.routes.len() > 64
+            || self.resolver_entries.len() > 32
+        {
             return Err(invalid_dhcp_ownership());
         }
         validate_ipv4_cidr(&self.address.cidr).map_err(|_| invalid_dhcp_ownership())?;
@@ -428,24 +441,49 @@ impl super::process::LinuxRouterPlatform {
                 service.label()
             )));
         }
+        let dhcp_generation = if service == ManagementService::Udhcpc {
+            if read_active_dhcp_generation()?.is_some() {
+                return Err(PlatformError::Conflict(
+                    "active DHCP generation already exists".to_owned(),
+                ));
+            }
+            let generation = new_dhcp_generation(self.unix_time_millis())?;
+            storage::atomic_write_private(
+                DHCP_ACTIVE_GENERATION_RECORD,
+                format!("{}\n", generation.as_str()).as_bytes(),
+            )?;
+            Some(generation)
+        } else {
+            None
+        };
         let mut command = Command::new(service.executable());
         command.args(service.argv()).env_clear().env("LC_ALL", "C");
-        if service == ManagementService::Udhcpc {
-            command.env(DHCP_HOOK_ROLE_ENV, "v1");
+        if let Some(generation) = &dhcp_generation {
+            command
+                .env(DHCP_HOOK_ROLE_ENV, "v1")
+                .env(DHCP_GENERATION_ENV, generation.as_str());
         }
         command
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
-        let mut child = command.spawn().map_err(|error| {
-            PlatformError::Io(format!("start {} directly: {error}", service.label()))
-        })?;
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                cleanup_unstarted_dhcp_generation(dhcp_generation.as_ref());
+                return Err(PlatformError::Io(format!(
+                    "start {} directly: {error}",
+                    service.label()
+                )));
+            }
+        };
         let pid = child.id();
         let identity = match identify_spawned_service(service, pid, PROCESS_WAIT) {
             Ok(identity) => identity,
             Err(error) => {
                 let _ = child.kill();
                 let _ = child.wait();
+                cleanup_unstarted_dhcp_generation(dhcp_generation.as_ref());
                 return Err(error);
             }
         };
@@ -454,6 +492,7 @@ impl super::process::LinuxRouterPlatform {
         {
             let _ = child.kill();
             let _ = child.wait();
+            cleanup_unstarted_dhcp_generation(dhcp_generation.as_ref());
             return Err(error);
         }
         super::process::reap_in_background(child, service.label());
@@ -464,10 +503,19 @@ impl super::process::LinuxRouterPlatform {
         for service in SERVICES.into_iter().rev() {
             self.stop_service(service)?;
         }
-        // udhcpc normally emits deconfig on USR2 through the daemon control socket. Perform the
-        // same exact owned-generation cleanup directly as well so daemon shutdown remains correct
-        // after control accepts have stopped, and so a failed callback cannot strand routes/DNS.
-        self.apply_dhcp_event(DhcpEvent::Deconfig)
+        let active = read_active_dhcp_generation()?;
+        let owned = read_dhcp_ownership()?;
+        if let Some(generation) = active {
+            self.apply_dhcp_event_locked(&DhcpEvent::new(
+                generation.clone(),
+                DhcpTransition::Deconfig,
+            ))?;
+            retire_active_dhcp_generation(&generation)?;
+        } else if let Some(owned) = owned {
+            reconcile_owned_generation(Some(&owned), None)?;
+            storage::remove_file_durable(DHCP_OWNERSHIP_RECORD)?;
+        }
+        Ok(())
     }
 
     fn stop_service(&self, service: ManagementService) -> Result<(), PlatformError> {
@@ -779,54 +827,71 @@ impl super::process::LinuxRouterPlatform {
         Ok(())
     }
 
-    pub(crate) fn apply_dhcp_event(&self, event: DhcpEvent) -> Result<(), PlatformError> {
-        match event {
-            DhcpEvent::Deconfig => {
+    fn apply_dhcp_event_locked(&self, event: &DhcpEvent) -> Result<(), PlatformError> {
+        match &event.transition {
+            DhcpTransition::Deconfig => {
                 run_ip(&["link", "set", "dev", WAN_INTERFACE, "up"])?;
                 let Some(previous) = read_dhcp_ownership()? else {
                     return Ok(());
                 };
-                if let Err(error) = remove_owned_generation(&previous) {
-                    let _ = apply_owned_generation(&previous);
-                    return Err(error);
+                if let Err(error) = reconcile_owned_generation(Some(&previous), None) {
+                    let rollback = reconcile_owned_generation(None, Some(&previous));
+                    return match rollback {
+                        Ok(()) => Err(error),
+                        Err(rollback) => Err(PlatformError::InvalidState(format!(
+                            "DHCP deconfiguration failed: {error}; exact rollback also failed: {rollback}"
+                        ))),
+                    };
                 }
                 if let Err(error) = storage::remove_file_durable(DHCP_OWNERSHIP_RECORD) {
-                    let _ = apply_owned_generation(&previous);
-                    return Err(error);
-                }
-                Ok(())
-            }
-            DhcpEvent::Lease { lease } => {
-                let next = DhcpOwnership::from_lease(&lease);
-                next.validate()?;
-                let encoded = serde_json::to_vec(&next).map_err(|_| {
-                    PlatformError::InvalidState("could not encode DHCP ownership record".to_owned())
-                })?;
-                let previous = read_dhcp_ownership()?;
-                if let Some(previous) = &previous {
-                    if let Err(error) = remove_owned_generation(previous) {
-                        let _ = apply_owned_generation(previous);
-                        return Err(error);
+                    if read_dhcp_ownership()?.is_some() {
+                        let rollback = reconcile_owned_generation(None, Some(&previous));
+                        return match rollback {
+                            Ok(()) => Err(error),
+                            Err(rollback) => Err(PlatformError::InvalidState(format!(
+                                "DHCP ownership removal failed: {error}; exact rollback also failed: {rollback}"
+                            ))),
+                        };
                     }
                 }
-                if let Err(error) = apply_owned_generation(&next) {
-                    rollback_generation(&next, previous.as_ref());
-                    return Err(error);
+                Ok(())
+            }
+            DhcpTransition::Lease { lease } => {
+                let next = DhcpOwnership::from_lease(event.generation.clone(), lease);
+                next.validate()?;
+                let previous = read_dhcp_ownership()?;
+                if let Err(error) = reconcile_owned_generation(previous.as_ref(), Some(&next)) {
+                    let rollback = reconcile_owned_generation(Some(&next), previous.as_ref());
+                    return match rollback {
+                        Ok(()) => Err(error),
+                        Err(rollback) => Err(PlatformError::InvalidState(format!(
+                            "DHCP lease reconciliation failed: {error}; exact rollback also failed: {rollback}"
+                        ))),
+                    };
                 }
-                if let Err(error) = storage::atomic_write_private(DHCP_OWNERSHIP_RECORD, &encoded) {
-                    rollback_generation(&next, previous.as_ref());
-                    return Err(error);
+                if let Err(error) = persist_dhcp_ownership_verified(&next) {
+                    let rollback = reconcile_owned_generation(Some(&next), previous.as_ref());
+                    return match rollback {
+                        Ok(()) => Err(error),
+                        Err(rollback) => Err(PlatformError::InvalidState(format!(
+                            "DHCP ownership commit failed: {error}; exact rollback also failed: {rollback}"
+                        ))),
+                    };
                 }
                 Ok(())
             }
-            DhcpEvent::NoChange => Ok(()),
+            DhcpTransition::NoChange => Ok(()),
         }
     }
 }
 
 impl DhcpPlatformPort for super::process::LinuxRouterPlatform {
-    fn apply_dhcp_event(&self, event: DhcpEvent) -> Result<(), PlatformError> {
-        super::process::LinuxRouterPlatform::apply_dhcp_event(self, event)
+    fn active_dhcp_generation(&self) -> Result<Option<DhcpGeneration>, PlatformError> {
+        read_active_dhcp_generation()
+    }
+
+    fn apply_dhcp_event(&self, event: &DhcpEvent) -> Result<(), PlatformError> {
+        self.apply_dhcp_event_locked(event)
     }
 }
 
@@ -1756,6 +1821,43 @@ fn exact_default_route_line(line: &str, route: &OwnedRoute) -> bool {
         ]
 }
 
+fn new_dhcp_generation(unix_time_millis: u64) -> Result<DhcpGeneration, PlatformError> {
+    let pid = std::process::id();
+    let start_time = process_start_time(pid)?.ok_or_else(|| {
+        PlatformError::InvalidState("cannot identify DHCP generation owner".to_owned())
+    })?;
+    let sequence = DHCP_GENERATION_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    DhcpGeneration::new(format!(
+        "dhcp-{pid}-{start_time}-{unix_time_millis}-{sequence}"
+    ))
+}
+
+fn read_active_dhcp_generation() -> Result<Option<DhcpGeneration>, PlatformError> {
+    let Some(record) = storage::read_private_small_optional(DHCP_ACTIVE_GENERATION_RECORD, 128)?
+    else {
+        return Ok(None);
+    };
+    DhcpGeneration::new(record.trim_end_matches('\n').to_owned()).map(Some)
+}
+
+fn retire_active_dhcp_generation(generation: &DhcpGeneration) -> Result<(), PlatformError> {
+    match read_active_dhcp_generation()? {
+        Some(active) if active == *generation => {
+            storage::remove_file_durable(DHCP_ACTIVE_GENERATION_RECORD)
+        }
+        Some(_) => Err(PlatformError::Conflict(
+            "active DHCP generation changed during retirement".to_owned(),
+        )),
+        None => Ok(()),
+    }
+}
+
+fn cleanup_unstarted_dhcp_generation(generation: Option<&DhcpGeneration>) {
+    if let Some(generation) = generation {
+        let _ = retire_active_dhcp_generation(generation);
+    }
+}
+
 fn read_dhcp_ownership() -> Result<Option<DhcpOwnership>, PlatformError> {
     let Some(record) = storage::read_small_optional(DHCP_OWNERSHIP_RECORD, 16 * 1024)? else {
         return Ok(None);
@@ -1766,31 +1868,190 @@ fn read_dhcp_ownership() -> Result<Option<DhcpOwnership>, PlatformError> {
     Ok(Some(ownership))
 }
 
-fn apply_owned_generation(ownership: &DhcpOwnership) -> Result<(), PlatformError> {
-    run_ip_owned(&address_args("add", &ownership.address))?;
-    for route in &ownership.routes {
-        run_ip_owned(&route_args("add", route))?;
+fn persist_dhcp_ownership_verified(ownership: &DhcpOwnership) -> Result<(), PlatformError> {
+    let encoded = serde_json::to_vec(ownership).map_err(|_| {
+        PlatformError::InvalidState("could not encode DHCP ownership record".to_owned())
+    })?;
+    let Err(write_error) = storage::atomic_write_private(DHCP_OWNERSHIP_RECORD, &encoded) else {
+        return Ok(());
+    };
+    match read_dhcp_ownership() {
+        Ok(Some(actual)) if actual == *ownership => Ok(()),
+        Ok(_) => Err(write_error),
+        Err(read_error) => Err(PlatformError::InvalidState(format!(
+            "DHCP ownership commit was ambiguous: {write_error}; read-back also failed: {read_error}"
+        ))),
     }
-    replace_resolver_entries(&[], &ownership.resolver_entries)
 }
 
-fn remove_owned_generation(ownership: &DhcpOwnership) -> Result<(), PlatformError> {
-    for route in ownership.routes.iter().rev() {
-        run_ip_owned(&route_args("del", route))?;
-    }
-    run_ip_owned(&address_args("del", &ownership.address))?;
-    replace_resolver_entries(&ownership.resolver_entries, &[])
-}
-
-fn rollback_generation(next: &DhcpOwnership, previous: Option<&DhcpOwnership>) {
-    for route in next.routes.iter().rev() {
-        let _ = run_ip_owned(&route_args("del", route));
-    }
-    let _ = run_ip_owned(&address_args("del", &next.address));
-    let _ = replace_resolver_entries(&next.resolver_entries, &[]);
+fn reconcile_owned_generation(
+    previous: Option<&DhcpOwnership>,
+    next: Option<&DhcpOwnership>,
+) -> Result<(), PlatformError> {
     if let Some(previous) = previous {
-        let _ = apply_owned_generation(previous);
+        for route in previous.routes.iter().rev() {
+            if !next.is_some_and(|next| next.routes.contains(route)) {
+                remove_owned_route(route)?;
+            }
+        }
+        if !next.is_some_and(|next| next.address == previous.address) {
+            remove_owned_address(&previous.address)?;
+        }
     }
+    if let Some(next) = next {
+        ensure_owned_address(&next.address)?;
+        for route in &next.routes {
+            ensure_owned_route(route)?;
+        }
+    }
+    replace_resolver_entries(
+        previous
+            .map(|value| value.resolver_entries.as_slice())
+            .unwrap_or_default(),
+        next.map(|value| value.resolver_entries.as_slice())
+            .unwrap_or_default(),
+    )?;
+    if owned_generation_matches(next)? {
+        Ok(())
+    } else {
+        Err(PlatformError::UnsafeToCutOver(
+            "DHCP address, route, or resolver transaction failed strict read-back".to_owned(),
+        ))
+    }
+}
+
+fn ensure_owned_address(address: &OwnedAddress) -> Result<(), PlatformError> {
+    run_ip_rechecked(&address_args("replace", address), || {
+        owned_address_present(address)
+    })
+}
+
+fn remove_owned_address(address: &OwnedAddress) -> Result<(), PlatformError> {
+    run_ip_rechecked(&address_args("del", address), || {
+        owned_address_present(address).map(|present| !present)
+    })
+}
+
+fn ensure_owned_route(route: &OwnedRoute) -> Result<(), PlatformError> {
+    run_ip_rechecked(&route_args("replace", route), || owned_route_present(route))
+}
+
+fn remove_owned_route(route: &OwnedRoute) -> Result<(), PlatformError> {
+    run_ip_rechecked(&route_args("del", route), || {
+        owned_route_present(route).map(|present| !present)
+    })
+}
+
+fn run_ip_rechecked(
+    args: &[String],
+    verify: impl FnOnce() -> Result<bool, PlatformError>,
+) -> Result<(), PlatformError> {
+    let operation = run_ip_owned(args);
+    match verify() {
+        Ok(true) => Ok(()),
+        Ok(false) => match operation {
+            Err(error) => Err(error),
+            Ok(()) => Err(PlatformError::ProbeFailed(
+                "fixed ip operation did not reach its exact requested state".to_owned(),
+            )),
+        },
+        Err(probe) => match operation {
+            Err(operation) => Err(PlatformError::InvalidState(format!(
+                "fixed ip operation failed: {operation}; exact read-back also failed: {probe}"
+            ))),
+            Ok(()) => Err(probe),
+        },
+    }
+}
+
+fn owned_address_present(address: &OwnedAddress) -> Result<bool, PlatformError> {
+    let output = run_bounded(
+        "/usr/sbin/ip",
+        &["-o", "-4", "address", "show", "dev", WAN_INTERFACE],
+        Duration::from_secs(3),
+    )?;
+    Ok(output
+        .lines()
+        .any(|line| exact_owned_address_line(line, address)))
+}
+
+fn exact_owned_address_line(line: &str, address: &OwnedAddress) -> bool {
+    let fields = line.split_whitespace().collect::<Vec<_>>();
+    let cidr = fields
+        .windows(2)
+        .any(|pair| pair == ["inet", address.cidr.as_str()]);
+    let broadcast = address.broadcast.is_none_or(|broadcast| {
+        let broadcast = broadcast.to_string();
+        fields
+            .windows(2)
+            .any(|pair| pair == ["brd", broadcast.as_str()])
+    });
+    cidr && broadcast
+}
+
+fn owned_route_present(route: &OwnedRoute) -> Result<bool, PlatformError> {
+    let output = run_bounded(
+        "/usr/sbin/ip",
+        &["-4", "route", "show", route.destination.as_str()],
+        Duration::from_secs(3),
+    )?;
+    Ok(output
+        .lines()
+        .any(|line| exact_owned_route_line(line, route)))
+}
+
+fn exact_owned_route_line(line: &str, route: &OwnedRoute) -> bool {
+    let destination = canonical_route_destination(&route.destination);
+    let mut expected = vec![
+        destination,
+        "via".to_owned(),
+        route.gateway.to_string(),
+        "dev".to_owned(),
+        WAN_INTERFACE.to_owned(),
+    ];
+    if let Some(metric) = route.metric {
+        expected.extend(["metric".to_owned(), metric.to_string()]);
+    }
+    line.split_whitespace()
+        .eq(expected.iter().map(String::as_str))
+}
+
+fn canonical_route_destination(destination: &str) -> String {
+    if matches!(destination, "default" | "0.0.0.0/0") {
+        return "default".to_owned();
+    }
+    let Some((address, prefix)) = destination.split_once('/') else {
+        return destination.to_owned();
+    };
+    let (Ok(address), Ok(prefix)) = (address.parse::<Ipv4Addr>(), prefix.parse::<u8>()) else {
+        return destination.to_owned();
+    };
+    if prefix > 32 {
+        return destination.to_owned();
+    }
+    let mask = if prefix == 0 {
+        0
+    } else {
+        u32::MAX << (32 - prefix)
+    };
+    format!("{}/{}", Ipv4Addr::from(u32::from(address) & mask), prefix)
+}
+
+fn owned_generation_matches(ownership: Option<&DhcpOwnership>) -> Result<bool, PlatformError> {
+    if let Some(ownership) = ownership {
+        if !owned_address_present(&ownership.address)? {
+            return Ok(false);
+        }
+        for route in &ownership.routes {
+            if !owned_route_present(route)? {
+                return Ok(false);
+            }
+        }
+    }
+    let expected = ownership
+        .map(|value| value.resolver_entries.clone())
+        .unwrap_or_default();
+    Ok(resolver_managed_entries()? == expected)
 }
 
 fn address_args(operation: &str, address: &OwnedAddress) -> Vec<String> {
@@ -1800,7 +2061,7 @@ fn address_args(operation: &str, address: &OwnedAddress) -> Vec<String> {
         operation.to_owned(),
         address.cidr.clone(),
     ];
-    if operation == "add" {
+    if operation == "replace" {
         if let Some(broadcast) = address.broadcast {
             args.extend(["broadcast".to_owned(), broadcast.to_string()]);
         }
@@ -1842,33 +2103,127 @@ fn validate_ipv4_cidr(value: &str) -> Result<(), PlatformError> {
 }
 
 fn replace_resolver_entries(previous: &[String], next: &[String]) -> Result<(), PlatformError> {
-    let existing = match fs::read(RESOLV_CONFIG) {
+    let path = resolver_target_path()?;
+    let existing = read_resolver_bytes(&path)?;
+    let existing_text = String::from_utf8(existing)
+        .map_err(|_| PlatformError::InvalidState("resolver config is not UTF-8".to_owned()))?;
+    let output = replace_resolver_text(&existing_text, previous, next);
+    if output == existing_text {
+        return Ok(());
+    }
+    let Err(write_error) = atomic_write_resolver(&path, output.as_bytes()) else {
+        return Ok(());
+    };
+    match read_resolver_bytes(&path) {
+        Ok(actual) if actual == output.as_bytes() => Ok(()),
+        Ok(_) => Err(write_error),
+        Err(read_error) => Err(PlatformError::InvalidState(format!(
+            "resolver commit was ambiguous: {write_error}; read-back also failed: {read_error}"
+        ))),
+    }
+}
+
+fn resolver_target_path() -> Result<PathBuf, PlatformError> {
+    let path = Path::new(RESOLV_CONFIG);
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => fs::canonicalize(path)
+            .map_err(|error| PlatformError::Io(format!("resolve resolver config: {error}"))),
+        Ok(_) => Ok(path.to_path_buf()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(path.to_path_buf()),
+        Err(error) => Err(PlatformError::Io(format!(
+            "inspect resolver config: {error}"
+        ))),
+    }
+}
+
+fn read_resolver_bytes(path: &Path) -> Result<Vec<u8>, PlatformError> {
+    let bytes = match fs::read(path) {
         Ok(value) => value,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
         Err(error) => return Err(PlatformError::Io(format!("read resolver config: {error}"))),
     };
-    if existing.len() > MAX_RESOLV_SIZE {
+    if bytes.len() > MAX_RESOLV_SIZE {
         return Err(PlatformError::InvalidState(
             "resolver config exceeds size limit".to_owned(),
         ));
     }
-    let existing = String::from_utf8(existing)
+    Ok(bytes)
+}
+
+fn resolver_managed_entries() -> Result<Vec<String>, PlatformError> {
+    let path = resolver_target_path()?;
+    let text = String::from_utf8(read_resolver_bytes(&path)?)
         .map_err(|_| PlatformError::InvalidState("resolver config is not UTF-8".to_owned()))?;
-    let output = replace_resolver_text(&existing, previous, next);
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o644)
-        .open(Path::new(RESOLV_CONFIG))
-        .map_err(|error| PlatformError::Io(format!("open resolver config: {error}")))?;
-    file.write_all(output.as_bytes())
-        .map_err(|error| PlatformError::Io(format!("write resolver config: {error}")))
+    Ok(text
+        .lines()
+        .filter(|line| line.ends_with(&format!("# {WAN_INTERFACE}")))
+        .map(str::to_owned)
+        .collect())
+}
+
+fn atomic_write_resolver(path: &Path, bytes: &[u8]) -> Result<(), PlatformError> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| PlatformError::InvalidState("resolver path has no parent".to_owned()))?;
+    let mode = match fs::metadata(path) {
+        Ok(metadata) => metadata.permissions().mode() & 0o777,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0o644,
+        Err(error) => return Err(PlatformError::Io(format!("inspect resolver mode: {error}"))),
+    };
+    let base = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("resolv.conf");
+    let (temporary, mut file) = loop {
+        let sequence = RESOLVER_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let candidate = parent.join(format!(
+            ".{base}.hyz-router.{}.{}.tmp",
+            std::process::id(),
+            sequence
+        ));
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(mode)
+            .open(&candidate)
+        {
+            Ok(file) => break (candidate, file),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(PlatformError::Io(format!(
+                    "create resolver temporary {}: {error}",
+                    candidate.display()
+                )))
+            }
+        }
+    };
+    let result = (|| {
+        file.write_all(bytes)
+            .map_err(|error| PlatformError::Io(format!("write resolver temporary: {error}")))?;
+        file.sync_all()
+            .map_err(|error| PlatformError::Io(format!("sync resolver temporary: {error}")))?;
+        fs::set_permissions(&temporary, fs::Permissions::from_mode(mode)).map_err(|error| {
+            PlatformError::Io(format!("set resolver temporary permissions: {error}"))
+        })?;
+        file.sync_all().map_err(|error| {
+            PlatformError::Io(format!("sync resolver temporary metadata: {error}"))
+        })?;
+        fs::rename(&temporary, path).map_err(|error| {
+            PlatformError::Io(format!("commit resolver {}: {error}", path.display()))
+        })?;
+        File::open(parent)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|error| PlatformError::Io(format!("sync resolver directory: {error}")))
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(temporary);
+    }
+    result
 }
 
 fn replace_resolver_text(existing: &str, previous: &[String], next: &[String]) -> String {
     let mut removals = HashMap::<&str, usize>::new();
-    for entry in previous {
+    for entry in previous.iter().chain(next) {
         *removals.entry(entry).or_default() += 1;
     }
     let mut output = String::new();
@@ -2296,11 +2651,33 @@ mod tests {
             dns: vec!["1.1.1.1".parse().unwrap()],
             search: vec!["example.test".to_owned()],
         };
-        let ownership = DhcpOwnership::from_lease(&lease);
+        let generation = DhcpGeneration::new("dhcp-test-generation".to_owned()).unwrap();
+        let ownership = DhcpOwnership::from_lease(generation.clone(), &lease);
         let encoded = serde_json::to_string(&ownership).unwrap();
         let decoded: DhcpOwnership = serde_json::from_str(&encoded).unwrap();
         decoded.validate().unwrap();
         assert_eq!(decoded, ownership);
+        assert_eq!(decoded.generation, Some(generation));
+        let legacy = encoded
+            .replace("\"version\":2,", "\"version\":1,")
+            .replace("\"generation\":\"dhcp-test-generation\",", "");
+        let legacy: DhcpOwnership = serde_json::from_str(&legacy).unwrap();
+        legacy.validate().unwrap();
+        assert_eq!(legacy.generation, None);
+        assert_eq!(
+            address_args("replace", &ownership.address),
+            [
+                "-4",
+                "address",
+                "replace",
+                "192.0.2.5/24",
+                "broadcast",
+                "192.0.2.255",
+                "dev",
+                "wlan0",
+            ]
+            .map(str::to_owned)
+        );
         assert_eq!(
             address_args("del", &ownership.address),
             ["-4", "address", "del", "192.0.2.5/24", "dev", "wlan0"].map(str::to_owned)
@@ -2335,6 +2712,16 @@ mod tests {
     }
 
     #[test]
+    fn resolver_reconciliation_is_idempotent_and_preserves_foreign_lines() {
+        let owned = vec!["nameserver 1.1.1.1 # wlan0".to_owned()];
+        let existing = "nameserver 9.9.9.9\nnameserver 1.1.1.1 # wlan0\n";
+        let once = replace_resolver_text(existing, &owned, &owned);
+        let twice = replace_resolver_text(&once, &owned, &owned);
+        assert_eq!(once, existing);
+        assert_eq!(twice, once);
+    }
+
+    #[test]
     fn wan_gate_requires_the_exact_owned_route_shape() {
         let route = OwnedRoute {
             destination: "default".to_owned(),
@@ -2344,6 +2731,18 @@ mod tests {
         assert!(address_output_contains(
             "3: wlan0 inet 192.0.2.5/24 brd 192.0.2.255 scope global wlan0",
             "192.0.2.5/24"
+        ));
+        let address = OwnedAddress {
+            cidr: "192.0.2.5/24".to_owned(),
+            broadcast: Some("192.0.2.255".parse().unwrap()),
+        };
+        assert!(exact_owned_address_line(
+            "3: wlan0 inet 192.0.2.5/24 brd 192.0.2.255 scope global wlan0",
+            &address
+        ));
+        assert!(!exact_owned_address_line(
+            "3: wlan0 inet 192.0.2.5/24 brd 192.0.2.127 scope global wlan0",
+            &address
         ));
         assert!(route_line_uses_interface(
             "default via 192.0.2.1 dev wlan0 metric 600",
@@ -2360,6 +2759,15 @@ mod tests {
         assert!(exact_default_route_line(
             "default via 192.0.2.1 dev wlan0 metric 600",
             &route
+        ));
+        let classless = OwnedRoute {
+            destination: "198.51.100.7/24".to_owned(),
+            gateway: "192.0.2.1".parse().unwrap(),
+            metric: None,
+        };
+        assert!(exact_owned_route_line(
+            "198.51.100.0/24 via 192.0.2.1 dev wlan0",
+            &classless
         ));
         assert!(!exact_default_route_line(
             "default via 192.0.2.1 dev wlan0 proto dhcp metric 600",

@@ -25,7 +25,7 @@ use hyz_router::{
     application::{
         admin::{AdminApplication, AdminError},
         device_policy::DevicePolicyApplication,
-        dhcp::DhcpPlatformPort,
+        dhcp::{DhcpApplication, DhcpEvent},
         fail_open::{MihomoFailOpenApplication, WatcherInvocation},
         ota::{InstallMode, OtaService},
         panel::PanelApplication,
@@ -60,7 +60,7 @@ use std::{
     sync::{Arc, Mutex as StdMutex, Weak},
     time::{Duration, Instant},
 };
-use tokio::sync::{oneshot, watch, Mutex as AsyncMutex};
+use tokio::sync::{mpsc, oneshot, watch, Mutex as AsyncMutex};
 
 const USAGE: &str = "Usage:\n  hyz-router daemon\n  hyz-router status [--json]\n  hyz-router router enable|disable\n  hyz-router proxy explicit|tun|disable\n  hyz-router wifi status|scan\n  hyz-router wifi ap apply|confirm|cancel\n  hyz-router subscription get [--json]\n  hyz-router subscription refresh\n  hyz-router ota ...";
 
@@ -300,6 +300,51 @@ impl StatusTailscalePlatformPort for ProductionTailscalePlatform {
     }
 }
 
+struct DhcpDispatch {
+    event: DhcpEvent,
+    response: oneshot::Sender<Result<(), PlatformError>>,
+}
+
+#[derive(Clone)]
+struct DhcpDispatcher {
+    sender: mpsc::Sender<DhcpDispatch>,
+}
+
+impl DhcpDispatcher {
+    fn new(router: Arc<LinuxRouterPlatform>) -> Self {
+        let (sender, mut receiver) = mpsc::channel::<DhcpDispatch>(8);
+        tokio::spawn(async move {
+            while let Some(dispatch) = receiver.recv().await {
+                let DhcpDispatch { event, response } = dispatch;
+                let platform = router.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    DhcpApplication::new(platform.as_ref(), platform.as_ref()).execute(&event)
+                })
+                .await
+                .map_err(|_| {
+                    PlatformError::CommandFailed("DHCP worker terminated unexpectedly".to_owned())
+                })
+                .and_then(|result| result);
+                let _ = response.send(result);
+            }
+        });
+        Self { sender }
+    }
+
+    async fn dispatch(&self, event: DhcpEvent) -> Result<(), PlatformError> {
+        let (response, completed) = oneshot::channel();
+        self.sender
+            .send(DhcpDispatch { event, response })
+            .await
+            .map_err(|_| {
+                PlatformError::InvalidState("DHCP dispatcher is unavailable".to_owned())
+            })?;
+        completed.await.map_err(|_| {
+            PlatformError::CommandFailed("DHCP dispatcher terminated unexpectedly".to_owned())
+        })?
+    }
+}
+
 struct ProductionRuntime {
     router: Arc<LinuxRouterPlatform>,
     tailscale: Arc<ProductionTailscalePlatform>,
@@ -307,6 +352,7 @@ struct ProductionRuntime {
     firmware: FirmwareAdapter,
     subscription_store: SubscriptionStore,
     subscription_transport: UreqSubscriptionTransport,
+    dhcp: DhcpDispatcher,
     router_proxy: AsyncMutex<()>,
     proxy_delay_last: AsyncMutex<Option<Instant>>,
     display: AsyncMutex<()>,
@@ -317,6 +363,7 @@ impl ProductionRuntime {
     fn build() -> Result<Self, AdminError> {
         let router = Arc::new(LinuxRouterPlatform::new());
         let tailscale = Arc::new(ProductionTailscalePlatform::new(router.clone()));
+        let dhcp = DhcpDispatcher::new(router.clone());
         let admin_adapter = Arc::new(AdminFileAdapter::default());
         let admin = Arc::new(AdminApplication::initialize(
             admin_adapter.clone(),
@@ -331,6 +378,7 @@ impl ProductionRuntime {
             firmware: FirmwareAdapter::default(),
             subscription_store: SubscriptionStore::default(),
             subscription_transport: UreqSubscriptionTransport::new(resolver),
+            dhcp,
             router_proxy: AsyncMutex::new(()),
             proxy_delay_last: AsyncMutex::new(None),
             display: AsyncMutex::new(()),
@@ -513,8 +561,8 @@ impl ProductionRuntime {
     }
 
     async fn initialize(&self) -> Result<(), String> {
-        // Router/proxy commands may connect while initialization runs, but only DHCP bypasses this
-        // guard. That lets udhcpc install its route without deadlocking the startup transaction.
+        // DHCP bypasses the async router/proxy guard, but its bounded worker shares the lifecycle
+        // lock. Router reconciliation releases that lock only around the WAN-route wait.
         let _serial = self.router_proxy.lock().await;
         WifiApplication::new(self.router.as_ref())
             .recover()
@@ -883,13 +931,9 @@ impl ControlHandler for ProductionRuntime {
                 })
             }
             ControlOperation::Dhcp { event } => {
-                // Deliberately independent of router_proxy: udhcpc callbacks must run while router
-                // startup waits for the DHCP-owned metric-600 route. The DHCP port never acquires
-                // /run/hyz-network.lock.
-                let platform = self.router.clone();
-                tokio::task::spawn_blocking(move || platform.apply_dhcp_event(event))
+                self.dhcp
+                    .dispatch(event)
                     .await
-                    .map_err(|_| "DHCP worker terminated unexpectedly".to_owned())?
                     .map_err(|error| error.to_string())?;
                 self.reconcile_running_tailscale_best_effort("DHCP/WAN update")
                     .await;
@@ -1664,12 +1708,13 @@ mod source_boundaries {
         assert!(!ota_production.contains(concat!("Firmware", "PlatformPort")));
         let management = include_str!("adapters/outbound/management.rs");
         let dhcp_apply = management
-            .split("pub(crate) fn apply_dhcp_event")
+            .split("fn apply_dhcp_event_locked")
             .nth(1)
             .unwrap()
             .split("impl DhcpPlatformPort")
             .next()
             .unwrap();
         assert!(!dhcp_apply.contains("NETWORK_LOCK"));
+        assert!(production.contains("DhcpApplication::new(platform.as_ref(), platform.as_ref())"));
     }
 }

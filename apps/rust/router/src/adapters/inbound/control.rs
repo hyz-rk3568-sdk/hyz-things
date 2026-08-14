@@ -2,7 +2,7 @@ use super::ota_cli::OtaCommand;
 use crate::{
     application::{
         device_policy::DevicePolicySnapshot,
-        dhcp::DhcpEvent,
+        dhcp::{DhcpEvent, DhcpTransition},
         wifi::{ApPrepareRequest, StaCandidateRequest, WifiScanEntry},
     },
     domain::{
@@ -39,7 +39,7 @@ pub const CONTROL_SOCKET: &str = "/run/hyz-router/control.sock";
 pub const CONTROL_RUNTIME_DIR: &str = "/run/hyz-router";
 pub const DAEMON_LOCK_DIR: &str = "/run/hyz-router/daemon.lock";
 const DAEMON_OWNER_FILE: &str = "/run/hyz-router/daemon.lock/owner";
-pub const PROTOCOL_VERSION: u16 = 7;
+pub const PROTOCOL_VERSION: u16 = 8;
 pub const MAX_FRAME_BYTES: usize = 64 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(30 * 60);
@@ -233,7 +233,7 @@ fn validate_digest(value: &str) -> Result<(), &'static str> {
 }
 
 fn validate_dhcp(event: &DhcpEvent) -> Result<(), &'static str> {
-    let DhcpEvent::Lease { lease } = event else {
+    let DhcpTransition::Lease { lease } = &event.transition else {
         return Ok(());
     };
     if lease.prefix > 32
@@ -788,7 +788,7 @@ mod tests {
         let request = ControlRequest::new(ControlOperation::Status {});
         let encoded = serde_json::to_vec(&request).unwrap();
         assert!(encoded.len() < MAX_FRAME_BYTES);
-        assert_eq!(PROTOCOL_VERSION, 7);
+        assert_eq!(PROTOCOL_VERSION, 8);
         let policy = ControlOperation::DevicePoliciesSet {
             request: DevicePolicyUpdateRequest {
                 expected_generation: 0,
@@ -863,7 +863,11 @@ mod tests {
             search: Vec::new(),
         };
         assert!(ControlOperation::Dhcp {
-            event: DhcpEvent::Lease { lease }
+            event: DhcpEvent::new(
+                crate::application::dhcp::DhcpGeneration::new("test-generation".to_owned())
+                    .unwrap(),
+                DhcpTransition::Lease { lease },
+            )
         }
         .validate()
         .is_err());

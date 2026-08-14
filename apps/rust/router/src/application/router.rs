@@ -1,10 +1,18 @@
 use crate::{
     application::{
-        ports::{ClockPort, PlatformError, RouterPlatformPort, SystemProbePort},
+        ports::{ClockPort, LifecycleLease, PlatformError, RouterPlatformPort, SystemProbePort},
         reconcile::{forwarding_plan, management_plan},
     },
     domain::network::{ForwardingDesired, NetworkAction, NetworkDesired, NetworkObserved, Probe},
 };
+
+use std::{
+    thread,
+    time::{Duration, Instant},
+};
+
+const LIFECYCLE_REACQUIRE_WAIT: Duration = Duration::from_secs(5);
+const LIFECYCLE_REACQUIRE_RETRY: Duration = Duration::from_millis(20);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RouterReconcileResult {
@@ -76,97 +84,146 @@ impl<'a> RouterApplication<'a> {
         &self,
         desired: &NetworkDesired,
     ) -> Result<RouterReconcileResult, PlatformError> {
-        let lease = self.platform.acquire_lifecycle_lock()?;
-        let result = (|| {
-            let initial = self.probe.observe_network()?;
-            let token = self.clock.ownership_token("hyz-router")?;
-            let management_actions = management_plan(&initial, &token)?;
-            let mut applied = Vec::new();
-            if let Err(error) = self.apply_phase(&management_actions, &mut applied) {
-                self.rollback(&applied);
-                return Err(error);
-            }
-
-            // LAN/AP health is independent of STA association and DHCP. This probe must succeed
-            // before either a management-only startup can complete or forwarding can be gated.
-            let mut managed = match self.probe.observe_network() {
-                Ok(observed) => observed,
-                Err(error) => {
-                    self.rollback(&applied);
-                    return Err(error);
-                }
-            };
-            if !managed.management_ready() {
-                self.rollback(&applied);
-                return Err(PlatformError::UnsafeToCutOver(
-                    "management phase completed but strict management probe failed".to_owned(),
-                ));
-            }
-
-            // Only forwarding waits for an upstream lease. The wait is bounded by the outbound
-            // adapter and followed by an exact ownership reprobe before any firewall commit.
-            if desired.forwarding == ForwardingDesired::Enabled {
-                match &managed.wan_default_route_present {
-                    Probe::Known(true) => {}
-                    Probe::Known(false) => {
-                        if let Err(error) =
-                            self.apply_phase(&[NetworkAction::WaitForWanRoute], &mut applied)
-                        {
-                            self.rollback(&applied);
-                            return Err(error);
-                        }
-                        managed = match self.probe.observe_network() {
-                            Ok(observed) => observed,
-                            Err(error) => {
-                                self.rollback(&applied);
-                                return Err(error);
-                            }
-                        };
-                    }
-                    Probe::Unknown(reason) => {
-                        self.rollback(&applied);
-                        return Err(PlatformError::ProbeFailed(format!(
-                            "WAN route readiness is unknown: {reason}"
-                        )));
-                    }
-                }
-            }
-
-            let forwarding_actions = match forwarding_plan(desired, &managed, &token) {
-                Ok(actions) => actions,
-                Err(error) => {
-                    self.rollback(&applied);
-                    return Err(error);
-                }
-            };
-            if let Err(error) = self.apply_phase(&forwarding_actions, &mut applied) {
-                self.rollback(&applied);
-                return Err(error);
-            }
-
-            let observed = match self.probe.observe_network() {
-                Ok(observed) => observed,
-                Err(error) => {
-                    self.rollback(&applied);
-                    return Err(error);
-                }
-            };
-            if !observed.ready_for(desired) {
-                self.rollback(&applied);
-                return Err(PlatformError::UnsafeToCutOver(
-                    "network actions completed but strict readiness probe failed".to_owned(),
-                ));
-            }
-            Ok(RouterReconcileResult {
-                observed,
-                actions_applied: applied.len(),
-            })
-        })();
-        let release = self.platform.release_lifecycle_lock(&lease);
-        match (result, release) {
+        let mut lease = Some(self.platform.acquire_lifecycle_lock()?);
+        let result = self.reconcile_with_lease(desired, &mut lease);
+        match (result, release_optional(self.platform, lease)) {
             (Err(error), _) => Err(error),
             (Ok(_), Err(error)) => Err(error),
             (Ok(result), Ok(())) => Ok(result),
         }
+    }
+
+    fn reconcile_with_lease(
+        &self,
+        desired: &NetworkDesired,
+        lease: &mut Option<LifecycleLease>,
+    ) -> Result<RouterReconcileResult, PlatformError> {
+        let initial = self.probe.observe_network()?;
+        let token = self.clock.ownership_token("hyz-router")?;
+        let management_actions = management_plan(&initial, &token)?;
+        let mut applied = Vec::new();
+        if let Err(error) = self.apply_phase(&management_actions, &mut applied) {
+            self.rollback(&applied);
+            return Err(error);
+        }
+
+        let mut managed = match self.probe.observe_network() {
+            Ok(observed) => observed,
+            Err(error) => {
+                self.rollback(&applied);
+                return Err(error);
+            }
+        };
+        if !managed.management_ready() {
+            self.rollback(&applied);
+            return Err(PlatformError::UnsafeToCutOver(
+                "management phase completed but strict management probe failed".to_owned(),
+            ));
+        }
+
+        if desired.forwarding == ForwardingDesired::Enabled {
+            match &managed.wan_default_route_present {
+                Probe::Known(true) => {}
+                Probe::Known(false) => {
+                    let held = lease.take().ok_or_else(|| {
+                        PlatformError::InvalidState("router lifecycle lease is absent".to_owned())
+                    })?;
+                    self.platform.release_lifecycle_lock(&held)?;
+
+                    let wait = self.platform.apply_network(&NetworkAction::WaitForWanRoute);
+                    let reacquired = self.reacquire_lifecycle_lock_bounded()?;
+                    *lease = Some(reacquired);
+                    if let Err(error) = wait {
+                        self.rollback(&applied);
+                        return Err(error);
+                    }
+                    applied.push(NetworkAction::WaitForWanRoute);
+
+                    managed = match self.probe.observe_network() {
+                        Ok(observed) => observed,
+                        Err(error) => {
+                            self.rollback(&applied);
+                            return Err(error);
+                        }
+                    };
+                    let management_unchanged = match management_plan(&managed, &token) {
+                        Ok(actions) => actions.is_empty(),
+                        Err(error) => {
+                            self.rollback(&applied);
+                            return Err(error);
+                        }
+                    };
+                    if !managed.management_ready()
+                        || managed.wan_default_route_present != Probe::Known(true)
+                        || !management_unchanged
+                    {
+                        self.rollback(&applied);
+                        return Err(PlatformError::UnsafeToCutOver(
+                            "network state changed while the WAN route wait released the lifecycle lock"
+                                .to_owned(),
+                        ));
+                    }
+                }
+                Probe::Unknown(reason) => {
+                    self.rollback(&applied);
+                    return Err(PlatformError::ProbeFailed(format!(
+                        "WAN route readiness is unknown: {reason}"
+                    )));
+                }
+            }
+        }
+
+        let forwarding_actions = match forwarding_plan(desired, &managed, &token) {
+            Ok(actions) => actions,
+            Err(error) => {
+                self.rollback(&applied);
+                return Err(error);
+            }
+        };
+        if let Err(error) = self.apply_phase(&forwarding_actions, &mut applied) {
+            self.rollback(&applied);
+            return Err(error);
+        }
+
+        let observed = match self.probe.observe_network() {
+            Ok(observed) => observed,
+            Err(error) => {
+                self.rollback(&applied);
+                return Err(error);
+            }
+        };
+        if !observed.ready_for(desired) {
+            self.rollback(&applied);
+            return Err(PlatformError::UnsafeToCutOver(
+                "network actions completed but strict readiness probe failed".to_owned(),
+            ));
+        }
+        Ok(RouterReconcileResult {
+            observed,
+            actions_applied: applied.len(),
+        })
+    }
+
+    fn reacquire_lifecycle_lock_bounded(&self) -> Result<LifecycleLease, PlatformError> {
+        let deadline = Instant::now() + LIFECYCLE_REACQUIRE_WAIT;
+        loop {
+            match self.platform.acquire_lifecycle_lock() {
+                Ok(lease) => return Ok(lease),
+                Err(PlatformError::Busy(_)) if Instant::now() < deadline => {
+                    thread::sleep(LIFECYCLE_REACQUIRE_RETRY);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+}
+
+fn release_optional(
+    platform: &dyn RouterPlatformPort,
+    lease: Option<LifecycleLease>,
+) -> Result<(), PlatformError> {
+    match lease {
+        Some(lease) => platform.release_lifecycle_lock(&lease),
+        None => Ok(()),
     }
 }

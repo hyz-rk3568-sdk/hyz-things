@@ -1,6 +1,9 @@
 use crate::{
     application::{
-        dhcp::{DhcpEvent, DhcpLease, DHCP_HOOK_ROLE_ENV},
+        dhcp::{
+            DhcpEvent, DhcpGeneration, DhcpLease, DhcpTransition, DHCP_GENERATION_ENV,
+            DHCP_HOOK_ROLE_ENV,
+        },
         ports::PlatformError,
     },
     domain::network::WAN_INTERFACE,
@@ -28,14 +31,17 @@ pub fn parse_dhcp_event(
     action: &str,
     get: impl Fn(&str) -> Option<String>,
 ) -> Result<DhcpEvent, PlatformError> {
+    let generation = DhcpGeneration::new(get(DHCP_GENERATION_ENV).ok_or_else(|| {
+        PlatformError::InvalidState("DHCP hook generation is absent".to_owned())
+    })?)?;
     if get("interface").as_deref() != Some(WAN_INTERFACE) {
         return Err(PlatformError::InvalidState(
             "DHCP hook interface is not the managed WAN".to_owned(),
         ));
     }
-    match action {
-        "deconfig" => Ok(DhcpEvent::Deconfig),
-        "leasefail" | "nak" => Ok(DhcpEvent::NoChange),
+    let transition = match action {
+        "deconfig" => DhcpTransition::Deconfig,
+        "leasefail" | "nak" => DhcpTransition::NoChange,
         "bound" | "renew" => {
             let address = parse_ipv4(get("ip"), "DHCP address")?;
             let prefix =
@@ -57,7 +63,7 @@ pub fn parse_dhcp_event(
                     "DHCP lease has no usable route".to_owned(),
                 ));
             }
-            Ok(DhcpEvent::Lease {
+            DhcpTransition::Lease {
                 lease: DhcpLease {
                     address,
                     prefix,
@@ -67,12 +73,15 @@ pub fn parse_dhcp_event(
                     dns,
                     search,
                 },
-            })
+            }
         }
-        _ => Err(PlatformError::InvalidState(
-            "unsupported DHCP hook action".to_owned(),
-        )),
-    }
+        _ => {
+            return Err(PlatformError::InvalidState(
+                "unsupported DHCP hook action".to_owned(),
+            ))
+        }
+    };
+    Ok(DhcpEvent::new(generation, transition))
 }
 
 fn parse_ipv4(value: Option<String>, label: &str) -> Result<Ipv4Addr, PlatformError> {
@@ -180,6 +189,7 @@ mod tests {
     #[test]
     fn parser_is_typed_and_preserves_route_inputs() {
         let values = [
+            (DHCP_GENERATION_ENV, "dhcp-test-generation"),
             ("interface", "wlan0"),
             ("ip", "192.0.2.5"),
             ("subnet", "255.255.255.0"),
@@ -195,7 +205,7 @@ mod tests {
                 .map(|(_, value)| (*value).to_owned())
         })
         .unwrap();
-        assert!(matches!(event, DhcpEvent::Lease { .. }));
+        assert!(matches!(event.transition, DhcpTransition::Lease { .. }));
         assert!(netmask_prefix("255.0.255.0").is_err());
     }
 }
