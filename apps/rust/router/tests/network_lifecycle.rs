@@ -327,6 +327,8 @@ impl RouterPlatformPort for Fake {
         Ok(LifecycleLease {
             path: "/run/fake.lock",
             identity: "fake".to_owned(),
+            directory_device: 0,
+            directory_inode: 0,
         })
     }
 

@@ -73,6 +73,8 @@ pub trait AdminRandomPort: Send + Sync {
 pub struct LifecycleLease {
     pub path: &'static str,
     pub identity: String,
+    pub directory_device: u64,
+    pub directory_inode: u64,
 }
 
 pub trait RouterPlatformPort: Send + Sync {

@@ -375,6 +375,8 @@ mod tests {
             Ok(LifecycleLease {
                 path: "test",
                 identity: "test".to_owned(),
+                directory_device: 0,
+                directory_inode: 0,
             })
         }
         fn release_lifecycle_lock(&self, _: &LifecycleLease) -> Result<(), PlatformError> {

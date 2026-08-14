@@ -1,8 +1,8 @@
 use crate::application::ports::{LifecycleLease, PlatformError};
 use std::{
-    fs::{self, File, OpenOptions},
-    io::Write,
-    os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
+    fs::{self, DirBuilder, File, Metadata, OpenOptions},
+    io::{Read, Write},
+    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::Path,
     sync::atomic::{AtomicU64, Ordering},
 };
@@ -167,20 +167,61 @@ pub(crate) fn remove_file_durable(path: &str) -> Result<(), PlatformError> {
     }
 }
 
+const LOCK_OWNER_NAME: &str = "pid";
+const MAX_LOCK_OWNER_BYTES: usize = 1024;
+const ROOT_UID: u32 = 0;
+const O_NOFOLLOW: i32 = 0o400000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FilesystemIdentity {
+    device: u64,
+    inode: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ProcessIdentity {
+    pid: u32,
+    start_time: u64,
+}
+
 pub(crate) fn acquire_lock(path: &'static str) -> Result<LifecycleLease, PlatformError> {
     let pid = std::process::id();
-    let start = super::process::process_start_time(pid)?
+    let start_time = super::process::process_start_time(pid)?
         .ok_or_else(|| PlatformError::InvalidState("cannot identify current process".to_owned()))?;
-    let identity = format!("{pid}:{start}\n");
-    fs::create_dir(path).map_err(|error| {
-        if error.kind() == std::io::ErrorKind::AlreadyExists {
-            PlatformError::Busy(format!("{path} already exists; stale takeover is disabled"))
-        } else {
-            PlatformError::Io(format!("create lock directory {path}: {error}"))
-        }
-    })?;
+    acquire_lock_with(path, ROOT_UID, ProcessIdentity { pid, start_time }, |pid| {
+        super::process::process_start_time(pid)
+    })
+}
 
-    let owner = Path::new(path).join("pid");
+fn acquire_lock_with(
+    path: &'static str,
+    required_uid: u32,
+    current: ProcessIdentity,
+    mut process_start_time: impl FnMut(u32) -> Result<Option<u64>, PlatformError>,
+) -> Result<LifecycleLease, PlatformError> {
+    let identity = format!("{}:{}\n", current.pid, current.start_time);
+    loop {
+        match DirBuilder::new().mode(0o700).create(path) {
+            Ok(()) => break,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                reclaim_stale_lock(path, required_uid, &mut process_start_time)?;
+            }
+            Err(error) => {
+                return Err(PlatformError::Io(format!(
+                    "create lock directory {path}: {error}"
+                )))
+            }
+        }
+    }
+
+    let directory_identity = match secure_directory_identity(Path::new(path), required_uid) {
+        Ok(identity) => identity,
+        Err(error) => {
+            let _ = fs::remove_dir(path);
+            return Err(error);
+        }
+    };
+    let owner = Path::new(path).join(LOCK_OWNER_NAME);
     let result = (|| {
         let mut file = OpenOptions::new()
             .write(true)
@@ -192,32 +233,509 @@ pub(crate) fn acquire_lock(path: &'static str) -> Result<LifecycleLease, Platfor
             })?;
         file.write_all(identity.as_bytes())
             .and_then(|_| file.sync_all())
-            .map_err(|error| PlatformError::Io(format!("write lock owner: {error}")))
+            .map_err(|error| PlatformError::Io(format!("write lock owner: {error}")))?;
+        let (_, owner_identity) = read_secure_lock_owner(&owner, required_uid)?;
+        require_directory_identity(Path::new(path), required_uid, directory_identity)?;
+        require_path_identity(&owner, required_uid, owner_identity)
     })();
     if let Err(error) = result {
-        let _ = fs::remove_file(&owner);
-        let _ = fs::remove_dir(path);
+        remove_owned_lock_directory(Path::new(path), required_uid, directory_identity);
         return Err(error);
     }
-    Ok(LifecycleLease { path, identity })
+    Ok(LifecycleLease {
+        path,
+        identity,
+        directory_device: directory_identity.device,
+        directory_inode: directory_identity.inode,
+    })
+}
+
+fn reclaim_stale_lock(
+    path: &str,
+    required_uid: u32,
+    process_start_time: &mut impl FnMut(u32) -> Result<Option<u64>, PlatformError>,
+) -> Result<(), PlatformError> {
+    let path = Path::new(path);
+    let directory_identity = secure_directory_identity(path, required_uid)?;
+    let owner = path.join(LOCK_OWNER_NAME);
+    let (owner_record, owner_identity) = read_secure_lock_owner(&owner, required_uid)?;
+    require_directory_identity(path, required_uid, directory_identity)?;
+    let process = parse_lock_owner(&owner_record)?;
+    if process_start_time(process.pid)? == Some(process.start_time) {
+        return Err(PlatformError::Busy(format!(
+            "{} is held by live PID {} with matching start time",
+            path.display(),
+            process.pid
+        )));
+    }
+
+    require_directory_identity(path, required_uid, directory_identity)?;
+    require_path_identity(&owner, required_uid, owner_identity)?;
+    fs::remove_file(&owner).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            PlatformError::Conflict("lifecycle lock owner changed during reclaim".to_owned())
+        } else {
+            PlatformError::Io(format!(
+                "remove stale lock owner {}: {error}",
+                owner.display()
+            ))
+        }
+    })?;
+    require_directory_identity(path, required_uid, directory_identity)?;
+    fs::remove_dir(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            PlatformError::Conflict("lifecycle lock directory changed during reclaim".to_owned())
+        } else {
+            PlatformError::Io(format!(
+                "remove stale lock directory {}: {error}",
+                path.display()
+            ))
+        }
+    })
 }
 
 pub(crate) fn release_lock(lease: &LifecycleLease) -> Result<(), PlatformError> {
-    let owner = Path::new(lease.path).join("pid");
-    let owner_path = owner
-        .to_str()
-        .ok_or_else(|| PlatformError::InvalidState("lock path is not UTF-8".to_owned()))?;
-    let current = read_small_optional(owner_path, 1024)?
-        .ok_or_else(|| PlatformError::Conflict("lifecycle lock owner disappeared".to_owned()))?;
+    release_lock_with(lease, ROOT_UID)
+}
+
+fn release_lock_with(lease: &LifecycleLease, required_uid: u32) -> Result<(), PlatformError> {
+    let path = Path::new(lease.path);
+    let directory_identity = FilesystemIdentity {
+        device: lease.directory_device,
+        inode: lease.directory_inode,
+    };
+    require_directory_identity(path, required_uid, directory_identity)?;
+    let owner = path.join(LOCK_OWNER_NAME);
+    let (current, owner_identity) = read_secure_lock_owner(&owner, required_uid)?;
     if current != lease.identity {
         return Err(PlatformError::Conflict(
             "lifecycle lock identity changed; refusing unlink".to_owned(),
         ));
     }
+    require_directory_identity(path, required_uid, directory_identity)?;
+    require_path_identity(&owner, required_uid, owner_identity)?;
     fs::remove_file(&owner).map_err(|error| {
-        PlatformError::Io(format!("remove lock owner {}: {error}", owner.display()))
+        if error.kind() == std::io::ErrorKind::NotFound {
+            PlatformError::Conflict("lifecycle lock owner changed during release".to_owned())
+        } else {
+            PlatformError::Io(format!("remove lock owner {}: {error}", owner.display()))
+        }
     })?;
-    fs::remove_dir(lease.path).map_err(|error| {
-        PlatformError::Io(format!("remove lock directory {}: {error}", lease.path))
+    require_directory_identity(path, required_uid, directory_identity)?;
+    fs::remove_dir(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            PlatformError::Conflict("lifecycle lock directory changed during release".to_owned())
+        } else {
+            PlatformError::Io(format!("remove lock directory {}: {error}", path.display()))
+        }
     })
+}
+
+fn parse_lock_owner(value: &str) -> Result<ProcessIdentity, PlatformError> {
+    let value = value.strip_suffix('\n').ok_or_else(invalid_lock_owner)?;
+    if value.contains('\n') || value.contains('\r') {
+        return Err(invalid_lock_owner());
+    }
+    let (pid, start_time) = value.split_once(':').ok_or_else(invalid_lock_owner)?;
+    if pid.is_empty() || start_time.is_empty() || start_time.contains(':') {
+        return Err(invalid_lock_owner());
+    }
+    let pid = pid.parse::<u32>().map_err(|_| invalid_lock_owner())?;
+    let start_time = start_time
+        .parse::<u64>()
+        .map_err(|_| invalid_lock_owner())?;
+    if pid == 0 || start_time == 0 {
+        return Err(invalid_lock_owner());
+    }
+    Ok(ProcessIdentity { pid, start_time })
+}
+
+fn read_secure_lock_owner(
+    path: &Path,
+    required_uid: u32,
+) -> Result<(String, FilesystemIdentity), PlatformError> {
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(O_NOFOLLOW)
+        .open(path)
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                PlatformError::InvalidState("lifecycle lock owner is missing".to_owned())
+            } else {
+                PlatformError::Io(format!("open lock owner {}: {error}", path.display()))
+            }
+        })?;
+    let metadata = file
+        .metadata()
+        .map_err(|error| PlatformError::Io(format!("inspect lock owner: {error}")))?;
+    validate_owner_metadata(path, &metadata, required_uid)?;
+    let identity = filesystem_identity(&metadata);
+    let mut bytes = Vec::new();
+    (&mut file)
+        .take((MAX_LOCK_OWNER_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| PlatformError::Io(format!("read lock owner: {error}")))?;
+    if bytes.len() > MAX_LOCK_OWNER_BYTES {
+        return Err(PlatformError::InvalidState(
+            "lifecycle lock owner exceeds size limit".to_owned(),
+        ));
+    }
+    require_path_identity(path, required_uid, identity)?;
+    let value = String::from_utf8(bytes).map_err(|_| invalid_lock_owner())?;
+    Ok((value, identity))
+}
+
+fn secure_directory_identity(
+    path: &Path,
+    required_uid: u32,
+) -> Result<FilesystemIdentity, PlatformError> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            PlatformError::Conflict("lifecycle lock directory disappeared".to_owned())
+        } else {
+            PlatformError::Io(format!(
+                "inspect lock directory {}: {error}",
+                path.display()
+            ))
+        }
+    })?;
+    validate_directory_metadata(path, &metadata, required_uid)?;
+    Ok(filesystem_identity(&metadata))
+}
+
+fn require_directory_identity(
+    path: &Path,
+    required_uid: u32,
+    expected: FilesystemIdentity,
+) -> Result<(), PlatformError> {
+    let current = secure_directory_identity(path, required_uid)?;
+    if current != expected {
+        return Err(PlatformError::Conflict(
+            "lifecycle lock directory inode changed".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn require_path_identity(
+    path: &Path,
+    required_uid: u32,
+    expected: FilesystemIdentity,
+) -> Result<(), PlatformError> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            PlatformError::Conflict("lifecycle lock owner changed".to_owned())
+        } else {
+            PlatformError::Io(format!("inspect lock owner {}: {error}", path.display()))
+        }
+    })?;
+    validate_owner_metadata(path, &metadata, required_uid)?;
+    if filesystem_identity(&metadata) != expected {
+        return Err(PlatformError::Conflict(
+            "lifecycle lock owner inode changed".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_directory_metadata(
+    path: &Path,
+    metadata: &Metadata,
+    required_uid: u32,
+) -> Result<(), PlatformError> {
+    if !metadata.file_type().is_dir()
+        || metadata.uid() != required_uid
+        || metadata.mode() & 0o022 != 0
+    {
+        return Err(PlatformError::InvalidState(format!(
+            "{} must be a root-owned directory that is not group/world writable",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn validate_owner_metadata(
+    path: &Path,
+    metadata: &Metadata,
+    required_uid: u32,
+) -> Result<(), PlatformError> {
+    if !metadata.file_type().is_file()
+        || metadata.uid() != required_uid
+        || metadata.mode() & 0o022 != 0
+        || metadata.nlink() != 1
+    {
+        return Err(PlatformError::InvalidState(format!(
+            "{} must be a singly-linked root-owned regular file that is not group/world writable",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn filesystem_identity(metadata: &Metadata) -> FilesystemIdentity {
+    FilesystemIdentity {
+        device: metadata.dev(),
+        inode: metadata.ino(),
+    }
+}
+
+fn remove_owned_lock_directory(
+    path: &Path,
+    required_uid: u32,
+    expected: FilesystemIdentity,
+) {
+    if secure_directory_identity(path, required_uid).ok() != Some(expected) {
+        return;
+    }
+    let _ = fs::remove_file(path.join(LOCK_OWNER_NAME));
+    if fs::symlink_metadata(path)
+        .ok()
+        .map(|metadata| filesystem_identity(&metadata))
+        == Some(expected)
+    {
+        let _ = fs::remove_dir(path);
+    }
+}
+
+fn invalid_lock_owner() -> PlatformError {
+    PlatformError::InvalidState("malformed lifecycle lock owner".to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        path::{Path, PathBuf},
+        sync::atomic::{AtomicU64, Ordering},
+    };
+
+    static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    struct TestLock {
+        root: PathBuf,
+        path: &'static str,
+        uid: u32,
+    }
+
+    impl TestLock {
+        fn new() -> Self {
+            let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let root = std::env::temp_dir().join(format!(
+                "hyz-router-storage-test-{}-{sequence}",
+                std::process::id()
+            ));
+            fs::create_dir(&root).unwrap();
+            let uid = fs::symlink_metadata(&root).unwrap().uid();
+            let path: &'static str = Box::leak(
+                root.join("lifecycle.lock")
+                    .to_string_lossy()
+                    .into_owned()
+                    .into_boxed_str(),
+            );
+            Self { root, path, uid }
+        }
+
+        fn path(&self) -> &Path {
+            Path::new(self.path)
+        }
+
+        fn create(&self, owner: &str) {
+            create_lock_fixture(self.path(), owner);
+        }
+    }
+
+    impl Drop for TestLock {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn create_lock_fixture(path: &Path, owner: &str) {
+        fs::create_dir(path).unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+        let owner_path = path.join(LOCK_OWNER_NAME);
+        fs::write(&owner_path, owner).unwrap();
+        fs::set_permissions(owner_path, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+
+    fn current_identity() -> ProcessIdentity {
+        ProcessIdentity {
+            pid: 900,
+            start_time: 901,
+        }
+    }
+
+    #[test]
+    fn matching_live_pid_and_start_time_remains_busy() {
+        let lock = TestLock::new();
+        lock.create("100:200\n");
+
+        let error = acquire_lock_with(lock.path, lock.uid, current_identity(), |pid| {
+            assert_eq!(pid, 100);
+            Ok(Some(200))
+        })
+        .unwrap_err();
+
+        assert!(matches!(error, PlatformError::Busy(_)));
+        assert_eq!(fs::read_to_string(lock.path().join(LOCK_OWNER_NAME)).unwrap(), "100:200\n");
+    }
+
+    #[test]
+    fn dead_owner_is_reclaimed_and_replaced_by_current_identity() {
+        let lock = TestLock::new();
+        lock.create("100:200\n");
+        fs::set_permissions(lock.path(), fs::Permissions::from_mode(0o755)).unwrap();
+
+        let lease = acquire_lock_with(lock.path, lock.uid, current_identity(), |_| Ok(None)).unwrap();
+
+        assert_eq!(lease.identity, "900:901\n");
+        assert_eq!(
+            fs::read_to_string(lock.path().join(LOCK_OWNER_NAME)).unwrap(),
+            lease.identity
+        );
+        release_lock_with(&lease, lock.uid).unwrap();
+        assert!(!lock.path().exists());
+    }
+
+    #[test]
+    fn reused_pid_with_different_start_time_is_reclaimed() {
+        let lock = TestLock::new();
+        lock.create("100:200\n");
+
+        let lease = acquire_lock_with(lock.path, lock.uid, current_identity(), |_| Ok(Some(201)))
+            .unwrap();
+
+        assert_eq!(lease.identity, "900:901\n");
+        release_lock_with(&lease, lock.uid).unwrap();
+    }
+
+    #[test]
+    fn malformed_or_missing_owner_fails_closed() {
+        let malformed = TestLock::new();
+        malformed.create("not-a-process\n");
+        let error = acquire_lock_with(malformed.path, malformed.uid, current_identity(), |_| {
+            panic!("malformed owner must not be probed")
+        })
+        .unwrap_err();
+        assert!(matches!(error, PlatformError::InvalidState(_)));
+        assert!(malformed.path().exists());
+
+        let missing = TestLock::new();
+        fs::create_dir(missing.path()).unwrap();
+        fs::set_permissions(missing.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        let error = acquire_lock_with(missing.path, missing.uid, current_identity(), |_| {
+            panic!("missing owner must not be probed")
+        })
+        .unwrap_err();
+        assert!(matches!(error, PlatformError::InvalidState(_)));
+        assert!(missing.path().exists());
+    }
+
+    #[test]
+    fn unsafe_directory_or_owner_permissions_fail_closed() {
+        let directory = TestLock::new();
+        directory.create("100:200\n");
+        fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o770)).unwrap();
+        let error = acquire_lock_with(directory.path, directory.uid, current_identity(), |_| {
+            panic!("unsafe directory must not be probed")
+        })
+        .unwrap_err();
+        assert!(matches!(error, PlatformError::InvalidState(_)));
+        assert!(directory.path().exists());
+
+        let owner = TestLock::new();
+        owner.create("100:200\n");
+        fs::set_permissions(
+            owner.path().join(LOCK_OWNER_NAME),
+            fs::Permissions::from_mode(0o620),
+        )
+        .unwrap();
+        let error = acquire_lock_with(owner.path, owner.uid, current_identity(), |_| {
+            panic!("unsafe owner must not be probed")
+        })
+        .unwrap_err();
+        assert!(matches!(error, PlatformError::InvalidState(_)));
+        assert!(owner.path().exists());
+
+        let owner_type = TestLock::new();
+        fs::create_dir(owner_type.path()).unwrap();
+        fs::set_permissions(owner_type.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        fs::create_dir(owner_type.path().join(LOCK_OWNER_NAME)).unwrap();
+        let error = acquire_lock_with(
+            owner_type.path,
+            owner_type.uid,
+            current_identity(),
+            |_| panic!("unsafe owner type must not be probed"),
+        )
+        .unwrap_err();
+        assert!(matches!(error, PlatformError::InvalidState(_)));
+        assert!(owner_type.path().exists());
+    }
+
+    #[test]
+    fn unexpected_owner_uid_fails_closed() {
+        let lock = TestLock::new();
+        lock.create("100:200\n");
+        let unexpected_uid = lock.uid.wrapping_add(1);
+
+        let error = acquire_lock_with(lock.path, unexpected_uid, current_identity(), |_| {
+            panic!("unexpected ownership must not be probed")
+        })
+        .unwrap_err();
+
+        assert!(matches!(error, PlatformError::InvalidState(_)));
+        assert!(lock.path().exists());
+    }
+
+    #[test]
+    fn stale_reclaim_refuses_a_replaced_directory_inode() {
+        let lock = TestLock::new();
+        lock.create("100:200\n");
+        let displaced = lock.root.join("displaced.lock");
+
+        let error = acquire_lock_with(lock.path, lock.uid, current_identity(), |_| {
+            fs::rename(lock.path(), &displaced).unwrap();
+            create_lock_fixture(lock.path(), "300:400\n");
+            Ok(None)
+        })
+        .unwrap_err();
+
+        assert!(matches!(error, PlatformError::Conflict(_)));
+        assert_eq!(
+            fs::read_to_string(lock.path().join(LOCK_OWNER_NAME)).unwrap(),
+            "300:400\n"
+        );
+    }
+
+    #[test]
+    fn release_requires_both_recorded_directory_inode_and_owner() {
+        let changed_owner = TestLock::new();
+        let lease = acquire_lock_with(
+            changed_owner.path,
+            changed_owner.uid,
+            current_identity(),
+            |_| Ok(None),
+        )
+        .unwrap();
+        fs::write(changed_owner.path().join(LOCK_OWNER_NAME), "902:903\n").unwrap();
+        let error = release_lock_with(&lease, changed_owner.uid).unwrap_err();
+        assert!(matches!(error, PlatformError::Conflict(_)));
+        assert!(changed_owner.path().exists());
+
+        let changed_inode = TestLock::new();
+        let lease = acquire_lock_with(
+            changed_inode.path,
+            changed_inode.uid,
+            current_identity(),
+            |_| Ok(None),
+        )
+        .unwrap();
+        let displaced = changed_inode.root.join("leased.lock");
+        fs::rename(changed_inode.path(), displaced).unwrap();
+        create_lock_fixture(changed_inode.path(), &lease.identity);
+        let error = release_lock_with(&lease, changed_inode.uid).unwrap_err();
+        assert!(matches!(error, PlatformError::Conflict(_)));
+        assert!(changed_inode.path().exists());
+    }
 }
