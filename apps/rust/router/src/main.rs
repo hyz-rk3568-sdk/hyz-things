@@ -25,7 +25,7 @@ use hyz_router::{
     application::{
         admin::{AdminApplication, AdminError},
         device_policy::DevicePolicyApplication,
-        dhcp::{DhcpApplication, DhcpEvent},
+        dhcp::{DhcpApplication, DhcpEvent, DhcpPlatformPort},
         fail_open::{MihomoFailOpenApplication, WatcherInvocation},
         ota::{InstallMode, OtaService},
         panel::PanelApplication,
@@ -58,7 +58,7 @@ use std::{
     error::Error,
     net::{Ipv4Addr, SocketAddr},
     path::Path,
-    sync::{mpsc, Arc, Mutex as StdMutex, Weak},
+    sync::{mpsc as std_mpsc, Arc, Mutex as StdMutex, Weak},
     time::{Duration, Instant},
 };
 use tokio::{
@@ -67,6 +67,16 @@ use tokio::{
 };
 
 const DAEMON_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2 * 60);
+
+fn arm_shutdown_deadline(deadline: TokioInstant) {
+    std::thread::spawn(move || {
+        std::thread::sleep(deadline.saturating_duration_since(TokioInstant::now()));
+        eprintln!(
+            "hyz-router: daemon shutdown deadline expired; forcing process exit with ownership evidence retained"
+        );
+        std::process::exit(1);
+    });
+}
 
 const USAGE: &str = "Usage:\n  hyz-router daemon\n  hyz-router status [--json]\n  hyz-router router enable|disable\n  hyz-router proxy explicit|tun|disable\n  hyz-router wifi status|scan\n  hyz-router wifi ap apply|confirm|cancel\n  hyz-router subscription get [--json]\n  hyz-router subscription refresh\n  hyz-router ota ...";
 
@@ -94,7 +104,7 @@ struct RunningTailscaleListener {
     ipv4: Ipv4Addr,
     runtime: tokio::runtime::Handle,
     shutdown: Option<oneshot::Sender<()>>,
-    accept_stopped: mpsc::Receiver<()>,
+    accept_stopped: std_mpsc::Receiver<()>,
     task: tokio::task::JoinHandle<std::io::Result<()>>,
 }
 
@@ -109,7 +119,7 @@ fn bind_exact_tailscale_listener(address: SocketAddr) -> std::io::Result<std::ne
 
 struct ConfirmedTailscaleListener {
     listener: tokio::net::TcpListener,
-    accept_stopped: Option<mpsc::Sender<()>>,
+    accept_stopped: Option<std_mpsc::Sender<()>>,
 }
 
 impl Drop for ConfirmedTailscaleListener {
@@ -231,7 +241,7 @@ impl ProductionTailscalePlatform {
             })?
         };
         let (shutdown, stopped) = oneshot::channel();
-        let (accept_stopped, accept_stopped_rx) = mpsc::channel();
+        let (accept_stopped, accept_stopped_rx) = std_mpsc::channel();
         let listener = ConfirmedTailscaleListener {
             listener,
             accept_stopped: Some(accept_stopped),
@@ -426,22 +436,39 @@ impl StatusTailscalePlatformPort for ProductionTailscalePlatform {
 
 struct DhcpDispatch {
     event: DhcpEvent,
-    response: oneshot::Sender<Result<(), PlatformError>>,
+}
+
+enum DhcpWorkerCommand {
+    Dispatch(DhcpDispatch),
+    Stop,
+}
+
+struct DhcpDispatcherState {
+    sender: Option<mpsc::Sender<DhcpWorkerCommand>>,
+    task: Option<tokio::task::JoinHandle<()>>,
 }
 
 #[derive(Clone)]
 struct DhcpDispatcher {
-    sender: mpsc::Sender<DhcpDispatch>,
+    state: Arc<AsyncMutex<DhcpDispatcherState>>,
 }
 
 impl DhcpDispatcher {
-    fn new(router: Arc<LinuxRouterPlatform>) -> Self {
-        let (sender, mut receiver) = mpsc::channel::<DhcpDispatch>(8);
-        tokio::spawn(async move {
-            while let Some(dispatch) = receiver.recv().await {
-                let DhcpDispatch { event, response } = dispatch;
+    fn new(router: Arc<LinuxRouterPlatform>, tailscale: Arc<ProductionTailscalePlatform>) -> Self {
+        let (sender, mut receiver) = mpsc::channel::<DhcpWorkerCommand>(8);
+        let task = tokio::spawn(async move {
+            while let Some(command) = receiver.recv().await {
+                let DhcpWorkerCommand::Dispatch(dispatch) = command else {
+                    break;
+                };
+                let DhcpDispatch { event } = dispatch;
                 let platform = router.clone();
                 let result = tokio::task::spawn_blocking(move || {
+                    if platform.active_dhcp_generation()?.as_ref() != Some(&event.generation) {
+                        return Err(PlatformError::Conflict(
+                            "DHCP callback generation is stale".to_owned(),
+                        ));
+                    }
                     DhcpApplication::new(platform.as_ref(), platform.as_ref()).execute(&event)
                 })
                 .await
@@ -449,24 +476,100 @@ impl DhcpDispatcher {
                     PlatformError::CommandFailed("DHCP worker terminated unexpectedly".to_owned())
                 })
                 .and_then(|result| result);
-                let _ = response.send(result);
+                match result {
+                    Ok(()) => {
+                        let tailscale = tailscale.clone();
+                        let router = router.clone();
+                        let reconcile = tokio::task::spawn_blocking(move || {
+                            reconcile_authenticated_tailscale_after_dhcp(
+                                tailscale.as_ref(),
+                                router.as_ref(),
+                            )
+                        })
+                        .await
+                        .map_err(|_| {
+                            PlatformError::CommandFailed(
+                                "post-DHCP Tailscale worker terminated unexpectedly".to_owned(),
+                            )
+                        })
+                        .and_then(|result| result);
+                        if let Err(error) = reconcile {
+                            eprintln!(
+                                "hyz-router: DHCP/WAN update applied but authenticated Tailscale reconcile failed: {error}"
+                            );
+                        }
+                    }
+                    Err(error) => eprintln!("hyz-router: queued DHCP event failed: {error}"),
+                }
             }
         });
-        Self { sender }
+        Self {
+            state: Arc::new(AsyncMutex::new(DhcpDispatcherState {
+                sender: Some(sender),
+                task: Some(task),
+            })),
+        }
     }
 
     async fn dispatch(&self, event: DhcpEvent) -> Result<(), PlatformError> {
-        let (response, completed) = oneshot::channel();
-        self.sender
-            .send(DhcpDispatch { event, response })
-            .await
-            .map_err(|_| {
-                PlatformError::InvalidState("DHCP dispatcher is unavailable".to_owned())
-            })?;
-        completed.await.map_err(|_| {
-            PlatformError::CommandFailed("DHCP dispatcher terminated unexpectedly".to_owned())
-        })?
+        let state = self.state.lock().await;
+        let sender = state
+            .sender
+            .as_ref()
+            .ok_or_else(|| PlatformError::InvalidState("DHCP dispatcher is stopping".to_owned()))?;
+        sender
+            .try_send(DhcpWorkerCommand::Dispatch(DhcpDispatch { event }))
+            .map_err(|error| match error {
+                mpsc::error::TrySendError::Full(_) => {
+                    PlatformError::Busy("DHCP dispatcher queue is full".to_owned())
+                }
+                mpsc::error::TrySendError::Closed(_) => {
+                    PlatformError::InvalidState("DHCP dispatcher is unavailable".to_owned())
+                }
+            })
     }
+
+    async fn stop_and_join(&self) -> Result<(), PlatformError> {
+        let mut state = self.state.lock().await;
+        let Some(sender) = state.sender.take() else {
+            return Ok(());
+        };
+        sender.send(DhcpWorkerCommand::Stop).await.map_err(|_| {
+            PlatformError::CommandFailed("DHCP dispatcher stopped unexpectedly".to_owned())
+        })?;
+        drop(sender);
+        let task = state.task.take().ok_or_else(|| {
+            PlatformError::InvalidState("DHCP dispatcher task is absent".to_owned())
+        })?;
+        drop(state);
+        task.await.map_err(|error| {
+            PlatformError::CommandFailed(format!(
+                "DHCP dispatcher task terminated unexpectedly: {error}"
+            ))
+        })
+    }
+}
+
+fn reconcile_authenticated_tailscale_after_dhcp(
+    tailscale: &ProductionTailscalePlatform,
+    router: &LinuxRouterPlatform,
+) -> Result<(), PlatformError> {
+    let observed = tailscale.observe_tailscale()?;
+    if observed.authenticated != Probe::Known(true) {
+        return Ok(());
+    }
+    let mode = match observed.persisted_mode {
+        Probe::Known(Some(mode)) => mode,
+        Probe::Known(None) => TailscaleMode::Disabled,
+        Probe::Unknown(reason) => {
+            return Err(PlatformError::ProbeFailed(format!(
+                "persisted Tailscale mode is unknown: {reason}"
+            )))
+        }
+    };
+    TailscaleApplication::new(tailscale, tailscale, router, router)
+        .reconcile(&TailscaleDesired { mode })
+        .map(|_| ())
 }
 
 struct ProductionRuntime {
@@ -487,7 +590,7 @@ impl ProductionRuntime {
     fn build() -> Result<Self, AdminError> {
         let router = Arc::new(LinuxRouterPlatform::new());
         let tailscale = Arc::new(ProductionTailscalePlatform::new(router.clone()));
-        let dhcp = DhcpDispatcher::new(router.clone());
+        let dhcp = DhcpDispatcher::new(router.clone(), tailscale.clone());
         let admin_adapter = Arc::new(AdminFileAdapter::default());
         let admin = Arc::new(AdminApplication::initialize(
             admin_adapter.clone(),
@@ -576,24 +679,6 @@ impl ProductionRuntime {
     ) -> Result<(TailscaleStatus, Option<TailscaleLoginUrl>), PlatformError> {
         let desired = self.tailscale_desired().await?;
         self.reconcile_tailscale(desired).await
-    }
-
-    async fn reconcile_running_tailscale_best_effort(&self, context: &str) {
-        let tailscale = self.tailscale.clone();
-        let authenticated = tokio::task::spawn_blocking(move || {
-            tailscale
-                .observe_tailscale()
-                .map(|observed| observed.authenticated == Probe::Known(true))
-        })
-        .await;
-        if !matches!(authenticated, Ok(Ok(true))) {
-            return;
-        }
-        if let Err(error) = self.reconcile_persisted_tailscale().await {
-            eprintln!(
-                "hyz-router: {context} succeeded but authenticated Tailscale reconcile failed: {error}"
-            );
-        }
     }
 
     async fn shutdown_tailscale(&self) -> Result<(), PlatformError> {
@@ -807,6 +892,10 @@ impl ProductionRuntime {
 
     async fn shutdown(&self) -> Result<(), String> {
         let _serial = self.router_proxy.lock().await;
+        self.dhcp
+            .stop_and_join()
+            .await
+            .map_err(|error| format!("DHCP dispatcher shutdown failed: {error}"))?;
         self.shutdown_tailscale()
             .await
             .map_err(|error| format!("Tailscale-first shutdown failed: {error}"))?;
@@ -1059,9 +1148,7 @@ impl ControlHandler for ProductionRuntime {
                     .dispatch(event)
                     .await
                     .map_err(|error| error.to_string())?;
-                self.reconcile_running_tailscale_best_effort("DHCP/WAN update")
-                    .await;
-                Ok(completed("DHCP event applied"))
+                Ok(completed("DHCP event queued"))
             }
             ControlOperation::Router { enabled } => {
                 let _serial = self.router_proxy.lock().await;
@@ -1420,6 +1507,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         result = &mut initialize => (join_initialize(result), None),
         _ = signals.recv() => {
             let deadline = TokioInstant::now() + DAEMON_SHUTDOWN_TIMEOUT;
+            arm_shutdown_deadline(deadline);
             let _ = shutdown_tx.send(true);
             let result = match timeout_at(deadline, &mut initialize).await {
                 Ok(result) => join_initialize(result),
@@ -1433,6 +1521,9 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     if let Err(error) = initialize_result {
         let deadline =
             startup_deadline.unwrap_or_else(|| TokioInstant::now() + DAEMON_SHUTDOWN_TIMEOUT);
+        if startup_deadline.is_none() {
+            arm_shutdown_deadline(deadline);
+        }
         let _ = shutdown_tx.send(true);
         let control_result = match timeout_at(deadline, &mut control).await {
             Ok(result) => join_control(result),
@@ -1535,6 +1626,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         _ = signals.recv() => Trigger::Signal,
     };
     let deadline = TokioInstant::now() + DAEMON_SHUTDOWN_TIMEOUT;
+    arm_shutdown_deadline(deadline);
     let _ = shutdown_tx.send(true);
     let drain = async {
         match trigger {
@@ -1869,7 +1961,7 @@ mod source_boundaries {
         assert!(production.contains("timeout_at(deadline, &mut initialize)"));
         assert!(production.contains("timeout_at(deadline, drain)"));
         assert!(production.contains("shutdown_runtime_before(runtime.clone(), deadline)"));
-        assert!(!production.contains(".abort()"));
+        assert!(production.contains("arm_shutdown_deadline(deadline)"));
         let ota = include_str!("application/ota.rs");
         assert!(ota.contains("OTA_OPERATION_TIMEOUT: Duration = Duration::from_secs(90)"));
         assert!(ota.contains("download_to_staging_temporary(source, deadline)"));
@@ -1979,7 +2071,7 @@ mod source_boundaries {
         listener.set_nonblocking(true).unwrap();
         let listener = tokio::net::TcpListener::from_std(listener).unwrap();
         let (shutdown, stopped) = oneshot::channel();
-        let (accept_stopped, accept_stopped_rx) = mpsc::channel();
+        let (accept_stopped, accept_stopped_rx) = std_mpsc::channel();
         let listener = ConfirmedTailscaleListener {
             listener,
             accept_stopped: Some(accept_stopped),
@@ -2030,7 +2122,7 @@ mod source_boundaries {
         let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
             .await
             .unwrap();
-        let (accept_stopped, accept_stopped_rx) = mpsc::channel();
+        let (accept_stopped, accept_stopped_rx) = std_mpsc::channel();
         let listener = ConfirmedTailscaleListener {
             listener,
             accept_stopped: Some(accept_stopped),

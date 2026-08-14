@@ -8,7 +8,7 @@ use std::{
 
 pub const DHCP_HOOK_ROLE_ENV: &str = "HYZ_ROUTER_INTERNAL_DHCP_HOOK";
 pub const DHCP_GENERATION_ENV: &str = "HYZ_ROUTER_DHCP_GENERATION";
-const LIFECYCLE_LOCK_WAIT: Duration = Duration::from_secs(35);
+const LIFECYCLE_LOCK_WAIT: Duration = Duration::from_secs(3 * 60);
 const LIFECYCLE_LOCK_RETRY: Duration = Duration::from_millis(20);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -149,7 +149,10 @@ fn release_lifecycle<T>(
 ) -> Result<T, PlatformError> {
     let release = platform.release_lifecycle_lock(lease);
     match (result, release) {
-        (Err(error), _) => Err(error),
+        (Err(primary), Err(release)) => Err(PlatformError::InvalidState(format!(
+            "DHCP operation failed: {primary}; lifecycle lock release also failed: {release}"
+        ))),
+        (Err(error), Ok(())) => Err(error),
         (Ok(_), Err(error)) => Err(error),
         (Ok(value), Ok(())) => Ok(value),
     }
@@ -175,6 +178,8 @@ mod tests {
             Ok(LifecycleLease {
                 path: "test",
                 identity: "test".to_owned(),
+                directory_device: 1,
+                directory_inode: 1,
             })
         }
 

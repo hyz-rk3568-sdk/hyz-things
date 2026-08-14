@@ -232,7 +232,7 @@ LCD 的 DTS `default-brightness-level = <0>` 让 U-Boot/Linux 冷启动默认保
 
 Rust candidate 当前覆盖：
 
-- `/run/hyz-network.lock` 的保守目录锁；
+- `/run/hyz-network.lock` 的保守目录锁：PID/start-time stale 判定，完整 owner 原子发布，按目录 inode 原子移出后回收或释放；
 - bridge ifindex、iptables exact rule/hook 和 comment-token ownership；
 - 全局 `ip_forward` 在首次变更前保存，daemon shutdown 最后恢复启动前值并删除 ownership marker；
 - WPA、udhcpc、hostapd、dnsmasq 的固定 argv 与 PID/start/exe/argv 身份；

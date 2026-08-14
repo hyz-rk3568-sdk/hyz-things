@@ -28,7 +28,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::Write,
     net::Ipv4Addr,
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
+    os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::atomic::{AtomicU64, Ordering},
@@ -134,10 +134,16 @@ impl DhcpOwnership {
             return Err(invalid_dhcp_ownership());
         }
         validate_ipv4_cidr(&self.address.cidr).map_err(|_| invalid_dhcp_ownership())?;
+        let mut route_destinations = Vec::new();
         for route in &self.routes {
             if route.destination != "default" && route.destination != "0.0.0.0/0" {
                 validate_ipv4_cidr(&route.destination).map_err(|_| invalid_dhcp_ownership())?;
             }
+            let destination = canonical_route_destination(&route.destination);
+            if route_destinations.contains(&destination) {
+                return Err(invalid_dhcp_ownership());
+            }
+            route_destinations.push(destination);
             if route.metric.is_some() && route.metric != Some(600) {
                 return Err(invalid_dhcp_ownership());
             }
@@ -834,15 +840,7 @@ impl super::process::LinuxRouterPlatform {
                 let Some(previous) = read_dhcp_ownership()? else {
                     return Ok(());
                 };
-                if let Err(error) = reconcile_owned_generation(Some(&previous), None) {
-                    let rollback = reconcile_owned_generation(None, Some(&previous));
-                    return match rollback {
-                        Ok(()) => Err(error),
-                        Err(rollback) => Err(PlatformError::InvalidState(format!(
-                            "DHCP deconfiguration failed: {error}; exact rollback also failed: {rollback}"
-                        ))),
-                    };
-                }
+                reconcile_owned_generation(Some(&previous), None)?;
                 if let Err(error) = storage::remove_file_durable(DHCP_OWNERSHIP_RECORD) {
                     if read_dhcp_ownership()?.is_some() {
                         let rollback = reconcile_owned_generation(None, Some(&previous));
@@ -860,15 +858,7 @@ impl super::process::LinuxRouterPlatform {
                 let next = DhcpOwnership::from_lease(event.generation.clone(), lease);
                 next.validate()?;
                 let previous = read_dhcp_ownership()?;
-                if let Err(error) = reconcile_owned_generation(previous.as_ref(), Some(&next)) {
-                    let rollback = reconcile_owned_generation(Some(&next), previous.as_ref());
-                    return match rollback {
-                        Ok(()) => Err(error),
-                        Err(rollback) => Err(PlatformError::InvalidState(format!(
-                            "DHCP lease reconciliation failed: {error}; exact rollback also failed: {rollback}"
-                        ))),
-                    };
-                }
+                reconcile_owned_generation(previous.as_ref(), Some(&next))?;
                 if let Err(error) = persist_dhcp_ownership_verified(&next) {
                     let rollback = reconcile_owned_generation(Some(&next), previous.as_ref());
                     return match rollback {
@@ -1884,39 +1874,243 @@ fn persist_dhcp_ownership_verified(ownership: &DhcpOwnership) -> Result<(), Plat
     }
 }
 
+fn verify_owned_generation_prestate(
+    previous: Option<&DhcpOwnership>,
+    next: Option<&DhcpOwnership>,
+) -> Result<(), PlatformError> {
+    let previous_address = previous.map(|ownership| &ownership.address);
+    let next_address = next.map(|ownership| &ownership.address);
+    if previous_address != next_address {
+        let output = run_bounded(
+            "/usr/sbin/ip",
+            &["-o", "-4", "address", "show", "dev", WAN_INTERFACE],
+            Duration::from_secs(3),
+        )?;
+        let live = output
+            .lines()
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>();
+        let exact = previous_address
+            .map(|address| live.len() == 1 && exact_owned_address_line(live[0], address))
+            .unwrap_or_else(|| live.is_empty());
+        if !exact {
+            return Err(PlatformError::Conflict(
+                "WAN IPv4 address state no longer exactly matches recorded DHCP ownership"
+                    .to_owned(),
+            ));
+        }
+    }
+
+    let mut destinations = Vec::new();
+    for route in previous
+        .into_iter()
+        .flat_map(|ownership| ownership.routes.iter())
+        .chain(
+            next.into_iter()
+                .flat_map(|ownership| ownership.routes.iter()),
+        )
+    {
+        let destination = canonical_route_destination(&route.destination);
+        if !destinations.contains(&destination) {
+            destinations.push(destination);
+        }
+    }
+    for destination in destinations {
+        let previous_routes = previous
+            .into_iter()
+            .flat_map(|ownership| ownership.routes.iter())
+            .filter(|route| canonical_route_destination(&route.destination) == destination)
+            .collect::<Vec<_>>();
+        let next_routes = next
+            .into_iter()
+            .flat_map(|ownership| ownership.routes.iter())
+            .filter(|route| canonical_route_destination(&route.destination) == destination)
+            .collect::<Vec<_>>();
+        if previous_routes == next_routes {
+            continue;
+        }
+        let output = run_bounded(
+            "/usr/sbin/ip",
+            &["-4", "route", "show", destination.as_str()],
+            Duration::from_secs(3),
+        )?;
+        let live = output
+            .lines()
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>();
+        let mut unmatched = previous_routes;
+        for line in live {
+            let Some(index) = unmatched
+                .iter()
+                .position(|route| exact_owned_route_line(line, route))
+            else {
+                return Err(PlatformError::Conflict(format!(
+                    "route destination {destination} contains foreign or changed state"
+                )));
+            };
+            unmatched.remove(index);
+        }
+        if !unmatched.is_empty() {
+            return Err(PlatformError::Conflict(format!(
+                "route destination {destination} is missing recorded DHCP-owned state"
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug)]
+enum DhcpCompensation {
+    EnsureAddress(OwnedAddress),
+    RemoveAddress(OwnedAddress),
+    EnsureRoute(OwnedRoute),
+    RemoveRoute(OwnedRoute),
+    Resolver {
+        current: Vec<String>,
+        previous: Vec<String>,
+    },
+}
+
 fn reconcile_owned_generation(
     previous: Option<&DhcpOwnership>,
     next: Option<&DhcpOwnership>,
 ) -> Result<(), PlatformError> {
-    if let Some(previous) = previous {
-        for route in previous.routes.iter().rev() {
-            if !next.is_some_and(|next| next.routes.contains(route)) {
-                remove_owned_route(route)?;
+    verify_owned_generation_prestate(previous, next)?;
+    let mut journal = Vec::new();
+    let result = (|| {
+        if let Some(previous) = previous {
+            for route in previous.routes.iter().rev() {
+                if !next.is_some_and(|next| next.routes.contains(route)) {
+                    remove_owned_route(route)?;
+                    journal.push(DhcpCompensation::EnsureRoute(route.clone()));
+                }
+            }
+            if !next.is_some_and(|next| next.address == previous.address) {
+                remove_owned_address(&previous.address)?;
+                journal.push(DhcpCompensation::EnsureAddress(previous.address.clone()));
             }
         }
-        if !next.is_some_and(|next| next.address == previous.address) {
-            remove_owned_address(&previous.address)?;
+        if let Some(next) = next {
+            if !previous.is_some_and(|previous| previous.address == next.address) {
+                ensure_owned_address(&next.address)?;
+                journal.push(DhcpCompensation::RemoveAddress(next.address.clone()));
+            }
+            for route in &next.routes {
+                if !previous.is_some_and(|previous| previous.routes.contains(route)) {
+                    ensure_owned_route(route)?;
+                    journal.push(DhcpCompensation::RemoveRoute(route.clone()));
+                }
+            }
         }
-    }
-    if let Some(next) = next {
-        ensure_owned_address(&next.address)?;
-        for route in &next.routes {
-            ensure_owned_route(route)?;
-        }
-    }
-    replace_resolver_entries(
-        previous
+        let previous_resolver = previous
             .map(|value| value.resolver_entries.as_slice())
-            .unwrap_or_default(),
-        next.map(|value| value.resolver_entries.as_slice())
-            .unwrap_or_default(),
+            .unwrap_or_default();
+        let next_resolver = next
+            .map(|value| value.resolver_entries.as_slice())
+            .unwrap_or_default();
+        if previous_resolver != next_resolver {
+            replace_resolver_entries(previous_resolver, next_resolver)?;
+            journal.push(DhcpCompensation::Resolver {
+                current: next_resolver.to_vec(),
+                previous: previous_resolver.to_vec(),
+            });
+        }
+        if owned_generation_matches(next)? {
+            Ok(())
+        } else {
+            Err(PlatformError::UnsafeToCutOver(
+                "DHCP address, route, or resolver transaction failed strict read-back".to_owned(),
+            ))
+        }
+    })();
+    if let Err(primary) = result {
+        let mut rollback_errors = Vec::new();
+        for compensation in journal.into_iter().rev() {
+            if let Err(error) = apply_dhcp_compensation(compensation) {
+                rollback_errors.push(error.to_string());
+            }
+        }
+        return if rollback_errors.is_empty() {
+            Err(primary)
+        } else {
+            Err(PlatformError::InvalidState(format!(
+                "DHCP transaction failed: {primary}; exact action rollback also failed: {}",
+                rollback_errors.join("; ")
+            )))
+        };
+    }
+    Ok(())
+}
+
+fn apply_dhcp_compensation(compensation: DhcpCompensation) -> Result<(), PlatformError> {
+    match compensation {
+        DhcpCompensation::EnsureAddress(address) => {
+            require_wan_address_state(None)?;
+            ensure_owned_address(&address)
+        }
+        DhcpCompensation::RemoveAddress(address) => {
+            require_wan_address_state(Some(&address))?;
+            remove_owned_address(&address)
+        }
+        DhcpCompensation::EnsureRoute(route) => {
+            require_route_state(&route.destination, None)?;
+            ensure_owned_route(&route)
+        }
+        DhcpCompensation::RemoveRoute(route) => {
+            require_route_state(&route.destination, Some(&route))?;
+            remove_owned_route(&route)
+        }
+        DhcpCompensation::Resolver { current, previous } => {
+            replace_resolver_entries(&current, &previous)
+        }
+    }
+}
+
+fn require_wan_address_state(expected: Option<&OwnedAddress>) -> Result<(), PlatformError> {
+    let output = run_bounded(
+        "/usr/sbin/ip",
+        &["-o", "-4", "address", "show", "dev", WAN_INTERFACE],
+        Duration::from_secs(3),
     )?;
-    if owned_generation_matches(next)? {
+    let live = output
+        .lines()
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    let matches = expected
+        .map(|address| live.len() == 1 && exact_owned_address_line(live[0], address))
+        .unwrap_or_else(|| live.is_empty());
+    if matches {
         Ok(())
     } else {
-        Err(PlatformError::UnsafeToCutOver(
-            "DHCP address, route, or resolver transaction failed strict read-back".to_owned(),
+        Err(PlatformError::Conflict(
+            "WAN IPv4 address changed before DHCP rollback".to_owned(),
         ))
+    }
+}
+
+fn require_route_state(
+    destination: &str,
+    expected: Option<&OwnedRoute>,
+) -> Result<(), PlatformError> {
+    let destination = canonical_route_destination(destination);
+    let output = run_bounded(
+        "/usr/sbin/ip",
+        &["-4", "route", "show", destination.as_str()],
+        Duration::from_secs(3),
+    )?;
+    let live = output
+        .lines()
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    let matches = expected
+        .map(|route| live.len() == 1 && exact_owned_route_line(live[0], route))
+        .unwrap_or_else(|| live.is_empty());
+    if matches {
+        Ok(())
+    } else {
+        Err(PlatformError::Conflict(format!(
+            "route destination {destination} changed before DHCP rollback"
+        )))
     }
 }
 
@@ -2105,13 +2299,23 @@ fn validate_ipv4_cidr(value: &str) -> Result<(), PlatformError> {
 fn replace_resolver_entries(previous: &[String], next: &[String]) -> Result<(), PlatformError> {
     let path = resolver_target_path()?;
     let existing = read_resolver_bytes(&path)?;
-    let existing_text = String::from_utf8(existing)
+    let existing_text = String::from_utf8(existing.clone())
         .map_err(|_| PlatformError::InvalidState("resolver config is not UTF-8".to_owned()))?;
+    let managed = existing_text
+        .lines()
+        .filter(|line| line.ends_with(&format!("# {WAN_INTERFACE}")))
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if managed != previous {
+        return Err(PlatformError::Conflict(
+            "resolver managed entries changed outside the recorded DHCP generation".to_owned(),
+        ));
+    }
     let output = replace_resolver_text(&existing_text, previous, next);
     if output == existing_text {
         return Ok(());
     }
-    let Err(write_error) = atomic_write_resolver(&path, output.as_bytes()) else {
+    let Err(write_error) = atomic_write_resolver(&path, &existing, output.as_bytes()) else {
         return Ok(());
     };
     match read_resolver_bytes(&path) {
@@ -2124,14 +2328,78 @@ fn replace_resolver_entries(previous: &[String], next: &[String]) -> Result<(), 
 }
 
 fn resolver_target_path() -> Result<PathBuf, PlatformError> {
-    let path = Path::new(RESOLV_CONFIG);
+    let entry = Path::new(RESOLV_CONFIG);
+    let target = match fs::symlink_metadata(entry) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            if metadata.uid() != 0 {
+                return Err(PlatformError::InvalidState(
+                    "resolver symlink must be root-owned".to_owned(),
+                ));
+            }
+            fs::canonicalize(entry)
+                .map_err(|error| PlatformError::Io(format!("resolve resolver config: {error}")))?
+        }
+        Ok(_) => entry.to_path_buf(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => entry.to_path_buf(),
+        Err(error) => {
+            return Err(PlatformError::Io(format!(
+                "inspect resolver config: {error}"
+            )))
+        }
+    };
+    if !matches!(
+        target.to_str(),
+        Some(
+            "/etc/resolv.conf"
+                | "/run/resolv.conf"
+                | "/run/hyz-router/resolv.conf"
+                | "/tmp/resolv.conf"
+        )
+    ) {
+        return Err(PlatformError::Conflict(format!(
+            "resolver target {} is outside the fixed allowlist",
+            target.display()
+        )));
+    }
+    validate_resolver_target(&target)?;
+    Ok(target)
+}
+
+fn validate_resolver_target(path: &Path) -> Result<(), PlatformError> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| PlatformError::InvalidState("resolver path has no parent".to_owned()))?;
+    let parent_metadata = fs::symlink_metadata(parent)
+        .map_err(|error| PlatformError::Io(format!("inspect resolver parent: {error}")))?;
+    let private_parent = parent_metadata.mode() & 0o022 == 0;
+    let sticky_tmp = path == Path::new("/tmp/resolv.conf")
+        && parent == Path::new("/tmp")
+        && parent_metadata.mode() & 0o1000 != 0;
+    if !parent_metadata.file_type().is_dir()
+        || parent_metadata.uid() != 0
+        || (!private_parent && !sticky_tmp)
+    {
+        return Err(PlatformError::InvalidState(
+            "resolver parent must be root-owned and either non-writable or the sticky /tmp directory"
+                .to_owned(),
+        ));
+    }
     match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => fs::canonicalize(path)
-            .map_err(|error| PlatformError::Io(format!("resolve resolver config: {error}"))),
-        Ok(_) => Ok(path.to_path_buf()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(path.to_path_buf()),
+        Ok(metadata)
+            if metadata.file_type().is_file()
+                && metadata.uid() == 0
+                && metadata.mode() & 0o022 == 0
+                && metadata.nlink() == 1 =>
+        {
+            Ok(())
+        }
+        Ok(_) => Err(PlatformError::InvalidState(
+            "resolver target must be a singly-linked root-owned regular file that is not group/world writable"
+                .to_owned(),
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(PlatformError::Io(format!(
-            "inspect resolver config: {error}"
+            "inspect resolver target: {error}"
         ))),
     }
 }
@@ -2161,7 +2429,7 @@ fn resolver_managed_entries() -> Result<Vec<String>, PlatformError> {
         .collect())
 }
 
-fn atomic_write_resolver(path: &Path, bytes: &[u8]) -> Result<(), PlatformError> {
+fn atomic_write_resolver(path: &Path, expected: &[u8], bytes: &[u8]) -> Result<(), PlatformError> {
     let parent = path
         .parent()
         .ok_or_else(|| PlatformError::InvalidState("resolver path has no parent".to_owned()))?;
@@ -2208,6 +2476,12 @@ fn atomic_write_resolver(path: &Path, bytes: &[u8]) -> Result<(), PlatformError>
         file.sync_all().map_err(|error| {
             PlatformError::Io(format!("sync resolver temporary metadata: {error}"))
         })?;
+        let current_target = resolver_target_path()?;
+        if current_target != path || read_resolver_bytes(path)? != expected {
+            return Err(PlatformError::Conflict(
+                "resolver entry or contents changed before commit".to_owned(),
+            ));
+        }
         fs::rename(&temporary, path).map_err(|error| {
             PlatformError::Io(format!("commit resolver {}: {error}", path.display()))
         })?;
@@ -2223,7 +2497,7 @@ fn atomic_write_resolver(path: &Path, bytes: &[u8]) -> Result<(), PlatformError>
 
 fn replace_resolver_text(existing: &str, previous: &[String], next: &[String]) -> String {
     let mut removals = HashMap::<&str, usize>::new();
-    for entry in previous.iter().chain(next) {
+    for entry in previous {
         *removals.entry(entry).or_default() += 1;
     }
     let mut output = String::new();

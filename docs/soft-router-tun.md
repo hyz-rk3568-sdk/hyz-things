@@ -73,7 +73,7 @@ Mihomo 自身 `-t` 校验成功后才允许启动核心。
 
 `HYZ_MIHOMO_FWD` 必须位于 `HYZ_ROUTER_FWD` 前面，否则 router chain 的 LAN drop 会先拒绝 TUN 流量。`hyz-router` 已增加所有权校验和规则位置计算：路由服务重启时，如果发现有效的 Mihomo-owned hook，会把自己的 hook 插在其后；未发现有效 hook 时仍保持普通 NAT chain 在首位。Router 的 FORWARD/POSTROUTING hook 也携带同一个随机 firewall token；升级时只迁移旧固件留下的单个无 comment hook，遇到多个歧义引用会拒绝删除。
 
-两个服务共同修改 FORWARD，因此现在共用 `/run/hyz-network.lock`；规则检查、位置计算、插入和清理不会并发执行。锁使用 PID 和进程启动时间验证。为避免不安全的 stale takeover 竞态，异常 `SIGKILL` 留下的 stale/损坏锁不会自动删除，需要重启（`/run` 自动清空）或由 root 明确检查后清理。
+两个服务共同修改 FORWARD，因此现在共用 `/run/hyz-network.lock`；规则检查、位置计算、插入和清理不会并发执行。锁使用 PID 和进程启动时间验证，并通过同目录临时目录、完整 owner `fsync` 和 `renameat2(RENAME_NOREPLACE)` 原子发布。回收与释放先把已验证 inode 原子移出最终命名空间，再清理内容；仅 PID/start-time 已失效且目录、owner、inode 全部可信的 stale lock 会自动回收，损坏、foreign 或竞态变化仍 fail closed。
 
 ## 失败与清理
 

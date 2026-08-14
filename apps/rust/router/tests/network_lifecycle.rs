@@ -567,7 +567,7 @@ fn cold_management_only_start_succeeds_without_a_wan_route() {
 }
 
 #[test]
-fn route_gate_detaches_ap_before_stopping_services_and_tearing_down_bridge() {
+fn route_gate_retains_strictly_confirmed_management_state() {
     let mut initial = network(false, OwnedResource::Absent);
     initial.bridge = Probe::Known(OwnedResource::Absent);
     initial.bridge_up = Probe::Known(false);
@@ -588,16 +588,19 @@ fn route_gate_detaches_ap_before_stopping_services_and_tearing_down_bridge() {
         .expect_err("route gate must reject forwarding");
     assert!(matches!(error, PlatformError::UnsafeToCutOver(_)));
 
-    let actions = fake.actions.lock().expect("actions");
-    let stop = actions
-        .iter()
-        .position(|action| *action == NetworkAction::StopManagementServices)
-        .expect("management compensation");
-    let detach = actions
-        .iter()
-        .position(|action| *action == NetworkAction::DetachAp)
-        .expect("bridge compensation");
-    assert!(detach < stop);
+    assert_eq!(
+        *fake.actions.lock().expect("actions"),
+        vec![
+            NetworkAction::EnsureOwnedBridge {
+                token: "hyz-router-42".to_owned(),
+            },
+            NetworkAction::ConfigureBridge,
+            NetworkAction::AssignLanAddress,
+            NetworkAction::EnsureManagementServices,
+            NetworkAction::AttachAp,
+            NetworkAction::WaitForWanRoute,
+        ]
+    );
 }
 
 #[test]

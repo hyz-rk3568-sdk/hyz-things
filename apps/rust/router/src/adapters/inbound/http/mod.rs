@@ -55,6 +55,7 @@ struct AppState {
     admin: Option<Arc<AdminApplication>>,
     csrf_token: Arc<str>,
     allowed_origin: Arc<str>,
+    allow_tailscale_self_stop: bool,
     assets: AssetStore,
 }
 
@@ -108,6 +109,7 @@ pub fn app(read_status: ReadStatus) -> Router {
         None,
         "",
         format!("http://{LAN_ADDRESS}:{DEFAULT_HTTP_PORT}"),
+        true,
         assets,
     )
 }
@@ -125,6 +127,7 @@ pub fn app_with_control(
         None,
         &csrf_token,
         format!("http://{LAN_ADDRESS}:{port}"),
+        true,
         assets,
     )
 }
@@ -136,7 +139,16 @@ pub fn app_with_admin_control(
     csrf_token: String,
     port: u16,
 ) -> Router {
-    app_with_admin_control_at_address(read_status, control, admin, csrf_token, LAN_ADDRESS, port)
+    let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
+    app_with_assets(
+        read_status,
+        Some(control),
+        Some(admin),
+        &csrf_token,
+        format!("http://{LAN_ADDRESS}:{port}"),
+        true,
+        assets,
+    )
 }
 
 pub fn app_with_admin_control_at_address(
@@ -154,6 +166,7 @@ pub fn app_with_admin_control_at_address(
         Some(admin),
         &csrf_token,
         format!("http://{address}:{port}"),
+        false,
         assets,
     )
 }
@@ -175,6 +188,7 @@ pub fn app_with_loopback_runtime_frontend(
         Some(admin),
         &csrf_token,
         exact_loopback_origin,
+        true,
         assets,
     ))
 }
@@ -212,6 +226,7 @@ fn app_with_assets(
     admin: Option<Arc<AdminApplication>>,
     csrf_token: &str,
     allowed_origin: String,
+    allow_tailscale_self_stop: bool,
     assets: AssetStore,
 ) -> Router {
     Router::new()
@@ -321,6 +336,7 @@ fn app_with_assets(
             admin,
             csrf_token: Arc::from(csrf_token),
             allowed_origin: Arc::from(allowed_origin),
+            allow_tailscale_self_stop,
             assets,
         })
 }
@@ -843,6 +859,9 @@ async fn tailscale_mode(
     let Ok(Json(request)) = payload else {
         return invalid_request_json();
     };
+    if !state.allow_tailscale_self_stop && request.mode == TailscaleMode::Disabled {
+        return tailscale_self_stop_conflict_json();
+    }
     invoke_tailscale_mutation_authorized(
         &state,
         ControlOperation::TailscaleMode { mode: request.mode },
@@ -869,13 +888,16 @@ async fn tailscale_logout(
     headers: HeaderMap,
     payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
 ) -> Response {
-    invoke_empty_tailscale_mutation(
-        &state,
-        &headers,
-        payload,
-        ControlOperation::TailscaleLogout {},
-    )
-    .await
+    if let Err(response) = authorize_sensitive_control(&state, &headers).await {
+        return response;
+    }
+    if payload.is_err() {
+        return invalid_request_json();
+    }
+    if !state.allow_tailscale_self_stop {
+        return tailscale_self_stop_conflict_json();
+    }
+    invoke_tailscale_mutation_authorized(&state, ControlOperation::TailscaleLogout {}).await
 }
 
 async fn invoke_empty_tailscale_mutation(
@@ -1256,6 +1278,19 @@ fn invalid_request_json() -> Response {
         StatusCode::BAD_REQUEST,
         Json(serde_json::json!({
             "error": { "code": "invalid_request", "message": "Control request is invalid" }
+        })),
+    )
+        .into_response()
+}
+
+fn tailscale_self_stop_conflict_json() -> Response {
+    (
+        StatusCode::CONFLICT,
+        Json(serde_json::json!({
+            "error": {
+                "code": "tailscale_self_stop_forbidden",
+                "message": "Disable or logout must be requested from LAN management or the Unix control socket"
+            }
         })),
     )
         .into_response()

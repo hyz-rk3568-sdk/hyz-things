@@ -42,7 +42,7 @@ const DAEMON_OWNER_FILE: &str = "/run/hyz-router/daemon.lock/owner";
 pub const PROTOCOL_VERSION: u16 = 8;
 pub const MAX_FRAME_BYTES: usize = 64 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
-const OPERATION_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+const CLIENT_OPERATION_WAIT: Duration = Duration::from_secs(30 * 60);
 const MAX_CONNECTIONS: usize = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -671,22 +671,10 @@ async fn handle_connection(
     } else if let Err(message) = request.operation.validate() {
         ControlResponse::error("invalid_request", message)
     } else {
-        // The connection has a bounded response deadline, but a timed-out operation is still
-        // awaited. This preserves mutation locks and lets graceful shutdown drain every handler.
         let operation = request.operation;
-        let operation_handler = handler.clone();
-        let mut task = tokio::spawn(async move { operation_handler.handle(operation).await });
-        match timeout(OPERATION_TIMEOUT, &mut task).await {
-            Ok(Ok(Ok(result))) => ControlResponse::success(result),
-            Ok(Ok(Err(message))) => ControlResponse::error("operation_failed", message),
-            Ok(Err(_)) => ControlResponse::error(
-                "operation_failed",
-                "control operation task terminated unexpectedly",
-            ),
-            Err(_) => {
-                let _ = task.await;
-                ControlResponse::error("operation_timeout", "control operation timed out")
-            }
+        match handler.handle(operation).await {
+            Ok(result) => ControlResponse::success(result),
+            Err(message) => ControlResponse::error("operation_failed", message),
         }
     };
     timeout(IO_TIMEOUT, write_frame(&mut stream, &response))
@@ -712,9 +700,14 @@ pub async fn request(operation: ControlOperation) -> io::Result<ControlResult> {
     .await
     .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "control request timed out"))??;
     let response: ControlResponse =
-        timeout(OPERATION_TIMEOUT + IO_TIMEOUT, read_frame(&mut stream))
+        timeout(CLIENT_OPERATION_WAIT + IO_TIMEOUT, read_frame(&mut stream))
             .await
-            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "control response timed out"))??;
+            .map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "control response wait expired; operation completion is unknown",
+                )
+            })??;
     if response.version != PROTOCOL_VERSION {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,

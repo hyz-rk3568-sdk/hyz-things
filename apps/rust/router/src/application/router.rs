@@ -120,6 +120,10 @@ impl<'a> RouterApplication<'a> {
                 "management phase completed but strict management probe failed".to_owned(),
             ));
         }
+        let management_actions_applied = applied.len();
+        // Strictly confirmed management is the fail-open commit point. Later WAN-gate or
+        // forwarding failures must retain it and may only compensate post-gate actions.
+        applied.clear();
 
         if desired.forwarding == ForwardingDesired::Enabled {
             match &managed.wan_default_route_present {
@@ -200,7 +204,7 @@ impl<'a> RouterApplication<'a> {
         }
         Ok(RouterReconcileResult {
             observed,
-            actions_applied: applied.len(),
+            actions_applied: management_actions_applied + applied.len(),
         })
     }
 

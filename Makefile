@@ -20,6 +20,9 @@ RECOVERY_PACKAGE := package-file-hyz-ota-with-recovery
 ADB ?= adb
 ADB_SERIAL ?=
 JOBS ?= $(shell nproc)
+HOST_NODE ?= $(shell command -v node 2>/dev/null)
+HOST_NPM ?= $(shell command -v npm 2>/dev/null)
+HOST_NODE_DIR := $(dir $(HOST_NODE))
 
 # Buildroot rejects whitespace in PATH. Keep builds independent from WSL's
 # injected Windows paths and unrelated user toolchains.
@@ -77,14 +80,16 @@ toolchain: configure
 
 router-frontend:
 	test -x "$(ROUTER_TRUNK)" || { echo 'repository-local Trunk 0.21.14 is required under .tools/trunk.' >&2; exit 1; }
+	test -x "$(HOST_NODE)" && test -x "$(HOST_NPM)" || { echo 'Node.js and npm must be available when make starts; override HOST_NODE/HOST_NPM if needed.' >&2; exit 1; }
 	test -x "$(ROUTER_APP)/node_modules/.bin/tailwindcss" || { echo 'run npm ci in apps/rust/router first.' >&2; exit 1; }
 	rustup target add wasm32-unknown-unknown
-	PATH="$(dir $(ROUTER_TRUNK)):$(PATH)" bash "$(ROUTER_APP)/tools/build-frontend-bundle.sh"
+	PATH="$(HOST_NODE_DIR):$(dir $(ROUTER_TRUNK)):$(PATH)" bash "$(ROUTER_APP)/tools/build-frontend-bundle.sh"
 	test -s "$(ROUTER_FRONTEND_BUNDLE)"
 
 router-e2e:
 	test -x "$(ROUTER_TRUNK)" || { echo 'repository-local Trunk 0.21.14 is required under .tools/trunk.' >&2; exit 1; }
-	cd "$(ROUTER_APP)" && PATH="$(dir $(ROUTER_TRUNK)):$(PATH)" npm run test:e2e
+	test -x "$(HOST_NODE)" && test -x "$(HOST_NPM)" || { echo 'Node.js and npm must be available when make starts; override HOST_NODE/HOST_NPM if needed.' >&2; exit 1; }
+	cd "$(ROUTER_APP)" && PATH="$(HOST_NODE_DIR):$(dir $(ROUTER_TRUNK)):$(PATH)" "$(HOST_NPM)" run test:e2e
 
 router-app: toolchain router-frontend
 	rustup target add $(RUST_TARGET)

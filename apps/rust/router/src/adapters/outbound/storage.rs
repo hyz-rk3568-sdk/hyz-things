@@ -1,9 +1,13 @@
 use crate::application::ports::{LifecycleLease, PlatformError};
 use std::{
+    ffi::{c_char, CString},
     fs::{self, DirBuilder, File, Metadata, OpenOptions},
     io::{Read, Write},
-    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
-    path::Path,
+    os::unix::{
+        ffi::OsStrExt,
+        fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
+    },
+    path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -171,6 +175,18 @@ const LOCK_OWNER_NAME: &str = "pid";
 const MAX_LOCK_OWNER_BYTES: usize = 1024;
 const ROOT_UID: u32 = 0;
 const O_NOFOLLOW: i32 = 0o400000;
+const AT_FDCWD: i32 = -100;
+const RENAME_NOREPLACE: u32 = 1;
+
+unsafe extern "C" {
+    fn renameat2(
+        old_directory: i32,
+        old_path: *const c_char,
+        new_directory: i32,
+        new_path: *const c_char,
+        flags: u32,
+    ) -> i32;
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FilesystemIdentity {
@@ -182,6 +198,54 @@ struct FilesystemIdentity {
 struct ProcessIdentity {
     pid: u32,
     start_time: u64,
+}
+
+fn unique_sibling(path: &Path, role: &str) -> Result<PathBuf, PlatformError> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| PlatformError::InvalidState("lock path has no parent".to_owned()))?;
+    let base = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| PlatformError::InvalidState("lock path is not UTF-8".to_owned()))?;
+    let sequence = TEMPORARY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    Ok(parent.join(format!(
+        ".{base}.{}.{}.{role}",
+        std::process::id(),
+        sequence
+    )))
+}
+
+fn rename_noreplace(source: &Path, destination: &Path) -> std::io::Result<()> {
+    let source = CString::new(source.as_os_str().as_bytes()).map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "source path contains NUL")
+    })?;
+    let destination = CString::new(destination.as_os_str().as_bytes()).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "destination path contains NUL",
+        )
+    })?;
+    let result = unsafe {
+        renameat2(
+            AT_FDCWD,
+            source.as_ptr(),
+            AT_FDCWD,
+            destination.as_ptr(),
+            RENAME_NOREPLACE,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+fn sync_directory(path: &Path) -> Result<(), PlatformError> {
+    File::open(path)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| PlatformError::Io(format!("sync {}: {error}", path.display())))
 }
 
 pub(crate) fn acquire_lock(path: &'static str) -> Result<LifecycleLease, PlatformError> {
@@ -199,55 +263,105 @@ fn acquire_lock_with(
     current: ProcessIdentity,
     mut process_start_time: impl FnMut(u32) -> Result<Option<u64>, PlatformError>,
 ) -> Result<LifecycleLease, PlatformError> {
+    let path_ref = Path::new(path);
+    let parent = path_ref
+        .parent()
+        .ok_or_else(|| PlatformError::InvalidState("lock path has no parent".to_owned()))?;
     let identity = format!("{}:{}\n", current.pid, current.start_time);
     loop {
-        match DirBuilder::new().mode(0o700).create(path) {
-            Ok(()) => break,
+        let temporary = unique_sibling(path_ref, "pending")?;
+        match DirBuilder::new().mode(0o700).create(&temporary) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(PlatformError::Io(format!(
+                    "create temporary lock directory {}: {error}",
+                    temporary.display()
+                )))
+            }
+        }
+        let temporary_identity = secure_directory_identity(&temporary, required_uid)?;
+        let owner = temporary.join(LOCK_OWNER_NAME);
+        let prepare = (|| {
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&owner)
+                .map_err(|error| {
+                    PlatformError::Io(format!("create lock owner {}: {error}", owner.display()))
+                })?;
+            file.write_all(identity.as_bytes())
+                .and_then(|_| file.sync_all())
+                .map_err(|error| PlatformError::Io(format!("write lock owner: {error}")))?;
+            let (_, owner_identity) = read_secure_lock_owner(&owner, required_uid)?;
+            require_directory_identity(&temporary, required_uid, temporary_identity)?;
+            require_path_identity(&owner, required_uid, owner_identity)?;
+            sync_directory(&temporary)
+        })();
+        if let Err(error) = prepare {
+            remove_owned_lock_directory(&temporary, required_uid, temporary_identity);
+            return Err(error);
+        }
+        match rename_noreplace(&temporary, path_ref) {
+            Ok(()) => {
+                if let Err(error) = sync_directory(parent) {
+                    remove_owned_lock_directory(path_ref, required_uid, temporary_identity);
+                    return Err(error);
+                }
+                return Ok(LifecycleLease {
+                    path,
+                    identity,
+                    directory_device: temporary_identity.device,
+                    directory_inode: temporary_identity.inode,
+                });
+            }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                remove_owned_lock_directory(&temporary, required_uid, temporary_identity);
                 reclaim_stale_lock(path, required_uid, &mut process_start_time)?;
             }
             Err(error) => {
+                remove_owned_lock_directory(&temporary, required_uid, temporary_identity);
                 return Err(PlatformError::Io(format!(
-                    "create lock directory {path}: {error}"
+                    "publish lock directory {path}: {error}"
+                )));
+            }
+        }
+    }
+}
+
+fn detach_lock_directory(
+    path: &Path,
+    required_uid: u32,
+    expected: FilesystemIdentity,
+    role: &str,
+) -> Result<PathBuf, PlatformError> {
+    loop {
+        let detached = unique_sibling(path, role)?;
+        match rename_noreplace(path, &detached) {
+            Ok(()) => {
+                let actual = secure_directory_identity(&detached, required_uid)?;
+                if actual != expected {
+                    let restore = rename_noreplace(&detached, path);
+                    return Err(PlatformError::Conflict(format!(
+                        "lifecycle lock directory changed during {role}; restore={restore:?}"
+                    )));
+                }
+                return Ok(detached);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Err(PlatformError::Conflict(format!(
+                    "lifecycle lock directory disappeared during {role}"
+                )))
+            }
+            Err(error) => {
+                return Err(PlatformError::Io(format!(
+                    "detach lifecycle lock during {role}: {error}"
                 )))
             }
         }
     }
-
-    let directory_identity = match secure_directory_identity(Path::new(path), required_uid) {
-        Ok(identity) => identity,
-        Err(error) => {
-            let _ = fs::remove_dir(path);
-            return Err(error);
-        }
-    };
-    let owner = Path::new(path).join(LOCK_OWNER_NAME);
-    let result = (|| {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&owner)
-            .map_err(|error| {
-                PlatformError::Io(format!("create lock owner {}: {error}", owner.display()))
-            })?;
-        file.write_all(identity.as_bytes())
-            .and_then(|_| file.sync_all())
-            .map_err(|error| PlatformError::Io(format!("write lock owner: {error}")))?;
-        let (_, owner_identity) = read_secure_lock_owner(&owner, required_uid)?;
-        require_directory_identity(Path::new(path), required_uid, directory_identity)?;
-        require_path_identity(&owner, required_uid, owner_identity)
-    })();
-    if let Err(error) = result {
-        remove_owned_lock_directory(Path::new(path), required_uid, directory_identity);
-        return Err(error);
-    }
-    Ok(LifecycleLease {
-        path,
-        identity,
-        directory_device: directory_identity.device,
-        directory_inode: directory_identity.inode,
-    })
 }
 
 fn reclaim_stale_lock(
@@ -271,26 +385,27 @@ fn reclaim_stale_lock(
 
     require_directory_identity(path, required_uid, directory_identity)?;
     require_path_identity(&owner, required_uid, owner_identity)?;
-    fs::remove_file(&owner).map_err(|error| {
-        if error.kind() == std::io::ErrorKind::NotFound {
-            PlatformError::Conflict("lifecycle lock owner changed during reclaim".to_owned())
-        } else {
-            PlatformError::Io(format!(
-                "remove stale lock owner {}: {error}",
-                owner.display()
-            ))
-        }
+    let detached = detach_lock_directory(path, required_uid, directory_identity, "reclaim")?;
+    let detached_owner = detached.join(LOCK_OWNER_NAME);
+    let (detached_record, detached_owner_identity) =
+        read_secure_lock_owner(&detached_owner, required_uid)?;
+    if detached_record != owner_record || detached_owner_identity != owner_identity {
+        let restore = rename_noreplace(&detached, path);
+        return Err(PlatformError::Conflict(format!(
+            "lifecycle lock owner changed during reclaim; restore={restore:?}"
+        )));
+    }
+    fs::remove_file(&detached_owner).map_err(|error| {
+        PlatformError::Io(format!(
+            "remove stale lock owner {}: {error}",
+            detached_owner.display()
+        ))
     })?;
-    require_directory_identity(path, required_uid, directory_identity)?;
-    fs::remove_dir(path).map_err(|error| {
-        if error.kind() == std::io::ErrorKind::NotFound {
-            PlatformError::Conflict("lifecycle lock directory changed during reclaim".to_owned())
-        } else {
-            PlatformError::Io(format!(
-                "remove stale lock directory {}: {error}",
-                path.display()
-            ))
-        }
+    fs::remove_dir(&detached).map_err(|error| {
+        PlatformError::Io(format!(
+            "remove stale lock directory {}: {error}",
+            detached.display()
+        ))
     })
 }
 
@@ -314,20 +429,27 @@ fn release_lock_with(lease: &LifecycleLease, required_uid: u32) -> Result<(), Pl
     }
     require_directory_identity(path, required_uid, directory_identity)?;
     require_path_identity(&owner, required_uid, owner_identity)?;
-    fs::remove_file(&owner).map_err(|error| {
-        if error.kind() == std::io::ErrorKind::NotFound {
-            PlatformError::Conflict("lifecycle lock owner changed during release".to_owned())
-        } else {
-            PlatformError::Io(format!("remove lock owner {}: {error}", owner.display()))
-        }
+    let detached = detach_lock_directory(path, required_uid, directory_identity, "release")?;
+    let detached_owner = detached.join(LOCK_OWNER_NAME);
+    let (detached_record, detached_owner_identity) =
+        read_secure_lock_owner(&detached_owner, required_uid)?;
+    if detached_record != lease.identity || detached_owner_identity != owner_identity {
+        let restore = rename_noreplace(&detached, path);
+        return Err(PlatformError::Conflict(format!(
+            "lifecycle lock owner changed during release; restore={restore:?}"
+        )));
+    }
+    fs::remove_file(&detached_owner).map_err(|error| {
+        PlatformError::Io(format!(
+            "remove lock owner {}: {error}",
+            detached_owner.display()
+        ))
     })?;
-    require_directory_identity(path, required_uid, directory_identity)?;
-    fs::remove_dir(path).map_err(|error| {
-        if error.kind() == std::io::ErrorKind::NotFound {
-            PlatformError::Conflict("lifecycle lock directory changed during release".to_owned())
-        } else {
-            PlatformError::Io(format!("remove lock directory {}: {error}", path.display()))
-        }
+    fs::remove_dir(&detached).map_err(|error| {
+        PlatformError::Io(format!(
+            "remove lock directory {}: {error}",
+            detached.display()
+        ))
     })
 }
 
@@ -480,11 +602,7 @@ fn filesystem_identity(metadata: &Metadata) -> FilesystemIdentity {
     }
 }
 
-fn remove_owned_lock_directory(
-    path: &Path,
-    required_uid: u32,
-    expected: FilesystemIdentity,
-) {
+fn remove_owned_lock_directory(path: &Path, required_uid: u32, expected: FilesystemIdentity) {
     if secure_directory_identity(path, required_uid).ok() != Some(expected) {
         return;
     }
@@ -578,7 +696,10 @@ mod tests {
         .unwrap_err();
 
         assert!(matches!(error, PlatformError::Busy(_)));
-        assert_eq!(fs::read_to_string(lock.path().join(LOCK_OWNER_NAME)).unwrap(), "100:200\n");
+        assert_eq!(
+            fs::read_to_string(lock.path().join(LOCK_OWNER_NAME)).unwrap(),
+            "100:200\n"
+        );
     }
 
     #[test]
@@ -587,7 +708,8 @@ mod tests {
         lock.create("100:200\n");
         fs::set_permissions(lock.path(), fs::Permissions::from_mode(0o755)).unwrap();
 
-        let lease = acquire_lock_with(lock.path, lock.uid, current_identity(), |_| Ok(None)).unwrap();
+        let lease =
+            acquire_lock_with(lock.path, lock.uid, current_identity(), |_| Ok(None)).unwrap();
 
         assert_eq!(lease.identity, "900:901\n");
         assert_eq!(
@@ -603,8 +725,8 @@ mod tests {
         let lock = TestLock::new();
         lock.create("100:200\n");
 
-        let lease = acquire_lock_with(lock.path, lock.uid, current_identity(), |_| Ok(Some(201)))
-            .unwrap();
+        let lease =
+            acquire_lock_with(lock.path, lock.uid, current_identity(), |_| Ok(Some(201))).unwrap();
 
         assert_eq!(lease.identity, "900:901\n");
         release_lock_with(&lease, lock.uid).unwrap();
@@ -662,12 +784,9 @@ mod tests {
         fs::create_dir(owner_type.path()).unwrap();
         fs::set_permissions(owner_type.path(), fs::Permissions::from_mode(0o700)).unwrap();
         fs::create_dir(owner_type.path().join(LOCK_OWNER_NAME)).unwrap();
-        let error = acquire_lock_with(
-            owner_type.path,
-            owner_type.uid,
-            current_identity(),
-            |_| panic!("unsafe owner type must not be probed"),
-        )
+        let error = acquire_lock_with(owner_type.path, owner_type.uid, current_identity(), |_| {
+            panic!("unsafe owner type must not be probed")
+        })
         .unwrap_err();
         assert!(matches!(error, PlatformError::InvalidState(_)));
         assert!(owner_type.path().exists());
