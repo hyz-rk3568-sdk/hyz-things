@@ -15,8 +15,10 @@ use crate::{
 };
 use sha2::{Digest, Sha256};
 use std::{
+    collections::BTreeSet,
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
+    net::{SocketAddr, SocketAddrV4},
     os::unix::{ffi::OsStrExt, fs::OpenOptionsExt, process::CommandExt},
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -69,6 +71,24 @@ pub(crate) struct FixedOutput {
     pub success: bool,
     pub stdout: String,
     pub stderr: String,
+}
+
+fn read_bounded_command_stream(mut stream: impl Read, max_output: usize) -> io::Result<Vec<u8>> {
+    let mut output = Vec::new();
+    let mut chunk = [0_u8; 8 * 1024];
+    loop {
+        let read = stream.read(&mut chunk)?;
+        if read == 0 {
+            return Ok(output);
+        }
+        if output.len().saturating_add(read) > max_output {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "fixed command output exceeded limit",
+            ));
+        }
+        output.extend_from_slice(&chunk[..read]);
+    }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -141,6 +161,16 @@ impl LinuxRouterPlatform {
         args: &[String],
         timeout: Duration,
     ) -> Result<FixedOutput, PlatformError> {
+        self.run_probe_with_timeout_and_limit(tool, args, timeout, MAX_COMMAND_OUTPUT)
+    }
+
+    pub(crate) fn run_probe_with_timeout_and_limit(
+        &self,
+        tool: Tool,
+        args: &[String],
+        timeout: Duration,
+        max_output: usize,
+    ) -> Result<FixedOutput, PlatformError> {
         let mut child = Command::new(tool.path())
             .args(args)
             .env_clear()
@@ -153,37 +183,50 @@ impl LinuxRouterPlatform {
             .map_err(|error| {
                 PlatformError::Io(format!("could not start fixed command: {error}"))
             })?;
+        let stdout = child.stdout.take().ok_or_else(|| {
+            PlatformError::Io("fixed command stdout pipe is unavailable".to_owned())
+        })?;
+        let stderr = child.stderr.take().ok_or_else(|| {
+            PlatformError::Io("fixed command stderr pipe is unavailable".to_owned())
+        })?;
+        let stdout_reader = thread::spawn(move || read_bounded_command_stream(stdout, max_output));
+        let stderr_reader = thread::spawn(move || read_bounded_command_stream(stderr, max_output));
         let deadline = Instant::now() + timeout;
-        loop {
-            if child
-                .try_wait()
-                .map_err(|error| PlatformError::Io(format!("could not wait for command: {error}")))?
-                .is_some()
-            {
-                break;
+        let status = loop {
+            if let Some(status) = child.try_wait().map_err(|error| {
+                PlatformError::Io(format!("could not wait for command: {error}"))
+            })? {
+                break status;
             }
             if Instant::now() >= deadline {
                 let _ = child.kill();
                 let _ = child.wait();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
                 return Err(PlatformError::CommandFailed(
                     "fixed command exceeded its deadline".to_owned(),
                 ));
             }
             thread::sleep(Duration::from_millis(20));
-        }
-        let output = child
-            .wait_with_output()
-            .map_err(|error| PlatformError::Io(format!("could not collect command: {error}")))?;
-        if output.stdout.len() + output.stderr.len() > MAX_COMMAND_OUTPUT {
+        };
+        let stdout = stdout_reader
+            .join()
+            .map_err(|_| PlatformError::CommandFailed("fixed stdout reader panicked".to_owned()))?
+            .map_err(|error| PlatformError::CommandFailed(error.to_string()))?;
+        let stderr = stderr_reader
+            .join()
+            .map_err(|_| PlatformError::CommandFailed("fixed stderr reader panicked".to_owned()))?
+            .map_err(|error| PlatformError::CommandFailed(error.to_string()))?;
+        if stdout.len() + stderr.len() > max_output {
             return Err(PlatformError::CommandFailed(
                 "fixed command output exceeded limit".to_owned(),
             ));
         }
-        let success = output.status.success();
-        let stdout = String::from_utf8(output.stdout).map_err(|_| {
+        let success = status.success();
+        let stdout = String::from_utf8(stdout).map_err(|_| {
             PlatformError::CommandFailed("fixed command emitted non-UTF-8 stdout".to_owned())
         })?;
-        let stderr = String::from_utf8(output.stderr).map_err(|_| {
+        let stderr = String::from_utf8(stderr).map_err(|_| {
             PlatformError::CommandFailed("fixed command emitted non-UTF-8 stderr".to_owned())
         })?;
         Ok(FixedOutput {
@@ -735,55 +778,187 @@ fn decode_cmdline(bytes: &[u8]) -> Result<Vec<Vec<u8>>, PlatformError> {
 
 const MAX_PROCESS_FD_ENTRIES: usize = 4096;
 const MAX_PROCESS_FDINFO_SIZE: usize = 4096;
+const TUN_DEVICE_PATH: &str = "/dev/net/tun";
 
 pub(crate) fn mihomo_process_holds_tun(core: CoreIdentity) -> Result<bool, PlatformError> {
     if process_start_time(core.pid)? != Some(core.start_time) {
         return Ok(false);
     }
-    let directory = format!("/proc/{}/fdinfo", core.pid);
-    let entries = match fs::read_dir(&directory) {
+    let fd_directory = PathBuf::from(format!("/proc/{}/fd", core.pid));
+    let fdinfo_directory = PathBuf::from(format!("/proc/{}/fdinfo", core.pid));
+    let found = process_holds_named_tun(&fd_directory, &fdinfo_directory)?;
+    Ok(found && process_start_time(core.pid)? == Some(core.start_time))
+}
+
+fn process_holds_named_tun(
+    fd_directory: &Path,
+    fdinfo_directory: &Path,
+) -> Result<bool, PlatformError> {
+    let entries = match fs::read_dir(fd_directory) {
         Ok(entries) => entries,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
         Err(error) => {
             return Err(PlatformError::ProbeFailed(format!(
-                "scan Mihomo fdinfo: {error}"
+                "scan Mihomo file descriptors: {error}"
             )))
         }
     };
     let expected = format!("iff:\t{MIHOMO_TUN_INTERFACE}");
-    let mut found = false;
     for (index, entry) in entries.enumerate() {
         if index >= MAX_PROCESS_FD_ENTRIES {
             return Err(PlatformError::ProbeFailed(
-                "Mihomo fdinfo entry count exceeds its bound".to_owned(),
+                "Mihomo file descriptor count exceeds its bound".to_owned(),
             ));
         }
         let entry = entry.map_err(|error| {
-            PlatformError::ProbeFailed(format!("inspect Mihomo fdinfo: {error}"))
+            PlatformError::ProbeFailed(format!("inspect Mihomo file descriptor: {error}"))
         })?;
-        let file = match File::open(entry.path()) {
+        let target = match fs::read_link(entry.path()) {
+            Ok(target) => target,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(PlatformError::ProbeFailed(format!(
+                    "inspect Mihomo file descriptor target: {error}"
+                )))
+            }
+        };
+        if target != Path::new(TUN_DEVICE_PATH) {
+            continue;
+        }
+        let file = match File::open(fdinfo_directory.join(entry.file_name())) {
             Ok(file) => file,
             Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
             Err(error) => {
                 return Err(PlatformError::ProbeFailed(format!(
-                    "open Mihomo fdinfo: {error}"
+                    "open Mihomo TUN fdinfo: {error}"
                 )))
             }
         };
         let mut bytes = Vec::with_capacity(512);
         file.take((MAX_PROCESS_FDINFO_SIZE + 1) as u64)
             .read_to_end(&mut bytes)
-            .map_err(|error| PlatformError::ProbeFailed(format!("read Mihomo fdinfo: {error}")))?;
+            .map_err(|error| {
+                PlatformError::ProbeFailed(format!("read Mihomo TUN fdinfo: {error}"))
+            })?;
         if bytes.len() > MAX_PROCESS_FDINFO_SIZE {
             return Err(PlatformError::ProbeFailed(
-                "Mihomo fdinfo exceeds its bound".to_owned(),
+                "Mihomo TUN fdinfo exceeds its bound".to_owned(),
             ));
         }
         let text = std::str::from_utf8(&bytes)
-            .map_err(|_| PlatformError::ProbeFailed("Mihomo fdinfo is not UTF-8".to_owned()))?;
-        found |= text.lines().any(|line| line == expected);
+            .map_err(|_| PlatformError::ProbeFailed("Mihomo TUN fdinfo is not UTF-8".to_owned()))?;
+        if text.lines().any(|line| line == expected) {
+            return Ok(true);
+        }
     }
-    Ok(found && process_start_time(core.pid)? == Some(core.start_time))
+    Ok(false)
+}
+
+const MAX_PROC_NET_TCP_SIZE: usize = 4 * 1024 * 1024;
+const TCP_LISTEN_STATE: &str = "0A";
+
+pub(crate) fn mihomo_process_owns_tcp_listener(
+    core: CoreIdentity,
+    address: SocketAddr,
+) -> Result<bool, PlatformError> {
+    if process_start_time(core.pid)? != Some(core.start_time) {
+        return Ok(false);
+    }
+    let SocketAddr::V4(address) = address else {
+        return Err(PlatformError::InvalidState(
+            "Mihomo mixed listener address must be IPv4".to_owned(),
+        ));
+    };
+    let listeners = tcp_listener_inodes(Path::new("/proc/net/tcp"), address)?;
+    if listeners.len() != 1 {
+        return Ok(false);
+    }
+    let sockets = process_socket_inodes(core.pid)?;
+    Ok(process_start_time(core.pid)? == Some(core.start_time)
+        && listeners.iter().all(|inode| sockets.contains(inode)))
+}
+
+fn tcp_listener_inodes(path: &Path, address: SocketAddrV4) -> Result<BTreeSet<u64>, PlatformError> {
+    let file = File::open(path)
+        .map_err(|error| PlatformError::ProbeFailed(format!("open TCP socket table: {error}")))?;
+    let mut bytes = Vec::with_capacity(64 * 1024);
+    file.take((MAX_PROC_NET_TCP_SIZE + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| PlatformError::ProbeFailed(format!("read TCP socket table: {error}")))?;
+    if bytes.len() > MAX_PROC_NET_TCP_SIZE {
+        return Err(PlatformError::ProbeFailed(
+            "TCP socket table exceeds its bound".to_owned(),
+        ));
+    }
+    let text = std::str::from_utf8(&bytes)
+        .map_err(|_| PlatformError::ProbeFailed("TCP socket table is not UTF-8".to_owned()))?;
+    let expected_address = u32::from_le_bytes(address.ip().octets());
+    let mut inodes = BTreeSet::new();
+    for line in text.lines().skip(1) {
+        let fields = line.split_ascii_whitespace().collect::<Vec<_>>();
+        if fields.len() <= 9 || fields[3] != TCP_LISTEN_STATE {
+            continue;
+        }
+        let Some((host, port)) = fields[1].split_once(':') else {
+            continue;
+        };
+        let (Ok(host), Ok(port), Ok(inode)) = (
+            u32::from_str_radix(host, 16),
+            u16::from_str_radix(port, 16),
+            fields[9].parse::<u64>(),
+        ) else {
+            continue;
+        };
+        if host == expected_address && port == address.port() {
+            inodes.insert(inode);
+        }
+    }
+    Ok(inodes)
+}
+
+fn process_socket_inodes(pid: u32) -> Result<BTreeSet<u64>, PlatformError> {
+    let directory = PathBuf::from(format!("/proc/{pid}/fd"));
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(BTreeSet::new()),
+        Err(error) => {
+            return Err(PlatformError::ProbeFailed(format!(
+                "scan Mihomo file descriptors: {error}"
+            )))
+        }
+    };
+    let mut inodes = BTreeSet::new();
+    for (index, entry) in entries.enumerate() {
+        if index >= MAX_PROCESS_FD_ENTRIES {
+            return Err(PlatformError::ProbeFailed(
+                "Mihomo file descriptor count exceeds its bound".to_owned(),
+            ));
+        }
+        let entry = entry.map_err(|error| {
+            PlatformError::ProbeFailed(format!("inspect Mihomo file descriptor: {error}"))
+        })?;
+        let target = match fs::read_link(entry.path()) {
+            Ok(target) => target,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(PlatformError::ProbeFailed(format!(
+                    "inspect Mihomo file descriptor target: {error}"
+                )))
+            }
+        };
+        let Some(target) = target.to_str() else {
+            continue;
+        };
+        let Some(inode) = target
+            .strip_prefix("socket:[")
+            .and_then(|value| value.strip_suffix(']'))
+            .and_then(|value| value.parse::<u64>().ok())
+        else {
+            continue;
+        };
+        inodes.insert(inode);
+    }
+    Ok(inodes)
 }
 
 pub(crate) fn count_executable_processes(executable: &Path) -> Result<usize, PlatformError> {
@@ -1077,6 +1252,74 @@ pub(crate) fn process_stat_identity(pid: u32) -> Result<Option<(u64, u8)>, Platf
 mod tests {
     use super::*;
     use std::collections::VecDeque;
+
+    #[test]
+    fn bounded_command_stream_accepts_the_limit_and_rejects_one_extra_byte() {
+        assert_eq!(
+            read_bounded_command_stream(std::io::Cursor::new(vec![b'x'; 64]), 64).unwrap(),
+            vec![b'x'; 64]
+        );
+        assert!(read_bounded_command_stream(std::io::Cursor::new(vec![b'x'; 65]), 64).is_err());
+    }
+
+    #[test]
+    fn tun_probe_ignores_large_fdinfo_for_unrelated_descriptors() {
+        use std::os::unix::fs::symlink;
+
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "hyz-router-tun-probe-{}-{unique}",
+            std::process::id()
+        ));
+        let fd = root.join("fd");
+        let fdinfo = root.join("fdinfo");
+        fs::create_dir_all(&fd).unwrap();
+        fs::create_dir_all(&fdinfo).unwrap();
+        symlink("/dev/null", fd.join("7")).unwrap();
+        fs::write(fdinfo.join("7"), vec![b'x'; MAX_PROCESS_FDINFO_SIZE + 1]).unwrap();
+        symlink(TUN_DEVICE_PATH, fd.join("8")).unwrap();
+        fs::write(
+            fdinfo.join("8"),
+            format!("pos:\t0\niff:\t{MIHOMO_TUN_INTERFACE}\n"),
+        )
+        .unwrap();
+
+        assert!(process_holds_named_tun(&fd, &fdinfo).unwrap());
+
+        fs::write(fdinfo.join("8"), "pos:\t0\niff:\tforeign-tun\n").unwrap();
+        assert!(!process_holds_named_tun(&fd, &fdinfo).unwrap());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn tcp_listener_probe_matches_only_the_exact_single_loopback_listener() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "hyz-router-tcp-listener-{}-{unique}",
+            std::process::id()
+        ));
+        fs::write(
+            &path,
+            "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n   0: 0100007F:1ED2 00000000:0000 0A 00000000:00000000 00:00000000 00000000 0 0 4242\n   1: 0100007F:1ED2 00000000:0000 01 00000000:00000000 00:00000000 00000000 0 0 9999\n   2: 00000000:1ED2 00000000:0000 0A 00000000:00000000 00:00000000 00000000 0 0 8888\n",
+        )
+        .unwrap();
+        let address = "127.0.0.1:7890".parse::<SocketAddr>().unwrap();
+        let SocketAddr::V4(address) = address else {
+            unreachable!();
+        };
+
+        assert_eq!(
+            tcp_listener_inodes(&path, address).unwrap(),
+            BTreeSet::from([4242])
+        );
+        fs::remove_file(path).unwrap();
+    }
 
     #[test]
     fn empty_zombie_cmdline_is_a_non_match_not_a_probe_error() {

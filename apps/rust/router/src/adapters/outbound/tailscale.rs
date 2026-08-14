@@ -5,9 +5,9 @@ use super::{
         TAILSCALE_STATE_FILE, TAILSCALE_SUBNET_FIREWALL_OWNER,
     },
     process::{
-        count_executable_processes, process_identity_matches, process_start_time,
-        process_stat_identity, reap_in_background, wait_for_identity_match, LinuxRouterPlatform,
-        Tool, NETWORK_LOCK,
+        count_executable_processes, mihomo_process_owns_tcp_listener, process_identity_matches,
+        process_start_time, process_stat_identity, reap_in_background, wait_for_identity_match,
+        LinuxRouterPlatform, Tool, NETWORK_LOCK,
     },
     storage,
     system::{
@@ -17,7 +17,8 @@ use super::{
 };
 use crate::{
     application::ports::{
-        LifecycleLease, PlatformError, TailscalePlatformPort, TailscaleProbePort,
+        LifecycleLease, PlatformError, TailnetPeerReadPort, TailscalePlatformPort,
+        TailscaleProbePort,
     },
     domain::{
         network::{
@@ -26,8 +27,9 @@ use crate::{
         proxy::{MIHOMO_FILTER_CHAIN, MIHOMO_MIXED_ADDRESS},
         tailscale::{
             TailscaleAction, TailscaleBackendState, TailscaleConnectionKind, TailscaleEnvironment,
-            TailscaleLoginUrl, TailscaleMode, TailscaleObserved, TailscalePreferences,
-            TailscaleProcessState, TAILSCALE_CGNAT_SUBNET, TAILSCALE_FORWARD_CHAIN,
+            TailscaleLoginUrl, TailscaleMode, TailscaleObserved, TailscalePeer,
+            TailscalePeerSnapshot, TailscalePreferences, TailscaleProcessState,
+            MAX_TAILSCALE_PEERS, TAILSCALE_CGNAT_SUBNET, TAILSCALE_FORWARD_CHAIN,
             TAILSCALE_INPUT_CHAIN, TAILSCALE_INTERFACE, TAILSCALE_LAN_ROUTE,
             TAILSCALE_MANAGEMENT_HTTP_PORT, TAILSCALE_NAT_CHAIN, TAILSCALE_UDP_PORT,
         },
@@ -53,6 +55,7 @@ const MAX_IDENTITY_RECORD: usize = 8 * 1024;
 const MAX_PROCESS_ENVIRON: usize = 4 * 1024;
 const MAX_PREFS_JSON: usize = 64 * 1024;
 const MAX_STATUS_JSON: usize = 256 * 1024;
+const MAX_STATUS_COMMAND_OUTPUT: usize = MAX_STATUS_JSON + 4 * 1024;
 const START_IDENTITY_ATTEMPTS: usize = 60;
 const START_IDENTITY_POLL: Duration = Duration::from_millis(50);
 const BACKEND_WAIT_TIMEOUT: Duration = Duration::from_secs(60);
@@ -332,7 +335,9 @@ impl LinuxTailscalePlatform {
             IdentityProcessState::Live => {
                 self.platform
                     .run(Tool::Kill, &["-TERM".to_owned(), identity.pid.to_string()])?;
-                if !wait_for_identity_exit(EXIT_ATTEMPTS, EXIT_POLL, || identity.process_state())? {
+                if !wait_for_identity_exit(EXIT_ATTEMPTS, EXIT_POLL, || {
+                    identity.process_state_after_signal()
+                })? {
                     match identity.process_state()? {
                         IdentityProcessState::Live => {
                             self.platform
@@ -347,7 +352,7 @@ impl LinuxTailscalePlatform {
                         }
                     }
                     if !wait_for_identity_exit(EXIT_ATTEMPTS, EXIT_POLL, || {
-                        identity.process_state()
+                        identity.process_state_after_signal()
                     })? {
                         return Err(PlatformError::Conflict(
                             "exact tailscaled identity remained live after TERM and KILL"
@@ -1186,6 +1191,12 @@ impl TailscaleProbePort for LinuxTailscalePlatform {
     fn probe_explicit_proxy_path(&self) -> Result<bool, PlatformError> {
         let deadline = Instant::now() + EXPLICIT_PROXY_PROBE_TIMEOUT;
         let address: SocketAddr = MIHOMO_MIXED_ADDRESS.parse().expect("fixed mixed address");
+        let Some(core) = self.platform.mihomo_identity()? else {
+            return Ok(false);
+        };
+        if !mihomo_process_owns_tcp_listener(core.core, address)? {
+            return Ok(false);
+        }
         let Ok(mut stream) = TcpStream::connect_timeout(&address, EXPLICIT_PROXY_PROBE_TIMEOUT)
         else {
             return Ok(false);
@@ -1233,12 +1244,69 @@ impl TailscaleProbePort for LinuxTailscalePlatform {
                 Ok(read) => {
                     response.extend_from_slice(&chunk[..read]);
                     if let Some(ready) = fixed_connect_response_ready(&response) {
+                        if self.platform.mihomo_identity()?.as_ref() != Some(&core)
+                            || !mihomo_process_owns_tcp_listener(core.core, address)?
+                        {
+                            return Ok(false);
+                        }
                         return Ok(ready);
                     }
                 }
                 Err(_) => return Ok(false),
             }
         }
+    }
+}
+
+impl TailnetPeerReadPort for LinuxTailscalePlatform {
+    fn read_tailnet_peers(&self) -> Result<TailscalePeerSnapshot, PlatformError> {
+        let identity = self.exact_identity()?.ok_or_else(|| {
+            PlatformError::ProbeFailed(
+                "owned live Tailscale backend is required for peer observation".to_owned(),
+            )
+        })?;
+        if count_executable_processes(Path::new(TAILSCALED_EXECUTABLE))? != 1 {
+            return Err(PlatformError::ProbeFailed(
+                "exactly one owned tailscaled process is required for peer observation".to_owned(),
+            ));
+        }
+        let socket = socket_identity(TAILSCALE_SOCKET)?.ok_or_else(|| {
+            PlatformError::ProbeFailed(
+                "owned Tailscale socket is required for peer observation".to_owned(),
+            )
+        })?;
+        if identity.socket != Some(socket) {
+            return Err(PlatformError::ProbeFailed(
+                "Tailscale socket identity does not match the owned backend".to_owned(),
+            ));
+        }
+        let fixed = vec![
+            "--socket".to_owned(),
+            TAILSCALE_SOCKET.to_owned(),
+            "status".to_owned(),
+            "--json".to_owned(),
+        ];
+        let status = self.platform.run_probe_with_timeout_and_limit(
+            Tool::Tailscale,
+            &fixed,
+            Duration::from_secs(3),
+            MAX_STATUS_COMMAND_OUTPUT,
+        )?;
+        if !status.success {
+            return Err(PlatformError::ProbeFailed(
+                "fixed Tailscale peer status command failed".to_owned(),
+            ));
+        }
+        if self.read_identity()?.as_ref() != Some(&identity)
+            || !identity.matches_live_process()?
+            || count_executable_processes(Path::new(TAILSCALED_EXECUTABLE))? != 1
+            || socket_identity(TAILSCALE_SOCKET)? != Some(socket)
+        {
+            return Err(PlatformError::ProbeFailed(
+                "Tailscale backend identity changed during peer observation".to_owned(),
+            ));
+        }
+        parse_peer_snapshot_json(&status.stdout)
     }
 }
 
@@ -1306,6 +1374,13 @@ fn classify_identity_process(
         Some((start, _)) if start == expected_start && exact_match => IdentityProcessState::Live,
         Some(_) => IdentityProcessState::Replaced,
     }
+}
+
+fn classify_signaled_identity_process(
+    expected_start: u64,
+    observed: Option<(u64, u8)>,
+) -> IdentityProcessState {
+    classify_identity_process(expected_start, observed, true)
 }
 
 fn wait_for_identity_exit<F>(
@@ -1437,6 +1512,13 @@ impl TailscaledIdentity {
         ))
     }
 
+    fn process_state_after_signal(&self) -> Result<IdentityProcessState, PlatformError> {
+        Ok(classify_signaled_identity_process(
+            self.start_time,
+            process_stat_identity(self.pid)?,
+        ))
+    }
+
     fn matches_live_process(&self) -> Result<bool, PlatformError> {
         Ok(process_identity_matches(
             crate::application::ports::CoreIdentity {
@@ -1534,6 +1616,25 @@ struct StatusFixture {
     tailscale_ips: Value,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct PeerStatusFixture {
+    backend_state: String,
+    #[serde(rename = "Peer")]
+    peers: Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct PeerFixture {
+    host_name: String,
+    #[serde(rename = "TailscaleIPs")]
+    tailscale_ips: Value,
+    online: bool,
+    #[serde(rename = "OS")]
+    os: Option<String>,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct ParsedStatus {
     backend: TailscaleBackendState,
@@ -1624,6 +1725,96 @@ fn parse_status_json(input: &str) -> Result<ParsedStatus, PlatformError> {
         authenticated,
         ipv4,
         connection,
+    })
+}
+
+fn parse_peer_snapshot_json(input: &str) -> Result<TailscalePeerSnapshot, PlatformError> {
+    if input.len() > MAX_STATUS_JSON {
+        return Err(PlatformError::ProbeFailed(
+            "Tailscale status JSON exceeds limit".to_owned(),
+        ));
+    }
+    let fixture: PeerStatusFixture = serde_json::from_str(input).map_err(|_| {
+        PlatformError::ProbeFailed(
+            "Tailscale peer status JSON lacks the narrow required shape".to_owned(),
+        )
+    })?;
+    let peer_values = match fixture.peers {
+        Value::Null => serde_json::Map::new(),
+        Value::Object(peers) => peers,
+        _ => {
+            return Err(PlatformError::ProbeFailed(
+                "Tailscale status Peer is neither null nor an object".to_owned(),
+            ))
+        }
+    };
+    if peer_values.len() > MAX_TAILSCALE_PEERS {
+        return Err(PlatformError::ProbeFailed(
+            "Tailscale peer count exceeds limit".to_owned(),
+        ));
+    }
+    if fixture.backend_state != "Running" {
+        if peer_values.is_empty()
+            && matches!(fixture.backend_state.as_str(), "Stopped" | "NeedsLogin")
+        {
+            return Ok(TailscalePeerSnapshot::empty());
+        }
+        return Err(PlatformError::ProbeFailed(
+            "Tailscale peer inventory is inconsistent with backend state".to_owned(),
+        ));
+    }
+    let peers = peer_values
+        .values()
+        .map(|value| {
+            let peer: PeerFixture = serde_json::from_value(value.clone()).map_err(|_| {
+                PlatformError::ProbeFailed(
+                    "Tailscale peer entry lacks the narrow required shape".to_owned(),
+                )
+            })?;
+            let address_values = peer.tailscale_ips.as_array().ok_or_else(|| {
+                PlatformError::ProbeFailed("Tailscale peer addresses are not an array".to_owned())
+            })?;
+            let ipv4s = address_values
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .ok_or_else(|| {
+                            PlatformError::ProbeFailed(
+                                "Tailscale peer contains a non-string IP address".to_owned(),
+                            )
+                        })?
+                        .parse::<std::net::IpAddr>()
+                        .map_err(|_| {
+                            PlatformError::ProbeFailed(
+                                "Tailscale peer contains a malformed IP address".to_owned(),
+                            )
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .filter_map(|address| match address {
+                    std::net::IpAddr::V4(address) => Some(address),
+                    std::net::IpAddr::V6(_) => None,
+                })
+                .collect::<Vec<_>>();
+            let [ipv4] = ipv4s.as_slice() else {
+                return Err(PlatformError::ProbeFailed(
+                    "Tailscale peer must contain exactly one IPv4 address".to_owned(),
+                ));
+            };
+            let os = peer.os.filter(|value| !value.is_empty());
+            TailscalePeer::new(peer.host_name, *ipv4, peer.online, os).ok_or_else(|| {
+                PlatformError::ProbeFailed(
+                    "Tailscale peer fields exceed bounds or contain an unsafe value".to_owned(),
+                )
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    TailscalePeerSnapshot::new(peers).ok_or_else(|| {
+        PlatformError::ProbeFailed(
+            "Tailscale peer inventory is oversized or contains duplicate IPv4 addresses".to_owned(),
+        )
     })
 }
 
@@ -2514,6 +2705,7 @@ mod tests {
         include_str!("../../../tests/fixtures/tailscale-status-running.json");
     const STATUS_NEEDS_LOGIN: &str =
         include_str!("../../../tests/fixtures/tailscale-status-needs-login.json");
+    const STATUS_PEERS: &str = include_str!("../../../tests/fixtures/tailscale-status-peers.json");
     const PREFS_ROUTER_ONLY: &str =
         include_str!("../../../tests/fixtures/tailscale-prefs-router-only.json");
     const PREFS_NEEDS_LOGIN: &str =
@@ -2532,6 +2724,57 @@ mod tests {
         )
         .is_err());
         assert!(parse_status_json(&STATUS_RUNNING.replace("Running", "FutureState")).is_ok());
+    }
+
+    #[test]
+    fn peer_status_fixture_exposes_only_bounded_sanitized_inventory() {
+        let snapshot = parse_peer_snapshot_json(STATUS_PEERS).unwrap();
+        assert_eq!(snapshot.total, 2);
+        assert_eq!(snapshot.online, 1);
+        assert_eq!(snapshot.peers[0].name, "laptop");
+        assert_eq!(snapshot.peers[0].ipv4, Ipv4Addr::new(100, 64, 0, 8));
+        assert_eq!(snapshot.peers[0].os.as_deref(), Some("linux"));
+        let serialized = serde_json::to_string(&snapshot).unwrap();
+        assert!(!serialized.contains("secret@example.com"));
+        assert!(!serialized.contains("must-not-be-exposed"));
+        assert!(!serialized.contains("LastSeen"));
+        assert!(!serialized.contains("DNSName"));
+        let mut empty: Value = serde_json::from_str(STATUS_PEERS).unwrap();
+        empty["Peer"] = Value::Null;
+        assert_eq!(
+            parse_peer_snapshot_json(&serde_json::to_string(&empty).unwrap()).unwrap(),
+            TailscalePeerSnapshot::empty()
+        );
+    }
+
+    #[test]
+    fn peer_status_parser_rejects_ambiguous_or_unbounded_inventory() {
+        assert!(
+            parse_peer_snapshot_json(&STATUS_PEERS.replace("\"100.64.0.8\"", "\"192.0.2.8\""))
+                .is_err()
+        );
+        assert!(parse_peer_snapshot_json(
+            &STATUS_PEERS.replace("\"100.64.0.9\"", "\"100.64.0.8\"")
+        )
+        .is_err());
+        assert!(parse_peer_snapshot_json(
+            &STATUS_PEERS.replace("\"Online\": true", "\"Online\": \"yes\"")
+        )
+        .is_err());
+        assert!(parse_peer_snapshot_json(&"x".repeat(MAX_STATUS_JSON + 1)).is_err());
+
+        let peers = (0..=MAX_TAILSCALE_PEERS)
+            .map(|index| {
+                format!(
+                    "\"nodekey:{index}\":{{\"HostName\":\"peer-{index}\",\"TailscaleIPs\":[\"100.64.{}.{}\"],\"Online\":false}}",
+                    index / 250,
+                    index % 250 + 1
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let oversized = format!("{{\"BackendState\":\"Running\",\"Peer\":{{{peers}}}}}");
+        assert!(parse_peer_snapshot_json(&oversized).is_err());
     }
 
     #[test]
@@ -2799,6 +3042,22 @@ mod tests {
         assert_eq!(
             classify_identity_process(34, Some((34, b'X')), false),
             IdentityProcessState::Exited
+        );
+    }
+
+    #[test]
+    fn signaled_identity_waits_for_same_pid_start_even_if_exec_metadata_is_tearing_down() {
+        assert_eq!(
+            classify_signaled_identity_process(34, Some((34, b'S'))),
+            IdentityProcessState::Live
+        );
+        assert_eq!(
+            classify_signaled_identity_process(34, Some((34, b'Z'))),
+            IdentityProcessState::Exited
+        );
+        assert_eq!(
+            classify_signaled_identity_process(34, Some((35, b'S'))),
+            IdentityProcessState::Replaced
         );
     }
 

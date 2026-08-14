@@ -12,10 +12,12 @@ use hyz_router::domain::{
     },
     status::{
         Component, ComponentState, LanTunEffective, LinkState, ProxyResourceState, SnapshotState,
-        StatusSnapshot, TailscaleConnectionType, TailscaleErrorCategory, TailscaleProxyFallback,
-        TailscaleStatus,
+        StatusSnapshot, TailscaleConnectionType, TailscaleErrorCategory,
+        TailscaleExplicitProxyPath, TailscaleProxyFallback, TailscaleStatus,
     },
-    tailscale::{TailscaleBackendState, TailscaleEnvironment, TailscaleMode},
+    tailscale::{
+        TailscaleBackendState, TailscaleEnvironment, TailscaleMode, TailscalePeerSnapshot,
+    },
 };
 use wasm_bindgen_futures::spawn_local;
 use web_sys::{HtmlElement, HtmlInputElement, HtmlSelectElement, RequestCredentials};
@@ -48,6 +50,7 @@ const SUBSCRIPTION_REFRESH_ENDPOINT: &str = "/api/v1/control/proxy/subscription/
 const DEVICE_POLICIES_ENDPOINT: &str = "/api/v1/proxy/device-policies";
 const DEVICE_POLICIES_UPDATE_ENDPOINT: &str = "/api/v1/control/proxy/device-policies";
 const TAILSCALE_ENDPOINT: &str = "/api/v1/tailscale";
+const TAILSCALE_PEERS_ENDPOINT: &str = "/api/v1/tailscale/peers";
 const TAILSCALE_MODE_ENDPOINT: &str = "/api/v1/control/tailscale/mode";
 const TAILSCALE_LOGIN_ENDPOINT: &str = "/api/v1/control/tailscale/login";
 const TAILSCALE_LOGOUT_ENDPOINT: &str = "/api/v1/control/tailscale/logout";
@@ -311,6 +314,12 @@ struct TailscaleResponseDto {
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
+struct TailscalePeersResponseDto {
+    peers: TailscalePeerSnapshot,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct TailscaleMutationResponseDto {
     tailscale: TailscaleStatus,
     login_url: Option<String>,
@@ -341,6 +350,8 @@ struct AppState {
     subscription: Option<SubscriptionDto>,
     device_policies: Option<DevicePolicySnapshotDto>,
     tailscale: Option<TailscaleStatus>,
+    tailscale_peers: Option<TailscalePeerSnapshot>,
+    tailscale_peers_error: Option<String>,
     tailscale_login_url: Option<String>,
 }
 
@@ -351,6 +362,14 @@ enum ControlArea {
     TailscaleProxy,
     Nodes,
 }
+
+type SettingsData = (
+    NetworkConfigDto,
+    NetworkPendingDto,
+    SubscriptionDto,
+    DevicePolicySnapshotDto,
+    TailscaleStatus,
+);
 
 enum Action {
     Started,
@@ -363,18 +382,11 @@ enum Action {
     AuthFinished(Result<(AuthSessionDto, String), String>),
     SettingsStarted,
     SettingsFinished(
-        Result<
-            (
-                NetworkConfigDto,
-                NetworkPendingDto,
-                SubscriptionDto,
-                DevicePolicySnapshotDto,
-                TailscaleStatus,
-            ),
-            String,
-        >,
+        Result<SettingsData, String>,
+        Result<TailscalePeerSnapshot, String>,
     ),
     TailscaleMutationFinished(Result<(TailscaleStatus, Option<String>, String), String>),
+    TailscalePeersFinished(Result<TailscalePeerSnapshot, String>),
     SettingsMutationFinished(Result<String, String>),
     ScanFinished(Result<Vec<WifiScanDto>, String>),
     SettingsNotice(String),
@@ -495,6 +507,8 @@ impl Reducible for AppState {
                             next.subscription = None;
                             next.device_policies = None;
                             next.tailscale = None;
+                            next.tailscale_peers = None;
+                            next.tailscale_peers_error = None;
                             next.tailscale_login_url = None;
                             next.scan_entries.clear();
                         }
@@ -511,7 +525,7 @@ impl Reducible for AppState {
                 ..(*self).clone()
             }
             .into(),
-            Action::SettingsFinished(result) => {
+            Action::SettingsFinished(result, peers_result) => {
                 let mut next = (*self).clone();
                 next.settings_busy = false;
                 match result {
@@ -526,6 +540,13 @@ impl Reducible for AppState {
                         next.settings_notice = Some(format!("设置数据读取失败：{error}"));
                     }
                 }
+                match peers_result {
+                    Ok(peers) => {
+                        next.tailscale_peers = Some(peers);
+                        next.tailscale_peers_error = None;
+                    }
+                    Err(error) => next.tailscale_peers_error = Some(error),
+                }
                 next.into()
             }
             Action::TailscaleMutationFinished(result) => {
@@ -533,13 +554,30 @@ impl Reducible for AppState {
                 next.settings_busy = false;
                 match result {
                     Ok((tailscale, login_url, message)) => {
+                        let logged_out = tailscale.authenticated == Some(false)
+                            && tailscale.desired_mode == Some(TailscaleMode::Disabled);
                         next.tailscale = Some(tailscale);
                         next.tailscale_login_url = login_url;
                         next.settings_notice = Some(message);
+                        if logged_out {
+                            next.tailscale_peers = None;
+                            next.tailscale_peers_error = None;
+                        }
                     }
                     Err(error) => {
                         next.settings_notice = Some(format!("操作失败：{error}"));
                     }
+                }
+                next.into()
+            }
+            Action::TailscalePeersFinished(result) => {
+                let mut next = (*self).clone();
+                match result {
+                    Ok(peers) => {
+                        next.tailscale_peers = Some(peers);
+                        next.tailscale_peers_error = None;
+                    }
+                    Err(error) => next.tailscale_peers_error = Some(error),
                 }
                 next.into()
             }
@@ -897,16 +935,7 @@ async fn post_json_response<T: serde::Serialize, R: serde::de::DeserializeOwned>
         .map_err(|error| format!("{label}响应格式无效：{error}"))
 }
 
-async fn fetch_settings_data() -> Result<
-    (
-        NetworkConfigDto,
-        NetworkPendingDto,
-        SubscriptionDto,
-        DevicePolicySnapshotDto,
-        TailscaleStatus,
-    ),
-    String,
-> {
+async fn fetch_settings_data() -> Result<SettingsData, String> {
     let network = fetch_json::<NetworkConfigResponseDto>(NETWORK_CONFIG_ENDPOINT, "网络配置")
         .await?
         .config;
@@ -923,10 +952,18 @@ async fn fetch_settings_data() -> Result<
     Ok((network, pending, subscription, device_policies, tailscale))
 }
 
+async fn fetch_tailscale_peers() -> Result<TailscalePeerSnapshot, String> {
+    fetch_json::<TailscalePeersResponseDto>(TAILSCALE_PEERS_ENDPOINT, "Tailscale 设备列表")
+        .await
+        .map(|response| response.peers)
+}
+
 fn dispatch_settings_refresh(state: UseReducerHandle<AppState>) {
     state.dispatch(Action::SettingsStarted);
     spawn_local(async move {
-        state.dispatch(Action::SettingsFinished(fetch_settings_data().await));
+        let settings = fetch_settings_data().await;
+        let peers = fetch_tailscale_peers().await;
+        state.dispatch(Action::SettingsFinished(settings, peers));
     });
 }
 
@@ -964,7 +1001,9 @@ fn dispatch_settings_mutation<T: serde::Serialize + 'static>(
     spawn_local(async move {
         let result = post_json(endpoint, &csrf, &body, label).await;
         if result.is_ok() {
-            state.dispatch(Action::SettingsFinished(fetch_settings_data().await));
+            let settings = fetch_settings_data().await;
+            let peers = fetch_tailscale_peers().await;
+            state.dispatch(Action::SettingsFinished(settings, peers));
         }
         state.dispatch(Action::SettingsMutationFinished(
             result.map(|_| success.to_owned()),
@@ -989,7 +1028,13 @@ fn dispatch_tailscale_mutation<T: serde::Serialize + 'static>(
         )
         .await
         .map(|response| (response.tailscale, response.login_url, success.to_owned()));
+        let refresh_peers = result.is_ok() && endpoint != TAILSCALE_LOGOUT_ENDPOINT;
         state.dispatch(Action::TailscaleMutationFinished(result));
+        if refresh_peers {
+            state.dispatch(Action::TailscalePeersFinished(
+                fetch_tailscale_peers().await,
+            ));
+        }
     });
 }
 
@@ -1008,7 +1053,9 @@ fn dispatch_disruptive_settings_mutation<T: serde::Serialize + 'static>(
         TimeoutFuture::new(NETWORK_APPLY_PAINT_DELAY_MS).await;
         let result = post_json(endpoint, &csrf, &body, label).await;
         if result.is_ok() {
-            state.dispatch(Action::SettingsFinished(fetch_settings_data().await));
+            let settings = fetch_settings_data().await;
+            let peers = fetch_tailscale_peers().await;
+            state.dispatch(Action::SettingsFinished(settings, peers));
         }
         state.dispatch(Action::SettingsMutationFinished(
             result.map(|_| success.to_owned()),
@@ -1046,7 +1093,9 @@ fn dispatch_subscription_source(state: UseReducerHandle<AppState>, csrf: String,
         }
         .await;
         if result.is_ok() {
-            state.dispatch(Action::SettingsFinished(fetch_settings_data().await));
+            let settings = fetch_settings_data().await;
+            let peers = fetch_tailscale_peers().await;
+            state.dispatch(Action::SettingsFinished(settings, peers));
         }
         state.dispatch(Action::SettingsMutationFinished(
             result.map(|_| "订阅来源已保存并更新".to_owned()),
@@ -1594,7 +1643,9 @@ fn dispatch_device_policy_update(
         )
         .await;
         if result.is_ok() {
-            state.dispatch(Action::SettingsFinished(fetch_settings_data().await));
+            let settings = fetch_settings_data().await;
+            let peers = fetch_tailscale_peers().await;
+            state.dispatch(Action::SettingsFinished(settings, peers));
         }
         let message = result
             .map(|_| "设备代理策略已保存".to_owned())
@@ -2323,6 +2374,67 @@ fn render_display_control(
     }
 }
 
+fn render_tailscale_peers(state: &UseReducerHandle<AppState>) -> Html {
+    let refresh = {
+        let state = state.clone();
+        Callback::from(move |_| dispatch_settings_refresh(state.clone()))
+    };
+    match (&state.tailscale_peers, &state.tailscale_peers_error) {
+        (Some(snapshot), error) => {
+            let summary = format!(
+                "Tailnet 设备 · {} / {} 在线",
+                snapshot.online, snapshot.total
+            );
+            html! {
+                <div class="grid gap-3 rounded-box border border-base-content/10 bg-base-200/40 p-4" role="region" aria-label="Tailnet 设备">
+                    <div class={CONTROL_TITLE}>
+                        <h3 class={CONTROL_HEADING}>{"Tailnet 设备"}</h3>
+                        <span class={CONTROL_META}>{summary}</span>
+                    </div>
+                    <div class={BUTTON_ROW}>
+                        <button class={BUTTON} type="button" onclick={refresh.clone()} disabled={state.settings_busy}>{"重新读取设备"}</button>
+                    </div>
+                    if let Some(error) = error {
+                        <div class={RISK_NOTE} role="status">{format!("设备列表读取失败，当前显示上次成功数据，数据可能已过期：{error}")}</div>
+                    }
+                    if snapshot.peers.is_empty() {
+                        <div class={SETTINGS_EMPTY} role="status">{"暂无其他 Tailnet 设备"}</div>
+                    } else {
+                        <details class="group rounded-box border border-base-content/10 bg-base-100/70 p-3">
+                            <summary class="cursor-pointer font-medium">{"查看设备列表"}</summary>
+                            <ul class="mt-3 grid gap-2">
+                                {for snapshot.peers.iter().map(|peer| {
+                                    let status = if peer.online { "在线" } else { "离线" };
+                                    let tone = if peer.online { Tone::Good } else { Tone::Neutral };
+                                    html! {
+                                        <li class="grid min-w-0 gap-2 rounded-box border border-base-content/10 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" key={peer.ipv4.to_string()}>
+                                            <div class="min-w-0">
+                                                <strong class="block truncate" title={peer.name.clone()}>{&peer.name}</strong>
+                                                <span class={HELP_TEXT}>{format!("{}{}", peer.ipv4, peer.os.as_ref().map_or_else(String::new, |os| format!(" · {os}")))}</span>
+                                            </div>
+                                            <span class={classes!(STATUS_BADGE, tone.class())}><span class={STATUS_DOT_SMALL} aria-hidden="true"></span>{status}</span>
+                                        </li>
+                                    }
+                                })}
+                            </ul>
+                        </details>
+                    }
+                    <small class={HELP_TEXT}>{"“在线”仅表示该设备当前连接到 Tailnet，不表示它正在访问本路由器的 LAN。"}</small>
+                </div>
+            }
+        }
+        (None, Some(error)) => html! {
+            <div class="grid gap-3">
+                <div class={RISK_NOTE} role="status">{format!("Tailnet 设备列表暂不可用：{error}")}</div>
+                <div class={BUTTON_ROW}><button class={BUTTON} type="button" onclick={refresh.clone()} disabled={state.settings_busy}>{"重新读取设备"}</button></div>
+            </div>
+        },
+        (None, None) => html! {
+            <div class={SETTINGS_EMPTY} role="status">{"正在读取 Tailnet 设备列表…"}</div>
+        },
+    }
+}
+
 fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf: &str) -> Html {
     let Some(tailscale) = state.tailscale.as_ref() else {
         return html! {
@@ -2434,6 +2546,7 @@ fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf: &str) -> H
                     <div class={METRIC}><dt class={METRIC_LABEL}>{"连接"}</dt><dd class={METRIC_VALUE}>{connection}</dd></div>
                     <div class={METRIC}><dt class={METRIC_LABEL}>{"本地路由 / 防火墙"}</dt><dd class={METRIC_VALUE}>{format!("路由 {} · 防火墙 {}", tailscale.route_advertised.map(format_bool).unwrap_or_else(missing), tailscale.local_firewall_ready.map(format_bool).unwrap_or_else(missing))}</dd></div>
                 </dl>
+                {render_tailscale_peers(state)}
                 if needs_login {
                     <div class={classes!(RISK_ALERT, "alert-warning", "border-warning/20")} role="alert">
                         <div>
@@ -2867,22 +2980,40 @@ fn tailscale_proxy_status_label(status: &TailscaleStatus) -> String {
     match (
         status.explicit_proxy_desired,
         status.environment,
+        status.explicit_proxy_path,
         status.proxy_fallback,
     ) {
         (
             Some(true),
             Some(TailscaleEnvironment::MihomoExplicit),
+            TailscaleExplicitProxyPath::Ready,
             TailscaleProxyFallback::NotNeeded,
         ) => "已启用".to_owned(),
         (
             Some(true),
+            Some(TailscaleEnvironment::MihomoExplicit),
+            TailscaleExplicitProxyPath::Unavailable,
+            _,
+        ) => "已降级 · 代理路径不可用".to_owned(),
+        (
+            Some(true),
+            Some(TailscaleEnvironment::MihomoExplicit),
+            TailscaleExplicitProxyPath::Unknown,
+            _,
+        ) => "未知 · 代理路径未确认".to_owned(),
+        (
+            Some(true),
             Some(TailscaleEnvironment::Direct),
+            _,
             TailscaleProxyFallback::DirectRestored,
         ) => "已降级 · 已恢复 Direct".to_owned(),
-        (Some(false), Some(TailscaleEnvironment::Direct), TailscaleProxyFallback::NotNeeded) => {
-            "已关闭 · Direct".to_owned()
-        }
-        (None, _, _) | (_, None, _) | (_, _, TailscaleProxyFallback::NotConfirmed) => {
+        (
+            Some(false),
+            Some(TailscaleEnvironment::Direct),
+            TailscaleExplicitProxyPath::NotRequired,
+            TailscaleProxyFallback::NotNeeded,
+        ) => "已关闭 · Direct".to_owned(),
+        (None, _, _, _) | (_, None, _, _) | (_, _, _, TailscaleProxyFallback::NotConfirmed) => {
             "未知 · 未确认".to_owned()
         }
         _ => "已降级 · 未确认".to_owned(),

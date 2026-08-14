@@ -1,7 +1,8 @@
 use crate::{
     application::{
         ports::{
-            ClockPort, PlatformError, SystemProbePort, TailscalePlatformPort, TailscaleProbePort,
+            ClockPort, PlatformError, SystemProbePort, TailnetPeerReadPort, TailscalePlatformPort,
+            TailscaleProbePort,
         },
         reconcile::{
             tailscale_bootstrap_plan, tailscale_plan, tailscale_router_only_runtime_plan,
@@ -12,8 +13,8 @@ use crate::{
         network::{NetworkDesired, OwnedResource, Probe},
         tailscale::{
             TailscaleAction, TailscaleBackendState, TailscaleDesired, TailscaleLoginUrl,
-            TailscaleMode, TailscaleObserved, TailscalePreferences, TailscaleProcessState,
-            TailscaleReadiness,
+            TailscaleMode, TailscaleObserved, TailscalePeerSnapshot, TailscalePreferences,
+            TailscaleProcessState, TailscaleReadiness,
         },
     },
 };
@@ -29,6 +30,20 @@ pub struct TailscaleReconcileResult {
     pub observed: TailscaleObserved,
     pub state: TailscaleReconcileState,
     pub actions_applied: usize,
+}
+
+pub struct ReadTailnetPeers<'a> {
+    reader: &'a dyn TailnetPeerReadPort,
+}
+
+impl<'a> ReadTailnetPeers<'a> {
+    pub const fn new(reader: &'a dyn TailnetPeerReadPort) -> Self {
+        Self { reader }
+    }
+
+    pub fn execute(&self) -> Result<TailscalePeerSnapshot, PlatformError> {
+        self.reader.read_tailnet_peers()
+    }
 }
 
 pub struct TailscaleApplication<'a> {
@@ -443,5 +458,46 @@ fn rollback_compensations(
             }]
         }
         _ => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::tailscale::TailscalePeer;
+    use std::net::Ipv4Addr;
+
+    struct PeerReader {
+        result: Result<TailscalePeerSnapshot, PlatformError>,
+    }
+
+    impl TailnetPeerReadPort for PeerReader {
+        fn read_tailnet_peers(&self) -> Result<TailscalePeerSnapshot, PlatformError> {
+            self.result.clone()
+        }
+    }
+
+    #[test]
+    fn peer_read_use_case_returns_typed_snapshot_without_lifecycle_mutation() {
+        let snapshot = TailscalePeerSnapshot::new(vec![TailscalePeer::new(
+            "laptop",
+            Ipv4Addr::new(100, 64, 0, 8),
+            true,
+            None,
+        )
+        .unwrap()])
+        .unwrap();
+        let reader = PeerReader {
+            result: Ok(snapshot.clone()),
+        };
+        assert_eq!(ReadTailnetPeers::new(&reader).execute().unwrap(), snapshot);
+
+        let reader = PeerReader {
+            result: Err(PlatformError::ProbeFailed("unavailable".to_owned())),
+        };
+        assert_eq!(
+            ReadTailnetPeers::new(&reader).execute(),
+            Err(PlatformError::ProbeFailed("unavailable".to_owned()))
+        );
     }
 }

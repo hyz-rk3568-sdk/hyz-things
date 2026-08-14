@@ -34,12 +34,13 @@ use hyz_router::{
         status::{
             Component, InterfaceStats, LanTunEffective, LanTunStatus, LinkState, MihomoCoreStatus,
             ProxyResourceState, ProxyStatus, RouterStatus, SystemStats, TailscaleConnectionStatus,
-            TailscaleConnectionType, TailscaleProxyFallback, TailscaleRouteApproval,
-            TailscaleStatus,
+            TailscaleConnectionType, TailscaleExplicitProxyPath, TailscaleProxyFallback,
+            TailscaleRouteApproval, TailscaleStatus,
         },
         subscription::{SubscriptionSummary, SubscriptionSummaryState},
         tailscale::{
             TailscaleBackendState, TailscaleEnvironment, TailscaleLoginUrl, TailscaleMode,
+            TailscalePeer, TailscalePeerSnapshot,
         },
     },
 };
@@ -80,6 +81,8 @@ struct HarnessState {
     router: Component<RouterStatus>,
     proxy: Component<ProxyStatus>,
     tailscale: Component<TailscaleStatus>,
+    tailscale_peers: TailscalePeerSnapshot,
+    tailscale_peers_failure: bool,
     system: Component<SystemStats>,
     panel: PanelSnapshot,
     network: NetworkConfigSummary,
@@ -159,9 +162,28 @@ impl Default for HarnessState {
                 },
                 explicit_proxy_desired: Some(false),
                 environment: Some(TailscaleEnvironment::Direct),
+                explicit_proxy_path: TailscaleExplicitProxyPath::NotRequired,
                 proxy_fallback: TailscaleProxyFallback::NotNeeded,
                 error_category: None,
             }),
+            tailscale_peers: TailscalePeerSnapshot::new(vec![
+                TailscalePeer::new(
+                    "laptop",
+                    Ipv4Addr::new(100, 64, 0, 8),
+                    true,
+                    Some("linux".to_owned()),
+                )
+                .unwrap(),
+                TailscalePeer::new(
+                    "tablet",
+                    Ipv4Addr::new(100, 64, 0, 9),
+                    false,
+                    Some("android".to_owned()),
+                )
+                .unwrap(),
+            ])
+            .unwrap(),
+            tailscale_peers_failure: false,
             system: Component::available(SystemStats {
                 uptime_seconds: Some(3_600),
                 cpu_temperature_millidegrees: Some(46_000),
@@ -504,6 +526,19 @@ impl ControlHandler for HarnessBackend {
             ControlOperation::TailscaleGet {} => Ok(ControlResult::Tailscale {
                 status: tailscale_status(&state)?.clone(),
             }),
+            ControlOperation::TailscalePeersGet {} => {
+                let tailscale = tailscale_status(&state)?;
+                if state.tailscale_peers_failure
+                    || tailscale.backend_state != TailscaleBackendState::Running
+                    || tailscale.authenticated != Some(true)
+                {
+                    Err("injected or unavailable Tailscale peers read".to_owned())
+                } else {
+                    Ok(ControlResult::TailscalePeers {
+                        snapshot: state.tailscale_peers.clone(),
+                    })
+                }
+            }
             ControlOperation::TailscaleMode { mode } => {
                 let status = tailscale_status_mut(&mut state)?;
                 status.desired_mode = Some(mode);
@@ -810,6 +845,21 @@ fn validate_harness_state(state: &HarnessState) -> HarnessResult<()> {
     }) {
         return Err("pending network summary version is unsupported".to_owned());
     }
+    let validated_peers = TailscalePeerSnapshot::new(
+        state
+            .tailscale_peers
+            .peers
+            .iter()
+            .map(|peer| {
+                TailscalePeer::new(peer.name.clone(), peer.ipv4, peer.online, peer.os.clone())
+                    .ok_or_else(|| "Tailscale peer state violates field bounds".to_owned())
+            })
+            .collect::<HarnessResult<Vec<_>>>()?,
+    )
+    .ok_or_else(|| "Tailscale peer snapshot violates count or uniqueness bounds".to_owned())?;
+    if validated_peers != state.tailscale_peers {
+        return Err("Tailscale peer snapshot counts or ordering are inconsistent".to_owned());
+    }
     if let Some(display) = &state.panel.display.data {
         if display.brightness > display.max_brightness
             || display.actual_brightness > display.max_brightness
@@ -889,6 +939,11 @@ fn set_proxy_features(
     } else {
         TailscaleEnvironment::Direct
     });
+    tailscale.explicit_proxy_path = if tailscale_enabled {
+        TailscaleExplicitProxyPath::Ready
+    } else {
+        TailscaleExplicitProxyPath::NotRequired
+    };
     tailscale.proxy_fallback = TailscaleProxyFallback::NotNeeded;
     tailscale.error_category = None;
     state.tailscale.state = hyz_router::domain::status::ComponentState::Available;

@@ -63,9 +63,9 @@ pub fn tailscale_router_only_runtime_plan(
 pub fn tailscale_shutdown_plan(
     observed: &TailscaleObserved,
 ) -> Result<Vec<TailscaleAction>, PlatformError> {
-    validate_tailscale_observation(observed)?;
+    validate_tailscale_shutdown_observation(observed)?;
     let mut actions = Vec::new();
-    remove_lan_path(observed, &mut actions)?;
+    remove_lan_path_for_shutdown(observed, &mut actions);
     remove_router_surface(observed, &mut actions)?;
     match &observed.process {
         Probe::Known(
@@ -147,6 +147,53 @@ pub fn tailscale_plan(
         actions.push(TailscaleAction::CommitDesiredMode { mode: desired.mode });
     }
     Ok(actions)
+}
+
+fn validate_tailscale_shutdown_observation(
+    observed: &TailscaleObserved,
+) -> Result<(), PlatformError> {
+    validate_process(&observed.process)?;
+    validate_owned(&observed.socket, "socket")?;
+    validate_owned(&observed.interface, "interface")?;
+    validate_owned(&observed.router_firewall, "router firewall")?;
+    validate_owned(&observed.subnet_firewall, "subnet firewall")?;
+    validate_owned(&observed.management_listener, "management listener")?;
+    require_known(
+        &observed.management_listener_ipv4,
+        "management listener IPv4",
+    )?;
+
+    match (&observed.process, &observed.socket, &observed.interface) {
+        (
+            Probe::Known(TailscaleProcessState::Absent),
+            Probe::Known(OwnedResource::Absent),
+            Probe::Known(OwnedResource::Absent),
+        ) if observed.backend_state == Probe::Known(TailscaleBackendState::Stopped)
+            && observed.route_advertised == Probe::Known(false) => {}
+        (
+            Probe::Known(TailscaleProcessState::OwnedLive { token: process }),
+            Probe::Known(OwnedResource::Owned { token: socket }),
+            Probe::Known(OwnedResource::Owned { token: interface }),
+        ) if process == socket && process == interface => {}
+        (Probe::Known(TailscaleProcessState::OwnedExited { token }), socket, interface)
+            if stale_node_is_absent_or_owned(socket, token)
+                && stale_node_is_absent_or_owned(interface, token) => {}
+        _ => {
+            return Err(PlatformError::Conflict(
+                "refusing inconsistent or partially observed Tailscale shutdown state".to_owned(),
+            ));
+        }
+    }
+    match (
+        &observed.management_listener,
+        &observed.management_listener_ipv4,
+    ) {
+        (Probe::Known(OwnedResource::Absent), Probe::Known(None))
+        | (Probe::Known(OwnedResource::Owned { .. }), Probe::Known(Some(_))) => Ok(()),
+        _ => Err(PlatformError::Conflict(
+            "Tailscale management listener ownership and IPv4 are inconsistent".to_owned(),
+        )),
+    }
 }
 
 fn validate_tailscale_observation(observed: &TailscaleObserved) -> Result<(), PlatformError> {
@@ -283,6 +330,18 @@ fn require_authenticated_backend(observed: &TailscaleObserved) -> Result<(), Pla
         ));
     }
     Ok(())
+}
+
+fn remove_lan_path_for_shutdown(observed: &TailscaleObserved, actions: &mut Vec<TailscaleAction>) {
+    if let Probe::Known(OwnedResource::Owned { token }) = &observed.subnet_firewall {
+        actions.push(TailscaleAction::RemoveSubnetFirewall {
+            token: token.clone(),
+        });
+    }
+    match &observed.route_advertised {
+        Probe::Known(true) => actions.push(TailscaleAction::ClearAdvertisedRoute),
+        Probe::Known(false) | Probe::Unknown(_) => {}
+    }
 }
 
 fn remove_lan_path(

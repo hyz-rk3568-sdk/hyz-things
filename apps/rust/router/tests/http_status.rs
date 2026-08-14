@@ -304,6 +304,14 @@ async fn control_posts_require_exact_origin_token_and_typed_json() {
     .expect("join anonymous Tailscale GET client");
     assert!(tailscale_get.starts_with("HTTP/1.1 401 Unauthorized\r\n"));
 
+    let tailscale_peers_address = server_address(&server, address);
+    let tailscale_peers = tokio::task::spawn_blocking(move || {
+        http_request(tailscale_peers_address, "GET", "/api/v1/tailscale/peers")
+    })
+    .await
+    .expect("join anonymous Tailscale peers GET client");
+    assert!(tailscale_peers.starts_with("HTTP/1.1 401 Unauthorized\r\n"));
+
     let origin = format!("http://192.168.8.1:{}", address.port());
 
     let login_without_token_address = server_address(&server, address);

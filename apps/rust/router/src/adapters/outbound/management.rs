@@ -2327,6 +2327,28 @@ fn replace_resolver_entries(previous: &[String], next: &[String]) -> Result<(), 
     }
 }
 
+fn resolve_resolver_symlink_target(entry: &Path) -> Result<PathBuf, PlatformError> {
+    let link = fs::read_link(entry)
+        .map_err(|error| PlatformError::Io(format!("read resolver symlink: {error}")))?;
+    let linked = if link.is_absolute() {
+        link
+    } else {
+        entry
+            .parent()
+            .ok_or_else(|| PlatformError::InvalidState("resolver path has no parent".to_owned()))?
+            .join(link)
+    };
+    let parent = linked.parent().ok_or_else(|| {
+        PlatformError::InvalidState("resolver symlink target has no parent".to_owned())
+    })?;
+    let file_name = linked.file_name().ok_or_else(|| {
+        PlatformError::InvalidState("resolver symlink target has no file name".to_owned())
+    })?;
+    let parent = fs::canonicalize(parent)
+        .map_err(|error| PlatformError::Io(format!("resolve resolver target parent: {error}")))?;
+    Ok(parent.join(file_name))
+}
+
 fn resolver_target_path() -> Result<PathBuf, PlatformError> {
     let entry = Path::new(RESOLV_CONFIG);
     let target = match fs::symlink_metadata(entry) {
@@ -2336,8 +2358,7 @@ fn resolver_target_path() -> Result<PathBuf, PlatformError> {
                     "resolver symlink must be root-owned".to_owned(),
                 ));
             }
-            fs::canonicalize(entry)
-                .map_err(|error| PlatformError::Io(format!("resolve resolver config: {error}")))?
+            resolve_resolver_symlink_target(entry)?
         }
         Ok(_) => entry.to_path_buf(),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => entry.to_path_buf(),
@@ -2554,6 +2575,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn dangling_relative_resolver_symlink_resolves_through_its_existing_parent() {
+        let root = std::env::temp_dir().join(format!(
+            "hyz-router-resolver-test-{}-{}",
+            std::process::id(),
+            RESOLVER_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        let etc = root.join("etc");
+        let tmp = root.join("tmp");
+        fs::create_dir_all(&etc).unwrap();
+        fs::create_dir_all(&tmp).unwrap();
+        let entry = etc.join("resolv.conf");
+        std::os::unix::fs::symlink("../tmp/resolv.conf", &entry).unwrap();
+
+        assert_eq!(
+            resolve_resolver_symlink_target(&entry).unwrap(),
+            tmp.join("resolv.conf")
+        );
+        assert!(!tmp.join("resolv.conf").exists());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn empty_zombie_cmdline_is_a_non_matching_argv_not_invalid_framing() {
         assert_eq!(decode_process_argv(&[]).unwrap(), Vec::<String>::new());
         assert!(decode_process_argv(b"/usr/sbin/dnsmasq").is_err());
@@ -2697,7 +2741,7 @@ mod tests {
     }
 
     #[test]
-    fn management_restart_detaches_before_hostapd_and_reattaches_after_readiness() {
+    fn management_restart_preserves_the_board_validated_sta_first_vht80_sequence() {
         let source = include_str!("management.rs");
         assert!(source
             .contains("self.restart_management_services(&committed_network_config()?, false)"));
@@ -2711,9 +2755,42 @@ mod tests {
         let preserve = body.find("let restore_attachment").unwrap();
         let detach = body.find("self.detach_ap()?").unwrap();
         let stop = body.find("self.stop_owned_management_services()?").unwrap();
+        let refuse_foreign = body
+            .find("self.refuse_foreign_management_processes()?")
+            .unwrap();
+        let prepare = body.find("prepare_runtime_configs").unwrap();
+        let wan_up = body
+            .find("run_ip(&[\"link\", \"set\", \"dev\", WAN_INTERFACE, \"up\"])?")
+            .unwrap();
+        let wpa = body
+            .find("self.start_service(ManagementService::WpaSupplicant)?")
+            .unwrap();
+        let udhcpc = body
+            .find("self.start_service(ManagementService::Udhcpc)?")
+            .unwrap();
+        let sta_channel = body
+            .find(".wait_for_sta_channel(STA_CHANNEL_WAIT)?")
+            .unwrap();
         let hostapd = body.find("self.start_hostapd_on_channel").unwrap();
+        let dnsmasq = body
+            .find("self.start_service(ManagementService::Dnsmasq)?")
+            .unwrap();
         let attach = body.find("if restore_attachment").unwrap();
-        assert!(preserve < detach && detach < stop && stop < hostapd && hostapd < attach);
+        let management_ready = body.find("self.management_services_ready()?").unwrap();
+        assert!(
+            preserve < detach
+                && detach < stop
+                && stop < refuse_foreign
+                && refuse_foreign < prepare
+                && prepare < wan_up
+                && wan_up < wpa
+                && wpa < udhcpc
+                && udhcpc < sta_channel
+                && sta_channel < hostapd
+                && hostapd < dnsmasq
+                && dnsmasq < attach
+                && attach < management_ready
+        );
         let cleanup = body.split_once("Err(primary) =>").unwrap().1;
         assert!(cleanup.find("self.detach_ap()").unwrap() < cleanup.find("for service").unwrap());
 
@@ -2724,13 +2801,26 @@ mod tests {
             .split_once("fn wait_for_sta_channel")
             .unwrap()
             .0;
+        let country = helper.find("apply_wifi_country(config.country)?").unwrap();
+        let stop_hostapd = helper
+            .find("self.stop_service(ManagementService::Hostapd)?")
+            .unwrap();
         let start = helper
             .find(".start_service(ManagementService::Hostapd)")
             .unwrap();
         let ready = helper
             .find("self.wait_for_hostapd(channel, AP_READY_WAIT)")
             .unwrap();
-        assert!(start < ready);
+        assert!(country < stop_hostapd && stop_hostapd < start && start < ready);
+        assert!(helper.contains("for attempt in 0..2"));
+        assert!(source.contains("const STA_CHANNEL_WAIT: Duration = Duration::from_secs(45)"));
+        assert!(source.contains("const AP_READY_WAIT: Duration = Duration::from_secs(30)"));
+        assert!(!body.contains("rmmod"));
+        assert!(!body.contains("insmod"));
+        assert!(!body.contains("modprobe"));
+        assert!(!helper.contains("rmmod"));
+        assert!(!helper.contains("insmod"));
+        assert!(!helper.contains("modprobe"));
     }
 
     #[test]

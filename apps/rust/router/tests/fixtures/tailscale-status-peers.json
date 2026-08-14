@@ -1,0 +1,29 @@
+{
+  "Version": "1.84.2-tf0a12c1e8-g6b2f6f630",
+  "BackendState": "Running",
+  "TailscaleIPs": ["100.64.0.7"],
+  "Peer": {
+    "nodekey:redacted-laptop": {
+      "HostName": "laptop",
+      "DNSName": "laptop.example.ts.net.",
+      "OS": "linux",
+      "TailscaleIPs": ["100.64.0.8", "fd7a:115c:a1e0::8"],
+      "Online": true,
+      "LastSeen": "2026-08-14T08:00:00Z",
+      "PublicKey": "nodekey:must-not-be-exposed"
+    },
+    "nodekey:redacted-tablet": {
+      "HostName": "tablet",
+      "DNSName": "tablet.example.ts.net.",
+      "OS": "android",
+      "TailscaleIPs": ["100.64.0.9"],
+      "Online": false,
+      "LastSeen": "2026-08-13T08:00:00Z"
+    }
+  },
+  "User": {
+    "123": {
+      "LoginName": "secret@example.com"
+    }
+  }
+}

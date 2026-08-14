@@ -91,13 +91,17 @@ shutdown 失败会写入 root-only、有界的 `/run/hyz-router/shutdown.log`。
 
 ## 当前冷启动结论
 
-2026-08-13 的冷启动证据仍表明：
+2026-08-14 在正式 rootfs 上停止 `hyz-router` 后，以不输出 SSID、PSK 或其他凭据的固定 shell 命令完成了 RTL8852BS 分层验证：
 
-- kernel uptime 约 18 秒时 `wlan0` ready；
-- `hyz-router` 在 management readiness 前可能退出并由 init 按 1、2、4、8 秒退避重试；
-- 历史最慢样本中，kernel uptime 约 165 秒时 `p2p0` 才加入 `br-lan`；
-- management network ready 后，Mihomo 约 1 秒启动，Tailscale 从启动到 `Running` 约 5 秒。
+- 默认 channel 6 AP 和管理 LAN 可以在约 6 秒内建立，但 AP 运行时 STA 无法关联到 5 GHz 上游；
+- 仅停止 hostapd 或将 `p2p0` down 仍不能恢复扫描，`wpa_supplicant` 持续报告 `CTRL-EVENT-SCAN-FAILED ret=-16`，直接 nl80211 scan 也返回 `Device or resource busy`；
+- 该启动还出现 `cfg80211_netdev_notifier_call` 内核警告，说明反复失败的 AP 切换会把 8852BS 留在忙状态；
+- 通过固定 `/usr/lib/modules/8852bs.ko` 真正卸载并重载模块后，接口约 2 秒恢复，纯 STA 约 6 秒关联到 5805 MHz；
+- 原 channel 161 HT40/VHT80 hostapd profile 在这次未主动执行 `iw reg set <AP country>` 的诊断脚本中立即报 `Hardware does not support configured channel`；
+- 同一 STA channel 161 改用 HT20、`ieee80211ac=0` 后，AP 约 6 秒进入 `ENABLED`，STA 保持 `COMPLETED`；
+- 在该稳定 STA/AP 组合下，临时 no-address DHCP hook 收到 lease，证明此前 DHCP 无结果是无线驱动忙状态的后果，不是上游 DHCP server 不响应；
+- 源码历史提交 `a88cde9` 已实现 VHT80 并在每次启动 hostapd 前主动设置 AP country，因此上述不完整 shell 复现不能推翻既有 VHT80 性能结果，也不能把 HT20 直接提升为生产配置；
+- 随后的正式 recovery-free OTA 已确认板端 `/usr/bin/hyz-router` 与打包 ELF 逐字节一致、BCB 在安装后清除；第 4 次 daemon launch 于 kernel uptime 约 92 秒达到管理 HTTP readiness，STA 为 5805 MHz/`COMPLETED`，AP 精确读回 channel 161、`secondary_channel=-1`、802.11ac、VHT width 1 与 center 155，且未出现新的 cfg80211/8852 error；
+- 该样本中 `udhcpc` 仍在运行但尚无 metric-600 默认路由，下游 AP station 数为 0，因此它完成的是启动与 VHT80 radio 验收，不是 DHCP、转发或历史 100+ Mbps 吞吐验收。
 
-因此长冷启动主要来自 RTL8852BS concurrent-mode 的 `p2p0`/AP 初始化与 daemon 重试，不是 Tailscale。应用级部署在网络接口已经稳定时，实测 stop、切换、start 和严格验证约 38–45 秒，避免了完整 OTA 和冷启动等待。
-
-冷启动优化仍应作为独立工作：让 daemon 在驱动接口暂未出现时保持安全、可观察的有界等待或管理降级，而不是重复退出并重启整个初始化事务。
+因此已确认的冷启动放大机制是 hostapd 失败后 daemon 全量清理和 init 退避重试；Tailscale、Mihomo 与 DHCP server 不是该长延迟的主因。产品接受总计 300 秒 deadline 内的 clean daemon retry，并以本轮约 92 秒作为当前 RTL8852BS 冷启动基线；不再以“必须 launch attempt 1”作为通过条件。为恢复 2026-08-14 凌晨版本的稳定等待窗口，生产流程使用 45 秒 STA channel 窗口、30 秒 AP readiness、单次 hostapd clean retry以及 S81 封顶指数退避；WAN route、forwarding、Tailscale 和 Mihomo 仍保留在管理 HTTP 之后，不恢复旧的同步阻塞路径。HT20 只作为诊断基线，VHT80 exact readiness 才是正式 5 GHz 配置；模块重载只用于诊断，不进入普通生产启动路径。

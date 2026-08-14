@@ -15,7 +15,7 @@ use crate::{
         },
         status::{StatusSnapshot, TailscaleStatus},
         subscription::{SubscriptionSummary, SubscriptionUrl},
-        tailscale::{TailscaleLoginUrl, TailscaleMode},
+        tailscale::{TailscaleLoginUrl, TailscaleMode, TailscalePeerSnapshot},
     },
 };
 use async_trait::async_trait;
@@ -39,7 +39,7 @@ pub const CONTROL_SOCKET: &str = "/run/hyz-router/control.sock";
 pub const CONTROL_RUNTIME_DIR: &str = "/run/hyz-router";
 pub const DAEMON_LOCK_DIR: &str = "/run/hyz-router/daemon.lock";
 const DAEMON_OWNER_FILE: &str = "/run/hyz-router/daemon.lock/owner";
-pub const PROTOCOL_VERSION: u16 = 9;
+pub const PROTOCOL_VERSION: u16 = 10;
 pub const MAX_FRAME_BYTES: usize = 64 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
 const CLIENT_OPERATION_WAIT: Duration = Duration::from_secs(30 * 60);
@@ -80,6 +80,7 @@ pub enum ControlOperation {
     DevicePoliciesGet {},
     DevicePoliciesSet { request: DevicePolicyUpdateRequest },
     TailscaleGet {},
+    TailscalePeersGet {},
     TailscaleMode { mode: TailscaleMode },
     TailscaleLogin {},
     TailscaleLogout {},
@@ -107,6 +108,7 @@ impl ControlOperation {
                 | Self::SubscriptionGet { .. }
                 | Self::DevicePoliciesGet { .. }
                 | Self::TailscaleGet { .. }
+                | Self::TailscalePeersGet { .. }
                 | Self::Ota {
                     command: OtaCommand::Verify { .. }
                 }
@@ -121,6 +123,7 @@ impl ControlOperation {
             | Self::SubscriptionRefresh { .. }
             | Self::DevicePoliciesGet { .. }
             | Self::TailscaleGet { .. }
+            | Self::TailscalePeersGet { .. }
             | Self::TailscaleMode { .. }
             | Self::TailscaleLogin { .. }
             | Self::TailscaleLogout { .. }
@@ -329,6 +332,9 @@ pub enum ControlResult {
     },
     Tailscale {
         status: TailscaleStatus,
+    },
+    TailscalePeers {
+        snapshot: TailscalePeerSnapshot,
     },
     TailscaleMutation {
         status: TailscaleStatus,
@@ -785,7 +791,7 @@ mod tests {
         let request = ControlRequest::new(ControlOperation::Status {});
         let encoded = serde_json::to_vec(&request).unwrap();
         assert!(encoded.len() < MAX_FRAME_BYTES);
-        assert_eq!(PROTOCOL_VERSION, 9);
+        assert_eq!(PROTOCOL_VERSION, 10);
         let policy = ControlOperation::DevicePoliciesSet {
             request: DevicePolicyUpdateRequest {
                 expected_generation: 0,
@@ -797,6 +803,37 @@ mod tests {
         let tailscale_get = ControlOperation::TailscaleGet {};
         assert!(!tailscale_get.mutates());
         assert!(tailscale_get.validate().is_ok());
+        let tailscale_peers_get = ControlOperation::TailscalePeersGet {};
+        assert!(!tailscale_peers_get.mutates());
+        assert!(tailscale_peers_get.validate().is_ok());
+        let peers = (0..crate::domain::tailscale::MAX_TAILSCALE_PEERS)
+            .map(|index| {
+                crate::domain::tailscale::TailscalePeer::new(
+                    format!("peer-{index:03}"),
+                    std::net::Ipv4Addr::new(100, 64 + (index / 256) as u8, 0, index as u8),
+                    index % 2 == 0,
+                    Some("linux".to_owned()),
+                )
+                .unwrap()
+            })
+            .collect();
+        let snapshot = crate::domain::tailscale::TailscalePeerSnapshot::new(peers).unwrap();
+        let encoded_peers =
+            serde_json::to_vec(&ControlResponse::success(ControlResult::TailscalePeers {
+                snapshot,
+            }))
+            .unwrap();
+        assert!(encoded_peers.len() < MAX_FRAME_BYTES);
+        let encoded_peers = String::from_utf8(encoded_peers).unwrap();
+        for secret in [
+            "node_key",
+            "machine_key",
+            "public_key",
+            "endpoints",
+            "auth_key",
+        ] {
+            assert!(!encoded_peers.contains(secret));
+        }
         for operation in [
             ControlOperation::TailscaleMode {
                 mode: TailscaleMode::Disabled,

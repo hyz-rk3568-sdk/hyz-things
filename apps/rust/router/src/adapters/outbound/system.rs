@@ -3,8 +3,8 @@ use super::{
         MIHOMO_CONTROLLER_SECRET, MIHOMO_FEATURES_FILE, MIHOMO_RUNTIME_CONFIG, MIHOMO_TUN_IDENTITY,
     },
     process::{
-        mihomo_process_holds_tun, FixedOutput, LinuxMihomoFailOpenPlatform, LinuxRouterPlatform,
-        Tool, NETWORK_LOCK,
+        mihomo_process_holds_tun, mihomo_process_owns_tcp_listener, FixedOutput,
+        LinuxMihomoFailOpenPlatform, LinuxRouterPlatform, Tool, NETWORK_LOCK,
     },
     proxy::mihomo_tun_ifindex,
     storage,
@@ -99,22 +99,21 @@ impl FailOpenPlatformPort for LinuxMihomoFailOpenPlatform {
                 "core identity changed before fail-open stale-state removal".to_owned(),
             ));
         }
-        let watcher = self.platform.read_watcher_record()?.ok_or_else(|| {
-            PlatformError::Conflict("watcher identity record disappeared".to_owned())
-        })?;
-        if watcher.process.pid != std::process::id()
-            || watcher.core != expected
-            || !watcher.matches_live_process()?
-        {
-            return Err(PlatformError::Conflict(
-                "watcher identity changed before fail-open stale-state removal".to_owned(),
-            ));
+        if let Some(watcher) = self.platform.read_watcher_record()? {
+            if watcher.process.pid != std::process::id()
+                || watcher.core != expected
+                || !watcher.matches_live_process()?
+            {
+                return Err(PlatformError::Conflict(
+                    "watcher identity changed before fail-open stale-state removal".to_owned(),
+                ));
+            }
         }
-        storage::remove_file_durable(super::process::MIHOMO_PID_RECORD)?;
         storage::remove_file_durable(super::process::MIHOMO_WATCHER_RECORD)?;
         storage::remove_file_durable(MIHOMO_TUN_IDENTITY)?;
         storage::remove_file_durable(MIHOMO_CONTROLLER_SECRET)?;
-        storage::remove_file_durable(MIHOMO_RUNTIME_CONFIG)
+        storage::remove_file_durable(MIHOMO_RUNTIME_CONFIG)?;
+        storage::remove_file_durable(super::process::MIHOMO_PID_RECORD)
     }
 
     fn sleep_fail_open_retry(&self, duration: std::time::Duration) {
@@ -186,7 +185,9 @@ impl SystemProbePort for LinuxRouterPlatform {
     }
 
     fn observe_proxy(&self) -> Result<ProxyObserved, PlatformError> {
-        let process_identity_valid = match (self.mihomo_identity(), self.mihomo_process_count()) {
+        let mihomo_identity = self.mihomo_identity();
+        let mihomo_process_count = self.mihomo_process_count();
+        let process_identity_valid = match (&mihomo_identity, &mihomo_process_count) {
             (Ok(Some(_)), Ok(1)) => Probe::Known(true),
             (Ok(None), Ok(0)) => Probe::Known(false),
             (Ok(Some(_)), Ok(count)) => Probe::Unknown(format!(
@@ -217,12 +218,8 @@ impl SystemProbePort for LinuxRouterPlatform {
         };
         let runtime_config_valid =
             match storage::read_private_small_optional(MIHOMO_RUNTIME_CONFIG, 4 * 1024 * 1024) {
-                Ok(Some(_)) => match self.validate_mihomo_config() {
-                    Err(PlatformError::CommandFailed(_)) => Probe::Known(false),
-                    Ok(()) => match self.mihomo_runtime_config_matches() {
-                        Ok(matches) => Probe::Known(matches),
-                        Err(error) => Probe::Unknown(error.to_string()),
-                    },
+                Ok(Some(_)) => match self.mihomo_runtime_config_matches() {
+                    Ok(matches) => Probe::Known(matches),
                     Err(error) => Probe::Unknown(error.to_string()),
                 },
                 Ok(None) => Probe::Known(false),
@@ -275,16 +272,23 @@ impl SystemProbePort for LinuxRouterPlatform {
             Probe::Unknown(reason) => Probe::Unknown(reason.clone()),
         };
         let persisted_features = read_or_migrate_proxy_features();
-        let mixed_port_ready = match &process_identity_valid {
-            Probe::Known(true) => {
+        let mixed_port_ready = match (&mihomo_identity, &process_identity_valid) {
+            (Ok(Some(identity)), Probe::Known(true)) => {
                 let address: SocketAddr =
                     MIHOMO_MIXED_ADDRESS.parse().expect("fixed mixed address");
-                Probe::Known(
-                    TcpStream::connect_timeout(&address, Duration::from_millis(100)).is_ok(),
-                )
+                match mihomo_process_owns_tcp_listener(identity.core, address) {
+                    Ok(true) => Probe::Known(
+                        TcpStream::connect_timeout(&address, Duration::from_millis(100)).is_ok(),
+                    ),
+                    Ok(false) => Probe::Known(false),
+                    Err(error) => Probe::Unknown(error.to_string()),
+                }
             }
-            Probe::Known(false) => Probe::Known(false),
-            Probe::Unknown(reason) => Probe::Unknown(reason.clone()),
+            (_, Probe::Known(false)) => Probe::Known(false),
+            (_, Probe::Unknown(reason)) => Probe::Unknown(reason.clone()),
+            (Ok(None), Probe::Known(true)) | (Err(_), Probe::Known(true)) => Probe::Unknown(
+                "Mihomo identity is unavailable during mixed-port ownership probe".to_owned(),
+            ),
         };
         let router_firewall = self.observe_router_firewall();
         let ordinary_nat_confirmed = match (
@@ -369,13 +373,17 @@ fn legacy_proxy_features(
     mode: Option<&str>,
     disabled_marker: bool,
 ) -> Result<ProxyFeaturesV1, &'static str> {
+    let mode = mode.map(str::trim);
+    if matches!(mode, Some(value) if !matches!(value, "disabled" | "explicit" | "tun")) {
+        return Err("persisted legacy proxy mode is invalid; migration was not attempted");
+    }
     if disabled_marker {
         return Ok(ProxyFeaturesV1::disabled());
     }
-    match mode.map(str::trim) {
+    match mode {
         None | Some("explicit") | Some("disabled") => Ok(ProxyFeaturesV1::disabled()),
         Some("tun") => Ok(ProxyFeaturesV1::new(true, false)),
-        Some(_) => Err("persisted legacy proxy mode is invalid; migration was not attempted"),
+        Some(_) => unreachable!("legacy mode was validated above"),
     }
 }
 
@@ -1250,6 +1258,11 @@ mod tests {
             ProxyFeaturesV1::new(true, false)
         );
         assert!(legacy_proxy_features(Some("future"), false).is_err());
+        assert!(legacy_proxy_features(Some("future"), true).is_err());
+        assert_eq!(
+            legacy_proxy_features(Some("tun"), true).unwrap(),
+            ProxyFeaturesV1::disabled()
+        );
     }
 
     #[test]
@@ -1526,7 +1539,8 @@ mod tests {
         let watcher = cleanup.find("MIHOMO_WATCHER_RECORD").unwrap();
         let secret = cleanup.find("MIHOMO_CONTROLLER_SECRET").unwrap();
         let runtime = cleanup.find("MIHOMO_RUNTIME_CONFIG").unwrap();
-        assert!(watcher < secret && secret < runtime);
+        let core = cleanup.rfind("MIHOMO_PID_RECORD").unwrap();
+        assert!(watcher < secret && secret < runtime && runtime < core);
     }
 
     #[test]

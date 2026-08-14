@@ -90,7 +90,7 @@ flowchart TB
         Application --> Domain
     end
 
-    Outbound["Outbound ports<br/>RouterPlatformPort · TailscalePlatformPort<br/>SystemProbePort · TailscaleProbePort · ClockPort<br/>FirmwarePlatformPort · status ports"]
+    Outbound["Outbound ports<br/>RouterPlatformPort · TailscalePlatformPort<br/>SystemProbePort · TailscaleProbePort · TailnetPeerReadPort · ClockPort<br/>FirmwarePlatformPort · status ports"]
 
     subgraph Driven["Driven adapters · adapters/outbound"]
         Linux["LinuxRouterPlatform<br/>network · process · proxy · storage · panel"]
@@ -141,20 +141,35 @@ sequenceDiagram
     Note over Control,Network: udhcpc 回调此时可独立提交 WAN lease，避免与启动事务死锁
     Daemon->>Network: reconcile management-only
     Network-->>Daemon: 严格复核管理 LAN/AP/DNS
-    Daemon->>Network: reconcile forwarding
-    alt WAN 和转发就绪
+    Daemon->>Daemon: 恢复设备策略事务
+    Daemon->>HTTP: 绑定固定 LAN 地址，Web 进入管理面就绪
+    par 后台等待 DHCP-owned WAN route
+        Daemon->>Network: 仅在默认路由已确认后 reconcile forwarding
         Network-->>Daemon: 普通 NAT 已确认
-        Daemon->>Proxy: 恢复持久代理模式
-    else 转发或代理恢复失败，但降级成功
-        Network-->>Daemon: 回到 management-only
-    else 无法确认安全状态
-        Daemon->>Daemon: 清理自有资源并退出失败
+        Daemon->>Proxy: 按 forwarding → Tailscale → proxy 顺序恢复持久运行时
+    and 继续服务管理面
+        HTTP-->>Init: 即使 WAN/DHCP 不可用也保持 Web 可见
     end
-    Daemon->>HTTP: 仅在已确认 normal 或 management-only 后绑定 LAN 地址
-    HTTP-->>Init: Web 可见，进入对外就绪状态
 ```
 
-control socket 可服务不等于 HTTP 已就绪。HTTP 绑定是对管理 LAN 暴露的最终 readiness boundary；任何 `unknown`、外部所有权或复核失败都不会被提升为 ready。
+control socket 可服务不等于 HTTP 已就绪。HTTP 绑定是对管理 LAN 暴露的最终 readiness boundary；启动关键路径只提交严格确认的 management-only 状态，不等待 WAN DHCP、Tailscale 或 Mihomo。后台恢复任务每次先确认 DHCP-owned 默认路由，再在同一 `router_proxy` 串行区内按 forwarding、Tailscale、proxy 顺序恢复；`unknown`、外部所有权或复核失败都不会被提升为 ready。
+
+WAN DHCP 租约按地址、metric `600` 路由、resolver 条目和 ownership record 整体提交；任一步失败都按精确动作逆序回滚。Buildroot 的 `/etc/resolv.conf -> ../tmp/resolv.conf` 在冷启动时允许目标尚不存在：adapter 只解析并校验固定 allowlist 中的目标父目录，再原子创建 `/tmp/resolv.conf`，不能因 dangling symlink 撤销已收到的有效租约。
+
+### RTL8852BS 冷启动固定流程
+
+RTL8852BS 单射频并发启动采用稳定优先的固定顺序，不以减少 init launch 次数为目标：
+
+1. 等待 `wlan0`、`p2p0` 出现，记录原 bridge attachment，先将 `p2p0` 从 bridge 分离；
+2. 按精确 PID/start/exe/argv 身份停止上一轮自有管理进程并拒绝 foreign process；
+3. 生成固定 wpa_supplicant、hostapd、dnsmasq runtime config，启动 `wpa_supplicant` 与常驻 `udhcpc`；
+4. 在 45 秒有界窗口内等待 committed STA 关联并取得共享信道；若暂时没有 STA channel，才使用固定管理 AP fallback channel；
+5. 启动 AP 前必须主动应用 committed AP country；5 GHz 非 DFS 信道使用既有 VHT80 geometry，信道 161 必须精确读回 `secondary_channel=-1`、`ieee80211ac=1`、`vht_oper_chwidth=1`、`vht_oper_centr_freq_seg0_idx=155`；
+6. hostapd 单次失败只允许一次 clean retry，每次都先停止精确自有进程、down/up `p2p0` 并重写固定配置；不得通过 `rmmod`、`insmod` 或 `modprobe` 把诊断性驱动重载带入生产启动；
+7. AP 精确 ready 后再启动 dnsmasq、恢复原 bridge attachment，并复核所有管理进程身份和 AP 状态；只有这一步完成后才绑定 LAN HTTP；
+8. 任一尝试失败都必须 detach AP 并按逆序清理本轮已启动的自有进程。S81 可在总计 300 秒 deadline 内按 1、2、4、8、16、30 秒封顶退避重新启动完整 daemon；多次 launch 本身不是故障，只要 ownership 每轮完全清理并在 deadline 内达到严格 readiness。
+
+2026-08-14 的正式 rootfs OTA 板测在第 4 次 launch、kernel uptime 约 92 秒时达到管理 HTTP 与同频道 VHT80 readiness。该量级已被接受为 RTL8852BS 冷启动基线；不得为了缩短时间改成 AP-first、永久 HT20、放宽 VHT geometry/readiness，或把 WAN DHCP、forwarding、Tailscale、Mihomo 放回 HTTP 前的关键路径。性能验收仍要求下游客户端连接后的实际吞吐测试，单凭 hostapd 状态不能证明恢复到历史 100+ Mbps。
 
 ## Composition root
 
@@ -173,13 +188,14 @@ control socket 可服务不等于 HTTP 已就绪。HTTP 绑定是对管理 LAN �
 hyz-router daemon
 hyz-router status [--json]
 hyz-router router enable|disable
-hyz-router proxy explicit|tun|disable
+hyz-router proxy lan-tun enable|disable
+hyz-router proxy tailscale enable|disable
 hyz-router ota verify|download|install|install-recovery|apply ...
 ```
 
 `daemon` 是正常控制路径中唯一构造完整生产 adapter 的角色。普通 CLI 和同一 ELF 的 udhcpc hook 都是 `/run/hyz-router/control.sock` 客户端；socket 位于 root-only `0700` 目录，文件模式 `0600`，并用 Linux peer credentials 再次要求 UID 0。Mihomo watcher 是唯一的最小特权例外：它由同一 composition root 装配，只能按已记录的 core PID/start/exe/argv 身份执行 fail-open，不提供公开 CLI、HTTP 或 control operation。
 
-OTA 和 router enable/disable 仍不通过 LAN API 暴露。匿名 LAN 页面只保留状态展示、LCD 控制和受限测速；产品代理模式与已验证组内节点选择现与 AP/STA、设备别名/策略及订阅来源一起，只通过固定 typed API 暴露给已完成强制改密的管理员 session。浏览器不能提交命令、路径、原始 wpa_supplicant/hostapd/Mihomo 配置、provider 名、测试 URL 或 timeout。凭据和订阅 URL 不回显，也不允许通过 CLI 参数输入，避免进入进程列表。
+OTA 和 router enable/disable 仍不通过 LAN API 暴露。匿名 LAN 页面只保留状态展示、LCD 控制和受限测速；LAN TUN、Tailscale 中继代理与已验证组内节点选择现与 AP/STA、设备别名/策略及订阅来源一起，只通过固定 typed API 暴露给已完成强制改密的管理员 session。浏览器不能提交命令、路径、原始 wpa_supplicant/hostapd/Mihomo 配置、provider 名、测试 URL 或 timeout。凭据和订阅 URL 不回显，也不允许通过 CLI 参数输入，避免进入进程列表。
 
 ## 六边形依赖规则
 
@@ -190,7 +206,7 @@ OTA 和 router enable/disable 仍不通过 LAN API 暴露。匿名 LAN 页面只
 5. 只有 `main.rs` 可以构造生产 adapter。
 6. adapter 不接受来自 HTTP 的命令字符串；外部程序只能通过固定 executable 和 typed argv 调用，禁止 `sh -c`。
 
-当前生命周期能力由独立 typed ports 表达：普通网络/Mihomo 使用 `RouterPlatformPort` 与 `SystemProbePort`，Tailscale 使用 `TailscalePlatformPort` 与 `TailscaleProbePort`；二者在 Linux adapter 中共享 `/run/hyz-network.lock`，避免并发修改统一 iptables hook。`FirmwarePlatformPort`、状态 ports 和 `ClockPort` 保持各自边界。
+当前生命周期能力由独立 typed ports 表达：普通网络/Mihomo 使用 `RouterPlatformPort` 与 `SystemProbePort`，Tailscale 生命周期使用 `TailscalePlatformPort` 与 `TailscaleProbePort`，管理员只读 Tailnet 设备清单通过独立 `TailnetPeerReadPort` 读取；二者在 Linux adapter 中共享 `/run/hyz-network.lock`，避免并发修改统一 iptables hook。`FirmwarePlatformPort`、状态 ports 和 `ClockPort` 保持各自边界。
 
 ## Web 状态与受限本地控制
 
@@ -201,19 +217,23 @@ HTTP 默认保留固定 LAN listener `192.168.8.1:8080`；`HYZ_ROUTER_HTTP_PORT`
 - `POST /api/v1/control/network/sta/{scan,apply}`；
 - `POST /api/v1/control/network/ap/{prepare,apply,confirm,cancel}`；
 - `GET /api/v1/proxy/subscription`；
+- `POST /api/v1/control/proxy/{lan-tun,tailscale}`；
 - `POST /api/v1/control/proxy/subscription/{source,refresh}`；
 - `GET /api/v1/tailscale`；
+- `GET /api/v1/tailscale/peers`（管理员只读、严格有界的设备名、Tailscale CGNAT IPv4、在线状态与可选 OS；不返回 peer map key、用户邮箱、endpoint、密钥或原始 JSON）；
 - `POST /api/v1/control/tailscale/{mode,login,logout}`。
 
-没有 CORS。未知 `/api/*` 返回 JSON 404，不进入 SPA fallback；API method/path 使用精确 allowlist。所有 mutation 都要求小尺寸 typed JSON、精确管理 origin、自定义 CSRF header；AP/STA、代理模式、节点选择、设备别名/策略和订阅接口还要求管理员 session。固定用户名为 `admin`，公开 bootstrap 密码仅用于首次进入，持久层只保存 Argon2id PHC hash，并在完成强制改密前拒绝设置操作。session 只驻留内存，使用 `HttpOnly; SameSite=Strict; Path=/` cookie、15 分钟 idle/8 小时 absolute TTL 和有界登录限速；密码变化会撤销其他 session。
+没有 CORS。未知 `/api/*` 返回 JSON 404，不进入 SPA fallback；API method/path 使用精确 allowlist。所有 mutation 都要求小尺寸 typed JSON、精确管理 origin、自定义 CSRF header；AP/STA、代理模式、节点选择、设备别名/策略和订阅接口还要求管理员 session。会停止或重启 `tailscaled` 的 Tailscale disable/logout 与两个 proxy feature mutation 只允许从固定 LAN listener 或 root-only Unix control 发起，Tailscale IPv4 listener 会返回 409，避免请求主动拆除承载自身的远程管理通道。固定用户名为 `admin`，公开 bootstrap 密码仅用于首次进入，持久层只保存 Argon2id PHC hash，并在完成强制改密前拒绝设置操作。session 只驻留内存，使用 `HttpOnly; SameSite=Strict; Path=/` cookie、15 分钟 idle/8 小时 absolute TTL 和有界登录限速；密码变化会撤销其他 session。
 
 用户明确选择继续使用 HTTP，因此 cookie 不能设置 `Secure`，管理 LAN 上能嗅探流量的客户端仍可能获得密码、Wi-Fi 凭据、订阅 URL 或 session。这是已接受但未消除的机密性风险；WPA2 只能降低无线接入风险，不能替代 HTTPS。共享默认密码也存在首次抢占风险，首次上线应立即改密。CSRF token 不是认证：匿名 LCD 和受限测速仍沿用 LAN 信任边界；代理模式、节点选择、设备别名/策略、凭据与持久设置均额外要求管理员认证。
 
 响应继续带 CSP、frame deny、nosniff、referrer、permissions、COOP/CORP 等安全头。Trunk 生成的 inline module bootstrap 会在 deterministic bundle 阶段被严格提取成同源 `/router-bootstrap.js`，因此不需要 nonce 或 `'unsafe-inline'`。Yew 启动需要浏览器编译同源 WASM，所以 `script-src` 精确允许 `'self' 'wasm-unsafe-eval'`；后者只开放 WebAssembly 编译，不开放普通 JavaScript `eval`。
 
-Yew 页面采用 `总览 / 网络设置` 两个页内 tab；总览以实时链路拓扑和四项关键指标优先呈现 WAN、STA、Router/NAT、AP/LAN 与 Mihomo/TUN 的关系，再只读展示系统、WAN、LAN/AP、转发/NAT、Mihomo/TUN、`wlan0` WAN 累计流量、LCD 背光、实际使用的代理组、当前节点、逐项延迟/超时和从节点名称保守推断的国家/地区。代理模式、节点选择、设备别名/策略与订阅配置统一放在登录后的网络设置中；设备别名按 MAC 持久保存，可在默认代理策略下独立保留，避免 DHCP hostname 消失后退化为 MAC。Mihomo 内置但在当前 rule 模式不承载流量的 `GLOBAL` 组被过滤；没有数据的状态卡、控制卡和代理区域直接隐藏，不显示“不可用”占位。页面首次进入或浏览器完整刷新时只触发一次受限组级全量测速，约两秒的状态轮询不会测速；手动按钮可再次刷新，五秒内重复请求返回缓存成功结果而不是 409。组级测速覆盖 inline proxies；响应直接合并到每个显示项，缺失项标记为超时，并在节点目录不变时由 daemon 进程内缓存保留最近结果。provider history 仍只作为初始数据来源，且只合并经过名称、数量和字段白名单校验的 `delay`/`alive`，浏览器不能指定 provider、代理组、测试 URL 或 timeout。代理节点、组名和地区属于 LAN-visible operational metadata；API 不返回 server/port、订阅 URL、密码、UUID、controller secret、原始 history 或 Mihomo JSON。写操作期间控件禁用，状态失败时保留最近成功快照。
+Yew 页面采用 `总览 / 网络设置` 两个页内 tab；总览以实时链路拓扑和四项关键指标优先呈现 WAN、STA、Router/NAT、AP/LAN 与 Mihomo/TUN 的关系，再只读展示系统、WAN、LAN/AP、转发/NAT、Mihomo core、LAN TUN、Tailscale 中继代理、`wlan0` WAN 累计流量、LCD 背光、实际使用的代理组、当前节点、逐项延迟/超时和从节点名称保守推断的国家/地区。LAN TUN 与 Tailscale 中继代理两个独立开关、节点选择、设备别名/策略与订阅配置统一放在登录后的网络设置中；设备别名按 MAC 持久保存，可在默认代理策略下独立保留，避免 DHCP hostname 消失后退化为 MAC。Mihomo 内置但在当前 rule 模式不承载流量的 `GLOBAL` 组被过滤；没有数据的状态卡、控制卡和代理区域直接隐藏，不显示“不可用”占位。页面首次进入或浏览器完整刷新时只触发一次受限组级全量测速，约两秒的状态轮询不会测速；手动按钮可再次刷新，五秒内重复请求返回缓存成功结果而不是 409。组级测速覆盖 inline proxies；响应直接合并到每个显示项，缺失项标记为超时，并在节点目录不变时由 daemon 进程内缓存保留最近结果。provider history 仍只作为初始数据来源，且只合并经过名称、数量和字段白名单校验的 `delay`/`alive`，浏览器不能指定 provider、代理组、测试 URL 或 timeout。代理节点、组名和地区属于 LAN-visible operational metadata；API 不返回 server/port、订阅 URL、密码、UUID、controller secret、原始 history 或 Mihomo JSON。写操作期间控件禁用，状态失败时保留最近成功快照。
 
-网络设置页签在未登录时只显示默认折叠的管理员登录摘要，按需展开登录表单；登录后提供代理模式与节点选择、设备显示名与代理策略、STA 扫描/手工切换、AP SSID/密码/国家码和 write-only Mihomo 订阅来源。AP/STA 面板默认折叠，按需展开；STA 或 AP 应用先在管理设置区显示内嵌风险确认 panel，不使用模态弹窗或页面遮罩。确认后先移除确认 panel 并折叠详情，等待浏览器完成渲染后才发送可能中断管理连接的请求。typed Wi-Fi 配置使用 PBKDF2 派生的 64-hex PSK和固定 renderer，不拼接 raw 配置。STA 只有在关联、DHCP metric-600 route 与同信道 AP readiness 都确认后才提交，失败恢复 committed generation；当前 renderer 只支持 2.4 GHz 并发，5 GHz 候选会 fail-closed。AP 采用 prepare → apply → 重新连接 → confirm，两分钟未确认则恢复旧 AP，daemon 重启发现 pending 也恢复 committed 配置。订阅只接受 HTTPS 公网目标，关闭 redirect/环境代理，使用固定 `clash.meta` User-Agent 请求 YAML，连接前校验并 pin 全部 DNS 结果；响应受 4 MiB 上限约束，必须包含唯一顶层 `proxies`，其他 Clash 配置字段会被丢弃，只有经过严格限制的节点数组进入本地候选。Mihomo 候选验证和 live readiness 成功后才切 current generation。GET 只显示是否配置与通用状态，不返回来源、host、代次或节点数。
+网络设置页签在未登录时只显示默认折叠的管理员登录摘要，按需展开登录表单；登录后提供代理模式与节点选择、设备显示名与代理策略、STA 扫描/手工切换、AP SSID/密码/国家码和 write-only Mihomo 订阅来源。AP/STA 面板默认折叠，按需展开；STA 或 AP 应用先在管理设置区显示内嵌风险确认 panel，不使用模态弹窗或页面遮罩。确认后先移除确认 panel 并折叠详情，等待浏览器完成渲染后才发送可能中断管理连接的请求。typed Wi-Fi 配置使用 PBKDF2 派生的 64-hex PSK和固定 renderer，不拼接 raw 配置。STA 只有在关联、DHCP metric-600 route 与同信道 AP readiness 都确认后才提交，失败恢复 committed generation；当前 renderer 对 2.4 GHz 使用 HT20，对受支持的非 DFS 5 GHz 同信道使用既有 VHT80 profile，并对 secondary channel、802.11ac、VHT width 与 center frequency 做精确 readiness 复核；诊断中可启动的 HT20 只用于隔离驱动状态问题，不作为生产性能降级。5 GHz 候选仍只有在 STA 关联、DHCP metric-600 route 与同信道 VHT80 AP readiness 都确认后才提交。AP 采用 prepare → apply → 重新连接 → confirm，两分钟未确认则恢复旧 AP，daemon 重启发现 pending 也恢复 committed 配置。订阅只接受 HTTPS 公网目标，关闭 redirect/环境代理，使用固定 `clash.meta` User-Agent 请求 YAML，连接前校验并 pin 全部 DNS 结果；响应受 4 MiB 上限约束，必须包含唯一顶层 `proxies`，其他 Clash 配置字段会被丢弃，只有经过严格限制的节点数组进入本地候选。Mihomo 候选验证和 live readiness 成功后才切 current generation。GET 只显示是否配置与通用状态，不返回来源、host、代次或节点数。
+
+登录后的 Tailscale 卡片还会独立读取管理员专用 Tailnet 设备清单：摘要显示在线数/总数，折叠列表只显示有界设备名、单个 `100.64.0.0/10` IPv4、在线/离线与可选 OS。列表失败不会拖垮本机 Tailscale 生命周期状态；已有成功快照会保留并明确标记“数据可能已过期”，首次失败与空 Tailnet 分别显示不可用和空状态。这里的“在线”只表示设备连接到 Tailnet，不表示正在访问本路由器 LAN；页面不提供踢设备、tags、ACL、路由批准或其他 Tailscale 写操作。
 
 LCD 的 DTS `default-brightness-level = <0>` 让 U-Boot/Linux 冷启动默认保持零 PWM，但 panel/DSI 仍注册，因此 Web 可以点亮。黑屏操作把 brightness 设为 0 并 powerdown；面板连接的是共享 always-on `vcc5v0_sys`，软件不能让 LCD 连接器 5V 物理归零。
 
@@ -226,9 +246,9 @@ LCD 的 DTS `default-brightness-level = <0>` 让 U-Boot/Linux 冷启动默认保
 - management LAN：`br-lan`、`p2p0`、DHCP/DNS；
 - WAN：`wlan0`、DHCP、metric `600`；
 - forwarding：IPv4 forwarding 和普通 NAT；
-- proxy：`explicit`、`tun`、`disabled`。
+- proxy：独立的 `lan_tun_enabled` 与 `tailscale_explicit_proxy_enabled`，共享派生的 Mihomo core。
 
-`router disable` 的模型先把 Tailscale LAN path 降到 RouterOnly，再移除 Mihomo interception 和 ordinary forwarding/NAT；管理 LAN、页面、Tailscale 认证状态和持久 desired mode 保留。恢复 forwarding 后会重新 reconcile 持久 Tailscale intent。
+`router disable` 的模型先把 Tailscale LAN path 降到 RouterOnly，再以 runtime-only reconcile 撤销 LAN TUN interception，最后移除 ordinary forwarding/NAT；管理 LAN、页面、Tailscale 认证状态、Tailscale access mode 以及两个 proxy feature desired 均保留。恢复 forwarding 后会重新 reconcile 持久 Tailscale 与 proxy feature intent。
 
 Rust candidate 当前覆盖：
 
@@ -239,14 +259,17 @@ Rust candidate 当前覆盖：
 - DHCP lease generation 的地址、route metric `600` 和 resolver 所有权记录；
 - 冷启动两阶段 reconcile：先启动离线可用的管理 LAN/AP/DNS，再仅为 forwarding 执行有界 DHCP route 等待和所有权复核，最后提交 firewall/forwarding；
 - `SIGTERM` 先停止 watcher/撤销 TUN，再撤销普通转发并按精确身份停止管理进程，最后删除自有 bridge；
-- Mihomo source 约束、受控 `tun:` 替换、persistent data/runtime state 分离；source 不允许 controller/UI/secret 键，runtime 每次生成双 UUID secret 和 `127.0.0.1:9090` controller；
+- Mihomo source 约束、受控 `tun:` 替换、persistent data/runtime state 分离；source 不能控制 listener/controller/UI/secret/TUN，runtime 固定生成 `127.0.0.1:7890` local-only mixed port、双 UUID controller secret 和 `127.0.0.1:9090` controller；
 - controller 启动前经过 authenticated `/version` readiness；浏览器只经过固定 typed facade，不能直连 controller；公开组/节点数据经过长度、成员关系、字段白名单和响应上限校验；
 - TUN exact chain、policy route/rule、`rp_filter`、interception commit-last；
 - 同一 ELF detached watcher、严格 core/watcher 身份和 ordinary-NAT fail-open；
-- proxy mode 持久化最后提交；
+- 版本化 `features.json` 将 LAN TUN 与 Tailscale 中继代理 desired 独立持久化，Mihomo core 由二者派生；旧 `disabled/explicit/tun` 只执行保守迁移，未知值不删除；
+- `tailscaled` 仅允许 fixed Direct 或 `HTTP_PROXY`/`HTTPS_PROXY=http://127.0.0.1:7890` 两组 exact environment；共享 core reload 前先切 Direct，恢复后再切回代理；
 - strict observed readiness，unknown/foreign 绝不当作 ready。
 
 Host 与板端 parity 已完成：统一包唯一的 `Cargo.lock`、native 测试套件、native/WASM 严格 Clippy、Trunk release bundle、连续两次一致的 deterministic tar、嵌入真实前端的 AArch64 ELF、Buildroot rootfs、kernel 和 recovery-free OTA 均已通过。统一运行时的 Web LCD/代理控制、节点切换与恢复、延迟、真实 Mihomo core 崩溃 fail-open、普通 NAT 和 TUN 恢复已完成板测。2026-08-10 Web 稳定性固件曾暴露 S81 固定 launch 次数窗口不足；2026-08-11 设置事务固件已安装封顶指数退避版 S81，并通过自动冷启动与 SysV restart 验收。
+
+2026-08-14 新增的 Mihomo shared core + LAN TUN/Tailscale 中继代理双 feature 层已完成主机静态检查、Rust 测试和 Chromium 桌面/360px E2E；该新层尚未部署到 RK3568，也未执行四组合、Mihomo `SIGKILL` 后 Tailscale Direct 恢复、固定 CONNECT 路径探测和长时间稳定性板测。此前板测结果不能替代这组新增验收。
 
 仍保留以下边界：
 

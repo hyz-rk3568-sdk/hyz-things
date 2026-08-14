@@ -76,7 +76,7 @@ stop_runtime() {
 
 verify_ready() {
     local expected_sha=$1
-    local actual_sha status_file tailscale_ip
+    local actual_sha status_file readiness_error tailscale_ip ready deadline
 
     actual_sha=$(device_shell "sha256sum '$REMOTE_TARGET'" | tr -d '\r' | awk '{print $1}')
     if [[ "$actual_sha" != "$expected_sha" ]]; then
@@ -85,9 +85,13 @@ verify_ready() {
     fi
 
     status_file=$(mktemp)
-    trap 'rm -f "$status_file"' RETURN
-    device_shell "$REMOTE_TARGET status" | tr -d '\r' >"$status_file"
-    tailscale_ip=$(python3 - "$status_file" <<'PY'
+    readiness_error=$(mktemp)
+    trap 'rm -f "${status_file:-}" "${readiness_error:-}"' RETURN
+    ready=false
+    deadline=$((SECONDS + 180))
+    while ((SECONDS < deadline)); do
+        if device_shell "$REMOTE_TARGET status" 2>/dev/null | tr -d '\r' >"$status_file"; then
+            if tailscale_ip=$(python3 - "$status_file" 2>"$readiness_error" <<'PY'
 import json
 import sys
 
@@ -100,8 +104,19 @@ proxy = status.get("proxy", {})
 tailscale = status.get("tailscale", {})
 if router.get("state") != "available":
     raise SystemExit("router state is unavailable")
-if proxy.get("state") != "available" or proxy.get("data", {}).get("state") != "running":
-    raise SystemExit("Mihomo is not running")
+proxy_data = proxy.get("data", {})
+mihomo = proxy_data.get("mihomo", {})
+legacy_proxy_ready = proxy_data.get("state") == "running"
+core_required = mihomo.get("configured_required")
+if proxy.get("state") != "available":
+    raise SystemExit("proxy state is unavailable")
+if core_required is True and mihomo.get("process") != "ready":
+    raise SystemExit("required Mihomo Core is not running")
+if core_required is None and not legacy_proxy_ready and mihomo.get("process") != "ready":
+    raise SystemExit("Mihomo readiness is unavailable in the legacy status format")
+lan_tun = proxy_data.get("lan_tun")
+if isinstance(lan_tun, dict) and lan_tun.get("desired") is True and lan_tun.get("effective") != "ready":
+    raise SystemExit("LAN TUN is not strictly ready")
 if tailscale.get("state") != "available":
     raise SystemExit("Tailscale state is unavailable")
 data = tailscale.get("data", {})
@@ -119,7 +134,17 @@ if desired == "lan_subnet_access":
             raise SystemExit(f"Tailscale {key} is not strictly ready")
 print(data.get("ipv4") or "")
 PY
-)
+            ); then
+                ready=true
+                break
+            fi
+        fi
+        sleep 2
+    done
+    if [[ "$ready" != true ]]; then
+        cat "$readiness_error" >&2
+        return 1
+    fi
     if ! device_shell "wget -q -T 3 -O /dev/null http://192.168.8.1:8080/api/v1/health" >/dev/null; then
         printf 'LAN management listener did not pass its health check\n' >&2
         return 1
@@ -129,7 +154,7 @@ PY
         printf 'Tailscale management listener did not pass its health check\n' >&2
         return 1
     fi
-    rm -f "$status_file"
+    rm -f "$status_file" "$readiness_error"
     trap - RETURN
 }
 

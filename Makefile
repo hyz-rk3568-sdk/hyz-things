@@ -180,6 +180,10 @@ check-static:
 	grep -q '"/api/v1/control/display"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
 	grep -q '"/api/v1/control/proxy/delay"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
 	grep -q '"/api/v1/control/proxy/delays"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
+	grep -q '"/api/v1/control/proxy/lan-tun"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
+	grep -q '"/api/v1/control/proxy/tailscale"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
+	grep -q '"/api/v1/tailscale/peers"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
+	! grep -q '\.route("/api/v1/control/proxy/mode"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
 	grep -q 'MIHOMO_CONTROLLER_ADDRESS: &str = "127.0.0.1:9090"' "$(ROUTER_APP)/src/adapters/outbound/paths.rs"
 	grep -q 'TAILSCALED_EXECUTABLE: &str = "/usr/bin/tailscaled"' "$(ROUTER_APP)/src/adapters/outbound/paths.rs"
 	grep -q 'TAILSCALE_EXECUTABLE: &str = "/usr/bin/tailscale"' "$(ROUTER_APP)/src/adapters/outbound/paths.rs"
@@ -210,7 +214,7 @@ check-static:
 	grep -q '^START_TIMEOUT_SECONDS=300$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q '^START_EXEC_GRACE_ATTEMPTS=10$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q '^START_RETRY_BACKOFF_MAX=30$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
-	grep -q '^STOP_CLEANUP_TIMEOUT_SECONDS=30$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	grep -q '^STOP_CLEANUP_TIMEOUT_SECONDS=130$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q '^FLOCK=/usr/bin/flock$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q '^ACTION_LOCKFILE=/run/hyz-router-init.lock$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q 'lock_action && stop_daemon && start_daemon' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
@@ -218,12 +222,16 @@ check-static:
 	grep -q 'deadline=.*START_TIMEOUT_SECONDS' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q 'daemon left running' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q 'wait_for_runtime_cleanup' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
-	! grep -q 'TERM/1810/KILL/5 || true' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	grep -q '"$$START_STOP_DAEMON" -K -q -s TERM' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	grep -q '"$$START_STOP_DAEMON" -K -q -s KILL' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	! grep -q -- '-R ' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q 'retrying after attempt' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	! grep -q 'START_LAUNCH_ATTEMPTS\|START_ATTEMPTS' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q 'stale ownership requires explicit recovery' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	! grep -qE 'hyz-mihomo (explicit|tun|disable)|hyz-mihomo removes' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/hyz-router/mihomo-config.yaml.example
-	grep -q 'hyz-router proxy tun' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/hyz-router/mihomo-config.yaml.example
+	grep -q 'hyz-router proxy lan-tun enable|disable' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/hyz-router/mihomo-config.yaml.example
+	grep -q 'hyz-router proxy tailscale enable|disable' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/hyz-router/mihomo-config.yaml.example
+	! grep -qE '^(mixed-port|port|socks-port|redir-port|tproxy-port|allow-lan|bind-address|external-controller|secret|tun):' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/hyz-router/mihomo-config.yaml.example
 	test ! -e sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-mihomo
 	test ! -e sdk/buildroot/board/rockchip/hyz_things/fs-overlay/usr/sbin/hyz-router
 	test ! -e sdk/buildroot/board/rockchip/hyz_things/fs-overlay/usr/sbin/hyz-mihomo

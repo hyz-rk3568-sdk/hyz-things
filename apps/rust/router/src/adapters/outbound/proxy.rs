@@ -4,7 +4,9 @@ use super::{
         MIHOMO_DATA_DIR, MIHOMO_FEATURES_FILE, MIHOMO_RUNTIME_CONFIG, MIHOMO_SOURCE_CONFIG,
         MIHOMO_STATE_DIR, MIHOMO_TUN_IDENTITY,
     },
-    process::{mihomo_process_holds_tun, LinuxRouterPlatform, Tool},
+    process::{
+        mihomo_process_holds_tun, mihomo_process_owns_tcp_listener, LinuxRouterPlatform, Tool,
+    },
     storage,
     system::{
         chain_output_is_exact, exact_chain_references, exact_default_gateway,
@@ -121,7 +123,7 @@ impl LinuxRouterPlatform {
             .ok_or_else(|| {
             PlatformError::InvalidState("Mihomo source config is absent".to_owned())
         })?;
-        validate_source_config(&source)?;
+        let source = migrate_legacy_persisted_source(&source);
         let controller_secret = new_controller_secret()?;
         let runtime = render_runtime_config(&source, lan_tun_enabled, &controller_secret)?;
         storage::atomic_write_private(MIHOMO_CONTROLLER_SECRET, controller_secret.as_bytes())?;
@@ -149,14 +151,31 @@ impl LinuxRouterPlatform {
 
     fn wait_for_mixed_port(&self) -> Result<(), PlatformError> {
         let address: SocketAddr = MIHOMO_MIXED_ADDRESS.parse().expect("fixed mixed address");
+        let identity = self.mihomo_identity()?.ok_or_else(|| {
+            PlatformError::InvalidState(
+                "Mihomo identity is absent before waiting for its fixed mixed port".to_owned(),
+            )
+        })?;
         for _ in 0..60 {
-            if TcpStream::connect_timeout(&address, Duration::from_millis(50)).is_ok() {
-                return Ok(());
-            }
-            if self.mihomo_identity()?.is_none() {
-                return Err(PlatformError::InvalidState(
-                    "Mihomo exited before its fixed mixed port became ready".to_owned(),
+            if self.mihomo_identity()?.as_ref() != Some(&identity) {
+                return Err(PlatformError::Conflict(
+                    "Mihomo identity changed while waiting for its fixed mixed port".to_owned(),
                 ));
+            }
+            if TcpStream::connect_timeout(&address, Duration::from_millis(50)).is_ok() {
+                if !mihomo_process_owns_tcp_listener(identity.core, address)? {
+                    return Err(PlatformError::Conflict(
+                        "fixed mixed port listener is not owned by the exact Mihomo process"
+                            .to_owned(),
+                    ));
+                }
+                if self.mihomo_identity()?.as_ref() != Some(&identity) {
+                    return Err(PlatformError::Conflict(
+                        "Mihomo identity changed after mixed-port ownership confirmation"
+                            .to_owned(),
+                    ));
+                }
+                return Ok(());
             }
             thread::sleep(Duration::from_millis(50));
         }
@@ -985,7 +1004,7 @@ fn validate_source_config(source: &str) -> Result<(), PlatformError> {
         "external-ui-url",
         "secret",
     ] {
-        if controlled_key_appears(source, key) {
+        if controlled_top_level_key_appears(source, key) {
             return Err(PlatformError::InvalidState(format!(
                 "Mihomo source config may not set controlled key {key}"
             )));
@@ -998,14 +1017,31 @@ fn validate_source_config(source: &str) -> Result<(), PlatformError> {
         "redir-port",
         "tproxy-port",
         "listeners",
+        "authentication",
+        "skip-auth-prefixes",
+        "lan-allowed-ips",
+        "lan-disallowed-ips",
     ] {
-        if controlled_key_appears(source, key) {
+        if controlled_top_level_key_appears(source, key) {
             return Err(PlatformError::InvalidState(format!(
                 "Mihomo source config may not set controlled listener key {key}"
             )));
         }
     }
     Ok(())
+}
+
+fn migrate_legacy_persisted_source(source: &str) -> String {
+    const LEGACY_CONTROLLED_FIELDS: &[&str] = &[
+        "mixed-port",
+        "allow-lan",
+        "bind-address",
+        "authentication",
+        "skip-auth-prefixes",
+        "lan-allowed-ips",
+        "lan-disallowed-ips",
+    ];
+    remove_top_level_fields(source, LEGACY_CONTROLLED_FIELDS)
 }
 
 fn remove_controlled_listener_fields(source: &str) -> String {
@@ -1018,14 +1054,38 @@ fn remove_controlled_listener_fields(source: &str) -> String {
         "allow-lan",
         "bind-address",
         "listeners",
+        "authentication",
+        "skip-auth-prefixes",
+        "lan-allowed-ips",
+        "lan-disallowed-ips",
     ];
-    source
-        .split_inclusive('\n')
-        .filter(|line| {
-            let body = line.strip_suffix('\n').unwrap_or(line);
-            !KEYS.iter().any(|key| top_level_plain_key(body, key))
-        })
-        .collect()
+    remove_top_level_fields(source, KEYS)
+}
+
+fn remove_top_level_fields(source: &str, keys: &[&str]) -> String {
+    let mut output = String::new();
+    let mut skipping = false;
+    for line in source.split_inclusive('\n') {
+        let body = line.strip_suffix('\n').unwrap_or(line);
+        if keys.iter().any(|key| top_level_plain_key(body, key)) {
+            skipping = true;
+            continue;
+        }
+        if skipping {
+            let trimmed = body.trim_start();
+            if body.is_empty()
+                || body.starts_with(char::is_whitespace)
+                || body.starts_with('#')
+                || trimmed == "-"
+                || trimmed.starts_with("- ")
+            {
+                continue;
+            }
+            skipping = false;
+        }
+        output.push_str(line);
+    }
+    output
 }
 
 fn replace_top_level_tun_blocks(source: &str, controlled: &str) -> String {
@@ -1062,17 +1122,42 @@ fn replace_top_level_tun_blocks(source: &str, controlled: &str) -> String {
     output
 }
 
-fn controlled_key_appears(source: &str, key: &str) -> bool {
+fn controlled_top_level_key_appears(source: &str, key: &str) -> bool {
+    let top_level_indent = source
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') || matches!(trimmed, "---" | "...") {
+                None
+            } else {
+                Some(line.len() - line.trim_start_matches(' ').len())
+            }
+        })
+        .min();
+    let Some(top_level_indent) = top_level_indent else {
+        return false;
+    };
     let needle = format!("{key}:");
+    let sequence_needle = format!("-{needle}");
+    let first_flow_needle = format!("{{{needle}");
+    let later_flow_needle = format!(",{needle}");
     source.lines().any(|line| {
-        if line.trim_start().starts_with('#') {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') || matches!(trimmed, "---" | "...") {
+            return false;
+        }
+        let indent = line.len() - line.trim_start_matches(' ').len();
+        if indent != top_level_indent {
             return false;
         }
         let normalized = line
             .chars()
             .filter(|character| !character.is_whitespace() && !matches!(character, '\'' | '"'))
             .collect::<String>();
-        normalized.contains(&needle)
+        normalized.starts_with(&needle)
+            || normalized.starts_with(&sequence_needle)
+            || normalized.contains(&first_flow_needle)
+            || normalized.contains(&later_flow_needle)
     })
 }
 
@@ -1123,6 +1208,7 @@ mod tests {
         assert!(disabled.contains("mixed-port: 7890"));
         assert!(disabled.contains("allow-lan: false"));
         assert!(disabled.contains("bind-address: 127.0.0.1"));
+        assert!(disabled.contains("authentication: []"));
         assert!(disabled.contains("tun:\n  enable: false"));
         assert!(!disabled.contains("enable: maybe"));
 
@@ -1140,6 +1226,9 @@ mod tests {
             "mode: rule\r\n",
             "password: CHANGE_ME_secret\n",
             "external-controller: 0.0.0.0:9090\n",
+            "authentication:\n- user:password\nmode: rule\n",
+            "skip-auth-prefixes: [127.0.0.0/8]\nmode: rule\n",
+            "lan-allowed-ips: [0.0.0.0/0]\nmode: rule\n",
             "{\"external-controller\": 0.0.0.0:9090}\n",
             "secret: exposed\n",
             "mode: rule\0\n",
@@ -1149,6 +1238,9 @@ mod tests {
                 "{unsafe_source:?}"
             );
         }
+        let nested_peer_fields = "proxies:\n  - name: example\n    type: socks5\n    server: 192.0.2.1\n    port: 443\n    airport: retained\n";
+        validate_source_config(nested_peer_fields).unwrap();
+
         let caller_listener = "allow-lan: true\nbind-address: 0.0.0.0\nmode: rule\n";
         validate_source_config(caller_listener).unwrap();
         let runtime = render_runtime_config(caller_listener, false, "test-secret").unwrap();
@@ -1156,6 +1248,34 @@ mod tests {
         assert!(!runtime.contains("bind-address: 0.0.0.0"));
         assert!(runtime.contains("allow-lan: false"));
         assert!(runtime.contains("bind-address: 127.0.0.1"));
+    }
+
+    #[test]
+    fn persisted_legacy_listener_scalars_are_removed_without_weakening_candidate_validation() {
+        let legacy = "mixed-port: 7890\nallow-lan: true\nbind-address: 0.0.0.0\nauthentication:\n- old-user:old-password\nmode: rule\n";
+        assert!(validate_source_config(legacy).is_err());
+
+        let migrated = migrate_legacy_persisted_source(legacy);
+        assert_eq!(migrated, "mode: rule\n");
+        let runtime = render_runtime_config(&migrated, true, "test-secret").unwrap();
+        assert!(runtime.contains("mixed-port: 7890"));
+        assert!(runtime.contains("allow-lan: false"));
+        assert!(runtime.contains("bind-address: 127.0.0.1"));
+        assert!(runtime.contains("authentication: []"));
+        assert!(!runtime.contains("old-user"));
+
+        for unsafe_source in [
+            "  mixed-port: 7890\n  mode: rule\n",
+            "\"mixed-port\": 7890\nmode: rule\n",
+            "external-controller: 0.0.0.0:9090\nmode: rule\n",
+            "listeners:\n  - name: foreign\n",
+        ] {
+            let migrated = migrate_legacy_persisted_source(unsafe_source);
+            assert!(
+                render_runtime_config(&migrated, false, "test-secret").is_err(),
+                "{unsafe_source:?}"
+            );
+        }
     }
 
     #[test]

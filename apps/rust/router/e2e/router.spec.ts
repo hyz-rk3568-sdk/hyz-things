@@ -120,6 +120,8 @@ test('serves the generated bundle through the strict production-shaped HTTP boun
     data: { enabled: true },
   });
   expect(anonymousTailscaleProxy.status()).toBe(401);
+  const anonymousTailscalePeers = await request.get('/api/v1/tailscale/peers');
+  expect(anonymousTailscalePeers.status()).toBe(401);
   const removedProxyMode = await request.post('/api/v1/control/proxy/mode', {
     headers: { Origin: webOrigin, 'X-HYZ-CSRF': csrf },
     data: { mode: 'tun' },
@@ -304,6 +306,16 @@ test('shows layered direct-restored, degraded, and unknown proxy wording', async
   await expect(
     proxyCapabilities.getByText('已降级 · 已恢复 Direct', { exact: true }),
   ).toBeVisible();
+
+  const unavailable = await readHarnessState(request);
+  unavailable.tailscale.data.explicit_proxy_desired = true;
+  unavailable.tailscale.data.environment = 'mihomo_explicit';
+  unavailable.tailscale.data.explicit_proxy_path = 'unavailable';
+  unavailable.tailscale.data.proxy_fallback = 'not_confirmed';
+  expect((await request.put(`${harnessOrigin}/state`, { data: unavailable })).ok()).toBeTruthy();
+  await expect(
+    proxyCapabilities.getByText('已降级 · 代理路径不可用', { exact: true }),
+  ).toBeVisible({ timeout: 7_500 });
 
   const unknown = await readHarnessState(request);
   unknown.proxy.data.mihomo.configured_required = null;
@@ -508,6 +520,8 @@ test('supports the administrator Tailscale login, approval, disable, and logout 
   expect((await request.put(`${harnessOrigin}/state`, { data: initial })).ok()).toBeTruthy();
 
   await page.goto('/');
+  await expect(page.getByText('laptop', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('100.64.0.8', { exact: false })).toHaveCount(0);
   await page.getByRole('button', { name: '网络设置', exact: true }).click();
   await page.getByRole('button', { name: '管理员登录' }).click();
   await page.getByLabel('密码').fill('admin');
@@ -518,6 +532,7 @@ test('supports the administrator Tailscale login, approval, disable, and logout 
   await page.getByRole('button', { name: '修改密码' }).click();
 
   const tailscale = page.getByRole('region', { name: 'Tailscale 远程 LAN 状态' });
+  await expect(tailscale.getByText(/Tailnet 设备列表暂不可用/)).toBeVisible();
   await tailscale.getByRole('button', { name: '启用远程 LAN 访问' }).click();
   const loginLink = tailscale.getByRole('link', { name: '打开一次性 Tailscale 登录链接' });
   await expect(loginLink).toHaveAttribute('href', 'https://login.tailscale.com/a/router-e2e');
@@ -532,6 +547,16 @@ test('supports the administrator Tailscale login, approval, disable, and logout 
   expect((await request.put(`${harnessOrigin}/state`, { data: authenticated })).ok()).toBeTruthy();
   await tailscale.getByRole('button', { name: '已完成登录，继续启用' }).click();
   await expect(tailscale.getByText('本机远程 LAN 访问已启用')).toBeVisible();
+  await expect(tailscale.getByText('Tailnet 设备 · 1 / 2 在线')).toBeVisible();
+  await expect(tailscale.getByText('laptop', { exact: true })).not.toBeVisible();
+  await tailscale.getByText('查看设备列表', { exact: true }).click();
+  await expect(tailscale.getByText('laptop', { exact: true })).toBeVisible();
+  await expect(tailscale.getByText('tablet', { exact: true })).toBeVisible();
+  await expect(tailscale.getByText(/100\.64\.0\.8 · linux/)).toBeVisible();
+  await expect(tailscale.getByText(/100\.64\.0\.9 · android/)).toBeVisible();
+  await expect(tailscale.getByText('在线', { exact: true })).toBeVisible();
+  await expect(tailscale.getByText('离线', { exact: true })).toBeVisible();
+  await expect(tailscale.getByText(/不表示它正在访问本路由器的 LAN/)).toBeVisible();
   await expect(tailscale.getByText('路由批准', { exact: true })).toHaveCount(0);
   await expect(tailscale.getByText(/外部确认/)).toHaveCount(0);
   await expect(tailscale.getByText(/当前 LAN Access/)).toBeVisible();
@@ -548,9 +573,13 @@ test('supports the administrator Tailscale login, approval, disable, and logout 
   });
   await page.setViewportSize({ width: 360, height: 800 });
   await expect(enabledButton).toBeVisible();
+  await expect(tailscale.getByText('laptop', { exact: true })).toBeVisible();
+  await expect(tailscale.getByText('tablet', { exact: true })).toBeVisible();
   await expect(tailscale.getByText('路由批准', { exact: true })).toHaveCount(0);
   await expect(tailscale.getByText(/外部确认/)).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
+  const expandedAccessibility = await new AxeBuilder({ page }).analyze();
+  expect(expandedAccessibility.violations).toEqual([]);
 
   await tailscale.getByRole('button', { name: '停用（保留认证）' }).click();
   const disabledButton = tailscale.getByRole('button', { name: 'Tailscale 已停用' });
@@ -568,6 +597,50 @@ test('supports the administrator Tailscale login, approval, disable, and logout 
     desired_mode: 'disabled',
     effective_mode: 'disabled',
   });
+  await expect(tailscale.getByText('laptop', { exact: true })).toHaveCount(0);
+  await expect(tailscale.getByText('100.64.0.8', { exact: false })).toHaveCount(0);
+});
+
+test('shows Tailnet peer empty, initial-error, stale, and recovery states', async ({
+  page,
+  request,
+}) => {
+  const initial = await readHarnessState(request);
+  initial.tailscale.data.authenticated = true;
+  initial.tailscale.data.backend_state = 'running';
+  initial.tailscale.data.desired_mode = 'router_only';
+  initial.tailscale.data.effective_mode = 'router_only';
+  initial.tailscale_peers_failure = true;
+  expect((await request.put(`${harnessOrigin}/state`, { data: initial })).ok()).toBeTruthy();
+
+  await loginAsAdmin(page);
+  const tailscale = page.getByRole('region', { name: 'Tailscale 远程 LAN 状态' });
+  await expect(tailscale.getByText(/Tailnet 设备列表暂不可用/)).toBeVisible();
+  await expect(tailscale.getByText('laptop', { exact: true })).toHaveCount(0);
+
+  let state = await readHarnessState(request);
+  state.tailscale_peers_failure = false;
+  expect((await request.put(`${harnessOrigin}/state`, { data: state })).ok()).toBeTruthy();
+  await tailscale.getByRole('button', { name: '重新读取设备' }).click();
+  await expect(tailscale.getByText('Tailnet 设备 · 1 / 2 在线')).toBeVisible();
+  await tailscale.getByText('查看设备列表', { exact: true }).click();
+  await expect(tailscale.getByText('laptop', { exact: true })).toBeVisible();
+
+  state = await readHarnessState(request);
+  state.tailscale_peers_failure = true;
+  expect((await request.put(`${harnessOrigin}/state`, { data: state })).ok()).toBeTruthy();
+  await tailscale.getByRole('button', { name: '重新读取设备' }).click();
+  await expect(tailscale.getByText(/数据可能已过期/)).toBeVisible();
+  await expect(tailscale.getByText('laptop', { exact: true })).toBeVisible();
+
+  state = await readHarnessState(request);
+  state.tailscale_peers_failure = false;
+  state.tailscale_peers = { total: 0, online: 0, peers: [] };
+  expect((await request.put(`${harnessOrigin}/state`, { data: state })).ok()).toBeTruthy();
+  await tailscale.getByRole('button', { name: '重新读取设备' }).click();
+  await expect(tailscale.getByText('暂无其他 Tailnet 设备')).toBeVisible();
+  await expect(tailscale.getByText('laptop', { exact: true })).toHaveCount(0);
+  await expectNoHorizontalOverflow(page);
 });
 
 test('fits a narrow management screen without horizontal overflow', async ({ page }) => {

@@ -6,7 +6,7 @@ use hyz_router::{
             ClockPort, LifecycleLease, PlatformError, SystemProbePort, TailscalePlatformPort,
             TailscaleProbePort,
         },
-        reconcile::{tailscale_bootstrap_plan, tailscale_plan},
+        reconcile::{tailscale_bootstrap_plan, tailscale_plan, tailscale_shutdown_plan},
         status::tailscale_status_component_from_observed,
         tailscale::{TailscaleApplication, TailscaleReconcileState},
     },
@@ -192,14 +192,38 @@ fn exited_owned_backend_is_cleaned_before_restart_without_becoming_foreign() {
     );
 
     assert_eq!(
-        hyz_router::application::reconcile::tailscale_shutdown_plan(&exited_owned(Some(
-            TailscaleMode::RouterOnly,
-        )))
-        .unwrap(),
+        tailscale_shutdown_plan(&exited_owned(Some(TailscaleMode::RouterOnly))).unwrap(),
         vec![TailscaleAction::StopBackend {
             token: "process-old".to_owned(),
         }]
     );
+}
+
+#[test]
+fn shutdown_stops_exact_owned_backend_when_local_api_telemetry_is_unknown() {
+    let mut observed = running_without_surface(Some(TailscaleMode::LanSubnetAccess));
+    let reason = "local API unavailable".to_owned();
+    observed.backend_state = Probe::Unknown(reason.clone());
+    observed.authenticated = Probe::Unknown(reason.clone());
+    observed.ipv4 = Probe::Unknown(reason.clone());
+    observed.preferences = Probe::Unknown(reason.clone());
+    observed.route_advertised = Probe::Unknown(reason.clone());
+    observed.connection = Probe::Unknown(reason);
+
+    assert_eq!(
+        tailscale_shutdown_plan(&observed).unwrap(),
+        vec![TailscaleAction::StopBackend {
+            token: "process-old".to_owned(),
+        }]
+    );
+}
+
+#[test]
+fn shutdown_rejects_unknown_route_state_without_an_owned_backend_to_stop() {
+    let mut observed = stopped(Some(TailscaleMode::Disabled));
+    observed.route_advertised = Probe::Unknown("route state unavailable".to_owned());
+
+    assert!(tailscale_shutdown_plan(&observed).is_err());
 }
 
 #[test]

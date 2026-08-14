@@ -144,7 +144,7 @@ adb -s "$SERIAL" shell hyz-router status
 - 顶层 `state` 为 `ok`；
 - router、proxy、system 均为 `available`；
 - STA、默认路由、AP、`br-lan` attachment、IPv4 forwarding 和 MASQUERADE 已确认；
-- 期望 TUN 模式时，proxy 为 `running` 且 mode 为 `tun`；
+- 期望 LAN TUN 开启时，proxy 的 `lan_tun.desired=true`、`lan_tun.effective=ready`，且 Mihomo process/runtime config/mixed port 均为 ready；
 - userdata 中的网络、管理员和订阅配置仍存在，但验收脚本不得读取或输出其秘密内容。
 
 ## 安全边界

@@ -19,7 +19,7 @@ pub const MIHOMO_MIXED_ADDRESS: &str = "127.0.0.1:7890";
 pub const CONTROLLED_TUN_ENABLED: &str = "\ntun:\n  enable: true\n  stack: system\n  device: hyz-mihomo\n  auto-route: false\n  auto-redirect: false\n  auto-detect-interface: false\n  strict-route: false\n  dns-hijack: []\n  mtu: 1500\n";
 pub const CONTROLLED_TUN_DISABLED: &str = "\ntun:\n  enable: false\n";
 pub const CONTROLLED_LOCAL_MIXED: &str =
-    "\nmixed-port: 7890\nallow-lan: false\nbind-address: 127.0.0.1\n";
+    "\nmixed-port: 7890\nallow-lan: false\nbind-address: 127.0.0.1\nauthentication: []\n";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

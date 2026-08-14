@@ -34,7 +34,7 @@ use crate::{
         },
         status::TailscaleStatus,
         subscription::SubscriptionSummary,
-        tailscale::TailscaleMode,
+        tailscale::{TailscaleMode, TailscalePeerSnapshot},
     },
 };
 
@@ -283,6 +283,10 @@ fn app_with_assets(
             on(MethodFilter::GET, proxy_subscription),
         )
         .route("/api/v1/tailscale", on(MethodFilter::GET, tailscale_status))
+        .route(
+            "/api/v1/tailscale/peers",
+            on(MethodFilter::GET, tailscale_peers),
+        )
         .route(
             "/api/v1/control/tailscale/mode",
             on(MethodFilter::POST, tailscale_mode),
@@ -672,6 +676,11 @@ struct TailscaleResponse {
 }
 
 #[derive(Serialize)]
+struct TailscalePeersResponse {
+    peers: TailscalePeerSnapshot,
+}
+
+#[derive(Serialize)]
 struct TailscaleMutationResponse {
     tailscale: TailscaleStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -687,6 +696,7 @@ enum SensitiveResult {
     DevicePolicies,
     Subscription,
     Tailscale,
+    TailscalePeers,
 }
 
 async fn network_config(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -852,6 +862,16 @@ async fn tailscale_status(State(state): State<AppState>, headers: HeaderMap) -> 
         &headers,
         ControlOperation::TailscaleGet {},
         SensitiveResult::Tailscale,
+    )
+    .await
+}
+
+async fn tailscale_peers(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    invoke_sensitive_control(
+        &state,
+        &headers,
+        ControlOperation::TailscalePeersGet {},
+        SensitiveResult::TailscalePeers,
     )
     .await
 }
@@ -1083,6 +1103,9 @@ async fn invoke_sensitive_control_authorized(
         (SensitiveResult::Tailscale, Ok(ControlResult::Tailscale { status })) => {
             Json(TailscaleResponse { tailscale: status }).into_response()
         }
+        (SensitiveResult::TailscalePeers, Ok(ControlResult::TailscalePeers { snapshot })) => {
+            Json(TailscalePeersResponse { peers: snapshot }).into_response()
+        }
         (_, Ok(_)) => service_unavailable_json(),
         (_, Err(_)) => control_failed_json(),
     }
@@ -1134,6 +1157,9 @@ async fn control_proxy_feature(
         }
         Err(_) => return invalid_request_json(),
     };
+    if !state.allow_tailscale_self_stop {
+        return tailscale_self_stop_conflict_json();
+    }
     invoke_control_authorized(state, operation(request.enabled)).await
 }
 
@@ -1331,7 +1357,7 @@ fn tailscale_self_stop_conflict_json() -> Response {
         Json(serde_json::json!({
             "error": {
                 "code": "tailscale_self_stop_forbidden",
-                "message": "Disable or logout must be requested from LAN management or the Unix control socket"
+                "message": "Operations that can restart or stop Tailscale must be requested from LAN management or the Unix control socket"
             }
         })),
     )
@@ -1640,6 +1666,8 @@ mod tests {
             .expect("end of proxy feature control handler")
             .0;
         assert!(feature_body.contains("authorize_sensitive_control(state, headers).await"));
+        assert!(feature_body.contains("!state.allow_tailscale_self_stop"));
+        assert!(feature_body.contains("tailscale_self_stop_conflict_json()"));
         assert!(feature_body.contains("invoke_control_authorized"));
         assert!(!feature_body.contains("invoke_control(state, headers"));
 

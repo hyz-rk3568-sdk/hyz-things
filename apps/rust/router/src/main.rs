@@ -31,16 +31,18 @@ use hyz_router::{
         panel::PanelApplication,
         ports::{
             ClockPort, DevicePolicyStorePort, LifecycleLease, PlatformError, SystemProbePort,
-            TailscalePlatformPort, TailscaleProbePort,
+            TailnetPeerReadPort, TailscalePlatformPort, TailscaleProbePort,
         },
-        proxy::ProxyFeatureCoordinator,
+        proxy::{
+            MihomoDirectRecoveryApplication, MihomoDirectRecoveryResult, ProxyFeatureCoordinator,
+        },
         router::RouterApplication,
         shutdown::ShutdownApplication,
         status::{
             tailscale_status_component_from_observed, ReadStatus, StatusTailscalePlatformPort,
         },
         subscription::{SubscriptionApplication, SubscriptionRuntimePorts},
-        tailscale::{TailscaleApplication, TailscaleReconcileState},
+        tailscale::{ReadTailnetPeers, TailscaleApplication, TailscaleReconcileState},
         wifi::{WifiApplication, AP_CONFIRM_TIMEOUT_SECS},
     },
     domain::{
@@ -67,6 +69,7 @@ use tokio::{
 };
 
 const DAEMON_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2 * 60);
+const MIHOMO_DIRECT_RECOVERY_INTERVAL: Duration = Duration::from_secs(2);
 
 fn arm_shutdown_deadline(deadline: TokioInstant) {
     std::thread::spawn(move || {
@@ -409,6 +412,14 @@ impl TailscaleProbePort for ProductionTailscalePlatform {
     }
 }
 
+impl TailnetPeerReadPort for ProductionTailscalePlatform {
+    fn read_tailnet_peers(
+        &self,
+    ) -> Result<hyz_router::domain::tailscale::TailscalePeerSnapshot, PlatformError> {
+        self.linux.read_tailnet_peers()
+    }
+}
+
 #[async_trait::async_trait]
 impl StatusTailscalePlatformPort for ProductionTailscalePlatform {
     async fn read_tailscale_status(&self) -> Component<TailscaleStatus> {
@@ -478,7 +489,7 @@ struct DhcpDispatcher {
 }
 
 impl DhcpDispatcher {
-    fn new(router: Arc<LinuxRouterPlatform>, tailscale: Arc<ProductionTailscalePlatform>) -> Self {
+    fn new(router: Arc<LinuxRouterPlatform>) -> Self {
         let (sender, mut receiver) = mpsc::channel::<DhcpWorkerCommand>(8);
         let task = tokio::spawn(async move {
             while let Some(command) = receiver.recv().await {
@@ -500,30 +511,8 @@ impl DhcpDispatcher {
                     PlatformError::CommandFailed("DHCP worker terminated unexpectedly".to_owned())
                 })
                 .and_then(|result| result);
-                match result {
-                    Ok(()) => {
-                        let tailscale = tailscale.clone();
-                        let router = router.clone();
-                        let reconcile = tokio::task::spawn_blocking(move || {
-                            reconcile_authenticated_tailscale_after_dhcp(
-                                tailscale.as_ref(),
-                                router.as_ref(),
-                            )
-                        })
-                        .await
-                        .map_err(|_| {
-                            PlatformError::CommandFailed(
-                                "post-DHCP Tailscale worker terminated unexpectedly".to_owned(),
-                            )
-                        })
-                        .and_then(|result| result);
-                        if let Err(error) = reconcile {
-                            eprintln!(
-                                "hyz-router: DHCP/WAN update applied but authenticated Tailscale reconcile failed: {error}"
-                            );
-                        }
-                    }
-                    Err(error) => eprintln!("hyz-router: queued DHCP event failed: {error}"),
+                if let Err(error) = result {
+                    eprintln!("hyz-router: queued DHCP event failed: {error}");
                 }
             }
         });
@@ -574,28 +563,6 @@ impl DhcpDispatcher {
     }
 }
 
-fn reconcile_authenticated_tailscale_after_dhcp(
-    tailscale: &ProductionTailscalePlatform,
-    router: &LinuxRouterPlatform,
-) -> Result<(), PlatformError> {
-    let observed = tailscale.observe_tailscale()?;
-    if observed.authenticated != Probe::Known(true) {
-        return Ok(());
-    }
-    let mode = match observed.persisted_mode {
-        Probe::Known(Some(mode)) => mode,
-        Probe::Known(None) => TailscaleMode::Disabled,
-        Probe::Unknown(reason) => {
-            return Err(PlatformError::ProbeFailed(format!(
-                "persisted Tailscale mode is unknown: {reason}"
-            )))
-        }
-    };
-    TailscaleApplication::new(tailscale, tailscale, router, router)
-        .reconcile(&TailscaleDesired { mode })
-        .map(|_| ())
-}
-
 struct ProductionRuntime {
     router: Arc<LinuxRouterPlatform>,
     tailscale: Arc<ProductionTailscalePlatform>,
@@ -614,7 +581,7 @@ impl ProductionRuntime {
     fn build() -> Result<Self, AdminError> {
         let router = Arc::new(LinuxRouterPlatform::new());
         let tailscale = Arc::new(ProductionTailscalePlatform::new(router.clone()));
-        let dhcp = DhcpDispatcher::new(router.clone(), tailscale.clone());
+        let dhcp = DhcpDispatcher::new(router.clone());
         let admin_adapter = Arc::new(AdminFileAdapter::default());
         let admin = Arc::new(AdminApplication::initialize(
             admin_adapter.clone(),
@@ -723,6 +690,29 @@ impl ProductionRuntime {
         .map_err(|_| {
             PlatformError::CommandFailed(
                 "proxy runtime recovery worker terminated unexpectedly".to_owned(),
+            )
+        })?
+    }
+
+    async fn recover_tailscale_direct_if_mihomo_unavailable(
+        &self,
+    ) -> Result<MihomoDirectRecoveryResult, PlatformError> {
+        let router = self.router.clone();
+        let tailscale = self.tailscale.clone();
+        tokio::task::spawn_blocking(move || {
+            MihomoDirectRecoveryApplication::new(
+                router.as_ref(),
+                router.as_ref(),
+                tailscale.as_ref(),
+                tailscale.as_ref(),
+                router.as_ref(),
+            )
+            .recover_if_core_unavailable()
+        })
+        .await
+        .map_err(|_| {
+            PlatformError::CommandFailed(
+                "Mihomo Direct recovery worker terminated unexpectedly".to_owned(),
             )
         })?
     }
@@ -872,7 +862,8 @@ impl ProductionRuntime {
 
     async fn initialize(&self) -> Result<(), String> {
         // DHCP bypasses the async router/proxy guard, but its bounded worker shares the lifecycle
-        // lock. Router reconciliation releases that lock only around the WAN-route wait.
+        // lock. Startup commits only strict management readiness; WAN-dependent restoration runs
+        // afterward so an absent DHCP lease cannot delay the LAN HTTP boundary.
         let _serial = self.router_proxy.lock().await;
         WifiApplication::new(self.router.as_ref())
             .recover()
@@ -884,93 +875,48 @@ impl ProductionRuntime {
                     "startup management reconciliation failed and network safety is unconfirmed: {error}"
                 )
             })?;
-
-        let forwarding_ready = match self.reconcile_network(NetworkDesired::forwarding()).await {
-            Ok(()) => true,
-            Err(error) => match self
-                .reconcile_network(NetworkDesired::management_only())
-                .await
-            {
-                Ok(()) => {
-                    eprintln!(
-                        "hyz-router: startup forwarding is unavailable ({error}); continuing in strictly confirmed management-only mode"
-                    );
-                    false
-                }
-                Err(degraded_error) => {
-                    return Err(startup_failure(
-                        "router forwarding reconciliation",
-                        error,
-                        degraded_error,
-                    ));
-                }
-            },
-        };
-
         self.recover_device_policy().await?;
+        Ok(())
+    }
 
-        if let Err(error) = self.reconcile_persisted_tailscale().await {
-            let cleanup = self.shutdown_tailscale().await;
-            match cleanup {
-                Ok(()) => eprintln!(
-                    "hyz-router: persisted Tailscale mode is unavailable ({error}); router and Mihomo state remain unchanged"
-                ),
-                Err(cleanup_error) => eprintln!(
-                    "hyz-router: persisted Tailscale mode is unavailable ({error}); Tailscale-only cleanup also failed: {cleanup_error}; router and Mihomo state remain unchanged"
-                ),
-            }
+    async fn wan_route_ready(&self) -> Result<bool, PlatformError> {
+        let platform = self.router.clone();
+        let observed = tokio::task::spawn_blocking(move || platform.observe_network())
+            .await
+            .map_err(|_| {
+                PlatformError::CommandFailed(
+                    "deferred WAN readiness probe terminated unexpectedly".to_owned(),
+                )
+            })??;
+        match observed.wan_default_route_present {
+            Probe::Known(ready) => Ok(ready),
+            Probe::Unknown(reason) => Err(PlatformError::ProbeFailed(format!(
+                "deferred WAN route readiness is unknown: {reason}"
+            ))),
+        }
+    }
+
+    async fn restore_persisted_runtime_if_wan_ready(&self) -> Result<bool, PlatformError> {
+        if !self.wan_route_ready().await? {
+            return Ok(false);
         }
 
-        let desired = self
-            .proxy_desired()
-            .await
-            .map_err(|error| error.to_string())?;
-        if forwarding_ready {
-            if let Err(error) = self.reconcile_proxy_features(desired.clone()).await {
-                match self
-                    .reconcile_network(NetworkDesired::management_only())
-                    .await
-                {
-                    Ok(()) => {
-                        let mut safe_runtime = desired;
-                        safe_runtime.lan_tun_enabled = false;
-                        safe_runtime.tailscale_explicit_proxy_enabled = false;
-                        let _ = self
-                            .reconcile_proxy_runtime_preserving_features(safe_runtime)
-                            .await;
-                        eprintln!(
-                            "hyz-router: persisted proxy features are unavailable ({error}); continuing in management-only mode"
-                        );
-                    }
-                    Err(degraded_error) => {
-                        return Err(startup_failure(
-                            "persisted proxy-feature restoration",
-                            error,
-                            degraded_error,
-                        ));
-                    }
+        self.reconcile_network(NetworkDesired::forwarding()).await?;
+        if let Err(error) = self.reconcile_persisted_tailscale().await {
+            match self.shutdown_tailscale().await {
+                Ok(()) => eprintln!(
+                    "hyz-router: deferred Tailscale restoration is unavailable ({error}); exact Tailscale runtime was cleaned"
+                ),
+                Err(cleanup_error) => {
+                    return Err(PlatformError::InvalidState(format!(
+                        "deferred Tailscale restoration failed ({error}); exact cleanup also failed: {cleanup_error}"
+                    )))
                 }
             }
-        } else if desired.tailscale_explicit_proxy_enabled {
-            let mut router_only_runtime = desired.clone();
-            router_only_runtime.lan_tun_enabled = false;
-            if let Err(error) = self
-                .reconcile_proxy_runtime_preserving_features(router_only_runtime)
-                .await
-            {
-                let mut direct_runtime = desired;
-                direct_runtime.lan_tun_enabled = false;
-                direct_runtime.tailscale_explicit_proxy_enabled = false;
-                let _ = self
-                    .reconcile_proxy_runtime_preserving_features(direct_runtime)
-                    .await;
-                eprintln!(
-                    "hyz-router: persisted Tailscale proxy is unavailable in management-only mode ({error}); Direct fallback was requested"
-                );
-            }
         }
-
-        Ok(())
+        let desired = self.proxy_desired().await?;
+        self.reconcile_proxy_features(desired).await?;
+        Ok(true)
     }
 
     async fn recover_device_policy(&self) -> Result<(), String> {
@@ -1019,12 +965,6 @@ impl ProductionRuntime {
         .map_err(|_| "shutdown worker terminated unexpectedly".to_owned())?
         .map_err(|error| error.to_string())
     }
-}
-
-fn startup_failure(phase: &str, error: PlatformError, degraded_error: PlatformError) -> String {
-    format!(
-        "startup {phase} failed: {error}; forwarding-disable reconciliation also failed and network safety is unconfirmed: {degraded_error}"
-    )
 }
 
 #[async_trait::async_trait]
@@ -1232,6 +1172,16 @@ impl ControlHandler for ProductionRuntime {
                     .ok_or_else(|| "Tailscale status is unavailable".to_owned())?;
                 Ok(ControlResult::Tailscale { status })
             }
+            ControlOperation::TailscalePeersGet { .. } => {
+                let tailscale = self.tailscale.clone();
+                let snapshot = tokio::task::spawn_blocking(move || {
+                    ReadTailnetPeers::new(tailscale.as_ref()).execute()
+                })
+                .await
+                .map_err(|_| "Tailscale peer probe terminated unexpectedly".to_owned())?
+                .map_err(|error| error.to_string())?;
+                Ok(ControlResult::TailscalePeers { snapshot })
+            }
             ControlOperation::TailscaleMode { mode } => {
                 let _serial = self.router_proxy.lock().await;
                 let (status, login_url) = self
@@ -1290,7 +1240,7 @@ impl ControlHandler for ProductionRuntime {
                         .map_err(|error| error.to_string())?;
                     desired.lan_tun_enabled = false;
                     actions_applied += self
-                        .reconcile_proxy_features(desired)
+                        .reconcile_proxy_runtime_preserving_features(desired)
                         .await
                         .map_err(|error| error.to_string())?;
                 }
@@ -1762,6 +1712,80 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         }
     });
 
+    let recovery_runtime = runtime.clone();
+    let mut recovery_shutdown = shutdown_rx.clone();
+    let mut direct_recovery = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(MIHOMO_DIRECT_RECOVERY_INTERVAL);
+        let mut runtime_restored = false;
+        let mut last_restore_error = None;
+        let mut last_direct_error = None;
+        interval.tick().await;
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    let _serial = recovery_runtime.router_proxy.lock().await;
+                    match recovery_runtime.wan_route_ready().await {
+                        Ok(false) => {
+                            runtime_restored = false;
+                            last_restore_error = None;
+                        }
+                        Ok(true) if !runtime_restored => {
+                            match recovery_runtime.restore_persisted_runtime_if_wan_ready().await {
+                                Ok(true) => {
+                                    runtime_restored = true;
+                                    last_restore_error = None;
+                                    eprintln!("hyz-router: deferred WAN, Tailscale, and proxy runtime restoration completed");
+                                }
+                                Ok(false) => {
+                                    runtime_restored = false;
+                                    last_restore_error = None;
+                                }
+                                Err(error) => {
+                                    let detail = error.to_string();
+                                    if last_restore_error.as_deref() != Some(detail.as_str()) {
+                                        eprintln!("hyz-router: deferred runtime restoration remains pending: {detail}");
+                                        last_restore_error = Some(detail);
+                                    }
+                                }
+                            }
+                        }
+                        Ok(true) => {}
+                        Err(error) => {
+                            runtime_restored = false;
+                            let detail = error.to_string();
+                            if last_restore_error.as_deref() != Some(detail.as_str()) {
+                                eprintln!("hyz-router: deferred WAN readiness remains unknown: {detail}");
+                                last_restore_error = Some(detail);
+                            }
+                        }
+                    }
+                    match recovery_runtime.recover_tailscale_direct_if_mihomo_unavailable().await {
+                        Ok(MihomoDirectRecoveryResult::Restored { tailscale_actions_applied }) => {
+                            last_direct_error = None;
+                            eprintln!(
+                                "hyz-router: Mihomo core unavailable; restored tailscaled Direct environment with {tailscale_actions_applied} typed actions"
+                            );
+                        }
+                        Ok(MihomoDirectRecoveryResult::NotNeeded | MihomoDirectRecoveryResult::AlreadyDirect) => {
+                            last_direct_error = None;
+                        }
+                        Err(error) => {
+                            let detail = error.to_string();
+                            if last_direct_error.as_deref() != Some(detail.as_str()) {
+                                eprintln!("hyz-router: bounded tailscaled Direct recovery failed: {detail}");
+                                last_direct_error = Some(detail);
+                            }
+                        }
+                    }
+                }
+                changed = recovery_shutdown.changed() => {
+                    let _ = changed;
+                    break;
+                }
+            }
+        }
+    });
+
     // HTTP binding is the externally visible readiness boundary and occurs only after a strictly
     // confirmed normal or management-only network state has been reached.
     let mut http = tokio::spawn(serve_http(
@@ -1818,6 +1842,17 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         )),
     };
     let services = combine_service_results(services, timeout_task);
+    let recovery_task = match timeout_at(deadline, &mut direct_recovery).await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(error)) => Err(std::io::Error::other(format!(
+            "Mihomo Direct recovery task terminated unexpectedly: {error}"
+        ))),
+        Err(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "Mihomo Direct recovery task drain exceeded the daemon shutdown deadline",
+        )),
+    };
+    let services = combine_service_results(services, recovery_task);
 
     // Runtime cleanup starts only after all request handlers have drained. If drain misses the
     // absolute deadline, the process exits with ownership evidence intact instead of cancelling a
@@ -2051,6 +2086,7 @@ fn expect_completed(result: ControlResult) -> Result<String, Box<dyn Error>> {
         | ControlResult::DevicePolicies { .. }
         | ControlResult::Subscription { .. }
         | ControlResult::Tailscale { .. }
+        | ControlResult::TailscalePeers { .. }
         | ControlResult::TailscaleMutation { .. } => {
             Err("daemon returned an unexpected mutation response".into())
         }
@@ -2130,7 +2166,7 @@ mod source_boundaries {
     }
 
     #[test]
-    fn management_only_startup_recovers_policy_then_reconciles_tailscale() {
+    fn management_only_startup_does_not_wait_for_wan_or_proxy() {
         let production = include_str!("main.rs")
             .split("#[cfg(test)]")
             .next()
@@ -2139,17 +2175,35 @@ mod source_boundaries {
             .split("async fn initialize(&self)")
             .nth(1)
             .unwrap()
+            .split("async fn wan_route_ready")
+            .next()
+            .unwrap();
+        assert!(initialize.contains("NetworkDesired::management_only()"));
+        assert!(initialize.contains("self.recover_device_policy().await?;"));
+        assert!(!initialize.contains("NetworkDesired::forwarding()"));
+        assert!(!initialize.contains("reconcile_persisted_tailscale"));
+        assert!(!initialize.contains("reconcile_proxy_features"));
+    }
+
+    #[test]
+    fn deferred_runtime_restores_forwarding_before_tailscale_and_proxy() {
+        let production = include_str!("main.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let restore = production
+            .split("async fn restore_persisted_runtime_if_wan_ready")
+            .nth(1)
+            .unwrap()
             .split("async fn recover_device_policy")
             .next()
             .unwrap();
-        let fallback = initialize.find("false").unwrap();
-        let recovery = initialize
-            .find("self.recover_device_policy().await?;")
+        let forwarding = restore
+            .find("reconcile_network(NetworkDesired::forwarding())")
             .unwrap();
-        let tailscale = initialize
-            .find("self.reconcile_persisted_tailscale().await")
-            .unwrap();
-        assert!(fallback < recovery && recovery < tailscale);
+        let tailscale = restore.find("reconcile_persisted_tailscale()").unwrap();
+        let proxy = restore.find("reconcile_proxy_features(desired)").unwrap();
+        assert!(forwarding < tailscale && tailscale < proxy);
     }
 
     #[test]
@@ -2167,9 +2221,12 @@ mod source_boundaries {
             .unwrap();
         let disabled_guard = branch.find("if !enabled").unwrap();
         let tailscale = branch.find("degrade_tailscale_to_router_only").unwrap();
-        let proxy = branch.find("reconcile_proxy_features(desired)").unwrap();
+        let proxy = branch
+            .find("reconcile_proxy_runtime_preserving_features(desired)")
+            .unwrap();
         let router = branch.find("RouterApplication::new").unwrap();
         assert!(disabled_guard < tailscale && tailscale < proxy && proxy < router);
+        assert!(!branch[..router].contains("reconcile_proxy_features(desired)"));
         assert!(branch.contains("desired.lan_tun_enabled = false"));
         assert!(branch.contains("NetworkDesired::management_only()"));
     }

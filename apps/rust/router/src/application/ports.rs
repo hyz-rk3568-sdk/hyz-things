@@ -5,7 +5,7 @@ use crate::domain::{
     panel::{DisplayRequest, DisplayStatus, ProxyDelayResult, ProxyGroup, ProxySelectionRequest},
     proxy::{ProxyAction, ProxyObserved},
     subscription::{GenerationId, SubscriptionStatus, SubscriptionUrl, ValidatedSubscription},
-    tailscale::{TailscaleAction, TailscaleLoginUrl, TailscaleObserved},
+    tailscale::{TailscaleAction, TailscaleLoginUrl, TailscaleObserved, TailscalePeerSnapshot},
 };
 use std::{error::Error, fmt, net::SocketAddr, time::Duration};
 
@@ -100,6 +100,10 @@ pub trait TailscalePlatformPort: Send + Sync {
 pub trait TailscaleProbePort: Send + Sync {
     fn observe_tailscale(&self) -> Result<TailscaleObserved, PlatformError>;
     fn probe_explicit_proxy_path(&self) -> Result<bool, PlatformError>;
+}
+
+pub trait TailnetPeerReadPort: Send + Sync {
+    fn read_tailnet_peers(&self) -> Result<TailscalePeerSnapshot, PlatformError>;
 }
 
 pub trait PanelPlatformPort: Send + Sync {

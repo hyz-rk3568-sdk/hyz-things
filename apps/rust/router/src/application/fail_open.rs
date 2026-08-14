@@ -230,6 +230,7 @@ mod tests {
         actions: Mutex<Vec<ProxyAction>>,
         sleeps: Mutex<usize>,
         removals: Mutex<usize>,
+        removal_failures: Mutex<usize>,
         releases: Mutex<usize>,
     }
 
@@ -248,6 +249,7 @@ mod tests {
                 actions: Mutex::new(Vec::new()),
                 sleeps: Mutex::new(0),
                 removals: Mutex::new(0),
+                removal_failures: Mutex::new(0),
                 releases: Mutex::new(0),
             }
         }
@@ -308,7 +310,15 @@ mod tests {
         }
         fn remove_fail_open_stale_state(&self, _: CoreIdentity) -> Result<(), PlatformError> {
             *self.removals.lock().unwrap() += 1;
-            Ok(())
+            let mut failures = self.removal_failures.lock().unwrap();
+            if *failures > 0 {
+                *failures -= 1;
+                Err(PlatformError::Io(
+                    "injected partial stale-state cleanup failure".to_owned(),
+                ))
+            } else {
+                Ok(())
+            }
         }
         fn sleep_fail_open_retry(&self, _: Duration) {
             *self.sleeps.lock().unwrap() += 1;
@@ -427,6 +437,29 @@ mod tests {
                 observed(false),
             ],
         );
+        assert_eq!(
+            MihomoFailOpenApplication::new(&fake).repair_until_safe(invocation()),
+            Ok(FailOpenResult::Cleaned)
+        );
+        assert_eq!(*fake.removals.lock().unwrap(), 2);
+        assert_eq!(*fake.releases.lock().unwrap(), 2);
+        assert_eq!(*fake.sleeps.lock().unwrap(), 1);
+    }
+
+    #[test]
+    fn partial_stale_state_removal_retries_while_core_record_remains_exact() {
+        let fake = Fake::new(
+            vec![
+                CoreRecordState::ExpectedExited,
+                CoreRecordState::ExpectedExited,
+                CoreRecordState::ExpectedExited,
+                CoreRecordState::ExpectedExited,
+            ],
+            vec![false, false],
+            vec![observed(true), observed(false), observed(false)],
+        );
+        *fake.removal_failures.lock().unwrap() = 1;
+
         assert_eq!(
             MihomoFailOpenApplication::new(&fake).repair_until_safe(invocation()),
             Ok(FailOpenResult::Cleaned)

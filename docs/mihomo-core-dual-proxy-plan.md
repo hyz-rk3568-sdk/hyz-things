@@ -2,7 +2,9 @@
 
 ## 状态
 
-**本文是设计与验收方案，尚未实现。**
+**2026-08-14：主机侧实现与自动验证已完成；RK3568 目标板部署、真实故障注入和验收矩阵仍待执行。**
+
+当前实现已包含版本化双 feature desired、共享 Mihomo core、ownership-aware LAN TUN、固定 `tailscaled` Direct/Mihomo environment、core 退出后的 daemon-owned Direct 恢复、固定 `controlplane.tailscale.com:443` 的 3 秒有界 HTTP CONNECT 路径探测、两个 exact HTTP mutation、两个独立 Web 开关及桌面/360px Chromium E2E。尚未据此文档执行板端四组合、Mihomo `SIGKILL`、节点全失效、重启恢复和长时间稳定性验收，因此本文后半部分的目标板项目仍是待办，而不是已验证事实。
 
 本文替代此前将 `tailscaled` 显式代理建模为独立 Tailscale 出站模式的方案。新的产品模型以 Mihomo core 为共享运行基础，将两个数据面能力拆成独立开关：
 
