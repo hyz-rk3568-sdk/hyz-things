@@ -78,6 +78,20 @@ pub const BUTTON_GHOST: &str = "btn btn-ghost btn-sm";
 pub const BUTTON_BLOCK_MOBILE: &str = "btn btn-primary btn-sm max-sm:w-full";
 pub const HELP_TEXT: &str = "text-xs leading-relaxed text-base-content/65";
 
+pub const CAMERA_CARD: &str =
+    "card mb-5 gap-4 border border-base-content/10 bg-base-100/60 p-4 shadow-sm sm:p-5";
+pub const CAMERA_LAYOUT: &str = "grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2 lg:items-center";
+pub const CAMERA_COPY: &str = "grid min-w-0 gap-4";
+pub const CAMERA_METRICS: &str = "grid grid-cols-1 gap-2 text-xs sm:grid-cols-2";
+pub const CAMERA_METRIC: &str = "grid grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-box border border-base-content/10 bg-base-200/50 px-3 py-2 text-base-content/65 [&_dd]:truncate [&_dd]:text-right [&_dd]:font-mono [&_dd]:font-semibold [&_dd]:text-base-content";
+pub const CAMERA_NOTICE: &str =
+    "rounded-box border border-base-content/10 bg-base-200/50 px-3 py-2 text-xs text-base-content/70";
+pub const CAMERA_STAGE: &str = "relative min-w-0 overflow-hidden rounded-box border border-base-content/10 bg-black shadow-inner fullscreen:grid fullscreen:h-screen fullscreen:w-screen fullscreen:place-items-center fullscreen:rounded-none fullscreen:border-0";
+pub const CAMERA_VIDEO: &str = "aspect-video block w-full bg-black object-contain";
+pub const CAMERA_FULLSCREEN_BUTTON: &str = "btn btn-sm absolute right-3 top-3 z-10 border-white/20 bg-black/70 text-white shadow-lg hover:bg-black/85 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white";
+pub const CAMERA_PLACEHOLDER: &str = "absolute inset-0 grid place-content-center place-items-center gap-3 bg-base-300 text-xs font-semibold text-base-content/60";
+pub const CAMERA_PLACEHOLDER_ICON: &str = "grid size-11 place-items-center rounded-full border border-primary/30 bg-primary/10 font-mono text-[0.6rem] font-black text-primary";
+
 pub const PROXY_GROUPS: &str = "grid gap-3";
 pub const PROXY_TOOLBAR: &str = "flex flex-col gap-2 text-xs text-base-content/65 sm:flex-row sm:items-center sm:justify-between";
 pub const PROXY_GROUP: &str = "grid min-w-0 grid-cols-1 gap-3 rounded-box border border-base-content/10 bg-base-100/60 p-4 sm:grid-cols-[minmax(8rem,0.7fr)_minmax(12rem,1.5fr)] sm:items-center";

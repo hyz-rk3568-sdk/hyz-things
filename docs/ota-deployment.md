@@ -147,6 +147,20 @@ adb -s "$SERIAL" shell hyz-router status
 - 期望 LAN TUN 开启时，proxy 的 `lan_tun.desired=true`、`lan_tun.effective=ready`，且 Mihomo process/runtime config/mixed port 均为 ready；
 - userdata 中的网络、管理员和订阅配置仍存在，但验收脚本不得读取或输出其秘密内容。
 
+如果 OTA 包含摄像头增量，还必须确认 `/usr/bin/hyz-camera`、`S82hyz-camera`、control socket 和进程均来自打包 rootfs，并运行真实设备端到端测试，而不是只运行带 WebRTC mock 的 host Playwright：
+
+```sh
+set -a
+. ./.env
+set +a
+cd apps/rust/router
+npm run test:hardware-camera -- \
+  http://LAN_ADDRESS:8080 \
+  http://TAILSCALE_ADDRESS:8080
+```
+
+完整前置条件、临时 credential 恢复要求、桌面/移动断言和 RTP/解码检查见 [`camera-hardware-e2e.md`](camera-hardware-e2e.md)。
+
 ## 安全边界
 
 - 临时 HTTP server 只用于受控开发局域网，下载完成后立即停止。

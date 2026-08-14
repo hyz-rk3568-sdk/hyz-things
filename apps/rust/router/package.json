@@ -7,7 +7,8 @@
   "scripts": {
     "build:css": "tailwindcss -i ./frontend/app.css -o ./frontend/router.css --minify",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "test:hardware-camera": "node e2e/camera-hardware.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.12.1",

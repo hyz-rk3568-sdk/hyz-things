@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 import {
   expectNoHorizontalOverflow,
   harnessOrigin,
+  installCameraWebRtcMock,
   loginAsAdmin,
   readHarnessState,
   resetHarness,
@@ -122,6 +123,13 @@ test('serves the generated bundle through the strict production-shaped HTTP boun
   expect(anonymousTailscaleProxy.status()).toBe(401);
   const anonymousTailscalePeers = await request.get('/api/v1/tailscale/peers');
   expect(anonymousTailscalePeers.status()).toBe(401);
+  const anonymousCameraStatus = await request.get('/api/v1/camera/status');
+  expect(anonymousCameraStatus.status()).toBe(401);
+  const anonymousCameraCreate = await request.post('/api/v1/control/camera/session/create', {
+    headers: { Origin: webOrigin, 'X-HYZ-CSRF': csrf },
+    data: { offer_sdp: 'v=0\r\n' },
+  });
+  expect(anonymousCameraCreate.status()).toBe(401);
   const removedProxyMode = await request.post('/api/v1/control/proxy/mode', {
     headers: { Origin: webOrigin, 'X-HYZ-CSRF': csrf },
     data: { mode: 'tun' },
@@ -163,6 +171,109 @@ test('serves the generated bundle through the strict production-shaped HTTP boun
   });
   expect(oversized.status()).toBe(413);
   expect((await readHarnessState(request)).panel.display.data).toEqual(displayBefore);
+});
+
+test('plays and cleans up the administrator camera session on desktop and mobile', async ({
+  page,
+  request,
+}) => {
+  await installCameraWebRtcMock(page);
+  await page.goto('/');
+  await expect(page.getByRole('article', { name: '摄像头直播' })).toHaveCount(0);
+
+  await loginAsAdmin(page);
+  const camera = page.getByRole('article', { name: '摄像头直播' });
+  await expect(camera).toBeVisible();
+  await expect(camera.getByText('可用', { exact: true })).toBeVisible();
+  await expect(camera.getByText('已停止', { exact: true })).toBeVisible();
+  await expect(camera.getByText(/1920 × 1080 · 30 fps · h264/)).toBeVisible();
+  await expect(camera.getByText('LAN · 0 个会话', { exact: true })).toBeVisible();
+
+  const verifyFullscreen = async () => {
+    await camera.getByRole('button', { name: '进入全屏' }).click();
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          document.fullscreenElement?.querySelector(
+            'video[aria-label="摄像头实时画面"]',
+          ) instanceof HTMLVideoElement,
+        ),
+      )
+      .toBe(true);
+    await expect(camera.getByRole('button', { name: '退出全屏' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await camera.getByRole('button', { name: '退出全屏' }).click();
+    await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true);
+    await expect(camera.getByRole('button', { name: '进入全屏' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+  };
+
+  await camera.getByRole('button', { name: '播放直播' }).click();
+  await expect
+    .poll(async () => {
+      const state = await readHarnessState(request);
+      return {
+        createCount: state.camera.create_count,
+        offer: state.camera.last_offer_sdp,
+        pipeline: state.camera.status.pipeline,
+        activeSessions: state.camera.status.active_sessions,
+        session: state.camera.active_session,
+      };
+    })
+    .toEqual({
+      createCount: 1,
+      offer: 'v=0\r\no=router-e2e-camera 1 1 IN IP4 127.0.0.1\r\n',
+      pipeline: 'streaming',
+      activeSessions: 1,
+      session: `e2e-camera.${'a'.repeat(48)}`,
+    });
+  await expect(camera.getByText('直播中', { exact: true })).toBeVisible();
+  expect(
+    await camera.locator('video').evaluate(video => {
+      const stream = (video as HTMLVideoElement).srcObject;
+      return stream instanceof MediaStream && stream.getVideoTracks().length === 1;
+    }),
+  ).toBe(true);
+  await verifyFullscreen();
+
+  await camera.getByRole('button', { name: '停止直播' }).click();
+  await expect(camera.getByText('未播放', { exact: true })).toBeVisible();
+  await expect(camera.getByRole('status').filter({ hasText: '摄像头直播已停止' })).toBeVisible();
+  await expect
+    .poll(async () => {
+      const state = await readHarnessState(request);
+      return {
+        closeCount: state.camera.close_count,
+        activeSessions: state.camera.status.active_sessions,
+        session: state.camera.active_session,
+      };
+    })
+    .toEqual({ closeCount: 1, activeSessions: 0, session: null });
+
+  await camera.getByRole('button', { name: '播放直播' }).click();
+  await expect(camera.getByText('直播中', { exact: true })).toBeVisible();
+  await page.evaluate(() => (window as any).__hyzCameraRtcFail());
+  await expect(
+    camera.getByRole('status').filter({ hasText: '摄像头 WebRTC 连接已中断' }),
+  ).toBeVisible();
+  await expect
+    .poll(async () => (await readHarnessState(request)).camera.active_session)
+    .toBeNull();
+
+  await camera.getByRole('button', { name: '播放直播' }).click();
+  await expect(camera.getByText('直播中', { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 360, height: 800 });
+  await expectNoHorizontalOverflow(page);
+  await verifyFullscreen();
+  await page.getByRole('button', { name: '退出登录' }).click();
+  await expect(camera).toHaveCount(0);
+  await expect
+    .poll(async () => (await readHarnessState(request)).camera.active_session)
+    .toBeNull();
 });
 
 test('controls all four proxy combinations with isolated failures on desktop and mobile', async ({

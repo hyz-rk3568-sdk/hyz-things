@@ -16,16 +16,19 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::{
     adapters::inbound::control::{ControlHandler, ControlOperation, ControlResult},
     application::{
         admin::{AdminApplication, AdminError},
+        camera::{CameraApplication, CameraError},
         status::ReadStatus,
         wifi::{ApPrepareRequest, StaCandidateRequest, WifiScanEntry},
     },
     domain::{
         admin::{AdminAuthorization, AdminLoginRequest, AdminPasswordChangeRequest, SecretString},
+        camera::{CameraAccessScope, CameraStatus, CAMERA_MAX_SDP_BYTES},
         device_policy::DevicePolicyUpdateRequest,
         network_config::{NetworkConfigSummary, PendingNetworkConfigSummary},
         panel::{
@@ -45,12 +48,15 @@ pub const DEFAULT_HTTP_PORT: u16 = 8080;
 pub const DEFAULT_BIND_ATTEMPTS: usize = 15;
 pub const ADMIN_SESSION_COOKIE: &str = "hyz_admin_session";
 const MAX_HTTP_JSON_BODY_BYTES: usize = 4 * 1024;
+const MAX_CAMERA_HTTP_JSON_BODY_BYTES: usize = CAMERA_MAX_SDP_BYTES + 4 * 1024;
 
 #[derive(Clone)]
 struct AppState {
     read_status: ReadStatus,
     control: Option<Arc<dyn ControlHandler>>,
     admin: Option<Arc<AdminApplication>>,
+    camera: Option<Arc<CameraApplication>>,
+    camera_scope: Option<CameraAccessScope>,
     csrf_token: Arc<str>,
     allowed_origin: Arc<str>,
     allow_tailscale_self_stop: bool,
@@ -103,11 +109,15 @@ pub fn app(read_status: ReadStatus) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
     app_with_assets(
         read_status,
-        None,
-        None,
-        "",
-        format!("http://{LAN_ADDRESS}:{DEFAULT_HTTP_PORT}"),
-        true,
+        AppConfiguration {
+            control: None,
+            admin: None,
+            camera: None,
+            camera_scope: None,
+            csrf_token: String::new(),
+            allowed_origin: format!("http://{LAN_ADDRESS}:{DEFAULT_HTTP_PORT}"),
+            allow_tailscale_self_stop: true,
+        },
         assets,
     )
 }
@@ -121,11 +131,15 @@ pub fn app_with_control(
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
     app_with_assets(
         read_status,
-        Some(control),
-        None,
-        &csrf_token,
-        format!("http://{LAN_ADDRESS}:{port}"),
-        true,
+        AppConfiguration {
+            control: Some(control),
+            admin: None,
+            camera: None,
+            camera_scope: None,
+            csrf_token,
+            allowed_origin: format!("http://{LAN_ADDRESS}:{port}"),
+            allow_tailscale_self_stop: true,
+        },
         assets,
     )
 }
@@ -140,11 +154,39 @@ pub fn app_with_admin_control(
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
     app_with_assets(
         read_status,
-        Some(control),
-        Some(admin),
-        &csrf_token,
-        format!("http://{LAN_ADDRESS}:{port}"),
-        true,
+        AppConfiguration {
+            control: Some(control),
+            admin: Some(admin),
+            camera: None,
+            camera_scope: None,
+            csrf_token,
+            allowed_origin: format!("http://{LAN_ADDRESS}:{port}"),
+            allow_tailscale_self_stop: true,
+        },
+        assets,
+    )
+}
+
+pub fn app_with_admin_camera_control(
+    read_status: ReadStatus,
+    control: Arc<dyn ControlHandler>,
+    admin: Arc<AdminApplication>,
+    camera: Arc<CameraApplication>,
+    csrf_token: String,
+    port: u16,
+) -> Router {
+    let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
+    app_with_assets(
+        read_status,
+        AppConfiguration {
+            control: Some(control),
+            admin: Some(admin),
+            camera: Some(camera),
+            camera_scope: Some(CameraAccessScope::Lan),
+            csrf_token,
+            allowed_origin: format!("http://{LAN_ADDRESS}:{port}"),
+            allow_tailscale_self_stop: true,
+        },
         assets,
     )
 }
@@ -160,11 +202,40 @@ pub fn app_with_admin_control_at_address(
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
     app_with_assets(
         read_status,
-        Some(control),
-        Some(admin),
-        &csrf_token,
-        format!("http://{address}:{port}"),
-        false,
+        AppConfiguration {
+            control: Some(control),
+            admin: Some(admin),
+            camera: None,
+            camera_scope: None,
+            csrf_token,
+            allowed_origin: format!("http://{address}:{port}"),
+            allow_tailscale_self_stop: false,
+        },
+        assets,
+    )
+}
+
+pub fn app_with_admin_camera_control_at_address(
+    read_status: ReadStatus,
+    control: Arc<dyn ControlHandler>,
+    admin: Arc<AdminApplication>,
+    camera: Arc<CameraApplication>,
+    csrf_token: String,
+    address: Ipv4Addr,
+    port: u16,
+) -> Router {
+    let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
+    app_with_assets(
+        read_status,
+        AppConfiguration {
+            control: Some(control),
+            admin: Some(admin),
+            camera: Some(camera),
+            camera_scope: Some(CameraAccessScope::Tailscale { address }),
+            csrf_token,
+            allowed_origin: format!("http://{address}:{port}"),
+            allow_tailscale_self_stop: false,
+        },
         assets,
     )
 }
@@ -174,6 +245,7 @@ pub fn app_with_loopback_runtime_frontend(
     read_status: ReadStatus,
     control: Arc<dyn ControlHandler>,
     admin: Arc<AdminApplication>,
+    camera: Arc<CameraApplication>,
     csrf_token: String,
     exact_loopback_origin: String,
     frontend_tar: &[u8],
@@ -182,11 +254,15 @@ pub fn app_with_loopback_runtime_frontend(
     let assets = AssetStore::from_tar(frontend_tar)?;
     Ok(app_with_assets(
         read_status,
-        Some(control),
-        Some(admin),
-        &csrf_token,
-        exact_loopback_origin,
-        true,
+        AppConfiguration {
+            control: Some(control),
+            admin: Some(admin),
+            camera: Some(camera),
+            camera_scope: Some(CameraAccessScope::Lan),
+            csrf_token,
+            allowed_origin: exact_loopback_origin,
+            allow_tailscale_self_stop: true,
+        },
         assets,
     ))
 }
@@ -218,15 +294,30 @@ fn validate_exact_loopback_origin(origin: &str) -> io::Result<()> {
     }
 }
 
-fn app_with_assets(
-    read_status: ReadStatus,
+struct AppConfiguration {
     control: Option<Arc<dyn ControlHandler>>,
     admin: Option<Arc<AdminApplication>>,
-    csrf_token: &str,
+    camera: Option<Arc<CameraApplication>>,
+    camera_scope: Option<CameraAccessScope>,
+    csrf_token: String,
     allowed_origin: String,
     allow_tailscale_self_stop: bool,
+}
+
+fn app_with_assets(
+    read_status: ReadStatus,
+    configuration: AppConfiguration,
     assets: AssetStore,
 ) -> Router {
+    let AppConfiguration {
+        control,
+        admin,
+        camera,
+        camera_scope,
+        csrf_token,
+        allowed_origin,
+        allow_tailscale_self_stop,
+    } = configuration;
     Router::new()
         .route("/api/v1/health", on(MethodFilter::GET, health))
         .route("/api/v1/status", on(MethodFilter::GET, status))
@@ -238,6 +329,19 @@ fn app_with_assets(
             on(MethodFilter::POST, admin_password),
         )
         .route("/api/v1/auth/session", on(MethodFilter::GET, admin_session))
+        .route(
+            "/api/v1/camera/status",
+            on(MethodFilter::GET, camera_status),
+        )
+        .route(
+            "/api/v1/control/camera/session/create",
+            on(MethodFilter::POST, camera_session_create)
+                .layer(DefaultBodyLimit::max(MAX_CAMERA_HTTP_JSON_BODY_BYTES)),
+        )
+        .route(
+            "/api/v1/control/camera/session/close",
+            on(MethodFilter::POST, camera_session_close),
+        )
         .route(
             "/api/v1/network/config",
             on(MethodFilter::GET, network_config),
@@ -340,6 +444,8 @@ fn app_with_assets(
             read_status,
             control,
             admin,
+            camera,
+            camera_scope,
             csrf_token: Arc::from(csrf_token),
             allowed_origin: Arc::from(allowed_origin),
             allow_tailscale_self_stop,
@@ -480,6 +586,7 @@ async fn admin_logout(State(state): State<AppState>, headers: HeaderMap) -> Resp
         Ok((token, _)) => token,
         Err(response) => return response,
     };
+    close_owned_camera_session(&state, &token).await;
     let Some(admin) = state.admin.clone() else {
         return authentication_error_json(StatusCode::SERVICE_UNAVAILABLE);
     };
@@ -522,11 +629,14 @@ async fn admin_password(
     };
     let result = tokio::task::spawn_blocking(move || admin.change_password(&token, &request)).await;
     match result {
-        Ok(Ok(())) => Json(AdminSessionResponse {
-            authenticated: true,
-            must_change: false,
-        })
-        .into_response(),
+        Ok(Ok(())) => {
+            close_all_camera_sessions(&state).await;
+            Json(AdminSessionResponse {
+                authenticated: true,
+                must_change: false,
+            })
+            .into_response()
+        }
         Ok(Err(error)) => admin_error_json(error),
         Err(_) => authentication_error_json(StatusCode::SERVICE_UNAVAILABLE),
     }
@@ -561,6 +671,135 @@ async fn admin_session(State(state): State<AppState>, headers: HeaderMap) -> Res
         Ok(Err(error)) => admin_error_json(error),
         Err(_) => authentication_error_json(StatusCode::SERVICE_UNAVAILABLE),
     }
+}
+
+#[derive(Serialize)]
+struct CameraStatusResponse {
+    camera: CameraStatus,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CameraSessionCreateRequest {
+    offer_sdp: String,
+}
+
+#[derive(Serialize)]
+struct CameraSessionCreateResponse {
+    session_id: String,
+    answer_sdp: String,
+    negotiation_timeout_seconds: u16,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CameraSessionCloseRequest {
+    session_id: String,
+}
+
+async fn camera_status(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let (Some(camera), Some(scope)) = (state.camera.clone(), state.camera_scope) else {
+        return service_unavailable_json();
+    };
+    match camera.status(scope).await {
+        Ok(camera) => Json(CameraStatusResponse { camera }).into_response(),
+        Err(error) => camera_error_json(error),
+    }
+}
+
+async fn camera_session_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<CameraSessionCreateRequest>, JsonRejection>,
+) -> Response {
+    let (token, _) = match authorize_sensitive_control_admin(&state, &headers).await {
+        Ok(result) => result,
+        Err(response) => return response,
+    };
+    let Ok(Json(request)) = payload else {
+        return invalid_request_json();
+    };
+    let (Some(camera), Some(scope)) = (state.camera.clone(), state.camera_scope) else {
+        return service_unavailable_json();
+    };
+    let owner = camera_session_owner(&token);
+    match camera
+        .create_owned_session(owner, scope, request.offer_sdp)
+        .await
+    {
+        Ok(session) => Json(CameraSessionCreateResponse {
+            session_id: session.session_id,
+            answer_sdp: session.answer_sdp,
+            negotiation_timeout_seconds: session.negotiation_timeout_seconds,
+        })
+        .into_response(),
+        Err(error) => camera_error_json(error),
+    }
+}
+
+async fn camera_session_close(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<CameraSessionCloseRequest>, JsonRejection>,
+) -> Response {
+    let (token, _) = match authorize_sensitive_control_admin(&state, &headers).await {
+        Ok(result) => result,
+        Err(response) => return response,
+    };
+    let Ok(Json(request)) = payload else {
+        return invalid_request_json();
+    };
+    let Some(camera) = state.camera.clone() else {
+        return service_unavailable_json();
+    };
+    let owner = camera_session_owner(&token);
+    match camera.close_owned_session(owner, &request.session_id).await {
+        Ok(()) => Json(serde_json::json!({ "closed": true })).into_response(),
+        Err(error) => camera_error_json(error),
+    }
+}
+
+fn camera_session_owner(token: &SecretString) -> [u8; 32] {
+    Sha256::digest(token.expose().as_bytes()).into()
+}
+
+async fn close_owned_camera_session(state: &AppState, token: &SecretString) {
+    if let Some(camera) = state.camera.clone() {
+        camera.close_owner(camera_session_owner(token)).await;
+    }
+}
+
+async fn close_all_camera_sessions(state: &AppState) {
+    if let Some(camera) = state.camera.clone() {
+        camera.close_all().await;
+    }
+}
+
+fn camera_error_json(error: CameraError) -> Response {
+    let status = match error {
+        CameraError::InvalidRequest => StatusCode::BAD_REQUEST,
+        CameraError::NotReady | CameraError::Busy => StatusCode::CONFLICT,
+        CameraError::UnsupportedOffer => StatusCode::UNPROCESSABLE_ENTITY,
+        CameraError::ResourceExhausted | CameraError::Unavailable => {
+            StatusCode::SERVICE_UNAVAILABLE
+        }
+        CameraError::UnknownSession => StatusCode::NOT_FOUND,
+        CameraError::Forbidden => StatusCode::FORBIDDEN,
+    };
+    let code = match error {
+        CameraError::InvalidRequest => "camera_invalid_request",
+        CameraError::NotReady => "camera_not_ready",
+        CameraError::Busy => "camera_busy",
+        CameraError::UnsupportedOffer => "camera_offer_unsupported",
+        CameraError::ResourceExhausted => "camera_resource_exhausted",
+        CameraError::UnknownSession => "camera_session_not_found",
+        CameraError::Forbidden => "camera_session_forbidden",
+        CameraError::Unavailable => "camera_unavailable",
+    };
+    (status, Json(serde_json::json!({ "error": code }))).into_response()
 }
 
 /// Shared authorization boundary for future sensitive administrator routes. Normal routes reject a
@@ -1044,12 +1283,19 @@ async fn authorize_sensitive_control(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<(), Response> {
+    authorize_sensitive_control_admin(state, headers)
+        .await
+        .map(|_| ())
+}
+
+async fn authorize_sensitive_control_admin(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(SecretString, AdminAuthorization), Response> {
     if !authorize_same_origin_csrf(state, headers) {
         return Err(forbidden_json());
     }
-    require_admin(state, headers, AdminRequirement::Normal)
-        .await
-        .map(|_| ())
+    require_admin(state, headers, AdminRequirement::Normal).await
 }
 
 async fn invoke_sensitive_control_authorized(
@@ -1465,6 +1711,8 @@ fn is_post_path(path: &str) -> bool {
         "/api/v1/auth/login"
             | "/api/v1/auth/logout"
             | "/api/v1/auth/password"
+            | "/api/v1/control/camera/session/create"
+            | "/api/v1/control/camera/session/close"
             | "/api/v1/control/network/sta/scan"
             | "/api/v1/control/network/sta/apply"
             | "/api/v1/control/network/ap/prepare"
@@ -1535,6 +1783,46 @@ async fn security_headers(request: Request, next: Next) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn camera_http_handlers_preserve_sensitive_read_and_control_boundaries() {
+        let source = include_str!("mod.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production HTTP source");
+        let handlers = source
+            .split_once("async fn camera_status(")
+            .expect("camera status handler")
+            .1
+            .split_once("async fn close_all_camera_sessions(")
+            .expect("camera handler boundary")
+            .0;
+        assert!(handlers.contains("authorize_sensitive_read(&state, &headers).await"));
+        assert_eq!(
+            handlers
+                .matches("authorize_sensitive_control_admin(&state, &headers).await")
+                .count(),
+            2
+        );
+        assert!(handlers.contains("create_owned_session(owner, scope, request.offer_sdp)"));
+        assert!(handlers.contains("close_owned_session(owner, &request.session_id)"));
+        assert!(!handlers.contains("token.expose().to_owned()"));
+    }
+
+    #[test]
+    fn camera_mutations_are_exact_post_routes() {
+        assert!(is_post_path("/api/v1/control/camera/session/create"));
+        assert!(is_post_path("/api/v1/control/camera/session/close"));
+        assert!(!is_post_path("/api/v1/control/camera/session/create/extra"));
+    }
+
+    #[test]
+    fn camera_session_ownership_uses_a_one_way_token_digest() {
+        let first = SecretString::new("a".repeat(64));
+        let second = SecretString::new("b".repeat(64));
+        assert_ne!(camera_session_owner(&first), camera_session_owner(&second));
+        assert_eq!(camera_session_owner(&first), camera_session_owner(&first));
+    }
 
     #[test]
     fn fixed_binding_never_uses_a_wildcard_address() {
@@ -1688,6 +1976,8 @@ mod tests {
         assert!(is_post_path("/api/v1/auth/login"));
         assert!(is_post_path("/api/v1/auth/logout"));
         assert!(is_post_path("/api/v1/auth/password"));
+        assert!(is_post_path("/api/v1/control/camera/session/create"));
+        assert!(is_post_path("/api/v1/control/camera/session/close"));
         assert!(is_post_path("/api/v1/control/network/sta/scan"));
         assert!(is_post_path("/api/v1/control/network/sta/apply"));
         assert!(is_post_path("/api/v1/control/network/ap/prepare"));

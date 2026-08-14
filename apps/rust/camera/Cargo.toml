@@ -1,0 +1,27 @@
+[package]
+name = "hyz-camera"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+
+[dependencies]
+getrandom = "0.3"
+gstreamer = { version = "=0.23.5", features = ["v1_22"] }
+gstreamer-app = { version = "=0.23.5", features = ["v1_22"] }
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+signal-hook = "0.3"
+str0m = "=0.18.1"
+thiserror = "2"
+time = { version = ">=0.3, <0.3.48", default-features = false }
+
+[[bin]]
+name = "hyz-camera"
+path = "src/main.rs"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = true

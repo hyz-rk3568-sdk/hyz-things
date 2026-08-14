@@ -18,6 +18,7 @@
 - 可选的家庭网络事件、质量指标与断网时间线；
 - 可选的本地 DNS 过滤、家庭域名与按客户端策略；
 - 可选的 Tailscale 远程管理与固定 LAN subnet access；
+- 可选的本机摄像头 WebRTC 实时观看；
 - 可选的 Mihomo 显式代理与 TUN 透明代理。
 
 当前 Wi-Fi-only 增量的实现与验证状态：
@@ -36,6 +37,7 @@
 - 仅 `br-lan` 入站的 TUN 模式、持久 `explicit`/`tun`/`disabled` 控制、策略路由、排除规则和核心退出清理已通过 recovery-free OTA、重启持久性、手机 TCP/UDP、视频、router restart 与核心 `SIGKILL` 普通 NAT 回退验证；
 - 统一 Web UI 的状态、LCD/代理模式、节点选择和受控延迟刷新已完成板端功能验证；inline proxies 组级测速、超时标记和后续 panel 缓存已按 16/16 匿名覆盖验证；S81 已改为总 deadline 内封顶退避，并通过最终 recovery-free OTA 的冷启动和 restart 验证；
 - 管理员认证、强制首次改密、默认折叠登录表单、typed AP/STA 设置、两阶段 AP 回滚和 write-only Mihomo HTTPS 订阅更新已经进入统一 Rust ELF；错误 STA 自动恢复、AP 未确认超时回滚、无秘密摘要以及凭据型订阅刷新已通过板测，成功切换另一组真实 STA 和管理员实际改密仍待操作者输入本地凭据；
+- 独立 `hyz-camera`、受限 HTTP SDP 信令、V4L2 + GStreamer + Rockchip MPP H.264、`str0m` 和固定 UDP 端口池已进入最终 recovery-free OTA；固定 `1920×1080 @ 30 FPS` 中央裁剪、full-range H.264 SPS/VUI、真实 canvas 非黑像素和全屏交互已通过 LAN 与 Tailscale、桌面与移动端四组真实 MJS/Playwright 播放/停止验收；
 - DNS 接管、8 小时路由+代理稳定性、节点全部失效/live-hang 自动回退仍未完成，因此代理 Epic 仍不得整体标记完成。
 
 变化的是上游接入方式，不是 LAN 拓扑。完整基础产品必须支持：
@@ -144,6 +146,7 @@
 | 本地 DNS 中心 | 固定成熟 DNS 引擎，由 `hyz-router` 管理 typed 配置、生命周期和 active resolver |
 | 远程访问 | 可选 Tailscale；遵循“尽可能 direct，但 relay 永远可用”，先 RouterOnly，再固定 `192.168.8.0/24` subnet access，不提供 exit node |
 | 管理 UI | `hyz-router` 内嵌 Yew 页面，不安装第三方 Dashboard |
+| 摄像头直播 | 独立 `hyz-camera` 媒体进程；router 负责认证信令和防火墙，媒体使用 WebRTC UDP 直连 |
 | 扩展方式 | 修改并发布本仓库代码，不提供插件或容器扩展平台 |
 
 Tailscale 模式术语固定如下：
@@ -171,7 +174,8 @@ LAN = br-lan = p2p0
 - 保守的 ownership、readiness、rollback、management-only、shutdown 和 fail-open；
 - Mihomo `explicit`、`tun`、`disabled`，以及核心退出时回退普通 NAT；
 - recovery-free OTA、固定 staging、RKFW/SHA-256 和 BCB 验证；
-- 内嵌 Yew 状态与受限本地控制页面。
+- 内嵌 Yew 状态与受限本地控制页面；
+- 独立 `hyz-camera`、固定媒体 profile、LAN/Tailscale WebRTC 和真实设备自动验收。
 
 当前尚未完成：
 
@@ -183,7 +187,7 @@ LAN = br-lan = p2p0
 - PPPoE、可选 VLAN、`ppp0` 防火墙和 MTU/MSS；
 - 家庭网络黑匣子的结构化事件、指标、断网时间线和诊断快照；
 - 本地 DNS 过滤、家庭域名和按客户端策略；
-- Tailscale RouterOnly 与固定 LAN subnet access 已完成代码实现和静态检查；Rust/frontend 构建、自动测试、固件集成及板端/Tailnet 验收仍待执行；
+- Tailscale RouterOnly 与固定 LAN subnet access 已完成代码、构建、recovery-free OTA 和板端/Tailnet 验收；
 - 完整基础产品及上述可选能力的稳定性和端到端测试矩阵。
 
 历史和板端验证记录：
@@ -777,3 +781,21 @@ Tailscale 分两级验收：
 4. 管理 API、controller 和秘密边界通过；
 5. 路由+代理稳定性测试通过；
 6. 代理功能失败不影响 Complete Router Baseline。
+
+### 12.7 可选摄像头直播能力
+
+**User Story**
+
+作为已登录管理员，我希望在本地 LAN 或 Tailscale RouterOnly 管理页面点击播放后直接观看设备固定摄像头，以便无需公开额外信令服务或把视频中继经过 router HTTP 进程。
+
+**验收标准**
+
+1. `/usr/bin/hyz-camera` 作为独立 root 服务运行，V4L2、GStreamer、MPP 或 WebRTC 故障不终止 `hyz-router`；
+2. 管理页面只在正常管理员 session 下访问 camera 状态和 mutation API，POST 继续要求 exact Origin、CSRF、typed JSON 和有界请求体；
+3. 浏览器是 SDP offerer，第一版只协商单路 H.264 recvonly 视频，不提供音频、录制、DataChannel、trickle ICE 或公网 TURN；
+4. router 根据当前 exact HTTP listener 派生 LAN 或 Tailscale access scope，浏览器不能提交设备路径、candidate 地址、UDP 端口、pipeline 或编码器属性；
+5. camera 只从固定 `40000-40015/udp` 池绑定端口，router 是唯一防火墙 authority，camera 不执行 `iptables`、`ip` 或 shell 命令；
+6. 第一版最多一个 viewer；logout、改密、显式停止、协商超时、连接失败和 daemon shutdown 都清理 router-owned session 与 camera-owned pipeline/socket；
+7. RouterOnly 足以访问路由器本机 camera；camera 不要求或隐式启用 LanSubnetAccess，也不改变 Tailscale desired state；
+8. 状态和错误响应不泄漏 `/dev/video*`、完整 SDP、ICE credentials、DTLS key、GStreamer pipeline、原始驱动错误或管理员 token；
+9. host 静态检查、Rust/frontend 测试、浏览器 LAN/Tailscale 流程、MPP H.264 实际解码和板端资源清理全部通过后，才可标记该能力完成。

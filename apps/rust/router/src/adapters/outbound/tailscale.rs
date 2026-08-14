@@ -21,6 +21,7 @@ use crate::{
         TailscaleProbePort,
     },
     domain::{
+        camera::{CAMERA_UDP_PORT_END, CAMERA_UDP_PORT_START},
         network::{
             OwnedResource, Probe, LAN_BRIDGE, LAN_SUBNET, ROUTER_FILTER_CHAIN, WAN_INTERFACE,
         },
@@ -2074,6 +2075,18 @@ fn tailscale_input_rules(token: &str) -> Vec<Vec<String>> {
             "-j",
             "ACCEPT",
         ]),
+        words(&[
+            "-i",
+            TAILSCALE_INTERFACE,
+            "-p",
+            "udp",
+            "-m",
+            "udp",
+            "--dport",
+            &format!("{CAMERA_UDP_PORT_START}:{CAMERA_UDP_PORT_END}"),
+            "-j",
+            "ACCEPT",
+        ]),
         words(&["-i", TAILSCALE_INTERFACE, "-j", "DROP"]),
         words(&["-j", "RETURN"]),
     ]
@@ -2950,7 +2963,7 @@ mod tests {
         assert_eq!(forward[1], canonical_drop);
 
         let input_output = format!(
-            "-N {TAILSCALE_INPUT_CHAIN}\n-A {TAILSCALE_INPUT_CHAIN} -m comment --comment router\n-A {TAILSCALE_INPUT_CHAIN} -s {TAILSCALE_CGNAT_SUBNET} ! -i {TAILSCALE_INTERFACE} -j DROP\n-A {TAILSCALE_INPUT_CHAIN} -i {WAN_INTERFACE} -p udp -m udp --dport {TAILSCALE_UDP_PORT} -j ACCEPT\n-A {TAILSCALE_INPUT_CHAIN} -i {TAILSCALE_INTERFACE} -p tcp -m tcp --dport {TAILSCALE_MANAGEMENT_HTTP_PORT} -j ACCEPT\n-A {TAILSCALE_INPUT_CHAIN} -i {TAILSCALE_INTERFACE} -j DROP\n-A {TAILSCALE_INPUT_CHAIN} -j RETURN\n"
+            "-N {TAILSCALE_INPUT_CHAIN}\n-A {TAILSCALE_INPUT_CHAIN} -m comment --comment router\n-A {TAILSCALE_INPUT_CHAIN} -s {TAILSCALE_CGNAT_SUBNET} ! -i {TAILSCALE_INTERFACE} -j DROP\n-A {TAILSCALE_INPUT_CHAIN} -i {WAN_INTERFACE} -p udp -m udp --dport {TAILSCALE_UDP_PORT} -j ACCEPT\n-A {TAILSCALE_INPUT_CHAIN} -i {TAILSCALE_INTERFACE} -p tcp -m tcp --dport {TAILSCALE_MANAGEMENT_HTTP_PORT} -j ACCEPT\n-A {TAILSCALE_INPUT_CHAIN} -i {TAILSCALE_INTERFACE} -p udp -m udp --dport {CAMERA_UDP_PORT_START}:{CAMERA_UDP_PORT_END} -j ACCEPT\n-A {TAILSCALE_INPUT_CHAIN} -i {TAILSCALE_INTERFACE} -j DROP\n-A {TAILSCALE_INPUT_CHAIN} -j RETURN\n"
         );
         let qualified = input
             .iter()

@@ -2,11 +2,15 @@
 
 mod ui;
 
-use std::{cell::Cell, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 use gloo_net::http::Request;
 use gloo_timers::future::TimeoutFuture;
 use hyz_router::domain::{
+    camera::{CameraAccessKind, CameraErrorCategory, CameraPipelineState, CameraStatus},
     panel::{
         DisplayRequest, PanelBootstrap, ProxyDelayRefreshRequest, ProxyGroup, ProxySelectionRequest,
     },
@@ -19,8 +23,14 @@ use hyz_router::domain::{
         TailscaleBackendState, TailscaleEnvironment, TailscaleMode, TailscalePeerSnapshot,
     },
 };
-use wasm_bindgen_futures::spawn_local;
-use web_sys::{HtmlElement, HtmlInputElement, HtmlSelectElement, RequestCredentials};
+use wasm_bindgen::{closure::Closure, JsCast, JsValue};
+use wasm_bindgen_futures::{spawn_local, JsFuture};
+use web_sys::{
+    Event, HtmlElement, HtmlInputElement, HtmlSelectElement, HtmlVideoElement, MediaStream,
+    RequestCredentials, RtcIceGatheringState, RtcPeerConnection, RtcPeerConnectionState,
+    RtcRtpTransceiverDirection, RtcRtpTransceiverInit, RtcSdpType, RtcSessionDescriptionInit,
+    RtcTrackEvent,
+};
 use yew::prelude::*;
 
 use ui::*;
@@ -54,6 +64,11 @@ const TAILSCALE_PEERS_ENDPOINT: &str = "/api/v1/tailscale/peers";
 const TAILSCALE_MODE_ENDPOINT: &str = "/api/v1/control/tailscale/mode";
 const TAILSCALE_LOGIN_ENDPOINT: &str = "/api/v1/control/tailscale/login";
 const TAILSCALE_LOGOUT_ENDPOINT: &str = "/api/v1/control/tailscale/logout";
+const CAMERA_STATUS_ENDPOINT: &str = "/api/v1/camera/status";
+const CAMERA_SESSION_CREATE_ENDPOINT: &str = "/api/v1/control/camera/session/create";
+const CAMERA_SESSION_CLOSE_ENDPOINT: &str = "/api/v1/control/camera/session/close";
+const CAMERA_ICE_GATHER_TIMEOUT_MS: u32 = 10_000;
+const CAMERA_ICE_POLL_MS: u32 = 50;
 const POLL_DELAY_MS: u32 = 2_000;
 const NETWORK_APPLY_PAINT_DELAY_MS: u32 = 150;
 const MISSING: &str = "—";
@@ -64,6 +79,61 @@ struct AuthSessionDto {
     authenticated: bool,
     must_change: bool,
 }
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CameraStatusResponseDto {
+    camera: CameraStatus,
+}
+
+#[derive(serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct CameraSessionCreateRequestDto {
+    offer_sdp: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CameraSessionCreateResponseDto {
+    session_id: String,
+    answer_sdp: String,
+    negotiation_timeout_seconds: u16,
+}
+
+#[derive(serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct CameraSessionCloseRequestDto {
+    session_id: String,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CameraViewPhase {
+    Idle,
+    Starting,
+    Connecting,
+    Playing,
+}
+
+impl CameraViewPhase {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Idle => "未播放",
+            Self::Starting => "正在协商",
+            Self::Connecting => "正在连接",
+            Self::Playing => "直播中",
+        }
+    }
+}
+
+struct CameraSessionRuntime {
+    peer: RtcPeerConnection,
+    _on_track: Closure<dyn FnMut(RtcTrackEvent)>,
+    _on_connection_state_change: Closure<dyn FnMut(Event)>,
+    session_id: Option<String>,
+    csrf: String,
+}
+
+type CameraRuntime = Rc<RefCell<Option<CameraSessionRuntime>>>;
 
 #[derive(Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 enum WifiCountryDto {
@@ -659,6 +729,523 @@ impl WorkspaceView {
     }
 }
 
+#[derive(Properties, PartialEq)]
+struct CameraLiveViewProps {
+    csrf: String,
+    stop_generation: u32,
+}
+
+fn camera_pipeline_label(state: CameraPipelineState) -> &'static str {
+    match state {
+        CameraPipelineState::Stopped => "已停止",
+        CameraPipelineState::Starting => "启动中",
+        CameraPipelineState::Streaming => "推流中",
+        CameraPipelineState::Stopping => "停止中",
+        CameraPipelineState::Failed => "故障",
+        CameraPipelineState::Unknown => "未知",
+    }
+}
+
+fn camera_access_label(access: CameraAccessKind) -> &'static str {
+    match access {
+        CameraAccessKind::Lan => "LAN",
+        CameraAccessKind::Tailscale => "Tailscale",
+    }
+}
+
+fn camera_error_label(error: CameraErrorCategory) -> &'static str {
+    match error {
+        CameraErrorCategory::CameraNotFound => "未找到摄像头",
+        CameraErrorCategory::CameraBusy => "摄像头占用中",
+        CameraErrorCategory::MediaPipelineFailed => "媒体管线故障",
+        CameraErrorCategory::EncoderUnavailable => "编码器不可用",
+        CameraErrorCategory::ControlUnavailable => "控制服务不可用",
+        CameraErrorCategory::WebrtcNegotiationFailed => "WebRTC 协商失败",
+        CameraErrorCategory::WebrtcTransportFailed => "WebRTC 传输失败",
+        CameraErrorCategory::ResourceExhausted => "资源不足",
+        CameraErrorCategory::Unknown => "未知故障",
+    }
+}
+
+fn camera_js_error(context: &str, error: JsValue) -> String {
+    let detail = error.as_string().unwrap_or_else(|| format!("{error:?}"));
+    format!("{context}：{detail}")
+}
+
+fn next_camera_generation(generation: &Rc<RefCell<u64>>) -> u64 {
+    let mut current = generation.borrow_mut();
+    *current = current.wrapping_add(1);
+    *current
+}
+
+fn camera_generation_is_current(generation: &Rc<RefCell<u64>>, expected: u64) -> bool {
+    *generation.borrow() == expected
+}
+
+fn close_camera_session(session_id: String, csrf: String) {
+    spawn_local(async move {
+        let _ = post_json(
+            CAMERA_SESSION_CLOSE_ENDPOINT,
+            &csrf,
+            &CameraSessionCloseRequestDto { session_id },
+            "摄像头会话关闭",
+        )
+        .await;
+    });
+}
+
+fn close_camera_runtime(runtime: &CameraRuntime, video: &NodeRef) {
+    if let Some(active) = runtime.borrow_mut().take() {
+        active.peer.set_ontrack(None);
+        active.peer.set_onconnectionstatechange(None);
+        active.peer.close();
+        if let Some(session_id) = active.session_id {
+            close_camera_session(session_id, active.csrf);
+        }
+    }
+    if let Some(video) = video.cast::<HtmlVideoElement>() {
+        let _ = video.pause();
+        video.set_src_object(None);
+        video.load();
+    }
+}
+
+async fn wait_for_camera_ice(peer: &RtcPeerConnection) -> Result<(), String> {
+    let mut waited = 0;
+    while peer.ice_gathering_state() != RtcIceGatheringState::Complete {
+        if waited >= CAMERA_ICE_GATHER_TIMEOUT_MS {
+            return Err("ICE 候选收集超时".to_owned());
+        }
+        TimeoutFuture::new(CAMERA_ICE_POLL_MS).await;
+        waited += CAMERA_ICE_POLL_MS;
+    }
+    Ok(())
+}
+
+async fn refresh_camera_status(
+    status: UseStateHandle<Option<CameraStatus>>,
+    error: UseStateHandle<Option<String>>,
+) {
+    match fetch_json::<CameraStatusResponseDto>(CAMERA_STATUS_ENDPOINT, "摄像头状态").await {
+        Ok(response) => {
+            status.set(Some(response.camera));
+            error.set(None);
+        }
+        Err(message) => {
+            status.set(None);
+            error.set(Some(message));
+        }
+    }
+}
+
+#[function_component(CameraLiveView)]
+fn camera_live_view(props: &CameraLiveViewProps) -> Html {
+    let video = use_node_ref();
+    let stage = use_node_ref();
+    let status = use_state(|| None::<CameraStatus>);
+    let status_error = use_state(|| None::<String>);
+    let notice = use_state(|| None::<String>);
+    let phase = use_state(|| CameraViewPhase::Idle);
+    let fullscreen = use_state(|| false);
+    let runtime = use_mut_ref(|| None::<CameraSessionRuntime>);
+    let generation = use_mut_ref(|| 0u64);
+    let previous_stop_generation = use_mut_ref(|| props.stop_generation);
+
+    {
+        let status = status.clone();
+        let status_error = status_error.clone();
+        use_effect_with((), move |_| {
+            let cancelled = Rc::new(Cell::new(false));
+            let task_cancelled = cancelled.clone();
+            spawn_local(async move {
+                while !task_cancelled.get() {
+                    refresh_camera_status(status.clone(), status_error.clone()).await;
+                    TimeoutFuture::new(POLL_DELAY_MS).await;
+                }
+            });
+            move || cancelled.set(true)
+        });
+    }
+
+    {
+        let runtime = runtime.clone();
+        let video = video.clone();
+        let phase = phase.clone();
+        let notice = notice.clone();
+        let generation = generation.clone();
+        let previous = previous_stop_generation.clone();
+        use_effect_with(props.stop_generation, move |requested| {
+            let changed = *previous.borrow() != *requested;
+            *previous.borrow_mut() = *requested;
+            if changed {
+                next_camera_generation(&generation);
+                close_camera_runtime(&runtime, &video);
+                phase.set(CameraViewPhase::Idle);
+                notice.set(Some("摄像头直播已在退出登录前停止".to_owned()));
+            }
+            || ()
+        });
+    }
+
+    {
+        let runtime = runtime.clone();
+        let video = video.clone();
+        let phase = phase.clone();
+        let notice = notice.clone();
+        let generation = generation.clone();
+        use_effect_with((), move |_| {
+            let window = web_sys::window();
+            let document = window.as_ref().and_then(|window| window.document());
+
+            let pagehide_runtime = runtime.clone();
+            let pagehide_video = video.clone();
+            let pagehide_generation = generation.clone();
+            let pagehide = Closure::<dyn FnMut(Event)>::new(move |_| {
+                next_camera_generation(&pagehide_generation);
+                close_camera_runtime(&pagehide_runtime, &pagehide_video);
+            });
+
+            let hidden_runtime = runtime.clone();
+            let hidden_video = video.clone();
+            let hidden_phase = phase.clone();
+            let hidden_notice = notice.clone();
+            let hidden_generation = generation.clone();
+            let watched_document = document.clone();
+            let visibility = Closure::<dyn FnMut(Event)>::new(move |_| {
+                if watched_document
+                    .as_ref()
+                    .is_some_and(|document| document.hidden())
+                {
+                    next_camera_generation(&hidden_generation);
+                    close_camera_runtime(&hidden_runtime, &hidden_video);
+                    hidden_phase.set(CameraViewPhase::Idle);
+                    hidden_notice.set(Some("页面离开前已停止摄像头直播".to_owned()));
+                }
+            });
+
+            if let Some(window) = &window {
+                let _ = window.add_event_listener_with_callback(
+                    "pagehide",
+                    pagehide.as_ref().unchecked_ref(),
+                );
+            }
+            if let Some(document) = &document {
+                let _ = document.add_event_listener_with_callback(
+                    "visibilitychange",
+                    visibility.as_ref().unchecked_ref(),
+                );
+            }
+
+            move || {
+                if let Some(window) = &window {
+                    let _ = window.remove_event_listener_with_callback(
+                        "pagehide",
+                        pagehide.as_ref().unchecked_ref(),
+                    );
+                }
+                if let Some(document) = &document {
+                    let _ = document.remove_event_listener_with_callback(
+                        "visibilitychange",
+                        visibility.as_ref().unchecked_ref(),
+                    );
+                }
+                next_camera_generation(&generation);
+                close_camera_runtime(&runtime, &video);
+            }
+        });
+    }
+
+    {
+        let fullscreen = fullscreen.clone();
+        use_effect_with((), move |_| {
+            let document = web_sys::window().and_then(|window| window.document());
+            let watched_document = document.clone();
+            let fullscreen_change = Closure::<dyn FnMut(Event)>::new(move |_| {
+                fullscreen.set(
+                    watched_document
+                        .as_ref()
+                        .is_some_and(|document| document.fullscreen_element().is_some()),
+                );
+            });
+
+            if let Some(document) = &document {
+                let _ = document.add_event_listener_with_callback(
+                    "fullscreenchange",
+                    fullscreen_change.as_ref().unchecked_ref(),
+                );
+            }
+
+            move || {
+                if let Some(document) = &document {
+                    let _ = document.remove_event_listener_with_callback(
+                        "fullscreenchange",
+                        fullscreen_change.as_ref().unchecked_ref(),
+                    );
+                }
+            }
+        });
+    }
+
+    let start = {
+        let csrf = props.csrf.clone();
+        let video = video.clone();
+        let phase = phase.clone();
+        let notice = notice.clone();
+        let runtime = runtime.clone();
+        let generation = generation.clone();
+        Callback::from(move |_| {
+            if csrf.is_empty() || *phase != CameraViewPhase::Idle {
+                return;
+            }
+            close_camera_runtime(&runtime, &video);
+            let attempt = next_camera_generation(&generation);
+            phase.set(CameraViewPhase::Starting);
+            notice.set(None);
+
+            let csrf = csrf.clone();
+            let video = video.clone();
+            let phase = phase.clone();
+            let notice = notice.clone();
+            let runtime = runtime.clone();
+            let generation = generation.clone();
+            spawn_local(async move {
+                let result = async {
+                    let peer = RtcPeerConnection::new()
+                        .map_err(|error| camera_js_error("无法创建 WebRTC 连接", error))?;
+                    let transceiver = RtcRtpTransceiverInit::new();
+                    transceiver.set_direction(RtcRtpTransceiverDirection::Recvonly);
+                    peer.add_transceiver_with_str_and_init("video", &transceiver);
+
+                    let track_video = video.clone();
+                    let track_phase = phase.clone();
+                    let track_notice = notice.clone();
+                    let on_track =
+                        Closure::<dyn FnMut(RtcTrackEvent)>::new(move |event: RtcTrackEvent| {
+                            let stream = event
+                                .streams()
+                                .get(0)
+                                .dyn_into::<MediaStream>()
+                                .ok()
+                                .or_else(|| {
+                                    let stream = MediaStream::new().ok()?;
+                                    stream.add_track(&event.track());
+                                    Some(stream)
+                                });
+                            if let (Some(video), Some(stream)) =
+                                (track_video.cast::<HtmlVideoElement>(), stream)
+                            {
+                                video.set_src_object(Some(&stream));
+                                let _ = video.play();
+                                track_phase.set(CameraViewPhase::Playing);
+                                track_notice.set(None);
+                            }
+                        });
+                    peer.set_ontrack(Some(on_track.as_ref().unchecked_ref()));
+
+                    let connection_peer = peer.clone();
+                    let connection_runtime = runtime.clone();
+                    let connection_video = video.clone();
+                    let connection_phase = phase.clone();
+                    let connection_notice = notice.clone();
+                    let connection_generation = generation.clone();
+                    let on_connection_state_change = Closure::<dyn FnMut(Event)>::new(move |_| {
+                        if matches!(
+                            connection_peer.connection_state(),
+                            RtcPeerConnectionState::Disconnected | RtcPeerConnectionState::Failed
+                        ) {
+                            next_camera_generation(&connection_generation);
+                            close_camera_runtime(&connection_runtime, &connection_video);
+                            connection_phase.set(CameraViewPhase::Idle);
+                            connection_notice.set(Some("摄像头 WebRTC 连接已中断".to_owned()));
+                        }
+                    });
+                    peer.set_onconnectionstatechange(Some(
+                        on_connection_state_change.as_ref().unchecked_ref(),
+                    ));
+                    *runtime.borrow_mut() = Some(CameraSessionRuntime {
+                        peer: peer.clone(),
+                        _on_track: on_track,
+                        _on_connection_state_change: on_connection_state_change,
+                        session_id: None,
+                        csrf: csrf.clone(),
+                    });
+
+                    let offer_value = JsFuture::from(peer.create_offer())
+                        .await
+                        .map_err(|error| camera_js_error("无法创建 WebRTC offer", error))?;
+                    let offer: RtcSessionDescriptionInit = offer_value.unchecked_into();
+                    JsFuture::from(peer.set_local_description(&offer))
+                        .await
+                        .map_err(|error| camera_js_error("无法设置本地 WebRTC 描述", error))?;
+                    if !camera_generation_is_current(&generation, attempt) {
+                        return Ok::<_, String>(());
+                    }
+                    wait_for_camera_ice(&peer).await?;
+                    if !camera_generation_is_current(&generation, attempt) {
+                        return Ok::<_, String>(());
+                    }
+                    let offer_sdp = peer
+                        .local_description()
+                        .map(|description| description.sdp())
+                        .filter(|sdp| !sdp.is_empty())
+                        .ok_or_else(|| "浏览器没有生成可提交的 WebRTC offer".to_owned())?;
+                    let response = post_json_response::<_, CameraSessionCreateResponseDto>(
+                        CAMERA_SESSION_CREATE_ENDPOINT,
+                        &csrf,
+                        &CameraSessionCreateRequestDto { offer_sdp },
+                        "摄像头会话创建",
+                    )
+                    .await?;
+
+                    if !camera_generation_is_current(&generation, attempt) {
+                        close_camera_session(response.session_id, csrf.clone());
+                        return Ok::<_, String>(());
+                    }
+                    if let Some(active) = runtime.borrow_mut().as_mut() {
+                        active.session_id = Some(response.session_id);
+                    }
+
+                    if !camera_generation_is_current(&generation, attempt) {
+                        return Ok::<_, String>(());
+                    }
+                    phase.set(CameraViewPhase::Connecting);
+                    let answer = RtcSessionDescriptionInit::new(RtcSdpType::Answer);
+                    answer.set_sdp(&response.answer_sdp);
+                    JsFuture::from(peer.set_remote_description(&answer))
+                        .await
+                        .map_err(|error| camera_js_error("无法设置摄像头 WebRTC answer", error))?;
+                    if !camera_generation_is_current(&generation, attempt) {
+                        return Ok::<_, String>(());
+                    }
+
+                    let timeout_ms =
+                        u32::from(response.negotiation_timeout_seconds).saturating_mul(1_000);
+                    let timeout_phase = phase.clone();
+                    let timeout_notice = notice.clone();
+                    let timeout_runtime = runtime.clone();
+                    let timeout_video = video.clone();
+                    let timeout_generation = generation.clone();
+                    spawn_local(async move {
+                        TimeoutFuture::new(timeout_ms).await;
+                        if camera_generation_is_current(&timeout_generation, attempt)
+                            && *timeout_phase == CameraViewPhase::Connecting
+                        {
+                            next_camera_generation(&timeout_generation);
+                            close_camera_runtime(&timeout_runtime, &timeout_video);
+                            timeout_phase.set(CameraViewPhase::Idle);
+                            timeout_notice.set(Some("摄像头 WebRTC 协商超时".to_owned()));
+                        }
+                    });
+                    Ok(())
+                }
+                .await;
+
+                if let Err(error) = result {
+                    if camera_generation_is_current(&generation, attempt) {
+                        next_camera_generation(&generation);
+                        close_camera_runtime(&runtime, &video);
+                        phase.set(CameraViewPhase::Idle);
+                        notice.set(Some(format!("播放失败：{error}")));
+                    }
+                }
+            });
+        })
+    };
+
+    let stop = {
+        let runtime = runtime.clone();
+        let video = video.clone();
+        let phase = phase.clone();
+        let notice = notice.clone();
+        let generation = generation.clone();
+        Callback::from(move |_| {
+            next_camera_generation(&generation);
+            close_camera_runtime(&runtime, &video);
+            phase.set(CameraViewPhase::Idle);
+            notice.set(Some("摄像头直播已停止".to_owned()));
+        })
+    };
+
+    let toggle_fullscreen = {
+        let stage = stage.clone();
+        let notice = notice.clone();
+        let fullscreen = *fullscreen;
+        Callback::from(move |_| {
+            let Some(document) = web_sys::window().and_then(|window| window.document()) else {
+                notice.set(Some("当前浏览器不支持直播全屏".to_owned()));
+                return;
+            };
+            if fullscreen {
+                document.exit_fullscreen();
+            } else if let Some(stage) = stage.cast::<HtmlElement>() {
+                if stage.request_fullscreen().is_err() {
+                    notice.set(Some("浏览器拒绝进入直播全屏".to_owned()));
+                }
+            }
+        })
+    };
+
+    let camera_available = status.as_ref().is_some_and(|camera| camera.available);
+    html! {
+        <article class={CAMERA_CARD} aria-labelledby="camera-live-title">
+            <div class={CAMERA_LAYOUT}>
+                <div class={CAMERA_COPY}>
+                    <div class={CONTROL_TITLE}>
+                        <div>
+                            <p class={EYEBROW}>{"CAMERA"}</p>
+                            <h3 id="camera-live-title" class={CONTROL_HEADING}>{"摄像头直播"}</h3>
+                        </div>
+                        <span class={classes!(STATUS_BADGE, if *phase == CameraViewPhase::Playing { "text-success" } else { "text-base-content/60" })}>
+                            <span class={STATUS_DOT_SMALL} aria-hidden="true"></span>
+                            {phase.label()}
+                        </span>
+                    </div>
+                    if let Some(camera) = status.as_ref() {
+                        <dl class={CAMERA_METRICS}>
+                            <div class={CAMERA_METRIC}><dt>{"设备"}</dt><dd>{if camera.available { "可用" } else { "不可用" }}</dd></div>
+                            <div class={CAMERA_METRIC}><dt>{"管线"}</dt><dd>{camera_pipeline_label(camera.pipeline)}</dd></div>
+                            <div class={CAMERA_METRIC}><dt>{"画面"}</dt><dd>{format!("{} × {} · {} fps · {}", camera.profile.width, camera.profile.height, camera.profile.fps, camera.profile.codec)}</dd></div>
+                            <div class={CAMERA_METRIC}><dt>{"访问"}</dt><dd>{format!("{} · {} 个会话", camera_access_label(camera.access), camera.active_sessions)}</dd></div>
+                        </dl>
+                        if let Some(error) = camera.error_category {
+                            <p class="text-xs text-error" role="status">{camera_error_label(error)}</p>
+                        }
+                    } else if let Some(error) = status_error.as_ref() {
+                        <p class="text-xs text-error" role="status">{format!("状态读取失败：{error}")}</p>
+                    } else {
+                        <p class={HELP_TEXT} role="status">{"正在读取摄像头状态…"}</p>
+                    }
+                    <p class={HELP_TEXT}>{"视频不会自动启动。点击播放后，浏览器仅接收设备视频轨道；离开页面或退出登录会立即停止会话。"}</p>
+                    <div class={BUTTON_ROW}>
+                        if *phase == CameraViewPhase::Idle {
+                            <button class={BUTTON_PRIMARY} type="button" onclick={start} disabled={!camera_available || props.csrf.is_empty()}>{"播放直播"}</button>
+                        } else {
+                            <button class={BUTTON_ERROR} type="button" onclick={stop}>{"停止直播"}</button>
+                        }
+                    </div>
+                    if let Some(message) = notice.as_ref() {
+                        <p class={CAMERA_NOTICE} role="status" aria-live="polite">{message}</p>
+                    }
+                </div>
+                <div ref={stage} class={CAMERA_STAGE}>
+                    <video ref={video} class={CAMERA_VIDEO} autoplay=true playsinline=true muted=true aria-label="摄像头实时画面"></video>
+                    if *phase == CameraViewPhase::Playing {
+                        <button class={CAMERA_FULLSCREEN_BUTTON} type="button" onclick={toggle_fullscreen} aria-pressed={fullscreen.to_string()}>
+                            {if *fullscreen { "退出全屏" } else { "进入全屏" }}
+                        </button>
+                    }
+                    if *phase == CameraViewPhase::Idle {
+                        <div class={CAMERA_PLACEHOLDER} aria-hidden="true">
+                            <span class={CAMERA_PLACEHOLDER_ICON}>{"LIVE"}</span>
+                            <span>{"等待手动播放"}</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </article>
+    }
+}
+
 #[function_component(App)]
 fn app() -> Html {
     let state = use_reducer(AppState::default);
@@ -1156,6 +1743,7 @@ fn settings(props: &SettingsProps) -> Html {
     let confirmation_cancel_button = use_node_ref();
     let subscription_url = use_node_ref();
     let login_expanded = use_state(|| false);
+    let camera_stop_generation = use_state(|| 0u32);
     let sta_expanded = use_state(|| false);
     let ap_expanded = use_state(|| false);
     let network_confirmation_open = use_state(|| false);
@@ -1209,8 +1797,10 @@ fn settings(props: &SettingsProps) -> Html {
         let state = state.clone();
         let csrf = csrf.clone();
         let login_expanded = login_expanded.clone();
+        let camera_stop_generation = camera_stop_generation.clone();
         Callback::from(move |_| {
             login_expanded.set(false);
+            camera_stop_generation.set((*camera_stop_generation).wrapping_add(1));
             dispatch_auth(
                 state.clone(),
                 AUTH_LOGOUT_ENDPOINT,
@@ -1559,6 +2149,7 @@ fn settings(props: &SettingsProps) -> Html {
                 </div>
             } else {
                 <>
+                    <CameraLiveView csrf={csrf.clone()} stop_generation={*camera_stop_generation} />
                     {render_proxy_control(state)}
                     {render_tailscale_control(state, &csrf)}
                     <div class={SETTINGS_GRID}>

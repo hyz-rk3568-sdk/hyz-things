@@ -2,10 +2,11 @@
 
 ## 目标与当前状态
 
-路由控制面正在收敛为 `apps/rust/router` **一个 Cargo 包、一个 native composition root、一个最终板端 ELF**：
+路由控制面继续收敛为 `apps/rust/router` **一个 Cargo 包、一个 native composition root、一个最终板端 ELF**，摄像头媒体面则作为故障隔离的独立进程交付：
 
 ```text
 apps/rust/router -> /usr/bin/hyz-router
+apps/rust/camera -> /usr/bin/hyz-camera
 ```
 
 它采用包内六边形架构，而不是为每个 adapter 建 crate：
@@ -19,11 +20,21 @@ src/web/                    同一包内的 Yew wasm build target
 src/main.rs                 唯一 production composition root
 ```
 
-`router-web` 只在宿主机构建阶段产生 WASM/静态资源并嵌入 `hyz-router`，不会作为第二个板端程序安装。旧的 `apps/router-panel/{shared,server,adapter-linux,frontend}` 多 crate 方案已被否决并从源码删除；状态契约、HTTP 行为和 UI 已迁入本包。独立 MetaCubeXD 静态包也已删除，产品只保留这一套 Web UI。
+`router-web` 只在宿主机构建阶段产生 WASM/静态资源并嵌入 `hyz-router`，不会作为第二个板端程序安装。`hyz-camera` 是独立板端媒体服务，通过 root-only Unix socket 接受 `hyz-router` 的受限状态、创建会话和关闭会话请求；它不参与路由控制面的 composition root，也不执行网络或防火墙命令。旧的 `apps/router-panel/{shared,server,adapter-linux,frontend}` 多 crate 方案已被否决并从源码删除；状态契约、HTTP 行为和 UI 已迁入 router 包。独立 MetaCubeXD 静态包也已删除，产品只保留这一套管理 Web UI。
 
-**源码、rootfs 与 recovery-free OTA 已完成统一 cutover，并已在 RK3568 完成功能验证。** 2026-08-11 安装的设置事务 OTA 已通过完整冷启动、错误 STA 候选自动恢复、AP 未确认超时回滚、SysV restart 和并发 start 串行化验证；daemon 及其子进程不再继承 init action lock。管理员认证基础行为此前已在同一统一 ELF 上验证。成功切换到另一组真实 STA、管理员实际改密以及凭据型订阅刷新仍需由操作者在面板中输入本地凭据完成，不能标记为已验收。`make apps` 只构建统一 `hyz-router`，`make overlay` 只安装 `/usr/bin/hyz-router` 和产品元数据；Buildroot board overlay 只保留最小 `S81hyz-router` 及 Mihomo 无凭据示例。旧 shell 路由/Mihomo wrapper、S82、独立 DHCP hook、独立 OTA 和 hello demos 已从最终 rootfs 删除。
+**源码、rootfs 与 recovery-free OTA 已完成统一 router cutover，并已在 RK3568 完成功能验证。** 2026-08-11 安装的设置事务 OTA 已通过完整冷启动、错误 STA 候选自动恢复、AP 未确认超时回滚、SysV restart 和并发 start 串行化验证；daemon 及其子进程不再继承 init action lock。管理员认证基础行为此前已在同一统一 ELF 上验证。成功切换到另一组真实 STA、管理员实际改密以及凭据型订阅刷新仍需由操作者在面板中输入本地凭据完成，不能标记为已验收。`make apps` 构建 `hyz-router` 与独立 `hyz-camera`，`make overlay` 安装两个 ELF 和产品元数据。摄像头增量已完成 Rust/frontend 构建、Router Playwright 10/10、recovery-free OTA 集成和真实 RK3568 WebRTC 验收；固定媒体 profile 从 RKISP `3840×2160` crop bounds 中央裁剪为 NV12 `1920×1080 @ 30 FPS`，使用 H.264 Baseline level 4、4 Mbps 和 GOP 30。LAN 与 Tailscale 的桌面/移动路径均确认收到并解码 H.264 RTP、canvas 存在可见像素、全屏覆盖 viewport，停止后 camera pipeline/session 回零。Buildroot board overlay 保留各自最小 SysV init 脚本及 Mihomo 无凭据示例。旧 shell 路由/Mihomo wrapper、独立 DHCP hook、独立 OTA 和 hello demos 已从最终 rootfs 删除。真实摄像头自动验收见 [`camera-hardware-e2e.md`](camera-hardware-e2e.md)。
 
-**Tailscale 固定 LAN 远程访问已完成代码实现和静态检查，尚未完成 Rust/frontend 构建、自动测试、固件集成和板端/Tailnet 验收。** 当前实现包含独立 typed lifecycle、固定 `tailscaled` 身份与 CLI、`netfilter-mode=off` 下的产品 owned INPUT/FORWARD/NAT、Mihomo → Tailscale → ordinary router hook 顺序、精确 Tailscale IPv4 HTTP listener、管理员登录/启用/停用/注销 Web 流程，以及固定 Tailscale `1.102.2` ARM64 Buildroot 包。完整验收矩阵见 [`soft-router-tailscale-plan.md`](soft-router-tailscale-plan.md)。
+**Tailscale 固定 LAN 远程访问已完成代码、构建、recovery-free OTA 和板端/Tailnet 验收。** 当前实现包含独立 typed lifecycle、固定 `tailscaled` 身份与 CLI、`netfilter-mode=off` 下的产品 owned INPUT/FORWARD/NAT、Mihomo → Tailscale → ordinary router hook 顺序、精确 Tailscale IPv4 HTTP listener、管理员登录/启用/停用/注销 Web 流程，以及固定 Tailscale `1.102.2` ARM64 Buildroot 包。摄像头真实端到端测试也已通过该 exact listener 完成信令和 UDP 媒体验收。完整验收矩阵见 [`soft-router-tailscale-plan.md`](soft-router-tailscale-plan.md)。
+
+## 2026-08-14 摄像头 WebRTC OTA 验收
+
+最终 1920×1080 recovery-free OTA `output/upgrade.fw` 大小为 `457,138,762` bytes，SHA-256 为 `839a316e9ec839ff084db1bddba303e1c84763182cf21c6d009e2bf95cf34ba3`。经 `rkImageMaker` 和 `afptool` 双层解包，成员只有 bootloader、U-Boot、misc、boot、rootfs 和 oem，不含 recovery 或 userdata。打包 rootfs 中的 `hyz-router`、`hyz-camera`、RKAIQ、两个 init 脚本及 V4L2、video parser、Rockchip MPP GStreamer plugins 均已提取审计，并与本次构建产物逐字节一致；rootfs 不含临时 `v4l2-ctl` 或 libv4l 诊断产物。
+
+OTA 通过 USB ADB 传输，主机与板端 SHA-256 一致后由 `hyz-router ota install` 校验 RKFW 并写入 BCB。安装后的新 boot 恢复 Router、Mihomo、严格 Tailscale `lan_subnet_access` 和 System readiness；`hyz-camera` 由 `S82hyz-camera` 自动启动并建立 root-only control socket。recovery 分区 SHA-256 保持 `9778353401cf31b6bdca54fd1e5dd59a7a0983d9b32488eb89e3f974f036e363`，`/userdata/hyz-router` 聚合摘要在清除 OTA staging 后保持不变，原管理员 credential 未被替换或输出。
+
+MPP 插件现在把 `GST_VIDEO_COLOR_RANGE_0_255` 映射为 `MPP_FRAME_RANGE_JPEG`，设置 `prep:range` 后强制将 encoder 配置标记为待提交。最终 OTA、打包 rootfs、Buildroot target 和板端插件的 SHA-256 均为 `f6202995874bd3bde81a59fcb61ef0dde9f5a13e7b9176018e18dd82c18d3aad`；板端采集码流经 `ffprobe` 确认为 `1920×1080`、Constrained Baseline level 4、`yuvj420p` 和 `color_range=pc`。
+
+真实 MJS/Playwright 直接访问板端 LAN 与 Tailscale 管理页面，不使用 HTTP、WebRTC 或媒体 mock。桌面 `1280×800` 与移动端 `360×800` 四组路径均确认真实 peer connected、inbound RTP bytes/packets/frames decoded 非零、H.264 解码尺寸 `1920×1080`、canvas 像素非黑且有可见细节、全屏 stage 覆盖 viewport、无横向溢出，点击停止后 pipeline 与 active session 归零。MPP 编码码流的 SPS/VUI 经 `ffprobe` 确认为 full-range `color_range=pc`。可复用脚本与操作说明见 [`camera-hardware-e2e.md`](camera-hardware-e2e.md)，完整产品边界和审计哈希见 [`soft-router-camera-webrtc-plan.md`](soft-router-camera-webrtc-plan.md)。
 
 ## 架构图
 
@@ -67,7 +78,9 @@ flowchart LR
     Watcher -->|"core 异常时撤销 TUN 拦截"| Net
 ```
 
-浏览器控制在进程内经过同一个 `ControlHandler`，不连接 root-only socket；CLI 和 udhcpc hook 只作为 socket 客户端存在。完整生产 adapter 只由 daemon 的 composition root 构造，watcher 只拥有撤销 TUN 拦截所需的最小能力。
+浏览器控制在进程内经过同一个 `ControlHandler`，不连接 root-only router socket；CLI 和 udhcpc hook 只作为该 socket 的客户端存在。完整 production adapter 只由 daemon 的 composition root 构造，watcher 只拥有撤销 TUN 拦截所需的最小能力。
+
+摄像头直播使用另一条受限边界：浏览器通过现有 Axum listener 完成管理员认证和 SDP offer/answer；`hyz-router` 的 `CameraApplication` 只通过固定 `/run/hyz-camera/control.sock` 调用独立 `hyz-camera`，并从当前 LAN 或 exact Tailscale listener 派生 candidate 地址。协商完成后，H.264 媒体直接在浏览器与 `hyz-camera` 的固定 `40000-40015/udp` 池之间流动，不经过 Axum。router 仍是唯一 firewall authority，camera 不执行网络命令。
 
 ### 包内六边形架构
 

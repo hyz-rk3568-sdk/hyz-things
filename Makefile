@@ -5,12 +5,17 @@ BOARD := hyz_things_rk3568
 BR_BOARD := rockchip_hyz_things
 BR_OUT := $(CURDIR)/sdk/buildroot/output/$(BR_BOARD)
 BR_HOST := $(BR_OUT)/host
+BR_SYSROOT := $(BR_HOST)/aarch64-buildroot-linux-gnu/sysroot
+BR_PKG_CONFIG := $(BR_HOST)/bin/pkg-config
+BR_PKG_CONFIG_LIBDIR := $(BR_SYSROOT)/usr/lib/pkgconfig:$(BR_SYSROOT)/usr/share/pkgconfig
 TOOLCHAIN_PREFIX := $(BR_HOST)/bin/aarch64-buildroot-linux-gnu-
 RUST_TARGET := aarch64-unknown-linux-gnu
 ROUTER_APP := $(CURDIR)/apps/rust/router
+CAMERA_APP := $(CURDIR)/apps/rust/camera
 ROUTER_FRONTEND_BUNDLE := $(CURDIR)/target/frontend-bundle/router-frontend.tar
 ROUTER_TRUNK := $(CURDIR)/.tools/trunk/bin/trunk
 ROUTER_BINARY := $(ROUTER_APP)/target/$(RUST_TARGET)/release/hyz-router
+CAMERA_BINARY := $(CAMERA_APP)/target/$(RUST_TARGET)/release/hyz-camera
 OUTPUT := $(CURDIR)/output
 OVERLAY := $(OUTPUT)/rootfs-overlay
 REPO := $(CURDIR)/.tools/repo
@@ -30,7 +35,7 @@ BUILD_PATH := $(BR_HOST)/bin:$(HOME)/.cargo/bin:$(HOME)/.local/bin:/usr/local/sb
 export PATH := $(BUILD_PATH)
 export RK_TOOLCHAIN_PREFIX := $(TOOLCHAIN_PREFIX)
 
-.PHONY: help sdk configure toolchain router-frontend router-e2e router-app router-deploy-dev router-revert-dev apps overlay rootfs kernel loader recovery firmware upgrade upgrade-recovery check check-static clean
+.PHONY: help sdk configure toolchain router-frontend router-e2e router-app camera-app router-deploy-dev router-revert-dev apps overlay rootfs kernel loader recovery firmware upgrade upgrade-recovery check check-static clean
 
 help:
 	@printf '%s\n' \
@@ -39,11 +44,12 @@ help:
 	  'make router-frontend  Build the deterministic Yew/Tailwind frontend bundle' \
 	  'make router-e2e  Run the host-only Axum/Playwright browser tests' \
 	  'make router-app Build the unified hyz-router ELF and embedded Yew UI' \
-	  'make router-deploy-dev  Build and activate only hyz-router over USB ADB' \
-	  'make router-revert-dev  Gracefully restore the firmware hyz-router ELF' \
-	  'make apps       Build the single product application (hyz-router)' \
-	  'make overlay    Stage only hyz-router and product metadata' \
-	  'make rootfs     Stage hyz-router and build the Buildroot rootfs' \
+	  'make camera-app Build the independent hyz-camera ELF against the Buildroot sysroot' \
+	  'make router-deploy-dev  Build, stage, reboot, and activate hyz-router over USB ADB' \
+	  'make router-revert-dev  Remove the development boot override and reboot into the firmware ELF' \
+	  'make apps       Build the hyz-router and hyz-camera product applications' \
+	  'make overlay    Stage product applications and metadata' \
+	  'make rootfs     Stage product applications and build the Buildroot rootfs' \
 	  'make kernel     Build the RK3568 kernel with the Buildroot compiler' \
 	  'make recovery   Build the source-controlled recovery image' \
 	  'make firmware   Build loader, kernel, recovery, rootfs, and partition images' \
@@ -100,7 +106,33 @@ router-app: toolchain router-frontend
 	  --manifest-path "$(ROUTER_APP)/Cargo.toml" \
 	  --bin hyz-router --features native
 
-apps: router-app
+camera-app: toolchain
+	$(MAKE) -C sdk/buildroot O="$(BR_OUT)" $(BR_BOARD)_defconfig
+	@if [[ ! -f "$(BR_OUT)/target/usr/lib/gstreamer-1.0/libgstapp.so" || \
+	       ! -f "$(BR_OUT)/target/usr/lib/gstreamer-1.0/libgstvideo4linux2.so" || \
+	       ! -f "$(BR_OUT)/target/usr/lib/gstreamer-1.0/libgstvideoparsersbad.so" ]]; then \
+		cd sdk && ./build.sh buildroot-make:gst1-plugins-base-dirclean:gst1-plugins-good-dirclean:gst1-plugins-bad-dirclean; \
+	fi
+	cd sdk && ./build.sh buildroot-make:gstreamer1:gst1-plugins-base:gst1-plugins-good:gst1-plugins-bad:rockchip-mpp:gstreamer1-rockchip
+	test -f "$(BR_OUT)/target/usr/lib/gstreamer-1.0/libgstapp.so"
+	test -f "$(BR_OUT)/target/usr/lib/gstreamer-1.0/libgstvideo4linux2.so"
+	test -f "$(BR_OUT)/target/usr/lib/gstreamer-1.0/libgstvideoparsersbad.so"
+	test -x "$(BR_OUT)/target/usr/libexec/gstreamer-1.0/gst-plugin-scanner"
+	test -x "$(BR_PKG_CONFIG)"
+	rustup target add $(RUST_TARGET)
+	PKG_CONFIG="$(BR_PKG_CONFIG)" \
+	PKG_CONFIG_ALLOW_CROSS=1 \
+	PKG_CONFIG_SYSROOT_DIR="$(BR_SYSROOT)" \
+	PKG_CONFIG_LIBDIR="$(BR_PKG_CONFIG_LIBDIR)" \
+	CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="$(TOOLCHAIN_PREFIX)gcc" \
+	AR_aarch64_unknown_linux_gnu="$(TOOLCHAIN_PREFIX)ar" \
+	CC_aarch64_unknown_linux_gnu="$(TOOLCHAIN_PREFIX)gcc" \
+	CXX_aarch64_unknown_linux_gnu="$(TOOLCHAIN_PREFIX)g++" \
+	  cargo build --locked --release --target $(RUST_TARGET) \
+	  --manifest-path "$(CAMERA_APP)/Cargo.toml" \
+	  --bin hyz-camera
+
+apps: router-app camera-app
 
 router-deploy-dev: router-app
 	ADB="$(ADB)" ADB_SERIAL="$(ADB_SERIAL)" bash "$(ROUTER_APP)/tools/deploy-dev.sh" deploy "$(ROUTER_BINARY)"
@@ -113,6 +145,7 @@ overlay: apps
 	mkdir -p "$(OVERLAY)"
 	cp -a product/rootfs-overlay/. "$(OVERLAY)/"
 	install -D -m 0755 "$(ROUTER_BINARY)" "$(OVERLAY)/usr/bin/hyz-router"
+	install -D -m 0755 "$(CAMERA_BINARY)" "$(OVERLAY)/usr/bin/hyz-camera"
 	printf 'hyz_things %s\n' "$${VERSION:-development}" > "$(OVERLAY)/etc/hyz-version"
 
 rootfs: configure overlay
@@ -159,12 +192,17 @@ check: check-static
 check-static:
 	sh -n "$(ROUTER_APP)/tools/build-frontend-bundle.sh"
 	bash -n "$(ROUTER_APP)/tools/deploy-dev.sh"
-	grep -q 'remote_action stop' "$(ROUTER_APP)/tools/deploy-dev.sh"
-	grep -q "mount -o bind" "$(ROUTER_APP)/tools/deploy-dev.sh"
-	! grep -q 'rm -rf /run/hyz-router/daemon.lock\|kill -9\|pkill' "$(ROUTER_APP)/tools/deploy-dev.sh"
+	grep -q 'REMOTE_INIT_SCRIPT=/etc/init.d/S80hyz-router-dev' "$(ROUTER_APP)/tools/deploy-dev.sh"
+	grep -q 'mount -o bind' "$(ROUTER_APP)/tools/deploy-dev.sh"
+	grep -q "cat /proc/sys/kernel/random/boot_id" "$(ROUTER_APP)/tools/deploy-dev.sh"
+	grep -q "rm -f '\$$REMOTE_INIT_SCRIPT'" "$(ROUTER_APP)/tools/deploy-dev.sh"
+	! grep -q 'remote_action stop\|S81hyz-router stop\|kill -9\|pkill' "$(ROUTER_APP)/tools/deploy-dev.sh"
 	sh -n "$(ROUTER_APP)/tools/start-e2e-server.sh"
 	python3 -m json.tool "$(ROUTER_APP)/package.json" >/dev/null
 	python3 -m json.tool "$(ROUTER_APP)/package-lock.json" >/dev/null
+	test -x "$(HOST_NODE)"
+	"$(HOST_NODE)" --check "$(ROUTER_APP)/e2e/camera-hardware.mjs"
+	! grep -qE '100\.[0-9]+\.[0-9]+\.[0-9]+|HYZ_ROUTER_ADMIN_PASSWORD=.*[^"$$]' "$(ROUTER_APP)/e2e/camera-hardware.mjs"
 	grep -q '"lockfileVersion"' "$(ROUTER_APP)/package-lock.json"
 	grep -q '@plugin "daisyui"' "$(ROUTER_APP)/frontend/app.css"
 	grep -q '@source "../src/web/\*\*/\*.rs"' "$(ROUTER_APP)/frontend/app.css"
@@ -201,14 +239,47 @@ check-static:
 	! grep -qE '&(dsi1|dsi1_panel|backlight1)[[:space:]]*\{[[:space:]]*status = "disabled"' sdk/kernel/arch/arm64/boot/dts/rockchip/rk3568-atk-evb1-mipi-dsi-1080p.dts
 	! grep -R -E -q 'TcpListener::bind\([^)]*(UNSPECIFIED|\[0,[[:space:]]*0,[[:space:]]*0,[[:space:]]*0\])|Ipv4Addr::UNSPECIFIED|CorsLayer::permissive|/usr/sbin/hyz-mihomo' "$(ROUTER_APP)/src"
 	! grep -R -q 'Command::new("sh")\|Command::new("bash")' "$(ROUTER_APP)/src"
+	test -f "$(CAMERA_APP)/Cargo.lock"
+	! grep -R -q 'std::process::Command\|Command::new\|sh -c\|gst_parse_launch' "$(CAMERA_APP)/src"
+	grep -q 'CONTROL_OWNER_PATH: &str = "/run/hyz-camera/daemon.owner"' "$(CAMERA_APP)/src/adapters/inbound/unix_control.rs"
+	grep -q 'UdpSocket::bind(SocketAddr::from((address, port)))' "$(CAMERA_APP)/src/adapters/outbound/webrtc.rs"
+	! grep -q 'Ipv4Addr::UNSPECIFIED' "$(CAMERA_APP)/src/adapters/outbound/webrtc.rs"
+	grep -q 'CAMERA_UDP_PORT_START: u16 = 40_000' "$(CAMERA_APP)/src/domain/session.rs"
+	grep -q 'CAMERA_UDP_PORT_END: u16 = 40_015' "$(CAMERA_APP)/src/domain/session.rs"
+	grep -q 'width: 1920' "$(CAMERA_APP)/src/domain/stream.rs"
+	grep -q 'height: 1080' "$(CAMERA_APP)/src/domain/stream.rs"
+	grep -q 'bitrate_bps: 4_000_000' "$(CAMERA_APP)/src/domain/stream.rs"
+	grep -q 'FIXED_CROP_LEFT, 960' "$(CAMERA_APP)/src/domain/stream.rs"
+	grep -q 'FIXED_CROP_TOP, 540' "$(CAMERA_APP)/src/domain/stream.rs"
+	grep -q 'source.set_property("crop-left", FIXED_CROP_LEFT)' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
+	grep -q 'source.set_property("crop-top", FIXED_CROP_TOP)' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
+	grep -q 'FULL_RANGE_BT709_COLORIMETRY: &str = "1:3:5:1"' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
+	grep -q 'field("colorimetry", FULL_RANGE_BT709_COLORIMETRY)' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
+	grep -q 'set_property_from_str("level", "4")' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
+	grep -q 'GST_VIDEO_COLOR_RANGE_0_255' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c
+	grep -q 'MPP_FRAME_RANGE_JPEG' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c
+	grep -q 'mpp_enc_cfg_set_s32 (self->mpp_cfg, "prep:range", range)' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c
+	grep -q 'failed to set input color range' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c
+	grep -q 'self->prop_dirty = TRUE' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c
 	grep -q 'network-config-sta-rollback-v1.json' "$(ROUTER_APP)/src/adapters/outbound/network_config.rs"
 	grep -q 'let cleanup_succeeded = cleanup.is_ok()' "$(ROUTER_APP)/src/main.rs"
 	test ! -d "$(ROUTER_APP)/adapter-linux"
 	sh -n sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	grep -q 'TARGET_DIR/usr/bin/hyz-ota' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	grep -q 'TARGET_DIR/usr/sbin/hyz-router' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
+	grep -q 'TARGET_DIR/usr/sbin/hyz-camera' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
+	grep -q 'chmod 0755.*S82hyz-camera' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	grep -q 'TARGET_DIR/etc/init.d/S82tailscaled' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	grep -q 'TARGET_DIR/usr/share/metacubexd' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
+	sh -n sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-camera
+	grep -q '^DAEMON=/usr/bin/hyz-camera$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-camera
+	grep -q '^CONTROL_SOCKET=\$$RUNTIME_DIR/control.sock$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-camera
+	grep -q '^OWNER_FILE=\$$RUNTIME_DIR/daemon.owner$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-camera
+	grep -q '^START_TIMEOUT_SECONDS=30$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-camera
+	grep -q '^STOP_TIMEOUT_SECONDS=30$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-camera
+	grep -q 'stale ownership requires explicit recovery' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-camera
+	grep -q 'control readiness timeout; daemon left running' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-camera
+	! grep -q 'hyz-router\|HEALTH_URL\|192\.168\.8\.1' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-camera
 	sh -n sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q '^DAEMON=/usr/bin/hyz-router$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q '^START_TIMEOUT_SECONDS=300$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
@@ -217,7 +288,8 @@ check-static:
 	grep -q '^STOP_CLEANUP_TIMEOUT_SECONDS=130$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q '^FLOCK=/usr/bin/flock$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q '^ACTION_LOCKFILE=/run/hyz-router-init.lock$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
-	grep -q 'lock_action && stop_daemon && start_daemon' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	! grep -q 'restart)' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	grep -q 'Usage: \$$0 {start|stop|status}' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q -- '-- daemon 9>&-' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q 'deadline=.*START_TIMEOUT_SECONDS' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q 'daemon left running' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
@@ -234,9 +306,42 @@ check-static:
 	! grep -qE '^(mixed-port|port|socks-port|redir-port|tproxy-port|allow-lan|bind-address|external-controller|secret|tun):' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/hyz-router/mihomo-config.yaml.example
 	test ! -e sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-mihomo
 	test ! -e sdk/buildroot/board/rockchip/hyz_things/fs-overlay/usr/sbin/hyz-router
+	test ! -e sdk/buildroot/board/rockchip/hyz_things/fs-overlay/usr/sbin/hyz-camera
 	test ! -e sdk/buildroot/board/rockchip/hyz_things/fs-overlay/usr/sbin/hyz-mihomo
 	test ! -e sdk/buildroot/board/rockchip/hyz_things/fs-overlay/usr/share/udhcpc/default.script.d/50-hyz-wlan-metric
 	grep -q 'BR2_ROOTFS_OVERLAY+="board/rockchip/hyz_things/fs-overlay ../../output/rootfs-overlay"' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q '^BR2_PACKAGE_CAMERA_ENGINE=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q '^BR2_PACKAGE_CAMERA_ENGINE_RKAIQ=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q '^BR2_PACKAGE_CAMERA_ENGINE_RKAIQ_IQFILE="isp21/imx415_CMK-OT1522-FG3_CS-P1150-IRC-8M-FAU.json"$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q 'BUILD_RKAIQ_3A_ONLY' sdk/external/camera_engine_rkaiq/CMakeLists.txt
+	grep -q -- '-DBUILD_RKAIQ_3A_ONLY=ON' sdk/buildroot/package/rockchip/camera-engine-rkaiq/camera-engine-rkaiq.mk
+	grep -q '^BR2_PACKAGE_GSTREAMER1=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q '^BR2_PACKAGE_GST1_PLUGINS_BASE=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q '^BR2_PACKAGE_GST1_PLUGINS_BASE_PLUGIN_APP=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q '^BR2_PACKAGE_GST1_PLUGINS_GOOD=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q '^BR2_PACKAGE_GST1_PLUGINS_GOOD_PLUGIN_V4L2=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q '^BR2_PACKAGE_GST1_PLUGINS_BAD=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q '^BR2_PACKAGE_GST1_PLUGINS_BAD_PLUGIN_VIDEOPARSERS=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q '^BR2_PACKAGE_ROCKCHIP_MPP=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q '^BR2_PACKAGE_ROCKCHIP_MPP_ALLOCATOR_DRM=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q '^BR2_PACKAGE_GSTREAMER1_ROCKCHIP=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	@for symbol in GSTREAMER1_INSTALL_TOOLS GST1_PLUGINS_BASE_INSTALL_TOOLS \
+	  GST1_PLUGINS_BASE_PLUGIN_AUDIOCONVERT GST1_PLUGINS_BASE_PLUGIN_AUDIORESAMPLE \
+	  GST1_PLUGINS_BASE_PLUGIN_PLAYBACK GST1_PLUGINS_BASE_PLUGIN_TYPEFIND \
+	  GST1_PLUGINS_BASE_PLUGIN_VIDEOCONVERTSCALE GST1_PLUGINS_BASE_PLUGIN_VOLUME \
+	  GST1_PLUGINS_GOOD_PLUGIN_AVI GST1_PLUGINS_GOOD_PLUGIN_ISOMP4 \
+	  GST1_PLUGINS_GOOD_PLUGIN_RTP GST1_PLUGINS_GOOD_PLUGIN_RTPMANAGER \
+	  GST1_PLUGINS_GOOD_PLUGIN_UDP GST1_PLUGINS_GOOD_PLUGIN_V4L2_PROBE \
+	  GST1_PLUGINS_GOOD_PLUGIN_WAVPARSE GST1_PLUGINS_BAD_PLUGIN_DIRECTFB \
+	  GST1_PLUGINS_BAD_PLUGIN_DTLS GST1_PLUGINS_BAD_PLUGIN_GL \
+	  GST1_PLUGINS_BAD_PLUGIN_SRTP GST1_PLUGINS_BAD_PLUGIN_WAYLAND \
+	  GST1_PLUGINS_BAD_PLUGIN_WPE LIBV4L ROCKCHIP_MPP_TESTS; do \
+		grep -q "^# BR2_PACKAGE_$$symbol is not set$$" sdk/buildroot/configs/rockchip/hyz_things.config || exit 1; \
+	done
+	! grep -q '^BR2_PACKAGE_FFMPEG=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	! grep -q '^BR2_PACKAGE_LIBNICE=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	! grep -q '^BR2_PACKAGE_GST1_PLUGINS_BAD_PLUGIN_WEBRTC=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	! grep -qiE '^BR2_PACKAGE_.*WEBRTCSINK=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
 	grep -q '^BR2_PACKAGE_MIHOMO=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
 	grep -q '^BR2_PACKAGE_TAILSCALE=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
 	sdk/buildroot/utils/check-package \

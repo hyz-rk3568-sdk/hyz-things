@@ -13,6 +13,7 @@ use hyz_router::{
     },
     application::{
         admin::AdminApplication,
+        camera::{CameraApplication, CameraControlPort, CameraError, CameraSession},
         device_policy::DevicePolicySnapshot,
         ports::{AdminCredentialStorePort, AdminRandomPort, ClockPort, PlatformError},
         status::{
@@ -23,6 +24,7 @@ use hyz_router::{
     },
     domain::{
         admin::AdminCredential,
+        camera::{CameraAccessScope, CameraPipelineState, CameraStatus, CameraStreamProfile},
         device_policy::{DevicePolicyConfigV1, DeviceRoutePolicy, LanClientObservation},
         network_config::{
             NetworkConfigSummary, PendingNetworkConfigSummary, WifiCountry, WifiSsid,
@@ -76,6 +78,40 @@ struct HarnessProxyFailures {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct HarnessCameraState {
+    status: CameraStatus,
+    create_count: u64,
+    close_count: u64,
+    last_offer_sdp: Option<String>,
+    active_session: Option<String>,
+}
+
+impl Default for HarnessCameraState {
+    fn default() -> Self {
+        Self {
+            status: CameraStatus {
+                available: true,
+                pipeline: CameraPipelineState::Stopped,
+                active_sessions: 0,
+                profile: CameraStreamProfile {
+                    codec: "h264".to_owned(),
+                    width: 1920,
+                    height: 1080,
+                    fps: 30,
+                },
+                access: hyz_router::domain::camera::CameraAccessKind::Lan,
+                error_category: None,
+            },
+            create_count: 0,
+            close_count: 0,
+            last_offer_sdp: None,
+            active_session: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct HarnessState {
     observed_at_unix_ms: u64,
     router: Component<RouterStatus>,
@@ -84,6 +120,7 @@ struct HarnessState {
     tailscale_peers: TailscalePeerSnapshot,
     tailscale_peers_failure: bool,
     system: Component<SystemStats>,
+    camera: HarnessCameraState,
     panel: PanelSnapshot,
     network: NetworkConfigSummary,
     pending_network: Option<PendingNetworkConfigSummary>,
@@ -193,6 +230,7 @@ impl Default for HarnessState {
                     tx_bytes: 2_345_678,
                 }],
             }),
+            camera: HarnessCameraState::default(),
             panel: PanelSnapshot {
                 display: Component::available(DisplayStatus {
                     enabled: true,
@@ -256,6 +294,7 @@ struct HarnessBackend {
 struct HarnessControlState {
     backend: Arc<HarnessBackend>,
     admin: Arc<AdminApplication>,
+    camera: Arc<CameraApplication>,
 }
 
 impl Default for HarnessBackend {
@@ -283,6 +322,62 @@ impl HarnessBackend {
         validate_harness_state(&state)?;
         *self.state()? = state;
         self.snapshot()
+    }
+}
+
+struct HarnessCamera {
+    backend: Arc<HarnessBackend>,
+}
+
+#[async_trait]
+impl CameraControlPort for HarnessCamera {
+    async fn status(&self, scope: CameraAccessScope) -> Result<CameraStatus, CameraError> {
+        let mut status = self
+            .backend
+            .state()
+            .map_err(|_| CameraError::Unavailable)?
+            .camera
+            .status
+            .clone();
+        status.access = scope.kind();
+        Ok(status)
+    }
+
+    async fn create_session(
+        &self,
+        _scope: CameraAccessScope,
+        offer_sdp: String,
+    ) -> Result<CameraSession, CameraError> {
+        let mut state = self.backend.state().map_err(|_| CameraError::Unavailable)?;
+        if !state.camera.status.available {
+            return Err(CameraError::NotReady);
+        }
+        if state.camera.active_session.is_some() {
+            return Err(CameraError::Busy);
+        }
+        let session_id = format!("e2e-camera.{}", "a".repeat(48));
+        state.camera.create_count += 1;
+        state.camera.last_offer_sdp = Some(offer_sdp);
+        state.camera.active_session = Some(session_id.clone());
+        state.camera.status.pipeline = CameraPipelineState::Streaming;
+        state.camera.status.active_sessions = 1;
+        Ok(CameraSession {
+            session_id,
+            answer_sdp: "v=0\r\n".to_owned(),
+            negotiation_timeout_seconds: 5,
+        })
+    }
+
+    async fn close_session(&self, session_id: &str) -> Result<(), CameraError> {
+        let mut state = self.backend.state().map_err(|_| CameraError::Unavailable)?;
+        if state.camera.active_session.as_deref() != Some(session_id) {
+            return Err(CameraError::UnknownSession);
+        }
+        state.camera.close_count += 1;
+        state.camera.active_session = None;
+        state.camera.status.pipeline = CameraPipelineState::Stopped;
+        state.camera.status.active_sessions = 0;
+        Ok(())
     }
 }
 
@@ -745,15 +840,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
         backend.clone(),
     );
     let web_control: Arc<dyn ControlHandler> = backend.clone();
+    let camera = Arc::new(CameraApplication::new(Arc::new(HarnessCamera {
+        backend: backend.clone(),
+    })));
     let web_app = app_with_loopback_runtime_frontend(
         read_status,
         web_control,
         admin.clone(),
+        camera.clone(),
         CSRF_TOKEN.to_owned(),
         web_origin.clone(),
         &frontend_tar,
     )?;
-    let harness_app = harness_control_app(backend, admin);
+    let harness_app = harness_control_app(backend, admin, camera);
 
     println!(
         "{}",
@@ -773,13 +872,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn harness_control_app(backend: Arc<HarnessBackend>, admin: Arc<AdminApplication>) -> Router {
+fn harness_control_app(
+    backend: Arc<HarnessBackend>,
+    admin: Arc<AdminApplication>,
+    camera: Arc<CameraApplication>,
+) -> Router {
     Router::new()
         .route("/health", get(harness_health))
         .route("/state", get(harness_state).put(replace_harness_state))
         .route("/reset", put(reset_harness_state))
         .layer(DefaultBodyLimit::max(MAX_HARNESS_JSON_BYTES))
-        .with_state(HarnessControlState { backend, admin })
+        .with_state(HarnessControlState {
+            backend,
+            admin,
+            camera,
+        })
 }
 
 async fn harness_health() -> Json<serde_json::Value> {
@@ -810,6 +917,7 @@ async fn replace_harness_state(
 async fn reset_harness_state(
     State(control): State<HarnessControlState>,
 ) -> Result<Json<HarnessState>, (axum::http::StatusCode, String)> {
+    control.camera.close_all().await;
     control
         .admin
         .reset_e2e_bootstrap()

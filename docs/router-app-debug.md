@@ -2,23 +2,17 @@
 
 ## 状态
 
-**已实现并完成目标板验证。** 2026-08-13 在完整 Router + Mihomo + Tailscale `lan_subnet_access` 状态下，USB ADB 应用级部署和显式回退均无需重启开发板。
+当前开发部署使用**启动时覆盖**，不再在线停止并重新接管正在运行的 Router、Mihomo、Tailscale 和网络资源。开发版与正式版使用同一份 `hyz-router` ELF 构建配置；差异只存在于板端临时启动配置：
 
-最终 recovery-free OTA：
+- 正式固件保留 `/usr/bin/hyz-router` 和 `/etc/init.d/S81hyz-router`；
+- `router-deploy-dev` 将按 SHA-256 命名的 ELF 放入 `/userdata/hyz-router/dev/`；
+- 临时 `/etc/init.d/S80hyz-router-dev` 在 `S81hyz-router` 之前运行，把已校验 ELF 复制到干净的 `/run/hyz-router-dev/`，再 bind mount 到正式路径；
+- `router-revert-dev` 只删除临时 `S80` 配置并重启，rootfs 中的正式 ELF 从未被覆盖；
+- 开发和回退都在新 boot 中验证运行 ELF、Router、Mihomo、Tailscale、LAN HTTP 和 Tailscale HTTP readiness。
 
-- `upgrade.fw` SHA-256：`18c8d8159ede656eff8b093466db61e3a0682535f10fa9410095195427daa614`
-- `/usr/bin/hyz-router` SHA-256：`911c2bb0e29e4f78e9eabfe17147221cc652c62fa494f76098fd413430f6074e`
-- OTA payload：bootloader、U-Boot、misc、boot、rootfs、oem；不含 recovery、userdata
-- 打包 rootfs 中的 ELF 与本次 AArch64 构建 ELF 逐字节一致
+这一区分属于部署配置，不使用 Cargo feature。这样可以保证真实设备上验证的应用逻辑与正式构建一致，避免开发 feature 隐藏生产差异。
 
-最终验收结果：
-
-1. `router-deploy-dev` 推送约 7.1 MB ELF，主机与板端 SHA-256 一致；
-2. 正式 `S81hyz-router stop` 完成 Tailscale、Mihomo 和 network runtime 清理；
-3. ELF 从 `/userdata/hyz-router/dev/` 复制到 `/run/hyz-router-dev/`，再 bind mount 到 `/usr/bin/hyz-router`；
-4. 正式 init 启动成功，Router、Mihomo、Tailscale、LAN HTTP 和 Tailscale HTTP 全部严格就绪；
-5. `router-revert-dev` 正常停机、卸载 bind mount、恢复固件 ELF并重新启动，全程未重启开发板；
-6. 最终板端无开发 bind mount、无 shutdown 失败日志，Tailscale 仍为已认证的 `lan_subnet_access`。
+该流程已在目标板完成成对验证：部署路径通过主机侧 `adb reboot` 进入新 boot 并激活指定开发 ELF；回退路径删除临时 `S80`、再次进入新 boot，并恢复到预先记录的固件 ELF SHA-256。两次启动均通过严格 Router、Mihomo、Tailscale 和双 HTTP listener 检查。
 
 ## 使用方式
 
@@ -31,7 +25,7 @@ make router-deploy-dev \
   ADB_SERIAL=USB_SERIAL
 ```
 
-该目标依赖 `router-app`，会构建内嵌 Web 的 AArch64 `hyz-router`，然后执行安全部署。只回退当前开发 ELF时不重新构建：
+该目标依赖 `router-app`，会构建内嵌 Web 的 AArch64 `hyz-router`、完成主机与板端 SHA-256 校验、写入临时启动配置并重启。只回退当前开发 ELF 时不重新构建：
 
 ```sh
 make router-revert-dev \
@@ -39,7 +33,7 @@ make router-revert-dev \
   ADB_SERIAL=USB_SERIAL
 ```
 
-开发覆盖位于 `/run`，整机重启也会自动恢复 rootfs 中的正式 ELF。显式回退更适合在本次调试结束时验证正常 shutdown，并让板卡保持已确认的正式固件状态。
+回退删除 `/etc/init.d/S80hyz-router-dev` 后重启。重启后的 `/usr/bin/hyz-router` 必须与首次部署前记录的固件 SHA-256 一致，否则脚本拒绝报告成功。
 
 ## 安全语义
 
@@ -47,13 +41,19 @@ make router-revert-dev \
 
 - 只接受主机提供的固定 ELF 路径和显式 ADB serial，不向应用 HTTP/API 增加命令、路径或认证参数；
 - 推送到 root-only 的 `/userdata/hyz-router/dev/`，主机和板端都校验 SHA-256；
-- 通过正式 init 脚本 stop/start，不使用 `pkill`、`kill -9`、删除 daemon lock 或强制接管；
-- 用板端状态文件取得远端 shell 的真实退出状态，不信任 Windows ADB 对 stdin script 的宿主进程退出码；
-- stop 后要求 runtime 进程及关键 ownership 记录全部消失，残留状态会阻止部署；
+- 开发 init 脚本固定使用已校验的版本化 ELF、`/run/hyz-router-dev` 和 `/usr/bin/hyz-router`，不接受板端或浏览器提供的命令、路径与参数；
+- 不在线执行 `S81hyz-router stop/start`，不使用 `pkill`、`kill -9`、删除 ownership 文件或强制接管；
+- 使用 boot ID 确认设备确实完成了一次新启动，而不是把 reboot 前仍可访问的 ADB 连接误判为成功；
 - 启动后核对运行 ELF SHA、顶层 `state: ok`、Mihomo、Tailscale 固定 LAN 模式、本地防火墙和两个 HTTP listener；
-- 部署失败时只尝试已经验证的正常 stop、卸载和正式 init 恢复；unknown、foreign 或 partial ownership 会被保留供调查。
+- 固件 SHA-256 缺失且已有开发启动覆盖时拒绝猜测底层 ELF；失败状态保留给人工检查，不执行未经验证的在线清理。
 
-shutdown 失败会写入 root-only、有界的 `/run/hyz-router/shutdown.log`。下一次完整初始化成功后该日志会被清除。
+旧的在线 stop、卸载、bind mount、start 实现已移除。真实设备曾在该路径上因 foreign/changed route ownership 拒绝 shutdown；部署配置分离不能消除在线资源接管风险，因此不再将旧路径作为可选模式保留。
+
+## init 动作边界
+
+`S81hyz-router` 只支持 `start`、`stop` 和 `status`，不再提供组合式 `restart`。实板再次确认，运行期间的 DHCP-owned route 已被外部或内核状态改变时，保守 `stop` 会拒绝删除无法精确证明归属的网络状态；旧 `restart` 随后不会执行 `start`，会把设备留在管理服务已停止的半状态。
+
+需要重新加载 Router、切换开发 ELF 或安装 OTA 时统一使用主机侧 `adb reboot` 或系统 reboot，并通过 boot ID 和严格 readiness 确认新 boot。`stop` 仍保留给系统关机阶段的有界优雅清理，但不得把一次 `stop` 成功当作在线重新部署前提，也不得在失败后删除 ownership 文件或强制接管网络资源。
 
 ## shutdown 修复
 

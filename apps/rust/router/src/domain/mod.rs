@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod camera;
 pub mod device_policy;
 pub mod network;
 pub mod network_config;

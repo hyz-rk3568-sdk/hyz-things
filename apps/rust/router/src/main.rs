@@ -8,13 +8,14 @@ use hyz_router::{
             },
             dhcp_hook,
             http::{
-                app_with_admin_control, app_with_admin_control_at_address,
+                app_with_admin_camera_control, app_with_admin_camera_control_at_address,
                 bind_fixed_lan_with_retry, DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
             },
             ota_cli::{parse_ota_cli, OtaCommand, OTA_USAGE},
         },
         outbound::{
             admin::AdminFileAdapter,
+            camera::CameraUnixAdapter,
             firmware::FirmwareAdapter,
             subscription::{
                 SubscriptionStore, SystemSubscriptionResolver, UreqSubscriptionTransport,
@@ -24,6 +25,7 @@ use hyz_router::{
     },
     application::{
         admin::{AdminApplication, AdminError},
+        camera::CameraApplication,
         device_policy::DevicePolicyApplication,
         dhcp::{DhcpApplication, DhcpEvent, DhcpPlatformPort},
         fail_open::{MihomoFailOpenApplication, WatcherInvocation},
@@ -252,10 +254,12 @@ impl ProductionTailscalePlatform {
         let status = owner.status();
         let control: Arc<dyn ControlHandler> = owner.clone();
         let admin = owner.admin();
-        let app = app_with_admin_control_at_address(
+        let camera = owner.camera();
+        let app = app_with_admin_camera_control_at_address(
             status,
             control,
             admin,
+            camera,
             config.csrf_token.clone(),
             ipv4,
             config.port,
@@ -567,6 +571,7 @@ struct ProductionRuntime {
     router: Arc<LinuxRouterPlatform>,
     tailscale: Arc<ProductionTailscalePlatform>,
     admin: Arc<AdminApplication>,
+    camera: Arc<CameraApplication>,
     firmware: FirmwareAdapter,
     subscription_store: SubscriptionStore,
     subscription_transport: UreqSubscriptionTransport,
@@ -589,10 +594,14 @@ impl ProductionRuntime {
             router.clone(),
         )?);
         let resolver = Arc::new(SystemSubscriptionResolver);
+        let camera = Arc::new(CameraApplication::new(Arc::new(
+            CameraUnixAdapter::default(),
+        )));
         Ok(Self {
             router,
             tailscale,
             admin,
+            camera,
             firmware: FirmwareAdapter::default(),
             subscription_store: SubscriptionStore::default(),
             subscription_transport: UreqSubscriptionTransport::new(resolver),
@@ -606,6 +615,10 @@ impl ProductionRuntime {
 
     fn admin(&self) -> Arc<AdminApplication> {
         self.admin.clone()
+    }
+
+    fn camera(&self) -> Arc<CameraApplication> {
+        self.camera.clone()
     }
 
     fn status(&self) -> ReadStatus {
@@ -1579,6 +1592,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     };
     let http_status = runtime.status();
     let http_admin = runtime.admin();
+    let http_camera = runtime.camera();
     let web_token = match runtime.web_token() {
         Ok(token) => token,
         Err(error) => {
@@ -1792,6 +1806,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         http_status,
         http_control,
         http_admin,
+        http_camera,
         web_token,
         port,
         shutdown_rx,
@@ -1884,6 +1899,7 @@ async fn serve_http(
     status: ReadStatus,
     control: Arc<dyn ControlHandler>,
     admin: Arc<AdminApplication>,
+    camera: Arc<CameraApplication>,
     csrf_token: String,
     port: u16,
     mut shutdown: watch::Receiver<bool>,
@@ -1902,7 +1918,7 @@ async fn serve_http(
     };
     axum::serve(
         listener,
-        app_with_admin_control(status, control, admin, csrf_token, port),
+        app_with_admin_camera_control(status, control, admin, camera, csrf_token, port),
     )
     .with_graceful_shutdown(async move {
         while !*shutdown.borrow() && shutdown.changed().await.is_ok() {}
@@ -2246,7 +2262,7 @@ mod source_boundaries {
             .unwrap();
         assert!(listener.contains("SocketAddr::from((ipv4, config.port))"));
         assert!(!listener.contains("0.0.0.0"));
-        assert!(listener.contains("app_with_admin_control_at_address"));
+        assert!(listener.contains("app_with_admin_camera_control_at_address"));
 
         let shutdown = production
             .split("async fn shutdown(&self)")
