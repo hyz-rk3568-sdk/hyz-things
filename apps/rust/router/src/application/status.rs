@@ -14,8 +14,8 @@ use crate::{
         status::{
             Component, Issue, ProxyStatus, RouterStatus, SnapshotState, StatusSnapshot,
             SystemStats, TailscaleConnectionStatus, TailscaleConnectionType,
-            TailscaleErrorCategory, TailscaleProxyFallback, TailscaleRouteApproval,
-            TailscaleStatus,
+            TailscaleErrorCategory, TailscaleExplicitProxyPath, TailscaleProxyFallback,
+            TailscaleRouteApproval, TailscaleStatus,
         },
         tailscale::{
             TailscaleBackendState, TailscaleConnectionKind, TailscaleDesired, TailscaleEnvironment,
@@ -60,6 +60,7 @@ pub fn tailscale_status_from_observed(
     observed: &TailscaleObserved,
     proxy_features: &Probe<ProxyFeaturesV1>,
     ordinary_router_ready: bool,
+    explicit_proxy_path_ready: &Probe<bool>,
 ) -> TailscaleStatus {
     let desired_mode = match &observed.persisted_mode {
         Probe::Known(mode) => *mode,
@@ -129,12 +130,28 @@ pub fn tailscale_status_from_observed(
         Probe::Known(environment) => Some(*environment),
         Probe::Unknown(_) => None,
     };
-    let proxy_fallback = match (explicit_proxy_desired, environment) {
-        (Some(false), Some(TailscaleEnvironment::Direct))
-        | (Some(true), Some(TailscaleEnvironment::MihomoExplicit)) => {
-            TailscaleProxyFallback::NotNeeded
+    let explicit_proxy_path = match (explicit_proxy_desired, environment) {
+        (Some(true), Some(TailscaleEnvironment::MihomoExplicit)) => match explicit_proxy_path_ready
+        {
+            Probe::Known(true) => TailscaleExplicitProxyPath::Ready,
+            Probe::Known(false) => TailscaleExplicitProxyPath::Unavailable,
+            Probe::Unknown(_) => TailscaleExplicitProxyPath::Unknown,
+        },
+        (Some(false), Some(_)) | (Some(true), Some(TailscaleEnvironment::Direct)) => {
+            TailscaleExplicitProxyPath::NotRequired
         }
-        (Some(true), Some(TailscaleEnvironment::Direct)) => TailscaleProxyFallback::DirectRestored,
+        _ => TailscaleExplicitProxyPath::Unknown,
+    };
+    let proxy_fallback = match (explicit_proxy_desired, environment, explicit_proxy_path) {
+        (Some(false), Some(TailscaleEnvironment::Direct), _)
+        | (
+            Some(true),
+            Some(TailscaleEnvironment::MihomoExplicit),
+            TailscaleExplicitProxyPath::Ready,
+        ) => TailscaleProxyFallback::NotNeeded,
+        (Some(true), Some(TailscaleEnvironment::Direct), _) => {
+            TailscaleProxyFallback::DirectRestored
+        }
         _ => TailscaleProxyFallback::NotConfirmed,
     };
     let has_unknown = matches!(&observed.persisted_mode, Probe::Unknown(_))
@@ -166,10 +183,13 @@ pub fn tailscale_status_from_observed(
         connection,
         explicit_proxy_desired,
         environment,
+        explicit_proxy_path,
         proxy_fallback,
-        error_category: if has_unknown {
+        error_category: if has_unknown || explicit_proxy_path == TailscaleExplicitProxyPath::Unknown
+        {
             Some(TailscaleErrorCategory::ProbeFailed)
-        } else if degraded_to_router_only
+        } else if explicit_proxy_path == TailscaleExplicitProxyPath::Unavailable
+            || degraded_to_router_only
             || proxy_fallback != TailscaleProxyFallback::NotNeeded
             || (desired_mode.is_some() && effective_mode.is_none() && authenticated != Some(false))
         {
@@ -184,18 +204,30 @@ pub fn tailscale_status_component_from_observed(
     observed: &TailscaleObserved,
     proxy_features: &Probe<ProxyFeaturesV1>,
     ordinary_router_ready: bool,
+    explicit_proxy_path_ready: &Probe<bool>,
 ) -> Component<TailscaleStatus> {
-    let status = tailscale_status_from_observed(observed, proxy_features, ordinary_router_ready);
+    let status = tailscale_status_from_observed(
+        observed,
+        proxy_features,
+        ordinary_router_ready,
+        explicit_proxy_path_ready,
+    );
     if status.error_category.is_none() {
         Component::available(status)
     } else {
-        Component::degraded(
-            status,
-            Issue::new(
-                "tailscale_not_ready",
-                "Tailscale state does not satisfy strict readiness",
-            ),
-        )
+        let (code, message) =
+            if status.explicit_proxy_path == TailscaleExplicitProxyPath::Unavailable {
+                (
+                    "tailscale_proxy_path_unavailable",
+                    "The fixed Tailscale explicit proxy path is unavailable",
+                )
+            } else {
+                (
+                    "tailscale_not_ready",
+                    "Tailscale state does not satisfy strict readiness",
+                )
+            };
+        Component::degraded(status, Issue::new(code, message))
     }
 }
 

@@ -403,6 +403,10 @@ impl TailscaleProbePort for ProductionTailscalePlatform {
         observed.management_listener_ipv4 = listener_ipv4;
         Ok(observed)
     }
+
+    fn probe_explicit_proxy_path(&self) -> Result<bool, PlatformError> {
+        self.linux.probe_explicit_proxy_path()
+    }
 }
 
 #[async_trait::async_trait]
@@ -421,10 +425,25 @@ impl StatusTailscalePlatformPort for ProductionTailscalePlatform {
                 .router
                 .observe_proxy()
                 .map_err(|error| error.to_string())?;
+            let explicit_proxy_path = match (&proxy.persisted_features, &observed.environment) {
+                (
+                    Probe::Known(features),
+                    Probe::Known(
+                        hyz_router::domain::tailscale::TailscaleEnvironment::MihomoExplicit,
+                    ),
+                ) if features.supported() && features.tailscale_explicit_proxy_enabled => {
+                    match tailscale.probe_explicit_proxy_path() {
+                        Ok(ready) => Probe::Known(ready),
+                        Err(error) => Probe::Unknown(error.to_string()),
+                    }
+                }
+                _ => Probe::Known(false),
+            };
             Ok::<_, String>(tailscale_status_component_from_observed(
                 &observed,
                 &proxy.persisted_features,
                 network.ready_for(&NetworkDesired::forwarding()),
+                &explicit_proxy_path,
             ))
         })
         .await

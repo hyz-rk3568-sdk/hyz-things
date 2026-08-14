@@ -383,6 +383,21 @@ impl<'a> ProxyFeatureCoordinator<'a> {
                     "Tailscale access mode is not ready for explicit proxy cutover".to_owned(),
                 ));
             }
+            match self.tailscale_probe.probe_explicit_proxy_path() {
+                Ok(true) => {}
+                Ok(false) => {
+                    let _ = self.restore_tailscale_environment(current_environment);
+                    let _ = self.restore_proxy(previous, &desired.direct_macs);
+                    return Err(PlatformError::UnsafeToCutOver(
+                        "fixed Tailscale explicit proxy path is unavailable".to_owned(),
+                    ));
+                }
+                Err(error) => {
+                    let _ = self.restore_tailscale_environment(current_environment);
+                    let _ = self.restore_proxy(previous, &desired.direct_macs);
+                    return Err(error);
+                }
+            }
         }
         if commit_features {
             if let Some(commit) = commit {
@@ -679,18 +694,31 @@ mod tests {
 
     fn coordinator_proxy(features: ProxyFeaturesV1) -> ProxyObserved {
         let core = features.mihomo_required();
+        let tun = features.lan_tun_enabled;
         ProxyObserved {
             persisted_features: Probe::Known(features),
             process_identity_valid: Probe::Known(core),
-            watcher_identity_valid: Probe::Known(false),
+            watcher_identity_valid: Probe::Known(tun),
             runtime_config_valid: Probe::Known(core),
             mixed_port_ready: Probe::Known(core),
-            tun_interface: Probe::Known(OwnedResource::Absent),
-            tun_firewall: Probe::Known(OwnedResource::Absent),
-            policy_rule_present: Probe::Known(false),
-            policy_route_present: Probe::Known(false),
-            interception_entry_present: Probe::Known(false),
-            ordinary_nat_confirmed: Probe::Known(true),
+            tun_interface: Probe::Known(if tun {
+                OwnedResource::Owned {
+                    token: "proxy-old".to_owned(),
+                }
+            } else {
+                OwnedResource::Absent
+            }),
+            tun_firewall: Probe::Known(if tun {
+                OwnedResource::Owned {
+                    token: "proxy-old".to_owned(),
+                }
+            } else {
+                OwnedResource::Absent
+            }),
+            policy_rule_present: Probe::Known(tun),
+            policy_route_present: Probe::Known(tun),
+            interception_entry_present: Probe::Known(tun),
+            ordinary_nat_confirmed: Probe::Known(!tun),
             active_direct_macs: Probe::Known(Default::default()),
         }
     }
@@ -698,6 +726,7 @@ mod tests {
     struct CoordinatorFake {
         proxy: Mutex<ProxyObserved>,
         tailscale: Mutex<crate::domain::tailscale::TailscaleObserved>,
+        proxy_path_ready: Mutex<bool>,
         events: Mutex<Vec<String>>,
         replace_tun_before_interception: bool,
     }
@@ -709,6 +738,7 @@ mod tests {
             Self {
                 proxy: Mutex::new(coordinator_proxy(features)),
                 tailscale: Mutex::new(tailscale),
+                proxy_path_ready: Mutex::new(true),
                 events: Mutex::new(Vec::new()),
                 replace_tun_before_interception: false,
             }
@@ -914,6 +944,14 @@ mod tests {
         ) -> Result<crate::domain::tailscale::TailscaleObserved, PlatformError> {
             Ok(self.tailscale.lock().unwrap().clone())
         }
+
+        fn probe_explicit_proxy_path(&self) -> Result<bool, PlatformError> {
+            self.events
+                .lock()
+                .unwrap()
+                .push("tailscale:path-probe".to_owned());
+            Ok(*self.proxy_path_ready.lock().unwrap())
+        }
     }
 
     impl ClockPort for CoordinatorFake {
@@ -972,18 +1010,60 @@ mod tests {
             .iter()
             .position(|event| event.contains("tailscale:StartManagementListener"))
             .unwrap();
+        let path_probe = events
+            .iter()
+            .position(|event| event == "tailscale:path-probe")
+            .unwrap();
         let commit = events
             .iter()
             .position(|event| event.contains("proxy:CommitFeatures"))
             .unwrap();
         assert!(mixed < stop_listener && stop_listener < stop_backend);
-        assert!(stop_backend < proxied && proxied < start_listener && start_listener < commit);
+        assert!(stop_backend < proxied && proxied < start_listener);
+        assert!(start_listener < path_probe && path_probe < commit);
         assert!(!events
             .iter()
             .any(|event| event.starts_with("tailscale:lock")));
         assert!(!events
             .iter()
             .any(|event| event.starts_with("tailscale:release")));
+    }
+
+    #[test]
+    fn unavailable_explicit_proxy_path_blocks_commit_and_preserves_ready_lan_tun() {
+        let fake = CoordinatorFake::new(
+            ProxyFeaturesV1::new(true, false),
+            TailscaleEnvironment::Direct,
+        );
+        *fake.proxy_path_ready.lock().unwrap() = false;
+
+        assert!(matches!(
+            ProxyFeatureCoordinator::new(&fake, &fake, &fake, &fake, &fake).reconcile(
+                &ProxyDesired {
+                    lan_tun_enabled: true,
+                    tailscale_explicit_proxy_enabled: true,
+                    direct_macs: Default::default(),
+                }
+            ),
+            Err(PlatformError::UnsafeToCutOver(_))
+        ));
+
+        let proxy = fake.proxy.lock().unwrap().clone();
+        assert_eq!(
+            proxy.persisted_features,
+            Probe::Known(ProxyFeaturesV1::new(true, false))
+        );
+        assert!(proxy.lan_tun_ready(&Default::default()));
+        assert_eq!(
+            fake.tailscale.lock().unwrap().environment,
+            Probe::Known(TailscaleEnvironment::Direct)
+        );
+        let events = fake.events();
+        assert!(events.iter().any(|event| event == "tailscale:path-probe"));
+        assert!(!events.iter().any(|event| {
+            event.contains("CommitFeatures")
+                && event.contains("tailscale_explicit_proxy_enabled: true")
+        }));
     }
 
     #[test]

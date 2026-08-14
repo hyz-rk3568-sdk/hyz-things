@@ -99,6 +99,7 @@ pub trait TailscalePlatformPort: Send + Sync {
 
 pub trait TailscaleProbePort: Send + Sync {
     fn observe_tailscale(&self) -> Result<TailscaleObserved, PlatformError>;
+    fn probe_explicit_proxy_path(&self) -> Result<bool, PlatformError>;
 }
 
 pub trait PanelPlatformPort: Send + Sync {
