@@ -97,15 +97,16 @@ mod tests {
     use super::*;
     use crate::domain::{
         network::{NetworkObserved, OwnedResource, Probe},
-        proxy::{ProxyMode, ProxyObserved},
+        proxy::{ProxyFeaturesV1, ProxyObserved},
     };
 
     fn active_proxy() -> ProxyObserved {
         ProxyObserved {
-            persisted_mode: Probe::Known(Some(ProxyMode::Tun)),
+            persisted_features: Probe::Known(ProxyFeaturesV1::new(true, true)),
             process_identity_valid: Probe::Known(true),
             watcher_identity_valid: Probe::Known(true),
             runtime_config_valid: Probe::Known(true),
+            mixed_port_ready: Probe::Known(true),
             tun_interface_present: Probe::Known(true),
             tun_firewall: Probe::Known(OwnedResource::Owned {
                 token: "proxy-owned".to_owned(),
@@ -159,7 +160,7 @@ mod tests {
         );
         assert!(!proxy.iter().any(|action| matches!(
             action,
-            ProxyAction::CommitMode { .. } | ProxyAction::RestorePersistedMode { .. }
+            ProxyAction::CommitFeatures { .. } | ProxyAction::RestorePersistedFeatures { .. }
         )));
 
         let network = shutdown_network_plan(&active_network()).unwrap();

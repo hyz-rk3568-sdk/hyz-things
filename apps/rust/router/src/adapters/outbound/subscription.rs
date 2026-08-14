@@ -3,12 +3,9 @@ use crate::{
         PlatformError, SubscriptionResolverPort, SubscriptionSourcePort, SubscriptionStorePort,
         SubscriptionTransportPort,
     },
-    domain::{
-        proxy::ProxyMode,
-        subscription::{
-            validate_dns_results, GenerationId, SubscriptionStatus, SubscriptionUrl,
-            ValidatedSubscription, MAX_SUBSCRIPTION_BYTES, MAX_SUBSCRIPTION_URL_BYTES,
-        },
+    domain::subscription::{
+        validate_dns_results, GenerationId, SubscriptionStatus, SubscriptionUrl,
+        ValidatedSubscription, MAX_SUBSCRIPTION_BYTES, MAX_SUBSCRIPTION_URL_BYTES,
     },
 };
 use serde_yaml::Value;
@@ -422,7 +419,7 @@ impl SubscriptionSourcePort for super::process::LinuxRouterPlatform {
         &self,
         current_source: &[u8],
         subscription: &ValidatedSubscription,
-        mode: ProxyMode,
+        lan_tun_enabled: bool,
     ) -> Result<Vec<u8>, PlatformError> {
         let mut source: Value = serde_yaml::from_slice(current_source).map_err(|_| {
             PlatformError::InvalidState("Mihomo source config is not valid YAML".to_owned())
@@ -451,7 +448,7 @@ impl SubscriptionSourcePort for super::process::LinuxRouterPlatform {
                 "candidate config is empty or exceeds size limit".to_owned(),
             ));
         }
-        self.validate_subscription_candidate(&candidate, mode)?;
+        self.validate_subscription_candidate(&candidate, lan_tun_enabled)?;
         Ok(candidate)
     }
 

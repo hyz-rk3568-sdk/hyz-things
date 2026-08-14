@@ -30,6 +30,13 @@ pub enum TailscaleBackendState {
     Unknown,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TailscaleEnvironment {
+    Direct,
+    MihomoExplicit,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TailscaleProcessState {
     Absent,
@@ -97,6 +104,7 @@ pub struct TailscaleObserved {
     pub persisted_mode: Probe<Option<TailscaleMode>>,
     pub backend_state: Probe<TailscaleBackendState>,
     pub process: Probe<TailscaleProcessState>,
+    pub environment: Probe<TailscaleEnvironment>,
     pub socket: Probe<OwnedResource>,
     pub interface: Probe<OwnedResource>,
     pub authenticated: Probe<bool>,
@@ -117,6 +125,7 @@ impl TailscaleObserved {
             persisted_mode: Probe::Unknown(reason.clone()),
             backend_state: Probe::Unknown(reason.clone()),
             process: Probe::Unknown(reason.clone()),
+            environment: Probe::Unknown(reason.clone()),
             socket: Probe::Unknown(reason.clone()),
             interface: Probe::Unknown(reason.clone()),
             authenticated: Probe::Unknown(reason.clone()),
@@ -203,6 +212,7 @@ impl TailscaleObserved {
 
     fn enabled_base_ready(&self) -> bool {
         self.backend_state == Probe::Known(TailscaleBackendState::Running)
+            && matches!(self.environment, Probe::Known(_))
             && matches!(
                 (&self.process, &self.socket, &self.interface),
                 (
@@ -247,21 +257,45 @@ pub enum TailscaleReadiness {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TailscaleAction {
-    StartBackend { token: String },
+    StartBackend {
+        token: String,
+        environment: TailscaleEnvironment,
+    },
     WaitForBackend,
-    StopBackend { token: String },
+    StopBackend {
+        token: String,
+    },
     SetFixedPreferences,
-    RestorePreferences { preferences: TailscalePreferences },
+    RestorePreferences {
+        preferences: TailscalePreferences,
+    },
     AdvertiseLanRoute,
     ClearAdvertisedRoute,
-    InstallRouterFirewall { token: String },
-    RemoveRouterFirewall { token: String },
-    InstallSubnetFirewall { token: String },
-    RemoveSubnetFirewall { token: String },
-    StartManagementListener { token: String, ipv4: Ipv4Addr },
-    StopManagementListener { token: String },
-    CommitDesiredMode { mode: TailscaleMode },
-    RestoreDesiredMode { mode: Option<TailscaleMode> },
+    InstallRouterFirewall {
+        token: String,
+    },
+    RemoveRouterFirewall {
+        token: String,
+    },
+    InstallSubnetFirewall {
+        token: String,
+    },
+    RemoveSubnetFirewall {
+        token: String,
+    },
+    StartManagementListener {
+        token: String,
+        ipv4: Ipv4Addr,
+    },
+    StopManagementListener {
+        token: String,
+    },
+    CommitDesiredMode {
+        mode: TailscaleMode,
+    },
+    RestoreDesiredMode {
+        mode: Option<TailscaleMode>,
+    },
 }
 
 #[derive(Clone, PartialEq, Eq)]

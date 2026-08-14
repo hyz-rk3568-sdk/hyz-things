@@ -9,7 +9,7 @@ use hyz_router::{
     },
     domain::{
         network::{NetworkAction, NetworkDesired, NetworkObserved, OwnedResource, Probe},
-        proxy::{ProxyAction, ProxyDesired, ProxyMode, ProxyObserved},
+        proxy::{ProxyAction, ProxyDesired, ProxyFeaturesV1, ProxyObserved},
     },
 };
 use std::{collections::VecDeque, sync::Mutex};
@@ -32,16 +32,42 @@ fn network(forwarding: bool, firewall: OwnedResource) -> NetworkObserved {
 
 fn stopped_proxy() -> ProxyObserved {
     ProxyObserved {
-        persisted_mode: Probe::Known(Some(ProxyMode::Disabled)),
+        persisted_features: Probe::Known(ProxyFeaturesV1::disabled()),
         process_identity_valid: Probe::Known(false),
         watcher_identity_valid: Probe::Known(false),
         runtime_config_valid: Probe::Known(false),
+        mixed_port_ready: Probe::Known(false),
         tun_interface_present: Probe::Known(false),
         tun_firewall: Probe::Known(OwnedResource::Absent),
         policy_rule_present: Probe::Known(false),
         policy_route_present: Probe::Known(false),
         interception_entry_present: Probe::Known(false),
         ordinary_nat_confirmed: Probe::Known(true),
+        active_direct_macs: Probe::Known(Default::default()),
+    }
+}
+
+fn ready_proxy(features: ProxyFeaturesV1) -> ProxyObserved {
+    let tun = features.lan_tun_enabled;
+    let core = features.mihomo_required();
+    ProxyObserved {
+        persisted_features: Probe::Known(features),
+        process_identity_valid: Probe::Known(core),
+        watcher_identity_valid: Probe::Known(tun),
+        runtime_config_valid: Probe::Known(core),
+        mixed_port_ready: Probe::Known(core),
+        tun_interface_present: Probe::Known(tun),
+        tun_firewall: Probe::Known(if tun {
+            OwnedResource::Owned {
+                token: "proxy-old".to_owned(),
+            }
+        } else {
+            OwnedResource::Absent
+        }),
+        policy_rule_present: Probe::Known(tun),
+        policy_route_present: Probe::Known(tun),
+        interception_entry_present: Probe::Known(tun),
+        ordinary_nat_confirmed: Probe::Known(!tun),
         active_direct_macs: Probe::Known(Default::default()),
     }
 }
@@ -223,26 +249,183 @@ fn stale_or_unknown_route_and_ownership_cannot_enable_forwarding() {
 }
 
 #[test]
-fn tun_plan_is_cleanup_first_interception_last_and_mode_commit_last() {
-    let observed = ProxyObserved {
-        persisted_mode: Probe::Known(Some(ProxyMode::Tun)),
-        process_identity_valid: Probe::Known(true),
-        watcher_identity_valid: Probe::Known(true),
-        runtime_config_valid: Probe::Known(false),
-        tun_interface_present: Probe::Known(true),
-        tun_firewall: Probe::Known(OwnedResource::Owned {
-            token: "old".to_owned(),
-        }),
-        policy_rule_present: Probe::Known(true),
-        policy_route_present: Probe::Known(true),
-        interception_entry_present: Probe::Known(true),
-        ordinary_nat_confirmed: Probe::Known(false),
-        active_direct_macs: Probe::Known(Default::default()),
-    };
+fn lan_tun_plan_is_interception_last_and_feature_commit_last() {
     let actions = proxy_plan(
         &ProxyDesired {
-            mode: ProxyMode::Tun,
+            lan_tun_enabled: true,
+            tailscale_explicit_proxy_enabled: false,
             direct_macs: Default::default(),
+        },
+        &stopped_proxy(),
+        &network(
+            true,
+            OwnedResource::Owned {
+                token: "router".to_owned(),
+            },
+        ),
+        "new",
+    )
+    .expect("LAN TUN plan");
+    assert!(matches!(
+        actions.first(),
+        Some(ProxyAction::WriteRuntimeConfig {
+            lan_tun_enabled: true
+        })
+    ));
+    assert!(
+        matches!(actions.get(actions.len() - 4), Some(ProxyAction::InstallInterceptionEntry { token }) if token == "new")
+    );
+    assert_eq!(
+        &actions[actions.len() - 3..],
+        &[
+            ProxyAction::StartWatcher,
+            ProxyAction::WaitForWatcher,
+            ProxyAction::CommitFeatures {
+                features: ProxyFeaturesV1::new(true, false)
+            },
+        ]
+    );
+}
+
+#[test]
+fn tailscale_only_plan_starts_core_without_lan_resources() {
+    let actions = proxy_plan(
+        &ProxyDesired {
+            lan_tun_enabled: false,
+            tailscale_explicit_proxy_enabled: true,
+            direct_macs: Default::default(),
+        },
+        &stopped_proxy(),
+        &network(
+            true,
+            OwnedResource::Owned {
+                token: "router".to_owned(),
+            },
+        ),
+        "new",
+    )
+    .unwrap();
+    assert!(actions.contains(&ProxyAction::WaitForMixedPort));
+    assert!(!actions.iter().any(|action| matches!(
+        action,
+        ProxyAction::CreateTunChains { .. } | ProxyAction::InstallInterceptionEntry { .. }
+    )));
+    assert_eq!(
+        actions.last(),
+        Some(&ProxyAction::CommitFeatures {
+            features: ProxyFeaturesV1::new(false, true),
+        })
+    );
+}
+
+#[test]
+fn proxy_planner_covers_shared_core_transition_matrix() {
+    let forwarding = network(
+        true,
+        OwnedResource::Owned {
+            token: "router".to_owned(),
+        },
+    );
+    let desired = |lan_tun_enabled, tailscale_explicit_proxy_enabled| ProxyDesired {
+        lan_tun_enabled,
+        tailscale_explicit_proxy_enabled,
+        direct_macs: Default::default(),
+    };
+
+    let lan_to_both = proxy_plan(
+        &desired(true, true),
+        &ready_proxy(ProxyFeaturesV1::new(true, false)),
+        &forwarding,
+        "new",
+    )
+    .unwrap();
+    assert_eq!(
+        lan_to_both,
+        vec![ProxyAction::CommitFeatures {
+            features: ProxyFeaturesV1::new(true, true),
+        }]
+    );
+
+    let both_to_lan = proxy_plan(
+        &desired(true, false),
+        &ready_proxy(ProxyFeaturesV1::new(true, true)),
+        &forwarding,
+        "new",
+    )
+    .unwrap();
+    assert_eq!(
+        both_to_lan,
+        vec![ProxyAction::CommitFeatures {
+            features: ProxyFeaturesV1::new(true, false),
+        }]
+    );
+    assert!(!both_to_lan.contains(&ProxyAction::StopCore));
+
+    let tailscale_to_both = proxy_plan(
+        &desired(true, true),
+        &ready_proxy(ProxyFeaturesV1::new(false, true)),
+        &forwarding,
+        "new",
+    )
+    .unwrap();
+    assert!(tailscale_to_both.contains(&ProxyAction::StopCore));
+    assert!(tailscale_to_both.contains(&ProxyAction::WaitForMixedPort));
+    assert!(tailscale_to_both
+        .iter()
+        .any(|action| matches!(action, ProxyAction::InstallInterceptionEntry { .. })));
+
+    let both_to_tailscale = proxy_plan(
+        &desired(false, true),
+        &ready_proxy(ProxyFeaturesV1::new(true, true)),
+        &forwarding,
+        "new",
+    )
+    .unwrap();
+    assert!(matches!(
+        both_to_tailscale.first(),
+        Some(ProxyAction::StopWatcher)
+    ));
+    assert!(both_to_tailscale.contains(&ProxyAction::StopCore));
+    assert!(both_to_tailscale.contains(&ProxyAction::WaitForMixedPort));
+    assert_eq!(
+        both_to_tailscale.last(),
+        Some(&ProxyAction::CommitFeatures {
+            features: ProxyFeaturesV1::new(false, true),
+        })
+    );
+
+    for current in [
+        ProxyFeaturesV1::new(true, false),
+        ProxyFeaturesV1::new(false, true),
+        ProxyFeaturesV1::new(true, true),
+    ] {
+        let actions = proxy_plan(
+            &desired(false, false),
+            &ready_proxy(current),
+            &forwarding,
+            "new",
+        )
+        .unwrap();
+        assert!(actions.contains(&ProxyAction::StopCore));
+        assert_eq!(
+            actions.last(),
+            Some(&ProxyAction::CommitFeatures {
+                features: ProxyFeaturesV1::disabled(),
+            })
+        );
+    }
+}
+
+#[test]
+fn device_policy_change_rebuilds_only_lan_tun_resources_and_keeps_shared_core() {
+    let mut observed = ready_proxy(ProxyFeaturesV1::new(true, true));
+    observed.active_direct_macs = Probe::Known(Default::default());
+    let desired_mac = "02:00:00:00:00:01".parse().unwrap();
+    let actions = proxy_plan(
+        &ProxyDesired {
+            lan_tun_enabled: true,
+            tailscale_explicit_proxy_enabled: true,
+            direct_macs: [desired_mac].into_iter().collect(),
         },
         &observed,
         &network(
@@ -253,57 +436,41 @@ fn tun_plan_is_cleanup_first_interception_last_and_mode_commit_last() {
         ),
         "new",
     )
-    .expect("TUN plan");
-
-    assert_eq!(actions.first(), Some(&ProxyAction::StopWatcher));
-    assert!(matches!(
-        actions.get(1),
-        Some(ProxyAction::RemoveInterceptionEntry { token }) if token == "old"
-    ));
-    assert!(matches!(
-        actions.get(2),
-        Some(ProxyAction::RemovePolicyRule)
-    ));
-    assert!(matches!(
-        actions.get(3),
-        Some(ProxyAction::RemovePolicyRoute)
-    ));
-    assert!(matches!(
-        actions.get(actions.len() - 4),
-        Some(ProxyAction::InstallInterceptionEntry { token }) if token == "new"
-    ));
-    assert_eq!(
-        &actions[actions.len() - 3..],
-        &[
-            ProxyAction::StartWatcher,
-            ProxyAction::WaitForWatcher,
-            ProxyAction::CommitMode {
-                mode: ProxyMode::Tun,
-            },
-        ]
-    );
+    .unwrap();
+    assert!(matches!(actions.first(), Some(ProxyAction::StopWatcher)));
+    assert!(actions
+        .iter()
+        .any(|action| matches!(action, ProxyAction::CreateTunChains { .. })));
+    assert!(!actions.contains(&ProxyAction::StopCore));
 }
 
 #[test]
-fn tun_plan_refuses_unconfirmed_router_readiness() {
-    let mut unready = network(
-        true,
-        OwnedResource::Owned {
-            token: "router".to_owned(),
-        },
-    );
-    unready.management_services_healthy = Probe::Unknown("no PID identity".to_owned());
-    let error = proxy_plan(
+fn proxy_planner_rejects_lan_commit_without_ordinary_forwarding_but_allows_tailscale_core() {
+    let management_only = network(false, OwnedResource::Absent);
+    assert!(matches!(
+        proxy_plan(
+            &ProxyDesired {
+                lan_tun_enabled: true,
+                tailscale_explicit_proxy_enabled: false,
+                direct_macs: Default::default(),
+            },
+            &stopped_proxy(),
+            &management_only,
+            "new",
+        ),
+        Err(PlatformError::UnsafeToCutOver(_))
+    ));
+    assert!(proxy_plan(
         &ProxyDesired {
-            mode: ProxyMode::Tun,
+            lan_tun_enabled: false,
+            tailscale_explicit_proxy_enabled: true,
             direct_macs: Default::default(),
         },
         &stopped_proxy(),
-        &unready,
+        &management_only,
         "new",
     )
-    .expect_err("must not prepare TUN on an unconfirmed router");
-    assert!(matches!(error, PlatformError::UnsafeToCutOver(_)));
+    .is_ok());
 }
 
 struct Fake {
@@ -652,83 +819,21 @@ fn successful_actions_do_not_create_false_readiness() {
 }
 
 #[test]
-fn tun_readiness_requires_exact_watcher_identity() {
-    let mut observed = ProxyObserved {
-        persisted_mode: Probe::Known(Some(ProxyMode::Tun)),
-        process_identity_valid: Probe::Known(true),
-        watcher_identity_valid: Probe::Known(false),
-        runtime_config_valid: Probe::Known(true),
-        tun_interface_present: Probe::Known(true),
-        tun_firewall: Probe::Known(OwnedResource::Owned {
-            token: "hyz-mihomo-ready".to_owned(),
-        }),
-        policy_rule_present: Probe::Known(true),
-        policy_route_present: Probe::Known(true),
-        interception_entry_present: Probe::Known(true),
-        ordinary_nat_confirmed: Probe::Known(false),
-        active_direct_macs: Probe::Known(Default::default()),
-    };
-    let desired = ProxyDesired {
-        mode: ProxyMode::Tun,
-        direct_macs: Default::default(),
-    };
-    assert!(!observed.ready_for(&desired));
-    observed.watcher_identity_valid = Probe::Known(true);
-    assert!(observed.ready_for(&desired));
-    observed.active_direct_macs =
-        Probe::Known(["02:00:00:00:00:01".parse().unwrap()].into_iter().collect());
-    assert!(!observed.ready_for(&desired));
-    observed.active_direct_macs = Probe::Unknown("malformed dynamic rules".to_owned());
-    assert!(!observed.ready_for(&desired));
-    observed.active_direct_macs = Probe::Known(Default::default());
-    observed.watcher_identity_valid = Probe::Unknown("stale record".to_owned());
-    assert!(!observed.ready_for(&desired));
-}
-
-#[test]
-fn explicit_and_disabled_readiness_require_watcher_absence() {
-    let mut disabled = stopped_proxy();
-    let disabled_desired = ProxyDesired {
-        mode: ProxyMode::Disabled,
-        direct_macs: Default::default(),
-    };
-    assert!(disabled.ready_for(&disabled_desired));
-    disabled.watcher_identity_valid = Probe::Known(true);
-    assert!(!disabled.ready_for(&disabled_desired));
-
-    let mut explicit = stopped_proxy();
-    explicit.persisted_mode = Probe::Known(Some(ProxyMode::Explicit));
-    explicit.process_identity_valid = Probe::Known(true);
-    explicit.runtime_config_valid = Probe::Known(true);
-    let explicit_desired = ProxyDesired {
-        mode: ProxyMode::Explicit,
-        direct_macs: Default::default(),
-    };
-    assert!(explicit.ready_for(&explicit_desired));
-    explicit.watcher_identity_valid = Probe::Known(true);
-    assert!(!explicit.ready_for(&explicit_desired));
-}
-
-#[test]
-fn missing_mode_file_defaults_to_explicit_but_not_disabled_or_tun() {
+fn feature_readiness_is_independent_but_core_is_shared() {
     let mut observed = stopped_proxy();
-    observed.persisted_mode = Probe::Known(None);
+    observed.persisted_features = Probe::Known(ProxyFeaturesV1::new(false, true));
     observed.process_identity_valid = Probe::Known(true);
     observed.runtime_config_valid = Probe::Known(true);
-    assert_eq!(
-        observed.effective_persisted_mode(),
-        Probe::Known(ProxyMode::Explicit)
-    );
+    observed.mixed_port_ready = Probe::Known(true);
     assert!(observed.ready_for(&ProxyDesired {
-        mode: ProxyMode::Explicit,
+        lan_tun_enabled: false,
+        tailscale_explicit_proxy_enabled: true,
         direct_macs: Default::default(),
     }));
+    observed.persisted_features = Probe::Known(ProxyFeaturesV1::new(true, true));
     assert!(!observed.ready_for(&ProxyDesired {
-        mode: ProxyMode::Disabled,
-        direct_macs: Default::default(),
-    }));
-    assert!(!observed.ready_for(&ProxyDesired {
-        mode: ProxyMode::Tun,
+        lan_tun_enabled: true,
+        tailscale_explicit_proxy_enabled: true,
         direct_macs: Default::default(),
     }));
 }
@@ -738,7 +843,8 @@ fn unknown_probe_fields_are_never_ready() {
     assert!(!NetworkObserved::unknown("probe failed").ready_for(&NetworkDesired::management_only()));
     assert!(
         !ProxyObserved::unknown("probe failed").ready_for(&ProxyDesired {
-            mode: ProxyMode::Disabled,
+            lan_tun_enabled: false,
+            tailscale_explicit_proxy_enabled: false,
             direct_macs: Default::default(),
         })
     );

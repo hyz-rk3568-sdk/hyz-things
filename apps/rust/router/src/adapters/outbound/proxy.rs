@@ -1,7 +1,8 @@
 use super::{
     paths::{
         MIHOMO_CANDIDATE_CONFIG, MIHOMO_CONTROLLER_ADDRESS, MIHOMO_CONTROLLER_SECRET,
-        MIHOMO_DATA_DIR, MIHOMO_RUNTIME_CONFIG, MIHOMO_SOURCE_CONFIG, MIHOMO_STATE_DIR,
+        MIHOMO_DATA_DIR, MIHOMO_FEATURES_FILE, MIHOMO_RUNTIME_CONFIG, MIHOMO_SOURCE_CONFIG,
+        MIHOMO_STATE_DIR,
     },
     process::{LinuxRouterPlatform, Tool},
     storage,
@@ -17,13 +18,18 @@ use crate::{
     domain::{
         network::{LAN_BRIDGE, LAN_SUBNET},
         proxy::{
-            ProxyAction, ProxyMode, CONTROLLED_TUN_DISABLED, CONTROLLED_TUN_ENABLED,
-            MIHOMO_FILTER_CHAIN, MIHOMO_MANGLE_CHAIN, MIHOMO_MARK, MIHOMO_ROUTE_TABLE,
-            MIHOMO_RULE_PRIORITY, MIHOMO_TUN_INTERFACE,
+            ProxyAction, ProxyFeaturesV1, CONTROLLED_LOCAL_MIXED, CONTROLLED_TUN_DISABLED,
+            CONTROLLED_TUN_ENABLED, MIHOMO_FILTER_CHAIN, MIHOMO_MANGLE_CHAIN, MIHOMO_MARK,
+            MIHOMO_MIXED_ADDRESS, MIHOMO_ROUTE_TABLE, MIHOMO_RULE_PRIORITY, MIHOMO_TUN_INTERFACE,
         },
     },
 };
-use std::{fs, thread, time::Duration};
+use std::{
+    fs,
+    net::{SocketAddr, TcpStream},
+    thread,
+    time::Duration,
+};
 
 const MAX_CONFIG_SIZE: usize = 4 * 1024 * 1024;
 
@@ -37,9 +43,13 @@ impl LinuxRouterPlatform {
             ProxyAction::RemoveTunChains { token } => self.remove_tun_chains(token),
             ProxyAction::StopWatcher => self.stop_mihomo_watcher(),
             ProxyAction::StopCore => self.stop_mihomo(),
-            ProxyAction::WriteRuntimeConfig { mode } => self.write_runtime_config(*mode),
+            ProxyAction::RemoveRuntimeState => self.remove_runtime_state(),
+            ProxyAction::WriteRuntimeConfig { lan_tun_enabled } => {
+                self.write_runtime_config(*lan_tun_enabled)
+            }
             ProxyAction::ValidateRuntimeConfig => self.validate_mihomo_config(),
             ProxyAction::StartCore => self.start_mihomo(),
+            ProxyAction::WaitForMixedPort => self.wait_for_mixed_port(),
             ProxyAction::WaitForTunInterface => self.wait_for_tun(),
             ProxyAction::CreateTunChains { token, direct_macs } => {
                 self.create_tun_chains(token, direct_macs)
@@ -99,8 +109,8 @@ impl LinuxRouterPlatform {
             }
             ProxyAction::StartWatcher => self.start_mihomo_watcher(),
             ProxyAction::WaitForWatcher => self.wait_for_mihomo_watcher(),
-            ProxyAction::CommitMode { mode } => self.commit_mode(*mode),
-            ProxyAction::RestorePersistedMode { mode } => self.restore_persisted_mode(*mode),
+            ProxyAction::CommitFeatures { features } => self.write_features(*features),
+            ProxyAction::RestorePersistedFeatures { features } => self.write_features(*features),
         }
     }
 
@@ -112,7 +122,7 @@ impl LinuxRouterPlatform {
         self.run(Tool::Iptables, &strings(args)).map(|_| ())
     }
 
-    fn write_runtime_config(&self, mode: ProxyMode) -> Result<(), PlatformError> {
+    fn write_runtime_config(&self, lan_tun_enabled: bool) -> Result<(), PlatformError> {
         storage::ensure_private_dir(MIHOMO_DATA_DIR)?;
         storage::ensure_private_dir(MIHOMO_STATE_DIR)?;
         let source = storage::read_private_small_optional(MIHOMO_SOURCE_CONFIG, MAX_CONFIG_SIZE)?
@@ -121,7 +131,7 @@ impl LinuxRouterPlatform {
         })?;
         validate_source_config(&source)?;
         let controller_secret = new_controller_secret()?;
-        let runtime = render_runtime_config(&source, mode, &controller_secret)?;
+        let runtime = render_runtime_config(&source, lan_tun_enabled, &controller_secret)?;
         storage::atomic_write_private(MIHOMO_CONTROLLER_SECRET, controller_secret.as_bytes())?;
         storage::atomic_write_private(MIHOMO_RUNTIME_CONFIG, runtime.as_bytes())
     }
@@ -129,16 +139,12 @@ impl LinuxRouterPlatform {
     pub(crate) fn validate_subscription_candidate(
         &self,
         source: &[u8],
-        mode: ProxyMode,
+        lan_tun_enabled: bool,
     ) -> Result<(), PlatformError> {
         let source = std::str::from_utf8(source).map_err(|_| {
             PlatformError::InvalidState("candidate source config is not UTF-8".to_owned())
         })?;
-        let validation_mode = match mode {
-            ProxyMode::Disabled => ProxyMode::Explicit,
-            mode => mode,
-        };
-        let runtime = render_runtime_config(source, validation_mode, "candidate-validation-only")?;
+        let runtime = render_runtime_config(source, lan_tun_enabled, "candidate-validation-only")?;
         storage::atomic_write_private(MIHOMO_CANDIDATE_CONFIG, runtime.as_bytes())?;
         let result = self.validate_mihomo_config_at(MIHOMO_CANDIDATE_CONFIG);
         let cleanup = storage::remove_file_durable(MIHOMO_CANDIDATE_CONFIG);
@@ -147,6 +153,24 @@ impl LinuxRouterPlatform {
             (Ok(()), Err(error)) => Err(error),
             (Ok(()), Ok(())) => Ok(()),
         }
+    }
+
+    fn wait_for_mixed_port(&self) -> Result<(), PlatformError> {
+        let address: SocketAddr = MIHOMO_MIXED_ADDRESS.parse().expect("fixed mixed address");
+        for _ in 0..60 {
+            if TcpStream::connect_timeout(&address, Duration::from_millis(50)).is_ok() {
+                return Ok(());
+            }
+            if self.mihomo_identity()?.is_none() {
+                return Err(PlatformError::InvalidState(
+                    "Mihomo exited before its fixed mixed port became ready".to_owned(),
+                ));
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        Err(PlatformError::UnsafeToCutOver(
+            "Mihomo fixed loopback mixed port did not become ready".to_owned(),
+        ))
     }
 
     fn wait_for_tun(&self) -> Result<(), PlatformError> {
@@ -710,53 +734,24 @@ impl LinuxRouterPlatform {
         storage::remove_file_durable(storage::TUN_FIREWALL_OWNER)
     }
 
-    fn commit_mode(&self, mode: ProxyMode) -> Result<(), PlatformError> {
-        self.update_persisted_mode(Some(mode))
-    }
-
-    fn restore_persisted_mode(&self, mode: Option<ProxyMode>) -> Result<(), PlatformError> {
-        self.update_persisted_mode(mode)
-    }
-
-    fn update_persisted_mode(&self, mode: Option<ProxyMode>) -> Result<(), PlatformError> {
-        let previous_mode = storage::read_private_small_optional(storage::MODE_FILE, 32)?;
-        let previous_disabled = storage::read_private_small_optional(storage::DISABLED_MARKER, 32)?;
-        let result = self.write_persisted_mode(mode);
-        if result.is_err() {
-            let _ = restore_optional_file(storage::MODE_FILE, previous_mode.as_deref());
-            let _ = restore_optional_file(storage::DISABLED_MARKER, previous_disabled.as_deref());
+    fn write_features(&self, features: ProxyFeaturesV1) -> Result<(), PlatformError> {
+        if !features.supported() {
+            return Err(PlatformError::InvalidState(
+                "unsupported proxy feature version".to_owned(),
+            ));
         }
-        result
+        storage::ensure_private_dir(MIHOMO_DATA_DIR)?;
+        let json = serde_json::to_vec(&features).map_err(|error| {
+            PlatformError::InvalidState(format!("serialize proxy features: {error}"))
+        })?;
+        storage::atomic_write_private(MIHOMO_FEATURES_FILE, &json)
     }
 
-    fn write_persisted_mode(&self, mode: Option<ProxyMode>) -> Result<(), PlatformError> {
-        match mode {
-            Some(ProxyMode::Disabled) => {
-                storage::atomic_write_private(storage::DISABLED_MARKER, b"")
-            }
-            Some(mode @ (ProxyMode::Explicit | ProxyMode::Tun)) => {
-                storage::atomic_write_private(
-                    storage::MODE_FILE,
-                    format!("{}\n", mode.as_str()).as_bytes(),
-                )?;
-                remove_optional_file(storage::DISABLED_MARKER, "disabled marker")
-            }
-            None => {
-                remove_optional_file(storage::MODE_FILE, "proxy mode")?;
-                remove_optional_file(storage::DISABLED_MARKER, "disabled marker")
-            }
+    fn remove_runtime_state(&self) -> Result<(), PlatformError> {
+        for path in [MIHOMO_RUNTIME_CONFIG, MIHOMO_CONTROLLER_SECRET] {
+            storage::remove_file_durable(path)?;
         }
-    }
-}
-
-fn remove_optional_file(path: &str, _label: &str) -> Result<(), PlatformError> {
-    storage::remove_file_durable(path)
-}
-
-fn restore_optional_file(path: &str, contents: Option<&str>) -> Result<(), PlatformError> {
-    match contents {
-        Some(contents) => storage::atomic_write_private(path, contents.as_bytes()),
-        None => remove_optional_file(path, path),
+        Ok(())
     }
 }
 
@@ -778,20 +773,18 @@ fn new_controller_secret() -> Result<String, PlatformError> {
 
 fn render_runtime_config(
     source: &str,
-    mode: ProxyMode,
+    lan_tun_enabled: bool,
     controller_secret: &str,
 ) -> Result<String, PlatformError> {
     validate_source_config(source)?;
-    let controlled = match mode {
-        ProxyMode::Tun => CONTROLLED_TUN_ENABLED,
-        ProxyMode::Explicit => CONTROLLED_TUN_DISABLED,
-        ProxyMode::Disabled => {
-            return Err(PlatformError::InvalidState(
-                "disabled mode has no runtime config".to_owned(),
-            ))
-        }
+    let controlled = if lan_tun_enabled {
+        CONTROLLED_TUN_ENABLED
+    } else {
+        CONTROLLED_TUN_DISABLED
     };
-    let mut runtime = replace_top_level_tun_blocks(source, controlled);
+    let source = remove_controlled_listener_fields(source);
+    let mut runtime = replace_top_level_tun_blocks(&source, controlled);
+    runtime.push_str(CONTROLLED_LOCAL_MIXED);
     runtime.push_str(&format!(
         "\nexternal-controller: {MIHOMO_CONTROLLER_ADDRESS}\nsecret: \"{controller_secret}\"\n"
     ));
@@ -826,36 +819,41 @@ fn validate_source_config(source: &str) -> Result<(), PlatformError> {
             )));
         }
     }
-    let allow_lan = source
-        .lines()
-        .filter(|line| safe_scalar_line(line, "allow-lan", "true"))
-        .count();
-    let bind_address = source
-        .lines()
-        .filter(|line| safe_scalar_line(line, "bind-address", "192.168.8.1"))
-        .count();
-    if allow_lan != 1 || bind_address != 1 {
-        return Err(PlatformError::InvalidState(
-            "Mihomo requires exactly one top-level allow-lan: true and bind-address: 192.168.8.1"
-                .to_owned(),
-        ));
+    for key in [
+        "mixed-port",
+        "port",
+        "socks-port",
+        "redir-port",
+        "tproxy-port",
+        "listeners",
+    ] {
+        if controlled_key_appears(source, key) {
+            return Err(PlatformError::InvalidState(format!(
+                "Mihomo source config may not set controlled listener key {key}"
+            )));
+        }
     }
     Ok(())
 }
 
-fn safe_scalar_line(line: &str, key: &str, value: &str) -> bool {
-    let Some(rest) = line
-        .strip_prefix(key)
-        .and_then(|rest| rest.strip_prefix(':'))
-    else {
-        return false;
-    };
-    let rest = rest.trim_start_matches(' ');
-    let Some(rest) = rest.strip_prefix(value) else {
-        return false;
-    };
-    rest.is_empty()
-        || rest.starts_with(' ') && (rest.trim().is_empty() || rest.trim_start().starts_with('#'))
+fn remove_controlled_listener_fields(source: &str) -> String {
+    const KEYS: &[&str] = &[
+        "mixed-port",
+        "port",
+        "socks-port",
+        "redir-port",
+        "tproxy-port",
+        "allow-lan",
+        "bind-address",
+        "listeners",
+    ];
+    source
+        .split_inclusive('\n')
+        .filter(|line| {
+            let body = line.strip_suffix('\n').unwrap_or(line);
+            !KEYS.iter().any(|key| top_level_plain_key(body, key))
+        })
+        .collect()
 }
 
 fn replace_top_level_tun_blocks(source: &str, controlled: &str) -> String {
@@ -926,41 +924,47 @@ mod tests {
     use super::*;
     use crate::adapters::outbound::system::expected_chain_rules;
 
-    const SOURCE: &str = "allow-lan: true # managed LAN\nbind-address: 192.168.8.1\nport: 7890\ntun:\n  enable: maybe\n  nested:\n    value: 1\n# consumed with tun block\nmode: rule\ntun: { enable: true }\n  child: true\ndns:\n  enable: true\n";
+    const SOURCE: &str = "tun:\n  enable: maybe\n  nested:\n    value: 1\n# consumed with tun block\nmode: rule\ntun: { enable: true }\n  child: true\ndns:\n  enable: true\n";
 
     #[test]
-    fn runtime_config_golden_removes_every_plain_top_level_tun_block() {
-        validate_source_config(SOURCE).expect("safe source");
-        assert_eq!(
-            replace_top_level_tun_blocks(SOURCE, CONTROLLED_TUN_DISABLED),
-            "allow-lan: true # managed LAN\nbind-address: 192.168.8.1\nport: 7890\nmode: rule\ndns:\n  enable: true\n\ntun:\n  enable: false\n"
-        );
-        assert_eq!(
-            replace_top_level_tun_blocks(SOURCE, CONTROLLED_TUN_ENABLED),
-            "allow-lan: true # managed LAN\nbind-address: 192.168.8.1\nport: 7890\nmode: rule\ndns:\n  enable: true\n\ntun:\n  enable: true\n  stack: system\n  device: hyz-mihomo\n  auto-route: false\n  auto-redirect: false\n  auto-detect-interface: false\n  strict-route: false\n  dns-hijack: []\n  mtu: 1500\n"
-        );
+    fn runtime_config_fixes_loopback_mixed_port_and_controls_tun() {
+        let disabled = render_runtime_config(SOURCE, false, "test-secret").unwrap();
+        assert!(disabled.contains("mixed-port: 7890"));
+        assert!(disabled.contains("allow-lan: false"));
+        assert!(disabled.contains("bind-address: 127.0.0.1"));
+        assert!(disabled.contains("tun:\n  enable: false"));
+        assert!(!disabled.contains("enable: maybe"));
+
+        let enabled = render_runtime_config(SOURCE, true, "test-secret").unwrap();
+        assert!(enabled.contains("device: hyz-mihomo"));
+        assert!(enabled.contains("auto-route: false"));
     }
 
     #[test]
-    fn source_safety_is_exact_and_rejects_unsafe_bytes_and_placeholders() {
+    fn source_safety_rejects_controlled_listeners_secrets_and_unsafe_bytes() {
         for unsafe_source in [
-            "allow-lan: false\nbind-address: 192.168.8.1\n",
-            " allow-lan: true\nbind-address: 192.168.8.1\n",
-            "allow-lan: true\nallow-lan: true\nbind-address: 192.168.8.1\n",
-            "allow-lan: true\nbind-address: 0.0.0.0\n",
-            "allow-lan:\ttrue\nbind-address: 192.168.8.1\n",
-            "allow-lan: true\r\nbind-address: 192.168.8.1\n",
-            "allow-lan: true\nbind-address: 192.168.8.1\npassword: CHANGE_ME_secret\n",
-            "allow-lan: true\nbind-address: 192.168.8.1\nexternal-controller: 0.0.0.0:9090\n",
-            "allow-lan: true\nbind-address: 192.168.8.1\n{\"external-controller\": 0.0.0.0:9090}\n",
-            "allow-lan: true\nbind-address: 192.168.8.1\nsecret: exposed\n",
-            "allow-lan: true\nbind-address: 192.168.8.1\0\n",
+            "port: 7890\nmode: rule\n",
+            "mixed-port: 7890\nmode: rule\n",
+            "mode:\trule\n",
+            "mode: rule\r\n",
+            "password: CHANGE_ME_secret\n",
+            "external-controller: 0.0.0.0:9090\n",
+            "{\"external-controller\": 0.0.0.0:9090}\n",
+            "secret: exposed\n",
+            "mode: rule\0\n",
         ] {
             assert!(
                 validate_source_config(unsafe_source).is_err(),
                 "{unsafe_source:?}"
             );
         }
+        let caller_listener = "allow-lan: true\nbind-address: 0.0.0.0\nmode: rule\n";
+        validate_source_config(caller_listener).unwrap();
+        let runtime = render_runtime_config(caller_listener, false, "test-secret").unwrap();
+        assert!(!runtime.contains("allow-lan: true"));
+        assert!(!runtime.contains("bind-address: 0.0.0.0"));
+        assert!(runtime.contains("allow-lan: false"));
+        assert!(runtime.contains("bind-address: 127.0.0.1"));
     }
 
     #[test]

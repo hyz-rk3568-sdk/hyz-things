@@ -21,6 +21,7 @@ pub fn tailscale_bootstrap_plan(
         ) => Ok(vec![
             TailscaleAction::StartBackend {
                 token: token.to_owned(),
+                environment: crate::domain::tailscale::TailscaleEnvironment::Direct,
             },
             TailscaleAction::WaitForBackend,
             TailscaleAction::SetFixedPreferences,
@@ -34,6 +35,7 @@ pub fn tailscale_bootstrap_plan(
             },
             TailscaleAction::StartBackend {
                 token: token.to_owned(),
+                environment: crate::domain::tailscale::TailscaleEnvironment::Direct,
             },
             TailscaleAction::WaitForBackend,
             TailscaleAction::SetFixedPreferences,

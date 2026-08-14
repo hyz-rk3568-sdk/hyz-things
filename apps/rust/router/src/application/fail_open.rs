@@ -5,7 +5,7 @@ use crate::{
         },
         reconcile::fail_open_plan,
     },
-    domain::{network::Probe, proxy::ProxyMode},
+    domain::network::Probe,
 };
 use std::time::Duration;
 
@@ -165,7 +165,8 @@ impl<'a> MihomoFailOpenApplication<'a> {
             CoreRecordState::ExpectedExited => {}
         }
         let observed = self.platform.observe_fail_open_proxy()?;
-        if observed.persisted_mode != Probe::Known(Some(ProxyMode::Tun)) {
+        if !matches!(observed.persisted_features, Probe::Known(features) if features.lan_tun_enabled)
+        {
             return Err(PlatformError::Conflict(
                 "watcher fail-open requires persisted TUN mode".to_owned(),
             ));
@@ -179,8 +180,8 @@ impl<'a> MihomoFailOpenApplication<'a> {
             || final_state.policy_rule_present != Probe::Known(false)
             || final_state.policy_route_present != Probe::Known(false)
             || !matches!(
-                final_state.persisted_mode,
-                Probe::Known(Some(ProxyMode::Tun))
+                final_state.persisted_features,
+                Probe::Known(features) if features.lan_tun_enabled
             )
             || final_state.ordinary_nat_confirmed != Probe::Known(true)
         {
@@ -316,10 +317,13 @@ mod tests {
 
     fn observed(owned: bool) -> ProxyObserved {
         ProxyObserved {
-            persisted_mode: Probe::Known(Some(ProxyMode::Tun)),
+            persisted_features: Probe::Known(crate::domain::proxy::ProxyFeaturesV1::new(
+                true, false,
+            )),
             process_identity_valid: Probe::Known(false),
             watcher_identity_valid: Probe::Known(owned),
             runtime_config_valid: Probe::Known(owned),
+            mixed_port_ready: Probe::Known(owned),
             tun_interface_present: Probe::Known(false),
             tun_firewall: Probe::Known(if owned {
                 OwnedResource::Owned {

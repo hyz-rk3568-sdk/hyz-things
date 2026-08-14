@@ -1,5 +1,5 @@
 use super::{
-    paths::{MIHOMO_CONTROLLER_SECRET, MIHOMO_RUNTIME_CONFIG},
+    paths::{MIHOMO_CONTROLLER_SECRET, MIHOMO_FEATURES_FILE, MIHOMO_RUNTIME_CONFIG},
     process::{FixedOutput, LinuxMihomoFailOpenPlatform, LinuxRouterPlatform, Tool, NETWORK_LOCK},
     storage,
 };
@@ -15,8 +15,9 @@ use crate::{
             LAN_MEMBER, ROUTER_FILTER_CHAIN, ROUTER_NAT_CHAIN, WAN_INTERFACE,
         },
         proxy::{
-            ProxyAction, ProxyMode, ProxyObserved, MIHOMO_FILTER_CHAIN, MIHOMO_MANGLE_CHAIN,
-            MIHOMO_MARK, MIHOMO_ROUTE_TABLE, MIHOMO_RULE_PRIORITY, MIHOMO_TUN_INTERFACE,
+            ProxyAction, ProxyFeaturesV1, ProxyObserved, MIHOMO_FILTER_CHAIN, MIHOMO_MANGLE_CHAIN,
+            MIHOMO_MARK, MIHOMO_MIXED_ADDRESS, MIHOMO_ROUTE_TABLE, MIHOMO_RULE_PRIORITY,
+            MIHOMO_TUN_INTERFACE,
         },
         tailscale::TAILSCALE_FORWARD_CHAIN,
     },
@@ -24,7 +25,9 @@ use crate::{
 use std::{
     collections::BTreeSet,
     fs,
+    net::{SocketAddr, TcpStream},
     path::Path,
+    time::Duration,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -266,18 +269,17 @@ impl SystemProbePort for LinuxRouterPlatform {
             Probe::Known(OwnedResource::Foreign) => Probe::Known(true),
             Probe::Unknown(reason) => Probe::Unknown(reason.clone()),
         };
-        let mode_file = storage::read_private_small_optional(storage::MODE_FILE, 32);
-        let disabled_marker = storage::read_private_small_optional(storage::DISABLED_MARKER, 32);
-        let persisted_mode = match (mode_file, disabled_marker) {
-            (_, Ok(Some(_))) => Probe::Known(Some(ProxyMode::Disabled)),
-            (_, Err(error)) => Probe::Unknown(error.to_string()),
-            (Err(error), Ok(None)) => Probe::Unknown(error.to_string()),
-            (Ok(None), Ok(None)) => Probe::Known(None),
-            (Ok(Some(mode)), Ok(None)) => match mode.trim() {
-                "explicit" => Probe::Known(Some(ProxyMode::Explicit)),
-                "tun" => Probe::Known(Some(ProxyMode::Tun)),
-                _ => Probe::Unknown("persisted proxy mode is invalid".to_owned()),
-            },
+        let persisted_features = read_or_migrate_proxy_features();
+        let mixed_port_ready = match &process_identity_valid {
+            Probe::Known(true) => {
+                let address: SocketAddr =
+                    MIHOMO_MIXED_ADDRESS.parse().expect("fixed mixed address");
+                Probe::Known(
+                    TcpStream::connect_timeout(&address, Duration::from_millis(100)).is_ok(),
+                )
+            }
+            Probe::Known(false) => Probe::Known(false),
+            Probe::Unknown(reason) => Probe::Unknown(reason.clone()),
         };
         let router_firewall = self.observe_router_firewall();
         let ordinary_nat_confirmed = match (
@@ -300,10 +302,11 @@ impl SystemProbePort for LinuxRouterPlatform {
         };
         let active_direct_macs = self.observe_active_direct_macs(&tun_firewall);
         Ok(ProxyObserved {
-            persisted_mode,
+            persisted_features,
             process_identity_valid,
             watcher_identity_valid,
             runtime_config_valid,
+            mixed_port_ready,
             tun_interface_present,
             tun_firewall,
             policy_rule_present,
@@ -312,6 +315,62 @@ impl SystemProbePort for LinuxRouterPlatform {
             ordinary_nat_confirmed,
             active_direct_macs,
         })
+    }
+}
+
+fn read_or_migrate_proxy_features() -> Probe<ProxyFeaturesV1> {
+    match storage::read_private_small_optional(MIHOMO_FEATURES_FILE, 512) {
+        Ok(Some(json)) => match serde_json::from_str::<ProxyFeaturesV1>(&json) {
+            Ok(features) if features.supported() => Probe::Known(features),
+            Ok(_) => Probe::Unknown("persisted proxy feature version is unsupported".to_owned()),
+            Err(_) => Probe::Unknown("persisted proxy features are invalid".to_owned()),
+        },
+        Err(error) => Probe::Unknown(error.to_string()),
+        Ok(None) => migrate_legacy_proxy_mode(),
+    }
+}
+
+fn migrate_legacy_proxy_mode() -> Probe<ProxyFeaturesV1> {
+    let mode = match storage::read_private_small_optional(storage::MODE_FILE, 32) {
+        Ok(mode) => mode,
+        Err(error) => return Probe::Unknown(error.to_string()),
+    };
+    let disabled = match storage::read_private_small_optional(storage::DISABLED_MARKER, 32) {
+        Ok(disabled) => disabled.is_some(),
+        Err(error) => return Probe::Unknown(error.to_string()),
+    };
+    let features = match legacy_proxy_features(mode.as_deref(), disabled) {
+        Ok(features) => features,
+        Err(reason) => return Probe::Unknown(reason.to_owned()),
+    };
+    let json = match serde_json::to_vec(&features) {
+        Ok(json) => json,
+        Err(error) => return Probe::Unknown(format!("serialize migrated proxy features: {error}")),
+    };
+    if let Err(error) = storage::atomic_write_private(MIHOMO_FEATURES_FILE, &json) {
+        return Probe::Unknown(error.to_string());
+    }
+    if let Err(error) = storage::remove_file_durable(storage::MODE_FILE)
+        .and_then(|()| storage::remove_file_durable(storage::DISABLED_MARKER))
+    {
+        return Probe::Unknown(format!(
+            "proxy features migrated but legacy cleanup failed: {error}"
+        ));
+    }
+    Probe::Known(features)
+}
+
+fn legacy_proxy_features(
+    mode: Option<&str>,
+    disabled_marker: bool,
+) -> Result<ProxyFeaturesV1, &'static str> {
+    if disabled_marker {
+        return Ok(ProxyFeaturesV1::disabled());
+    }
+    match mode.map(str::trim) {
+        None | Some("explicit") | Some("disabled") => Ok(ProxyFeaturesV1::disabled()),
+        Some("tun") => Ok(ProxyFeaturesV1::new(true, false)),
+        Some(_) => Err("persisted legacy proxy mode is invalid; migration was not attempted"),
     }
 }
 
@@ -1134,6 +1193,23 @@ fn strings(values: &[&str]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_proxy_modes_migrate_without_authorizing_tailscaled() {
+        assert_eq!(
+            legacy_proxy_features(Some("disabled"), false).unwrap(),
+            ProxyFeaturesV1::disabled()
+        );
+        assert_eq!(
+            legacy_proxy_features(Some("explicit"), false).unwrap(),
+            ProxyFeaturesV1::disabled()
+        );
+        assert_eq!(
+            legacy_proxy_features(Some("tun"), false).unwrap(),
+            ProxyFeaturesV1::new(true, false)
+        );
+        assert!(legacy_proxy_features(Some("future"), false).is_err());
+    }
 
     #[test]
     fn direct_mac_rules_are_sorted_before_mark_and_strictly_parsed() {

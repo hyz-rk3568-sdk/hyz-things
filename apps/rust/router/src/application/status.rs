@@ -10,14 +10,16 @@ use crate::{
     application::ports::ClockPort,
     domain::{
         network::{OwnedResource, Probe},
+        proxy::ProxyFeaturesV1,
         status::{
             Component, Issue, ProxyStatus, RouterStatus, SnapshotState, StatusSnapshot,
             SystemStats, TailscaleConnectionStatus, TailscaleConnectionType,
-            TailscaleErrorCategory, TailscaleRouteApproval, TailscaleStatus,
+            TailscaleErrorCategory, TailscaleProxyFallback, TailscaleRouteApproval,
+            TailscaleStatus,
         },
         tailscale::{
-            TailscaleBackendState, TailscaleConnectionKind, TailscaleDesired, TailscaleMode,
-            TailscaleObserved, TailscaleReadiness,
+            TailscaleBackendState, TailscaleConnectionKind, TailscaleDesired, TailscaleEnvironment,
+            TailscaleMode, TailscaleObserved, TailscaleReadiness,
         },
     },
 };
@@ -56,6 +58,7 @@ impl StatusTailscalePlatformPort for UnavailableTailscaleStatus {
 
 pub fn tailscale_status_from_observed(
     observed: &TailscaleObserved,
+    proxy_features: &Probe<ProxyFeaturesV1>,
     ordinary_router_ready: bool,
 ) -> TailscaleStatus {
     let desired_mode = match &observed.persisted_mode {
@@ -116,8 +119,29 @@ pub fn tailscale_status_from_observed(
             }
         }
     };
+    let explicit_proxy_desired = match proxy_features {
+        Probe::Known(features) if features.supported() => {
+            Some(features.tailscale_explicit_proxy_enabled)
+        }
+        Probe::Known(_) | Probe::Unknown(_) => None,
+    };
+    let environment = match &observed.environment {
+        Probe::Known(environment) => Some(*environment),
+        Probe::Unknown(_) => None,
+    };
+    let proxy_fallback = match (explicit_proxy_desired, environment) {
+        (Some(false), Some(TailscaleEnvironment::Direct))
+        | (Some(true), Some(TailscaleEnvironment::MihomoExplicit)) => {
+            TailscaleProxyFallback::NotNeeded
+        }
+        (Some(true), Some(TailscaleEnvironment::Direct)) => TailscaleProxyFallback::DirectRestored,
+        _ => TailscaleProxyFallback::NotConfirmed,
+    };
     let has_unknown = matches!(&observed.persisted_mode, Probe::Unknown(_))
+        || matches!(proxy_features, Probe::Unknown(_))
+        || matches!(proxy_features, Probe::Known(features) if !features.supported())
         || matches!(&observed.process, Probe::Unknown(_))
+        || matches!(&observed.environment, Probe::Unknown(_))
         || matches!(&observed.socket, Probe::Unknown(_))
         || matches!(&observed.interface, Probe::Unknown(_))
         || matches!(&observed.backend_state, Probe::Unknown(_))
@@ -140,9 +164,13 @@ pub fn tailscale_status_from_observed(
         local_firewall_ready,
         route_approval: TailscaleRouteApproval::UnknownExternalApprovalRequired,
         connection,
+        explicit_proxy_desired,
+        environment,
+        proxy_fallback,
         error_category: if has_unknown {
             Some(TailscaleErrorCategory::ProbeFailed)
         } else if degraded_to_router_only
+            || proxy_fallback != TailscaleProxyFallback::NotNeeded
             || (desired_mode.is_some() && effective_mode.is_none() && authenticated != Some(false))
         {
             Some(TailscaleErrorCategory::NotReady)
@@ -154,9 +182,10 @@ pub fn tailscale_status_from_observed(
 
 pub fn tailscale_status_component_from_observed(
     observed: &TailscaleObserved,
+    proxy_features: &Probe<ProxyFeaturesV1>,
     ordinary_router_ready: bool,
 ) -> Component<TailscaleStatus> {
-    let status = tailscale_status_from_observed(observed, ordinary_router_ready);
+    let status = tailscale_status_from_observed(observed, proxy_features, ordinary_router_ready);
     if status.error_category.is_none() {
         Component::available(status)
     } else {

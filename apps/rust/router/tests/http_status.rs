@@ -22,7 +22,10 @@ use hyz_router::{
     },
     domain::{
         panel::{DisplayStatus, PanelSnapshot},
-        status::{Component, Issue, ProxyMode, ProxyState, ProxyStatus, RouterStatus, SystemStats},
+        status::{
+            Component, Issue, LanTunEffective, LanTunStatus, MihomoCoreStatus, ProxyResourceState,
+            ProxyStatus, RouterStatus, SystemStats,
+        },
     },
 };
 
@@ -449,14 +452,22 @@ fn server_address<T>(_server: &tokio::task::JoinHandle<T>, address: SocketAddr) 
 }
 
 #[test]
-fn typed_proxy_dto_keeps_wire_values_stable() {
+fn typed_proxy_dto_keeps_layered_wire_values_stable() {
     let value = serde_json::to_value(ProxyStatus {
-        state: ProxyState::Running,
-        mode: ProxyMode::Tun,
-        configured: Some(true),
-        ordinary_nat_fallback: Some(false),
+        configured: true,
+        mihomo: MihomoCoreStatus {
+            configured_required: Some(true),
+            process: ProxyResourceState::Ready,
+            runtime_config: ProxyResourceState::Ready,
+            mixed_port: ProxyResourceState::Ready,
+        },
+        lan_tun: LanTunStatus {
+            desired: Some(true),
+            effective: LanTunEffective::Ready,
+            ordinary_nat_fallback: Some(false),
+        },
     })
     .expect("serialize proxy DTO");
-    assert_eq!(value["state"], "running");
-    assert_eq!(value["mode"], "tun");
+    assert_eq!(value["mihomo"]["process"], "ready");
+    assert_eq!(value["lan_tun"]["effective"], "ready");
 }

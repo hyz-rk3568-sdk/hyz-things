@@ -33,19 +33,19 @@ use hyz_router::{
             ClockPort, DevicePolicyStorePort, LifecycleLease, PlatformError, SystemProbePort,
             TailscalePlatformPort, TailscaleProbePort,
         },
-        proxy::ProxyApplication,
+        proxy::ProxyFeatureCoordinator,
         router::RouterApplication,
         shutdown::ShutdownApplication,
         status::{
             tailscale_status_component_from_observed, ReadStatus, StatusTailscalePlatformPort,
         },
-        subscription::SubscriptionApplication,
+        subscription::{SubscriptionApplication, SubscriptionRuntimePorts},
         tailscale::{TailscaleApplication, TailscaleReconcileState},
         wifi::{WifiApplication, AP_CONFIRM_TIMEOUT_SECS},
     },
     domain::{
         network::{NetworkDesired, OwnedResource, Probe},
-        proxy::{ProxyDesired, ProxyMode},
+        proxy::ProxyDesired,
         status::{Component, Issue, TailscaleStatus},
         tailscale::{
             TailscaleAction, TailscaleDesired, TailscaleLoginUrl, TailscaleMode, TailscaleObserved,
@@ -78,7 +78,7 @@ fn arm_shutdown_deadline(deadline: TokioInstant) {
     });
 }
 
-const USAGE: &str = "Usage:\n  hyz-router daemon\n  hyz-router status [--json]\n  hyz-router router enable|disable\n  hyz-router proxy explicit|tun|disable\n  hyz-router wifi status|scan\n  hyz-router wifi ap apply|confirm|cancel\n  hyz-router subscription get [--json]\n  hyz-router subscription refresh\n  hyz-router ota ...";
+const USAGE: &str = "Usage:\n  hyz-router daemon\n  hyz-router status [--json]\n  hyz-router router enable|disable\n  hyz-router proxy lan-tun enable|disable\n  hyz-router proxy tailscale enable|disable\n  hyz-router wifi status|scan\n  hyz-router wifi ap apply|confirm|cancel\n  hyz-router subscription get [--json]\n  hyz-router subscription refresh\n  hyz-router ota ...";
 
 #[derive(Clone)]
 struct ProductionTailscalePlatform {
@@ -417,8 +417,13 @@ impl StatusTailscalePlatformPort for ProductionTailscalePlatform {
                 .router
                 .observe_network()
                 .map_err(|error| error.to_string())?;
+            let proxy = tailscale
+                .router
+                .observe_proxy()
+                .map_err(|error| error.to_string())?;
             Ok::<_, String>(tailscale_status_component_from_observed(
                 &observed,
+                &proxy.persisted_features,
                 network.ready_for(&NetworkDesired::forwarding()),
             ))
         })
@@ -626,6 +631,83 @@ impl ProductionRuntime {
         )
     }
 
+    async fn proxy_desired(&self) -> Result<ProxyDesired, PlatformError> {
+        let platform = self.router.clone();
+        tokio::task::spawn_blocking(move || {
+            let observed = platform.observe_proxy()?;
+            let features = match observed.persisted_features {
+                Probe::Known(features) if features.supported() => features,
+                Probe::Known(_) => {
+                    return Err(PlatformError::ProbeFailed(
+                        "persisted proxy feature version is unsupported".to_owned(),
+                    ))
+                }
+                Probe::Unknown(reason) => {
+                    return Err(PlatformError::ProbeFailed(format!(
+                        "persisted proxy features are unknown: {reason}"
+                    )))
+                }
+            };
+            Ok(ProxyDesired {
+                lan_tun_enabled: features.lan_tun_enabled,
+                tailscale_explicit_proxy_enabled: features.tailscale_explicit_proxy_enabled,
+                direct_macs: platform.load_device_policy()?.direct_macs(),
+            })
+        })
+        .await
+        .map_err(|_| {
+            PlatformError::CommandFailed("proxy desired probe terminated unexpectedly".to_owned())
+        })?
+    }
+
+    async fn reconcile_proxy_features(
+        &self,
+        desired: ProxyDesired,
+    ) -> Result<usize, PlatformError> {
+        let router = self.router.clone();
+        let tailscale = self.tailscale.clone();
+        tokio::task::spawn_blocking(move || {
+            ProxyFeatureCoordinator::new(
+                router.as_ref(),
+                router.as_ref(),
+                tailscale.as_ref(),
+                tailscale.as_ref(),
+                router.as_ref(),
+            )
+            .reconcile(&desired)
+            .map(|result| result.proxy_actions_applied + result.tailscale_actions_applied)
+        })
+        .await
+        .map_err(|_| {
+            PlatformError::CommandFailed("proxy feature worker terminated unexpectedly".to_owned())
+        })?
+    }
+
+    async fn reconcile_proxy_runtime_preserving_features(
+        &self,
+        desired: ProxyDesired,
+    ) -> Result<usize, PlatformError> {
+        let router = self.router.clone();
+        let tailscale = self.tailscale.clone();
+        tokio::task::spawn_blocking(move || {
+            ProxyFeatureCoordinator::new(
+                router.as_ref(),
+                router.as_ref(),
+                tailscale.as_ref(),
+                tailscale.as_ref(),
+                router.as_ref(),
+            )
+            .reconcile_runtime_preserving_features(&desired)
+            .map(|result| result.proxy_actions_applied + result.tailscale_actions_applied)
+        })
+        .await
+        .map_err(|_| {
+            PlatformError::CommandFailed(
+                "proxy runtime recovery worker terminated unexpectedly".to_owned(),
+            )
+        })?
+    }
+
     async fn tailscale_desired(&self) -> Result<TailscaleDesired, PlatformError> {
         let tailscale = self.tailscale.clone();
         let observed = tokio::task::spawn_blocking(move || tailscale.observe_tailscale())
@@ -808,47 +890,6 @@ impl ProductionRuntime {
 
         self.recover_device_policy().await?;
 
-        if forwarding_ready {
-            let platform = self.router.clone();
-            let proxy = tokio::task::spawn_blocking(move || {
-                let observed = platform.observe_proxy()?;
-                let mode = match observed.effective_persisted_mode() {
-                    Probe::Known(mode) => mode,
-                    Probe::Unknown(reason) => {
-                        return Err(PlatformError::ProbeFailed(format!(
-                            "effective persisted proxy mode is unknown: {reason}"
-                        )));
-                    }
-                };
-                let direct_macs = platform.load_device_policy()?.direct_macs();
-                ProxyApplication::new(platform.as_ref(), platform.as_ref(), platform.as_ref())
-                    .reconcile(&ProxyDesired { mode, direct_macs })
-                    .map(|_| ())
-            })
-            .await
-            .map_err(|_| "startup proxy worker terminated unexpectedly".to_owned())?;
-
-            if let Err(error) = proxy {
-                match self
-                    .reconcile_network(NetworkDesired::management_only())
-                    .await
-                {
-                    Ok(()) => {
-                        eprintln!(
-                            "hyz-router: persisted proxy mode is unavailable ({error}); continuing in management-only mode"
-                        );
-                    }
-                    Err(degraded_error) => {
-                        return Err(startup_failure(
-                            "persisted proxy-mode restoration",
-                            error,
-                            degraded_error,
-                        ));
-                    }
-                }
-            }
-        }
-
         if let Err(error) = self.reconcile_persisted_tailscale().await {
             let cleanup = self.shutdown_tailscale().await;
             match cleanup {
@@ -860,6 +901,56 @@ impl ProductionRuntime {
                 ),
             }
         }
+
+        let desired = self
+            .proxy_desired()
+            .await
+            .map_err(|error| error.to_string())?;
+        if forwarding_ready {
+            if let Err(error) = self.reconcile_proxy_features(desired.clone()).await {
+                match self
+                    .reconcile_network(NetworkDesired::management_only())
+                    .await
+                {
+                    Ok(()) => {
+                        let mut safe_runtime = desired;
+                        safe_runtime.lan_tun_enabled = false;
+                        safe_runtime.tailscale_explicit_proxy_enabled = false;
+                        let _ = self
+                            .reconcile_proxy_runtime_preserving_features(safe_runtime)
+                            .await;
+                        eprintln!(
+                            "hyz-router: persisted proxy features are unavailable ({error}); continuing in management-only mode"
+                        );
+                    }
+                    Err(degraded_error) => {
+                        return Err(startup_failure(
+                            "persisted proxy-feature restoration",
+                            error,
+                            degraded_error,
+                        ));
+                    }
+                }
+            }
+        } else if desired.tailscale_explicit_proxy_enabled {
+            let mut router_only_runtime = desired.clone();
+            router_only_runtime.lan_tun_enabled = false;
+            if let Err(error) = self
+                .reconcile_proxy_runtime_preserving_features(router_only_runtime)
+                .await
+            {
+                let mut direct_runtime = desired;
+                direct_runtime.lan_tun_enabled = false;
+                direct_runtime.tailscale_explicit_proxy_enabled = false;
+                let _ = self
+                    .reconcile_proxy_runtime_preserving_features(direct_runtime)
+                    .await;
+                eprintln!(
+                    "hyz-router: persisted Tailscale proxy is unavailable in management-only mode ({error}); Direct fallback was requested"
+                );
+            }
+        }
+
         Ok(())
     }
 
@@ -1039,14 +1130,19 @@ impl ControlHandler for ProductionRuntime {
                 let store = self.subscription_store.clone();
                 let transport = self.subscription_transport.clone();
                 let platform = self.router.clone();
+                let tailscale = self.tailscale.clone();
                 let summary = tokio::task::spawn_blocking(move || {
                     SubscriptionApplication::new(
                         &store,
                         &transport,
                         platform.as_ref(),
-                        platform.as_ref(),
-                        platform.as_ref(),
-                        platform.as_ref(),
+                        SubscriptionRuntimePorts {
+                            platform: platform.as_ref(),
+                            probe: platform.as_ref(),
+                            tailscale: tailscale.as_ref(),
+                            tailscale_probe: tailscale.as_ref(),
+                            clock: platform.as_ref(),
+                        },
                     )
                     .summary()
                 })
@@ -1060,14 +1156,19 @@ impl ControlHandler for ProductionRuntime {
                 let store = self.subscription_store.clone();
                 let transport = self.subscription_transport.clone();
                 let platform = self.router.clone();
+                let tailscale = self.tailscale.clone();
                 let summary = tokio::task::spawn_blocking(move || {
                     let subscription = SubscriptionApplication::new(
                         &store,
                         &transport,
                         platform.as_ref(),
-                        platform.as_ref(),
-                        platform.as_ref(),
-                        platform.as_ref(),
+                        SubscriptionRuntimePorts {
+                            platform: platform.as_ref(),
+                            probe: platform.as_ref(),
+                            tailscale: tailscale.as_ref(),
+                            tailscale_probe: tailscale.as_ref(),
+                            clock: platform.as_ref(),
+                        },
                     );
                     subscription.set_url(url.expose().to_owned())?;
                     subscription.refresh()
@@ -1082,14 +1183,19 @@ impl ControlHandler for ProductionRuntime {
                 let store = self.subscription_store.clone();
                 let transport = self.subscription_transport.clone();
                 let platform = self.router.clone();
+                let tailscale = self.tailscale.clone();
                 let summary = tokio::task::spawn_blocking(move || {
                     SubscriptionApplication::new(
                         &store,
                         &transport,
                         platform.as_ref(),
-                        platform.as_ref(),
-                        platform.as_ref(),
-                        platform.as_ref(),
+                        SubscriptionRuntimePorts {
+                            platform: platform.as_ref(),
+                            probe: platform.as_ref(),
+                            tailscale: tailscale.as_ref(),
+                            tailscale_probe: tailscale.as_ref(),
+                            clock: platform.as_ref(),
+                        },
                     )
                     .refresh()
                 })
@@ -1152,51 +1258,52 @@ impl ControlHandler for ProductionRuntime {
             }
             ControlOperation::Router { enabled } => {
                 let _serial = self.router_proxy.lock().await;
+                let mut actions_applied = 0;
                 if !enabled {
-                    // The Tailscale LAN path must close while ordinary forwarding is still
-                    // confirmed. Its persisted desired mode is intentionally preserved.
+                    // Close remote LAN access and LAN interception while ordinary forwarding is
+                    // still confirmed. Persisted Tailscale access mode and proxy intent survive.
                     self.degrade_tailscale_to_router_only()
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    let mut desired = self
+                        .proxy_desired()
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    desired.lan_tun_enabled = false;
+                    actions_applied += self
+                        .reconcile_proxy_features(desired)
                         .await
                         .map_err(|error| error.to_string())?;
                 }
                 let platform = self.router.clone();
-                let actions_applied = tokio::task::spawn_blocking(move || {
-                    let mut actions_applied = 0;
-                    if !enabled {
-                        // TUN interception must be removed while ordinary NAT is still confirmed.
-                        // Committing disabled also makes a later router enable come back as plain NAT
-                        // until the operator explicitly selects another proxy mode.
-                        let proxy = ProxyApplication::new(
-                            platform.as_ref(),
-                            platform.as_ref(),
-                            platform.as_ref(),
-                        )
-                        .reconcile(&ProxyDesired {
-                            mode: ProxyMode::Disabled,
-                            direct_macs: platform.load_device_policy()?.direct_macs(),
-                        })?;
-                        actions_applied += proxy.actions_applied;
-                    }
+                let router_actions = tokio::task::spawn_blocking(move || {
                     let desired = if enabled {
                         NetworkDesired::forwarding()
                     } else {
                         NetworkDesired::management_only()
                     };
-                    let router = RouterApplication::new(
-                        platform.as_ref(),
-                        platform.as_ref(),
-                        platform.as_ref(),
-                    )
-                    .reconcile(&desired)?;
-                    Ok::<usize, PlatformError>(actions_applied + router.actions_applied)
+                    RouterApplication::new(platform.as_ref(), platform.as_ref(), platform.as_ref())
+                        .reconcile(&desired)
+                        .map(|result| result.actions_applied)
                 })
                 .await
                 .map_err(|_| "router worker terminated unexpectedly".to_owned())?
                 .map_err(|error| error.to_string())?;
+                actions_applied += router_actions;
                 if let Err(error) = self.reconcile_persisted_tailscale().await {
                     eprintln!(
                         "hyz-router: router reconciliation succeeded but Tailscale remains degraded: {error}"
                     );
+                }
+                if enabled {
+                    let desired = self
+                        .proxy_desired()
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    actions_applied += self
+                        .reconcile_proxy_features(desired)
+                        .await
+                        .map_err(|error| error.to_string())?;
                 }
                 Ok(completed(format!(
                     "router reconciled; actions={actions_applied}"
@@ -1204,23 +1311,51 @@ impl ControlHandler for ProductionRuntime {
             }
             ControlOperation::Proxy { mode } => {
                 let _serial = self.router_proxy.lock().await;
-                let platform = self.router.clone();
-                let result = tokio::task::spawn_blocking(move || {
-                    let mode = match mode {
-                        ControlProxyMode::Explicit => ProxyMode::Explicit,
-                        ControlProxyMode::Tun => ProxyMode::Tun,
-                        ControlProxyMode::Disabled => ProxyMode::Disabled,
-                    };
-                    let direct_macs = platform.load_device_policy()?.direct_macs();
-                    ProxyApplication::new(platform.as_ref(), platform.as_ref(), platform.as_ref())
-                        .reconcile(&ProxyDesired { mode, direct_macs })
-                })
-                .await
-                .map_err(|_| "proxy worker terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                let mut desired = self
+                    .proxy_desired()
+                    .await
+                    .map_err(|error| error.to_string())?;
+                match mode {
+                    ControlProxyMode::Explicit | ControlProxyMode::Disabled => {
+                        desired.lan_tun_enabled = false;
+                        desired.tailscale_explicit_proxy_enabled = false;
+                    }
+                    ControlProxyMode::Tun => desired.lan_tun_enabled = true,
+                }
+                let actions = self
+                    .reconcile_proxy_features(desired)
+                    .await
+                    .map_err(|error| error.to_string())?;
                 Ok(completed(format!(
-                    "proxy reconciled; actions={}",
-                    result.actions_applied
+                    "proxy features reconciled; actions={actions}"
+                )))
+            }
+            ControlOperation::ProxyLanTun { enabled } => {
+                let _serial = self.router_proxy.lock().await;
+                let mut desired = self
+                    .proxy_desired()
+                    .await
+                    .map_err(|error| error.to_string())?;
+                desired.lan_tun_enabled = enabled;
+                let actions = self
+                    .reconcile_proxy_features(desired)
+                    .await
+                    .map_err(|error| error.to_string())?;
+                Ok(completed(format!("LAN TUN reconciled; actions={actions}")))
+            }
+            ControlOperation::ProxyTailscale { enabled } => {
+                let _serial = self.router_proxy.lock().await;
+                let mut desired = self
+                    .proxy_desired()
+                    .await
+                    .map_err(|error| error.to_string())?;
+                desired.tailscale_explicit_proxy_enabled = enabled;
+                let actions = self
+                    .reconcile_proxy_features(desired)
+                    .await
+                    .map_err(|error| error.to_string())?;
+                Ok(completed(format!(
+                    "Tailscale proxy reconciled; actions={actions}"
                 )))
             }
             ControlOperation::WifiStatus { .. } => {
@@ -1376,14 +1511,18 @@ async fn run(args: Vec<String>) -> Result<(), Box<dyn Error>> {
                 .await?,
             )?;
         }
-        [group, action] if group == "proxy" => {
-            let mode = match action.as_str() {
-                "explicit" => ControlProxyMode::Explicit,
-                "tun" => ControlProxyMode::Tun,
-                "disable" => ControlProxyMode::Disabled,
-                _ => return Err(usage_error(USAGE)),
+        [group, feature, action]
+            if group == "proxy"
+                && matches!(feature.as_str(), "lan-tun" | "tailscale")
+                && matches!(action.as_str(), "enable" | "disable") =>
+        {
+            let enabled = action == "enable";
+            let operation = if feature == "lan-tun" {
+                ControlOperation::ProxyLanTun { enabled }
+            } else {
+                ControlOperation::ProxyTailscale { enabled }
             };
-            print_completed(request(ControlOperation::Proxy { mode }).await?)?;
+            print_completed(request(operation).await?)?;
         }
         [group, action] if group == "wifi" && action == "status" => {
             print_wifi_result(request(ControlOperation::WifiStatus {}).await?)?;
@@ -2009,10 +2148,10 @@ mod source_boundaries {
             .unwrap();
         let disabled_guard = branch.find("if !enabled").unwrap();
         let tailscale = branch.find("degrade_tailscale_to_router_only").unwrap();
-        let proxy = branch.find("ProxyApplication::new").unwrap();
+        let proxy = branch.find("reconcile_proxy_features(desired)").unwrap();
         let router = branch.find("RouterApplication::new").unwrap();
         assert!(disabled_guard < tailscale && tailscale < proxy && proxy < router);
-        assert!(branch.contains("mode: ProxyMode::Disabled"));
+        assert!(branch.contains("desired.lan_tun_enabled = false"));
         assert!(branch.contains("NetworkDesired::management_only()"));
     }
 

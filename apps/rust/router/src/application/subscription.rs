@@ -3,12 +3,13 @@ use crate::{
         ports::{
             ClockPort, PlatformError, RouterPlatformPort, SubscriptionSourcePort,
             SubscriptionStorePort, SubscriptionTransportPort, SystemProbePort,
+            TailscalePlatformPort, TailscaleProbePort,
         },
-        proxy::ProxyApplication,
+        proxy::ProxyFeatureCoordinator,
     },
     domain::{
         network::Probe,
-        proxy::{ProxyDesired, ProxyMode},
+        proxy::{ProxyDesired, ProxyFeaturesV1},
         subscription::{
             parse_mihomo_subscription, GenerationId, SubscriptionStatus, SubscriptionSummary,
             SubscriptionUrl,
@@ -16,12 +17,22 @@ use crate::{
     },
 };
 
+pub struct SubscriptionRuntimePorts<'a> {
+    pub platform: &'a dyn RouterPlatformPort,
+    pub probe: &'a dyn SystemProbePort,
+    pub tailscale: &'a dyn TailscalePlatformPort,
+    pub tailscale_probe: &'a dyn TailscaleProbePort,
+    pub clock: &'a dyn ClockPort,
+}
+
 pub struct SubscriptionApplication<'a> {
     store: &'a dyn SubscriptionStorePort,
     transport: &'a dyn SubscriptionTransportPort,
     source: &'a dyn SubscriptionSourcePort,
     platform: &'a dyn RouterPlatformPort,
     probe: &'a dyn SystemProbePort,
+    tailscale: &'a dyn TailscalePlatformPort,
+    tailscale_probe: &'a dyn TailscaleProbePort,
     clock: &'a dyn ClockPort,
 }
 
@@ -30,17 +41,17 @@ impl<'a> SubscriptionApplication<'a> {
         store: &'a dyn SubscriptionStorePort,
         transport: &'a dyn SubscriptionTransportPort,
         source: &'a dyn SubscriptionSourcePort,
-        platform: &'a dyn RouterPlatformPort,
-        probe: &'a dyn SystemProbePort,
-        clock: &'a dyn ClockPort,
+        ports: SubscriptionRuntimePorts<'a>,
     ) -> Self {
         Self {
             store,
             transport,
             source,
-            platform,
-            probe,
-            clock,
+            platform: ports.platform,
+            probe: ports.probe,
+            tailscale: ports.tailscale,
+            tailscale_probe: ports.tailscale_probe,
+            clock: ports.clock,
         }
     }
 
@@ -91,11 +102,16 @@ impl<'a> SubscriptionApplication<'a> {
             PlatformError::InvalidState(format!("subscription provider was rejected: {error}"))
         })?;
         let observed = self.probe.observe_proxy()?;
-        let mode = match observed.effective_persisted_mode() {
-            Probe::Known(mode) => mode,
+        let features = match observed.persisted_features {
+            Probe::Known(features) if features.supported() => features,
+            Probe::Known(_) => {
+                return Err(PlatformError::ProbeFailed(
+                    "persisted proxy feature version is unsupported".to_owned(),
+                ))
+            }
             Probe::Unknown(_) => {
                 return Err(PlatformError::ProbeFailed(
-                    "persisted proxy mode is unknown".to_owned(),
+                    "persisted proxy features are unknown".to_owned(),
                 ))
             }
         };
@@ -108,16 +124,16 @@ impl<'a> SubscriptionApplication<'a> {
             }
         };
         let old_source = self.source.load_source()?;
-        let candidate = self
-            .source
-            .prepare_candidate(&old_source, &subscription, mode)?;
+        let candidate =
+            self.source
+                .prepare_candidate(&old_source, &subscription, features.lan_tun_enabled)?;
         let generation = GenerationId::parse(format!("g-{}", self.clock.unix_time_millis()))
             .map_err(|_| {
                 PlatformError::InvalidState("could not allocate subscription generation".to_owned())
             })?;
         self.store.stage_generation(&generation, &subscription)?;
 
-        if mode == ProxyMode::Disabled {
+        if !features.mihomo_required() {
             self.source.store_source(&candidate)?;
             if let Err(error) = self.store.activate_generation(&generation) {
                 return match self.source.store_source(&old_source) {
@@ -130,9 +146,18 @@ impl<'a> SubscriptionApplication<'a> {
             return Ok(generation);
         }
 
-        let proxy = || ProxyApplication::new(self.platform, self.probe, self.clock);
+        let proxy = || {
+            ProxyFeatureCoordinator::new(
+                self.platform,
+                self.probe,
+                self.tailscale,
+                self.tailscale_probe,
+                self.clock,
+            )
+        };
         proxy().reconcile(&ProxyDesired {
-            mode: ProxyMode::Disabled,
+            lan_tun_enabled: false,
+            tailscale_explicit_proxy_enabled: false,
             direct_macs: direct_macs.clone(),
         })?;
         let cutover = self
@@ -141,14 +166,15 @@ impl<'a> SubscriptionApplication<'a> {
             .and_then(|()| {
                 proxy()
                     .reconcile(&ProxyDesired {
-                        mode,
+                        lan_tun_enabled: features.lan_tun_enabled,
+                        tailscale_explicit_proxy_enabled: features.tailscale_explicit_proxy_enabled,
                         direct_macs: direct_macs.clone(),
                     })
                     .map(|_| ())
             })
             .and_then(|()| self.store.activate_generation(&generation));
         if let Err(cutover_error) = cutover {
-            let restore = self.restore_live_source(&old_source, mode, &direct_macs);
+            let restore = self.restore_live_source(&old_source, features, &direct_macs);
             return match restore {
                 Ok(()) => Err(cutover_error),
                 Err(restore_error) => Err(PlatformError::UnsafeToCutOver(format!(
@@ -162,19 +188,34 @@ impl<'a> SubscriptionApplication<'a> {
     fn restore_live_source(
         &self,
         old_source: &[u8],
-        mode: ProxyMode,
+        features: ProxyFeaturesV1,
         direct_macs: &std::collections::BTreeSet<crate::domain::device_policy::LanDeviceMac>,
     ) -> Result<(), PlatformError> {
-        ProxyApplication::new(self.platform, self.probe, self.clock).reconcile(&ProxyDesired {
-            mode: ProxyMode::Disabled,
+        ProxyFeatureCoordinator::new(
+            self.platform,
+            self.probe,
+            self.tailscale,
+            self.tailscale_probe,
+            self.clock,
+        )
+        .reconcile(&ProxyDesired {
+            lan_tun_enabled: false,
+            tailscale_explicit_proxy_enabled: false,
             direct_macs: direct_macs.clone(),
         })?;
         self.source.store_source(old_source)?;
-        ProxyApplication::new(self.platform, self.probe, self.clock)
-            .reconcile(&ProxyDesired {
-                mode,
-                direct_macs: direct_macs.clone(),
-            })
-            .map(|_| ())
+        ProxyFeatureCoordinator::new(
+            self.platform,
+            self.probe,
+            self.tailscale,
+            self.tailscale_probe,
+            self.clock,
+        )
+        .reconcile(&ProxyDesired {
+            lan_tun_enabled: features.lan_tun_enabled,
+            tailscale_explicit_proxy_enabled: features.tailscale_explicit_proxy_enabled,
+            direct_macs: direct_macs.clone(),
+        })
+        .map(|_| ())
     }
 }

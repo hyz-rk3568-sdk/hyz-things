@@ -12,15 +12,15 @@ use hyz_router::{
     },
     domain::{
         network::{NetworkObserved, OwnedResource, Probe},
-        proxy::{ProxyMode, ProxyObserved},
-        status::{ComponentState, TailscaleErrorCategory},
+        proxy::{ProxyFeaturesV1, ProxyObserved},
+        status::{ComponentState, TailscaleErrorCategory, TailscaleProxyFallback},
         tailscale::{
             TailscaleAction, TailscaleBackendState, TailscaleConnectionKind, TailscaleDesired,
-            TailscaleLoginUrl, TailscaleMode, TailscaleObserved, TailscalePreferences,
-            TailscaleProcessState, TailscaleReadiness, TAILSCALE_CGNAT_SUBNET,
-            TAILSCALE_FORWARD_CHAIN, TAILSCALE_INPUT_CHAIN, TAILSCALE_INTERFACE,
-            TAILSCALE_LAN_ROUTE, TAILSCALE_MANAGEMENT_HTTP_PORT, TAILSCALE_NAT_CHAIN,
-            TAILSCALE_UDP_PORT,
+            TailscaleEnvironment, TailscaleLoginUrl, TailscaleMode, TailscaleObserved,
+            TailscalePreferences, TailscaleProcessState, TailscaleReadiness,
+            TAILSCALE_CGNAT_SUBNET, TAILSCALE_FORWARD_CHAIN, TAILSCALE_INPUT_CHAIN,
+            TAILSCALE_INTERFACE, TAILSCALE_LAN_ROUTE, TAILSCALE_MANAGEMENT_HTTP_PORT,
+            TAILSCALE_NAT_CHAIN, TAILSCALE_UDP_PORT,
         },
     },
 };
@@ -36,6 +36,7 @@ fn stopped(mode: Option<TailscaleMode>) -> TailscaleObserved {
     TailscaleObserved {
         persisted_mode: Probe::Known(mode),
         backend_state: Probe::Known(TailscaleBackendState::Stopped),
+        environment: Probe::Known(TailscaleEnvironment::Direct),
         process: Probe::Known(TailscaleProcessState::Absent),
         socket: Probe::Known(OwnedResource::Absent),
         interface: Probe::Known(OwnedResource::Absent),
@@ -119,10 +120,11 @@ fn network_unready() -> NetworkObserved {
 
 fn stopped_proxy() -> ProxyObserved {
     ProxyObserved {
-        persisted_mode: Probe::Known(Some(ProxyMode::Disabled)),
+        persisted_features: Probe::Known(ProxyFeaturesV1::disabled()),
         process_identity_valid: Probe::Known(false),
         watcher_identity_valid: Probe::Known(false),
         runtime_config_valid: Probe::Known(false),
+        mixed_port_ready: Probe::Known(false),
         tun_interface_present: Probe::Known(false),
         tun_firewall: Probe::Known(OwnedResource::Absent),
         policy_rule_present: Probe::Known(false),
@@ -161,6 +163,7 @@ fn bootstrap_starts_exact_owned_backend_before_any_remote_surface() {
         vec![
             TailscaleAction::StartBackend {
                 token: "new".to_owned(),
+                environment: TailscaleEnvironment::Direct,
             },
             TailscaleAction::WaitForBackend,
             TailscaleAction::SetFixedPreferences,
@@ -178,6 +181,7 @@ fn exited_owned_backend_is_cleaned_before_restart_without_becoming_foreign() {
             },
             TailscaleAction::StartBackend {
                 token: "new".to_owned(),
+                environment: TailscaleEnvironment::Direct,
             },
             TailscaleAction::WaitForBackend,
             TailscaleAction::SetFixedPreferences,
@@ -365,6 +369,7 @@ fn unready_or_unknown_router_falls_back_to_confirmed_router_only() {
 fn desired_lan_access_effective_router_only_is_typed_degraded_status() {
     let component = tailscale_status_component_from_observed(
         &router_only(Some(TailscaleMode::LanSubnetAccess)),
+        &Probe::Known(ProxyFeaturesV1::disabled()),
         false,
     );
     assert_eq!(component.state, ComponentState::Degraded);
@@ -372,6 +377,43 @@ fn desired_lan_access_effective_router_only_is_typed_degraded_status() {
         component.data.unwrap().error_category,
         Some(TailscaleErrorCategory::NotReady)
     );
+}
+
+#[test]
+fn explicit_proxy_status_distinguishes_ready_direct_fallback_and_unknown_desired() {
+    let direct = router_only(Some(TailscaleMode::RouterOnly));
+    let restored = tailscale_status_component_from_observed(
+        &direct,
+        &Probe::Known(ProxyFeaturesV1::new(false, true)),
+        true,
+    );
+    let restored = restored.data.unwrap();
+    assert_eq!(restored.explicit_proxy_desired, Some(true));
+    assert_eq!(
+        restored.proxy_fallback,
+        TailscaleProxyFallback::DirectRestored
+    );
+
+    let mut proxied = direct.clone();
+    proxied.environment = Probe::Known(TailscaleEnvironment::MihomoExplicit);
+    let ready = tailscale_status_component_from_observed(
+        &proxied,
+        &Probe::Known(ProxyFeaturesV1::new(false, true)),
+        true,
+    );
+    assert_eq!(ready.state, ComponentState::Available);
+    assert_eq!(
+        ready.data.unwrap().proxy_fallback,
+        TailscaleProxyFallback::NotNeeded
+    );
+
+    let unknown = tailscale_status_component_from_observed(
+        &proxied,
+        &Probe::Unknown("features unreadable".to_owned()),
+        true,
+    );
+    assert_eq!(unknown.state, ComponentState::Degraded);
+    assert_eq!(unknown.data.unwrap().explicit_proxy_desired, None);
 }
 
 #[test]
@@ -593,6 +635,7 @@ fn disabled_to_router_only_starts_then_installs_minimum_surface_then_commits() {
         vec![
             TailscaleAction::StartBackend {
                 token: "hyz-tailscale-42".to_owned(),
+                environment: TailscaleEnvironment::Direct,
             },
             TailscaleAction::WaitForBackend,
             TailscaleAction::SetFixedPreferences,
@@ -635,6 +678,7 @@ fn unauthenticated_backend_returns_only_transient_login_url_without_lan_actions(
         vec![
             TailscaleAction::StartBackend {
                 token: "hyz-tailscale-42".to_owned(),
+                environment: TailscaleEnvironment::Direct,
             },
             TailscaleAction::WaitForBackend,
             TailscaleAction::SetFixedPreferences,
@@ -702,6 +746,7 @@ fn failed_restart_after_exited_cleanup_does_not_resurrect_old_backend() {
             },
             TailscaleAction::StartBackend {
                 token: "hyz-tailscale-42".to_owned(),
+                environment: TailscaleEnvironment::Direct,
             },
             TailscaleAction::WaitForBackend,
             TailscaleAction::StopBackend {

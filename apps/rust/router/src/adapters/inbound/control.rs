@@ -39,7 +39,7 @@ pub const CONTROL_SOCKET: &str = "/run/hyz-router/control.sock";
 pub const CONTROL_RUNTIME_DIR: &str = "/run/hyz-router";
 pub const DAEMON_LOCK_DIR: &str = "/run/hyz-router/daemon.lock";
 const DAEMON_OWNER_FILE: &str = "/run/hyz-router/daemon.lock/owner";
-pub const PROTOCOL_VERSION: u16 = 8;
+pub const PROTOCOL_VERSION: u16 = 9;
 pub const MAX_FRAME_BYTES: usize = 64 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
 const CLIENT_OPERATION_WAIT: Duration = Duration::from_secs(30 * 60);
@@ -69,6 +69,8 @@ pub enum ControlOperation {
     Display { request: DisplayRequest },
     Router { enabled: bool },
     Proxy { mode: ControlProxyMode },
+    ProxyLanTun { enabled: bool },
+    ProxyTailscale { enabled: bool },
     ProxySelection { request: ProxySelectionRequest },
     ProxyDelay { request: ProxyDelayRequest },
     ProxyDelayRefresh { request: ProxyDelayRefreshRequest },
@@ -124,6 +126,8 @@ impl ControlOperation {
             | Self::TailscaleLogout { .. }
             | Self::Router { .. }
             | Self::Proxy { .. }
+            | Self::ProxyLanTun { .. }
+            | Self::ProxyTailscale { .. }
             | Self::WifiStatus { .. }
             | Self::WifiPending { .. }
             | Self::WifiScan { .. }
@@ -781,7 +785,7 @@ mod tests {
         let request = ControlRequest::new(ControlOperation::Status {});
         let encoded = serde_json::to_vec(&request).unwrap();
         assert!(encoded.len() < MAX_FRAME_BYTES);
-        assert_eq!(PROTOCOL_VERSION, 8);
+        assert_eq!(PROTOCOL_VERSION, 9);
         let policy = ControlOperation::DevicePoliciesSet {
             request: DevicePolicyUpdateRequest {
                 expected_generation: 0,

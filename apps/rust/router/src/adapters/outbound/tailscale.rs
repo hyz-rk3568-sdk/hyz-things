@@ -25,11 +25,11 @@ use crate::{
         },
         proxy::MIHOMO_FILTER_CHAIN,
         tailscale::{
-            TailscaleAction, TailscaleBackendState, TailscaleConnectionKind, TailscaleLoginUrl,
-            TailscaleMode, TailscaleObserved, TailscalePreferences, TailscaleProcessState,
-            TAILSCALE_CGNAT_SUBNET, TAILSCALE_FORWARD_CHAIN, TAILSCALE_INPUT_CHAIN,
-            TAILSCALE_INTERFACE, TAILSCALE_LAN_ROUTE, TAILSCALE_MANAGEMENT_HTTP_PORT,
-            TAILSCALE_NAT_CHAIN, TAILSCALE_UDP_PORT,
+            TailscaleAction, TailscaleBackendState, TailscaleConnectionKind, TailscaleEnvironment,
+            TailscaleLoginUrl, TailscaleMode, TailscaleObserved, TailscalePreferences,
+            TailscaleProcessState, TAILSCALE_CGNAT_SUBNET, TAILSCALE_FORWARD_CHAIN,
+            TAILSCALE_INPUT_CHAIN, TAILSCALE_INTERFACE, TAILSCALE_LAN_ROUTE,
+            TAILSCALE_MANAGEMENT_HTTP_PORT, TAILSCALE_NAT_CHAIN, TAILSCALE_UDP_PORT,
         },
     },
 };
@@ -37,7 +37,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::{
     fs::{self, File, OpenOptions},
-    io,
+    io::{self, Read},
     net::Ipv4Addr,
     os::unix::{
         ffi::OsStrExt,
@@ -50,6 +50,7 @@ use std::{
 };
 
 const MAX_IDENTITY_RECORD: usize = 8 * 1024;
+const MAX_PROCESS_ENVIRON: usize = 4 * 1024;
 const MAX_PREFS_JSON: usize = 64 * 1024;
 const MAX_STATUS_JSON: usize = 256 * 1024;
 const START_IDENTITY_ATTEMPTS: usize = 60;
@@ -75,7 +76,9 @@ impl LinuxTailscalePlatform {
 
     fn apply(&self, action: &TailscaleAction) -> Result<(), PlatformError> {
         match action {
-            TailscaleAction::StartBackend { token } => self.start_backend(token),
+            TailscaleAction::StartBackend { token, environment } => {
+                self.start_backend(token, *environment)
+            }
             TailscaleAction::WaitForBackend => self.wait_for_backend(),
             TailscaleAction::StopBackend { token } => self.stop_backend(token),
             TailscaleAction::SetFixedPreferences => {
@@ -153,7 +156,11 @@ impl LinuxTailscalePlatform {
             .map(|_| ())
     }
 
-    fn start_backend(&self, token: &str) -> Result<(), PlatformError> {
+    fn start_backend(
+        &self,
+        token: &str,
+        environment: TailscaleEnvironment,
+    ) -> Result<(), PlatformError> {
         storage::validate_token(token)?;
         if storage::read_private_small_optional(TAILSCALE_PID_RECORD, MAX_IDENTITY_RECORD)?
             .is_some()
@@ -182,7 +189,8 @@ impl LinuxTailscalePlatform {
             .try_clone()
             .map_err(|error| PlatformError::Io(format!("clone tailscaled log: {error}")))?;
         let argv = tailscaled_argv();
-        let mut child = Command::new(TAILSCALED_EXECUTABLE)
+        let mut command = Command::new(TAILSCALED_EXECUTABLE);
+        command
             .args(
                 argv.iter()
                     .skip(1)
@@ -190,7 +198,12 @@ impl LinuxTailscalePlatform {
             )
             .env_clear()
             .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
-            .env("LC_ALL", "C")
+            .env("LC_ALL", "C");
+        if environment == TailscaleEnvironment::MihomoExplicit {
+            command.env("HTTP_PROXY", "http://127.0.0.1:7890");
+            command.env("HTTPS_PROXY", "http://127.0.0.1:7890");
+        }
+        let mut child = command
             .stdin(Stdio::null())
             .stdout(Stdio::from(log))
             .stderr(Stdio::from(stderr))
@@ -205,6 +218,7 @@ impl LinuxTailscalePlatform {
             start_time,
             executable: PathBuf::from(TAILSCALED_EXECUTABLE),
             argv,
+            environment,
             token: token.to_owned(),
             socket: None,
             interface_ifindex: None,
@@ -1061,6 +1075,28 @@ impl TailscaleProbePort for LinuxTailscalePlatform {
                 }
             }
         }
+        let environment = match &process {
+            Probe::Known(TailscaleProcessState::OwnedLive { .. }) => match self.read_identity() {
+                Ok(Some(identity)) => match read_exact_environment(identity.pid) {
+                    Ok(environment) if environment == identity.environment => {
+                        Probe::Known(environment)
+                    }
+                    Ok(_) => Probe::Unknown(
+                        "tailscaled environment differs from its owned identity".to_owned(),
+                    ),
+                    Err(error) => Probe::Unknown(error.to_string()),
+                },
+                Ok(None) => Probe::Unknown("tailscaled identity record is absent".to_owned()),
+                Err(error) => Probe::Unknown(error.to_string()),
+            },
+            Probe::Known(
+                TailscaleProcessState::Absent | TailscaleProcessState::OwnedExited { .. },
+            ) => Probe::Known(TailscaleEnvironment::Direct),
+            Probe::Known(TailscaleProcessState::Foreign) => {
+                Probe::Unknown("foreign tailscaled environment is not trusted".to_owned())
+            }
+            Probe::Unknown(reason) => Probe::Unknown(reason.clone()),
+        };
         let socket = self.observe_socket(&process);
         let interface = self.observe_interface(&process);
         let (backend_state, authenticated, ipv4, preferences, route_advertised, connection) =
@@ -1128,6 +1164,7 @@ impl TailscaleProbePort for LinuxTailscalePlatform {
             persisted_mode: self.read_mode(),
             backend_state,
             process,
+            environment,
             socket,
             interface,
             authenticated,
@@ -1211,6 +1248,7 @@ struct TailscaledIdentity {
     start_time: u64,
     executable: PathBuf,
     argv: Vec<Vec<u8>>,
+    environment: TailscaleEnvironment,
     token: String,
     socket: Option<RuntimeNodeIdentity>,
     interface_ifindex: Option<u32>,
@@ -1219,12 +1257,13 @@ struct TailscaledIdentity {
 impl TailscaledIdentity {
     fn serialize(&self) -> String {
         format!(
-            "{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+            "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
             self.pid,
             self.start_time,
             self.executable.display(),
             self.token,
             encode_argv(&self.argv),
+            environment_text(self.environment),
             self.socket
                 .map(|identity| format!("{}:{}", identity.dev, identity.ino))
                 .unwrap_or_else(|| "-".to_owned()),
@@ -1251,6 +1290,7 @@ impl TailscaledIdentity {
         let argv = decode_argv(lines.next().ok_or_else(|| {
             PlatformError::InvalidState("tailscaled argv record is absent".to_owned())
         })?)?;
+        let environment = parse_environment(lines.next())?;
         let (socket, interface_ifindex) = match (lines.next(), lines.next()) {
             (None, None) => (None, None),
             (Some(socket), Some(ifindex)) => (
@@ -1278,6 +1318,7 @@ impl TailscaledIdentity {
             start_time,
             executable,
             argv,
+            environment,
             token,
             socket,
             interface_ifindex,
@@ -1306,14 +1347,91 @@ impl TailscaledIdentity {
     }
 
     fn matches_live_process(&self) -> Result<bool, PlatformError> {
-        process_identity_matches(
+        Ok(process_identity_matches(
             crate::application::ports::CoreIdentity {
                 pid: self.pid,
                 start_time: self.start_time,
             },
             &self.executable,
             &self.argv,
-        )
+        )? && read_exact_environment(self.pid)? == self.environment)
+    }
+}
+
+fn environment_text(environment: TailscaleEnvironment) -> &'static str {
+    match environment {
+        TailscaleEnvironment::Direct => "direct",
+        TailscaleEnvironment::MihomoExplicit => "mihomo_explicit",
+    }
+}
+
+fn parse_environment(value: Option<&str>) -> Result<TailscaleEnvironment, PlatformError> {
+    match value {
+        Some("direct") => Ok(TailscaleEnvironment::Direct),
+        Some("mihomo_explicit") => Ok(TailscaleEnvironment::MihomoExplicit),
+        _ => Err(PlatformError::InvalidState(
+            "tailscaled environment identity is invalid".to_owned(),
+        )),
+    }
+}
+
+fn read_exact_environment(pid: u32) -> Result<TailscaleEnvironment, PlatformError> {
+    let file = File::open(format!("/proc/{pid}/environ"))
+        .map_err(|error| PlatformError::ProbeFailed(format!("open tailscaled environ: {error}")))?;
+    let mut bytes = Vec::with_capacity(MAX_PROCESS_ENVIRON.min(4 * 1024));
+    file.take((MAX_PROCESS_ENVIRON + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| PlatformError::ProbeFailed(format!("read tailscaled environ: {error}")))?;
+    classify_environment(&bytes)
+}
+
+fn classify_environment(bytes: &[u8]) -> Result<TailscaleEnvironment, PlatformError> {
+    if bytes.len() > MAX_PROCESS_ENVIRON || bytes.is_empty() || !bytes.ends_with(&[0]) {
+        return Err(PlatformError::ProbeFailed(
+            "tailscaled environ is empty, unterminated, or exceeds its bound".to_owned(),
+        ));
+    }
+    let raw = bytes[..bytes.len() - 1]
+        .split(|byte| *byte == 0)
+        .collect::<Vec<_>>();
+    if raw.iter().any(|entry| entry.is_empty()) {
+        return Err(PlatformError::ProbeFailed(
+            "tailscaled environ contains an empty or duplicate separator".to_owned(),
+        ));
+    }
+    let decoded = raw
+        .iter()
+        .map(|entry| {
+            std::str::from_utf8(entry).map_err(|_| {
+                PlatformError::ProbeFailed("tailscaled environ contains non-UTF-8 data".to_owned())
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let entries = decoded
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    if entries.len() != decoded.len() {
+        return Err(PlatformError::ProbeFailed(
+            "tailscaled environ contains duplicate entries".to_owned(),
+        ));
+    }
+    let direct =
+        std::collections::BTreeSet::from(["LC_ALL=C", "PATH=/usr/sbin:/usr/bin:/sbin:/bin"]);
+    let proxied = std::collections::BTreeSet::from([
+        "HTTP_PROXY=http://127.0.0.1:7890",
+        "HTTPS_PROXY=http://127.0.0.1:7890",
+        "LC_ALL=C",
+        "PATH=/usr/sbin:/usr/bin:/sbin:/bin",
+    ]);
+    if entries == direct {
+        Ok(TailscaleEnvironment::Direct)
+    } else if entries == proxied {
+        Ok(TailscaleEnvironment::MihomoExplicit)
+    } else {
+        Err(PlatformError::ProbeFailed(
+            "tailscaled environ is missing or contains unexpected entries".to_owned(),
+        ))
     }
 }
 
@@ -2601,12 +2719,35 @@ mod tests {
     }
 
     #[test]
+    fn exact_environment_parser_accepts_only_the_two_fixed_sets() {
+        assert_eq!(
+            classify_environment(b"PATH=/usr/sbin:/usr/bin:/sbin:/bin\0LC_ALL=C\0").unwrap(),
+            TailscaleEnvironment::Direct
+        );
+        assert_eq!(
+            classify_environment(b"HTTPS_PROXY=http://127.0.0.1:7890\0LC_ALL=C\0HTTP_PROXY=http://127.0.0.1:7890\0PATH=/usr/sbin:/usr/bin:/sbin:/bin\0").unwrap(),
+            TailscaleEnvironment::MihomoExplicit
+        );
+        for invalid in [
+            &b"PATH=/usr/sbin:/usr/bin:/sbin:/bin\0"[..],
+            &b"PATH=/usr/sbin:/usr/bin:/sbin:/bin\0LC_ALL=C\0LC_ALL=C\0"[..],
+            &b"PATH=/usr/sbin:/usr/bin:/sbin:/bin\0LC_ALL=C\0ALL_PROXY=socks5://127.0.0.1:7890\0"[..],
+            &b"PATH=/usr/sbin:/usr/bin:/sbin:/bin\0LC_ALL=\xff\0"[..],
+        ] {
+            assert!(classify_environment(invalid).is_err());
+        }
+        let oversized = vec![b'x'; MAX_PROCESS_ENVIRON + 1];
+        assert!(classify_environment(&oversized).is_err());
+    }
+
+    #[test]
     fn tailscaled_identity_argv_is_fixed_and_round_trips_without_shell() {
         let identity = TailscaledIdentity {
             pid: 12,
             start_time: 34,
             executable: PathBuf::from(TAILSCALED_EXECUTABLE),
             argv: tailscaled_argv(),
+            environment: TailscaleEnvironment::Direct,
             token: "hyz-tailscale-test".to_owned(),
             socket: Some(RuntimeNodeIdentity { dev: 56, ino: 78 }),
             interface_ifindex: Some(9),
@@ -2620,9 +2761,7 @@ mod tests {
             TAILSCALED_EXECUTABLE,
             encode_argv(&tailscaled_argv())
         );
-        let legacy = TailscaledIdentity::parse(&legacy).unwrap();
-        assert_eq!(legacy.socket, None);
-        assert_eq!(legacy.interface_ifindex, None);
+        assert!(TailscaledIdentity::parse(&legacy).is_err());
         let args = tailscaled_argv()
             .into_iter()
             .map(|arg| String::from_utf8(arg).unwrap())

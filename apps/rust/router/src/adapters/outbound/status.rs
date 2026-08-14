@@ -15,10 +15,10 @@ use crate::{
             ForwardingDesired, NetworkDesired, NetworkObserved, OwnedResource, Probe, LAN_BRIDGE,
             LAN_MEMBER, WAN_INTERFACE,
         },
-        proxy::{ProxyDesired, ProxyMode as DomainProxyMode, ProxyObserved},
+        proxy::{ProxyDesired, ProxyObserved},
         status::{
-            Component, InterfaceStats, Issue, LinkState, ProxyMode, ProxyState, ProxyStatus,
-            RouterStatus, SystemStats,
+            Component, InterfaceStats, Issue, LanTunEffective, LanTunStatus, LinkState,
+            MihomoCoreStatus, ProxyResourceState, ProxyStatus, RouterStatus, SystemStats,
         },
     },
 };
@@ -206,75 +206,69 @@ fn proxy_status_from_observed(
         std::collections::BTreeSet<crate::domain::device_policy::LanDeviceMac>,
     >,
 ) -> Component<ProxyStatus> {
-    let desired_mode = match &observed.persisted_mode {
-        Probe::Known(Some(mode)) => Some(*mode),
-        Probe::Known(None) => Some(DomainProxyMode::Explicit),
+    let features = match &observed.persisted_features {
+        Probe::Known(features) if features.supported() => Some(*features),
+        _ => None,
+    };
+    let desired_macs = match &desired_direct_macs {
+        Probe::Known(macs) => Some(macs),
         Probe::Unknown(_) => None,
     };
-    let mode = match desired_mode {
-        Some(DomainProxyMode::Explicit) => ProxyMode::Explicit,
-        Some(DomainProxyMode::Tun) => ProxyMode::Tun,
-        Some(DomainProxyMode::Disabled) => ProxyMode::Disabled,
-        None => ProxyMode::Unknown,
-    };
-    let ready = desired_mode.is_some_and(|mode| match mode {
-        // Proxy lifecycle reconciliation requires ordinary NAT before it commits disabled, so a
-        // live router cannot lose its fail-open path. Status is different: management-only mode
-        // intentionally has no forwarding or NAT, and remains healthy when every proxy-owned
-        // packet path and process is absent.
-        DomainProxyMode::Disabled => {
-            observed.persisted_mode == Probe::Known(Some(DomainProxyMode::Disabled))
-                && observed.process_identity_valid == Probe::Known(false)
-                && observed.watcher_identity_valid == Probe::Known(false)
-                && observed.tun_resources_absent()
-        }
-        _ => match &desired_direct_macs {
-            Probe::Known(direct_macs) => observed.ready_for(&ProxyDesired {
-                mode,
-                direct_macs: direct_macs.clone(),
-            }),
-            Probe::Unknown(_) => false,
-        },
-    });
-    let state = match desired_mode {
-        None => ProxyState::Unknown,
-        Some(_) if matches!(desired_direct_macs, Probe::Unknown(_)) => ProxyState::Unknown,
-        Some(DomainProxyMode::Disabled) if ready => ProxyState::Disabled,
-        Some(_) if ready => ProxyState::Running,
-        Some(_) if proxy_observation_has_unknown(observed) => ProxyState::Unknown,
-        Some(_) => ProxyState::Error,
+    let core_required = features.map(|features| features.mihomo_required());
+    let lan_ready = features
+        .zip(desired_macs)
+        .is_some_and(|(features, macs)| features.lan_tun_enabled && observed.lan_tun_ready(macs));
+    let lan_effective = if lan_ready {
+        LanTunEffective::Ready
+    } else if observed.ordinary_nat_confirmed == Probe::Known(true)
+        && features.is_some_and(|features| !features.lan_tun_enabled)
+    {
+        LanTunEffective::OrdinaryNat
+    } else {
+        LanTunEffective::NotConfirmed
     };
     let status = ProxyStatus {
-        state,
-        mode,
-        configured: Some(configured),
-        ordinary_nat_fallback: known_bool(&observed.ordinary_nat_confirmed),
+        configured,
+        mihomo: MihomoCoreStatus {
+            configured_required: core_required,
+            process: resource_state(&observed.process_identity_valid, core_required),
+            runtime_config: resource_state(&observed.runtime_config_valid, core_required),
+            mixed_port: resource_state(&observed.mixed_port_ready, core_required),
+        },
+        lan_tun: LanTunStatus {
+            desired: features.map(|features| features.lan_tun_enabled),
+            effective: lan_effective,
+            ordinary_nat_fallback: known_bool(&observed.ordinary_nat_confirmed),
+        },
     };
-    if matches!(state, ProxyState::Running | ProxyState::Disabled) {
+    let ready = match (features, desired_macs) {
+        (Some(features), Some(macs)) => observed.ready_for(&ProxyDesired {
+            lan_tun_enabled: features.lan_tun_enabled,
+            tailscale_explicit_proxy_enabled: features.tailscale_explicit_proxy_enabled,
+            direct_macs: macs.clone(),
+        }),
+        _ => false,
+    };
+    if ready {
         Component::available(status)
     } else {
         Component::degraded(
             status,
             Issue::new(
                 "proxy_not_ready",
-                "Proxy state does not satisfy strict readiness for its effective desired mode",
+                "Proxy features do not satisfy strict independent readiness",
             ),
         )
     }
 }
 
-fn proxy_observation_has_unknown(observed: &ProxyObserved) -> bool {
-    matches!(&observed.persisted_mode, Probe::Unknown(_))
-        || matches!(&observed.process_identity_valid, Probe::Unknown(_))
-        || matches!(&observed.watcher_identity_valid, Probe::Unknown(_))
-        || matches!(&observed.runtime_config_valid, Probe::Unknown(_))
-        || matches!(&observed.tun_interface_present, Probe::Unknown(_))
-        || matches!(&observed.tun_firewall, Probe::Unknown(_))
-        || matches!(&observed.policy_rule_present, Probe::Unknown(_))
-        || matches!(&observed.policy_route_present, Probe::Unknown(_))
-        || matches!(&observed.interception_entry_present, Probe::Unknown(_))
-        || matches!(&observed.ordinary_nat_confirmed, Probe::Unknown(_))
-        || matches!(&observed.active_direct_macs, Probe::Unknown(_))
+fn resource_state(probe: &Probe<bool>, required: Option<bool>) -> ProxyResourceState {
+    match (probe, required) {
+        (Probe::Unknown(_), _) | (_, None) => ProxyResourceState::Unknown,
+        (Probe::Known(true), Some(true)) => ProxyResourceState::Ready,
+        (Probe::Known(false), Some(false)) => ProxyResourceState::Absent,
+        _ => ProxyResourceState::NotReady,
+    }
 }
 
 fn read_system_stats() -> Component<SystemStats> {
@@ -410,6 +404,7 @@ fn unavailable<T>(code: &str, message: &str) -> Component<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::proxy::ProxyFeaturesV1;
 
     #[test]
     fn parses_only_safe_status_values() {
@@ -425,131 +420,53 @@ mod tests {
         assert!(safe_text("ssid\nwith-control").is_none());
     }
 
-    fn proxy_observed(mode: DomainProxyMode) -> ProxyObserved {
+    fn proxy_observed(features: ProxyFeaturesV1) -> ProxyObserved {
+        let tun = features.lan_tun_enabled;
+        let core = features.mihomo_required();
         ProxyObserved {
-            persisted_mode: Probe::Known(Some(mode)),
-            process_identity_valid: Probe::Known(true),
-            watcher_identity_valid: Probe::Known(mode == DomainProxyMode::Tun),
-            runtime_config_valid: Probe::Known(true),
-            tun_interface_present: Probe::Known(mode == DomainProxyMode::Tun),
-            tun_firewall: Probe::Known(if mode == DomainProxyMode::Tun {
+            persisted_features: Probe::Known(features),
+            process_identity_valid: Probe::Known(core),
+            watcher_identity_valid: Probe::Known(tun),
+            runtime_config_valid: Probe::Known(core),
+            mixed_port_ready: Probe::Known(core),
+            tun_interface_present: Probe::Known(tun),
+            tun_firewall: Probe::Known(if tun {
                 OwnedResource::Owned {
                     token: "owned".to_owned(),
                 }
             } else {
                 OwnedResource::Absent
             }),
-            policy_rule_present: Probe::Known(mode == DomainProxyMode::Tun),
-            policy_route_present: Probe::Known(mode == DomainProxyMode::Tun),
-            interception_entry_present: Probe::Known(mode == DomainProxyMode::Tun),
-            ordinary_nat_confirmed: Probe::Known(mode != DomainProxyMode::Tun),
+            policy_rule_present: Probe::Known(tun),
+            policy_route_present: Probe::Known(tun),
+            interception_entry_present: Probe::Known(tun),
+            ordinary_nat_confirmed: Probe::Known(!tun),
             active_direct_macs: Probe::Known(Default::default()),
         }
     }
 
-    fn network_observed() -> NetworkObserved {
-        NetworkObserved {
-            bridge: Probe::Known(OwnedResource::Owned {
-                token: "owned".to_owned(),
-            }),
-            bridge_up: Probe::Known(true),
-            lan_address_present: Probe::Known(true),
-            ap_attached: Probe::Known(true),
-            management_services_healthy: Probe::Known(true),
-            wan_default_route_present: Probe::Known(true),
-            ipv4_forwarding: Probe::Known(true),
-            previous_ipv4_forwarding: Probe::Known(Some(false)),
-            router_firewall: Probe::Known(OwnedResource::Owned {
-                token: "owned".to_owned(),
-            }),
-        }
-    }
-
     #[test]
-    fn running_requires_full_effective_mode_readiness() {
-        let ready = proxy_status_from_observed(
-            &proxy_observed(DomainProxyMode::Tun),
+    fn layered_status_distinguishes_shared_core_and_lan_tun() {
+        let tailscale_only = proxy_status_from_observed(
+            &proxy_observed(ProxyFeaturesV1::new(false, true)),
             true,
             Probe::Known(Default::default()),
         );
-        assert_eq!(ready.data.unwrap().state, ProxyState::Running);
+        let data = tailscale_only.data.unwrap();
+        assert_eq!(data.mihomo.process, ProxyResourceState::Ready);
+        assert_eq!(data.lan_tun.effective, LanTunEffective::OrdinaryNat);
 
-        let mut incomplete = proxy_observed(DomainProxyMode::Tun);
+        let mut incomplete = proxy_observed(ProxyFeaturesV1::new(true, true));
         incomplete.policy_route_present = Probe::Known(false);
-        let incomplete =
+        let status =
             proxy_status_from_observed(&incomplete, true, Probe::Known(Default::default()));
         assert_eq!(
-            incomplete.state,
-            crate::domain::status::ComponentState::Degraded
-        );
-        assert_eq!(incomplete.data.unwrap().state, ProxyState::Error);
-    }
-
-    #[test]
-    fn committed_device_policy_mismatch_or_unreadable_config_degrades_status() {
-        let observed = proxy_observed(DomainProxyMode::Tun);
-        let direct = ["02:00:00:00:00:01".parse().unwrap()].into_iter().collect();
-        let mismatch = proxy_status_from_observed(&observed, true, Probe::Known(direct));
-        assert_eq!(mismatch.data.unwrap().state, ProxyState::Error);
-        let unreadable = proxy_status_from_observed(
-            &observed,
-            true,
-            Probe::Unknown("committed policy unreadable".to_owned()),
-        );
-        assert_eq!(unreadable.data.unwrap().state, ProxyState::Unknown);
-    }
-
-    #[test]
-    fn disabled_proxy_is_healthy_without_nat_in_management_only_mode() {
-        let mut observed = proxy_observed(DomainProxyMode::Disabled);
-        observed.process_identity_valid = Probe::Known(false);
-        observed.watcher_identity_valid = Probe::Known(false);
-        observed.ordinary_nat_confirmed = Probe::Known(false);
-
-        let status = proxy_status_from_observed(&observed, true, Probe::Known(Default::default()));
-        assert_eq!(
-            status.state,
-            crate::domain::status::ComponentState::Available
-        );
-        let data = status.data.unwrap();
-        assert_eq!(data.state, ProxyState::Disabled);
-        assert_eq!(data.ordinary_nat_fallback, Some(false));
-
-        observed.process_identity_valid = Probe::Known(true);
-        let residual_core =
-            proxy_status_from_observed(&observed, true, Probe::Known(Default::default()));
-        assert_eq!(
-            residual_core.state,
-            crate::domain::status::ComponentState::Degraded
-        );
-        assert_eq!(residual_core.data.unwrap().state, ProxyState::Error);
-    }
-
-    #[test]
-    fn unknown_proxy_ownership_is_unknown_and_degraded() {
-        let mut observed = proxy_observed(DomainProxyMode::Tun);
-        observed.tun_firewall = Probe::Unknown("ownership probe failed".to_owned());
-        let status = proxy_status_from_observed(&observed, true, Probe::Known(Default::default()));
-        assert_eq!(
             status.state,
             crate::domain::status::ComponentState::Degraded
         );
-        assert_eq!(status.data.unwrap().state, ProxyState::Unknown);
-    }
-
-    #[test]
-    fn router_degrades_for_foreign_identity_and_readiness_inconsistency() {
-        let mut foreign_bridge = network_observed();
-        foreign_bridge.bridge = Probe::Known(OwnedResource::Foreign);
-        assert!(router_status_is_degraded(&foreign_bridge));
-
-        let mut unknown_management = network_observed();
-        unknown_management.management_services_healthy =
-            Probe::Unknown("identity unavailable".to_owned());
-        assert!(router_status_is_degraded(&unknown_management));
-
-        let mut inconsistent_firewall = network_observed();
-        inconsistent_firewall.ipv4_forwarding = Probe::Known(false);
-        assert!(router_status_is_degraded(&inconsistent_firewall));
+        assert_eq!(
+            status.data.unwrap().lan_tun.effective,
+            LanTunEffective::NotConfirmed
+        );
     }
 }

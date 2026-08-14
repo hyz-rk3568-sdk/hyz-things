@@ -374,7 +374,7 @@ fn rollback_compensations(
     previous_mode: Option<TailscaleMode>,
 ) -> Vec<TailscaleAction> {
     match action {
-        TailscaleAction::StartBackend { token } => vec![TailscaleAction::StopBackend {
+        TailscaleAction::StartBackend { token, .. } => vec![TailscaleAction::StopBackend {
             token: token.clone(),
         }],
         TailscaleAction::StopBackend { token }
@@ -386,6 +386,7 @@ fn rollback_compensations(
             vec![
                 TailscaleAction::StartBackend {
                     token: token.clone(),
+                    environment: crate::domain::tailscale::TailscaleEnvironment::Direct,
                 },
                 TailscaleAction::WaitForBackend,
             ]

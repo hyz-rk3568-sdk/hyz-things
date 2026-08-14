@@ -9,7 +9,7 @@ use crate::{
     domain::{
         device_policy::{DevicePolicyConfigV1, DevicePolicyUpdateRequest, LanClientObservation},
         network::Probe,
-        proxy::{ProxyDesired, ProxyMode},
+        proxy::{ProxyDesired, ProxyFeaturesV1},
     },
 };
 use serde::{Deserialize, Serialize};
@@ -79,14 +79,14 @@ impl<'a> DevicePolicyApplication<'a> {
             // transaction commits, the response is assembled from the reconciled candidate so a
             // transient discovery or probe failure cannot misreport a successful mutation.
             let clients = self.discovery.discover_lan_clients(&candidate)?;
-            let mode = self.persisted_mode()?;
+            let features = self.persisted_features()?;
             run_update_transaction(self.store, &previous, &candidate, |config| {
-                self.reconcile_locked(mode, config)
+                self.reconcile_locked(features, config)
             })?;
             Ok(DevicePolicySnapshot {
                 config: candidate,
                 clients,
-                effective: mode == ProxyMode::Tun,
+                effective: features.lan_tun_enabled,
             })
         })();
         let release = self.platform.release_lifecycle_lock(&lease);
@@ -105,8 +105,8 @@ impl<'a> DevicePolicyApplication<'a> {
                 return Ok(());
             };
             restore_previous(self.store, &previous, |config| {
-                let mode = self.persisted_mode()?;
-                self.reconcile_locked(mode, config)
+                let features = self.persisted_features()?;
+                self.reconcile_locked(features, config)
             })
         })();
         let release = self.platform.release_lifecycle_lock(&lease);
@@ -119,15 +119,8 @@ impl<'a> DevicePolicyApplication<'a> {
 
     fn effective_for(&self, config: &DevicePolicyConfigV1) -> Result<bool, PlatformError> {
         let observed = self.probe.observe_proxy()?;
-        let mode = match observed.effective_persisted_mode() {
-            Probe::Known(mode) => mode,
-            Probe::Unknown(reason) => {
-                return Err(PlatformError::ProbeFailed(format!(
-                    "persisted proxy mode is unknown: {reason}"
-                )))
-            }
-        };
-        if mode != ProxyMode::Tun {
+        let features = self.persisted_features()?;
+        if !features.lan_tun_enabled {
             return Ok(false);
         }
         if let Probe::Unknown(reason) = &observed.active_direct_macs {
@@ -136,28 +129,33 @@ impl<'a> DevicePolicyApplication<'a> {
             )));
         }
         Ok(observed.ready_for(&ProxyDesired {
-            mode,
+            lan_tun_enabled: true,
+            tailscale_explicit_proxy_enabled: features.tailscale_explicit_proxy_enabled,
             direct_macs: config.direct_macs(),
         }))
     }
 
-    fn persisted_mode(&self) -> Result<ProxyMode, PlatformError> {
-        match self.probe.observe_proxy()?.effective_persisted_mode() {
-            Probe::Known(mode) => Ok(mode),
+    fn persisted_features(&self) -> Result<ProxyFeaturesV1, PlatformError> {
+        match self.probe.observe_proxy()?.persisted_features {
+            Probe::Known(features) if features.supported() => Ok(features),
+            Probe::Known(_) => Err(PlatformError::ProbeFailed(
+                "persisted proxy feature version is unsupported".to_owned(),
+            )),
             Probe::Unknown(reason) => Err(PlatformError::ProbeFailed(format!(
-                "persisted proxy mode is unknown: {reason}"
+                "persisted proxy features are unknown: {reason}"
             ))),
         }
     }
 
     fn reconcile_locked(
         &self,
-        mode: ProxyMode,
+        features: ProxyFeaturesV1,
         config: &DevicePolicyConfigV1,
     ) -> Result<(), PlatformError> {
         ProxyApplication::new(self.platform, self.probe, self.clock)
             .reconcile_locked(&ProxyDesired {
-                mode,
+                lan_tun_enabled: features.lan_tun_enabled,
+                tailscale_explicit_proxy_enabled: features.tailscale_explicit_proxy_enabled,
                 direct_macs: config.direct_macs(),
             })
             .map(|_| ())

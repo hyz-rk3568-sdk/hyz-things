@@ -11,7 +11,7 @@ use crate::{
         network::{
             ForwardingDesired, NetworkAction, NetworkDesired, NetworkObserved, OwnedResource, Probe,
         },
-        proxy::{ProxyAction, ProxyDesired, ProxyMode, ProxyObserved},
+        proxy::{ProxyAction, ProxyDesired, ProxyObserved},
     },
 };
 
@@ -159,59 +159,80 @@ pub fn proxy_plan(
     if observed.ready_for(desired) {
         return Ok(Vec::new());
     }
-    if matches!(&observed.persisted_mode, Probe::Unknown(_)) {
-        return Err(PlatformError::ProbeFailed(
-            "persisted proxy mode is unknown; rollback cannot be guaranteed".to_owned(),
-        ));
-    }
+    let current = match &observed.persisted_features {
+        Probe::Known(features) if features.supported() => *features,
+        Probe::Known(_) => {
+            return Err(PlatformError::ProbeFailed(
+                "persisted proxy feature version is unsupported".to_owned(),
+            ))
+        }
+        Probe::Unknown(reason) => {
+            return Err(PlatformError::ProbeFailed(format!(
+                "persisted proxy features are unknown: {reason}"
+            )))
+        }
+    };
+    require_known_proxy_ownership(observed)?;
     let mut actions = Vec::new();
-    if observed.watcher_identity_valid == Probe::Known(true) {
-        actions.push(ProxyAction::StopWatcher);
-    } else if observed.watcher_identity_valid != Probe::Known(false) {
-        return Err(PlatformError::ProbeFailed(
-            "Mihomo watcher identity is unknown".to_owned(),
-        ));
+    let direct_mac_change = match &observed.active_direct_macs {
+        Probe::Known(active) => active != &desired.direct_macs,
+        Probe::Unknown(reason) if current.lan_tun_enabled || desired.lan_tun_enabled => {
+            return Err(PlatformError::ProbeFailed(format!(
+                "active device policy is unknown: {reason}"
+            )))
+        }
+        Probe::Unknown(_) => false,
+    };
+    let runtime_change = current.lan_tun_enabled != desired.lan_tun_enabled
+        || observed.runtime_config_valid != Probe::Known(true);
+    let tun_change = runtime_change || direct_mac_change;
+
+    if tun_change || !desired.lan_tun_enabled {
+        if observed.watcher_identity_valid == Probe::Known(true) {
+            actions.push(ProxyAction::StopWatcher);
+        }
+        actions.extend(cleanup_tun_plan(observed)?);
     }
-    actions.extend(cleanup_tun_plan(observed)?);
-    if observed.process_identity_valid == Probe::Known(true) {
+    if observed.process_identity_valid == Probe::Known(true) && runtime_change {
         actions.push(ProxyAction::StopCore);
-    } else if !matches!(observed.process_identity_valid, Probe::Known(false)) {
-        return Err(PlatformError::ProbeFailed(
-            "Mihomo process identity is unknown".to_owned(),
+    }
+
+    if !desired.mihomo_required() {
+        if observed.process_identity_valid == Probe::Known(true) && !runtime_change {
+            actions.push(ProxyAction::StopCore);
+        }
+        actions.push(ProxyAction::RemoveRuntimeState);
+        actions.push(ProxyAction::CommitFeatures {
+            features: desired.features(),
+        });
+        return Ok(actions);
+    }
+
+    let core_needs_start = observed.process_identity_valid == Probe::Known(false) || runtime_change;
+    if core_needs_start {
+        actions.extend([
+            ProxyAction::WriteRuntimeConfig {
+                lan_tun_enabled: desired.lan_tun_enabled,
+            },
+            ProxyAction::ValidateRuntimeConfig,
+            ProxyAction::StartCore,
+            ProxyAction::WaitForMixedPort,
+        ]);
+    } else if observed.mixed_port_ready != Probe::Known(true) {
+        return Err(PlatformError::UnsafeToCutOver(
+            "owned Mihomo core is live but its fixed mixed port is not ready".to_owned(),
         ));
     }
 
-    match desired.mode {
-        ProxyMode::Disabled => {
-            actions.push(ProxyAction::CommitMode {
-                mode: ProxyMode::Disabled,
-            });
+    if desired.lan_tun_enabled {
+        if !network.ready_for(&crate::domain::network::NetworkDesired::forwarding()) {
+            return Err(PlatformError::UnsafeToCutOver(
+                "LAN TUN requires confirmed management LAN, WAN route, forwarding and owned NAT"
+                    .to_owned(),
+            ));
         }
-        ProxyMode::Explicit => {
+        if !observed.lan_tun_ready(&desired.direct_macs) || tun_change {
             actions.extend([
-                ProxyAction::WriteRuntimeConfig {
-                    mode: ProxyMode::Explicit,
-                },
-                ProxyAction::ValidateRuntimeConfig,
-                ProxyAction::StartCore,
-                ProxyAction::CommitMode {
-                    mode: ProxyMode::Explicit,
-                },
-            ]);
-        }
-        ProxyMode::Tun => {
-            if !network.ready_for(&crate::domain::network::NetworkDesired::forwarding()) {
-                return Err(PlatformError::UnsafeToCutOver(
-                    "TUN requires confirmed management LAN, WAN route, forwarding and owned NAT"
-                        .to_owned(),
-                ));
-            }
-            actions.extend([
-                ProxyAction::WriteRuntimeConfig {
-                    mode: ProxyMode::Tun,
-                },
-                ProxyAction::ValidateRuntimeConfig,
-                ProxyAction::StartCore,
                 ProxyAction::WaitForTunInterface,
                 ProxyAction::CreateTunChains {
                     token: token.to_owned(),
@@ -222,20 +243,32 @@ pub fn proxy_plan(
                 },
                 ProxyAction::InstallPolicyRoute,
                 ProxyAction::InstallPolicyRule,
-                // Commit point for packet interception is intentionally last.
                 ProxyAction::InstallInterceptionEntry {
                     token: token.to_owned(),
                 },
                 ProxyAction::StartWatcher,
                 ProxyAction::WaitForWatcher,
-                // Persistent desired mode is committed only after data-plane commit.
-                ProxyAction::CommitMode {
-                    mode: ProxyMode::Tun,
-                },
             ]);
         }
     }
+    actions.push(ProxyAction::CommitFeatures {
+        features: desired.features(),
+    });
     Ok(actions)
+}
+
+fn require_known_proxy_ownership(observed: &ProxyObserved) -> Result<(), PlatformError> {
+    for (label, probe) in [
+        ("Mihomo process", &observed.process_identity_valid),
+        ("Mihomo watcher", &observed.watcher_identity_valid),
+    ] {
+        if let Probe::Unknown(reason) = probe {
+            return Err(PlatformError::ProbeFailed(format!(
+                "{label} identity is unknown: {reason}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 pub fn fail_open_plan(observed: &ProxyObserved) -> Result<Vec<ProxyAction>, PlatformError> {

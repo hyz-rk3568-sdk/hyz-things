@@ -3,7 +3,7 @@ use crate::domain::{
     device_policy::{DevicePolicyConfigV1, LanClientObservation},
     network::{NetworkAction, NetworkObserved},
     panel::{DisplayRequest, DisplayStatus, ProxyDelayResult, ProxyGroup, ProxySelectionRequest},
-    proxy::{ProxyAction, ProxyMode, ProxyObserved},
+    proxy::{ProxyAction, ProxyObserved},
     subscription::{GenerationId, SubscriptionStatus, SubscriptionUrl, ValidatedSubscription},
     tailscale::{TailscaleAction, TailscaleLoginUrl, TailscaleObserved},
 };
@@ -171,7 +171,7 @@ pub trait SubscriptionSourcePort: Send + Sync {
         &self,
         current_source: &[u8],
         subscription: &ValidatedSubscription,
-        mode: ProxyMode,
+        lan_tun_enabled: bool,
     ) -> Result<Vec<u8>, PlatformError>;
     fn store_source(&self, source: &[u8]) -> Result<(), PlatformError>;
 }

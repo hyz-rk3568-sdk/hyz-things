@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
 
-use super::tailscale::{TailscaleBackendState, TailscaleMode};
+use super::tailscale::{TailscaleBackendState, TailscaleEnvironment, TailscaleMode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -131,8 +131,19 @@ pub struct TailscaleStatus {
     pub local_firewall_ready: Option<bool>,
     pub route_approval: TailscaleRouteApproval,
     pub connection: TailscaleConnectionStatus,
+    pub explicit_proxy_desired: Option<bool>,
+    pub environment: Option<TailscaleEnvironment>,
+    pub proxy_fallback: TailscaleProxyFallback,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_category: Option<TailscaleErrorCategory>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TailscaleProxyFallback {
+    NotNeeded,
+    DirectRestored,
+    NotConfirmed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -174,27 +185,6 @@ pub enum LinkState {
     Unknown,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ProxyStatus {
-    pub state: ProxyState,
-    pub mode: ProxyMode,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub configured: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ordinary_nat_fallback: Option<bool>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ProxyState {
-    Running,
-    Stopped,
-    Disabled,
-    Error,
-    Unknown,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProxyMode {
@@ -202,6 +192,48 @@ pub enum ProxyMode {
     Tun,
     Disabled,
     Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProxyStatus {
+    pub configured: bool,
+    pub mihomo: MihomoCoreStatus,
+    pub lan_tun: LanTunStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MihomoCoreStatus {
+    pub configured_required: Option<bool>,
+    pub process: ProxyResourceState,
+    pub runtime_config: ProxyResourceState,
+    pub mixed_port: ProxyResourceState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LanTunStatus {
+    pub desired: Option<bool>,
+    pub effective: LanTunEffective,
+    pub ordinary_nat_fallback: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProxyResourceState {
+    Ready,
+    Absent,
+    NotReady,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LanTunEffective {
+    Ready,
+    OrdinaryNat,
+    NotConfirmed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -262,6 +294,9 @@ mod tests {
                     kind: TailscaleConnectionType::Derp,
                     derp_region: Some("sfo".to_owned()),
                 },
+                explicit_proxy_desired: Some(true),
+                environment: Some(TailscaleEnvironment::MihomoExplicit),
+                proxy_fallback: TailscaleProxyFallback::NotNeeded,
                 error_category: None,
             }),
             system: Component::available(SystemStats {
