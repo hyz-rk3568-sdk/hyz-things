@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 import {
   expectNoHorizontalOverflow,
   harnessOrigin,
+  loginAsAdmin,
   readHarnessState,
   resetHarness,
   webOrigin,
@@ -35,7 +36,7 @@ test('renders the dashboard and applies the anonymous display control', async ({
   await expect(page.getByRole('status').filter({ hasText: '背光已开启' })).toBeVisible();
 
   await expect(page.getByRole('button', { name: '代理', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'Mihomo / TUN' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '代理状态' })).toBeVisible();
   const readonlyProxy = page.getByRole('region', { name: '当前代理与延迟' });
   await expect(readonlyProxy.getByText('当前选择 · 东京')).toBeVisible();
   await expect
@@ -52,7 +53,8 @@ test('renders the dashboard and applies the anonymous display control', async ({
     brightness: 180,
     actual_brightness: 180,
   });
-  expect(state.proxy.data.mode).toBe('tun');
+  expect(state.proxy.data.lan_tun.desired).toBe(true);
+  expect(state.tailscale.data.explicit_proxy_desired).toBe(false);
   expect(state.panel.proxy_groups.data[0].selected).toBe('东京');
 
   const accessibility = await new AxeBuilder({ page }).analyze();
@@ -63,7 +65,7 @@ test('renders the dashboard and applies the anonymous display control', async ({
 
 test('keeps the last dashboard while a component becomes degraded', async ({ page, request }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Mihomo / TUN' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '代理状态' })).toBeVisible();
 
   const current = await readHarnessState(request);
   current.proxy.state = 'degraded';
@@ -75,7 +77,7 @@ test('keeps the last dashboard while a component becomes degraded', async ({ pag
   expect(update.ok()).toBeTruthy();
 
   await expect(page.getByText('代理探测暂时不可用')).toBeVisible({ timeout: 7_500 });
-  await expect(page.getByRole('heading', { name: 'Mihomo / TUN' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '代理状态' })).toBeVisible();
 });
 
 test('serves the generated bundle through the strict production-shaped HTTP boundary', async ({
@@ -108,11 +110,21 @@ test('serves the generated bundle through the strict production-shaped HTTP boun
 
   const panel = await request.get('/api/v1/panel');
   const csrf = ((await panel.json()) as { csrf_token: string }).csrf_token;
-  const anonymousProxyMode = await request.post('/api/v1/control/proxy/mode', {
+  const anonymousLanTun = await request.post('/api/v1/control/proxy/lan-tun', {
     headers: { Origin: webOrigin, 'X-HYZ-CSRF': csrf },
-    data: { mode: 'explicit' },
+    data: { enabled: true },
   });
-  expect(anonymousProxyMode.status()).toBe(401);
+  expect(anonymousLanTun.status()).toBe(401);
+  const anonymousTailscaleProxy = await request.post('/api/v1/control/proxy/tailscale', {
+    headers: { Origin: webOrigin, 'X-HYZ-CSRF': csrf },
+    data: { enabled: true },
+  });
+  expect(anonymousTailscaleProxy.status()).toBe(401);
+  const removedProxyMode = await request.post('/api/v1/control/proxy/mode', {
+    headers: { Origin: webOrigin, 'X-HYZ-CSRF': csrf },
+    data: { mode: 'tun' },
+  });
+  expect(removedProxyMode.status()).toBe(405);
   const anonymousProxySelection = await request.post('/api/v1/control/proxy/selection', {
     headers: { Origin: webOrigin, 'X-HYZ-CSRF': csrf },
     data: { group: '自动选择', proxy: '新加坡' },
@@ -151,6 +163,162 @@ test('serves the generated bundle through the strict production-shaped HTTP boun
   expect((await readHarnessState(request)).panel.display.data).toEqual(displayBefore);
 });
 
+test('controls all four proxy combinations with isolated failures on desktop and mobile', async ({
+  page,
+  request,
+}) => {
+  await loginAsAdmin(page);
+  const lanTun = page.getByRole('switch', { name: 'LAN 透明代理' });
+  const tailscaleProxy = page.getByRole('switch', { name: 'Tailscale 中继代理' });
+
+  const expectCombination = async (lanEnabled: boolean, tailscaleEnabled: boolean) => {
+    await expect
+      .poll(async () => {
+        const state = await readHarnessState(request);
+        return {
+          lanDesired: state.proxy.data.lan_tun.desired,
+          lanEffective: state.proxy.data.lan_tun.effective,
+          tailscaleDesired: state.tailscale.data.explicit_proxy_desired,
+          environment: state.tailscale.data.environment,
+          core: state.proxy.data.mihomo.process,
+        };
+      })
+      .toEqual({
+        lanDesired: lanEnabled,
+        lanEffective: lanEnabled ? 'ready' : 'ordinary_nat',
+        tailscaleDesired: tailscaleEnabled,
+        environment: tailscaleEnabled ? 'mihomo_explicit' : 'direct',
+        core: lanEnabled || tailscaleEnabled ? 'ready' : 'absent',
+      });
+    await expect(lanTun).toBeChecked({ checked: lanEnabled });
+    await expect(tailscaleProxy).toBeChecked({ checked: tailscaleEnabled });
+  };
+
+  await expectCombination(true, false);
+  await tailscaleProxy.click();
+  await expectCombination(true, true);
+  await lanTun.click();
+  await expectCombination(false, true);
+  await tailscaleProxy.click();
+  await expectCombination(false, false);
+  await lanTun.click();
+  await expectCombination(true, false);
+
+  await page.setViewportSize({ width: 360, height: 800 });
+  await tailscaleProxy.click();
+  await expectCombination(true, true);
+  await lanTun.click();
+  await expectCombination(false, true);
+  await expectNoHorizontalOverflow(page);
+  await expect(page.getByText('当前代理节点')).toBeVisible();
+  await expect(page.getByRole('combobox', { name: '自动选择 节点' })).toBeEnabled();
+
+  let state = await readHarnessState(request);
+  state.proxy_failures.lan_tun = true;
+  expect((await request.put(`${harnessOrigin}/state`, { data: state })).ok()).toBeTruthy();
+  await lanTun.click();
+  await expect(page.getByRole('status').filter({ hasText: '操作失败' })).toBeVisible();
+  await expectCombination(false, true);
+  await expect(tailscaleProxy).toBeChecked();
+
+  state = await readHarnessState(request);
+  state.proxy_failures.lan_tun = false;
+  state.proxy_failures.tailscale = true;
+  expect((await request.put(`${harnessOrigin}/state`, { data: state })).ok()).toBeTruthy();
+  await tailscaleProxy.click();
+  await expect(page.getByRole('status').filter({ hasText: '操作失败' })).toHaveCount(2);
+  await expectCombination(false, true);
+  await expect(lanTun).not.toBeChecked();
+
+  state = await readHarnessState(request);
+  state.proxy_failures.tailscale = false;
+  expect((await request.put(`${harnessOrigin}/state`, { data: state })).ok()).toBeTruthy();
+  await page.getByRole('combobox', { name: '自动选择 节点' }).selectOption('新加坡');
+  await expect
+    .poll(async () => (await readHarnessState(request)).panel.proxy_groups.data[0].selected)
+    .toBe('新加坡');
+  await expect(tailscaleProxy).toBeEnabled();
+  await expectNoHorizontalOverflow(page);
+
+  const csrf = ((await (await request.get('/api/v1/panel')).json()) as { csrf_token: string })
+    .csrf_token;
+  for (const path of [
+    '/api/v1/control/proxy/lan-tun',
+    '/api/v1/control/proxy/tailscale',
+  ]) {
+    const forbidden = await page.evaluate(
+      async ({ path, csrf }) =>
+        (
+          await fetch(path, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-HYZ-CSRF': csrf },
+            body: JSON.stringify({
+              enabled: true,
+              proxy_url: 'http://127.0.0.1:7890',
+              port: 7890,
+              environment: { HTTP_PROXY: 'forbidden' },
+              provider: 'forbidden',
+              Controller: 'forbidden',
+              config: 'raw',
+            }),
+          })
+        ).status,
+      { path, csrf },
+    );
+    expect(forbidden).toBe(400);
+  }
+  const oversized = await page.evaluate(
+    async csrf =>
+      (
+        await fetch('/api/v1/control/proxy/lan-tun', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-HYZ-CSRF': csrf },
+          body: JSON.stringify({ enabled: true, padding: 'x'.repeat(5_000) }),
+        })
+      ).status,
+    csrf,
+  );
+  expect(oversized).toBe(413);
+});
+
+test('shows layered direct-restored, degraded, and unknown proxy wording', async ({ page, request }) => {
+  await loginAsAdmin(page);
+  const state = await readHarnessState(request);
+  state.proxy.state = 'degraded';
+  state.proxy.issue = { code: 'lan_tun_not_confirmed', message: 'LAN TUN 未确认' };
+  state.proxy.data.lan_tun.desired = true;
+  state.proxy.data.lan_tun.effective = 'not_confirmed';
+  state.tailscale.state = 'degraded';
+  state.tailscale.issue = { code: 'tailscale_proxy_direct_restored', message: '代理已回退' };
+  state.tailscale.data.explicit_proxy_desired = true;
+  state.tailscale.data.environment = 'direct';
+  state.tailscale.data.proxy_fallback = 'direct_restored';
+  expect((await request.put(`${harnessOrigin}/state`, { data: state })).ok()).toBeTruthy();
+
+  const proxyCapabilities = page.getByLabel('代理能力');
+  await expect(proxyCapabilities.getByText('已降级 · 未确认', { exact: true })).toBeVisible({
+    timeout: 7_500,
+  });
+  await expect(
+    proxyCapabilities.getByText('已降级 · 已恢复 Direct', { exact: true }),
+  ).toBeVisible();
+
+  const unknown = await readHarnessState(request);
+  unknown.proxy.data.mihomo.configured_required = null;
+  unknown.proxy.data.mihomo.process = 'unknown';
+  unknown.proxy.data.lan_tun.desired = null;
+  unknown.tailscale.data.explicit_proxy_desired = null;
+  unknown.tailscale.data.environment = null;
+  unknown.tailscale.data.proxy_fallback = 'not_confirmed';
+  expect((await request.put(`${harnessOrigin}/state`, { data: unknown })).ok()).toBeTruthy();
+  await expect(page.getByText('Mihomo core：未知', { exact: true })).toBeVisible({ timeout: 7_500 });
+  await expect(proxyCapabilities.getByText('未知 · 未确认', { exact: true })).toHaveCount(2);
+  await expect(page.getByRole('switch', { name: 'LAN 透明代理' })).toBeDisabled();
+  await expect(page.getByRole('switch', { name: 'Tailscale 中继代理' })).toBeDisabled();
+});
+
 test('supports the administrator, STA, AP, and write-only subscription journey', async ({
   page,
   request,
@@ -172,11 +340,7 @@ test('supports the administrator, STA, AP, and write-only subscription journey',
   await page.getByLabel('确认新密码').fill('router-e2e-password');
   await page.getByRole('button', { name: '修改密码' }).click();
   await expect(page.getByRole('button', { name: '上游 Wi-Fi (STA)' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: '代理路径与节点' })).toBeVisible();
-  await page.getByRole('button', { name: '显式代理' }).click();
-  await expect
-    .poll(async () => (await readHarnessState(request)).proxy.data.mode)
-    .toBe('explicit');
+  await expect(page.getByRole('heading', { name: '代理设置' })).toBeVisible();
   await page.getByRole('combobox', { name: '自动选择 节点' }).selectOption('新加坡');
   await expect
     .poll(async () => (await readHarnessState(request)).panel.proxy_groups.data[0].selected)

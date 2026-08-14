@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::status::{Component, ProxyMode};
+use super::status::Component;
 
 pub const MAX_CONTROL_NAME_BYTES: usize = 192;
 pub const MAX_PROXY_GROUPS: usize = 128;
@@ -21,12 +21,6 @@ pub struct DisplayRequest {
     pub enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub brightness: Option<u16>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ProxyModeRequest {
-    pub mode: ProxyMode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -117,13 +111,5 @@ mod tests {
         assert!(!valid_control_name(""));
         assert!(!valid_control_name("node\nsecret"));
         assert!(!valid_control_name(&"x".repeat(MAX_CONTROL_NAME_BYTES + 1)));
-    }
-
-    #[test]
-    fn unknown_proxy_mode_cannot_be_a_mutation_request() {
-        let request = ProxyModeRequest {
-            mode: ProxyMode::Unknown,
-        };
-        assert_eq!(request.mode, ProxyMode::Unknown);
     }
 }

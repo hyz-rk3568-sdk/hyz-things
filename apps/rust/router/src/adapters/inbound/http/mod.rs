@@ -18,9 +18,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    adapters::inbound::control::{
-        ControlHandler, ControlOperation, ControlProxyMode, ControlResult,
-    },
+    adapters::inbound::control::{ControlHandler, ControlOperation, ControlResult},
     application::{
         admin::{AdminApplication, AdminError},
         status::ReadStatus,
@@ -32,9 +30,9 @@ use crate::{
         network_config::{NetworkConfigSummary, PendingNetworkConfigSummary},
         panel::{
             DisplayRequest, PanelBootstrap, ProxyDelayRefreshRequest, ProxyDelayRequest,
-            ProxyModeRequest, ProxySelectionRequest,
+            ProxySelectionRequest,
         },
-        status::{ProxyMode, TailscaleStatus},
+        status::TailscaleStatus,
         subscription::SubscriptionSummary,
         tailscale::TailscaleMode,
     },
@@ -310,8 +308,12 @@ fn app_with_assets(
             on(MethodFilter::POST, control_display),
         )
         .route(
-            "/api/v1/control/proxy/mode",
-            on(MethodFilter::POST, control_proxy_mode),
+            "/api/v1/control/proxy/lan-tun",
+            on(MethodFilter::POST, control_proxy_lan_tun),
+        )
+        .route(
+            "/api/v1/control/proxy/tailscale",
+            on(MethodFilter::POST, control_proxy_tailscale),
         )
         .route(
             "/api/v1/control/proxy/selection",
@@ -650,6 +652,12 @@ struct NetworkScanResponse {
 #[derive(Serialize)]
 struct SubscriptionResponse {
     subscription: SubscriptionSummary,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProxyFeatureRequest {
+    enabled: bool,
 }
 
 #[derive(Deserialize)]
@@ -1088,21 +1096,45 @@ async fn control_display(
     invoke_control(&state, &headers, ControlOperation::Display { request }).await
 }
 
-async fn control_proxy_mode(
+async fn control_proxy_lan_tun(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<ProxyModeRequest>,
+    payload: Result<Json<ProxyFeatureRequest>, JsonRejection>,
 ) -> Response {
-    if let Err(response) = authorize_sensitive_control(&state, &headers).await {
+    control_proxy_feature(&state, &headers, payload, |enabled| {
+        ControlOperation::ProxyLanTun { enabled }
+    })
+    .await
+}
+
+async fn control_proxy_tailscale(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<ProxyFeatureRequest>, JsonRejection>,
+) -> Response {
+    control_proxy_feature(&state, &headers, payload, |enabled| {
+        ControlOperation::ProxyTailscale { enabled }
+    })
+    .await
+}
+
+async fn control_proxy_feature(
+    state: &AppState,
+    headers: &HeaderMap,
+    payload: Result<Json<ProxyFeatureRequest>, JsonRejection>,
+    operation: impl FnOnce(bool) -> ControlOperation,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control(state, headers).await {
         return response;
     }
-    let mode = match request.mode {
-        ProxyMode::Explicit => ControlProxyMode::Explicit,
-        ProxyMode::Tun => ControlProxyMode::Tun,
-        ProxyMode::Disabled => ControlProxyMode::Disabled,
-        ProxyMode::Unknown => return invalid_request_json(),
+    let request = match payload {
+        Ok(Json(request)) => request,
+        Err(rejection) if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE => {
+            return payload_too_large_json();
+        }
+        Err(_) => return invalid_request_json(),
     };
-    invoke_control_authorized(&state, ControlOperation::Proxy { mode }).await
+    invoke_control_authorized(state, operation(request.enabled)).await
 }
 
 async fn control_proxy_selection(
@@ -1273,6 +1305,16 @@ fn forbidden_json() -> Response {
         .into_response()
 }
 
+fn payload_too_large_json() -> Response {
+    (
+        StatusCode::PAYLOAD_TOO_LARGE,
+        Json(serde_json::json!({
+            "error": { "code": "payload_too_large", "message": "Control request exceeds the body limit" }
+        })),
+    )
+        .into_response()
+}
+
 fn invalid_request_json() -> Response {
     (
         StatusCode::BAD_REQUEST,
@@ -1410,7 +1452,8 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/control/tailscale/login"
             | "/api/v1/control/tailscale/logout"
             | "/api/v1/control/display"
-            | "/api/v1/control/proxy/mode"
+            | "/api/v1/control/proxy/lan-tun"
+            | "/api/v1/control/proxy/tailscale"
             | "/api/v1/control/proxy/selection"
             | "/api/v1/control/proxy/delay"
             | "/api/v1/control/proxy/delays"
@@ -1520,6 +1563,23 @@ mod tests {
         )
         .is_err());
 
+        assert!(serde_json::from_str::<ProxyFeatureRequest>(r#"{"enabled":true}"#).is_ok());
+        for forbidden in [
+            "proxy_url",
+            "port",
+            "environment",
+            "provider",
+            "controller",
+            "config",
+        ] {
+            let body = format!(r#"{{"enabled":true,"{forbidden}":"forbidden"}}"#);
+            assert!(serde_json::from_str::<ProxyFeatureRequest>(&body).is_err());
+        }
+        assert!(serde_json::from_str::<ProxyFeatureRequest>(
+            r#"{"enabled":true,"unexpected":false}"#
+        )
+        .is_err());
+
         assert!(serde_json::from_str::<TailscaleModeRequest>(
             r#"{"mode":"lan_subnet_access","login_url":"https://example.com"}"#
         )
@@ -1567,32 +1627,32 @@ mod tests {
     }
 
     #[test]
-    fn proxy_mode_and_selection_require_normal_administrator_authorization() {
+    fn proxy_features_and_selection_require_normal_administrator_authorization() {
         let source = include_str!("mod.rs")
             .split("#[cfg(test)]")
             .next()
             .expect("production HTTP source");
-        for (start, end) in [
-            (
-                "async fn control_proxy_mode(",
-                "async fn control_proxy_selection(",
-            ),
-            (
-                "async fn control_proxy_selection(",
-                "async fn control_proxy_delay(",
-            ),
-        ] {
-            let body = source
-                .split_once(start)
-                .expect("proxy control handler")
-                .1
-                .split_once(end)
-                .expect("end of proxy control handler")
-                .0;
-            assert!(body.contains("authorize_sensitive_control(&state, &headers).await"));
-            assert!(body.contains("invoke_control_authorized"));
-            assert!(!body.contains("invoke_control(&state, &headers"));
-        }
+        let feature_body = source
+            .split_once("async fn control_proxy_feature(")
+            .expect("proxy feature control handler")
+            .1
+            .split_once("async fn control_proxy_selection(")
+            .expect("end of proxy feature control handler")
+            .0;
+        assert!(feature_body.contains("authorize_sensitive_control(state, headers).await"));
+        assert!(feature_body.contains("invoke_control_authorized"));
+        assert!(!feature_body.contains("invoke_control(state, headers"));
+
+        let selection_body = source
+            .split_once("async fn control_proxy_selection(")
+            .expect("proxy selection control handler")
+            .1
+            .split_once("async fn control_proxy_delay(")
+            .expect("end of proxy selection control handler")
+            .0;
+        assert!(selection_body.contains("authorize_sensitive_control(&state, &headers).await"));
+        assert!(selection_body.contains("invoke_control_authorized"));
+        assert!(!selection_body.contains("invoke_control(&state, &headers"));
     }
 
     #[test]
@@ -1613,7 +1673,9 @@ mod tests {
         assert!(is_post_path("/api/v1/control/tailscale/login"));
         assert!(is_post_path("/api/v1/control/tailscale/logout"));
         assert!(is_post_path("/api/v1/control/display"));
-        assert!(is_post_path("/api/v1/control/proxy/mode"));
+        assert!(is_post_path("/api/v1/control/proxy/lan-tun"));
+        assert!(is_post_path("/api/v1/control/proxy/tailscale"));
+        assert!(!is_post_path("/api/v1/control/proxy/mode"));
         assert!(!is_post_path("/api/v1/auth/session"));
         assert!(!is_post_path("/api/v1/admin/login"));
         assert!(!is_post_path("/api/v1/network/config"));
