@@ -124,6 +124,14 @@ impl ProxyObserved {
     }
 
     pub fn lan_tun_ready(&self, direct_macs: &BTreeSet<LanDeviceMac>) -> bool {
+        self.lan_tun_ready_except_direct_macs()
+            && self.active_direct_macs == Probe::Known(direct_macs.clone())
+    }
+
+    /// True when every LAN TUN resource is up and owned except that the live direct-MAC set may
+    /// differ from the desired one. Used to allow a pure device-policy change to refresh only the
+    /// direct-MAC rules in place instead of tearing down and rebuilding the whole TUN data plane.
+    pub fn lan_tun_ready_except_direct_macs(&self) -> bool {
         self.core_ready()
             && self.watcher_identity_valid == Probe::Known(true)
             && matches!(
@@ -141,7 +149,6 @@ impl ProxyObserved {
             && self.policy_rule_present == Probe::Known(true)
             && self.policy_route_present == Probe::Known(true)
             && self.interception_entry_present == Probe::Known(true)
-            && self.active_direct_macs == Probe::Known(direct_macs.clone())
     }
 
     pub fn ready_for_interception(
@@ -241,6 +248,9 @@ pub enum ProxyAction {
     },
     StartWatcher,
     WaitForWatcher,
+    RefreshTunDirectMacs {
+        direct_macs: BTreeSet<LanDeviceMac>,
+    },
     CommitFeatures {
         features: ProxyFeaturesV1,
     },
@@ -272,5 +282,56 @@ mod tests {
         )
         .unwrap();
         assert!(!unsupported.supported());
+    }
+
+    fn tun_ready() -> ProxyObserved {
+        ProxyObserved {
+            persisted_features: Probe::Known(ProxyFeaturesV1::new(true, false)),
+            process_identity_valid: Probe::Known(true),
+            watcher_identity_valid: Probe::Known(true),
+            runtime_config_valid: Probe::Known(true),
+            mixed_port_ready: Probe::Known(true),
+            tun_interface: Probe::Known(OwnedResource::Owned {
+                token: "tun".to_owned(),
+            }),
+            tun_firewall: Probe::Known(OwnedResource::Owned {
+                token: "tun".to_owned(),
+            }),
+            policy_rule_present: Probe::Known(true),
+            policy_route_present: Probe::Known(true),
+            interception_entry_present: Probe::Known(true),
+            ordinary_nat_confirmed: Probe::Known(true),
+            active_direct_macs: Probe::Known(Default::default()),
+        }
+    }
+
+    #[test]
+    fn lan_tun_ready_distinguishes_live_direct_macs_from_resource_readiness() {
+        let mac = "02:00:00:00:00:01".parse().unwrap();
+        let observed = tun_ready();
+        // Every resource is up and owned; only the live direct-MAC set differs from desired.
+        assert!(observed.lan_tun_ready_except_direct_macs());
+        assert!(!observed.lan_tun_ready(&[mac].into_iter().collect()));
+        assert!(observed.lan_tun_ready(&Default::default()));
+    }
+
+    #[test]
+    fn lan_tun_ready_except_direct_macs_is_false_when_any_resource_is_missing() {
+        let mut observed = tun_ready();
+        observed.interception_entry_present = Probe::Known(false);
+        assert!(!observed.lan_tun_ready_except_direct_macs());
+        observed = tun_ready();
+        observed.policy_route_present = Probe::Known(false);
+        assert!(!observed.lan_tun_ready_except_direct_macs());
+        observed = tun_ready();
+        observed.tun_interface = Probe::Known(OwnedResource::Foreign);
+        assert!(!observed.lan_tun_ready_except_direct_macs());
+        observed = tun_ready();
+        observed.watcher_identity_valid = Probe::Known(false);
+        assert!(!observed.lan_tun_ready_except_direct_macs());
+        observed = tun_ready();
+        observed.active_direct_macs = Probe::Unknown("unreadable".to_owned());
+        // Resource readiness does not depend on observing the live MAC set.
+        assert!(observed.lan_tun_ready_except_direct_macs());
     }
 }

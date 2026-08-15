@@ -187,6 +187,24 @@ pub fn proxy_plan(
         || observed.runtime_config_valid != Probe::Known(true);
     let tun_change = runtime_change || direct_mac_change;
 
+    // A pure device-policy change on an already-ready LAN TUN must not tear down the whole data
+    // plane. The TUN is up and owned with every resource present except the live direct-MAC set;
+    // refresh only those rules in place, keeping the interception entry, watcher and core live.
+    if desired.lan_tun_enabled
+        && !runtime_change
+        && direct_mac_change
+        && observed.lan_tun_ready_except_direct_macs()
+        && network.ready_for(&crate::domain::network::NetworkDesired::forwarding())
+    {
+        actions.push(ProxyAction::RefreshTunDirectMacs {
+            direct_macs: desired.direct_macs.clone(),
+        });
+        actions.push(ProxyAction::CommitFeatures {
+            features: desired.features(),
+        });
+        return Ok(actions);
+    }
+
     if tun_change || !desired.lan_tun_enabled {
         if observed.watcher_identity_valid == Probe::Known(true) {
             actions.push(ProxyAction::StopWatcher);

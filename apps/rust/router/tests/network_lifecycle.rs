@@ -459,9 +459,77 @@ fn proxy_planner_covers_shared_core_transition_matrix() {
 }
 
 #[test]
-fn device_policy_change_rebuilds_only_lan_tun_resources_and_keeps_shared_core() {
+fn device_policy_change_refreshes_only_direct_mac_rules_in_place() {
+    let observed = ready_proxy(ProxyFeaturesV1::new(true, true));
+    let desired_mac = "02:00:00:00:00:01".parse().unwrap();
+    let actions = proxy_plan(
+        &ProxyDesired {
+            lan_tun_enabled: true,
+            tailscale_explicit_proxy_enabled: true,
+            direct_macs: [desired_mac].into_iter().collect(),
+        },
+        &observed,
+        &network(
+            true,
+            OwnedResource::Owned {
+                token: "router".to_owned(),
+            },
+        ),
+        "new",
+    )
+    .unwrap();
+    assert_eq!(
+        actions,
+        vec![
+            ProxyAction::RefreshTunDirectMacs {
+                direct_macs: [desired_mac].into_iter().collect(),
+            },
+            ProxyAction::CommitFeatures {
+                features: ProxyFeaturesV1::new(true, true),
+            },
+        ]
+    );
+    assert!(!actions.contains(&ProxyAction::StopWatcher));
+    assert!(!actions.contains(&ProxyAction::StopCore));
+    assert!(!actions
+        .iter()
+        .any(|action| matches!(action, ProxyAction::CreateTunChains { .. })));
+}
+
+#[test]
+fn enabling_lan_tun_with_macs_is_a_full_rebuild_not_an_inplace_refresh() {
+    let observed = ready_proxy(ProxyFeaturesV1::new(false, true));
+    let desired_mac = "02:00:00:00:00:01".parse().unwrap();
+    let actions = proxy_plan(
+        &ProxyDesired {
+            lan_tun_enabled: true,
+            tailscale_explicit_proxy_enabled: true,
+            direct_macs: [desired_mac].into_iter().collect(),
+        },
+        &observed,
+        &network(
+            true,
+            OwnedResource::Owned {
+                token: "router".to_owned(),
+            },
+        ),
+        "new",
+    )
+    .unwrap();
+    assert!(actions.contains(&ProxyAction::StopCore));
+    assert!(actions
+        .iter()
+        .any(|action| matches!(action, ProxyAction::CreateTunChains { .. })));
+    assert!(!actions
+        .iter()
+        .any(|action| matches!(action, ProxyAction::RefreshTunDirectMacs { .. })));
+}
+
+#[test]
+fn device_policy_change_with_degraded_tun_still_rebuilds_lan_tun_and_keeps_core() {
     let mut observed = ready_proxy(ProxyFeaturesV1::new(true, true));
     observed.active_direct_macs = Probe::Known(Default::default());
+    observed.interception_entry_present = Probe::Known(false);
     let desired_mac = "02:00:00:00:00:01".parse().unwrap();
     let actions = proxy_plan(
         &ProxyDesired {

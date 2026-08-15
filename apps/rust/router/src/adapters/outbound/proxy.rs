@@ -103,6 +103,9 @@ impl LinuxRouterPlatform {
             }
             ProxyAction::StartWatcher => self.start_mihomo_watcher(),
             ProxyAction::WaitForWatcher => self.wait_for_mihomo_watcher(),
+            ProxyAction::RefreshTunDirectMacs { direct_macs } => {
+                self.refresh_tun_direct_macs(direct_macs)
+            }
             ProxyAction::CommitFeatures { features } => self.write_features(*features),
             ProxyAction::RestorePersistedFeatures { features } => self.write_features(*features),
         }
@@ -743,6 +746,159 @@ impl LinuxRouterPlatform {
             remove_rules("filter", MIHOMO_FILTER_CHAIN, None);
         }
         remove_rules("mangle", MIHOMO_MANGLE_CHAIN, Some(gateway));
+    }
+
+    fn refresh_tun_direct_macs(
+        &self,
+        direct_macs: &std::collections::BTreeSet<crate::domain::device_policy::LanDeviceMac>,
+    ) -> Result<(), PlatformError> {
+        let identity = self.require_owned_mihomo_tun(None)?;
+        let token = identity.token;
+        let output = self
+            .run(
+                Tool::Iptables,
+                &strings(&["-w", "-t", "mangle", "-S", MIHOMO_MANGLE_CHAIN]),
+            )?
+            .stdout;
+        let active = parse_direct_mac_rules(&output, MIHOMO_MANGLE_CHAIN).ok_or_else(|| {
+            PlatformError::Conflict("live direct MAC rules are malformed".to_owned())
+        })?;
+        if active == *direct_macs {
+            return Ok(());
+        }
+        if !self
+            .allowed_direct_mac_sets()?
+            .iter()
+            .any(|allowed| allowed == &active)
+        {
+            return Err(PlatformError::Conflict(
+                "live direct MAC rules do not match committed or pending policy".to_owned(),
+            ));
+        }
+        let gateway = self.tun_gateway()?;
+        let expected =
+            expected_chain_rules_with_direct(MIHOMO_MANGLE_CHAIN, &token, Some(&gateway), &active);
+        if !chain_output_is_exact(&output, MIHOMO_MANGLE_CHAIN, &expected) {
+            return Err(PlatformError::Conflict(
+                "live mangle chain is not the exact owned installer body".to_owned(),
+            ));
+        }
+        match self.reconfigure_tun_direct_macs(&token, direct_macs) {
+            Ok(()) => Ok(()),
+            Err(primary) => {
+                let restore = self
+                    .reconfigure_tun_direct_macs(&token, &active)
+                    .map_err(|rollback| {
+                        PlatformError::UnsafeToCutOver(format!(
+                            "refresh direct MAC rules failed: {primary}; rollback also failed: {rollback}"
+                        ))
+                    });
+                match restore {
+                    Err(error) => Err(error),
+                    Ok(()) => Err(primary),
+                }
+            }
+        }
+    }
+
+    /// Replace only the direct-MAC RETURN and MARK tail of an already-owned, already-verified
+    /// mangle chain, leaving the interception entry, policy rule/route, watcher and core live.
+    /// Re-parses the current tail on each call so it can also be used to restore a prior set.
+    fn reconfigure_tun_direct_macs(
+        &self,
+        token: &str,
+        direct_macs: &std::collections::BTreeSet<crate::domain::device_policy::LanDeviceMac>,
+    ) -> Result<(), PlatformError> {
+        let current = self
+            .run(
+                Tool::Iptables,
+                &strings(&["-w", "-t", "mangle", "-S", MIHOMO_MANGLE_CHAIN]),
+            )?
+            .stdout;
+        let present = parse_direct_mac_rules(&current, MIHOMO_MANGLE_CHAIN).ok_or_else(|| {
+            PlatformError::Conflict("live direct MAC rules are malformed".to_owned())
+        })?;
+        for mac in &present {
+            let mac = mac.to_string();
+            self.proxy_iptables(&[
+                "-w",
+                "-t",
+                "mangle",
+                "-D",
+                MIHOMO_MANGLE_CHAIN,
+                "-m",
+                "mac",
+                "--mac-source",
+                &mac,
+                "-j",
+                "RETURN",
+            ])?;
+        }
+        for protocol in ["tcp", "udp"] {
+            self.proxy_iptables(&[
+                "-w",
+                "-t",
+                "mangle",
+                "-D",
+                MIHOMO_MANGLE_CHAIN,
+                "-p",
+                protocol,
+                "-j",
+                "MARK",
+                "--set-xmark",
+                MIHOMO_MARK,
+            ])?;
+        }
+        for mac in direct_macs {
+            let mac = mac.to_string();
+            self.proxy_iptables(&[
+                "-w",
+                "-t",
+                "mangle",
+                "-A",
+                MIHOMO_MANGLE_CHAIN,
+                "-m",
+                "mac",
+                "--mac-source",
+                &mac,
+                "-j",
+                "RETURN",
+            ])?;
+        }
+        for protocol in ["tcp", "udp"] {
+            self.proxy_iptables(&[
+                "-w",
+                "-t",
+                "mangle",
+                "-A",
+                MIHOMO_MANGLE_CHAIN,
+                "-p",
+                protocol,
+                "-j",
+                "MARK",
+                "--set-xmark",
+                MIHOMO_MARK,
+            ])?;
+        }
+        let gateway = self.tun_gateway()?;
+        let final_body = self
+            .run(
+                Tool::Iptables,
+                &strings(&["-w", "-t", "mangle", "-S", MIHOMO_MANGLE_CHAIN]),
+            )?
+            .stdout;
+        let expected = expected_chain_rules_with_direct(
+            MIHOMO_MANGLE_CHAIN,
+            token,
+            Some(&gateway),
+            direct_macs,
+        );
+        if !chain_output_is_exact(&final_body, MIHOMO_MANGLE_CHAIN, &expected) {
+            return Err(PlatformError::Conflict(
+                "reconfigured mangle chain body is not the exact owned installer body".to_owned(),
+            ));
+        }
+        Ok(())
     }
 
     fn install_tun_hook(&self, token: &str) -> Result<(), PlatformError> {
