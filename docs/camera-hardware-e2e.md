@@ -60,16 +60,16 @@ npm run test:hardware-camera -- \
 5. 通过保留的真实 `RTCPeerConnection` 调用 `getStats()`；
 6. 要求 `connectionState=connected`；
 7. 要求 video `inbound-rtp` 的 `bytesReceived`、`packetsReceived` 和 `framesDecoded` 都大于零；
-8. 要求解码尺寸为 `1920×1080`，视频没有暂停；
+8. 要求解码尺寸为 `3840×2160`，视频没有暂停；
 9. 将真实 `<video>` 绘制到小尺寸 canvas，计算平均亮度、最大亮度、亮像素比例和亮度标准差，拒绝纯黑或没有可见细节的解码帧；
-10. 点击“进入全屏”，要求摄像头 stage 成为 `document.fullscreenElement`、覆盖当前 viewport，并可通过画面内“退出全屏”按钮恢复；
+10. 点击“旋转画面”，要求 `<video>` 依次应用 `rotate-90/180/270/0` class，验证每次点击顺时针旋转 90°；
 11. 要求页面 `scrollWidth <= clientWidth`，避免桌面或移动端横向溢出；
 12. 点击“停止直播”，等待 UI 回到“未播放”；
 13. 再次读取真实 camera 状态，要求 `pipeline=stopped`、`active_sessions=0`。
 
 这组断言不仅证明 SDP API 返回成功，还证明 ICE、DTLS、SRTP、RTP、H.264 解码、**实际可见像素内容**、全屏交互、页面媒体绑定和服务端 session 清理真实完成。仅有 `framesDecoded > 0` 不足以通过验收，因为 ISP 未运行或编码色彩范围错误时也可能持续编码和解码纯黑帧。
 
-当前固定采集从 RKISP `3840×2160` crop bounds 中央裁剪：左右各 `960`、上下各 `540`，输出 NV12 `1920×1080 @ 30 FPS`。GStreamer caps 显式声明 full-range BT.709 `colorimetry=1:3:5:1`；Rockchip MPP 插件必须把 `GST_VIDEO_COLOR_RANGE_0_255` 映射为 `MPP_FRAME_RANGE_JPEG`，设置 `prep:range` 后将 encoder 配置标记为待提交。可使用受控的一次性板端采集程序取得 Annex-B H.264，再在宿主机运行 `ffprobe`；正确 SPS/VUI 应报告 `color_range=pc`，通常同时显示 `pix_fmt=yuvj420p`。
+当前固定采集使用 RKISP 原生 `3840×2160` 全幅（不再裁剪），GStreamer 编码输出 NV12 `3840×2160 @ 30 FPS`、H.264 baseline、20 Mbps。GStreamer caps 显式声明 full-range BT.709 `colorimetry=1:3:5:1`；Rockchip MPP 插件必须把 `GST_VIDEO_COLOR_RANGE_0_255` 映射为 `MPP_FRAME_RANGE_JPEG`，设置 `prep:range` 后将 encoder 配置标记为待提交。可使用受控的一次性板端采集程序取得 Annex-B H.264，再在宿主机运行 `ffprobe`；正确 SPS/VUI 应报告 `color_range=pc`，通常同时显示 `pix_fmt=yuvj420p`。
 
 弱光会降低平均亮度，但不应使最大亮度、亮像素比例和标准差同时归零。曾出现原始 NV12 有细节、Chromium canvas 全黑的情况：原因是 full-range 输入未进入 MPP encoder 配置，低于 16 的 Y 分量被浏览器按 limited-range 裁剪。最终 OTA 的四组真实 Chromium 样本平均亮度约 `17.0-21.9`、最大亮度约 `121-123`、亮像素比例约 `38.9%-49.5%`，不再依赖白天环境才能通过。
 
