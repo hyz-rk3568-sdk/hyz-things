@@ -60,7 +60,7 @@ npm run test:hardware-camera -- \
 5. 通过保留的真实 `RTCPeerConnection` 调用 `getStats()`；
 6. 要求 `connectionState=connected`；
 7. 要求 video `inbound-rtp` 的 `bytesReceived`、`packetsReceived` 和 `framesDecoded` 都大于零；
-8. 要求解码尺寸为 `3840×2160`，视频没有暂停；
+8. 默认 720p 预设解码尺寸为 `1280×720`；切换到 4K 预设后要求解码尺寸为 `3840×2160`，视频没有暂停；
 9. 将真实 `<video>` 绘制到小尺寸 canvas，计算平均亮度、最大亮度、亮像素比例和亮度标准差，拒绝纯黑或没有可见细节的解码帧；
 10. 点击“旋转画面”，要求 `<video>` 依次应用 `rotate-90/180/270/0` class，验证每次点击顺时针旋转 90°；
 11. 要求页面 `scrollWidth <= clientWidth`，避免桌面或移动端横向溢出；
@@ -69,7 +69,9 @@ npm run test:hardware-camera -- \
 
 这组断言不仅证明 SDP API 返回成功，还证明 ICE、DTLS、SRTP、RTP、H.264 解码、**实际可见像素内容**、全屏交互、页面媒体绑定和服务端 session 清理真实完成。仅有 `framesDecoded > 0` 不足以通过验收，因为 ISP 未运行或编码色彩范围错误时也可能持续编码和解码纯黑帧。
 
-当前固定采集使用 RKISP 原生 `3840×2160` 全幅（不再裁剪），GStreamer 编码输出 NV12 `3840×2160 @ 30 FPS`、H.264 baseline、20 Mbps。GStreamer caps 显式声明 full-range BT.709 `colorimetry=1:3:5:1`；Rockchip MPP 插件必须把 `GST_VIDEO_COLOR_RANGE_0_255` 映射为 `MPP_FRAME_RANGE_JPEG`，设置 `prep:range` 后将 encoder 配置标记为待提交。可使用受控的一次性板端采集程序取得 Annex-B H.264，再在宿主机运行 `ffprobe`；正确 SPS/VUI 应报告 `color_range=pc`，通常同时显示 `pix_fmt=yuvj420p`。
+当前采集固定使用 RKISP 原生 `3840×2160` 全幅（不再裁剪），输出分辨率与码率通过固定枚举的 16:9 预设选择：默认 `720p · 2.5 Mbps`，可选 `1080p · 5 Mbps`、`1440p · 10 Mbps`、`4K · 20 Mbps`（均 `@ 30 FPS`、H.264 baseline）。非 4K 预设由 GStreamer `videoscale` 从 4K 全幅缩放，保留完整视野。预设只能在无活跃会话时通过管理页「画面分辨率 / 码率」下拉切换，切换会自动停止并重新打开直播。
+
+GStreamer caps 显式声明 full-range BT.709 `colorimetry=1:3:5:1`；Rockchip MPP 插件必须把 `GST_VIDEO_COLOR_RANGE_0_255` 映射为 `MPP_FRAME_RANGE_JPEG`，设置 `prep:range` 后将 encoder 配置标记为待提交。可使用受控的一次性板端采集程序取得 Annex-B H.264，再在宿主机运行 `ffprobe`；正确 SPS/VUI 应报告 `color_range=pc`，通常同时显示 `pix_fmt=yuvj420p`。
 
 弱光会降低平均亮度，但不应使最大亮度、亮像素比例和标准差同时归零。曾出现原始 NV12 有细节、Chromium canvas 全黑的情况：原因是 full-range 输入未进入 MPP encoder 配置，低于 16 的 Y 分量被浏览器按 limited-range 裁剪。最终 OTA 的四组真实 Chromium 样本平均亮度约 `17.0-21.9`、最大亮度约 `121-123`、亮像素比例约 `38.9%-49.5%`，不再依赖白天环境才能通过。
 

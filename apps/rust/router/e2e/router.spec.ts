@@ -186,8 +186,12 @@ test('plays and cleans up the administrator camera session on desktop and mobile
   await expect(camera).toBeVisible();
   await expect(camera.getByText('可用', { exact: true })).toBeVisible();
   await expect(camera.getByText('已停止', { exact: true })).toBeVisible();
-  await expect(camera.getByText(/3840 × 2160 · 30 fps · h264/)).toBeVisible();
+  await expect(camera.getByText(/3840 × 2160 · 30 fps · 20\.0 Mbps · h264/)).toBeVisible();
   await expect(camera.getByText('LAN · 0 个会话', { exact: true })).toBeVisible();
+
+  const presetSelect = camera.getByRole('combobox', { name: '画面分辨率与码率' });
+  await expect(presetSelect).toBeVisible();
+  await expect(presetSelect.locator('option')).toHaveCount(4);
 
   const verifyRotation = async () => {
     const rotateButton = camera.getByRole('button', { name: '旋转画面' });
@@ -238,6 +242,33 @@ test('plays and cleans up the administrator camera session on desktop and mobile
   ).toBe(true);
   await verifyRotation();
 
+  // Switching the preset while playing stops the session and reopens with the new profile.
+  await presetSelect.selectOption('fhd1080p5m');
+  await expect
+    .poll(async () => {
+      const state = await readHarnessState(request);
+      return {
+        createCount: state.camera.create_count,
+        closeCount: state.camera.close_count,
+        width: state.camera.status.profile.width,
+        height: state.camera.status.profile.height,
+        bitrate: state.camera.status.profile.bitrate_bps,
+        activeSessions: state.camera.status.active_sessions,
+        session: state.camera.active_session,
+      };
+    })
+    .toEqual({
+      createCount: 2,
+      closeCount: 1,
+      width: 1920,
+      height: 1080,
+      bitrate: 5_000_000,
+      activeSessions: 1,
+      session: `e2e-camera.${'a'.repeat(48)}`,
+    });
+  await expect(camera.getByText('直播中', { exact: true })).toBeVisible();
+  await expect(camera.getByText(/1920 × 1080 · 30 fps · 5\.0 Mbps · h264/)).toBeVisible();
+
   await camera.getByRole('button', { name: '停止直播' }).click();
   await expect(camera.getByText('未播放', { exact: true })).toBeVisible();
   await expect(camera.getByRole('status').filter({ hasText: '摄像头直播已停止' })).toBeVisible();
@@ -250,7 +281,7 @@ test('plays and cleans up the administrator camera session on desktop and mobile
         session: state.camera.active_session,
       };
     })
-    .toEqual({ closeCount: 1, activeSessions: 0, session: null });
+    .toEqual({ closeCount: 2, activeSessions: 0, session: null });
 
   await camera.getByRole('button', { name: '播放直播' }).click();
   await expect(camera.getByText('直播中', { exact: true })).toBeVisible();

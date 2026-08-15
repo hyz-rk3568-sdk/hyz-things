@@ -28,7 +28,7 @@ use crate::{
     },
     domain::{
         admin::{AdminAuthorization, AdminLoginRequest, AdminPasswordChangeRequest, SecretString},
-        camera::{CameraAccessScope, CameraStatus, CAMERA_MAX_SDP_BYTES},
+        camera::{CameraAccessScope, CameraStatus, CameraStreamPreset, CAMERA_MAX_SDP_BYTES},
         device_policy::DevicePolicyUpdateRequest,
         network_config::{NetworkConfigSummary, PendingNetworkConfigSummary},
         panel::{
@@ -341,6 +341,11 @@ fn app_with_assets(
         .route(
             "/api/v1/control/camera/session/close",
             on(MethodFilter::POST, camera_session_close),
+        )
+        .route(
+            "/api/v1/control/camera/profile",
+            on(MethodFilter::POST, camera_profile_update)
+                .layer(DefaultBodyLimit::max(MAX_CAMERA_HTTP_JSON_BODY_BYTES)),
         )
         .route(
             "/api/v1/network/config",
@@ -676,6 +681,13 @@ async fn admin_session(State(state): State<AppState>, headers: HeaderMap) -> Res
 #[derive(Serialize)]
 struct CameraStatusResponse {
     camera: CameraStatus,
+    available_presets: Vec<CameraStreamPreset>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CameraProfileUpdateRequest {
+    preset: CameraStreamPreset,
 }
 
 #[derive(Deserialize)]
@@ -705,7 +717,11 @@ async fn camera_status(State(state): State<AppState>, headers: HeaderMap) -> Res
         return service_unavailable_json();
     };
     match camera.status(scope).await {
-        Ok(camera) => Json(CameraStatusResponse { camera }).into_response(),
+        Ok(camera) => Json(CameraStatusResponse {
+            camera,
+            available_presets: CameraStreamPreset::ALL.to_vec(),
+        })
+        .into_response(),
         Err(error) => camera_error_json(error),
     }
 }
@@ -758,6 +774,27 @@ async fn camera_session_close(
     let owner = camera_session_owner(&token);
     match camera.close_owned_session(owner, &request.session_id).await {
         Ok(()) => Json(serde_json::json!({ "closed": true })).into_response(),
+        Err(error) => camera_error_json(error),
+    }
+}
+
+async fn camera_profile_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<CameraProfileUpdateRequest>, JsonRejection>,
+) -> Response {
+    let (_, _) = match authorize_sensitive_control_admin(&state, &headers).await {
+        Ok(result) => result,
+        Err(response) => return response,
+    };
+    let Ok(Json(request)) = payload else {
+        return invalid_request_json();
+    };
+    let Some(camera) = state.camera.clone() else {
+        return service_unavailable_json();
+    };
+    match camera.set_profile(request.preset).await {
+        Ok(()) => Json(serde_json::json!({ "applied": true })).into_response(),
         Err(error) => camera_error_json(error),
     }
 }
@@ -1713,6 +1750,7 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/auth/password"
             | "/api/v1/control/camera/session/create"
             | "/api/v1/control/camera/session/close"
+            | "/api/v1/control/camera/profile"
             | "/api/v1/control/network/sta/scan"
             | "/api/v1/control/network/sta/apply"
             | "/api/v1/control/network/ap/prepare"
@@ -1802,10 +1840,11 @@ mod tests {
             handlers
                 .matches("authorize_sensitive_control_admin(&state, &headers).await")
                 .count(),
-            2
+            3
         );
         assert!(handlers.contains("create_owned_session(owner, scope, request.offer_sdp)"));
         assert!(handlers.contains("close_owned_session(owner, &request.session_id)"));
+        assert!(handlers.contains("camera.set_profile(request.preset).await"));
         assert!(!handlers.contains("token.expose().to_owned()"));
     }
 
@@ -1813,6 +1852,7 @@ mod tests {
     fn camera_mutations_are_exact_post_routes() {
         assert!(is_post_path("/api/v1/control/camera/session/create"));
         assert!(is_post_path("/api/v1/control/camera/session/close"));
+        assert!(is_post_path("/api/v1/control/camera/profile"));
         assert!(!is_post_path("/api/v1/control/camera/session/create/extra"));
     }
 

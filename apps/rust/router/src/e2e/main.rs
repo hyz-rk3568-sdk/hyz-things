@@ -24,7 +24,10 @@ use hyz_router::{
     },
     domain::{
         admin::AdminCredential,
-        camera::{CameraAccessScope, CameraPipelineState, CameraStatus, CameraStreamProfile},
+        camera::{
+            CameraAccessScope, CameraPipelineState, CameraStatus, CameraStreamPreset,
+            CameraStreamProfile,
+        },
         device_policy::{DevicePolicyConfigV1, DeviceRoutePolicy, LanClientObservation},
         network_config::{
             NetworkConfigSummary, PendingNetworkConfigSummary, WifiCountry, WifiSsid,
@@ -98,6 +101,7 @@ impl Default for HarnessCameraState {
                     width: 3840,
                     height: 2160,
                     fps: 30,
+                    bitrate_bps: 20_000_000,
                 },
                 access: hyz_router::domain::camera::CameraAccessKind::Lan,
                 error_category: None,
@@ -377,6 +381,21 @@ impl CameraControlPort for HarnessCamera {
         state.camera.active_session = None;
         state.camera.status.pipeline = CameraPipelineState::Stopped;
         state.camera.status.active_sessions = 0;
+        Ok(())
+    }
+
+    async fn set_profile(&self, preset: CameraStreamPreset) -> Result<(), CameraError> {
+        let mut state = self.backend.state().map_err(|_| CameraError::Unavailable)?;
+        if state.camera.active_session.is_some() {
+            return Err(CameraError::Busy);
+        }
+        state.camera.status.profile = CameraStreamProfile {
+            codec: "h264".to_owned(),
+            width: preset.width(),
+            height: preset.height(),
+            fps: preset.fps(),
+            bitrate_bps: preset.bitrate_bps(),
+        };
         Ok(())
     }
 }

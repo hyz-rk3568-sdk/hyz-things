@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
     sync::{Arc, Condvar, Mutex},
@@ -27,13 +27,81 @@ pub struct CameraStreamProfile {
 
 pub const FIXED_CAPTURE_WIDTH: u16 = 3840;
 pub const FIXED_CAPTURE_HEIGHT: u16 = 2160;
-pub const FIXED_STREAM_PROFILE: CameraStreamProfile = CameraStreamProfile {
-    width: FIXED_CAPTURE_WIDTH,
-    height: FIXED_CAPTURE_HEIGHT,
-    fps: 30,
-    bitrate_bps: 20_000_000,
-    codec: CameraVideoCodec::H264Baseline,
-};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CameraStreamPreset {
+    Uhd4k20m,
+    Qhd1440p10m,
+    Fhd1080p5m,
+    Hd720p25m,
+}
+
+impl CameraStreamPreset {
+    pub const ALL: [Self; 4] = [
+        Self::Uhd4k20m,
+        Self::Qhd1440p10m,
+        Self::Fhd1080p5m,
+        Self::Hd720p25m,
+    ];
+
+    pub const fn profile(self) -> CameraStreamProfile {
+        match self {
+            Self::Uhd4k20m => CameraStreamProfile {
+                width: FIXED_CAPTURE_WIDTH,
+                height: FIXED_CAPTURE_HEIGHT,
+                fps: 30,
+                bitrate_bps: 20_000_000,
+                codec: CameraVideoCodec::H264Baseline,
+            },
+            Self::Qhd1440p10m => CameraStreamProfile {
+                width: 2560,
+                height: 1440,
+                fps: 30,
+                bitrate_bps: 10_000_000,
+                codec: CameraVideoCodec::H264Baseline,
+            },
+            Self::Fhd1080p5m => CameraStreamProfile {
+                width: 1920,
+                height: 1080,
+                fps: 30,
+                bitrate_bps: 5_000_000,
+                codec: CameraVideoCodec::H264Baseline,
+            },
+            Self::Hd720p25m => CameraStreamProfile {
+                width: 1280,
+                height: 720,
+                fps: 30,
+                bitrate_bps: 2_500_000,
+                codec: CameraVideoCodec::H264Baseline,
+            },
+        }
+    }
+
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Uhd4k20m => "uhd4k20m",
+            Self::Qhd1440p10m => "qhd1440p10m",
+            Self::Fhd1080p5m => "fhd1080p5m",
+            Self::Hd720p25m => "hd720p25m",
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Uhd4k20m => "4K · 20 Mbps",
+            Self::Qhd1440p10m => "1440p · 10 Mbps",
+            Self::Fhd1080p5m => "1080p · 5 Mbps",
+            Self::Hd720p25m => "720p · 2.5 Mbps",
+        }
+    }
+}
+
+impl Default for CameraStreamPreset {
+    fn default() -> Self {
+        Self::Hd720p25m
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct EncodedFrame {
@@ -169,12 +237,47 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fixed_stream_is_full_4k_capture() {
-        assert_eq!(FIXED_STREAM_PROFILE.width, FIXED_CAPTURE_WIDTH);
-        assert_eq!(FIXED_STREAM_PROFILE.height, FIXED_CAPTURE_HEIGHT);
-        assert_eq!(FIXED_STREAM_PROFILE.width, 3840);
-        assert_eq!(FIXED_STREAM_PROFILE.height, 2160);
-        assert_eq!(FIXED_STREAM_PROFILE.fps, 30);
-        assert_eq!(FIXED_STREAM_PROFILE.bitrate_bps, 20_000_000);
+    fn default_preset_is_lowest_latency_720p() {
+        assert_eq!(CameraStreamPreset::default(), CameraStreamPreset::Hd720p25m);
+        let profile = CameraStreamPreset::default().profile();
+        assert_eq!(profile.width, 1280);
+        assert_eq!(profile.height, 720);
+        assert_eq!(profile.fps, 30);
+        assert_eq!(profile.bitrate_bps, 2_500_000);
+    }
+
+    #[test]
+    fn uhd_preset_matches_full_capture() {
+        let profile = CameraStreamPreset::Uhd4k20m.profile();
+        assert_eq!(profile.width, FIXED_CAPTURE_WIDTH);
+        assert_eq!(profile.height, FIXED_CAPTURE_HEIGHT);
+        assert_eq!(profile.bitrate_bps, 20_000_000);
+    }
+
+    #[test]
+    fn presets_cover_descending_16by9_resolutions() {
+        let mut previous_width = u16::MAX;
+        for preset in CameraStreamPreset::ALL {
+            let profile = preset.profile();
+            assert!(profile.width % 16 == 0 && profile.height % 9 == 0);
+            assert_eq!(profile.width * 9, profile.height * 16);
+            assert!(profile.width < previous_width);
+            assert_eq!(profile.fps, 30);
+            assert_eq!(profile.codec, CameraVideoCodec::H264Baseline);
+            previous_width = profile.width;
+        }
+    }
+
+    #[test]
+    fn preset_ids_and_labels_are_fixed_and_distinct() {
+        let mut ids = std::collections::HashSet::new();
+        let mut labels = std::collections::HashSet::new();
+        for preset in CameraStreamPreset::ALL {
+            assert!(ids.insert(preset.id()));
+            assert!(labels.insert(preset.label()));
+        }
+        assert_eq!(ids.len(), CameraStreamPreset::ALL.len());
+        assert_eq!(CameraStreamPreset::Uhd4k20m.id(), "uhd4k20m");
+        assert_eq!(CameraStreamPreset::Uhd4k20m.label(), "4K · 20 Mbps");
     }
 }

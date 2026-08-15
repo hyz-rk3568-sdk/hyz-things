@@ -16,7 +16,7 @@ use crate::{
     application::camera::{CameraControlPort, CameraError, CameraSession},
     domain::camera::{
         CameraAccessKind, CameraAccessScope, CameraErrorCategory, CameraPipelineState,
-        CameraStatus, CameraStreamProfile,
+        CameraStatus, CameraStreamPreset, CameraStreamProfile,
     },
 };
 
@@ -114,6 +114,7 @@ impl CameraControlPort for CameraUnixAdapter {
                 width: status.profile.width,
                 height: status.profile.height,
                 fps: status.profile.fps,
+                bitrate_bps: status.profile.bitrate_bps,
             },
             access: scope.kind(),
             error_category: status.error,
@@ -158,6 +159,20 @@ impl CameraControlPort for CameraUnixAdapter {
         .map_err(|_| CameraError::Unavailable)??;
         match result {
             ResponseResult::SessionClosed => Ok(()),
+            _ => Err(CameraError::Unavailable),
+        }
+    }
+
+    async fn set_profile(&self, preset: CameraStreamPreset) -> Result<(), CameraError> {
+        let adapter = self.clone();
+        let request = SetProfileRequest { preset };
+        let result = tokio::task::spawn_blocking(move || {
+            adapter.request(RequestOperation::SetProfile(request))
+        })
+        .await
+        .map_err(|_| CameraError::Unavailable)??;
+        match result {
+            ResponseResult::ProfileSet => Ok(()),
             _ => Err(CameraError::Unavailable),
         }
     }
@@ -208,6 +223,7 @@ enum RequestOperation {
     Status,
     CreateSession(CreateSessionRequest),
     CloseSession(CloseSessionRequest),
+    SetProfile(SetProfileRequest),
 }
 
 #[derive(Serialize)]
@@ -220,6 +236,11 @@ struct CreateSessionRequest {
 #[derive(Serialize)]
 struct CloseSessionRequest {
     session_id: String,
+}
+
+#[derive(Serialize)]
+struct SetProfileRequest {
+    preset: CameraStreamPreset,
 }
 
 #[derive(Deserialize)]
@@ -242,6 +263,7 @@ enum ResponseResult {
     Status(CameraStatusWire),
     SessionCreated(SessionCreatedResponse),
     SessionClosed,
+    ProfileSet,
     ShutdownAccepted,
 }
 
@@ -260,8 +282,7 @@ struct CameraStreamProfileWire {
     width: u16,
     height: u16,
     fps: u8,
-    #[serde(rename = "bitrate_bps")]
-    _bitrate_bps: u32,
+    bitrate_bps: u32,
     codec: String,
 }
 
@@ -349,6 +370,7 @@ mod tests {
         };
         assert_eq!(status.profile.codec, "h264_baseline");
         assert_eq!(status.profile.width, 3840);
+        assert_eq!(status.profile.bitrate_bps, 20_000_000);
     }
 
     #[test]
@@ -365,6 +387,19 @@ mod tests {
         assert_eq!(body["version"], 1);
         assert_eq!(body["operation"]["create_session"]["scope"], "lan");
         assert!(body["operation"]["create_session"].get("port").is_none());
+    }
+
+    #[test]
+    fn set_profile_request_is_typed_and_enum_scoped() {
+        let body = serde_json::to_value(ControlRequest {
+            version: CAMERA_CONTROL_PROTOCOL_VERSION,
+            operation: RequestOperation::SetProfile(SetProfileRequest {
+                preset: CameraStreamPreset::Fhd1080p5m,
+            }),
+        })
+        .unwrap();
+        assert_eq!(body["version"], 1);
+        assert_eq!(body["operation"]["set_profile"]["preset"], "fhd1080p5m");
     }
 
     #[test]

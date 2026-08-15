@@ -1,4 +1,7 @@
-use crate::domain::{BoundedFrameQueue, CameraAccessScope, CameraPipelineState, CameraSessionId};
+use crate::domain::{
+    BoundedFrameQueue, CameraAccessScope, CameraPipelineState, CameraSessionId,
+    CameraStreamProfile,
+};
 use std::sync::Arc;
 
 pub trait KeyframeRequester: Send + Sync {
@@ -19,7 +22,7 @@ pub trait RunningMedia: Send {
 
 pub trait CameraMediaPort: Send + Sync {
     fn probe(&self) -> Result<(), MediaError>;
-    fn start(&self) -> Result<Box<dyn RunningMedia>, MediaError>;
+    fn start(&self, profile: CameraStreamProfile) -> Result<Box<dyn RunningMedia>, MediaError>;
 }
 
 pub trait RunningWebRtcSession: Send {

@@ -10,7 +10,10 @@ use std::{
 use gloo_net::http::Request;
 use gloo_timers::future::TimeoutFuture;
 use hyz_router::domain::{
-    camera::{CameraAccessKind, CameraErrorCategory, CameraPipelineState, CameraStatus},
+    camera::{
+        CameraAccessKind, CameraErrorCategory, CameraPipelineState, CameraStatus,
+        CameraStreamPreset,
+    },
     panel::{
         DisplayRequest, PanelBootstrap, ProxyDelayRefreshRequest, ProxyGroup, ProxySelectionRequest,
     },
@@ -67,6 +70,7 @@ const TAILSCALE_LOGOUT_ENDPOINT: &str = "/api/v1/control/tailscale/logout";
 const CAMERA_STATUS_ENDPOINT: &str = "/api/v1/camera/status";
 const CAMERA_SESSION_CREATE_ENDPOINT: &str = "/api/v1/control/camera/session/create";
 const CAMERA_SESSION_CLOSE_ENDPOINT: &str = "/api/v1/control/camera/session/close";
+const CAMERA_PROFILE_UPDATE_ENDPOINT: &str = "/api/v1/control/camera/profile";
 const CAMERA_ICE_GATHER_TIMEOUT_MS: u32 = 10_000;
 const CAMERA_ICE_POLL_MS: u32 = 50;
 const POLL_DELAY_MS: u32 = 2_000;
@@ -84,6 +88,19 @@ struct AuthSessionDto {
 #[serde(deny_unknown_fields)]
 struct CameraStatusResponseDto {
     camera: CameraStatus,
+    available_presets: Vec<CameraStreamPreset>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct CameraProfileUpdateRequestDto {
+    preset: CameraStreamPreset,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CameraProfileUpdateResponseDto {
+    applied: bool,
 }
 
 #[derive(serde::Serialize)]
@@ -782,31 +799,36 @@ fn camera_generation_is_current(generation: &Rc<RefCell<u64>>, expected: u64) ->
     *generation.borrow() == expected
 }
 
-fn close_camera_session(session_id: String, csrf: String) {
-    spawn_local(async move {
-        let _ = post_json(
-            CAMERA_SESSION_CLOSE_ENDPOINT,
-            &csrf,
-            &CameraSessionCloseRequestDto { session_id },
-            "摄像头会话关闭",
-        )
-        .await;
-    });
+async fn close_camera_session(session_id: String, csrf: String) {
+    let _ = post_json(
+        CAMERA_SESSION_CLOSE_ENDPOINT,
+        &csrf,
+        &CameraSessionCloseRequestDto { session_id },
+        "摄像头会话关闭",
+    )
+    .await;
 }
 
-fn close_camera_runtime(runtime: &CameraRuntime, video: &NodeRef) {
-    if let Some(active) = runtime.borrow_mut().take() {
+fn take_camera_runtime(runtime: &CameraRuntime, video: &NodeRef) -> Option<(String, String)> {
+    let session = runtime.borrow_mut().take().and_then(|active| {
         active.peer.set_ontrack(None);
         active.peer.set_onconnectionstatechange(None);
         active.peer.close();
-        if let Some(session_id) = active.session_id {
-            close_camera_session(session_id, active.csrf);
-        }
-    }
+        active
+            .session_id
+            .map(|session_id| (session_id, active.csrf))
+    });
     if let Some(video) = video.cast::<HtmlVideoElement>() {
         let _ = video.pause();
         video.set_src_object(None);
         video.load();
+    }
+    session
+}
+
+fn close_camera_runtime(runtime: &CameraRuntime, video: &NodeRef) {
+    if let Some((session_id, csrf)) = take_camera_runtime(runtime, video) {
+        spawn_local(close_camera_session(session_id, csrf));
     }
 }
 
@@ -824,15 +846,18 @@ async fn wait_for_camera_ice(peer: &RtcPeerConnection) -> Result<(), String> {
 
 async fn refresh_camera_status(
     status: UseStateHandle<Option<CameraStatus>>,
+    presets: UseStateHandle<Vec<CameraStreamPreset>>,
     error: UseStateHandle<Option<String>>,
 ) {
     match fetch_json::<CameraStatusResponseDto>(CAMERA_STATUS_ENDPOINT, "摄像头状态").await {
         Ok(response) => {
             status.set(Some(response.camera));
+            presets.set(response.available_presets);
             error.set(None);
         }
         Err(message) => {
             status.set(None);
+            presets.set(Vec::new());
             error.set(Some(message));
         }
     }
@@ -843,6 +868,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     let video = use_node_ref();
     let stage = use_node_ref();
     let status = use_state(|| None::<CameraStatus>);
+    let presets = use_state(|| Vec::<CameraStreamPreset>::new());
     let status_error = use_state(|| None::<String>);
     let notice = use_state(|| None::<String>);
     let phase = use_state(|| CameraViewPhase::Idle);
@@ -853,13 +879,15 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
 
     {
         let status = status.clone();
+        let presets = presets.clone();
         let status_error = status_error.clone();
         use_effect_with((), move |_| {
             let cancelled = Rc::new(Cell::new(false));
             let task_cancelled = cancelled.clone();
             spawn_local(async move {
                 while !task_cancelled.get() {
-                    refresh_camera_status(status.clone(), status_error.clone()).await;
+                    refresh_camera_status(status.clone(), presets.clone(), status_error.clone())
+                        .await;
                     TimeoutFuture::new(POLL_DELAY_MS).await;
                 }
             });
@@ -963,7 +991,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
         let runtime = runtime.clone();
         let generation = generation.clone();
         Callback::from(move |_| {
-            if csrf.is_empty() || *phase != CameraViewPhase::Idle {
+            if csrf.is_empty() || runtime.borrow().is_some() {
                 return;
             }
             close_camera_runtime(&runtime, &video);
@@ -1067,7 +1095,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                     .await?;
 
                     if !camera_generation_is_current(&generation, attempt) {
-                        close_camera_session(response.session_id, csrf.clone());
+                        spawn_local(close_camera_session(response.session_id, csrf.clone()));
                         return Ok::<_, String>(());
                     }
                     if let Some(active) = runtime.borrow_mut().as_mut() {
@@ -1142,6 +1170,63 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
         })
     };
 
+    let set_profile = {
+        let csrf = props.csrf.clone();
+        let notice = notice.clone();
+        let phase = phase.clone();
+        let runtime = runtime.clone();
+        let video = video.clone();
+        let generation = generation.clone();
+        let start = start.clone();
+        Callback::from(move |event: Event| {
+            let select: HtmlSelectElement = event.target_unchecked_into();
+            let Some(preset) = CameraStreamPreset::ALL
+                .into_iter()
+                .find(|candidate| candidate.id() == select.value())
+            else {
+                return;
+            };
+            let was_playing = *phase == CameraViewPhase::Playing;
+            let pending_close = take_camera_runtime(&runtime, &video);
+            if was_playing {
+                phase.set(CameraViewPhase::Idle);
+            }
+            next_camera_generation(&generation);
+            let csrf = csrf.clone();
+            let notice = notice.clone();
+            let phase = phase.clone();
+            let start = start.clone();
+            spawn_local(async move {
+                if let Some((session_id, token)) = pending_close {
+                    close_camera_session(session_id, token).await;
+                }
+                match post_json_response::<_, CameraProfileUpdateResponseDto>(
+                    CAMERA_PROFILE_UPDATE_ENDPOINT,
+                    &csrf,
+                    &CameraProfileUpdateRequestDto { preset },
+                    "摄像头画面设置",
+                )
+                .await
+                {
+                    Ok(response) if response.applied => {
+                        notice.set(Some(format!("画面已切换：{}", preset.label())));
+                        if was_playing {
+                            phase.set(CameraViewPhase::Idle);
+                            start.emit(());
+                        }
+                    }
+                    Ok(_) => notice.set(Some("画面设置未生效".to_owned())),
+                    Err(message) => notice.set(Some(message)),
+                }
+            });
+        })
+    };
+
+    let start_button = {
+        let start = start.clone();
+        Callback::from(move |_| start.emit(()))
+    };
+
     let camera_available = status.as_ref().is_some_and(|camera| camera.available);
     html! {
         <article class={CAMERA_CARD} aria-labelledby="camera-live-title">
@@ -1161,9 +1246,24 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                         <dl class={CAMERA_METRICS}>
                             <div class={CAMERA_METRIC}><dt>{"设备"}</dt><dd>{if camera.available { "可用" } else { "不可用" }}</dd></div>
                             <div class={CAMERA_METRIC}><dt>{"管线"}</dt><dd>{camera_pipeline_label(camera.pipeline)}</dd></div>
-                            <div class={CAMERA_METRIC}><dt>{"画面"}</dt><dd>{format!("{} × {} · {} fps · {}", camera.profile.width, camera.profile.height, camera.profile.fps, camera.profile.codec)}</dd></div>
+                            <div class={CAMERA_METRIC}><dt>{"画面"}</dt><dd>{format!("{} × {} · {} fps · {:.1} Mbps · {}", camera.profile.width, camera.profile.height, camera.profile.fps, camera.profile.bitrate_bps as f64 / 1_000_000.0, camera.profile.codec)}</dd></div>
                             <div class={CAMERA_METRIC}><dt>{"访问"}</dt><dd>{format!("{} · {} 个会话", camera_access_label(camera.access), camera.active_sessions)}</dd></div>
                         </dl>
+                        if !presets.is_empty() {
+                            <label class={FIELD}>
+                                <span class={FIELD_LABEL}>{"画面分辨率 / 码率（切换会自动停止并重新打开直播）"}</span>
+                                <select class={SELECT} onchange={set_profile} disabled={!camera_available || props.csrf.is_empty()} aria-label="画面分辨率与码率">
+                                    {for presets.iter().map(|preset| {
+                                        let selected = camera.profile.width == preset.width()
+                                            && camera.profile.height == preset.height()
+                                            && camera.profile.bitrate_bps == preset.bitrate_bps();
+                                        html! {
+                                            <option value={preset.id()} selected={selected}>{preset.label()}</option>
+                                        }
+                                    })}
+                                </select>
+                            </label>
+                        }
                         if let Some(error) = camera.error_category {
                             <p class="text-xs text-error" role="status">{camera_error_label(error)}</p>
                         }
@@ -1175,7 +1275,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                     <p class={HELP_TEXT}>{"视频不会自动启动。点击播放后，浏览器仅接收设备视频轨道；离开页面或退出登录会立即停止会话。"}</p>
                     <div class={BUTTON_ROW}>
                         if *phase == CameraViewPhase::Idle {
-                            <button class={BUTTON_PRIMARY} type="button" onclick={start} disabled={!camera_available || props.csrf.is_empty()}>{"播放直播"}</button>
+                            <button class={BUTTON_PRIMARY} type="button" onclick={start_button} disabled={!camera_available || props.csrf.is_empty()}>{"播放直播"}</button>
                         } else {
                             <button class={BUTTON_ERROR} type="button" onclick={stop}>{"停止直播"}</button>
                         }

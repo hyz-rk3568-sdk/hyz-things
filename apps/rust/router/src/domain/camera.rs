@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::net::Ipv4Addr;
+use std::{net::Ipv4Addr, str::FromStr};
 
 pub const CAMERA_LAN_ADDRESS: Ipv4Addr = Ipv4Addr::new(192, 168, 8, 1);
 pub const CAMERA_UDP_PORT_START: u16 = 40_000;
@@ -70,6 +70,91 @@ pub struct CameraStreamProfile {
     pub width: u16,
     pub height: u16,
     pub fps: u8,
+    pub bitrate_bps: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CameraStreamPreset {
+    Uhd4k20m,
+    Qhd1440p10m,
+    Fhd1080p5m,
+    Hd720p25m,
+}
+
+impl CameraStreamPreset {
+    pub const ALL: [Self; 4] = [
+        Self::Uhd4k20m,
+        Self::Qhd1440p10m,
+        Self::Fhd1080p5m,
+        Self::Hd720p25m,
+    ];
+
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Uhd4k20m => "uhd4k20m",
+            Self::Qhd1440p10m => "qhd1440p10m",
+            Self::Fhd1080p5m => "fhd1080p5m",
+            Self::Hd720p25m => "hd720p25m",
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Uhd4k20m => "4K · 20 Mbps",
+            Self::Qhd1440p10m => "1440p · 10 Mbps",
+            Self::Fhd1080p5m => "1080p · 5 Mbps",
+            Self::Hd720p25m => "720p · 2.5 Mbps",
+        }
+    }
+
+    pub const fn width(self) -> u16 {
+        match self {
+            Self::Uhd4k20m => 3840,
+            Self::Qhd1440p10m => 2560,
+            Self::Fhd1080p5m => 1920,
+            Self::Hd720p25m => 1280,
+        }
+    }
+
+    pub const fn height(self) -> u16 {
+        match self {
+            Self::Uhd4k20m => 2160,
+            Self::Qhd1440p10m => 1440,
+            Self::Fhd1080p5m => 1080,
+            Self::Hd720p25m => 720,
+        }
+    }
+
+    pub const fn fps(self) -> u8 {
+        30
+    }
+
+    pub const fn bitrate_bps(self) -> u32 {
+        match self {
+            Self::Uhd4k20m => 20_000_000,
+            Self::Qhd1440p10m => 10_000_000,
+            Self::Fhd1080p5m => 5_000_000,
+            Self::Hd720p25m => 2_500_000,
+        }
+    }
+}
+
+impl Default for CameraStreamPreset {
+    fn default() -> Self {
+        Self::Hd720p25m
+    }
+}
+
+impl FromStr for CameraStreamPreset {
+    type Err = ();
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        CameraStreamPreset::ALL
+            .into_iter()
+            .find(|preset| preset.id() == value)
+            .ok_or(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

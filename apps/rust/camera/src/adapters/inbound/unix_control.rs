@@ -1,6 +1,6 @@
 use crate::{
     application::{CameraApplication, CameraApplicationError, CreateSessionResult},
-    domain::{CameraAccessKind, CameraSessionId, CameraStatus},
+    domain::{CameraAccessKind, CameraSessionId, CameraStatus, CameraStreamPreset},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -45,6 +45,7 @@ pub enum ControlOperation {
     Status,
     CreateSession(CreateSessionRequest),
     CloseSession(CloseSessionRequest),
+    SetProfile(SetProfileRequest),
     Shutdown,
 }
 
@@ -60,6 +61,12 @@ pub struct CreateSessionRequest {
 #[serde(deny_unknown_fields)]
 pub struct CloseSessionRequest {
     pub session_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SetProfileRequest {
+    pub preset: CameraStreamPreset,
 }
 
 #[derive(Serialize)]
@@ -82,6 +89,7 @@ pub enum ControlResult {
     Status(CameraStatus),
     SessionCreated(SessionCreatedResponse),
     SessionClosed,
+    ProfileSet,
     ShutdownAccepted,
 }
 
@@ -224,6 +232,12 @@ fn handle_request(
                 .map_err(map_application_error)?;
             ControlResult::SessionClosed
         }
+        ControlOperation::SetProfile(request) => {
+            application
+                .set_profile(request.preset)
+                .map_err(map_application_error)?;
+            ControlResult::ProfileSet
+        }
         ControlOperation::Shutdown => {
             application.shutdown().map_err(map_application_error)?;
             shutdown.store(true, Ordering::Release);
@@ -273,6 +287,7 @@ fn map_application_error(error: CameraApplicationError) -> ControlErrorCode {
     use crate::application::ports::{MediaError, WebRtcError};
     match error {
         CameraApplicationError::InvalidAccessScope => ControlErrorCode::InvalidAccessScope,
+        CameraApplicationError::InvalidProfile => ControlErrorCode::InvalidRequest,
         CameraApplicationError::ShuttingDown => ControlErrorCode::ShuttingDown,
         CameraApplicationError::SessionBusy => ControlErrorCode::SessionBusy,
         CameraApplicationError::UnknownSession => ControlErrorCode::UnknownSession,

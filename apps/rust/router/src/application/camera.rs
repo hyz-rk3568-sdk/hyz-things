@@ -3,7 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
 use crate::domain::camera::{
-    CameraAccessScope, CameraStatus, CAMERA_MAX_SDP_BYTES, CAMERA_MAX_SESSION_ID_BYTES,
+    CameraAccessScope, CameraStatus, CameraStreamPreset, CAMERA_MAX_SDP_BYTES,
+    CAMERA_MAX_SESSION_ID_BYTES,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,6 +37,8 @@ pub trait CameraControlPort: Send + Sync {
     ) -> Result<CameraSession, CameraError>;
 
     async fn close_session(&self, session_id: &str) -> Result<(), CameraError>;
+
+    async fn set_profile(&self, preset: CameraStreamPreset) -> Result<(), CameraError>;
 }
 
 pub struct CameraApplication {
@@ -130,6 +133,13 @@ impl CameraApplication {
         }
         self.control.close_session(session_id).await
     }
+
+    pub async fn set_profile(&self, preset: CameraStreamPreset) -> Result<(), CameraError> {
+        if !CameraStreamPreset::ALL.contains(&preset) {
+            return Err(CameraError::InvalidRequest);
+        }
+        self.control.set_profile(preset).await
+    }
 }
 
 #[cfg(test)]
@@ -151,6 +161,7 @@ mod tests {
                     width: 3840,
                     height: 2160,
                     fps: 30,
+                    bitrate_bps: 20_000_000,
                 },
                 access: scope.kind(),
                 error_category: None,
@@ -170,6 +181,10 @@ mod tests {
         }
 
         async fn close_session(&self, _session_id: &str) -> Result<(), CameraError> {
+            Ok(())
+        }
+
+        async fn set_profile(&self, _preset: CameraStreamPreset) -> Result<(), CameraError> {
             Ok(())
         }
     }
@@ -224,5 +239,14 @@ mod tests {
         let app = CameraApplication::new(Arc::new(Fake));
         let status = app.status(CameraAccessScope::Lan).await.unwrap();
         assert_eq!(status.access, CameraAccessKind::Lan);
+    }
+
+    #[tokio::test]
+    async fn forwards_an_enumerated_preset_to_the_adapter() {
+        let app = CameraApplication::new(Arc::new(Fake));
+        assert_eq!(
+            app.set_profile(CameraStreamPreset::Fhd1080p5m).await,
+            Ok(())
+        );
     }
 }

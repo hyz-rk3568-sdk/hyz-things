@@ -4,7 +4,7 @@ use super::ports::{
 };
 use crate::domain::{
     CameraAccessKind, CameraAccessScope, CameraErrorCategory, CameraPipelineState, CameraSessionId,
-    CameraStatus, FIXED_STREAM_PROFILE,
+    CameraStatus, CameraStreamPreset,
 };
 use std::{
     net::Ipv4Addr,
@@ -24,6 +24,7 @@ struct ApplicationState {
     accepting: bool,
     active: Option<ActiveSession>,
     last_error: Option<CameraErrorCategory>,
+    preset: CameraStreamPreset,
 }
 
 struct ActiveSession {
@@ -57,6 +58,7 @@ impl CameraApplication {
                 accepting: true,
                 active: None,
                 last_error,
+                preset: CameraStreamPreset::default(),
             }),
         })
     }
@@ -79,9 +81,28 @@ impl CameraApplication {
             available: state.accepting && state.last_error.is_none(),
             pipeline,
             active_sessions: u8::from(state.active.is_some()),
-            profile: FIXED_STREAM_PROFILE,
+            profile: state.preset.profile(),
             error: state.last_error,
         }
+    }
+
+    pub fn set_profile(&self, preset: CameraStreamPreset) -> Result<(), CameraApplicationError> {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !state.accepting {
+            return Err(CameraApplicationError::ShuttingDown);
+        }
+        if state.active.is_some() {
+            return Err(CameraApplicationError::SessionBusy);
+        }
+        if state.preset == preset {
+            return Ok(());
+        }
+        state.preset = preset;
+        state.last_error = self.media.probe().err().map(media_category);
+        Ok(())
     }
 
     pub fn create_session(
@@ -111,10 +132,13 @@ impl CameraApplication {
             state.last_error = Some(media_category(error));
             CameraApplicationError::Media(error)
         })?;
-        let media = self.media.start().map_err(|error| {
-            state.last_error = Some(media_category(error));
-            CameraApplicationError::Media(error)
-        })?;
+        let media = self
+            .media
+            .start(state.preset.profile())
+            .map_err(|error| {
+                state.last_error = Some(media_category(error));
+                CameraApplicationError::Media(error)
+            })?;
 
         let mut random = [0u8; 24];
         if getrandom::fill(&mut random).is_err() {
@@ -245,6 +269,8 @@ fn webrtc_category(error: WebRtcError) -> CameraErrorCategory {
 pub enum CameraApplicationError {
     #[error("camera access scope is invalid")]
     InvalidAccessScope,
+    #[error("camera stream preset is invalid")]
+    InvalidProfile,
     #[error("camera daemon generation is invalid")]
     InvalidGeneration,
     #[error("camera daemon is shutting down")]

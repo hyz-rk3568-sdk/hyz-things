@@ -4,8 +4,9 @@ use crate::{
         CameraMediaPort, KeyframeRequester, MediaError, MediaTerminator, RunningMedia,
     },
     domain::{
-        pts_ns_to_90khz, BoundedFrameQueue, CameraPipelineState, EncodedFrame, FramePopOutcome,
-        FIXED_CAMERA_DEVICE, FIXED_STREAM_PROFILE, FRAME_QUEUE_CAPACITY, MAX_ENCODED_FRAME_BYTES,
+        pts_ns_to_90khz, BoundedFrameQueue, CameraPipelineState, CameraStreamProfile, EncodedFrame,
+        FramePopOutcome, FIXED_CAMERA_DEVICE, FIXED_CAPTURE_HEIGHT, FIXED_CAPTURE_WIDTH,
+        FRAME_QUEUE_CAPACITY, MAX_ENCODED_FRAME_BYTES,
     },
 };
 use gstreamer as gst;
@@ -48,6 +49,7 @@ impl CameraMediaPort for GStreamerMediaAdapter {
         for factory in [
             "v4l2src",
             "queue",
+            "videoscale",
             "mpph264enc",
             "h264parse",
             "capsfilter",
@@ -64,28 +66,31 @@ impl CameraMediaPort for GStreamerMediaAdapter {
         Ok(())
     }
 
-    fn start(&self) -> Result<Box<dyn RunningMedia>, MediaError> {
+    fn start(&self, profile: CameraStreamProfile) -> Result<Box<dyn RunningMedia>, MediaError> {
         self.probe()?;
         let pipeline = gst::Pipeline::with_name("hyz-camera-pipeline");
         let source = make("v4l2src", "camera-source")?;
-        let raw_caps = make("capsfilter", "raw-caps")?;
+        let capture_caps = make("capsfilter", "capture-caps")?;
         let queue = make("queue", "capture-queue")?;
+        let scaling = profile.width != FIXED_CAPTURE_WIDTH || profile.height != FIXED_CAPTURE_HEIGHT;
+        let videoscale = make("videoscale", "video-scaler")?;
+        let scale_caps = make("capsfilter", "scale-caps")?;
         let encoder = make("mpph264enc", "h264-encoder")?;
         let parser = make("h264parse", "h264-parser")?;
         let h264_caps = make("capsfilter", "h264-caps")?;
         let sink_element = make("appsink", "encoded-frames")?;
 
         source.set_property("device", FIXED_CAMERA_DEVICE);
-        raw_caps.set_property(
+        capture_caps.set_property(
             "caps",
             gst::Caps::builder("video/x-raw")
                 .field("format", "NV12")
                 .field("colorimetry", FULL_RANGE_BT709_COLORIMETRY)
-                .field("width", i32::from(FIXED_STREAM_PROFILE.width))
-                .field("height", i32::from(FIXED_STREAM_PROFILE.height))
+                .field("width", i32::from(FIXED_CAPTURE_WIDTH))
+                .field("height", i32::from(FIXED_CAPTURE_HEIGHT))
                 .field(
                     "framerate",
-                    gst::Fraction::new(i32::from(FIXED_STREAM_PROFILE.fps), 1),
+                    gst::Fraction::new(i32::from(profile.fps), 1),
                 )
                 .build(),
         );
@@ -93,10 +98,26 @@ impl CameraMediaPort for GStreamerMediaAdapter {
         queue.set_property("max-size-bytes", 0u32);
         queue.set_property("max-size-time", 0u64);
         queue.set_property_from_str("leaky", "downstream");
+        if scaling {
+            videoscale.set_property("add-borders", false);
+            scale_caps.set_property(
+                "caps",
+                gst::Caps::builder("video/x-raw")
+                    .field("format", "NV12")
+                    .field("colorimetry", FULL_RANGE_BT709_COLORIMETRY)
+                    .field("width", i32::from(profile.width))
+                    .field("height", i32::from(profile.height))
+                    .field(
+                        "framerate",
+                        gst::Fraction::new(i32::from(profile.fps), 1),
+                    )
+                    .build(),
+            );
+        }
         encoder.set_property_from_str("profile", "baseline");
         encoder.set_property_from_str("level", "4");
-        encoder.set_property("gop", i32::from(FIXED_STREAM_PROFILE.fps));
-        encoder.set_property("bps", FIXED_STREAM_PROFILE.bitrate_bps);
+        encoder.set_property("gop", i32::from(profile.fps));
+        encoder.set_property("bps", profile.bitrate_bps);
         parser.set_property("config-interval", -1i32);
         h264_caps.set_property(
             "caps",
@@ -157,27 +178,17 @@ impl CameraMediaPort for GStreamerMediaAdapter {
                 .build(),
         );
 
-        pipeline
-            .add_many([
-                &source,
-                &raw_caps,
-                &queue,
-                &encoder,
-                &parser,
-                &h264_caps,
-                sink_element.upcast_ref(),
-            ])
-            .map_err(|_| MediaError::PipelineFailed)?;
-        gst::Element::link_many([
-            &source,
-            &raw_caps,
-            &queue,
-            &encoder,
-            &parser,
-            &h264_caps,
-            sink_element.upcast_ref(),
-        ])
-        .map_err(|_| MediaError::PipelineFailed)?;
+        let mut chain: Vec<&gst::Element> = vec![&source, &capture_caps, &queue];
+        if scaling {
+            chain.push(&videoscale);
+            chain.push(&scale_caps);
+        }
+        chain.push(&encoder);
+        chain.push(&parser);
+        chain.push(&h264_caps);
+        chain.push(sink_element.upcast_ref());
+        pipeline.add_many(&chain).map_err(|_| MediaError::PipelineFailed)?;
+        gst::Element::link_many(&chain).map_err(|_| MediaError::PipelineFailed)?;
 
         let stopping = Arc::new(AtomicBool::new(false));
         let state = Arc::new(AtomicU8::new(state_code(CameraPipelineState::Starting)));

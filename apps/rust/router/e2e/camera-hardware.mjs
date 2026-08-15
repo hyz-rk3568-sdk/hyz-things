@@ -89,7 +89,11 @@ async function verifyStream(page, originName, viewport) {
   const camera = page.getByRole('article', { name: '摄像头直播' });
   await camera.waitFor({ state: 'visible', timeout: 30_000 });
   await camera.getByText('可用', { exact: true }).waitFor({ state: 'visible' });
-  await camera.getByText(/3840 × 2160 · 30 fps · h264/).waitFor({ state: 'visible' });
+  await camera.getByText(/1280 × 720 · 30 fps · 2\.5 Mbps · h264/).waitFor({ state: 'visible' });
+
+  const presetSelect = camera.getByRole('combobox', { name: '画面分辨率与码率' });
+  await presetSelect.waitFor({ state: 'visible' });
+  assert.equal(await presetSelect.locator('option').count(), 4);
 
   const initial = await cameraStatus(page);
   assert.equal(initial.camera.available, true);
@@ -132,8 +136,8 @@ async function verifyStream(page, originName, viewport) {
     readyState: video.readyState,
     paused: video.paused,
   }));
-  assert.equal(media.width, 3840);
-  assert.equal(media.height, 2160);
+  assert.equal(media.width, 1280);
+  assert.equal(media.height, 720);
   assert.ok(media.readyState >= 2);
   assert.equal(media.paused, false);
 
@@ -148,6 +152,21 @@ async function verifyStream(page, originName, viewport) {
     visual.brightPixelRatio >= 0.01,
     `camera frame has insufficient non-black pixels: ${JSON.stringify(visual)}`,
   );
+
+  // Switch to 4K while playing: the session stops and reopens at the higher profile.
+  await presetSelect.selectOption('uhd4k20m');
+  await camera.getByText('直播中', { exact: true }).waitFor({
+    state: 'visible',
+    timeout: 45_000,
+  });
+  await page.waitForFunction(() => {
+    const video = document.querySelector('video[aria-label="摄像头实时画面"]');
+    return video instanceof HTMLVideoElement && video.videoWidth === 3840
+      && video.videoHeight === 2160;
+  }, null, { timeout: 45_000 });
+  await camera.getByText(/3840 × 2160 · 30 fps · 20\.0 Mbps · h264/).waitFor({
+    state: 'visible',
+  });
 
   const layout = await page.evaluate(() => ({
     clientWidth: document.documentElement.clientWidth,
