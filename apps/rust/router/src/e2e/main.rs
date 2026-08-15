@@ -95,8 +95,8 @@ impl Default for HarnessCameraState {
                 active_sessions: 0,
                 profile: CameraStreamProfile {
                     codec: "h264".to_owned(),
-                    width: 1920,
-                    height: 1080,
+                    width: 3840,
+                    height: 2160,
                     fps: 30,
                 },
                 access: hyz_router::domain::camera::CameraAccessKind::Lan,

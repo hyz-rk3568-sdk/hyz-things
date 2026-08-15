@@ -5,8 +5,7 @@ use crate::{
     },
     domain::{
         pts_ns_to_90khz, BoundedFrameQueue, CameraPipelineState, EncodedFrame, FramePopOutcome,
-        FIXED_CAMERA_DEVICE, FIXED_CROP_BOTTOM, FIXED_CROP_LEFT, FIXED_CROP_RIGHT, FIXED_CROP_TOP,
-        FIXED_STREAM_PROFILE, FRAME_QUEUE_CAPACITY, MAX_ENCODED_FRAME_BYTES,
+        FIXED_CAMERA_DEVICE, FIXED_STREAM_PROFILE, FRAME_QUEUE_CAPACITY, MAX_ENCODED_FRAME_BYTES,
     },
 };
 use gstreamer as gst;
@@ -77,10 +76,6 @@ impl CameraMediaPort for GStreamerMediaAdapter {
         let sink_element = make("appsink", "encoded-frames")?;
 
         source.set_property("device", FIXED_CAMERA_DEVICE);
-        source.set_property("crop-left", FIXED_CROP_LEFT);
-        source.set_property("crop-right", FIXED_CROP_RIGHT);
-        source.set_property("crop-top", FIXED_CROP_TOP);
-        source.set_property("crop-bottom", FIXED_CROP_BOTTOM);
         raw_caps.set_property(
             "caps",
             gst::Caps::builder("video/x-raw")

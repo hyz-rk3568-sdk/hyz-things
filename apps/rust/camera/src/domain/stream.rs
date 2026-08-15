@@ -28,19 +28,12 @@ pub struct CameraStreamProfile {
 pub const FIXED_CAPTURE_WIDTH: u16 = 3840;
 pub const FIXED_CAPTURE_HEIGHT: u16 = 2160;
 pub const FIXED_STREAM_PROFILE: CameraStreamProfile = CameraStreamProfile {
-    width: 1920,
-    height: 1080,
+    width: FIXED_CAPTURE_WIDTH,
+    height: FIXED_CAPTURE_HEIGHT,
     fps: 30,
-    bitrate_bps: 4_000_000,
+    bitrate_bps: 20_000_000,
     codec: CameraVideoCodec::H264Baseline,
 };
-
-pub const FIXED_CROP_LEFT: u32 =
-    (FIXED_CAPTURE_WIDTH as u32 - FIXED_STREAM_PROFILE.width as u32) / 2;
-pub const FIXED_CROP_RIGHT: u32 = FIXED_CROP_LEFT;
-pub const FIXED_CROP_TOP: u32 =
-    (FIXED_CAPTURE_HEIGHT as u32 - FIXED_STREAM_PROFILE.height as u32) / 2;
-pub const FIXED_CROP_BOTTOM: u32 = FIXED_CROP_TOP;
 
 #[derive(Clone, Debug)]
 pub struct EncodedFrame {
@@ -176,22 +169,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fixed_stream_is_a_centered_1080p_crop() {
-        assert_eq!(FIXED_STREAM_PROFILE.width, 1920);
-        assert_eq!(FIXED_STREAM_PROFILE.height, 1080);
+    fn fixed_stream_is_full_4k_capture() {
+        assert_eq!(FIXED_STREAM_PROFILE.width, FIXED_CAPTURE_WIDTH);
+        assert_eq!(FIXED_STREAM_PROFILE.height, FIXED_CAPTURE_HEIGHT);
+        assert_eq!(FIXED_STREAM_PROFILE.width, 3840);
+        assert_eq!(FIXED_STREAM_PROFILE.height, 2160);
         assert_eq!(FIXED_STREAM_PROFILE.fps, 30);
-        assert_eq!(FIXED_STREAM_PROFILE.bitrate_bps, 4_000_000);
-        assert_eq!(FIXED_CROP_LEFT, 960);
-        assert_eq!(FIXED_CROP_RIGHT, 960);
-        assert_eq!(FIXED_CROP_TOP, 540);
-        assert_eq!(FIXED_CROP_BOTTOM, 540);
-        assert_eq!(
-            u32::from(FIXED_STREAM_PROFILE.width) + FIXED_CROP_LEFT + FIXED_CROP_RIGHT,
-            u32::from(FIXED_CAPTURE_WIDTH)
-        );
-        assert_eq!(
-            u32::from(FIXED_STREAM_PROFILE.height) + FIXED_CROP_TOP + FIXED_CROP_BOTTOM,
-            u32::from(FIXED_CAPTURE_HEIGHT)
-        );
+        assert_eq!(FIXED_STREAM_PROFILE.bitrate_bps, 20_000_000);
     }
 }

@@ -186,30 +186,28 @@ test('plays and cleans up the administrator camera session on desktop and mobile
   await expect(camera).toBeVisible();
   await expect(camera.getByText('可用', { exact: true })).toBeVisible();
   await expect(camera.getByText('已停止', { exact: true })).toBeVisible();
-  await expect(camera.getByText(/1920 × 1080 · 30 fps · h264/)).toBeVisible();
+  await expect(camera.getByText(/3840 × 2160 · 30 fps · h264/)).toBeVisible();
   await expect(camera.getByText('LAN · 0 个会话', { exact: true })).toBeVisible();
 
-  const verifyFullscreen = async () => {
-    await camera.getByRole('button', { name: '进入全屏' }).click();
+  const verifyRotation = async () => {
+    const rotateButton = camera.getByRole('button', { name: '旋转画面' });
+    await expect(rotateButton).toBeVisible();
+    await rotateButton.click();
     await expect
-      .poll(() =>
-        page.evaluate(() =>
-          document.fullscreenElement?.querySelector(
-            'video[aria-label="摄像头实时画面"]',
-          ) instanceof HTMLVideoElement,
-        ),
-      )
-      .toBe(true);
-    await expect(camera.getByRole('button', { name: '退出全屏' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    await camera.getByRole('button', { name: '退出全屏' }).click();
-    await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true);
-    await expect(camera.getByRole('button', { name: '进入全屏' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
+      .poll(() => camera.locator('video').evaluate(video => video.className))
+      .toContain('rotate-90');
+    await rotateButton.click();
+    await expect
+      .poll(() => camera.locator('video').evaluate(video => video.className))
+      .toContain('rotate-180');
+    await rotateButton.click();
+    await expect
+      .poll(() => camera.locator('video').evaluate(video => video.className))
+      .toContain('rotate-270');
+    await rotateButton.click();
+    await expect
+      .poll(() => camera.locator('video').evaluate(video => video.className))
+      .toContain('rotate-0');
   };
 
   await camera.getByRole('button', { name: '播放直播' }).click();
@@ -238,7 +236,7 @@ test('plays and cleans up the administrator camera session on desktop and mobile
       return stream instanceof MediaStream && stream.getVideoTracks().length === 1;
     }),
   ).toBe(true);
-  await verifyFullscreen();
+  await verifyRotation();
 
   await camera.getByRole('button', { name: '停止直播' }).click();
   await expect(camera.getByText('未播放', { exact: true })).toBeVisible();
@@ -268,7 +266,7 @@ test('plays and cleans up the administrator camera session on desktop and mobile
   await expect(camera.getByText('直播中', { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 360, height: 800 });
   await expectNoHorizontalOverflow(page);
-  await verifyFullscreen();
+  await verifyRotation();
   await page.getByRole('button', { name: '退出登录' }).click();
   await expect(camera).toHaveCount(0);
   await expect

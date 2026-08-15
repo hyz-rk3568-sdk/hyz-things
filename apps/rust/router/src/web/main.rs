@@ -846,7 +846,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     let status_error = use_state(|| None::<String>);
     let notice = use_state(|| None::<String>);
     let phase = use_state(|| CameraViewPhase::Idle);
-    let fullscreen = use_state(|| false);
+    let rotation = use_state(|| 0u16);
     let runtime = use_mut_ref(|| None::<CameraSessionRuntime>);
     let generation = use_mut_ref(|| 0u64);
     let previous_stop_generation = use_mut_ref(|| props.stop_generation);
@@ -951,37 +951,6 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                 }
                 next_camera_generation(&generation);
                 close_camera_runtime(&runtime, &video);
-            }
-        });
-    }
-
-    {
-        let fullscreen = fullscreen.clone();
-        use_effect_with((), move |_| {
-            let document = web_sys::window().and_then(|window| window.document());
-            let watched_document = document.clone();
-            let fullscreen_change = Closure::<dyn FnMut(Event)>::new(move |_| {
-                fullscreen.set(
-                    watched_document
-                        .as_ref()
-                        .is_some_and(|document| document.fullscreen_element().is_some()),
-                );
-            });
-
-            if let Some(document) = &document {
-                let _ = document.add_event_listener_with_callback(
-                    "fullscreenchange",
-                    fullscreen_change.as_ref().unchecked_ref(),
-                );
-            }
-
-            move || {
-                if let Some(document) = &document {
-                    let _ = document.remove_event_listener_with_callback(
-                        "fullscreenchange",
-                        fullscreen_change.as_ref().unchecked_ref(),
-                    );
-                }
             }
         });
     }
@@ -1166,22 +1135,10 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
         })
     };
 
-    let toggle_fullscreen = {
-        let stage = stage.clone();
-        let notice = notice.clone();
-        let fullscreen = *fullscreen;
+    let rotate = {
+        let rotation = rotation.clone();
         Callback::from(move |_| {
-            let Some(document) = web_sys::window().and_then(|window| window.document()) else {
-                notice.set(Some("当前浏览器不支持直播全屏".to_owned()));
-                return;
-            };
-            if fullscreen {
-                document.exit_fullscreen();
-            } else if let Some(stage) = stage.cast::<HtmlElement>() {
-                if stage.request_fullscreen().is_err() {
-                    notice.set(Some("浏览器拒绝进入直播全屏".to_owned()));
-                }
-            }
+            rotation.set((*rotation + 90) % 360);
         })
     };
 
@@ -1228,10 +1185,15 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                     }
                 </div>
                 <div ref={stage} class={CAMERA_STAGE}>
-                    <video ref={video} class={CAMERA_VIDEO} autoplay=true playsinline=true muted=true aria-label="摄像头实时画面"></video>
+                    <video ref={video} class={classes!(CAMERA_VIDEO, match *rotation {
+                        90 => CAMERA_ROTATE_90,
+                        180 => CAMERA_ROTATE_180,
+                        270 => CAMERA_ROTATE_270,
+                        _ => CAMERA_ROTATE_0,
+                    })} autoplay=true playsinline=true muted=true aria-label="摄像头实时画面"></video>
                     if *phase == CameraViewPhase::Playing {
-                        <button class={CAMERA_FULLSCREEN_BUTTON} type="button" onclick={toggle_fullscreen} aria-pressed={fullscreen.to_string()}>
-                            {if *fullscreen { "退出全屏" } else { "进入全屏" }}
+                        <button class={CAMERA_ROTATE_BUTTON} type="button" onclick={rotate} aria-label="旋转画面">
+                            {"旋转画面"}
                         </button>
                     }
                     if *phase == CameraViewPhase::Idle {

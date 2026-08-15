@@ -334,10 +334,10 @@ mod tests {
                     "pipeline": "stopped",
                     "active_sessions": 0,
                     "profile": {
-                        "width": 1920,
-                        "height": 1080,
+                        "width": 3840,
+                        "height": 2160,
                         "fps": 30,
-                        "bitrate_bps": 4000000,
+                        "bitrate_bps": 20000000,
                         "codec": "h264_baseline"
                     }
                 }
@@ -348,7 +348,7 @@ mod tests {
             panic!("expected camera status response");
         };
         assert_eq!(status.profile.codec, "h264_baseline");
-        assert_eq!(status.profile.width, 1920);
+        assert_eq!(status.profile.width, 3840);
     }
 
     #[test]

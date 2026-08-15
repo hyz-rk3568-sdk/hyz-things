@@ -89,7 +89,7 @@ async function verifyStream(page, originName, viewport) {
   const camera = page.getByRole('article', { name: '摄像头直播' });
   await camera.waitFor({ state: 'visible', timeout: 30_000 });
   await camera.getByText('可用', { exact: true }).waitFor({ state: 'visible' });
-  await camera.getByText(/1920 × 1080 · 30 fps · h264/).waitFor({ state: 'visible' });
+  await camera.getByText(/3840 × 2160 · 30 fps · h264/).waitFor({ state: 'visible' });
 
   const initial = await cameraStatus(page);
   assert.equal(initial.camera.available, true);
@@ -132,8 +132,8 @@ async function verifyStream(page, originName, viewport) {
     readyState: video.readyState,
     paused: video.paused,
   }));
-  assert.equal(media.width, 1920);
-  assert.equal(media.height, 1080);
+  assert.equal(media.width, 3840);
+  assert.equal(media.height, 2160);
   assert.ok(media.readyState >= 2);
   assert.equal(media.paused, false);
 
@@ -155,41 +155,18 @@ async function verifyStream(page, originName, viewport) {
   }));
   assert.ok(layout.scrollWidth <= layout.clientWidth);
 
-  await camera.getByRole('button', { name: '进入全屏' }).click();
-  await page.waitForFunction(() =>
-    document.fullscreenElement?.querySelector(
-      'video[aria-label="摄像头实时画面"]',
-    ) instanceof HTMLVideoElement,
-  );
-  const fullscreenLayout = await page.evaluate(() => {
-    const element = document.fullscreenElement;
-    const rect = element?.getBoundingClientRect();
-    return {
-      active: Boolean(element),
-      buttonPressed: element?.querySelector('button[aria-pressed="true"]')?.textContent?.trim(),
-      width: rect?.width ?? 0,
-      height: rect?.height ?? 0,
-      viewportWidth: window.innerWidth,
-      viewportHeight: window.innerHeight,
-    };
-  });
-  assert.equal(fullscreenLayout.active, true);
-  assert.equal(fullscreenLayout.buttonPressed, '退出全屏');
-  assert.equal(fullscreenLayout.width, fullscreenLayout.viewportWidth);
-  assert.equal(fullscreenLayout.height, fullscreenLayout.viewportHeight);
-
-  if (screenshotDirectory) {
-    await page.screenshot({
-      path: path.join(screenshotDirectory, `camera-${originName}-${viewport.width}-fullscreen.png`),
-    });
+  const rotateButton = camera.getByRole('button', { name: '旋转画面' });
+  await rotateButton.waitFor({ state: 'visible' });
+  let rotation = 0;
+  for (const deg of [90, 180, 270, 0]) {
+    await rotateButton.click();
+    const className = await camera.locator('video').evaluate(video => video.className);
+    assert.ok(
+      className.includes(`rotate-${deg}`),
+      `rotation ${deg}deg applied (className=${className})`,
+    );
+    rotation = deg;
   }
-
-  await camera.getByRole('button', { name: '退出全屏' }).click();
-  await page.waitForFunction(() => document.fullscreenElement === null);
-  assert.equal(
-    await camera.getByRole('button', { name: '进入全屏' }).getAttribute('aria-pressed'),
-    'false',
-  );
 
   if (screenshotDirectory) {
     await page.screenshot({
@@ -210,7 +187,7 @@ async function verifyStream(page, originName, viewport) {
     return body.camera.pipeline === 'stopped' && body.camera.active_sessions === 0;
   }, null, { timeout: 30_000 });
 
-  return { media, visual, layout, fullscreenLayout };
+  return { media, visual, layout, rotation };
 }
 
 const browser = await chromium.launch({
