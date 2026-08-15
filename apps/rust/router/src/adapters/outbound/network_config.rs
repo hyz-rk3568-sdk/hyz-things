@@ -4,6 +4,7 @@ use crate::{
         ApConfig, DerivedPsk, NetworkConfigV1, PendingNetworkConfigV1, StaConfig, WifiCountry,
         WifiPassphrase, WifiSsid,
     },
+    domain::wifi_startup::{ApBand as DomainApBand, ApChannel as DomainApChannel},
 };
 use std::{error::Error, fmt};
 use zeroize::Zeroizing;
@@ -287,6 +288,25 @@ impl ApRadioChannel {
             (ApRadioBand::Ghz5, 149 | 153 | 157 | 161) => Some((1, 155)),
             (ApRadioBand::Ghz5, 165) => Some((0, 165)),
             _ => None,
+        }
+    }
+
+    /// Map to the domain shared-channel value used by the last-good record.
+    pub(crate) fn to_domain(self) -> DomainApChannel {
+        let band = match self.band {
+            ApRadioBand::Ghz2 => DomainApBand::Ghz2,
+            ApRadioBand::Ghz5 => DomainApBand::Ghz5,
+        };
+        DomainApChannel::new(band, self.number)
+            .expect("ApRadioChannel constructors enforce the domain channel set")
+    }
+
+    /// Map a validated domain shared-channel back to the adapter radio channel. Returns `None`
+    /// only if the domain value somehow lies outside the adapter's allowed set.
+    pub(crate) fn from_domain(channel: DomainApChannel) -> Option<Self> {
+        match channel.band() {
+            DomainApBand::Ghz2 => Self::ghz2(channel.number()),
+            DomainApBand::Ghz5 => Self::ghz5(channel.number()),
         }
     }
 }

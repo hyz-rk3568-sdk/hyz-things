@@ -20,6 +20,10 @@ use crate::{
             ApConfig, NetworkConfigSummary, NetworkConfigV1, PendingNetworkConfigSummary,
             PendingNetworkConfigV1, StaConfig, WifiCountry, WifiSsid,
         },
+        wifi_startup::{
+            startup_channel_plan, LastGoodStaChannel, StaFingerprint, StartupChannelPlan,
+            LAST_GOOD_MAX_AGE_MS,
+        },
     },
 };
 use serde::{Deserialize, Serialize};
@@ -44,10 +48,26 @@ const RESOLV_CONFIG: &str = "/etc/resolv.conf";
 const DHCP_ACTIVE_GENERATION_RECORD: &str = "/run/hyz-router/udhcpc.active-generation";
 const DHCP_OWNERSHIP_RECORD: &str = "/run/hyz-router/udhcpc.lease-generation.json";
 const AP_PENDING_APPLIED_RECORD: &str = "/run/hyz-router/ap-pending-applied-v1";
+const LAST_GOOD_CHANNEL_PATH: &str = "/userdata/hyz-router/sta-last-good-channel.json";
+const MAX_LAST_GOOD_BYTES: usize = 4096;
 const PROCESS_WAIT: Duration = Duration::from_secs(5);
 const STA_CHANNEL_WAIT: Duration = Duration::from_secs(45);
+/// Short bounded window used on the last-good fast path before programming hostapd. It is not a
+/// full shared-channel wait: it only lets the single radio finish its first scan/association
+/// (stability), and it lets a live STA channel override the recorded last-good one when present.
+/// Without an upstream, the AP still starts on the recorded channel after this window.
+const FAST_START_CONFIRM_WAIT: Duration = Duration::from_secs(15);
+/// Bound for the exact AP readiness probe (state=ENABLED plus the exact VHT80 geometry) after
+/// hostapd starts. On a cold RTL8852BS start the radio settles into the exact profile tens of
+/// seconds after the shared-channel gate passes; the window must stay small enough that a failing
+/// attempt leaves room for S81 to relaunch within the startup deadline.
 const AP_READY_WAIT: Duration = Duration::from_secs(30);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
+/// Bounded window for the single radio to become operationally ready for the target AP channel
+/// before hostapd is programmed. On a cold RTL8852BS start the radio is not ready until the STA
+/// is confirmed on the shared channel; starting hostapd earlier races the driver and fails the
+/// strict VHT80 readiness probe, burning the whole AP-readiness window per launch attempt.
+const RADIO_CHANNEL_READY_WAIT: Duration = Duration::from_secs(45);
 const MAX_RESOLV_SIZE: usize = 64 * 1024;
 static DHCP_GENERATION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static RESOLVER_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -335,6 +355,21 @@ impl super::process::LinuxRouterPlatform {
         self.refuse_foreign_management_processes()?;
         prepare_runtime_configs(config, ApRadioChannel::DEFAULT)?;
 
+        // Last-good fast-start applies only to cold-start management startup (`attach_after_start
+        // == false`). STA apply and rollback are explicit configuration/recovery paths where the
+        // bounded shared-channel wait is kept for correctness regardless of any cache.
+        let fingerprint = StaFingerprint::of(&config.sta);
+        let plan = if attach_after_start {
+            StartupChannelPlan::WaitForStaChannel
+        } else {
+            startup_channel_plan(
+                read_last_good_channel()?.as_ref(),
+                &fingerprint,
+                self.unix_time_millis(),
+                LAST_GOOD_MAX_AGE_MS,
+            )
+        };
+
         let mut started = Vec::new();
         let result = (|| {
             run_ip(&["link", "set", "dev", WAN_INTERFACE, "up"])?;
@@ -346,12 +381,33 @@ impl super::process::LinuxRouterPlatform {
             self.start_service(ManagementService::Udhcpc)?;
             started.push(ManagementService::Udhcpc);
 
-            // RTL8852BS concurrent mode shares one radio channel. Give an available committed STA
-            // a bounded association window before AP startup, but keep LAN fallback independent
-            // from DHCP/default-route readiness.
-            let channel = self
-                .wait_for_sta_channel(STA_CHANNEL_WAIT)?
-                .unwrap_or(ApRadioChannel::DEFAULT);
+            // RTL8852BS concurrent mode shares one radio channel. With a fresh last-good record
+            // the AP startup still keeps a short radio-settling window before hostapd is
+            // programmed: starting hostapd while the single radio is still scanning/associating
+            // races the driver and flakes the strict AP readiness probe (observed as repeated
+            // cold-start relaunches on the board). So on the fast path we wait a bounded window
+            // for the committed STA's channel and use the live channel when it appears, falling
+            // back to the recorded last-good one only when no upstream channel shows up. The
+            // standard path keeps the full 45s association window before AP startup, with LAN
+            // fallback independent from DHCP/default-route readiness.
+            let channel = match plan {
+                StartupChannelPlan::FastStart { channel } => {
+                    match self.wait_for_sta_channel(FAST_START_CONFIRM_WAIT)? {
+                        Some(live) => live,
+                        None => {
+                            ApRadioChannel::from_domain(channel).unwrap_or(ApRadioChannel::DEFAULT)
+                        }
+                    }
+                }
+                StartupChannelPlan::WaitForStaChannel => self
+                    .wait_for_sta_channel(STA_CHANNEL_WAIT)?
+                    .unwrap_or(ApRadioChannel::DEFAULT),
+            };
+            // Whatever the channel source (live STA, recorded last-good fallback, or the fixed AP
+            // fallback), only program hostapd once the single radio is operationally on that
+            // channel; otherwise the strict AP readiness probe burns the full window on a radio
+            // that is still settling.
+            self.wait_for_radio_channel_ready(config, channel, RADIO_CHANNEL_READY_WAIT)?;
             self.start_hostapd_on_channel(&config.ap, channel)?;
             started.push(ManagementService::Hostapd);
 
@@ -366,6 +422,28 @@ impl super::process::LinuxRouterPlatform {
                 return Err(PlatformError::ProbeFailed(
                     "management services did not reach ready state".to_owned(),
                 ));
+            }
+            // Persist a fresh last-good record whenever the AP is up on a channel the STA is
+            // actually sharing, so a later cold start can fast-start on it. This is a
+            // runtime-derived cache and never affects readiness; both the probe and the write
+            // degrade to "no record" on any failure.
+            if !attach_after_start {
+                match self.current_sta_channel() {
+                    Ok(Some(channel)) => {
+                        let record = LastGoodStaChannel {
+                            fingerprint,
+                            channel: channel.to_domain(),
+                            recorded_unix_ms: self.unix_time_millis(),
+                        };
+                        if let Err(error) = write_last_good_channel(&record) {
+                            eprintln!("hyz-router: persist last-good STA channel: {error}");
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        eprintln!("hyz-router: skip last-good STA channel recording: {error}");
+                    }
+                }
             }
             Ok(())
         })();
@@ -394,6 +472,23 @@ impl super::process::LinuxRouterPlatform {
                 }
             }
         }
+    }
+
+    /// Refresh the persisted last-good STA channel record once the STA is confirmed on the shared
+    /// channel (e.g. after forwarding reconciliation confirms the DHCP-owned default route). A
+    /// not-yet-associated STA leaves the record untouched; a missing committed config no-ops.
+    /// Fail-soft: this is a cache and must never affect management correctness.
+    pub fn refresh_last_good_sta_channel(&self) -> Result<(), PlatformError> {
+        let Some(channel) = self.current_sta_channel()? else {
+            return Ok(());
+        };
+        let config = committed_network_config()?;
+        let record = LastGoodStaChannel {
+            fingerprint: StaFingerprint::of(&config.sta),
+            channel: channel.to_domain(),
+            recorded_unix_ms: self.unix_time_millis(),
+        };
+        write_last_good_channel(&record)
     }
 
     pub(crate) fn management_services_ready(&self) -> Result<bool, PlatformError> {
@@ -699,6 +794,36 @@ impl super::process::LinuxRouterPlatform {
                 })
             })
             .transpose()
+    }
+
+    fn wait_for_radio_channel_ready(
+        &self,
+        config: &NetworkConfigV1,
+        channel: ApRadioChannel,
+        timeout: Duration,
+    ) -> Result<(), PlatformError> {
+        // The single radio only accepts the AP channel once it is operationally there: the STA
+        // confirmed on the shared channel AND the driver's current supported-channel set listing
+        // it. Both signals still precede the exact VHT80 readiness (the AP settles into it tens of
+        // seconds later), which the longer AP_READY_WAIT absorbs. Without any upstream the STA can
+        // never confirm the channel, so the gate degrades to the recorded-channel start.
+        let mut ready = || {
+            if !radio_currently_supports_channel(WAN_INTERFACE, channel)? {
+                return Ok(false);
+            }
+            match self.sta_associated_with(&config.sta, channel) {
+                Ok(ready) => Ok(ready),
+                Err(error) if is_management_probe_timeout(&error) => Ok(false),
+                Err(error) => Err(error),
+            }
+        };
+        let mut degrade = || radio_currently_supports_channel(WAN_INTERFACE, channel);
+        wait_for_radio_channel_ready_until(
+            &mut ready,
+            &mut degrade,
+            Instant::now() + timeout,
+            || thread::sleep(POLL_INTERVAL),
+        )
     }
 
     fn sta_associated_with(
@@ -1306,6 +1431,49 @@ fn committed_network_config() -> Result<NetworkConfigV1, PlatformError> {
         })
 }
 
+/// Read the persisted last-good STA channel record. This is a runtime-derived cache: a missing,
+/// malformed, oversized or otherwise unusable record is treated as absent (returning `None`) so
+/// that management startup never blocks on it and falls back to the bounded association wait.
+fn read_last_good_channel() -> Result<Option<LastGoodStaChannel>, PlatformError> {
+    read_last_good_channel_at(LAST_GOOD_CHANNEL_PATH)
+}
+
+fn read_last_good_channel_at(path: &str) -> Result<Option<LastGoodStaChannel>, PlatformError> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            eprintln!("hyz-router: read last-good STA channel record: {error}");
+            return Ok(None);
+        }
+    };
+    if bytes.len() > MAX_LAST_GOOD_BYTES {
+        eprintln!("hyz-router: last-good STA channel record exceeds size limit");
+        return Ok(None);
+    }
+    match serde_json::from_slice::<LastGoodStaChannel>(&bytes) {
+        Ok(record) => Ok(Some(record)),
+        Err(error) => {
+            eprintln!("hyz-router: ignore malformed last-good STA channel record: {error}");
+            Ok(None)
+        }
+    }
+}
+
+fn write_last_good_channel(record: &LastGoodStaChannel) -> Result<(), PlatformError> {
+    write_last_good_channel_at(LAST_GOOD_CHANNEL_PATH, record)
+}
+
+fn write_last_good_channel_at(
+    path: &str,
+    record: &LastGoodStaChannel,
+) -> Result<(), PlatformError> {
+    let json = serde_json::to_vec(record).map_err(|error| {
+        PlatformError::InvalidState(format!("serialize last-good STA channel: {error}"))
+    })?;
+    storage::atomic_write_private(path, &json)
+}
+
 fn refuse_outstanding_sta_transaction(store: &NetworkConfigStore) -> Result<(), PlatformError> {
     if store
         .read_sta_rollback()
@@ -1393,41 +1561,90 @@ fn decode_process_argv(bytes: &[u8]) -> Result<Vec<String>, PlatformError> {
         .collect()
 }
 
+/// Outcome of probing a freshly spawned management process for its identity.
+///
+/// On a cold single-radio start the fork/exec image settles asynchronously, so a visible process
+/// may not yet carry the fixed identity. `Mismatch` is therefore transient: the caller retries
+/// within its bounded window and only fails closed when the window elapses without ever observing
+/// the fixed identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SpawnProbe {
+    /// The process is not yet visible in /proc (or has already exited); keep waiting.
+    NotReady,
+    /// The process is visible and carries the fixed identity.
+    Ready(ServiceIdentity),
+    /// The process is visible but does not yet carry the fixed identity.
+    Mismatch,
+}
+
+fn probe_spawned_service(
+    service: ManagementService,
+    pid: u32,
+) -> Result<SpawnProbe, PlatformError> {
+    let Some(start_time) = process_start_time(pid)? else {
+        return Ok(SpawnProbe::NotReady);
+    };
+    let executable = fs::read_link(format!("/proc/{pid}/exe")).map_err(|error| {
+        PlatformError::ProbeFailed(format!(
+            "identify new {} executable: {error}",
+            service.label()
+        ))
+    })?;
+    let identity = ServiceIdentity {
+        pid,
+        start_time,
+        executable,
+        argv: read_process_argv(pid)?,
+    };
+    if identity.matches(service)? {
+        Ok(SpawnProbe::Ready(identity))
+    } else {
+        Ok(SpawnProbe::Mismatch)
+    }
+}
+
 fn identify_spawned_service(
     service: ManagementService,
     pid: u32,
     timeout: Duration,
 ) -> Result<ServiceIdentity, PlatformError> {
     let deadline = Instant::now() + timeout;
+    let mut probe = || probe_spawned_service(service, pid);
+    identify_spawned_service_with_probe(
+        service,
+        &mut probe,
+        || Instant::now() < deadline,
+        || thread::sleep(POLL_INTERVAL),
+    )
+}
+
+fn identify_spawned_service_with_probe(
+    service: ManagementService,
+    probe: &mut dyn FnMut() -> Result<SpawnProbe, PlatformError>,
+    mut keep_polling: impl FnMut() -> bool,
+    mut wait: impl FnMut(),
+) -> Result<ServiceIdentity, PlatformError> {
+    let mut mismatch_seen = false;
     loop {
-        if let Some(start_time) = process_start_time(pid)? {
-            let executable = fs::read_link(format!("/proc/{pid}/exe")).map_err(|error| {
-                PlatformError::ProbeFailed(format!(
-                    "identify new {} executable: {error}",
+        match probe()? {
+            SpawnProbe::Ready(identity) => return Ok(identity),
+            SpawnProbe::Mismatch => mismatch_seen = true,
+            SpawnProbe::NotReady => {}
+        }
+        if !keep_polling() {
+            return Err(if mismatch_seen {
+                PlatformError::Conflict(format!(
+                    "new {} process did not have the fixed identity",
                     service.label()
                 ))
-            })?;
-            let identity = ServiceIdentity {
-                pid,
-                start_time,
-                executable,
-                argv: read_process_argv(pid)?,
-            };
-            if identity.matches(service)? {
-                return Ok(identity);
-            }
-            return Err(PlatformError::Conflict(format!(
-                "new {} process did not have the fixed identity",
-                service.label()
-            )));
+            } else {
+                PlatformError::ProbeFailed(format!(
+                    "{} disappeared during startup",
+                    service.label()
+                ))
+            });
         }
-        if Instant::now() >= deadline {
-            return Err(PlatformError::ProbeFailed(format!(
-                "{} disappeared during startup",
-                service.label()
-            )));
-        }
-        thread::sleep(POLL_INTERVAL);
+        wait();
     }
 }
 
@@ -1699,6 +1916,70 @@ fn wait_until(
             )));
         }
         thread::sleep(Duration::from_secs(1));
+    }
+}
+
+/// Parses the RTL8852BS driver's current supported operating-class list (the per-interface
+/// `cur_spt_op_class_ch` proc file, which is what hostapd's "current mode channel list" derives
+/// from) and reports whether the channel is present. The list is transient on a cold start: the
+/// upper-5GHz channels are missing until the radio finishes initializing/scans, then appear even
+/// while the STA later rescans.
+fn current_driver_channel_set_contains(content: &str, channel_number: u8) -> bool {
+    content.lines().any(|line| {
+        let mut fields = line.split_whitespace();
+        let Some(class) = fields.next() else {
+            return false;
+        };
+        if class.parse::<u8>().is_err() {
+            // Header ("class band bw ch_list") and summary ("op_class number:N") lines.
+            return false;
+        }
+        // Fields after the class id: band, bw, then the channel list.
+        fields.next();
+        fields.next();
+        fields.any(|token| token.parse::<u8>() == Ok(channel_number))
+    })
+}
+
+fn radio_currently_supports_channel(
+    interface: &str,
+    channel: ApRadioChannel,
+) -> Result<bool, PlatformError> {
+    let path = format!("/proc/net/rtl8852bs/{interface}/cur_spt_op_class_ch");
+    let content = fs::read_to_string(&path).map_err(|error| {
+        PlatformError::ProbeFailed(format!(
+            "read {interface} current supported channels: {error}"
+        ))
+    })?;
+    Ok(current_driver_channel_set_contains(
+        &content,
+        channel.number(),
+    ))
+}
+
+fn wait_for_radio_channel_ready_until(
+    ready: &mut dyn FnMut() -> Result<bool, PlatformError>,
+    degrade: &mut dyn FnMut() -> Result<bool, PlatformError>,
+    deadline: Instant,
+    mut wait: impl FnMut(),
+) -> Result<(), PlatformError> {
+    loop {
+        if ready()? {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            // No upstream may ever associate; degrade to the legacy recorded-channel start when
+            // the driver still lists the channel as supported, and fail closed only when the
+            // channel itself is unavailable.
+            if degrade()? {
+                return Ok(());
+            }
+            return Err(PlatformError::ProbeFailed(
+                "single radio did not become ready for the target AP channel within its bounded wait"
+                    .to_owned(),
+            ));
+        }
+        wait();
     }
 }
 
@@ -2573,6 +2854,8 @@ fn invalid_dhcp_ownership() -> PlatformError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::network_config::WifiPassphrase;
+    use crate::domain::wifi_startup::{ApBand, ApChannel};
 
     #[test]
     fn dangling_relative_resolver_symlink_resolves_through_its_existing_parent() {
@@ -2593,6 +2876,54 @@ mod tests {
             tmp.join("resolv.conf")
         );
         assert!(!tmp.join("resolv.conf").exists());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn last_good_channel_store_read_is_fail_soft_and_roundtrips() {
+        let root = std::env::temp_dir().join(format!(
+            "hyz-router-last-good-test-{}-{}",
+            std::process::id(),
+            RESOLVER_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("sta-last-good-channel.json");
+        let path = path.to_string_lossy().into_owned();
+
+        // Missing record reads as absent: the cache must never block management startup.
+        assert_eq!(read_last_good_channel_at(&path).unwrap(), None);
+
+        let config = StaConfig::from_passphrase(
+            WifiSsid::new("uplink").unwrap(),
+            &WifiPassphrase::new("passphrase-123").unwrap(),
+        );
+        let record = LastGoodStaChannel {
+            fingerprint: StaFingerprint::of(&config),
+            channel: ApChannel::new(ApBand::Ghz5, 161).unwrap(),
+            recorded_unix_ms: 42,
+        };
+        fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+        assert_eq!(
+            read_last_good_channel_at(&path).unwrap(),
+            Some(record.clone())
+        );
+
+        // Malformed JSON degrades to absent.
+        fs::write(&path, b"{not json").unwrap();
+        assert_eq!(read_last_good_channel_at(&path).unwrap(), None);
+
+        // Unknown fields are rejected by deny_unknown_fields and degrade to absent.
+        fs::write(
+            &path,
+            br#"{"fingerprint":"0000000000000000000000000000000000000000","channel":{"band":"Ghz2","number":6},"recorded_unix_ms":1,"extra":1}"#,
+        )
+        .unwrap();
+        assert_eq!(read_last_good_channel_at(&path).unwrap(), None);
+
+        // Oversized records degrade to absent.
+        fs::write(&path, vec![b' '; MAX_LAST_GOOD_BYTES + 1]).unwrap();
+        assert_eq!(read_last_good_channel_at(&path).unwrap(), None);
 
         fs::remove_dir_all(root).unwrap();
     }
@@ -2759,6 +3090,10 @@ mod tests {
             .find("self.refuse_foreign_management_processes()?")
             .unwrap();
         let prepare = body.find("prepare_runtime_configs").unwrap();
+        let fingerprint = body
+            .find("let fingerprint = StaFingerprint::of(&config.sta)")
+            .unwrap();
+        let plan = body.find("startup_channel_plan(").unwrap();
         let wan_up = body
             .find("run_ip(&[\"link\", \"set\", \"dev\", WAN_INTERFACE, \"up\"])?")
             .unwrap();
@@ -2768,29 +3103,58 @@ mod tests {
         let udhcpc = body
             .find("self.start_service(ManagementService::Udhcpc)?")
             .unwrap();
+        let fast_channel = body
+            .find("StartupChannelPlan::FastStart { channel }")
+            .unwrap();
         let sta_channel = body
             .find(".wait_for_sta_channel(STA_CHANNEL_WAIT)?")
             .unwrap();
+        // The radio channel readiness gate must sit between the final channel choice (which covers
+        // the live STA channel, the recorded last-good fallback, and the fixed AP fallback) and the
+        // hostapd programming: it uses the same `channel` value in every branch.
+        let gate = body
+            .find("wait_for_radio_channel_ready(config, channel, RADIO_CHANNEL_READY_WAIT)?")
+            .expect("single-radio channel readiness gate before hostapd");
         let hostapd = body.find("self.start_hostapd_on_channel").unwrap();
         let dnsmasq = body
             .find("self.start_service(ManagementService::Dnsmasq)?")
             .unwrap();
         let attach = body.find("if restore_attachment").unwrap();
         let management_ready = body.find("self.management_services_ready()?").unwrap();
+        let record = body.find("write_last_good_channel(&record)").unwrap();
         assert!(
             preserve < detach
                 && detach < stop
                 && stop < refuse_foreign
                 && refuse_foreign < prepare
-                && prepare < wan_up
+                && prepare < fingerprint
+                && fingerprint < plan
+                && plan < wan_up
                 && wan_up < wpa
                 && wpa < udhcpc
-                && udhcpc < sta_channel
-                && sta_channel < hostapd
+                && udhcpc < fast_channel
+                && fast_channel < sta_channel
+                && sta_channel < gate
+                && gate < hostapd
                 && hostapd < dnsmasq
                 && dnsmasq < attach
                 && attach < management_ready
+                && management_ready < record
         );
+        // The full STA-channel wait exists only in the slow path, exactly once. The last-good
+        // fast path must still keep a short radio-settling window (FAST_START_CONFIRM_WAIT) before
+        // programming hostapd; it uses a live STA channel when present and only falls back to the
+        // recorded channel when no upstream channel appears.
+        assert_eq!(
+            body.matches(".wait_for_sta_channel(STA_CHANNEL_WAIT)?")
+                .count(),
+            1
+        );
+        assert!(body.contains("wait_for_sta_channel(FAST_START_CONFIRM_WAIT)?"));
+        assert!(body.contains("Some(live) => live"));
+        assert!(body.contains("if attach_after_start"));
+        assert!(body.contains("StartupChannelPlan::WaitForStaChannel"));
+        assert!(body.contains("read_last_good_channel()?.as_ref()"));
         let cleanup = body.split_once("Err(primary) =>").unwrap().1;
         assert!(cleanup.find("self.detach_ap()").unwrap() < cleanup.find("for service").unwrap());
 
@@ -2868,6 +3232,136 @@ mod tests {
             ServiceIdentity::decode(encoded, ManagementService::WpaSupplicant).unwrap(),
             identity
         );
+    }
+
+    #[test]
+    fn spawned_service_transient_identity_mismatch_is_retried_within_the_window() {
+        let service = ManagementService::Hostapd;
+        let identity = ServiceIdentity {
+            pid: 4242,
+            start_time: 9001,
+            executable: PathBuf::from(service.executable()),
+            argv: expected_command_line(service).unwrap(),
+        };
+        // On a cold single-radio start the fork/exec image settles asynchronously, so the first
+        // probes observe a pre-exec identity. The retry loop must keep probing within its bounded
+        // window instead of failing on the first mismatch, and must return the settled identity.
+        let outcomes = [
+            SpawnProbe::Mismatch,
+            SpawnProbe::Mismatch,
+            SpawnProbe::Ready(identity.clone()),
+        ];
+        let calls = std::rc::Rc::new(std::cell::Cell::new(0usize));
+        let probe_calls = calls.clone();
+        let mut probe = move || -> Result<SpawnProbe, PlatformError> {
+            let call = probe_calls.get();
+            probe_calls.set(call + 1);
+            Ok(outcomes.get(call).cloned().unwrap_or(SpawnProbe::Mismatch))
+        };
+        let resolved = identify_spawned_service_with_probe(service, &mut probe, || true, || {})
+            .expect("transient mismatch must be retried to the settled identity");
+        assert_eq!(resolved, identity);
+        assert_eq!(calls.get(), 3);
+    }
+
+    #[test]
+    fn spawned_service_persistent_identity_mismatch_fails_closed() {
+        let service = ManagementService::WpaSupplicant;
+        let mut probe = || Ok(SpawnProbe::Mismatch);
+        let mut attempts = 0;
+        let keep_polling = move || {
+            attempts += 1;
+            attempts < 3
+        };
+        let error = identify_spawned_service_with_probe(service, &mut probe, keep_polling, || {})
+            .expect_err("persistent identity mismatch must fail closed");
+        assert!(matches!(error, PlatformError::Conflict(detail)
+            if detail.contains("did not have the fixed identity")));
+    }
+
+    #[test]
+    fn spawned_service_that_never_appears_fails_closed() {
+        let service = ManagementService::Dnsmasq;
+        let mut probe = || Ok(SpawnProbe::NotReady);
+        let error = identify_spawned_service_with_probe(service, &mut probe, || false, || {})
+            .expect_err("a service that never appears must fail closed");
+        assert!(matches!(error, PlatformError::ProbeFailed(detail)
+            if detail.contains("disappeared during startup")));
+    }
+
+    #[test]
+    fn current_driver_channel_set_contains_reflects_the_board_observed_cold_start_state() {
+        // Settled state observed on the board (radio on ch161, STA COMPLETED): upper-5GHz classes
+        // carry 161, while the current 20M class only carries 36/40/48 (44 and 165 are in the
+        // static capability but not the current set).
+        let settled = "class band bw      ch_list\n\
+            81 2.4G    20M  1 2 3 4 5 6 7 8 9 10 11\n\
+            83 2.4G    40M+ 1 2 3 4 5 6 7\n\
+            115   5G    20M  36 40 48\n\
+            124   5G    20M  149 153 157 161\n\
+            125   5G    20M  149 153 157 161\n\
+            128   5G    80M  149 153 157 161\n\
+            op_class number:11\n";
+        assert!(current_driver_channel_set_contains(settled, 161));
+        assert!(current_driver_channel_set_contains(settled, 149));
+        assert!(current_driver_channel_set_contains(settled, 6));
+        assert!(current_driver_channel_set_contains(settled, 36));
+        assert!(!current_driver_channel_set_contains(settled, 44));
+        assert!(!current_driver_channel_set_contains(settled, 165));
+
+        // Early cold-start scanning state observed on the board: only 2.4G and lower-5GHz classes
+        // are current, so the recorded upper-5GHz channel is not yet usable by hostapd.
+        let scanning = "class band bw      ch_list\n\
+            81 2.4G    20M  1 2 3 4 5 6 7 8 9 10 11\n\
+            115   5G    20M  36 40 48\n\
+            op_class number:3\n";
+        assert!(!current_driver_channel_set_contains(scanning, 161));
+        assert!(current_driver_channel_set_contains(scanning, 6));
+    }
+
+    #[test]
+    fn radio_ready_gate_retries_transient_unavailability_then_proceeds() {
+        let mut ready = {
+            let outcomes = [false, false, true];
+            let mut index = 0;
+            move || -> Result<bool, PlatformError> {
+                let outcome = outcomes.get(index).copied().unwrap_or(true);
+                index += 1;
+                Ok(outcome)
+            }
+        };
+        let mut degrade = || Ok(true);
+        wait_for_radio_channel_ready_until(
+            &mut ready,
+            &mut degrade,
+            Instant::now() + Duration::from_secs(60),
+            || {},
+        )
+        .expect(
+            "a transiently unavailable radio must be retried until the STA confirms the channel",
+        );
+    }
+
+    #[test]
+    fn radio_ready_gate_fails_closed_when_the_channel_stays_unavailable() {
+        let mut ready = || Ok(false);
+        let mut degrade = || Ok(false);
+        let error =
+            wait_for_radio_channel_ready_until(&mut ready, &mut degrade, Instant::now(), || {})
+                .expect_err("a channel that never becomes available must fail closed");
+        assert!(matches!(error, PlatformError::ProbeFailed(detail)
+            if detail.contains("did not become ready")));
+    }
+
+    #[test]
+    fn radio_ready_gate_degrades_to_the_recorded_channel_when_no_upstream_associates() {
+        // With no upstream the STA can never confirm the shared channel; the gate must degrade to
+        // the recorded-channel start (legacy LAN-only behavior) when the driver still lists the
+        // channel as supported, instead of failing the whole launch.
+        let mut ready = || Ok(false);
+        let mut degrade = || Ok(true);
+        wait_for_radio_channel_ready_until(&mut ready, &mut degrade, Instant::now(), || {})
+            .expect("no-upstream must degrade to the recorded channel, not fail");
     }
 
     #[test]

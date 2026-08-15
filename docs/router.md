@@ -176,13 +176,17 @@ RTL8852BS 单射频并发启动采用稳定优先的固定顺序，不以减少 
 1. 等待 `wlan0`、`p2p0` 出现，记录原 bridge attachment，先将 `p2p0` 从 bridge 分离；
 2. 按精确 PID/start/exe/argv 身份停止上一轮自有管理进程并拒绝 foreign process；
 3. 生成固定 wpa_supplicant、hostapd、dnsmasq runtime config，启动 `wpa_supplicant` 与常驻 `udhcpc`；
-4. 在 45 秒有界窗口内等待 committed STA 关联并取得共享信道；若暂时没有 STA channel，才使用固定管理 AP fallback channel；
+4. last-good 快启动优先：若持久化的 last-good 记录（`/userdata/hyz-router/sta-last-good-channel.json`，SHA-1 指纹 = committed STA 的 ssid+PSK，7 天新鲜度）与 committed STA 匹配且未过期，用 15 秒短确认窗口替代完整 45 秒等待——单射频必须先完成首次扫描/关联再编程 hostapd，否则会与驱动竞争并导致冷启动反复 relaunch（板上已实测）；窗口内拿到 STA 信道就用实际信道（单射频下即为共享信道），拿不到才回退记录信道，因此无上游场景比慢路径更快；记录无效/过期则走完整 45 秒窗口，仍拿不到 STA channel 才使用固定管理 AP fallback channel。last-good 是 runtime-derived 缓存，只在冷启动 boot 路径生效（STA apply/rollback 恒走标准等待），损坏/缺失/超龄一律回退标准等待，绝不阻塞启动；记录在管理服务就绪且观察到共享信道时写入，并在后台确认 DHCP-owned WAN route 时刷新；
 5. 启动 AP 前必须主动应用 committed AP country；5 GHz 非 DFS 信道使用既有 VHT80 geometry，信道 161 必须精确读回 `secondary_channel=-1`、`ieee80211ac=1`、`vht_oper_chwidth=1`、`vht_oper_centr_freq_seg0_idx=155`；
 6. hostapd 单次失败只允许一次 clean retry，每次都先停止精确自有进程、down/up `p2p0` 并重写固定配置；不得通过 `rmmod`、`insmod` 或 `modprobe` 把诊断性驱动重载带入生产启动；
 7. AP 精确 ready 后再启动 dnsmasq、恢复原 bridge attachment，并复核所有管理进程身份和 AP 状态；只有这一步完成后才绑定 LAN HTTP；
 8. 任一尝试失败都必须 detach AP 并按逆序清理本轮已启动的自有进程。S81 可在总计 300 秒 deadline 内按 1、2、4、8、16、30 秒封顶退避重新启动完整 daemon；多次 launch 本身不是故障，只要 ownership 每轮完全清理并在 deadline 内达到严格 readiness。
 
-2026-08-14 的正式 rootfs OTA 板测在第 4 次 launch、kernel uptime 约 92 秒时达到管理 HTTP 与同频道 VHT80 readiness。该量级已被接受为 RTL8852BS 冷启动基线；不得为了缩短时间改成 AP-first、永久 HT20、放宽 VHT geometry/readiness，或把 WAN DHCP、forwarding、Tailscale、Mihomo 放回 HTTP 前的关键路径。性能验收仍要求下游客户端连接后的实际吞吐测试，单凭 hostapd 状态不能证明恢复到历史 100+ Mbps。
+启动时对新生管理进程的身份确认对瞬态 `/proc` 状态重试：`Command::spawn` 返回后 exec 尚未落定，第一次严格匹配失败不代表 foreign process。`identify_spawned_service` 在 5 秒窗口内每 100ms 重新快照并重新匹配，只有 deadline 前始终无法匹配才 fail closed（曾见不匹配报 `Conflict`，全程不可见报 `ProbeFailed`）。这消除了冷启动因身份竞态导致的额外 relaunch，是总启动时间压下去的正路。
+
+2026-08-14 的正式 rootfs OTA 板测在第 4 次 launch、kernel uptime 约 92 秒时达到管理 HTTP 与同频道 VHT80 readiness。该量级已被接受为 RTL8852BS 冷启动基线；不得为了缩短时间改成 AP-first、永久 HT20、放宽 VHT geometry/readiness，或把 WAN DHCP、forwarding、Tailscale、Mihomo 放回 HTTP 前的关键路径。last-good 快启动把 45 秒共享信道等待收窄为 15 秒确认窗口（稳定部署下 STA 在窗口内关联，行为与慢路径等价；无上游时更早回退到记录信道），不改变最坏情况基线，也不违反“不 AP-first”：AP 仍然一开始就在 committed STA 的（历史共享）信道上，不做后续切信道；stale 记录（上游换信道、被指纹+新鲜度闸门约束的罕见情况）在确认窗口内用实际 STA 信道纠正，无上游时才用记录信道，因此不再有“stale 记录挡住 STA”的死锁。板上实测：直接跳过等待（0 秒窗口）会在单射频扫描期编程 hostapd、与驱动竞争导致冷启动反复 relaunch 甚至 stale-ownership 卡死，因此 fast path 必须保留短确认窗口。性能验收仍要求下游客户端连接后的实际吞吐测试，单凭 hostapd 状态不能证明恢复到历史 100+ Mbps。
+
+多次 launch 的原始主因（新生管理进程 exec 未落定时的身份竞态）已在 5 秒窗口内改为重试而非首次不匹配即失败，板上复验确认该启动失败已消除。在编程 hostapd 前新增单射频信道就绪门：只有当 committed STA 已确认在共享信道上（`wpa_cli` COMPLETED + 频率匹配）且 RTL8852BS 驱动的当前支持信道表（`/proc/net/rtl8852bs/{iface}/cur_spt_op_class_ch`，即 hostapd “current mode channel list” 的数据源）包含该信道时才开始 AP；无上游时在窗口内降级为记录信道启动（保持 LAN-only 可用），窗口耗尽仍无信道则 fail-closed。板上复验：`Hardware does not support configured channel (161)` 类启动失败已消除，launch 次数从 4-5 稳定到 3（到就绪 112-152 秒）；剩余 launch 由射频物理沉降时间主导——驱动信号（信道表、STA COMPLETED）在关联后即“就绪”，但严格 VHT80-ENABLED 往往要再等数十秒（跨 boot 实测 70-210 秒不等，无可读信号提前预测），且存在一轮“已到 dnsmasq+attach 仍退出”的偶发后续失败（原因待抓）。启动时 device-policy recovery 也改为在生命周期锁被瞬时占有时做有界重试（镜像 DHCP worker 的 `LIFECYCLE_LOCK_WAIT` 语义），避免 startup 因锁竞争直接失败。
 
 ## Composition root
 

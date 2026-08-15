@@ -915,6 +915,12 @@ impl ProductionRuntime {
         }
 
         self.reconcile_network(NetworkDesired::forwarding()).await?;
+        // The STA now holds the confirmed default route on the shared radio channel, so refresh
+        // the last-good channel cache for a faster cold start. This is a runtime-derived cache:
+        // a failure only shortens the next boot fast-start window and must not fail restoration.
+        if let Err(error) = self.router.refresh_last_good_sta_channel() {
+            eprintln!("hyz-router: refresh last-good STA channel cache: {error}");
+        }
         if let Err(error) = self.reconcile_persisted_tailscale().await {
             match self.shutdown_tailscale().await {
                 Ok(()) => eprintln!(

@@ -71,6 +71,23 @@ make router-revert-dev \
 
 相关单元测试覆盖正常 live-to-exited、zombie、replacement、bounded timeout 和空 cmdline；完整 `make check` 已通过。
 
+## startup 身份修复
+
+与 shutdown 侧同源的 `/proc` 竞态也存在于冷启动：`Command::spawn` 返回后，子进程要等 `execve` 完成才呈现固定身份。旧 `identify_spawned_service` 一旦看到进程可见就先取一次 exe/argv 快照，第一次严格匹配失败就立刻以 `Conflict` 报错并杀掉重来——RTL8852BS 冷启动下，这会在 fork/exec 尚未稳定时误判“新进程没有固定身份”，表现为每轮多 launch（板上实测 5 次手动前台运行中 4 次命中该错误）。它并不是 foreign process，而是“身份还没来得及落定”的瞬态。
+
+修复保持 fail-closed 语义，只在窗口内重试瞬态不匹配：
+
+- `identify_spawned_service_with_probe` 是注入式重试核心：`probe` 返回 `NotReady`（进程尚不可见）/`Mismatch`（可见但身份未落定）/`Ready(identity)`；
+- 生产路径在每个 `POLL_INTERVAL`（100ms）重新快照并重新匹配，直到 `PROCESS_WAIT`（5s）deadline；
+- deadline 前从未匹配：曾观察到 `Mismatch` 则报 `Conflict("… did not have the fixed identity")`，全程 `NotReady` 则报 `ProbeFailed("… disappeared during startup")`——均保持原有错误语义，仍由 `start_service` 杀掉并回滚；
+- 单测注入脚本化 probe，不触碰真实 `/proc`，也不依赖墙钟：瞬态 `Mismatch → Mismatch → Ready` 必须返回落定身份；持续 `Mismatch` 必须 fail closed；全程 `NotReady` 必须 fail closed。
+
+这使冷启动的“身份竞态导致额外 relaunch”被消除（板上复验：多次 launch 中不再出现 “did not have the fixed identity”）。在此基础上新增**单射频信道就绪门**：编程 hostapd 前，只有 committed STA 已确认在共享信道上（`wpa_cli` COMPLETED + 频率匹配）且 RTL8852BS 驱动当前支持信道表（`/proc/net/rtl8852bs/{iface}/cur_spt_op_class_ch`，即 hostapd “current mode channel list” 的数据源）包含该信道时才起 AP；无上游时在窗口内降级为记录信道启动（LAN-only 保持可用），窗口耗尽仍无信道则 fail-closed。TDD：用板上实测的“扫描期/稳定期”信道表做解析单测、注入式就绪门语义单测（瞬态重试/fail-closed/无上游降级），并断言就绪门位于信道选择之后、`start_hostapd_on_channel` 之前且对回退信道同样生效。
+
+板上复验（多次独立冷启动）：`Hardware does not support configured channel (161)` 类启动失败已消除，launch 次数从 4-5 稳定到 **3（到就绪 112-152 秒）**。剩余 launch 由射频物理沉降时间主导：驱动信号（当前信道表、STA COMPLETED）在关联后即报“就绪”，但严格 VHT80-ENABLED 往往要再等数十秒（跨 boot 实测 70-210 秒不等，无可读信号提前预测），且存在一轮“已到 dnsmasq+attach 仍退出”的偶发后续失败（原因待抓）。尝试把 `AP_READY_WAIT` 提到 90 秒反而更慢（到就绪 ~255 秒），已回退 30 秒。这不改变“AP 仍从 committed STA 的（历史共享）信道开始、不做 AP-first、不跳过单射频确认窗口”的既定流程。
+
+配套修复：startup 的 device-policy recovery 对生命周期锁（`/run/hyz-network.lock`）的获取改为有界重试（镜像 DHCP worker 的 3 分钟上限、20ms 间隔语义），因为管理启动期间 udhcpc 拿到租约后，DHCP dispatcher 会在 reconcile 释放锁后短暂持有它；recovery 若即时失败会让整个 daemon 无法 boot。该重试保持 fail-closed：窗口内始终被占用仍报 `Busy`。
+
 ## 适用边界
 
 应用级部署适合：
@@ -104,4 +121,4 @@ make router-revert-dev \
 - 随后的正式 recovery-free OTA 已确认板端 `/usr/bin/hyz-router` 与打包 ELF 逐字节一致、BCB 在安装后清除；第 4 次 daemon launch 于 kernel uptime 约 92 秒达到管理 HTTP readiness，STA 为 5805 MHz/`COMPLETED`，AP 精确读回 channel 161、`secondary_channel=-1`、802.11ac、VHT width 1 与 center 155，且未出现新的 cfg80211/8852 error；
 - 该样本中 `udhcpc` 仍在运行但尚无 metric-600 默认路由，下游 AP station 数为 0，因此它完成的是启动与 VHT80 radio 验收，不是 DHCP、转发或历史 100+ Mbps 吞吐验收。
 
-因此已确认的冷启动放大机制是 hostapd 失败后 daemon 全量清理和 init 退避重试；Tailscale、Mihomo 与 DHCP server 不是该长延迟的主因。产品接受总计 300 秒 deadline 内的 clean daemon retry，并以本轮约 92 秒作为当前 RTL8852BS 冷启动基线；不再以“必须 launch attempt 1”作为通过条件。为恢复 2026-08-14 凌晨版本的稳定等待窗口，生产流程使用 45 秒 STA channel 窗口、30 秒 AP readiness、单次 hostapd clean retry以及 S81 封顶指数退避；WAN route、forwarding、Tailscale 和 Mihomo 仍保留在管理 HTTP 之后，不恢复旧的同步阻塞路径。HT20 只作为诊断基线，VHT80 exact readiness 才是正式 5 GHz 配置；模块重载只用于诊断，不进入普通生产启动路径。
+因此已确认的冷启动放大机制是 hostapd 失败后 daemon 全量清理和 init 退避重试；Tailscale、Mihomo 与 DHCP server 不是该长延迟的主因。产品接受总计 300 秒 deadline 内的 clean daemon retry，并以本轮约 92 秒作为当前 RTL8852BS 冷启动基线；不再以“必须 launch attempt 1”作为通过条件。为恢复 2026-08-14 凌晨版本的稳定等待窗口，生产流程使用 45 秒 STA channel 窗口（仅在无有效 last-good 记录时的慢路径）、30 秒 AP readiness、单次 hostapd clean retry以及 S81 封顶指数退避；last-good 快启动（SHA-1 指纹匹配 + 7 天新鲜度）在稳定部署下把该窗口收窄为 15 秒确认窗口（拿到 STA 信道用实际信道、拿不到回退记录信道），且实测证实 fast path 必须保留该短窗口——完全跳过会导致单射频扫描期编程 hostapd 与驱动竞争、冷启动反复 relaunch。WAN route、forwarding、Tailscale 和 Mihomo 仍保留在管理 HTTP 之后，不恢复旧的同步阻塞路径。HT20 只作为诊断基线，VHT80 exact readiness 才是正式 5 GHz 配置；模块重载只用于诊断，不进入普通生产启动路径。

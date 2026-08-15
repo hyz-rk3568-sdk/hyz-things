@@ -9,3 +9,4 @@ pub mod proxy;
 pub mod status;
 pub mod subscription;
 pub mod tailscale;
+pub mod wifi_startup;

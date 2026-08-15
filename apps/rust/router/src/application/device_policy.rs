@@ -1,8 +1,8 @@
 use crate::{
     application::{
         ports::{
-            ClockPort, DevicePolicyStorePort, LanClientDiscoveryPort, PlatformError,
-            RouterPlatformPort, SystemProbePort,
+            ClockPort, DevicePolicyStorePort, LanClientDiscoveryPort, LifecycleLease,
+            PlatformError, RouterPlatformPort, SystemProbePort,
         },
         proxy::ProxyApplication,
     },
@@ -13,6 +13,7 @@ use crate::{
     },
 };
 use serde::{Deserialize, Serialize};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -99,7 +100,11 @@ impl<'a> DevicePolicyApplication<'a> {
 
     /// Startup recovery always restores the journal's previous state and never promotes candidate.
     pub fn recover(&self) -> Result<(), PlatformError> {
-        let lease = self.platform.acquire_lifecycle_lock()?;
+        // Startup must not fail because a transient in-process worker (the DHCP dispatcher
+        // applying a lease captured while management startup held the lock) briefly owns the
+        // lifecycle lock. Acquire it with the same bounded retry the DHCP worker uses, then still
+        // fail closed if the contention never clears.
+        let lease = acquire_lifecycle_lock_bounded(self.platform)?;
         let result = (|| {
             let Some((previous, _candidate)) = self.store.load_pending_device_policy()? else {
                 return Ok(());
@@ -159,6 +164,34 @@ impl<'a> DevicePolicyApplication<'a> {
                 direct_macs: config.direct_macs(),
             })
             .map(|_| ())
+    }
+}
+
+/// Upper bound for waiting on a transiently busy lifecycle lock during startup device-policy
+/// recovery. Mirrors the DHCP worker's bounded acquisition so startup does not hard-fail on
+/// in-process contention that clears within the same budget.
+const LIFECYCLE_LOCK_WAIT: Duration = Duration::from_secs(3 * 60);
+const LIFECYCLE_LOCK_RETRY: Duration = Duration::from_millis(20);
+
+fn acquire_lifecycle_lock_bounded(
+    platform: &dyn RouterPlatformPort,
+) -> Result<LifecycleLease, PlatformError> {
+    acquire_lifecycle_lock_bounded_until(platform, Instant::now() + LIFECYCLE_LOCK_WAIT, || {
+        std::thread::sleep(LIFECYCLE_LOCK_RETRY)
+    })
+}
+
+fn acquire_lifecycle_lock_bounded_until(
+    platform: &dyn RouterPlatformPort,
+    deadline: Instant,
+    mut wait: impl FnMut(),
+) -> Result<LifecycleLease, PlatformError> {
+    loop {
+        match platform.acquire_lifecycle_lock() {
+            Ok(lease) => return Ok(lease),
+            Err(PlatformError::Busy(_)) if Instant::now() < deadline => wait(),
+            Err(error) => return Err(error),
+        }
     }
 }
 
@@ -487,5 +520,77 @@ mod tests {
             .unwrap_err();
         assert!(matches!(error, PlatformError::Conflict(_)));
         assert_eq!(*events.lock().unwrap(), ["lock", "load", "release"]);
+    }
+
+    struct BusyThenOkLockPlatform {
+        remaining_busy: Arc<Mutex<usize>>,
+    }
+
+    impl RouterPlatformPort for BusyThenOkLockPlatform {
+        fn acquire_lifecycle_lock(&self) -> Result<LifecycleLease, PlatformError> {
+            let mut remaining = self.remaining_busy.lock().unwrap();
+            if *remaining > 0 {
+                *remaining -= 1;
+                return Err(PlatformError::Busy("test transient busy".to_owned()));
+            }
+            Ok(LifecycleLease {
+                path: "test",
+                identity: "test".to_owned(),
+                directory_device: 0,
+                directory_inode: 0,
+            })
+        }
+        fn release_lifecycle_lock(&self, _: &LifecycleLease) -> Result<(), PlatformError> {
+            Ok(())
+        }
+        fn apply_network(&self, _: &NetworkAction) -> Result<(), PlatformError> {
+            unreachable!()
+        }
+        fn apply_proxy(&self, _: &ProxyAction) -> Result<(), PlatformError> {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn bounded_lock_acquisition_retries_a_transient_busy_holder() {
+        let platform = BusyThenOkLockPlatform {
+            remaining_busy: Arc::new(Mutex::new(2)),
+        };
+        let attempts = Arc::new(Mutex::new(0usize));
+        let lease = acquire_lifecycle_lock_bounded_until(
+            &platform,
+            Instant::now() + Duration::from_secs(60),
+            || {
+                *attempts.lock().unwrap() += 1;
+            },
+        )
+        .expect("a transient Busy must be retried and then acquired");
+        assert_eq!(lease.path, "test");
+        assert_eq!(*attempts.lock().unwrap(), 2);
+    }
+
+    #[test]
+    fn bounded_lock_acquisition_fails_closed_when_the_holder_never_clears() {
+        let platform = BusyThenOkLockPlatform {
+            remaining_busy: Arc::new(Mutex::new(usize::MAX)),
+        };
+        let error = acquire_lifecycle_lock_bounded_until(&platform, Instant::now(), || {})
+            .expect_err("a lock that stays Busy must fail closed at the deadline");
+        assert!(matches!(error, PlatformError::Busy(_)));
+    }
+
+    #[test]
+    fn recovery_retries_a_transient_busy_lifecycle_lock_instead_of_failing_startup() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let store = FakeStore::new(DevicePolicyConfigV1::empty(), events.clone());
+        let platform = BusyThenOkLockPlatform {
+            remaining_busy: Arc::new(Mutex::new(2)),
+        };
+        let unused = UnusedProbe;
+        let app = DevicePolicyApplication::new(&store, &unused, &platform, &unused, &unused);
+        // The DHCP dispatcher can briefly hold the lifecycle lock while applying a lease that
+        // management startup captured; recovery must wait it out instead of aborting the boot.
+        app.recover()
+            .expect("transient lock contention must not fail startup recovery");
     }
 }
