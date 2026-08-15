@@ -73,12 +73,13 @@ pub struct CameraStreamProfile {
     pub bitrate_bps: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CameraStreamPreset {
     Uhd4k20m,
     Qhd1440p10m,
     Fhd1080p5m,
+    #[default]
     Hd720p25m,
 }
 
@@ -137,12 +138,6 @@ impl CameraStreamPreset {
             Self::Fhd1080p5m => 5_000_000,
             Self::Hd720p25m => 2_500_000,
         }
-    }
-}
-
-impl Default for CameraStreamPreset {
-    fn default() -> Self {
-        Self::Hd720p25m
     }
 }
 
