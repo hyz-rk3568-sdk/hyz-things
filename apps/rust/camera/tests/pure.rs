@@ -1,11 +1,13 @@
 use hyz_camera::{
     adapters::{
-        inbound::unix_control::{decode_control_request, ControlOperation},
+        inbound::unix_control::{decode_control_request, ControlOperation, SetRotationRequest},
         outbound::webrtc::{validate_offer_sdp, MAX_PAYLOAD_TYPES, MAX_SDP_BYTES},
     },
     domain::{
-        pts_ns_to_90khz, BoundedFrameQueue, CameraAccessKind, CameraAccessScope, EncodedFrame,
-        FramePopOutcome, FramePushOutcome, PtsError, FIXED_LAN_ADDRESS,
+        pts_ns_to_90khz, BoundedFrameQueue, CameraAccessKind, CameraAccessScope, CameraRotation,
+        CameraStreamPreset, EncodedFrame, FramePopOutcome, FramePushOutcome, PtsError,
+        TimestampWatermark, WatermarkPosition, FIXED_LAN_ADDRESS, WATERMARK_FONT_FAMILY,
+        WATERMARK_TIME_FORMAT,
     },
 };
 use std::{net::Ipv4Addr, sync::Arc, time::Duration};
@@ -113,14 +115,47 @@ fn pts_conversion_rejects_regression_and_large_jump() {
 
 #[test]
 fn control_protocol_is_versioned_and_denies_unknown_fields() {
-    let status = br#"{"version":1,"operation":"status"}"#;
+    let status = br#"{"version":2,"operation":"status"}"#;
     assert!(matches!(
         decode_control_request(status).unwrap().operation,
         ControlOperation::Status
     ));
-    assert!(decode_control_request(br#"{"version":2,"operation":"status"}"#).is_err());
+    assert!(decode_control_request(br#"{"version":3,"operation":"status"}"#).is_err());
     assert!(decode_control_request(
-        br#"{"version":1,"operation":"status","pipeline":"caller-value"}"#
+        br#"{"version":2,"operation":"status","pipeline":"caller-value"}"#
     )
     .is_err());
+}
+
+#[test]
+fn set_rotation_operation_is_typed_and_enum_scoped() {
+    let request = br#"{"version":2,"operation":{"set_rotation":{"rotation":"deg_270"}}}"#;
+    assert!(matches!(
+        decode_control_request(request).unwrap().operation,
+        ControlOperation::SetRotation(SetRotationRequest {
+            rotation: CameraRotation::Deg270
+        })
+    ));
+    assert!(decode_control_request(
+        br#"{"version":2,"operation":{"set_rotation":{"rotation":"deg_45"}}}"#
+    )
+    .is_err());
+    assert!(decode_control_request(
+        br#"{"version":2,"operation":{"set_rotation":{"rotation":"deg_90","extra":1}}}"#
+    )
+    .is_err());
+}
+
+#[test]
+fn timestamp_watermark_is_burned_into_every_profile() {
+    for preset in CameraStreamPreset::ALL {
+        let watermark = TimestampWatermark::for_profile(preset.profile());
+        assert_eq!(watermark.time_format, WATERMARK_TIME_FORMAT);
+        assert_eq!(watermark.position, WatermarkPosition::TopLeft);
+        assert!(watermark.shaded_background);
+        assert!(watermark.font_size >= 18);
+        assert!(watermark.font_size <= 54);
+        assert!(WATERMARK_FONT_FAMILY.contains("DejaVu Sans"));
+        assert_eq!(watermark.validate(), Ok(()));
+    }
 }

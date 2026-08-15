@@ -88,10 +88,6 @@ pub const CAMERA_NOTICE: &str =
     "rounded-box border border-base-content/10 bg-base-200/50 px-3 py-2 text-xs text-base-content/70";
 pub const CAMERA_STAGE: &str = "relative min-w-0 overflow-hidden rounded-box border border-base-content/10 bg-black shadow-inner";
 pub const CAMERA_VIDEO: &str = "aspect-video block w-full bg-black object-contain";
-pub const CAMERA_ROTATE_0: &str = "rotate-0";
-pub const CAMERA_ROTATE_90: &str = "rotate-90";
-pub const CAMERA_ROTATE_180: &str = "rotate-180";
-pub const CAMERA_ROTATE_270: &str = "rotate-270";
 pub const CAMERA_ROTATE_BUTTON: &str = "btn btn-sm absolute right-3 top-3 z-10 border-white/20 bg-black/70 text-white shadow-lg hover:bg-black/85 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white";
 pub const CAMERA_PLACEHOLDER: &str = "absolute inset-0 grid place-content-center place-items-center gap-3 bg-base-300 text-xs font-semibold text-base-content/60";
 pub const CAMERA_PLACEHOLDER_ICON: &str = "grid size-11 place-items-center rounded-full border border-primary/30 bg-primary/10 font-mono text-[0.6rem] font-black text-primary";

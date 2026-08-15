@@ -297,10 +297,11 @@ pub fn validate_offer_sdp(sdp: &str) -> Result<(), WebRtcError> {
         if let Some(rest) = line.strip_prefix("m=video ") {
             video_lines += 1;
             let fields: Vec<_> = rest.split_ascii_whitespace().collect();
-            if fields.len() < 4 {
+            // m=<media> <port> <proto> <fmt>...；payload 类型从下标 2 开始。
+            if fields.len() < 3 {
                 return Err(WebRtcError::UnsupportedSdp);
             }
-            payload_types = fields[3..].len();
+            payload_types = fields[2..].len();
         } else if line.starts_with("m=audio ") {
             audio_lines += 1;
         } else if line.starts_with("m=application ") {

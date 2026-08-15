@@ -4,9 +4,10 @@ use crate::{
         CameraMediaPort, KeyframeRequester, MediaError, MediaTerminator, RunningMedia,
     },
     domain::{
-        pts_ns_to_90khz, BoundedFrameQueue, CameraPipelineState, CameraStreamProfile, EncodedFrame,
-        FramePopOutcome, FIXED_CAMERA_DEVICE, FIXED_CAPTURE_HEIGHT, FIXED_CAPTURE_WIDTH,
-        FRAME_QUEUE_CAPACITY, MAX_ENCODED_FRAME_BYTES,
+        pts_ns_to_90khz, BoundedFrameQueue, CameraPipelineState, CameraRotation,
+        CameraStreamProfile, EncodedFrame, FramePopOutcome, TimestampWatermark,
+        FIXED_CAMERA_DEVICE, FIXED_CAPTURE_HEIGHT, FIXED_CAPTURE_WIDTH, FRAME_QUEUE_CAPACITY,
+        MAX_ENCODED_FRAME_BYTES, WATERMARK_FONT_FAMILY,
     },
 };
 use gstreamer as gst;
@@ -50,6 +51,8 @@ impl CameraMediaPort for GStreamerMediaAdapter {
             "v4l2src",
             "queue",
             "videoscale",
+            "videoflip",
+            "clockoverlay",
             "mpph264enc",
             "h264parse",
             "capsfilter",
@@ -72,9 +75,12 @@ impl CameraMediaPort for GStreamerMediaAdapter {
         let source = make("v4l2src", "camera-source")?;
         let capture_caps = make("capsfilter", "capture-caps")?;
         let queue = make("queue", "capture-queue")?;
-        let scaling = profile.width != FIXED_CAPTURE_WIDTH || profile.height != FIXED_CAPTURE_HEIGHT;
+        let scaling =
+            profile.width != FIXED_CAPTURE_WIDTH || profile.height != FIXED_CAPTURE_HEIGHT;
         let videoscale = make("videoscale", "video-scaler")?;
         let scale_caps = make("capsfilter", "scale-caps")?;
+        let flip = make("videoflip", "orientation-flip")?;
+        let overlay = make("clockoverlay", "timestamp-overlay")?;
         let encoder = make("mpph264enc", "h264-encoder")?;
         let parser = make("h264parse", "h264-parser")?;
         let h264_caps = make("capsfilter", "h264-caps")?;
@@ -88,10 +94,7 @@ impl CameraMediaPort for GStreamerMediaAdapter {
                 .field("colorimetry", FULL_RANGE_BT709_COLORIMETRY)
                 .field("width", i32::from(FIXED_CAPTURE_WIDTH))
                 .field("height", i32::from(FIXED_CAPTURE_HEIGHT))
-                .field(
-                    "framerate",
-                    gst::Fraction::new(i32::from(profile.fps), 1),
-                )
+                .field("framerate", gst::Fraction::new(i32::from(profile.fps), 1))
                 .build(),
         );
         queue.set_property("max-size-buffers", 2u32);
@@ -107,13 +110,26 @@ impl CameraMediaPort for GStreamerMediaAdapter {
                     .field("colorimetry", FULL_RANGE_BT709_COLORIMETRY)
                     .field("width", i32::from(profile.width))
                     .field("height", i32::from(profile.height))
-                    .field(
-                        "framerate",
-                        gst::Fraction::new(i32::from(profile.fps), 1),
-                    )
+                    .field("framerate", gst::Fraction::new(i32::from(profile.fps), 1))
                     .build(),
             );
         }
+        flip.set_property_from_str("method", videoflip_method(profile.rotation));
+        let watermark = TimestampWatermark::for_profile(profile);
+        watermark
+            .validate()
+            .map_err(|_| MediaError::PipelineFailed)?;
+        overlay.set_property_from_str("time-format", watermark.time_format);
+        overlay.set_property_from_str(
+            "font-desc",
+            &format!("{} {}", WATERMARK_FONT_FAMILY, watermark.font_size),
+        );
+        overlay.set_property_from_str("halignment", watermark.position.halign());
+        overlay.set_property_from_str("valignment", watermark.position.valign());
+        let padding = i32::try_from(watermark.padding).map_err(|_| MediaError::PipelineFailed)?;
+        overlay.set_property("xpad", padding);
+        overlay.set_property("ypad", padding);
+        overlay.set_property("shaded-background", watermark.shaded_background);
         encoder.set_property_from_str("profile", "baseline");
         encoder.set_property_from_str("level", "4");
         encoder.set_property("gop", i32::from(profile.fps));
@@ -183,11 +199,15 @@ impl CameraMediaPort for GStreamerMediaAdapter {
             chain.push(&videoscale);
             chain.push(&scale_caps);
         }
+        chain.push(&flip);
+        chain.push(&overlay);
         chain.push(&encoder);
         chain.push(&parser);
         chain.push(&h264_caps);
         chain.push(sink_element.upcast_ref());
-        pipeline.add_many(&chain).map_err(|_| MediaError::PipelineFailed)?;
+        pipeline
+            .add_many(&chain)
+            .map_err(|_| MediaError::PipelineFailed)?;
         gst::Element::link_many(&chain).map_err(|_| MediaError::PipelineFailed)?;
 
         let stopping = Arc::new(AtomicBool::new(false));
@@ -248,6 +268,16 @@ impl CameraMediaPort for GStreamerMediaAdapter {
             stopping,
             bus_thread: Some(bus_thread),
         }))
+    }
+}
+
+/// 将产品旋转方向映射为 GStreamer `videoflip` 的 method（顺时针与 CSS 旋转一致）。
+fn videoflip_method(rotation: CameraRotation) -> &'static str {
+    match rotation {
+        CameraRotation::Deg0 => "none",
+        CameraRotation::Deg90 => "clockwise",
+        CameraRotation::Deg180 => "rotate-180",
+        CameraRotation::Deg270 => "counterclockwise",
     }
 }
 

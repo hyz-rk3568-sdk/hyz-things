@@ -1,6 +1,5 @@
 use crate::domain::{
-    BoundedFrameQueue, CameraAccessScope, CameraPipelineState, CameraSessionId,
-    CameraStreamProfile,
+    BoundedFrameQueue, CameraAccessScope, CameraPipelineState, CameraSessionId, CameraStreamProfile,
 };
 use std::sync::Arc;
 

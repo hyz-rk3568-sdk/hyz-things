@@ -71,6 +71,10 @@ npm run test:hardware-camera -- \
 
 当前采集固定使用 RKISP 原生 `3840×2160` 全幅（不再裁剪），输出分辨率与码率通过固定枚举的 16:9 预设选择：默认 `720p · 2.5 Mbps`，可选 `1080p · 5 Mbps`、`1440p · 10 Mbps`、`4K · 20 Mbps`（均 `@ 30 FPS`、H.264 baseline）。非 4K 预设由 GStreamer `videoscale` 从 4K 全幅缩放，保留完整视野。预设只能在无活跃会话时通过管理页「画面分辨率 / 码率」下拉切换，切换会自动停止并重新打开直播。
 
+时间戳水印在旋转、缩放之后、编码之前由 GStreamer `clockoverlay` 烧入码流：左上角、黑底、`%Y-%m-%d %H:%M:%S`，字号随旋转后显示高度缩放（`DejaVu Sans`，720p→18 … 4K→54）。水印是编码视频的一部分，不是浏览器叠加层；截图/录屏均包含它。验收截图应能在左上角看到与板端系统时间一致的日期时间文本。
+
+画面旋转由「旋转画面」按钮驱动，是服务端媒体管线属性：`videoflip` 在编码前应用（0/90/180/270°），按钮按 0 → 270 → 180 → 90 → 0 循环，切换会自动停止并重新打开直播，浏览器端不再应用 CSS 旋转 class。90/270 时解码尺寸宽高互换（如 4K 预设变为 `2160×3840`），时间戳水印始终在最终方向画面的左上角。
+
 GStreamer caps 显式声明 full-range BT.709 `colorimetry=1:3:5:1`；Rockchip MPP 插件必须把 `GST_VIDEO_COLOR_RANGE_0_255` 映射为 `MPP_FRAME_RANGE_JPEG`，设置 `prep:range` 后将 encoder 配置标记为待提交。可使用受控的一次性板端采集程序取得 Annex-B H.264，再在宿主机运行 `ffprobe`；正确 SPS/VUI 应报告 `color_range=pc`，通常同时显示 `pix_fmt=yuvj420p`。
 
 弱光会降低平均亮度，但不应使最大亮度、亮像素比例和标准差同时归零。曾出现原始 NV12 有细节、Chromium canvas 全黑的情况：原因是 full-range 输入未进入 MPP encoder 配置，低于 16 的 Y 分量被浏览器按 limited-range 裁剪。最终 OTA 的四组真实 Chromium 样本平均亮度约 `17.0-21.9`、最大亮度约 `121-123`、亮像素比例约 `38.9%-49.5%`，不再依赖白天环境才能通过。

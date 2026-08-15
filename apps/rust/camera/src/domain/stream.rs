@@ -16,6 +16,49 @@ pub enum CameraVideoCodec {
     H264Baseline,
 }
 
+/// 画面旋转是媒体管线属性：`videoflip` 在编码前应用，时间戳水印始终叠加在
+/// 最终方向画面的左上角，浏览器端不再做 CSS 旋转。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CameraRotation {
+    #[serde(rename = "deg_0")]
+    Deg0,
+    #[serde(rename = "deg_90")]
+    Deg90,
+    #[serde(rename = "deg_180")]
+    Deg180,
+    #[serde(rename = "deg_270")]
+    Deg270,
+}
+
+impl CameraRotation {
+    pub const ALL: [Self; 4] = [Self::Deg0, Self::Deg90, Self::Deg180, Self::Deg270];
+
+    pub const fn degrees(self) -> u16 {
+        match self {
+            Self::Deg0 => 0,
+            Self::Deg90 => 90,
+            Self::Deg180 => 180,
+            Self::Deg270 => 270,
+        }
+    }
+
+    /// 「旋转画面」每次点击的循环顺序：0 → 270 → 180 → 90 → 0。
+    pub const fn next_rotation(self) -> Self {
+        match self {
+            Self::Deg0 => Self::Deg270,
+            Self::Deg270 => Self::Deg180,
+            Self::Deg180 => Self::Deg90,
+            Self::Deg90 => Self::Deg0,
+        }
+    }
+
+    /// 90/270 旋转会交换输出宽高。
+    pub const fn swaps_dimensions(self) -> bool {
+        matches!(self, Self::Deg90 | Self::Deg270)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct CameraStreamProfile {
     pub width: u16,
@@ -23,17 +66,30 @@ pub struct CameraStreamProfile {
     pub fps: u8,
     pub bitrate_bps: u32,
     pub codec: CameraVideoCodec,
+    pub rotation: CameraRotation,
+}
+
+impl CameraStreamProfile {
+    /// 旋转应用后的实际显示高度（90/270 时宽高互换）。
+    pub const fn display_height(self) -> u16 {
+        if self.rotation.swaps_dimensions() {
+            self.width
+        } else {
+            self.height
+        }
+    }
 }
 
 pub const FIXED_CAPTURE_WIDTH: u16 = 3840;
 pub const FIXED_CAPTURE_HEIGHT: u16 = 2160;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CameraStreamPreset {
     Uhd4k20m,
     Qhd1440p10m,
     Fhd1080p5m,
+    #[default]
     Hd720p25m,
 }
 
@@ -53,6 +109,7 @@ impl CameraStreamPreset {
                 fps: 30,
                 bitrate_bps: 20_000_000,
                 codec: CameraVideoCodec::H264Baseline,
+                rotation: CameraRotation::Deg0,
             },
             Self::Qhd1440p10m => CameraStreamProfile {
                 width: 2560,
@@ -60,6 +117,7 @@ impl CameraStreamPreset {
                 fps: 30,
                 bitrate_bps: 10_000_000,
                 codec: CameraVideoCodec::H264Baseline,
+                rotation: CameraRotation::Deg0,
             },
             Self::Fhd1080p5m => CameraStreamProfile {
                 width: 1920,
@@ -67,6 +125,7 @@ impl CameraStreamPreset {
                 fps: 30,
                 bitrate_bps: 5_000_000,
                 codec: CameraVideoCodec::H264Baseline,
+                rotation: CameraRotation::Deg0,
             },
             Self::Hd720p25m => CameraStreamProfile {
                 width: 1280,
@@ -74,6 +133,7 @@ impl CameraStreamPreset {
                 fps: 30,
                 bitrate_bps: 2_500_000,
                 codec: CameraVideoCodec::H264Baseline,
+                rotation: CameraRotation::Deg0,
             },
         }
     }
@@ -94,12 +154,6 @@ impl CameraStreamPreset {
             Self::Fhd1080p5m => "1080p · 5 Mbps",
             Self::Hd720p25m => "720p · 2.5 Mbps",
         }
-    }
-}
-
-impl Default for CameraStreamPreset {
-    fn default() -> Self {
-        Self::Hd720p25m
     }
 }
 
@@ -279,5 +333,41 @@ mod tests {
         assert_eq!(ids.len(), CameraStreamPreset::ALL.len());
         assert_eq!(CameraStreamPreset::Uhd4k20m.id(), "uhd4k20m");
         assert_eq!(CameraStreamPreset::Uhd4k20m.label(), "4K · 20 Mbps");
+    }
+
+    #[test]
+    fn presets_are_not_rotated_by_default() {
+        for preset in CameraStreamPreset::ALL {
+            assert_eq!(preset.profile().rotation, CameraRotation::Deg0);
+            assert_eq!(preset.profile().display_height(), preset.profile().height);
+        }
+    }
+
+    #[test]
+    fn rotation_cycles_in_product_order_and_swaps_dimensions() {
+        assert_eq!(CameraRotation::Deg0.next_rotation(), CameraRotation::Deg270);
+        assert_eq!(
+            CameraRotation::Deg270.next_rotation(),
+            CameraRotation::Deg180
+        );
+        assert_eq!(
+            CameraRotation::Deg180.next_rotation(),
+            CameraRotation::Deg90
+        );
+        assert_eq!(CameraRotation::Deg90.next_rotation(), CameraRotation::Deg0);
+        for rotation in CameraRotation::ALL {
+            assert_eq!(rotation.degrees(), rotation.degrees() % 360);
+            assert_eq!(
+                rotation.swaps_dimensions(),
+                matches!(rotation, CameraRotation::Deg90 | CameraRotation::Deg270)
+            );
+        }
+        let profile = CameraStreamPreset::Hd720p25m.profile();
+        let rotated = CameraStreamProfile {
+            rotation: CameraRotation::Deg90,
+            ..profile
+        };
+        assert_eq!(rotated.display_height(), profile.width);
+        assert_eq!(rotated.display_height(), 1280);
     }
 }

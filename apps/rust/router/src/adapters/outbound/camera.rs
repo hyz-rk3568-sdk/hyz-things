@@ -16,12 +16,12 @@ use crate::{
     application::camera::{CameraControlPort, CameraError, CameraSession},
     domain::camera::{
         CameraAccessKind, CameraAccessScope, CameraErrorCategory, CameraPipelineState,
-        CameraStatus, CameraStreamPreset, CameraStreamProfile,
+        CameraRotation, CameraStatus, CameraStreamPreset, CameraStreamProfile,
     },
 };
 
 pub const CAMERA_CONTROL_SOCKET: &str = "/run/hyz-camera/control.sock";
-const CAMERA_CONTROL_PROTOCOL_VERSION: u16 = 1;
+const CAMERA_CONTROL_PROTOCOL_VERSION: u16 = 2;
 const CAMERA_CONTROL_MAX_FRAME_BYTES: usize = 64 * 1024;
 const CAMERA_CONTROL_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -115,6 +115,7 @@ impl CameraControlPort for CameraUnixAdapter {
                 height: status.profile.height,
                 fps: status.profile.fps,
                 bitrate_bps: status.profile.bitrate_bps,
+                rotation: status.profile.rotation,
             },
             access: scope.kind(),
             error_category: status.error,
@@ -176,6 +177,20 @@ impl CameraControlPort for CameraUnixAdapter {
             _ => Err(CameraError::Unavailable),
         }
     }
+
+    async fn set_rotation(&self, rotation: CameraRotation) -> Result<(), CameraError> {
+        let adapter = self.clone();
+        let request = SetRotationRequest { rotation };
+        let result = tokio::task::spawn_blocking(move || {
+            adapter.request(RequestOperation::SetRotation(request))
+        })
+        .await
+        .map_err(|_| CameraError::Unavailable)??;
+        match result {
+            ResponseResult::RotationSet => Ok(()),
+            _ => Err(CameraError::Unavailable),
+        }
+    }
 }
 
 fn validate_socket(path: &Path) -> Result<(), CameraError> {
@@ -224,6 +239,7 @@ enum RequestOperation {
     CreateSession(CreateSessionRequest),
     CloseSession(CloseSessionRequest),
     SetProfile(SetProfileRequest),
+    SetRotation(SetRotationRequest),
 }
 
 #[derive(Serialize)]
@@ -241,6 +257,11 @@ struct CloseSessionRequest {
 #[derive(Serialize)]
 struct SetProfileRequest {
     preset: CameraStreamPreset,
+}
+
+#[derive(Serialize)]
+struct SetRotationRequest {
+    rotation: CameraRotation,
 }
 
 #[derive(Deserialize)]
@@ -264,6 +285,7 @@ enum ResponseResult {
     SessionCreated(SessionCreatedResponse),
     SessionClosed,
     ProfileSet,
+    RotationSet,
     ShutdownAccepted,
 }
 
@@ -284,6 +306,7 @@ struct CameraStreamProfileWire {
     fps: u8,
     bitrate_bps: u32,
     codec: String,
+    rotation: CameraRotation,
 }
 
 #[derive(Deserialize)]
@@ -348,7 +371,7 @@ mod tests {
     #[test]
     fn camera_status_wire_maps_private_profile_to_public_h264() {
         let response: ControlResponse = serde_json::from_value(serde_json::json!({
-            "version": 1,
+            "version": 2,
             "ok": {
                 "status": {
                     "available": true,
@@ -359,7 +382,8 @@ mod tests {
                         "height": 2160,
                         "fps": 30,
                         "bitrate_bps": 20000000,
-                        "codec": "h264_baseline"
+                        "codec": "h264_baseline",
+                        "rotation": "deg_90"
                     }
                 }
             }
@@ -371,6 +395,7 @@ mod tests {
         assert_eq!(status.profile.codec, "h264_baseline");
         assert_eq!(status.profile.width, 3840);
         assert_eq!(status.profile.bitrate_bps, 20_000_000);
+        assert_eq!(status.profile.rotation, CameraRotation::Deg90);
     }
 
     #[test]
@@ -384,7 +409,7 @@ mod tests {
             }),
         })
         .unwrap();
-        assert_eq!(body["version"], 1);
+        assert_eq!(body["version"], 2);
         assert_eq!(body["operation"]["create_session"]["scope"], "lan");
         assert!(body["operation"]["create_session"].get("port").is_none());
     }
@@ -398,8 +423,21 @@ mod tests {
             }),
         })
         .unwrap();
-        assert_eq!(body["version"], 1);
+        assert_eq!(body["version"], 2);
         assert_eq!(body["operation"]["set_profile"]["preset"], "fhd1080p5m");
+    }
+
+    #[test]
+    fn set_rotation_request_is_typed_and_enum_scoped() {
+        let body = serde_json::to_value(ControlRequest {
+            version: CAMERA_CONTROL_PROTOCOL_VERSION,
+            operation: RequestOperation::SetRotation(SetRotationRequest {
+                rotation: CameraRotation::Deg270,
+            }),
+        })
+        .unwrap();
+        assert_eq!(body["version"], 2);
+        assert_eq!(body["operation"]["set_rotation"]["rotation"], "deg_270");
     }
 
     #[test]

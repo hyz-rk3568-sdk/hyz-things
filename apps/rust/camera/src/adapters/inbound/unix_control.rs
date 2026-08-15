@@ -1,6 +1,6 @@
 use crate::{
     application::{CameraApplication, CameraApplicationError, CreateSessionResult},
-    domain::{CameraAccessKind, CameraSessionId, CameraStatus, CameraStreamPreset},
+    domain::{CameraAccessKind, CameraRotation, CameraSessionId, CameraStatus, CameraStreamPreset},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -24,7 +24,7 @@ use std::{
     time::Duration,
 };
 
-pub const CONTROL_PROTOCOL_VERSION: u16 = 1;
+pub const CONTROL_PROTOCOL_VERSION: u16 = 2;
 pub const CONTROL_SOCKET_PATH: &str = "/run/hyz-camera/control.sock";
 pub const CONTROL_OWNER_PATH: &str = "/run/hyz-camera/daemon.owner";
 pub const CONTROL_RUNTIME_DIRECTORY: &str = "/run/hyz-camera";
@@ -46,6 +46,7 @@ pub enum ControlOperation {
     CreateSession(CreateSessionRequest),
     CloseSession(CloseSessionRequest),
     SetProfile(SetProfileRequest),
+    SetRotation(SetRotationRequest),
     Shutdown,
 }
 
@@ -69,6 +70,12 @@ pub struct SetProfileRequest {
     pub preset: CameraStreamPreset,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SetRotationRequest {
+    pub rotation: CameraRotation,
+}
+
 #[derive(Serialize)]
 pub struct ControlResponse {
     pub version: u16,
@@ -90,6 +97,7 @@ pub enum ControlResult {
     SessionCreated(SessionCreatedResponse),
     SessionClosed,
     ProfileSet,
+    RotationSet,
     ShutdownAccepted,
 }
 
@@ -237,6 +245,12 @@ fn handle_request(
                 .set_profile(request.preset)
                 .map_err(map_application_error)?;
             ControlResult::ProfileSet
+        }
+        ControlOperation::SetRotation(request) => {
+            application
+                .set_rotation(request.rotation)
+                .map_err(map_application_error)?;
+            ControlResult::RotationSet
         }
         ControlOperation::Shutdown => {
             application.shutdown().map_err(map_application_error)?;

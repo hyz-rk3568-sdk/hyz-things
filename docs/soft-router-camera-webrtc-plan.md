@@ -2,9 +2,9 @@
 
 ## 状态
 
-**第一版已实现、构建并安装最终 recovery-free OTA，1920×1080 中央裁剪和 MPP full-range 配置提交修复均已完成真实 RK3568 浏览器端到端验证。**
+**第一版已实现、构建并安装最终 recovery-free OTA；时间戳水印（左上角、小字号）与编码前 `videoflip` 画面旋转已加入媒体管线，并在真实 RK3568 上完成浏览器观看验收。**
 
-实现保持本文定义的独立 `hyz-camera`、HTTP SDP 信令、固定 LAN/Tailscale candidate、V4L2 + GStreamer + Rockchip MPP H.264、`str0m` 和单观看者边界。真实 Chromium 已分别通过 LAN 与 Tailscale origin，在桌面和移动端完成播放、H.264 解码、canvas 可见像素、全屏、停止与 session 清理验收。最终 OTA 中的插件、Camera 和 Router 与构建产物逐字节一致；板端采集码流经 `ffprobe` 确认为 full-range `color_range=pc`。
+实现保持本文定义的独立 `hyz-camera`、HTTP SDP 信令、固定 LAN/Tailscale candidate、V4L2 + GStreamer + Rockchip MPP H.264、`str0m` 和单观看者边界。真实 Chromium 已分别通过 LAN 与 Tailscale origin，在桌面和移动端完成播放、H.264 解码、canvas 可见像素、全屏、停止与 session 清理验收。最终 OTA 中的插件、Camera 和 Router 与构建产物逐字节一致；板端采集码流经 `ffprobe` 确认为 full-range `color_range=pc`。camera 纯测试（SDP 校验、控制协议 v2、水印与旋转 domain）已交叉编译并在板端全部通过。
 
 本文继续记录第一版管理页面摄像头直播的产品边界、进程架构、信令协议、WebRTC 媒体路径、Tailscale 集成、安全约束、测试顺序和验收矩阵。真实设备测试方法见 [`camera-hardware-e2e.md`](camera-hardware-e2e.md)。
 
@@ -14,7 +14,9 @@
 ### 实施与验收摘要
 
 - 独立程序：`/usr/bin/hyz-camera`；
-- 固定媒体 profile：从 RKISP `3840×2160` crop bounds 中央裁剪左右各 `960`、上下各 `540`，输出 NV12、1920×1080、30 FPS、H.264 Baseline level 4、4 Mbps、GOP 30；
+- 固定媒体 profile：采集固定使用 RKISP 原生 `3840×2160` 全幅 NV12，输出分辨率与码率由固定枚举的 16:9 预设选择（默认 `720p · 2.5 Mbps`，可选 `1080p · 5 Mbps`、`1440p · 10 Mbps`、`4K · 20 Mbps`，均 `@ 30 FPS`、H.264 Baseline），非 4K 预设由 `videoscale` 缩放；
+- 时间戳水印：`clockoverlay` 烧入日期+时间（`%Y-%m-%d %H:%M:%S`）、左上角、黑底，字号随旋转后显示高度缩放（720p→18 … 4K→54）；依赖 gst1-plugins-base pango 插件与 DejaVu Sans 字体；
+- 画面旋转：`videoflip` 编码前应用（0/90/180/270°，`BR2_PACKAGE_GST1_PLUGINS_GOOD_PLUGIN_VIDEOFILTER`），管理页「旋转画面」按 0 → 270 → 180 → 90 → 0 循环并自动重启直播，浏览器不再做 CSS 旋转；
 - 固定媒体端口：UDP `40000-40015`；
 - Router Playwright mock/harness 回归：10/10 通过；
 - 真实设备 MJS/Playwright：LAN 与 Tailscale、`1280×800` 与 `360×800` 四组路径全部通过；
@@ -28,12 +30,14 @@
 
 | 产物 | SHA-256 |
 | --- | --- |
-| `output/upgrade.fw`（457,138,762 bytes） | `839a316e9ec839ff084db1bddba303e1c84763182cf21c6d009e2bf95cf34ba3` |
-| 打包 `boot.img` | `850c302c9554f11bf720986a981b4984eec4705324cb330101b1ee2886859083` |
-| 打包 `rootfs.img` | `170997ba7c9ac2a6e138cf255bdea9260f612ca77de80434674dd3efb97cbcc9` |
-| 打包 `oem.img` | `be20eb8a8f2f4f0477c62c6d6e2e39657ede177928d0be6e3c4d41d609d369a0` |
-| OTA 中及板端 `/usr/bin/hyz-router` | `dc75ca7215accba793cbe41b756b5906441b363b2641bf8b78eda29b1747d624` |
-| OTA 中及板端 `/usr/bin/hyz-camera` | `d22fbd4c995637b9f6632076999877c17f8bbc1542a67f33aa54d7e696c82203` |
+| `output/upgrade.fw`（460,284,490 bytes） | `e8821d9653eab15cd3fd88b19fc5a887a047dd0fa4f9701e6e574ae4fa8381fa` |
+| 打包 `boot.img` | `9eaef522956f6355847d8562ed3283b6d649d3ff1b8baf4f96b062f194148a4f` |
+| 打包 `rootfs.img` | `75469aedf64c6348bd726ffe8bae041757b88392ef633e02d430987c739dfd6d` |
+| 打包 `oem.img` | `ff4501e0736929d15cd6e3c931760908ac667414bbfc8b0b345a76fdcec37d71` |
+| OTA 中及板端 `/usr/bin/hyz-router` | `1d3c2e02f72fb286666bf5f7a4214f9ecd6d6b6df51cf556a36de117003b7df9` |
+| OTA 中及板端 `/usr/bin/hyz-camera` | `7a64456431f159af3bdba1f49f9e5a88a8050d81af4963c2c3dbdf34bca4c544` |
+| OTA 中及板端 `/usr/lib/gstreamer-1.0/libgstpango.so` | `c51115e14203ed515e33265ef27bc0405bfbb6fe4ba05a5bfee65e1163bf0451` |
+| OTA 中及板端 `/usr/lib/gstreamer-1.0/libgstvideofilter.so` | `75a6f0097865e34ee1c33cc7ccc831e6723cf3770826fcea4d067124eb038b8b` |
 | OTA 中及板端 `/usr/lib/gstreamer-1.0/libgstrockchipmpp.so` | `f6202995874bd3bde81a59fcb61ef0dde9f5a13e7b9176018e18dd82c18d3aad` |
 | OTA 中及板端 `/usr/bin/rkaiq_3A_server` | `f13f6aaa404062d9e841f2a9e8b48b98d3c5c416a832dcee846ef54f3ea81441` |
 | OTA 中及板端 `/etc/init.d/S81hyz-router` | `97db4519983d8212d4585c875c0abad4993271b7a3f95a32282dfc2c46a966a3` |
@@ -56,7 +60,7 @@ hyz-router
     │ root-only typed Unix socket
     ▼
 hyz-camera
-    ├── GStreamer：V4L2 → Rockchip MPP H.264 → appsink
+    ├── GStreamer：V4L2 → clockoverlay 时间戳水印 → Rockchip MPP H.264 → appsink
     └── str0m：ICE → DTLS → SRTP → RTP/RTCP
              │
              └──────── WebRTC UDP 视频 ────────► 浏览器 <video>
@@ -77,6 +81,8 @@ hyz-camera
 - 一个固定摄像头设备，由产品配置确定，不接受浏览器路径；
 - V4L2 视频采集；
 - GStreamer pipeline；
+- 画面旋转：`videoflip` 在编码前应用（0/90/180/270°），由管理页「旋转画面」驱动，浏览器端不做 CSS 旋转；
+- `clockoverlay` 时间戳水印：日期+时间、左上角、黑底，字号随旋转后显示高度缩放，烧入编码码流；
 - Rockchip MPP H.264 硬件编码；
 - H.264 Baseline、Annex-B、access-unit 对齐；
 - `str0m` WebRTC 会话；
@@ -413,23 +419,25 @@ enum CameraVideoCodec {
 
 ## GStreamer 媒体路径
 
-### 第一版固定 profile
+### 固定 profile、旋转与时间戳水印
 
-初始候选：
+最终值固化在 `apps/rust/camera/src/domain/`，不是 Web 输入。采集固定使用 RKISP 原生 `3840×2160` 全幅 NV12，输出分辨率与码率由固定枚举的 16:9 预设选择（默认 `Hd720p25m`：`1280×720`、`2.5 Mbps`；可选 `Fhd1080p5m`、`Qhd1440p10m`、`Uhd4k20m`，均 30 FPS、H.264 Baseline）。非 4K 预设由 GStreamer `videoscale` 从 4K 全幅缩放。
 
-| 项目 | 第一版候选 |
+画面旋转是服务端媒体管线属性：`videoflip` 在缩放之后、水印之前应用，90/270 时输出宽高互换，水印始终叠加在最终方向画面的左上角。管理页「旋转画面」按 0 → 270 → 180 → 90 → 0 循环，切换会自动停止并重新打开直播。
+
+时间戳水印固定值：
+
+| 项目 | 固定值 |
 | --- | --- |
-| 分辨率 | `1920x1080`，从 `3840x2160` 中央裁剪 |
-| 帧率 | 固定 `30 fps` |
-| 像素格式 | `NV12` |
-| 编码 | H.264 Baseline level 4，4 Mbps，GOP 30 |
-| Level | 3.1 |
-| 码率 | `2,000,000 bps` |
-| GOP | 30 帧 |
+| 时间格式 | `%Y-%m-%d %H:%M:%S` |
+| 位置 | 左上角，`xpad=ypad=8` |
+| 字体 | DejaVu Sans，字号 = 显示高度 × 2 / 80（720p→18、1080p→27、1440p→36、4K→54） |
+| 背景 | `shaded-background=true`（黑底保证亮场景可读） |
+| 时间来源 | pipeline clock，v4l2src 直播时为系统实时钟 |
 | 音频 | 无 |
 | 最大编码器数量 | 1 |
 
-这些值不是 Web 输入。实施前必须先通过板端 V4L2/MPP probe 确认摄像头实际能力，再把最终值固化到源码和测试。
+`clockoverlay` 属于 gst1-plugins-base 的 pango 插件（`libgstpango.so`，`BR2_PACKAGE_GST1_PLUGINS_BASE_PLUGIN_PANGO`），文本渲染依赖 pango/cairo/fontconfig/freetype/harfbuzz，并安装 DejaVu Sans 字体（`BR2_PACKAGE_DEJAVU` + `BR2_PACKAGE_DEJAVU_SANS`）。`videoflip` 属于 gst-plugins-good 的 videofilter 插件（`BR2_PACKAGE_GST1_PLUGINS_GOOD_PLUGIN_VIDEOFILTER`）。1.22.2 的 `GstBaseTextOverlay` 原生支持 NV12，不会自动插入 videoconvert 造成额外 4K 全帧转换；混合只写文字包围盒区域，时间文本每秒才更新一次，CPU 开销可控。
 
 ### pipeline
 
@@ -437,9 +445,13 @@ enum CameraVideoCodec {
 
 ```text
 v4l2src fixed-device
-  → video/x-raw,format=NV12,width=1280,height=720,framerate=30/1
+  → video/x-raw,format=NV12,width=3840,height=2160,colorimetry=1:3:5:1,framerate=30/1
   → queue, bounded and downstream-leaky
-  → mpph264enc profile=baseline level=31 gop=30 bps=2000000
+  → videoscale → video/x-raw,format=NV12,width=<输出宽>,height=<输出高>  （非 4K 预设）
+  → videoflip method=<none|clockwise|rotate-180|counterclockwise>  （0/90/180/270°）
+  → clockoverlay time-format=%Y-%m-%d %H:%M:%S font-desc="DejaVu Sans <字号>"
+                halignment=left valignment=top xpad=8 ypad=8 shaded-background=true
+  → mpph264enc profile=baseline level=4 gop=30 bps=<预设码率>
   → h264parse config-interval=-1
   → video/x-h264,stream-format=byte-stream,alignment=au
   → appsink max-buffers=2 drop=true sync=false

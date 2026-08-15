@@ -63,6 +63,44 @@ pub enum CameraErrorCategory {
     Unknown,
 }
 
+/// 画面旋转是媒体管线属性（camera 进程在编码前应用 videoflip），浏览器端不做 CSS
+/// 旋转；时间戳水印始终叠加在最终方向画面的左上角。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CameraRotation {
+    #[serde(rename = "deg_0")]
+    Deg0,
+    #[serde(rename = "deg_90")]
+    Deg90,
+    #[serde(rename = "deg_180")]
+    Deg180,
+    #[serde(rename = "deg_270")]
+    Deg270,
+}
+
+impl CameraRotation {
+    pub const ALL: [Self; 4] = [Self::Deg0, Self::Deg90, Self::Deg180, Self::Deg270];
+
+    pub const fn degrees(self) -> u16 {
+        match self {
+            Self::Deg0 => 0,
+            Self::Deg90 => 90,
+            Self::Deg180 => 180,
+            Self::Deg270 => 270,
+        }
+    }
+
+    /// 「旋转画面」每次点击的循环顺序：0 → 270 → 180 → 90 → 0。
+    pub const fn next_rotation(self) -> Self {
+        match self {
+            Self::Deg0 => Self::Deg270,
+            Self::Deg270 => Self::Deg180,
+            Self::Deg180 => Self::Deg90,
+            Self::Deg90 => Self::Deg0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CameraStreamProfile {
@@ -71,6 +109,7 @@ pub struct CameraStreamProfile {
     pub height: u16,
     pub fps: u8,
     pub bitrate_bps: u32,
+    pub rotation: CameraRotation,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

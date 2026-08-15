@@ -3,8 +3,8 @@ use super::ports::{
     WebRtcError, WebRtcSessionPort,
 };
 use crate::domain::{
-    CameraAccessKind, CameraAccessScope, CameraErrorCategory, CameraPipelineState, CameraSessionId,
-    CameraStatus, CameraStreamPreset,
+    CameraAccessKind, CameraAccessScope, CameraErrorCategory, CameraPipelineState, CameraRotation,
+    CameraSessionId, CameraStatus, CameraStreamPreset, CameraStreamProfile,
 };
 use std::{
     net::Ipv4Addr,
@@ -25,6 +25,7 @@ struct ApplicationState {
     active: Option<ActiveSession>,
     last_error: Option<CameraErrorCategory>,
     preset: CameraStreamPreset,
+    rotation: CameraRotation,
 }
 
 struct ActiveSession {
@@ -59,6 +60,7 @@ impl CameraApplication {
                 active: None,
                 last_error,
                 preset: CameraStreamPreset::default(),
+                rotation: CameraRotation::Deg0,
             }),
         })
     }
@@ -81,7 +83,7 @@ impl CameraApplication {
             available: state.accepting && state.last_error.is_none(),
             pipeline,
             active_sessions: u8::from(state.active.is_some()),
-            profile: state.preset.profile(),
+            profile: configured_profile(&state),
             error: state.last_error,
         }
     }
@@ -101,6 +103,25 @@ impl CameraApplication {
             return Ok(());
         }
         state.preset = preset;
+        state.last_error = self.media.probe().err().map(media_category);
+        Ok(())
+    }
+
+    pub fn set_rotation(&self, rotation: CameraRotation) -> Result<(), CameraApplicationError> {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !state.accepting {
+            return Err(CameraApplicationError::ShuttingDown);
+        }
+        if state.active.is_some() {
+            return Err(CameraApplicationError::SessionBusy);
+        }
+        if state.rotation == rotation {
+            return Ok(());
+        }
+        state.rotation = rotation;
         state.last_error = self.media.probe().err().map(media_category);
         Ok(())
     }
@@ -134,7 +155,7 @@ impl CameraApplication {
         })?;
         let media = self
             .media
-            .start(state.preset.profile())
+            .start(configured_profile(&state))
             .map_err(|error| {
                 state.last_error = Some(media_category(error));
                 CameraApplicationError::Media(error)
@@ -225,6 +246,13 @@ impl CameraApplication {
             media_result.map_err(CameraApplicationError::Media)?;
         }
         Ok(())
+    }
+}
+
+fn configured_profile(state: &ApplicationState) -> CameraStreamProfile {
+    CameraStreamProfile {
+        rotation: state.rotation,
+        ..state.preset.profile()
     }
 }
 

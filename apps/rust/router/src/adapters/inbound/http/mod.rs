@@ -28,7 +28,10 @@ use crate::{
     },
     domain::{
         admin::{AdminAuthorization, AdminLoginRequest, AdminPasswordChangeRequest, SecretString},
-        camera::{CameraAccessScope, CameraStatus, CameraStreamPreset, CAMERA_MAX_SDP_BYTES},
+        camera::{
+            CameraAccessScope, CameraRotation, CameraStatus, CameraStreamPreset,
+            CAMERA_MAX_SDP_BYTES,
+        },
         device_policy::DevicePolicyUpdateRequest,
         network_config::{NetworkConfigSummary, PendingNetworkConfigSummary},
         panel::{
@@ -345,6 +348,11 @@ fn app_with_assets(
         .route(
             "/api/v1/control/camera/profile",
             on(MethodFilter::POST, camera_profile_update)
+                .layer(DefaultBodyLimit::max(MAX_CAMERA_HTTP_JSON_BODY_BYTES)),
+        )
+        .route(
+            "/api/v1/control/camera/rotation",
+            on(MethodFilter::POST, camera_rotation_update)
                 .layer(DefaultBodyLimit::max(MAX_CAMERA_HTTP_JSON_BODY_BYTES)),
         )
         .route(
@@ -692,6 +700,12 @@ struct CameraProfileUpdateRequest {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct CameraRotationUpdateRequest {
+    rotation: CameraRotation,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CameraSessionCreateRequest {
     offer_sdp: String,
 }
@@ -794,6 +808,27 @@ async fn camera_profile_update(
         return service_unavailable_json();
     };
     match camera.set_profile(request.preset).await {
+        Ok(()) => Json(serde_json::json!({ "applied": true })).into_response(),
+        Err(error) => camera_error_json(error),
+    }
+}
+
+async fn camera_rotation_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<CameraRotationUpdateRequest>, JsonRejection>,
+) -> Response {
+    let (_, _) = match authorize_sensitive_control_admin(&state, &headers).await {
+        Ok(result) => result,
+        Err(response) => return response,
+    };
+    let Ok(Json(request)) = payload else {
+        return invalid_request_json();
+    };
+    let Some(camera) = state.camera.clone() else {
+        return service_unavailable_json();
+    };
+    match camera.set_rotation(request.rotation).await {
         Ok(()) => Json(serde_json::json!({ "applied": true })).into_response(),
         Err(error) => camera_error_json(error),
     }
@@ -1751,6 +1786,7 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/control/camera/session/create"
             | "/api/v1/control/camera/session/close"
             | "/api/v1/control/camera/profile"
+            | "/api/v1/control/camera/rotation"
             | "/api/v1/control/network/sta/scan"
             | "/api/v1/control/network/sta/apply"
             | "/api/v1/control/network/ap/prepare"
@@ -1840,11 +1876,12 @@ mod tests {
             handlers
                 .matches("authorize_sensitive_control_admin(&state, &headers).await")
                 .count(),
-            3
+            4
         );
         assert!(handlers.contains("create_owned_session(owner, scope, request.offer_sdp)"));
         assert!(handlers.contains("close_owned_session(owner, &request.session_id)"));
         assert!(handlers.contains("camera.set_profile(request.preset).await"));
+        assert!(handlers.contains("camera.set_rotation(request.rotation).await"));
         assert!(!handlers.contains("token.expose().to_owned()"));
     }
 
@@ -1853,7 +1890,9 @@ mod tests {
         assert!(is_post_path("/api/v1/control/camera/session/create"));
         assert!(is_post_path("/api/v1/control/camera/session/close"));
         assert!(is_post_path("/api/v1/control/camera/profile"));
+        assert!(is_post_path("/api/v1/control/camera/rotation"));
         assert!(!is_post_path("/api/v1/control/camera/session/create/extra"));
+        assert!(!is_post_path("/api/v1/control/camera/rotation/extra"));
     }
 
     #[test]
@@ -2018,6 +2057,7 @@ mod tests {
         assert!(is_post_path("/api/v1/auth/password"));
         assert!(is_post_path("/api/v1/control/camera/session/create"));
         assert!(is_post_path("/api/v1/control/camera/session/close"));
+        assert!(is_post_path("/api/v1/control/camera/rotation"));
         assert!(is_post_path("/api/v1/control/network/sta/scan"));
         assert!(is_post_path("/api/v1/control/network/sta/apply"));
         assert!(is_post_path("/api/v1/control/network/ap/prepare"));

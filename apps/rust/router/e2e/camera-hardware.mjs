@@ -176,15 +176,33 @@ async function verifyStream(page, originName, viewport) {
 
   const rotateButton = camera.getByRole('button', { name: '旋转画面' });
   await rotateButton.waitFor({ state: 'visible' });
-  let rotation = 0;
-  for (const deg of [90, 180, 270, 0]) {
+  // Rotation is a server-side media-pipeline property: the session stops, the
+  // camera reopens the pipeline with videoflip applied before the timestamp
+  // watermark, and the browser decodes the rotated stream. The button cycles
+  // 0 → 270 → 180 → 90 → 0; 90/270 swap width and height.
+  for (const [deg, width, height] of [
+    [270, 2160, 3840],
+    [180, 3840, 2160],
+    [90, 2160, 3840],
+    [0, 3840, 2160],
+  ]) {
+    await rotateButton.waitFor({ state: 'visible' });
     await rotateButton.click();
-    const className = await camera.locator('video').evaluate(video => video.className);
-    assert.ok(
-      className.includes(`rotate-${deg}`),
-      `rotation ${deg}deg applied (className=${className})`,
+    await camera.getByText('直播中', { exact: true }).waitFor({
+      state: 'visible',
+      timeout: 45_000,
+    });
+    await page.waitForFunction(
+      expected => {
+        const video = document.querySelector('video[aria-label="摄像头实时画面"]');
+        return video instanceof HTMLVideoElement && video.videoWidth === expected.width
+          && video.videoHeight === expected.height;
+      },
+      { width, height },
+      { timeout: 45_000 },
     );
-    rotation = deg;
+    const status = await cameraStatus(page);
+    assert.equal(status.camera.profile.rotation, `deg_${deg}`);
   }
 
   if (screenshotDirectory) {

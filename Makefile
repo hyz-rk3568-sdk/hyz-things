@@ -113,7 +113,7 @@ camera-app: toolchain
 	       ! -f "$(BR_OUT)/target/usr/lib/gstreamer-1.0/libgstvideoparsersbad.so" ]]; then \
 		cd sdk && ./build.sh buildroot-make:gst1-plugins-base-dirclean:gst1-plugins-good-dirclean:gst1-plugins-bad-dirclean; \
 	fi
-	cd sdk && ./build.sh buildroot-make:gstreamer1:gst1-plugins-base:gst1-plugins-good:gst1-plugins-bad:rockchip-mpp:gstreamer1-rockchip
+	cd sdk && ./build.sh buildroot-make:gstreamer1:gst1-plugins-base:gst1-plugins-good:gst1-plugins-bad:rockchip-mpp:gstreamer1-rockchip:dejavu
 	test -f "$(BR_OUT)/target/usr/lib/gstreamer-1.0/libgstapp.so"
 	test -f "$(BR_OUT)/target/usr/lib/gstreamer-1.0/libgstvideo4linux2.so"
 	test -f "$(BR_OUT)/target/usr/lib/gstreamer-1.0/libgstvideoparsersbad.so"
@@ -248,11 +248,17 @@ check-static:
 	grep -q 'CAMERA_UDP_PORT_END: u16 = 40_015' "$(CAMERA_APP)/src/domain/session.rs"
 	grep -q 'width: 1920' "$(CAMERA_APP)/src/domain/stream.rs"
 	grep -q 'height: 1080' "$(CAMERA_APP)/src/domain/stream.rs"
-	grep -q 'bitrate_bps: 4_000_000' "$(CAMERA_APP)/src/domain/stream.rs"
-	grep -q 'FIXED_CROP_LEFT, 960' "$(CAMERA_APP)/src/domain/stream.rs"
-	grep -q 'FIXED_CROP_TOP, 540' "$(CAMERA_APP)/src/domain/stream.rs"
-	grep -q 'source.set_property("crop-left", FIXED_CROP_LEFT)' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
-	grep -q 'source.set_property("crop-top", FIXED_CROP_TOP)' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
+	grep -q 'bitrate_bps: 2_500_000' "$(CAMERA_APP)/src/domain/stream.rs"
+	grep -q 'FIXED_CAPTURE_WIDTH: u16 = 3840' "$(CAMERA_APP)/src/domain/stream.rs"
+	grep -q 'FIXED_CAPTURE_HEIGHT: u16 = 2160' "$(CAMERA_APP)/src/domain/stream.rs"
+	grep -q 'WATERMARK_TIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S"' "$(CAMERA_APP)/src/domain/watermark.rs"
+	grep -q 'WATERMARK_FONT_FAMILY: &str = "DejaVu Sans"' "$(CAMERA_APP)/src/domain/watermark.rs"
+	grep -q 'source.set_property("device", FIXED_CAMERA_DEVICE)' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
+	grep -q 'make("clockoverlay", "timestamp-overlay")' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
+	grep -q 'make("videoflip", "orientation-flip")' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
+	grep -q '"clockoverlay"' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
+	grep -q '"videoflip"' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
+	grep -q 'WatermarkPosition::TopLeft' "$(CAMERA_APP)/src/domain/watermark.rs"
 	grep -q 'FULL_RANGE_BT709_COLORIMETRY: &str = "1:3:5:1"' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
 	grep -q 'field("colorimetry", FULL_RANGE_BT709_COLORIMETRY)' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
 	grep -q 'set_property_from_str("level", "4")' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
@@ -318,8 +324,12 @@ check-static:
 	grep -q '^BR2_PACKAGE_GSTREAMER1=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
 	grep -q '^BR2_PACKAGE_GST1_PLUGINS_BASE=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
 	grep -q '^BR2_PACKAGE_GST1_PLUGINS_BASE_PLUGIN_APP=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q '^BR2_PACKAGE_GST1_PLUGINS_BASE_PLUGIN_PANGO=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q '^BR2_PACKAGE_DEJAVU=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q '^BR2_PACKAGE_DEJAVU_SANS=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
 	grep -q '^BR2_PACKAGE_GST1_PLUGINS_GOOD=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
 	grep -q '^BR2_PACKAGE_GST1_PLUGINS_GOOD_PLUGIN_V4L2=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q '^BR2_PACKAGE_GST1_PLUGINS_GOOD_PLUGIN_VIDEOFILTER=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
 	grep -q '^BR2_PACKAGE_GST1_PLUGINS_BAD=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
 	grep -q '^BR2_PACKAGE_GST1_PLUGINS_BAD_PLUGIN_VIDEOPARSERS=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
 	grep -q '^BR2_PACKAGE_ROCKCHIP_MPP=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
@@ -328,7 +338,7 @@ check-static:
 	@for symbol in GSTREAMER1_INSTALL_TOOLS GST1_PLUGINS_BASE_INSTALL_TOOLS \
 	  GST1_PLUGINS_BASE_PLUGIN_AUDIOCONVERT GST1_PLUGINS_BASE_PLUGIN_AUDIORESAMPLE \
 	  GST1_PLUGINS_BASE_PLUGIN_PLAYBACK GST1_PLUGINS_BASE_PLUGIN_TYPEFIND \
-	  GST1_PLUGINS_BASE_PLUGIN_VIDEOCONVERTSCALE GST1_PLUGINS_BASE_PLUGIN_VOLUME \
+	  GST1_PLUGINS_BASE_PLUGIN_VOLUME \
 	  GST1_PLUGINS_GOOD_PLUGIN_AVI GST1_PLUGINS_GOOD_PLUGIN_ISOMP4 \
 	  GST1_PLUGINS_GOOD_PLUGIN_RTP GST1_PLUGINS_GOOD_PLUGIN_RTPMANAGER \
 	  GST1_PLUGINS_GOOD_PLUGIN_UDP GST1_PLUGINS_GOOD_PLUGIN_V4L2_PROBE \

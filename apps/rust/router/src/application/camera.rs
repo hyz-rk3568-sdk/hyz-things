@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
 use crate::domain::camera::{
-    CameraAccessScope, CameraStatus, CameraStreamPreset, CAMERA_MAX_SDP_BYTES,
+    CameraAccessScope, CameraRotation, CameraStatus, CameraStreamPreset, CAMERA_MAX_SDP_BYTES,
     CAMERA_MAX_SESSION_ID_BYTES,
 };
 
@@ -39,6 +39,8 @@ pub trait CameraControlPort: Send + Sync {
     async fn close_session(&self, session_id: &str) -> Result<(), CameraError>;
 
     async fn set_profile(&self, preset: CameraStreamPreset) -> Result<(), CameraError>;
+
+    async fn set_rotation(&self, rotation: CameraRotation) -> Result<(), CameraError>;
 }
 
 pub struct CameraApplication {
@@ -140,6 +142,13 @@ impl CameraApplication {
         }
         self.control.set_profile(preset).await
     }
+
+    pub async fn set_rotation(&self, rotation: CameraRotation) -> Result<(), CameraError> {
+        if !CameraRotation::ALL.contains(&rotation) {
+            return Err(CameraError::InvalidRequest);
+        }
+        self.control.set_rotation(rotation).await
+    }
 }
 
 #[cfg(test)]
@@ -162,6 +171,7 @@ mod tests {
                     height: 2160,
                     fps: 30,
                     bitrate_bps: 20_000_000,
+                    rotation: CameraRotation::Deg0,
                 },
                 access: scope.kind(),
                 error_category: None,
@@ -185,6 +195,10 @@ mod tests {
         }
 
         async fn set_profile(&self, _preset: CameraStreamPreset) -> Result<(), CameraError> {
+            Ok(())
+        }
+
+        async fn set_rotation(&self, _rotation: CameraRotation) -> Result<(), CameraError> {
             Ok(())
         }
     }
@@ -248,5 +262,21 @@ mod tests {
             app.set_profile(CameraStreamPreset::Fhd1080p5m).await,
             Ok(())
         );
+    }
+
+    #[tokio::test]
+    async fn forwards_an_enumerated_rotation_to_the_adapter() {
+        let app = CameraApplication::new(Arc::new(Fake));
+        for rotation in CameraRotation::ALL {
+            assert_eq!(app.set_rotation(rotation).await, Ok(()));
+        }
+    }
+
+    #[test]
+    fn rotation_serde_rejects_unknown_degrees() {
+        assert!(serde_json::from_str::<CameraRotation>("\"deg_0\"").is_ok());
+        assert!(serde_json::from_str::<CameraRotation>("\"deg_90\"").is_ok());
+        assert!(serde_json::from_str::<CameraRotation>("\"deg_45\"").is_err());
+        assert!(serde_json::from_str::<CameraRotation>("\"clockwise\"").is_err());
     }
 }

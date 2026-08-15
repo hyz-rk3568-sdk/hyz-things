@@ -11,7 +11,7 @@ use gloo_net::http::Request;
 use gloo_timers::future::TimeoutFuture;
 use hyz_router::domain::{
     camera::{
-        CameraAccessKind, CameraErrorCategory, CameraPipelineState, CameraStatus,
+        CameraAccessKind, CameraErrorCategory, CameraPipelineState, CameraRotation, CameraStatus,
         CameraStreamPreset,
     },
     panel::{
@@ -71,6 +71,7 @@ const CAMERA_STATUS_ENDPOINT: &str = "/api/v1/camera/status";
 const CAMERA_SESSION_CREATE_ENDPOINT: &str = "/api/v1/control/camera/session/create";
 const CAMERA_SESSION_CLOSE_ENDPOINT: &str = "/api/v1/control/camera/session/close";
 const CAMERA_PROFILE_UPDATE_ENDPOINT: &str = "/api/v1/control/camera/profile";
+const CAMERA_ROTATION_UPDATE_ENDPOINT: &str = "/api/v1/control/camera/rotation";
 const CAMERA_ICE_GATHER_TIMEOUT_MS: u32 = 10_000;
 const CAMERA_ICE_POLL_MS: u32 = 50;
 const POLL_DELAY_MS: u32 = 2_000;
@@ -100,6 +101,18 @@ struct CameraProfileUpdateRequestDto {
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CameraProfileUpdateResponseDto {
+    applied: bool,
+}
+
+#[derive(serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct CameraRotationUpdateRequestDto {
+    rotation: CameraRotation,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CameraRotationUpdateResponseDto {
     applied: bool,
 }
 
@@ -872,7 +885,6 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     let status_error = use_state(|| None::<String>);
     let notice = use_state(|| None::<String>);
     let phase = use_state(|| CameraViewPhase::Idle);
-    let rotation = use_state(|| 0u16);
     let runtime = use_mut_ref(|| None::<CameraSessionRuntime>);
     let generation = use_mut_ref(|| 0u64);
     let previous_stop_generation = use_mut_ref(|| props.stop_generation);
@@ -1164,9 +1176,55 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     };
 
     let rotate = {
-        let rotation = rotation.clone();
+        let csrf = props.csrf.clone();
+        let status = status.clone();
+        let notice = notice.clone();
+        let phase = phase.clone();
+        let runtime = runtime.clone();
+        let video = video.clone();
+        let generation = generation.clone();
+        let start = start.clone();
         Callback::from(move |_| {
-            rotation.set((*rotation + 90) % 360);
+            let Some(current) = status.as_ref().map(|camera| camera.profile.rotation) else {
+                return;
+            };
+            let next = current.next_rotation();
+            if next == current {
+                return;
+            }
+            let was_playing = *phase == CameraViewPhase::Playing;
+            let pending_close = take_camera_runtime(&runtime, &video);
+            if was_playing {
+                phase.set(CameraViewPhase::Idle);
+            }
+            next_camera_generation(&generation);
+            let csrf = csrf.clone();
+            let notice = notice.clone();
+            let phase = phase.clone();
+            let start = start.clone();
+            spawn_local(async move {
+                if let Some((session_id, token)) = pending_close {
+                    close_camera_session(session_id, token).await;
+                }
+                match post_json_response::<_, CameraRotationUpdateResponseDto>(
+                    CAMERA_ROTATION_UPDATE_ENDPOINT,
+                    &csrf,
+                    &CameraRotationUpdateRequestDto { rotation: next },
+                    "摄像头画面设置",
+                )
+                .await
+                {
+                    Ok(response) if response.applied => {
+                        notice.set(Some(format!("画面已旋转：{}°", next.degrees())));
+                        if was_playing {
+                            phase.set(CameraViewPhase::Idle);
+                            start.emit(());
+                        }
+                    }
+                    Ok(_) => notice.set(Some("画面旋转未生效".to_owned())),
+                    Err(message) => notice.set(Some(message)),
+                }
+            });
         })
     };
 
@@ -1246,7 +1304,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                         <dl class={CAMERA_METRICS}>
                             <div class={CAMERA_METRIC}><dt>{"设备"}</dt><dd>{if camera.available { "可用" } else { "不可用" }}</dd></div>
                             <div class={CAMERA_METRIC}><dt>{"管线"}</dt><dd>{camera_pipeline_label(camera.pipeline)}</dd></div>
-                            <div class={CAMERA_METRIC}><dt>{"画面"}</dt><dd>{format!("{} × {} · {} fps · {:.1} Mbps · {}", camera.profile.width, camera.profile.height, camera.profile.fps, camera.profile.bitrate_bps as f64 / 1_000_000.0, camera.profile.codec)}</dd></div>
+                            <div class={CAMERA_METRIC}><dt>{"画面"}</dt><dd>{format!("{} × {} · {} fps · {:.1} Mbps · {} · 旋转 {}°", camera.profile.width, camera.profile.height, camera.profile.fps, camera.profile.bitrate_bps as f64 / 1_000_000.0, camera.profile.codec, camera.profile.rotation.degrees())}</dd></div>
                             <div class={CAMERA_METRIC}><dt>{"访问"}</dt><dd>{format!("{} · {} 个会话", camera_access_label(camera.access), camera.active_sessions)}</dd></div>
                         </dl>
                         if !presets.is_empty() {
@@ -1285,12 +1343,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                     }
                 </div>
                 <div ref={stage} class={CAMERA_STAGE}>
-                    <video ref={video} class={classes!(CAMERA_VIDEO, match *rotation {
-                        90 => CAMERA_ROTATE_90,
-                        180 => CAMERA_ROTATE_180,
-                        270 => CAMERA_ROTATE_270,
-                        _ => CAMERA_ROTATE_0,
-                    })} autoplay=true playsinline=true muted=true aria-label="摄像头实时画面"></video>
+                    <video ref={video} class={CAMERA_VIDEO} autoplay=true playsinline=true muted=true aria-label="摄像头实时画面"></video>
                     if *phase == CameraViewPhase::Playing {
                         <button class={CAMERA_ROTATE_BUTTON} type="button" onclick={rotate} aria-label="旋转画面">
                             {"旋转画面"}
