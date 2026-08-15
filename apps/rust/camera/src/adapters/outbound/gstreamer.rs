@@ -22,7 +22,7 @@ use std::{
     time::Duration,
 };
 
-const PIPELINE_START_DEADLINE: Duration = Duration::from_secs(3);
+const PIPELINE_START_DEADLINE: Duration = Duration::from_secs(10);
 const SYSTEM_PLUGIN_DIRECTORY: &str = "/usr/lib/gstreamer-1.0";
 const FULL_RANGE_BT709_COLORIMETRY: &str = "1:3:5:1";
 
@@ -115,14 +115,14 @@ impl CameraMediaPort for GStreamerMediaAdapter {
             );
         }
         flip.set_property_from_str("method", videoflip_method(profile.rotation));
-        let watermark = TimestampWatermark::for_profile(profile);
+        let watermark = TimestampWatermark::DEFAULT;
         watermark
             .validate()
             .map_err(|_| MediaError::PipelineFailed)?;
         overlay.set_property_from_str("time-format", watermark.time_format);
         overlay.set_property_from_str(
             "font-desc",
-            &format!("{} {}", WATERMARK_FONT_FAMILY, watermark.font_size),
+            &format!("{} {}px", WATERMARK_FONT_FAMILY, watermark.font_size),
         );
         overlay.set_property_from_str("halignment", watermark.position.halign());
         overlay.set_property_from_str("valignment", watermark.position.valign());
@@ -131,7 +131,7 @@ impl CameraMediaPort for GStreamerMediaAdapter {
         overlay.set_property("ypad", padding);
         overlay.set_property("shaded-background", watermark.shaded_background);
         encoder.set_property_from_str("profile", "baseline");
-        encoder.set_property_from_str("level", "4");
+        encoder.set_property_from_str("level", h264_level(profile));
         encoder.set_property("gop", i32::from(profile.fps));
         encoder.set_property("bps", profile.bitrate_bps);
         parser.set_property("config-interval", -1i32);
@@ -278,6 +278,17 @@ fn videoflip_method(rotation: CameraRotation) -> &'static str {
         CameraRotation::Deg90 => "clockwise",
         CameraRotation::Deg180 => "rotate-180",
         CameraRotation::Deg270 => "counterclockwise",
+    }
+}
+
+/// H.264 level 按帧大小选择：Level 4.0 的 MaxFS 为 2,097,152 像素，超过（1440p/4K）
+/// 必须使用 Level 5.1，否则 SPS level 与帧大小不符，解码端可能拒绝。
+fn h264_level(profile: CameraStreamProfile) -> &'static str {
+    const LEVEL_40_MAX_PIXELS: u32 = 2_097_152;
+    if u32::from(profile.width) * u32::from(profile.height) > LEVEL_40_MAX_PIXELS {
+        "5.1"
+    } else {
+        "4"
     }
 }
 

@@ -23,7 +23,7 @@ use crate::{
 pub const CAMERA_CONTROL_SOCKET: &str = "/run/hyz-camera/control.sock";
 const CAMERA_CONTROL_PROTOCOL_VERSION: u16 = 2;
 const CAMERA_CONTROL_MAX_FRAME_BYTES: usize = 64 * 1024;
-const CAMERA_CONTROL_TIMEOUT: Duration = Duration::from_secs(10);
+const CAMERA_CONTROL_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Clone)]
 pub struct CameraUnixAdapter {

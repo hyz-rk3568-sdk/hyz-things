@@ -5,9 +5,8 @@ use hyz_camera::{
     },
     domain::{
         pts_ns_to_90khz, BoundedFrameQueue, CameraAccessKind, CameraAccessScope, CameraRotation,
-        CameraStreamPreset, EncodedFrame, FramePopOutcome, FramePushOutcome, PtsError,
-        TimestampWatermark, WatermarkPosition, FIXED_LAN_ADDRESS, WATERMARK_FONT_FAMILY,
-        WATERMARK_TIME_FORMAT,
+        EncodedFrame, FramePopOutcome, FramePushOutcome, PtsError, TimestampWatermark,
+        WatermarkPosition, FIXED_LAN_ADDRESS, WATERMARK_FONT_FAMILY, WATERMARK_TIME_FORMAT,
     },
 };
 use std::{net::Ipv4Addr, sync::Arc, time::Duration};
@@ -147,15 +146,12 @@ fn set_rotation_operation_is_typed_and_enum_scoped() {
 }
 
 #[test]
-fn timestamp_watermark_is_burned_into_every_profile() {
-    for preset in CameraStreamPreset::ALL {
-        let watermark = TimestampWatermark::for_profile(preset.profile());
-        assert_eq!(watermark.time_format, WATERMARK_TIME_FORMAT);
-        assert_eq!(watermark.position, WatermarkPosition::TopLeft);
-        assert!(watermark.shaded_background);
-        assert!(watermark.font_size >= 18);
-        assert!(watermark.font_size <= 54);
-        assert!(WATERMARK_FONT_FAMILY.contains("DejaVu Sans"));
-        assert_eq!(watermark.validate(), Ok(()));
-    }
+fn timestamp_watermark_is_fixed_across_presets() {
+    let watermark = TimestampWatermark::DEFAULT;
+    assert_eq!(watermark.time_format, WATERMARK_TIME_FORMAT);
+    assert_eq!(watermark.position, WatermarkPosition::TopLeft);
+    assert!(watermark.shaded_background);
+    assert_eq!(watermark.font_size, 20);
+    assert!(WATERMARK_FONT_FAMILY.contains("DejaVu Sans"));
+    assert_eq!(watermark.validate(), Ok(()));
 }

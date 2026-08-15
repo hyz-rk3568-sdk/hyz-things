@@ -2,9 +2,9 @@
 
 ## 状态
 
-**第一版已实现、构建并安装最终 recovery-free OTA；时间戳水印（左上角、小字号）与编码前 `videoflip` 画面旋转已加入媒体管线，并在真实 RK3568 上完成浏览器观看验收。**
+**第一版已实现、构建并安装最终 recovery-free OTA；时间戳水印（左上角、固定 20px）、编码前 `videoflip` 画面旋转与 4K 直播稳定性均已在真实 RK3568 上验收。**
 
-实现保持本文定义的独立 `hyz-camera`、HTTP SDP 信令、固定 LAN/Tailscale candidate、V4L2 + GStreamer + Rockchip MPP H.264、`str0m` 和单观看者边界。真实 Chromium 已分别通过 LAN 与 Tailscale origin，在桌面和移动端完成播放、H.264 解码、canvas 可见像素、全屏、停止与 session 清理验收。最终 OTA 中的插件、Camera 和 Router 与构建产物逐字节一致；板端采集码流经 `ffprobe` 确认为 full-range `color_range=pc`。camera 纯测试（SDP 校验、控制协议 v2、水印与旋转 domain）已交叉编译并在板端全部通过。
+实现保持本文定义的独立 `hyz-camera`、HTTP SDP 信令、固定 LAN/Tailscale candidate、V4L2 + GStreamer + Rockchip MPP H.264、`str0m` 和单观看者边界。真实 Chromium 已分别通过 LAN 与 Tailscale origin，在桌面和移动端完成播放、H.264 解码、canvas 可见像素、全屏、停止与 session 清理验收。最终 OTA 中的插件、Camera 和 Router 与构建产物逐字节一致；板端采集码流经 `ffprobe` 确认为 full-range `color_range=pc`。camera 纯测试（SDP 校验、控制协议 v2、水印与旋转 domain）已交叉编译并在板端全部通过。4K 预设间歇 HTTP 503 已定位为 4K 冷启动首帧超过 3 秒管线启动截止时间（实测 4.3-4.5s），截止时间上调至 10s 后 4K 稳定出流。
 
 本文继续记录第一版管理页面摄像头直播的产品边界、进程架构、信令协议、WebRTC 媒体路径、Tailscale 集成、安全约束、测试顺序和验收矩阵。真实设备测试方法见 [`camera-hardware-e2e.md`](camera-hardware-e2e.md)。
 
@@ -15,7 +15,7 @@
 
 - 独立程序：`/usr/bin/hyz-camera`；
 - 固定媒体 profile：采集固定使用 RKISP 原生 `3840×2160` 全幅 NV12，输出分辨率与码率由固定枚举的 16:9 预设选择（默认 `720p · 2.5 Mbps`，可选 `1080p · 5 Mbps`、`1440p · 10 Mbps`、`4K · 20 Mbps`，均 `@ 30 FPS`、H.264 Baseline），非 4K 预设由 `videoscale` 缩放；
-- 时间戳水印：`clockoverlay` 烧入日期+时间（`%Y-%m-%d %H:%M:%S`）、左上角、黑底，字号随旋转后显示高度缩放（720p→18 … 4K→54）；依赖 gst1-plugins-base pango 插件与 DejaVu Sans 字体；
+- 时间戳水印：`clockoverlay` 烧入日期+时间（`%Y-%m-%d %H:%M:%S`）、左上角、黑底，固定 `20px` 字号（所有预设一致）；依赖 gst1-plugins-base pango 插件与 DejaVu Sans 字体；
 - 画面旋转：`videoflip` 编码前应用（0/90/180/270°，`BR2_PACKAGE_GST1_PLUGINS_GOOD_PLUGIN_VIDEOFILTER`），管理页「旋转画面」按 0 → 270 → 180 → 90 → 0 循环并自动重启直播，浏览器不再做 CSS 旋转；
 - 固定媒体端口：UDP `40000-40015`；
 - Router Playwright mock/harness 回归：10/10 通过；
@@ -30,12 +30,12 @@
 
 | 产物 | SHA-256 |
 | --- | --- |
-| `output/upgrade.fw`（460,284,490 bytes） | `e8821d9653eab15cd3fd88b19fc5a887a047dd0fa4f9701e6e574ae4fa8381fa` |
-| 打包 `boot.img` | `9eaef522956f6355847d8562ed3283b6d649d3ff1b8baf4f96b062f194148a4f` |
-| 打包 `rootfs.img` | `75469aedf64c6348bd726ffe8bae041757b88392ef633e02d430987c739dfd6d` |
-| 打包 `oem.img` | `ff4501e0736929d15cd6e3c931760908ac667414bbfc8b0b345a76fdcec37d71` |
-| OTA 中及板端 `/usr/bin/hyz-router` | `1d3c2e02f72fb286666bf5f7a4214f9ecd6d6b6df51cf556a36de117003b7df9` |
-| OTA 中及板端 `/usr/bin/hyz-camera` | `7a64456431f159af3bdba1f49f9e5a88a8050d81af4963c2c3dbdf34bca4c544` |
+| `output/upgrade.fw`（460,284,490 bytes） | `2375bb757bede1ef710d908eaee6b54e6de1f49fade12db1e90e72c0a3be3010` |
+| 打包 `boot.img` | `ecf7562037d8788b3601b796f7064a49e5075d6e8b4ccc4b9bd29ac43d075a08` |
+| 打包 `rootfs.img` | `a9e7a5f11e6913085f14c57525d873c8adaa51d6e5bc8d66854bd3c28ecea729` |
+| 打包 `oem.img` | `bc86066f63fc5b115b6bed66c85f22b3dcc97f498e6fe83d0f77e117e447fbf8` |
+| OTA 中及板端 `/usr/bin/hyz-router` | `a9d966b35c0932651605d014890db2b9d3d24d7aef56148bf039724c407428d7` |
+| OTA 中及板端 `/usr/bin/hyz-camera` | `8b819cb7fd287b695ae5d49f139b869d354cae392d1dcebedf3545a0a27f6ef2` |
 | OTA 中及板端 `/usr/lib/gstreamer-1.0/libgstpango.so` | `c51115e14203ed515e33265ef27bc0405bfbb6fe4ba05a5bfee65e1163bf0451` |
 | OTA 中及板端 `/usr/lib/gstreamer-1.0/libgstvideofilter.so` | `75a6f0097865e34ee1c33cc7ccc831e6723cf3770826fcea4d067124eb038b8b` |
 | OTA 中及板端 `/usr/lib/gstreamer-1.0/libgstrockchipmpp.so` | `f6202995874bd3bde81a59fcb61ef0dde9f5a13e7b9176018e18dd82c18d3aad` |
@@ -431,7 +431,7 @@ enum CameraVideoCodec {
 | --- | --- |
 | 时间格式 | `%Y-%m-%d %H:%M:%S` |
 | 位置 | 左上角，`xpad=ypad=8` |
-| 字体 | DejaVu Sans，字号 = 显示高度 × 2 / 80（720p→18、1080p→27、1440p→36、4K→54） |
+| 字体 | DejaVu Sans，固定 `20px`（显式像素，所有预设一致） |
 | 背景 | `shaded-background=true`（黑底保证亮场景可读） |
 | 时间来源 | pipeline clock，v4l2src 直播时为系统实时钟 |
 | 音频 | 无 |
@@ -449,13 +449,15 @@ v4l2src fixed-device
   → queue, bounded and downstream-leaky
   → videoscale → video/x-raw,format=NV12,width=<输出宽>,height=<输出高>  （非 4K 预设）
   → videoflip method=<none|clockwise|rotate-180|counterclockwise>  （0/90/180/270°）
-  → clockoverlay time-format=%Y-%m-%d %H:%M:%S font-desc="DejaVu Sans <字号>"
+  → clockoverlay time-format=%Y-%m-%d %H:%M:%S font-desc="DejaVu Sans 20px"
                 halignment=left valignment=top xpad=8 ypad=8 shaded-background=true
-  → mpph264enc profile=baseline level=4 gop=30 bps=<预设码率>
+  → mpph264enc profile=baseline level=<4|5.1> gop=30 bps=<预设码率>
   → h264parse config-interval=-1
   → video/x-h264,stream-format=byte-stream,alignment=au
   → appsink max-buffers=2 drop=true sync=false
 ```
+
+H.264 level 按帧大小选择：Level 4.0 的 MaxFS 为 2,097,152 像素，720p/1080p 使用 `4`，1440p/4K 使用 `5.1`（否则 SPS level 与帧大小不符）。管线启动首帧截止时间为 10 秒（4K 冷启动含 ISP 初始化与 MPP 编码器启动，3 秒过于紧张，曾导致间歇 `media_pipeline_failed` → HTTP 503）。
 
 实现必须使用 element API 或固定内部 pipeline construction；不得接受 caller-provided `gst_parse_launch` 字符串。若使用 `gst_parse_launch` 进行早期板端诊断，只能是开发命令，不进入生产 Web/API 路径。
 

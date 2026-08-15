@@ -253,6 +253,8 @@ check-static:
 	grep -q 'FIXED_CAPTURE_HEIGHT: u16 = 2160' "$(CAMERA_APP)/src/domain/stream.rs"
 	grep -q 'WATERMARK_TIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S"' "$(CAMERA_APP)/src/domain/watermark.rs"
 	grep -q 'WATERMARK_FONT_FAMILY: &str = "DejaVu Sans"' "$(CAMERA_APP)/src/domain/watermark.rs"
+	grep -q 'WATERMARK_FONT_SIZE: u32 = 20' "$(CAMERA_APP)/src/domain/watermark.rs"
+	grep -q '"{} {}px"' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
 	grep -q 'source.set_property("device", FIXED_CAMERA_DEVICE)' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
 	grep -q 'make("clockoverlay", "timestamp-overlay")' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
 	grep -q 'make("videoflip", "orientation-flip")' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
@@ -261,7 +263,8 @@ check-static:
 	grep -q 'WatermarkPosition::TopLeft' "$(CAMERA_APP)/src/domain/watermark.rs"
 	grep -q 'FULL_RANGE_BT709_COLORIMETRY: &str = "1:3:5:1"' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
 	grep -q 'field("colorimetry", FULL_RANGE_BT709_COLORIMETRY)' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
-	grep -q 'set_property_from_str("level", "4")' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
+	grep -q 'set_property_from_str("level", h264_level(profile))' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
+	grep -q '"5.1"' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
 	grep -q 'GST_VIDEO_COLOR_RANGE_0_255' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c
 	grep -q 'MPP_FRAME_RANGE_JPEG' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c
 	grep -q 'mpp_enc_cfg_set_s32 (self->mpp_cfg, "prep:range", range)' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c

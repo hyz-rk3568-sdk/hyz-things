@@ -888,6 +888,20 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     let runtime = use_mut_ref(|| None::<CameraSessionRuntime>);
     let generation = use_mut_ref(|| 0u64);
     let previous_stop_generation = use_mut_ref(|| props.stop_generation);
+    // 乐观旋转状态：点击后立即推进 0 → 270 → 180 → 90 → 0，不依赖 2s 轮询的
+    // 延迟刷新，保证「旋转画面」每次点击都严格逆时针 90°。
+    let rotation = use_mut_ref(|| None::<CameraRotation>);
+
+    {
+        let status = status.clone();
+        let rotation = rotation.clone();
+        use_effect_with(status.clone(), move |_| {
+            if rotation.borrow().is_none() {
+                *rotation.borrow_mut() = status.as_ref().map(|camera| camera.profile.rotation);
+            }
+            || ()
+        });
+    }
 
     {
         let status = status.clone();
@@ -1184,14 +1198,16 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
         let video = video.clone();
         let generation = generation.clone();
         let start = start.clone();
+        let rotation = rotation.clone();
         Callback::from(move |_| {
-            let Some(current) = status.as_ref().map(|camera| camera.profile.rotation) else {
+            let current = rotation
+                .borrow()
+                .or_else(|| status.as_ref().map(|camera| camera.profile.rotation));
+            let Some(current) = current else {
                 return;
             };
             let next = current.next_rotation();
-            if next == current {
-                return;
-            }
+            *rotation.borrow_mut() = Some(next);
             let was_playing = *phase == CameraViewPhase::Playing;
             let pending_close = take_camera_runtime(&runtime, &video);
             if was_playing {
@@ -1202,6 +1218,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
             let notice = notice.clone();
             let phase = phase.clone();
             let start = start.clone();
+            let rotation = rotation.clone();
             spawn_local(async move {
                 if let Some((session_id, token)) = pending_close {
                     close_camera_session(session_id, token).await;
@@ -1221,8 +1238,14 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                             start.emit(());
                         }
                     }
-                    Ok(_) => notice.set(Some("画面旋转未生效".to_owned())),
-                    Err(message) => notice.set(Some(message)),
+                    Ok(_) => {
+                        *rotation.borrow_mut() = None;
+                        notice.set(Some("画面旋转未生效".to_owned()));
+                    }
+                    Err(message) => {
+                        *rotation.borrow_mut() = None;
+                        notice.set(Some(message));
+                    }
                 }
             });
         })
