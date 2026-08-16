@@ -45,7 +45,7 @@ pub trait CameraControlPort: Send + Sync {
 
 pub struct CameraApplication {
     control: Arc<dyn CameraControlPort>,
-    sessions: Mutex<HashMap<[u8; 32], String>>,
+    sessions: Mutex<HashMap<[u8; 32], Vec<String>>>,
 }
 
 impl CameraApplication {
@@ -71,6 +71,7 @@ impl CameraApplication {
         self.control.create_session(scope, offer_sdp).await
     }
 
+    /// 一个管理员账号可以同时持有多个观看会话（多窗口/多设备同账号并发）。
     pub async fn create_owned_session(
         &self,
         owner: [u8; 32],
@@ -78,11 +79,11 @@ impl CameraApplication {
         offer_sdp: String,
     ) -> Result<CameraSession, CameraError> {
         let mut sessions = self.sessions.lock().await;
-        if sessions.contains_key(&owner) {
-            return Err(CameraError::Busy);
-        }
         let session = self.create_session(scope, offer_sdp).await?;
-        sessions.insert(owner, session.session_id.clone());
+        sessions
+            .entry(owner)
+            .or_default()
+            .push(session.session_id.clone());
         Ok(session)
     }
 
@@ -92,21 +93,33 @@ impl CameraApplication {
         session_id: &str,
     ) -> Result<(), CameraError> {
         let mut sessions = self.sessions.lock().await;
-        if sessions.get(&owner).map(String::as_str) != Some(session_id) {
-            return Err(CameraError::Forbidden);
+        let (owned_id, empty) = {
+            let Some(ids) = sessions.get_mut(&owner) else {
+                return Err(CameraError::Forbidden);
+            };
+            let Some(index) = ids.iter().position(|id| id == session_id) else {
+                return Err(CameraError::Forbidden);
+            };
+            let owned_id = ids.remove(index);
+            (owned_id, ids.is_empty())
+        };
+        if empty {
+            sessions.remove(&owner);
         }
-        match self.close_session(session_id).await {
-            Ok(()) | Err(CameraError::UnknownSession) => {
-                sessions.remove(&owner);
-                Ok(())
-            }
+        match self.close_session(&owned_id).await {
+            Ok(()) | Err(CameraError::UnknownSession) => Ok(()),
             Err(error) => Err(error),
         }
     }
 
     pub async fn close_owner(&self, owner: [u8; 32]) {
-        let session_id = self.sessions.lock().await.remove(&owner);
-        if let Some(session_id) = session_id {
+        let session_ids = self
+            .sessions
+            .lock()
+            .await
+            .remove(&owner)
+            .unwrap_or_default();
+        for session_id in session_ids {
             let _ = self.close_session(&session_id).await;
         }
     }
@@ -114,10 +127,7 @@ impl CameraApplication {
     pub async fn close_all(&self) {
         let sessions = {
             let mut owners = self.sessions.lock().await;
-            owners
-                .drain()
-                .map(|(_, session)| session)
-                .collect::<Vec<_>>()
+            owners.drain().flat_map(|(_, ids)| ids).collect::<Vec<_>>()
         };
         for session_id in sessions {
             let _ = self.close_session(&session_id).await;
@@ -155,8 +165,19 @@ impl CameraApplication {
 mod tests {
     use super::*;
     use crate::domain::camera::{CameraAccessKind, CameraPipelineState, CameraStreamProfile};
+    use std::sync::atomic::{AtomicU64, Ordering};
 
-    struct Fake;
+    struct Fake {
+        next_session: AtomicU64,
+    }
+
+    impl Default for Fake {
+        fn default() -> Self {
+            Self {
+                next_session: AtomicU64::new(1),
+            }
+        }
+    }
 
     #[async_trait]
     impl CameraControlPort for Fake {
@@ -183,8 +204,9 @@ mod tests {
             _scope: CameraAccessScope,
             _offer_sdp: String,
         ) -> Result<CameraSession, CameraError> {
+            let index = self.next_session.fetch_add(1, Ordering::SeqCst);
             Ok(CameraSession {
-                session_id: "a".repeat(64),
+                session_id: format!("{index:064x}"),
                 answer_sdp: "v=0\r\n".to_owned(),
                 negotiation_timeout_seconds: 30,
             })
@@ -205,7 +227,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_oversized_offer_before_calling_adapter() {
-        let app = CameraApplication::new(Arc::new(Fake));
+        let app = CameraApplication::new(Arc::new(Fake::default()));
         let offer = "x".repeat(CAMERA_MAX_SDP_BYTES + 1);
         assert_eq!(
             app.create_session(CameraAccessScope::Lan, offer).await,
@@ -214,32 +236,77 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ownership_is_shared_by_the_camera_application() {
-        let app = CameraApplication::new(Arc::new(Fake));
+    async fn an_owner_can_hold_multiple_sessions_and_close_only_its_own() {
+        let app = CameraApplication::new(Arc::new(Fake::default()));
         let owner = [1u8; 32];
-        let session = app
+        let first = app
             .create_owned_session(owner, CameraAccessScope::Lan, "v=0\r\n".to_owned())
             .await
             .unwrap();
+        let second = app
+            .create_owned_session(owner, CameraAccessScope::Lan, "v=0\r\n".to_owned())
+            .await
+            .unwrap();
+        assert_ne!(first.session_id, second.session_id);
         assert_eq!(
-            app.create_owned_session(owner, CameraAccessScope::Lan, "v=0\r\n".to_owned())
-                .await,
-            Err(CameraError::Busy)
-        );
-        assert_eq!(
-            app.close_owned_session([2u8; 32], &session.session_id)
-                .await,
+            app.close_owned_session([2u8; 32], &first.session_id).await,
             Err(CameraError::Forbidden)
         );
         assert_eq!(
-            app.close_owned_session(owner, &session.session_id).await,
+            app.close_owned_session(owner, &first.session_id).await,
             Ok(())
+        );
+        assert_eq!(
+            app.close_owned_session(owner, &second.session_id).await,
+            Ok(())
+        );
+        assert_eq!(
+            app.close_owned_session(owner, &first.session_id).await,
+            Err(CameraError::Forbidden)
         );
     }
 
     #[tokio::test]
+    async fn logout_closes_all_sessions_of_an_owner() {
+        let app = CameraApplication::new(Arc::new(Fake::default()));
+        let owner = [7u8; 32];
+        app.create_owned_session(owner, CameraAccessScope::Lan, "v=0\r\n".to_owned())
+            .await
+            .unwrap();
+        app.create_owned_session(owner, CameraAccessScope::Lan, "v=0\r\n".to_owned())
+            .await
+            .unwrap();
+        app.close_owner(owner).await;
+        // 关闭后同 owner 再次关闭任何会话都视为未持有。
+        assert_eq!(
+            app.close_owned_session(owner, "any").await,
+            Err(CameraError::Forbidden)
+        );
+    }
+
+    #[tokio::test]
+    async fn close_all_drains_every_owners_sessions() {
+        let app = CameraApplication::new(Arc::new(Fake::default()));
+        for owner in [[1u8; 32], [2u8; 32]] {
+            app.create_owned_session(owner, CameraAccessScope::Lan, "v=0\r\n".to_owned())
+                .await
+                .unwrap();
+            app.create_owned_session(owner, CameraAccessScope::Lan, "v=0\r\n".to_owned())
+                .await
+                .unwrap();
+        }
+        app.close_all().await;
+        for owner in [[1u8; 32], [2u8; 32]] {
+            assert_eq!(
+                app.close_owned_session(owner, "any").await,
+                Err(CameraError::Forbidden)
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn accepts_generation_scoped_session_ids() {
-        let app = CameraApplication::new(Arc::new(Fake));
+        let app = CameraApplication::new(Arc::new(Fake::default()));
         let session_id = format!("{}.{}", "generation", "a".repeat(48));
         assert_eq!(app.close_session(&session_id).await, Ok(()));
         assert_eq!(
@@ -250,14 +317,14 @@ mod tests {
 
     #[tokio::test]
     async fn derives_public_access_from_server_scope() {
-        let app = CameraApplication::new(Arc::new(Fake));
+        let app = CameraApplication::new(Arc::new(Fake::default()));
         let status = app.status(CameraAccessScope::Lan).await.unwrap();
         assert_eq!(status.access, CameraAccessKind::Lan);
     }
 
     #[tokio::test]
     async fn forwards_an_enumerated_preset_to_the_adapter() {
-        let app = CameraApplication::new(Arc::new(Fake));
+        let app = CameraApplication::new(Arc::new(Fake::default()));
         assert_eq!(
             app.set_profile(CameraStreamPreset::Fhd1080p5m).await,
             Ok(())
@@ -266,7 +333,7 @@ mod tests {
 
     #[tokio::test]
     async fn forwards_an_enumerated_rotation_to_the_adapter() {
-        let app = CameraApplication::new(Arc::new(Fake));
+        let app = CameraApplication::new(Arc::new(Fake::default()));
         for rotation in CameraRotation::ALL {
             assert_eq!(app.set_rotation(rotation).await, Ok(()));
         }

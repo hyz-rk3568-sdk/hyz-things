@@ -5,9 +5,8 @@ use crate::{
     },
     domain::{
         pts_ns_to_90khz, BoundedFrameQueue, CameraPipelineState, CameraRotation,
-        CameraStreamProfile, EncodedFrame, FramePopOutcome, TimestampWatermark,
-        FIXED_CAMERA_DEVICE, FIXED_CAPTURE_HEIGHT, FIXED_CAPTURE_WIDTH, FRAME_QUEUE_CAPACITY,
-        MAX_ENCODED_FRAME_BYTES, WATERMARK_FONT_FAMILY,
+        CameraStreamProfile, EncodedFrame, FrameHub, TimestampWatermark, FIXED_CAMERA_DEVICE,
+        FIXED_CAPTURE_HEIGHT, FIXED_CAPTURE_WIDTH, MAX_ENCODED_FRAME_BYTES, WATERMARK_FONT_FAMILY,
     },
 };
 use gstreamer as gst;
@@ -152,7 +151,7 @@ impl CameraMediaPort for GStreamerMediaAdapter {
         appsink.set_sync(false);
         appsink.set_wait_on_eos(false);
 
-        let frames = Arc::new(BoundedFrameQueue::new(FRAME_QUEUE_CAPACITY));
+        let frames = Arc::new(FrameHub::new());
         let last_pts = Arc::new(Mutex::new(None));
         let callback_frames = Arc::clone(&frames);
         let callback_pts = Arc::clone(&last_pts);
@@ -246,11 +245,9 @@ impl CameraMediaPort for GStreamerMediaAdapter {
             state_code(CameraPipelineState::Streaming),
             Ordering::Release,
         );
-        match frames.pop_timeout(PIPELINE_START_DEADLINE) {
-            FramePopOutcome::Frame(frame) => {
-                frames.push(frame);
-            }
-            FramePopOutcome::Timeout | FramePopOutcome::Closed => {
+        match frames.wait_first_frame(PIPELINE_START_DEADLINE) {
+            Ok(()) => {}
+            Err(_) => {
                 stopping.store(true, Ordering::Release);
                 frames.close();
                 let _ = pipeline.set_state(gst::State::Null);
@@ -308,7 +305,7 @@ fn make(factory: &str, name: &str) -> Result<gst::Element, MediaError> {
 struct GStreamerRunningMedia {
     pipeline: gst::Pipeline,
     encoder: gst::Element,
-    frames: Arc<BoundedFrameQueue>,
+    frames: Arc<FrameHub>,
     state: Arc<AtomicU8>,
     stopping: Arc<AtomicBool>,
     bus_thread: Option<JoinHandle<()>>,
@@ -320,7 +317,7 @@ struct GStreamerKeyframeRequester {
 
 struct GStreamerMediaTerminator {
     pipeline: gst::Pipeline,
-    frames: Arc<BoundedFrameQueue>,
+    frames: Arc<FrameHub>,
     state: Arc<AtomicU8>,
     stopping: Arc<AtomicBool>,
 }
@@ -359,8 +356,12 @@ impl KeyframeRequester for GStreamerKeyframeRequester {
 }
 
 impl RunningMedia for GStreamerRunningMedia {
-    fn frames(&self) -> Arc<BoundedFrameQueue> {
-        Arc::clone(&self.frames)
+    fn subscribe(&self) -> Arc<BoundedFrameQueue> {
+        self.frames.subscribe()
+    }
+
+    fn unsubscribe(&self, queue: &Arc<BoundedFrameQueue>) {
+        self.frames.unsubscribe(queue);
     }
 
     fn keyframe_requester(&self) -> Arc<dyn KeyframeRequester> {

@@ -265,6 +265,10 @@ check-static:
 	grep -q 'field("colorimetry", FULL_RANGE_BT709_COLORIMETRY)' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
 	grep -q 'set_property_from_str("level", h264_level(profile))' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
 	grep -q '"5.1"' "$(CAMERA_APP)/src/adapters/outbound/gstreamer.rs"
+	grep -q 'MAX_VIEWERS: usize = 4' "$(CAMERA_APP)/src/application/lifecycle.rs"
+	grep -q 'struct FrameHub' "$(CAMERA_APP)/src/domain/stream.rs"
+	grep -q 'fn subscribe(&self) -> Arc<BoundedFrameQueue>' "$(CAMERA_APP)/src/application/ports.rs"
+	grep -q 'sessions: Vec<ActiveSession>' "$(CAMERA_APP)/src/application/lifecycle.rs"
 	grep -q 'GST_VIDEO_COLOR_RANGE_0_255' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c
 	grep -q 'MPP_FRAME_RANGE_JPEG' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c
 	grep -q 'mpp_enc_cfg_set_s32 (self->mpp_cfg, "prep:range", range)' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c

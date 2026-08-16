@@ -303,6 +303,7 @@ fn map_application_error(error: CameraApplicationError) -> ControlErrorCode {
         CameraApplicationError::InvalidAccessScope => ControlErrorCode::InvalidAccessScope,
         CameraApplicationError::InvalidProfile => ControlErrorCode::InvalidRequest,
         CameraApplicationError::ShuttingDown => ControlErrorCode::ShuttingDown,
+        CameraApplicationError::TooManyViewers => ControlErrorCode::ResourceExhausted,
         CameraApplicationError::SessionBusy => ControlErrorCode::SessionBusy,
         CameraApplicationError::UnknownSession => ControlErrorCode::UnknownSession,
         CameraApplicationError::Media(MediaError::CameraNotFound) => {

@@ -795,7 +795,7 @@ Tailscale 分两级验收：
 3. 浏览器是 SDP offerer，第一版只协商单路 H.264 recvonly 视频，不提供音频、录制、DataChannel、trickle ICE 或公网 TURN；
 4. router 根据当前 exact HTTP listener 派生 LAN 或 Tailscale access scope，浏览器不能提交设备路径、candidate 地址、UDP 端口、pipeline 或编码器属性；
 5. camera 只从固定 `40000-40015/udp` 池绑定端口，router 是唯一防火墙 authority，camera 不执行 `iptables`、`ip` 或 shell 命令；
-6. 第一版最多一个 viewer；logout、改密、显式停止、协商超时、连接失败和 daemon shutdown 都清理 router-owned session 与 camera-owned pipeline/socket；
+6. 同一编码流扇出，第一版最多 4 个并发 viewer（`MAX_VIEWERS=4`，每个 viewer 独立 UDP 端口、DTLS/SRTP 与 str0m 会话；同一管理员账号可同时持有多个 session）；超过上限返回 503「资源不足」；logout、改密、显式停止、协商超时、连接失败和 daemon shutdown 都清理该账号全部或全部 router-owned session 与 camera-owned pipeline/socket；
 7. RouterOnly 足以访问路由器本机 camera；camera 不要求或隐式启用 LanSubnetAccess，也不改变 Tailscale desired state；
 8. 观看画面左上角固定显示烧入码流的时间戳水印（日期+时间、黑底、固定 20px 字号，所有分辨率一致），水印不是浏览器叠加层，截图与录屏均包含它；画面旋转是服务端媒体管线属性，「旋转画面」按 0 → 270 → 180 → 90 → 0 循环并自动重启直播，浏览器不做 CSS 旋转；
 9. 状态和错误响应不泄漏 `/dev/video*`、完整 SDP、ICE credentials、DTLS key、GStreamer pipeline、原始驱动错误或管理员 token；

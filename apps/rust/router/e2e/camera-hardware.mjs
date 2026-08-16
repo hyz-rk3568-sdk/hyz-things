@@ -227,6 +227,87 @@ async function verifyStream(page, originName, viewport) {
   return { media, visual, layout, rotation };
 }
 
+// 并发观看：同一浏览器上下文（同一管理员 cookie、同一 owner）开第二个页面，
+// 两个页面同时观看同一路 720p 编码流；关闭其一不影响另一个。
+async function verifyConcurrentViewers(context, origin, originName) {
+  const pageA = context.pages()[0];
+  const cameraA = pageA.getByRole('article', { name: '摄像头直播' });
+  await cameraA.waitFor({ state: 'visible', timeout: 30_000 });
+
+  // verifyStream 结束时停留在 4K 预设：先切回默认 720p，减轻双路解码负载。
+  const presetSelect = cameraA.getByRole('combobox', { name: '画面分辨率与码率' });
+  await presetSelect.selectOption('hd720p25m');
+  await cameraA.getByText(/1280 × 720 · 30 fps · 2\.5 Mbps · h264/).waitFor({
+    state: 'visible',
+  });
+
+  await cameraA.getByRole('button', { name: '播放直播' }).click();
+  await cameraA.getByText('直播中', { exact: true }).waitFor({
+    state: 'visible',
+    timeout: 45_000,
+  });
+
+  const pageB = await context.newPage();
+  const browserErrorsB = [];
+  pageB.on('pageerror', error => browserErrorsB.push(`pageerror: ${error.message}`));
+  pageB.on('console', message => {
+    if (message.type() === 'error') browserErrorsB.push(`console: ${message.text()}`);
+  });
+  await pageB.goto(origin, { waitUntil: 'networkidle', timeout: 30_000 });
+  const cameraB = pageB.getByRole('article', { name: '摄像头直播' });
+  await cameraB.waitFor({ state: 'visible', timeout: 30_000 });
+  await cameraB.getByRole('button', { name: '播放直播' }).click();
+  await cameraB.getByText('直播中', { exact: true }).waitFor({
+    state: 'visible',
+    timeout: 45_000,
+  });
+
+  for (const page of [pageA, pageB]) {
+    await page.waitForFunction(() => {
+      const video = document.querySelector('video[aria-label="摄像头实时画面"]');
+      return video instanceof HTMLVideoElement && video.videoWidth === 1280
+        && video.videoHeight === 720;
+    }, null, { timeout: 45_000 });
+  }
+
+  const concurrent = await cameraStatus(pageA);
+  assert.equal(concurrent.camera.pipeline, 'streaming');
+  assert.equal(concurrent.camera.active_sessions, 2);
+
+  // 关闭第一个页面：第二个页面继续播放。
+  await cameraA.getByRole('button', { name: '停止直播' }).click();
+  await cameraA.getByText('未播放', { exact: true }).waitFor({
+    state: 'visible',
+    timeout: 30_000,
+  });
+  await pageA.waitForFunction(async () => {
+    const response = await fetch('/api/v1/camera/status', { cache: 'no-store' });
+    if (!response.ok) return false;
+    const body = await response.json();
+    return body.camera.active_sessions === 1;
+  }, null, { timeout: 30_000 });
+  const remaining = await cameraStatus(pageB);
+  assert.equal(remaining.camera.active_sessions, 1);
+  await cameraB.getByText('直播中', { exact: true }).waitFor({ state: 'visible' });
+
+  // 关闭第二个页面：全部清理。
+  await cameraB.getByRole('button', { name: '停止直播' }).click();
+  await cameraB.getByText('未播放', { exact: true }).waitFor({
+    state: 'visible',
+    timeout: 30_000,
+  });
+  await pageB.waitForFunction(async () => {
+    const response = await fetch('/api/v1/camera/status', { cache: 'no-store' });
+    if (!response.ok) return false;
+    const body = await response.json();
+    return body.camera.pipeline === 'stopped' && body.camera.active_sessions === 0;
+  }, null, { timeout: 30_000 });
+  await pageB.close();
+
+  assert.deepEqual(browserErrorsB, []);
+  return { concurrent_viewers: 2 };
+}
+
 const browser = await chromium.launch({
   headless: true,
   args: [`--unsafely-treat-insecure-origin-as-secure=${origins.join(',')}`],
@@ -260,8 +341,11 @@ try {
       const originName = new URL(origin).hostname.replaceAll(':', '_');
       const desktop = await verifyStream(page, originName, { width: 1280, height: 800 });
       const mobile = await verifyStream(page, originName, { width: 360, height: 800 });
+      const concurrent = index === 0
+        ? await verifyConcurrentViewers(context, origin, originName)
+        : undefined;
       assert.deepEqual(browserErrors, []);
-      results.push({ origin, desktop, mobile });
+      results.push({ origin, desktop, mobile, concurrent });
     } finally {
       await context.close();
     }

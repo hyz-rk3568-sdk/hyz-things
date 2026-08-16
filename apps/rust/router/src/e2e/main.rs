@@ -86,7 +86,7 @@ struct HarnessCameraState {
     create_count: u64,
     close_count: u64,
     last_offer_sdp: Option<String>,
-    active_session: Option<String>,
+    sessions: Vec<String>,
 }
 
 impl Default for HarnessCameraState {
@@ -110,7 +110,7 @@ impl Default for HarnessCameraState {
             create_count: 0,
             close_count: 0,
             last_offer_sdp: None,
-            active_session: None,
+            sessions: Vec::new(),
         }
     }
 }
@@ -357,15 +357,17 @@ impl CameraControlPort for HarnessCamera {
         if !state.camera.status.available {
             return Err(CameraError::NotReady);
         }
-        if state.camera.active_session.is_some() {
-            return Err(CameraError::Busy);
-        }
-        let session_id = format!("e2e-camera.{}", "a".repeat(48));
         state.camera.create_count += 1;
+        let session_id = format!(
+            "e2e-camera.{}{:02x}",
+            "a".repeat(46),
+            state.camera.create_count
+        );
         state.camera.last_offer_sdp = Some(offer_sdp);
-        state.camera.active_session = Some(session_id.clone());
+        state.camera.sessions.push(session_id.clone());
         state.camera.status.pipeline = CameraPipelineState::Streaming;
-        state.camera.status.active_sessions = 1;
+        state.camera.status.active_sessions =
+            u8::try_from(state.camera.sessions.len()).unwrap_or(u8::MAX);
         Ok(CameraSession {
             session_id,
             answer_sdp: "v=0\r\n".to_owned(),
@@ -375,19 +377,24 @@ impl CameraControlPort for HarnessCamera {
 
     async fn close_session(&self, session_id: &str) -> Result<(), CameraError> {
         let mut state = self.backend.state().map_err(|_| CameraError::Unavailable)?;
-        if state.camera.active_session.as_deref() != Some(session_id) {
+        let Some(index) = state.camera.sessions.iter().position(|id| id == session_id) else {
             return Err(CameraError::UnknownSession);
-        }
+        };
+        state.camera.sessions.remove(index);
         state.camera.close_count += 1;
-        state.camera.active_session = None;
-        state.camera.status.pipeline = CameraPipelineState::Stopped;
-        state.camera.status.active_sessions = 0;
+        state.camera.status.pipeline = if state.camera.sessions.is_empty() {
+            CameraPipelineState::Stopped
+        } else {
+            CameraPipelineState::Streaming
+        };
+        state.camera.status.active_sessions =
+            u8::try_from(state.camera.sessions.len()).unwrap_or(u8::MAX);
         Ok(())
     }
 
     async fn set_profile(&self, preset: CameraStreamPreset) -> Result<(), CameraError> {
         let mut state = self.backend.state().map_err(|_| CameraError::Unavailable)?;
-        if state.camera.active_session.is_some() {
+        if !state.camera.sessions.is_empty() {
             return Err(CameraError::Busy);
         }
         state.camera.status.profile = CameraStreamProfile {
@@ -403,7 +410,7 @@ impl CameraControlPort for HarnessCamera {
 
     async fn set_rotation(&self, rotation: CameraRotation) -> Result<(), CameraError> {
         let mut state = self.backend.state().map_err(|_| CameraError::Unavailable)?;
-        if state.camera.active_session.is_some() {
+        if !state.camera.sessions.is_empty() {
             return Err(CameraError::Busy);
         }
         state.camera.status.profile.rotation = rotation;

@@ -44,6 +44,12 @@ recovery-free OTA `output/upgrade.fw`（`460,284,490` bytes，SHA-256 `2375bb757
 
 板端安装后的 `/usr/bin/hyz-camera` 与打包 rootfs 逐字节一致（`8b819cb7fd287b695ae5d49f139b869d354cae392d1dcebedf3545a0a27f6ef2`），`/usr/bin/hyz-router` 为 `a9d966b35c0932651605d014890db2b9d3d24d7aef56148bf039724c407428d7`；camera 纯测试二进制（SDP 校验、控制协议 v2、水印与旋转 domain）已在板端运行，8/8 通过。完整审计哈希见 [`soft-router-camera-webrtc-plan.md`](soft-router-camera-webrtc-plan.md)。
 
+## 2026-08-16 多人观看 OTA 验收
+
+recovery-free OTA `output/upgrade.fw`（`460,284,490` bytes，SHA-256 `5eda8d1079d5435b6e51d2941b08700808c5fbbc99139c0acda0ec5fa1b654e1`）已通过 USB ADB 安装到真实 RK3568，板端 `/usr/bin/hyz-router`（`61ca68ef97c310f8f685a98785bd501fc2970eacaa14f661618dfc1b85e7ad10`）与 `/usr/bin/hyz-camera`（`a082bcaf9e7decb3e2dad85db8355eeefe04dee07ef3b0ba321bf04d440c2797`）与打包 rootfs 逐字节一致，recovery 分区保持 `9778353401cf31b6bdca54fd1e5dd59a7a0983d9b32488eb89e3f974f036e363`。
+
+多人观看：camera 守护进程从单会话改为共享管线 + 多会话（`MAX_VIEWERS=4`），同一编码流经 `FrameHub` 扇出到每个 viewer 的独立帧队列（零拷贝、各队列独立丢旧帧），每个 viewer 独立 UDP 端口、DTLS/SRTP 与 str0m 会话线程；管线随第一个 viewer 启动、最后一个 viewer 退出停止（引用计数 terminator，应用层幂等兜底）。第二个 viewer 不再收到 409：同一管理员账号（同一 cookie）的多窗口/多设备可同时观看；超过 4 个并发返回 503 `camera_resource_exhausted`（复用 `ResourceExhausted`，控制协议保持 v2）。router 应用层每账号会话从单个改为列表，logout/改密仍清理该账号全部会话。直播中有 viewer 时切换分辨率/旋转仍返回 409。Playwright mock 新增同账号双页面并发用例（含修复轮次 4 遗留的 CSS 旋转断言），真机脚本新增双页面并发观看验收（`active_sessions=2`、两路真实解码 720p、关闭其一不影响另一个、全部关闭后归零）。
+
 ## 架构图
 
 ### 运行时与外部边界

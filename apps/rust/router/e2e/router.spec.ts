@@ -193,25 +193,20 @@ test('plays and cleans up the administrator camera session on desktop and mobile
   await expect(presetSelect).toBeVisible();
   await expect(presetSelect.locator('option')).toHaveCount(4);
 
+  const harnessSessionId = (createCount: number) =>
+    `e2e-camera.${'a'.repeat(46)}${createCount.toString(16).padStart(2, '0')}`;
+
+  // 旋转是服务端媒体管线属性（videoflip）：断言桩端 rotation 与页面指标，而非 CSS class。
   const verifyRotation = async () => {
     const rotateButton = camera.getByRole('button', { name: '旋转画面' });
     await expect(rotateButton).toBeVisible();
-    await rotateButton.click();
-    await expect
-      .poll(() => camera.locator('video').evaluate(video => video.className))
-      .toContain('rotate-90');
-    await rotateButton.click();
-    await expect
-      .poll(() => camera.locator('video').evaluate(video => video.className))
-      .toContain('rotate-180');
-    await rotateButton.click();
-    await expect
-      .poll(() => camera.locator('video').evaluate(video => video.className))
-      .toContain('rotate-270');
-    await rotateButton.click();
-    await expect
-      .poll(() => camera.locator('video').evaluate(video => video.className))
-      .toContain('rotate-0');
+    for (const degrees of [270, 180, 90, 0]) {
+      await rotateButton.click();
+      await expect
+        .poll(async () => (await readHarnessState(request)).camera.status.profile.rotation)
+        .toBe(`deg_${degrees}`);
+      await expect(camera.getByText(`旋转 ${degrees}°`, { exact: false })).toBeVisible();
+    }
   };
 
   await camera.getByRole('button', { name: '播放直播' }).click();
@@ -223,7 +218,7 @@ test('plays and cleans up the administrator camera session on desktop and mobile
         offer: state.camera.last_offer_sdp,
         pipeline: state.camera.status.pipeline,
         activeSessions: state.camera.status.active_sessions,
-        session: state.camera.active_session,
+        sessions: state.camera.sessions,
       };
     })
     .toEqual({
@@ -231,7 +226,7 @@ test('plays and cleans up the administrator camera session on desktop and mobile
       offer: 'v=0\r\no=router-e2e-camera 1 1 IN IP4 127.0.0.1\r\n',
       pipeline: 'streaming',
       activeSessions: 1,
-      session: `e2e-camera.${'a'.repeat(48)}`,
+      sessions: [harnessSessionId(1)],
     });
   await expect(camera.getByText('直播中', { exact: true })).toBeVisible();
   expect(
@@ -243,6 +238,7 @@ test('plays and cleans up the administrator camera session on desktop and mobile
   await verifyRotation();
 
   // Switching the preset while playing stops the session and reopens with the new profile.
+  const beforeSwitch = await readHarnessState(request);
   await presetSelect.selectOption('fhd1080p5m');
   await expect
     .poll(async () => {
@@ -254,17 +250,17 @@ test('plays and cleans up the administrator camera session on desktop and mobile
         height: state.camera.status.profile.height,
         bitrate: state.camera.status.profile.bitrate_bps,
         activeSessions: state.camera.status.active_sessions,
-        session: state.camera.active_session,
+        sessions: state.camera.sessions,
       };
     })
     .toEqual({
-      createCount: 2,
-      closeCount: 1,
+      createCount: beforeSwitch.camera.create_count + 1,
+      closeCount: beforeSwitch.camera.close_count + 1,
       width: 1920,
       height: 1080,
       bitrate: 5_000_000,
       activeSessions: 1,
-      session: `e2e-camera.${'a'.repeat(48)}`,
+      sessions: [harnessSessionId(beforeSwitch.camera.create_count + 1)],
     });
   await expect(camera.getByText('直播中', { exact: true })).toBeVisible();
   await expect(camera.getByText(/1920 × 1080 · 30 fps · 5\.0 Mbps · h264/)).toBeVisible();
@@ -278,10 +274,14 @@ test('plays and cleans up the administrator camera session on desktop and mobile
       return {
         closeCount: state.camera.close_count,
         activeSessions: state.camera.status.active_sessions,
-        session: state.camera.active_session,
+        sessions: state.camera.sessions,
       };
     })
-    .toEqual({ closeCount: 2, activeSessions: 0, session: null });
+    .toEqual({
+      closeCount: beforeSwitch.camera.close_count + 2,
+      activeSessions: 0,
+      sessions: [],
+    });
 
   await camera.getByRole('button', { name: '播放直播' }).click();
   await expect(camera.getByText('直播中', { exact: true })).toBeVisible();
@@ -290,8 +290,8 @@ test('plays and cleans up the administrator camera session on desktop and mobile
     camera.getByRole('status').filter({ hasText: '摄像头 WebRTC 连接已中断' }),
   ).toBeVisible();
   await expect
-    .poll(async () => (await readHarnessState(request)).camera.active_session)
-    .toBeNull();
+    .poll(async () => (await readHarnessState(request)).camera.sessions)
+    .toEqual([]);
 
   await camera.getByRole('button', { name: '播放直播' }).click();
   await expect(camera.getByText('直播中', { exact: true })).toBeVisible();
@@ -301,8 +301,75 @@ test('plays and cleans up the administrator camera session on desktop and mobile
   await page.getByRole('button', { name: '退出登录' }).click();
   await expect(camera).toHaveCount(0);
   await expect
-    .poll(async () => (await readHarnessState(request)).camera.active_session)
-    .toBeNull();
+    .poll(async () => (await readHarnessState(request)).camera.sessions)
+    .toEqual([]);
+});
+
+test('lets two same-account viewers watch the camera concurrently', async ({
+  context,
+  request,
+}) => {
+  const first = await context.newPage();
+  await installCameraWebRtcMock(first);
+  await first.goto('/');
+  await loginAsAdmin(first);
+
+  const cameraA = first.getByRole('article', { name: '摄像头直播' });
+  await cameraA.getByRole('button', { name: '播放直播' }).click();
+  await expect(cameraA.getByText('直播中', { exact: true })).toBeVisible();
+
+  // 同一浏览器上下文（同一管理员 cookie，同一 owner）的第二个页面并发观看。
+  const second = await context.newPage();
+  await installCameraWebRtcMock(second);
+  await second.goto('/');
+  const cameraB = second.getByRole('article', { name: '摄像头直播' });
+  await cameraB.getByRole('button', { name: '播放直播' }).click();
+  await expect(cameraB.getByText('直播中', { exact: true })).toBeVisible();
+
+  const harnessSessionId = (createCount: number) =>
+    `e2e-camera.${'a'.repeat(46)}${createCount.toString(16).padStart(2, '0')}`;
+  await expect
+    .poll(async () => {
+      const state = await readHarnessState(request);
+      return {
+        createCount: state.camera.create_count,
+        activeSessions: state.camera.status.active_sessions,
+        sessions: state.camera.sessions,
+      };
+    })
+    .toEqual({
+      createCount: 2,
+      activeSessions: 2,
+      sessions: [harnessSessionId(1), harnessSessionId(2)],
+    });
+  await expect(first.getByText('直播中', { exact: true })).toBeVisible();
+  await expect(second.getByText('直播中', { exact: true })).toBeVisible();
+
+  // 关闭第一个页面：第二个页面的会话不受影响。
+  await cameraA.getByRole('button', { name: '停止直播' }).click();
+  await expect(cameraA.getByText('未播放', { exact: true })).toBeVisible();
+  await expect
+    .poll(async () => {
+      const state = await readHarnessState(request);
+      return {
+        activeSessions: state.camera.status.active_sessions,
+        sessions: state.camera.sessions,
+      };
+    })
+    .toEqual({ activeSessions: 1, sessions: [harnessSessionId(2)] });
+  await expect(cameraB.getByText('直播中', { exact: true })).toBeVisible();
+
+  // 关闭第二个页面后全部清理。
+  await cameraB.getByRole('button', { name: '停止直播' }).click();
+  await expect
+    .poll(async () => {
+      const state = await readHarnessState(request);
+      return {
+        activeSessions: state.camera.status.active_sessions,
+        sessions: state.camera.sessions,
+      };
+    })
+    .toEqual({ activeSessions: 0, sessions: [] });
 });
 
 test('controls all four proxy combinations with isolated failures on desktop and mobile', async ({

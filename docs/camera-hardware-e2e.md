@@ -62,7 +62,7 @@ npm run test:hardware-camera -- \
 7. 要求 video `inbound-rtp` 的 `bytesReceived`、`packetsReceived` 和 `framesDecoded` 都大于零；
 8. 默认 720p 预设解码尺寸为 `1280×720`；切换到 4K 预设后要求解码尺寸为 `3840×2160`，视频没有暂停；
 9. 将真实 `<video>` 绘制到小尺寸 canvas，计算平均亮度、最大亮度、亮像素比例和亮度标准差，拒绝纯黑或没有可见细节的解码帧；
-10. 点击“旋转画面”，要求 `<video>` 依次应用 `rotate-90/180/270/0` class，验证每次点击顺时针旋转 90°；
+10. 点击“旋转画面”，要求解码尺寸按 0 → 270 → 180 → 90 → 0 循环（90/270 宽高互换），并核对真实 camera 状态 `profile.rotation=deg_*`，验证每次点击严格逆时针旋转 90°；
 11. 要求页面 `scrollWidth <= clientWidth`，避免桌面或移动端横向溢出；
 12. 点击“停止直播”，等待 UI 回到“未播放”；
 13. 再次读取真实 camera 状态，要求 `pipeline=stopped`、`active_sessions=0`。
@@ -80,6 +80,19 @@ GStreamer caps 显式声明 full-range BT.709 `colorimetry=1:3:5:1`；Rockchip M
 弱光会降低平均亮度，但不应使最大亮度、亮像素比例和标准差同时归零。曾出现原始 NV12 有细节、Chromium canvas 全黑的情况：原因是 full-range 输入未进入 MPP encoder 配置，低于 16 的 Y 分量被浏览器按 limited-range 裁剪。最终 OTA 的四组真实 Chromium 样本平均亮度约 `17.0-21.9`、最大亮度约 `121-123`、亮像素比例约 `38.9%-49.5%`，不再依赖白天环境才能通过。
 
 当前 IMX415 IQ 文件启用了 `AECV2_ANTIFLICKER_AUTO_MODE`，频率配置为 50 Hz。凌晨或极暗场景中，自动曝光提高 sensor/ISP gain 后可能显现横向行噪声、彩色热点；如果现场 LED 使用 60 Hz 或非标准 PWM 调光，还可能出现移动的 rolling-shutter banding。开灯后消失通常表示弱光高增益噪声，持续移动通常表示光源频闪，固定在相同行位置则应继续检查 sensor 行噪声、黑电平和坏点校准。这类条纹来自采集/ISP 条件，不是 WebRTC、H.264 transport 或全屏布局生成。
+
+## 并发观看断言
+
+脚本在第一个 origin（LAN）额外运行一次并发观看流程：
+
+1. 在已登录的第一个页面播放默认 720p 直播；
+2. 在**同一浏览器 context**（同一管理员 cookie、同一 owner）打开第二个页面并播放；
+3. 要求两个页面都真实解码出 `1280×720`；
+4. 读取真实 camera 状态，要求 `pipeline=streaming`、`active_sessions=2`（同一编码流扇出，不是双路编码）；
+5. 关闭第一个页面，要求第二个页面继续播放且 `active_sessions=1`；
+6. 关闭第二个页面，要求 `pipeline=stopped`、`active_sessions=0`。
+
+并发观看不单独验收 4K 双路：4K 单路扇出已由 4K 预设验收覆盖，双页面并发固定使用默认 720p 以控制板端与网络负载。
 
 ## 结果与诊断
 

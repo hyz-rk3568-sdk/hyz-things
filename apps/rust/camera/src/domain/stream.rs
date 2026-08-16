@@ -157,7 +157,7 @@ impl CameraStreamPreset {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EncodedFrame {
     pub data: Arc<[u8]>,
     pub media_time_90khz: u64,
@@ -249,6 +249,136 @@ impl BoundedFrameQueue {
     }
 }
 
+/// 编码帧扇出：单个 pipeline 的一路编码流转发给多个 viewer，每个 viewer 持有
+/// 独立的 `BoundedFrameQueue`（单消费者）。`push` 零拷贝（`EncodedFrame` 数据为
+/// `Arc`），慢 viewer 在各自队列独立丢旧帧，互不影响。
+#[derive(Debug)]
+pub struct FrameHub {
+    inner: Mutex<FrameHubInner>,
+    available: Condvar,
+}
+
+#[derive(Debug)]
+struct FrameHubInner {
+    subscribers: Vec<Arc<BoundedFrameQueue>>,
+    first_frame_seen: bool,
+    closed: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FrameHubError {
+    Timeout,
+    Closed,
+}
+
+impl Default for FrameHub {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FrameHub {
+    pub fn new() -> Self {
+        Self {
+            inner: Mutex::new(FrameHubInner {
+                subscribers: Vec::new(),
+                first_frame_seen: false,
+                closed: false,
+            }),
+            available: Condvar::new(),
+        }
+    }
+
+    /// 注册一个新 viewer 队列。hub 已关闭时返回一个已关闭队列，消费者立即看到
+    /// `FramePopOutcome::Closed`。
+    pub fn subscribe(&self) -> Arc<BoundedFrameQueue> {
+        let queue = Arc::new(BoundedFrameQueue::new(FRAME_QUEUE_CAPACITY));
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if inner.closed {
+            queue.close();
+        } else {
+            inner.subscribers.push(Arc::clone(&queue));
+        }
+        queue
+    }
+
+    pub fn unsubscribe(&self, queue: &Arc<BoundedFrameQueue>) {
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        inner
+            .subscribers
+            .retain(|candidate| !Arc::ptr_eq(candidate, queue));
+    }
+
+    pub fn subscriber_count(&self) -> usize {
+        self.inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .subscribers
+            .len()
+    }
+
+    /// 向所有订阅者转发一帧，并记录首帧以便 `wait_first_frame` 返回。hub 已关闭
+    /// 时忽略，避免向关闭队列投递。
+    pub fn push(&self, frame: EncodedFrame) {
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if inner.closed {
+            return;
+        }
+        inner.first_frame_seen = true;
+        for queue in &inner.subscribers {
+            let _ = queue.push(frame.clone());
+        }
+        self.available.notify_all();
+    }
+
+    /// 等待第一帧产出（pipeline 启动校验；无订阅者时也生效）。返回首帧、关闭或超时。
+    pub fn wait_first_frame(&self, timeout: Duration) -> Result<(), FrameHubError> {
+        let inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (inner, _) = self
+            .available
+            .wait_timeout_while(inner, timeout, |state| {
+                !state.first_frame_seen && !state.closed
+            })
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if inner.first_frame_seen {
+            Ok(())
+        } else if inner.closed {
+            Err(FrameHubError::Closed)
+        } else {
+            Err(FrameHubError::Timeout)
+        }
+    }
+
+    /// 关闭 hub：唤醒首帧等待，并关闭所有订阅者队列（pipeline 故障/EOS 时所有
+    /// viewer 线程收到 `FramePopOutcome::Closed` 退出）。
+    pub fn close(&self) {
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if inner.closed {
+            return;
+        }
+        inner.closed = true;
+        for queue in inner.subscribers.drain(..) {
+            queue.close();
+        }
+        self.available.notify_all();
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FramePushOutcome {
     Queued,
@@ -256,7 +386,7 @@ pub enum FramePushOutcome {
     Closed,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum FramePopOutcome {
     Frame(EncodedFrame),
     Timeout,
@@ -369,5 +499,109 @@ mod tests {
         };
         assert_eq!(rotated.display_height(), profile.width);
         assert_eq!(rotated.display_height(), 1280);
+    }
+
+    #[test]
+    fn hub_fans_out_every_frame_to_all_subscribers() {
+        let hub = FrameHub::new();
+        let first = hub.subscribe();
+        let second = hub.subscribe();
+        hub.push(EncodedFrame {
+            data: Arc::<[u8]>::from([1]),
+            media_time_90khz: 90,
+            is_keyframe: true,
+        });
+        hub.push(EncodedFrame {
+            data: Arc::<[u8]>::from([2]),
+            media_time_90khz: 180,
+            is_keyframe: false,
+        });
+        for queue in [&first, &second] {
+            match queue.pop_timeout(Duration::ZERO) {
+                FramePopOutcome::Frame(frame) => assert_eq!(&*frame.data, &[1]),
+                other => panic!("unexpected queue result: {other:?}"),
+            }
+            match queue.pop_timeout(Duration::ZERO) {
+                FramePopOutcome::Frame(frame) => assert_eq!(&*frame.data, &[2]),
+                other => panic!("unexpected queue result: {other:?}"),
+            }
+        }
+        assert_eq!(hub.subscriber_count(), 2);
+    }
+
+    #[test]
+    fn hub_unsubscribe_stops_delivery_to_that_viewer_only() {
+        let hub = FrameHub::new();
+        let first = hub.subscribe();
+        let second = hub.subscribe();
+        hub.unsubscribe(&first);
+        assert_eq!(hub.subscriber_count(), 1);
+        hub.push(EncodedFrame {
+            data: Arc::<[u8]>::from([9]),
+            media_time_90khz: 90,
+            is_keyframe: true,
+        });
+        assert_eq!(first.pop_timeout(Duration::ZERO), FramePopOutcome::Timeout);
+        match second.pop_timeout(Duration::ZERO) {
+            FramePopOutcome::Frame(frame) => assert_eq!(&*frame.data, &[9]),
+            other => panic!("unexpected queue result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn hub_subscribers_drop_old_frames_independently() {
+        let hub = FrameHub::new();
+        let first = hub.subscribe();
+        let second = hub.subscribe();
+        for value in [1u8, 2, 3] {
+            hub.push(EncodedFrame {
+                data: Arc::<[u8]>::from([value]),
+                media_time_90khz: u64::from(value) * 90,
+                is_keyframe: value == 1,
+            });
+        }
+        // 每个订阅者容量 2：第 2 帧被第 3 帧挤掉，且只影响各自队列。
+        for queue in [&first, &second] {
+            match queue.pop_timeout(Duration::ZERO) {
+                FramePopOutcome::Frame(frame) => assert_eq!(&*frame.data, &[1]),
+                other => panic!("unexpected queue result: {other:?}"),
+            }
+            match queue.pop_timeout(Duration::ZERO) {
+                FramePopOutcome::Frame(frame) => assert_eq!(&*frame.data, &[3]),
+                other => panic!("unexpected queue result: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn hub_first_frame_wait_is_immediate_after_a_push() {
+        let hub = FrameHub::new();
+        assert_eq!(
+            hub.wait_first_frame(Duration::ZERO),
+            Err(FrameHubError::Timeout)
+        );
+        hub.push(EncodedFrame {
+            data: Arc::<[u8]>::from([1]),
+            media_time_90khz: 90,
+            is_keyframe: true,
+        });
+        assert_eq!(hub.wait_first_frame(Duration::ZERO), Ok(()));
+    }
+
+    #[test]
+    fn hub_close_unblocks_wait_and_closes_subscriber_queues() {
+        let hub = FrameHub::new();
+        let queue = hub.subscribe();
+        hub.close();
+        assert_eq!(
+            hub.wait_first_frame(Duration::ZERO),
+            Err(FrameHubError::Closed)
+        );
+        assert_eq!(hub.subscriber_count(), 0);
+        assert_eq!(queue.pop_timeout(Duration::ZERO), FramePopOutcome::Closed);
+        assert_eq!(
+            hub.subscribe().pop_timeout(Duration::ZERO),
+            FramePopOutcome::Closed
+        );
     }
 }

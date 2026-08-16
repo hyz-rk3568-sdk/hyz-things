@@ -12,7 +12,10 @@ pub trait MediaTerminator: Send + Sync {
 }
 
 pub trait RunningMedia: Send {
-    fn frames(&self) -> Arc<BoundedFrameQueue>;
+    /// 为一个 viewer 注册独立帧队列（同一编码流扇出）；media 已停止时返回已关闭队列。
+    fn subscribe(&self) -> Arc<BoundedFrameQueue>;
+    /// viewer 退出时注销其队列，停止投递。
+    fn unsubscribe(&self, queue: &Arc<BoundedFrameQueue>);
     fn keyframe_requester(&self) -> Arc<dyn KeyframeRequester>;
     fn terminator(&self) -> Arc<dyn MediaTerminator>;
     fn state(&self) -> CameraPipelineState;

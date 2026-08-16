@@ -2,9 +2,9 @@
 
 ## 状态
 
-**第一版已实现、构建并安装最终 recovery-free OTA；时间戳水印（左上角、固定 20px）、编码前 `videoflip` 画面旋转与 4K 直播稳定性均已在真实 RK3568 上验收。**
+**第一版已实现、构建并安装多轮 recovery-free OTA；时间戳水印（左上角、固定 20px）、编码前 `videoflip` 画面旋转、4K 直播稳定性与多人观看（同一编码流扇出，最多 4 个并发 viewer）均已在真实 RK3568 上验收。**
 
-实现保持本文定义的独立 `hyz-camera`、HTTP SDP 信令、固定 LAN/Tailscale candidate、V4L2 + GStreamer + Rockchip MPP H.264、`str0m` 和单观看者边界。真实 Chromium 已分别通过 LAN 与 Tailscale origin，在桌面和移动端完成播放、H.264 解码、canvas 可见像素、全屏、停止与 session 清理验收。最终 OTA 中的插件、Camera 和 Router 与构建产物逐字节一致；板端采集码流经 `ffprobe` 确认为 full-range `color_range=pc`。camera 纯测试（SDP 校验、控制协议 v2、水印与旋转 domain）已交叉编译并在板端全部通过。4K 预设间歇 HTTP 503 已定位为 4K 冷启动首帧超过 3 秒管线启动截止时间（实测 4.3-4.5s），截止时间上调至 10s 后 4K 稳定出流。
+实现保持本文定义的独立 `hyz-camera`、HTTP SDP 信令、固定 LAN/Tailscale candidate、V4L2 + GStreamer + Rockchip MPP H.264、`str0m` 和多观看者边界（`MAX_VIEWERS=4`）。真实 Chromium 已分别通过 LAN 与 Tailscale origin，在桌面和移动端完成播放、H.264 解码、canvas 可见像素、全屏、停止与 session 清理验收；同一账号两个页面可同时观看同一路直播（`active_sessions=2`），关闭其一不影响另一个。最终 OTA 中的插件、Camera 和 Router 与构建产物逐字节一致；板端采集码流经 `ffprobe` 确认为 full-range `color_range=pc`。camera 纯测试（SDP 校验、控制协议 v2、水印与旋转 domain、FrameHub 扇出与多会话生命周期）已交叉编译并在板端全部通过。4K 预设间歇 HTTP 503 已定位为 4K 冷启动首帧超过 3 秒管线启动截止时间（实测 4.3-4.5s），截止时间上调至 10s 后 4K 稳定出流。
 
 本文继续记录第一版管理页面摄像头直播的产品边界、进程架构、信令协议、WebRTC 媒体路径、Tailscale 集成、安全约束、测试顺序和验收矩阵。真实设备测试方法见 [`camera-hardware-e2e.md`](camera-hardware-e2e.md)。
 
@@ -45,6 +45,20 @@
 | 板端 recovery 分区（OTA 前后相同） | `9778353401cf31b6bdca54fd1e5dd59a7a0983d9b32488eb89e3f974f036e363` |
 
 最终 OTA 经双层解包确认成员只有 bootloader、U-Boot、misc、boot、rootfs 和 oem，不含 recovery/userdata；打包关键文件与构建产物逐字节一致，且不含临时 `v4l2-ctl` 或 libv4l 诊断产物。安装后 boot ID 已变化，Router、Proxy、Tailscale 和 System 全部严格就绪，recovery 分区与 `/userdata/hyz-router` 聚合摘要均保持不变。
+
+### 轮次 5 OTA（多人观看）审计值
+
+| 产物 | SHA-256 |
+| --- | --- |
+| `output/upgrade.fw`（460,284,490 bytes） | `5eda8d1079d5435b6e51d2941b08700808c5fbbc99139c0acda0ec5fa1b654e1` |
+| 打包 `boot.img` | `06276f751309d07a484925102cc0ddb5fb31afbabe0882c7881f3e7b2c81e59a` |
+| 打包 `rootfs.img` | `9a32d7a91af473fbb654b36eddbc9775a67f988d3efe06256c3ba8b3ddd0fbd6` |
+| 打包 `oem.img` | `ac2fc8b4e426d7474afa318af3ebdca00224111e20d0a297572bff419051fd32` |
+| OTA 中及板端 `/usr/bin/hyz-router` | `61ca68ef97c310f8f685a98785bd501fc2970eacaa14f661618dfc1b85e7ad10` |
+| OTA 中及板端 `/usr/bin/hyz-camera` | `a082bcaf9e7decb3e2dad85db8355eeefe04dee07ef3b0ba321bf04d440c2797` |
+| 板端 recovery 分区（OTA 前后相同） | `9778353401cf31b6bdca54fd1e5dd59a7a0983d9b32488eb89e3f974f036e363` |
+
+本轮 Buildroot 与媒体插件（`libgstpango.so`、`libgstvideofilter.so`、`libgstrockchipmpp.so`、DejaVu 字体等）未变化，沿用轮次 4 哈希。控制协议保持 v2：新增语义为超过 `MAX_VIEWERS=4` 返回 `ResourceExhausted`（HTTP 503 `camera_resource_exhausted`），Router 与 Camera 在同一 OTA 中升级。板端双页面并发观看（同一管理员 cookie、同一 owner）验收通过：`active_sessions=2`、两路均真实解码 720p、关闭其一不影响另一个、全部关闭后 pipeline/session 归零。
 
 ## 目标
 
@@ -90,7 +104,7 @@ hyz-camera
 - 第一版非 trickle ICE，通过完整 SDP 一次性交换 candidate；
 - LAN 和 Tailscale RouterOnly 入口；
 - 单路编码器；
-- 第一阶段最多一个观看者，结构上允许后续扩展为同一编码流扇出到多个 peer；
+- 同一编码流扇出到最多 4 个并发 viewer（每个 viewer 独立 UDP 端口、DTLS/SRTP、str0m 会话与帧队列）；
 - 管理员认证、强制改密、exact Origin、CSRF 和小尺寸 typed API；
 - 固定且有界的 UDP 媒体端口池；
 - 页面播放、停止、错误和不可用状态；
@@ -367,7 +381,7 @@ enum CameraVideoCodec {
 
 不变量：
 
-- 第一版最多一个 active/negotiating session；
+- 最多 4 个并发 active/negotiating session（`MAX_VIEWERS=4`，同一编码流扇出）；
 - session 必须绑定一个服务端派生的 access scope；
 - `Lan` address 必须严格等于固定管理 LAN 地址；
 - `Tailscale` address 必须是 router 严格观测的单个 Tailscale CGNAT IPv4；
@@ -414,7 +428,7 @@ enum CameraVideoCodec {
 - negotiation deadline；
 - ICE/DTLS deadline；
 - idle session timeout；
-- last-viewer pipeline stop grace period；
+- last-viewer pipeline stop 计数（引用计数 terminator，无固定 grace 定时器）；
 - 测试中的确定性时间推进。
 
 ## GStreamer 媒体路径
@@ -436,6 +450,7 @@ enum CameraVideoCodec {
 | 时间来源 | pipeline clock，v4l2src 直播时为系统实时钟 |
 | 音频 | 无 |
 | 最大编码器数量 | 1 |
+| 最大并发 viewer | 4（`MAX_VIEWERS`，同一编码流扇出） |
 
 `clockoverlay` 属于 gst1-plugins-base 的 pango 插件（`libgstpango.so`，`BR2_PACKAGE_GST1_PLUGINS_BASE_PLUGIN_PANGO`），文本渲染依赖 pango/cairo/fontconfig/freetype/harfbuzz，并安装 DejaVu Sans 字体（`BR2_PACKAGE_DEJAVU` + `BR2_PACKAGE_DEJAVU_SANS`）。`videoflip` 属于 gst-plugins-good 的 videofilter 插件（`BR2_PACKAGE_GST1_PLUGINS_GOOD_PLUGIN_VIDEOFILTER`）。1.22.2 的 `GstBaseTextOverlay` 原生支持 NV12，不会自动插入 videoconvert 造成额外 4K 全帧转换；混合只写文字包围盒区域，时间文本每秒才更新一次，CPU 开销可控。
 
@@ -547,10 +562,10 @@ enum CameraAccessScopeRequest {
 
 最终常量应放在 domain/product config 中，并由 static checks、camera 和 router firewall 共同引用，避免三处漂移。
 
-第一版最多一个 session，但仍使用小型端口池以便：
+最多 4 个并发 session，每个 session 从端口池独占一个端口；小型固定池以便：
 
 - 旧 socket TIME_WAIT 不适用于 UDP，但短暂旧 session/重启状态可被精确隔离；
-- 后续扩展少量多 peer；
+- 支持少量多 peer（16 个端口满足 `MAX_VIEWERS=4`）；
 - 避免任意 ephemeral port 导致 firewall 无界开放。
 
 端口分配必须：
@@ -695,7 +710,7 @@ POST /api/v1/control/camera/session/create
 - `deny_unknown_fields`；
 - 当前请求来自 LAN exact listener 或严格 ready 的 Tailscale exact listener；
 - camera process、device、pipeline 和对应 firewall scope 可用；
-- 单 session 限制；
+- 多 session 上限（`MAX_VIEWERS=4`，超限返回 503 `camera_resource_exhausted`）；
 - camera error 映射为窄化 HTTP error，不返回底层原文。
 
 ### 关闭 session
@@ -895,12 +910,11 @@ camera 不应成为现有管理 HTTP 启动的关键路径。camera 失败只让
 
 ### 最后一个 session 关闭
 
-1. 停止向该 peer 投递帧；
+1. 停止向该 peer 投递帧并注销其订阅队列；
 2. 关闭 `Rtc` 和 UDP socket；
-3. 从 active session map 删除；
-4. 等待固定短 grace period，例如 5 秒；
-5. grace period 内没有新 session 则停止 pipeline；
-6. 复核 V4L2/MPP/GStreamer owned 资源已释放。
+3. 从 active session 列表删除；
+4. 引用计数 terminator 递减：最后一个 viewer 线程退出时立即停止 pipeline（应用层在 session 列表清空时幂等兜底）；
+5. 复核 V4L2/MPP/GStreamer owned 资源已释放。
 
 ### shutdown
 
@@ -961,8 +975,8 @@ unknown
 使用 fake media/WebRTC/clock ports，覆盖：
 
 - stopped → first session → pipeline start → Answer；
-- session close → grace period → pipeline stop；
-- 单 session 限制；
+- session close → last-viewer → pipeline stop；
+- 并发多 session、`MAX_VIEWERS` 上限；
 - LAN/Tailscale scope address validation；
 - unknown/busy/foreign device 不 ready；
 - UDP port pool exhausted；
@@ -1298,7 +1312,7 @@ camera 不进入 router core network readiness，camera firewall readiness 只�
 
 依次执行：
 
-1. LAN 单会话；
+1. LAN 双页面并发观看；
 2. 重复 start/stop；
 3. 进程和 pipeline 故障；
 4. Tailscale RouterOnly direct；
@@ -1398,7 +1412,7 @@ camera 不进入 router core network readiness，camera firewall readiness 只�
 6. Chromium/Firefox 在当前 HTTP 管理 origin 下的 recvonly `RTCPeerConnection` 行为；
 7. Tailscale direct、peer relay 和 DERP 下的实际视频吞吐与延迟；
 8. camera init 顺序、用户身份和 `/dev/video*`/MPP 权限；
-9. 固定 UDP 端口池是否需要根据并发目标从 16 个进一步缩小；
-10. 第一版是否只支持一个管理员 session，还是在不增加编码器的前提下直接允许两个 peer。
+9. ~~固定 UDP 端口池是否需要根据并发目标从 16 个进一步缩小~~ —— 已确认 16 端口满足 `MAX_VIEWERS=4`；
+10. ~~第一版是否只支持一个管理员 session，还是在不增加编码器的前提下直接允许两个 peer~~ —— 已确认同一编码流扇出、最多 4 个 peer、无额外编码器；同一管理员账号可同时持有多个 session。
 
 任何确认结果都应更新本文和对应测试，不通过在 adapter 中添加宽松 fallback 规避。
