@@ -1,5 +1,4 @@
 use crate::domain::{
-    admin::AdminCredential,
     device_policy::{DevicePolicyConfigV1, LanClientObservation},
     network::{NetworkAction, NetworkObserved},
     panel::{DisplayRequest, DisplayStatus, ProxyDelayResult, ProxyGroup, ProxySelectionRequest},
@@ -58,15 +57,6 @@ pub trait LanClientDiscoveryPort: Send + Sync {
         &self,
         config: &DevicePolicyConfigV1,
     ) -> Result<Vec<LanClientObservation>, PlatformError>;
-}
-
-pub trait AdminCredentialStorePort: Send + Sync {
-    fn load_admin_credential(&self) -> Result<Option<AdminCredential>, PlatformError>;
-    fn save_admin_credential(&self, credential: &AdminCredential) -> Result<(), PlatformError>;
-}
-
-pub trait AdminRandomPort: Send + Sync {
-    fn fill_random(&self, destination: &mut [u8]) -> Result<(), PlatformError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

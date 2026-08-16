@@ -157,11 +157,6 @@ fn validate_tailscale_shutdown_observation(
     validate_owned(&observed.interface, "interface")?;
     validate_owned(&observed.router_firewall, "router firewall")?;
     validate_owned(&observed.subnet_firewall, "subnet firewall")?;
-    validate_owned(&observed.management_listener, "management listener")?;
-    require_known(
-        &observed.management_listener_ipv4,
-        "management listener IPv4",
-    )?;
 
     match (&observed.process, &observed.socket, &observed.interface) {
         (
@@ -184,16 +179,7 @@ fn validate_tailscale_shutdown_observation(
             ));
         }
     }
-    match (
-        &observed.management_listener,
-        &observed.management_listener_ipv4,
-    ) {
-        (Probe::Known(OwnedResource::Absent), Probe::Known(None))
-        | (Probe::Known(OwnedResource::Owned { .. }), Probe::Known(Some(_))) => Ok(()),
-        _ => Err(PlatformError::Conflict(
-            "Tailscale management listener ownership and IPv4 are inconsistent".to_owned(),
-        )),
-    }
+    Ok(())
 }
 
 fn validate_tailscale_observation(observed: &TailscaleObserved) -> Result<(), PlatformError> {
@@ -202,11 +188,6 @@ fn validate_tailscale_observation(observed: &TailscaleObserved) -> Result<(), Pl
     validate_owned(&observed.interface, "interface")?;
     validate_owned(&observed.router_firewall, "router firewall")?;
     validate_owned(&observed.subnet_firewall, "subnet firewall")?;
-    validate_owned(&observed.management_listener, "management listener")?;
-    require_known(
-        &observed.management_listener_ipv4,
-        "management listener IPv4",
-    )?;
     require_known(&observed.backend_state, "backend state")?;
     require_known(&observed.authenticated, "authentication state")?;
     require_known(&observed.ipv4, "Tailscale IPv4")?;
@@ -236,18 +217,6 @@ fn validate_tailscale_observation(observed: &TailscaleObserved) -> Result<(), Pl
         _ => {
             return Err(PlatformError::Conflict(
                 "refusing inconsistent or partially observed Tailscale runtime state".to_owned(),
-            ));
-        }
-    }
-    match (
-        &observed.management_listener,
-        &observed.management_listener_ipv4,
-    ) {
-        (Probe::Known(OwnedResource::Absent), Probe::Known(None))
-        | (Probe::Known(OwnedResource::Owned { .. }), Probe::Known(Some(_))) => {}
-        _ => {
-            return Err(PlatformError::Conflict(
-                "Tailscale management listener ownership and IPv4 are inconsistent".to_owned(),
             ));
         }
     }
@@ -365,11 +334,6 @@ fn remove_router_surface(
     observed: &TailscaleObserved,
     actions: &mut Vec<TailscaleAction>,
 ) -> Result<(), PlatformError> {
-    if let Probe::Known(OwnedResource::Owned { token }) = &observed.management_listener {
-        actions.push(TailscaleAction::StopManagementListener {
-            token: token.clone(),
-        });
-    }
     if let Probe::Known(OwnedResource::Owned { token }) = &observed.router_firewall {
         actions.push(TailscaleAction::RemoveRouterFirewall {
             token: token.clone(),
@@ -395,28 +359,9 @@ fn ensure_router_surface(
     token: &str,
     actions: &mut Vec<TailscaleAction>,
 ) -> Result<(), PlatformError> {
-    let ipv4 = match observed.ipv4 {
-        Probe::Known(Some(ipv4)) => ipv4,
-        _ => unreachable!("authenticated observation validation requires one IPv4"),
-    };
     if observed.router_firewall == Probe::Known(OwnedResource::Absent) {
         actions.push(TailscaleAction::InstallRouterFirewall {
             token: token.to_owned(),
-        });
-    }
-    if let Probe::Known(OwnedResource::Owned { token }) = &observed.management_listener {
-        if observed.management_listener_ipv4 != Probe::Known(Some(ipv4)) {
-            actions.push(TailscaleAction::StopManagementListener {
-                token: token.clone(),
-            });
-        }
-    }
-    if observed.management_listener == Probe::Known(OwnedResource::Absent)
-        || observed.management_listener_ipv4 != Probe::Known(Some(ipv4))
-    {
-        actions.push(TailscaleAction::StartManagementListener {
-            token: token.to_owned(),
-            ipv4,
         });
     }
     Ok(())

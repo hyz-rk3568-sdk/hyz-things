@@ -12,11 +12,13 @@ TOOLCHAIN_PREFIX := $(BR_HOST)/bin/aarch64-buildroot-linux-gnu-
 RUST_TARGET := aarch64-unknown-linux-gnu
 ROUTER_APP := $(CURDIR)/apps/rust/router
 CAMERA_APP := $(CURDIR)/apps/rust/camera
+THINGS_APP := $(CURDIR)/apps/rust/things
 CONTRACT_APP := $(CURDIR)/apps/rust/contract
-ROUTER_FRONTEND_BUNDLE := $(CURDIR)/target/frontend-bundle/router-frontend.tar
+THINGS_FRONTEND_BUNDLE := $(CURDIR)/target/frontend-bundle/hyz-things-frontend.tar
 ROUTER_TRUNK := $(CURDIR)/.tools/trunk/bin/trunk
 ROUTER_BINARY := $(ROUTER_APP)/target/$(RUST_TARGET)/release/hyz-router
 CAMERA_BINARY := $(CAMERA_APP)/target/$(RUST_TARGET)/release/hyz-camera
+THINGS_BINARY := $(THINGS_APP)/target/$(RUST_TARGET)/release/hyz-things
 OUTPUT := $(CURDIR)/output
 OVERLAY := $(OUTPUT)/rootfs-overlay
 REPO := $(CURDIR)/.tools/repo
@@ -36,19 +38,20 @@ BUILD_PATH := $(BR_HOST)/bin:$(HOME)/.cargo/bin:$(HOME)/.local/bin:/usr/local/sb
 export PATH := $(BUILD_PATH)
 export RK_TOOLCHAIN_PREFIX := $(TOOLCHAIN_PREFIX)
 
-.PHONY: help sdk configure toolchain router-frontend router-e2e router-app camera-app router-deploy-dev router-revert-dev apps overlay rootfs kernel loader recovery firmware upgrade upgrade-recovery check check-static clean
+.PHONY: help sdk configure toolchain things-frontend things-e2e things-app router-app camera-app router-deploy-dev router-revert-dev apps overlay rootfs kernel loader recovery firmware upgrade upgrade-recovery check check-static clean
 
 help:
 	@printf '%s\n' \
 	  'make sdk        Clone/sync the pinned SDK manifest' \
 	  'make toolchain  Configure Buildroot and build the AArch64 toolchain' \
-	  'make router-frontend  Build the deterministic Yew/Tailwind frontend bundle' \
-	  'make router-e2e  Run the host-only Axum/Playwright browser tests' \
-	  'make router-app Build the unified hyz-router ELF and embedded Yew UI' \
+	  'make things-frontend  Build the deterministic Yew/Tailwind frontend bundle' \
+	  'make things-e2e  Run the host-only Axum/Playwright browser tests' \
+	  'make things-app Build the hyz-things portal ELF with the embedded Yew UI' \
+	  'make router-app Build the headless hyz-router core ELF' \
 	  'make camera-app Build the independent hyz-camera ELF against the Buildroot sysroot' \
 	  'make router-deploy-dev  Build, stage, reboot, and activate hyz-router over USB ADB' \
 	  'make router-revert-dev  Remove the development boot override and reboot into the firmware ELF' \
-	  'make apps       Build the hyz-router and hyz-camera product applications' \
+	  'make apps       Build the hyz-things, hyz-router and hyz-camera product applications' \
 	  'make overlay    Stage product applications and metadata' \
 	  'make rootfs     Stage product applications and build the Buildroot rootfs' \
 	  'make kernel     Build the RK3568 kernel with the Buildroot compiler' \
@@ -57,7 +60,7 @@ help:
 	  'make upgrade    Build the normal OTA without recovery (default)' \
 	  'make upgrade-recovery  Also build an explicit OTA containing recovery' \
 	  'make check-static  Run source/configuration checks without compiling' \
-	  'make check      Run router formatting, tests, strict Clippy, and static checks'
+	  'make check      Run formatting, tests, strict Clippy, and static checks'
 
 $(REPO):
 	@mkdir -p "$(dir $(REPO))"
@@ -85,22 +88,30 @@ configure: sdk/build.sh
 toolchain: configure
 	cd sdk && ./build.sh buildroot-make:toolchain:host-flex:host-lz4:host-dtc
 
-router-frontend:
+things-frontend:
 	test -x "$(ROUTER_TRUNK)" || { echo 'repository-local Trunk 0.21.14 is required under .tools/trunk.' >&2; exit 1; }
 	test -x "$(HOST_NODE)" && test -x "$(HOST_NPM)" || { echo 'Node.js and npm must be available when make starts; override HOST_NODE/HOST_NPM if needed.' >&2; exit 1; }
-	test -x "$(ROUTER_APP)/node_modules/.bin/tailwindcss" || { echo 'run npm ci in apps/rust/router first.' >&2; exit 1; }
+	test -x "$(THINGS_APP)/node_modules/.bin/tailwindcss" || { echo 'run npm ci in apps/rust/things first.' >&2; exit 1; }
 	rustup target add wasm32-unknown-unknown
-	PATH="$(HOST_NODE_DIR):$(dir $(ROUTER_TRUNK)):$(PATH)" bash "$(ROUTER_APP)/tools/build-frontend-bundle.sh"
-	test -s "$(ROUTER_FRONTEND_BUNDLE)"
+	PATH="$(HOST_NODE_DIR):$(dir $(ROUTER_TRUNK)):$(PATH)" bash "$(THINGS_APP)/tools/build-frontend-bundle.sh"
+	test -s "$(THINGS_FRONTEND_BUNDLE)"
 
-router-e2e:
+things-e2e:
 	test -x "$(ROUTER_TRUNK)" || { echo 'repository-local Trunk 0.21.14 is required under .tools/trunk.' >&2; exit 1; }
 	test -x "$(HOST_NODE)" && test -x "$(HOST_NPM)" || { echo 'Node.js and npm must be available when make starts; override HOST_NODE/HOST_NPM if needed.' >&2; exit 1; }
-	cd "$(ROUTER_APP)" && PATH="$(HOST_NODE_DIR):$(dir $(ROUTER_TRUNK)):$(PATH)" "$(HOST_NPM)" run test:e2e
+	cd "$(THINGS_APP)" && PATH="$(HOST_NODE_DIR):$(dir $(ROUTER_TRUNK)):$(PATH)" "$(HOST_NPM)" run test:e2e
 
-router-app: toolchain router-frontend
+things-app: toolchain things-frontend
 	rustup target add $(RUST_TARGET)
-	ROUTER_FRONTEND_ARCHIVE="$(ROUTER_FRONTEND_BUNDLE)" \
+	HYZ_THINGS_FRONTEND_ARCHIVE="$(THINGS_FRONTEND_BUNDLE)" \
+	CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="$(TOOLCHAIN_PREFIX)gcc" \
+	CC_aarch64_unknown_linux_gnu="$(TOOLCHAIN_PREFIX)gcc" \
+	  cargo build --locked --release --target $(RUST_TARGET) \
+	  --manifest-path "$(THINGS_APP)/Cargo.toml" \
+	  --bin hyz-things --features native
+
+router-app: toolchain
+	rustup target add $(RUST_TARGET)
 	CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="$(TOOLCHAIN_PREFIX)gcc" \
 	CC_aarch64_unknown_linux_gnu="$(TOOLCHAIN_PREFIX)gcc" \
 	  cargo build --locked --release --target $(RUST_TARGET) \
@@ -133,7 +144,7 @@ camera-app: toolchain
 	  --manifest-path "$(CAMERA_APP)/Cargo.toml" \
 	  --bin hyz-camera
 
-apps: router-app camera-app
+apps: router-app camera-app things-app
 
 router-deploy-dev: router-app
 	ADB="$(ADB)" ADB_SERIAL="$(ADB_SERIAL)" bash "$(ROUTER_APP)/tools/deploy-dev.sh" deploy "$(ROUTER_BINARY)"
@@ -147,6 +158,7 @@ overlay: apps
 	cp -a product/rootfs-overlay/. "$(OVERLAY)/"
 	install -D -m 0755 "$(ROUTER_BINARY)" "$(OVERLAY)/usr/bin/hyz-router"
 	install -D -m 0755 "$(CAMERA_BINARY)" "$(OVERLAY)/usr/bin/hyz-camera"
+	install -D -m 0755 "$(THINGS_BINARY)" "$(OVERLAY)/usr/bin/hyz-things"
 	printf 'hyz_things %s\n' "$${VERSION:-development}" > "$(OVERLAY)/etc/hyz-version"
 
 rootfs: configure overlay
@@ -189,44 +201,48 @@ check: check-static
 	cargo test --locked --manifest-path "$(CONTRACT_APP)/Cargo.toml"
 	cargo clippy --locked --manifest-path "$(CONTRACT_APP)/Cargo.toml" \
 	  --all-targets -- -D warnings
+	cargo fmt --manifest-path "$(THINGS_APP)/Cargo.toml" --all -- --check
+	cargo test --locked --manifest-path "$(THINGS_APP)/Cargo.toml" --features native
+	cargo clippy --locked --manifest-path "$(THINGS_APP)/Cargo.toml" \
+	  --all-targets --features e2e -- -D warnings
 	cargo fmt --manifest-path "$(ROUTER_APP)/Cargo.toml" --all -- --check
 	cargo test --locked --manifest-path "$(ROUTER_APP)/Cargo.toml" --features native
 	cargo clippy --locked --manifest-path "$(ROUTER_APP)/Cargo.toml" \
 	  --all-targets --features native -- -D warnings
 
 check-static:
-	sh -n "$(ROUTER_APP)/tools/build-frontend-bundle.sh"
+	sh -n "$(THINGS_APP)/tools/build-frontend-bundle.sh"
 	bash -n "$(ROUTER_APP)/tools/deploy-dev.sh"
 	grep -q 'REMOTE_INIT_SCRIPT=/etc/init.d/S80hyz-router-dev' "$(ROUTER_APP)/tools/deploy-dev.sh"
 	grep -q 'mount -o bind' "$(ROUTER_APP)/tools/deploy-dev.sh"
 	grep -q "cat /proc/sys/kernel/random/boot_id" "$(ROUTER_APP)/tools/deploy-dev.sh"
 	grep -q "rm -f '\$$REMOTE_INIT_SCRIPT'" "$(ROUTER_APP)/tools/deploy-dev.sh"
 	! grep -q 'remote_action stop\|S81hyz-router stop\|kill -9\|pkill' "$(ROUTER_APP)/tools/deploy-dev.sh"
-	sh -n "$(ROUTER_APP)/tools/start-e2e-server.sh"
-	python3 -m json.tool "$(ROUTER_APP)/package.json" >/dev/null
-	python3 -m json.tool "$(ROUTER_APP)/package-lock.json" >/dev/null
+	sh -n "$(THINGS_APP)/tools/start-e2e-server.sh"
+	python3 -m json.tool "$(THINGS_APP)/package.json" >/dev/null
+	python3 -m json.tool "$(THINGS_APP)/package-lock.json" >/dev/null
 	test -x "$(HOST_NODE)"
-	"$(HOST_NODE)" --check "$(ROUTER_APP)/e2e/camera-hardware.mjs"
-	! grep -qE '100\.[0-9]+\.[0-9]+\.[0-9]+|HYZ_ROUTER_ADMIN_PASSWORD=.*[^"$$]' "$(ROUTER_APP)/e2e/camera-hardware.mjs"
-	grep -q '"lockfileVersion"' "$(ROUTER_APP)/package-lock.json"
-	grep -q '@plugin "daisyui"' "$(ROUTER_APP)/frontend/app.css"
-	grep -q '@source "../src/web/\*\*/\*.rs"' "$(ROUTER_APP)/frontend/app.css"
-	python3 -c 'from pathlib import Path; p = Path("$(ROUTER_APP)/tools/externalize-trunk-bootstrap.py"); compile(p.read_bytes(), str(p), "exec")'
-	grep -q 'router-bootstrap\.js' "$(ROUTER_APP)/tools/externalize-trunk-bootstrap.py"
-	grep -q 'bootstrap_version' "$(ROUTER_APP)/tools/externalize-trunk-bootstrap.py"
-	grep -q 'path == "router-bootstrap.js"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
-	grep -q 'static_asset_path' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
-	! grep -R -q 'unsafe-inline' "$(ROUTER_APP)/src" "$(ROUTER_APP)/frontend" "$(ROUTER_APP)/tools"
-	grep -q "script-src 'self' 'wasm-unsafe-eval'" "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
-	! grep -q "script-src 'self' 'unsafe-eval'" "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
-	grep -q 'Ipv4Addr::new(192, 168, 8, 1)' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
-	grep -q '"/api/v1/control/display"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
-	grep -q '"/api/v1/control/proxy/delay"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
-	grep -q '"/api/v1/control/proxy/delays"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
-	grep -q '"/api/v1/control/proxy/lan-tun"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
-	grep -q '"/api/v1/control/proxy/tailscale"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
-	grep -q '"/api/v1/tailscale/peers"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
-	! grep -q '\.route("/api/v1/control/proxy/mode"' "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
+	"$(HOST_NODE)" --check "$(THINGS_APP)/e2e/camera-hardware.mjs"
+	! grep -qE '100\.[0-9]+\.[0-9]+\.[0-9]+|HYZ_ROUTER_ADMIN_PASSWORD=.*[^"$$]' "$(THINGS_APP)/e2e/camera-hardware.mjs"
+	grep -q '"lockfileVersion"' "$(THINGS_APP)/package-lock.json"
+	grep -q '@plugin "daisyui"' "$(THINGS_APP)/frontend/app.css"
+	grep -q '@source "../src/web/\*\*/\*.rs"' "$(THINGS_APP)/frontend/app.css"
+	python3 -c 'from pathlib import Path; p = Path("$(THINGS_APP)/tools/externalize-trunk-bootstrap.py"); compile(p.read_bytes(), str(p), "exec")'
+	grep -q 'router-bootstrap\.js' "$(THINGS_APP)/tools/externalize-trunk-bootstrap.py"
+	grep -q 'bootstrap_version' "$(THINGS_APP)/tools/externalize-trunk-bootstrap.py"
+	grep -q 'path == "router-bootstrap.js"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
+	grep -q 'static_asset_path' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
+	! grep -R -q 'unsafe-inline' "$(THINGS_APP)/src" "$(THINGS_APP)/frontend" "$(THINGS_APP)/tools"
+	grep -q "script-src 'self' 'wasm-unsafe-eval'" "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
+	! grep -q "script-src 'self' 'unsafe-eval'" "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
+	grep -q 'Ipv4Addr::new(192, 168, 8, 1)' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
+	grep -q '"/api/v1/control/display"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
+	grep -q '"/api/v1/control/proxy/delay"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
+	grep -q '"/api/v1/control/proxy/delays"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
+	grep -q '"/api/v1/control/proxy/lan-tun"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
+	grep -q '"/api/v1/control/proxy/tailscale"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
+	grep -q '"/api/v1/tailscale/peers"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
+	! grep -q '\.route("/api/v1/control/proxy/mode"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
 	grep -q 'MIHOMO_CONTROLLER_ADDRESS: &str = "127.0.0.1:9090"' "$(ROUTER_APP)/src/adapters/outbound/paths.rs"
 	grep -q 'TAILSCALED_EXECUTABLE: &str = "/usr/bin/tailscaled"' "$(ROUTER_APP)/src/adapters/outbound/paths.rs"
 	grep -q 'TAILSCALE_EXECUTABLE: &str = "/usr/bin/tailscale"' "$(ROUTER_APP)/src/adapters/outbound/paths.rs"
@@ -235,15 +251,15 @@ check-static:
 	grep -q 'TAILSCALE_INTERFACE: &str = "tailscale0"' "$(ROUTER_APP)/src/domain/tailscale.rs"
 	grep -q 'TAILSCALE_LAN_ROUTE: &str = "192.168.8.0/24"' "$(ROUTER_APP)/src/domain/tailscale.rs"
 	grep -q 'TAILSCALE_UDP_PORT: u16 = 41_641' "$(ROUTER_APP)/src/domain/tailscale.rs"
-	grep -q 'TAILSCALE_MANAGEMENT_HTTP_PORT: u16 = 8080' "$(ROUTER_APP)/src/domain/tailscale.rs"
+	grep -q 'pub const TAILSCALE_MANAGEMENT_HTTP_PORT: u16 = 8080' "$(CONTRACT_APP)/src/tailscale.rs"
 	! grep -qE 'pub (login_server|auth_key|subnet|advertise_routes|exit_node|argv|tag):' \
 	  "$(ROUTER_APP)/src/adapters/inbound/control.rs" \
-	  "$(ROUTER_APP)/src/adapters/inbound/http/mod.rs"
-	! grep -R -qE '127\.0\.0\.1:9090|controller\.secret' "$(ROUTER_APP)/src/web" "$(ROUTER_APP)/frontend"
+	  "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
+	! grep -R -qE '127\.0\.0\.1:9090|controller\.secret' "$(THINGS_APP)/src/web" "$(THINGS_APP)/frontend"
 	grep -q 'default-brightness-level = <0>' sdk/kernel/arch/arm64/boot/dts/rockchip/rk3568-atk-evb1-mipi-dsi-1080p.dts
 	! grep -qE '&(dsi1|dsi1_panel|backlight1)[[:space:]]*\{[[:space:]]*status = "disabled"' sdk/kernel/arch/arm64/boot/dts/rockchip/rk3568-atk-evb1-mipi-dsi-1080p.dts
-	! grep -R -E -q 'TcpListener::bind\([^)]*(UNSPECIFIED|\[0,[[:space:]]*0,[[:space:]]*0,[[:space:]]*0\])|Ipv4Addr::UNSPECIFIED|CorsLayer::permissive|/usr/sbin/hyz-mihomo' "$(ROUTER_APP)/src"
-	! grep -R -q 'Command::new("sh")\|Command::new("bash")' "$(ROUTER_APP)/src"
+	! grep -R -E -q 'TcpListener::bind\([^)]*(UNSPECIFIED|\[0,[[:space:]]*0,[[:space:]]*0,[[:space:]]*0\])|Ipv4Addr::UNSPECIFIED|CorsLayer::permissive|/usr/sbin/hyz-mihomo' "$(ROUTER_APP)/src" "$(THINGS_APP)/src"
+	! grep -R -q 'Command::new("sh")\|Command::new("bash")' "$(ROUTER_APP)/src" "$(THINGS_APP)/src"
 	test -f "$(CAMERA_APP)/Cargo.lock"
 	! grep -R -q 'std::process::Command\|Command::new\|sh -c\|gst_parse_launch' "$(CAMERA_APP)/src"
 	grep -q 'CONTROL_OWNER_PATH: &str = "/run/hyz-camera/daemon.owner"' "$(CAMERA_APP)/src/adapters/inbound/unix_control.rs"
@@ -251,11 +267,11 @@ check-static:
 	! grep -q 'Ipv4Addr::UNSPECIFIED' "$(CAMERA_APP)/src/adapters/outbound/webrtc.rs"
 	grep -q 'CAMERA_UDP_PORT_START: u16 = 40_000' "$(CAMERA_APP)/src/domain/session.rs"
 	grep -q 'CAMERA_UDP_PORT_END: u16 = 40_015' "$(CAMERA_APP)/src/domain/session.rs"
-	grep -q 'width: 1920' "$(CAMERA_APP)/src/domain/stream.rs"
-	grep -q 'height: 1080' "$(CAMERA_APP)/src/domain/stream.rs"
-	grep -q 'bitrate_bps: 2_500_000' "$(CAMERA_APP)/src/domain/stream.rs"
-	grep -q 'FIXED_CAPTURE_WIDTH: u16 = 3840' "$(CAMERA_APP)/src/domain/stream.rs"
-	grep -q 'FIXED_CAPTURE_HEIGHT: u16 = 2160' "$(CAMERA_APP)/src/domain/stream.rs"
+	grep -q 'width: 1920' "$(CONTRACT_APP)/src/camera.rs"
+	grep -q 'height: 1080' "$(CONTRACT_APP)/src/camera.rs"
+	grep -q 'bitrate_bps: 2_500_000' "$(CONTRACT_APP)/src/camera.rs"
+	grep -q 'pub const FIXED_CAPTURE_WIDTH: u16 = 3840' "$(CONTRACT_APP)/src/camera.rs"
+	grep -q 'pub const FIXED_CAPTURE_HEIGHT: u16 = 2160' "$(CONTRACT_APP)/src/camera.rs"
 	grep -q 'WATERMARK_TIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S"' "$(CAMERA_APP)/src/domain/watermark.rs"
 	grep -q 'WATERMARK_FONT_FAMILY: &str = "DejaVu Sans"' "$(CAMERA_APP)/src/domain/watermark.rs"
 	grep -q 'WATERMARK_FONT_SIZE: u32 = 20' "$(CAMERA_APP)/src/domain/watermark.rs"
@@ -318,6 +334,14 @@ check-static:
 	grep -q 'retrying after attempt' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	! grep -q 'START_LAUNCH_ATTEMPTS\|START_ATTEMPTS' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
 	grep -q 'stale ownership requires explicit recovery' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	grep -q '^READY_MARKER=/run/hyz-router/ready$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	! grep -q 'HEALTH_URL=http://192\.168\.8\.1:8080' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S81hyz-router
+	sh -n sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-things
+	grep -q '^DAEMON=/usr/bin/hyz-things$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-things
+	grep -q '^ROUTER_READY_MARKER=/run/hyz-router/ready$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-things
+	grep -q 'HEALTH_URL=http://192\.168\.8\.1:8080/api/v1/health' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-things
+	! grep -q 'restart)' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-things
+	grep -q 'chmod 0755 .*S83hyz-things' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	! grep -qE 'hyz-mihomo (explicit|tun|disable)|hyz-mihomo removes' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/hyz-router/mihomo-config.yaml.example
 	grep -q 'hyz-router proxy lan-tun enable|disable' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/hyz-router/mihomo-config.yaml.example
 	grep -q 'hyz-router proxy tailscale enable|disable' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/hyz-router/mihomo-config.yaml.example

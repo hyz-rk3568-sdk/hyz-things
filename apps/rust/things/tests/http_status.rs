@@ -11,25 +11,18 @@ use std::{
 };
 
 use async_trait::async_trait;
-use hyz_router::{
-    adapters::inbound::{
-        control::{ControlHandler, ControlOperation, ControlResult},
-        http::{app, app_with_control},
-    },
-    application::{
-        ports::ClockPort,
-        status::{ReadStatus, StatusRouterPlatformPort, StatusSystemProbePort},
-    },
+use hyz_contract::router::{ControlOperation, ControlResult};
+use hyz_things::{
+    adapters::inbound::http::{app, app_with_control},
+    application::{ports::PortalControlHandler, status::PortalStatus},
     domain::{
         panel::{DisplayStatus, PanelSnapshot},
         status::{
             Component, Issue, LanTunEffective, LanTunStatus, MihomoCoreStatus, ProxyResourceState,
-            ProxyStatus, RouterStatus, SystemStats,
+            ProxyStatus, RouterStatus, SnapshotState, StatusSnapshot, SystemStats,
         },
     },
 };
-
-struct FakeStatus;
 
 #[derive(Default)]
 struct FakeControl {
@@ -37,9 +30,28 @@ struct FakeControl {
 }
 
 #[async_trait]
-impl ControlHandler for FakeControl {
+impl PortalControlHandler for FakeControl {
     async fn handle(&self, operation: ControlOperation) -> Result<ControlResult, String> {
         match operation {
+            ControlOperation::Status {} => Ok(ControlResult::Status {
+                snapshot: Box::new(StatusSnapshot {
+                    state: SnapshotState::Degraded,
+                    observed_at_unix_ms: 123,
+                    router: Component::available(RouterStatus::default()),
+                    proxy: Component::unavailable(Issue::new(
+                        "proxy_unavailable",
+                        "Proxy status is unavailable",
+                    )),
+                    tailscale: Component::unavailable(Issue::new(
+                        "tailscale_unavailable",
+                        "Tailscale status is unavailable",
+                    )),
+                    system: Component::degraded(
+                        SystemStats::default(),
+                        Issue::new("stats_partial", "Some system statistics are unavailable"),
+                    ),
+                }),
+            }),
             ControlOperation::PanelStatus { .. } => Ok(ControlResult::PanelStatus {
                 snapshot: Box::new(PanelSnapshot {
                     display: Component::available(DisplayStatus {
@@ -65,39 +77,8 @@ impl ControlHandler for FakeControl {
     }
 }
 
-#[async_trait]
-impl StatusRouterPlatformPort for FakeStatus {
-    async fn read_router_status(&self) -> Component<RouterStatus> {
-        Component::available(RouterStatus::default())
-    }
-
-    async fn read_proxy_status(&self) -> Component<ProxyStatus> {
-        Component::unavailable(Issue::new(
-            "proxy_unavailable",
-            "Proxy status is unavailable",
-        ))
-    }
-}
-
-#[async_trait]
-impl StatusSystemProbePort for FakeStatus {
-    async fn read_system_stats(&self) -> Component<SystemStats> {
-        Component::degraded(
-            SystemStats::default(),
-            Issue::new("stats_partial", "Some system statistics are unavailable"),
-        )
-    }
-}
-
-impl ClockPort for FakeStatus {
-    fn unix_time_millis(&self) -> u64 {
-        123
-    }
-}
-
-fn read_status() -> ReadStatus {
-    let fake = Arc::new(FakeStatus);
-    ReadStatus::new(fake.clone(), fake.clone(), fake)
+fn read_status(control: Arc<dyn PortalControlHandler>) -> PortalStatus {
+    PortalStatus::new(control)
 }
 
 fn http_request(address: SocketAddr, method: &str, path: &str) -> String {
@@ -148,8 +129,9 @@ async fn serves_partial_degraded_status_with_strict_http_policy() {
         .await
         .expect("bind test listener");
     let address = listener.local_addr().expect("read test address");
+    let control: Arc<dyn PortalControlHandler> = Arc::new(FakeControl::default());
     let server = tokio::spawn(async move {
-        axum::serve(listener, app(read_status()))
+        axum::serve(listener, app(read_status(control)))
             .await
             .expect("serve test app");
     });
@@ -271,12 +253,12 @@ async fn control_posts_require_exact_origin_token_and_typed_json() {
         .expect("bind control test listener");
     let address = listener.local_addr().expect("read control test address");
     let control = Arc::new(FakeControl::default());
-    let server_control: Arc<dyn ControlHandler> = control.clone();
+    let server_control: Arc<dyn PortalControlHandler> = control.clone();
     let server = tokio::spawn(async move {
         axum::serve(
             listener,
             app_with_control(
-                read_status(),
+                read_status(server_control.clone()),
                 server_control,
                 "csrf-test".to_owned(),
                 address.port(),

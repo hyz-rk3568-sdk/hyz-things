@@ -361,8 +361,6 @@ fn runtime_absent(observed: &TailscaleObserved) -> bool {
         && observed.route_advertised == Probe::Known(false)
         && observed.router_firewall == Probe::Known(OwnedResource::Absent)
         && observed.subnet_firewall == Probe::Known(OwnedResource::Absent)
-        && observed.management_listener == Probe::Known(OwnedResource::Absent)
-        && observed.management_listener_ipv4 == Probe::Known(None)
 }
 
 fn known_previous_mode(
@@ -380,7 +378,6 @@ fn has_remote_surface(observed: &TailscaleObserved) -> bool {
     observed.route_advertised != Probe::Known(false)
         || observed.router_firewall != Probe::Known(OwnedResource::Absent)
         || observed.subnet_firewall != Probe::Known(OwnedResource::Absent)
-        || observed.management_listener != Probe::Known(OwnedResource::Absent)
 }
 
 fn rollback_compensations(
@@ -436,20 +433,6 @@ fn rollback_compensations(
         TailscaleAction::RemoveSubnetFirewall { token } => {
             vec![TailscaleAction::InstallSubnetFirewall {
                 token: token.clone(),
-            }]
-        }
-        TailscaleAction::StartManagementListener { token, .. } => {
-            vec![TailscaleAction::StopManagementListener {
-                token: token.clone(),
-            }]
-        }
-        TailscaleAction::StopManagementListener { token } => {
-            vec![TailscaleAction::StartManagementListener {
-                token: token.clone(),
-                ipv4: match &initial.management_listener_ipv4 {
-                    Probe::Known(Some(ipv4)) => *ipv4,
-                    _ => return Vec::new(),
-                },
             }]
         }
         TailscaleAction::CommitDesiredMode { .. } => {

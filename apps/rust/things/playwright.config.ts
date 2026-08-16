@@ -1,15 +1,15 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const defaultWebPort = 20_000 + (process.pid % 20_000) * 2;
-const webPort = parsePort(process.env.ROUTER_E2E_WEB_PORT, defaultWebPort, 'ROUTER_E2E_WEB_PORT');
+const webPort = parsePort(process.env.HYZ_THINGS_E2E_WEB_PORT, defaultWebPort, 'HYZ_THINGS_E2E_WEB_PORT');
 const controlPort = parsePort(
-  process.env.ROUTER_E2E_CONTROL_PORT,
+  process.env.HYZ_THINGS_E2E_CONTROL_PORT,
   webPort + 1,
-  'ROUTER_E2E_CONTROL_PORT',
+  'HYZ_THINGS_E2E_CONTROL_PORT',
 );
 
-process.env.ROUTER_E2E_WEB_PORT = String(webPort);
-process.env.ROUTER_E2E_CONTROL_PORT = String(controlPort);
+process.env.HYZ_THINGS_E2E_WEB_PORT = String(webPort);
+process.env.HYZ_THINGS_E2E_CONTROL_PORT = String(controlPort);
 
 export default defineConfig({
   testDir: './e2e',

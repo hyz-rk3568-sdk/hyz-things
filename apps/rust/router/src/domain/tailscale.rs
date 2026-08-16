@@ -9,14 +9,13 @@ use super::network::{OwnedResource, Probe};
 pub use hyz_contract::tailscale::{
     TailscaleBackendState, TailscaleEnvironment, TailscaleLoginUrl, TailscaleMode, TailscalePeer,
     TailscalePeerSnapshot, MAX_TAILSCALE_PEERS, MAX_TAILSCALE_PEER_NAME_BYTES,
-    MAX_TAILSCALE_PEER_OS_BYTES,
+    MAX_TAILSCALE_PEER_OS_BYTES, TAILSCALE_MANAGEMENT_HTTP_PORT,
 };
 
 pub const TAILSCALE_INTERFACE: &str = "tailscale0";
 pub const TAILSCALE_LAN_ROUTE: &str = "192.168.8.0/24";
 pub const TAILSCALE_CGNAT_SUBNET: &str = "100.64.0.0/10";
 pub const TAILSCALE_UDP_PORT: u16 = 41_641;
-pub const TAILSCALE_MANAGEMENT_HTTP_PORT: u16 = 8080;
 pub const TAILSCALE_INPUT_CHAIN: &str = "HYZ_TS_INPUT";
 pub const TAILSCALE_FORWARD_CHAIN: &str = "HYZ_TS_FWD";
 pub const TAILSCALE_NAT_CHAIN: &str = "HYZ_TS_NAT";
@@ -97,8 +96,6 @@ pub struct TailscaleObserved {
     pub route_advertised: Probe<bool>,
     pub router_firewall: Probe<OwnedResource>,
     pub subnet_firewall: Probe<OwnedResource>,
-    pub management_listener: Probe<OwnedResource>,
-    pub management_listener_ipv4: Probe<Option<Ipv4Addr>>,
     pub connection: Probe<TailscaleConnectionKind>,
 }
 
@@ -118,8 +115,6 @@ impl TailscaleObserved {
             route_advertised: Probe::Unknown(reason.clone()),
             router_firewall: Probe::Unknown(reason.clone()),
             subnet_firewall: Probe::Unknown(reason.clone()),
-            management_listener: Probe::Unknown(reason.clone()),
-            management_listener_ipv4: Probe::Unknown(reason.clone()),
             connection: Probe::Unknown(reason),
         }
     }
@@ -175,8 +170,6 @@ impl TailscaleObserved {
             && self.route_advertised == Probe::Known(false)
             && self.router_firewall == Probe::Known(OwnedResource::Absent)
             && self.subnet_firewall == Probe::Known(OwnedResource::Absent)
-            && self.management_listener == Probe::Known(OwnedResource::Absent)
-            && self.management_listener_ipv4 == Probe::Known(None)
     }
 
     fn router_only_ready(&self) -> bool {
@@ -212,23 +205,12 @@ impl TailscaleObserved {
                 self.router_firewall,
                 Probe::Known(OwnedResource::Owned { .. })
             )
-            && matches!(
-                self.management_listener,
-                Probe::Known(OwnedResource::Owned { .. })
-            )
-            && matches!(
-                (&self.ipv4, &self.management_listener_ipv4),
-                (Probe::Known(Some(ipv4)), Probe::Known(Some(listener_ipv4)))
-                    if ipv4 == listener_ipv4
-            )
     }
 
     fn login_surface_absent(&self) -> bool {
         self.route_advertised == Probe::Known(false)
             && self.router_firewall == Probe::Known(OwnedResource::Absent)
             && self.subnet_firewall == Probe::Known(OwnedResource::Absent)
-            && self.management_listener == Probe::Known(OwnedResource::Absent)
-            && self.management_listener_ipv4 == Probe::Known(None)
     }
 }
 
@@ -265,13 +247,6 @@ pub enum TailscaleAction {
         token: String,
     },
     RemoveSubnetFirewall {
-        token: String,
-    },
-    StartManagementListener {
-        token: String,
-        ipv4: Ipv4Addr,
-    },
-    StopManagementListener {
         token: String,
     },
     CommitDesiredMode {

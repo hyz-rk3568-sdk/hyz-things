@@ -1,5 +1,3 @@
-pub mod admin;
-pub mod camera;
 pub mod device_policy;
 pub mod dhcp;
 pub mod fail_open;

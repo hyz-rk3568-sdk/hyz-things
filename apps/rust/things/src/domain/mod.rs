@@ -1,10 +1,9 @@
+pub mod admin;
+pub mod camera;
 pub mod device_policy;
-pub mod network;
 pub mod network_config;
-pub mod ota;
 pub mod panel;
-pub mod proxy;
 pub mod status;
 pub mod subscription;
 pub mod tailscale;
-pub mod wifi_startup;
+pub mod wifi;

@@ -7,7 +7,7 @@ readonly WORKSPACE_DIR="$(CDPATH= cd -- "${PACKAGE_DIR}/../../.." && pwd)"
 readonly FRONTEND_DIR="${PACKAGE_DIR}/frontend"
 readonly EXTERNALIZER="${SCRIPT_DIR}/externalize-trunk-bootstrap.py"
 readonly OUTPUT_DIR="${WORKSPACE_DIR}/target/frontend-bundle"
-readonly OUTPUT_FILE="${OUTPUT_DIR}/router-frontend.tar"
+readonly OUTPUT_FILE="${OUTPUT_DIR}/hyz-things-frontend.tar"
 
 for command_name in node npm python3 rustup trunk tar mktemp; do
     if ! command -v "${command_name}" >/dev/null 2>&1; then
@@ -30,7 +30,7 @@ if ! rustup target list --installed | grep -qx 'wasm32-unknown-unknown'; then
     exit 1
 fi
 if [[ ! -f "${PACKAGE_DIR}/Cargo.toml" || ! -f "${PACKAGE_DIR}/package-lock.json" || ! -f "${FRONTEND_DIR}/index.html" || ! -f "${FRONTEND_DIR}/app.css" || ! -f "${EXTERNALIZER}" ]]; then
-    printf 'error: incomplete router package/frontend source tree\n' >&2
+    printf 'error: incomplete things package/frontend source tree\n' >&2
     exit 1
 fi
 if [[ ! -x "${PACKAGE_DIR}/node_modules/.bin/tailwindcss" ]]; then
@@ -40,7 +40,7 @@ if [[ ! -x "${PACKAGE_DIR}/node_modules/.bin/tailwindcss" ]]; then
 fi
 
 mkdir -p -- "${OUTPUT_DIR}"
-readonly TEMP_DIR="$(mktemp -d "${OUTPUT_DIR}/.router-frontend.XXXXXX")"
+readonly TEMP_DIR="$(mktemp -d "${OUTPUT_DIR}/.hyz-things-frontend.XXXXXX")"
 cleanup() { rm -rf -- "${TEMP_DIR}"; }
 trap cleanup EXIT INT TERM HUP
 readonly DIST_DIR="${TEMP_DIR}/dist"
@@ -66,7 +66,7 @@ if grep -RIEq "@import[[:space:]]+url\\(['\"]?https?://|url\\(['\"]?https?://" "
     exit 1
 fi
 
-readonly TEMP_ARCHIVE="${TEMP_DIR}/router-frontend.tar"
+readonly TEMP_ARCHIVE="${TEMP_DIR}/hyz-things-frontend.tar"
 find "${DIST_DIR}" -type d -exec chmod 0755 {} +
 find "${DIST_DIR}" -type f -exec chmod 0644 {} +
 tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -cf "${TEMP_ARCHIVE}" -C "${DIST_DIR}" .

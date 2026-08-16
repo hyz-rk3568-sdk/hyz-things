@@ -12,14 +12,14 @@ const PLACEHOLDER: &[u8] = br#"<!doctype html><html lang="en"><head><meta charse
 
 fn main() -> io::Result<()> {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("manifest directory"));
-    let default_archive = manifest.join("../../../target/frontend-bundle/router-frontend.tar");
-    let source = env::var_os("ROUTER_FRONTEND_ARCHIVE")
+    let default_archive = manifest.join("../../../target/frontend-bundle/hyz-things-frontend.tar");
+    let source = env::var_os("HYZ_THINGS_FRONTEND_ARCHIVE")
         .map(PathBuf::from)
         .unwrap_or(default_archive);
     let output =
         PathBuf::from(env::var_os("OUT_DIR").expect("output directory")).join("frontend.tar");
 
-    println!("cargo:rerun-if-env-changed=ROUTER_FRONTEND_ARCHIVE");
+    println!("cargo:rerun-if-env-changed=HYZ_THINGS_FRONTEND_ARCHIVE");
     println!("cargo:rerun-if-changed={}", source.display());
     if source.is_file() {
         validate_archive(&source)?;

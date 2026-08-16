@@ -49,8 +49,6 @@ fn stopped(mode: Option<TailscaleMode>) -> TailscaleObserved {
         route_advertised: Probe::Known(false),
         router_firewall: Probe::Known(OwnedResource::Absent),
         subnet_firewall: Probe::Known(OwnedResource::Absent),
-        management_listener: Probe::Known(OwnedResource::Absent),
-        management_listener_ipv4: Probe::Known(None),
         connection: Probe::Known(TailscaleConnectionKind::Unknown),
     }
 }
@@ -89,8 +87,6 @@ fn needs_login(mode: Option<TailscaleMode>) -> TailscaleObserved {
 fn router_only(mode: Option<TailscaleMode>) -> TailscaleObserved {
     let mut observed = running_without_surface(mode);
     observed.router_firewall = owned("router-old");
-    observed.management_listener = owned("listener-old");
-    observed.management_listener_ipv4 = Probe::Known(Some(Ipv4Addr::new(100, 64, 0, 7)));
     observed
 }
 
@@ -272,34 +268,6 @@ fn router_only_to_lan_access_gates_route_and_firewall_on_router_readiness() {
 }
 
 #[test]
-fn tailscale_ipv4_change_stops_the_old_exact_listener_before_binding_the_new_one() {
-    let mut observed = router_only(Some(TailscaleMode::RouterOnly));
-    observed.management_listener_ipv4 = Probe::Known(Some(Ipv4Addr::new(100, 64, 0, 6)));
-
-    assert_eq!(
-        tailscale_plan(
-            &TailscaleDesired::router_only(),
-            &observed,
-            &network_ready(),
-            "new",
-        )
-        .unwrap(),
-        vec![
-            TailscaleAction::StopManagementListener {
-                token: "listener-old".to_owned(),
-            },
-            TailscaleAction::StartManagementListener {
-                token: "new".to_owned(),
-                ipv4: Ipv4Addr::new(100, 64, 0, 7),
-            },
-            TailscaleAction::CommitDesiredMode {
-                mode: TailscaleMode::RouterOnly,
-            },
-        ]
-    );
-}
-
-#[test]
 fn lan_access_to_router_only_closes_forwarding_before_committing_mode() {
     assert_eq!(
         tailscale_plan(
@@ -322,7 +290,7 @@ fn lan_access_to_router_only_closes_forwarding_before_committing_mode() {
 }
 
 #[test]
-fn disable_closes_lan_and_management_surfaces_before_stopping_process() {
+fn disable_closes_lan_surfaces_before_stopping_process() {
     assert_eq!(
         tailscale_plan(
             &TailscaleDesired::disabled(),
@@ -336,9 +304,6 @@ fn disable_closes_lan_and_management_surfaces_before_stopping_process() {
                 token: "subnet-old".to_owned(),
             },
             TailscaleAction::ClearAdvertisedRoute,
-            TailscaleAction::StopManagementListener {
-                token: "listener-old".to_owned(),
-            },
             TailscaleAction::RemoveRouterFirewall {
                 token: "router-old".to_owned(),
             },
@@ -502,33 +467,6 @@ fn foreign_unknown_and_partial_runtime_state_are_never_mutated() {
         Err(PlatformError::Conflict(_))
     ));
 
-    let mut foreign_listener = router_only(Some(TailscaleMode::RouterOnly));
-    foreign_listener.management_listener = Probe::Known(OwnedResource::Foreign);
-    foreign_listener.management_listener_ipv4 =
-        Probe::Unknown("foreign Tailscale listener address is not trusted".to_owned());
-    assert!(matches!(
-        tailscale_plan(
-            &TailscaleDesired::disabled(),
-            &foreign_listener,
-            &network_ready(),
-            "new"
-        ),
-        Err(PlatformError::Conflict(_))
-    ));
-
-    let mut unknown_listener = router_only(Some(TailscaleMode::RouterOnly));
-    unknown_listener.management_listener =
-        Probe::Unknown("Tailscale listener ownership is unconfirmed".to_owned());
-    assert!(matches!(
-        tailscale_plan(
-            &TailscaleDesired::disabled(),
-            &unknown_listener,
-            &network_ready(),
-            "new"
-        ),
-        Err(PlatformError::ProbeFailed(_))
-    ));
-
     let mut stale_with_replaced_socket = exited_owned(Some(TailscaleMode::RouterOnly));
     stale_with_replaced_socket.socket = Probe::Known(OwnedResource::Foreign);
     assert!(matches!(
@@ -688,8 +626,6 @@ fn disabled_to_router_only_starts_then_installs_minimum_surface_then_commits() {
     let authenticated = running_without_surface(Some(TailscaleMode::Disabled));
     let mut precommit = router_only(Some(TailscaleMode::Disabled));
     precommit.router_firewall = owned("hyz-tailscale-42");
-    precommit.management_listener = owned("hyz-tailscale-42");
-    precommit.management_listener_ipv4 = Probe::Known(Some(Ipv4Addr::new(100, 64, 0, 7)));
     let mut final_state = precommit.clone();
     final_state.persisted_mode = Probe::Known(Some(TailscaleMode::RouterOnly));
     let fake = Fake::new(
@@ -717,10 +653,6 @@ fn disabled_to_router_only_starts_then_installs_minimum_surface_then_commits() {
             TailscaleAction::SetFixedPreferences,
             TailscaleAction::InstallRouterFirewall {
                 token: "hyz-tailscale-42".to_owned(),
-            },
-            TailscaleAction::StartManagementListener {
-                token: "hyz-tailscale-42".to_owned(),
-                ipv4: Ipv4Addr::new(100, 64, 0, 7),
             },
             TailscaleAction::CommitDesiredMode {
                 mode: TailscaleMode::RouterOnly,
@@ -768,7 +700,6 @@ fn unauthenticated_backend_returns_only_transient_login_url_without_lan_actions(
         TailscaleAction::AdvertiseLanRoute
             | TailscaleAction::InstallRouterFirewall { .. }
             | TailscaleAction::InstallSubnetFirewall { .. }
-            | TailscaleAction::StartManagementListener { .. }
     )));
 }
 
@@ -883,7 +814,7 @@ fn shutdown_is_tailscale_first_runtime_cleanup_without_desired_mode_commit() {
         .shutdown()
         .unwrap();
 
-    assert_eq!(actions, 5);
+    assert_eq!(actions, 4);
     assert_eq!(
         *fake.actions.lock().unwrap(),
         vec![
@@ -891,9 +822,6 @@ fn shutdown_is_tailscale_first_runtime_cleanup_without_desired_mode_commit() {
                 token: "subnet-old".to_owned(),
             },
             TailscaleAction::ClearAdvertisedRoute,
-            TailscaleAction::StopManagementListener {
-                token: "listener-old".to_owned(),
-            },
             TailscaleAction::RemoveRouterFirewall {
                 token: "router-old".to_owned(),
             },

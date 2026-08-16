@@ -18,13 +18,14 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use hyz_contract::router::{ControlOperation, ControlResult};
+
 use crate::{
-    adapters::inbound::control::{ControlHandler, ControlOperation, ControlResult},
     application::{
         admin::{AdminApplication, AdminError},
         camera::{CameraApplication, CameraError},
-        status::ReadStatus,
-        wifi::{ApPrepareRequest, StaCandidateRequest, WifiScanEntry},
+        ports::PortalControlHandler,
+        status::PortalStatus,
     },
     domain::{
         admin::{AdminAuthorization, AdminLoginRequest, AdminPasswordChangeRequest, SecretString},
@@ -41,6 +42,7 @@ use crate::{
         status::TailscaleStatus,
         subscription::SubscriptionSummary,
         tailscale::{TailscaleMode, TailscalePeerSnapshot},
+        wifi::{ApPrepareRequest, StaCandidateRequest, WifiScanEntry},
     },
 };
 
@@ -55,8 +57,8 @@ const MAX_CAMERA_HTTP_JSON_BODY_BYTES: usize = CAMERA_MAX_SDP_BYTES + 4 * 1024;
 
 #[derive(Clone)]
 struct AppState {
-    read_status: ReadStatus,
-    control: Option<Arc<dyn ControlHandler>>,
+    read_status: PortalStatus,
+    control: Option<Arc<dyn PortalControlHandler>>,
     admin: Option<Arc<AdminApplication>>,
     camera: Option<Arc<CameraApplication>>,
     camera_scope: Option<CameraAccessScope>,
@@ -108,7 +110,7 @@ impl AssetStore {
     }
 }
 
-pub fn app(read_status: ReadStatus) -> Router {
+pub fn app(read_status: PortalStatus) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
     app_with_assets(
         read_status,
@@ -126,8 +128,8 @@ pub fn app(read_status: ReadStatus) -> Router {
 }
 
 pub fn app_with_control(
-    read_status: ReadStatus,
-    control: Arc<dyn ControlHandler>,
+    read_status: PortalStatus,
+    control: Arc<dyn PortalControlHandler>,
     csrf_token: String,
     port: u16,
 ) -> Router {
@@ -148,8 +150,8 @@ pub fn app_with_control(
 }
 
 pub fn app_with_admin_control(
-    read_status: ReadStatus,
-    control: Arc<dyn ControlHandler>,
+    read_status: PortalStatus,
+    control: Arc<dyn PortalControlHandler>,
     admin: Arc<AdminApplication>,
     csrf_token: String,
     port: u16,
@@ -171,8 +173,8 @@ pub fn app_with_admin_control(
 }
 
 pub fn app_with_admin_camera_control(
-    read_status: ReadStatus,
-    control: Arc<dyn ControlHandler>,
+    read_status: PortalStatus,
+    control: Arc<dyn PortalControlHandler>,
     admin: Arc<AdminApplication>,
     camera: Arc<CameraApplication>,
     csrf_token: String,
@@ -195,8 +197,8 @@ pub fn app_with_admin_camera_control(
 }
 
 pub fn app_with_admin_control_at_address(
-    read_status: ReadStatus,
-    control: Arc<dyn ControlHandler>,
+    read_status: PortalStatus,
+    control: Arc<dyn PortalControlHandler>,
     admin: Arc<AdminApplication>,
     csrf_token: String,
     address: Ipv4Addr,
@@ -219,8 +221,8 @@ pub fn app_with_admin_control_at_address(
 }
 
 pub fn app_with_admin_camera_control_at_address(
-    read_status: ReadStatus,
-    control: Arc<dyn ControlHandler>,
+    read_status: PortalStatus,
+    control: Arc<dyn PortalControlHandler>,
     admin: Arc<AdminApplication>,
     camera: Arc<CameraApplication>,
     csrf_token: String,
@@ -245,8 +247,8 @@ pub fn app_with_admin_camera_control_at_address(
 
 #[cfg(feature = "e2e")]
 pub fn app_with_loopback_runtime_frontend(
-    read_status: ReadStatus,
-    control: Arc<dyn ControlHandler>,
+    read_status: PortalStatus,
+    control: Arc<dyn PortalControlHandler>,
     admin: Arc<AdminApplication>,
     camera: Arc<CameraApplication>,
     csrf_token: String,
@@ -298,7 +300,7 @@ fn validate_exact_loopback_origin(origin: &str) -> io::Result<()> {
 }
 
 struct AppConfiguration {
-    control: Option<Arc<dyn ControlHandler>>,
+    control: Option<Arc<dyn PortalControlHandler>>,
     admin: Option<Arc<AdminApplication>>,
     camera: Option<Arc<CameraApplication>>,
     camera_scope: Option<CameraAccessScope>,
@@ -308,7 +310,7 @@ struct AppConfiguration {
 }
 
 fn app_with_assets(
-    read_status: ReadStatus,
+    read_status: PortalStatus,
     configuration: AppConfiguration,
     assets: AssetStore,
 ) -> Router {
@@ -523,7 +525,7 @@ async fn health() -> Json<Health<'static>> {
         status: "alive",
         check: "liveness",
         readiness_assessed: false,
-        service: "hyz-router",
+        service: "hyz-things",
         version: env!("CARGO_PKG_VERSION"),
     })
 }

@@ -9,7 +9,7 @@ use std::{
 
 use gloo_net::http::Request;
 use gloo_timers::future::TimeoutFuture;
-use hyz_router::domain::{
+use hyz_things::domain::{
     camera::{
         CameraAccessKind, CameraErrorCategory, CameraPipelineState, CameraRotation, CameraStatus,
         CameraStreamPreset,
@@ -3552,7 +3552,7 @@ fn render_proxy_groups(
 }
 
 fn group_kind_label(group: &ProxyGroup) -> &'static str {
-    use hyz_router::domain::panel::ProxyGroupKind;
+    use hyz_things::domain::panel::ProxyGroupKind;
     match group.kind {
         ProxyGroupKind::Selector => "手动选择",
         ProxyGroupKind::UrlTest => "自动测速",
@@ -3670,7 +3670,7 @@ fn proxy_resource_label(state: ProxyResourceState) -> &'static str {
     }
 }
 
-fn mihomo_core_status_label(status: &hyz_router::domain::status::ProxyStatus) -> String {
+fn mihomo_core_status_label(status: &hyz_things::domain::status::ProxyStatus) -> String {
     match (
         status.mihomo.configured_required,
         status.mihomo.process,
@@ -3694,7 +3694,7 @@ fn mihomo_core_status_label(status: &hyz_router::domain::status::ProxyStatus) ->
     }
 }
 
-fn lan_tun_status_label(status: &hyz_router::domain::status::ProxyStatus) -> String {
+fn lan_tun_status_label(status: &hyz_things::domain::status::ProxyStatus) -> String {
     match (status.lan_tun.desired, status.lan_tun.effective) {
         (Some(true), LanTunEffective::Ready) => "已启用".to_owned(),
         (Some(true), LanTunEffective::OrdinaryNat) => "已降级 · 普通 NAT".to_owned(),
@@ -3750,7 +3750,7 @@ fn tailscale_proxy_status_label(status: &TailscaleStatus) -> String {
 }
 
 fn wan_traffic(
-    component: &Component<hyz_router::domain::status::SystemStats>,
+    component: &Component<hyz_things::domain::status::SystemStats>,
 ) -> Option<(u64, u64)> {
     component.data.as_ref().and_then(|stats| {
         stats

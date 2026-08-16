@@ -166,9 +166,7 @@ pub fn tailscale_status_from_observed(
         || matches!(&observed.ipv4, Probe::Unknown(_))
         || matches!(&observed.route_advertised, Probe::Unknown(_))
         || matches!(&observed.router_firewall, Probe::Unknown(_))
-        || matches!(&observed.subnet_firewall, Probe::Unknown(_))
-        || matches!(&observed.management_listener, Probe::Unknown(_))
-        || matches!(&observed.management_listener_ipv4, Probe::Unknown(_));
+        || matches!(&observed.subnet_firewall, Probe::Unknown(_));
     let degraded_to_router_only = desired_mode == Some(TailscaleMode::LanSubnetAccess)
         && effective_mode == Some(TailscaleMode::RouterOnly);
     TailscaleStatus {
@@ -286,37 +284,6 @@ impl ReadStatus {
         )
     }
 
-    #[cfg(feature = "e2e")]
-    pub fn new_uncached(
-        router_platform: Arc<dyn StatusRouterPlatformPort>,
-        system_probe: Arc<dyn StatusSystemProbePort>,
-        clock: Arc<dyn ClockPort>,
-    ) -> Self {
-        Self::with_cache_ttl(
-            router_platform,
-            Arc::new(UnavailableTailscaleStatus),
-            system_probe,
-            clock,
-            Duration::ZERO,
-        )
-    }
-
-    #[cfg(feature = "e2e")]
-    pub fn new_uncached_with_tailscale(
-        router_platform: Arc<dyn StatusRouterPlatformPort>,
-        tailscale_platform: Arc<dyn StatusTailscalePlatformPort>,
-        system_probe: Arc<dyn StatusSystemProbePort>,
-        clock: Arc<dyn ClockPort>,
-    ) -> Self {
-        Self::with_cache_ttl(
-            router_platform,
-            tailscale_platform,
-            system_probe,
-            clock,
-            Duration::ZERO,
-        )
-    }
-
     fn with_cache_ttl(
         router_platform: Arc<dyn StatusRouterPlatformPort>,
         tailscale_platform: Arc<dyn StatusTailscalePlatformPort>,
@@ -426,18 +393,6 @@ mod tests {
         assert!(snapshot.router.data.is_some());
         assert!(snapshot.proxy.data.is_none());
         assert_eq!(snapshot.observed_at_unix_ms, 42);
-    }
-
-    #[cfg(feature = "e2e")]
-    #[tokio::test]
-    async fn e2e_uncached_reader_observes_each_harness_state_change() {
-        let fake = Arc::new(Fake::default());
-        let status = ReadStatus::new_uncached(fake.clone(), fake.clone(), fake.clone());
-
-        status.execute().await;
-        status.execute().await;
-
-        assert_eq!(fake.router_reads.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]

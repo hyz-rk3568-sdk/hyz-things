@@ -6,21 +6,17 @@ use axum::{
     routing::{get, put},
     Json, Router,
 };
-use hyz_router::{
-    adapters::inbound::{
-        control::{ControlHandler, ControlOperation, ControlProxyMode, ControlResult},
-        http::app_with_loopback_runtime_frontend,
-    },
+use hyz_contract::router::{ControlOperation, ControlProxyMode, ControlResult};
+use hyz_things::{
+    adapters::inbound::http::app_with_loopback_runtime_frontend,
     application::{
         admin::AdminApplication,
         camera::{CameraApplication, CameraControlPort, CameraError, CameraSession},
-        device_policy::DevicePolicySnapshot,
-        ports::{AdminCredentialStorePort, AdminRandomPort, ClockPort, PlatformError},
-        status::{
-            ReadStatus, StatusRouterPlatformPort, StatusSystemProbePort,
-            StatusTailscalePlatformPort,
+        ports::{
+            AdminCredentialStorePort, AdminRandomPort, ClockPort, PlatformError,
+            PortalControlHandler,
         },
-        wifi::{WifiScanEntry, AP_CONFIRM_TIMEOUT_SECS},
+        status::PortalStatus,
     },
     domain::{
         admin::AdminCredential,
@@ -28,25 +24,28 @@ use hyz_router::{
             CameraAccessScope, CameraPipelineState, CameraRotation, CameraStatus,
             CameraStreamPreset, CameraStreamProfile,
         },
-        device_policy::{DevicePolicyConfigV1, DeviceRoutePolicy, LanClientObservation},
+        device_policy::{
+            DevicePolicyConfigV1, DevicePolicySnapshot, DeviceRoutePolicy, LanClientObservation,
+        },
         network_config::{
             NetworkConfigSummary, PendingNetworkConfigSummary, WifiCountry, WifiSsid,
-            NETWORK_CONFIG_VERSION,
         },
         panel::{
             DisplayStatus, PanelSnapshot, ProxyDelayResult, ProxyGroup, ProxyGroupKind, ProxyOption,
         },
         status::{
-            Component, InterfaceStats, LanTunEffective, LanTunStatus, LinkState, MihomoCoreStatus,
-            ProxyResourceState, ProxyStatus, RouterStatus, SystemStats, TailscaleConnectionStatus,
-            TailscaleConnectionType, TailscaleExplicitProxyPath, TailscaleProxyFallback,
-            TailscaleRouteApproval, TailscaleStatus,
+            Component, ComponentState, InterfaceStats, LanTunEffective, LanTunStatus, LinkState,
+            MihomoCoreStatus, ProxyResourceState, ProxyStatus, RouterStatus, SnapshotState,
+            StatusSnapshot, SystemStats, TailscaleConnectionStatus, TailscaleConnectionType,
+            TailscaleExplicitProxyPath, TailscaleProxyFallback, TailscaleRouteApproval,
+            TailscaleStatus,
         },
         subscription::{SubscriptionSummary, SubscriptionSummaryState},
         tailscale::{
             TailscaleBackendState, TailscaleEnvironment, TailscaleLoginUrl, TailscaleMode,
             TailscalePeer, TailscalePeerSnapshot,
         },
+        wifi::WifiScanEntry,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -64,7 +63,9 @@ use std::{
 };
 
 const LOOPBACK: Ipv4Addr = Ipv4Addr::LOCALHOST;
-const CSRF_TOKEN: &str = "router-web-e2e-csrf";
+const CSRF_TOKEN: &str = "hyz-things-e2e-csrf";
+const AP_CONFIRM_TIMEOUT_SECS: u64 = 120;
+const NETWORK_CONFIG_VERSION: u8 = 1;
 const MAX_FRONTEND_TAR_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_HARNESS_JSON_BYTES: usize = 256 * 1024;
 const USAGE: &str =
@@ -104,7 +105,7 @@ impl Default for HarnessCameraState {
                     bitrate_bps: 20_000_000,
                     rotation: CameraRotation::Deg0,
                 },
-                access: hyz_router::domain::camera::CameraAccessKind::Lan,
+                access: hyz_things::domain::camera::CameraAccessKind::Lan,
                 error_category: None,
             },
             create_count: 0,
@@ -419,13 +420,13 @@ impl CameraControlPort for HarnessCamera {
 }
 
 #[async_trait]
-impl ControlHandler for HarnessBackend {
+impl PortalControlHandler for HarnessBackend {
     async fn handle(&self, operation: ControlOperation) -> HarnessResult<ControlResult> {
         let mut state = self.state()?;
         match operation {
-            ControlOperation::Status {} => {
-                Err("status uses the HTTP status application".to_owned())
-            }
+            ControlOperation::Status {} => Ok(ControlResult::Status {
+                snapshot: Box::new(harness_snapshot(&state)),
+            }),
             ControlOperation::PanelStatus {} => Ok(ControlResult::PanelStatus {
                 snapshot: Box::new(state.panel.clone()),
             }),
@@ -748,36 +749,23 @@ impl ControlHandler for HarnessBackend {
     }
 }
 
-#[async_trait]
-impl StatusRouterPlatformPort for HarnessBackend {
-    async fn read_router_status(&self) -> Component<RouterStatus> {
-        self.state()
-            .map(|state| state.router.clone())
-            .unwrap_or_else(|error| Component::unavailable(harness_issue(error)))
-    }
-
-    async fn read_proxy_status(&self) -> Component<ProxyStatus> {
-        self.state()
-            .map(|state| state.proxy.clone())
-            .unwrap_or_else(|error| Component::unavailable(harness_issue(error)))
-    }
-}
-
-#[async_trait]
-impl StatusTailscalePlatformPort for HarnessBackend {
-    async fn read_tailscale_status(&self) -> Component<TailscaleStatus> {
-        self.state()
-            .map(|state| state.tailscale.clone())
-            .unwrap_or_else(|error| Component::unavailable(harness_issue(error)))
-    }
-}
-
-#[async_trait]
-impl StatusSystemProbePort for HarnessBackend {
-    async fn read_system_stats(&self) -> Component<SystemStats> {
-        self.state()
-            .map(|state| state.system.clone())
-            .unwrap_or_else(|error| Component::unavailable(harness_issue(error)))
+fn harness_snapshot(state: &HarnessState) -> StatusSnapshot {
+    let snapshot_state = if state.router.state == ComponentState::Available
+        && state.proxy.state == ComponentState::Available
+        && state.tailscale.state == ComponentState::Available
+        && state.system.state == ComponentState::Available
+    {
+        SnapshotState::Ok
+    } else {
+        SnapshotState::Degraded
+    };
+    StatusSnapshot {
+        state: snapshot_state,
+        observed_at_unix_ms: state.observed_at_unix_ms,
+        router: state.router.clone(),
+        proxy: state.proxy.clone(),
+        tailscale: state.tailscale.clone(),
+        system: state.system.clone(),
     }
 }
 
@@ -870,13 +858,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         backend.clone(),
         backend.clone(),
     )?);
-    let read_status = ReadStatus::new_uncached_with_tailscale(
-        backend.clone(),
-        backend.clone(),
-        backend.clone(),
-        backend.clone(),
-    );
-    let web_control: Arc<dyn ControlHandler> = backend.clone();
+    let web_control: Arc<dyn PortalControlHandler> = backend.clone();
+    let read_status = PortalStatus::new(web_control.clone());
     let camera = Arc::new(CameraApplication::new(Arc::new(HarnessCamera {
         backend: backend.clone(),
     })));
@@ -977,7 +960,7 @@ fn validate_harness_state(state: &HarnessState) -> HarnessResult<()> {
         return Err("network summary version is unsupported".to_owned());
     }
     if state.device_policies.config.version
-        != hyz_router::domain::device_policy::DEVICE_POLICY_VERSION
+        != hyz_things::domain::device_policy::DEVICE_POLICY_VERSION
     {
         return Err("device policy version is unsupported".to_owned());
     }
@@ -1029,13 +1012,13 @@ fn validate_harness_state(state: &HarnessState) -> HarnessResult<()> {
 
 fn validate_component<T>(label: &str, component: &Component<T>) -> HarnessResult<()> {
     let valid = match component.state {
-        hyz_router::domain::status::ComponentState::Available => {
+        hyz_things::domain::status::ComponentState::Available => {
             component.data.is_some() && component.issue.is_none()
         }
-        hyz_router::domain::status::ComponentState::Degraded => {
+        hyz_things::domain::status::ComponentState::Degraded => {
             component.data.is_some() && component.issue.is_some()
         }
-        hyz_router::domain::status::ComponentState::Unavailable => {
+        hyz_things::domain::status::ComponentState::Unavailable => {
             component.data.is_none() && component.issue.is_some()
         }
     };
@@ -1073,7 +1056,7 @@ fn set_proxy_features(
         LanTunEffective::OrdinaryNat
     };
     proxy.lan_tun.ordinary_nat_fallback = Some(true);
-    state.proxy.state = hyz_router::domain::status::ComponentState::Available;
+    state.proxy.state = hyz_things::domain::status::ComponentState::Available;
     state.proxy.issue = None;
     state.device_policies.effective = lan_tun_enabled;
 
@@ -1091,7 +1074,7 @@ fn set_proxy_features(
     };
     tailscale.proxy_fallback = TailscaleProxyFallback::NotNeeded;
     tailscale.error_category = None;
-    state.tailscale.state = hyz_router::domain::status::ComponentState::Available;
+    state.tailscale.state = hyz_things::domain::status::ComponentState::Available;
     state.tailscale.issue = None;
     Ok(())
 }
@@ -1125,10 +1108,6 @@ fn completed(message: impl Into<String>) -> ControlResult {
     ControlResult::Completed {
         message: message.into(),
     }
-}
-
-fn harness_issue(message: String) -> hyz_router::domain::status::Issue {
-    hyz_router::domain::status::Issue::new("e2e_harness_unavailable", message)
 }
 
 fn harness_control_error(error: String) -> (axum::http::StatusCode, String) {

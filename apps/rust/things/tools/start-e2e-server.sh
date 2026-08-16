@@ -4,9 +4,9 @@ set -Eeuo pipefail
 readonly SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly PACKAGE_DIR="$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)"
 readonly WORKSPACE_DIR="$(CDPATH= cd -- "${PACKAGE_DIR}/../../.." && pwd)"
-readonly FRONTEND_TAR="${WORKSPACE_DIR}/target/frontend-bundle/router-frontend.tar"
-readonly WEB_PORT="${ROUTER_E2E_WEB_PORT:-3190}"
-readonly CONTROL_PORT="${ROUTER_E2E_CONTROL_PORT:-3191}"
+readonly FRONTEND_TAR="${WORKSPACE_DIR}/target/frontend-bundle/hyz-things-frontend.tar"
+readonly WEB_PORT="${HYZ_THINGS_E2E_WEB_PORT:-3190}"
+readonly CONTROL_PORT="${HYZ_THINGS_E2E_CONTROL_PORT:-3191}"
 
 for command_name in cargo npm trunk; do
     if ! command -v "${command_name}" >/dev/null 2>&1; then
@@ -25,5 +25,5 @@ fi
 exec cargo run --locked \
     --manifest-path "${PACKAGE_DIR}/Cargo.toml" \
     --features e2e \
-    --bin router-web-e2e \
+    --bin hyz-things-e2e \
     -- "${FRONTEND_TAR}" "${WEB_PORT}" "${CONTROL_PORT}"

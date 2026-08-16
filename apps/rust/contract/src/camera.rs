@@ -15,6 +15,8 @@ pub const CONTROL_REQUEST_DEADLINE: std::time::Duration = std::time::Duration::f
 pub const FIXED_CAPTURE_WIDTH: u16 = 3840;
 pub const FIXED_CAPTURE_HEIGHT: u16 = 2160;
 pub const MAX_SESSION_ID_LEN: usize = 96;
+pub const CAMERA_UDP_PORT_START: u16 = 40_000;
+pub const CAMERA_UDP_PORT_END: u16 = 40_015;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

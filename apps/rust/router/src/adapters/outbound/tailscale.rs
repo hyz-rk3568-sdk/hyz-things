@@ -21,7 +21,6 @@ use crate::{
         TailscaleProbePort,
     },
     domain::{
-        camera::{CAMERA_UDP_PORT_END, CAMERA_UDP_PORT_START},
         network::{
             OwnedResource, Probe, LAN_BRIDGE, LAN_SUBNET, ROUTER_FILTER_CHAIN, WAN_INTERFACE,
         },
@@ -36,6 +35,7 @@ use crate::{
         },
     },
 };
+use hyz_contract::camera::{CAMERA_UDP_PORT_END, CAMERA_UDP_PORT_START};
 use serde::Deserialize;
 use serde_json::Value;
 use std::{
@@ -107,10 +107,6 @@ impl LinuxTailscalePlatform {
             TailscaleAction::RemoveSubnetFirewall { token } => self.remove_subnet_firewall(token),
             TailscaleAction::CommitDesiredMode { mode } => self.write_mode(Some(*mode)),
             TailscaleAction::RestoreDesiredMode { mode } => self.write_mode(*mode),
-            TailscaleAction::StartManagementListener { .. }
-            | TailscaleAction::StopManagementListener { .. } => Err(PlatformError::InvalidState(
-                "composition must intercept Tailscale management-listener actions".to_owned(),
-            )),
         }
     }
 
@@ -1183,8 +1179,6 @@ impl TailscaleProbePort for LinuxTailscalePlatform {
             route_advertised,
             router_firewall,
             subnet_firewall,
-            management_listener: Probe::Known(OwnedResource::Absent),
-            management_listener_ipv4: Probe::Known(None),
             connection,
         })
     }

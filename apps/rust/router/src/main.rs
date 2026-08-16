@@ -7,15 +7,9 @@ use hyz_router::{
                 ControlResult,
             },
             dhcp_hook,
-            http::{
-                app_with_admin_camera_control, app_with_admin_camera_control_at_address,
-                bind_fixed_lan_with_retry, DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
-            },
             ota_cli::{parse_ota_cli, OtaCommand, OTA_USAGE},
         },
         outbound::{
-            admin::AdminFileAdapter,
-            camera::CameraUnixAdapter,
             firmware::FirmwareAdapter,
             subscription::{
                 SubscriptionStore, SystemSubscriptionResolver, UreqSubscriptionTransport,
@@ -24,8 +18,6 @@ use hyz_router::{
         },
     },
     application::{
-        admin::{AdminApplication, AdminError},
-        camera::CameraApplication,
         device_policy::DevicePolicyApplication,
         dhcp::{DhcpApplication, DhcpEvent, DhcpPlatformPort},
         fail_open::{MihomoFailOpenApplication, WatcherInvocation},
@@ -48,25 +40,25 @@ use hyz_router::{
         wifi::{WifiApplication, AP_CONFIRM_TIMEOUT_SECS},
     },
     domain::{
-        network::{NetworkDesired, OwnedResource, Probe},
+        network::{NetworkDesired, Probe},
         proxy::ProxyDesired,
         status::{Component, Issue, TailscaleStatus},
         tailscale::{
             TailscaleAction, TailscaleDesired, TailscaleLoginUrl, TailscaleMode, TailscaleObserved,
-            TAILSCALE_MANAGEMENT_HTTP_PORT,
         },
     },
 };
-use socket2::{Domain, Protocol, Socket, Type};
 use std::{
     error::Error,
-    net::{Ipv4Addr, SocketAddr},
+    fs::{self, OpenOptions},
+    io::{self, Write},
+    os::unix::fs::{MetadataExt, OpenOptionsExt},
     path::Path,
-    sync::{mpsc as std_mpsc, Arc, Mutex as StdMutex, Weak},
+    sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::{
-    sync::{mpsc, oneshot, watch, Mutex as AsyncMutex},
+    sync::{mpsc, watch, Mutex as AsyncMutex},
     time::{timeout_at, Instant as TokioInstant},
 };
 
@@ -83,293 +75,43 @@ fn arm_shutdown_deadline(deadline: TokioInstant) {
     });
 }
 
+const READY_MARKER: &str = "/run/hyz-router/ready";
+
+fn write_ready_marker() -> io::Result<()> {
+    let mut owner = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .custom_flags(0o400000)
+        .open(READY_MARKER)?;
+    owner.write_all(b"ready\n")?;
+    owner.sync_all()
+}
+
+fn remove_ready_marker() -> io::Result<()> {
+    let metadata = fs::symlink_metadata(READY_MARKER)?;
+    if metadata.uid() != 0 || metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "refusing to remove a changed ready marker",
+        ));
+    }
+    fs::remove_file(READY_MARKER)
+}
+
 const USAGE: &str = "Usage:\n  hyz-router daemon\n  hyz-router status [--json]\n  hyz-router router enable|disable\n  hyz-router proxy lan-tun enable|disable\n  hyz-router proxy tailscale enable|disable\n  hyz-router wifi status|scan\n  hyz-router wifi ap apply|confirm|cancel\n  hyz-router subscription get [--json]\n  hyz-router subscription refresh\n  hyz-router ota ...";
 
 #[derive(Clone)]
 struct ProductionTailscalePlatform {
     linux: LinuxTailscalePlatform,
-    listener: Arc<StdMutex<Option<RunningTailscaleListener>>>,
-    http: Arc<StdMutex<Option<TailscaleHttpConfig>>>,
     router: Arc<LinuxRouterPlatform>,
-}
-
-struct TailscaleHttpConfig {
-    runtime: tokio::runtime::Handle,
-    owner: Weak<ProductionRuntime>,
-    csrf_token: String,
-    port: u16,
-}
-
-const TAILSCALE_ACCEPT_STOP_TIMEOUT: Duration = Duration::from_secs(1);
-const TAILSCALE_GRACEFUL_JOIN_TIMEOUT: Duration = Duration::from_millis(250);
-const TAILSCALE_ABORT_REAP_TIMEOUT: Duration = Duration::from_secs(1);
-
-struct RunningTailscaleListener {
-    token: String,
-    ipv4: Ipv4Addr,
-    runtime: tokio::runtime::Handle,
-    shutdown: Option<oneshot::Sender<()>>,
-    accept_stopped: std_mpsc::Receiver<()>,
-    task: tokio::task::JoinHandle<std::io::Result<()>>,
-}
-
-fn bind_exact_tailscale_listener(address: SocketAddr) -> std::io::Result<std::net::TcpListener> {
-    let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
-    socket.set_reuse_address(true)?;
-    socket.set_nonblocking(true)?;
-    socket.bind(&address.into())?;
-    socket.listen(128)?;
-    Ok(socket.into())
-}
-
-struct ConfirmedTailscaleListener {
-    listener: tokio::net::TcpListener,
-    accept_stopped: Option<std_mpsc::Sender<()>>,
-}
-
-impl Drop for ConfirmedTailscaleListener {
-    fn drop(&mut self) {
-        if let Some(accept_stopped) = self.accept_stopped.take() {
-            let _ = accept_stopped.send(());
-        }
-    }
-}
-
-impl axum::serve::Listener for ConfirmedTailscaleListener {
-    type Io = tokio::net::TcpStream;
-    type Addr = SocketAddr;
-
-    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
-        axum::serve::Listener::accept(&mut self.listener).await
-    }
-
-    fn local_addr(&self) -> std::io::Result<Self::Addr> {
-        self.listener.local_addr()
-    }
-}
-
-impl RunningTailscaleListener {
-    fn wait_for_task(
-        &mut self,
-        timeout: Duration,
-    ) -> Option<Result<std::io::Result<()>, tokio::task::JoinError>> {
-        let runtime = self.runtime.clone();
-        runtime.block_on(async { tokio::time::timeout(timeout, &mut self.task).await.ok() })
-    }
-
-    fn log_completion(result: Result<std::io::Result<()>, tokio::task::JoinError>) {
-        match result {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => {
-                eprintln!("hyz-router: Tailscale management listener failed: {error}");
-            }
-            Err(error) if error.is_cancelled() => {}
-            Err(error) => {
-                eprintln!("hyz-router: Tailscale management listener task failed: {error}");
-            }
-        }
-    }
-
-    fn reap_finished(mut self) {
-        let runtime = self.runtime.clone();
-        Self::log_completion(runtime.block_on(&mut self.task));
-    }
 }
 
 impl ProductionTailscalePlatform {
     fn new(router: Arc<LinuxRouterPlatform>) -> Self {
         Self {
             linux: LinuxTailscalePlatform::new(),
-            listener: Arc::new(StdMutex::new(None)),
-            http: Arc::new(StdMutex::new(None)),
             router,
-        }
-    }
-
-    fn attach_http(
-        &self,
-        owner: Weak<ProductionRuntime>,
-        csrf_token: String,
-        port: u16,
-        runtime: tokio::runtime::Handle,
-    ) -> Result<(), PlatformError> {
-        let mut config = self.http.lock().map_err(|_| {
-            PlatformError::InvalidState("Tailscale HTTP config lock poisoned".to_owned())
-        })?;
-        if config.is_some() {
-            return Err(PlatformError::Conflict(
-                "Tailscale HTTP composition is already attached".to_owned(),
-            ));
-        }
-        *config = Some(TailscaleHttpConfig {
-            runtime,
-            owner,
-            csrf_token,
-            port,
-        });
-        Ok(())
-    }
-
-    fn start_listener(&self, token: &str, ipv4: Ipv4Addr) -> Result<(), PlatformError> {
-        let mut state = self.listener.lock().map_err(|_| {
-            PlatformError::InvalidState("Tailscale listener lock poisoned".to_owned())
-        })?;
-        if state.is_some() {
-            return Err(PlatformError::Conflict(
-                "Tailscale management listener already exists".to_owned(),
-            ));
-        }
-        let config = self.http.lock().map_err(|_| {
-            PlatformError::InvalidState("Tailscale HTTP config lock poisoned".to_owned())
-        })?;
-        let config = config.as_ref().ok_or_else(|| {
-            PlatformError::InvalidState("Tailscale HTTP composition is not attached".to_owned())
-        })?;
-        if config.port != TAILSCALE_MANAGEMENT_HTTP_PORT {
-            return Err(PlatformError::InvalidState(format!(
-                "Tailscale management listener requires fixed HTTP port {TAILSCALE_MANAGEMENT_HTTP_PORT}"
-            )));
-        }
-        let owner = config.owner.upgrade().ok_or_else(|| {
-            PlatformError::InvalidState("Tailscale HTTP runtime owner is unavailable".to_owned())
-        })?;
-        let address = SocketAddr::from((ipv4, config.port));
-        let listener = bind_exact_tailscale_listener(address).map_err(|error| {
-            PlatformError::Io(format!(
-                "bind exact Tailscale HTTP listener {address}: {error}"
-            ))
-        })?;
-        let listener = {
-            let _enter = config.runtime.enter();
-            tokio::net::TcpListener::from_std(listener).map_err(|error| {
-                PlatformError::Io(format!("adopt exact Tailscale HTTP listener: {error}"))
-            })?
-        };
-        let (shutdown, stopped) = oneshot::channel();
-        let (accept_stopped, accept_stopped_rx) = std_mpsc::channel();
-        let listener = ConfirmedTailscaleListener {
-            listener,
-            accept_stopped: Some(accept_stopped),
-        };
-        let status = owner.status();
-        let control: Arc<dyn ControlHandler> = owner.clone();
-        let admin = owner.admin();
-        let camera = owner.camera();
-        let app = app_with_admin_camera_control_at_address(
-            status,
-            control,
-            admin,
-            camera,
-            config.csrf_token.clone(),
-            ipv4,
-            config.port,
-        );
-        let runtime = config.runtime.clone();
-        let task = runtime.spawn(async move {
-            axum::serve(listener, app)
-                .with_graceful_shutdown(async move {
-                    let _ = stopped.await;
-                })
-                .await
-        });
-        *state = Some(RunningTailscaleListener {
-            token: token.to_owned(),
-            ipv4,
-            runtime,
-            shutdown: Some(shutdown),
-            accept_stopped: accept_stopped_rx,
-            task,
-        });
-        Ok(())
-    }
-
-    fn stop_listener(&self, token: &str) -> Result<(), PlatformError> {
-        let mut state = self.listener.lock().map_err(|_| {
-            PlatformError::InvalidState("Tailscale listener lock poisoned".to_owned())
-        })?;
-        let mut running = state.take().ok_or_else(|| {
-            PlatformError::Conflict("Tailscale management listener is absent".to_owned())
-        })?;
-        if running.token != token {
-            *state = Some(running);
-            return Err(PlatformError::Conflict(
-                "refusing to stop a Tailscale listener with a different ownership token".to_owned(),
-            ));
-        }
-        drop(state);
-
-        if let Some(shutdown) = running.shutdown.take() {
-            let _ = shutdown.send(());
-        } else {
-            running.task.abort();
-        }
-
-        let accept_confirmed = running
-            .accept_stopped
-            .recv_timeout(TAILSCALE_ACCEPT_STOP_TIMEOUT)
-            .is_ok();
-        if accept_confirmed {
-            if let Some(result) = running.wait_for_task(TAILSCALE_GRACEFUL_JOIN_TIMEOUT) {
-                RunningTailscaleListener::log_completion(result);
-                return Ok(());
-            }
-        }
-
-        running.task.abort();
-        if let Some(result) = running.wait_for_task(TAILSCALE_ABORT_REAP_TIMEOUT) {
-            RunningTailscaleListener::log_completion(result);
-            let accept_confirmed = accept_confirmed || running.accept_stopped.try_recv().is_ok();
-            return if accept_confirmed {
-                Ok(())
-            } else {
-                Err(PlatformError::UnsafeToCutOver(
-                    "Tailscale management listener stopped without accept-loop confirmation"
-                        .to_owned(),
-                ))
-            };
-        }
-
-        let mut state = match self.listener.lock() {
-            Ok(state) => state,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        *state = Some(running);
-        Err(PlatformError::UnsafeToCutOver(
-            "Tailscale management listener task did not stop within the bounded abort/reap window"
-                .to_owned(),
-        ))
-    }
-
-    fn listener_observation(&self) -> (Probe<OwnedResource>, Probe<Option<Ipv4Addr>>) {
-        let mut state = match self.listener.lock() {
-            Ok(state) => state,
-            Err(_) => {
-                let reason = "Tailscale listener lock poisoned".to_owned();
-                return (Probe::Unknown(reason.clone()), Probe::Unknown(reason));
-            }
-        };
-        if state
-            .as_ref()
-            .is_some_and(|listener| listener.task.is_finished())
-        {
-            let listener = state.take().expect("finished listener must exist");
-            drop(state);
-            listener.reap_finished();
-            return (Probe::Known(OwnedResource::Absent), Probe::Known(None));
-        }
-        match state.as_ref() {
-            None => (Probe::Known(OwnedResource::Absent), Probe::Known(None)),
-            Some(listener) if listener.shutdown.is_none() => {
-                let reason =
-                    "Tailscale management listener termination is not confirmed".to_owned();
-                (Probe::Unknown(reason.clone()), Probe::Unknown(reason))
-            }
-            Some(listener) => (
-                Probe::Known(OwnedResource::Owned {
-                    token: listener.token.clone(),
-                }),
-                Probe::Known(Some(listener.ipv4)),
-            ),
         }
     }
 }
@@ -384,13 +126,7 @@ impl TailscalePlatformPort for ProductionTailscalePlatform {
     }
 
     fn apply_tailscale(&self, action: &TailscaleAction) -> Result<(), PlatformError> {
-        match action {
-            TailscaleAction::StartManagementListener { token, ipv4 } => {
-                self.start_listener(token, *ipv4)
-            }
-            TailscaleAction::StopManagementListener { token } => self.stop_listener(token),
-            _ => self.linux.apply_tailscale(action),
-        }
+        self.linux.apply_tailscale(action)
     }
 
     fn request_login(&self) -> Result<TailscaleLoginUrl, PlatformError> {
@@ -404,11 +140,7 @@ impl TailscalePlatformPort for ProductionTailscalePlatform {
 
 impl TailscaleProbePort for ProductionTailscalePlatform {
     fn observe_tailscale(&self) -> Result<TailscaleObserved, PlatformError> {
-        let mut observed = self.linux.observe_tailscale()?;
-        let (listener, listener_ipv4) = self.listener_observation();
-        observed.management_listener = listener;
-        observed.management_listener_ipv4 = listener_ipv4;
-        Ok(observed)
+        self.linux.observe_tailscale()
     }
 
     fn probe_explicit_proxy_path(&self) -> Result<bool, PlatformError> {
@@ -570,8 +302,6 @@ impl DhcpDispatcher {
 struct ProductionRuntime {
     router: Arc<LinuxRouterPlatform>,
     tailscale: Arc<ProductionTailscalePlatform>,
-    admin: Arc<AdminApplication>,
-    camera: Arc<CameraApplication>,
     firmware: FirmwareAdapter,
     subscription_store: SubscriptionStore,
     subscription_transport: UreqSubscriptionTransport,
@@ -583,25 +313,14 @@ struct ProductionRuntime {
 }
 
 impl ProductionRuntime {
-    fn build() -> Result<Self, AdminError> {
+    fn build() -> Result<Self, PlatformError> {
         let router = Arc::new(LinuxRouterPlatform::new());
         let tailscale = Arc::new(ProductionTailscalePlatform::new(router.clone()));
         let dhcp = DhcpDispatcher::new(router.clone());
-        let admin_adapter = Arc::new(AdminFileAdapter::default());
-        let admin = Arc::new(AdminApplication::initialize(
-            admin_adapter.clone(),
-            admin_adapter,
-            router.clone(),
-        )?);
         let resolver = Arc::new(SystemSubscriptionResolver);
-        let camera = Arc::new(CameraApplication::new(Arc::new(
-            CameraUnixAdapter::default(),
-        )));
         Ok(Self {
             router,
             tailscale,
-            admin,
-            camera,
             firmware: FirmwareAdapter::default(),
             subscription_store: SubscriptionStore::default(),
             subscription_transport: UreqSubscriptionTransport::new(resolver),
@@ -611,14 +330,6 @@ impl ProductionRuntime {
             display: AsyncMutex::new(()),
             ota: AsyncMutex::new(()),
         })
-    }
-
-    fn admin(&self) -> Arc<AdminApplication> {
-        self.admin.clone()
-    }
-
-    fn camera(&self) -> Arc<CameraApplication> {
-        self.camera.clone()
     }
 
     fn status(&self) -> ReadStatus {
@@ -854,10 +565,6 @@ impl ProductionRuntime {
                     "Tailscale status is unavailable after logout".to_owned(),
                 )
             })
-    }
-
-    fn web_token(&self) -> Result<String, PlatformError> {
-        self.router.ownership_token("hyz-web")
     }
 
     async fn reconcile_network(&self, desired: NetworkDesired) -> Result<(), PlatformError> {
@@ -1573,9 +1280,6 @@ impl ShutdownSignals {
 async fn run_daemon() -> Result<(), Box<dyn Error>> {
     require_root("daemon")?;
     let mut signals = ShutdownSignals::install()?;
-    let port = std::env::var("HYZ_ROUTER_HTTP_PORT")
-        .map(|value| value.parse::<u16>())
-        .unwrap_or(Ok(DEFAULT_HTTP_PORT))?;
     let mut ownership = acquire_daemon_ownership()?;
     let control_listener = match bind_control_socket(&mut ownership) {
         Ok(listener) => listener,
@@ -1585,9 +1289,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    // This is the sole production construction point for privileged outbound adapters. Admin
-    // credential initialization is fail-closed: HTTP and control services are not exposed if the
-    // root-owned credential record cannot be loaded or bootstrapped.
+    // This is the sole production construction point for privileged outbound adapters.
     let runtime = match ProductionRuntime::build() {
         Ok(runtime) => Arc::new(runtime),
         Err(error) => {
@@ -1596,29 +1298,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
             return Err(error.into());
         }
     };
-    let http_status = runtime.status();
-    let http_admin = runtime.admin();
-    let http_camera = runtime.camera();
-    let web_token = match runtime.web_token() {
-        Ok(token) => token,
-        Err(error) => {
-            remove_control_socket(&ownership)?;
-            ownership.release()?;
-            return Err(error.into());
-        }
-    };
-    if let Err(error) = runtime.tailscale.attach_http(
-        Arc::downgrade(&runtime),
-        web_token.clone(),
-        port,
-        tokio::runtime::Handle::current(),
-    ) {
-        remove_control_socket(&ownership)?;
-        ownership.release()?;
-        return Err(error.into());
-    }
     let control_runtime: Arc<dyn ControlHandler> = runtime.clone();
-    let http_control = control_runtime.clone();
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
     // The control socket must be actively serving before management startup launches udhcpc.
@@ -1684,6 +1364,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         return Err(message.into());
     }
     runtime.router.clear_shutdown_failure_log()?;
+    write_ready_marker()?;
 
     if let Some(deadline) = startup_deadline {
         let _ = shutdown_tx.send(true);
@@ -1806,26 +1487,15 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    // HTTP binding is the externally visible readiness boundary and occurs only after a strictly
-    // confirmed normal or management-only network state has been reached.
-    let mut http = tokio::spawn(serve_http(
-        http_status,
-        http_control,
-        http_admin,
-        http_camera,
-        web_token,
-        port,
-        shutdown_rx,
-    ));
-
+    // The ready marker is the externally visible management readiness boundary: it is written
+    // only after a strictly confirmed management-only network state and removed on shutdown, so
+    // the portal must not expose HTTP readiness while network safety is unconfirmed.
     enum Trigger {
         Signal,
         Control(std::io::Result<()>),
-        Http(std::io::Result<()>),
     }
     let trigger = tokio::select! {
         result = &mut control => Trigger::Control(join_control(result)),
-        result = &mut http => Trigger::Http(join_http(result)),
         _ = signals.recv() => Trigger::Signal,
     };
     let deadline = TokioInstant::now() + DAEMON_SHUTDOWN_TIMEOUT;
@@ -1833,23 +1503,15 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     let _ = shutdown_tx.send(true);
     let drain = async {
         match trigger {
-            Trigger::Signal => {
-                let (control, http) = tokio::join!(&mut control, &mut http);
-                combine_service_results(join_control(control), join_http(http))
-            }
-            Trigger::Control(control_result) => {
-                combine_service_results(control_result, join_http((&mut http).await))
-            }
-            Trigger::Http(http_result) => {
-                combine_service_results(join_control((&mut control).await), http_result)
-            }
+            Trigger::Signal => join_control((&mut control).await),
+            Trigger::Control(control_result) => control_result,
         }
     };
     let services = match timeout_at(deadline, drain).await {
         Ok(result) => result,
         Err(_) => Err(std::io::Error::new(
             std::io::ErrorKind::TimedOut,
-            "HTTP/control drain exceeded the daemon shutdown deadline",
+            "control drain exceeded the daemon shutdown deadline",
         )),
     };
     let timeout_task = match timeout_at(deadline, &mut wifi_timeout).await {
@@ -1862,7 +1524,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
             "AP timeout task drain exceeded the daemon shutdown deadline",
         )),
     };
-    let services = combine_service_results(services, timeout_task);
+    let services = services.and(timeout_task);
     let recovery_task = match timeout_at(deadline, &mut direct_recovery).await {
         Ok(Ok(())) => Ok(()),
         Ok(Err(error)) => Err(std::io::Error::other(format!(
@@ -1873,7 +1535,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
             "Mihomo Direct recovery task drain exceeded the daemon shutdown deadline",
         )),
     };
-    let services = combine_service_results(services, recovery_task);
+    let services = services.and(recovery_task);
 
     // Runtime cleanup starts only after all request handlers have drained. If drain misses the
     // absolute deadline, the process exits with ownership evidence intact instead of cancelling a
@@ -1881,7 +1543,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     let cleanup = if services.is_ok() {
         shutdown_runtime_before(runtime.clone(), deadline).await
     } else {
-        Err("runtime cleanup skipped because HTTP/control operations did not drain".to_owned())
+        Err("runtime cleanup skipped because control operations did not drain".to_owned())
     };
     if let Err(error) = &cleanup {
         let _ = runtime
@@ -1895,41 +1557,11 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     // as durable evidence. SysV stop must fail and automatic restart must remain blocked until an
     // operator investigates residual processes, routes, firewall state, and ownership records.
     if cleanup_succeeded {
+        let _ = remove_ready_marker();
         remove_control_socket(&ownership)?;
         ownership.release()?;
     }
     result.map_err(|error| Box::new(error) as Box<dyn Error>)
-}
-
-async fn serve_http(
-    status: ReadStatus,
-    control: Arc<dyn ControlHandler>,
-    admin: Arc<AdminApplication>,
-    camera: Arc<CameraApplication>,
-    csrf_token: String,
-    port: u16,
-    mut shutdown: watch::Receiver<bool>,
-) -> std::io::Result<()> {
-    if *shutdown.borrow() {
-        return Ok(());
-    }
-    let bind = bind_fixed_lan_with_retry(port, DEFAULT_BIND_ATTEMPTS, Duration::from_secs(1));
-    tokio::pin!(bind);
-    let listener = tokio::select! {
-        result = &mut bind => result?,
-        changed = shutdown.changed() => {
-            let _ = changed;
-            return Ok(());
-        }
-    };
-    axum::serve(
-        listener,
-        app_with_admin_camera_control(status, control, admin, camera, csrf_token, port),
-    )
-    .with_graceful_shutdown(async move {
-        while !*shutdown.borrow() && shutdown.changed().await.is_ok() {}
-    })
-    .await
 }
 
 fn join_initialize(
@@ -1964,22 +1596,6 @@ fn join_control(
             "control service terminated unexpectedly: {error}"
         )))
     })
-}
-
-fn join_http(result: Result<std::io::Result<()>, tokio::task::JoinError>) -> std::io::Result<()> {
-    result.unwrap_or_else(|error| {
-        Err(std::io::Error::other(format!(
-            "HTTP service terminated unexpectedly: {error}"
-        )))
-    })
-}
-
-fn combine_service_results(
-    control: std::io::Result<()>,
-    http: std::io::Result<()>,
-) -> std::io::Result<()> {
-    control?;
-    http
 }
 
 fn combine_runtime_results(
@@ -2144,25 +1760,16 @@ fn usage_error(message: &'static str) -> Box<dyn Error> {
 
 #[cfg(test)]
 mod source_boundaries {
-    use super::*;
-    use axum::{routing::get, Router};
-    use tokio::{io::AsyncWriteExt, sync::Notify};
-
-    fn test_listener_platform(listener: RunningTailscaleListener) -> ProductionTailscalePlatform {
-        let platform = ProductionTailscalePlatform::new(Arc::new(LinuxRouterPlatform::new()));
-        *platform.listener.lock().unwrap() = Some(listener);
-        platform
-    }
     #[test]
-    fn daemon_serves_control_before_initialization_and_http_afterward() {
+    fn daemon_serves_control_before_initialization_and_ready_marker_afterward() {
         let production = include_str!("main.rs")
             .split("#[cfg(test)]")
             .next()
             .unwrap();
         let control = production.find("tokio::spawn(serve_control").unwrap();
         let initialize = production.find("initialize_runtime.initialize()").unwrap();
-        let http = production.find("tokio::spawn(serve_http").unwrap();
-        assert!(control < initialize && initialize < http);
+        let ready = production.find("    write_ready_marker()?;").unwrap();
+        assert!(control < initialize && initialize < ready);
     }
 
     #[test]
@@ -2183,8 +1790,9 @@ mod source_boundaries {
         assert!(ota.contains("download_to_staging_temporary(source, deadline)"));
         assert!(ota.contains("stage_with_update_engine(firmware, deadline)"));
         assert!(ota.contains("reboot(deadline)"));
-        assert!(production
-            .contains("runtime cleanup skipped because HTTP/control operations did not drain"));
+        assert!(
+            production.contains("runtime cleanup skipped because control operations did not drain")
+        );
     }
 
     #[test]
@@ -2254,22 +1862,11 @@ mod source_boundaries {
     }
 
     #[test]
-    fn tailscale_listener_is_exact_and_shutdown_precedes_proxy_network_cleanup() {
+    fn tailscale_shutdown_precedes_proxy_network_cleanup() {
         let production = include_str!("main.rs")
             .split("#[cfg(test)]")
             .next()
             .unwrap();
-        let listener = production
-            .split("fn start_listener")
-            .nth(1)
-            .unwrap()
-            .split("fn stop_listener")
-            .next()
-            .unwrap();
-        assert!(listener.contains("SocketAddr::from((ipv4, config.port))"));
-        assert!(!listener.contains("0.0.0.0"));
-        assert!(listener.contains("app_with_admin_camera_control_at_address"));
-
         let shutdown = production
             .split("async fn shutdown(&self)")
             .nth(1)
@@ -2280,116 +1877,6 @@ mod source_boundaries {
         let tailscale = shutdown.find("self.shutdown_tailscale()").unwrap();
         let proxy_network = shutdown.find("ShutdownApplication::new").unwrap();
         assert!(tailscale < proxy_network);
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn tailscale_listener_stop_is_bounded_reaped_and_allows_exact_rebind() {
-        let entered = Arc::new(Notify::new());
-        let release = Arc::new(Notify::new());
-        let app = Router::new().route(
-            "/",
-            get({
-                let entered = entered.clone();
-                let release = release.clone();
-                move || {
-                    let entered = entered.clone();
-                    let release = release.clone();
-                    async move {
-                        entered.notify_one();
-                        release.notified().await;
-                        "stopped"
-                    }
-                }
-            }),
-        );
-        let listener =
-            bind_exact_tailscale_listener(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).unwrap();
-        let address = listener.local_addr().unwrap();
-        listener.set_nonblocking(true).unwrap();
-        let listener = tokio::net::TcpListener::from_std(listener).unwrap();
-        let (shutdown, stopped) = oneshot::channel();
-        let (accept_stopped, accept_stopped_rx) = std_mpsc::channel();
-        let listener = ConfirmedTailscaleListener {
-            listener,
-            accept_stopped: Some(accept_stopped),
-        };
-        let runtime = tokio::runtime::Handle::current();
-        let task = runtime.spawn(async move {
-            axum::serve(listener, app)
-                .with_graceful_shutdown(async move {
-                    let _ = stopped.await;
-                })
-                .await
-        });
-        let platform = Arc::new(test_listener_platform(RunningTailscaleListener {
-            token: "listener-owned".to_owned(),
-            ipv4: Ipv4Addr::LOCALHOST,
-            runtime,
-            shutdown: Some(shutdown),
-            accept_stopped: accept_stopped_rx,
-            task,
-        }));
-
-        let mut request = tokio::net::TcpStream::connect(address).await.unwrap();
-        request
-            .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
-            .await
-            .unwrap();
-        tokio::time::timeout(Duration::from_secs(1), entered.notified())
-            .await
-            .unwrap();
-
-        let stopping = platform.clone();
-        let stopped = tokio::task::spawn_blocking(move || stopping.stop_listener("listener-owned"));
-        tokio::time::timeout(Duration::from_secs(3), stopped)
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
-        let rebound = bind_exact_tailscale_listener(address).unwrap();
-        assert!(platform.listener.lock().unwrap().is_none());
-
-        release.notify_waiters();
-        drop(request);
-        drop(rebound);
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn finished_owned_listener_task_is_reaped_and_observed_as_absent() {
-        let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-            .await
-            .unwrap();
-        let (accept_stopped, accept_stopped_rx) = std_mpsc::channel();
-        let listener = ConfirmedTailscaleListener {
-            listener,
-            accept_stopped: Some(accept_stopped),
-        };
-        let runtime = tokio::runtime::Handle::current();
-        let task = runtime.spawn(async move {
-            drop(listener);
-            Err(std::io::Error::other("injected listener failure"))
-        });
-        while !task.is_finished() {
-            tokio::task::yield_now().await;
-        }
-        let platform = Arc::new(test_listener_platform(RunningTailscaleListener {
-            token: "listener-owned".to_owned(),
-            ipv4: Ipv4Addr::LOCALHOST,
-            runtime,
-            shutdown: None,
-            accept_stopped: accept_stopped_rx,
-            task,
-        }));
-
-        let observing = platform.clone();
-        let observation = tokio::task::spawn_blocking(move || observing.listener_observation())
-            .await
-            .unwrap();
-        assert_eq!(
-            observation,
-            (Probe::Known(OwnedResource::Absent), Probe::Known(None))
-        );
-        assert!(platform.listener.lock().unwrap().is_none());
     }
 
     #[test]

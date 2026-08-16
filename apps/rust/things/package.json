@@ -1,5 +1,5 @@
 {
-  "name": "hyz-router-web",
+  "name": "hyz-things-web",
   "private": true,
   "engines": {
     "node": ">=20"

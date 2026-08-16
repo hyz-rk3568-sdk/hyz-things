@@ -6,6 +6,9 @@ use std::{fmt, net::Ipv4Addr};
 pub const MAX_TAILSCALE_PEERS: usize = 128;
 pub const MAX_TAILSCALE_PEER_NAME_BYTES: usize = 64;
 pub const MAX_TAILSCALE_PEER_OS_BYTES: usize = 32;
+/// Fixed TCP port for the management-plane HTTP listener on the Tailscale
+/// interface. The router firewall opens it; the portal binds it.
+pub const TAILSCALE_MANAGEMENT_HTTP_PORT: u16 = 8080;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]

@@ -892,10 +892,6 @@ mod tests {
             } else {
                 OwnedResource::Absent
             }),
-            management_listener: Probe::Known(OwnedResource::Owned {
-                token: "listener".to_owned(),
-            }),
-            management_listener_ipv4: Probe::Known(Some("100.64.0.1".parse().unwrap())),
             connection: Probe::Known(TailscaleConnectionKind::Direct),
         }
     }
@@ -915,9 +911,6 @@ mod tests {
                     token: "subnet".to_owned(),
                 },
                 TailscaleAction::ClearAdvertisedRoute,
-                TailscaleAction::StopManagementListener {
-                    token: "listener".to_owned(),
-                },
                 TailscaleAction::RemoveRouterFirewall {
                     token: "firewall".to_owned(),
                 },
@@ -943,8 +936,6 @@ mod tests {
         observed.interface = Probe::Known(OwnedResource::Absent);
         observed.authenticated = Probe::Known(false);
         observed.ipv4 = Probe::Known(None);
-        observed.management_listener = Probe::Known(OwnedResource::Absent);
-        observed.management_listener_ipv4 = Probe::Known(None);
 
         assert_eq!(
             tailscale_environment_plan(&observed, TailscaleEnvironment::Direct, "replacement")
@@ -990,8 +981,6 @@ mod tests {
         observed.route_advertised = Probe::Known(false);
         observed.router_firewall = Probe::Known(OwnedResource::Absent);
         observed.subnet_firewall = Probe::Known(OwnedResource::Absent);
-        observed.management_listener = Probe::Known(OwnedResource::Absent);
-        observed.management_listener_ipv4 = Probe::Known(None);
         assert!(surface_free_login_ready(&observed, &desired));
 
         observed.socket = Probe::Known(OwnedResource::Foreign);
@@ -1293,16 +1282,6 @@ mod tests {
                 TailscaleAction::RemoveSubnetFirewall { .. } => {
                     observed.subnet_firewall = Probe::Known(OwnedResource::Absent)
                 }
-                TailscaleAction::StopManagementListener { .. } => {
-                    observed.management_listener = Probe::Known(OwnedResource::Absent);
-                    observed.management_listener_ipv4 = Probe::Known(None);
-                }
-                TailscaleAction::StartManagementListener { token, ipv4 } => {
-                    observed.management_listener = Probe::Known(OwnedResource::Owned {
-                        token: token.clone(),
-                    });
-                    observed.management_listener_ipv4 = Probe::Known(Some(*ipv4));
-                }
                 _ => {}
             }
             Ok(())
@@ -1377,10 +1356,6 @@ mod tests {
             .iter()
             .position(|event| event == "proxy:WaitForMixedPort")
             .unwrap();
-        let stop_listener = events
-            .iter()
-            .position(|event| event.contains("tailscale:StopManagementListener"))
-            .unwrap();
         let stop_backend = events
             .iter()
             .position(|event| event.contains("tailscale:StopBackend"))
@@ -1388,10 +1363,6 @@ mod tests {
         let proxied = events
             .iter()
             .position(|event| event.contains("environment: MihomoExplicit"))
-            .unwrap();
-        let start_listener = events
-            .iter()
-            .position(|event| event.contains("tailscale:StartManagementListener"))
             .unwrap();
         let path_probe = events
             .iter()
@@ -1401,9 +1372,9 @@ mod tests {
             .iter()
             .position(|event| event.contains("proxy:CommitFeatures"))
             .unwrap();
-        assert!(mixed < stop_listener && stop_listener < stop_backend);
-        assert!(stop_backend < proxied && proxied < start_listener);
-        assert!(start_listener < path_probe && path_probe < commit);
+        assert!(mixed < stop_backend);
+        assert!(stop_backend < proxied && proxied < path_probe);
+        assert!(path_probe < commit);
         assert!(!events
             .iter()
             .any(|event| event.starts_with("tailscale:lock")));
@@ -1510,10 +1481,6 @@ mod tests {
             tailscale.process,
             Probe::Known(TailscaleProcessState::OwnedLive { .. })
         ));
-        assert!(matches!(
-            tailscale.management_listener,
-            Probe::Known(OwnedResource::Owned { .. })
-        ));
         let events = fake.events();
         let failed_proxied = events
             .iter()
@@ -1564,14 +1531,8 @@ mod tests {
             tailscale.subnet_firewall,
             Probe::Known(OwnedResource::Absent)
         );
-        assert_eq!(
-            tailscale.management_listener,
-            Probe::Known(OwnedResource::Absent)
-        );
         assert!(!fake.events().iter().any(|event| {
-            event.contains("InstallRouterFirewall")
-                || event.contains("InstallSubnetFirewall")
-                || event.contains("StartManagementListener")
+            event.contains("InstallRouterFirewall") || event.contains("InstallSubnetFirewall")
         }));
     }
 
@@ -1632,7 +1593,7 @@ mod tests {
             MihomoDirectRecoveryApplication::new(&fake, &fake, &fake, &fake, &fake)
                 .recover_if_core_unavailable(),
             Ok(MihomoDirectRecoveryResult::Restored {
-                tailscale_actions_applied: 8,
+                tailscale_actions_applied: 6,
             })
         );
         assert_eq!(
