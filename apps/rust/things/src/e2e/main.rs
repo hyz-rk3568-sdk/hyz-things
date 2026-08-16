@@ -13,13 +13,14 @@ use hyz_things::{
         admin::AdminApplication,
         camera::{CameraApplication, CameraControlPort, CameraError, CameraSession},
         ports::{
-            AdminCredentialStorePort, AdminRandomPort, ClockPort, PlatformError,
+            AdminCredentialStorePort, AdminRandomPort, ClockPort, InstalledAppsPort, PlatformError,
             PortalControlHandler,
         },
         status::PortalStatus,
     },
     domain::{
         admin::AdminCredential,
+        apps::InstalledApp,
         camera::{
             CameraAccessScope, CameraPipelineState, CameraRotation, CameraStatus,
             CameraStreamPreset, CameraStreamProfile,
@@ -135,6 +136,7 @@ struct HarnessState {
     subscription: SubscriptionSummary,
     device_policies: DevicePolicySnapshot,
     proxy_failures: HarnessProxyFailures,
+    installed_apps: Vec<InstalledApp>,
 }
 
 impl Default for HarnessState {
@@ -286,8 +288,41 @@ impl Default for HarnessState {
                 effective: true,
             },
             proxy_failures: HarnessProxyFailures::default(),
+            installed_apps: e2e_installed_apps(),
         }
     }
+}
+
+fn e2e_installed_apps() -> Vec<InstalledApp> {
+    fn versions(pairs: &[(&str, u32)]) -> std::collections::BTreeMap<String, u32> {
+        pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+    }
+    // 与生产适配器一致，按名字排序输出。
+    let mut apps = vec![
+        InstalledApp {
+            name: "router".to_owned(),
+            binary: "/usr/bin/hyz-router".to_owned(),
+            init_script: "/etc/init.d/S81hyz-router".to_owned(),
+            sha256: Some("e2e-router-sha-0001".to_owned()),
+            protocol_versions: versions(&[("router", 2)]),
+        },
+        InstalledApp {
+            name: "things".to_owned(),
+            binary: "/usr/bin/hyz-things".to_owned(),
+            init_script: "/etc/init.d/S83hyz-things".to_owned(),
+            sha256: Some("e2e-things-sha-0001".to_owned()),
+            protocol_versions: versions(&[("router", 2), ("camera", 1)]),
+        },
+        InstalledApp {
+            name: "camera".to_owned(),
+            binary: "/usr/bin/hyz-camera".to_owned(),
+            init_script: "/etc/init.d/S82hyz-camera".to_owned(),
+            sha256: Some("e2e-camera-sha-0001".to_owned()),
+            protocol_versions: versions(&[("camera", 1)]),
+        },
+    ];
+    apps.sort_by(|left, right| left.name.cmp(&right.name));
+    apps
 }
 
 struct HarnessBackend {
@@ -803,6 +838,14 @@ impl AdminRandomPort for HarnessBackend {
     }
 }
 
+impl InstalledAppsPort for HarnessBackend {
+    fn installed_apps(&self) -> Result<Vec<InstalledApp>, PlatformError> {
+        self.state()
+            .map(|state| state.installed_apps.clone())
+            .map_err(PlatformError::InvalidState)
+    }
+}
+
 #[derive(Debug)]
 struct Config {
     frontend_tar: PathBuf,
@@ -871,6 +914,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         CSRF_TOKEN.to_owned(),
         web_origin.clone(),
         &frontend_tar,
+        Some(backend.clone()),
     )?;
     let harness_app = harness_control_app(backend, admin, camera);
 

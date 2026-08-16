@@ -52,6 +52,12 @@ pub trait AdminCredentialStorePort: Send + Sync {
     fn save_admin_credential(&self, credential: &AdminCredential) -> Result<(), PlatformError>;
 }
 
+/// Read-only snapshot of the applications the hot-push tool has deployed on
+/// this device (registry at `/userdata/hyz-things/apps/registry.json`).
+pub trait InstalledAppsPort: Send + Sync {
+    fn installed_apps(&self) -> Result<Vec<crate::domain::apps::InstalledApp>, PlatformError>;
+}
+
 pub trait AdminRandomPort: Send + Sync {
     fn fill_random(&self, destination: &mut [u8]) -> Result<(), PlatformError>;
 }

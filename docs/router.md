@@ -105,7 +105,7 @@ flowchart LR
 
 浏览器控制在 `hyz-things` 进程内经过同一个 `PortalControlHandler`，不连接 root-only router socket；CLI 和 udhcpc hook 只作为该 socket 的客户端存在。`hyz-things` 是 router/camera 的普通客户端，**不是**它们的 composition root——每个进程的完整生产 adapter 只由各自的 `main.rs` 构造。
 
-摄像头直播使用受限边界：浏览器通过 things 的 Axum listener 完成管理员认证和 SDP offer/answer；things 通过固定 `/run/hyz-camera/control.sock` 调用独立 `hyz-camera`，并从当前 LAN 或 exact Tailscale listener 派生 candidate 地址。协商完成后，H.264 媒体直接在浏览器与 `hyz-camera` 的固定 `40000-40015/udp` 池之间流动，不经过 Axum 或 router。router 仍是唯一 firewall authority，camera 不执行网络命令。
+摄像头直播使用受限边界：观看对匿名开放——浏览器从 things 领取 15 分钟短时 viewer 令牌（内存驻留、最多 128 个），令牌只允许创建/关闭自己名下的会话；画面分辨率与旋转设置仍要求管理员 session。things 通过固定 `/run/hyz-camera/control.sock` 调用独立 `hyz-camera`，并从当前 LAN 或 exact Tailscale listener 派生 candidate 地址。协商完成后，H.264 媒体直接在浏览器与 `hyz-camera` 的固定 `40000-40015/udp` 池之间流动，不经过 Axum 或 router。router 仍是唯一 firewall authority，camera 不执行网络命令。
 
 ### 每包六边形架构
 
@@ -285,8 +285,9 @@ OTA 和 router enable/disable 仍不通过 LAN API 暴露。匿名 LAN 页面只
 
 ## hyz-things HTTP 状态与受限本地控制
 
-门户 HTTP 由 `hyz-things` 进程承载（`S83hyz-things` 在 router ready 标记出现后才启动它）。默认保留固定 LAN listener `192.168.8.1:8080`；`HYZ_THINGS_HTTP_PORT` 可覆盖端口，但 LAN 监听 IP 始终固定。已认证的 RouterOnly/LanSubnetAccess 还可在严格观测到的单个 Tailscale IPv4 上启动同端口的第二个 exact listener，并为该地址建立独立 exact origin；地址变化时先停旧 listener，再绑定新地址。两个 listener 都不会回退到 `0.0.0.0`。匿名状态与原受限控制接口保持不变，设置面包含以下精确接口：
+门户 HTTP 由 `hyz-things` 进程承载（`S83hyz-things` 在 router ready 标记出现后才启动它）。默认保留固定 LAN listener `192.168.8.1:8080`；`HYZ_THINGS_HTTP_PORT` 可覆盖端口，但 LAN 监听 IP 始终固定。已认证的 RouterOnly/LanSubnetAccess 还可在严格观测到的单个 Tailscale IPv4 上启动同端口的第二个 exact listener，并为该地址建立独立 exact origin；地址变化时先停旧 listener，再绑定新地址。两个 listener 都不会回退到 `0.0.0.0`。匿名接口包含 `/api/v1/{health,status,panel,apps}` 与 `/api/v1/camera/{status,viewer-token}`；设置面包含以下精确接口：
 
+- `GET /api/v1/apps`（热推送 registry 只读：名称、固定 binary/init 脚本、sha256 与协议版本；无 registry 时返回空，表示固件内置）；
 - `POST /api/v1/auth/{login,logout,password}` 与 `GET /api/v1/auth/session`；
 - `GET /api/v1/network/{config,pending}`；
 - `POST /api/v1/control/network/sta/{scan,apply}`；
@@ -296,15 +297,17 @@ OTA 和 router enable/disable 仍不通过 LAN API 暴露。匿名 LAN 页面只
 - `POST /api/v1/control/proxy/subscription/{source,refresh}`；
 - `GET /api/v1/tailscale`；
 - `GET /api/v1/tailscale/peers`（管理员只读、严格有界的设备名、Tailscale CGNAT IPv4、在线状态与可选 OS；不返回 peer map key、用户邮箱、endpoint、密钥或原始 JSON）；
-- `POST /api/v1/control/tailscale/{mode,login,logout}`。
+- `POST /api/v1/control/tailscale/{mode,login,logout}`；
+- `POST /api/v1/control/camera/session/{create,close}`（管理员 session 或匿名 viewer 令牌二选一；创建/关闭都按令牌 SHA-256 归属 owner，只能关闭自己名下的会话）；
+- `POST /api/v1/control/camera/{profile,rotation}`（仅管理员）。
 
-没有 CORS。未知 `/api/*` 返回 JSON 404，不进入 SPA fallback；API method/path 使用精确 allowlist。所有 mutation 都要求小尺寸 typed JSON、精确管理 origin、自定义 CSRF header；AP/STA、代理模式、节点选择、设备别名/策略和订阅接口还要求管理员 session。会停止或重启 `tailscaled` 的 Tailscale disable/logout 与两个 proxy feature mutation 只允许从固定 LAN listener 或 root-only Unix control 发起，Tailscale IPv4 listener 会返回 409，避免请求主动拆除承载自身的远程管理通道。固定用户名为 `admin`，公开 bootstrap 密码仅用于首次进入，持久层只保存 Argon2id PHC hash，并在完成强制改密前拒绝设置操作。session 只驻留内存，使用 `HttpOnly; SameSite=Strict; Path=/` cookie、15 分钟 idle/8 小时 absolute TTL 和有界登录限速；密码变化会撤销其他 session。
+没有 CORS。未知 `/api/*` 返回 JSON 404，不进入 SPA fallback；API method/path 使用精确 allowlist。所有 mutation 都要求小尺寸 typed JSON、精确管理 origin、自定义 CSRF header；AP/STA、代理模式、节点选择、设备别名/策略、订阅接口和 camera 画面设置还要求管理员 session。匿名 camera viewer 令牌本身即凭据（256-bit 随机、15 分钟 TTL、最多 128 个并发，页面领取时与后续使用都强制同源）。会停止或重启 `tailscaled` 的 Tailscale disable/logout 与两个 proxy feature mutation 只允许从固定 LAN listener 或 root-only Unix control 发起，Tailscale IPv4 listener 会返回 409，避免请求主动拆除承载自身的远程管理通道。固定用户名为 `admin`，公开 bootstrap 密码仅用于首次进入，持久层只保存 Argon2id PHC hash，并在完成强制改密前拒绝设置操作。session 只驻留内存，使用 `HttpOnly; SameSite=Strict; Path=/` cookie、15 分钟 idle/8 小时 absolute TTL 和有界登录限速；密码变化会撤销其他 session。
 
 用户明确选择继续使用 HTTP，因此 cookie 不能设置 `Secure`，管理 LAN 上能嗅探流量的客户端仍可能获得密码、Wi-Fi 凭据、订阅 URL 或 session。这是已接受但未消除的机密性风险；WPA2 只能降低无线接入风险，不能替代 HTTPS。共享默认密码也存在首次抢占风险，首次上线应立即改密。CSRF token 不是认证：匿名 LCD 和受限测速仍沿用 LAN 信任边界；代理模式、节点选择、设备别名/策略、凭据与持久设置均额外要求管理员认证。
 
 响应继续带 CSP、frame deny、nosniff、referrer、permissions、COOP/CORP 等安全头。Trunk 生成的 inline module bootstrap 会在 deterministic bundle 阶段被严格提取成同源 `/router-bootstrap.js`，因此不需要 nonce 或 `'unsafe-inline'`。Yew 启动需要浏览器编译同源 WASM，所以 `script-src` 精确允许 `'self' 'wasm-unsafe-eval'`；后者只开放 WebAssembly 编译，不开放普通 JavaScript `eval`。
 
-Yew 页面采用 `总览 / 网络设置` 两个页内 tab；总览以实时链路拓扑和四项关键指标优先呈现 WAN、STA、Router/NAT、AP/LAN 与 Mihomo/TUN 的关系，再只读展示系统、WAN、LAN/AP、转发/NAT、Mihomo core、LAN TUN、Tailscale 中继代理、`wlan0` WAN 累计流量、LCD 背光、实际使用的代理组、当前节点、逐项延迟/超时和从节点名称保守推断的国家/地区。LAN TUN 与 Tailscale 中继代理两个独立开关、节点选择、设备别名/策略与订阅配置统一放在登录后的网络设置中；设备别名按 MAC 持久保存，可在默认代理策略下独立保留，避免 DHCP hostname 消失后退化为 MAC。Mihomo 内置但在当前 rule 模式不承载流量的 `GLOBAL` 组被过滤；没有数据的状态卡、控制卡和代理区域直接隐藏，不显示“不可用”占位。页面首次进入或浏览器完整刷新时只触发一次受限组级全量测速，约两秒的状态轮询不会测速；手动按钮可再次刷新，五秒内重复请求返回缓存成功结果而不是 409。组级测速覆盖 inline proxies；响应直接合并到每个显示项，缺失项标记为超时，并在节点目录不变时由 router daemon 进程内缓存保留最近结果。provider history 仍只作为初始数据来源，且只合并经过名称、数量和字段白名单校验的 `delay`/`alive`，浏览器不能指定 provider、代理组、测试 URL 或 timeout。代理节点、组名和地区属于 LAN-visible operational metadata；API 不返回 server/port、订阅 URL、密码、UUID、controller secret、原始 history 或 Mihomo JSON。写操作期间控件禁用，状态失败时保留最近成功快照。门户品牌为「hyz things」，页面标题与 `index.html` 的 `<title>` 一致，不再使用“HYZ Router”标识。
+Yew 页面按门户形态组织：顶层 `首页 / 路由器 / 摄像头` 三个视图，路由器视图内部保留 `总览 / 网络设置` 两个页内 tab。首页聚合应用入口（路由器管理、摄像头直播、门户与设置）、热推送部署记录（`/api/v1/apps`）与三张运行概览卡，摄像头入口显示免登录的可用性徽标；摄像头视图内嵌直播卡片，未登录时画面设置禁用。总览以实时链路拓扑和四项关键指标优先呈现 WAN、STA、Router/NAT、AP/LAN 与 Mihomo/TUN 的关系，再只读展示系统、WAN、LAN/AP、转发/NAT、Mihomo core、LAN TUN、Tailscale 中继代理、`wlan0` WAN 累计流量、LCD 背光、实际使用的代理组、当前节点、逐项延迟/超时和从节点名称保守推断的国家/地区。LAN TUN 与 Tailscale 中继代理两个独立开关、节点选择、设备别名/策略与订阅配置统一放在登录后的网络设置中；设备别名按 MAC 持久保存，可在默认代理策略下独立保留，避免 DHCP hostname 消失后退化为 MAC。Mihomo 内置但在当前 rule 模式不承载流量的 `GLOBAL` 组被过滤；没有数据的状态卡、控制卡和代理区域直接隐藏，不显示“不可用”占位。页面首次进入或浏览器完整刷新时只触发一次受限组级全量测速，约两秒的状态轮询不会测速；手动按钮可再次刷新，五秒内重复请求返回缓存成功结果而不是 409。组级测速覆盖 inline proxies；响应直接合并到每个显示项，缺失项标记为超时，并在节点目录不变时由 router daemon 进程内缓存保留最近结果。provider history 仍只作为初始数据来源，且只合并经过名称、数量和字段白名单校验的 `delay`/`alive`，浏览器不能指定 provider、代理组、测试 URL 或 timeout。代理节点、组名和地区属于 LAN-visible operational metadata；API 不返回 server/port、订阅 URL、密码、UUID、controller secret、原始 history 或 Mihomo JSON。写操作期间控件禁用，状态失败时保留最近成功快照。门户品牌为「hyz things」，页面标题与 `index.html` 的 `<title>` 一致，不再使用“HYZ Router”标识。
 
 网络设置页签在未登录时只显示默认折叠的管理员登录摘要，按需展开登录表单；登录后提供代理模式与节点选择、设备显示名与代理策略、STA 扫描/手工切换、AP SSID/密码/国家码和 write-only Mihomo 订阅来源。AP/STA 面板默认折叠，按需展开；STA 或 AP 应用先在管理设置区显示内嵌风险确认 panel，不使用模态弹窗或页面遮罩。确认后先移除确认 panel 并折叠详情，等待浏览器完成渲染后才发送可能中断管理连接的请求。typed Wi-Fi 配置使用 PBKDF2 派生的 64-hex PSK和固定 renderer，不拼接 raw 配置。STA 只有在关联、DHCP metric-600 route 与同信道 AP readiness 都确认后才提交，失败恢复 committed generation；当前 renderer 对 2.4 GHz 使用 HT20，对受支持的非 DFS 5 GHz 同信道使用既有 VHT80 profile，并对 secondary channel、802.11ac、VHT width 与 center frequency 做精确 readiness 复核；诊断中可启动的 HT20 只用于隔离驱动状态问题，不作为生产性能降级。5 GHz 候选仍只有在 STA 关联、DHCP metric-600 route 与同信道 VHT80 AP readiness 都确认后才提交。AP 采用 prepare → apply → 重新连接 → confirm，两分钟未确认则恢复旧 AP，daemon 重启发现 pending 也恢复 committed 配置。订阅只接受 HTTPS 公网目标，关闭 redirect/环境代理，使用固定 `clash.meta` User-Agent 请求 YAML，连接前校验并 pin 全部 DNS 结果；响应受 4 MiB 上限约束，必须包含唯一顶层 `proxies`，其他 Clash 配置字段会被丢弃，只有经过严格限制的节点数组进入本地候选。Mihomo 候选验证和 live readiness 成功后才切 current generation。GET 只显示是否配置与通用状态，不返回来源、host、代次或节点数。
 
@@ -383,7 +386,7 @@ Host 与板端 parity 已建立：`hyz-contract`/`hyz-router`/`hyz-things` 各�
 - `hyz-contract`：21 个 wire 类型/校验/脱敏测试；
 - `hyz-router`：status Serde/秘密排除、partial degraded aggregation、network/proxy action order、rollback、unknown non-readiness、Tailscale 生命周期、OTA BCB 与 verify-before-commit；
 - `hyz-things`：real random-port Axum/security/fallback HTTP 测试；非默认 `e2e` feature 的 loopback-only Axum harness（bin `hyz-things-e2e`）：真实 HTTP/CSP/CSRF/Origin/管理员应用，状态、面板、Wi-Fi、订阅与 camera 通过 application ports/typed `PortalControlHandler` fake 注入，不构造生产 outbound adapter；部署工具 host 测试（`tools/test-deploy-app.sh`）；
-- Playwright Chromium 浏览器流程：总览/代理/网络设置页签导航、链路拓扑和关键指标、匿名状态与控制、bootstrap 强制改密、STA/AP 事务及内嵌非模态风险确认 panel、write-only 订阅、可访问性与窄屏无横向溢出；
+- Playwright Chromium 浏览器流程：首页应用入口与部署记录、总览/代理/网络设置页签导航、匿名摄像头观看与管理员画面设置、链路拓扑和关键指标、匿名状态与控制、bootstrap 强制改密、STA/AP 事务及内嵌非模态风险确认 panel、write-only 订阅、可访问性与窄屏无横向溢出；
 - Tailwind CSS 4 + daisyUI 5 `dracula` 默认主题的 locked npm 静态 CSS 生成（`npm run build:css` 输出被 gitignore 的生成 CSS），以及 deterministic bundle 的 CSP-compatible external bootstrap；
 - Yew formatting/state 与单一 WAN 流量口径；
 - deploy-app.sh 的 fake-adb 服务隔离与协议兼容矩阵测试。

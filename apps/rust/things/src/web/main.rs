@@ -68,10 +68,12 @@ const TAILSCALE_MODE_ENDPOINT: &str = "/api/v1/control/tailscale/mode";
 const TAILSCALE_LOGIN_ENDPOINT: &str = "/api/v1/control/tailscale/login";
 const TAILSCALE_LOGOUT_ENDPOINT: &str = "/api/v1/control/tailscale/logout";
 const CAMERA_STATUS_ENDPOINT: &str = "/api/v1/camera/status";
+const CAMERA_VIEWER_TOKEN_ENDPOINT: &str = "/api/v1/camera/viewer-token";
 const CAMERA_SESSION_CREATE_ENDPOINT: &str = "/api/v1/control/camera/session/create";
 const CAMERA_SESSION_CLOSE_ENDPOINT: &str = "/api/v1/control/camera/session/close";
 const CAMERA_PROFILE_UPDATE_ENDPOINT: &str = "/api/v1/control/camera/profile";
 const CAMERA_ROTATION_UPDATE_ENDPOINT: &str = "/api/v1/control/camera/rotation";
+const APPS_ENDPOINT: &str = "/api/v1/apps";
 const CAMERA_ICE_GATHER_TIMEOUT_MS: u32 = 10_000;
 const CAMERA_ICE_POLL_MS: u32 = 50;
 const POLL_DELAY_MS: u32 = 2_000;
@@ -83,6 +85,29 @@ const MISSING: &str = "—";
 struct AuthSessionDto {
     authenticated: bool,
     must_change: bool,
+}
+
+#[derive(Clone, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InstalledAppDto {
+    name: String,
+    binary: String,
+    init_script: String,
+    sha256: Option<String>,
+    protocol_versions: std::collections::BTreeMap<String, u32>,
+}
+
+#[derive(Clone, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AppsResponseDto {
+    apps: Vec<InstalledAppDto>,
+}
+
+#[derive(Clone, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CameraViewerTokenDto {
+    token: String,
+    expires_in_seconds: u64,
 }
 
 #[derive(serde::Deserialize)]
@@ -453,6 +478,8 @@ struct AppState {
     tailscale_peers: Option<TailscalePeerSnapshot>,
     tailscale_peers_error: Option<String>,
     tailscale_login_url: Option<String>,
+    apps: Option<Vec<InstalledAppDto>>,
+    apps_error: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -490,6 +517,7 @@ enum Action {
     SettingsMutationFinished(Result<String, String>),
     ScanFinished(Result<Vec<WifiScanDto>, String>),
     SettingsNotice(String),
+    AppsFinished(Result<Vec<InstalledAppDto>, String>),
 }
 
 impl Reducible for AppState {
@@ -707,6 +735,19 @@ impl Reducible for AppState {
                 ..(*self).clone()
             }
             .into(),
+            Action::AppsFinished(result) => match result {
+                Ok(apps) => Self {
+                    apps: Some(apps),
+                    apps_error: None,
+                    ..(*self).clone()
+                }
+                .into(),
+                Err(error) => Self {
+                    apps_error: Some(error),
+                    ..(*self).clone()
+                }
+                .into(),
+            },
         }
     }
 }
@@ -726,6 +767,39 @@ impl Tone {
             Self::Warn => "text-warning",
             Self::Bad => "text-error",
             Self::Neutral => "text-base-content/60",
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PortalView {
+    Home,
+    Router,
+    Camera,
+}
+
+impl PortalView {
+    const fn tab_id(self) -> &'static str {
+        match self {
+            Self::Home => "portal-home-tab",
+            Self::Router => "portal-router-tab",
+            Self::Camera => "portal-camera-tab",
+        }
+    }
+
+    const fn panel_id(self) -> &'static str {
+        match self {
+            Self::Home => "portal-home-panel",
+            Self::Router => "portal-router-panel",
+            Self::Camera => "portal-camera-panel",
+        }
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Home => "首页",
+            Self::Router => "路由器",
+            Self::Camera => "摄像头",
         }
     }
 }
@@ -761,7 +835,13 @@ impl WorkspaceView {
 
 #[derive(Properties, PartialEq)]
 struct CameraLiveViewProps {
-    csrf: String,
+    /// Panel bootstrap CSRF token, used only for administrator mutations
+    /// (profile/rotation) while an administrator session is present.
+    admin_csrf: String,
+    /// Whether an administrator session is currently authenticated without a
+    /// forced password change. Anonymous viewers must not use the (public)
+    /// panel CSRF as their session token; they get a short-lived viewer token.
+    is_admin: bool,
     stop_generation: u32,
 }
 
@@ -820,6 +900,24 @@ async fn close_camera_session(session_id: String, csrf: String) {
         "摄像头会话关闭",
     )
     .await;
+}
+
+async fn fetch_camera_viewer_token() -> Result<String, String> {
+    let response = Request::post(CAMERA_VIEWER_TOKEN_ENDPOINT)
+        .credentials(RequestCredentials::SameOrigin)
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .send()
+        .await
+        .map_err(|error| format!("无法获取观看凭证：{error}"))?;
+    if !response.ok() {
+        return Err(format!("观看凭证接口返回 HTTP {}", response.status()));
+    }
+    response
+        .json::<CameraViewerTokenDto>()
+        .await
+        .map(|dto| dto.token)
+        .map_err(|error| format!("观看凭证数据格式无效：{error}"))
 }
 
 fn take_camera_runtime(runtime: &CameraRuntime, video: &NodeRef) -> Option<(String, String)> {
@@ -921,6 +1019,34 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
         });
     }
 
+    let viewer_token = use_state(|| None::<String>);
+    let viewer_token_error = use_state(|| None::<String>);
+    {
+        let viewer_token = viewer_token.clone();
+        let viewer_token_error = viewer_token_error.clone();
+        use_effect_with(props.is_admin, move |is_admin| {
+            viewer_token.set(None);
+            viewer_token_error.set(None);
+            if !is_admin {
+                spawn_local(async move {
+                    match fetch_camera_viewer_token().await {
+                        Ok(token) => viewer_token.set(Some(token)),
+                        Err(error) => viewer_token_error.set(Some(error)),
+                    }
+                });
+            }
+            || ()
+        });
+    }
+
+    let session_token = if props.is_admin {
+        props.admin_csrf.clone()
+    } else {
+        viewer_token.as_deref().unwrap_or("").to_owned()
+    };
+    let can_view = !session_token.is_empty();
+    let can_control = props.is_admin && !props.admin_csrf.is_empty();
+
     {
         let runtime = runtime.clone();
         let video = video.clone();
@@ -1010,7 +1136,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     }
 
     let start = {
-        let csrf = props.csrf.clone();
+        let csrf = session_token.clone();
         let video = video.clone();
         let phase = phase.clone();
         let notice = notice.clone();
@@ -1190,7 +1316,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     };
 
     let rotate = {
-        let csrf = props.csrf.clone();
+        let csrf = props.admin_csrf.clone();
         let status = status.clone();
         let notice = notice.clone();
         let phase = phase.clone();
@@ -1252,7 +1378,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     };
 
     let set_profile = {
-        let csrf = props.csrf.clone();
+        let csrf = props.admin_csrf.clone();
         let notice = notice.clone();
         let phase = phase.clone();
         let runtime = runtime.clone();
@@ -1333,7 +1459,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                         if !presets.is_empty() {
                             <label class={FIELD}>
                                 <span class={FIELD_LABEL}>{"画面分辨率 / 码率（切换会自动停止并重新打开直播）"}</span>
-                                <select class={SELECT} onchange={set_profile} disabled={!camera_available || props.csrf.is_empty()} aria-label="画面分辨率与码率">
+                                <select class={SELECT} onchange={set_profile} disabled={!camera_available || !can_control} aria-label="画面分辨率与码率">
                                     {for presets.iter().map(|preset| {
                                         let selected = camera.profile.width == preset.width()
                                             && camera.profile.height == preset.height()
@@ -1353,10 +1479,13 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                     } else {
                         <p class={HELP_TEXT} role="status">{"正在读取摄像头状态…"}</p>
                     }
-                    <p class={HELP_TEXT}>{"视频不会自动启动。点击播放后，浏览器仅接收设备视频轨道；离开页面或退出登录会立即停止会话。"}</p>
+                    if let Some(error) = viewer_token_error.as_ref() {
+                        <p class="text-xs text-error" role="status">{format!("观看凭证获取失败：{error}")}</p>
+                    }
+                    <p class={HELP_TEXT}>{"视频不会自动启动。点击播放后，浏览器仅接收设备视频轨道；离开页面会立即停止会话。画面设置需要管理员登录。"}</p>
                     <div class={BUTTON_ROW}>
                         if *phase == CameraViewPhase::Idle {
-                            <button class={BUTTON_PRIMARY} type="button" onclick={start_button} disabled={!camera_available || props.csrf.is_empty()}>{"播放直播"}</button>
+                            <button class={BUTTON_PRIMARY} type="button" onclick={start_button} disabled={!camera_available || !can_view}>{"播放直播"}</button>
                         } else {
                             <button class={BUTTON_ERROR} type="button" onclick={stop}>{"停止直播"}</button>
                         }
@@ -1367,7 +1496,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                 </div>
                 <div ref={stage} class={CAMERA_STAGE}>
                     <video ref={video} class={CAMERA_VIDEO} autoplay=true playsinline=true muted=true aria-label="摄像头实时画面"></video>
-                    if *phase == CameraViewPhase::Playing {
+                    if *phase == CameraViewPhase::Playing && can_control {
                         <button class={CAMERA_ROTATE_BUTTON} type="button" onclick={rotate} aria-label="旋转画面">
                             {"旋转画面"}
                         </button>
@@ -1384,12 +1513,183 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     }
 }
 
+#[function_component(CameraAvailability)]
+fn camera_availability() -> Html {
+    let status = use_state(|| None::<CameraStatus>);
+    let presets = use_state(Vec::<CameraStreamPreset>::new);
+    let status_error = use_state(|| None::<String>);
+    {
+        let status = status.clone();
+        let presets = presets.clone();
+        let status_error = status_error.clone();
+        use_effect_with((), move |_| {
+            let cancelled = Rc::new(Cell::new(false));
+            let task_cancelled = cancelled.clone();
+            spawn_local(async move {
+                while !task_cancelled.get() {
+                    refresh_camera_status(status.clone(), presets.clone(), status_error.clone())
+                        .await;
+                    TimeoutFuture::new(POLL_DELAY_MS).await;
+                }
+            });
+            move || cancelled.set(true)
+        });
+    }
+    match (status.as_ref(), status_error.as_ref()) {
+        (Some(camera), _) if camera.available => html! {
+            <span class={classes!(STATUS_BADGE, "text-success")}><span class={STATUS_DOT_SMALL} aria-hidden="true"></span>{"可用"}</span>
+        },
+        (Some(_), _) => html! {
+            <span class={classes!(STATUS_BADGE, "text-error")}><span class={STATUS_DOT_SMALL} aria-hidden="true"></span>{"不可用"}</span>
+        },
+        (None, Some(_)) => html! {
+            <span class={STATUS_BADGE}><span class={STATUS_DOT_SMALL} aria-hidden="true"></span>{"状态未知"}</span>
+        },
+        (None, None) => html! {
+            <span class={STATUS_BADGE}><span class={STATUS_DOT_SMALL} aria-hidden="true"></span>{"读取中"}</span>
+        },
+    }
+}
+
+fn render_deployed_apps(state: &UseReducerHandle<AppState>) -> Html {
+    let body = match (&state.apps, &state.apps_error) {
+        (Some(apps), _) if !apps.is_empty() => html! {
+            <ul class="grid gap-2">
+                {for apps.iter().map(|app| {
+                    let sha = app.sha256.as_deref().map(|sha| {
+                        let prefix = &sha[..sha.len().min(12)];
+                        format!("已部署 · sha256:{prefix}")
+                    }).unwrap_or_else(|| "固件内置".to_owned());
+                    let versions = if app.protocol_versions.is_empty() {
+                        "无协议记录".to_owned()
+                    } else {
+                        app.protocol_versions
+                            .iter()
+                            .map(|(protocol, version)| format!("{protocol}=v{version}"))
+                            .collect::<Vec<_>>()
+                            .join(" · ")
+                    };
+                    html! {
+                        <li class="grid min-w-0 gap-2 rounded-box border border-base-content/10 p-3 sm:grid-cols-[minmax(0,1fr)_auto]" key={app.name.clone()}>
+                            <div class="min-w-0">
+                                <strong class="block truncate">{&app.name}</strong>
+                                <span class={HELP_TEXT}>{format!("{} · {}", sha, versions)}</span>
+                            </div>
+                        </li>
+                    }
+                })}
+            </ul>
+        },
+        (Some(_), _) => html! {
+            <div class={SETTINGS_EMPTY} role="status">{"固件内置，暂无热推送部署记录"}</div>
+        },
+        (None, Some(error)) => html! {
+            <p class={HELP_TEXT} role="status">{format!("部署记录读取失败：{error}")}</p>
+        },
+        (None, None) => html! {
+            <p class={HELP_TEXT} role="status">{"正在读取部署记录…"}</p>
+        },
+    };
+    html! {
+        <div class="mt-4 grid gap-3" role="region" aria-label="已部署应用">
+            <div class={CONTROL_TITLE}>
+                <h3 class={CONTROL_HEADING}>{"已部署应用"}</h3>
+                <span class={CONTROL_META}>{"热推送记录（registry.json）"}</span>
+            </div>
+            {body}
+        </div>
+    }
+}
+
+fn render_home(
+    state: &UseReducerHandle<AppState>,
+    select_router: Callback<MouseEvent>,
+    select_camera: Callback<MouseEvent>,
+    select_router_settings: Callback<MouseEvent>,
+) -> Html {
+    let router_status = state
+        .snapshot
+        .as_ref()
+        .map(|snapshot| {
+            let (label, tone) = component_card_status(&snapshot.router);
+            html! { <span class={classes!(STATUS_BADGE, tone.class())}><span class={STATUS_DOT_SMALL} aria-hidden="true"></span>{label}</span> }
+        })
+        .unwrap_or_default();
+    html! {
+        <>
+            <section class={SECTION} aria-labelledby="apps-title">
+                <div class={SECTION_HEAD}>
+                    <div><p class={EYEBROW}>{"APPS"}</p><h2 id="apps-title" class={SECTION_TITLE}>{"应用"}</h2></div>
+                    <span class={SECTION_META}>{"门户聚合各独立应用；热推送不重启路由器"}</span>
+                </div>
+                <div class={APP_GRID}>
+                    <article class={APP_CARD} aria-labelledby="app-router-title">
+                        <div class={CONTROL_TITLE}>
+                            <div>
+                                <p class={EYEBROW}>{"ROUTER"}</p>
+                                <h3 id="app-router-title" class={CONTROL_HEADING}>{"路由器管理"}</h3>
+                            </div>
+                            {router_status}
+                        </div>
+                        <p class={HELP_TEXT}>{"无头路由核心的管理界面：网络拓扑、代理、Tailscale、无线与设备策略。"}</p>
+                        <div class={BUTTON_ROW}><button class={BUTTON_PRIMARY} type="button" onclick={select_router}>{"进入路由器"}</button></div>
+                    </article>
+                    <article class={APP_CARD} aria-labelledby="app-camera-title">
+                        <div class={CONTROL_TITLE}>
+                            <div>
+                                <p class={EYEBROW}>{"CAMERA"}</p>
+                                <h3 id="app-camera-title" class={CONTROL_HEADING}>{"摄像头直播"}</h3>
+                            </div>
+                            <CameraAvailability />
+                        </div>
+                        <p class={HELP_TEXT}>{"免登录实时查看摄像头画面；分辨率与旋转设置需要管理员登录。"}</p>
+                        <div class={BUTTON_ROW}><button class={BUTTON_PRIMARY} type="button" onclick={select_camera}>{"进入直播"}</button></div>
+                    </article>
+                    <article class={APP_CARD} aria-labelledby="app-portal-title">
+                        <div class={CONTROL_TITLE}>
+                            <div>
+                                <p class={EYEBROW}>{"THINGS"}</p>
+                                <h3 id="app-portal-title" class={CONTROL_HEADING}>{"门户与设置"}</h3>
+                            </div>
+                            <span class={STATUS_BADGE}><span class={STATUS_DOT_SMALL} aria-hidden="true"></span>{"本门户"}</span>
+                        </div>
+                        <p class={HELP_TEXT}>{"hyz things 门户自身：管理员登录、订阅与设备策略等写操作入口。"}</p>
+                        <div class={BUTTON_ROW}><button class={BUTTON} type="button" onclick={select_router_settings}>{"前往设置"}</button></div>
+                    </article>
+                </div>
+                {render_deployed_apps(state)}
+            </section>
+            <div class={VIEW_HEADING}>
+                <div><p class={EYEBROW}>{"HEALTH"}</p><h2 class={SECTION_TITLE}>{"运行概览"}</h2></div>
+                <span class={SECTION_META}>{"最近一次成功快照"}</span>
+            </div>
+            if let Some(snapshot) = &state.snapshot {
+                {render_dashboard(snapshot)}
+                {render_issues(snapshot)}
+            } else if state.loading {
+                <section class={LOADING_GRID} aria-labelledby="home-loading-title" aria-busy="true">
+                    <h2 id="home-loading-title" class="sr-only">{"正在加载状态"}</h2>
+                    {for (0..3).map(|_| html! { <div class={SKELETON} aria-hidden="true"></div> })}
+                </section>
+            } else {
+                <section class={EMPTY_STATE} role="alert" aria-labelledby="home-empty-title">
+                    <span class={EMPTY_ICON} aria-hidden="true">{"!"}</span>
+                    <h2 id="home-empty-title" class={EMPTY_TITLE}>{"暂时无法读取状态"}</h2>
+                    <p class={EMPTY_COPY}>{"面板会自动重试，无需刷新页面。"}</p>
+                </section>
+            }
+        </>
+    }
+}
+
 #[function_component(App)]
 fn app() -> Html {
     let state = use_reducer(AppState::default);
     let brightness = use_state(|| 128u16);
     let delay_refresh_started = use_state(|| false);
-    let active_view = use_state(|| WorkspaceView::Overview);
+    let portal_view = use_state(|| PortalView::Home);
+    let router_view = use_state(|| WorkspaceView::Overview);
+    let camera_stop_generation = use_state(|| 0u32);
 
     {
         let state = state.clone();
@@ -1415,6 +1715,17 @@ fn app() -> Html {
                 }
             });
             move || cancelled.set(true)
+        });
+    }
+
+    {
+        let state = state.clone();
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                let apps = fetch_json::<AppsResponseDto>(APPS_ENDPOINT, "已部署应用").await;
+                state.dispatch(Action::AppsFinished(apps.map(|response| response.apps)));
+            });
+            || ()
         });
     }
 
@@ -1457,15 +1768,45 @@ fn app() -> Html {
 
     let (overall_text, overall_tone) = overall_status(&state);
     let updated = state.last_update.as_deref().unwrap_or("尚未更新");
+    let admin_csrf = state
+        .panel
+        .as_ref()
+        .map(|panel| panel.csrf_token.clone())
+        .unwrap_or_default();
+    let is_admin = state
+        .session
+        .as_ref()
+        .is_some_and(|session| session.authenticated && !session.must_change);
+    let select_home = {
+        let portal_view = portal_view.clone();
+        Callback::from(move |_| portal_view.set(PortalView::Home))
+    };
+    let select_router = {
+        let portal_view = portal_view.clone();
+        Callback::from(move |_| portal_view.set(PortalView::Router))
+    };
+    let select_camera = {
+        let portal_view = portal_view.clone();
+        Callback::from(move |_| portal_view.set(PortalView::Camera))
+    };
     let select_overview = {
-        let active_view = active_view.clone();
-        Callback::from(move |_| active_view.set(WorkspaceView::Overview))
+        let router_view = router_view.clone();
+        Callback::from(move |_| router_view.set(WorkspaceView::Overview))
     };
     let select_network = {
-        let active_view = active_view.clone();
-        Callback::from(move |_| active_view.set(WorkspaceView::Network))
+        let router_view = router_view.clone();
+        Callback::from(move |_| router_view.set(WorkspaceView::Network))
     };
-    let active = *active_view;
+    let select_router_settings = {
+        let portal_view = portal_view.clone();
+        let router_view = router_view.clone();
+        Callback::from(move |_| {
+            router_view.set(WorkspaceView::Network);
+            portal_view.set(PortalView::Router);
+        })
+    };
+    let portal = *portal_view;
+    let workspace = *router_view;
 
     html! {
         <main class={PAGE}>
@@ -1475,7 +1816,7 @@ fn app() -> Html {
                     <div>
                         <p class={EYEBROW}>{"LOCAL CONTROL PLANE"}</p>
                         <h1 class={PAGE_TITLE}>{"hyz things"}</h1>
-                        <p class={SUBTITLE}>{"单设备网络、代理与无线管理"}</p>
+                        <p class={SUBTITLE}>{"个人门户 · 设备与应用管理"}</p>
                     </div>
                 </div>
                 <div class={classes!(OVERALL, overall_tone.class())} role="status" aria-live="polite" aria-atomic="true">
@@ -1487,40 +1828,57 @@ fn app() -> Html {
                 </div>
             </header>
             {render_notice(&state)}
-            <nav class={WORKSPACE_TABS} aria-label="管理视图">
-                <button id={WorkspaceView::Overview.tab_id()} class={classes!(WORKSPACE_TAB, (active == WorkspaceView::Overview).then_some(WORKSPACE_TAB_ACTIVE))} type="button" aria-pressed={(active == WorkspaceView::Overview).to_string()} aria-controls={WorkspaceView::Overview.panel_id()} onclick={select_overview}>{WorkspaceView::Overview.label()}</button>
-                <button id={WorkspaceView::Network.tab_id()} class={classes!(WORKSPACE_TAB, (active == WorkspaceView::Network).then_some(WORKSPACE_TAB_ACTIVE))} type="button" aria-pressed={(active == WorkspaceView::Network).to_string()} aria-controls={WorkspaceView::Network.panel_id()} onclick={select_network}>{WorkspaceView::Network.label()}</button>
+            <nav class={PORTAL_TABS} aria-label="门户视图">
+                <button id={PortalView::Home.tab_id()} class={classes!(PORTAL_TAB, (portal == PortalView::Home).then_some(PORTAL_TAB_ACTIVE))} type="button" aria-pressed={(portal == PortalView::Home).to_string()} onclick={select_home}>{PortalView::Home.label()}</button>
+                <button id={PortalView::Router.tab_id()} class={classes!(PORTAL_TAB, (portal == PortalView::Router).then_some(PORTAL_TAB_ACTIVE))} type="button" aria-pressed={(portal == PortalView::Router).to_string()} onclick={select_router.clone()}>{PortalView::Router.label()}</button>
+                <button id={PortalView::Camera.tab_id()} class={classes!(PORTAL_TAB, (portal == PortalView::Camera).then_some(PORTAL_TAB_ACTIVE))} type="button" aria-pressed={(portal == PortalView::Camera).to_string()} onclick={select_camera.clone()}>{PortalView::Camera.label()}</button>
             </nav>
-            <section id={WorkspaceView::Overview.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={WorkspaceView::Overview.tab_id()} hidden={active != WorkspaceView::Overview}>
-                if let Some(snapshot) = &state.snapshot {
-                    {render_topology(snapshot)}
-                    {render_kpis(snapshot)}
-                    {render_issues(snapshot)}
-                    <div class={VIEW_HEADING}>
-                        <div><p class={EYEBROW}>{"DETAILS"}</p><h2 class={SECTION_TITLE}>{"运行详情"}</h2></div>
-                        <span class={SECTION_META}>{"保留最近一次成功快照"}</span>
-                    </div>
-                    {render_dashboard(snapshot)}
-                    if let Some(panel) = &state.panel {
-                        {render_proxy_groups_read_only(&panel.panel.proxy_groups)}
-                    }
-                } else if state.loading {
-                    <section class={LOADING_GRID} aria-labelledby="loading-title" aria-busy="true">
-                        <h2 id="loading-title" class="sr-only">{"正在加载路由器状态"}</h2>
-                        {for (0..3).map(|_| html! { <div class={SKELETON} aria-hidden="true"></div> })}
+            if portal == PortalView::Home {
+                <section id={PortalView::Home.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={PortalView::Home.tab_id()}>
+                    {render_home(&state, select_router.clone(), select_camera.clone(), select_router_settings.clone())}
+                </section>
+            } else if portal == PortalView::Router {
+                <section id={PortalView::Router.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={PortalView::Router.tab_id()}>
+                    <nav class={WORKSPACE_TABS} aria-label="路由器视图">
+                        <button id={WorkspaceView::Overview.tab_id()} class={classes!(WORKSPACE_TAB, (workspace == WorkspaceView::Overview).then_some(WORKSPACE_TAB_ACTIVE))} type="button" aria-pressed={(workspace == WorkspaceView::Overview).to_string()} aria-controls={WorkspaceView::Overview.panel_id()} onclick={select_overview}>{WorkspaceView::Overview.label()}</button>
+                        <button id={WorkspaceView::Network.tab_id()} class={classes!(WORKSPACE_TAB, (workspace == WorkspaceView::Network).then_some(WORKSPACE_TAB_ACTIVE))} type="button" aria-pressed={(workspace == WorkspaceView::Network).to_string()} aria-controls={WorkspaceView::Network.panel_id()} onclick={select_network}>{WorkspaceView::Network.label()}</button>
+                    </nav>
+                    <section id={WorkspaceView::Overview.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={WorkspaceView::Overview.tab_id()} hidden={workspace != WorkspaceView::Overview}>
+                        if let Some(snapshot) = &state.snapshot {
+                            {render_topology(snapshot)}
+                            {render_kpis(snapshot)}
+                            {render_issues(snapshot)}
+                            <div class={VIEW_HEADING}>
+                                <div><p class={EYEBROW}>{"DETAILS"}</p><h2 class={SECTION_TITLE}>{"运行详情"}</h2></div>
+                                <span class={SECTION_META}>{"保留最近一次成功快照"}</span>
+                            </div>
+                            {render_dashboard(snapshot)}
+                            if let Some(panel) = &state.panel {
+                                {render_proxy_groups_read_only(&panel.panel.proxy_groups)}
+                            }
+                        } else if state.loading {
+                            <section class={LOADING_GRID} aria-labelledby="loading-title" aria-busy="true">
+                                <h2 id="loading-title" class="sr-only">{"正在加载路由器状态"}</h2>
+                                {for (0..3).map(|_| html! { <div class={SKELETON} aria-hidden="true"></div> })}
+                            </section>
+                        } else {
+                            <section class={EMPTY_STATE} role="alert" aria-labelledby="empty-title">
+                                <span class={EMPTY_ICON} aria-hidden="true">{"!"}</span>
+                                <h2 id="empty-title" class={EMPTY_TITLE}>{"暂时无法读取状态"}</h2>
+                                <p class={EMPTY_COPY}>{"面板会自动重试，无需刷新页面。"}</p>
+                            </section>
+                        }
+                        {render_display_control(&state, brightness.clone())}
                     </section>
-                } else {
-                    <section class={EMPTY_STATE} role="alert" aria-labelledby="empty-title">
-                        <span class={EMPTY_ICON} aria-hidden="true">{"!"}</span>
-                        <h2 id="empty-title" class={EMPTY_TITLE}>{"暂时无法读取状态"}</h2>
-                        <p class={EMPTY_COPY}>{"面板会自动重试，无需刷新页面。"}</p>
+                    <section id={WorkspaceView::Network.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={WorkspaceView::Network.tab_id()} hidden={workspace != WorkspaceView::Network}>
+                        <Settings state={state.clone()} camera_stop_generation={camera_stop_generation.clone()} />
                     </section>
-                }
-                {render_display_control(&state, brightness.clone())}
-            </section>
-            <section id={WorkspaceView::Network.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={WorkspaceView::Network.tab_id()} hidden={active != WorkspaceView::Network}>
-                <Settings state={state.clone()} />
-            </section>
+                </section>
+            } else {
+                <section id={PortalView::Camera.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={PortalView::Camera.tab_id()}>
+                    <CameraLiveView admin_csrf={admin_csrf} is_admin={is_admin} stop_generation={*camera_stop_generation} />
+                </section>
+            }
             <footer class={FOOTER}>{"数据约每 2 秒自动刷新 · 写操作仅接受同源令牌保护的类型化请求"}</footer>
         </main>
     }
@@ -1845,6 +2203,7 @@ fn reveal_and_focus_after_render(reveal_node: NodeRef, focus_node: NodeRef) {
 #[derive(Properties, PartialEq)]
 struct SettingsProps {
     state: UseReducerHandle<AppState>,
+    camera_stop_generation: UseStateHandle<u32>,
 }
 
 struct ApSettingsRefs<'a> {
@@ -1881,11 +2240,11 @@ fn settings(props: &SettingsProps) -> Html {
     let confirmation_cancel_button = use_node_ref();
     let subscription_url = use_node_ref();
     let login_expanded = use_state(|| false);
-    let camera_stop_generation = use_state(|| 0u32);
     let sta_expanded = use_state(|| false);
     let ap_expanded = use_state(|| false);
     let network_confirmation_open = use_state(|| false);
     let network_apply_intent = use_mut_ref(|| None::<NetworkApplyIntent>);
+    let camera_stop_generation = props.camera_stop_generation.clone();
 
     {
         let network_confirmation_panel = network_confirmation_panel.clone();
@@ -2287,7 +2646,6 @@ fn settings(props: &SettingsProps) -> Html {
                 </div>
             } else {
                 <>
-                    <CameraLiveView csrf={csrf.clone()} stop_generation={*camera_stop_generation} />
                     {render_proxy_control(state)}
                     {render_tailscale_control(state, &csrf)}
                     <div class={SETTINGS_GRID}>

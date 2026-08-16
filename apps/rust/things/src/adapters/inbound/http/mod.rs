@@ -2,8 +2,8 @@ use std::{
     collections::HashMap,
     io::{self, Cursor, Read},
     net::{Ipv4Addr, SocketAddr},
-    sync::Arc,
-    time::Duration,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
 use axum::{
@@ -24,7 +24,7 @@ use crate::{
     application::{
         admin::{AdminApplication, AdminError},
         camera::{CameraApplication, CameraError},
-        ports::PortalControlHandler,
+        ports::{InstalledAppsPort, PortalControlHandler},
         status::PortalStatus,
     },
     domain::{
@@ -54,6 +54,9 @@ pub const DEFAULT_BIND_ATTEMPTS: usize = 15;
 pub const ADMIN_SESSION_COOKIE: &str = "hyz_admin_session";
 const MAX_HTTP_JSON_BODY_BYTES: usize = 4 * 1024;
 const MAX_CAMERA_HTTP_JSON_BODY_BYTES: usize = CAMERA_MAX_SDP_BYTES + 4 * 1024;
+const VIEWER_TOKEN_TTL: Duration = Duration::from_secs(15 * 60);
+const VIEWER_TOKEN_TTL_SECONDS: u64 = 15 * 60;
+const MAX_VIEWER_TOKENS: usize = 128;
 
 #[derive(Clone)]
 struct AppState {
@@ -66,6 +69,11 @@ struct AppState {
     allowed_origin: Arc<str>,
     allow_tailscale_self_stop: bool,
     assets: AssetStore,
+    installed_apps: Option<Arc<dyn InstalledAppsPort>>,
+    /// Short-lived anonymous camera viewer capabilities. Each token is a
+    /// 256-bit secret issued to the browser and remembered here so a leaked
+    /// token expires even if its owner never closes their sessions.
+    viewer_tokens: Arc<Mutex<HashMap<String, Instant>>>,
 }
 
 #[derive(Clone)]
@@ -122,6 +130,7 @@ pub fn app(read_status: PortalStatus) -> Router {
             csrf_token: String::new(),
             allowed_origin: format!("http://{LAN_ADDRESS}:{DEFAULT_HTTP_PORT}"),
             allow_tailscale_self_stop: true,
+            installed_apps: None,
         },
         assets,
     )
@@ -144,6 +153,7 @@ pub fn app_with_control(
             csrf_token,
             allowed_origin: format!("http://{LAN_ADDRESS}:{port}"),
             allow_tailscale_self_stop: true,
+            installed_apps: None,
         },
         assets,
     )
@@ -167,6 +177,7 @@ pub fn app_with_admin_control(
             csrf_token,
             allowed_origin: format!("http://{LAN_ADDRESS}:{port}"),
             allow_tailscale_self_stop: true,
+            installed_apps: None,
         },
         assets,
     )
@@ -179,6 +190,7 @@ pub fn app_with_admin_camera_control(
     camera: Arc<CameraApplication>,
     csrf_token: String,
     port: u16,
+    installed_apps: Option<Arc<dyn InstalledAppsPort>>,
 ) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
     app_with_assets(
@@ -191,6 +203,7 @@ pub fn app_with_admin_camera_control(
             csrf_token,
             allowed_origin: format!("http://{LAN_ADDRESS}:{port}"),
             allow_tailscale_self_stop: true,
+            installed_apps,
         },
         assets,
     )
@@ -215,6 +228,7 @@ pub fn app_with_admin_control_at_address(
             csrf_token,
             allowed_origin: format!("http://{address}:{port}"),
             allow_tailscale_self_stop: false,
+            installed_apps: None,
         },
         assets,
     )
@@ -240,12 +254,17 @@ pub fn app_with_admin_camera_control_at_address(
             csrf_token,
             allowed_origin: format!("http://{address}:{port}"),
             allow_tailscale_self_stop: false,
+            installed_apps: None,
         },
         assets,
     )
 }
 
 #[cfg(feature = "e2e")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one-shot e2e composition root wiring the fixed adapter set"
+)]
 pub fn app_with_loopback_runtime_frontend(
     read_status: PortalStatus,
     control: Arc<dyn PortalControlHandler>,
@@ -254,6 +273,7 @@ pub fn app_with_loopback_runtime_frontend(
     csrf_token: String,
     exact_loopback_origin: String,
     frontend_tar: &[u8],
+    installed_apps: Option<Arc<dyn InstalledAppsPort>>,
 ) -> io::Result<Router> {
     validate_exact_loopback_origin(&exact_loopback_origin)?;
     let assets = AssetStore::from_tar(frontend_tar)?;
@@ -267,6 +287,7 @@ pub fn app_with_loopback_runtime_frontend(
             csrf_token,
             allowed_origin: exact_loopback_origin,
             allow_tailscale_self_stop: true,
+            installed_apps,
         },
         assets,
     ))
@@ -307,6 +328,7 @@ struct AppConfiguration {
     csrf_token: String,
     allowed_origin: String,
     allow_tailscale_self_stop: bool,
+    installed_apps: Option<Arc<dyn InstalledAppsPort>>,
 }
 
 fn app_with_assets(
@@ -322,6 +344,7 @@ fn app_with_assets(
         csrf_token,
         allowed_origin,
         allow_tailscale_self_stop,
+        installed_apps,
     } = configuration;
     Router::new()
         .route("/api/v1/health", on(MethodFilter::GET, health))
@@ -334,9 +357,14 @@ fn app_with_assets(
             on(MethodFilter::POST, admin_password),
         )
         .route("/api/v1/auth/session", on(MethodFilter::GET, admin_session))
+        .route("/api/v1/apps", on(MethodFilter::GET, apps_list))
         .route(
             "/api/v1/camera/status",
             on(MethodFilter::GET, camera_status),
+        )
+        .route(
+            "/api/v1/camera/viewer-token",
+            on(MethodFilter::POST, camera_viewer_token),
         )
         .route(
             "/api/v1/control/camera/session/create",
@@ -465,6 +493,8 @@ fn app_with_assets(
             allowed_origin: Arc::from(allowed_origin),
             allow_tailscale_self_stop,
             assets,
+            installed_apps,
+            viewer_tokens: Arc::new(Mutex::new(HashMap::new())),
         })
 }
 
@@ -725,10 +755,28 @@ struct CameraSessionCloseRequest {
     session_id: String,
 }
 
-async fn camera_status(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
-        return response;
+#[derive(Serialize)]
+struct CameraViewerTokenResponse {
+    token: String,
+    expires_in_seconds: u64,
+}
+
+#[derive(Serialize)]
+struct AppsResponse {
+    apps: Vec<crate::domain::apps::InstalledApp>,
+}
+
+async fn apps_list(State(state): State<AppState>) -> Response {
+    let Some(installed_apps) = state.installed_apps.clone() else {
+        return Json(AppsResponse { apps: Vec::new() }).into_response();
+    };
+    match installed_apps.installed_apps() {
+        Ok(apps) => Json(AppsResponse { apps }).into_response(),
+        Err(_) => service_unavailable_json(),
     }
+}
+
+async fn camera_status(State(state): State<AppState>) -> Response {
     let (Some(camera), Some(scope)) = (state.camera.clone(), state.camera_scope) else {
         return service_unavailable_json();
     };
@@ -742,13 +790,43 @@ async fn camera_status(State(state): State<AppState>, headers: HeaderMap) -> Res
     }
 }
 
+async fn camera_viewer_token(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if !authorize_json_origin(&state, &headers) {
+        return forbidden_json();
+    }
+    let mut bytes = [0u8; 32];
+    if getrandom::fill(&mut bytes).is_err() {
+        return service_unavailable_json();
+    }
+    let token = bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let mut tokens = match state.viewer_tokens.lock() {
+        Ok(tokens) => tokens,
+        Err(_) => return service_unavailable_json(),
+    };
+    let now = Instant::now();
+    tokens.retain(|_, expiry| *expiry > now);
+    if tokens.len() >= MAX_VIEWER_TOKENS {
+        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    }
+    tokens.insert(token.clone(), now + VIEWER_TOKEN_TTL);
+    drop(tokens);
+    Json(CameraViewerTokenResponse {
+        token,
+        expires_in_seconds: VIEWER_TOKEN_TTL_SECONDS,
+    })
+    .into_response()
+}
+
 async fn camera_session_create(
     State(state): State<AppState>,
     headers: HeaderMap,
     payload: Result<Json<CameraSessionCreateRequest>, JsonRejection>,
 ) -> Response {
-    let (token, _) = match authorize_sensitive_control_admin(&state, &headers).await {
-        Ok(result) => result,
+    let token = match authorize_camera_viewer(&state, &headers).await {
+        Ok(token) => token,
         Err(response) => return response,
     };
     let Ok(Json(request)) = payload else {
@@ -777,8 +855,8 @@ async fn camera_session_close(
     headers: HeaderMap,
     payload: Result<Json<CameraSessionCloseRequest>, JsonRejection>,
 ) -> Response {
-    let (token, _) = match authorize_sensitive_control_admin(&state, &headers).await {
-        Ok(result) => result,
+    let token = match authorize_camera_viewer(&state, &headers).await {
+        Ok(token) => token,
         Err(response) => return response,
     };
     let Ok(Json(request)) = payload else {
@@ -838,6 +916,43 @@ async fn camera_rotation_update(
 
 fn camera_session_owner(token: &SecretString) -> [u8; 32] {
     Sha256::digest(token.expose().as_bytes()).into()
+}
+
+/// Camera viewing accepts either an administrator session or a short-lived
+/// anonymous viewer token; either way the presented token becomes the owner
+/// identity for the created sessions, so viewers can only close what they
+/// opened. Profile and rotation mutations stay administrator-only.
+async fn authorize_camera_viewer(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<SecretString, Response> {
+    if authorize_same_origin_csrf(state, headers) {
+        if let Ok((token, _)) = require_admin(state, headers, AdminRequirement::Normal).await {
+            return Ok(token);
+        }
+    }
+    if !authorize_json_origin(state, headers) {
+        return Err(forbidden_json());
+    }
+    let token = headers
+        .get("x-hyz-csrf")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    if token.len() != 64 || !token.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        // 非 viewer 令牌格式（或管理员 CSRF 而无 session）：认证不足，不是
+        // origin/CSRF 违规，按 401 处理。
+        return Err(authentication_error_json(StatusCode::UNAUTHORIZED));
+    }
+    let mut tokens = match state.viewer_tokens.lock() {
+        Ok(tokens) => tokens,
+        Err(_) => return Err(authentication_error_json(StatusCode::SERVICE_UNAVAILABLE)),
+    };
+    let now = Instant::now();
+    if !matches!(tokens.get(token), Some(expiry) if *expiry > now) {
+        tokens.remove(token);
+        return Err(authentication_error_json(StatusCode::UNAUTHORIZED));
+    }
+    Ok(SecretString::new(token.to_owned()))
 }
 
 async fn close_owned_camera_session(state: &AppState, token: &SecretString) {
@@ -1785,6 +1900,7 @@ fn is_post_path(path: &str) -> bool {
         "/api/v1/auth/login"
             | "/api/v1/auth/logout"
             | "/api/v1/auth/password"
+            | "/api/v1/camera/viewer-token"
             | "/api/v1/control/camera/session/create"
             | "/api/v1/control/camera/session/close"
             | "/api/v1/control/camera/profile"
@@ -1873,12 +1989,16 @@ mod tests {
             .split_once("async fn close_all_camera_sessions(")
             .expect("camera handler boundary")
             .0;
-        assert!(handlers.contains("authorize_sensitive_read(&state, &headers).await"));
+        // 状态读取对匿名开放（与 /api/v1/status 一致）；会话创建/关闭走
+        // 管理员或短时 viewer 令牌；profile/rotation 仍是管理员专属。
+        assert!(!handlers.contains("authorize_sensitive_read(&state, &headers).await"));
+        assert!(handlers.contains("authorize_camera_viewer(&state, &headers).await"));
+        assert!(handlers.contains("authorize_sensitive_control_admin(&state, &headers).await"));
         assert_eq!(
             handlers
                 .matches("authorize_sensitive_control_admin(&state, &headers).await")
                 .count(),
-            4
+            2
         );
         assert!(handlers.contains("create_owned_session(owner, scope, request.offer_sdp)"));
         assert!(handlers.contains("close_owned_session(owner, &request.session_id)"));
@@ -2057,6 +2177,7 @@ mod tests {
         assert!(is_post_path("/api/v1/auth/login"));
         assert!(is_post_path("/api/v1/auth/logout"));
         assert!(is_post_path("/api/v1/auth/password"));
+        assert!(is_post_path("/api/v1/camera/viewer-token"));
         assert!(is_post_path("/api/v1/control/camera/session/create"));
         assert!(is_post_path("/api/v1/control/camera/session/close"));
         assert!(is_post_path("/api/v1/control/camera/rotation"));

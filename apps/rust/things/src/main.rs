@@ -7,6 +7,7 @@ use hyz_things::{
         outbound::{
             admin::AdminFileAdapter,
             camera::CameraUnixAdapter,
+            registry::RegistryAdapter,
             router::RouterControlClient,
             tailscale::{fetch_tailscale_status, PortalListenerApp, TailscaleListenerManager},
         },
@@ -153,7 +154,15 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         _ = signals.recv() => return Ok(()),
         _ = interrupt.recv() => return Ok(()),
     };
-    let app = app_with_admin_camera_control(status, control, admin, camera, csrf_token, port);
+    let app = app_with_admin_camera_control(
+        status,
+        control,
+        admin,
+        camera,
+        csrf_token,
+        port,
+        Some(Arc::new(RegistryAdapter::default())),
+    );
     eprintln!("hyz-things: management portal ready at http://{LAN_ADDRESS}:{port}");
 
     tokio::select! {

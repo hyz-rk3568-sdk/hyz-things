@@ -18,6 +18,14 @@ pub const WORKSPACE_TAB: &str = "tab h-10 min-w-24 rounded-field text-xs font-bo
 pub const WORKSPACE_TAB_ACTIVE: &str = "tab-active bg-primary text-primary-content";
 pub const WORKSPACE_PANEL: &str = "min-w-0 outline-none";
 
+pub const PORTAL_TABS: &str = "tabs tabs-box sticky top-2 z-20 mt-3 grid grid-cols-3 overflow-x-auto border border-base-content/10 bg-base-200/90 p-1 shadow-lg shadow-black/10 backdrop-blur";
+pub const PORTAL_TAB: &str = "tab h-10 min-w-24 rounded-field text-xs font-bold sm:text-sm";
+pub const PORTAL_TAB_ACTIVE: &str = "tab-active bg-primary text-primary-content";
+
+pub const APP_GRID: &str = "grid grid-cols-1 gap-4 lg:grid-cols-3";
+pub const APP_CARD: &str =
+    "card min-w-0 gap-4 border border-base-content/10 bg-base-100/60 p-5 shadow-sm";
+
 pub const TOPOLOGY: &str =
     "card mt-5 gap-4 border border-base-content/10 bg-base-200/70 p-4 shadow-sm sm:p-6";
 pub const TOPOLOGY_FLOW: &str =

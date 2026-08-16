@@ -17,6 +17,7 @@ export async function readHarnessState(request: APIRequestContext) {
 
 export async function loginAsAdmin(page: Page) {
   await page.goto('/');
+  await page.getByRole('button', { name: '路由器', exact: true }).click();
   await page.getByRole('button', { name: '网络设置', exact: true }).click();
   await page.getByRole('button', { name: '管理员登录' }).click();
   await page.getByLabel('密码').fill('admin');

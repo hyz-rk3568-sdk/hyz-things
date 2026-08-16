@@ -53,8 +53,10 @@ composition root in its own Cargo package:
     `PortalControlHandler` 端口；`src/adapters/inbound/http` 通过该端口
     调用用例，不直接构造 outbound adapter。
   - `src/adapters/outbound` 实现 `PortalControlHandler`（router UDS
-    client）、camera UDS client、admin 凭据存储与 Tailscale exact
-    listener，不依赖 HTTP DTO 或 Yew。
+    client）、camera UDS client、admin 凭据存储、Tailscale exact
+    listener 与热推送 registry 读取（固定路径
+    `/userdata/hyz-things/apps/registry.json`，经 `InstalledAppsPort`
+    暴露给 `/api/v1/apps`），不依赖 HTTP DTO 或 Yew。
   - `src/web` 是浏览器侧 driving adapter，只通过受限 HTTP API 通信，
     不得获得对 native inbound/outbound adapter 的 Rust 依赖（`web`
     feature 只编译 `domain` 与 SPA）。
@@ -74,6 +76,10 @@ composition root in its own Cargo package:
 - 不通过 LAN API 暴露 router enable/disable、OTA、任意配置或 Mihomo
   controller。现有 Web mutations 必须保持 fixed、typed、same-origin、
   大小受限且 CSRF 保护。
+- 摄像头观看对匿名开放：`camera/session/{create,close}` 接受管理员
+  session 或 15 分钟短时 viewer 令牌（内存驻留、数量有界、仅同源领取，
+  令牌只能创建/关闭自己名下的会话）；`camera/status` 匿名只读，
+  `camera/{profile,rotation}` 保持管理员专属。
 - 热推送（`apps/rust/things/tools/deploy-app.sh`）：推送 camera/things
   只停止并重启对应应用的 init 服务，绝不重启 router；任何停止动作之前
   必须通过注册表记录的协议版本做兼容性检查。

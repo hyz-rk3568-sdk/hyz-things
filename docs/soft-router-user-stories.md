@@ -40,6 +40,7 @@
 - 管理员认证、强制首次改密、默认折叠登录表单、typed AP/STA 设置、两阶段 AP 回滚和 write-only Mihomo HTTPS 订阅更新已经进入 hyz-things 门户；错误 STA 自动恢复、AP 未确认超时回滚、无秘密摘要以及凭据型订阅刷新已通过板测，成功切换另一组真实 STA 和管理员实际改密仍待操作者输入本地凭据；
 - 独立 `hyz-camera`、受限 HTTP SDP 信令、V4L2 + GStreamer + Rockchip MPP H.264、`str0m` 和固定 UDP 端口池已进入最终 recovery-free OTA；固定 `1920×1080 @ 30 FPS` 中央裁剪、full-range H.264 SPS/VUI、真实 canvas 非黑像素和全屏交互已通过 LAN 与 Tailscale、桌面与移动端四组真实 MJS/Playwright 播放/停止验收；
 - 三进程拆分（无头 `hyz-router` + `hyz-things` 门户 + `hyz-camera` 媒体）已完成：`deploy-app.sh` 支持对任一应用热推送而不重启 router，协议版本不匹配时在停止服务前拒绝；
+- 门户 UI 改为 `首页 / 路由器 / 摄像头` 形态：首页聚合应用入口、`/api/v1/apps` 热推送部署记录与运行概览；摄像头直播免登录可看（15 分钟短时 viewer 令牌），画面分辨率与旋转设置保留管理员专属；
 - DNS 接管、8 小时路由+代理稳定性、节点全部失效/live-hang 自动回退仍未完成，因此代理 Epic 仍不得整体标记完成。
 
 变化的是上游接入方式，不是 LAN 拓扑。完整基础产品必须支持：
@@ -147,8 +148,8 @@
 | 网络黑匣子 | 结构化事件、有界指标、断网时间线和受限诊断快照 |
 | 本地 DNS 中心 | 固定成熟 DNS 引擎，由 `hyz-router` 管理 typed 配置、生命周期和 active resolver |
 | 远程访问 | 可选 Tailscale；遵循“尽可能 direct，但 relay 永远可用”，先 RouterOnly，再固定 `192.168.8.0/24` subnet access，不提供 exit node |
-| 管理 UI | 独立 `hyz-things` 门户进程承载 Yew 页面（hyz things 品牌），不安装第三方 Dashboard |
-| 摄像头直播 | 独立 `hyz-camera` 媒体进程；`hyz-things` 门户负责认证信令和 camera 客户端，媒体使用 WebRTC UDP 直连 |
+| 管理 UI | 独立 `hyz-things` 门户进程承载 Yew 页面（hyz things 品牌，`首页 / 路由器 / 摄像头` 门户形态），不安装第三方 Dashboard |
+| 摄像头直播 | 独立 `hyz-camera` 媒体进程；`hyz-things` 门户负责信令与 camera 客户端，观看免登录（短时 viewer 令牌），画面设置需管理员；媒体使用 WebRTC UDP 直连 |
 | 扩展方式 | 修改并发布本仓库代码，不提供插件或容器扩展平台 |
 
 Tailscale 模式术语固定如下：
