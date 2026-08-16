@@ -38,10 +38,13 @@ struct ApplicationState {
 }
 
 /// 所有 viewer 共享的一路媒体管线。`viewers` 计数持有该管线 terminator 的会话线程：
-/// 归零（最后一个 viewer 退出）时立即停止管线。
+/// 归零（最后一个 viewer 退出）时立即停止管线。`profile` 记录启动该管线时的完整
+/// 媒体配置（预设 + 旋转）：配置变更后旧管线必须重建，不能把残留管线复用给
+/// 期望新配置的 viewer。
 struct SharedMedia {
     running: Box<dyn RunningMedia>,
     viewers: Arc<AtomicUsize>,
+    profile: CameraStreamProfile,
 }
 
 struct ActiveSession {
@@ -141,6 +144,9 @@ impl CameraApplication {
             return Ok(());
         }
         state.preset = preset;
+        // 配置已变化：可能仍在跑的上一个配置的共享管线必须停止，否则后续
+        // viewer 会通过 create_session 复用旧预设的画面。
+        take_and_stop_media(&mut state);
         state.last_error = self.media.probe().err().map(media_category);
         Ok(())
     }
@@ -160,6 +166,8 @@ impl CameraApplication {
             return Ok(());
         }
         state.rotation = rotation;
+        // 配置已变化：停止旧配置的共享管线，防止后续 viewer 复用旧旋转画面。
+        take_and_stop_media(&mut state);
         state.last_error = self.media.probe().err().map(media_category);
         Ok(())
     }
@@ -188,21 +196,27 @@ impl CameraApplication {
             return Err(CameraApplicationError::TooManyViewers);
         }
 
-        if state.media.is_none() {
+        let desired = configured_profile(&state);
+        let reuse = state
+            .media
+            .as_ref()
+            .is_some_and(|shared| shared.profile == desired);
+        if !reuse {
+            // 无管线，或残留管线配置与当前配置不一致：停止旧管线并按当前
+            // 配置重建，避免 viewer 拿到错误预设/旋转的画面。
+            take_and_stop_media(&mut state);
             self.media.probe().map_err(|error| {
                 state.last_error = Some(media_category(error));
                 CameraApplicationError::Media(error)
             })?;
-            let running = self
-                .media
-                .start(configured_profile(&state))
-                .map_err(|error| {
-                    state.last_error = Some(media_category(error));
-                    CameraApplicationError::Media(error)
-                })?;
+            let running = self.media.start(desired).map_err(|error| {
+                state.last_error = Some(media_category(error));
+                CameraApplicationError::Media(error)
+            })?;
             state.media = Some(SharedMedia {
                 running,
                 viewers: Arc::new(AtomicUsize::new(0)),
+                profile: desired,
             });
         }
 
@@ -428,6 +442,8 @@ mod tests {
         stop_count: Arc<AtomicUsize>,
         state: Arc<AtomicU8>,
         hub: Arc<FrameHub>,
+        /// 最近一次 start 使用的完整媒体配置：断言管线按当前配置（预设+旋转）重建。
+        last_profile: Mutex<Option<CameraStreamProfile>>,
     }
 
     impl CameraMediaPort for FakeMediaPort {
@@ -435,11 +451,12 @@ mod tests {
             Ok(())
         }
 
-        fn start(
-            &self,
-            _profile: CameraStreamProfile,
-        ) -> Result<Box<dyn RunningMedia>, MediaError> {
+        fn start(&self, profile: CameraStreamProfile) -> Result<Box<dyn RunningMedia>, MediaError> {
             self.starts.fetch_add(1, Ordering::SeqCst);
+            *self
+                .last_profile
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(profile);
             self.state.store(1, Ordering::Release);
             Ok(Box::new(FakeRunningMedia {
                 hub: Arc::clone(&self.hub),
@@ -673,6 +690,77 @@ mod tests {
         app.close_session(&second.session_id).unwrap();
         assert_eq!(app.set_profile(CameraStreamPreset::Uhd4k20m), Ok(()));
         assert_eq!(app.set_rotation(CameraRotation::Deg90), Ok(()));
+    }
+
+    #[test]
+    fn configuration_changes_stop_stale_pipeline_and_new_session_uses_new_configuration() {
+        let media = Arc::new(FakeMediaPort::default());
+        let webrtc = Arc::new(FakeWebRtcPort::default());
+        let app = CameraApplication::new(media.clone(), webrtc.clone(), "test".to_owned()).unwrap();
+        let session = app
+            .create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
+            .unwrap();
+        assert_eq!(media.starts.load(Ordering::SeqCst), 1);
+        app.close_session(&session.session_id).unwrap();
+        // 最后一个 viewer 离开：默认 720p 管线已停止。
+        assert_eq!(media.stop_count.load(Ordering::SeqCst), 1);
+
+        // 无 viewer 时改配置：旧配置管线立即停止（不等空闲清理），避免
+        // 后续 create_session 复用旧预设/旋转的画面。
+        app.set_profile(CameraStreamPreset::Uhd4k20m).unwrap();
+        app.set_rotation(CameraRotation::Deg90).unwrap();
+        assert_eq!(media.stop_count.load(Ordering::SeqCst), 3);
+
+        let session = app
+            .create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
+            .unwrap();
+        assert_eq!(media.starts.load(Ordering::SeqCst), 2);
+        let profile = media
+            .last_profile
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .expect("media started with a profile");
+        assert_eq!(profile.width, 3840);
+        assert_eq!(profile.height, 2160);
+        assert_eq!(profile.rotation, CameraRotation::Deg90);
+        app.close_session(&session.session_id).unwrap();
+    }
+
+    #[test]
+    fn residual_finished_session_does_not_force_new_viewer_onto_stale_pipeline() {
+        let media = Arc::new(FakeMediaPort::default());
+        let webrtc = Arc::new(FakeWebRtcPort::default());
+        let app = CameraApplication::new(media.clone(), webrtc.clone(), "test".to_owned()).unwrap();
+        let _first = app
+            .create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
+            .unwrap();
+        // 模拟浏览器异常退出：会话线程已结束但服务端尚未收到 close。
+        let handles = webrtc
+            .sessions
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        handles[0].finished.store(true, Ordering::Release);
+        assert_eq!(
+            app.set_profile(CameraStreamPreset::Uhd4k20m),
+            Err(CameraApplicationError::SessionBusy)
+        );
+        // status 触发 reap 并把最后一个 viewer 的管线停掉。
+        let status = app.status();
+        assert_eq!(status.active_sessions, 0);
+        assert_eq!(media.stop_count.load(Ordering::SeqCst), 1);
+        app.set_profile(CameraStreamPreset::Uhd4k20m).unwrap();
+        assert_eq!(media.stop_count.load(Ordering::SeqCst), 2);
+        app.create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
+            .unwrap();
+        assert_eq!(media.starts.load(Ordering::SeqCst), 2);
+        let profile = media
+            .last_profile
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .expect("media started with a profile");
+        assert_eq!(profile.width, 3840);
+        assert_eq!(profile.height, 2160);
     }
 
     #[test]
