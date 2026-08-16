@@ -201,6 +201,15 @@ pub struct CameraStatus {
     pub access: CameraAccessKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_category: Option<CameraErrorCategory>,
+    /// 全双工语音对讲能力（additive：旧 camera 响应缺省为不支持）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio: Option<CameraAudioStatus>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CameraAudioStatus {
+    pub supported: bool,
 }
 
 #[cfg(test)]

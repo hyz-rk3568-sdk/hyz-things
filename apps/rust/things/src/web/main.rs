@@ -29,10 +29,11 @@ use hyz_things::domain::{
 use wasm_bindgen::{closure::Closure, JsCast, JsValue};
 use wasm_bindgen_futures::{spawn_local, JsFuture};
 use web_sys::{
-    Event, HtmlElement, HtmlInputElement, HtmlSelectElement, HtmlVideoElement, MediaStream,
+    Event, HtmlElement, HtmlInputElement, HtmlMediaElement, HtmlSelectElement, HtmlVideoElement,
+    MediaStream, MediaStreamConstraints, MediaStreamTrack, MediaTrackConstraints,
     RequestCredentials, RtcIceGatheringState, RtcPeerConnection, RtcPeerConnectionState,
-    RtcRtpTransceiverDirection, RtcRtpTransceiverInit, RtcSdpType, RtcSessionDescriptionInit,
-    RtcTrackEvent,
+    RtcRtpSender, RtcRtpTransceiverDirection, RtcRtpTransceiverInit, RtcSdpType,
+    RtcSessionDescriptionInit, RtcTrackEvent,
 };
 use yew::prelude::*;
 
@@ -190,6 +191,10 @@ struct CameraSessionRuntime {
     _on_connection_state_change: Closure<dyn FnMut(Event)>,
     session_id: Option<String>,
     csrf: String,
+    /// audio transceiver 的发送端：对讲开关通过 `replace_track` 挂载/摘下麦克风，
+    /// 不重协商。
+    audio_sender: Option<RtcRtpSender>,
+    mic_track: Option<MediaStreamTrack>,
 }
 
 type CameraRuntime = Rc<RefCell<Option<CameraSessionRuntime>>>;
@@ -886,6 +891,16 @@ fn camera_js_error(context: &str, error: JsValue) -> String {
     format!("{context}：{detail}")
 }
 
+/// 播放/暂停竞争（清理时 pause 打断 play）会让 play() 的 Promise 拒绝；await 并
+/// 忽略其结果，避免未处理拒绝变成 pageerror。
+fn play_media_ignoring_interruption(element: &HtmlMediaElement) {
+    if let Ok(promise) = element.play() {
+        spawn_local(async move {
+            let _ = JsFuture::from(promise).await;
+        });
+    }
+}
+
 fn next_camera_generation(generation: &Rc<RefCell<u64>>) -> u64 {
     let mut current = generation.borrow_mut();
     *current = current.wrapping_add(1);
@@ -924,8 +939,19 @@ async fn fetch_camera_viewer_token() -> Result<String, String> {
         .map_err(|error| format!("观看凭证数据格式无效：{error}"))
 }
 
-fn take_camera_runtime(runtime: &CameraRuntime, video: &NodeRef) -> Option<(String, String)> {
-    let session = runtime.borrow_mut().take().and_then(|active| {
+fn take_camera_runtime(
+    runtime: &CameraRuntime,
+    video: &NodeRef,
+    audio: &NodeRef,
+) -> Option<(String, String)> {
+    let session = runtime.borrow_mut().take().and_then(|mut active| {
+        // 释放麦克风：先摘下 track 再停止，避免残留发送。
+        if let Some(sender) = &active.audio_sender {
+            let _ = sender.replace_track(None);
+        }
+        if let Some(track) = active.mic_track.take() {
+            track.stop();
+        }
         active.peer.set_ontrack(None);
         active.peer.set_onconnectionstatechange(None);
         active.peer.close();
@@ -938,11 +964,16 @@ fn take_camera_runtime(runtime: &CameraRuntime, video: &NodeRef) -> Option<(Stri
         video.set_src_object(None);
         video.load();
     }
+    if let Some(audio) = audio.cast::<HtmlMediaElement>() {
+        let _ = audio.pause();
+        audio.set_src_object(None);
+        audio.load();
+    }
     session
 }
 
-fn close_camera_runtime(runtime: &CameraRuntime, video: &NodeRef) {
-    if let Some((session_id, csrf)) = take_camera_runtime(runtime, video) {
+fn close_camera_runtime(runtime: &CameraRuntime, video: &NodeRef, audio: &NodeRef) {
+    if let Some((session_id, csrf)) = take_camera_runtime(runtime, video, audio) {
         spawn_local(close_camera_session(session_id, csrf));
     }
 }
@@ -981,12 +1012,14 @@ async fn refresh_camera_status(
 #[function_component(CameraLiveView)]
 fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     let video = use_node_ref();
+    let audio = use_node_ref();
     let stage = use_node_ref();
     let status = use_state(|| None::<CameraStatus>);
     let presets = use_state(Vec::<CameraStreamPreset>::new);
     let status_error = use_state(|| None::<String>);
     let notice = use_state(|| None::<String>);
     let phase = use_state(|| CameraViewPhase::Idle);
+    let talk_active = use_state(|| false);
     let runtime = use_mut_ref(|| None::<CameraSessionRuntime>);
     let generation = use_mut_ref(|| 0u64);
     let previous_stop_generation = use_mut_ref(|| props.stop_generation);
@@ -1054,6 +1087,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     {
         let runtime = runtime.clone();
         let video = video.clone();
+        let audio = audio.clone();
         let phase = phase.clone();
         let notice = notice.clone();
         let generation = generation.clone();
@@ -1063,7 +1097,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
             *previous.borrow_mut() = *requested;
             if changed {
                 next_camera_generation(&generation);
-                close_camera_runtime(&runtime, &video);
+                close_camera_runtime(&runtime, &video, &audio);
                 phase.set(CameraViewPhase::Idle);
                 notice.set(Some("摄像头直播已在退出登录前停止".to_owned()));
             }
@@ -1074,6 +1108,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     {
         let runtime = runtime.clone();
         let video = video.clone();
+        let audio = audio.clone();
         let phase = phase.clone();
         let notice = notice.clone();
         let generation = generation.clone();
@@ -1083,14 +1118,16 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
 
             let pagehide_runtime = runtime.clone();
             let pagehide_video = video.clone();
+            let pagehide_audio = audio.clone();
             let pagehide_generation = generation.clone();
             let pagehide = Closure::<dyn FnMut(Event)>::new(move |_| {
                 next_camera_generation(&pagehide_generation);
-                close_camera_runtime(&pagehide_runtime, &pagehide_video);
+                close_camera_runtime(&pagehide_runtime, &pagehide_video, &pagehide_audio);
             });
 
             let hidden_runtime = runtime.clone();
             let hidden_video = video.clone();
+            let hidden_audio = audio.clone();
             let hidden_phase = phase.clone();
             let hidden_notice = notice.clone();
             let hidden_generation = generation.clone();
@@ -1101,7 +1138,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                     .is_some_and(|document| document.hidden())
                 {
                     next_camera_generation(&hidden_generation);
-                    close_camera_runtime(&hidden_runtime, &hidden_video);
+                    close_camera_runtime(&hidden_runtime, &hidden_video, &hidden_audio);
                     hidden_phase.set(CameraViewPhase::Idle);
                     hidden_notice.set(Some("页面离开前已停止摄像头直播".to_owned()));
                 }
@@ -1134,7 +1171,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                     );
                 }
                 next_camera_generation(&generation);
-                close_camera_runtime(&runtime, &video);
+                close_camera_runtime(&runtime, &video, &audio);
             }
         });
     }
@@ -1142,21 +1179,30 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     let start = {
         let csrf = session_token.clone();
         let video = video.clone();
+        let audio = audio.clone();
+        let status = status.clone();
         let phase = phase.clone();
         let notice = notice.clone();
         let runtime = runtime.clone();
         let generation = generation.clone();
+        let talk_active = talk_active.clone();
         Callback::from(move |_| {
             if csrf.is_empty() || runtime.borrow().is_some() {
                 return;
             }
-            close_camera_runtime(&runtime, &video);
+            talk_active.set(false);
+            close_camera_runtime(&runtime, &video, &audio);
             let attempt = next_camera_generation(&generation);
+            // 音频能力来自 status：不支持时 offer 不带 audio m-line，保持 video-only。
+            let audio_supported = status
+                .as_ref()
+                .is_some_and(|camera| camera.audio.as_ref().is_some_and(|audio| audio.supported));
             phase.set(CameraViewPhase::Starting);
             notice.set(None);
 
             let csrf = csrf.clone();
             let video = video.clone();
+            let audio = audio.clone();
             let phase = phase.clone();
             let notice = notice.clone();
             let runtime = runtime.clone();
@@ -1168,8 +1214,19 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                     let transceiver = RtcRtpTransceiverInit::new();
                     transceiver.set_direction(RtcRtpTransceiverDirection::Recvonly);
                     peer.add_transceiver_with_str_and_init("video", &transceiver);
+                    // 全双工对讲：audio transceiver 固定 sendrecv，麦克风通过
+                    // replaceTrack 挂载/摘下，不重协商。offer 因此携带 audio m-line。
+                    let mut audio_sender = None;
+                    if audio_supported {
+                        let audio_init = RtcRtpTransceiverInit::new();
+                        audio_init.set_direction(RtcRtpTransceiverDirection::Sendrecv);
+                        let transceiver =
+                            peer.add_transceiver_with_str_and_init("audio", &audio_init);
+                        audio_sender = Some(transceiver.sender());
+                    }
 
                     let track_video = video.clone();
+                    let track_audio = audio.clone();
                     let track_phase = phase.clone();
                     let track_notice = notice.clone();
                     let on_track =
@@ -1184,11 +1241,17 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                                     stream.add_track(&event.track());
                                     Some(stream)
                                 });
-                            if let (Some(video), Some(stream)) =
-                                (track_video.cast::<HtmlVideoElement>(), stream)
-                            {
-                                video.set_src_object(Some(&stream));
-                                let _ = video.play();
+                            if let Some(stream) = stream {
+                                if event.track().kind() == "audio" {
+                                    // 设备麦克风音频走独立 <audio> 元素（<video> 保持 muted）。
+                                    if let Some(audio) = track_audio.cast::<HtmlMediaElement>() {
+                                        audio.set_src_object(Some(&stream));
+                                        play_media_ignoring_interruption(&audio);
+                                    }
+                                } else if let Some(video) = track_video.cast::<HtmlVideoElement>() {
+                                    video.set_src_object(Some(&stream));
+                                    play_media_ignoring_interruption(&video);
+                                }
                                 track_phase.set(CameraViewPhase::Playing);
                                 track_notice.set(None);
                             }
@@ -1198,6 +1261,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                     let connection_peer = peer.clone();
                     let connection_runtime = runtime.clone();
                     let connection_video = video.clone();
+                    let connection_audio = audio.clone();
                     let connection_phase = phase.clone();
                     let connection_notice = notice.clone();
                     let connection_generation = generation.clone();
@@ -1207,7 +1271,11 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                             RtcPeerConnectionState::Disconnected | RtcPeerConnectionState::Failed
                         ) {
                             next_camera_generation(&connection_generation);
-                            close_camera_runtime(&connection_runtime, &connection_video);
+                            close_camera_runtime(
+                                &connection_runtime,
+                                &connection_video,
+                                &connection_audio,
+                            );
                             connection_phase.set(CameraViewPhase::Idle);
                             connection_notice.set(Some("摄像头 WebRTC 连接已中断".to_owned()));
                         }
@@ -1221,6 +1289,8 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                         _on_connection_state_change: on_connection_state_change,
                         session_id: None,
                         csrf: csrf.clone(),
+                        audio_sender,
+                        mic_track: None,
                     });
 
                     let offer_value = JsFuture::from(peer.create_offer())
@@ -1277,6 +1347,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                     let timeout_notice = notice.clone();
                     let timeout_runtime = runtime.clone();
                     let timeout_video = video.clone();
+                    let timeout_audio = audio.clone();
                     let timeout_generation = generation.clone();
                     spawn_local(async move {
                         TimeoutFuture::new(timeout_ms).await;
@@ -1284,7 +1355,11 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                             && *timeout_phase == CameraViewPhase::Connecting
                         {
                             next_camera_generation(&timeout_generation);
-                            close_camera_runtime(&timeout_runtime, &timeout_video);
+                            close_camera_runtime(
+                                &timeout_runtime,
+                                &timeout_video,
+                                &timeout_audio,
+                            );
                             timeout_phase.set(CameraViewPhase::Idle);
                             timeout_notice.set(Some("摄像头 WebRTC 协商超时".to_owned()));
                         }
@@ -1296,7 +1371,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                 if let Err(error) = result {
                     if camera_generation_is_current(&generation, attempt) {
                         next_camera_generation(&generation);
-                        close_camera_runtime(&runtime, &video);
+                        close_camera_runtime(&runtime, &video, &audio);
                         phase.set(CameraViewPhase::Idle);
                         notice.set(Some(format!("播放失败：{error}")));
                     }
@@ -1308,12 +1383,13 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     let stop = {
         let runtime = runtime.clone();
         let video = video.clone();
+        let audio = audio.clone();
         let phase = phase.clone();
         let notice = notice.clone();
         let generation = generation.clone();
         Callback::from(move |_| {
             next_camera_generation(&generation);
-            close_camera_runtime(&runtime, &video);
+            close_camera_runtime(&runtime, &video, &audio);
             phase.set(CameraViewPhase::Idle);
             notice.set(Some("摄像头直播已停止".to_owned()));
         })
@@ -1326,6 +1402,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
         let phase = phase.clone();
         let runtime = runtime.clone();
         let video = video.clone();
+        let audio = audio.clone();
         let generation = generation.clone();
         let start = start.clone();
         let rotation = rotation.clone();
@@ -1339,7 +1416,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
             let next = current.next_rotation();
             *rotation.borrow_mut() = Some(next);
             let was_playing = *phase == CameraViewPhase::Playing;
-            let pending_close = take_camera_runtime(&runtime, &video);
+            let pending_close = take_camera_runtime(&runtime, &video, &audio);
             if was_playing {
                 phase.set(CameraViewPhase::Idle);
             }
@@ -1395,6 +1472,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
         let phase = phase.clone();
         let runtime = runtime.clone();
         let video = video.clone();
+        let audio = audio.clone();
         let generation = generation.clone();
         let start = start.clone();
         Callback::from(move |event: Event| {
@@ -1406,7 +1484,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                 return;
             };
             let was_playing = *phase == CameraViewPhase::Playing;
-            let pending_close = take_camera_runtime(&runtime, &video);
+            let pending_close = take_camera_runtime(&runtime, &video, &audio);
             if was_playing {
                 phase.set(CameraViewPhase::Idle);
             }
@@ -1459,6 +1537,95 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
         Callback::from(move |_| start.emit(()))
     };
 
+    // 全双工对讲：开启时 getUserMedia 采集麦克风并通过 replaceTrack 挂载到 audio
+    // transceiver；关闭时摘下并停止 track。设备音频回放始终随会话流动，说话时
+    // 由浏览器端 AEC（echoCancellation）消除回环。
+    let talk = {
+        let runtime = runtime.clone();
+        let notice = notice.clone();
+        let talk_active = talk_active.clone();
+        Callback::from(move |_| {
+            if runtime.borrow().is_none() {
+                return;
+            }
+            let next_active = !*talk_active;
+            let runtime = runtime.clone();
+            let notice = notice.clone();
+            let talk_active = talk_active.clone();
+            spawn_local(async move {
+                let result: Result<(), String> = async {
+                    if next_active {
+                        let window = web_sys::window()
+                            .ok_or_else(|| "浏览器没有 window 对象".to_owned())?;
+                        let media_devices = window
+                            .navigator()
+                            .media_devices()
+                            .map_err(|error| camera_js_error("无法访问麦克风设备", error))?;
+                        let track_constraints = MediaTrackConstraints::new();
+                        track_constraints.set_echo_cancellation_bool(true);
+                        track_constraints.set_noise_suppression_bool(true);
+                        let constraints = MediaStreamConstraints::new();
+                        constraints.set_audio_media_track_constraints(&track_constraints);
+                        let promise = media_devices
+                            .get_user_media_with_constraints(&constraints)
+                            .map_err(|error| camera_js_error("无法获取麦克风", error))?;
+                        let stream: MediaStream = JsFuture::from(promise)
+                            .await
+                            .map_err(|error| camera_js_error("麦克风授权失败", error))?
+                            .into();
+                        let track = stream
+                            .get_audio_tracks()
+                            .get(0)
+                            .dyn_into::<MediaStreamTrack>()
+                            .map_err(|_| "浏览器没有返回音频轨道".to_owned())?;
+                        let sender = runtime
+                            .borrow()
+                            .as_ref()
+                            .and_then(|active| active.audio_sender.clone())
+                            .ok_or_else(|| "当前会话未协商音频，无法对讲".to_owned())?;
+                        JsFuture::from(sender.replace_track(Some(&track)))
+                            .await
+                            .map_err(|error| camera_js_error("挂载麦克风失败", error))?;
+                        if let Some(active) = runtime.borrow_mut().as_mut() {
+                            active.mic_track = Some(track);
+                        }
+                        Ok(())
+                    } else {
+                        let (sender, track) = {
+                            let mut active_ref = runtime.borrow_mut();
+                            let Some(active) = active_ref.as_mut() else {
+                                return Ok(());
+                            };
+                            (active.audio_sender.clone(), active.mic_track.take())
+                        };
+                        if let Some(sender) = sender {
+                            let _ = JsFuture::from(sender.replace_track(None)).await;
+                        }
+                        if let Some(track) = track {
+                            track.stop();
+                        }
+                        Ok(())
+                    }
+                }
+                .await;
+                match result {
+                    Ok(()) => {
+                        talk_active.set(next_active);
+                        notice.set(Some(if next_active {
+                            "对讲已开启，请说话".to_owned()
+                        } else {
+                            "对讲已关闭".to_owned()
+                        }));
+                    }
+                    Err(error) => notice.set(Some(format!("对讲失败：{error}"))),
+                }
+            });
+        })
+    };
+
+    let audio_supported = status
+        .as_ref()
+        .is_some_and(|camera| camera.audio.as_ref().is_some_and(|audio| audio.supported));
     let camera_available = status.as_ref().is_some_and(|camera| camera.available);
     html! {
         <article class={CAMERA_CARD} aria-labelledby="camera-live-title">
@@ -1507,12 +1674,19 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                     if let Some(error) = viewer_token_error.as_ref() {
                         <p class="text-xs text-error" role="status">{format!("观看凭证获取失败：{error}")}</p>
                     }
-                    <p class={HELP_TEXT}>{"视频不会自动启动。点击播放后，浏览器仅接收设备视频轨道；离开页面会立即停止会话。画面设置需要管理员登录。"}</p>
+                    <p class={HELP_TEXT}>{"视频不会自动启动。点击播放后，浏览器接收设备视频与麦克风音频；对讲需要显式点击「开启对讲」才会采集你的麦克风。离开页面会立即停止会话。画面设置需要管理员登录。"}</p>
                     <div class={BUTTON_ROW}>
                         if *phase == CameraViewPhase::Idle {
                             <button class={BUTTON_PRIMARY} type="button" onclick={start_button} disabled={!camera_available || !can_view}>{"播放直播"}</button>
                         } else {
                             <button class={BUTTON_ERROR} type="button" onclick={stop}>{"停止直播"}</button>
+                            if audio_supported {
+                                if *talk_active {
+                                    <button class={BUTTON_PRIMARY} type="button" onclick={talk}>{"关闭对讲"}</button>
+                                } else {
+                                    <button class={BUTTON} type="button" onclick={talk}>{"开启对讲"}</button>
+                                }
+                            }
                         }
                     </div>
                     if let Some(message) = notice.as_ref() {
@@ -1521,6 +1695,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                 </div>
                 <div ref={stage} class={CAMERA_STAGE}>
                     <video ref={video} class={CAMERA_VIDEO} autoplay=true playsinline=true muted=true aria-label="摄像头实时画面"></video>
+                    <audio ref={audio} class="hidden" autoplay=true playsinline=true aria-label="摄像头麦克风"></audio>
                     if *phase == CameraViewPhase::Playing && can_control {
                         <button class={CAMERA_ROTATE_BUTTON} type="button" onclick={rotate} aria-label="旋转画面">
                             {"旋转画面"}

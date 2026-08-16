@@ -370,6 +370,57 @@ test('plays the camera anonymously and controls it as an administrator', async (
     .toEqual([]);
 });
 
+test('enables full-duplex intercom with a real microphone track and cleans up', async ({
+  page,
+  request,
+}) => {
+  await installCameraWebRtcMock(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: '摄像头', exact: true }).click();
+  const camera = page.getByRole('article', { name: '摄像头直播' });
+  await camera.getByRole('button', { name: '播放直播' }).click();
+  await expect(camera.getByText('直播中', { exact: true })).toBeVisible();
+
+  // 播放时创建 video + audio 两个 transceiver（audio 为 sendrecv，对讲不重协商）。
+  expect(await page.evaluate(() => (window as any).__hyzCameraTransceivers)).toEqual([
+    'video',
+    'audio',
+  ]);
+  // 对讲按钮只在播放且音频能力可用时出现。
+  const talkButton = camera.getByRole('button', { name: '开启对讲' });
+  await expect(talkButton).toBeVisible();
+
+  // 开启对讲：真实 getUserMedia（fake device）提供麦克风轨道并挂载到 sender。
+  await talkButton.click();
+  await expect(camera.getByText('对讲已开启', { exact: false })).toBeVisible();
+  await expect(camera.getByRole('button', { name: '关闭对讲' })).toBeVisible();
+  await expect
+    .poll(async () => page.evaluate(() => (window as any).__hyzCameraReplaceTrackCalls))
+    .toEqual([{ kind: 'audio', hasTrack: true }]);
+
+  // 关闭对讲：摘下并停止麦克风轨道。
+  await camera.getByRole('button', { name: '关闭对讲' }).click();
+  await expect(camera.getByText('对讲已关闭', { exact: false })).toBeVisible();
+  await expect
+    .poll(async () => page.evaluate(() => (window as any).__hyzCameraReplaceTrackCalls))
+    .toEqual([
+      { kind: 'audio', hasTrack: true },
+      { kind: 'audio', hasTrack: false },
+    ]);
+
+  // 停止直播：会话关闭、管线与 session 归零。
+  await camera.getByRole('button', { name: '停止直播' }).click();
+  await expect
+    .poll(async () => {
+      const state = await readHarnessState(request);
+      return {
+        pipeline: state.camera.status.pipeline,
+        activeSessions: state.camera.status.active_sessions,
+      };
+    })
+    .toEqual({ pipeline: 'stopped', activeSessions: 0 });
+});
+
 test('lets two anonymous viewers watch the camera concurrently', async ({
   context,
   request,

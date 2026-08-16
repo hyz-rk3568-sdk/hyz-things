@@ -16,7 +16,9 @@ use hyz_contract::router::{ControlOperation, ControlResult};
 use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::{
-    adapters::inbound::http::app_with_admin_camera_control_at_address,
+    adapters::inbound::http::{
+        app_with_admin_camera_control_at_address, TlsListener,
+    },
     application::{
         admin::AdminApplication,
         camera::CameraApplication,
@@ -135,10 +137,12 @@ impl TailscaleListenerManager {
             app.csrf_token,
             ipv4,
             TAILSCALE_MANAGEMENT_HTTP_PORT,
+            true,
         );
+        let tls_listener = TlsListener::new(listener, app.tls.clone());
         let runtime = app.runtime.clone();
         let task = runtime.spawn(async move {
-            axum::serve(listener, http_app)
+            axum::serve(tls_listener, http_app)
                 .with_graceful_shutdown(async move {
                     let _ = stopped.await;
                 })
@@ -256,6 +260,9 @@ pub struct PortalListenerApp {
     pub csrf_token: String,
     pub runtime: tokio::runtime::Handle,
     pub clock: Arc<dyn ClockPort>,
+    /// TLS identity for the Tailscale management listener; the same
+    /// per-device self-signed certificate serves the LAN listener.
+    pub tls: tokio_rustls::TlsAcceptor,
 }
 
 impl RunningTailscaleListener {

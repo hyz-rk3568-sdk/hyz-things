@@ -164,7 +164,9 @@ impl CameraApplication {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::camera::{CameraAccessKind, CameraPipelineState, CameraStreamProfile};
+    use crate::domain::camera::{
+        CameraAccessKind, CameraAudioStatus, CameraPipelineState, CameraStreamProfile,
+    };
     use std::sync::atomic::{AtomicU64, Ordering};
 
     struct Fake {
@@ -196,6 +198,7 @@ mod tests {
                 },
                 access: scope.kind(),
                 error_category: None,
+                audio: Some(CameraAudioStatus { supported: true }),
             })
         }
 

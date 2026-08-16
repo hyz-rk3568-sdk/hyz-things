@@ -39,7 +39,14 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        // 摄像头对讲测试使用真实 navigator.mediaDevices.getUserMedia：
+        // fake 设备 + 自动授权让 headless Chromium 返回真实音频轨道。
+        launchOptions: {
+          args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
+        },
+      },
     },
   ],
 });

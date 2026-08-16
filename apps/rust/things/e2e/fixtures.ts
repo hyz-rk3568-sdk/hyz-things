@@ -31,6 +31,9 @@ export async function loginAsAdmin(page: Page) {
 
 export async function installCameraWebRtcMock(page: Page) {
   await page.addInitScript(() => {
+    const transceivers: string[] = [];
+    const replaceTrackCalls: { kind: string; hasTrack: boolean }[] = [];
+
     class CameraPeerConnectionMock {
       iceGatheringState = 'complete';
       connectionState = 'new';
@@ -40,8 +43,19 @@ export async function installCameraWebRtcMock(page: Page) {
       private stream: MediaStream | null = null;
       closed = false;
 
-      addTransceiver() {
-        return {};
+      addTransceiver(kind: string) {
+        transceivers.push(kind);
+        // audio transceiver 需要 sender().replaceTrack()（对讲挂载麦克风）。
+        // 真实 RTCRtpTransceiver 的 `sender` 是 getter 属性，web-sys 按属性访问；
+        // web-sys 把 Rust `None` 映射为 JS `undefined`（不是 null），需宽松判断。
+        return {
+          sender: {
+            replaceTrack: (track: MediaStreamTrack | null | undefined) => {
+              replaceTrackCalls.push({ kind, hasTrack: track != null });
+              return Promise.resolve();
+            },
+          },
+        };
       }
 
       async createOffer() {
@@ -88,6 +102,8 @@ export async function installCameraWebRtcMock(page: Page) {
     });
     (window as any).__hyzCameraRtcPeers = peers;
     (window as any).__hyzCameraRtcFail = () => peers.at(-1)?.fail();
+    (window as any).__hyzCameraTransceivers = transceivers;
+    (window as any).__hyzCameraReplaceTrackCalls = replaceTrackCalls;
   });
 }
 

@@ -1,8 +1,8 @@
 use hyz_things::{
     adapters::{
         inbound::http::{
-            app_with_admin_camera_control, bind_fixed_lan_with_retry, DEFAULT_BIND_ATTEMPTS,
-            DEFAULT_HTTP_PORT, LAN_ADDRESS,
+            app_with_admin_camera_control, bind_fixed_lan_with_retry, PortalTls, TlsListener,
+            DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT, LAN_ADDRESS,
         },
         outbound::{
             admin::AdminFileAdapter,
@@ -22,6 +22,8 @@ use hyz_things::{
 use std::{error::Error, os::unix::fs::MetadataExt, sync::Arc, time::Duration};
 
 const ROUTER_READY_MARKER: &str = "/run/hyz-router/ready";
+const PORTAL_READY_DIRECTORY: &str = "/run/hyz-things";
+const PORTAL_READY_MARKER: &str = "/run/hyz-things/ready";
 const ROUTER_READY_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const ROUTER_READY_POLL: Duration = Duration::from_secs(1);
 const TAILSCALE_RECONCILE_INTERVAL: Duration = Duration::from_secs(2);
@@ -108,6 +110,18 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     let mut signals = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
 
+    // The portal serves HTTPS with a per-device self-signed certificate so
+    // browsers treat the LAN origin as a secure context (getUserMedia-based
+    // camera talk only exists on secure contexts). The init script waits on
+    // PORTAL_READY_MARKER instead of probing HTTP, because the device has no
+    // TLS-capable wget/curl for self-signed health checks.
+    let tls = PortalTls::load_or_generate()?;
+    let tls_acceptor = tls.acceptor();
+    // 全新开机时 /run/hyz-things 不存在（热部署工具会创建它，掩盖了裸机启动
+    // 路径）；守护进程自己建立运行时目录再写就绪标记。
+    std::fs::create_dir_all(PORTAL_READY_DIRECTORY)?;
+    let _ = std::fs::remove_file(PORTAL_READY_MARKER);
+
     let tailscale = TailscaleListenerManager::new();
     let tailscale_app = PortalListenerApp {
         status: status.clone(),
@@ -117,6 +131,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         csrf_token: csrf_token.clone(),
         runtime: tokio::runtime::Handle::current(),
         clock: Arc::new(SystemClock),
+        tls: tls_acceptor.clone(),
     };
     let tailscale_manager = tailscale.clone();
     let tailscale_control = control.clone();
@@ -162,20 +177,24 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         csrf_token,
         port,
         Some(Arc::new(RegistryAdapter::default())),
+        true,
     );
-    eprintln!("hyz-things: management portal ready at http://{LAN_ADDRESS}:{port}");
+    std::fs::write(PORTAL_READY_MARKER, format!("{port}\n"))?;
+    eprintln!("hyz-things: management portal ready at https://{LAN_ADDRESS}:{port}");
 
+    let serve = axum::serve(TlsListener::new(listener, tls_acceptor.clone()), app)
+        .with_graceful_shutdown(async move {
+            while !*shutdown_rx.borrow() && shutdown_rx.changed().await.is_ok() {}
+        });
     tokio::select! {
-        result = axum::serve(listener, app)
-            .with_graceful_shutdown(async move {
-                while !*shutdown_rx.borrow() && shutdown_rx.changed().await.is_ok() {}
-            }) => {
+        result = serve => {
             result?;
         }
         _ = signals.recv() => {}
         _ = interrupt.recv() => {}
     }
 
+    let _ = std::fs::remove_file(PORTAL_READY_MARKER);
     let _ = shutdown_tx.send(true);
     let _ = tailscale_task.await;
     match tailscale.stop_all() {

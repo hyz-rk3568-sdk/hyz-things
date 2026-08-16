@@ -15,8 +15,8 @@ use std::{
 use crate::{
     application::camera::{CameraControlPort, CameraError, CameraSession},
     domain::camera::{
-        CameraAccessKind, CameraAccessScope, CameraErrorCategory, CameraPipelineState,
-        CameraRotation, CameraStatus, CameraStreamPreset, CameraStreamProfile,
+        CameraAccessKind, CameraAccessScope, CameraAudioStatus, CameraErrorCategory,
+        CameraPipelineState, CameraRotation, CameraStatus, CameraStreamPreset, CameraStreamProfile,
     },
 };
 
@@ -119,6 +119,9 @@ impl CameraControlPort for CameraUnixAdapter {
             },
             access: scope.kind(),
             error_category: status.error,
+            audio: status.audio.map(|audio| CameraAudioStatus {
+                supported: audio.supported,
+            }),
         })
     }
 
@@ -297,6 +300,13 @@ struct CameraStatusWire {
     profile: CameraStreamProfileWire,
     #[serde(default)]
     error: Option<CameraErrorCategory>,
+    #[serde(default)]
+    audio: Option<CameraAudioStatusWire>,
+}
+
+#[derive(Deserialize)]
+struct CameraAudioStatusWire {
+    supported: bool,
 }
 
 #[derive(Deserialize)]

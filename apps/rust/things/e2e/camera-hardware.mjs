@@ -9,8 +9,8 @@ const replacementPassword = process.env.HYZ_ROUTER_REPLACEMENT_PASSWORD;
 const bootstrapFirstOrigin = process.env.HYZ_ROUTER_BOOTSTRAP === '1';
 const screenshotDirectory = process.env.HYZ_CAMERA_SCREENSHOT_DIR;
 
-if (origins.length === 0 || origins.some(origin => !/^http:\/\/[^/]+(?::\d+)?$/.test(origin))) {
-  throw new Error('usage: node e2e/camera-hardware.mjs http://LAN_ORIGIN [http://TAILSCALE_ORIGIN]');
+if (origins.length === 0 || origins.some(origin => !/^https?:\/\/[^/]+(?::\d+)?$/.test(origin))) {
+  throw new Error('usage: node e2e/camera-hardware.mjs https://LAN_ORIGIN [https://TAILSCALE_ORIGIN]');
 }
 if (!initialPassword) {
   throw new Error('HYZ_ROUTER_ADMIN_PASSWORD is required');
@@ -243,6 +243,8 @@ async function verifyStream(page, originName, viewport) {
     });
   }
 
+  await verifyIntercom(page, camera);
+
   await camera.getByRole('button', { name: '停止直播' }).click();
   await camera.getByText('未播放', { exact: true }).waitFor({
     state: 'visible',
@@ -256,6 +258,81 @@ async function verifyStream(page, originName, viewport) {
   }, null, { timeout: 30_000 });
 
   return { media, visual, layout, rotation };
+}
+
+// 全双工语音对讲：板载 mic → 浏览器（inbound audio），浏览器 mic → 设备喇叭
+// （outbound audio）。注意：不做「浏览器播放音调 → 设备喇叭 → 板载 mic → 回传
+// 浏览器」的环回检测，因为正确工作的浏览器端 AEC 会消除这个自听信号；喇叭→mic
+// 声学通路由板端 arecord/aplay 冒烟覆盖。
+async function verifyIntercom(page, camera) {
+  const status = await cameraStatus(page);
+  assert.equal(status.camera.audio.supported, true);
+
+  // 设备 → 浏览器：<audio> 元素持有真实音频轨道。
+  await page.waitForFunction(() => {
+    const audio = document.querySelector('audio[aria-label="摄像头麦克风"]');
+    const stream = audio?.srcObject;
+    return audio instanceof HTMLAudioElement
+      && stream instanceof MediaStream
+      && stream.getAudioTracks().some(track => track.readyState === 'live');
+  }, null, { timeout: 45_000 });
+
+  // 设备 → 浏览器：audio inbound-rtp 持续流动（板载 mic 有真实信号）。
+  await page.waitForFunction(async () => {
+    const peer = window.__hyzRealPeers?.at(-1);
+    if (!peer || peer.connectionState !== 'connected') return false;
+    const stats = await peer.getStats();
+    for (const report of stats.values()) {
+      if (report.type === 'inbound-rtp' && report.kind === 'audio'
+        && report.bytesReceived > 0 && report.packetsReceived > 0) return true;
+    }
+    return false;
+  }, null, { timeout: 45_000 });
+
+  // 对讲开启：getUserMedia 由 --use-fake-ui-for-media-stream 自动授权；
+  // 宿主无麦克风时 outbound 使用 --use-fake-device-for-media-stream 的合成音频。
+  await camera.getByRole('button', { name: '开启对讲' }).click();
+  await camera.getByText('对讲已开启', { exact: false }).waitFor({
+    state: 'visible',
+    timeout: 30_000,
+  });
+
+  // 浏览器 → 设备：audio outbound-rtp 持续发送。
+  await page.waitForFunction(async () => {
+    const peer = window.__hyzRealPeers?.at(-1);
+    if (!peer || peer.connectionState !== 'connected') return false;
+    const stats = await peer.getStats();
+    for (const report of stats.values()) {
+      if (report.type === 'outbound-rtp' && report.kind === 'audio'
+        && report.bytesSent > 0 && report.packetsSent > 0) return true;
+    }
+    return false;
+  }, null, { timeout: 30_000 });
+
+  // 对讲关闭：sender.replaceTrack(null) 后 outbound 停止增长（采样两次对比）。
+  await camera.getByRole('button', { name: '关闭对讲' }).click();
+  await camera.getByText('对讲已关闭', { exact: false }).waitFor({
+    state: 'visible',
+    timeout: 30_000,
+  });
+  const audioPacketsSent = async () => {
+    const value = await page.evaluate(async () => {
+      const peer = window.__hyzRealPeers?.at(-1);
+      const stats = await peer.getStats();
+      for (const report of stats.values()) {
+        if (report.type === 'outbound-rtp' && report.kind === 'audio') {
+          return report.packetsSent || 0;
+        }
+      }
+      return 0;
+    });
+    return value;
+  };
+  await page.waitForTimeout(1_000);
+  const first = await audioPacketsSent();
+  await page.waitForTimeout(1_500);
+  const second = await audioPacketsSent();
+  assert.equal(second, first, '关闭对讲后浏览器仍在发送音频');
 }
 
 // 并发观看：同一浏览器上下文（同一管理员 cookie、同一 owner）开第二个页面，
@@ -342,7 +419,15 @@ async function verifyConcurrentViewers(context, origin, originName) {
 
 const browser = await chromium.launch({
   headless: true,
-  args: [`--unsafely-treat-insecure-origin-as-secure=${origins.join(',')}`],
+  args: [
+    // 门户只提供 HTTPS（设备自签证书）：忽略证书错误以通过拦截页，同时页面
+    // 仍处于 secure context，navigator.mediaDevices.getUserMedia 才存在。
+    '--ignore-certificate-errors',
+    // 自动授予媒体权限。验收主机通常没有内置麦克风，outbound 信号由 Chromium
+    // 合成音频设备提供；板载 mic 采集与声学路径由板端 arecord/aplay 冒烟覆盖。
+    '--use-fake-ui-for-media-stream',
+    '--use-fake-device-for-media-stream',
+  ],
 });
 const results = [];
 let password = initialPassword;

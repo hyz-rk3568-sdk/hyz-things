@@ -46,6 +46,10 @@ use crate::{
     },
 };
 
+mod tls;
+
+pub use tls::{PortalTls, TlsListener};
+
 const EMBEDDED_FRONTEND: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/frontend.tar"));
 const CSP: &str = "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'";
 pub const LAN_ADDRESS: Ipv4Addr = Ipv4Addr::new(192, 168, 8, 1);
@@ -67,6 +71,10 @@ struct AppState {
     camera_scope: Option<CameraAccessScope>,
     csrf_token: Arc<str>,
     allowed_origin: Arc<str>,
+    /// Serves the portal over TLS: session cookies carry `Secure` and the
+    /// allowed origin uses the `https` scheme. The host e2e harness and unit
+    /// tests keep plain HTTP on loopback and set this to `false`.
+    tls: bool,
     allow_tailscale_self_stop: bool,
     assets: AssetStore,
     installed_apps: Option<Arc<dyn InstalledAppsPort>>,
@@ -129,6 +137,7 @@ pub fn app(read_status: PortalStatus) -> Router {
             camera_scope: None,
             csrf_token: String::new(),
             allowed_origin: format!("http://{LAN_ADDRESS}:{DEFAULT_HTTP_PORT}"),
+            tls: false,
             allow_tailscale_self_stop: true,
             installed_apps: None,
         },
@@ -152,6 +161,7 @@ pub fn app_with_control(
             camera_scope: None,
             csrf_token,
             allowed_origin: format!("http://{LAN_ADDRESS}:{port}"),
+            tls: false,
             allow_tailscale_self_stop: true,
             installed_apps: None,
         },
@@ -176,6 +186,7 @@ pub fn app_with_admin_control(
             camera_scope: None,
             csrf_token,
             allowed_origin: format!("http://{LAN_ADDRESS}:{port}"),
+            tls: false,
             allow_tailscale_self_stop: true,
             installed_apps: None,
         },
@@ -183,6 +194,10 @@ pub fn app_with_admin_control(
     )
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "fixed production composition-root wiring"
+)]
 pub fn app_with_admin_camera_control(
     read_status: PortalStatus,
     control: Arc<dyn PortalControlHandler>,
@@ -191,6 +206,7 @@ pub fn app_with_admin_camera_control(
     csrf_token: String,
     port: u16,
     installed_apps: Option<Arc<dyn InstalledAppsPort>>,
+    tls: bool,
 ) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
     app_with_assets(
@@ -201,7 +217,11 @@ pub fn app_with_admin_camera_control(
             camera: Some(camera),
             camera_scope: Some(CameraAccessScope::Lan),
             csrf_token,
-            allowed_origin: format!("http://{LAN_ADDRESS}:{port}"),
+            allowed_origin: format!(
+                "{}://{LAN_ADDRESS}:{port}",
+                if tls { "https" } else { "http" }
+            ),
+            tls,
             allow_tailscale_self_stop: true,
             installed_apps,
         },
@@ -227,6 +247,7 @@ pub fn app_with_admin_control_at_address(
             camera_scope: None,
             csrf_token,
             allowed_origin: format!("http://{address}:{port}"),
+            tls: false,
             allow_tailscale_self_stop: false,
             installed_apps: None,
         },
@@ -234,6 +255,10 @@ pub fn app_with_admin_control_at_address(
     )
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "fixed Tailscale management composition-root wiring"
+)]
 pub fn app_with_admin_camera_control_at_address(
     read_status: PortalStatus,
     control: Arc<dyn PortalControlHandler>,
@@ -242,6 +267,7 @@ pub fn app_with_admin_camera_control_at_address(
     csrf_token: String,
     address: Ipv4Addr,
     port: u16,
+    tls: bool,
 ) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
     app_with_assets(
@@ -252,7 +278,11 @@ pub fn app_with_admin_camera_control_at_address(
             camera: Some(camera),
             camera_scope: Some(CameraAccessScope::Tailscale { address }),
             csrf_token,
-            allowed_origin: format!("http://{address}:{port}"),
+            allowed_origin: format!(
+                "{}://{address}:{port}",
+                if tls { "https" } else { "http" }
+            ),
+            tls,
             allow_tailscale_self_stop: false,
             installed_apps: None,
         },
@@ -286,6 +316,7 @@ pub fn app_with_loopback_runtime_frontend(
             camera_scope: Some(CameraAccessScope::Lan),
             csrf_token,
             allowed_origin: exact_loopback_origin,
+            tls: false,
             allow_tailscale_self_stop: true,
             installed_apps,
         },
@@ -327,6 +358,7 @@ struct AppConfiguration {
     camera_scope: Option<CameraAccessScope>,
     csrf_token: String,
     allowed_origin: String,
+    tls: bool,
     allow_tailscale_self_stop: bool,
     installed_apps: Option<Arc<dyn InstalledAppsPort>>,
 }
@@ -343,6 +375,7 @@ fn app_with_assets(
         camera_scope,
         csrf_token,
         allowed_origin,
+        tls,
         allow_tailscale_self_stop,
         installed_apps,
     } = configuration;
@@ -491,6 +524,7 @@ fn app_with_assets(
             camera_scope,
             csrf_token: Arc::from(csrf_token),
             allowed_origin: Arc::from(allowed_origin),
+            tls,
             allow_tailscale_self_stop,
             assets,
             installed_apps,
@@ -609,7 +643,7 @@ async fn admin_login(
         Ok(Err(error)) => return admin_error_json(error),
         Err(_) => return authentication_error_json(StatusCode::SERVICE_UNAVAILABLE),
     };
-    let cookie = match session_cookie(login.token.expose()) {
+    let cookie = match session_cookie(login.token.expose(), state.tls) {
         Some(cookie) => cookie,
         None => return authentication_error_json(StatusCode::SERVICE_UNAVAILABLE),
     };
@@ -1040,9 +1074,10 @@ fn admin_session_token(headers: &HeaderMap) -> Option<SecretString> {
     found
 }
 
-fn session_cookie(token: &str) -> Option<HeaderValue> {
+fn session_cookie(token: &str, secure: bool) -> Option<HeaderValue> {
+    let secure_attribute = if secure { "; Secure" } else { "" };
     HeaderValue::from_str(&format!(
-        "{ADMIN_SESSION_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/"
+        "{ADMIN_SESSION_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/{secure_attribute}"
     ))
     .ok()
 }
@@ -1955,7 +1990,9 @@ async fn security_headers(request: Request, next: Next) -> Response {
     headers.insert("content-security-policy", HeaderValue::from_static(CSP));
     headers.insert(
         "permissions-policy",
-        HeaderValue::from_static("camera=(), microphone=(), geolocation=(), payment=(), usb=()"),
+        // 摄像头对讲（全双工）需要浏览器麦克风：`microphone` 仅对本源开放，
+        // 仍拒绝 camera/geolocation/payment/usb。
+        HeaderValue::from_static("camera=(), microphone=(self), geolocation=(), payment=(), usb=()"),
     );
     headers.insert(
         "cross-origin-opener-policy",
@@ -2047,17 +2084,20 @@ mod tests {
     }
 
     #[test]
-    fn administrator_cookie_has_fixed_non_tls_attributes_and_strict_parsing() {
+    fn administrator_cookie_attributes_depend_on_tls_and_parse_strictly() {
         let token = "a".repeat(64);
-        let cookie = session_cookie(&token).unwrap().to_str().unwrap().to_owned();
-        assert!(cookie.starts_with(&format!("{ADMIN_SESSION_COOKIE}=")));
-        assert!(cookie.contains("; HttpOnly"));
-        assert!(cookie.contains("; SameSite=Strict"));
-        assert!(cookie.contains("; Path=/"));
-        assert!(!cookie.contains("; Secure"));
+        let plain = session_cookie(&token, false).unwrap().to_str().unwrap().to_owned();
+        assert!(plain.starts_with(&format!("{ADMIN_SESSION_COOKIE}=")));
+        assert!(plain.contains("; HttpOnly"));
+        assert!(plain.contains("; SameSite=Strict"));
+        assert!(plain.contains("; Path=/"));
+        assert!(!plain.contains("; Secure"));
+
+        let secured = session_cookie(&token, true).unwrap().to_str().unwrap().to_owned();
+        assert!(secured.contains("; Secure"));
 
         let mut headers = HeaderMap::new();
-        headers.insert(header::COOKIE, HeaderValue::from_str(&cookie).unwrap());
+        headers.insert(header::COOKIE, HeaderValue::from_str(&plain).unwrap());
         assert_eq!(admin_session_token(&headers).unwrap().expose(), token);
         headers.append(
             header::COOKIE,

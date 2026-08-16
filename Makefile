@@ -297,6 +297,12 @@ check-static:
 	grep -q '"/api/v1/camera/viewer-token"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
 	grep -q 'authorize_camera_viewer' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
 	grep -q 'INSTALLED_APPS_REGISTRY_PATH: &str = "/userdata/hyz-things/apps/registry.json"' "$(THINGS_APP)/src/adapters/outbound/registry.rs"
+	grep -q 'CERT_DIRECTORY: &str = "/userdata/hyz-things/tls"' "$(THINGS_APP)/src/adapters/inbound/http/tls.rs"
+	grep -q 'PortalTls' "$(THINGS_APP)/src/adapters/inbound/http/tls.rs"
+	grep -q 'struct TlsListener' "$(THINGS_APP)/src/adapters/inbound/http/tls.rs"
+	grep -q '{}://{LAN_ADDRESS}:{port}' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
+	grep -q 'axum::serve(TlsListener' "$(THINGS_APP)/src/main.rs"
+	grep -q 'PORTAL_READY_MARKER: &str = "/run/hyz-things/ready"' "$(THINGS_APP)/src/main.rs"
 	grep -q 'portal-camera-tab' "$(THINGS_APP)/src/web/main.rs"
 	grep -q '免登录实时查看摄像头画面' "$(THINGS_APP)/src/web/main.rs"
 	grep -q 'MIHOMO_CONTROLLER_ADDRESS: &str = "127.0.0.1:9090"' "$(ROUTER_APP)/src/adapters/outbound/paths.rs"
@@ -365,6 +371,8 @@ check-static:
 	grep -q '^DAEMON=/usr/bin/hyz-camera$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-camera
 	grep -q '^CONTROL_SOCKET=\$$RUNTIME_DIR/control.sock$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-camera
 	grep -q '^OWNER_FILE=\$$RUNTIME_DIR/daemon.owner$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-camera
+	grep -q "cset name='Playback Path' SPK" sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-camera
+	grep -q "cset name='Capture MIC Path' 'Main Mic'" sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-camera
 	grep -q '^START_TIMEOUT_SECONDS=30$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-camera
 	grep -q '^STOP_TIMEOUT_SECONDS=30$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-camera
 	grep -q 'stale ownership requires explicit recovery' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-camera
@@ -395,7 +403,8 @@ check-static:
 	sh -n sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-things
 	grep -q '^DAEMON=/usr/bin/hyz-things$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-things
 	grep -q '^ROUTER_READY_MARKER=/run/hyz-router/ready$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-things
-	grep -q 'HEALTH_URL=http://192\.168\.8\.1:8080/api/v1/health' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-things
+	grep -q '^READY_MARKER=/run/hyz-things/ready$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-things
+	! grep -q 'HEALTH_URL\|wget' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-things
 	! grep -q 'restart)' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-things
 	grep -q 'chmod 0755 .*S83hyz-things' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	! grep -qE 'hyz-mihomo (explicit|tun|disable)|hyz-mihomo removes' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/hyz-router/mihomo-config.yaml.example
@@ -428,7 +437,6 @@ check-static:
 	grep -q '^BR2_PACKAGE_ROCKCHIP_MPP_ALLOCATOR_DRM=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
 	grep -q '^BR2_PACKAGE_GSTREAMER1_ROCKCHIP=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
 	@for symbol in GSTREAMER1_INSTALL_TOOLS GST1_PLUGINS_BASE_INSTALL_TOOLS \
-	  GST1_PLUGINS_BASE_PLUGIN_AUDIOCONVERT GST1_PLUGINS_BASE_PLUGIN_AUDIORESAMPLE \
 	  GST1_PLUGINS_BASE_PLUGIN_PLAYBACK GST1_PLUGINS_BASE_PLUGIN_TYPEFIND \
 	  GST1_PLUGINS_BASE_PLUGIN_VOLUME \
 	  GST1_PLUGINS_GOOD_PLUGIN_AVI GST1_PLUGINS_GOOD_PLUGIN_ISOMP4 \
@@ -439,6 +447,12 @@ check-static:
 	  GST1_PLUGINS_BAD_PLUGIN_SRTP GST1_PLUGINS_BAD_PLUGIN_WAYLAND \
 	  GST1_PLUGINS_BAD_PLUGIN_WPE LIBV4L ROCKCHIP_MPP_TESTS; do \
 		grep -q "^# BR2_PACKAGE_$$symbol is not set$$" sdk/buildroot/configs/rockchip/hyz_things.config || exit 1; \
+	done
+	@for symbol in GST1_PLUGINS_BASE_PLUGIN_ALSA GST1_PLUGINS_BASE_PLUGIN_AUDIOCONVERT \
+	  GST1_PLUGINS_BASE_PLUGIN_AUDIORESAMPLE GST1_PLUGINS_BASE_PLUGIN_AUDIOMIXER \
+	  GST1_PLUGINS_BASE_PLUGIN_OPUS GST1_PLUGINS_BAD_PLUGIN_WEBRTCDSP \
+	  ALSA_UTILS ALSA_UTILS_APLAY ALSA_UTILS_AMIXER ROCKCHIP_ALSA_CONFIG; do \
+		grep -q "^BR2_PACKAGE_$$symbol=y$$" sdk/buildroot/configs/rockchip/hyz_things.config || exit 1; \
 	done
 	! grep -q '^BR2_PACKAGE_FFMPEG=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
 	! grep -q '^BR2_PACKAGE_LIBNICE=y$$' sdk/buildroot/configs/rockchip/hyz_things.config

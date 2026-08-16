@@ -147,6 +147,9 @@ async fn serves_partial_degraded_status_with_strict_http_policy() {
     assert!(!status_lower.contains("'unsafe-inline'"));
     assert!(!status_lower.contains("script-src 'self' 'unsafe-eval'"));
     assert!(status_lower.contains("x-frame-options: deny"));
+    assert!(status_lower.contains(
+        "permissions-policy: camera=(), microphone=(self), geolocation=(), payment=(), usb=()"
+    ));
     assert!(!status_lower.contains("access-control-allow-origin:"));
     assert!(status.contains("\"state\":\"degraded\""));
     assert!(status.contains("\"observed_at_unix_ms\":123"));

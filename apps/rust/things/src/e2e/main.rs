@@ -108,6 +108,9 @@ impl Default for HarnessCameraState {
                 },
                 access: hyz_things::domain::camera::CameraAccessKind::Lan,
                 error_category: None,
+                audio: Some(hyz_things::domain::camera::CameraAudioStatus {
+                    supported: true,
+                }),
             },
             create_count: 0,
             close_count: 0,

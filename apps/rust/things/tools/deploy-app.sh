@@ -38,7 +38,7 @@ REMOTE_RUN_DIR=/run/hyz-things/apps
 ROUTER_READY_MARKER=/run/hyz-router/ready
 CAMERA_CONTROL_SOCKET=/run/hyz-camera/control.sock
 CAMERA_OWNER_FILE=/run/hyz-camera/daemon.owner
-THINGS_HEALTH_URL=http://192.168.8.1:8080/api/v1/health
+THINGS_READY_MARKER=/run/hyz-things/ready
 ADB_WAIT_SECONDS=${ADB_WAIT_SECONDS:-360}
 READY_WAIT_SECONDS=${READY_WAIT_SECONDS:-180}
 
@@ -257,7 +257,7 @@ verify_ready() {
     local probe deadline
     case "$APP_NAME" in
         router) probe="[ -s '$ROUTER_READY_MARKER' ]" ;;
-        things) probe="/usr/bin/wget -q -T 3 -O /dev/null '$THINGS_HEALTH_URL'" ;;
+        things) probe="[ -s '$THINGS_READY_MARKER' ]" ;;
         camera) probe="[ -S '$CAMERA_CONTROL_SOCKET' ] && [ -f '$CAMERA_OWNER_FILE' ]" ;;
     esac
     deadline=$((SECONDS + READY_WAIT_SECONDS))

@@ -110,6 +110,9 @@ case "${1:-}" in
             */run/hyz-router/ready*)
                 log "shell $cmd"
                 ;;
+            */run/hyz-things/ready*)
+                log "shell $cmd"
+                ;;
             *)
                 printf 'unhandled fake adb shell: %s\n' "$cmd" >&2
                 rc=1
