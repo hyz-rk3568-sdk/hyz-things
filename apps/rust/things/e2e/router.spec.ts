@@ -322,6 +322,8 @@ test('lets two same-account viewers watch the camera concurrently', async ({
   const second = await context.newPage();
   await installCameraWebRtcMock(second);
   await second.goto('/');
+  // 摄像头卡片只渲染在网络设置页签；第二个页面默认停在总览，需与用户一致地展开。
+  await second.getByRole('button', { name: '网络设置', exact: true }).click();
   const cameraB = second.getByRole('article', { name: '摄像头直播' });
   await cameraB.getByRole('button', { name: '播放直播' }).click();
   await expect(cameraB.getByText('直播中', { exact: true })).toBeVisible();

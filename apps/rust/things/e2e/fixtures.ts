@@ -1,7 +1,7 @@
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
 
-export const webOrigin = `http://127.0.0.1:${process.env.ROUTER_E2E_WEB_PORT ?? 3190}`;
-export const harnessOrigin = `http://127.0.0.1:${process.env.ROUTER_E2E_CONTROL_PORT ?? 3191}`;
+export const webOrigin = `http://127.0.0.1:${process.env.HYZ_THINGS_E2E_WEB_PORT ?? 3190}`;
+export const harnessOrigin = `http://127.0.0.1:${process.env.HYZ_THINGS_E2E_CONTROL_PORT ?? 3191}`;
 
 export async function resetHarness(request: APIRequestContext) {
   const response = await request.put(`${harnessOrigin}/reset`);
