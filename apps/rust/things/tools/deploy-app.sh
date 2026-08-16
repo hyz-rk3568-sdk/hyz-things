@@ -63,7 +63,20 @@ if [[ -n "$ADB_SERIAL" ]]; then
 fi
 
 device_shell() {
-    "$ADB" "${adb_args[@]}" shell "$1"
+    # 远端命令可能带 device_shell_rc 的回传标记；输出型调用不需要它。
+    # grep 无匹配行时返回 1，pipefail 下会误报整个命令失败：输出型调用
+    # 不依赖退出码，成败判断一律走 device_shell_rc。
+    "$ADB" "${adb_args[@]}" shell "$1" | tr -d '\r' | grep -v '^__HYZ_RC__=' || true
+}
+
+# RK adbd 不把远端 shell 的退出码回传给宿主，`adb shell` 总是返回 0。
+# 需要远端成败判断的地方显式回传退出码并解析，避免部署工具对失败"盲跑"
+# （例如 init 脚本 stop/start 失败仍继续换二进制）。
+device_shell_rc() {
+    local output rc
+    output=$("$ADB" "${adb_args[@]}" shell "$1; printf '\\n__HYZ_RC__=%d\\n' \$?" | tr -d '\r')
+    rc=$(printf '%s\n' "$output" | sed -n 's/.*__HYZ_RC__=\([0-9][0-9]*\).*/\1/p' | tail -1)
+    [[ -n "$rc" && "$rc" == "0" ]]
 }
 
 valid_sha() {
@@ -203,7 +216,7 @@ installed_peer_version() { # peer protocol
         printf '%s\n' "$version"
         return 0
     fi
-    if device_shell "test -x '${DAEMON[$peer]}'" >/dev/null 2>&1; then
+    if device_shell_rc "test -x '${DAEMON[$peer]}'"; then
         version=$(protocol_version_of "$peer" "$protocol")
         printf 'registry has no %s entry; assuming installed firmware %s speaks %s protocol %s from source\n' \
             "$peer" "$peer" "$protocol" "$version" >&2
@@ -249,7 +262,7 @@ verify_ready() {
     esac
     deadline=$((SECONDS + READY_WAIT_SECONDS))
     while ((SECONDS < deadline)); do
-        if device_shell "$probe" >/dev/null 2>&1; then
+        if device_shell_rc "$probe"; then
             return 0
         fi
         sleep 2
@@ -259,7 +272,7 @@ verify_ready() {
 }
 
 assert_router_untouched() {
-    if ! device_shell "test -s '$ROUTER_READY_MARKER'" >/dev/null 2>&1; then
+    if ! device_shell_rc "test -s '$ROUTER_READY_MARKER'"; then
         printf '%s push disturbed the running router: %s is gone\n' "$APP_NAME" "$ROUTER_READY_MARKER" >&2
         return 1
     fi
@@ -270,15 +283,15 @@ swap_binary() { # staged_on_device expected_sha
     target_next="$target.next"
     # Only this application's service is stopped and restarted; the init
     # scripts of the other applications are never invoked.
-    if ! device_shell "'$init_script' stop"; then
+    if ! device_shell_rc "'$init_script' stop"; then
         printf '%s init script refused to stop; binary left unchanged\n' "$APP_NAME" >&2
         return 1
     fi
-    if ! device_shell "install -m 0755 '$1' '$target_next' && test \"\$(sha256sum '$target_next' | cut -d' ' -f1)\" = '$2' && mv '$target_next' '$target' && sync"; then
+    if ! device_shell_rc "install -m 0755 '$1' '$target_next' && test \"\$(sha256sum '$target_next' | cut -d' ' -f1)\" = '$2' && mv '$target_next' '$target' && sync"; then
         printf 'failed to atomically install %s\n' "$target" >&2
         return 1
     fi
-    if ! device_shell "'$init_script' start"; then
+    if ! device_shell_rc "'$init_script' start"; then
         printf '%s failed to start; run %s revert %s to roll back\n' "$APP_NAME" "$0" "$APP_NAME" >&2
         return 1
     fi
@@ -289,16 +302,23 @@ swap_binary() { # staged_on_device expected_sha
 }
 
 write_registry() { # sha
-    local entry_json registry_json host_sha remote_sha tmp
-    entry_json=$(python3 - "$APP_NAME" "${DAEMON[$APP_NAME]}" "${INIT_SCRIPT[$APP_NAME]}" "$1" < <(pushed_protocol_versions "$APP_NAME") <<'PY'
+    local entry_json registry_json host_sha remote_sha tmp versions_file
+    versions_file=$(mktemp)
+    pushed_protocol_versions "$APP_NAME" >"$versions_file"
+    # 版本行经临时文件传给 python：heredoc（脚本体）和进程替换会同时占用
+    # stdin，后者会被覆盖，导致 registry 的 protocol_versions 写空。
+    entry_json=$(python3 - "$APP_NAME" "${DAEMON[$APP_NAME]}" "${INIT_SCRIPT[$APP_NAME]}" "$1" "$versions_file" <<'PY'
 import json
 import sys
 
-name, binary, init_script, sha = sys.argv[1:5]
+name, binary, init_script, sha, versions_file = sys.argv[1:6]
 versions = {}
-for line in sys.stdin:
-    protocol, version = line.split()
-    versions[protocol] = int(version)
+with open(versions_file, encoding="utf-8") as stream:
+    for line in stream:
+        if not line.strip():
+            continue
+        protocol, version = line.split()
+        versions[protocol] = int(version)
 print(json.dumps({
     "binary": binary,
     "init_script": init_script,
@@ -307,6 +327,7 @@ print(json.dumps({
 }, sort_keys=True))
 PY
 )
+    rm -f "$versions_file"
     registry_json=$(python3 - "$REGISTRY_FILE" "$APP_NAME" "$entry_json" <<'PY'
 import json
 import sys
@@ -364,7 +385,7 @@ deploy() {
     rm -f "$versions_file"
 
     remote_binary="$REMOTE_APPS_DIR/$APP_NAME/$host_sha"
-    if [[ "$APP_NAME" != "router" ]] && device_shell "test -s '$ROUTER_READY_MARKER'" >/dev/null 2>&1; then
+    if [[ "$APP_NAME" != "router" ]] && device_shell_rc "test -s '$ROUTER_READY_MARKER'"; then
         ROUTER_WAS_READY=true
     fi
 
@@ -404,11 +425,11 @@ revert() {
     fi
     rm -f "$versions_file"
     remote_previous="$REMOTE_APPS_DIR/$APP_NAME/$previous_sha"
-    if ! device_shell "test -x '$remote_previous'" >/dev/null 2>&1; then
+    if ! device_shell_rc "test -x '$remote_previous'"; then
         printf 'previous %s binary is not present on the device: %s\n' "$APP_NAME" "$remote_previous" >&2
         return 1
     fi
-    if [[ "$APP_NAME" != "router" ]] && device_shell "test -s '$ROUTER_READY_MARKER'" >/dev/null 2>&1; then
+    if [[ "$APP_NAME" != "router" ]] && device_shell_rc "test -s '$ROUTER_READY_MARKER'"; then
         ROUTER_WAS_READY=true
     fi
     swap_binary "$remote_previous" "$previous_sha"

@@ -32,9 +32,11 @@ HOST_NODE ?= $(shell command -v node 2>/dev/null)
 HOST_NPM ?= $(shell command -v npm 2>/dev/null)
 HOST_NODE_DIR := $(dir $(HOST_NODE))
 
-# Buildroot rejects whitespace in PATH. Keep builds independent from WSL's
-# injected Windows paths and unrelated user toolchains.
-BUILD_PATH := $(BR_HOST)/bin:$(HOME)/.cargo/bin:$(HOME)/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Buildroot rejects whitespace in PATH. Filter out WSL-injected Windows paths
+# and whitespace entries, but keep the rest of the environment PATH so user
+# tools (e.g. adb under platform-tools) stay usable inside make.
+ENV_PATH := $(shell printf '%s\n' "$$PATH" | tr ':' '\n' | grep -v '^/mnt/' | grep -v ' ' | paste -sd: -)
+BUILD_PATH := $(BR_HOST)/bin:$(ENV_PATH)
 export PATH := $(BUILD_PATH)
 export RK_TOOLCHAIN_PREFIX := $(TOOLCHAIN_PREFIX)
 

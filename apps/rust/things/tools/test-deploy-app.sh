@@ -51,7 +51,11 @@ case "${1:-}" in
         exit 0
         ;;
     shell)
+        # 模拟远端 shell 执行 device_shell_rc 包装后的命令：真实 RK adbd 不
+        # 回传远端退出码，工具通过显式 __HYZ_RC__ 标记获取；mock 必须输出
+        # 同样的标记，否则所有远端成败判断都会"盲跑"。
         cmd="${*:2}"
+        rc=0
         case "$cmd" in
             *cat*registry.json*)
                 cat "$FAKE_REGISTRY"
@@ -87,7 +91,7 @@ case "${1:-}" in
                     sha256sum "$FAKE_DEVICE_ROOT$path" | awk '{print $1}'
                 else
                     printf 'fake device file missing: %s\n' "$path" >&2
-                    exit 1
+                    rc=1
                 fi
                 ;;
             *wget*)
@@ -95,12 +99,10 @@ case "${1:-}" in
                 ;;
             *test\ -x*)
                 if [[ -n "${FAKE_NO_CAMERA:-}" && "$cmd" == *hyz-camera* ]]; then
-                    exit 1
+                    rc=1
                 fi
-                exit 0
                 ;;
             *test\ -s*)
-                exit 0
                 ;;
             *control.sock*)
                 log "shell $cmd"
@@ -110,9 +112,10 @@ case "${1:-}" in
                 ;;
             *)
                 printf 'unhandled fake adb shell: %s\n' "$cmd" >&2
-                exit 1
+                rc=1
                 ;;
         esac
+        printf '\n__HYZ_RC__=%d\n' "$rc"
         ;;
     push)
         mkdir -p "$(dirname "$FAKE_DEVICE_ROOT$3")"
