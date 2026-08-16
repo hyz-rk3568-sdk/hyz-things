@@ -881,7 +881,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     let video = use_node_ref();
     let stage = use_node_ref();
     let status = use_state(|| None::<CameraStatus>);
-    let presets = use_state(|| Vec::<CameraStreamPreset>::new());
+    let presets = use_state(Vec::<CameraStreamPreset>::new);
     let status_error = use_state(|| None::<String>);
     let notice = use_state(|| None::<String>);
     let phase = use_state(|| CameraViewPhase::Idle);
@@ -1474,7 +1474,7 @@ fn app() -> Html {
                     <span class={BRAND_MARK} aria-hidden="true">{"HYZ"}</span>
                     <div>
                         <p class={EYEBROW}>{"LOCAL CONTROL PLANE"}</p>
-                        <h1 class={PAGE_TITLE}>{"HYZ Router"}</h1>
+                        <h1 class={PAGE_TITLE}>{"hyz things"}</h1>
                         <p class={SUBTITLE}>{"单设备网络、代理与无线管理"}</p>
                     </div>
                 </div>

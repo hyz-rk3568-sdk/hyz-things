@@ -8,7 +8,7 @@ use std::{
 use tar::{Archive, Builder, Header};
 
 const MAX_ARCHIVE_BYTES: u64 = 32 * 1024 * 1024;
-const PLACEHOLDER: &[u8] = br#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Router Status</title></head><body><main><h1>Router Status</h1><p>Frontend bundle is not installed.</p></main></body></html>"#;
+const PLACEHOLDER: &[u8] = br#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>hyz things</title></head><body><main><h1>hyz things</h1><p>Frontend bundle is not installed.</p></main></body></html>"#;
 
 fn main() -> io::Result<()> {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("manifest directory"));
@@ -26,7 +26,7 @@ fn main() -> io::Result<()> {
         fs::copy(&source, &output)?;
     } else {
         write_placeholder(&output)?;
-        println!("cargo:warning=router frontend bundle absent; embedding safe placeholder");
+        println!("cargo:warning=hyz-things frontend bundle absent; embedding safe placeholder");
     }
     Ok(())
 }

@@ -19,12 +19,9 @@ native = [
 
 [dependencies]
 hyz-contract = { path = "../contract", features = ["client"] }
-hmac = "0.12"
-pbkdf2 = "0.12"
 serde = { version = "1", features = ["derive"] }
-sha1 = "0.10"
 serde_yaml = "0.9.33"
-url = "2.5.8"
+sha1 = "0.10"
 zeroize = "1.9.0"
 
 async-trait = { version = "0.1", optional = true }

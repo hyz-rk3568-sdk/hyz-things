@@ -245,10 +245,8 @@ name = "hyz-router"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "hmac",
  "hyz-contract",
  "libc",
- "pbkdf2",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -257,7 +255,6 @@ dependencies = [
  "socket2",
  "tokio",
  "ureq",
- "url",
  "zeroize",
 ]
 

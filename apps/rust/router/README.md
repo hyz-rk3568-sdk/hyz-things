@@ -1,19 +1,27 @@
 # hyz-router
 
-`hyz-router` 是 RK3568 产品上的统一路由控制服务。它以单个 Linux ELF 提供管理 LAN、WAN DHCP、IPv4 转发/NAT、Mihomo 代理、状态面板和 recovery-free OTA；Yew/WASM 前端在构建时作为静态资源嵌入同一个 ELF，不会安装第二个 Web 服务程序。
+`hyz-router` 是 RK3568 产品上**无头**（headless）的路由控制核心。它以单一 Linux ELF 提供管理 LAN、WAN DHCP、IPv4 转发/NAT、Mihomo 代理、Tailscale 生命周期和 recovery-free OTA，**不包含** HTTP 服务、Web UI、管理员认证或摄像头信令——这些属于独立的 `hyz-things` 门户进程。
 
-- 板端程序：`/usr/bin/hyz-router`
-- 管理地址：`http://192.168.8.1:8080`
-- 管理 LAN：`br-lan` + `p2p0`，`192.168.8.1/24`
+- 板端程序：`/usr/bin/hyz-router`（init：`/etc/init.d/S81hyz-router`）
+- 管理网络：`br-lan` + `p2p0`，`192.168.8.1/24`
 - WAN：`wlan0`，DHCP 默认路由 metric `600`
+- root-only 控制 socket：`/run/hyz-router/control.sock`
+- 就绪标记：`/run/hyz-router/ready`（仅在全管理面严格 reconcile 后写入）
 - 详细设计、架构图和板端验证记录：[docs/router.md](../../../docs/router.md)
+
+## 进程边界
+
+`hyz-things`（门户）与 `hyz-camera`（媒体）都是独立进程，各自拥有 composition root：
+
+- `hyz-things` 通过版本化 JSON frame 连接 `/run/hyz-router/control.sock` 执行状态、面板、Tailscale 等操作；它承载管理员认证、CSRF、会话与嵌入式 Yew 页面，并等待 `/run/hyz-router/ready` 后才绑定 LAN HTTP。
+- `hyz-camera` 通过 `/run/hyz-camera/control.sock` 接受受限状态、会话和旋转请求；它不执行网络或防火墙命令。
+- 共享 wire 契约位于 `apps/rust/contract`（`hyz-contract`）。客户端要求协议版本精确匹配，服务端接受自身与前一版本，滚动推送时按 [`deploy-app.sh`](../../../apps/rust/things/tools/deploy-app.sh) 的兼容性矩阵把关。
 
 ## 能力
 
 - 分两阶段收敛管理网络和转发网络；转发失败时优先保留可访问的管理 LAN。
 - 支持普通 NAT，以及 Mihomo `explicit`、`tun`、`disabled` 三种模式。
-- 通过 root-only Unix socket 统一承接 CLI、udhcpc hook 和 OTA 操作。
-- 提供只绑定管理 LAN 的 Axum API 和 Yew 状态/控制面板，并以管理员 session 保护 AP、STA 与订阅设置。
+- 通过 root-only Unix socket 统一承接 CLI、udhcpc hook、OTA 和门户操作。
 - 校验 RKFW magic 与 SHA-256，并通过固定 staging 路径提交 BCB 或调用 `updateEngine`。
 - 仅清理自身拥有的 bridge、iptables、进程和运行时文件；未知或外部资源不会被当作可安全接管的状态。
 
@@ -22,75 +30,29 @@
 ```text
 src/domain/                 纯状态、值对象、desired/observed 模型和不变量
 src/application/            路由、代理、面板、状态、OTA、关闭等用例与 ports
-src/adapters/inbound/       CLI、Unix control、udhcpc hook、Axum HTTP
-src/adapters/outbound/      Linux 网络、进程、存储、Mihomo、面板和固件实现
-src/web/                    Yew/WASM 前端
+src/adapters/inbound/       CLI、Unix control、udhcpc hook、OTA CLI
+src/adapters/outbound/      Linux 网络、进程、存储、Mihomo、面板、Tailscale 和固件实现
 src/main.rs                 唯一 production composition root
-frontend/                   Trunk HTML/CSS 入口
-tests/                      HTTP、网络生命周期和 OTA 集成测试
-tools/                      可复现前端 bundle 工具
+tests/                      网络生命周期、Tailscale 和 OTA 集成测试
+tools/                      开发用 boot override 工具
 ```
 
-依赖方向保持为 `adapters -> application -> domain`。只有 `src/main.rs` 可以构造生产 outbound adapter；浏览器、CLI 和 DHCP hook 都不能直接执行 Linux 命令。完整依赖图和启动时序见[架构文档](../../../docs/router.md#架构图)。
+依赖方向保持为 `adapters -> application -> domain`。只有 `src/main.rs` 可以构造生产 outbound adapter；CLI、udhcpc hook 和门户客户端都不能直接执行 Linux 命令。完整依赖图和启动时序见[架构文档](../../../docs/router.md#架构图)。
 
 ## 构建与检查
 
-最低 Rust 版本为 `1.85`，前端工具要求 Node.js `20` 或更新版本。native 实现只支持 Linux。
-
-在本目录执行默认 native 检查：
+最低 Rust 版本为 `1.85`。native 实现只支持 Linux。
 
 ```sh
-cargo test --locked
-cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked --features native
+cargo clippy --locked --all-targets --features native -- -D warnings
 ```
 
-直接执行 `cargo build --locked --release` 时，如果没有前端 bundle，`build.rs` 会嵌入安全占位页。真实管理页面使用 Tailwind CSS 4 + daisyUI 5，默认采用 daisyUI `dracula` 主题；主题与全局样式入口位于 `frontend/app.css`，HTML 的主题声明和浏览器主题色位于 `frontend/index.html`。Node 依赖只在开发机或 CI 上生成静态 CSS，不会进入设备运行环境。首次准备前端工具：
-
-```sh
-npm ci
-npm exec playwright install chromium
-rustup target add wasm32-unknown-unknown
-cargo install trunk --locked --version 0.21.14 --root ../../../.tools/trunk
-```
-
-生成 deterministic bundle，再构建 native ELF：
-
-```sh
-PATH="../../../.tools/trunk/bin:$PATH" ./tools/build-frontend-bundle.sh
-cargo build --locked --release
-```
-
-`node_modules/`、Playwright 浏览器和测试报告都只用于本地/CI，不提交、不打包进前端 tar，也不安装到 RK3568。
-
-前端产物默认写入仓库根目录的 `target/frontend-bundle/router-frontend.tar`。也可以通过 `ROUTER_FRONTEND_ARCHIVE=/absolute/path/router-frontend.tar` 指定已有归档。生产 AArch64 构建、Buildroot 安装和固件集成应从仓库根目录使用：
+生产 AArch64 构建、Buildroot 安装和固件集成应从仓库根目录使用：
 
 ```sh
 make router-app
 ```
-
-不要提交 `target/`、前端 bundle、`node_modules/`、Playwright 输出、交叉编译输出或设备运行数据。
-
-## 浏览器端到端测试
-
-Playwright 启动一个仅绑定 `127.0.0.1` 的 `router-web-e2e` Axum harness。页面、静态资源、CSP、HTTP routes、CSRF/Origin 校验和 `AdminApplication` 都使用真实实现；状态、面板、Wi-Fi 和订阅操作通过内存 fake ports/`ControlHandler` 提供，不会执行 Linux 命令或修改宿主机网络。
-
-```sh
-npm ci
-npm exec playwright install chromium
-PATH="../../../.tools/trunk/bin:$PATH" npm run test:e2e
-```
-
-需要人工预览 fake 后端页面时，持续运行：
-
-```sh
-PATH="../../../.tools/trunk/bin:$PATH" ./tools/start-e2e-server.sh
-```
-
-默认页面地址为 `http://127.0.0.1:3190`，测试控制接口为 `http://127.0.0.1:3191`；可通过 `ROUTER_E2E_WEB_PORT` 和 `ROUTER_E2E_CONTROL_PORT` 覆盖。该服务仅绑定 loopback，使用 fake ports，不执行 Linux 网络命令；结束预览时终止该前台进程。
-
-也可以从仓库根目录执行 `make router-e2e`。该命令会构建 Yew/WASM 前端和 host-only Rust harness；它不会启动生产 daemon、Buildroot、交叉编译或固件构建。
-
-Harness 默认按 Playwright 进程选择一对 loopback 端口，避免不同 checkout/并发任务固定争用；也可通过 `ROUTER_E2E_WEB_PORT` 和 `ROUTER_E2E_CONTROL_PORT` 显式固定。测试控制接口只存在于非默认 `e2e` feature 的 loopback harness 中，不属于产品 LAN API。
 
 ## 运行与 CLI
 
@@ -100,14 +62,17 @@ Harness 默认按 Playwright 进程选择一对 loopback 端口，避免不同 c
 hyz-router daemon
 ```
 
-默认 HTTP 端口为 `8080`，可在 daemon 启动前通过 `HYZ_ROUTER_HTTP_PORT` 修改；监听 IP 始终固定为 `192.168.8.1`，不会回退到 `0.0.0.0`。
-
 其他公开命令都是 `/run/hyz-router/control.sock` 的客户端：
 
 ```text
 hyz-router status [--json]
 hyz-router router enable|disable
-hyz-router proxy explicit|tun|disable
+hyz-router proxy lan-tun enable|disable
+hyz-router proxy tailscale enable|disable
+hyz-router wifi status|scan
+hyz-router wifi ap apply|confirm|cancel
+hyz-router subscription get [--json]
+hyz-router subscription refresh
 hyz-router ota verify <upgrade.fw> <sha256>
 hyz-router ota download <http(s)-url> <sha256>
 hyz-router ota install <upgrade.fw> <sha256> [--reboot]
@@ -115,7 +80,7 @@ hyz-router ota install-recovery <upgrade.fw> <sha256> [--reboot]
 hyz-router ota apply <http(s)-url> <sha256> [--reboot]
 ```
 
-control socket 位于 root-only `0700` 目录且自身模式为 `0600`。不要手工删除 daemon/network/OTA lock 来“恢复”运行；代码会保守拒绝 stale 或身份不明的所有权记录，应先确认对应进程和资源状态。
+control socket 位于 root-only `0700` 目录且自身模式为 `0600`，并以 Linux peer credentials 再次要求 UID 0。不要手工删除 daemon/network/OTA lock 来“恢复”运行；代码会保守拒绝 stale 或身份不明的所有权记录，应先确认对应进程和资源状态。
 
 ## 板端配置与依赖
 
@@ -124,28 +89,14 @@ control socket 位于 root-only `0700` 目录且自身模式为 `0600`。不要�
 | 路径 | 用途 |
 | --- | --- |
 | `/userdata/hyz-router/network-config-v1.json` | 已提交的 STA/AP 配置 |
-| `/userdata/hyz-router/admin/credential.json` | 管理员 Argon2id 凭据 |
 | `/userdata/hyz-router/mihomo/config.yaml` | 旧版 Mihomo 配置源及迁移输入 |
 | `/userdata/hyz-router/mihomo/subscription/` | write-only 订阅来源、状态和配置代次 |
 | `/userdata/hyz-router/mihomo/mode` | 已提交的代理模式 |
 | `/userdata/hyz-router/ota/upgrade.fw` | 唯一允许安装的固定 OTA staging 文件 |
+| `/userdata/hyz-router/tailscale/` | Tailscale node state（root-only） |
+
+管理员 Argon2id 凭据 `/userdata/hyz-router/admin/credential.json` 与门户运行时由 `hyz-things` 读写，router 不接触。
 
 native adapter 使用固定路径调用 `ip`、legacy `iptables`、`wpa_cli`、`hostapd_cli`、`mihomo`、`updateEngine` 和 `reboot`，并依赖产品镜像提供 `wpa_supplicant`、`udhcpc`、`hostapd`、`dnsmasq` 及对应内核网络能力。它不是可在普通开发机上直接运行的通用路由器守护进程。
-
-## HTTP 边界
-
-公开读取接口为：
-
-```text
-GET /api/v1/health
-GET /api/v1/status
-GET /api/v1/panel
-```
-
-匿名 Web 只调用固定、类型化的背光和代理控制接口。AP/STA 与 write-only 订阅来源使用独立的固定 typed API，并要求管理员 session；默认 `admin` bootstrap 密码只能用于首次登录，完成强制改密后才能修改设置。凭据和订阅 URL 不通过读取 API 回显。
-
-所有写请求都要求同源 `Origin`、JSON、启动期 CSRF token 和受限 DTO；CSRF token 不是认证。router enable/disable、Ethernet/PPPoE、OTA、任意命令、路径、interface、原始 Mihomo controller 和任意网络配置均不暴露到 LAN API。
-
-产品明确继续使用 HTTP，因此 session cookie 不能设置 `Secure`，管理 LAN 上的流量嗅探者仍可能获取密码、Wi-Fi 凭据、订阅 URL 或 session。首次上线应立即改密；若要消除此风险，必须增加 HTTPS，不能把 CSRF 或 WPA2 当作传输加密。
 
 OTA 的 SHA-256 只提供完整性校验，不提供发布者认证、anti-rollback 或 A/B rollback。迁移期间不得让旧 `hyz-ota` 与本实现并发运行。

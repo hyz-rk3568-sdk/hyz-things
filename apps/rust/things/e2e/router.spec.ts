@@ -22,7 +22,7 @@ test('renders the dashboard and applies the anonymous display control', async ({
   page.on('pageerror', error => browserErrors.push(error.message));
 
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'HYZ Router', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'hyz things', level: 1 })).toBeVisible();
   await expect(page.getByRole('heading', { name: '网络拓扑' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '路由 / LAN' })).toBeVisible();
   await expect(page.getByText('E2E-Upstream', { exact: false }).first()).toBeVisible();
@@ -853,7 +853,7 @@ test('shows Tailnet peer empty, initial-error, stale, and recovery states', asyn
 test('fits a narrow management screen without horizontal overflow', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'HYZ Router', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'hyz things', level: 1 })).toBeVisible();
   await expect(page.getByRole('heading', { name: '网络拓扑' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '路由 / LAN' })).toBeVisible();
   await expectNoHorizontalOverflow(page);

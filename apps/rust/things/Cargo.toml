@@ -10,6 +10,8 @@ build = "build.rs"
 default = ["native"]
 e2e = ["native"]
 native = [
+  "dep:hyz-contract",
+  "hyz-contract/client",
   "dep:argon2",
   "dep:async-trait",
   "dep:axum",
@@ -23,6 +25,7 @@ native = [
   "dep:tokio",
 ]
 web = [
+  "dep:hyz-contract",
   "dep:gloo-net",
   "dep:gloo-timers",
   "dep:js-sys",
@@ -33,7 +36,7 @@ web = [
 ]
 
 [dependencies]
-hyz-contract = { path = "../contract", features = ["client"] }
+hyz-contract = { path = "../contract", default-features = false, optional = true }
 serde = { version = "1", features = ["derive"] }
 url = "2.5.8"
 zeroize = "1.9.0"

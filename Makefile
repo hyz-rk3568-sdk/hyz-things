@@ -259,6 +259,13 @@ check-static:
 	grep -q "mv '\$$target_next' '\$$target' && sync" "$(THINGS_APP)/tools/deploy-app.sh"
 	grep -q 'protocol_versions' "$(THINGS_APP)/tools/deploy-app.sh"
 	grep -q 'registry\.json' "$(THINGS_APP)/tools/deploy-app.sh"
+	grep -q 'npm run build:css' "$(THINGS_APP)/tools/build-frontend-bundle.sh"
+	grep -q 'data-bin="hyz-things-web"' "$(THINGS_APP)/frontend/index.html"
+	grep -q '^hyz-contract = { path = "\.\./contract", default-features = false, optional = true }' "$(THINGS_APP)/Cargo.toml"
+	! grep -q 'hmac\|pbkdf2\|url = ' "$(ROUTER_APP)/Cargo.toml"
+	grep -q '"name": "hyz-things-web"' "$(THINGS_APP)/package.json" "$(THINGS_APP)/package-lock.json"
+	grep -q 'apps/rust/things/frontend/router.css' .gitignore
+	! grep -q 'HYZ Router\|HYZ 路由器' "$(THINGS_APP)/src/web" "$(THINGS_APP)/frontend/index.html" "$(THINGS_APP)/e2e"
 	sh -n "$(THINGS_APP)/tools/start-e2e-server.sh"
 	python3 -m json.tool "$(THINGS_APP)/package.json" >/dev/null
 	python3 -m json.tool "$(THINGS_APP)/package-lock.json" >/dev/null
