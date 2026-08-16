@@ -38,7 +38,7 @@ BUILD_PATH := $(BR_HOST)/bin:$(HOME)/.cargo/bin:$(HOME)/.local/bin:/usr/local/sb
 export PATH := $(BUILD_PATH)
 export RK_TOOLCHAIN_PREFIX := $(TOOLCHAIN_PREFIX)
 
-.PHONY: help sdk configure toolchain things-frontend things-e2e things-app router-app camera-app router-deploy-dev router-revert-dev apps overlay rootfs kernel loader recovery firmware upgrade upgrade-recovery check check-static clean
+.PHONY: help sdk configure toolchain things-frontend things-e2e things-app router-app camera-app router-deploy-dev router-revert-dev deploy-router deploy-things deploy-camera revert-router revert-things revert-camera apps overlay rootfs kernel loader recovery firmware upgrade upgrade-recovery check check-static clean
 
 help:
 	@printf '%s\n' \
@@ -51,6 +51,12 @@ help:
 	  'make camera-app Build the independent hyz-camera ELF against the Buildroot sysroot' \
 	  'make router-deploy-dev  Build, stage, reboot, and activate hyz-router over USB ADB' \
 	  'make router-revert-dev  Remove the development boot override and reboot into the firmware ELF' \
+	  'make deploy-router  Build and hot-push hyz-router (restarts only the router core)' \
+	  'make deploy-things  Build and hot-push hyz-things (router keeps running)' \
+	  'make deploy-camera  Build and hot-push hyz-camera (router keeps running)' \
+	  'make revert-router  Roll hyz-router back to its previously deployed binary' \
+	  'make revert-things  Roll hyz-things back to its previously deployed binary' \
+	  'make revert-camera  Roll hyz-camera back to its previously deployed binary' \
 	  'make apps       Build the hyz-things, hyz-router and hyz-camera product applications' \
 	  'make overlay    Stage product applications and metadata' \
 	  'make rootfs     Stage product applications and build the Buildroot rootfs' \
@@ -152,6 +158,24 @@ router-deploy-dev: router-app
 router-revert-dev:
 	ADB="$(ADB)" ADB_SERIAL="$(ADB_SERIAL)" bash "$(ROUTER_APP)/tools/deploy-dev.sh" revert
 
+deploy-router: router-app
+	ADB="$(ADB)" ADB_SERIAL="$(ADB_SERIAL)" bash "$(THINGS_APP)/tools/deploy-app.sh" deploy router "$(ROUTER_BINARY)"
+
+deploy-things: things-app
+	ADB="$(ADB)" ADB_SERIAL="$(ADB_SERIAL)" bash "$(THINGS_APP)/tools/deploy-app.sh" deploy things "$(THINGS_BINARY)"
+
+deploy-camera: camera-app
+	ADB="$(ADB)" ADB_SERIAL="$(ADB_SERIAL)" bash "$(THINGS_APP)/tools/deploy-app.sh" deploy camera "$(CAMERA_BINARY)"
+
+revert-router:
+	ADB="$(ADB)" ADB_SERIAL="$(ADB_SERIAL)" bash "$(THINGS_APP)/tools/deploy-app.sh" revert router
+
+revert-things:
+	ADB="$(ADB)" ADB_SERIAL="$(ADB_SERIAL)" bash "$(THINGS_APP)/tools/deploy-app.sh" revert things
+
+revert-camera:
+	ADB="$(ADB)" ADB_SERIAL="$(ADB_SERIAL)" bash "$(THINGS_APP)/tools/deploy-app.sh" revert camera
+
 overlay: apps
 	rm -rf "$(OVERLAY)"
 	mkdir -p "$(OVERLAY)"
@@ -209,6 +233,7 @@ check: check-static
 	cargo test --locked --manifest-path "$(ROUTER_APP)/Cargo.toml" --features native
 	cargo clippy --locked --manifest-path "$(ROUTER_APP)/Cargo.toml" \
 	  --all-targets --features native -- -D warnings
+	bash "$(THINGS_APP)/tools/test-deploy-app.sh"
 
 check-static:
 	sh -n "$(THINGS_APP)/tools/build-frontend-bundle.sh"
@@ -218,6 +243,22 @@ check-static:
 	grep -q "cat /proc/sys/kernel/random/boot_id" "$(ROUTER_APP)/tools/deploy-dev.sh"
 	grep -q "rm -f '\$$REMOTE_INIT_SCRIPT'" "$(ROUTER_APP)/tools/deploy-dev.sh"
 	! grep -q 'remote_action stop\|S81hyz-router stop\|kill -9\|pkill' "$(ROUTER_APP)/tools/deploy-dev.sh"
+	bash -n "$(THINGS_APP)/tools/deploy-app.sh"
+	bash -n "$(THINGS_APP)/tools/test-deploy-app.sh"
+	grep -q 'REMOTE_APPS_DIR=/userdata/hyz-things/apps' "$(THINGS_APP)/tools/deploy-app.sh"
+	grep -q 'REMOTE_REGISTRY=.*registry\.json' "$(THINGS_APP)/tools/deploy-app.sh"
+	grep -q 'REMOTE_RUN_DIR=/run/hyz-things/apps' "$(THINGS_APP)/tools/deploy-app.sh"
+	grep -q '\[router\]=/etc/init\.d/S81hyz-router' "$(THINGS_APP)/tools/deploy-app.sh"
+	grep -q '\[things\]=/etc/init\.d/S83hyz-things' "$(THINGS_APP)/tools/deploy-app.sh"
+	grep -q '\[camera\]=/etc/init\.d/S82hyz-camera' "$(THINGS_APP)/tools/deploy-app.sh"
+	! grep -qE 'S8[123]hyz-(router|things|camera)[[:space:]]+(stop|start|restart)' "$(THINGS_APP)/tools/deploy-app.sh"
+	grep -q 'assert_router_untouched' "$(THINGS_APP)/tools/deploy-app.sh"
+	grep -q 'ROUTER_READY_MARKER=/run/hyz-router/ready' "$(THINGS_APP)/tools/deploy-app.sh"
+	grep -q 'PROTOCOL_VERSION' "$(THINGS_APP)/tools/deploy-app.sh"
+	grep -q 'CONTROL_PROTOCOL_VERSION' "$(THINGS_APP)/tools/deploy-app.sh"
+	grep -q "mv '\$$target_next' '\$$target' && sync" "$(THINGS_APP)/tools/deploy-app.sh"
+	grep -q 'protocol_versions' "$(THINGS_APP)/tools/deploy-app.sh"
+	grep -q 'registry\.json' "$(THINGS_APP)/tools/deploy-app.sh"
 	sh -n "$(THINGS_APP)/tools/start-e2e-server.sh"
 	python3 -m json.tool "$(THINGS_APP)/package.json" >/dev/null
 	python3 -m json.tool "$(THINGS_APP)/package-lock.json" >/dev/null
