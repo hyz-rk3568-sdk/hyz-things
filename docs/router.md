@@ -1,30 +1,25 @@
-# 统一 Rust Router 应用
+# hyz-things 三进程架构
 
 ## 目标与当前状态
 
-路由控制面继续收敛为 `apps/rust/router` **一个 Cargo 包、一个 native composition root、一个最终板端 ELF**，摄像头媒体面则作为故障隔离的独立进程交付：
+路由控制面收敛为独立无头核心 `hyz-router`，管理门户为独立进程 `hyz-things`，媒体面为独立进程 `hyz-camera`。三者各自是独立的 Cargo 包、独立的板端 ELF、独立的 composition root，通过 root-only 版本化 Unix socket 契约协作：
 
 ```text
-apps/rust/router -> /usr/bin/hyz-router
-apps/rust/camera -> /usr/bin/hyz-camera
+apps/rust/contract  -> 共享 wire 契约（纯 serde，无框架依赖）
+apps/rust/router    -> /usr/bin/hyz-router（无头路由核心，S81）
+apps/rust/things    -> /usr/bin/hyz-things（门户/管理进程，S83）
+apps/rust/camera    -> /usr/bin/hyz-camera（媒体进程，S82）
 ```
 
-它采用包内六边形架构，而不是为每个 adapter 建 crate：
+- `hyz-router` 是**稳定的长运行服务**：拥有管理 LAN、WAN DHCP、IPv4 转发/NAT、Mihomo 代理、Tailscale 生命周期、OTA 与 shutdown；**没有** HTTP、Web、管理员认证或摄像头信令。它只服务 root-only `/run/hyz-router/control.sock`，并在严格 management-only reconcile 后才写入 `/run/hyz-router/ready` 标记。
+- `hyz-things` 以「hyz things」个人网站形式承载管理面：LAN `192.168.8.1:8080` 与精确 Tailscale IPv4 监听、管理员认证（Argon2id 凭据仍在 `/userdata/hyz-router/admin/credential.json`）、会话/CSRF、嵌入式 Yew SPA、camera 客户端与 Tailscale listener 管理。它等待 router ready 标记后才绑定 HTTP，通过 `hyz-contract` client 驱动 router，通过 `/run/hyz-camera/control.sock` 驱动 camera。
+- `hyz-camera` 是独立媒体进程，接受受限状态、会话、旋转请求，媒体在浏览器与固定 `40000-40015/udp` 池之间直连；它不执行网络或防火墙命令。
 
-```text
-src/domain/                 纯状态、值对象与不变量
-src/application/            用例与 outbound ports
-src/adapters/inbound/       Axum、CLI、root-only local control、udhcpc hook
-src/adapters/outbound/      network、proxy、process、storage、firmware、system
-src/web/                    同一包内的 Yew wasm build target
-src/main.rs                 唯一 production composition root
-```
+推送演进：`apps/rust/things/tools/deploy-app.sh` 支持对任一应用热推送新 ELF。推送 camera/things 只停止并重启对应 init 服务，**router 永不因此重启**；推送 router 是唯一会重启 router 的动作。停止任何服务之前，工具按注册表记录的协议版本做兼容性检查（见「热推送与协议兼容窗口」）。
 
-`router-web` 只在宿主机构建阶段产生 WASM/静态资源并嵌入 `hyz-router`，不会作为第二个板端程序安装。`hyz-camera` 是独立板端媒体服务，通过 root-only Unix socket 接受 `hyz-router` 的受限状态、创建会话和关闭会话请求；它不参与路由控制面的 composition root，也不执行网络或防火墙命令。旧的 `apps/router-panel/{shared,server,adapter-linux,frontend}` 多 crate 方案已被否决并从源码删除；状态契约、HTTP 行为和 UI 已迁入 router 包。独立 MetaCubeXD 静态包也已删除，产品只保留这一套管理 Web UI。
+旧的统一单 ELF 方案（Web/Axum/管理员认证内嵌于 `hyz-router`）已完成拆分；本文档 2026-08-16 之前的 OTA 验收记录均属于拆分前的统一 ELF，作为历史验收保留。`apps/router-panel/{shared,server,adapter-linux,frontend}` 多 crate 方案此前已被否决并从源码删除；独立 MetaCubeXD 静态包也已删除，产品只保留 hyz-things 这一套管理 Web UI。
 
-**源码、rootfs 与 recovery-free OTA 已完成统一 router cutover，并已在 RK3568 完成功能验证。** 2026-08-11 安装的设置事务 OTA 已通过完整冷启动、错误 STA 候选自动恢复、AP 未确认超时回滚、SysV restart 和并发 start 串行化验证；daemon 及其子进程不再继承 init action lock。管理员认证基础行为此前已在同一统一 ELF 上验证。成功切换到另一组真实 STA、管理员实际改密以及凭据型订阅刷新仍需由操作者在面板中输入本地凭据完成，不能标记为已验收。`make apps` 构建 `hyz-router` 与独立 `hyz-camera`，`make overlay` 安装两个 ELF 和产品元数据。摄像头增量已完成 Rust/frontend 构建、Router Playwright 10/10、recovery-free OTA 集成和真实 RK3568 WebRTC 验收；采集固定使用 RKISP 原生 `3840×2160` 全幅 NV12，输出分辨率与码率由固定枚举的 16:9 预设选择（默认 `720p · 2.5 Mbps`，可选 `1080p · 5 Mbps`、`1440p · 10 Mbps`、`4K · 20 Mbps`，均 `@ 30 FPS`、H.264 Baseline），非 4K 预设由 `videoscale` 缩放，画面旋转由 `videoflip` 在编码前应用（0/90/180/270°，浏览器不做 CSS 旋转），时间戳水印由 `clockoverlay` 在旋转后烧入（左上角、黑底、固定 20px 字号）。LAN 与 Tailscale 的桌面/移动路径均确认收到并解码 H.264 RTP、canvas 存在可见像素、全屏覆盖 viewport，停止后 camera pipeline/session 回零。Buildroot board overlay 保留各自最小 SysV init 脚本及 Mihomo 无凭据示例。旧 shell 路由/Mihomo wrapper、独立 DHCP hook、独立 OTA 和 hello demos 已从最终 rootfs 删除。真实摄像头自动验收见 [`camera-hardware-e2e.md`](camera-hardware-e2e.md)。
-
-**Tailscale 固定 LAN 远程访问已完成代码、构建、recovery-free OTA 和板端/Tailnet 验收。** 当前实现包含独立 typed lifecycle、固定 `tailscaled` 身份与 CLI、`netfilter-mode=off` 下的产品 owned INPUT/FORWARD/NAT、Mihomo → Tailscale → ordinary router hook 顺序、精确 Tailscale IPv4 HTTP listener、管理员登录/启用/停用/注销 Web 流程，以及固定 Tailscale `1.102.2` ARM64 Buildroot 包。摄像头真实端到端测试也已通过该 exact listener 完成信令和 UDP 媒体验收。完整验收矩阵见 [`soft-router-tailscale-plan.md`](soft-router-tailscale-plan.md)。
+**源码、rootfs 与 recovery-free OTA 已完成三进程 cutover：** 无头 router 通过 `/run/hyz-router/ready` 标记门控门户，`S83hyz-things` 等待标记后才启动门户并自检 HTTP；`make apps` 构建三个 ELF，`make overlay` 安装三者与产品元数据。`make check` 覆盖 contract、things、router 三 crate 的 fmt/test/clippy 与部署工具 host 测试。摄像头采集固定使用 RKISP 原生 `3840×2160` 全幅 NV12，输出分辨率与码率由固定枚举的 16:9 预设选择（默认 `720p · 2.5 Mbps`，可选 `1080p · 5 Mbps`、`1440p · 10 Mbps`、`4K · 20 Mbps`，均 `@ 30 FPS`、H.264 Baseline），非 4K 预设由 `videoscale` 缩放，画面旋转由 `videoflip` 在编码前应用（0/90/180/270°，浏览器不做 CSS 旋转），时间戳水印由 `clockoverlay` 在旋转后烧入（左上角、黑底、固定 20px 字号）。真实摄像头自动验收见 [`camera-hardware-e2e.md`](camera-hardware-e2e.md)。
 
 ## 2026-08-14 摄像头 WebRTC OTA 验收
 
@@ -59,21 +54,16 @@ flowchart LR
     Browser["管理 LAN 浏览器"]
     RootCLI["root CLI"]
     UdHCPC["udhcpc hook"]
-    Signal["SIGTERM / Ctrl-C"]
 
-    subgraph ELF["单一板端 ELF：/usr/bin/hyz-router"]
-        Web["嵌入式 Yew / WASM"]
-        HTTP["Axum<br/>192.168.8.1:8080（默认）"]
+    subgraph Router["/usr/bin/hyz-router · S81 无头核心"]
         Socket["root-only Unix control<br/>/run/hyz-router/control.sock"]
-        Runtime["ProductionRuntime<br/>唯一 composition root"]
+        Runtime["hyz-router main.rs<br/>composition root"]
         UseCases["Application use cases<br/>router · proxy · panel · status · OTA · shutdown"]
         Ports["Outbound ports"]
         Linux["LinuxRouterPlatform"]
         Firmware["FirmwareAdapter"]
         Watcher["最小 Mihomo fail-open watcher"]
 
-        Web --> HTTP
-        HTTP --> Runtime
         Socket --> Runtime
         Runtime --> UseCases
         UseCases --> Ports
@@ -82,55 +72,99 @@ flowchart LR
         Runtime -. "按严格身份启动" .-> Watcher
     end
 
+    subgraph Things["/usr/bin/hyz-things · S83 门户"]
+        Web["嵌入式 Yew / WASM"]
+        HTTP["Axum<br/>192.168.8.1:8080 + 精确 Tailscale IPv4"]
+        Portal["hyz-things main.rs<br/>composition root"]
+        Admin["AdminApplication"]
+        CamClient["CameraUnixAdapter"]
+
+        Web --> HTTP
+        HTTP --> Portal
+        Portal --> Admin
+        Portal --> CamClient
+    end
+
+    subgraph Camera["/usr/bin/hyz-camera · S82 媒体"]
+        CamSocket["root-only Unix control<br/>/run/hyz-camera/control.sock"]
+        Media["V4L2 · GStreamer · MPP · WebRTC<br/>固定 40000-40015/udp 池"]
+        CamSocket --> Media
+    end
+
     Browser -->|"同源 GET / 受限 POST"| HTTP
     RootCLI -->|"版本化 JSON frame"| Socket
     UdHCPC -->|"类型化 DHCP event"| Socket
-    Signal --> Runtime
+    Portal -->|"hyz-contract client<br/>版本化 JSON frame"| Socket
+    Portal -->|"camera 协议 v2<br/>版本化 JSON frame"| CamSocket
 
     Linux --> Net["Linux 网络与服务<br/>br-lan · wlan0 · iptables<br/>WPA · hostapd · dnsmasq · Mihomo"]
     Firmware --> OTA["OTA 平台<br/>staging · BCB · updateEngine · reboot"]
     Watcher -->|"core 异常时撤销 TUN 拦截"| Net
+    Browser -->|"H.264 媒体直连（WebRTC UDP）"| Media
 ```
 
-浏览器控制在进程内经过同一个 `ControlHandler`，不连接 root-only router socket；CLI 和 udhcpc hook 只作为该 socket 的客户端存在。完整 production adapter 只由 daemon 的 composition root 构造，watcher 只拥有撤销 TUN 拦截所需的最小能力。
+浏览器控制在 `hyz-things` 进程内经过同一个 `PortalControlHandler`，不连接 root-only router socket；CLI 和 udhcpc hook 只作为该 socket 的客户端存在。`hyz-things` 是 router/camera 的普通客户端，**不是**它们的 composition root——每个进程的完整生产 adapter 只由各自的 `main.rs` 构造。
 
-摄像头直播使用另一条受限边界：浏览器通过现有 Axum listener 完成管理员认证和 SDP offer/answer；`hyz-router` 的 `CameraApplication` 只通过固定 `/run/hyz-camera/control.sock` 调用独立 `hyz-camera`，并从当前 LAN 或 exact Tailscale listener 派生 candidate 地址。协商完成后，H.264 媒体直接在浏览器与 `hyz-camera` 的固定 `40000-40015/udp` 池之间流动，不经过 Axum。router 仍是唯一 firewall authority，camera 不执行网络命令。
+摄像头直播使用受限边界：浏览器通过 things 的 Axum listener 完成管理员认证和 SDP offer/answer；things 通过固定 `/run/hyz-camera/control.sock` 调用独立 `hyz-camera`，并从当前 LAN 或 exact Tailscale listener 派生 candidate 地址。协商完成后，H.264 媒体直接在浏览器与 `hyz-camera` 的固定 `40000-40015/udp` 池之间流动，不经过 Axum 或 router。router 仍是唯一 firewall authority，camera 不执行网络命令。
 
-### 包内六边形架构
+### 每包六边形架构
+
+三个进程各自在包内采用六边形架构，共享 `hyz-contract` 定义的类型化 wire 边界：
+
+```text
+hyz-contract  src/                  纯 serde 值对象与校验/脱敏不变量（可选 client 传输）
+hyz-router    src/domain/           纯状态、值对象与不变量
+              src/application/      用例与 outbound ports
+              src/adapters/inbound/ CLI、Unix control、udhcpc hook、OTA CLI
+              src/adapters/outbound/ network、proxy、process、storage、firmware、system、tailscale
+              src/main.rs           唯一 production composition root
+hyz-things    src/domain/           纯状态（re-export 自 hyz-contract）
+              src/application/      admin、camera client、status 聚合、PortalControlHandler
+              src/adapters/inbound/ Axum HTTP（LAN + Tailscale exact listeners）
+              src/adapters/outbound/ router UDS client、camera UDS client、admin storage、tailscale listener
+              src/web/              Yew/WASM 前端（web feature，只依赖 domain）
+              src/main.rs           唯一 production composition root
+hyz-camera    src/domain/           会话、preset、watermark、rotation 模型
+              src/application/      lifecycle、ports（FrameHub 扇出）
+              src/adapters/inbound/ root-only Unix control
+              src/adapters/outbound/ gstreamer、webrtc
+              src/main.rs           唯一 production composition root
+```
 
 ```mermaid
 flowchart TB
-    Web["Yew / WASM 浏览器客户端"]
-
     subgraph Driving["Driving adapters · adapters/inbound"]
-        CLI["CLI / Unix control"]
-        DHCP["udhcpc hook"]
-        HTTP["Axum HTTP"]
+        CLI["CLI / Unix control（router）"]
+        DHCP["udhcpc hook（router）"]
+        OTA["OTA CLI（router）"]
+        HTTP["Axum HTTP（things）"]
         Lifecycle["daemon lifecycle / signal"]
     end
 
-    Inbound["Typed inbound boundary<br/>ControlOperation · application use-case methods"]
+    Inbound["Typed inbound boundary<br/>ControlOperation · PortalControlHandler · use-case methods"]
 
     subgraph Core["Core"]
-        Application["application<br/>router · proxy · panel · status · OTA · shutdown"]
+        Application["application<br/>router · proxy · panel · status · OTA · shutdown<br/>admin · camera client · status aggregation"]
         Domain["domain<br/>desired / observed state · actions · invariants"]
         Application --> Domain
     end
 
-    Outbound["Outbound ports<br/>RouterPlatformPort · TailscalePlatformPort<br/>SystemProbePort · TailscaleProbePort · TailnetPeerReadPort · ClockPort<br/>FirmwarePlatformPort · status ports"]
+    Outbound["Outbound ports<br/>RouterPlatformPort · TailscalePlatformPort · SystemProbePort<br/>TailscaleProbePort · TailnetPeerReadPort · ClockPort<br/>FirmwarePlatformPort · status ports · PortalControlHandler<br/>CameraControlPort · AdminCredentialStorePort"]
 
     subgraph Driven["Driven adapters · adapters/outbound"]
         Linux["LinuxRouterPlatform<br/>network · process · proxy · storage · panel"]
         Tailscale["LinuxTailscalePlatform<br/>exact process · CLI · owned firewall"]
         Firmware["FirmwareAdapter"]
+        RouterClient["RouterControlClient（things → router UDS）"]
+        CameraClient["CameraUnixAdapter（things → camera UDS）"]
     end
 
     External["Linux / product platform<br/>kernel · procfs/sysfs · fixed executables · block devices"]
-    Main["src/main.rs<br/>composition root"]
+    Main["各包 src/main.rs<br/>各自 composition root"]
 
-    Web -->|"HTTP at runtime"| HTTP
     CLI --> Inbound
     DHCP --> Inbound
+    OTA --> Inbound
     HTTP --> Inbound
     Lifecycle --> Inbound
     Inbound --> Application
@@ -138,6 +172,8 @@ flowchart TB
     Outbound --> Linux
     Outbound --> Tailscale
     Outbound --> Firmware
+    Outbound --> RouterClient
+    Outbound --> CameraClient
     Linux --> External
     Tailscale --> External
     Firmware --> External
@@ -147,39 +183,43 @@ flowchart TB
     Main -. "constructs" .-> Firmware
 ```
 
-实线表示运行时调用方向：外部请求从 driving adapter 进入类型化边界，核心用例通过 outbound port 请求平台能力，核心本身不反向依赖 adapter。虚线只表示 `main.rs` 在启动时完成装配，不是业务调用。Yew 只在浏览器中通过 HTTP 使用 native 服务，不与 `adapters/inbound` 建立 Rust 编译依赖。
-
-源码依赖保持向内：`domain` 不依赖框架和 Linux；`application` 只依赖 domain 和自身定义的 outbound ports；outbound adapter 实现这些 ports。当前 inbound boundary 中既有 `ControlOperation`/`ControlHandler`，也有 application use-case 的类型化方法，因此它是一个逻辑边界，不代表必须为每个入口再创建微型 trait。
+实线表示运行时调用方向：外部请求从 driving adapter 进入类型化边界，核心用例通过 outbound port 请求平台能力，核心本身不反向依赖 adapter。虚线只表示 `main.rs` 在启动时完成装配，不是业务调用。跨进程的驱动/被驱动关系全部落在 `hyz-contract` 的版本化 frame 上：things 是 router 与 camera 的类型化客户端，不是它们的组合根。Yew 只在浏览器中通过 HTTP 使用 native 服务，不与 things 的 `adapters/inbound` 建立 Rust 编译依赖（`web` feature 只编译 `domain` 与 SPA）。
 
 ### Daemon 启动与就绪边界
 
 ```mermaid
 sequenceDiagram
-    participant Init as init/S81
+    participant InitR as init/S81
     participant Daemon as hyz-router daemon
     participant Control as Unix control
     participant Network as RouterApplication
     participant Proxy as ProxyApplication
-    participant HTTP as Axum
+    participant Marker as /run/hyz-router/ready
+    participant InitT as init/S83
+    participant Portal as hyz-things
 
-    Init->>Daemon: 以 root 启动
-    Daemon->>Daemon: 获取 daemon ownership
+    InitR->>Daemon: 以 root 启动
+    Daemon->>Daemon: 获取 daemon ownership，删除陈旧 ready 标记
     Daemon->>Control: 绑定并开始服务 control.sock
     Note over Control,Network: udhcpc 回调此时可独立提交 WAN lease，避免与启动事务死锁
     Daemon->>Network: reconcile management-only
     Network-->>Daemon: 严格复核管理 LAN/AP/DNS
     Daemon->>Daemon: 恢复设备策略事务
-    Daemon->>HTTP: 绑定固定 LAN 地址，Web 进入管理面就绪
+    Daemon->>Marker: 严格 management-only 确认后写入 ready 标记
     par 后台等待 DHCP-owned WAN route
         Daemon->>Network: 仅在默认路由已确认后 reconcile forwarding
         Network-->>Daemon: 普通 NAT 已确认
         Daemon->>Proxy: 按 forwarding → Tailscale → proxy 顺序恢复持久运行时
-    and 继续服务管理面
-        HTTP-->>Init: 即使 WAN/DHCP 不可用也保持 Web 可见
+    and 门户等待核心确认
+        InitT->>Marker: 轮询 ready 标记（有界 300s）
+        Marker-->>InitT: 存在
+        InitT->>Portal: 启动 hyz-things
+        Portal->>Portal: 绑定固定 LAN 地址与精确 Tailscale listener
+        Portal-->>InitT: HTTP health 通过
     end
 ```
 
-control socket 可服务不等于 HTTP 已就绪。HTTP 绑定是对管理 LAN 暴露的最终 readiness boundary；启动关键路径只提交严格确认的 management-only 状态，不等待 WAN DHCP、Tailscale 或 Mihomo。后台恢复任务每次先确认 DHCP-owned 默认路由，再在同一 `router_proxy` 串行区内按 forwarding、Tailscale、proxy 顺序恢复；`unknown`、外部所有权或复核失败都不会被提升为 ready。
+control socket 可服务不等于 router 已就绪，router ready 标记也不等于门户已就绪。ready 标记是核心对管理面严格 reconcile 的最终确认，只有它出现后 `S83hyz-things` 才会启动门户并绑定 LAN HTTP；即使 WAN/DHCP 不可用，核心的管理 LAN/AP/DNS 也保持可用。后台恢复任务每次先确认 DHCP-owned 默认路由，再在同一 `router_proxy` 串行区内按 forwarding、Tailscale、proxy 顺序恢复；`unknown`、外部所有权或复核失败都不会被提升为 ready。push camera/things 时 router 进程与 ready 标记都不受影响；push router 后门户保持运行并自动重连 UDS。
 
 WAN DHCP 租约按地址、metric `600` 路由、resolver 条目和 ownership record 整体提交；任一步失败都按精确动作逆序回滚。Buildroot 的 `/etc/resolv.conf -> ../tmp/resolv.conf` 在冷启动时允许目标尚不存在：adapter 只解析并校验固定 allowlist 中的目标父目录，再原子创建 `/tmp/resolv.conf`，不能因 dangling symlink 撤销已收到的有效租约。
 
@@ -193,7 +233,7 @@ RTL8852BS 单射频并发启动采用稳定优先的固定顺序，不以减少 
 4. last-good 快启动优先：若持久化的 last-good 记录（`/userdata/hyz-router/sta-last-good-channel.json`，SHA-1 指纹 = committed STA 的 ssid+PSK，7 天新鲜度）与 committed STA 匹配且未过期，用 15 秒短确认窗口替代完整 45 秒等待——单射频必须先完成首次扫描/关联再编程 hostapd，否则会与驱动竞争并导致冷启动反复 relaunch（板上已实测）；窗口内拿到 STA 信道就用实际信道（单射频下即为共享信道），拿不到才回退记录信道，因此无上游场景比慢路径更快；记录无效/过期则走完整 45 秒窗口，仍拿不到 STA channel 才使用固定管理 AP fallback channel。last-good 是 runtime-derived 缓存，只在冷启动 boot 路径生效（STA apply/rollback 恒走标准等待），损坏/缺失/超龄一律回退标准等待，绝不阻塞启动；记录在管理服务就绪且观察到共享信道时写入，并在后台确认 DHCP-owned WAN route 时刷新；
 5. 启动 AP 前必须主动应用 committed AP country；5 GHz 非 DFS 信道使用既有 VHT80 geometry，信道 161 必须精确读回 `secondary_channel=-1`、`ieee80211ac=1`、`vht_oper_chwidth=1`、`vht_oper_centr_freq_seg0_idx=155`；
 6. hostapd 单次失败只允许一次 clean retry，每次都先停止精确自有进程、down/up `p2p0` 并重写固定配置；不得通过 `rmmod`、`insmod` 或 `modprobe` 把诊断性驱动重载带入生产启动；
-7. AP 精确 ready 后再启动 dnsmasq、恢复原 bridge attachment，并复核所有管理进程身份和 AP 状态；只有这一步完成后才绑定 LAN HTTP；
+7. AP 精确 ready 后再启动 dnsmasq、恢复原 bridge attachment，并复核所有管理进程身份和 AP 状态；只有这一步完成后才写入 ready 标记；
 8. 任一尝试失败都必须 detach AP 并按逆序清理本轮已启动的自有进程。S81 可在总计 300 秒 deadline 内按 1、2、4、8、16、30 秒封顶退避重新启动完整 daemon；多次 launch 本身不是故障，只要 ownership 每轮完全清理并在 deadline 内达到严格 readiness。
 
 启动时对新生管理进程的身份确认对瞬态 `/proc` 状态重试：`Command::spawn` 返回后 exec 尚未落定，第一次严格匹配失败不代表 foreign process。`identify_spawned_service` 在 5 秒窗口内每 100ms 重新快照并重新匹配，只有 deadline 前始终无法匹配才 fail closed（曾见不匹配报 `Conflict`，全程不可见报 `ProbeFailed`）。这消除了冷启动因身份竞态导致的额外 relaunch，是总启动时间压下去的正路。
@@ -202,18 +242,15 @@ RTL8852BS 单射频并发启动采用稳定优先的固定顺序，不以减少 
 
 多次 launch 的原始主因（新生管理进程 exec 未落定时的身份竞态）已在 5 秒窗口内改为重试而非首次不匹配即失败，板上复验确认该启动失败已消除。在编程 hostapd 前新增单射频信道就绪门：只有当 committed STA 已确认在共享信道上（`wpa_cli` COMPLETED + 频率匹配）且 RTL8852BS 驱动的当前支持信道表（`/proc/net/rtl8852bs/{iface}/cur_spt_op_class_ch`，即 hostapd “current mode channel list” 的数据源）包含该信道时才开始 AP；无上游时在窗口内降级为记录信道启动（保持 LAN-only 可用），窗口耗尽仍无信道则 fail-closed。板上复验：`Hardware does not support configured channel (161)` 类启动失败已消除，launch 次数从 4-5 稳定到 3（到就绪 112-152 秒）；剩余 launch 由射频物理沉降时间主导——驱动信号（信道表、STA COMPLETED）在关联后即“就绪”，但严格 VHT80-ENABLED 往往要再等数十秒（跨 boot 实测 70-210 秒不等，无可读信号提前预测），且存在一轮“已到 dnsmasq+attach 仍退出”的偶发后续失败（原因待抓）。启动时 device-policy recovery 也改为在生命周期锁被瞬时占有时做有界重试（镜像 DHCP worker 的 `LIFECYCLE_LOCK_WAIT` 语义），避免 startup 因锁竞争直接失败。
 
-## Composition root
+## Composition roots
 
-`src/main.rs` 是唯一装配点，构造：
+每个进程的 `src/main.rs` 是各自唯一的装配点：
 
-- `LinuxRouterPlatform`：typed `ip`/legacy `iptables`、管理网络进程身份、网络和 Mihomo 状态；
-- `LinuxTailscalePlatform`：固定 `/usr/bin/tailscaled` 与 `/usr/bin/tailscale`、PID/start/exe/argv/socket/interface 身份、持久 mode/state 以及 Tailscale owned firewall；
-- `LinuxMihomoFailOpenPlatform`：同一 ELF 的隐藏 watcher 角色，仅负责 PID/start 绑定的 TUN fail-open；
-- `FirmwareAdapter`：OTA 下载、RKFW/SHA-256、BCB、`updateEngine`、reboot；
-- `ReadStatus`：router/proxy/tailscale/system 的部分成功聚合；
-- LAN Axum server、按严格观测地址启停的 Tailscale Axum server、root-only local control 与嵌入 Yew assets。
+- `hyz-router` 构造：`LinuxRouterPlatform`（typed `ip`/legacy `iptables`、管理网络进程身份、网络和 Mihomo 状态）、`LinuxTailscalePlatform`（固定 `/usr/bin/tailscaled` 与 `/usr/bin/tailscale`、PID/start/exe/argv/socket/interface 身份、持久 mode/state 以及 Tailscale owned firewall）、`LinuxMihomoFailOpenPlatform`（同一 ELF 的隐藏 watcher 角色，仅负责 PID/start 绑定的 TUN fail-open）、`FirmwareAdapter`（OTA 下载、RKFW/SHA-256、BCB、`updateEngine`、reboot）、`ReadStatus`（router/proxy/tailscale/system 的部分成功聚合）与 root-only local control；就绪后写入 `/run/hyz-router/ready`。
+- `hyz-things` 构造：`AdminFileAdapter`/`AdminApplication`（Argon2id 凭据，`/userdata/hyz-router/admin/credential.json`）、`CameraApplication(CameraUnixAdapter)`、`RouterControlClient`（`hyz-contract` client）、`PortalStatus`（router 不可用时返回明确 degraded 快照）、CSRF token、LAN 固定 `192.168.8.1:8080` 监听与 Tailscale exact listener 管理循环。
+- `hyz-camera` 构造：pipeline/session 生命周期、`FrameHub` 扇出、str0m 会话线程与固定 UDP 端口池，root-only control socket。
 
-候选命令为：
+`hyz-router` 的命令行：
 
 ```text
 hyz-router daemon
@@ -221,10 +258,14 @@ hyz-router status [--json]
 hyz-router router enable|disable
 hyz-router proxy lan-tun enable|disable
 hyz-router proxy tailscale enable|disable
+hyz-router wifi status|scan
+hyz-router wifi ap apply|confirm|cancel
+hyz-router subscription get [--json]
+hyz-router subscription refresh
 hyz-router ota verify|download|install|install-recovery|apply ...
 ```
 
-`daemon` 是正常控制路径中唯一构造完整生产 adapter 的角色。普通 CLI 和同一 ELF 的 udhcpc hook 都是 `/run/hyz-router/control.sock` 客户端；socket 位于 root-only `0700` 目录，文件模式 `0600`，并用 Linux peer credentials 再次要求 UID 0。Mihomo watcher 是唯一的最小特权例外：它由同一 composition root 装配，只能按已记录的 core PID/start/exe/argv 身份执行 fail-open，不提供公开 CLI、HTTP 或 control operation。
+`daemon` 是正常控制路径中唯一构造完整生产 adapter 的角色。普通 CLI、同一 ELF 的 udhcpc hook 和 `hyz-things` 都是 `/run/hyz-router/control.sock` 客户端；socket 位于 root-only `0700` 目录，文件模式 `0600`，并用 Linux peer credentials 再次要求 UID 0。Mihomo watcher 是唯一的最小特权例外：它由同一 composition root 装配，只能按已记录的 core PID/start/exe/argv 身份执行 fail-open，不提供公开 CLI、HTTP 或 control operation。
 
 OTA 和 router enable/disable 仍不通过 LAN API 暴露。匿名 LAN 页面只保留状态展示、LCD 控制和受限测速；LAN TUN、Tailscale 中继代理与已验证组内节点选择现与 AP/STA、设备别名/策略及订阅来源一起，只通过固定 typed API 暴露给已完成强制改密的管理员 session。浏览器不能提交命令、路径、原始 wpa_supplicant/hostapd/Mihomo 配置、provider 名、测试 URL 或 timeout。凭据和订阅 URL 不回显，也不允许通过 CLI 参数输入，避免进入进程列表。
 
@@ -234,14 +275,17 @@ OTA 和 router enable/disable 仍不通过 LAN API 暴露。匿名 LAN 页面只
 2. `application` 只依赖 domain 和自身定义的 ports。
 3. HTTP/CLI 只能调用 application use cases，不能直接构造或调用 outbound adapter。
 4. outbound adapter 实现 application ports，不依赖 HTTP DTO 或 Yew。
-5. 只有 `main.rs` 可以构造生产 adapter。
+5. 只有各进程自己的 `main.rs` 可以构造生产 adapter；`hyz-things` 不是 router/camera 的组合根。
 6. adapter 不接受来自 HTTP 的命令字符串；外部程序只能通过固定 executable 和 typed argv 调用，禁止 `sh -c`。
+7. 跨进程调用只经过 `hyz-contract` 的版本化 frame；协议版本不匹配必须拒绝（客户端精确匹配，服务端接受当前与前一版本）。
 
-当前生命周期能力由独立 typed ports 表达：普通网络/Mihomo 使用 `RouterPlatformPort` 与 `SystemProbePort`，Tailscale 生命周期使用 `TailscalePlatformPort` 与 `TailscaleProbePort`，管理员只读 Tailnet 设备清单通过独立 `TailnetPeerReadPort` 读取；二者在 Linux adapter 中共享 `/run/hyz-network.lock`，避免并发修改统一 iptables hook。`FirmwarePlatformPort`、状态 ports 和 `ClockPort` 保持各自边界。
+当前生命周期能力由独立 typed ports 表达：普通网络/Mihomo 使用 `RouterPlatformPort` 与 `SystemProbePort`，Tailscale 生命周期使用 `TailscalePlatformPort` 与 `TailscaleProbePort`，管理员只读 Tailnet 设备清单通过独立 `TailnetPeerReadPort` 读取；二者在 Linux adapter 中共享 `/run/hyz-network.lock`，避免并发修改统一 iptables hook。`FirmwarePlatformPort`、状态 ports 和 `ClockPort` 保持各自边界。门户侧的 `PortalControlHandler`（things application ports）把 HTTP 与 router/camera UDS 客户端隔离；`CameraControlPort` 与 `AdminCredentialStorePort` 是 things 的 outbound 边界。
 
 ## Web 状态与受限本地控制
 
-HTTP 默认保留固定 LAN listener `192.168.8.1:8080`；`HYZ_ROUTER_HTTP_PORT` 可覆盖端口，但 LAN 监听 IP 始终固定。已认证的 RouterOnly/LanSubnetAccess 还可在严格观测到的单个 Tailscale IPv4 上启动同端口的第二个 exact listener，并为该地址建立独立 exact origin；地址变化时先停旧 listener，再绑定新地址。两个 listener 都不会回退到 `0.0.0.0`。匿名状态与原受限控制接口保持不变，设置面包含以下精确接口：
+## hyz-things HTTP 状态与受限本地控制
+
+门户 HTTP 由 `hyz-things` 进程承载（`S83hyz-things` 在 router ready 标记出现后才启动它）。默认保留固定 LAN listener `192.168.8.1:8080`；`HYZ_THINGS_HTTP_PORT` 可覆盖端口，但 LAN 监听 IP 始终固定。已认证的 RouterOnly/LanSubnetAccess 还可在严格观测到的单个 Tailscale IPv4 上启动同端口的第二个 exact listener，并为该地址建立独立 exact origin；地址变化时先停旧 listener，再绑定新地址。两个 listener 都不会回退到 `0.0.0.0`。匿名状态与原受限控制接口保持不变，设置面包含以下精确接口：
 
 - `POST /api/v1/auth/{login,logout,password}` 与 `GET /api/v1/auth/session`；
 - `GET /api/v1/network/{config,pending}`；
@@ -260,7 +304,7 @@ HTTP 默认保留固定 LAN listener `192.168.8.1:8080`；`HYZ_ROUTER_HTTP_PORT`
 
 响应继续带 CSP、frame deny、nosniff、referrer、permissions、COOP/CORP 等安全头。Trunk 生成的 inline module bootstrap 会在 deterministic bundle 阶段被严格提取成同源 `/router-bootstrap.js`，因此不需要 nonce 或 `'unsafe-inline'`。Yew 启动需要浏览器编译同源 WASM，所以 `script-src` 精确允许 `'self' 'wasm-unsafe-eval'`；后者只开放 WebAssembly 编译，不开放普通 JavaScript `eval`。
 
-Yew 页面采用 `总览 / 网络设置` 两个页内 tab；总览以实时链路拓扑和四项关键指标优先呈现 WAN、STA、Router/NAT、AP/LAN 与 Mihomo/TUN 的关系，再只读展示系统、WAN、LAN/AP、转发/NAT、Mihomo core、LAN TUN、Tailscale 中继代理、`wlan0` WAN 累计流量、LCD 背光、实际使用的代理组、当前节点、逐项延迟/超时和从节点名称保守推断的国家/地区。LAN TUN 与 Tailscale 中继代理两个独立开关、节点选择、设备别名/策略与订阅配置统一放在登录后的网络设置中；设备别名按 MAC 持久保存，可在默认代理策略下独立保留，避免 DHCP hostname 消失后退化为 MAC。Mihomo 内置但在当前 rule 模式不承载流量的 `GLOBAL` 组被过滤；没有数据的状态卡、控制卡和代理区域直接隐藏，不显示“不可用”占位。页面首次进入或浏览器完整刷新时只触发一次受限组级全量测速，约两秒的状态轮询不会测速；手动按钮可再次刷新，五秒内重复请求返回缓存成功结果而不是 409。组级测速覆盖 inline proxies；响应直接合并到每个显示项，缺失项标记为超时，并在节点目录不变时由 daemon 进程内缓存保留最近结果。provider history 仍只作为初始数据来源，且只合并经过名称、数量和字段白名单校验的 `delay`/`alive`，浏览器不能指定 provider、代理组、测试 URL 或 timeout。代理节点、组名和地区属于 LAN-visible operational metadata；API 不返回 server/port、订阅 URL、密码、UUID、controller secret、原始 history 或 Mihomo JSON。写操作期间控件禁用，状态失败时保留最近成功快照。
+Yew 页面采用 `总览 / 网络设置` 两个页内 tab；总览以实时链路拓扑和四项关键指标优先呈现 WAN、STA、Router/NAT、AP/LAN 与 Mihomo/TUN 的关系，再只读展示系统、WAN、LAN/AP、转发/NAT、Mihomo core、LAN TUN、Tailscale 中继代理、`wlan0` WAN 累计流量、LCD 背光、实际使用的代理组、当前节点、逐项延迟/超时和从节点名称保守推断的国家/地区。LAN TUN 与 Tailscale 中继代理两个独立开关、节点选择、设备别名/策略与订阅配置统一放在登录后的网络设置中；设备别名按 MAC 持久保存，可在默认代理策略下独立保留，避免 DHCP hostname 消失后退化为 MAC。Mihomo 内置但在当前 rule 模式不承载流量的 `GLOBAL` 组被过滤；没有数据的状态卡、控制卡和代理区域直接隐藏，不显示“不可用”占位。页面首次进入或浏览器完整刷新时只触发一次受限组级全量测速，约两秒的状态轮询不会测速；手动按钮可再次刷新，五秒内重复请求返回缓存成功结果而不是 409。组级测速覆盖 inline proxies；响应直接合并到每个显示项，缺失项标记为超时，并在节点目录不变时由 router daemon 进程内缓存保留最近结果。provider history 仍只作为初始数据来源，且只合并经过名称、数量和字段白名单校验的 `delay`/`alive`，浏览器不能指定 provider、代理组、测试 URL 或 timeout。代理节点、组名和地区属于 LAN-visible operational metadata；API 不返回 server/port、订阅 URL、密码、UUID、controller secret、原始 history 或 Mihomo JSON。写操作期间控件禁用，状态失败时保留最近成功快照。门户品牌为「hyz things」，页面标题与 `index.html` 的 `<title>` 一致，不再使用“HYZ Router”标识。
 
 网络设置页签在未登录时只显示默认折叠的管理员登录摘要，按需展开登录表单；登录后提供代理模式与节点选择、设备显示名与代理策略、STA 扫描/手工切换、AP SSID/密码/国家码和 write-only Mihomo 订阅来源。AP/STA 面板默认折叠，按需展开；STA 或 AP 应用先在管理设置区显示内嵌风险确认 panel，不使用模态弹窗或页面遮罩。确认后先移除确认 panel 并折叠详情，等待浏览器完成渲染后才发送可能中断管理连接的请求。typed Wi-Fi 配置使用 PBKDF2 派生的 64-hex PSK和固定 renderer，不拼接 raw 配置。STA 只有在关联、DHCP metric-600 route 与同信道 AP readiness 都确认后才提交，失败恢复 committed generation；当前 renderer 对 2.4 GHz 使用 HT20，对受支持的非 DFS 5 GHz 同信道使用既有 VHT80 profile，并对 secondary channel、802.11ac、VHT width 与 center frequency 做精确 readiness 复核；诊断中可启动的 HT20 只用于隔离驱动状态问题，不作为生产性能降级。5 GHz 候选仍只有在 STA 关联、DHCP metric-600 route 与同信道 VHT80 AP readiness 都确认后才提交。AP 采用 prepare → apply → 重新连接 → confirm，两分钟未确认则恢复旧 AP，daemon 重启发现 pending 也恢复 committed 配置。订阅只接受 HTTPS 公网目标，关闭 redirect/环境代理，使用固定 `clash.meta` User-Agent 请求 YAML，连接前校验并 pin 全部 DNS 结果；响应受 4 MiB 上限约束，必须包含唯一顶层 `proxies`，其他 Clash 配置字段会被丢弃，只有经过严格限制的节点数组进入本地候选。Mihomo 候选验证和 live readiness 成功后才切 current generation。GET 只显示是否配置与通用状态，不返回来源、host、代次或节点数。
 
@@ -269,6 +313,16 @@ Yew 页面采用 `总览 / 网络设置` 两个页内 tab；总览以实时链�
 LCD 的 DTS `default-brightness-level = <0>` 让 U-Boot/Linux 冷启动默认保持零 PWM，但 panel/DSI 仍注册，因此 Web 可以点亮。黑屏操作把 brightness 设为 0 并 powerdown；面板连接的是共享 always-on `vcc5v0_sys`，软件不能让 LCD 连接器 5V 物理归零。
 
 状态 probe 直接调用固定的 `/usr/sbin/wpa_cli`、`/usr/bin/hostapd_cli`、`/usr/sbin/ip`、`/usr/sbin/iptables` 并读取固定 procfs/sysfs，不调用 `/usr/sbin/hyz-router` 或 `/usr/sbin/hyz-mihomo` wrapper。
+
+## 热推送与协议兼容窗口
+
+`apps/rust/things/tools/deploy-app.sh` 是每应用热推送工具（`make deploy-router|deploy-things|deploy-camera`，回滚 `make revert-*`，预检 `deploy-app.sh check NAME`）：
+
+- 推送流程：adb 推送 ELF 到 `/userdata/hyz-things/apps/<name>/<sha256>/` → 远端 SHA-256 校验 → **只停止目标应用的 init 服务**（S81/S83/S82）→ 同文件系统原子替换 `/usr/bin/<app>` → 启动 → 就绪探针 → 写注册表。
+- 服务隔离：推送 camera/things 绝不调用 router 的 init 脚本；`assert_router_untouched` 在推送前后断言 `/run/hyz-router/ready` 仍在。推送 router 是唯一重启 router 的动作，门户保持运行并自动重连 UDS。
+- 注册表：持久 `/userdata/hyz-things/apps/registry.json` 记录每个已部署二进制的 sha256 与 wire 协议版本（`protocol_versions`），每次部署保留 previous 条目供回滚；`/run/hyz-things/apps/<name>.json` 是当前启动的易失快照。
+- 协议兼容窗口：`hyz-contract` 的 wire 契约版本化，服务端接受当前与前一版本（`[current, current - 1]`），客户端要求精确匹配。deploy 与 revert 在**停止任何服务之前**按注册表记录版本做兼容性检查：推送 router 时要求已装 things 的 router 协议版本相等；推送 things 时要求已装 router/camera 版本相等；推送 camera 时要求已装 things 的 camera 期望版本相等。回滚按 previous 条目**记录的**版本校验（而不是当前源码树），防止源码已前进时错误放行。
+- 测试：`tools/test-deploy-app.sh` 用 fake adb 断言服务隔离、先拒绝后停止、回滚按记录版本把关；`make check` 与 `check-static` 均覆盖。
 
 ## 路由与 Mihomo direct adapter
 
@@ -298,7 +352,7 @@ Rust candidate 当前覆盖：
 - `tailscaled` 仅允许 fixed Direct 或 `HTTP_PROXY`/`HTTPS_PROXY=http://127.0.0.1:7890` 两组 exact environment；共享 core reload 前先切 Direct，恢复后再切回代理；
 - strict observed readiness，unknown/foreign 绝不当作 ready。
 
-Host 与板端 parity 已完成：统一包唯一的 `Cargo.lock`、native 测试套件、native/WASM 严格 Clippy、Trunk release bundle、连续两次一致的 deterministic tar、嵌入真实前端的 AArch64 ELF、Buildroot rootfs、kernel 和 recovery-free OTA 均已通过。统一运行时的 Web LCD/代理控制、节点切换与恢复、延迟、真实 Mihomo core 崩溃 fail-open、普通 NAT 和 TUN 恢复已完成板测。2026-08-10 Web 稳定性固件曾暴露 S81 固定 launch 次数窗口不足；2026-08-11 设置事务固件已安装封顶指数退避版 S81，并通过自动冷启动与 SysV restart 验收。
+Host 与板端 parity 已建立：`hyz-contract`/`hyz-router`/`hyz-things` 各自的 `Cargo.lock`、native 测试套件、严格 Clippy、Trunk release bundle、连续两次一致的 deterministic tar、嵌入真实前端的 AArch64 ELF、Buildroot rootfs、kernel 和 recovery-free OTA 均已通过；三进程拆分后的 `make check` 覆盖 contract/things/router 的 fmt、test、Clippy 与部署工具 host 测试。统一运行时的 Web LCD/代理控制、节点切换与恢复、延迟、真实 Mihomo core 崩溃 fail-open、普通 NAT 和 TUN 恢复已在拆分前的统一 ELF 上完成板测（历史记录见下文各节）。2026-08-10 Web 稳定性固件曾暴露 S81 固定 launch 次数窗口不足；2026-08-11 设置事务固件已安装封顶指数退避版 S81，并通过自动冷启动与 SysV restart 验收。
 
 2026-08-14 新增的 Mihomo shared core + LAN TUN/Tailscale 中继代理双 feature 层已完成主机静态检查、Rust 测试和 Chromium 桌面/360px E2E；该新层尚未部署到 RK3568，也未执行四组合、Mihomo `SIGKILL` 后 Tailscale Direct 恢复、固定 CONNECT 路径探测和长时间稳定性板测。此前板测结果不能替代这组新增验收。
 
@@ -326,27 +380,25 @@ Host 与板端 parity 已完成：统一包唯一的 `Cargo.lock`、native 测�
 
 已放置的测试层包括：
 
-- status Serde/秘密排除；
-- partial degraded aggregation 与并发状态读取合并；
-- real random-port Axum/security/fallback；
-- 非默认 `e2e` feature 的 loopback-only Axum harness：真实 HTTP/CSP/CSRF/Origin/管理员应用，状态、面板、Wi-Fi 与订阅通过 application ports/typed `ControlHandler` fake 注入，不构造生产 outbound adapter；
+- `hyz-contract`：21 个 wire 类型/校验/脱敏测试；
+- `hyz-router`：status Serde/秘密排除、partial degraded aggregation、network/proxy action order、rollback、unknown non-readiness、Tailscale 生命周期、OTA BCB 与 verify-before-commit；
+- `hyz-things`：real random-port Axum/security/fallback HTTP 测试；非默认 `e2e` feature 的 loopback-only Axum harness（bin `hyz-things-e2e`）：真实 HTTP/CSP/CSRF/Origin/管理员应用，状态、面板、Wi-Fi、订阅与 camera 通过 application ports/typed `PortalControlHandler` fake 注入，不构造生产 outbound adapter；部署工具 host 测试（`tools/test-deploy-app.sh`）；
 - Playwright Chromium 浏览器流程：总览/代理/网络设置页签导航、链路拓扑和关键指标、匿名状态与控制、bootstrap 强制改密、STA/AP 事务及内嵌非模态风险确认 panel、write-only 订阅、可访问性与窄屏无横向溢出；
-- Tailwind CSS 4 + daisyUI 5 `dracula` 默认主题的 locked npm 静态 CSS 生成，以及 deterministic bundle 的 CSP-compatible external bootstrap；
+- Tailwind CSS 4 + daisyUI 5 `dracula` 默认主题的 locked npm 静态 CSS 生成（`npm run build:css` 输出被 gitignore 的生成 CSS），以及 deterministic bundle 的 CSP-compatible external bootstrap；
 - Yew formatting/state 与单一 WAN 流量口径；
-- network/proxy action order、rollback、unknown non-readiness；
-- OTA BCB、fake-port call order、verify-before-commit/stage/reboot。
+- deploy-app.sh 的 fake-adb 服务隔离与协议兼容矩阵测试。
 
 仓库本地固定版本 Trunk、locked Node 前端依赖和显式构建/浏览器测试入口：
 
 ```sh
-(cd apps/rust/router && npm ci)
+(cd apps/rust/things && npm ci)
 cargo install trunk --locked --version 0.21.14 --root .tools/trunk
-make router-frontend
-make router-e2e
-make router-app
+make things-frontend
+make things-e2e
+make things-app
 ```
 
-`router-frontend` 执行 Tailwind/daisyUI 静态 CSS、Trunk/Cargo release WASM build 和 deterministic tar；`router-e2e` 使用 host-only loopback Axum harness 运行 Playwright，不执行产品网络命令；`router-app` 再完成资源嵌入和 AArch64 native build。由于 Trunk 0.21.14 默认的 Binaryen 版本不能接受当前 rustc 产生的标准 WASM 特性，前端显式禁用可选的 `wasm-opt` 二次处理；Cargo release 的 LTO/strip 保留。最终 tar 连续构建 SHA-256 一致，AArch64 ELF 已确认嵌入真实资源并逐字节进入 rootfs。
+`things-frontend` 先执行 Tailwind/daisyUI 静态 CSS 再执行 Trunk/Cargo release WASM build 并产出 deterministic tar（`target/frontend-bundle/hyz-things-frontend.tar`，由 `build.rs` 经 `HYZ_THINGS_FRONTEND_ARCHIVE` 嵌入 ELF）；`things-e2e` 使用 host-only loopback Axum harness 运行 Playwright，不执行产品网络命令；`things-app` 再完成资源嵌入和 AArch64 native build。由于 Trunk 0.21.14 默认的 Binaryen 版本不能接受当前 rustc 产生的标准 WASM 特性，前端显式禁用可选的 `wasm-opt` 二次处理；Cargo release 的 LTO/strip 保留。最终 tar 连续构建 SHA-256 一致，AArch64 ELF 已确认嵌入真实资源并逐字节进入 rootfs。`make check` 覆盖 contract/things/router 的 fmt、test、严格 Clippy 与 `test-deploy-app.sh`。
 
 ## 2026-08-10 Web 稳定性 OTA 与板端结果
 
