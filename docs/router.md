@@ -12,7 +12,7 @@ apps/rust/camera    -> /usr/bin/hyz-camera（媒体进程，S82）
 ```
 
 - `hyz-router` 是**稳定的长运行服务**：拥有管理 LAN、WAN DHCP、IPv4 转发/NAT、Mihomo 代理、Tailscale 生命周期、OTA 与 shutdown；**没有** HTTP、Web、管理员认证或摄像头信令。它只服务 root-only `/run/hyz-router/control.sock`，并在严格 management-only reconcile 后才写入 `/run/hyz-router/ready` 标记。
-- `hyz-things` 以「hyz things」个人网站形式承载管理面：LAN `192.168.8.1:8080` 与精确 Tailscale IPv4 监听、管理员认证（Argon2id 凭据仍在 `/userdata/hyz-router/admin/credential.json`）、会话/CSRF、嵌入式 Yew SPA、camera 客户端与 Tailscale listener 管理。它等待 router ready 标记后才绑定 HTTP，通过 `hyz-contract` client 驱动 router，通过 `/run/hyz-camera/control.sock` 驱动 camera。
+- `hyz-things` 以「hyz things」个人网站形式承载管理面：LAN `192.168.8.1:8080`（HTTPS，自签证书）与精确 Tailscale IPv4 监听、管理员认证（Argon2id 凭据仍在 `/userdata/hyz-router/admin/credential.json`）、会话/CSRF、嵌入式 Yew SPA、camera 客户端与 Tailscale listener 管理。它等待 router ready 标记后才绑定 HTTPS，通过 `hyz-contract` client 驱动 router，通过 `/run/hyz-camera/control.sock` 驱动 camera。
 - `hyz-camera` 是独立媒体进程，接受受限状态、会话、旋转请求，媒体在浏览器与固定 `40000-40015/udp` 池之间直连；它不执行网络或防火墙命令。
 
 推送演进：`apps/rust/things/tools/deploy-app.sh` 支持对任一应用热推送新 ELF。推送 camera/things 只停止并重启对应 init 服务，**router 永不因此重启**；推送 router 是唯一会重启 router 的动作。停止任何服务之前，工具按注册表记录的协议版本做兼容性检查（见「热推送与协议兼容窗口」）。
@@ -74,7 +74,7 @@ flowchart LR
 
     subgraph Things["/usr/bin/hyz-things · S83 门户"]
         Web["嵌入式 Yew / WASM"]
-        HTTP["Axum<br/>192.168.8.1:8080 + 精确 Tailscale IPv4"]
+        HTTP["Axum + rustls<br/>https://192.168.8.1:8080 + 精确 Tailscale IPv4"]
         Portal["hyz-things main.rs<br/>composition root"]
         Admin["AdminApplication"]
         CamClient["CameraUnixAdapter"]
@@ -247,7 +247,7 @@ RTL8852BS 单射频并发启动采用稳定优先的固定顺序，不以减少 
 每个进程的 `src/main.rs` 是各自唯一的装配点：
 
 - `hyz-router` 构造：`LinuxRouterPlatform`（typed `ip`/legacy `iptables`、管理网络进程身份、网络和 Mihomo 状态）、`LinuxTailscalePlatform`（固定 `/usr/bin/tailscaled` 与 `/usr/bin/tailscale`、PID/start/exe/argv/socket/interface 身份、持久 mode/state 以及 Tailscale owned firewall）、`LinuxMihomoFailOpenPlatform`（同一 ELF 的隐藏 watcher 角色，仅负责 PID/start 绑定的 TUN fail-open）、`FirmwareAdapter`（OTA 下载、RKFW/SHA-256、BCB、`updateEngine`、reboot）、`ReadStatus`（router/proxy/tailscale/system 的部分成功聚合）与 root-only local control；就绪后写入 `/run/hyz-router/ready`。
-- `hyz-things` 构造：`AdminFileAdapter`/`AdminApplication`（Argon2id 凭据，`/userdata/hyz-router/admin/credential.json`）、`CameraApplication(CameraUnixAdapter)`、`RouterControlClient`（`hyz-contract` client）、`PortalStatus`（router 不可用时返回明确 degraded 快照）、CSRF token、LAN 固定 `192.168.8.1:8080` 监听与 Tailscale exact listener 管理循环。
+- `hyz-things` 构造：`AdminFileAdapter`/`AdminApplication`（Argon2id 凭据，`/userdata/hyz-router/admin/credential.json`）、`CameraApplication(CameraUnixAdapter)`、`RouterControlClient`（`hyz-contract` client）、`PortalStatus`（router 不可用时返回明确 degraded 快照）、CSRF token、`PortalTls`（首次启动自签证书，`/userdata/hyz-things/tls/`）、LAN 固定 `192.168.8.1:8080` HTTPS 监听与 Tailscale exact listener 管理循环。
 - `hyz-camera` 构造：pipeline/session 生命周期、`FrameHub` 扇出、str0m 会话线程与固定 UDP 端口池，root-only control socket。
 
 `hyz-router` 的命令行：
@@ -285,7 +285,7 @@ OTA 和 router enable/disable 仍不通过 LAN API 暴露。匿名 LAN 页面只
 
 ## hyz-things HTTP 状态与受限本地控制
 
-门户 HTTP 由 `hyz-things` 进程承载（`S83hyz-things` 在 router ready 标记出现后才启动它）。默认保留固定 LAN listener `192.168.8.1:8080`；`HYZ_THINGS_HTTP_PORT` 可覆盖端口，但 LAN 监听 IP 始终固定。已认证的 RouterOnly/LanSubnetAccess 还可在严格观测到的单个 Tailscale IPv4 上启动同端口的第二个 exact listener，并为该地址建立独立 exact origin；地址变化时先停旧 listener，再绑定新地址。两个 listener 都不会回退到 `0.0.0.0`。匿名接口包含 `/api/v1/{health,status,panel,apps}` 与 `/api/v1/camera/{status,viewer-token}`；设置面包含以下精确接口：
+门户 HTTPS 由 `hyz-things` 进程承载（`S83hyz-things` 在 router ready 标记出现后才启动它），TLS 使用设备首次启动生成的自签证书（`/userdata/hyz-things/tls/`，浏览器首次访问需手动通过一次证书警告）。默认保留固定 LAN listener `192.168.8.1:8080`；`HYZ_THINGS_HTTP_PORT` 可覆盖端口，但 LAN 监听 IP 始终固定。已认证的 RouterOnly/LanSubnetAccess 还可在严格观测到的单个 Tailscale IPv4 上启动同端口的第二个 exact listener（同样 TLS），并为该地址建立独立 exact origin；地址变化时先停旧 listener，再绑定新地址。两个 listener 都不会回退到 `0.0.0.0`。匿名接口包含 `/api/v1/{health,status,panel,apps}` 与 `/api/v1/camera/{status,viewer-token}`；设置面包含以下精确接口：
 
 - `GET /api/v1/apps`（热推送 registry 只读：名称、固定 binary/init 脚本、sha256 与协议版本；无 registry 时返回空，表示固件内置）；
 - `POST /api/v1/auth/{login,logout,password}` 与 `GET /api/v1/auth/session`；

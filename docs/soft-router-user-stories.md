@@ -796,7 +796,7 @@ Tailscale 分两级验收：
 
 1. `/usr/bin/hyz-camera` 作为独立 root 服务运行，V4L2、GStreamer、MPP 或 WebRTC 故障不终止 `hyz-router`；
 2. 管理页面只在正常管理员 session 下访问 camera 状态和 mutation API，POST 继续要求 exact Origin、CSRF、typed JSON 和有界请求体；
-3. 浏览器是 SDP offerer，第一版只协商单路 H.264 recvonly 视频，不提供音频、录制、DataChannel、trickle ICE 或公网 TURN；
+3. 浏览器是 SDP offerer，第一版只协商单路 H.264 recvonly 视频，不提供音频、录制、DataChannel、trickle ICE 或公网 TURN；后续全双工语音对讲（音频 m-line 与设备端 AEC）见 §12.8；
 4. router 根据当前 exact HTTP listener 派生 LAN 或 Tailscale access scope，浏览器不能提交设备路径、candidate 地址、UDP 端口、pipeline 或编码器属性；
 5. camera 只从固定 `40000-40015/udp` 池绑定端口，router 是唯一防火墙 authority，camera 不执行 `iptables`、`ip` 或 shell 命令；
 6. 同一编码流扇出，第一版最多 4 个并发 viewer（`MAX_VIEWERS=4`，每个 viewer 独立 UDP 端口、DTLS/SRTP 与 str0m 会话；同一管理员账号可同时持有多个 session）；超过上限返回 503「资源不足」；logout、改密、显式停止、协商超时、连接失败和 daemon shutdown 都清理该账号全部或全部 router-owned session 与 camera-owned pipeline/socket；
@@ -804,3 +804,28 @@ Tailscale 分两级验收：
 8. 观看画面左上角固定显示烧入码流的时间戳水印（日期+时间、黑底、固定 20px 字号，所有分辨率一致），水印不是浏览器叠加层，截图与录屏均包含它；画面旋转是服务端媒体管线属性，「旋转画面」按 0 → 270 → 180 → 90 → 0 循环并自动重启直播，浏览器不做 CSS 旋转；
 9. 状态和错误响应不泄漏 `/dev/video*`、完整 SDP、ICE credentials、DTLS key、GStreamer pipeline、原始驱动错误或管理员 token；
 10. host 静态检查、Rust/frontend 测试、浏览器 LAN/Tailscale 流程、MPP H.264 实际解码和板端资源清理全部通过后，才可标记该能力完成。
+
+### 12.8 可选摄像头全双工语音对讲能力
+
+**User Story**
+
+作为已登录管理员或匿名 viewer（15 分钟 viewer 令牌），我希望在观看直播的同时与摄像头处双向通话：听到设备板载麦克风采集的声音，并让自己的声音经设备喇叭播出，双向同时进行。
+
+**决策记录**
+
+- 喊话（浏览器 → 设备喇叭）对匿名 viewer 同样开放，与观看同模型（viewer 令牌边界 + `MAX_VIEWERS=4`）；
+- 全双工：浏览器端用 `getUserMedia({ echoCancellation: true })` 内置 AEC，设备端用 GStreamer `webrtcdsp` + `webrtcechoprobe`（同一管线内耦合回声参考）；
+- 门户必须 HTTPS（设备自签证书）：`navigator.mediaDevices` 只在 secure context 暴露，纯 HTTP 下 `getUserMedia` 恒为 undefined，对讲「说」方向不可用（板端实测确认）。
+
+**验收标准**
+
+1. 设备板载麦克风（RK809 codec `hw:0`，card id 精确为 `rockchiprk809`）→ Opus（48 kHz / 单声道 / 20 ms / 32 kbps）→ WebRTC → 浏览器独立 `<audio>` 元素播放；`inbound-rtp` audio stats 递增且 `audioLevel > 0`；
+2. 浏览器麦克风只在用户显式点击「开启对讲」后采集；`sender.replaceTrack` 挂载/摘下轨道，不重协商；停止直播、页面离开、logout、超时、连接失败均释放麦克风；
+3. 浏览器 → 设备喇叭出声（`outbound-rtp` 递增，关闭对讲后停止增长）；双向同时性由 inbound/outbound 双向 RTP stats 与板端 `arecord`/`aplay` 冒烟共同证明（浏览器端 AEC 会消除「自听」环回音调，不做环回音调检测）；
+4. 设备端 AEC 消除喇叭到麦克风的回环；浏览器端 AEC 消除自听；`permissions-policy` 精确为 `microphone=(self)`，CSP 不变；
+5. 匿名 viewer 可听可说；viewer 令牌 15 分钟过期失效；多个说话者同时发声时经 `audiomixer` 混音到喇叭（每个会话一个动态 pad，上限 `MAX_VIEWERS`）；
+6. 音频失败只降级 `audio.supported=false`（video-only），不影响 `available` 与视频会话；缺包或非 rk809 卡时保持视频可用；
+7. 控制协议保持 v2 形状不变；`CameraStatus.audio` 为 additive 可选字段；无新 route、无新 body 字段、viewer-token 模型不变；
+8. 停止/离开后 mic、`<audio>` 元素、pipeline、mixer pad、`active_sessions` 全部归零；
+9. 板端 ALSA 冒烟（`aplay -l` 出现 `rockchiprk809`、`arecord`/`aplay` 回环）与浏览器 LAN/Tailscale × 桌面/移动端回归通过后，才可标记该能力完成；
+10. 管理页面只通过 HTTPS 提供（LAN 与 Tailscale 入口一致）；首次访问自签证书警告可手动通过；`S83hyz-things` 就绪探测不依赖 HTTP。

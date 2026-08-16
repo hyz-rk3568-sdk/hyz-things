@@ -58,6 +58,11 @@ adb -s "$SERIAL" reboot
 
 ## 方式二：网络 ADB + 临时 HTTP server
 
+板端 adbd 开机即监听 5555；连接细节、协议语义与本 WSL 宿主机必须用独立
+server（`adb -P 5038`，默认 client 会命中 Windows server 而 10060 超时）
+见 [network-adb.md](network-adb.md)。本方式二的所有 `adb` 命令在 WSL 上
+均需按该文档替换为 `adb -P 5038`。
+
 连接并固定网络 serial：
 
 ```sh
@@ -153,10 +158,10 @@ adb -s "$SERIAL" shell hyz-router status
 set -a
 . ./.env
 set +a
-cd apps/rust/router
+cd apps/rust/things
 npm run test:hardware-camera -- \
-  http://LAN_ADDRESS:8080 \
-  http://TAILSCALE_ADDRESS:8080
+  https://LAN_ADDRESS:8080 \
+  https://TAILSCALE_ADDRESS:8080
 ```
 
 完整前置条件、临时 credential 恢复要求、桌面/移动断言和 RTP/解码检查见 [`camera-hardware-e2e.md`](camera-hardware-e2e.md)。

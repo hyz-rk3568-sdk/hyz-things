@@ -2,7 +2,7 @@
 
 ## 定位
 
-`apps/rust/router/e2e/camera-hardware.mjs` 是面向真实 RK3568、真实摄像头和真实网络路径的 Playwright 测试。它与普通 `npm run test:e2e` 的职责不同：
+`apps/rust/things/e2e/camera-hardware.mjs` 是面向真实 RK3568、真实摄像头和真实网络路径的 Playwright 测试。它与普通 `npm run test:e2e` 的职责不同：
 
 - 普通 Playwright 套件启动宿主机 Axum harness，并用浏览器内 `RTCPeerConnection` mock 验证 UI、API 和清理状态；
 - `camera-hardware.mjs` 不替换 WebRTC、HTTP、camera control 或媒体管线，浏览器直接访问目标板管理页面；
@@ -15,7 +15,7 @@
 - 目标板已安装包含 `/usr/bin/hyz-router`、`/usr/bin/hyz-camera` 和 `S82hyz-camera` 的固件；
 - Router、Camera、管理 LAN 和需要测试的 Tailscale exact listener 已 ready；
 - 主机已安装仓库锁定的 Node.js 依赖和 Playwright Chromium；
-- 主机能够路由到命令行传入的每一个 HTTP origin；
+- 主机能够路由到命令行传入的每一个 HTTPS origin；
 - 管理员密码只从 Git ignored、权限 `0600` 的工作区根目录 `.env` 或等价的进程环境加载。不得把真实密码写入脚本、Git、文档、命令输出或测试结果。
 
 脚本不会使用默认设备地址。LAN 和 Tailscale origin 必须由操作者显式传入：
@@ -24,27 +24,27 @@
 set -a
 . ./.env
 set +a
-cd apps/rust/router
+cd apps/rust/things
 HYZ_CAMERA_SCREENSHOT_DIR=/tmp/hyz-camera-hardware \
 npm run test:hardware-camera -- \
-  http://LAN_ADDRESS:8080 \
-  http://TAILSCALE_ADDRESS:8080
+  https://LAN_ADDRESS:8080 \
+  https://TAILSCALE_ADDRESS:8080
 ```
 
-管理页面当前使用 HTTP。脚本只针对显式传入的 origin 启动 Chromium 的 `--unsafely-treat-insecure-origin-as-secure`，使本地受控测试可以使用真实 WebRTC API；它不会把任意 HTTP 地址设为安全上下文。
+管理页面只提供 HTTPS（设备自签证书，见 `docs/soft-router-camera-audio-intercom-plan.md` 的 HTTPS 一节）。脚本为显式传入的 origin 启动 Chromium 的 `--ignore-certificate-errors`，使本地受控测试可以绕过自签证书拦截页，同时页面仍是 secure context（`navigator.mediaDevices.getUserMedia` 对讲依赖这一点）。真实用户首次访问 `https://192.168.8.1:8080` 时需要在浏览器里手动通过一次自签证书警告。
 
 ## 首次改密测试
 
 如果目标板为了受控验收临时进入 bootstrap 管理员状态，可以让脚本在第一个 origin 登录后完成强制改密，后续 origin 自动使用新密码：
 
 ```sh
-cd apps/rust/router
+cd apps/rust/things
 HYZ_ROUTER_ADMIN_PASSWORD="$BOOTSTRAP_PASSWORD" \
 HYZ_ROUTER_BOOTSTRAP=1 \
 HYZ_ROUTER_REPLACEMENT_PASSWORD="$TEMPORARY_PASSWORD" \
 npm run test:hardware-camera -- \
-  http://LAN_ADDRESS:8080 \
-  http://TAILSCALE_ADDRESS:8080
+  https://LAN_ADDRESS:8080 \
+  https://TAILSCALE_ADDRESS:8080
 ```
 
 测试前必须按 SHA-256 备份原管理员 credential；测试后应原子恢复原文件、核对原始 SHA-256、删除临时备份并重启 Router。测试日志只记录摘要，不读取或输出密码哈希之外的秘密内容。
@@ -93,6 +93,24 @@ GStreamer caps 显式声明 full-range BT.709 `colorimetry=1:3:5:1`；Rockchip M
 6. 关闭第二个页面，要求 `pipeline=stopped`、`active_sessions=0`。
 
 并发观看不单独验收 4K 双路：4K 单路扇出已由 4K 预设验收覆盖，双页面并发固定使用默认 720p 以控制板端与网络负载。
+
+## 全双工语音对讲验收
+
+每个 origin 的播放流程在旋转验收后、停止直播前额外执行一次对讲验收：
+
+1. 读取真实 `/api/v1/camera/status`，要求 `audio.supported=true`；
+2. 要求 `<audio aria-label="摄像头麦克风">` 持有 live `MediaStreamTrack`（板载 mic → 浏览器）；
+3. 要求 audio `inbound-rtp` 的 `bytesReceived`/`packetsReceived` 大于零（板载 mic 有真实信号）；
+4. 点击「开启对讲」，要求 `getUserMedia` 返回麦克风轨道并挂载到 audio sender。页面必须是 secure context 才存在 `navigator.mediaDevices`，因此本脚本只对 HTTPS origin 运行；Chromium 以 `--use-fake-ui-for-media-stream` 自动授权，验收主机通常无内置麦克风，outbound 信号由 `--use-fake-device-for-media-stream` 的合成音频设备提供，板载 mic 采集与声学路径由板端 `arecord`/`aplay` 冒烟覆盖；
+5. 要求 audio `outbound-rtp` 的 `bytesSent`/`packetsSent` 大于零（浏览器 → 设备喇叭）；
+6. 点击「关闭对讲」，要求 `replaceTrack(null)` 后 `outbound-rtp` 的 `packetsSent` 在 1.5 秒窗口内停止增长；
+7. 之后继续停止直播并断言 pipeline/session 归零。
+
+**不做**「浏览器播放固定音调 → 设备喇叭 → 板载 mic → 回传浏览器检测」的环回音调
+检测：正确工作的浏览器端 AEC（`echoCancellation:true`）会消除这个自听信号，这正是
+全双工应有的行为。喇叭 → 麦克风的声学通路由板端 `arecord`/`aplay` 冒烟覆盖（部署
+验收前执行：`arecord -d 3 /tmp/t.wav && aplay /tmp/t.wav`，喇叭有声、录音有波形），
+双向传输由第 3/5/6 条的双向 RTP stats 与发送停止断言证明。
 
 ## 结果与诊断
 

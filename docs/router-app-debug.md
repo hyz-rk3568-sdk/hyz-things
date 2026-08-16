@@ -16,6 +16,10 @@
 
 ## 使用方式
 
+`ADB_SERIAL` 在 USB 场景传 USB serial；无 USB 线时用网络 ADB，serial 传
+`192.168.8.1:5555` 且 `ADB="adb -P 5038"`（本 WSL 上默认 client 连的是
+Windows adb server，路由不到板子），见 [network-adb.md](network-adb.md)。
+
 先完成静态检查，再构建并部署：
 
 ```sh

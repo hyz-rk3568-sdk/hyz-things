@@ -80,10 +80,10 @@ hyz-camera
              └──────── WebRTC UDP 视频 ────────► 浏览器 <video>
 ```
 
-第一版同时支持两种管理入口：
+第一版同时支持两种管理入口（均为 HTTPS，自签证书见 `soft-router-camera-audio-intercom-plan.md` 的 HTTPS 一节）：
 
-- 固定 LAN listener：`http://192.168.8.1:<port>`；
-- 已严格确认的 Tailscale IPv4 exact listener：`http://100.x.y.z:<port>`。
+- 固定 LAN listener：`https://192.168.8.1:<port>`；
+- 已严格确认的 Tailscale IPv4 exact listener：`https://100.x.y.z:<port>`。
 
 用户通过哪个管理入口创建会话，服务端就只向该会话公布对应入口的 WebRTC host candidate。视频媒体不经过 Axum HTTP body、WebSocket 或 `hyz-router` 数据转发。
 
