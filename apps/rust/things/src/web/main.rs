@@ -78,6 +78,10 @@ const CAMERA_ICE_GATHER_TIMEOUT_MS: u32 = 10_000;
 const CAMERA_ICE_POLL_MS: u32 = 50;
 const POLL_DELAY_MS: u32 = 2_000;
 const NETWORK_APPLY_PAINT_DELAY_MS: u32 = 150;
+// 画面设置（预设/旋转）提交遇到 camera busy（残留会话或 close 尚未完成）时
+// 短暂重试，避免连续快速操作被一个过渡态永久卡在"未播放"。
+const CAMERA_UPDATE_RETRY_ATTEMPTS: u8 = 3;
+const CAMERA_UPDATE_RETRY_DELAY_MS: u32 = 1_000;
 const MISSING: &str = "—";
 
 #[derive(Clone, PartialEq, serde::Deserialize)]
@@ -1349,29 +1353,37 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                 if let Some((session_id, token)) = pending_close {
                     close_camera_session(session_id, token).await;
                 }
-                match post_json_response::<_, CameraRotationUpdateResponseDto>(
-                    CAMERA_ROTATION_UPDATE_ENDPOINT,
-                    &csrf,
-                    &CameraRotationUpdateRequestDto { rotation: next },
-                    "摄像头画面设置",
-                )
-                .await
-                {
-                    Ok(response) if response.applied => {
-                        notice.set(Some(format!("画面已旋转：{}°", next.degrees())));
-                        if was_playing {
-                            phase.set(CameraViewPhase::Idle);
-                            start.emit(());
+                let mut applied = false;
+                let mut failure = String::new();
+                for attempt in 0..=CAMERA_UPDATE_RETRY_ATTEMPTS {
+                    match post_json_response::<_, CameraRotationUpdateResponseDto>(
+                        CAMERA_ROTATION_UPDATE_ENDPOINT,
+                        &csrf,
+                        &CameraRotationUpdateRequestDto { rotation: next },
+                        "摄像头画面设置",
+                    )
+                    .await
+                    {
+                        Ok(response) if response.applied => {
+                            applied = true;
+                            break;
                         }
+                        Ok(_) => failure = "画面旋转未生效".to_owned(),
+                        Err(message) => failure = message,
                     }
-                    Ok(_) => {
-                        *rotation.borrow_mut() = None;
-                        notice.set(Some("画面旋转未生效".to_owned()));
+                    if attempt < CAMERA_UPDATE_RETRY_ATTEMPTS {
+                        TimeoutFuture::new(CAMERA_UPDATE_RETRY_DELAY_MS).await;
                     }
-                    Err(message) => {
-                        *rotation.borrow_mut() = None;
-                        notice.set(Some(message));
+                }
+                if applied {
+                    notice.set(Some(format!("画面已旋转：{}°", next.degrees())));
+                    if was_playing {
+                        phase.set(CameraViewPhase::Idle);
+                        start.emit(());
                     }
+                } else {
+                    *rotation.borrow_mut() = None;
+                    notice.set(Some(failure));
                 }
             });
         })
@@ -1407,23 +1419,36 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                 if let Some((session_id, token)) = pending_close {
                     close_camera_session(session_id, token).await;
                 }
-                match post_json_response::<_, CameraProfileUpdateResponseDto>(
-                    CAMERA_PROFILE_UPDATE_ENDPOINT,
-                    &csrf,
-                    &CameraProfileUpdateRequestDto { preset },
-                    "摄像头画面设置",
-                )
-                .await
-                {
-                    Ok(response) if response.applied => {
-                        notice.set(Some(format!("画面已切换：{}", preset.label())));
-                        if was_playing {
-                            phase.set(CameraViewPhase::Idle);
-                            start.emit(());
+                let mut applied = false;
+                let mut failure = String::new();
+                for attempt in 0..=CAMERA_UPDATE_RETRY_ATTEMPTS {
+                    match post_json_response::<_, CameraProfileUpdateResponseDto>(
+                        CAMERA_PROFILE_UPDATE_ENDPOINT,
+                        &csrf,
+                        &CameraProfileUpdateRequestDto { preset },
+                        "摄像头画面设置",
+                    )
+                    .await
+                    {
+                        Ok(response) if response.applied => {
+                            applied = true;
+                            break;
                         }
+                        Ok(_) => failure = "画面设置未生效".to_owned(),
+                        Err(message) => failure = message,
                     }
-                    Ok(_) => notice.set(Some("画面设置未生效".to_owned())),
-                    Err(message) => notice.set(Some(message)),
+                    if attempt < CAMERA_UPDATE_RETRY_ATTEMPTS {
+                        TimeoutFuture::new(CAMERA_UPDATE_RETRY_DELAY_MS).await;
+                    }
+                }
+                if applied {
+                    notice.set(Some(format!("画面已切换：{}", preset.label())));
+                    if was_playing {
+                        phase.set(CameraViewPhase::Idle);
+                        start.emit(());
+                    }
+                } else {
+                    notice.set(Some(failure));
                 }
             });
         })
