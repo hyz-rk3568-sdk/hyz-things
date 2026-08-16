@@ -913,6 +913,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyz-contract"
+version = "0.1.0"
+dependencies = [
+ "pbkdf2",
+ "serde",
+ "serde_json",
+ "sha1",
+ "tokio",
+ "url",
+ "zeroize",
+]
+
+[[package]]
 name = "hyz-router"
 version = "0.1.0"
 dependencies = [
@@ -923,6 +936,7 @@ dependencies = [
  "gloo-net 0.6.0",
  "gloo-timers 0.3.0",
  "hmac",
+ "hyz-contract",
  "js-sys",
  "libc",
  "mime_guess",

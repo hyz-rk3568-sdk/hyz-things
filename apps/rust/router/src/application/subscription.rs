@@ -58,7 +58,7 @@ impl<'a> SubscriptionApplication<'a> {
     pub fn summary(&self) -> Result<SubscriptionSummary, PlatformError> {
         let configured = self.store.load_url()?.is_some();
         let status = self.store.load_subscription_status()?;
-        Ok(SubscriptionSummary::from_status(
+        Ok(crate::domain::subscription::summary_from_status(
             configured,
             status.as_ref(),
         ))

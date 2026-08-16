@@ -1,161 +1,18 @@
-use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
     sync::{Arc, Condvar, Mutex},
     time::Duration,
 };
 
+pub use hyz_contract::camera::{
+    CameraRotation, CameraStreamPreset, CameraStreamProfile, CameraVideoCodec,
+    FIXED_CAPTURE_HEIGHT, FIXED_CAPTURE_WIDTH,
+};
+
 pub const FIXED_CAMERA_DEVICE: &str = "/dev/video0";
 pub const FRAME_QUEUE_CAPACITY: usize = 2;
 pub const MAX_ENCODED_FRAME_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_PTS_JUMP_NS: u64 = 5_000_000_000;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CameraVideoCodec {
-    H264Baseline,
-}
-
-/// 画面旋转是媒体管线属性：`videoflip` 在编码前应用，时间戳水印始终叠加在
-/// 最终方向画面的左上角，浏览器端不再做 CSS 旋转。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CameraRotation {
-    #[serde(rename = "deg_0")]
-    Deg0,
-    #[serde(rename = "deg_90")]
-    Deg90,
-    #[serde(rename = "deg_180")]
-    Deg180,
-    #[serde(rename = "deg_270")]
-    Deg270,
-}
-
-impl CameraRotation {
-    pub const ALL: [Self; 4] = [Self::Deg0, Self::Deg90, Self::Deg180, Self::Deg270];
-
-    pub const fn degrees(self) -> u16 {
-        match self {
-            Self::Deg0 => 0,
-            Self::Deg90 => 90,
-            Self::Deg180 => 180,
-            Self::Deg270 => 270,
-        }
-    }
-
-    /// 「旋转画面」每次点击的循环顺序：0 → 270 → 180 → 90 → 0。
-    pub const fn next_rotation(self) -> Self {
-        match self {
-            Self::Deg0 => Self::Deg270,
-            Self::Deg270 => Self::Deg180,
-            Self::Deg180 => Self::Deg90,
-            Self::Deg90 => Self::Deg0,
-        }
-    }
-
-    /// 90/270 旋转会交换输出宽高。
-    pub const fn swaps_dimensions(self) -> bool {
-        matches!(self, Self::Deg90 | Self::Deg270)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-pub struct CameraStreamProfile {
-    pub width: u16,
-    pub height: u16,
-    pub fps: u8,
-    pub bitrate_bps: u32,
-    pub codec: CameraVideoCodec,
-    pub rotation: CameraRotation,
-}
-
-impl CameraStreamProfile {
-    /// 旋转应用后的实际显示高度（90/270 时宽高互换）。
-    pub const fn display_height(self) -> u16 {
-        if self.rotation.swaps_dimensions() {
-            self.width
-        } else {
-            self.height
-        }
-    }
-}
-
-pub const FIXED_CAPTURE_WIDTH: u16 = 3840;
-pub const FIXED_CAPTURE_HEIGHT: u16 = 2160;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum CameraStreamPreset {
-    Uhd4k20m,
-    Qhd1440p10m,
-    Fhd1080p5m,
-    #[default]
-    Hd720p25m,
-}
-
-impl CameraStreamPreset {
-    pub const ALL: [Self; 4] = [
-        Self::Uhd4k20m,
-        Self::Qhd1440p10m,
-        Self::Fhd1080p5m,
-        Self::Hd720p25m,
-    ];
-
-    pub const fn profile(self) -> CameraStreamProfile {
-        match self {
-            Self::Uhd4k20m => CameraStreamProfile {
-                width: FIXED_CAPTURE_WIDTH,
-                height: FIXED_CAPTURE_HEIGHT,
-                fps: 30,
-                bitrate_bps: 20_000_000,
-                codec: CameraVideoCodec::H264Baseline,
-                rotation: CameraRotation::Deg0,
-            },
-            Self::Qhd1440p10m => CameraStreamProfile {
-                width: 2560,
-                height: 1440,
-                fps: 30,
-                bitrate_bps: 10_000_000,
-                codec: CameraVideoCodec::H264Baseline,
-                rotation: CameraRotation::Deg0,
-            },
-            Self::Fhd1080p5m => CameraStreamProfile {
-                width: 1920,
-                height: 1080,
-                fps: 30,
-                bitrate_bps: 5_000_000,
-                codec: CameraVideoCodec::H264Baseline,
-                rotation: CameraRotation::Deg0,
-            },
-            Self::Hd720p25m => CameraStreamProfile {
-                width: 1280,
-                height: 720,
-                fps: 30,
-                bitrate_bps: 2_500_000,
-                codec: CameraVideoCodec::H264Baseline,
-                rotation: CameraRotation::Deg0,
-            },
-        }
-    }
-
-    pub const fn id(self) -> &'static str {
-        match self {
-            Self::Uhd4k20m => "uhd4k20m",
-            Self::Qhd1440p10m => "qhd1440p10m",
-            Self::Fhd1080p5m => "fhd1080p5m",
-            Self::Hd720p25m => "hd720p25m",
-        }
-    }
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Uhd4k20m => "4K · 20 Mbps",
-            Self::Qhd1440p10m => "1440p · 10 Mbps",
-            Self::Fhd1080p5m => "1080p · 5 Mbps",
-            Self::Hd720p25m => "720p · 2.5 Mbps",
-        }
-    }
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EncodedFrame {

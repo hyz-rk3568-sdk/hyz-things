@@ -1,35 +1,8 @@
-use serde::{Deserialize, Serialize};
 use std::{error::Error, ffi::OsString, fmt};
 
-pub const OTA_USAGE: &str = "Usage:\n  hyz-router ota verify <upgrade.fw> <sha256>\n  hyz-router ota download <source> <sha256>\n  hyz-router ota install <firmware.fw> <sha256> [--reboot]\n  hyz-router ota install-recovery <firmware.fw> <sha256> [--reboot]\n  hyz-router ota apply <source> <sha256> [--reboot]";
+pub use hyz_contract::ota::OtaCommand;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "command", rename_all = "kebab-case", deny_unknown_fields)]
-pub enum OtaCommand {
-    Verify {
-        firmware: String,
-        expected: String,
-    },
-    Download {
-        source: String,
-        expected: String,
-    },
-    Install {
-        firmware: String,
-        expected: String,
-        reboot: bool,
-    },
-    InstallRecovery {
-        firmware: String,
-        expected: String,
-        reboot: bool,
-    },
-    Apply {
-        source: String,
-        expected: String,
-        reboot: bool,
-    },
-}
+pub const OTA_USAGE: &str = "Usage:\n  hyz-router ota verify <upgrade.fw> <sha256>\n  hyz-router ota download <source> <sha256>\n  hyz-router ota install <firmware.fw> <sha256> [--reboot]\n  hyz-router ota install-recovery <firmware.fw> <sha256> [--reboot]\n  hyz-router ota apply <source> <sha256> [--reboot]";
 
 pub fn parse_ota_cli<I, S>(args: I) -> Result<OtaCommand, OtaCliError>
 where

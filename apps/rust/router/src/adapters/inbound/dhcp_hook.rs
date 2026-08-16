@@ -31,9 +31,11 @@ pub fn parse_dhcp_event(
     action: &str,
     get: impl Fn(&str) -> Option<String>,
 ) -> Result<DhcpEvent, PlatformError> {
-    let generation = DhcpGeneration::new(get(DHCP_GENERATION_ENV).ok_or_else(|| {
-        PlatformError::InvalidState("DHCP hook generation is absent".to_owned())
-    })?)?;
+    let generation =
+        DhcpGeneration::new(get(DHCP_GENERATION_ENV).ok_or_else(|| {
+            PlatformError::InvalidState("DHCP hook generation is absent".to_owned())
+        })?)
+        .map_err(|message| PlatformError::InvalidState(message.to_owned()))?;
     if get("interface").as_deref() != Some(WAN_INTERFACE) {
         return Err(PlatformError::InvalidState(
             "DHCP hook interface is not the managed WAN".to_owned(),

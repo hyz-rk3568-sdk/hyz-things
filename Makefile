@@ -12,6 +12,7 @@ TOOLCHAIN_PREFIX := $(BR_HOST)/bin/aarch64-buildroot-linux-gnu-
 RUST_TARGET := aarch64-unknown-linux-gnu
 ROUTER_APP := $(CURDIR)/apps/rust/router
 CAMERA_APP := $(CURDIR)/apps/rust/camera
+CONTRACT_APP := $(CURDIR)/apps/rust/contract
 ROUTER_FRONTEND_BUNDLE := $(CURDIR)/target/frontend-bundle/router-frontend.tar
 ROUTER_TRUNK := $(CURDIR)/.tools/trunk/bin/trunk
 ROUTER_BINARY := $(ROUTER_APP)/target/$(RUST_TARGET)/release/hyz-router
@@ -184,6 +185,10 @@ upgrade-recovery: upgrade
 	@cut -d' ' -f1 "$(OUTPUT)/upgrade-recovery.fw.sha256"
 
 check: check-static
+	cargo fmt --manifest-path "$(CONTRACT_APP)/Cargo.toml" --all -- --check
+	cargo test --locked --manifest-path "$(CONTRACT_APP)/Cargo.toml"
+	cargo clippy --locked --manifest-path "$(CONTRACT_APP)/Cargo.toml" \
+	  --all-targets -- -D warnings
 	cargo fmt --manifest-path "$(ROUTER_APP)/Cargo.toml" --all -- --check
 	cargo test --locked --manifest-path "$(ROUTER_APP)/Cargo.toml" --features native
 	cargo clippy --locked --manifest-path "$(ROUTER_APP)/Cargo.toml" \

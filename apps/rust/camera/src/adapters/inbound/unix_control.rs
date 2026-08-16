@@ -1,12 +1,10 @@
 use crate::{
     application::{CameraApplication, CameraApplicationError, CreateSessionResult},
-    domain::{CameraAccessKind, CameraRotation, CameraSessionId, CameraStatus, CameraStreamPreset},
+    domain::CameraSessionId,
 };
-use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, OpenOptions},
     io::{self, Read, Write},
-    net::Ipv4Addr,
     os::{
         fd::AsRawFd,
         unix::{
@@ -24,89 +22,15 @@ use std::{
     time::Duration,
 };
 
-pub const CONTROL_PROTOCOL_VERSION: u16 = 2;
-pub const CONTROL_SOCKET_PATH: &str = "/run/hyz-camera/control.sock";
+pub use hyz_contract::camera::{
+    CloseSessionRequest, ControlErrorCode, ControlErrorResponse, ControlOperation, ControlOutcome,
+    ControlRequest, ControlResponse, ControlResult, CreateSessionRequest, SessionCreatedResponse,
+    SetProfileRequest, SetRotationRequest, CONTROL_PROTOCOL_VERSION, CONTROL_REQUEST_DEADLINE,
+    CONTROL_SOCKET_PATH, MAX_CONTROL_FRAME_BYTES,
+};
 pub const CONTROL_OWNER_PATH: &str = "/run/hyz-camera/daemon.owner";
 pub const CONTROL_RUNTIME_DIRECTORY: &str = "/run/hyz-camera";
-pub const MAX_CONTROL_FRAME_BYTES: usize = 64 * 1024;
-pub const CONTROL_REQUEST_DEADLINE: Duration = Duration::from_secs(2);
 const CONTROL_ACCEPT_POLL: Duration = Duration::from_millis(50);
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ControlRequest {
-    pub version: u16,
-    pub operation: ControlOperation,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ControlOperation {
-    Status,
-    CreateSession(CreateSessionRequest),
-    CloseSession(CloseSessionRequest),
-    SetProfile(SetProfileRequest),
-    SetRotation(SetRotationRequest),
-    Shutdown,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CreateSessionRequest {
-    pub scope: CameraAccessKind,
-    pub address: Ipv4Addr,
-    pub offer_sdp: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CloseSessionRequest {
-    pub session_id: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SetProfileRequest {
-    pub preset: CameraStreamPreset,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SetRotationRequest {
-    pub rotation: CameraRotation,
-}
-
-#[derive(Serialize)]
-pub struct ControlResponse {
-    pub version: u16,
-    #[serde(flatten)]
-    pub outcome: ControlOutcome,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ControlOutcome {
-    Ok(ControlResult),
-    Error(ControlErrorResponse),
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ControlResult {
-    Status(CameraStatus),
-    SessionCreated(SessionCreatedResponse),
-    SessionClosed,
-    ProfileSet,
-    RotationSet,
-    ShutdownAccepted,
-}
-
-#[derive(Serialize)]
-pub struct SessionCreatedResponse {
-    pub session_id: CameraSessionId,
-    pub answer_sdp: String,
-    pub negotiation_timeout_seconds: u16,
-}
 
 impl From<CreateSessionResult> for SessionCreatedResponse {
     fn from(result: CreateSessionResult) -> Self {
@@ -116,33 +40,6 @@ impl From<CreateSessionResult> for SessionCreatedResponse {
             negotiation_timeout_seconds: result.negotiation_timeout_seconds,
         }
     }
-}
-
-#[derive(Serialize)]
-pub struct ControlErrorResponse {
-    pub code: ControlErrorCode,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ControlErrorCode {
-    InvalidVersion,
-    InvalidRequest,
-    RequestTooLarge,
-    PermissionDenied,
-    InvalidAccessScope,
-    ShuttingDown,
-    SessionBusy,
-    UnknownSession,
-    CameraNotFound,
-    CameraBusy,
-    EncoderUnavailable,
-    MediaPipelineFailed,
-    UnsupportedSdp,
-    ResourceExhausted,
-    WebRtcNegotiationFailed,
-    WebRtcTransportFailed,
-    Internal,
 }
 
 pub fn decode_control_request(bytes: &[u8]) -> Result<ControlRequest, ControlErrorCode> {

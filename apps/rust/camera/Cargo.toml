@@ -6,6 +6,7 @@ rust-version = "1.85"
 publish = false
 
 [dependencies]
+hyz-contract = { path = "../contract" }
 getrandom = "0.3"
 gstreamer = { version = "=0.23.5", features = ["v1_22"] }
 gstreamer-app = { version = "=0.23.5", features = ["v1_22"] }

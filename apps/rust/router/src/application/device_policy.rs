@@ -1,27 +1,16 @@
+use crate::application::proxy::ProxyApplication;
 use crate::{
-    application::{
-        ports::{
-            ClockPort, DevicePolicyStorePort, LanClientDiscoveryPort, LifecycleLease,
-            PlatformError, RouterPlatformPort, SystemProbePort,
-        },
-        proxy::ProxyApplication,
+    application::ports::{
+        ClockPort, DevicePolicyStorePort, LanClientDiscoveryPort, LifecycleLease, PlatformError,
+        RouterPlatformPort, SystemProbePort,
     },
     domain::{
-        device_policy::{DevicePolicyConfigV1, DevicePolicyUpdateRequest, LanClientObservation},
+        device_policy::{DevicePolicyConfigV1, DevicePolicySnapshot, DevicePolicyUpdateRequest},
         network::Probe,
         proxy::{ProxyDesired, ProxyFeaturesV1},
     },
 };
-use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct DevicePolicySnapshot {
-    pub config: DevicePolicyConfigV1,
-    pub clients: Vec<LanClientObservation>,
-    pub effective: bool,
-}
 
 pub struct DevicePolicyApplication<'a> {
     store: &'a dyn DevicePolicyStorePort,
@@ -232,6 +221,7 @@ mod tests {
     use crate::{
         application::ports::LifecycleLease,
         domain::{
+            device_policy::LanClientObservation,
             network::{NetworkAction, NetworkObserved},
             proxy::{ProxyAction, ProxyObserved},
         },

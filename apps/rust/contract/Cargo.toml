@@ -1,0 +1,26 @@
+[package]
+name = "hyz-contract"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+
+# Shared wire contracts between the independent hyz-things processes. The
+# default build is pure serde; the `client` feature adds the tokio Unix domain
+# socket transport used by CLI and portal clients.
+
+[features]
+default = []
+client = ["dep:tokio"]
+
+[dependencies]
+pbkdf2 = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha1 = "0.10"
+url = "2.5.8"
+zeroize = "1.9.0"
+
+tokio = { version = "1", features = ["io-util", "net", "time"], optional = true }
+
+[dev-dependencies]

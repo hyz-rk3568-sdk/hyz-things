@@ -2101,6 +2101,7 @@ fn new_dhcp_generation(unix_time_millis: u64) -> Result<DhcpGeneration, Platform
     DhcpGeneration::new(format!(
         "dhcp-{pid}-{start_time}-{unix_time_millis}-{sequence}"
     ))
+    .map_err(|message| PlatformError::InvalidState(message.to_owned()))
 }
 
 fn read_active_dhcp_generation() -> Result<Option<DhcpGeneration>, PlatformError> {
@@ -2108,7 +2109,9 @@ fn read_active_dhcp_generation() -> Result<Option<DhcpGeneration>, PlatformError
     else {
         return Ok(None);
     };
-    DhcpGeneration::new(record.trim_end_matches('\n').to_owned()).map(Some)
+    DhcpGeneration::new(record.trim_end_matches('\n').to_owned())
+        .map(Some)
+        .map_err(|message| PlatformError::InvalidState(message.to_owned()))
 }
 
 fn retire_active_dhcp_generation(generation: &DhcpGeneration) -> Result<(), PlatformError> {

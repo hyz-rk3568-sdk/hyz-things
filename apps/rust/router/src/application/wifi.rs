@@ -2,37 +2,12 @@ use crate::{
     application::ports::PlatformError,
     domain::network_config::{
         ApConfig, NetworkConfigSummary, NetworkConfigV1, PendingNetworkConfigSummary, StaConfig,
-        WifiCountry, WifiPassphrase, WifiSsid,
     },
 };
-use serde::{Deserialize, Serialize};
+
+pub use hyz_contract::wifi::{ApPrepareRequest, StaCandidateRequest, WifiScanEntry};
 
 pub const AP_CONFIRM_TIMEOUT_SECS: u64 = 120;
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct StaCandidateRequest {
-    pub ssid: WifiSsid,
-    pub passphrase: WifiPassphrase,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ApPrepareRequest {
-    pub ssid: WifiSsid,
-    pub passphrase: WifiPassphrase,
-    pub country: WifiCountry,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WifiScanEntry {
-    pub ssid: WifiSsid,
-    pub bssid: String,
-    pub frequency_mhz: u16,
-    pub signal_dbm: i16,
-    pub secured: bool,
-}
 
 pub trait WifiPlatformPort: Send + Sync {
     fn recover_interrupted_ap_transaction(&self) -> Result<(), PlatformError>;
@@ -182,7 +157,9 @@ impl<'a, P: WifiPlatformPort> WifiApplication<'a, P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::network_config::{WifiCountry, NETWORK_CONFIG_VERSION};
+    use crate::domain::network_config::{
+        WifiCountry, WifiPassphrase, WifiSsid, NETWORK_CONFIG_VERSION,
+    };
     use std::sync::Mutex;
 
     #[derive(Clone, Copy, PartialEq, Eq)]
