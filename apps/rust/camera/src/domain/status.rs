@@ -1,1 +1,3 @@
-pub use hyz_contract::camera::{CameraErrorCategory, CameraPipelineState, CameraStatus};
+pub use hyz_contract::camera::{
+    CameraAudioStatus, CameraErrorCategory, CameraPipelineState, CameraStatus,
+};

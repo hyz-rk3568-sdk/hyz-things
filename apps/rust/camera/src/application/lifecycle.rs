@@ -1,11 +1,12 @@
 use super::ports::{
-    CameraMediaPort, CreatedWebRtcSession, MediaError, MediaTerminator, RunningMedia,
-    RunningWebRtcSession, WebRtcError, WebRtcSessionPort,
+    CameraAudioPort, CameraMediaPort, CreatedWebRtcSession, MediaError, MediaTerminator,
+    RunningAudioMedia, RunningMedia, RunningWebRtcSession, SessionAudio, SessionCreate,
+    WebRtcError, WebRtcSessionPort,
 };
 use crate::domain::{
-    BoundedFrameQueue, CameraAccessKind, CameraAccessScope, CameraErrorCategory,
-    CameraPipelineState, CameraRotation, CameraSessionId, CameraStatus, CameraStreamPreset,
-    CameraStreamProfile,
+    offer_negotiates_audio, BoundedAudioQueue, BoundedFrameQueue, CameraAccessKind,
+    CameraAccessScope, CameraAudioStatus, CameraErrorCategory, CameraPipelineState, CameraRotation,
+    CameraSessionId, CameraStatus, CameraStreamPreset, CameraStreamProfile,
 };
 use std::{
     net::Ipv4Addr,
@@ -23,6 +24,7 @@ pub const MAX_VIEWERS: usize = 4;
 
 pub struct CameraApplication {
     media: Arc<dyn CameraMediaPort>,
+    audio: Arc<dyn CameraAudioPort>,
     webrtc: Arc<dyn WebRtcSessionPort>,
     generation: String,
     state: Mutex<ApplicationState>,
@@ -31,6 +33,8 @@ pub struct CameraApplication {
 struct ApplicationState {
     accepting: bool,
     media: Option<SharedMedia>,
+    audio: Option<SharedAudioMedia>,
+    audio_supported: bool,
     sessions: Vec<ActiveSession>,
     last_error: Option<CameraErrorCategory>,
     preset: CameraStreamPreset,
@@ -47,10 +51,18 @@ struct SharedMedia {
     profile: CameraStreamProfile,
 }
 
+/// 所有音频会话共享的一路采集+回放管线（同一条 GStreamer pipeline，AEC 参考耦合）。
+/// `sessions` 计数持有该管线 terminator 的会话线程：归零时立即停止音频管线。
+struct SharedAudioMedia {
+    running: Box<dyn RunningAudioMedia>,
+    sessions: Arc<AtomicUsize>,
+}
+
 struct ActiveSession {
     id: CameraSessionId,
     webrtc: Box<dyn RunningWebRtcSession>,
     frames: Arc<BoundedFrameQueue>,
+    audio_frames: Option<Arc<BoundedAudioQueue>>,
 }
 
 /// 引用计数 terminator：每个 viewer 会话线程的 `MediaTerminationGuard` 持有一个，
@@ -83,6 +95,7 @@ pub struct CreateSessionResult {
 impl CameraApplication {
     pub fn new(
         media: Arc<dyn CameraMediaPort>,
+        audio: Arc<dyn CameraAudioPort>,
         webrtc: Arc<dyn WebRtcSessionPort>,
         generation: String,
     ) -> Result<Self, CameraApplicationError> {
@@ -90,13 +103,18 @@ impl CameraApplication {
             return Err(CameraApplicationError::InvalidGeneration);
         }
         let last_error = media.probe().err().map(media_category);
+        // 音频失败只降级 video-only（audio.supported=false），不影响 available。
+        let audio_supported = audio.probe().is_ok();
         Ok(Self {
             media,
+            audio,
             webrtc,
             generation,
             state: Mutex::new(ApplicationState {
                 accepting: true,
                 media: None,
+                audio: None,
+                audio_supported,
                 sessions: Vec::new(),
                 last_error,
                 preset: CameraStreamPreset::default(),
@@ -112,8 +130,12 @@ impl CameraApplication {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         reap_finished_sessions(&mut state);
         stop_shared_media_when_last_viewer_left(&mut state);
+        stop_shared_audio_when_last_audio_viewer_left(&mut state);
         if state.accepting && state.media.is_none() {
             state.last_error = self.media.probe().err().map(media_category);
+        }
+        if state.accepting && state.audio.is_none() {
+            state.audio_supported = self.audio.probe().is_ok();
         }
         let pipeline = state
             .media
@@ -126,6 +148,9 @@ impl CameraApplication {
             active_sessions: u8::try_from(state.sessions.len()).unwrap_or(u8::MAX),
             profile: configured_profile(&state),
             error: state.last_error,
+            audio: Some(CameraAudioStatus {
+                supported: state.audio_supported,
+            }),
         }
     }
 
@@ -192,9 +217,11 @@ impl CameraApplication {
         }
         reap_finished_sessions(&mut state);
         stop_shared_media_when_last_viewer_left(&mut state);
+        stop_shared_audio_when_last_audio_viewer_left(&mut state);
         if state.sessions.len() >= MAX_VIEWERS {
             return Err(CameraApplicationError::TooManyViewers);
         }
+        let negotiates_audio = offer_negotiates_audio(offer_sdp);
 
         let desired = configured_profile(&state);
         let reuse = state
@@ -233,6 +260,7 @@ impl CameraApplication {
                 return Err(CameraApplicationError::InvalidGeneration);
             }
         };
+
         let shared = state.media.as_ref().expect("media was just started");
         let frames = shared.running.subscribe();
         let keyframe_requester = shared.running.keyframe_requester();
@@ -243,20 +271,73 @@ impl CameraApplication {
         // 先计数再 spawn：会话线程的 guard 退出时递减，避免在创建成功前减到 0。
         shared.viewers.fetch_add(1, Ordering::AcqRel);
 
+        // 音频：首个协商 audio 的会话启动共享音频管线，后续会话复用；失败只
+        // 影响本会话（video-only 仍可用），不拖累视频管线与其他会话。
+        let audio = if negotiates_audio {
+            if !state.audio_supported {
+                rollback_created_viewer(&mut state, &frames);
+                return Err(CameraApplicationError::Media(
+                    MediaError::AudioDeviceNotFound,
+                ));
+            }
+            if state.audio.is_none() {
+                let running = self.audio.start().map_err(|error| {
+                    state.audio_supported = false;
+                    rollback_created_viewer(&mut state, &frames);
+                    CameraApplicationError::Media(error)
+                })?;
+                state.audio = Some(SharedAudioMedia {
+                    running,
+                    sessions: Arc::new(AtomicUsize::new(0)),
+                });
+            }
+            let shared_audio = state.audio.as_ref().expect("audio was just started");
+            let audio_terminator = Arc::new(RefCountedTerminator {
+                inner: shared_audio.running.terminator(),
+                viewers: Arc::clone(&shared_audio.sessions),
+            });
+            shared_audio.sessions.fetch_add(1, Ordering::AcqRel);
+            let audio_frames = shared_audio.running.subscribe_capture();
+            let sink = shared_audio.running.playback();
+            if let Err(error) = sink.register(id.as_str()) {
+                shared_audio.sessions.fetch_sub(1, Ordering::AcqRel);
+                shared_audio.running.unsubscribe_capture(&audio_frames);
+                sink.unregister(id.as_str());
+                stop_shared_audio_when_last_audio_viewer_left(&mut state);
+                rollback_created_viewer(&mut state, &frames);
+                return Err(CameraApplicationError::Media(error));
+            }
+            Some(SessionAudio {
+                frames: audio_frames,
+                sink: Arc::clone(&sink),
+                media_terminator: audio_terminator,
+            })
+        } else {
+            None
+        };
+
+        let audio_frames_for_session = audio
+            .as_ref()
+            .map(|session_audio| Arc::clone(&session_audio.frames));
+
         let CreatedWebRtcSession {
             answer_sdp,
             running,
-        } = match self.webrtc.create(
-            &id,
+        } = match self.webrtc.create(SessionCreate {
+            session_id: id.clone(),
             scope,
-            offer_sdp,
-            Arc::clone(&frames),
+            offer_sdp: offer_sdp.to_owned(),
+            frames: Arc::clone(&frames),
             keyframe_requester,
-            terminator,
-        ) {
+            media_terminator: terminator,
+            audio,
+        }) {
             Ok(created) => created,
             Err(error) => {
                 rollback_created_viewer(&mut state, &frames);
+                if let Some(queue) = &audio_frames_for_session {
+                    rollback_created_audio_viewer(&mut state, queue, id.as_str());
+                }
                 state.last_error = Some(webrtc_category(error));
                 return Err(CameraApplicationError::WebRtc(error));
             }
@@ -267,6 +348,7 @@ impl CameraApplication {
             id: id.clone(),
             webrtc: running,
             frames,
+            audio_frames: audio_frames_for_session,
         });
         Ok(CreateSessionResult {
             session_id: id,
@@ -293,8 +375,15 @@ impl CameraApplication {
         if let Some(shared) = state.media.as_ref() {
             shared.running.unsubscribe(&session.frames);
         }
+        if let Some(queue) = &session.audio_frames {
+            if let Some(shared_audio) = state.audio.as_ref() {
+                shared_audio.running.unsubscribe_capture(queue);
+                shared_audio.running.playback().unregister(id.as_str());
+            }
+        }
         let webrtc_result = session.webrtc.stop();
         stop_shared_media_when_last_viewer_left(&mut state);
+        stop_shared_audio_when_last_audio_viewer_left(&mut state);
         webrtc_result.map_err(CameraApplicationError::WebRtc)
     }
 
@@ -310,12 +399,26 @@ impl CameraApplication {
             if let Some(shared) = state.media.as_ref() {
                 shared.running.unsubscribe(&session.frames);
             }
+            if let Some(queue) = &session.audio_frames {
+                if let Some(shared_audio) = state.audio.as_ref() {
+                    shared_audio.running.unsubscribe_capture(queue);
+                    shared_audio
+                        .running
+                        .playback()
+                        .unregister(session.id.as_str());
+                }
+            }
             if let Err(error) = session.webrtc.stop() {
                 first_error.get_or_insert(CameraApplicationError::WebRtc(error));
             }
         }
         if let Some(shared) = state.media.take() {
             if let Err(error) = shared.running.stop() {
+                first_error.get_or_insert(CameraApplicationError::Media(error));
+            }
+        }
+        if let Some(shared_audio) = state.audio.take() {
+            if let Err(error) = shared_audio.running.stop() {
                 first_error.get_or_insert(CameraApplicationError::Media(error));
             }
         }
@@ -346,6 +449,15 @@ fn reap_finished_sessions(state: &mut ApplicationState) {
         if let Some(shared) = state.media.as_ref() {
             shared.running.unsubscribe(&session.frames);
         }
+        if let Some(queue) = &session.audio_frames {
+            if let Some(shared_audio) = state.audio.as_ref() {
+                shared_audio.running.unsubscribe_capture(queue);
+                shared_audio
+                    .running
+                    .playback()
+                    .unregister(session.id.as_str());
+            }
+        }
         if let Err(error) = session.webrtc.stop() {
             state.last_error = Some(webrtc_category(error));
         }
@@ -360,11 +472,32 @@ fn stop_shared_media_when_last_viewer_left(state: &mut ApplicationState) {
     take_and_stop_media(state);
 }
 
+/// 最后一个音频会话离开后停止共享音频管线（幂等：引用计数 guard 也可能已触发停止）。
+fn stop_shared_audio_when_last_audio_viewer_left(state: &mut ApplicationState) {
+    if state
+        .sessions
+        .iter()
+        .any(|session| session.audio_frames.is_some())
+    {
+        return;
+    }
+    take_and_stop_audio(state);
+}
+
 /// 取出并停止共享管线（幂等）。
 fn take_and_stop_media(state: &mut ApplicationState) {
     if let Some(shared) = state.media.take() {
         if let Err(error) = shared.running.stop() {
             state.last_error = Some(media_category(error));
+        }
+    }
+}
+
+/// 取出并停止共享音频管线（幂等）。
+fn take_and_stop_audio(state: &mut ApplicationState) {
+    if let Some(shared_audio) = state.audio.take() {
+        if let Err(error) = shared_audio.running.stop() {
+            state.last_error = Some(audio_category(error));
         }
     }
 }
@@ -378,13 +511,43 @@ fn rollback_created_viewer(state: &mut ApplicationState, frames: &Arc<BoundedFra
     stop_shared_media_when_last_viewer_left(state);
 }
 
+/// 创建会话失败后的音频回滚：归还引用计数、退订采集队列、注销混音输入；无其他
+/// 音频会话时停止共享音频管线。
+fn rollback_created_audio_viewer(
+    state: &mut ApplicationState,
+    queue: &Arc<BoundedAudioQueue>,
+    session_id: &str,
+) {
+    if let Some(shared_audio) = state.audio.as_ref() {
+        shared_audio.sessions.fetch_sub(1, Ordering::AcqRel);
+        shared_audio.running.unsubscribe_capture(queue);
+        shared_audio.running.playback().unregister(session_id);
+    }
+    stop_shared_audio_when_last_audio_viewer_left(state);
+}
+
 fn media_category(error: MediaError) -> CameraErrorCategory {
     match error {
         MediaError::CameraNotFound => CameraErrorCategory::CameraNotFound,
         MediaError::CameraBusy => CameraErrorCategory::CameraBusy,
         MediaError::EncoderUnavailable => CameraErrorCategory::EncoderUnavailable,
         MediaError::PipelineFailed => CameraErrorCategory::MediaPipelineFailed,
+        MediaError::AudioDeviceNotFound | MediaError::AudioDeviceBusy => {
+            CameraErrorCategory::CameraBusy
+        }
+        MediaError::AudioPipelineFailed => CameraErrorCategory::MediaPipelineFailed,
         MediaError::UnknownOwnership => CameraErrorCategory::Unknown,
+    }
+}
+
+fn audio_category(error: MediaError) -> CameraErrorCategory {
+    match error {
+        MediaError::AudioDeviceNotFound | MediaError::AudioDeviceBusy => {
+            CameraErrorCategory::CameraBusy
+        }
+        MediaError::AudioPipelineFailed => CameraErrorCategory::MediaPipelineFailed,
+        // 音频管线停止失败不应隐藏视频路径的既有错误类别。
+        other => media_category(other),
     }
 }
 
@@ -425,8 +588,8 @@ pub enum CameraApplicationError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::ports::KeyframeRequester;
-    use crate::domain::{FrameHub, FIXED_LAN_ADDRESS};
+    use crate::application::ports::{AudioSink, KeyframeRequester};
+    use crate::domain::{AudioFrame, AudioHub, FrameHub, FIXED_LAN_ADDRESS};
     use std::sync::{
         atomic::{AtomicBool, AtomicU8},
         Mutex,
@@ -434,6 +597,14 @@ mod tests {
 
     fn offer() -> String {
         "v=0\r\n".to_owned()
+    }
+
+    /// 全双工对讲 offer：video + audio sendrecv（浏览器将发送自己的麦克风）。
+    fn audio_offer() -> String {
+        format!(
+            "{}m=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=sendrecv\r\na=rtpmap:111 opus/48000/2\r\n",
+            offer()
+        )
     }
 
     #[derive(Default)]
@@ -529,9 +700,156 @@ mod tests {
     }
 
     #[derive(Default)]
+    struct FakeAudioPort {
+        starts: AtomicUsize,
+        stop_count: Arc<AtomicUsize>,
+        state: Arc<AtomicU8>,
+        hub: Arc<AudioHub>,
+        sink: Arc<FakeAudioSink>,
+        /// probe 失败时模拟音频设备缺失（audio.supported=false 降级）。
+        probe_fails: bool,
+    }
+
+    impl FakeAudioPort {
+        fn failing() -> Self {
+            Self {
+                probe_fails: true,
+                ..Default::default()
+            }
+        }
+    }
+
+    impl CameraAudioPort for FakeAudioPort {
+        fn probe(&self) -> Result<(), MediaError> {
+            if self.probe_fails {
+                Err(MediaError::AudioDeviceNotFound)
+            } else {
+                Ok(())
+            }
+        }
+
+        fn start(&self) -> Result<Box<dyn RunningAudioMedia>, MediaError> {
+            if self.probe_fails {
+                return Err(MediaError::AudioPipelineFailed);
+            }
+            self.starts.fetch_add(1, Ordering::SeqCst);
+            self.state.store(1, Ordering::Release);
+            Ok(Box::new(FakeRunningAudioMedia {
+                hub: Arc::clone(&self.hub),
+                stop_count: Arc::clone(&self.stop_count),
+                state: Arc::clone(&self.state),
+                sink: Arc::clone(&self.sink),
+            }))
+        }
+    }
+
+    struct FakeRunningAudioMedia {
+        hub: Arc<AudioHub>,
+        stop_count: Arc<AtomicUsize>,
+        state: Arc<AtomicU8>,
+        sink: Arc<FakeAudioSink>,
+    }
+
+    impl RunningAudioMedia for FakeRunningAudioMedia {
+        fn subscribe_capture(&self) -> Arc<BoundedAudioQueue> {
+            self.hub.subscribe()
+        }
+
+        fn unsubscribe_capture(&self, queue: &Arc<BoundedAudioQueue>) {
+            self.hub.unsubscribe(queue);
+        }
+
+        fn terminator(&self) -> Arc<dyn MediaTerminator> {
+            Arc::new(FakeAudioTerminator {
+                hub: Arc::clone(&self.hub),
+                state: Arc::clone(&self.state),
+            })
+        }
+
+        fn playback(&self) -> Arc<dyn AudioSink> {
+            let sink: Arc<dyn AudioSink> = self.sink.clone();
+            sink
+        }
+
+        fn state(&self) -> CameraPipelineState {
+            if self.state.load(Ordering::Acquire) == 1 {
+                CameraPipelineState::Streaming
+            } else {
+                CameraPipelineState::Stopped
+            }
+        }
+
+        fn stop(self: Box<Self>) -> Result<(), MediaError> {
+            self.state.store(0, Ordering::Release);
+            self.hub.close();
+            self.stop_count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    struct FakeAudioTerminator {
+        hub: Arc<AudioHub>,
+        state: Arc<AtomicU8>,
+    }
+
+    impl MediaTerminator for FakeAudioTerminator {
+        fn terminate(&self) {
+            self.state.store(0, Ordering::Release);
+            self.hub.close();
+        }
+    }
+
+    #[derive(Default)]
+    struct FakeAudioSink {
+        registered: Mutex<Vec<String>>,
+        pushed: AtomicUsize,
+    }
+
+    impl FakeAudioSink {
+        fn registered_ids(&self) -> Vec<String> {
+            self.registered
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone()
+        }
+    }
+
+    impl AudioSink for FakeAudioSink {
+        fn register(&self, session_id: &str) -> Result<(), MediaError> {
+            self.registered
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(session_id.to_owned());
+            Ok(())
+        }
+
+        fn unregister(&self, session_id: &str) {
+            self.registered
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .retain(|id| id != session_id);
+        }
+
+        fn push_opus(&self, _session_id: &str, _frame: AudioFrame) {
+            self.pushed.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[derive(Default)]
     struct FakeWebRtcPort {
         created: AtomicUsize,
         sessions: Mutex<Vec<Arc<FakeRunningSession>>>,
+        /// 为 true 时 create 返回协商失败，用于回滚路径测试。
+        fail_create: AtomicBool,
+    }
+
+    impl FakeWebRtcPort {
+        fn failing() -> Self {
+            Self {
+                fail_create: AtomicBool::new(true),
+                ..Default::default()
+            }
+        }
     }
 
     impl WebRtcSessionPort for FakeWebRtcPort {
@@ -539,15 +857,10 @@ mod tests {
             Ok(())
         }
 
-        fn create(
-            &self,
-            _session_id: &CameraSessionId,
-            _scope: CameraAccessScope,
-            _offer_sdp: &str,
-            _frames: Arc<BoundedFrameQueue>,
-            _keyframe_requester: Arc<dyn KeyframeRequester>,
-            _media_terminator: Arc<dyn MediaTerminator>,
-        ) -> Result<CreatedWebRtcSession, WebRtcError> {
+        fn create(&self, _session: SessionCreate) -> Result<CreatedWebRtcSession, WebRtcError> {
+            if self.fail_create.load(Ordering::Acquire) {
+                return Err(WebRtcError::NegotiationFailed);
+            }
             self.created.fetch_add(1, Ordering::SeqCst);
             let session = Arc::new(FakeRunningSession::default());
             self.sessions
@@ -582,7 +895,14 @@ mod tests {
     fn concurrent_sessions_share_one_pipeline() {
         let media = Arc::new(FakeMediaPort::default());
         let webrtc = Arc::new(FakeWebRtcPort::default());
-        let app = CameraApplication::new(media.clone(), webrtc.clone(), "test".to_owned()).unwrap();
+        let audio = Arc::new(FakeAudioPort::default());
+        let app = CameraApplication::new(
+            media.clone(),
+            audio.clone(),
+            webrtc.clone(),
+            "test".to_owned(),
+        )
+        .unwrap();
         let first = app
             .create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
             .unwrap();
@@ -601,7 +921,14 @@ mod tests {
     fn viewer_cap_rejects_extra_viewers() {
         let media = Arc::new(FakeMediaPort::default());
         let webrtc = Arc::new(FakeWebRtcPort::default());
-        let app = CameraApplication::new(media.clone(), webrtc.clone(), "test".to_owned()).unwrap();
+        let audio = Arc::new(FakeAudioPort::default());
+        let app = CameraApplication::new(
+            media.clone(),
+            audio.clone(),
+            webrtc.clone(),
+            "test".to_owned(),
+        )
+        .unwrap();
         for _ in 0..MAX_VIEWERS {
             app.create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
                 .unwrap();
@@ -617,7 +944,14 @@ mod tests {
     fn closing_one_session_keeps_others_and_pipeline() {
         let media = Arc::new(FakeMediaPort::default());
         let webrtc = Arc::new(FakeWebRtcPort::default());
-        let app = CameraApplication::new(media.clone(), webrtc.clone(), "test".to_owned()).unwrap();
+        let audio = Arc::new(FakeAudioPort::default());
+        let app = CameraApplication::new(
+            media.clone(),
+            audio.clone(),
+            webrtc.clone(),
+            "test".to_owned(),
+        )
+        .unwrap();
         let first = app
             .create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
             .unwrap();
@@ -640,7 +974,14 @@ mod tests {
     fn finished_session_is_reaped_and_last_one_stops_media() {
         let media = Arc::new(FakeMediaPort::default());
         let webrtc = Arc::new(FakeWebRtcPort::default());
-        let app = CameraApplication::new(media.clone(), webrtc.clone(), "test".to_owned()).unwrap();
+        let audio = Arc::new(FakeAudioPort::default());
+        let app = CameraApplication::new(
+            media.clone(),
+            audio.clone(),
+            webrtc.clone(),
+            "test".to_owned(),
+        )
+        .unwrap();
         app.create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
             .unwrap();
         app.create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
@@ -667,7 +1008,14 @@ mod tests {
     fn profile_and_rotation_are_busy_while_any_viewer_is_active() {
         let media = Arc::new(FakeMediaPort::default());
         let webrtc = Arc::new(FakeWebRtcPort::default());
-        let app = CameraApplication::new(media.clone(), webrtc.clone(), "test".to_owned()).unwrap();
+        let audio = Arc::new(FakeAudioPort::default());
+        let app = CameraApplication::new(
+            media.clone(),
+            audio.clone(),
+            webrtc.clone(),
+            "test".to_owned(),
+        )
+        .unwrap();
         let first = app
             .create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
             .unwrap();
@@ -696,7 +1044,14 @@ mod tests {
     fn configuration_changes_stop_stale_pipeline_and_new_session_uses_new_configuration() {
         let media = Arc::new(FakeMediaPort::default());
         let webrtc = Arc::new(FakeWebRtcPort::default());
-        let app = CameraApplication::new(media.clone(), webrtc.clone(), "test".to_owned()).unwrap();
+        let audio = Arc::new(FakeAudioPort::default());
+        let app = CameraApplication::new(
+            media.clone(),
+            audio.clone(),
+            webrtc.clone(),
+            "test".to_owned(),
+        )
+        .unwrap();
         let session = app
             .create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
             .unwrap();
@@ -705,11 +1060,11 @@ mod tests {
         // 最后一个 viewer 离开：默认 720p 管线已停止。
         assert_eq!(media.stop_count.load(Ordering::SeqCst), 1);
 
-        // 无 viewer 时改配置：旧配置管线立即停止（不等空闲清理），避免
-        // 后续 create_session 复用旧预设/旋转的画面。
+        // 无 viewer 时改配置：管线已在最后一个 viewer 离开时停止，此处
+        // 只更新配置；后续 create_session 用新配置新建管线（不会复用旧画面）。
         app.set_profile(CameraStreamPreset::Uhd4k20m).unwrap();
         app.set_rotation(CameraRotation::Deg90).unwrap();
-        assert_eq!(media.stop_count.load(Ordering::SeqCst), 3);
+        assert_eq!(media.stop_count.load(Ordering::SeqCst), 1);
 
         let session = app
             .create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
@@ -730,7 +1085,14 @@ mod tests {
     fn residual_finished_session_does_not_force_new_viewer_onto_stale_pipeline() {
         let media = Arc::new(FakeMediaPort::default());
         let webrtc = Arc::new(FakeWebRtcPort::default());
-        let app = CameraApplication::new(media.clone(), webrtc.clone(), "test".to_owned()).unwrap();
+        let audio = Arc::new(FakeAudioPort::default());
+        let app = CameraApplication::new(
+            media.clone(),
+            audio.clone(),
+            webrtc.clone(),
+            "test".to_owned(),
+        )
+        .unwrap();
         let _first = app
             .create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
             .unwrap();
@@ -750,7 +1112,8 @@ mod tests {
         assert_eq!(status.active_sessions, 0);
         assert_eq!(media.stop_count.load(Ordering::SeqCst), 1);
         app.set_profile(CameraStreamPreset::Uhd4k20m).unwrap();
-        assert_eq!(media.stop_count.load(Ordering::SeqCst), 2);
+        // 陈旧管线已在 reap 时停止，改配置不会重复停（新会话由 create 新建管线）。
+        assert_eq!(media.stop_count.load(Ordering::SeqCst), 1);
         app.create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
             .unwrap();
         assert_eq!(media.starts.load(Ordering::SeqCst), 2);
@@ -767,7 +1130,14 @@ mod tests {
     fn shutdown_stops_all_sessions_and_media() {
         let media = Arc::new(FakeMediaPort::default());
         let webrtc = Arc::new(FakeWebRtcPort::default());
-        let app = CameraApplication::new(media.clone(), webrtc.clone(), "test".to_owned()).unwrap();
+        let audio = Arc::new(FakeAudioPort::default());
+        let app = CameraApplication::new(
+            media.clone(),
+            audio.clone(),
+            webrtc.clone(),
+            "test".to_owned(),
+        )
+        .unwrap();
         app.create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
             .unwrap();
         app.create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
@@ -793,7 +1163,14 @@ mod tests {
     fn close_session_rejects_unknown_ids_and_repeats() {
         let media = Arc::new(FakeMediaPort::default());
         let webrtc = Arc::new(FakeWebRtcPort::default());
-        let app = CameraApplication::new(media.clone(), webrtc.clone(), "test".to_owned()).unwrap();
+        let audio = Arc::new(FakeAudioPort::default());
+        let app = CameraApplication::new(
+            media.clone(),
+            audio.clone(),
+            webrtc.clone(),
+            "test".to_owned(),
+        )
+        .unwrap();
         let first = app
             .create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
             .unwrap();
@@ -835,5 +1212,120 @@ mod tests {
         };
         extra.terminate();
         assert_eq!(inner.0.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn audio_session_starts_shared_audio_and_last_close_stops_it() {
+        let media = Arc::new(FakeMediaPort::default());
+        let audio = Arc::new(FakeAudioPort::default());
+        let webrtc = Arc::new(FakeWebRtcPort::default());
+        let app = CameraApplication::new(
+            media.clone(),
+            audio.clone(),
+            webrtc.clone(),
+            "test".to_owned(),
+        )
+        .unwrap();
+        let first = app
+            .create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &audio_offer())
+            .unwrap();
+        let second = app
+            .create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &audio_offer())
+            .unwrap();
+        assert_eq!(audio.starts.load(Ordering::SeqCst), 1);
+        assert_eq!(audio.sink.registered_ids().len(), 2);
+        assert_eq!(
+            app.status().audio,
+            Some(CameraAudioStatus { supported: true })
+        );
+        app.close_session(&first.session_id).unwrap();
+        assert_eq!(audio.stop_count.load(Ordering::SeqCst), 0);
+        assert_eq!(audio.sink.registered_ids().len(), 1);
+        app.close_session(&second.session_id).unwrap();
+        assert_eq!(audio.stop_count.load(Ordering::SeqCst), 1);
+        assert!(audio.sink.registered_ids().is_empty());
+    }
+
+    #[test]
+    fn video_only_session_never_starts_audio() {
+        let media = Arc::new(FakeMediaPort::default());
+        let audio = Arc::new(FakeAudioPort::default());
+        let webrtc = Arc::new(FakeWebRtcPort::default());
+        let app = CameraApplication::new(
+            media.clone(),
+            audio.clone(),
+            webrtc.clone(),
+            "test".to_owned(),
+        )
+        .unwrap();
+        let session = app
+            .create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
+            .unwrap();
+        assert_eq!(audio.starts.load(Ordering::SeqCst), 0);
+        assert!(audio.sink.registered_ids().is_empty());
+        app.close_session(&session.session_id).unwrap();
+        assert_eq!(audio.stop_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn audio_failure_degrades_to_video_only_without_blocking_video() {
+        let media = Arc::new(FakeMediaPort::default());
+        let audio = Arc::new(FakeAudioPort::failing());
+        let webrtc = Arc::new(FakeWebRtcPort::default());
+        let app = CameraApplication::new(
+            media.clone(),
+            audio.clone(),
+            webrtc.clone(),
+            "test".to_owned(),
+        )
+        .unwrap();
+        // probe 失败：camera 仍可用，audio.supported=false。
+        assert_eq!(
+            app.status().audio,
+            Some(CameraAudioStatus { supported: false })
+        );
+        assert!(app.status().available);
+        // 视频会话照常。
+        let session = app
+            .create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
+            .unwrap();
+        app.close_session(&session.session_id).unwrap();
+        // 音频会话被拒绝，且不影响后续视频会话。
+        assert_eq!(
+            app.create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &audio_offer()),
+            Err(CameraApplicationError::Media(
+                MediaError::AudioDeviceNotFound
+            ))
+        );
+        let session = app
+            .create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &offer())
+            .unwrap();
+        assert_eq!(app.status().active_sessions, 1);
+        app.close_session(&session.session_id).unwrap();
+        assert_eq!(audio.starts.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn webrtc_create_failure_rolls_back_audio_registration() {
+        let media = Arc::new(FakeMediaPort::default());
+        let audio = Arc::new(FakeAudioPort::default());
+        let webrtc = Arc::new(FakeWebRtcPort::failing());
+        let app = CameraApplication::new(
+            media.clone(),
+            audio.clone(),
+            webrtc.clone(),
+            "test".to_owned(),
+        )
+        .unwrap();
+        assert_eq!(
+            app.create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &audio_offer()),
+            Err(CameraApplicationError::WebRtc(
+                WebRtcError::NegotiationFailed
+            ))
+        );
+        // 音频引用计数已归还、混音输入已注销、管线已停（无其他音频会话）。
+        assert_eq!(audio.stop_count.load(Ordering::SeqCst), 1);
+        assert!(audio.sink.registered_ids().is_empty());
+        assert_eq!(app.status().active_sessions, 0);
     }
 }

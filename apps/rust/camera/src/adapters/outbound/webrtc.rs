@@ -1,16 +1,18 @@
 use crate::{
     application::ports::{
         CreatedWebRtcSession, KeyframeRequester, MediaTerminator, RunningWebRtcSession,
-        WebRtcError, WebRtcSessionPort,
+        SessionAudio, SessionCreate, WebRtcError, WebRtcSessionPort,
     },
     domain::{
-        BoundedFrameQueue, CameraAccessScope, CameraSessionId, FramePopOutcome,
-        CAMERA_UDP_PORT_END, CAMERA_UDP_PORT_START,
+        validate_offer_sdp, AudioFrame, AudioPopOutcome, BoundedAudioQueue, BoundedFrameQueue,
+        FramePopOutcome, SdpValidationError, CAMERA_UDP_PORT_END, CAMERA_UDP_PORT_START,
+        MAX_SDP_BYTES,
     },
 };
 use std::{
     io::ErrorKind,
     net::{Ipv4Addr, SocketAddr, UdpSocket},
+    os::fd::AsRawFd,
     sync::{
         mpsc::{self, Sender},
         Arc,
@@ -21,20 +23,27 @@ use std::{
 use str0m::{
     change::SdpOffer,
     format::Codec,
-    media::{MediaKind, MediaTime, Mid, Pt},
+    media::{Frequency, MediaKind, MediaTime, Mid, Pt},
     net::{Protocol, Receive},
     Candidate, Event, IceConnectionState, Input, Output, Rtc,
 };
 
-pub const MAX_SDP_BYTES: usize = 32 * 1024;
-pub const MAX_SDP_LINE_BYTES: usize = 2048;
-pub const MAX_CANDIDATES: usize = 32;
-pub const MAX_PAYLOAD_TYPES: usize = 64;
-pub const MAX_ICE_CREDENTIAL_BYTES: usize = 256;
 pub const NEGOTIATION_DEADLINE: Duration = Duration::from_secs(30);
 pub const TRANSPORT_IDLE_DEADLINE: Duration = Duration::from_secs(90);
 const DRIVER_POLL_SLICE: Duration = Duration::from_millis(10);
 const UDP_BUFFER_BYTES: usize = 2048;
+/// 4K 高码率下单个 RTP 突发可超过内核默认发送缓冲（~212 KiB）；调大并保留
+/// 突发余量，避免 send_to 频繁 EAGAIN。
+const SEND_BUFFER_BYTES: usize = 1 << 20;
+/// send_to 返回 WouldBlock 时的重试上限（10ms × 20 = 200ms），之后才视为传输失败。
+const SEND_RETRY_ATTEMPTS: usize = 20;
+
+fn map_sdp_validation_error(error: SdpValidationError) -> WebRtcError {
+    match error {
+        SdpValidationError::TooLarge => WebRtcError::SdpTooLarge,
+        SdpValidationError::Unsupported => WebRtcError::UnsupportedSdp,
+    }
+}
 
 pub struct Str0mWebRtcAdapter;
 
@@ -52,35 +61,50 @@ impl Default for Str0mWebRtcAdapter {
 
 impl WebRtcSessionPort for Str0mWebRtcAdapter {
     fn validate_offer(&self, offer_sdp: &str) -> Result<(), WebRtcError> {
-        validate_offer_sdp(offer_sdp)
+        validate_offer_sdp(offer_sdp).map_err(map_sdp_validation_error)
     }
 
-    fn create(
-        &self,
-        session_id: &CameraSessionId,
-        scope: CameraAccessScope,
-        offer_sdp: &str,
-        frames: Arc<BoundedFrameQueue>,
-        keyframe_requester: Arc<dyn KeyframeRequester>,
-        media_terminator: Arc<dyn MediaTerminator>,
-    ) -> Result<CreatedWebRtcSession, WebRtcError> {
-        validate_offer_sdp(offer_sdp)?;
+    fn create(&self, session: SessionCreate) -> Result<CreatedWebRtcSession, WebRtcError> {
+        let SessionCreate {
+            session_id,
+            scope,
+            offer_sdp,
+            frames,
+            keyframe_requester,
+            media_terminator,
+            audio,
+        } = session;
+        validate_offer_sdp(&offer_sdp).map_err(map_sdp_validation_error)?;
         let offer =
-            SdpOffer::from_sdp_string(offer_sdp).map_err(|_| WebRtcError::UnsupportedSdp)?;
+            SdpOffer::from_sdp_string(&offer_sdp).map_err(|_| WebRtcError::UnsupportedSdp)?;
         let (socket, port) = bind_fixed_udp_port(scope.address())?;
         socket
             .set_nonblocking(true)
             .map_err(|_| WebRtcError::TransportFailed)?;
+        let buffer_size: libc::c_int = SEND_BUFFER_BYTES as libc::c_int;
+        let setsockopt = unsafe {
+            libc::setsockopt(
+                socket.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_SNDBUF,
+                &buffer_size as *const libc::c_int as *const libc::c_void,
+                std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+            )
+        };
+        if setsockopt != 0 {
+            eprintln!("camera: SO_SNDBUF failed for session {session_id}");
+            return Err(WebRtcError::TransportFailed);
+        }
         let candidate_addr = SocketAddr::new(scope.address().into(), port);
 
         let mut rtc = Rtc::new(Instant::now());
         let candidate =
             Candidate::host(candidate_addr, "udp").map_err(|_| WebRtcError::NegotiationFailed)?;
         rtc.add_local_candidate(candidate);
-        let answer = rtc
-            .sdp_api()
-            .accept_offer(offer)
-            .map_err(|_| WebRtcError::NegotiationFailed)?;
+        let answer = rtc.sdp_api().accept_offer(offer).map_err(|_| {
+            eprintln!("camera: accept_offer failed for session {session_id}");
+            WebRtcError::NegotiationFailed
+        })?;
         let answer_sdp = answer.to_sdp_string();
         if answer_sdp.len() > MAX_SDP_BYTES {
             return Err(WebRtcError::NegotiationFailed);
@@ -88,18 +112,21 @@ impl WebRtcSessionPort for Str0mWebRtcAdapter {
 
         let (shutdown_tx, shutdown_rx) = mpsc::channel();
         let thread_name = format!("hyz-camera-webrtc-{}", &session_id.as_str()[..8]);
+        let driver = SessionDriver {
+            session_id: session_id.as_str().to_owned(),
+            frames,
+            keyframe_requester,
+            media_terminator,
+            audio,
+        };
         let join = thread::Builder::new()
             .name(thread_name)
             .spawn(move || {
-                drive_session(
-                    rtc,
-                    socket,
-                    candidate_addr,
-                    frames,
-                    keyframe_requester,
-                    media_terminator,
-                    shutdown_rx,
-                )
+                let result = drive_session(rtc, socket, candidate_addr, driver, shutdown_rx);
+                if let Err(error) = &result {
+                    eprintln!("session thread {session_id}: exited with error: {error:?}");
+                }
+                result
             })
             .map_err(|_| WebRtcError::TransportFailed)?;
 
@@ -118,7 +145,10 @@ fn bind_fixed_udp_port(address: Ipv4Addr) -> Result<(UdpSocket, u16), WebRtcErro
         match UdpSocket::bind(SocketAddr::from((address, port))) {
             Ok(socket) => return Ok((socket, port)),
             Err(error) if error.kind() == ErrorKind::AddrInUse => continue,
-            Err(_) => return Err(WebRtcError::TransportFailed),
+            Err(error) => {
+                eprintln!("camera: UDP bind {address}:{port} failed: {error}");
+                return Err(WebRtcError::TransportFailed);
+            }
         }
     }
     Err(WebRtcError::ResourceExhausted)
@@ -151,22 +181,49 @@ impl Drop for MediaTerminationGuard {
     }
 }
 
+/// `drive_session` 的会话参数（收敛签名，避免过多参数）。
+struct SessionDriver {
+    session_id: String,
+    frames: Arc<BoundedFrameQueue>,
+    keyframe_requester: Arc<dyn KeyframeRequester>,
+    media_terminator: Arc<dyn MediaTerminator>,
+    audio: Option<SessionAudio>,
+}
+
 fn drive_session(
     mut rtc: Rtc,
     socket: UdpSocket,
     candidate_addr: SocketAddr,
-    frames: Arc<BoundedFrameQueue>,
-    keyframe_requester: Arc<dyn KeyframeRequester>,
-    media_terminator: Arc<dyn MediaTerminator>,
+    driver: SessionDriver,
     shutdown_rx: mpsc::Receiver<()>,
 ) -> Result<(), WebRtcError> {
+    let SessionDriver {
+        session_id,
+        frames,
+        keyframe_requester,
+        media_terminator,
+        audio,
+    } = driver;
     let _termination_guard = MediaTerminationGuard(media_terminator);
+    // 音频引用计数 guard：会话线程退出时递减，最后一个音频会话退出时停止音频管线。
+    let _audio_termination_guard = audio
+        .as_ref()
+        .map(|session_audio| MediaTerminationGuard(Arc::clone(&session_audio.media_terminator)));
+    let audio_frames = audio
+        .as_ref()
+        .map(|session_audio| Arc::clone(&session_audio.frames));
+    let audio_sink = audio
+        .as_ref()
+        .map(|session_audio| Arc::clone(&session_audio.sink));
+
     let started = Instant::now();
     let mut last_transport_activity = started;
     let mut connected = false;
     let mut waiting_for_keyframe = true;
     let mut video_mid: Option<Mid> = None;
     let mut video_pt: Option<Pt> = None;
+    let mut audio_mid: Option<Mid> = None;
+    let mut audio_pt: Option<Pt> = None;
     let mut recv_buf = [0u8; UDP_BUFFER_BYTES];
 
     loop {
@@ -176,9 +233,24 @@ fn drive_session(
                 .map_err(|_| WebRtcError::TransportFailed)?
             {
                 Output::Transmit(transmit) => {
-                    socket
-                        .send_to(&transmit.contents, transmit.destination)
-                        .map_err(|_| WebRtcError::TransportFailed)?;
+                    let destination = transmit.destination;
+                    let mut attempts = 0;
+                    loop {
+                        match socket.send_to(&transmit.contents, destination) {
+                            Ok(_) => break,
+                            Err(error)
+                                if error.kind() == ErrorKind::WouldBlock
+                                    && attempts < SEND_RETRY_ATTEMPTS =>
+                            {
+                                attempts += 1;
+                                thread::sleep(DRIVER_POLL_SLICE);
+                            }
+                            Err(error) => {
+                                eprintln!("session {session_id}: udp send_to failed: {error}");
+                                return Err(WebRtcError::TransportFailed);
+                            }
+                        }
+                    }
                 }
                 Output::Event(event) => match event {
                     Event::Connected => {
@@ -186,8 +258,11 @@ fn drive_session(
                         waiting_for_keyframe = true;
                         let _ = keyframe_requester.request_keyframe();
                     }
-                    Event::IceConnectionStateChange(IceConnectionState::Disconnected) => {
-                        return Ok(());
+                    Event::IceConnectionStateChange(state) => {
+                        eprintln!("session {session_id}: ice state change to {state:?}");
+                        if state == IceConnectionState::Disconnected {
+                            return Ok(());
+                        }
                     }
                     Event::MediaAdded(media) => {
                         if media.kind == MediaKind::Video && video_mid.is_none() {
@@ -198,10 +273,37 @@ fn drive_session(
                                     .find(|params| params.spec().codec == Codec::H264)
                                     .map(|params| params.pt())
                             });
+                        } else if media.kind == MediaKind::Audio
+                            && audio_mid.is_none()
+                            && audio_frames.is_some()
+                        {
+                            audio_mid = Some(media.mid);
+                            audio_pt = rtc.writer(media.mid).and_then(|writer| {
+                                writer
+                                    .payload_params()
+                                    .find(|params| params.spec().codec == Codec::Opus)
+                                    .map(|params| params.pt())
+                            });
                         }
                     }
                     Event::KeyframeRequest(_) => {
                         let _ = keyframe_requester.request_keyframe();
+                    }
+                    Event::MediaData(media) => {
+                        if Some(media.mid) == audio_mid {
+                            if let Some(sink) = &audio_sink {
+                                sink.push_opus(
+                                    &session_id,
+                                    AudioFrame {
+                                        data: Arc::from(media.data),
+                                        media_time_48khz: media
+                                            .time
+                                            .rebase(Frequency::FORTY_EIGHT_KHZ)
+                                            .numer(),
+                                    },
+                                );
+                            }
+                        }
                     }
                     _ => {}
                 },
@@ -210,13 +312,16 @@ fn drive_session(
         };
 
         if shutdown_rx.try_recv().is_ok() {
+            eprintln!("session {session_id}: shutdown requested");
             return Ok(());
         }
         let now = Instant::now();
         if !connected && now.duration_since(started) >= NEGOTIATION_DEADLINE {
+            eprintln!("session {session_id}: negotiation deadline exceeded");
             return Err(WebRtcError::TransportFailed);
         }
         if connected && now.duration_since(last_transport_activity) >= TRANSPORT_IDLE_DEADLINE {
+            eprintln!("session {session_id}: transport idle deadline exceeded");
             return Ok(());
         }
 
@@ -235,16 +340,25 @@ fn drive_session(
                                 MediaTime::from_90khz(frame.media_time_90khz),
                                 frame.data.to_vec(),
                             )
-                            .map_err(|_| WebRtcError::TransportFailed)?;
+                            .map_err(|error| {
+                                eprintln!(
+                                    "session {session_id}: video writer.write failed: {error:?}"
+                                );
+                                WebRtcError::TransportFailed
+                            })?;
                         waiting_for_keyframe = false;
                         continue;
                     }
                     waiting_for_keyframe = true;
                     let _ = keyframe_requester.request_keyframe();
                 }
-                FramePopOutcome::Closed => return Ok(()),
+                FramePopOutcome::Closed => {
+                    eprintln!("session {session_id}: video frame queue closed");
+                    return Ok(());
+                }
                 FramePopOutcome::Timeout => {}
             }
+            drain_audio(&mut rtc, audio_mid, audio_pt, &audio_frames)?;
         }
 
         match socket.recv_from(&mut recv_buf) {
@@ -270,83 +384,31 @@ fn drive_session(
     }
 }
 
-pub fn validate_offer_sdp(sdp: &str) -> Result<(), WebRtcError> {
-    if sdp.len() > MAX_SDP_BYTES {
-        return Err(WebRtcError::SdpTooLarge);
-    }
-    if sdp.is_empty() || sdp.contains('\0') {
-        return Err(WebRtcError::UnsupportedSdp);
-    }
-
-    let mut video_lines = 0usize;
-    let mut audio_lines = 0usize;
-    let mut application_lines = 0usize;
-    let mut candidates = 0usize;
-    let mut payload_types = 0usize;
-    let mut has_h264 = false;
-    let mut has_recv_direction = false;
-    let mut has_sha256_fingerprint = false;
-    let mut ice_ufrag = 0usize;
-    let mut ice_pwd = 0usize;
-
-    for raw_line in sdp.split_terminator('\n') {
-        let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
-        if line.is_empty() || line.len() > MAX_SDP_LINE_BYTES {
-            return Err(WebRtcError::UnsupportedSdp);
-        }
-        if let Some(rest) = line.strip_prefix("m=video ") {
-            video_lines += 1;
-            let fields: Vec<_> = rest.split_ascii_whitespace().collect();
-            // m=<media> <port> <proto> <fmt>...；payload 类型从下标 2 开始。
-            if fields.len() < 3 {
-                return Err(WebRtcError::UnsupportedSdp);
+/// 从采集队列取 Opus AU 写入音频 writer（48 kHz RTP 时钟）。音频管线关闭
+/// （`Closed`）时停止发送但会话继续（video-only 降级）。
+fn drain_audio(
+    rtc: &mut Rtc,
+    audio_mid: Option<Mid>,
+    audio_pt: Option<Pt>,
+    audio_frames: &Option<Arc<BoundedAudioQueue>>,
+) -> Result<(), WebRtcError> {
+    let (Some(mid), Some(pt), Some(frames)) = (audio_mid, audio_pt, audio_frames.as_ref()) else {
+        return Ok(());
+    };
+    loop {
+        match frames.pop_timeout(Duration::ZERO) {
+            AudioPopOutcome::Frame(frame) => {
+                let writer = rtc.writer(mid).ok_or(WebRtcError::TransportFailed)?;
+                writer
+                    .write(
+                        pt,
+                        Instant::now(),
+                        MediaTime::new(frame.media_time_48khz, Frequency::FORTY_EIGHT_KHZ),
+                        frame.data.to_vec(),
+                    )
+                    .map_err(|_| WebRtcError::TransportFailed)?;
             }
-            payload_types = fields[2..].len();
-        } else if line.starts_with("m=audio ") {
-            audio_lines += 1;
-        } else if line.starts_with("m=application ") {
-            application_lines += 1;
-        } else if line.starts_with("m=") {
-            return Err(WebRtcError::UnsupportedSdp);
-        } else if line.starts_with("a=rtpmap:") && line.to_ascii_uppercase().contains(" H264/90000")
-        {
-            has_h264 = true;
-        } else if matches!(line, "a=recvonly" | "a=sendrecv") {
-            has_recv_direction = true;
-        } else if let Some(value) = line.strip_prefix("a=fingerprint:") {
-            has_sha256_fingerprint |= value
-                .split_ascii_whitespace()
-                .next()
-                .is_some_and(|algorithm| algorithm.eq_ignore_ascii_case("sha-256"));
-        } else if let Some(value) = line.strip_prefix("a=ice-ufrag:") {
-            ice_ufrag += 1;
-            if value.is_empty() || value.len() > MAX_ICE_CREDENTIAL_BYTES {
-                return Err(WebRtcError::UnsupportedSdp);
-            }
-        } else if let Some(value) = line.strip_prefix("a=ice-pwd:") {
-            ice_pwd += 1;
-            if value.is_empty() || value.len() > MAX_ICE_CREDENTIAL_BYTES {
-                return Err(WebRtcError::UnsupportedSdp);
-            }
-        } else if line.starts_with("a=candidate:") {
-            candidates += 1;
+            AudioPopOutcome::Timeout | AudioPopOutcome::Closed => return Ok(()),
         }
     }
-
-    if video_lines != 1
-        || audio_lines != 0
-        || application_lines != 0
-        || !has_h264
-        || !has_recv_direction
-        || !has_sha256_fingerprint
-        || ice_ufrag != 1
-        || ice_pwd != 1
-        || candidates == 0
-        || candidates > MAX_CANDIDATES
-        || payload_types == 0
-        || payload_types > MAX_PAYLOAD_TYPES
-    {
-        return Err(WebRtcError::UnsupportedSdp);
-    }
-    Ok(())
 }

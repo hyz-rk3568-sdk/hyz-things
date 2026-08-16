@@ -295,6 +295,15 @@ pub struct CameraStatus {
     pub profile: CameraStreamProfile,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<CameraErrorCategory>,
+    /// 全双工语音对讲能力（additive：旧 camera 不发送该字段，旧客户端忽略）。
+    /// `supported=false` 或缺失时前端不显示对讲控件，直播保持 video-only。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio: Option<CameraAudioStatus>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CameraAudioStatus {
+    pub supported: bool,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -437,11 +446,13 @@ mod tests {
                     rotation: CameraRotation::Deg90,
                 },
                 error: None,
+                audio: Some(CameraAudioStatus { supported: true }),
             })),
         };
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("h264_baseline"));
         assert!(json.contains("deg_90"));
+        assert!(json.contains("\"audio\":{\"supported\":true}"));
         let decoded: ControlResponse = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded.version, CONTROL_PROTOCOL_VERSION);
         let ControlOutcome::Ok(ControlResult::Status(status)) = decoded.outcome else {
@@ -449,6 +460,37 @@ mod tests {
         };
         assert_eq!(status.profile.codec, CameraVideoCodec::H264Baseline);
         assert_eq!(status.profile.rotation, CameraRotation::Deg90);
+        assert_eq!(status.audio, Some(CameraAudioStatus { supported: true }));
+    }
+
+    #[test]
+    fn status_without_audio_field_decodes_with_default() {
+        // 旧 camera（协议 v2 无 audio 字段）：序列化时省略，解码端回落到 None。
+        let response = ControlResponse {
+            version: CONTROL_PROTOCOL_VERSION,
+            outcome: ControlOutcome::Ok(ControlResult::Status(CameraStatus {
+                available: true,
+                pipeline: CameraPipelineState::Stopped,
+                active_sessions: 0,
+                profile: CameraStreamProfile {
+                    width: 1280,
+                    height: 720,
+                    fps: 30,
+                    bitrate_bps: 2_500_000,
+                    codec: CameraVideoCodec::H264Baseline,
+                    rotation: CameraRotation::Deg0,
+                },
+                error: None,
+                audio: None,
+            })),
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(!json.contains("audio"));
+        let decoded: ControlResponse = serde_json::from_str(&json).unwrap();
+        let ControlOutcome::Ok(ControlResult::Status(status)) = decoded.outcome else {
+            panic!("expected camera status response");
+        };
+        assert_eq!(status.audio, None);
     }
 
     #[test]

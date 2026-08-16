@@ -1,7 +1,10 @@
 use hyz_camera::{
     adapters::{
         inbound::unix_control::serve_root_control,
-        outbound::{gstreamer::GStreamerMediaAdapter, webrtc::Str0mWebRtcAdapter},
+        outbound::{
+            gstreamer::{GStreamerAudioAdapter, GStreamerMediaAdapter},
+            webrtc::Str0mWebRtcAdapter,
+        },
     },
     application::CameraApplication,
 };
@@ -31,8 +34,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let generation: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
 
     let media = Arc::new(GStreamerMediaAdapter::new()?);
+    let audio = Arc::new(GStreamerAudioAdapter::new());
     let webrtc = Arc::new(Str0mWebRtcAdapter::new());
-    let application = Arc::new(CameraApplication::new(media, webrtc, generation.clone())?);
+    let application = Arc::new(CameraApplication::new(
+        media,
+        audio,
+        webrtc,
+        generation.clone(),
+    )?);
     let shutdown = Arc::new(AtomicBool::new(false));
     flag::register(SIGTERM, shutdown.clone())?;
     flag::register(SIGINT, shutdown.clone())?;

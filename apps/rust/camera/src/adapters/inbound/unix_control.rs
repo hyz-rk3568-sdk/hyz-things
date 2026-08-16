@@ -126,7 +126,10 @@ fn handle_request(
         ControlOperation::CreateSession(request) => {
             let created = application
                 .create_session(request.scope, request.address, &request.offer_sdp)
-                .map_err(map_application_error)?;
+                .map_err(|error| {
+                    eprintln!("camera: session create rejected: {error:?}");
+                    map_application_error(error)
+                })?;
             ControlResult::SessionCreated(created.into())
         }
         ControlOperation::CloseSession(request) => {
