@@ -24,6 +24,8 @@ if (screenshotDirectory) {
 
 async function login(page, origin, password, bootstrap) {
   await page.goto(origin, { waitUntil: 'networkidle', timeout: 30_000 });
+  // 门户形态：登录入口在路由器视图的网络设置页签内。
+  await page.getByRole('button', { name: '路由器', exact: true }).click();
   await page.getByRole('button', { name: '网络设置', exact: true }).click();
   await page.getByRole('button', { name: '管理员登录' }).click();
   await page.getByLabel('密码').fill(password);
@@ -86,14 +88,41 @@ async function sampleVideoPixels(page) {
 
 async function verifyStream(page, originName, viewport) {
   await page.setViewportSize(viewport);
+  // 门户形态：直播控件在独立的摄像头视图内，先从门户导航进入。
+  await page.getByRole('button', { name: '摄像头', exact: true }).click();
   const camera = page.getByRole('article', { name: '摄像头直播' });
   await camera.waitFor({ state: 'visible', timeout: 30_000 });
   await camera.getByText('可用', { exact: true }).waitFor({ state: 'visible' });
-  await camera.getByText(/1280 × 720 · 30 fps · 2\.5 Mbps · h264/).waitFor({ state: 'visible' });
 
   const presetSelect = camera.getByRole('combobox', { name: '画面分辨率与码率' });
   await presetSelect.waitFor({ state: 'visible' });
   assert.equal(await presetSelect.locator('option').count(), 4);
+
+  // 板端 rotation/preset 是跨会话保留的全局状态：前一次运行（或上一个 origin）
+  // 可能遗留非默认值，而本脚本的旋转/预设断言从 720p + deg_0 开始。播放前
+  // 显式复位；若残留会话仍占着相机（409 busy），等待其空闲后再复位。
+  await page.evaluate(async () => {
+    const panel = await (await fetch('/api/v1/panel', { cache: 'no-store' })).json();
+    const csrf = panel.csrf_token;
+    const reset = async () => {
+      const status = await (await fetch('/api/v1/camera/status', { cache: 'no-store' })).json();
+      const profile = status.camera.profile;
+      if (profile.rotation === 'deg_0') return true;
+      const response = await fetch('/api/v1/control/camera/rotation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-HYZ-CSRF': csrf },
+        body: JSON.stringify({ rotation: 'deg_0' }),
+      });
+      return response.ok;
+    };
+    const deadline = Date.now() + 120_000;
+    while (!(await reset())) {
+      if (Date.now() > deadline) throw new Error('rotation 复位超时（相机持续忙）');
+      await new Promise(resolve => setTimeout(resolve, 3_000));
+    }
+  });
+  await presetSelect.selectOption('hd720p25m');
+  await camera.getByText(/1280 × 720 · 30 fps · 2\.5 Mbps · h264/).waitFor({ state: 'visible' });
 
   const initial = await cameraStatus(page);
   assert.equal(initial.camera.available, true);
@@ -180,6 +209,7 @@ async function verifyStream(page, originName, viewport) {
   // camera reopens the pipeline with videoflip applied before the timestamp
   // watermark, and the browser decodes the rotated stream. The button cycles
   // 0 → 270 → 180 → 90 → 0; 90/270 swap width and height.
+  const rotation = [];
   for (const [deg, width, height] of [
     [270, 2160, 3840],
     [180, 3840, 2160],
@@ -203,6 +233,7 @@ async function verifyStream(page, originName, viewport) {
     );
     const status = await cameraStatus(page);
     assert.equal(status.camera.profile.rotation, `deg_${deg}`);
+    rotation.push(`deg_${deg}`);
   }
 
   if (screenshotDirectory) {
@@ -254,6 +285,7 @@ async function verifyConcurrentViewers(context, origin, originName) {
     if (message.type() === 'error') browserErrorsB.push(`console: ${message.text()}`);
   });
   await pageB.goto(origin, { waitUntil: 'networkidle', timeout: 30_000 });
+  await pageB.getByRole('button', { name: '摄像头', exact: true }).click();
   const cameraB = pageB.getByRole('article', { name: '摄像头直播' });
   await cameraB.waitFor({ state: 'visible', timeout: 30_000 });
   await cameraB.getByRole('button', { name: '播放直播' }).click();
