@@ -20,7 +20,7 @@ if [[ -n "$ADB_SERIAL" ]]; then
 fi
 
 device_shell() {
-    "$ADB" "${adb_args[@]}" shell "$1"
+    $ADB "${adb_args[@]}" shell "$1"
 }
 
 valid_sha() {
@@ -31,7 +31,7 @@ wait_for_adb() {
     local deadline=$((SECONDS + ADB_WAIT_SECONDS))
 
     while ((SECONDS < deadline)); do
-        if "$ADB" "${adb_args[@]}" get-state >/dev/null 2>&1; then
+        if $ADB "${adb_args[@]}" get-state >/dev/null 2>&1; then
             return 0
         fi
         sleep 2
@@ -45,10 +45,10 @@ reboot_board() {
 
     previous_boot_id=$(device_shell 'cat /proc/sys/kernel/random/boot_id' | tr -d '\r\n')
     device_shell 'sync'
-    "$ADB" "${adb_args[@]}" reboot >/dev/null
+    $ADB "${adb_args[@]}" reboot >/dev/null
     deadline=$((SECONDS + ADB_WAIT_SECONDS))
     while ((SECONDS < deadline)); do
-        if "$ADB" "${adb_args[@]}" get-state >/dev/null 2>&1; then
+        if $ADB "${adb_args[@]}" get-state >/dev/null 2>&1; then
             current_boot_id=$(device_shell 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null | tr -d '\r\n')
             if [[ -n "$current_boot_id" && "$current_boot_id" != "$previous_boot_id" ]]; then
                 return 0
@@ -213,7 +213,7 @@ EOF
     chmod 0755 "$local_script"
     local_script_sha=$(sha256sum "$local_script" | awk '{print $1}')
     remote_script="$REMOTE_DEV_DIR/S80hyz-router-dev.$host_sha"
-    "$ADB" "${adb_args[@]}" push "$local_script" "$remote_script"
+    $ADB "${adb_args[@]}" push "$local_script" "$remote_script"
     remote_script_sha=$(device_shell "sha256sum '$remote_script'" | tr -d '\r' | awk '{print $1}')
     if [[ "$remote_script_sha" != "$local_script_sha" ]]; then
         printf 'staged init script SHA-256 mismatch: expected %s, got %s\n' "$local_script_sha" "$remote_script_sha" >&2
@@ -240,7 +240,7 @@ deploy() {
 
     firmware_sha=$(ensure_firmware_sha)
     device_shell "install -d -m 0700 '$REMOTE_DEV_DIR'"
-    "$ADB" "${adb_args[@]}" push "$BINARY" "$remote_binary.tmp"
+    $ADB "${adb_args[@]}" push "$BINARY" "$remote_binary.tmp"
     remote_staged=$(device_shell "sha256sum '$remote_binary.tmp'" | tr -d '\r' | awk '{print $1}')
     if [[ "$remote_staged" != "$host_sha" ]]; then
         printf 'staged ELF SHA-256 mismatch: expected %s, got %s\n' "$host_sha" "$remote_staged" >&2
