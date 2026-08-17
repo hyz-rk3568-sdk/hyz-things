@@ -528,6 +528,71 @@ fn mic_pcm_caps() -> Result<gst::Caps, MediaError> {
         .build())
 }
 
+/// 在 webrtcdsp 之后挂 RNNoise 神经网络降噪探针（nnnoiseless，纯 Rust 移植）。
+///
+/// 为什么放在 dsp 之后：webrtcdsp 输出固定的 48kHz mono 10ms（480 样本）帧，
+/// 正好是 RNNoise 的固有帧长；探针在 dsp 的 src pad 上原地改写 S16LE 数据，
+/// 不引入任何额外缓冲元素。dsp 的 NS 只留 high 作轻量兜底，稳态底噪主要由
+/// 这里的神经网络压制（RNNoise 对稳态噪声压制明显更深，代价是重噪声下的人声
+/// 细节损失，对讲场景可接受）。
+///
+/// 说明：
+/// - RNNoise 输入/输出是 i16 数值范围的 f32（demo 直接读 short 到 float），
+///   不需要归一化到 [-1, 1]。
+/// - 文档要求丢弃首帧（fade-in 伪影），首帧写静音。
+/// - 非 480 整数倍的缓冲区直接透传（理论上不会出现：webrtcdsp 按 10ms 帧出
+///   数据；万一出现只警告一次，避免刷日志）。
+fn attach_rnnoise_probe(dsp: &gst::Element) -> Result<(), MediaError> {
+    let src_pad = dsp
+        .static_pad("src")
+        .ok_or(MediaError::AudioPipelineFailed)?;
+    let state: Arc<Mutex<Box<nnnoiseless::DenoiseState<'static>>>> =
+        Arc::new(Mutex::new(nnnoiseless::DenoiseState::new()));
+    let first = Arc::new(AtomicBool::new(true));
+    let warned = Arc::new(AtomicBool::new(false));
+    let frame_size = nnnoiseless::DenoiseState::FRAME_SIZE;
+    src_pad.add_probe(gst::PadProbeType::BUFFER, move |_pad, info| {
+        let Some(buffer) = info.buffer_mut() else {
+            return gst::PadProbeReturn::Ok;
+        };
+        let Some(buffer) = buffer.get_mut() else {
+            return gst::PadProbeReturn::Ok;
+        };
+        let Ok(mut map) = buffer.map_writable() else {
+            return gst::PadProbeReturn::Ok;
+        };
+        let bytes: &mut [u8] = &mut map;
+        let samples = bytes.len() / 2;
+        if samples == 0 || samples % frame_size != 0 {
+            if !warned.swap(true, Ordering::Relaxed) {
+                eprintln!("rnnoise: unexpected buffer size {samples} samples; passthrough");
+            }
+            return gst::PadProbeReturn::Ok;
+        }
+        let mut state = state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut input = [0f32; 480];
+        let mut output = [0f32; 480];
+        for frame in bytes.chunks_exact_mut(frame_size * 2) {
+            for (i, chunk) in frame.chunks_exact_mut(2).enumerate() {
+                input[i] = f32::from(i16::from_ne_bytes([chunk[0], chunk[1]]));
+            }
+            if first.swap(false, Ordering::Relaxed) {
+                output.fill(0.0);
+            } else {
+                state.process_frame(&mut output, &input);
+            }
+            for (i, chunk) in frame.chunks_exact_mut(2).enumerate() {
+                let value = output[i].round().clamp(-32768.0, 32767.0) as i16;
+                chunk.copy_from_slice(&value.to_ne_bytes());
+            }
+        }
+        gst::PadProbeReturn::Ok
+    });
+    Ok(())
+}
+
 fn opus_caps() -> Result<gst::Caps, MediaError> {
     let rate = i32::try_from(AUDIO_SAMPLE_RATE_HZ).map_err(|_| MediaError::AudioPipelineFailed)?;
     // WebRTC RTP 的 Opus 载荷不带 OpusHead/streamheader；opusdec（gst-plugins-base）
@@ -639,8 +704,10 @@ impl CameraAudioPort for GStreamerAudioAdapter {
         dsp.set_property("high-pass-filter", true);
         dsp.set_property("noise-suppression", true);
         // 插件实例默认的 noise-suppression-level 是 kLow（结构体清零即 0），
-        // 实测对语音带稳态噪声只压约 2dB；显式提到 high 后压制明显增强，
-        // 残余"底噪"进一步下降（very-high 会更强但可能带轻微人声染色）。
+        // 实测对语音带稳态噪声只压约 2dB；提到 high（约 18dB）后压制明显
+        // 增强。A/B 实测：关掉 NS 后静音底噪从 -44dBFS 回落到 -37dBFS
+        // （桌面端），说明 NS=high 在 RNNoise 之外仍有实际压制作用
+        // （也防止噪声推高 AGC 增益），保留 high 作为互补。
         dsp.set_property_from_str("noise-suppression-level", "high");
         // AGC：麦克风电平随说话距离/音量变化且无自动补偿，正常音量说话可能
         // 偏小（实测必须大声才听得清）。开启自适应增益把语音抬到目标电平，
@@ -654,6 +721,12 @@ impl CameraAudioPort for GStreamerAudioAdapter {
         );
         // frame-size 是 GstOpusEncFrameSize 枚举（值名 "20" 等），不能用整数属性设置。
         encoder.set_property_from_str("frame-size", &AUDIO_FRAME_MS.to_string());
+        // DTX：静音段每 400ms 才发一帧，不再持续编码麦克风残余噪声底
+        // （Opus SILK 在 DTX 关闭时对静音输出约 -56dB 的低电平噪声，见
+        // xiph/opus#2353）。audio-type=voice 走 SILK 语音编码，对 32kbps
+        // 对讲是更优解，词间噪声进一步收敛。
+        encoder.set_property("dtx", true);
+        encoder.set_property_from_str("audio-type", "voice");
 
         // —— 回放支路：audiomixer（会话按需 request pad）→ AEC 参考 → 喇叭 ——
         // hw:0 回放仅支持 2+ 声道：AEC 参考保持 mono 48k，到喇叭前再转回设备原生格式
@@ -785,6 +858,9 @@ impl CameraAudioPort for GStreamerAudioAdapter {
             .add_many(&all)
             .map_err(|_| MediaError::AudioPipelineFailed)?;
         gst::Element::link_many(&capture_chain).map_err(|_| MediaError::AudioPipelineFailed)?;
+        // RNNoise 探针必须挂在链接之后（pad 已就绪），且在管线进 PLAYING 之前，
+        // 确保从第一帧音频就开始降噪。
+        attach_rnnoise_probe(&dsp)?;
         gst::Element::link_many(&playback_tail).map_err(|_| MediaError::AudioPipelineFailed)?;
 
         let stopping = Arc::new(AtomicBool::new(false));
