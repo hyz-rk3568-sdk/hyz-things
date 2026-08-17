@@ -1736,7 +1736,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                     if let Some(error) = viewer_token_error.as_ref() {
                         <p class="text-xs text-error" role="status">{format!("观看凭证获取失败：{error}")}</p>
                     }
-                    <p class={HELP_TEXT}>{"视频不会自动启动。点击播放后，浏览器接收设备视频与麦克风音频；对讲需要显式点击「开启对讲」才会采集你的麦克风。离开页面会立即停止会话。画面设置需要管理员登录。"}</p>
+                    <p class={HELP_TEXT}>{"视频不会自动启动。点击播放后，浏览器接收设备视频与麦克风音频；对讲需要显式点击「开启对讲」才会采集你的麦克风。离开页面后会话保留 1 分钟，期间回来继续播放，超过 1 分钟未回来才停止。画面设置需要管理员登录。"}</p>
                     <div class={BUTTON_ROW}>
                         if *phase == CameraViewPhase::Idle {
                             <button class={BUTTON_PRIMARY} type="button" onclick={start_button} disabled={!camera_available || !can_view}>{"播放直播"}</button>
