@@ -77,6 +77,9 @@ const CAMERA_ROTATION_UPDATE_ENDPOINT: &str = "/api/v1/control/camera/rotation";
 const APPS_ENDPOINT: &str = "/api/v1/apps";
 const CAMERA_ICE_GATHER_TIMEOUT_MS: u32 = 10_000;
 const CAMERA_ICE_POLL_MS: u32 = 50;
+// 页面隐藏后不立即关闭直播会话：宽限期内回来就继续，超时才真正关闭
+// （多 viewer 场景下避免切走标签页即断流）。
+const CAMERA_HIDDEN_CLOSE_GRACE_MS: u32 = 60_000;
 const POLL_DELAY_MS: u32 = 2_000;
 const NETWORK_APPLY_PAINT_DELAY_MS: u32 = 150;
 // 画面设置（预设/旋转）提交遇到 camera busy（残留会话或 close 尚未完成）时
@@ -978,6 +981,16 @@ fn close_camera_runtime(runtime: &CameraRuntime, video: &NodeRef, audio: &NodeRe
     }
 }
 
+/// 取消页面隐藏时的延迟关闭计时（页面恢复可见 / 页面卸载 / 会话被其他路径
+/// 关闭时调用）。句柄取出即视为取消，即使 window 不可用也清掉本地状态。
+fn cancel_hidden_close_timer(timer: &Rc<RefCell<Option<i32>>>, window: Option<&web_sys::Window>) {
+    if let Some(handle) = timer.borrow_mut().take() {
+        if let Some(window) = window {
+            window.clear_timeout_with_handle(handle);
+        }
+    }
+}
+
 async fn wait_for_camera_ice(peer: &RtcPeerConnection) -> Result<(), String> {
     let mut waited = 0;
     while peer.ice_gathering_state() != RtcIceGatheringState::Complete {
@@ -1022,6 +1035,8 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     let talk_active = use_state(|| false);
     let runtime = use_mut_ref(|| None::<CameraSessionRuntime>);
     let generation = use_mut_ref(|| 0u64);
+    // 页面隐藏时的延迟关闭计时器句柄（None 表示无待触发计时）。
+    let hidden_timer = use_mut_ref(|| None::<i32>);
     let previous_stop_generation = use_mut_ref(|| props.stop_generation);
     // 乐观旋转状态：点击后立即推进 0 → 270 → 180 → 90 → 0，不依赖 2s 轮询的
     // 延迟刷新，保证「旋转画面」每次点击都严格逆时针 90°。
@@ -1091,11 +1106,13 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
         let phase = phase.clone();
         let notice = notice.clone();
         let generation = generation.clone();
+        let hidden_timer = hidden_timer.clone();
         let previous = previous_stop_generation.clone();
         use_effect_with(props.stop_generation, move |requested| {
             let changed = *previous.borrow() != *requested;
             *previous.borrow_mut() = *requested;
             if changed {
+                cancel_hidden_close_timer(&hidden_timer, web_sys::window().as_ref());
                 next_camera_generation(&generation);
                 close_camera_runtime(&runtime, &video, &audio);
                 phase.set(CameraViewPhase::Idle);
@@ -1112,6 +1129,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
         let phase = phase.clone();
         let notice = notice.clone();
         let generation = generation.clone();
+        let hidden_timer = hidden_timer.clone();
         use_effect_with((), move |_| {
             let window = web_sys::window();
             let document = window.as_ref().and_then(|window| window.document());
@@ -1120,7 +1138,10 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
             let pagehide_video = video.clone();
             let pagehide_audio = audio.clone();
             let pagehide_generation = generation.clone();
+            let pagehide_timer = hidden_timer.clone();
+            let pagehide_window = window.clone();
             let pagehide = Closure::<dyn FnMut(Event)>::new(move |_| {
+                cancel_hidden_close_timer(&pagehide_timer, pagehide_window.as_ref());
                 next_camera_generation(&pagehide_generation);
                 close_camera_runtime(&pagehide_runtime, &pagehide_video, &pagehide_audio);
             });
@@ -1131,16 +1152,56 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
             let hidden_phase = phase.clone();
             let hidden_notice = notice.clone();
             let hidden_generation = generation.clone();
+            let hidden_timer = hidden_timer.clone();
+            let cleanup_timer = hidden_timer.clone();
+            let hidden_window = window.clone();
             let watched_document = document.clone();
             let visibility = Closure::<dyn FnMut(Event)>::new(move |_| {
-                if watched_document
-                    .as_ref()
-                    .is_some_and(|document| document.hidden())
-                {
-                    next_camera_generation(&hidden_generation);
-                    close_camera_runtime(&hidden_runtime, &hidden_video, &hidden_audio);
-                    hidden_phase.set(CameraViewPhase::Idle);
-                    hidden_notice.set(Some("页面离开前已停止摄像头直播".to_owned()));
+                let Some(document) = watched_document.as_ref() else {
+                    return;
+                };
+                if document.hidden() {
+                    // 页面隐藏不立即关闭会话：启动宽限期计时，期间回来就取消
+                    // （取消走下方 else 分支），超时才真正关闭。已有计时器在
+                    // 跑就不重复启动，保证宽限窗口从「最近一次可见」起算。
+                    if hidden_timer.borrow().is_none() {
+                        let timer_runtime = hidden_runtime.clone();
+                        let timer_video = hidden_video.clone();
+                        let timer_audio = hidden_audio.clone();
+                        let timer_phase = hidden_phase.clone();
+                        let timer_notice = hidden_notice.clone();
+                        let timer_generation = hidden_generation.clone();
+                        let timer_handle = hidden_timer.clone();
+                        let timer_document = watched_document.clone();
+                        let callback = Closure::once(move || {
+                            *timer_handle.borrow_mut() = None;
+                            // 计时触发时页面已恢复可见（回来与超时撞车）则不再关闭。
+                            if timer_document
+                                .as_ref()
+                                .is_some_and(|document| !document.hidden())
+                            {
+                                return;
+                            }
+                            next_camera_generation(&timer_generation);
+                            close_camera_runtime(&timer_runtime, &timer_video, &timer_audio);
+                            timer_phase.set(CameraViewPhase::Idle);
+                            timer_notice
+                                .set(Some("页面离开超过 1 分钟，已停止摄像头直播".to_owned()));
+                        });
+                        if let Some(window) = hidden_window.as_ref() {
+                            if let Ok(handle) = window
+                                .set_timeout_with_callback_and_timeout_and_arguments_0(
+                                    callback.as_ref().unchecked_ref(),
+                                    CAMERA_HIDDEN_CLOSE_GRACE_MS as i32,
+                                )
+                            {
+                                *hidden_timer.borrow_mut() = Some(handle);
+                                callback.forget();
+                            }
+                        }
+                    }
+                } else {
+                    cancel_hidden_close_timer(&hidden_timer, hidden_window.as_ref());
                 }
             });
 
@@ -1170,6 +1231,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                         visibility.as_ref().unchecked_ref(),
                     );
                 }
+                cancel_hidden_close_timer(&cleanup_timer, window.as_ref());
                 next_camera_generation(&generation);
                 close_camera_runtime(&runtime, &video, &audio);
             }
