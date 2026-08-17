@@ -155,10 +155,10 @@ camera-app: toolchain
 apps: router-app camera-app things-app
 
 router-deploy-dev: router-app
-	ADB="$(ADB)" ADB_SERIAL="$(ADB_SERIAL)" bash "$(ROUTER_APP)/tools/deploy-dev.sh" deploy "$(ROUTER_BINARY)"
+	ADB="$(ADB)" ADB_SERIAL="$(ADB_SERIAL)" bash "$(THINGS_APP)/tools/deploy-dev.sh" deploy "$(ROUTER_BINARY)"
 
 router-revert-dev:
-	ADB="$(ADB)" ADB_SERIAL="$(ADB_SERIAL)" bash "$(ROUTER_APP)/tools/deploy-dev.sh" revert
+	ADB="$(ADB)" ADB_SERIAL="$(ADB_SERIAL)" bash "$(THINGS_APP)/tools/deploy-dev.sh" revert
 
 deploy-router: router-app
 	ADB="$(ADB)" ADB_SERIAL="$(ADB_SERIAL)" bash "$(THINGS_APP)/tools/deploy-app.sh" deploy router "$(ROUTER_BINARY)"
@@ -239,12 +239,12 @@ check: check-static
 
 check-static:
 	sh -n "$(THINGS_APP)/tools/build-frontend-bundle.sh"
-	bash -n "$(ROUTER_APP)/tools/deploy-dev.sh"
-	grep -q 'REMOTE_INIT_SCRIPT=/etc/init.d/S80hyz-router-dev' "$(ROUTER_APP)/tools/deploy-dev.sh"
-	grep -q 'mount -o bind' "$(ROUTER_APP)/tools/deploy-dev.sh"
-	grep -q "cat /proc/sys/kernel/random/boot_id" "$(ROUTER_APP)/tools/deploy-dev.sh"
-	grep -q "rm -f '\$$REMOTE_INIT_SCRIPT'" "$(ROUTER_APP)/tools/deploy-dev.sh"
-	! grep -q 'remote_action stop\|S81hyz-router stop\|kill -9\|pkill' "$(ROUTER_APP)/tools/deploy-dev.sh"
+	bash -n "$(THINGS_APP)/tools/deploy-dev.sh"
+	grep -q 'REMOTE_INIT_SCRIPT=/etc/init.d/S80hyz-router-dev' "$(THINGS_APP)/tools/deploy-dev.sh"
+	grep -q 'mount -o bind' "$(THINGS_APP)/tools/deploy-dev.sh"
+	grep -q "cat /proc/sys/kernel/random/boot_id" "$(THINGS_APP)/tools/deploy-dev.sh"
+	grep -q "rm -f '\$$REMOTE_INIT_SCRIPT'" "$(THINGS_APP)/tools/deploy-dev.sh"
+	! grep -q 'remote_action stop\|S81hyz-router stop\|kill -9\|pkill' "$(THINGS_APP)/tools/deploy-dev.sh"
 	bash -n "$(THINGS_APP)/tools/deploy-app.sh"
 	bash -n "$(THINGS_APP)/tools/test-deploy-app.sh"
 	grep -q 'REMOTE_APPS_DIR=/userdata/hyz-things/apps' "$(THINGS_APP)/tools/deploy-app.sh"

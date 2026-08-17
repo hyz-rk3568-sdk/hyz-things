@@ -41,7 +41,7 @@ make router-revert-dev \
 
 ## 安全语义
 
-`apps/rust/router/tools/deploy-dev.sh` 保持以下边界：
+`apps/rust/things/tools/deploy-dev.sh` 保持以下边界：
 
 - 只接受主机提供的固定 ELF 路径和显式 ADB serial，不向应用 HTTP/API 增加命令、路径或认证参数；
 - 推送到 root-only 的 `/userdata/hyz-router/dev/`，主机和板端都校验 SHA-256；
