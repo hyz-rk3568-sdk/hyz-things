@@ -66,7 +66,7 @@ device_shell() {
     # 远端命令可能带 device_shell_rc 的回传标记；输出型调用不需要它。
     # grep 无匹配行时返回 1，pipefail 下会误报整个命令失败：输出型调用
     # 不依赖退出码，成败判断一律走 device_shell_rc。
-    "$ADB" "${adb_args[@]}" shell "$1" | tr -d '\r' | grep -v '^__HYZ_RC__=' || true
+    $ADB "${adb_args[@]}" shell "$1" | tr -d '\r' | grep -v '^__HYZ_RC__=' || true
 }
 
 # RK adbd 不把远端 shell 的退出码回传给宿主，`adb shell` 总是返回 0。
@@ -74,7 +74,7 @@ device_shell() {
 # （例如 init 脚本 stop/start 失败仍继续换二进制）。
 device_shell_rc() {
     local output rc
-    output=$("$ADB" "${adb_args[@]}" shell "$1; printf '\\n__HYZ_RC__=%d\\n' \$?" | tr -d '\r')
+    output=$($ADB "${adb_args[@]}" shell "$1; printf '\\n__HYZ_RC__=%d\\n' \$?" | tr -d '\r')
     rc=$(printf '%s\n' "$output" | sed -n 's/.*__HYZ_RC__=\([0-9][0-9]*\).*/\1/p' | tail -1)
     [[ -n "$rc" && "$rc" == "0" ]]
 }
@@ -96,7 +96,7 @@ wait_for_adb() {
     local deadline=$((SECONDS + ADB_WAIT_SECONDS))
 
     while ((SECONDS < deadline)); do
-        if "$ADB" "${adb_args[@]}" get-state >/dev/null 2>&1; then
+        if $ADB "${adb_args[@]}" get-state >/dev/null 2>&1; then
             return 0
         fi
         sleep 2
@@ -347,7 +347,7 @@ PY
     tmp=$(mktemp)
     printf '%s\n' "$registry_json" >"$tmp"
     host_sha=$(sha256sum "$tmp" | awk '{print $1}')
-    "$ADB" "${adb_args[@]}" push "$tmp" "$REMOTE_REGISTRY.tmp" >/dev/null
+    $ADB "${adb_args[@]}" push "$tmp" "$REMOTE_REGISTRY.tmp" >/dev/null
     remote_sha=$(device_shell "sha256sum '$REMOTE_REGISTRY.tmp'" | tr -d '\r' | awk '{print $1}')
     if [[ "$remote_sha" != "$host_sha" ]]; then
         printf 'registry push SHA-256 mismatch: expected %s, got %s\n' "$host_sha" "$remote_sha" >&2
@@ -356,7 +356,7 @@ PY
     fi
     device_shell "install -d -m 0700 '$REMOTE_APPS_DIR'; mv '$REMOTE_REGISTRY.tmp' '$REMOTE_REGISTRY'; sync"
     device_shell "install -d -m 0700 '$REMOTE_RUN_DIR'"
-    "$ADB" "${adb_args[@]}" push "$tmp" "$REMOTE_RUN_DIR/$APP_NAME.json" >/dev/null
+    $ADB "${adb_args[@]}" push "$tmp" "$REMOTE_RUN_DIR/$APP_NAME.json" >/dev/null
     rm -f "$tmp"
 }
 
@@ -390,7 +390,7 @@ deploy() {
     fi
 
     device_shell "install -d -m 0700 '$REMOTE_APPS_DIR/$APP_NAME'"
-    "$ADB" "${adb_args[@]}" push "$BINARY" "$remote_binary.tmp" >/dev/null
+    $ADB "${adb_args[@]}" push "$BINARY" "$remote_binary.tmp" >/dev/null
     remote_staged=$(device_shell "sha256sum '$remote_binary.tmp'" | tr -d '\r' | awk '{print $1}')
     if [[ "$remote_staged" != "$host_sha" ]]; then
         printf 'staged ELF SHA-256 mismatch: expected %s, got %s\n' "$host_sha" "$remote_staged" >&2
