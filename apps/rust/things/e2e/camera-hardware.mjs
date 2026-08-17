@@ -309,6 +309,32 @@ async function verifyIntercom(page, camera) {
     return false;
   }, null, { timeout: 30_000 });
 
+  // 回归检查：设备侧音频管线在浏览器开始发送音频后必须存活。曾经 appsrc 的
+  // Opus caps 缺 channel-mapping-family 导致首帧 not-negotiated，整个音频管线
+  // （含板载 mic 采集）报错失败；本检查采样 inbound-rtp 两次，若管线已死则
+  // 设备不再发音频、计数不再增长。
+  const audioPacketsReceived = async () => {
+    const value = await page.evaluate(async () => {
+      const peer = window.__hyzRealPeers?.at(-1);
+      const stats = await peer.getStats();
+      for (const report of stats.values()) {
+        if (report.type === 'inbound-rtp' && report.kind === 'audio') {
+          return report.packetsReceived || 0;
+        }
+      }
+      return 0;
+    });
+    return value;
+  };
+  await page.waitForTimeout(1_000);
+  const inboundBefore = await audioPacketsReceived();
+  await page.waitForTimeout(2_000);
+  const inboundAfter = await audioPacketsReceived();
+  assert.ok(
+    inboundAfter > inboundBefore,
+    `开启对讲后设备音频管线死亡（inbound 不再增长：${inboundBefore} -> ${inboundAfter}）`,
+  );
+
   // 对讲关闭：sender.replaceTrack(null) 后 outbound 停止增长（采样两次对比）。
   await camera.getByRole('button', { name: '关闭对讲' }).click();
   await camera.getByText('对讲已关闭', { exact: false }).waitFor({

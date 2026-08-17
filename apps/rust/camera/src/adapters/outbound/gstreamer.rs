@@ -20,13 +20,19 @@ use std::{
     collections::HashMap,
     sync::{
         atomic::{AtomicBool, AtomicU8, Ordering},
-        Arc, Mutex,
+        mpsc, Arc, Mutex,
     },
     thread::{self, JoinHandle},
     time::Duration,
 };
 
 const PIPELINE_START_DEADLINE: Duration = Duration::from_secs(10);
+/// 管线停止上限：set_state(Null) 在设备/元素卡住时会永久阻塞（板端实测 RK809
+/// 采集 XRUN 后任务不退出）。它若跑在会话线程上，close_session 的 join 会连带把
+/// control socket 主线程卡死，整个 daemon 失去响应。超时则放弃停止、记录元素
+/// 状态；残留管线由进程生命周期兜底，后续 start 会因设备占用而失败降级，而不是
+/// 拖垮整个守护进程。
+const PIPELINE_STOP_DEADLINE: Duration = Duration::from_secs(3);
 const SYSTEM_PLUGIN_DIRECTORY: &str = "/usr/lib/gstreamer-1.0";
 const FULL_RANGE_BT709_COLORIMETRY: &str = "1:3:5:1";
 
@@ -351,11 +357,7 @@ impl MediaTerminator for GStreamerMediaTerminator {
         self.state
             .store(state_code(CameraPipelineState::Stopping), Ordering::Release);
         self.frames.close();
-        let next = if self.pipeline.set_state(gst::State::Null).is_ok() {
-            CameraPipelineState::Stopped
-        } else {
-            CameraPipelineState::Failed
-        };
+        let next = stop_pipeline_bounded(&self.pipeline, "video");
         self.state.store(state_code(next), Ordering::Release);
     }
 }
@@ -445,6 +447,37 @@ fn decode_state(value: u8) -> CameraPipelineState {
     }
 }
 
+/// 有界停止管线：见 `PIPELINE_STOP_DEADLINE`。超时返回 Failed 并 dump 元素状态。
+fn stop_pipeline_bounded(pipeline: &gst::Pipeline, tag: &str) -> CameraPipelineState {
+    let owned = pipeline.clone();
+    let (tx, rx) = mpsc::channel();
+    let _ = thread::Builder::new()
+        .name(format!("{tag}-pipeline-stop"))
+        .spawn(move || {
+            let _ = tx.send(owned.set_state(gst::State::Null).is_ok());
+        });
+    match rx.recv_timeout(PIPELINE_STOP_DEADLINE) {
+        Ok(true) => {
+            eprintln!("{tag} pipeline stopped");
+            CameraPipelineState::Stopped
+        }
+        Ok(false) => {
+            eprintln!("{tag} pipeline stop returned failure");
+            CameraPipelineState::Failed
+        }
+        Err(_) => {
+            eprintln!(
+                "{tag} pipeline stop timed out after {:?}; element states:",
+                PIPELINE_STOP_DEADLINE
+            );
+            for child in pipeline.children() {
+                eprintln!("  {} state {:?}", child.name(), child.current_state());
+            }
+            CameraPipelineState::Failed
+        }
+    }
+}
+
 // ==================== 全双工语音对讲音频管线 ====================
 
 /// 固定 ALSA 设备 probe：读 `/proc/asound/cards`（只读），要求 card 0 精确为
@@ -479,10 +512,35 @@ fn fixed_pcm_caps() -> Result<gst::Caps, MediaError> {
         .build())
 }
 
+/// 采集专用 caps：mono + channel-mask=FL（左声道）。
+///
+/// hw:0 采集必须是 2+ 声道，且本板麦克风信号只在 L（FL）声道，R 为空接近静音。
+/// 不带 mask 时 audioconvert 的默认 2→1 混音按 (L+R)/2 处理，实测把 L 衰减约
+/// 10dB（输入偏小的主因）；带上 channel-mask=FL 后混音矩阵保留 L 满电平，
+/// 也避免把空接 R 声道的噪声混进来。
+fn mic_pcm_caps() -> Result<gst::Caps, MediaError> {
+    let rate = i32::try_from(AUDIO_SAMPLE_RATE_HZ).map_err(|_| MediaError::AudioPipelineFailed)?;
+    Ok(gst::Caps::builder("audio/x-raw")
+        .field("format", "S16LE")
+        .field("rate", rate)
+        .field("channels", i32::from(AUDIO_CHANNELS))
+        .field("channel-mask", 0x1u64)
+        .build())
+}
+
 fn opus_caps() -> Result<gst::Caps, MediaError> {
     let rate = i32::try_from(AUDIO_SAMPLE_RATE_HZ).map_err(|_| MediaError::AudioPipelineFailed)?;
+    // WebRTC RTP 的 Opus 载荷不带 OpusHead/streamheader；opusdec（gst-plugins-base）
+    // 在无 header 路径用 gst_codec_utils_opus_parse_caps 解析 caps，该函数强制要求
+    // channel-mapping-family 字段。只给 rate 时 appsrc 推入首帧即 not-negotiated，
+    // 总线报错会拖垮整条音频管线（含采集）。
+    // channels 必须与编码器实际发送一致：WebRTC 端（Chrome）默认单声道（fmtp 无
+    // stereo=1），若配置 channels=2，opusdec 建多流双声道解码器解单声道帧会输出
+    // 错乱信号（实测为低电平噪声，喇叭只有底噪没有语音）。
     Ok(gst::Caps::builder("audio/x-opus")
         .field("rate", rate)
+        .field("channel-mapping-family", 0)
+        .field("channels", 1)
         .build())
 }
 
@@ -551,12 +609,45 @@ impl CameraAudioPort for GStreamerAudioAdapter {
         let dsp = make_audio("webrtcdsp", "echo-canceller")?;
         let encoder = make_audio("opusenc", "opus-encoder")?;
         let sink_element = make_audio("appsink", "encoded-audio-frames")?;
+        // 采集滤镜（gst-plugins-good audiofx 的 audiocheblimit）：
+        // 高通 150Hz 滤除模拟前端注入的市电哼声谐波（50-300Hz，webrtcdsp 内置
+        // 80Hz 高通压不住残余），低通 8kHz 滤除 ΔΣ ADC 整形噪声/电源耦合
+        // （8kHz 以上，实测为采集噪声主体）。滤镜只接受 F32LE/F64LE，
+        // 前后各放一个 audioconvert 在 S16LE↔F32LE 间无损转换。
+        // 插件由 buildroot hyz_things.config 的 GST1_PLUGINS_GOOD_PLUGIN_AUDIOFX
+        // 引入；旧固件缺失时降级为不过滤，保证 camera 仍可用。
+        let mut capture_filters: Vec<gst::Element> = Vec::new();
+        if gst::ElementFactory::find("audiocheblimit").is_some() {
+            let filter_in = make_audio("audioconvert", "mic-filter-in")?;
+            let hpf = make_audio("audiocheblimit", "mic-highpass")?;
+            hpf.set_property_from_str("mode", "high-pass");
+            hpf.set_property("cutoff", 150.0f32);
+            hpf.set_property("poles", 4i32);
+            let lpf = make_audio("audiocheblimit", "mic-lowpass")?;
+            lpf.set_property_from_str("mode", "low-pass");
+            lpf.set_property("cutoff", 8000.0f32);
+            lpf.set_property("poles", 4i32);
+            let filter_out = make_audio("audioconvert", "mic-filter-out")?;
+            capture_filters.extend([filter_in, hpf, lpf, filter_out]);
+        } else {
+            eprintln!("audiocheblimit unavailable: capture noise filtering disabled");
+        }
 
         source.set_property("device", FIXED_ALSA_DEVICE);
-        capture_caps.set_property("caps", fixed_pcm_caps()?);
+        capture_caps.set_property("caps", mic_pcm_caps()?);
         dsp.set_property("echo-cancel", true);
         dsp.set_property("high-pass-filter", true);
         dsp.set_property("noise-suppression", true);
+        // 插件实例默认的 noise-suppression-level 是 kLow（结构体清零即 0），
+        // 实测对语音带稳态噪声只压约 2dB；显式提到 high 后压制明显增强，
+        // 残余"底噪"进一步下降（very-high 会更强但可能带轻微人声染色）。
+        dsp.set_property_from_str("noise-suppression-level", "high");
+        // AGC：麦克风电平随说话距离/音量变化且无自动补偿，正常音量说话可能
+        // 偏小（实测必须大声才听得清）。开启自适应增益把语音抬到目标电平，
+        // limiter 防削波；安静时实测不抬噪声底（无泵浦）。
+        dsp.set_property("gain-control", true);
+        dsp.set_property_from_str("gain-control-mode", "adaptive-digital");
+        dsp.set_property("limiter", true);
         encoder.set_property(
             "bitrate",
             i32::try_from(AUDIO_BITRATE_BPS).map_err(|_| MediaError::AudioPipelineFailed)?,
@@ -578,6 +669,57 @@ impl CameraAudioPort for GStreamerAudioAdapter {
         // 会话建立初期回放尾链无数据（浏览器音频稍后才到）：async=false 让
         // alsasink 不等首帧就完成状态切换，否则整条管线卡在 PAUSED 阻塞采集。
         speaker.set_property("async", false);
+        // 管线时钟是 alsasrc 提供的 GstAudioClock（从时钟，阶梯式跳变）：
+        // sync=true 时 alsasink 等待时间戳与时钟步进错位，实测回放变成一段段
+        // 短突发（"发报声"）；sync=false 让数据到即播，配合 mixer 前的 queue
+        // 吸收网络抖动，实测为连续纯净播放。
+        speaker.set_property("sync", false);
+        // 回放电平诊断：记录进入 alsasink 的缓冲区 RMS 峰值（每 200 帧打印），
+        // 用于定位"喇叭无声/只有底噪"是数据未到、电平过低还是内容被解码破坏。
+        let speaker_rms = Arc::new(Mutex::new((0u64, 0.0f64)));
+        let speaker_sink_pad = speaker
+            .static_pad("sink")
+            .ok_or(MediaError::AudioPipelineFailed)?;
+        {
+            let speaker_rms = Arc::clone(&speaker_rms);
+            speaker_sink_pad.add_probe(gst::PadProbeType::BUFFER, move |_pad, info| {
+                let Some(buffer) = info.buffer() else {
+                    return gst::PadProbeReturn::Ok;
+                };
+                let Ok(map) = buffer.map_readable() else {
+                    return gst::PadProbeReturn::Ok;
+                };
+                let bytes = map.as_slice();
+                let samples = bytes.len() / 2;
+                if samples > 0 {
+                    let mut sum = 0i64;
+                    for chunk in bytes.chunks_exact(2).take(480) {
+                        let value = i16::from_ne_bytes([chunk[0], chunk[1]]) as i64;
+                        sum += value * value;
+                    }
+                    let rms = ((sum / (samples.min(480) as i64)) as f64).sqrt();
+                    let mut state = speaker_rms.lock().unwrap_or_else(|p| p.into_inner());
+                    state.0 += 1;
+                    if rms > state.1 {
+                        state.1 = rms;
+                    }
+                    if state.0 % 200 == 0 {
+                        let peak = state.1;
+                        let db = if peak > 0.0 {
+                            20.0 * (peak / 32768.0).log10()
+                        } else {
+                            -120.0
+                        };
+                        eprintln!(
+                            "speaker sink rms peak={peak:.0} ({db:.0} dBFS) after {} buffers",
+                            state.0
+                        );
+                        state.1 = 0.0;
+                    }
+                }
+                gst::PadProbeReturn::Ok
+            });
+        }
 
         let appsink = sink_element
             .clone()
@@ -625,15 +767,10 @@ impl CameraAudioPort for GStreamerAudioAdapter {
                 .build(),
         );
 
-        let capture_chain: Vec<&gst::Element> = vec![
-            &source,
-            &capture_convert,
-            &capture_resample,
-            &capture_caps,
-            &dsp,
-            &encoder,
-            &sink_element,
-        ];
+        let mut capture_chain: Vec<&gst::Element> =
+            vec![&source, &capture_convert, &capture_resample, &capture_caps];
+        capture_chain.extend(capture_filters.iter());
+        capture_chain.extend([&dsp, &encoder, &sink_element]);
         let playback_tail: Vec<&gst::Element> = vec![
             &mixer,
             &tail_caps,
@@ -723,6 +860,13 @@ impl CameraAudioPort for GStreamerAudioAdapter {
                         element.current_state()
                     );
                 }
+                for element in &capture_filters {
+                    eprintln!(
+                        "  audio element {} state: {:?}",
+                        element.name(),
+                        element.current_state()
+                    );
+                }
                 stopping.store(true, Ordering::Release);
                 frames.close();
                 let _ = pipeline.set_state(gst::State::Null);
@@ -737,6 +881,7 @@ impl CameraAudioPort for GStreamerAudioAdapter {
             mixer,
             chains: Mutex::new(HashMap::new()),
         });
+        eprintln!("audio pipeline started (capture producing frames)");
         Ok(Box::new(GStreamerRunningAudioMedia {
             pipeline,
             frames,
@@ -782,6 +927,11 @@ impl AudioSink for GStreamerAudioPlaybackSink {
             .map_err(|_| MediaError::AudioPipelineFailed)?;
         app_src.set_property("format", gst::Format::Time);
         app_src.set_property("is-live", true);
+        // RTP 时间戳是随机大偏移（常见 20-40 亿），直接作 PTS 会让 alsasink 等到
+        // 时钟追上天（几十小时后）才出声，表现为"远端没声音"且回放链淤积。
+        // do-timestamp 按管线运行时间打时间戳，数据到达即播放（LAN 上 20ms 抖动
+        // 可忽略）。
+        app_src.set_property("do-timestamp", true);
         app_src.set_caps(Some(&opus_caps()?));
 
         let elements = vec![
@@ -833,24 +983,38 @@ impl AudioSink for GStreamerAudioPlaybackSink {
                 mixer_pad,
             },
         );
+        eprintln!("playback chain registered for session {session_id}");
         Ok(())
     }
 
     fn unregister(&self, session_id: &str) {
-        let mut chains = self
-            .chains
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let Some(chain) = chains.remove(session_id) else {
+        let chain = {
+            let mut chains = self
+                .chains
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            chains.remove(session_id)
+        };
+        let Some(chain) = chain else {
             return;
         };
-        for element in &chain.elements {
-            let _ = element.set_state(gst::State::Null);
-        }
-        self.mixer.release_request_pad(&chain.mixer_pad);
-        for element in &chain.elements {
-            let _ = self.pipeline.remove(element);
-        }
+        // 元素 stop/remove 与 mixer pad 释放放到有界后台线程：管线卡住时
+        // element.set_state(Null) 会永久阻塞（见 PIPELINE_STOP_DEADLINE），若在
+        // close_session/reap 主线程路径上执行会连带卡死整个 control socket。
+        // 后台线程超时由进程生命周期兜底；残留元素随管线销毁。
+        let pipeline = self.pipeline.clone();
+        let mixer = self.mixer.clone();
+        let _ = thread::Builder::new()
+            .name("audio-chain-unreg".to_owned())
+            .spawn(move || {
+                for element in &chain.elements {
+                    let _ = element.set_state(gst::State::Null);
+                }
+                mixer.release_request_pad(&chain.mixer_pad);
+                for element in &chain.elements {
+                    let _ = pipeline.remove(element);
+                }
+            });
     }
 
     fn push_opus(&self, session_id: &str, frame: AudioFrame) {
@@ -861,11 +1025,9 @@ impl AudioSink for GStreamerAudioPlaybackSink {
         let Some(chain) = chains.get(session_id) else {
             return;
         };
-        let pts_ns =
-            (u128::from(frame.media_time_48khz) * 1_000_000_000) / u128::from(AUDIO_SAMPLE_RATE_HZ);
+        // do-timestamp 会按管线运行时间重写 PTS（见 register），这里只保留时长。
         let mut buffer = gst::Buffer::from_mut_slice(frame.data.to_vec());
         let buffer_ref = buffer.make_mut();
-        buffer_ref.set_pts(Some(gst::ClockTime::from_nseconds(pts_ns as u64)));
         buffer_ref.set_duration(Some(gst::ClockTime::from_mseconds(u64::from(
             AUDIO_FRAME_MS,
         ))));
@@ -897,11 +1059,7 @@ impl MediaTerminator for GStreamerAudioTerminator {
         self.state
             .store(state_code(CameraPipelineState::Stopping), Ordering::Release);
         self.frames.close();
-        let next = if self.pipeline.set_state(gst::State::Null).is_ok() {
-            CameraPipelineState::Stopped
-        } else {
-            CameraPipelineState::Failed
-        };
+        let next = stop_pipeline_bounded(&self.pipeline, "audio");
         self.state.store(state_code(next), Ordering::Release);
     }
 }
