@@ -243,7 +243,7 @@ async function verifyStream(page, originName, viewport) {
     });
   }
 
-  await verifyIntercom(page, camera);
+  const audio = await verifyIntercom(page, camera);
 
   await camera.getByRole('button', { name: '停止直播' }).click();
   await camera.getByText('未播放', { exact: true }).waitFor({
@@ -257,7 +257,45 @@ async function verifyStream(page, originName, viewport) {
     return body.camera.pipeline === 'stopped' && body.camera.active_sessions === 0;
   }, null, { timeout: 30_000 });
 
-  return { media, visual, layout, rotation };
+  return { media, visual, layout, rotation, audio };
+}
+
+// 设备 → 浏览器：解码后静音段电平（残余"底噪"= 用户实际听到的噪声底）。
+// 直接对 <audio> 元素的 MediaStream 建 AnalyserNode 采样，不干预其播放；
+// 在对讲开启前测量（此时设备喇叭静默、无回声干扰）。精确 dB 值进 results，
+// 供固件改动（webrtcdsp/opusenc 降噪配置）前后做量化对比。
+async function sampleDecodedAudioLevel(page, durationMs) {
+  return page.evaluate(async durationMs => {
+    const audio = document.querySelector('audio[aria-label="摄像头麦克风"]');
+    const stream = audio?.srcObject;
+    if (!(audio instanceof HTMLAudioElement) || !(stream instanceof MediaStream)) {
+      throw new Error('camera audio is not ready for level sampling');
+    }
+    const context = new (window.AudioContext || window.webkitAudioContext)();
+    if (context.state === 'suspended') {
+      await context.resume();
+    }
+    const source = context.createMediaStreamSource(stream);
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+    const samples = new Float32Array(analyser.fftSize);
+    let sumSquares = 0;
+    let count = 0;
+    const deadline = performance.now() + durationMs;
+    while (performance.now() < deadline) {
+      analyser.getFloatTimeDomainData(samples);
+      for (const value of samples) {
+        sumSquares += value * value;
+        count += 1;
+      }
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    }
+    source.disconnect();
+    await context.close();
+    const rms = Math.sqrt(sumSquares / Math.max(1, count));
+    return { rms, db: 20 * Math.log10(Math.max(rms, 1e-9)) };
+  }, durationMs);
 }
 
 // 全双工语音对讲：板载 mic → 浏览器（inbound audio），浏览器 mic → 设备喇叭
@@ -288,6 +326,15 @@ async function verifyIntercom(page, camera) {
     }
     return false;
   }, null, { timeout: 45_000 });
+
+  // 静音段噪声底（对讲开启前采样，喇叭静默、无回声干扰）。上界很宽松，
+  // 只挡"降噪链路整体失效后嘶声回归"这类灾难性回归；精确值在 results 里，
+  // 由验收者对比改动前后（设备端降噪/编码配置改动后应更低）。
+  const silence = await sampleDecodedAudioLevel(page, 2_000);
+  assert.ok(
+    silence.rms < 0.2,
+    `静音段电平过高（疑似降噪失效）: ${silence.db.toFixed(1)} dBFS`,
+  );
 
   // 对讲开启：getUserMedia 由 --use-fake-ui-for-media-stream 自动授权；
   // 宿主无麦克风时 outbound 使用 --use-fake-device-for-media-stream 的合成音频。
@@ -359,6 +406,8 @@ async function verifyIntercom(page, camera) {
   await page.waitForTimeout(1_500);
   const second = await audioPacketsSent();
   assert.equal(second, first, '关闭对讲后浏览器仍在发送音频');
+
+  return { silence };
 }
 
 // 并发观看：同一浏览器上下文（同一管理员 cookie、同一 owner）开第二个页面，
@@ -453,6 +502,9 @@ const browser = await chromium.launch({
     // 合成音频设备提供；板载 mic 采集与声学路径由板端 arecord/aplay 冒烟覆盖。
     '--use-fake-ui-for-media-stream',
     '--use-fake-device-for-media-stream',
+    // 静音段电平采样在 page.evaluate 里新建 AudioContext 测解码后噪声底，
+    // 不依赖用户手势启动。
+    '--autoplay-policy=no-user-gesture-required',
   ],
 });
 const results = [];
