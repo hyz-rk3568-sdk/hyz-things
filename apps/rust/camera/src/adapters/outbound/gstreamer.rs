@@ -35,6 +35,9 @@ const PIPELINE_START_DEADLINE: Duration = Duration::from_secs(10);
 const PIPELINE_STOP_DEADLINE: Duration = Duration::from_secs(3);
 const SYSTEM_PLUGIN_DIRECTORY: &str = "/usr/lib/gstreamer-1.0";
 const FULL_RANGE_BT709_COLORIMETRY: &str = "1:3:5:1";
+// Keep most of the output gain after RNNoise so the denoiser does not receive
+// an unnecessarily amplified microphone noise floor.
+const RNNOISE_POST_GAIN_DB: f32 = 3.0;
 
 pub struct GStreamerMediaAdapter;
 
@@ -532,9 +535,8 @@ fn mic_pcm_caps() -> Result<gst::Caps, MediaError> {
 ///
 /// 为什么放在 dsp 之后：webrtcdsp 输出固定的 48kHz mono 10ms（480 样本）帧，
 /// 正好是 RNNoise 的固有帧长；探针在 dsp 的 src pad 上原地改写 S16LE 数据，
-/// 不引入任何额外缓冲元素。dsp 的 NS 只留 high 作轻量兜底，稳态底噪主要由
-/// 这里的神经网络压制（RNNoise 对稳态噪声压制明显更深，代价是重噪声下的人声
-/// 细节损失，对讲场景可接受）。
+/// 不引入任何额外缓冲元素。WebRTC NS high 负责互补抑噪，RNNoise 是采集链的最终
+/// 神经网络降噪器；输出增益在探针中位于 RNNoise 之后，避免先放大模拟噪声。
 ///
 /// 说明：
 /// - RNNoise 输入/输出是 i16 数值范围的 f32（demo 直接读 short 到 float），
@@ -551,6 +553,7 @@ fn attach_rnnoise_probe(dsp: &gst::Element) -> Result<(), MediaError> {
     let first = Arc::new(AtomicBool::new(true));
     let warned = Arc::new(AtomicBool::new(false));
     let frame_size = nnnoiseless::DenoiseState::FRAME_SIZE;
+    let post_gain = 10.0f32.powf(RNNOISE_POST_GAIN_DB / 20.0);
     src_pad.add_probe(gst::PadProbeType::BUFFER, move |_pad, info| {
         let Some(buffer) = info.buffer_mut() else {
             return gst::PadProbeReturn::Ok;
@@ -584,7 +587,7 @@ fn attach_rnnoise_probe(dsp: &gst::Element) -> Result<(), MediaError> {
                 state.process_frame(&mut output, &input);
             }
             for (i, chunk) in frame.chunks_exact_mut(2).enumerate() {
-                let value = output[i].round().clamp(-32768.0, 32767.0) as i16;
+                let value = (output[i] * post_gain).round().clamp(-32768.0, 32767.0) as i16;
                 chunk.copy_from_slice(&value.to_ne_bytes());
             }
         }
@@ -674,13 +677,10 @@ impl CameraAudioPort for GStreamerAudioAdapter {
         let dsp = make_audio("webrtcdsp", "echo-canceller")?;
         let encoder = make_audio("opusenc", "opus-encoder")?;
         let sink_element = make_audio("appsink", "encoded-audio-frames")?;
-        // 采集滤镜（gst-plugins-good audiofx 的 audiocheblimit）：
-        // 高通 150Hz 滤除模拟前端注入的市电哼声谐波（50-300Hz，webrtcdsp 内置
-        // 80Hz 高通压不住残余），低通 8kHz 滤除 ΔΣ ADC 整形噪声/电源耦合
-        // （8kHz 以上，实测为采集噪声主体）。滤镜只接受 F32LE/F64LE，
-        // 前后各放一个 audioconvert 在 S16LE↔F32LE 间无损转换。
-        // 插件由 buildroot hyz_things.config 的 GST1_PLUGINS_GOOD_PLUGIN_AUDIOFX
-        // 引入；旧固件缺失时降级为不过滤，保证 camera 仍可用。
+        // Restore the original complementary filters for the board's whooshing noise:
+        // a gentle 150 Hz high-pass removes low-frequency airflow/mains rumble, while
+        // the 8 kHz low-pass limits broadband ADC/power noise. The filters are optional
+        // at runtime so an older rootfs still degrades to the RNNoise path.
         let mut capture_filters: Vec<gst::Element> = Vec::new();
         if gst::ElementFactory::find("audiocheblimit").is_some() {
             let filter_in = make_audio("audioconvert", "mic-filter-in")?;
@@ -695,25 +695,26 @@ impl CameraAudioPort for GStreamerAudioAdapter {
             let filter_out = make_audio("audioconvert", "mic-filter-out")?;
             capture_filters.extend([filter_in, hpf, lpf, filter_out]);
         } else {
-            eprintln!("audiocheblimit unavailable: capture noise filtering disabled");
+            eprintln!("audiocheblimit unavailable: capture band filtering disabled");
         }
-
         source.set_property("device", FIXED_ALSA_DEVICE);
         capture_caps.set_property("caps", mic_pcm_caps()?);
+        // Keep WebRTC's echo canceller and high-pass filter, plus NS high as a
+        // complementary suppressor for the board's non-stationary whooshing noise;
+        // RNNoise remains the final denoiser.
         dsp.set_property("echo-cancel", true);
         dsp.set_property("high-pass-filter", true);
         dsp.set_property("noise-suppression", true);
-        // 插件实例默认的 noise-suppression-level 是 kLow（结构体清零即 0），
-        // 实测对语音带稳态噪声只压约 2dB；提到 high（约 18dB）后压制明显
-        // 增强。A/B 实测：关掉 NS 后静音底噪从 -44dBFS 回落到 -37dBFS
-        // （桌面端），说明 NS=high 在 RNNoise 之外仍有实际压制作用
-        // （也防止噪声推高 AGC 增益），保留 high 作为互补。
         dsp.set_property_from_str("noise-suppression-level", "high");
-        // AGC：麦克风电平随说话距离/音量变化且无自动补偿，正常音量说话可能
-        // 偏小（实测必须大声才听得清）。开启自适应增益把语音抬到目标电平，
-        // limiter 防削波；安静时实测不抬噪声底（无泵浦）。
+        // Use adaptive digital gain with a small headroom. Adaptive gain restores
+        // speech level after AEC/NS suppresses correlated speaker audio, while the
+        // limited compression gain and post-RNNoise gain avoid excessive noise.
         dsp.set_property("gain-control", true);
         dsp.set_property_from_str("gain-control-mode", "adaptive-digital");
+        dsp.set_property("target-level-dbfs", 3i32);
+        // Keep a small pre-denoise gain for AEC/voice level, then apply the remaining
+        // output gain after RNNoise so the denoiser sees less amplified noise.
+        dsp.set_property("compression-gain-db", 6i32);
         dsp.set_property("limiter", true);
         encoder.set_property(
             "bitrate",
@@ -930,13 +931,6 @@ impl CameraAudioPort for GStreamerAudioAdapter {
                     &tail_resample,
                     &speaker,
                 ] {
-                    eprintln!(
-                        "  audio element {} state: {:?}",
-                        element.name(),
-                        element.current_state()
-                    );
-                }
-                for element in &capture_filters {
                     eprintln!(
                         "  audio element {} state: {:?}",
                         element.name(),
