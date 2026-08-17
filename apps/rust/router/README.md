@@ -7,7 +7,7 @@
 - WAN：`wlan0`，DHCP 默认路由 metric `600`
 - root-only 控制 socket：`/run/hyz-router/control.sock`
 - 就绪标记：`/run/hyz-router/ready`（仅在全管理面严格 reconcile 后写入）
-- 详细设计、架构图和板端验证记录：[docs/router.md](../../../docs/router.md)
+- 详细设计、架构图和板端验证记录：[docs/architecture.md](../../../docs/architecture.md)
 
 ## 进程边界
 
@@ -37,7 +37,7 @@ tests/                      网络生命周期、Tailscale 和 OTA 集成测试
 tools/                      开发用 boot override 工具
 ```
 
-依赖方向保持为 `adapters -> application -> domain`。只有 `src/main.rs` 可以构造生产 outbound adapter；CLI、udhcpc hook 和门户客户端都不能直接执行 Linux 命令。完整依赖图和启动时序见[架构文档](../../../docs/router.md#架构图)。
+依赖方向保持为 `adapters -> application -> domain`。只有 `src/main.rs` 可以构造生产 outbound adapter；CLI、udhcpc hook 和门户客户端都不能直接执行 Linux 命令。完整依赖图和启动时序见[架构文档](../../../docs/architecture.md#架构图)。
 
 ## 构建与检查
 

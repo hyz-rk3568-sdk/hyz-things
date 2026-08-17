@@ -2,7 +2,7 @@
 
 ## 状态
 
-> 本文中的安装路径和命令属于已验证的历史 shell 固件。当前 active source 已切换为单一 `/usr/bin/hyz-router`、最小 `S81hyz-router` 和同 ELF DHCP hook；统一运行时的构建、OTA 与功能板测见 [`router.md`](router.md)，本文只保留旧 STA/AP/NAT parity 数据。
+> 本文中的安装路径和命令属于已验证的历史 shell 固件。当前 active source 已切换为单一 `/usr/bin/hyz-router`、最小 `S81hyz-router` 和同 ELF DHCP hook；统一运行时的构建、OTA 与功能板测见 [`architecture.md`](architecture.md)，本文只保留旧 STA/AP/NAT parity 数据。
 
 **基础 STA+AP+IPv4 NAT 上网已通过；吞吐受弱上游信号和单射频中继限制，8 小时稳定性尚未执行。**
 

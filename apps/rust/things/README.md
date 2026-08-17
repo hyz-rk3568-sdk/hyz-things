@@ -6,7 +6,7 @@
 - 管理地址：`http://192.168.8.1:8080`（LAN 固定监听；Tailscale 认证后精确绑定单个 Tailscale IPv4）
 - 启动前置：等待 `/run/hyz-router/ready` 标记，之后才绑定 HTTP
 - 共享 wire 契约：`apps/rust/contract`（`hyz-contract`）
-- 详细设计、架构图和板端验证记录：[docs/router.md](../../../docs/router.md)
+- 详细设计、架构图和板端验证记录：[docs/architecture.md](../../../docs/architecture.md)
 
 ## 能力
 

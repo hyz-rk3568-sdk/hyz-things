@@ -52,7 +52,7 @@
 
 本产品不以通用 OpenWrt 后台、透明 Bridge Mode、插件系统、容器平台或任意 Linux 网络配置器为目标。后续功能通过修改、测试和发布本仓库代码增加，不维护运行时插件 ABI 或第三方插件兼容性。
 
-详细实现架构见 [`router.md`](router.md)。
+详细实现架构见 [`architecture.md`](architecture.md)。
 
 ## 2. 固定产品拓扑
 

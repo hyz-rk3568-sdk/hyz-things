@@ -323,7 +323,7 @@ dhcp-range=192.168.8.100,192.168.8.249,255.255.255.0,10m
 全部验收通过后：
 
 1. 将本文状态改为“已完成”，填写验证日期、固件哈希、结果和已知限制；
-2. 更新 [`router.md`](router.md) 的当前统一固件验证状态；
+2. 更新 [`architecture.md`](architecture.md) 的当前统一固件验证状态；
 3. 更新 [`soft-router-br-lan-validation.md`](soft-router-br-lan-validation.md) 顶部说明，指向本文的最终统一固件结果，同时保留其历史基线性质；
 4. 在 [`soft-router-user-stories.md`](soft-router-user-stories.md) 中勾选：
 

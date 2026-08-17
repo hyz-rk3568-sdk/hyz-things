@@ -114,7 +114,7 @@
 修改：
 
 - `docs/soft-router-user-stories.md`
-- `docs/router.md`
+- `docs/architecture.md`
 - 本文持续记录部署、Tailnet route approval、Grants 示例和板测矩阵
 
 明确补充：

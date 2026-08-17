@@ -2,7 +2,7 @@
 
 ## 状态
 
-> 本文的安装路径和大部分板测数据对应已完成的旧 shell runtime，保留为 bridge/NAT parity 历史基线。当前 active source 已切换为统一 `/usr/bin/hyz-router`、`/run/hyz-network.lock` 和 Rust 内部 ownership records；统一运行时的构建、OTA 与功能板测见 [`router.md`](router.md)，本文不再代表当前验证状态。
+> 本文的安装路径和大部分板测数据对应已完成的旧 shell runtime，保留为 bridge/NAT parity 历史基线。当前 active source 已切换为统一 `/usr/bin/hyz-router`、`/run/hyz-network.lock` 和 Rust 内部 ownership records；统一运行时的构建、OTA 与功能板测见 [`architecture.md`](architecture.md)，本文不再代表当前验证状态。
 
 **recovery-free OTA 编译、产物审计、安装、板端控制面及下游关联/DHCP/普通 NAT 路径已通过；客户端应用层 DNS/HTTPS 仍待用户确认。**
 

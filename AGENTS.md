@@ -6,7 +6,7 @@
 
 ## Project architecture
 
-@./docs/router.md
+@./docs/architecture.md
 
 ## Process boundaries
 
@@ -88,7 +88,7 @@ composition root in its own Cargo package:
 
 测试即文档。
 
-@./docs/router.md
+@./docs/architecture.md
 
 ### Test guardrails
 

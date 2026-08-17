@@ -21,7 +21,7 @@ Mihomo core 生命周期
 
 相关文档：
 
-- [`router.md`](router.md)
+- [`architecture.md`](architecture.md)
 - [`soft-router-user-stories.md`](soft-router-user-stories.md)
 - [`soft-router-tun.md`](soft-router-tun.md)
 - [`soft-router-tailscale-plan.md`](soft-router-tailscale-plan.md)

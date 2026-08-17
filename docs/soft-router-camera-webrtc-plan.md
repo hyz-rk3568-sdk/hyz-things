@@ -1188,7 +1188,7 @@ make camera-host-webrtc
 
 - 本文；
 - 实施开始后更新 `docs/soft-router-user-stories.md`；
-- 架构落定后更新 `docs/router.md`。
+- 架构落定后更新 `docs/architecture.md`。
 
 只做静态和板端只读探测，不开始完整应用构建：
 
