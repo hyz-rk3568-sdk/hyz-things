@@ -45,6 +45,54 @@ recovery-free OTA `output/upgrade.fw`（`460,284,490` bytes，SHA-256 `5eda8d107
 
 多人观看：camera 守护进程从单会话改为共享管线 + 多会话（`MAX_VIEWERS=4`），同一编码流经 `FrameHub` 扇出到每个 viewer 的独立帧队列（零拷贝、各队列独立丢旧帧），每个 viewer 独立 UDP 端口、DTLS/SRTP 与 str0m 会话线程；管线随第一个 viewer 启动、最后一个 viewer 退出停止（引用计数 terminator，应用层幂等兜底）。第二个 viewer 不再收到 409：同一管理员账号（同一 cookie）的多窗口/多设备可同时观看；超过 4 个并发返回 503 `camera_resource_exhausted`（复用 `ResourceExhausted`，控制协议保持 v2）。router 应用层每账号会话从单个改为列表，logout/改密仍清理该账号全部会话。直播中有 viewer 时切换分辨率/旋转仍返回 409。Playwright mock 新增同账号双页面并发用例（含修复轮次 4 遗留的 CSS 旋转断言），真机脚本新增双页面并发观看验收（`active_sessions=2`、两路真实解码 720p、关闭其一不影响另一个、全部关闭后归零）。
 
+## 摄像头媒体管线
+
+camera 的媒体面由固定 GStreamer 管线驱动（`src/adapters/outbound/gstreamer.rs`），视频管线与音频管线各自独立、都以引用计数方式随第一个 viewer 会话启动、最后一个会话退出停止。浏览器与板端之间不经过任何服务端媒体中转：RTP 由每个 str0m 会话线程从 `FrameHub` 队列取编码帧直发浏览器的固定 `40000-40015/udp` 端口池。
+
+### 视频采集管线
+
+```text
+v4l2src（RKISP 3840×2160 全幅 NV12，full-range BT.709，固定 30fps）
+→ capsfilter（NV12 3840×2160 @ 预设帧率）
+→ queue（max-size-buffers=2，leaky=downstream 丢旧帧）
+→ [videoscale + capsfilter（仅非 4K 预设缩放到目标 16:9）]
+→ videoflip（按 0/90/180/270° 逆时针，编码前应用，浏览器不做 CSS 旋转）
+→ clockoverlay（时间戳水印：`%Y-%m-%d %H:%M:%S`，DejaVu Sans 20px，左上角黑底）
+→ mpph264enc（Baseline；level 按帧大小 720p/1080p=4、1440p/4K=5.1；gop=帧率；bps=预设码率）
+→ h264parse（config-interval=-1 周期重发 SPS/PPS）
+→ capsfilter（byte-stream / alignment=au）
+→ appsink → FrameHub 扇出
+```
+
+水印时间走 glibc `localtime`：`hyz-camera` 启动时设 `TZ=CST-8`（上海 UTC+8、无夏令时；板端 rootfs 无 tzdata，`Asia/Shanghai` 会解析失败回退 UTC，因此用等价的 POSIX 偏移串）。采集固定 RKISP 全幅再按预设缩放，非 4K 预设由 `videoscale` 完成；`mpph264enc` 输出经 `FrameHub` 零拷贝扇出给各 viewer 的独立帧队列。
+
+### 音频采集链（对讲麦克风）
+
+```text
+alsasrc（hw:0，板载麦克风在 L 声道）
+→ audioconvert → audioresample
+→ capsfilter（S16LE 48kHz mono，channel-mask=FL）
+→ audioconvert → audiocheblimit 高通 150Hz（4 阶）→ audiocheblimit 低通 8kHz（4 阶）→ audioconvert
+→ webrtcdsp（AEC、NS high、AGC adaptive-digital、limiter）
+→ RNNoise 探针（nnnoiseless，480 样本帧，首帧写静音，非整帧透传）
+→ opusenc（32kbps、20ms、DTX、audio-type=voice）
+→ appsink → 各会话 str0m 音频发送
+```
+
+- `channel-mask=FL` 避免默认 (L+R)/2 混音把单麦衰减约 10dB 并混入空接的 R 声道。
+- 降噪分层：HPF/LPF 先硬滤市电哼声谐波与 8kHz 以上 ADC/PSU 噪声；webrtcdsp NS 保持 `high` 作为互补（A/B 实测关掉后静音底噪从约 −44dBFS 回落到约 −37dBFS，NS 还防止噪声推高 AGC 增益）；稳态底噪主力由 dsp 之后的 RNNoise 神经网络探针压制（实测 −44.4/−44.2 dBFS，对比基线 −39.8/−39.7 dBFS）。
+- DTX 让静音段每 400ms 才发一帧，配合降噪后真正安静的静音段收敛码流；`audio-type=voice` 走 SILK 语音编码。
+
+### 回放尾链（对讲喇叭）
+
+```text
+audiomixer（会话按需 request pad）→ capsfilter（S16LE 48k mono）
+→ webrtcechoprobe（AEC 参考，固定元素名 webrtcechoprobe0）
+→ audioconvert → audioresample → alsasink（async=false，sync=false）
+```
+
+`sync=false` 是因为管线时钟是 alsasrc 提供的从时钟（阶梯式跳变），`sync=true` 时回放会变成短突发；配合 mixer 前的 queue 吸收网络抖动实测为连续纯净播放。
+
 ## 架构图
 
 ### 运行时与外部边界
