@@ -5,6 +5,11 @@
 
 /// strftime 风格格式，由 GStreamer `clockoverlay` 逐秒渲染。
 pub const WATERMARK_TIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
+/// 水印渲染时区：上海（UTC+8，无夏令时）。板端 rootfs 无 tzdata
+/// （无 /usr/share/zoneinfo），`Asia/Shanghai` 会解析失败回退 UTC，因此用
+/// 等价的 POSIX 偏移串 `CST-8`。clockoverlay 的 strftime 走 glibc localtime，
+/// 按进程 `TZ` 环境变量渲染；`hyz-camera` main 在启动时设置它。
+pub const WATERMARK_TIMEZONE: &str = "CST-8";
 /// 目标 rootfs 安装的 DejaVu Sans 字体族名（fontconfig 直接按族名匹配）。
 pub const WATERMARK_FONT_FAMILY: &str = "DejaVu Sans";
 /// 所有预设共用的固定字号（像素）。用显式 `px` 传给 pango，避免点距/DPI 歧义。
