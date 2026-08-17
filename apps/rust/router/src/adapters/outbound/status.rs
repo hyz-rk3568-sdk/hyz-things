@@ -12,13 +12,14 @@ use crate::{
     },
     domain::{
         network::{
-            ForwardingDesired, NetworkDesired, NetworkObserved, OwnedResource, Probe, LAN_BRIDGE,
-            LAN_MEMBER, WAN_INTERFACE,
+            ForwardingDesired, NetworkDesired, NetworkObserved, OwnedResource, Probe, UplinkId,
+            UplinkObserved, LAN_BRIDGE, LAN_MEMBER, WAN_INTERFACE,
         },
         proxy::{ProxyDesired, ProxyObserved},
         status::{
-            Component, InterfaceStats, Issue, LanTunEffective, LanTunStatus, LinkState,
-            MihomoCoreStatus, ProxyResourceState, ProxyStatus, RouterStatus, SystemStats,
+            ActiveResolverStatus, Component, InterfaceStats, Issue, LanTunEffective, LanTunStatus,
+            LinkState, MihomoCoreStatus, ProxyResourceState, ProxyStatus, RouterStatus,
+            SystemStats, UplinkId as ContractUplinkId, UplinkStatus,
         },
     },
 };
@@ -147,6 +148,36 @@ fn read_router_status(platform: &LinuxRouterPlatform) -> Component<RouterStatus>
                 Probe::Known(OwnedResource::Absent) => Some(false),
                 Probe::Known(OwnedResource::Foreign) | Probe::Unknown(_) => None,
             }),
+        ethernet: observed
+            .as_ref()
+            .map(|value| uplink_status(&value.ethernet_uplink)),
+        wifi: observed
+            .as_ref()
+            .map(|value| uplink_status(&value.wifi_uplink)),
+        active_uplink: observed.as_ref().and_then(|value| {
+            match value.active_uplink_observation() {
+                Probe::Known(Some(active)) => Some(contract_uplink_id(active.uplink)),
+                Probe::Known(None) | Probe::Unknown(_) => None,
+            }
+        }),
+        active_resolver: match platform.active_resolver_nameservers() {
+            Ok(Some((uplink, nameservers))) => Some(ActiveResolverStatus {
+                uplink: contract_uplink_id(match uplink {
+                    crate::application::dhcp::DhcpUplink::Ethernet => {
+                        crate::domain::network::UplinkId::Ethernet
+                    }
+                    crate::application::dhcp::DhcpUplink::Wifi => {
+                        crate::domain::network::UplinkId::Wifi
+                    }
+                }),
+                nameservers,
+            }),
+            Ok(None) => None,
+            Err(_) => {
+                partial = true;
+                None
+            }
+        },
     };
 
     if status.sta_state.is_none() || status.ap_state.is_none() {
@@ -390,6 +421,30 @@ fn read_u64(path: String) -> Option<u64> {
     fs::read_to_string(path).ok()?.trim().parse().ok()
 }
 
+fn uplink_status(observed: &UplinkObserved) -> UplinkStatus {
+    UplinkStatus {
+        link_up: known_bool(&observed.link),
+        session_up: known_bool(&observed.session),
+        address_present: match &observed.address {
+            Probe::Known(OwnedResource::Absent) => Some(false),
+            Probe::Known(OwnedResource::Owned { .. }) => Some(true),
+            Probe::Known(OwnedResource::Foreign) | Probe::Unknown(_) => None,
+        },
+        default_route_present: known_bool(&observed.default_route),
+        gateway: match &observed.gateway {
+            Probe::Known(Some(gateway)) => Some(*gateway),
+            Probe::Known(None) | Probe::Unknown(_) => None,
+        },
+        resolver_present: known_bool(&observed.resolver),
+    }
+}
+
+fn contract_uplink_id(uplink: UplinkId) -> ContractUplinkId {
+    match uplink {
+        UplinkId::Ethernet => ContractUplinkId::Ethernet,
+        UplinkId::Wifi => ContractUplinkId::Wifi,
+    }
+}
 fn known_bool(probe: &Probe<bool>) -> Option<bool> {
     match probe {
         Probe::Known(value) => Some(*value),
@@ -443,6 +498,7 @@ mod tests {
             } else {
                 OwnedResource::Absent
             }),
+            tun_active_uplink: Probe::Known(None),
             policy_rule_present: Probe::Known(tun),
             policy_route_present: Probe::Known(tun),
             interception_entry_present: Probe::Known(tun),

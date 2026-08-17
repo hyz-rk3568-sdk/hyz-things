@@ -8,7 +8,10 @@ use hyz_router::{
         router::RouterApplication,
     },
     domain::{
-        network::{NetworkAction, NetworkDesired, NetworkObserved, OwnedResource, Probe},
+        network::{
+            NetworkAction, NetworkDesired, NetworkObserved, OwnedResource, Probe, RouterWanSet,
+            UplinkObserved,
+        },
         proxy::{ProxyAction, ProxyDesired, ProxyFeaturesV1, ProxyObserved},
     },
 };
@@ -22,12 +25,26 @@ fn network(forwarding: bool, firewall: OwnedResource) -> NetworkObserved {
         bridge_up: Probe::Known(true),
         lan_address_present: Probe::Known(true),
         ap_attached: Probe::Known(true),
+        ethernet_lan_attached: Probe::Known(true),
         management_services_healthy: Probe::Known(true),
-        wan_default_route_present: Probe::Known(true),
+        ethernet_uplink: UplinkObserved::unavailable(),
+        wifi_uplink: UplinkObserved::wifi_only_route(Probe::Known(true)),
         ipv4_forwarding: Probe::Known(forwarding),
         previous_ipv4_forwarding: Probe::Known(Some(false)),
+        firewall_wan_set: Probe::Known(
+            matches!(firewall, OwnedResource::Owned { .. }).then_some(RouterWanSet::Wifi),
+        ),
         router_firewall: Probe::Known(firewall),
     }
+}
+
+fn without_wifi_route(observed: &mut NetworkObserved) {
+    observed.wifi_uplink = UplinkObserved::wifi_only_route(Probe::Known(false));
+}
+
+fn unknown_wifi_route(observed: &mut NetworkObserved) {
+    observed.wifi_uplink =
+        UplinkObserved::wifi_only_route(Probe::Unknown("stale route record".to_owned()));
 }
 
 fn stopped_proxy() -> ProxyObserved {
@@ -39,6 +56,7 @@ fn stopped_proxy() -> ProxyObserved {
         mixed_port_ready: Probe::Known(false),
         tun_interface: Probe::Known(OwnedResource::Absent),
         tun_firewall: Probe::Known(OwnedResource::Absent),
+        tun_active_uplink: Probe::Known(None),
         policy_rule_present: Probe::Known(false),
         policy_route_present: Probe::Known(false),
         interception_entry_present: Probe::Known(false),
@@ -70,6 +88,12 @@ fn ready_proxy(features: ProxyFeaturesV1) -> ProxyObserved {
         } else {
             OwnedResource::Absent
         }),
+        tun_active_uplink: Probe::Known(tun.then(|| {
+            hyz_router::domain::network::ActiveUplinkObserved::new(
+                hyz_router::domain::network::UplinkId::Wifi,
+                "192.0.2.1".parse().unwrap(),
+            )
+        })),
         policy_rule_present: Probe::Known(tun),
         policy_route_present: Probe::Known(tun),
         interception_entry_present: Probe::Known(tun),
@@ -79,14 +103,14 @@ fn ready_proxy(features: ProxyFeaturesV1) -> ProxyObserved {
 }
 
 #[test]
-fn cold_management_start_initializes_ap_services_before_bridge_attachment() {
+fn cold_management_start_initializes_services_before_independent_lan_attachment() {
     let mut observed = network(false, OwnedResource::Absent);
     observed.bridge = Probe::Known(OwnedResource::Absent);
     observed.bridge_up = Probe::Known(false);
     observed.lan_address_present = Probe::Known(false);
     observed.ap_attached = Probe::Known(false);
+    observed.ethernet_lan_attached = Probe::Known(false);
     observed.management_services_healthy = Probe::Known(false);
-    observed.wan_default_route_present = Probe::Known(false);
 
     assert_eq!(
         network_plan(&NetworkDesired::management_only(), &observed, "new").unwrap(),
@@ -97,8 +121,26 @@ fn cold_management_start_initializes_ap_services_before_bridge_attachment() {
             NetworkAction::ConfigureBridge,
             NetworkAction::AssignLanAddress,
             NetworkAction::EnsureManagementServices,
+            NetworkAction::AttachEthernetLan,
             NetworkAction::AttachAp,
         ]
+    );
+}
+
+#[test]
+fn management_repair_only_attaches_the_missing_lan_member() {
+    let mut observed = network(false, OwnedResource::Absent);
+    observed.ap_attached = Probe::Known(false);
+    assert_eq!(
+        management_plan(&observed, "new").unwrap(),
+        vec![NetworkAction::AttachAp]
+    );
+
+    observed.ap_attached = Probe::Known(true);
+    observed.ethernet_lan_attached = Probe::Known(false);
+    assert_eq!(
+        management_plan(&observed, "new").unwrap(),
+        vec![NetworkAction::AttachEthernetLan]
     );
 }
 
@@ -127,19 +169,19 @@ fn forwarding_off_removes_only_data_plane_in_cleanup_order() {
             | NetworkAction::ConfigureBridge
             | NetworkAction::AssignLanAddress
             | NetworkAction::AttachAp
+            | NetworkAction::AttachEthernetLan
             | NetworkAction::EnsureManagementServices
     )));
 }
 
 #[test]
 fn management_only_disable_does_not_require_a_wan_route() {
-    let mut observed = network(
+    let observed = network(
         true,
         OwnedResource::Owned {
             token: "router-old".to_owned(),
         },
     );
-    observed.wan_default_route_present = Probe::Known(false);
     assert_eq!(
         forwarding_plan(&NetworkDesired::management_only(), &observed, "new")
             .expect("route-independent management-only plan"),
@@ -183,6 +225,101 @@ fn management_only_reconfirms_forwarding_before_removing_owned_firewall() {
 }
 
 #[test]
+fn forwarding_uses_the_confirmed_typed_wifi_uplink() {
+    let observed = network(false, OwnedResource::Absent);
+
+    assert_eq!(
+        forwarding_plan(&NetworkDesired::forwarding(), &observed, "new").unwrap(),
+        vec![
+            NetworkAction::InstallRouterFirewall {
+                token: "new".to_owned(),
+                wan_set: RouterWanSet::Wifi,
+            },
+            NetworkAction::EnableIpv4Forwarding,
+        ]
+    );
+}
+
+#[test]
+fn partial_ethernet_observation_keeps_wifi_as_the_only_forwarding_path() {
+    let mut observed = network(false, OwnedResource::Absent);
+    observed.ethernet_uplink = UplinkObserved {
+        link: Probe::Known(true),
+        session: Probe::Known(true),
+        address: Probe::Known(OwnedResource::Foreign),
+        default_route: Probe::Known(true),
+        gateway: Probe::Known(Some("192.0.2.1".parse().unwrap())),
+        resolver: Probe::Known(true),
+    };
+
+    assert_eq!(
+        forwarding_plan(&NetworkDesired::forwarding(), &observed, "new").unwrap(),
+        vec![
+            NetworkAction::InstallRouterFirewall {
+                token: "new".to_owned(),
+                wan_set: RouterWanSet::Wifi,
+            },
+            NetworkAction::EnableIpv4Forwarding,
+        ]
+    );
+}
+
+#[test]
+fn fully_ready_ethernet_joins_wifi_in_the_exact_dual_wan_firewall_set() {
+    let mut observed = network(false, OwnedResource::Absent);
+    observed.ethernet_uplink = UplinkObserved {
+        link: Probe::Known(true),
+        session: Probe::Known(true),
+        address: Probe::Known(OwnedResource::Owned {
+            token: "ethernet-dhcp".to_owned(),
+        }),
+        default_route: Probe::Known(true),
+        gateway: Probe::Known(Some("192.0.2.1".parse().unwrap())),
+        resolver: Probe::Known(true),
+    };
+
+    assert_eq!(
+        forwarding_plan(&NetworkDesired::forwarding(), &observed, "new").unwrap(),
+        vec![
+            NetworkAction::InstallRouterFirewall {
+                token: "new".to_owned(),
+                wan_set: RouterWanSet::EthernetAndWifi,
+            },
+            NetworkAction::EnableIpv4Forwarding,
+        ]
+    );
+}
+
+#[test]
+fn owned_firewall_reconfigures_to_the_exact_current_wan_set() {
+    let mut observed = network(
+        true,
+        OwnedResource::Owned {
+            token: "router-old".to_owned(),
+        },
+    );
+    observed.ethernet_uplink = UplinkObserved {
+        link: Probe::Known(true),
+        session: Probe::Known(true),
+        address: Probe::Known(OwnedResource::Owned {
+            token: "ethernet-dhcp".to_owned(),
+        }),
+        default_route: Probe::Known(true),
+        gateway: Probe::Known(Some("192.0.2.1".parse().unwrap())),
+        resolver: Probe::Known(true),
+    };
+
+    assert_eq!(
+        forwarding_plan(&NetworkDesired::forwarding(), &observed, "new").unwrap(),
+        vec![NetworkAction::ReconfigureRouterFirewall {
+            token: "router-old".to_owned(),
+            previous_wan_set: RouterWanSet::Wifi,
+            wan_set: RouterWanSet::EthernetAndWifi,
+        }]
+    );
+}
+
+#[test]
 fn forwarding_captures_global_switch_before_data_plane_mutation() {
     let mut observed = network(false, OwnedResource::Absent);
     observed.previous_ipv4_forwarding = Probe::Known(None);
@@ -192,6 +329,7 @@ fn forwarding_captures_global_switch_before_data_plane_mutation() {
             NetworkAction::CaptureIpv4Forwarding,
             NetworkAction::InstallRouterFirewall {
                 token: "new".to_owned(),
+                wan_set: RouterWanSet::Wifi,
             },
             NetworkAction::EnableIpv4Forwarding,
         ]
@@ -238,11 +376,11 @@ fn foreign_firewall_is_neither_ready_nor_removed() {
 #[test]
 fn stale_or_unknown_route_and_ownership_cannot_enable_forwarding() {
     let mut unknown_route = network(false, OwnedResource::Absent);
-    unknown_route.wan_default_route_present = Probe::Unknown("stale route record".to_owned());
+    unknown_wifi_route(&mut unknown_route);
     assert!(!unknown_route.ready_for(&NetworkDesired::forwarding()));
     assert!(matches!(
         forwarding_plan(&NetworkDesired::forwarding(), &unknown_route, "new"),
-        Err(PlatformError::UnsafeToCutOver(_))
+        Err(PlatformError::ProbeFailed(_))
     ));
 
     let mut unknown_firewall = network(true, OwnedResource::Absent);
@@ -670,6 +808,7 @@ fn fake_port_characterizes_enable_order_and_reprobes_before_ready() {
         vec![
             NetworkAction::InstallRouterFirewall {
                 token: "hyz-router-42".to_owned(),
+                wan_set: RouterWanSet::Wifi,
             },
             NetworkAction::EnableIpv4Forwarding,
         ]
@@ -750,11 +889,12 @@ fn cold_start_applies_management_then_reprobes_route_before_forwarding() {
     initial.bridge_up = Probe::Known(false);
     initial.lan_address_present = Probe::Known(false);
     initial.ap_attached = Probe::Known(false);
+    initial.ethernet_lan_attached = Probe::Known(false);
     initial.management_services_healthy = Probe::Known(false);
-    initial.wan_default_route_present = Probe::Known(false);
+    without_wifi_route(&mut initial);
 
     let mut managed_without_route = network(false, OwnedResource::Absent);
-    managed_without_route.wan_default_route_present = Probe::Known(false);
+    without_wifi_route(&mut managed_without_route);
     let route_ready = network(false, OwnedResource::Absent);
     let final_state = network(
         true,
@@ -772,7 +912,7 @@ fn cold_start_applies_management_then_reprobes_route_before_forwarding() {
         .reconcile(&NetworkDesired::forwarding())
         .expect("cold-start reconcile");
 
-    assert_eq!(result.actions_applied, 8);
+    assert_eq!(result.actions_applied, 9);
     assert_eq!(
         *fake.actions.lock().expect("actions"),
         vec![
@@ -782,10 +922,12 @@ fn cold_start_applies_management_then_reprobes_route_before_forwarding() {
             NetworkAction::ConfigureBridge,
             NetworkAction::AssignLanAddress,
             NetworkAction::EnsureManagementServices,
+            NetworkAction::AttachEthernetLan,
             NetworkAction::AttachAp,
             NetworkAction::WaitForWanRoute,
             NetworkAction::InstallRouterFirewall {
                 token: "hyz-router-42".to_owned(),
+                wan_set: RouterWanSet::Wifi,
             },
             NetworkAction::EnableIpv4Forwarding,
         ]
@@ -799,7 +941,7 @@ fn cold_start_applies_management_then_reprobes_route_before_forwarding() {
 #[test]
 fn route_wait_reacquires_and_rejects_changed_management_state() {
     let mut without_route = network(false, OwnedResource::Absent);
-    without_route.wan_default_route_present = Probe::Known(false);
+    without_wifi_route(&mut without_route);
     let mut changed = network(false, OwnedResource::Absent);
     changed.ap_attached = Probe::Known(false);
     let fake = Fake::with_observations(vec![without_route.clone(), without_route, changed]);
@@ -825,17 +967,18 @@ fn cold_management_only_start_succeeds_without_a_wan_route() {
     initial.bridge_up = Probe::Known(false);
     initial.lan_address_present = Probe::Known(false);
     initial.ap_attached = Probe::Known(false);
+    initial.ethernet_lan_attached = Probe::Known(false);
     initial.management_services_healthy = Probe::Known(false);
-    initial.wan_default_route_present = Probe::Known(false);
+    without_wifi_route(&mut initial);
 
     let mut managed_offline = network(false, OwnedResource::Absent);
-    managed_offline.wan_default_route_present = Probe::Known(false);
+    without_wifi_route(&mut managed_offline);
     let fake = Fake::with_observations(vec![initial, managed_offline.clone(), managed_offline]);
     let result = RouterApplication::new(&fake, &fake, &fake)
         .reconcile(&NetworkDesired::management_only())
         .expect("offline management startup");
 
-    assert_eq!(result.actions_applied, 5);
+    assert_eq!(result.actions_applied, 6);
     assert!(!fake
         .actions
         .lock()
@@ -850,11 +993,12 @@ fn route_gate_retains_strictly_confirmed_management_state() {
     initial.bridge_up = Probe::Known(false);
     initial.lan_address_present = Probe::Known(false);
     initial.ap_attached = Probe::Known(false);
+    initial.ethernet_lan_attached = Probe::Known(false);
     initial.management_services_healthy = Probe::Known(false);
-    initial.wan_default_route_present = Probe::Known(false);
+    without_wifi_route(&mut initial);
 
     let mut managed_without_route = network(false, OwnedResource::Absent);
-    managed_without_route.wan_default_route_present = Probe::Known(false);
+    without_wifi_route(&mut managed_without_route);
     let fake = Fake::with_observations(vec![
         initial,
         managed_without_route.clone(),
@@ -874,6 +1018,7 @@ fn route_gate_retains_strictly_confirmed_management_state() {
             NetworkAction::ConfigureBridge,
             NetworkAction::AssignLanAddress,
             NetworkAction::EnsureManagementServices,
+            NetworkAction::AttachEthernetLan,
             NetworkAction::AttachAp,
             NetworkAction::WaitForWanRoute,
         ]
@@ -884,7 +1029,7 @@ fn route_gate_retains_strictly_confirmed_management_state() {
 fn previously_healthy_management_services_are_not_rollback_compensated() {
     let initial = network(false, OwnedResource::Absent);
     let mut managed_without_route = initial.clone();
-    managed_without_route.wan_default_route_present = Probe::Known(false);
+    without_wifi_route(&mut managed_without_route);
     let fake = Fake::with_observations(vec![
         initial,
         managed_without_route.clone(),
@@ -917,6 +1062,7 @@ fn successful_actions_do_not_create_false_readiness() {
         vec![
             NetworkAction::InstallRouterFirewall {
                 token: "hyz-router-42".to_owned(),
+                wan_set: RouterWanSet::Wifi,
             },
             NetworkAction::EnableIpv4Forwarding,
             NetworkAction::DisableIpv4Forwarding,

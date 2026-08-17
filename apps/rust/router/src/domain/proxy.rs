@@ -2,7 +2,7 @@
 
 use super::{
     device_policy::LanDeviceMac,
-    network::{OwnedResource, Probe},
+    network::{ActiveUplinkObserved, OwnedResource, Probe},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -83,6 +83,7 @@ pub struct ProxyObserved {
     pub mixed_port_ready: Probe<bool>,
     pub tun_interface: Probe<OwnedResource>,
     pub tun_firewall: Probe<OwnedResource>,
+    pub tun_active_uplink: Probe<Option<ActiveUplinkObserved>>,
     pub policy_rule_present: Probe<bool>,
     pub policy_route_present: Probe<bool>,
     pub interception_entry_present: Probe<bool>,
@@ -101,6 +102,7 @@ impl ProxyObserved {
             mixed_port_ready: Probe::Unknown(reason.clone()),
             tun_interface: Probe::Unknown(reason.clone()),
             tun_firewall: Probe::Unknown(reason.clone()),
+            tun_active_uplink: Probe::Unknown(reason.clone()),
             policy_rule_present: Probe::Unknown(reason.clone()),
             policy_route_present: Probe::Unknown(reason.clone()),
             interception_entry_present: Probe::Unknown(reason.clone()),
@@ -139,6 +141,7 @@ impl ProxyObserved {
                 Probe::Known(OwnedResource::Owned { .. })
             )
             && matches!(self.tun_firewall, Probe::Known(OwnedResource::Owned { .. }))
+            && matches!(self.tun_active_uplink, Probe::Known(Some(_)))
             && matches!(
                 (&self.tun_interface, &self.tun_firewall),
                 (
@@ -237,6 +240,7 @@ pub enum ProxyAction {
     CreateTunChains {
         token: String,
         direct_macs: BTreeSet<LanDeviceMac>,
+        active: ActiveUplinkObserved,
     },
     InstallTunForwardHook {
         token: String,
@@ -297,6 +301,12 @@ mod tests {
             tun_firewall: Probe::Known(OwnedResource::Owned {
                 token: "tun".to_owned(),
             }),
+            tun_active_uplink: Probe::Known(Some(
+                crate::domain::network::ActiveUplinkObserved::new(
+                    crate::domain::network::UplinkId::Wifi,
+                    "192.0.2.1".parse().unwrap(),
+                ),
+            )),
             policy_rule_present: Probe::Known(true),
             policy_route_present: Probe::Known(true),
             interception_entry_present: Probe::Known(true),

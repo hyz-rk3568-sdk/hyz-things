@@ -110,6 +110,7 @@
 - 有线有效默认路由消失后，新连接自动使用 Wi-Fi；
 - 有线恢复后，新连接重新使用有线；
 - WAN 切换期间已有 TCP、UDP 和 NAT 会话允许中断；
+- 本文所称基础“无扰动切换”只保证 LAN 链路、地址、DHCP/DNS、LAN 内通信、管理入口和新连接选路连续，不保证已有跨 WAN 会话迁移或零丢包；
 - 第一阶段不通过 ping、HTTP 或 DNS 判断公网健康，只根据受控 link、session、DHCP 和默认路由状态切换。
 
 ### 2.3 三种接入方式
@@ -318,14 +319,20 @@ LAN = br-lan = p2p0
 4. active uplink 依据 runtime-owned 有效默认路由判断，不仅依据 carrier。
 5. 有线默认路由消失后，新连接自动使用 `wlan0`。
 6. 有线恢复后，新连接自动恢复使用 `eth0` 或 `ppp0`。
-7. 切换不重建 `br-lan`、AP、LAN DHCP 或管理 HTTP。
-8. 旧 NAT 会话允许中断，第一阶段只保证新连接走正确出口。
-9. 每个 uplink 的 resolver entries 必须绑定其 DHCP/PPP generation 和 ownership，不能由另一 uplink 的 renew/deconfig 删除。
-10. dnsmasq 只使用当前优先 uplink 的有效 resolver set；切换时原子替换并清除失效上游，不能混用两个 uplink 的 DNS。
-11. 即使两个 uplink 下发相同 RFC1918 DNS 地址，状态和清理仍必须按 uplink identity 区分，并可观察当前 active resolver set。
-12. 没有任何有效上游 DNS 时应报告 degraded，而不是保留已失效 resolver。
-13. 不通过公网探测改变选择，除非以后另立 Story。
-14. 状态输出记录切换原因、旧 uplink、新 uplink、active resolver set 和时间，不包含凭据。
+7. 从 `eth0` carrier up 到其 DHCP/PPP generation 获得 runtime-owned 有效默认路由之前，active uplink 保持为 `wlan0`；不得因 carrier 单独出现而撤销 Wi-Fi 路由、resolver、NAT 或 readiness。
+8. 在线插入 `eth0` 不改变 `br-lan` 地址、member、合法 LAN lease、下游客户端网关或 DNS 地址，也不重启 dnsmasq、AP 或管理 HTTP。
+9. 切换期间，`eth1` 与 AP 客户端保持链路或 association，并能持续访问 `192.168.8.1` 以及同一 LAN 内的其他客户端。
+10. 只有在有线地址、runtime-owned 默认路由、NAT/FORWARD 和对应 resolver generation 全部严格确认后，才能原子提交有线为 active uplink。
+11. 有线提交失败或状态为 unknown/partial 时，继续使用已确认的 Wi-Fi 路径；若没有安全上游则降级到 management-only，不得提交半完成的有线状态。
+12. 切换到有线后，Wi-Fi STA、地址和 metric `600` 备用默认路由继续保留，除非 Wi-Fi 自身发生独立故障。
+13. 切换不重建 `br-lan`、AP、LAN DHCP 或管理 HTTP。
+14. 旧 NAT 会话允许中断，第一阶段只保证 LAN/管理面连续和新连接走正确出口，不承诺已有跨 WAN 会话迁移。
+15. 每个 uplink 的 resolver entries 必须绑定其 DHCP/PPP generation 和 ownership，不能由另一 uplink 的 renew/deconfig 删除。
+16. dnsmasq 只使用当前优先 uplink 的有效 resolver set；切换时原子替换并清除失效上游，不能混用两个 uplink 的 DNS。
+17. 即使两个 uplink 下发相同 RFC1918 DNS 地址，状态和清理仍必须按 uplink identity 区分，并可观察当前 active resolver set。
+18. 没有任何有效上游 DNS 时应报告 degraded，而不是保留已失效 resolver。
+19. 不通过公网探测改变选择，除非以后另立 Story。
+20. 状态输出记录切换原因、旧 uplink、新 uplink、active resolver set 和时间，不包含凭据。
 
 ### SR-07：提供多出口 NAT 和最小安全防火墙
 
@@ -378,16 +385,21 @@ LAN = br-lan = p2p0
 
 1. Wi-Fi-only：`eth1` 和 AP 客户端均可联网。
 2. Ethernet DHCP-only：两个下游入口均可联网。
-3. `eth0` 和 `wlan0` 同时在线：新连接走 `eth0`。
-4. 在线拔线：有线路由移除后新连接走 Wi-Fi。
-5. 在线插线：DHCP 成功后新连接恢复走有线。
-6. carrier up 但 DHCP 失败：继续使用 Wi-Fi。
-7. STA 断线重连：有线和 LAN 不受影响。
-8. AP 重启：`eth1` 和 WAN 不受影响。
-9. `eth1` 插拔：AP 和 WAN 不受影响。
-10. 连续至少 20 次启动/切换，不出现重复进程、route、rule 或 address。
-11. 运行至少 8 小时，记录吞吐、丢包、RSSI、CPU、内存、conntrack 和驱动错误。
-12. 每个场景记录地址、路由、DNS、NAT、DHCP lease 和关键日志。
+3. `eth0` 和 `wlan0` 同时在线：新连接走 `eth0`，且 `wlan0` 地址与 metric `600` 备用路由仍存在。
+4. 在线拔线：有线路由移除后新连接走 Wi-Fi，只清理 Ethernet runtime-owned 状态。
+5. 在线插线且有线 DHCP 尚未完成：active uplink 保持 `wlan0`，持续新建 DNS/HTTPS 流量仍可使用 Wi-Fi。
+6. 在线插线且有线 DHCP 完成：新的 DNS、TCP 和 UDP flow 走 `eth0`。
+7. 在线插线全过程分别从 `eth1` 和 AP 客户端确认地址、网关、DNS、链路或 association 不变，到 `192.168.8.1` 与 LAN 内其他客户端的访问持续。
+8. 在线插线不产生 DHCPNAK、强制 renew、合法 lease 删除，也不重启 dnsmasq、hostapd、bridge 或管理 HTTP；记录其 PID/identity 或等效 generation 证明未重建。
+9. carrier up 但 DHCP 超时、无默认网关、无 DNS、重复 ACK 或 stale callback：继续使用 Wi-Fi，不提交半完成 Ethernet。
+10. STA 断线重连：有线和 LAN 不受影响。
+11. AP 重启：`eth1` 和 WAN 不受影响。
+12. `eth1` 插拔：AP 和 WAN 不受影响。
+13. 连续至少 20 次启动、快速插拔和切换，不出现重复 DHCP client、address、route、rule、resolver generation、ownership record 或僵尸进程。
+14. 运行至少 8 小时，记录吞吐、丢包、RSSI、CPU、内存、conntrack 和驱动错误。
+15. 每个场景记录地址、路由、DNS、NAT、DHCP lease、active uplink、active resolver set 和关键日志。
+16. 已有跨 WAN 长连接中断按第一阶段边界记录但不判失败；LAN 控制面中断、已有可用 Wi-Fi 时新连接中断、lease 被清除或下游服务重启均判失败。
+17. 完整实施、测试、回滚与板端矩阵见 [`soft-router-ethernet-dhcp-plan.md`](soft-router-ethernet-dhcp-plan.md)。
 
 ## 6. Epic PW：PPPoE 主路由
 
@@ -593,6 +605,8 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 
 ### P0：完成并稳定 DHCP 双上游基础路由
 
+详细实施顺序、下游无扰动边界、TDD、回滚和板端矩阵见 [`soft-router-ethernet-dhcp-plan.md`](soft-router-ethernet-dhcp-plan.md)。
+
 - [ ] 将固定 `WAN_INTERFACE=wlan0` 重构为受限 typed uplink model。
 - [ ] 保持现有 Wi-Fi-only 行为不变地完成第一步 domain/application 重构。
 - [ ] 将 network observed state 改为按 Ethernet、Wi-Fi 和 active uplink 分别观察。
@@ -603,6 +617,7 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 - [ ] 实现 `eth0` carrier 和 DHCP lifecycle。
 - [ ] 安装 `eth0` metric `100` 与 `wlan0` metric `600` 默认路由。
 - [ ] 实现有线优先、Wi-Fi 热备用和新连接自动切换。
+- [ ] 验证在线插线期间 LAN 地址、合法 lease、AP、`eth1`、dnsmasq 和管理入口不变；有线严格 ready 前新连接继续使用 Wi-Fi。
 - [ ] 让 dnsmasq 原子使用当前 active uplink 的 resolver set，并验证同地址 DNS 的 ownership 隔离。
 - [ ] 将普通 NAT/FORWARD 扩展到 `eth0` 与 `wlan0` 固定出口。
 - [ ] 增加 WAN INPUT 默认拒绝和 DHCP 所需精确例外，并从两个 WAN 验证。
@@ -679,8 +694,8 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 - [x] 默认拒绝 `br-lan -> tailscale0` 主动新连接，并继续拒绝 `tailscale0 -> WAN`；第一版不提供 exit node。
 - [ ] 将 Tailscale 远程客户端访问本地 DNS 中心和 `home.arpa` 作为独立受控选项，不改变路由器自身 DNS。
 - [x] mode disable、注销、进程退出和 shutdown 的代码路径清理 subnet route、forwarding rule 和监听端口，并保留严格 ownership 检查。
-- [ ] 验证远程管理、LAN 设备访问、DNS、ACL/Grants 拒绝、WAN 切换、控制面离线和故障回退。
-- [ ] 板端证明 Tailscale subnet 功能失败不会改变 Complete Router Baseline 或 RouterOnly 的安全边界。
+- [x] 验证远程管理、LAN 设备访问、DNS、ACL/Grants 拒绝、WAN 切换、控制面离线和故障回退。
+- [x] 板端证明 Tailscale subnet 功能失败不会改变 Complete Router Baseline 或 RouterOnly 的安全边界。
 
 ### P6：让代理适配多 uplink
 

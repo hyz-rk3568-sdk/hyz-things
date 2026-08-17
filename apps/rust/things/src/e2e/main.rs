@@ -108,9 +108,7 @@ impl Default for HarnessCameraState {
                 },
                 access: hyz_things::domain::camera::CameraAccessKind::Lan,
                 error_category: None,
-                audio: Some(hyz_things::domain::camera::CameraAudioStatus {
-                    supported: true,
-                }),
+                audio: Some(hyz_things::domain::camera::CameraAudioStatus { supported: true }),
             },
             create_count: 0,
             close_count: 0,
@@ -180,6 +178,7 @@ impl Default for HarnessState {
                 ap_attached_to_lan: Some(true),
                 ipv4_forwarding: Some(true),
                 masquerade_enabled: Some(true),
+                ..RouterStatus::default()
             }),
             proxy: Component::available(ProxyStatus {
                 configured: true,

@@ -273,6 +273,16 @@ control socket 可服务不等于 router 已就绪，router ready 标记也不�
 
 WAN DHCP 租约按地址、metric `600` 路由、resolver 条目和 ownership record 整体提交；任一步失败都按精确动作逆序回滚。Buildroot 的 `/etc/resolv.conf -> ../tmp/resolv.conf` 在冷启动时允许目标尚不存在：adapter 只解析并校验固定 allowlist 中的目标父目录，再原子创建 `/tmp/resolv.conf`，不能因 dangling symlink 撤销已收到的有效租约。
 
+### Ethernet DHCP 双上游演进边界
+
+当前生产代码仍是 Wi-Fi-only：`br-lan = p2p0`、单一 `wlan0` DHCP generation/ownership、metric `600` 默认路由以及固定 `wlan0` NAT/FORWARD。`eth1` LAN member、`eth0` carrier/DHCP、有线与 Wi-Fi 共存、per-uplink resolver ownership 和 active uplink 尚未实现，不能把在线插入网线视为已支持能力。
+
+目标演进先把固定 LAN 扩展为 `br-lan = eth1 + p2p0`，再以受限 typed uplink model 表达 `Ethernet` 与 `Wifi`。每条 uplink 分别观察 link/session/address/default-route/resolver/ownership，DHCP callback 绑定固定 uplink identity 和独立 generation；active uplink 只在 runtime-owned 地址、默认路由、NAT/FORWARD 与 resolver generation 全部严格确认后提交。`eth0` metric `100` 优先于 `wlan0` metric `600`，但 carrier 单独出现不能触发切换。
+
+双出口 firewall 将一次性包含 `br-lan ↔ eth0` 与 `br-lan ↔ wlan0` 的固定 FORWARD、MASQUERADE 和 WAN INPUT 边界，route 切换不重建整套 chain。dnsmasq 原子使用当前 active uplink 的 resolver set；一个 uplink 的 renew/deconfig 或 stale callback 不得删除另一个 uplink 的地址、路由或 DNS。Mihomo direct/TUN、Tailscale outbound 和状态聚合必须依赖 active uplink，而不是继续读取固定 `wlan0` gateway。
+
+这里的“下游无扰动”只保证插拔 WAN 网线时不重建 `br-lan`、不改变 LAN 地址或合法 lease、不重启 dnsmasq/AP/管理 HTTP，并保持 `eth1`、AP、LAN 内通信与本地管理入口；有线严格 ready 前新连接继续走 Wi-Fi，ready 后新连接走有线。不同出口地址和 NAT 映射下的既有 TCP/UDP 会话允许中断，不承诺会话迁移或零丢包。完整分阶段实施和验收见 [`soft-router-ethernet-dhcp-plan.md`](soft-router-ethernet-dhcp-plan.md)。
+
 ### RTL8852BS 冷启动固定流程
 
 RTL8852BS 单射频并发启动采用稳定优先的固定顺序，不以减少 init launch 次数为目标：
@@ -379,12 +389,12 @@ LCD 的 DTS `default-brightness-level = <0>` 让 U-Boot/Linux 冷启动默认保
 
 ## 路由与 Mihomo direct adapter
 
-已建立的领域模型把管理平面和转发平面分开：
+当前已建立的领域模型把管理平面和转发平面分开，但生产实现仍是单 Wi-Fi WAN：
 
-- management LAN：`br-lan`、`p2p0`、DHCP/DNS；
-- WAN：`wlan0`、DHCP、metric `600`；
-- forwarding：IPv4 forwarding 和普通 NAT；
-- proxy：独立的 `lan_tun_enabled` 与 `tailscale_explicit_proxy_enabled`，共享派生的 Mihomo core。
+- management LAN：当前为 `br-lan`、`p2p0`、DHCP/DNS；目标在独立 member 生命周期完成后扩展为 `br-lan = eth1 + p2p0`；
+- WAN：当前为 `wlan0`、单一 DHCP generation/ownership、metric `600`；目标为 typed `Ethernet/Wifi`、per-uplink DHCP/route/resolver ownership 与显式 active uplink；
+- forwarding：IPv4 forwarding 和普通 NAT；当前 exact rules 固定 `wlan0`，双上游阶段扩展为固定 `eth0`/`wlan0` 双出口且切换不重建 chain；
+- proxy：独立的 `lan_tun_enabled` 与 `tailscale_explicit_proxy_enabled`，共享派生的 Mihomo core；双上游后 direct/TUN 出口跟随严格确认的 active uplink。
 
 `router disable` 的模型先把 Tailscale LAN path 降到 RouterOnly，再以 runtime-only reconcile 撤销 LAN TUN interception，最后移除 ordinary forwarding/NAT；管理 LAN、页面、Tailscale 认证状态、Tailscale access mode 以及两个 proxy feature desired 均保留。恢复 forwarding 后会重新 reconcile 持久 Tailscale 与 proxy feature intent。
 

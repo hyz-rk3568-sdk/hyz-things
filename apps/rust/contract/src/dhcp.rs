@@ -3,6 +3,14 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use std::net::Ipv4Addr;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DhcpUplink {
+    Ethernet,
+    #[default]
+    Wifi,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct DhcpGeneration(String);
@@ -38,13 +46,17 @@ impl DhcpGeneration {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DhcpEvent {
+    /// Missing only for the previous router control protocol; it represented Wi-Fi.
+    #[serde(default)]
+    pub uplink: DhcpUplink,
     pub generation: DhcpGeneration,
     pub transition: DhcpTransition,
 }
 
 impl DhcpEvent {
-    pub fn new(generation: DhcpGeneration, transition: DhcpTransition) -> Self {
+    pub fn new(uplink: DhcpUplink, generation: DhcpGeneration, transition: DhcpTransition) -> Self {
         Self {
+            uplink,
             generation,
             transition,
         }
@@ -83,5 +95,30 @@ impl DhcpLease {
                 .map(|address| format!("nameserver {address} # {interface}")),
         );
         lines
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_uplink_from_the_previous_protocol_maps_only_to_wifi() {
+        let event: DhcpEvent =
+            serde_json::from_str(r#"{"generation":"wifi-1","transition":{"kind":"no_change"}}"#)
+                .unwrap();
+        assert_eq!(event.uplink, DhcpUplink::Wifi);
+    }
+
+    #[test]
+    fn ethernet_uplink_round_trips_as_a_fixed_value() {
+        let event = DhcpEvent::new(
+            DhcpUplink::Ethernet,
+            DhcpGeneration::new("ethernet-1".to_owned()).unwrap(),
+            DhcpTransition::NoChange,
+        );
+        let encoded = serde_json::to_string(&event).unwrap();
+        assert!(encoded.contains("\"uplink\":\"ethernet\""));
+        assert_eq!(serde_json::from_str::<DhcpEvent>(&encoded).unwrap(), event);
     }
 }

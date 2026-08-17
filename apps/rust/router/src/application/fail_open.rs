@@ -348,6 +348,7 @@ mod tests {
             } else {
                 OwnedResource::Absent
             }),
+            tun_active_uplink: Probe::Known(None),
             policy_rule_present: Probe::Known(owned),
             policy_route_present: Probe::Known(owned),
             interception_entry_present: Probe::Known(owned),

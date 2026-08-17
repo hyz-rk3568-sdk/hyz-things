@@ -4,15 +4,19 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub use hyz_contract::dhcp::{DhcpEvent, DhcpGeneration, DhcpLease, DhcpTransition};
+pub use hyz_contract::dhcp::{DhcpEvent, DhcpGeneration, DhcpLease, DhcpTransition, DhcpUplink};
 
 pub const DHCP_HOOK_ROLE_ENV: &str = "HYZ_ROUTER_INTERNAL_DHCP_HOOK";
 pub const DHCP_GENERATION_ENV: &str = "HYZ_ROUTER_DHCP_GENERATION";
+pub const DHCP_UPLINK_ENV: &str = "HYZ_ROUTER_DHCP_UPLINK";
 const LIFECYCLE_LOCK_WAIT: Duration = Duration::from_secs(3 * 60);
 const LIFECYCLE_LOCK_RETRY: Duration = Duration::from_millis(20);
 
 pub trait DhcpPlatformPort: Send + Sync {
-    fn active_dhcp_generation(&self) -> Result<Option<DhcpGeneration>, PlatformError>;
+    fn active_dhcp_generation(
+        &self,
+        uplink: DhcpUplink,
+    ) -> Result<Option<DhcpGeneration>, PlatformError>;
     fn apply_dhcp_event(&self, event: &DhcpEvent) -> Result<(), PlatformError>;
 }
 
@@ -32,7 +36,7 @@ impl<'a> DhcpApplication<'a> {
     pub fn execute(&self, event: &DhcpEvent) -> Result<(), PlatformError> {
         let lease = self.acquire_lifecycle_lock_bounded()?;
         let result = (|| {
-            let active = self.platform.active_dhcp_generation()?;
+            let active = self.platform.active_dhcp_generation(event.uplink)?;
             if active.as_ref() != Some(&event.generation) {
                 return Err(PlatformError::Conflict(
                     "DHCP callback generation is stale".to_owned(),
@@ -113,9 +117,14 @@ mod tests {
     }
 
     impl DhcpPlatformPort for Fake {
-        fn active_dhcp_generation(&self) -> Result<Option<DhcpGeneration>, PlatformError> {
+        fn active_dhcp_generation(
+            &self,
+            uplink: DhcpUplink,
+        ) -> Result<Option<DhcpGeneration>, PlatformError> {
             self.events.lock().unwrap().push("generation");
-            Ok(self.active.clone())
+            Ok((uplink == DhcpUplink::Wifi)
+                .then(|| self.active.clone())
+                .flatten())
         }
 
         fn apply_dhcp_event(&self, _: &DhcpEvent) -> Result<(), PlatformError> {
@@ -133,8 +142,35 @@ mod tests {
             events: Mutex::new(Vec::new()),
         };
         let error = DhcpApplication::new(&fake, &fake)
-            .execute(&DhcpEvent::new(stale, DhcpTransition::NoChange))
+            .execute(&DhcpEvent::new(
+                DhcpUplink::Wifi,
+                stale,
+                DhcpTransition::NoChange,
+            ))
             .unwrap_err();
+        assert!(matches!(error, PlatformError::Conflict(_)));
+        assert_eq!(
+            *fake.events.lock().unwrap(),
+            vec!["lock", "generation", "release"]
+        );
+    }
+
+    #[test]
+    fn a_wifi_generation_cannot_authorize_an_ethernet_callback() {
+        let generation = DhcpGeneration::new("shared-looking-generation".to_owned()).unwrap();
+        let fake = Fake {
+            active: Some(generation.clone()),
+            events: Mutex::new(Vec::new()),
+        };
+
+        let error = DhcpApplication::new(&fake, &fake)
+            .execute(&DhcpEvent::new(
+                DhcpUplink::Ethernet,
+                generation,
+                DhcpTransition::NoChange,
+            ))
+            .unwrap_err();
+
         assert!(matches!(error, PlatformError::Conflict(_)));
         assert_eq!(
             *fake.events.lock().unwrap(),
@@ -150,7 +186,11 @@ mod tests {
             events: Mutex::new(Vec::new()),
         };
         DhcpApplication::new(&fake, &fake)
-            .execute(&DhcpEvent::new(generation, DhcpTransition::NoChange))
+            .execute(&DhcpEvent::new(
+                DhcpUplink::Wifi,
+                generation,
+                DhcpTransition::NoChange,
+            ))
             .unwrap();
         assert_eq!(
             *fake.events.lock().unwrap(),

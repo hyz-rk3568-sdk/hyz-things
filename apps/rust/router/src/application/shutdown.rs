@@ -96,7 +96,7 @@ fn apply_network_actions(
 mod tests {
     use super::*;
     use crate::domain::{
-        network::{NetworkObserved, OwnedResource, Probe},
+        network::{NetworkObserved, OwnedResource, Probe, UplinkObserved},
         proxy::{ProxyFeaturesV1, ProxyObserved},
     };
 
@@ -113,6 +113,12 @@ mod tests {
             tun_firewall: Probe::Known(OwnedResource::Owned {
                 token: "proxy-owned".to_owned(),
             }),
+            tun_active_uplink: Probe::Known(Some(
+                crate::domain::network::ActiveUplinkObserved::new(
+                    crate::domain::network::UplinkId::Wifi,
+                    "192.0.2.1".parse().unwrap(),
+                ),
+            )),
             policy_rule_present: Probe::Known(true),
             policy_route_present: Probe::Known(true),
             interception_entry_present: Probe::Known(true),
@@ -129,13 +135,16 @@ mod tests {
             bridge_up: Probe::Known(true),
             lan_address_present: Probe::Known(true),
             ap_attached: Probe::Known(true),
+            ethernet_lan_attached: Probe::Known(true),
             management_services_healthy: Probe::Known(true),
-            wan_default_route_present: Probe::Known(true),
+            ethernet_uplink: UplinkObserved::unavailable(),
+            wifi_uplink: UplinkObserved::wifi_only_route(Probe::Known(true)),
             ipv4_forwarding: Probe::Known(true),
             previous_ipv4_forwarding: Probe::Known(Some(false)),
             router_firewall: Probe::Known(OwnedResource::Owned {
                 token: "router-owned".to_owned(),
             }),
+            firewall_wan_set: Probe::Known(Some(crate::domain::network::RouterWanSet::Wifi)),
         }
     }
 
@@ -173,6 +182,7 @@ mod tests {
                 NetworkAction::RemoveRouterFirewall {
                     token: "router-owned".to_owned(),
                 },
+                NetworkAction::DetachEthernetLan,
                 NetworkAction::DetachAp,
                 NetworkAction::StopManagementServices,
                 NetworkAction::RemoveLanAddress,
@@ -199,11 +209,14 @@ mod tests {
         network.bridge_up = Probe::Known(false);
         network.lan_address_present = Probe::Known(false);
         network.ap_attached = Probe::Known(false);
+        network.ethernet_lan_attached = Probe::Known(false);
         network.management_services_healthy = Probe::Known(false);
-        network.wan_default_route_present = Probe::Known(false);
+        network.ethernet_uplink = UplinkObserved::unavailable();
+        network.wifi_uplink = UplinkObserved::unavailable();
         network.ipv4_forwarding = Probe::Known(true);
         network.previous_ipv4_forwarding = Probe::Known(None);
         network.router_firewall = Probe::Known(OwnedResource::Absent);
+        network.firewall_wan_set = Probe::Known(None);
         assert!(network_shutdown_ready(&network, true));
     }
 
@@ -226,11 +239,14 @@ mod tests {
         network.bridge_up = Probe::Known(false);
         network.lan_address_present = Probe::Known(false);
         network.ap_attached = Probe::Known(false);
+        network.ethernet_lan_attached = Probe::Known(false);
         network.management_services_healthy = Probe::Known(false);
-        network.wan_default_route_present = Probe::Known(false);
+        network.ethernet_uplink = UplinkObserved::unavailable();
+        network.wifi_uplink = UplinkObserved::unavailable();
         network.ipv4_forwarding = Probe::Known(false);
         network.previous_ipv4_forwarding = Probe::Known(None);
         network.router_firewall = Probe::Known(OwnedResource::Absent);
+        network.firewall_wan_set = Probe::Known(None);
         assert!(network_shutdown_ready(&network, false));
     }
 }

@@ -50,16 +50,26 @@ impl<'a> RouterApplication<'a> {
                 NetworkAction::ConfigureBridge => Some(NetworkAction::SetBridgeDown),
                 NetworkAction::AssignLanAddress => Some(NetworkAction::RemoveLanAddress),
                 NetworkAction::AttachAp => Some(NetworkAction::DetachAp),
+                NetworkAction::AttachEthernetLan => Some(NetworkAction::DetachEthernetLan),
                 NetworkAction::EnsureManagementServices => {
                     Some(NetworkAction::StopManagementServices)
                 }
                 NetworkAction::CaptureIpv4Forwarding => Some(NetworkAction::RestoreIpv4Forwarding),
                 NetworkAction::EnableIpv4Forwarding => Some(NetworkAction::DisableIpv4Forwarding),
-                NetworkAction::InstallRouterFirewall { token } => {
+                NetworkAction::InstallRouterFirewall { token, .. } => {
                     Some(NetworkAction::RemoveRouterFirewall {
                         token: token.clone(),
                     })
                 }
+                NetworkAction::ReconfigureRouterFirewall {
+                    token,
+                    previous_wan_set,
+                    wan_set,
+                } => Some(NetworkAction::ReconfigureRouterFirewall {
+                    token: token.clone(),
+                    previous_wan_set: *wan_set,
+                    wan_set: *previous_wan_set,
+                }),
                 _ => None,
             };
             if let Some(compensation) = compensation {
@@ -126,9 +136,9 @@ impl<'a> RouterApplication<'a> {
         applied.clear();
 
         if desired.forwarding == ForwardingDesired::Enabled {
-            match &managed.wan_default_route_present {
-                Probe::Known(true) => {}
-                Probe::Known(false) => {
+            match managed.active_uplink_probe() {
+                Probe::Known(Some(_)) => {}
+                Probe::Known(None) => {
                     let held = lease.take().ok_or_else(|| {
                         PlatformError::InvalidState("router lifecycle lease is absent".to_owned())
                     })?;
@@ -158,7 +168,7 @@ impl<'a> RouterApplication<'a> {
                         }
                     };
                     if !managed.management_ready()
-                        || managed.wan_default_route_present != Probe::Known(true)
+                        || !matches!(managed.router_wan_set(), Probe::Known(Some(_)))
                         || !management_unchanged
                     {
                         self.rollback(&applied);

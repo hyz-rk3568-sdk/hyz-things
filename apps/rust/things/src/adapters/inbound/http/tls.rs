@@ -65,18 +65,17 @@ impl PortalTls {
     }
 }
 
-fn load_certificate(
-    certificate_path: &Path,
-    private_key_path: &Path,
-) -> io::Result<TlsAcceptor> {
+fn load_certificate(certificate_path: &Path, private_key_path: &Path) -> io::Result<TlsAcceptor> {
     let certificate_pem = fs::read(certificate_path)?;
     let private_key_pem = fs::read(private_key_path)?;
-    let certificates = vec![CertificateDer::from_pem_slice(&certificate_pem).map_err(|error| {
-        io::Error::new(
-            ErrorKind::InvalidData,
-            format!("device certificate is not valid PEM: {error}"),
-        )
-    })?];
+    let certificates = vec![
+        CertificateDer::from_pem_slice(&certificate_pem).map_err(|error| {
+            io::Error::new(
+                ErrorKind::InvalidData,
+                format!("device certificate is not valid PEM: {error}"),
+            )
+        })?,
+    ];
     let private_key = PrivateKeyDer::from_pem_slice(&private_key_pem).map_err(|error| {
         io::Error::new(
             ErrorKind::InvalidData,
@@ -92,24 +91,29 @@ fn generate_certificate(
 ) -> Result<TlsAcceptor, String> {
     use rcgen::{date_time_ymd, CertificateParams, DnType, KeyPair};
 
-    let key_pair = KeyPair::generate().map_err(|error| format!("TLS key generation failed: {error}"))?;
+    let key_pair =
+        KeyPair::generate().map_err(|error| format!("TLS key generation failed: {error}"))?;
     // rcgen parses each string: IP literals become IP SANs, everything else a
     // DNS name. The LAN address must be present so browsers accept the
     // self-signed certificate for the exact origin users type.
-    let mut params = CertificateParams::new(vec![
-        LAN_ADDRESS.to_string(),
-        "hyz-things.local".to_owned(),
-    ])
-    .map_err(|error| format!("TLS certificate parameters are invalid: {error}"))?;
-    params.distinguished_name.push(DnType::CommonName, "hyz-things");
+    let mut params =
+        CertificateParams::new(vec![LAN_ADDRESS.to_string(), "hyz-things.local".to_owned()])
+            .map_err(|error| format!("TLS certificate parameters are invalid: {error}"))?;
+    params
+        .distinguished_name
+        .push(DnType::CommonName, "hyz-things");
     params.not_before = date_time_ymd(2025, 1, 1);
     params.not_after = date_time_ymd(2025 + i32::from(CERTIFICATE_VALIDITY_YEARS), 1, 1);
     let certificate = params
         .self_signed(&key_pair)
         .map_err(|error| format!("TLS self-signing failed: {error}"))?;
 
-    fs::create_dir_all(certificate_path.parent().expect("certificate path must have a parent"))
-        .map_err(|error| format!("cannot create {}: {error}", CERT_DIRECTORY))?;
+    fs::create_dir_all(
+        certificate_path
+            .parent()
+            .expect("certificate path must have a parent"),
+    )
+    .map_err(|error| format!("cannot create {}: {error}", CERT_DIRECTORY))?;
     write_private(certificate_path, certificate.pem().as_bytes())?;
     write_private(private_key_path, key_pair.serialize_pem().as_bytes())?;
 
@@ -142,7 +146,10 @@ fn server_acceptor(
         .with_no_client_auth()
         .with_single_cert(certificates, private_key)
         .map_err(|error| {
-            io::Error::new(ErrorKind::InvalidData, format!("TLS identity is invalid: {error}"))
+            io::Error::new(
+                ErrorKind::InvalidData,
+                format!("TLS identity is invalid: {error}"),
+            )
         })?;
     config.alpn_protocols = vec![b"http/1.1".to_vec()];
     Ok(TlsAcceptor::from(Arc::new(config)))
@@ -196,10 +203,8 @@ mod tests {
 
     #[test]
     fn generated_self_signed_identity_round_trips() {
-        let directory = std::env::temp_dir().join(format!(
-            "hyz-things-tls-test-{}",
-            std::process::id()
-        ));
+        let directory =
+            std::env::temp_dir().join(format!("hyz-things-tls-test-{}", std::process::id()));
         let certificate_path = directory.join(CERTIFICATE_FILE);
         let private_key_path = directory.join(PRIVATE_KEY_FILE);
 
@@ -224,10 +229,8 @@ mod tests {
 
     #[test]
     fn generated_certificate_covers_the_lan_address() {
-        let directory = std::env::temp_dir().join(format!(
-            "hyz-things-tls-san-test-{}",
-            std::process::id()
-        ));
+        let directory =
+            std::env::temp_dir().join(format!("hyz-things-tls-san-test-{}", std::process::id()));
         let certificate_path = directory.join(CERTIFICATE_FILE);
         let private_key_path = directory.join(PRIVATE_KEY_FILE);
         generate_certificate(&certificate_path, &private_key_path)

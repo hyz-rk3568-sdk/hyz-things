@@ -278,10 +278,7 @@ pub fn app_with_admin_camera_control_at_address(
             camera: Some(camera),
             camera_scope: Some(CameraAccessScope::Tailscale { address }),
             csrf_token,
-            allowed_origin: format!(
-                "{}://{address}:{port}",
-                if tls { "https" } else { "http" }
-            ),
+            allowed_origin: format!("{}://{address}:{port}", if tls { "https" } else { "http" }),
             tls,
             allow_tailscale_self_stop: false,
             installed_apps: None,
@@ -1992,7 +1989,9 @@ async fn security_headers(request: Request, next: Next) -> Response {
         "permissions-policy",
         // 摄像头对讲（全双工）需要浏览器麦克风：`microphone` 仅对本源开放，
         // 仍拒绝 camera/geolocation/payment/usb。
-        HeaderValue::from_static("camera=(), microphone=(self), geolocation=(), payment=(), usb=()"),
+        HeaderValue::from_static(
+            "camera=(), microphone=(self), geolocation=(), payment=(), usb=()",
+        ),
     );
     headers.insert(
         "cross-origin-opener-policy",
@@ -2086,14 +2085,22 @@ mod tests {
     #[test]
     fn administrator_cookie_attributes_depend_on_tls_and_parse_strictly() {
         let token = "a".repeat(64);
-        let plain = session_cookie(&token, false).unwrap().to_str().unwrap().to_owned();
+        let plain = session_cookie(&token, false)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
         assert!(plain.starts_with(&format!("{ADMIN_SESSION_COOKIE}=")));
         assert!(plain.contains("; HttpOnly"));
         assert!(plain.contains("; SameSite=Strict"));
         assert!(plain.contains("; Path=/"));
         assert!(!plain.contains("; Secure"));
 
-        let secured = session_cookie(&token, true).unwrap().to_str().unwrap().to_owned();
+        let secured = session_cookie(&token, true)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
         assert!(secured.contains("; Secure"));
 
         let mut headers = HeaderMap::new();

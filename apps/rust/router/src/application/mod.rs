@@ -1,5 +1,6 @@
 pub mod device_policy;
 pub mod dhcp;
+pub mod ethernet_dhcp;
 pub mod fail_open;
 pub mod ota;
 pub mod panel;

@@ -6,7 +6,7 @@ use super::{
         mihomo_process_holds_tun, mihomo_process_owns_tcp_listener, FixedOutput,
         LinuxMihomoFailOpenPlatform, LinuxRouterPlatform, Tool, NETWORK_LOCK,
     },
-    proxy::mihomo_tun_ifindex,
+    proxy::{mihomo_tun_ifindex, read_tun_firewall_context},
     storage,
 };
 use crate::{
@@ -17,15 +17,16 @@ use crate::{
     domain::{
         device_policy::LanDeviceMac,
         network::{
-            NetworkAction, NetworkObserved, OwnedResource, Probe, LAN_ADDRESS, LAN_BRIDGE,
-            LAN_MEMBER, ROUTER_FILTER_CHAIN, ROUTER_NAT_CHAIN, WAN_INTERFACE,
+            NetworkAction, NetworkObserved, OwnedResource, Probe, RouterWanSet,
+            ETHERNET_LAN_INTERFACE, LAN_ADDRESS, LAN_BRIDGE, LAN_MEMBER, ROUTER_FILTER_CHAIN,
+            ROUTER_INPUT_CHAIN, ROUTER_NAT_CHAIN, WAN_INTERFACE,
         },
         proxy::{
             ProxyAction, ProxyFeaturesV1, ProxyObserved, MIHOMO_FILTER_CHAIN, MIHOMO_MANGLE_CHAIN,
             MIHOMO_MARK, MIHOMO_MIXED_ADDRESS, MIHOMO_ROUTE_TABLE, MIHOMO_RULE_PRIORITY,
             MIHOMO_TUN_INTERFACE,
         },
-        tailscale::TAILSCALE_FORWARD_CHAIN,
+        tailscale::{TAILSCALE_FORWARD_CHAIN, TAILSCALE_INPUT_CHAIN},
     },
 };
 use std::{
@@ -141,17 +142,11 @@ impl SystemProbePort for LinuxRouterPlatform {
             self.ip_output(&["-o", "-4", "address", "show", "dev", LAN_BRIDGE])
                 .map(|output| output.split_whitespace().any(|field| field == LAN_ADDRESS))
         };
-        let ap_attached = match fs::read_link(format!("/sys/class/net/{LAN_MEMBER}/master")) {
-            Ok(master) => {
-                Probe::Known(master.file_name().and_then(|name| name.to_str()) == Some(LAN_BRIDGE))
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Probe::Known(false),
-            Err(error) => Probe::Unknown(format!("read AP bridge master: {error}")),
-        };
-        let wan_default_route_present = match self.owned_sta_address_and_route_ready() {
-            Ok(ready) => Probe::Known(ready),
-            Err(error) => Probe::Unknown(error.to_string()),
-        };
+        let ap_attached = observe_bridge_member(LAN_MEMBER, LAN_BRIDGE);
+        let ethernet_lan_attached = observe_bridge_member(ETHERNET_LAN_INTERFACE, LAN_BRIDGE);
+        let ethernet_uplink =
+            self.observe_dhcp_uplink(crate::application::dhcp::DhcpUplink::Ethernet);
+        let wifi_uplink = self.observe_dhcp_uplink(crate::application::dhcp::DhcpUplink::Wifi);
         let ipv4_forwarding =
             read_trimmed("/proc/sys/net/ipv4/ip_forward").and_then(|value| match value.as_str() {
                 "0" => Probe::Known(false),
@@ -168,19 +163,23 @@ impl SystemProbePort for LinuxRouterPlatform {
                 },
                 Err(error) => Probe::Unknown(error.to_string()),
             };
+        let (router_firewall, firewall_wan_set) = self.observe_router_firewall_state();
         Ok(NetworkObserved {
             bridge,
             bridge_up,
             lan_address_present,
             ap_attached,
+            ethernet_lan_attached,
             management_services_healthy: match self.management_services_ready() {
                 Ok(ready) => Probe::Known(ready),
                 Err(error) => Probe::Unknown(error.to_string()),
             },
-            wan_default_route_present,
+            ethernet_uplink,
+            wifi_uplink,
             ipv4_forwarding,
             previous_ipv4_forwarding,
-            router_firewall: self.observe_router_firewall(),
+            router_firewall,
+            firewall_wan_set,
         })
     }
 
@@ -227,6 +226,22 @@ impl SystemProbePort for LinuxRouterPlatform {
             };
         let tun_interface = self.observe_mihomo_tun_interface();
         let tun_firewall = self.observe_tun_firewall();
+        let tun_active_uplink = match &tun_firewall {
+            Probe::Known(OwnedResource::Owned { token }) => match read_tun_firewall_context() {
+                Ok(Some(context)) if context.token == *token => {
+                    Probe::Known(Some(crate::domain::network::ActiveUplinkObserved::new(
+                        context.uplink,
+                        context.gateway,
+                    )))
+                }
+                Ok(Some(_)) => Probe::Known(None),
+                Ok(None) => Probe::Known(None),
+                Err(error) => Probe::Unknown(error.to_string()),
+            },
+            Probe::Known(OwnedResource::Absent) => Probe::Known(None),
+            Probe::Known(OwnedResource::Foreign) => Probe::Known(None),
+            Probe::Unknown(reason) => Probe::Unknown(reason.clone()),
+        };
         let policy_rule_present = self
             .ip_output(&["-4", "rule", "show"])
             .and_then(|output| policy_rule_probe(&output));
@@ -318,12 +333,23 @@ impl SystemProbePort for LinuxRouterPlatform {
             mixed_port_ready,
             tun_interface,
             tun_firewall,
+            tun_active_uplink,
             policy_rule_present,
             policy_route_present,
             interception_entry_present,
             ordinary_nat_confirmed,
             active_direct_macs,
         })
+    }
+}
+
+fn observe_bridge_member(interface: &str, bridge: &str) -> Probe<bool> {
+    match fs::read_link(format!("/sys/class/net/{interface}/master")) {
+        Ok(master) => {
+            Probe::Known(master.file_name().and_then(|name| name.to_str()) == Some(bridge))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Probe::Known(false),
+        Err(error) => Probe::Unknown(format!("read {interface} bridge master: {error}")),
     }
 }
 
@@ -569,59 +595,152 @@ impl LinuxRouterPlatform {
     }
 
     fn observe_router_firewall(&self) -> Probe<OwnedResource> {
-        let filter = self.observe_owned_chain(
-            "filter",
-            ROUTER_FILTER_CHAIN,
-            storage::ROUTER_FIREWALL_OWNER,
-            "hyz-router-owner:",
-        );
-        let nat = self.observe_owned_chain(
-            "nat",
-            ROUTER_NAT_CHAIN,
-            storage::ROUTER_FIREWALL_OWNER,
-            "hyz-router-owner:",
-        );
-        match (filter, nat) {
-            (Probe::Known(OwnedResource::Absent), Probe::Known(OwnedResource::Absent)) => {
-                Probe::Known(OwnedResource::Absent)
+        self.observe_router_firewall_state().0
+    }
+
+    fn observe_router_firewall_state(&self) -> (Probe<OwnedResource>, Probe<Option<RouterWanSet>>) {
+        let marker = match storage::read_private_small_optional(storage::ROUTER_FIREWALL_OWNER, 128)
+        {
+            Ok(marker) => marker,
+            Err(error) => {
+                let reason = error.to_string();
+                return (Probe::Unknown(reason.clone()), Probe::Unknown(reason));
             }
-            (
-                Probe::Known(OwnedResource::Owned { token: left }),
-                Probe::Known(OwnedResource::Owned { token: right }),
-            ) if left == right => {
-                let filter_hook =
-                    self.observe_hook("filter", "FORWARD", left.as_str(), ROUTER_FILTER_CHAIN);
-                let nat_hook =
-                    self.observe_hook("nat", "POSTROUTING", left.as_str(), ROUTER_NAT_CHAIN);
-                match (filter_hook, nat_hook) {
-                    (Probe::Known(true), Probe::Known(true)) => {
-                        match self.observe_router_hook_order() {
-                            Probe::Known(true) => {
-                                Probe::Known(OwnedResource::Owned { token: left })
-                            }
-                            Probe::Known(false) => Probe::Known(OwnedResource::Foreign),
-                            Probe::Unknown(reason) => Probe::Unknown(reason),
-                        }
-                    }
-                    (Probe::Unknown(reason), _) | (_, Probe::Unknown(reason)) => {
-                        Probe::Unknown(reason)
-                    }
-                    _ => Probe::Known(OwnedResource::Foreign),
-                }
+        };
+        let chains = [
+            ("filter", ROUTER_INPUT_CHAIN),
+            ("filter", ROUTER_FILTER_CHAIN),
+            ("nat", ROUTER_NAT_CHAIN),
+        ]
+        .into_iter()
+        .map(|(table, chain)| {
+            self.run_probe(Tool::Iptables, &strings(&["-w", "-t", table, "-S", chain]))
+        })
+        .collect::<Result<Vec<_>, _>>();
+        let chains = match chains {
+            Ok(chains) => chains,
+            Err(error) => {
+                let reason = error.to_string();
+                return (Probe::Unknown(reason.clone()), Probe::Unknown(reason));
             }
-            (Probe::Unknown(reason), _) | (_, Probe::Unknown(reason)) => Probe::Unknown(reason),
-            _ => Probe::Known(OwnedResource::Foreign),
+        };
+        if chains.iter().all(|output| {
+            !output.success && output.stderr.contains("No chain/target/match by that name")
+        }) && marker.is_none()
+        {
+            return (Probe::Known(OwnedResource::Absent), Probe::Known(None));
+        }
+        let Some(token) = marker else {
+            return (
+                Probe::Known(OwnedResource::Foreign),
+                Probe::Unknown("router firewall marker is absent".to_owned()),
+            );
+        };
+        let token = token.trim();
+        if storage::validate_token(token).is_err() || chains.iter().any(|output| !output.success) {
+            return (
+                Probe::Known(OwnedResource::Foreign),
+                Probe::Unknown("router firewall chains are incomplete or unowned".to_owned()),
+            );
+        }
+        let input = &chains[0].stdout;
+        let filter = &chains[1].stdout;
+        let nat = &chains[2].stdout;
+        let expected_set = RouterWanSet::ALL.into_iter().find(|wan_set| {
+            chain_output_is_exact(
+                input,
+                ROUTER_INPUT_CHAIN,
+                &expected_router_chain_rules(ROUTER_INPUT_CHAIN, token, *wan_set),
+            ) && chain_output_is_exact(
+                filter,
+                ROUTER_FILTER_CHAIN,
+                &expected_router_chain_rules(ROUTER_FILTER_CHAIN, token, *wan_set),
+            ) && chain_output_is_exact(
+                nat,
+                ROUTER_NAT_CHAIN,
+                &expected_router_chain_rules(ROUTER_NAT_CHAIN, token, *wan_set),
+            )
+        });
+        let Some(wan_set) = expected_set else {
+            return (
+                Probe::Known(OwnedResource::Foreign),
+                Probe::Unknown("router firewall chain bodies are not exact".to_owned()),
+            );
+        };
+        let input_hook = self.observe_hook("filter", "INPUT", token, ROUTER_INPUT_CHAIN);
+        let filter_hook = self.observe_hook("filter", "FORWARD", token, ROUTER_FILTER_CHAIN);
+        let nat_hook = self.observe_hook("nat", "POSTROUTING", token, ROUTER_NAT_CHAIN);
+        match (
+            input_hook,
+            filter_hook,
+            nat_hook,
+            self.observe_router_hook_order(),
+        ) {
+            (Probe::Known(true), Probe::Known(true), Probe::Known(true), Probe::Known(true)) => (
+                Probe::Known(OwnedResource::Owned {
+                    token: token.to_owned(),
+                }),
+                Probe::Known(Some(wan_set)),
+            ),
+            (Probe::Unknown(reason), _, _, _)
+            | (_, Probe::Unknown(reason), _, _)
+            | (_, _, Probe::Unknown(reason), _)
+            | (_, _, _, Probe::Unknown(reason)) => {
+                (Probe::Unknown(reason.clone()), Probe::Unknown(reason))
+            }
+            _ => (
+                Probe::Known(OwnedResource::Foreign),
+                Probe::Unknown("router firewall hooks are not exact".to_owned()),
+            ),
+        }
+    }
+
+    pub(crate) fn observe_router_wan_set(
+        &self,
+        token: &str,
+    ) -> Result<RouterWanSet, PlatformError> {
+        match self.observe_router_firewall_state() {
+            (Probe::Known(OwnedResource::Owned { token: owned }), Probe::Known(Some(wan_set)))
+                if owned == token =>
+            {
+                Ok(wan_set)
+            }
+            (Probe::Known(OwnedResource::Owned { .. }), _) => Err(PlatformError::Conflict(
+                "router firewall ownership token changed before removal".to_owned(),
+            )),
+            (Probe::Unknown(reason), _) | (_, Probe::Unknown(reason)) => {
+                Err(PlatformError::ProbeFailed(reason))
+            }
+            _ => Err(PlatformError::Conflict(
+                "router firewall is not exactly owned".to_owned(),
+            )),
         }
     }
 
     fn observe_router_hook_order(&self) -> Probe<bool> {
         let forward = self.observe_shared_forward_hook_order();
         let nat = self.iptables_output(&["-w", "-t", "nat", "-S", "POSTROUTING"]);
-        match (forward, nat) {
-            (Probe::Known(forward), Probe::Known(nat)) => {
-                Probe::Known(forward && owned_jump_is_first(&nat, "POSTROUTING", ROUTER_NAT_CHAIN))
+        let input = self.iptables_output(&["-w", "-t", "filter", "-S", "INPUT"]);
+        match (forward, nat, input) {
+            (Probe::Known(forward), Probe::Known(nat), Probe::Known(input)) => {
+                let tailscale = owned_hook_is_exact(
+                    &input,
+                    "INPUT",
+                    storage::TAILSCALE_FIREWALL_OWNER,
+                    TAILSCALE_INPUT_CHAIN,
+                );
+                match tailscale {
+                    Ok(tailscale) => Probe::Known(
+                        forward
+                            && owned_jump_is_first(&nat, "POSTROUTING", ROUTER_NAT_CHAIN)
+                            && input_hook_order_is_exact(&input, tailscale, true),
+                    ),
+                    Err(error) => Probe::Unknown(error.to_string()),
+                }
             }
-            (Probe::Unknown(reason), _) | (_, Probe::Unknown(reason)) => Probe::Unknown(reason),
+            (Probe::Unknown(reason), _, _)
+            | (_, Probe::Unknown(reason), _)
+            | (_, _, Probe::Unknown(reason)) => Probe::Unknown(reason),
         }
     }
 
@@ -712,17 +831,13 @@ impl LinuxRouterPlatform {
             return Probe::Known(OwnedResource::Foreign);
         }
         let gateway = if chain == MIHOMO_MANGLE_CHAIN {
-            match self.ip_output(&["-4", "route", "show", "default", "dev", WAN_INTERFACE]) {
-                Probe::Known(output) => match exact_default_gateway(&output) {
-                    Some(gateway) => Some(gateway.to_owned()),
-                    None => {
-                        return Probe::Unknown(
-                            "wlan0 default gateway is not exactly and uniquely identifiable"
-                                .to_owned(),
-                        )
-                    }
-                },
-                Probe::Unknown(reason) => return Probe::Unknown(reason),
+            match read_tun_firewall_context() {
+                Ok(Some(context)) if context.token == token => Some(context.gateway.to_string()),
+                Ok(Some(_)) => return Probe::Known(OwnedResource::Foreign),
+                Ok(None) => {
+                    return Probe::Unknown("Mihomo TUN gateway sidecar is absent".to_owned())
+                }
+                Err(error) => return Probe::Unknown(error.to_string()),
             }
         } else {
             None
@@ -790,6 +905,110 @@ pub(crate) fn expected_interception_rule(token: &str) -> Vec<String> {
     ])
 }
 
+pub(crate) fn expected_router_chain_rules(
+    chain: &str,
+    token: &str,
+    wan_set: RouterWanSet,
+) -> Vec<Vec<String>> {
+    let mut rules = Vec::new();
+    let mut push = |body: &[&str]| {
+        let mut rule = words(&["-A", chain]);
+        rule.extend(words(body));
+        rules.push(rule);
+    };
+    match chain {
+        ROUTER_INPUT_CHAIN => {
+            push(&["-m", "comment", "--comment", token]);
+            for interface in [
+                crate::domain::network::ETHERNET_WAN_INTERFACE,
+                WAN_INTERFACE,
+            ] {
+                push(&[
+                    "-i", interface, "-p", "udp", "-m", "udp", "--sport", "67", "--dport", "68",
+                    "-j", "ACCEPT",
+                ]);
+                push(&[
+                    "-i",
+                    interface,
+                    "-m",
+                    "conntrack",
+                    "--ctstate",
+                    "RELATED,ESTABLISHED",
+                    "-j",
+                    "ACCEPT",
+                ]);
+                push(&["-i", interface, "-j", "DROP"]);
+            }
+            push(&["-j", "RETURN"]);
+        }
+        ROUTER_FILTER_CHAIN => {
+            push(&["-m", "comment", "--comment", token]);
+            for interface in [
+                crate::domain::network::ETHERNET_WAN_INTERFACE,
+                WAN_INTERFACE,
+            ] {
+                if wan_set.interfaces().contains(&interface) {
+                    push(&[
+                        "-s",
+                        crate::domain::network::LAN_SUBNET,
+                        "-i",
+                        LAN_BRIDGE,
+                        "-o",
+                        interface,
+                        "-m",
+                        "conntrack",
+                        "--ctstate",
+                        "NEW,RELATED,ESTABLISHED",
+                        "-j",
+                        "ACCEPT",
+                    ]);
+                    push(&[
+                        "-d",
+                        crate::domain::network::LAN_SUBNET,
+                        "-i",
+                        interface,
+                        "-o",
+                        LAN_BRIDGE,
+                        "-m",
+                        "conntrack",
+                        "--ctstate",
+                        "RELATED,ESTABLISHED",
+                        "-j",
+                        "ACCEPT",
+                    ]);
+                } else {
+                    push(&["-i", LAN_BRIDGE, "-o", interface, "-j", "DROP"]);
+                    push(&["-i", interface, "-o", LAN_BRIDGE, "-j", "DROP"]);
+                }
+            }
+            push(&["-i", LAN_BRIDGE, "-j", "DROP"]);
+        }
+        ROUTER_NAT_CHAIN => {
+            push(&["-m", "comment", "--comment", token]);
+            for interface in [
+                crate::domain::network::ETHERNET_WAN_INTERFACE,
+                WAN_INTERFACE,
+            ] {
+                if wan_set.interfaces().contains(&interface) {
+                    push(&[
+                        "-s",
+                        crate::domain::network::LAN_SUBNET,
+                        "-o",
+                        interface,
+                        "-j",
+                        "MASQUERADE",
+                    ]);
+                } else {
+                    push(&["-o", interface, "-j", "RETURN"]);
+                }
+            }
+        }
+        _ => {}
+    }
+    rules
+}
+
+#[cfg(test)]
 pub(crate) fn expected_chain_rules(
     chain: &str,
     token: &str,
@@ -1129,9 +1348,18 @@ pub(crate) fn owned_forward_hook_is_exact(
     marker_path: &str,
     chain: &str,
 ) -> Result<bool, PlatformError> {
+    owned_hook_is_exact(output, "FORWARD", marker_path, chain)
+}
+
+pub(crate) fn owned_hook_is_exact(
+    output: &str,
+    parent: &str,
+    marker_path: &str,
+    chain: &str,
+) -> Result<bool, PlatformError> {
     let marker = storage::read_private_small_optional(marker_path, 128)?;
     let references = exact_chain_references(output, chain).ok_or_else(|| {
-        PlatformError::ProbeFailed(format!("cannot parse {chain} FORWARD references"))
+        PlatformError::ProbeFailed(format!("cannot parse {chain} {parent} references"))
     })?;
     match marker {
         Some(token) => {
@@ -1139,7 +1367,7 @@ pub(crate) fn owned_forward_hook_is_exact(
             storage::validate_token(token)?;
             let expected = words(&[
                 "-A",
-                "FORWARD",
+                parent,
                 "-m",
                 "comment",
                 "--comment",
@@ -1149,14 +1377,14 @@ pub(crate) fn owned_forward_hook_is_exact(
             ]);
             if references != [expected] {
                 return Err(PlatformError::Conflict(format!(
-                    "{chain} FORWARD hook is not exact and unique"
+                    "{chain} {parent} hook is not exact and unique"
                 )));
             }
             Ok(true)
         }
         None if references.is_empty() => Ok(false),
         None => Err(PlatformError::Conflict(format!(
-            "unowned {chain} FORWARD references are present"
+            "unowned {chain} {parent} references are present"
         ))),
     }
 }
@@ -1182,6 +1410,41 @@ pub fn forward_hook_order_is_exact(
         (mihomo_present, MIHOMO_FILTER_CHAIN),
         (tailscale_present, TAILSCALE_FORWARD_CHAIN),
         (router_present, ROUTER_FILTER_CHAIN),
+    ] {
+        let positions = rules
+            .iter()
+            .enumerate()
+            .filter(|(_, rule)| rule.windows(2).any(|pair| pair == ["-j", chain]))
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        let wanted = expected.iter().position(|expected| *expected == chain);
+        match wanted {
+            Some(position) if positions == [position] => {}
+            None if positions.is_empty() => {}
+            _ => return false,
+        }
+    }
+    true
+}
+
+pub fn input_hook_order_is_exact(
+    output: &str,
+    tailscale_present: bool,
+    router_present: bool,
+) -> bool {
+    let Some(rules) = normalized_chain_rules(output, "INPUT") else {
+        return false;
+    };
+    let expected = [
+        (tailscale_present, TAILSCALE_INPUT_CHAIN),
+        (router_present, ROUTER_INPUT_CHAIN),
+    ]
+    .into_iter()
+    .filter_map(|(present, chain)| present.then_some(chain))
+    .collect::<Vec<_>>();
+    for (_, chain) in [
+        (tailscale_present, TAILSCALE_INPUT_CHAIN),
+        (router_present, ROUTER_INPUT_CHAIN),
     ] {
         let positions = rules
             .iter()
@@ -1383,6 +1646,74 @@ mod tests {
             "-A FORWARD -j HYZ_MIHOMO_FWD\n-A FORWARD -j HYZ_TS_FWD\n-A FORWARD -j HYZ_TS_FWD\n-A FORWARD -j HYZ_ROUTER_FWD\n",
         ] {
             assert!(!forward_hook_order_is_exact(invalid, true, true, true));
+        }
+    }
+
+    #[test]
+    fn dual_wan_router_chains_authorize_only_the_exact_ready_set_and_drop_wan_input() {
+        let token = "hyz-router-00000000-0000-0000-0000-000000000000";
+        let wifi = expected_router_chain_rules(ROUTER_FILTER_CHAIN, token, RouterWanSet::Wifi);
+        assert!(wifi.iter().any(|rule| {
+            rule == &words(&[
+                "-A",
+                ROUTER_FILTER_CHAIN,
+                "-i",
+                LAN_BRIDGE,
+                "-o",
+                crate::domain::network::ETHERNET_WAN_INTERFACE,
+                "-j",
+                "DROP",
+            ])
+        }));
+        assert!(!wifi.iter().any(|rule| {
+            rule.windows(2)
+                .any(|pair| pair == ["-o", crate::domain::network::ETHERNET_WAN_INTERFACE])
+                && rule.iter().any(|word| word == "ACCEPT")
+        }));
+        let wifi_nat = expected_router_chain_rules(ROUTER_NAT_CHAIN, token, RouterWanSet::Wifi);
+        assert!(wifi_nat.iter().any(|rule| {
+            rule == &words(&[
+                "-A",
+                ROUTER_NAT_CHAIN,
+                "-o",
+                crate::domain::network::ETHERNET_WAN_INTERFACE,
+                "-j",
+                "RETURN",
+            ])
+        }));
+        let dual =
+            expected_router_chain_rules(ROUTER_FILTER_CHAIN, token, RouterWanSet::EthernetAndWifi);
+        assert!(dual.iter().any(|rule| {
+            rule.windows(2)
+                .any(|pair| pair == ["-o", crate::domain::network::ETHERNET_WAN_INTERFACE])
+                && rule.iter().any(|word| word == "ACCEPT")
+        }));
+        let input = expected_router_chain_rules(ROUTER_INPUT_CHAIN, token, RouterWanSet::Wifi);
+        for interface in [
+            crate::domain::network::ETHERNET_WAN_INTERFACE,
+            WAN_INTERFACE,
+        ] {
+            assert!(input.iter().any(|rule| {
+                rule == &words(&[
+                    "-A",
+                    ROUTER_INPUT_CHAIN,
+                    "-i",
+                    interface,
+                    "-p",
+                    "udp",
+                    "-m",
+                    "udp",
+                    "--sport",
+                    "67",
+                    "--dport",
+                    "68",
+                    "-j",
+                    "ACCEPT",
+                ])
+            }));
+            assert!(input.iter().any(|rule| {
+                rule == &words(&["-A", ROUTER_INPUT_CHAIN, "-i", interface, "-j", "DROP"])
+            }));
         }
     }
 

@@ -14,6 +14,7 @@ use std::{
 pub const BRIDGE_OWNER: &str = "/run/hyz-router/br-lan.owned";
 pub const ROUTER_FIREWALL_OWNER: &str = "/run/hyz-router/firewall.owned";
 pub const TUN_FIREWALL_OWNER: &str = "/run/hyz-mihomo/tun.owned";
+pub const TUN_FIREWALL_UPLINK: &str = "/run/hyz-mihomo/tun.uplink";
 pub const TAILSCALE_FIREWALL_OWNER: &str = super::paths::TAILSCALE_FIREWALL_OWNER;
 pub const TAILSCALE_SUBNET_FIREWALL_OWNER: &str = super::paths::TAILSCALE_SUBNET_FIREWALL_OWNER;
 pub const PREVIOUS_FORWARDING: &str = "/run/hyz-router/ip-forward.previous";
