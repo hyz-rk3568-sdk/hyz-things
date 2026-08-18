@@ -949,6 +949,105 @@ fn icon_rotate() -> Html {
     }
 }
 
+struct MediaSessionRegistration {
+    session: JsValue,
+    _handlers: Vec<Closure<dyn FnMut(JsValue)>>,
+}
+
+fn browser_media_session() -> Option<JsValue> {
+    let window = web_sys::window()?;
+    let navigator: JsValue = window.navigator().into();
+    Reflect::get(&navigator, &JsValue::from_str("mediaSession"))
+        .ok()
+        .filter(|value| !value.is_null() && !value.is_undefined())
+}
+
+fn media_session_set_action_handler(session: &JsValue, action: &str, handler: Option<&JsValue>) {
+    let Ok(value) = Reflect::get(session, &JsValue::from_str("setActionHandler")) else {
+        return;
+    };
+    let Ok(method) = value.dyn_into::<Function>() else {
+        return;
+    };
+    let callback = handler.cloned().unwrap_or(JsValue::NULL);
+    let _ = method.call2(session, &JsValue::from_str(action), &callback);
+}
+
+fn clear_media_session(session: &JsValue) {
+    let _ = Reflect::set(session, &JsValue::from_str("metadata"), &JsValue::NULL);
+    let _ = Reflect::set(
+        session,
+        &JsValue::from_str("playbackState"),
+        &JsValue::from_str("none"),
+    );
+    for action in ["play", "pause", "stop"] {
+        media_session_set_action_handler(session, action, None);
+    }
+}
+
+fn media_metadata_value() -> JsValue {
+    let init = js_sys::Object::new();
+    let _ = Reflect::set(
+        &init,
+        &JsValue::from_str("title"),
+        &JsValue::from_str("摄像头直播"),
+    );
+    let _ = Reflect::set(
+        &init,
+        &JsValue::from_str("artist"),
+        &JsValue::from_str("hyz things"),
+    );
+
+    let constructed = web_sys::window()
+        .and_then(|window| Reflect::get(window.as_ref(), &JsValue::from_str("MediaMetadata")).ok())
+        .and_then(|value| value.dyn_into::<Function>().ok())
+        .and_then(|constructor| Reflect::construct(&constructor, &js_sys::Array::of1(&init)).ok());
+    constructed.unwrap_or_else(|| init.into())
+}
+
+fn install_media_session(
+    paused: bool,
+    on_play: Rc<dyn Fn()>,
+    on_pause: Rc<dyn Fn()>,
+    on_stop: Rc<dyn Fn()>,
+) -> Option<MediaSessionRegistration> {
+    let session = browser_media_session()?;
+    let metadata = media_metadata_value();
+    let _ = Reflect::set(&session, &JsValue::from_str("metadata"), &metadata);
+    let _ = Reflect::set(
+        &session,
+        &JsValue::from_str("playbackState"),
+        &JsValue::from_str(if paused { "paused" } else { "playing" }),
+    );
+
+    let play_handler = {
+        let on_play = on_play.clone();
+        Closure::<dyn FnMut(JsValue)>::new(move |_| {
+            if paused {
+                on_play();
+            }
+        })
+    };
+    let pause_handler = {
+        let on_pause = on_pause.clone();
+        Closure::<dyn FnMut(JsValue)>::new(move |_| {
+            if !paused {
+                on_pause();
+            }
+        })
+    };
+    let stop_handler = Closure::<dyn FnMut(JsValue)>::new(move |_| on_stop());
+    let handlers = vec![play_handler, pause_handler, stop_handler];
+    for (action, handler) in ["play", "pause", "stop"].into_iter().zip(handlers.iter()) {
+        media_session_set_action_handler(&session, action, Some(handler.as_ref()));
+    }
+
+    Some(MediaSessionRegistration {
+        session,
+        _handlers: handlers,
+    })
+}
+
 fn picture_in_picture_method(target: &JsValue, name: &str) -> Option<Function> {
     Reflect::get(target, &JsValue::from_str(name))
         .ok()
@@ -968,6 +1067,11 @@ fn picture_in_picture_supported(video: &HtmlVideoElement) -> bool {
         })
         .and_then(|value| value.as_bool())
         .unwrap_or(false)
+}
+
+fn picture_in_picture_ready(video: &HtmlVideoElement) -> bool {
+    // HAVE_FUTURE_DATA：视频至少已经有可播放的媒体数据，避免在 WebRTC 首帧到达前调用 PiP。
+    video.ready_state() >= 3
 }
 
 fn picture_in_picture_active(video: &HtmlVideoElement) -> bool {
@@ -1173,6 +1277,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     let paused = use_state(|| false);
     let talk_active = use_state(|| false);
     let pip_supported = use_state(|| false);
+    let pip_ready = use_state(|| false);
     let pip_active = use_state(|| false);
     let runtime = use_mut_ref(|| None::<CameraSessionRuntime>);
     let generation = use_mut_ref(|| 0u64);
@@ -1186,14 +1291,16 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     {
         let video = video.clone();
         let pip_supported = pip_supported.clone();
+        let pip_ready = pip_ready.clone();
         let pip_active = pip_active.clone();
         use_effect_with((), move |_| {
             let video_element = video.cast::<HtmlVideoElement>();
-            pip_supported.set(
-                video_element
-                    .as_ref()
-                    .is_some_and(picture_in_picture_supported),
-            );
+            let supported = video_element
+                .as_ref()
+                .is_some_and(picture_in_picture_supported);
+            pip_supported.set(supported);
+            pip_ready
+                .set(supported && video_element.as_ref().is_some_and(picture_in_picture_ready));
             let entered = {
                 let pip_active = pip_active.clone();
                 Closure::<dyn FnMut(Event)>::new(move |_| pip_active.set(true))
@@ -1201,6 +1308,17 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
             let left = {
                 let pip_active = pip_active.clone();
                 Closure::<dyn FnMut(Event)>::new(move |_| pip_active.set(false))
+            };
+            let ready = {
+                let pip_ready = pip_ready.clone();
+                let video_element = video_element.clone();
+                Closure::<dyn FnMut(Event)>::new(move |_| {
+                    pip_ready.set(video_element.as_ref().is_some_and(picture_in_picture_ready));
+                })
+            };
+            let reset = {
+                let pip_ready = pip_ready.clone();
+                Closure::<dyn FnMut(Event)>::new(move |_| pip_ready.set(false))
             };
             if let Some(video_element) = video_element.as_ref() {
                 let _ = video_element.add_event_listener_with_callback(
@@ -1215,6 +1333,18 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                     "webkitpresentationmodechanged",
                     left.as_ref().unchecked_ref(),
                 );
+                for event_name in ["loadedmetadata", "canplay", "playing"] {
+                    let _ = video_element.add_event_listener_with_callback(
+                        event_name,
+                        ready.as_ref().unchecked_ref(),
+                    );
+                }
+                for event_name in ["loadstart", "emptied"] {
+                    let _ = video_element.add_event_listener_with_callback(
+                        event_name,
+                        reset.as_ref().unchecked_ref(),
+                    );
+                }
             }
             move || {
                 if let Some(video_element) = video_element.as_ref() {
@@ -1230,7 +1360,20 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                         "webkitpresentationmodechanged",
                         left.as_ref().unchecked_ref(),
                     );
+                    for event_name in ["loadedmetadata", "canplay", "playing"] {
+                        let _ = video_element.remove_event_listener_with_callback(
+                            event_name,
+                            ready.as_ref().unchecked_ref(),
+                        );
+                    }
+                    for event_name in ["loadstart", "emptied"] {
+                        let _ = video_element.remove_event_listener_with_callback(
+                            event_name,
+                            reset.as_ref().unchecked_ref(),
+                        );
+                    }
                 }
+                pip_ready.set(false);
             }
         });
     }
@@ -1643,7 +1786,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
         })
     };
 
-    let stop = {
+    let stop_action: Rc<dyn Fn()> = {
         let runtime = runtime.clone();
         let video = video.clone();
         let audio = audio.clone();
@@ -1651,13 +1794,17 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
         let paused = paused.clone();
         let notice = notice.clone();
         let generation = generation.clone();
-        Callback::from(move |_| {
+        Rc::new(move || {
             next_camera_generation(&generation);
             close_camera_runtime(&runtime, &video, &audio);
             phase.set(CameraViewPhase::Idle);
             paused.set(false);
             notice.set(Some("摄像头直播已停止".to_owned()));
         })
+    };
+    let stop = {
+        let stop_action = stop_action.clone();
+        Callback::from(move |_| stop_action())
     };
 
     let rotate = {
@@ -1802,12 +1949,12 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
         Callback::from(move |_| start.emit(()))
     };
 
-    let toggle_pause = {
+    let toggle_pause_action: Rc<dyn Fn()> = {
         let video = video.clone();
         let audio = audio.clone();
         let paused = paused.clone();
         let notice = notice.clone();
-        Callback::from(move |_| {
+        Rc::new(move || {
             let next_paused = !*paused;
             if let Some(video) = video.cast::<HtmlVideoElement>() {
                 if next_paused {
@@ -1831,6 +1978,32 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
             }));
         })
     };
+    let toggle_pause = {
+        let toggle_pause_action = toggle_pause_action.clone();
+        Callback::from(move |_| toggle_pause_action())
+    };
+
+    {
+        let toggle_pause_action = toggle_pause_action.clone();
+        let stop_action = stop_action.clone();
+        use_effect_with((*phase, *paused), move |(current_phase, current_paused)| {
+            let registration = if *current_phase == CameraViewPhase::Playing {
+                install_media_session(
+                    *current_paused,
+                    toggle_pause_action.clone(),
+                    toggle_pause_action.clone(),
+                    stop_action.clone(),
+                )
+            } else {
+                None
+            };
+            move || {
+                if let Some(registration) = registration {
+                    clear_media_session(&registration.session);
+                }
+            }
+        });
+    }
 
     let toggle_pip = {
         let video = video.clone();
@@ -1840,6 +2013,10 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
             let Some(video_element) = video.cast::<HtmlVideoElement>() else {
                 return;
             };
+            if !picture_in_picture_ready(&video_element) {
+                notice.set(Some("画面正在准备，请稍后再试".to_owned()));
+                return;
+            }
             let was_active = picture_in_picture_active(&video_element);
             let operation = if was_active {
                 picture_in_picture_exit(&video_element)
@@ -2046,7 +2223,14 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                                 </button>
                             }
                             if *pip_supported {
-                                <button class={classes!(CAMERA_CONTROL_BUTTON, (*pip_active).then_some(CAMERA_CONTROL_BUTTON_ACTIVE))} type="button" onclick={toggle_pip} aria-label={if *pip_active { "退出画中画" } else { "进入画中画" }} title={if *pip_active { "退出画中画" } else { "进入画中画" }}>
+                                <button
+                                    class={classes!(CAMERA_CONTROL_BUTTON, (*pip_active).then_some(CAMERA_CONTROL_BUTTON_ACTIVE), (!*pip_ready).then_some(CAMERA_CONTROL_BUTTON_DISABLED))}
+                                    type="button"
+                                    onclick={toggle_pip}
+                                    disabled={!*pip_ready || *phase != CameraViewPhase::Playing}
+                                    aria-label={if !*pip_ready { "画面准备中" } else if *pip_active { "退出画中画" } else { "进入画中画" }}
+                                    title={if !*pip_ready { "画面准备中" } else if *pip_active { "退出画中画" } else { "进入画中画" }}
+                                >
                                     {icon_picture_in_picture()}
                                 </button>
                             }

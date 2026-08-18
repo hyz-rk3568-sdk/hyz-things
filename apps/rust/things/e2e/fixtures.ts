@@ -33,6 +33,48 @@ export async function installCameraWebRtcMock(page: Page) {
   await page.addInitScript(() => {
     const transceivers: string[] = [];
     const replaceTrackCalls: { kind: string; hasTrack: boolean }[] = [];
+    const mediaSessionHandlers: Record<
+      string,
+      ((details?: unknown) => void) | null
+    > = {};
+    const mediaSession = {
+      metadata: null as { title?: string; artist?: string } | null,
+      playbackState: 'none',
+      handlers: mediaSessionHandlers,
+      setActionHandler(
+        action: string,
+        handler: ((details?: unknown) => void) | null,
+      ) {
+        mediaSessionHandlers[action] = handler;
+      },
+    };
+    Object.defineProperty(navigator, 'mediaSession', {
+      configurable: true,
+      value: mediaSession,
+    });
+
+    let pictureInPictureElement: HTMLVideoElement | null = null;
+    Object.defineProperty(HTMLVideoElement.prototype, 'requestPictureInPicture', {
+      configurable: true,
+      value: function (this: HTMLVideoElement) {
+        pictureInPictureElement = this;
+        this.dispatchEvent(new Event('enterpictureinpicture'));
+        return Promise.resolve(this);
+      },
+    });
+    Object.defineProperty(document, 'pictureInPictureElement', {
+      configurable: true,
+      get: () => pictureInPictureElement,
+    });
+    Object.defineProperty(document, 'exitPictureInPicture', {
+      configurable: true,
+      value: () => {
+        const current = pictureInPictureElement;
+        pictureInPictureElement = null;
+        current?.dispatchEvent(new Event('leavepictureinpicture'));
+        return Promise.resolve();
+      },
+    });
 
     class CameraPeerConnectionMock {
       iceGatheringState = 'complete';
@@ -104,6 +146,16 @@ export async function installCameraWebRtcMock(page: Page) {
     (window as any).__hyzCameraRtcFail = () => peers.at(-1)?.fail();
     (window as any).__hyzCameraTransceivers = transceivers;
     (window as any).__hyzCameraReplaceTrackCalls = replaceTrackCalls;
+    (window as any).__hyzCameraMediaSession = mediaSession;
+    (window as any).__hyzCameraSetVideoReady = (ready: boolean) => {
+      const video = document.querySelector('video');
+      if (!(video instanceof HTMLVideoElement)) return;
+      Object.defineProperty(video, 'readyState', {
+        configurable: true,
+        value: ready ? 3 : 0,
+      });
+      video.dispatchEvent(new Event(ready ? 'canplay' : 'emptied'));
+    };
   });
 }
 

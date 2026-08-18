@@ -324,13 +324,86 @@ test("plays the camera anonymously and controls it as an administrator", async (
       activeSessions: 1,
       sessions: [harnessSessionId(1)],
     });
+
+  await expect
+    .poll(async () =>
+      page.evaluate(() => ({
+        playbackState: (window as any).__hyzCameraMediaSession.playbackState,
+        title: (window as any).__hyzCameraMediaSession.metadata?.title ?? null,
+      })),
+    )
+    .toEqual({ playbackState: "playing", title: "摄像头直播" });
+
+  // 视频尚未有可播放数据时，画中画按钮保留但置灰；首帧就绪后才允许点击。
+  await page.evaluate(() =>
+    (window as any).__hyzCameraSetVideoReady(false),
+  );
+  const pipButton = camera.getByRole("button", { name: "画面准备中" });
+  await expect(pipButton).toBeVisible();
+  await expect(pipButton).toBeDisabled();
+  await page.evaluate(() =>
+    (window as any).__hyzCameraSetVideoReady(true),
+  );
+  await expect(
+    camera.getByRole("button", { name: "进入画中画" }),
+  ).toBeEnabled();
+  await camera.getByRole("button", { name: "进入画中画" }).click();
+  await expect(
+    camera.getByRole("button", { name: "退出画中画" }),
+  ).toBeVisible();
+  await camera.getByRole("button", { name: "退出画中画" }).click();
+  await expect(
+    camera.getByRole("button", { name: "进入画中画" }),
+  ).toBeVisible();
+
+  const readMediaSession = () =>
+    page.evaluate(() => {
+      const mediaSession = (window as any).__hyzCameraMediaSession;
+      return {
+        playbackState: mediaSession.playbackState,
+        title: mediaSession.metadata?.title ?? null,
+        artist: mediaSession.metadata?.artist ?? null,
+        handlers: Object.fromEntries(
+          ["play", "pause", "stop"].map((action) => [
+            action,
+            typeof mediaSession.handlers[action] === "function",
+          ]),
+        ),
+      };
+    });
+
+  await expect.poll(readMediaSession).toEqual({
+    playbackState: "playing",
+    title: "摄像头直播",
+    artist: "hyz things",
+    handlers: { play: true, pause: true, stop: true },
+  });
   await expect(camera.getByRole("button", { name: "暂停直播" })).toBeVisible();
   await camera.getByRole("button", { name: "暂停直播" }).click();
   await expect(camera.getByRole("button", { name: "继续直播" })).toBeVisible();
   await expect(camera.getByText("直播已暂停", { exact: true })).toBeVisible();
+  await expect.poll(readMediaSession).toMatchObject({
+    playbackState: "paused",
+  });
   await camera.getByRole("button", { name: "继续直播" }).click();
   await expect(camera.getByRole("button", { name: "暂停直播" })).toBeVisible();
   await expect(camera.getByText("直播已继续", { exact: true })).toBeVisible();
+  await expect.poll(readMediaSession).toMatchObject({
+    playbackState: "playing",
+  });
+
+  // 锁屏媒体控制的标准播放/暂停操作复用页面直播控制。
+  await page.evaluate(() =>
+    (window as any).__hyzCameraMediaSession.handlers.pause?.(),
+  );
+  await expect(camera.getByText("直播已暂停", { exact: true })).toBeVisible();
+  await page.evaluate(() =>
+    (window as any).__hyzCameraMediaSession.handlers.play?.(),
+  );
+  await expect(camera.getByText("直播已继续", { exact: true })).toBeVisible();
+  await expect.poll(readMediaSession).toMatchObject({
+    playbackState: "playing",
+  });
   expect(
     await camera.locator("video").evaluate((video) => {
       const stream = (video as HTMLVideoElement).srcObject;
@@ -410,9 +483,15 @@ test("plays the camera anonymously and controls it as an administrator", async (
 
   await camera.getByRole("button", { name: "停止直播" }).click();
   await expect(camera.getByText("未播放", { exact: true })).toBeVisible();
-  await expect(
-    camera.getByRole("status").filter({ hasText: "摄像头直播已停止" }),
-  ).toBeVisible();
+  await expect(camera.getByRole("status").filter({ hasText: "摄像头直播已停止" })).toBeVisible();
+  await expect
+    .poll(readMediaSession)
+    .toEqual({
+      playbackState: "none",
+      title: null,
+      artist: null,
+      handlers: { play: false, pause: false, stop: false },
+    });
   await expect
     .poll(async () => {
       const state = await readHarnessState(request);

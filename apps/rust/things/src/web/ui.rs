@@ -102,6 +102,7 @@ pub const CAMERA_CONTROL_BUTTON: &str = "btn btn-circle btn-sm touch-none select
 pub const CAMERA_CONTROL_BUTTON_ACTIVE: &str =
     "bg-primary text-primary-content hover:bg-primary/90";
 pub const CAMERA_CONTROL_BUTTON_DANGER: &str = "bg-error text-error-content hover:bg-error/90";
+pub const CAMERA_CONTROL_BUTTON_DISABLED: &str = "cursor-not-allowed opacity-50";
 pub const CAMERA_ICON: &str = "size-5";
 pub const CAMERA_PLACEHOLDER: &str = "absolute inset-0 grid place-content-center place-items-center gap-3 bg-base-300 text-xs font-semibold text-base-content/60";
 pub const CAMERA_PLACEHOLDER_ICON: &str = "grid size-11 place-items-center rounded-full border border-primary/30 bg-primary/10 font-mono text-[0.6rem] font-black text-primary";
