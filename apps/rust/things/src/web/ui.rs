@@ -90,13 +90,19 @@ pub const CAMERA_CARD: &str =
     "card mb-5 gap-4 border border-base-content/10 bg-base-100/60 p-4 shadow-sm sm:p-5";
 pub const CAMERA_LAYOUT: &str = "grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2 lg:items-center";
 pub const CAMERA_COPY: &str = "grid min-w-0 gap-4";
+pub const CAMERA_MEDIA: &str = "min-w-0";
 pub const CAMERA_METRICS: &str = "grid grid-cols-1 gap-2 text-xs sm:grid-cols-2";
 pub const CAMERA_METRIC: &str = "grid grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-box border border-base-content/10 bg-base-200/50 px-3 py-2 text-base-content/65 [&_dd]:truncate [&_dd]:text-right [&_dd]:font-mono [&_dd]:font-semibold [&_dd]:text-base-content";
 pub const CAMERA_NOTICE: &str =
     "rounded-box border border-base-content/10 bg-base-200/50 px-3 py-2 text-xs text-base-content/70";
 pub const CAMERA_STAGE: &str = "relative min-w-0 overflow-hidden rounded-box border border-base-content/10 bg-black shadow-inner";
 pub const CAMERA_VIDEO: &str = "aspect-video block w-full bg-black object-contain";
-pub const CAMERA_ROTATE_BUTTON: &str = "btn btn-sm absolute right-3 top-3 z-10 border-white/20 bg-black/70 text-white shadow-lg hover:bg-black/85 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white";
+pub const CAMERA_CONTROLS: &str = "mt-3 flex flex-wrap items-center justify-center gap-2";
+pub const CAMERA_CONTROL_BUTTON: &str = "btn btn-circle btn-sm touch-none select-none border-base-content/15 bg-base-200/80 shadow-sm transition-colors hover:bg-base-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
+pub const CAMERA_CONTROL_BUTTON_ACTIVE: &str =
+    "bg-primary text-primary-content hover:bg-primary/90";
+pub const CAMERA_CONTROL_BUTTON_DANGER: &str = "bg-error text-error-content hover:bg-error/90";
+pub const CAMERA_ICON: &str = "size-5";
 pub const CAMERA_PLACEHOLDER: &str = "absolute inset-0 grid place-content-center place-items-center gap-3 bg-base-300 text-xs font-semibold text-base-content/60";
 pub const CAMERA_PLACEHOLDER_ICON: &str = "grid size-11 place-items-center rounded-full border border-primary/30 bg-primary/10 font-mono text-[0.6rem] font-black text-primary";
 

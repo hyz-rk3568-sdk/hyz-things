@@ -26,6 +26,7 @@ use hyz_things::domain::{
         TailscaleBackendState, TailscaleEnvironment, TailscaleMode, TailscalePeerSnapshot,
     },
 };
+use js_sys::{Function, Promise, Reflect};
 use wasm_bindgen::{closure::Closure, JsCast, JsValue};
 use wasm_bindgen_futures::{spawn_local, JsFuture};
 use web_sys::{
@@ -889,6 +890,143 @@ fn camera_error_label(error: CameraErrorCategory) -> &'static str {
     }
 }
 
+fn icon_play() -> Html {
+    html! {
+        <svg class={CAMERA_ICON} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M8 5.14v13.72a1 1 0 0 0 1.53.85l10.29-6.86a1 1 0 0 0 0-1.66L9.53 4.29A1 1 0 0 0 8 5.14Z" />
+        </svg>
+    }
+}
+
+fn icon_pause() -> Html {
+    html! {
+        <svg class={CAMERA_ICON} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <rect x="6" y="5" width="4" height="14" rx="1" />
+            <rect x="14" y="5" width="4" height="14" rx="1" />
+        </svg>
+    }
+}
+
+fn icon_stop() -> Html {
+    html! {
+        <svg class={CAMERA_ICON} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <rect x="5" y="5" width="14" height="14" rx="2" />
+        </svg>
+    }
+}
+
+fn icon_microphone(enabled: bool) -> Html {
+    html! {
+        <svg class={CAMERA_ICON} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="9" y="3" width="6" height="11" rx="3" />
+            <path d="M5 11a7 7 0 0 0 14 0" />
+            <path d="M12 18v3" />
+            <path d="M8 21h8" />
+            if !enabled {
+                <path d="m4 4 16 16" />
+            }
+        </svg>
+    }
+}
+
+fn icon_picture_in_picture() -> Html {
+    html! {
+        <svg class={CAMERA_ICON} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="5" width="18" height="14" rx="2" />
+            <path d="M13 13h6v4h-6z" />
+        </svg>
+    }
+}
+
+fn icon_rotate() -> Html {
+    html! {
+        <svg class={CAMERA_ICON} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20 11a8 8 0 0 0-14.9-3.9L3 10" />
+            <path d="M3 5v5h5" />
+            <path d="M4 13a8 8 0 0 0 14.9 3.9L21 14" />
+            <path d="M21 19v-5h-5" />
+        </svg>
+    }
+}
+
+fn picture_in_picture_method(target: &JsValue, name: &str) -> Option<Function> {
+    Reflect::get(target, &JsValue::from_str(name))
+        .ok()
+        .and_then(|value| value.dyn_into::<Function>().ok())
+}
+
+fn picture_in_picture_supported(video: &HtmlVideoElement) -> bool {
+    let target: JsValue = video.clone().into();
+    if picture_in_picture_method(&target, "requestPictureInPicture").is_some() {
+        return true;
+    }
+    picture_in_picture_method(&target, "webkitSupportsPresentationMode")
+        .and_then(|method| {
+            method
+                .call1(&target, &JsValue::from_str("picture-in-picture"))
+                .ok()
+        })
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+}
+
+fn picture_in_picture_active(video: &HtmlVideoElement) -> bool {
+    let target: JsValue = video.clone().into();
+    let standard_active = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| {
+            Reflect::get(
+                document.as_ref(),
+                &JsValue::from_str("pictureInPictureElement"),
+            )
+            .ok()
+        })
+        .is_some_and(|element| element == target);
+    let webkit_active = Reflect::get(&target, &JsValue::from_str("webkitPresentationMode"))
+        .ok()
+        .and_then(|value| value.as_string())
+        .is_some_and(|mode| mode == "picture-in-picture");
+    standard_active || webkit_active
+}
+
+fn picture_in_picture_request(video: &HtmlVideoElement) -> Result<JsValue, JsValue> {
+    let target: JsValue = video.clone().into();
+    if let Some(method) = picture_in_picture_method(&target, "requestPictureInPicture") {
+        return method.call0(&target);
+    }
+    if let Some(method) = picture_in_picture_method(&target, "webkitSetPresentationMode") {
+        method.call1(&target, &JsValue::from_str("picture-in-picture"))?;
+        return Ok(JsValue::UNDEFINED);
+    }
+    Err(JsValue::from_str("浏览器不支持画中画"))
+}
+
+fn picture_in_picture_exit(video: &HtmlVideoElement) -> Result<JsValue, JsValue> {
+    let target: JsValue = video.clone().into();
+    if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+        let document_value: JsValue = document.into();
+        if picture_in_picture_method(&document_value, "exitPictureInPicture").is_some() {
+            if let Some(method) = picture_in_picture_method(&document_value, "exitPictureInPicture")
+            {
+                return method.call0(&document_value);
+            }
+        }
+    }
+    if let Some(method) = picture_in_picture_method(&target, "webkitSetPresentationMode") {
+        method.call1(&target, &JsValue::from_str("inline"))?;
+        return Ok(JsValue::UNDEFINED);
+    }
+    Err(JsValue::from_str("无法退出画中画"))
+}
+
+async fn await_picture_in_picture(value: JsValue) -> Result<(), JsValue> {
+    if value.is_undefined() || value.is_null() {
+        return Ok(());
+    }
+    let promise: Promise = value.dyn_into()?;
+    JsFuture::from(promise).await.map(|_| ())
+}
+
 fn camera_js_error(context: &str, error: JsValue) -> String {
     let detail = error.as_string().unwrap_or_else(|| format!("{error:?}"));
     format!("{context}：{detail}")
@@ -1032,7 +1170,10 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     let status_error = use_state(|| None::<String>);
     let notice = use_state(|| None::<String>);
     let phase = use_state(|| CameraViewPhase::Idle);
+    let paused = use_state(|| false);
     let talk_active = use_state(|| false);
+    let pip_supported = use_state(|| false);
+    let pip_active = use_state(|| false);
     let runtime = use_mut_ref(|| None::<CameraSessionRuntime>);
     let generation = use_mut_ref(|| 0u64);
     // 页面隐藏时的延迟关闭计时器句柄（None 表示无待触发计时）。
@@ -1041,6 +1182,58 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     // 乐观旋转状态：点击后立即推进 0 → 270 → 180 → 90 → 0，不依赖 2s 轮询的
     // 延迟刷新，保证「旋转画面」每次点击都严格逆时针 90°。
     let rotation = use_mut_ref(|| None::<CameraRotation>);
+
+    {
+        let video = video.clone();
+        let pip_supported = pip_supported.clone();
+        let pip_active = pip_active.clone();
+        use_effect_with((), move |_| {
+            let video_element = video.cast::<HtmlVideoElement>();
+            pip_supported.set(
+                video_element
+                    .as_ref()
+                    .is_some_and(picture_in_picture_supported),
+            );
+            let entered = {
+                let pip_active = pip_active.clone();
+                Closure::<dyn FnMut(Event)>::new(move |_| pip_active.set(true))
+            };
+            let left = {
+                let pip_active = pip_active.clone();
+                Closure::<dyn FnMut(Event)>::new(move |_| pip_active.set(false))
+            };
+            if let Some(video_element) = video_element.as_ref() {
+                let _ = video_element.add_event_listener_with_callback(
+                    "enterpictureinpicture",
+                    entered.as_ref().unchecked_ref(),
+                );
+                let _ = video_element.add_event_listener_with_callback(
+                    "leavepictureinpicture",
+                    left.as_ref().unchecked_ref(),
+                );
+                let _ = video_element.add_event_listener_with_callback(
+                    "webkitpresentationmodechanged",
+                    left.as_ref().unchecked_ref(),
+                );
+            }
+            move || {
+                if let Some(video_element) = video_element.as_ref() {
+                    let _ = video_element.remove_event_listener_with_callback(
+                        "enterpictureinpicture",
+                        entered.as_ref().unchecked_ref(),
+                    );
+                    let _ = video_element.remove_event_listener_with_callback(
+                        "leavepictureinpicture",
+                        left.as_ref().unchecked_ref(),
+                    );
+                    let _ = video_element.remove_event_listener_with_callback(
+                        "webkitpresentationmodechanged",
+                        left.as_ref().unchecked_ref(),
+                    );
+                }
+            }
+        });
+    }
 
     {
         let status = status.clone();
@@ -1104,6 +1297,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
         let video = video.clone();
         let audio = audio.clone();
         let phase = phase.clone();
+        let paused = paused.clone();
         let notice = notice.clone();
         let generation = generation.clone();
         let hidden_timer = hidden_timer.clone();
@@ -1116,6 +1310,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                 next_camera_generation(&generation);
                 close_camera_runtime(&runtime, &video, &audio);
                 phase.set(CameraViewPhase::Idle);
+                paused.set(false);
                 notice.set(Some("摄像头直播已在退出登录前停止".to_owned()));
             }
             || ()
@@ -1152,6 +1347,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
             let hidden_phase = phase.clone();
             let hidden_notice = notice.clone();
             let hidden_generation = generation.clone();
+            let watched_video = video.clone();
             let hidden_timer = hidden_timer.clone();
             let cleanup_timer = hidden_timer.clone();
             let hidden_window = window.clone();
@@ -1161,6 +1357,13 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                     return;
                 };
                 if document.hidden() {
+                    if watched_video
+                        .cast::<HtmlVideoElement>()
+                        .is_some_and(|video| picture_in_picture_active(&video))
+                    {
+                        cancel_hidden_close_timer(&hidden_timer, hidden_window.as_ref());
+                        return;
+                    }
                     // 页面隐藏不立即关闭会话：启动宽限期计时，期间回来就取消
                     // （取消走下方 else 分支），超时才真正关闭。已有计时器在
                     // 跑就不重复启动，保证宽限窗口从「最近一次可见」起算。
@@ -1244,6 +1447,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
         let audio = audio.clone();
         let status = status.clone();
         let phase = phase.clone();
+        let paused = paused.clone();
         let notice = notice.clone();
         let runtime = runtime.clone();
         let generation = generation.clone();
@@ -1253,6 +1457,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                 return;
             }
             talk_active.set(false);
+            paused.set(false);
             close_camera_runtime(&runtime, &video, &audio);
             let attempt = next_camera_generation(&generation);
             // 音频能力来自 status：不支持时 offer 不带 audio m-line，保持 video-only。
@@ -1417,11 +1622,7 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                             && *timeout_phase == CameraViewPhase::Connecting
                         {
                             next_camera_generation(&timeout_generation);
-                            close_camera_runtime(
-                                &timeout_runtime,
-                                &timeout_video,
-                                &timeout_audio,
-                            );
+                            close_camera_runtime(&timeout_runtime, &timeout_video, &timeout_audio);
                             timeout_phase.set(CameraViewPhase::Idle);
                             timeout_notice.set(Some("摄像头 WebRTC 协商超时".to_owned()));
                         }
@@ -1447,12 +1648,14 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
         let video = video.clone();
         let audio = audio.clone();
         let phase = phase.clone();
+        let paused = paused.clone();
         let notice = notice.clone();
         let generation = generation.clone();
         Callback::from(move |_| {
             next_camera_generation(&generation);
             close_camera_runtime(&runtime, &video, &audio);
             phase.set(CameraViewPhase::Idle);
+            paused.set(false);
             notice.set(Some("摄像头直播已停止".to_owned()));
         })
     };
@@ -1599,10 +1802,76 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
         Callback::from(move |_| start.emit(()))
     };
 
-    // 全双工对讲：开启时 getUserMedia 采集麦克风并通过 replaceTrack 挂载到 audio
-    // transceiver；关闭时摘下并停止 track。设备音频回放始终随会话流动，说话时
-    // 由浏览器端 AEC（echoCancellation）消除回环。
-    let talk = {
+    let toggle_pause = {
+        let video = video.clone();
+        let audio = audio.clone();
+        let paused = paused.clone();
+        let notice = notice.clone();
+        Callback::from(move |_| {
+            let next_paused = !*paused;
+            if let Some(video) = video.cast::<HtmlVideoElement>() {
+                if next_paused {
+                    let _ = video.pause();
+                } else {
+                    play_media_ignoring_interruption(&video);
+                }
+            }
+            if let Some(audio) = audio.cast::<HtmlMediaElement>() {
+                if next_paused {
+                    let _ = audio.pause();
+                } else {
+                    play_media_ignoring_interruption(&audio);
+                }
+            }
+            paused.set(next_paused);
+            notice.set(Some(if next_paused {
+                "直播已暂停".to_owned()
+            } else {
+                "直播已继续".to_owned()
+            }));
+        })
+    };
+
+    let toggle_pip = {
+        let video = video.clone();
+        let pip_active = pip_active.clone();
+        let notice = notice.clone();
+        Callback::from(move |_| {
+            let Some(video_element) = video.cast::<HtmlVideoElement>() else {
+                return;
+            };
+            let was_active = picture_in_picture_active(&video_element);
+            let operation = if was_active {
+                picture_in_picture_exit(&video_element)
+            } else {
+                picture_in_picture_request(&video_element)
+            };
+            let pip_active = pip_active.clone();
+            let notice = notice.clone();
+            spawn_local(async move {
+                match operation {
+                    Ok(value) => {
+                        if await_picture_in_picture(value).await.is_ok() {
+                            pip_active.set(!was_active);
+                            notice.set(Some(if was_active {
+                                "已退出画中画".to_owned()
+                            } else {
+                                "已进入画中画".to_owned()
+                            }));
+                        } else {
+                            notice.set(Some("当前浏览器或视频源不支持画中画".to_owned()));
+                        }
+                    }
+                    Err(_) => {
+                        notice.set(Some("当前浏览器或视频源不支持画中画".to_owned()));
+                    }
+                }
+            });
+        })
+    };
+
+    // 全双工对讲：点击按钮切换麦克风轨道，保持当前会话与音频 transceiver 不变。
+    let toggle_talk = {
         let runtime = runtime.clone();
         let notice = notice.clone();
         let talk_active = talk_active.clone();
@@ -1617,8 +1886,8 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
             spawn_local(async move {
                 let result: Result<(), String> = async {
                     if next_active {
-                        let window = web_sys::window()
-                            .ok_or_else(|| "浏览器没有 window 对象".to_owned())?;
+                        let window =
+                            web_sys::window().ok_or_else(|| "浏览器没有 window 对象".to_owned())?;
                         let media_devices = window
                             .navigator()
                             .media_devices()
@@ -1651,7 +1920,6 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                         if let Some(active) = runtime.borrow_mut().as_mut() {
                             active.mic_track = Some(track);
                         }
-                        Ok(())
                     } else {
                         let (sender, track) = {
                             let mut active_ref = runtime.borrow_mut();
@@ -1666,15 +1934,15 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                         if let Some(track) = track {
                             track.stop();
                         }
-                        Ok(())
                     }
+                    Ok(())
                 }
                 .await;
                 match result {
                     Ok(()) => {
                         talk_active.set(next_active);
                         notice.set(Some(if next_active {
-                            "对讲已开启，请说话".to_owned()
+                            "对讲已开启".to_owned()
                         } else {
                             "对讲已关闭".to_owned()
                         }));
@@ -1736,39 +2004,59 @@ fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                     if let Some(error) = viewer_token_error.as_ref() {
                         <p class="text-xs text-error" role="status">{format!("观看凭证获取失败：{error}")}</p>
                     }
-                    <p class={HELP_TEXT}>{"视频不会自动启动。点击播放后，浏览器接收设备视频与麦克风音频；对讲需要显式点击「开启对讲」才会采集你的麦克风。离开页面后会话保留 1 分钟，期间回来继续播放，超过 1 分钟未回来才停止。画面设置需要管理员登录。"}</p>
-                    <div class={BUTTON_ROW}>
-                        if *phase == CameraViewPhase::Idle {
-                            <button class={BUTTON_PRIMARY} type="button" onclick={start_button} disabled={!camera_available || !can_view}>{"播放直播"}</button>
-                        } else {
-                            <button class={BUTTON_ERROR} type="button" onclick={stop}>{"停止直播"}</button>
-                            if audio_supported {
-                                if *talk_active {
-                                    <button class={BUTTON_PRIMARY} type="button" onclick={talk}>{"关闭对讲"}</button>
-                                } else {
-                                    <button class={BUTTON} type="button" onclick={talk}>{"开启对讲"}</button>
-                                }
-                            }
-                        }
-                    </div>
+                    <p class={HELP_TEXT}>{"视频不会自动启动。点击麦克风图标即可开启或关闭对讲；播放中可以暂停画面、停止会话或尝试进入画中画。离开页面后会话保留 1 分钟，期间回来继续播放，超过 1 分钟未回来才停止。画面设置需要管理员登录。"}</p>
                     if let Some(message) = notice.as_ref() {
                         <p class={CAMERA_NOTICE} role="status" aria-live="polite">{message}</p>
                     }
                 </div>
-                <div ref={stage} class={CAMERA_STAGE}>
-                    <video ref={video} class={CAMERA_VIDEO} autoplay=true playsinline=true muted=true aria-label="摄像头实时画面"></video>
-                    <audio ref={audio} class="hidden" autoplay=true playsinline=true aria-label="摄像头麦克风"></audio>
-                    if *phase == CameraViewPhase::Playing && can_control {
-                        <button class={CAMERA_ROTATE_BUTTON} type="button" onclick={rotate} aria-label="旋转画面">
-                            {"旋转画面"}
-                        </button>
-                    }
-                    if *phase == CameraViewPhase::Idle {
-                        <div class={CAMERA_PLACEHOLDER} aria-hidden="true">
-                            <span class={CAMERA_PLACEHOLDER_ICON}>{"LIVE"}</span>
-                            <span>{"等待手动播放"}</span>
-                        </div>
-                    }
+                <div class={CAMERA_MEDIA}>
+                    <div ref={stage} class={CAMERA_STAGE}>
+                        <video ref={video} class={CAMERA_VIDEO} autoplay=true playsinline=true muted=true aria-label="摄像头实时画面"></video>
+                        <audio ref={audio} class="hidden" autoplay=true playsinline=true aria-label="摄像头麦克风"></audio>
+                        if *phase == CameraViewPhase::Idle {
+                            <div class={CAMERA_PLACEHOLDER} aria-hidden="true">
+                                <span class={CAMERA_PLACEHOLDER_ICON}>{"LIVE"}</span>
+                                <span>{"等待手动播放"}</span>
+                            </div>
+                        }
+                    </div>
+                    <div class={CAMERA_CONTROLS} role="toolbar" aria-label="直播控制">
+                        if *phase == CameraViewPhase::Idle {
+                            <button class={CAMERA_CONTROL_BUTTON} type="button" onclick={start_button} disabled={!camera_available || !can_view} aria-label="播放直播" title="播放直播">
+                                {icon_play()}
+                            </button>
+                        } else {
+                            <button class={CAMERA_CONTROL_BUTTON} type="button" onclick={toggle_pause} disabled={*phase != CameraViewPhase::Playing} aria-label={if *paused { "继续直播" } else { "暂停直播" }} title={if *paused { "继续直播" } else { "暂停直播" }}>
+                                { if *paused { icon_play() } else { icon_pause() } }
+                            </button>
+                            <button class={classes!(CAMERA_CONTROL_BUTTON, CAMERA_CONTROL_BUTTON_DANGER)} type="button" onclick={stop} aria-label="停止直播" title="停止直播">
+                                {icon_stop()}
+                            </button>
+                            if audio_supported {
+                                <button
+                                    class={classes!(CAMERA_CONTROL_BUTTON, (*talk_active).then_some(CAMERA_CONTROL_BUTTON_ACTIVE))}
+                                    type="button"
+                                    disabled={*phase != CameraViewPhase::Playing}
+                                    aria-label={if *talk_active { "关闭对讲" } else { "开启对讲" }}
+                                    title={if *talk_active { "关闭对讲" } else { "开启对讲" }}
+                                    aria-pressed={talk_active.to_string()}
+                                    onclick={toggle_talk.clone()}
+                                >
+                                    {icon_microphone(*talk_active)}
+                                </button>
+                            }
+                            if *pip_supported {
+                                <button class={classes!(CAMERA_CONTROL_BUTTON, (*pip_active).then_some(CAMERA_CONTROL_BUTTON_ACTIVE))} type="button" onclick={toggle_pip} aria-label={if *pip_active { "退出画中画" } else { "进入画中画" }} title={if *pip_active { "退出画中画" } else { "进入画中画" }}>
+                                    {icon_picture_in_picture()}
+                                </button>
+                            }
+                            if can_control {
+                                <button class={CAMERA_CONTROL_BUTTON} type="button" onclick={rotate} aria-label="旋转画面" title="旋转画面">
+                                    {icon_rotate()}
+                                </button>
+                            }
+                        }
+                    </div>
                 </div>
             </div>
         </article>

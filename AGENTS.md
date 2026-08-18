@@ -88,8 +88,6 @@ composition root in its own Cargo package:
 
 测试即文档。
 
-@./docs/architecture.md
-
 ### Test guardrails
 
 - 测试通过 domain 函数、application 用例、ports、`ControlHandler`（router
@@ -112,3 +110,7 @@ composition root in its own Cargo package:
   设备凭据、生成固件或忽略的审计产物。
 - 先运行静态检查再构建。除非用户明确要求，不启动 Rust、前端、SDK、
   Buildroot、kernel、rootfs 或 firmware 构建。
+
+## 构建测试入口
+
+@./Makefile
