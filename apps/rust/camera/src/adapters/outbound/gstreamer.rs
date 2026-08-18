@@ -35,9 +35,15 @@ const PIPELINE_START_DEADLINE: Duration = Duration::from_secs(10);
 const PIPELINE_STOP_DEADLINE: Duration = Duration::from_secs(3);
 const SYSTEM_PLUGIN_DIRECTORY: &str = "/usr/lib/gstreamer-1.0";
 const FULL_RANGE_BT709_COLORIMETRY: &str = "1:3:5:1";
-// Keep most of the output gain after RNNoise so the denoiser does not receive
-// an unnecessarily amplified microphone noise floor.
-const RNNOISE_POST_GAIN_DB: f32 = 3.0;
+// VAD-gated output gain: attenuate non-speech residuals and add only a small,
+// smoothed lift while RNNoise identifies speech. This prevents isolated noise
+// bursts from being sent at full level while preserving speech headroom.
+const RNNOISE_SILENCE_GAIN_DB: f32 = -12.0;
+const RNNOISE_VOICE_GAIN_DB: f32 = 6.0;
+const RNNOISE_VAD_ON_THRESHOLD: f32 = 0.65;
+const RNNOISE_VAD_OFF_THRESHOLD: f32 = 0.35;
+const RNNOISE_VAD_ATTACK_FRAMES: f32 = 10.0;
+const RNNOISE_VAD_RELEASE_FRAMES: f32 = 40.0;
 
 pub struct GStreamerMediaAdapter;
 
@@ -531,16 +537,20 @@ fn mic_pcm_caps() -> Result<gst::Caps, MediaError> {
         .build())
 }
 
-/// 在 webrtcdsp 之后挂 RNNoise 神经网络降噪探针（nnnoiseless，纯 Rust 移植）。
+/// 在 webrtcdsp 之后挂 RNNoise 神经网络降噪和 VAD 门控增益探针（nnnoiseless，纯 Rust 移植）。
 ///
 /// 为什么放在 dsp 之后：webrtcdsp 输出固定的 48kHz mono 10ms（480 样本）帧，
 /// 正好是 RNNoise 的固有帧长；探针在 dsp 的 src pad 上原地改写 S16LE 数据，
-/// 不引入任何额外缓冲元素。WebRTC NS high 负责互补抑噪，RNNoise 是采集链的最终
-/// 神经网络降噪器；输出增益在探针中位于 RNNoise 之后，避免先放大模拟噪声。
+/// 不引入任何额外缓冲元素。WebRTC AEC + NS 先处理回声和背景噪声，RNNoise
+/// 同时提供残余降噪和语音概率；输出增益只在检测到人声后平滑增加，避免说话开始
+/// 时把残余噪声一起抬高。
 ///
 /// 说明：
 /// - RNNoise 输入/输出是 i16 数值范围的 f32（demo 直接读 short 到 float），
 ///   不需要归一化到 [-1, 1]。
+/// - `process_frame` 返回当前 10ms 帧的语音概率；使用双阈值避免 VAD 在临界噪声
+///   上反复开关。
+/// - 人声增益使用 100ms attack、400ms release，避免增益泵动和语音断字。
 /// - 文档要求丢弃首帧（fade-in 伪影），首帧写静音。
 /// - 非 480 整数倍的缓冲区直接透传（理论上不会出现：webrtcdsp 按 10ms 帧出
 ///   数据；万一出现只警告一次，避免刷日志）。
@@ -553,7 +563,10 @@ fn attach_rnnoise_probe(dsp: &gst::Element) -> Result<(), MediaError> {
     let first = Arc::new(AtomicBool::new(true));
     let warned = Arc::new(AtomicBool::new(false));
     let frame_size = nnnoiseless::DenoiseState::FRAME_SIZE;
-    let post_gain = 10.0f32.powf(RNNOISE_POST_GAIN_DB / 20.0);
+    let voice_gain = 10.0f32.powf(RNNOISE_VOICE_GAIN_DB / 20.0);
+    let silence_gain = 10.0f32.powf(RNNOISE_SILENCE_GAIN_DB / 20.0);
+    let gate_state = Arc::new(Mutex::new((false, silence_gain)));
+    let gate_state_for_probe = Arc::clone(&gate_state);
     src_pad.add_probe(gst::PadProbeType::BUFFER, move |_pad, info| {
         let Some(buffer) = info.buffer_mut() else {
             return gst::PadProbeReturn::Ok;
@@ -575,21 +588,47 @@ fn attach_rnnoise_probe(dsp: &gst::Element) -> Result<(), MediaError> {
         let mut state = state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut gate = gate_state_for_probe
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut input = [0f32; 480];
         let mut output = [0f32; 480];
         for frame in bytes.chunks_exact_mut(frame_size * 2) {
+            let (mut voice_active, mut current_gain) = *gate;
             for (i, chunk) in frame.chunks_exact_mut(2).enumerate() {
                 input[i] = f32::from(i16::from_ne_bytes([chunk[0], chunk[1]]));
             }
-            if first.swap(false, Ordering::Relaxed) {
+            let first_frame = first.swap(false, Ordering::Relaxed);
+            let vad_probability = state.process_frame(&mut output, &input);
+            if first_frame {
                 output.fill(0.0);
+            }
+            if voice_active {
+                if vad_probability <= RNNOISE_VAD_OFF_THRESHOLD {
+                    voice_active = false;
+                }
+            } else if vad_probability >= RNNOISE_VAD_ON_THRESHOLD {
+                voice_active = true;
+            }
+            let target_gain = if voice_active {
+                voice_gain
             } else {
-                state.process_frame(&mut output, &input);
+                silence_gain
+            };
+            let smoothing_frames = if target_gain > current_gain {
+                RNNOISE_VAD_ATTACK_FRAMES
+            } else {
+                RNNOISE_VAD_RELEASE_FRAMES
+            };
+            current_gain += (target_gain - current_gain) / smoothing_frames;
+            if (current_gain - target_gain).abs() < 0.001 {
+                current_gain = target_gain;
             }
             for (i, chunk) in frame.chunks_exact_mut(2).enumerate() {
-                let value = (output[i] * post_gain).round().clamp(-32768.0, 32767.0) as i16;
+                let value = (output[i] * current_gain).round().clamp(-32768.0, 32767.0) as i16;
                 chunk.copy_from_slice(&value.to_ne_bytes());
             }
+            *gate = (voice_active, current_gain);
         }
         gst::PadProbeReturn::Ok
     });
@@ -699,22 +738,14 @@ impl CameraAudioPort for GStreamerAudioAdapter {
         }
         source.set_property("device", FIXED_ALSA_DEVICE);
         capture_caps.set_property("caps", mic_pcm_caps()?);
-        // Keep WebRTC's echo canceller and high-pass filter, plus NS high as a
-        // complementary suppressor for the board's non-stationary whooshing noise;
-        // RNNoise remains the final denoiser.
+        // Keep AEC and WebRTC NS before RNNoise. Gain control is intentionally handled
+        // after RNNoise by the VAD-gated probe so speech does not lift the residual noise
+        // floor before the neural denoiser sees it.
         dsp.set_property("echo-cancel", true);
         dsp.set_property("high-pass-filter", true);
         dsp.set_property("noise-suppression", true);
         dsp.set_property_from_str("noise-suppression-level", "high");
-        // Use adaptive digital gain with a small headroom. Adaptive gain restores
-        // speech level after AEC/NS suppresses correlated speaker audio, while the
-        // limited compression gain and post-RNNoise gain avoid excessive noise.
-        dsp.set_property("gain-control", true);
-        dsp.set_property_from_str("gain-control-mode", "adaptive-digital");
-        dsp.set_property("target-level-dbfs", 3i32);
-        // Keep a small pre-denoise gain for AEC/voice level, then apply the remaining
-        // output gain after RNNoise so the denoiser sees less amplified noise.
-        dsp.set_property("compression-gain-db", 6i32);
+        dsp.set_property("gain-control", false);
         dsp.set_property("limiter", true);
         encoder.set_property(
             "bitrate",

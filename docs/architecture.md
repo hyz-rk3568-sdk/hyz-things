@@ -73,15 +73,15 @@ alsasrc（hw:0，板载麦克风在 L 声道）
 → audioconvert → audioresample
 → capsfilter（S16LE 48kHz mono，channel-mask=FL）
 → audioconvert → audiocheblimit 高通 150Hz（4 阶）→ audiocheblimit 低通 8kHz（4 阶）→ audioconvert
-→ webrtcdsp（AEC、HPF、NS high、adaptive-digital、limiter）
-→ RNNoise 探针（nnnoiseless，480 样本帧，首帧写静音，后置 3dB 增益/限幅，非整帧透传）
+→ webrtcdsp（AEC、HPF、NS high，关闭内部 AGC、limiter）
+→ RNNoise + VAD 探针（nnnoiseless，480 样本帧，首帧写静音，语音概率双阈值，100ms attack / 400ms release，静音时后置 -12dB、人声时后置 +6dB 增益/限幅，非整帧透传）
 → opusenc（32kbps、20ms、DTX、audio-type=voice）
 → appsink → 各会话 str0m 音频发送
 ```
 
 - `channel-mask=FL` 避免默认 (L+R)/2 混音把单麦衰减约 10dB 并混入空接的 R 声道。
 - 150Hz 高通优先处理板端“呼呼声”和低频模拟扰动，8kHz 低通限制 ADC/电源宽带噪声；两者依赖 `audiocheblimit`，插件缺失时退化为不过滤。
-- `webrtcdsp` 保留 AEC、HPF 和 NS high 作为互补抑噪；前置自适应数字增益使用 `compression-gain-db=6`、`target-level-dbfs=3`，在 AEC/NS 抑制回声后恢复语音电平，RNNoise 后再补 `3dB` 输出增益并限幅，避免先放大模拟噪声。
+- `webrtcdsp` 保留 AEC、HPF 和 NS high 作为互补抑噪，但关闭内部 AGC；RNNoise 的 `process_frame` 返回语音概率，探针使用 0.65/0.35 双阈值控制语音状态，在 100ms 内从静音 `-12dB` 平滑增加到人声 `+6dB`、在 400ms 内释放回 `-12dB`，避免说话触发时把残余噪声一起抬高。
 - RNNoise 是采集链的最终神经网络降噪器。它使用 48kHz 的 480 样本帧；首帧丢弃以避开初始化淡入伪影。
 - DTX 让静音段每 400ms 才发一帧；`audio-type=voice` 走 SILK 语音编码。
 
