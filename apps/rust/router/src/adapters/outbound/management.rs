@@ -1,6 +1,7 @@
 use super::{
     network_config::{
-        render_hostapd_on_channel, render_wpa_supplicant, ApRadioChannel, NetworkConfigStore,
+        render_hostapd_on_channel_with_profile, render_wpa_supplicant, ApRadioChannel,
+        ApRadioProfile, NetworkConfigStore,
     },
     process::process_start_time,
     storage,
@@ -22,7 +23,7 @@ use crate::{
         },
         network_config::{
             ApConfig, NetworkConfigSummary, NetworkConfigV1, PendingNetworkConfigSummary,
-            PendingNetworkConfigV1, StaConfig, WifiCountry, WifiSsid,
+            PendingNetworkConfigV1, StaConfig, WifiCountry, WifiSsid, PRODUCT_WIFI_COUNTRY,
         },
         wifi_startup::{
             startup_channel_plan, LastGoodStaChannel, StaFingerprint, StartupChannelPlan,
@@ -60,15 +61,7 @@ const LAST_GOOD_CHANNEL_PATH: &str = "/userdata/hyz-router/sta-last-good-channel
 const MAX_LAST_GOOD_BYTES: usize = 4096;
 const PROCESS_WAIT: Duration = Duration::from_secs(5);
 const STA_CHANNEL_WAIT: Duration = Duration::from_secs(45);
-/// Short bounded window used on the last-good fast path before programming hostapd. It is not a
-/// full shared-channel wait: it only lets the single radio finish its first scan/association
-/// (stability), and it lets a live STA channel override the recorded last-good one when present.
-/// Without an upstream, the AP still starts on the recorded channel after this window.
-const FAST_START_CONFIRM_WAIT: Duration = Duration::from_secs(15);
-/// Bound for the exact AP readiness probe (state=ENABLED plus the exact VHT80 geometry) after
-/// hostapd starts. On a cold RTL8852BS start the radio settles into the exact profile tens of
-/// seconds after the shared-channel gate passes; the window must stay small enough that a failing
-/// attempt leaves room for S81 to relaunch within the startup deadline.
+/// Bound for the AP readiness probe after the shared RTL8852BS radio begins hostapd setup.
 const AP_READY_WAIT: Duration = Duration::from_secs(30);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 /// Bounded window for the single radio to become operationally ready for the target AP channel
@@ -76,6 +69,8 @@ const POLL_INTERVAL: Duration = Duration::from_millis(100);
 /// is confirmed on the shared channel; starting hostapd earlier races the driver and fails the
 /// strict VHT80 readiness probe, burning the whole AP-readiness window per launch attempt.
 const RADIO_CHANNEL_READY_WAIT: Duration = Duration::from_secs(45);
+const VHT80_UPGRADE_LOG_PATH: &str = "/run/hyz-router/vht80-upgrade.log";
+const MAX_VHT80_UPGRADE_LOG_BYTES: usize = 4096;
 const MAX_RESOLV_SIZE: usize = 64 * 1024;
 static DHCP_GENERATION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static RESOLVER_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -456,34 +451,40 @@ impl super::process::LinuxRouterPlatform {
             self.start_service(ManagementService::Udhcpc)?;
             started.push(ManagementService::Udhcpc);
 
-            // RTL8852BS concurrent mode shares one radio channel. With a fresh last-good record
-            // the AP startup still keeps a short radio-settling window before hostapd is
-            // programmed: starting hostapd while the single radio is still scanning/associating
-            // races the driver and flakes the strict AP readiness probe (observed as repeated
-            // cold-start relaunches on the board). So on the fast path we wait a bounded window
-            // for the committed STA's channel and use the live channel when it appears, falling
-            // back to the recorded last-good one only when no upstream channel shows up. The
-            // standard path keeps the full 45s association window before AP startup, with LAN
-            // fallback independent from DHCP/default-route readiness.
-            let channel = match plan {
-                StartupChannelPlan::FastStart { channel } => {
-                    match self.wait_for_sta_channel(FAST_START_CONFIRM_WAIT)? {
-                        Some(live) => live,
-                        None => {
-                            ApRadioChannel::from_domain(channel).unwrap_or(ApRadioChannel::DEFAULT)
-                        }
-                    }
-                }
-                StartupChannelPlan::WaitForStaChannel => self
-                    .wait_for_sta_channel(STA_CHANNEL_WAIT)?
-                    .unwrap_or(ApRadioChannel::DEFAULT),
+            // RTL8852BS concurrent mode shares one radio channel. A fresh last-good record is the
+            // last confirmed STA/AP shared channel, so use it immediately for AP startup instead
+            // of waiting for STA association. Without a usable record, wait for the live STA
+            // channel before programming hostapd; LAN fallback remains independent from DHCP.
+            let (channel, require_sta_association) = match plan {
+                StartupChannelPlan::FastStart { channel } => (
+                    ApRadioChannel::from_domain(channel).unwrap_or(ApRadioChannel::DEFAULT),
+                    false,
+                ),
+                StartupChannelPlan::WaitForStaChannel => (
+                    self.wait_for_sta_channel(STA_CHANNEL_WAIT)?
+                        .unwrap_or(ApRadioChannel::DEFAULT),
+                    true,
+                ),
             };
-            // Whatever the channel source (live STA, recorded last-good fallback, or the fixed AP
-            // fallback), only program hostapd once the single radio is operationally on that
-            // channel; otherwise the strict AP readiness probe burns the full window on a radio
-            // that is still settling.
-            self.wait_for_radio_channel_ready(config, channel, RADIO_CHANNEL_READY_WAIT)?;
-            self.start_hostapd_on_channel(&config.ap, channel)?;
+            // A matching last-good channel skips STA association waiting, but the shared radio
+            // still has to advertise that channel before hostapd is programmed. Without a usable
+            // record, the cold start waits for the live STA and driver channel before hostapd.
+            self.wait_for_radio_channel_ready(
+                config,
+                channel,
+                RADIO_CHANNEL_READY_WAIT,
+                require_sta_association,
+            )?;
+            let profile = radio_ap_profile(WAN_INTERFACE, channel)?;
+            if let Err(error) = self.start_hostapd_on_channel(&config.ap, channel, profile) {
+                if profile != ApRadioProfile::Vht80 {
+                    return Err(error);
+                }
+                eprintln!(
+                    "hyz-router: VHT80 AP startup failed; falling back to HT20 management AP: {error}"
+                );
+                self.start_hostapd_on_channel(&config.ap, channel, ApRadioProfile::Ht20)?;
+            }
             started.push(ManagementService::Hostapd);
 
             self.start_service(ManagementService::Dnsmasq)?;
@@ -493,11 +494,7 @@ impl super::process::LinuxRouterPlatform {
                 self.attach_ap()?;
             }
 
-            if !self.management_services_ready()? {
-                return Err(PlatformError::ProbeFailed(
-                    "management services did not reach ready state".to_owned(),
-                ));
-            }
+            self.wait_for_management_services_ready(PROCESS_WAIT)?;
             // Persist a fresh last-good record whenever the AP is up on a channel the STA is
             // actually sharing, so a later cold start can fast-start on it. This is a
             // runtime-derived cache and never affects readiness; both the probe and the write
@@ -564,6 +561,17 @@ impl super::process::LinuxRouterPlatform {
             recorded_unix_ms: self.unix_time_millis(),
         };
         write_last_good_channel(&record)
+    }
+
+    pub(crate) fn wait_for_management_services_ready(
+        &self,
+        timeout: Duration,
+    ) -> Result<(), PlatformError> {
+        wait_until(
+            timeout,
+            || self.management_services_ready(),
+            "management services",
+        )
     }
 
     pub(crate) fn management_services_ready(&self) -> Result<bool, PlatformError> {
@@ -853,26 +861,43 @@ impl super::process::LinuxRouterPlatform {
         wait_until(
             timeout,
             || self.hostapd_enabled_on_channel(channel),
-            "AP enablement with the exact radio profile on the associated STA channel",
+            "AP enablement on the target primary channel",
         )
+    }
+
+    fn wait_for_hostapd_profile(
+        &self,
+        channel: ApRadioChannel,
+        profile: ApRadioProfile,
+        timeout: Duration,
+    ) -> Result<(), PlatformError> {
+        match profile {
+            ApRadioProfile::Ht20 => self.wait_for_hostapd(channel, timeout),
+            ApRadioProfile::Vht80 => wait_until(
+                timeout,
+                || self.hostapd_vht80_enabled_on_channel(channel),
+                "AP VHT80 enablement",
+            ),
+        }
     }
 
     fn start_hostapd_on_channel(
         &self,
         config: &ApConfig,
         channel: ApRadioChannel,
+        profile: ApRadioProfile,
     ) -> Result<(), PlatformError> {
         apply_wifi_country(config.country)?;
         let mut first_error = None;
         for attempt in 0..2 {
             self.stop_service(ManagementService::Hostapd)?;
             run_ip(&["link", "set", "dev", LAN_MEMBER, "down"])?;
-            let hostapd = render_hostapd_on_channel(config, channel);
+            let hostapd = render_hostapd_on_channel_with_profile(config, channel, profile);
             storage::atomic_write_private(HOSTAPD_RUNTIME_CONFIG, hostapd.as_bytes())?;
             run_ip(&["link", "set", "dev", LAN_MEMBER, "up"])?;
             let result = self
                 .start_service(ManagementService::Hostapd)
-                .and_then(|()| self.wait_for_hostapd(channel, AP_READY_WAIT));
+                .and_then(|()| self.wait_for_hostapd_profile(channel, profile, AP_READY_WAIT));
             match result {
                 Ok(()) => return Ok(()),
                 Err(error) => {
@@ -893,6 +918,75 @@ impl super::process::LinuxRouterPlatform {
             }
         }
         unreachable!("fixed hostapd retry loop returns on every second attempt")
+    }
+
+    fn record_vht80_upgrade_log(&self, record: &str) {
+        let record = record
+            .chars()
+            .take(MAX_VHT80_UPGRADE_LOG_BYTES)
+            .collect::<String>();
+        if let Err(error) = storage::atomic_write_private(VHT80_UPGRADE_LOG_PATH, record.as_bytes())
+        {
+            eprintln!("hyz-router: failed to record VHT80 upgrade diagnostic: {error}");
+        }
+    }
+
+    fn hostapd_status_diagnostic(&self) -> String {
+        match self.run_management_probe("/usr/bin/hostapd_cli", &["-i", LAN_MEMBER, "status"]) {
+            Ok(output) => summarize_hostapd_status(&output),
+            Err(error) => format!("probe_error={error}"),
+        }
+    }
+
+    fn reload_hostapd_on_channel(
+        &self,
+        config: &ApConfig,
+        channel: ApRadioChannel,
+        profile: ApRadioProfile,
+    ) -> Result<(), PlatformError> {
+        apply_wifi_country(config.country)?;
+        let hostapd = render_hostapd_on_channel_with_profile(config, channel, profile);
+        storage::atomic_write_private(HOSTAPD_RUNTIME_CONFIG, hostapd.as_bytes())?;
+        let response =
+            self.run_management_probe("/usr/bin/hostapd_cli", &["-i", LAN_MEMBER, "reload"])?;
+        if response.trim() != "OK" {
+            return Err(PlatformError::ProbeFailed(format!(
+                "hostapd reload did not acknowledge the fixed profile: response={}",
+                sanitize_diagnostic_value(&response)
+            )));
+        }
+        let result = self.wait_for_hostapd_profile(channel, profile, AP_READY_WAIT);
+        result.map_err(|error| {
+            PlatformError::ProbeFailed(format!(
+                "AP {profile:?} reload failed on channel {}: {error}; hostapd_status={}",
+                channel.number(),
+                self.hostapd_status_diagnostic()
+            ))
+        })
+    }
+
+    fn hostapd_vht80_enabled_on_channel(
+        &self,
+        channel: ApRadioChannel,
+    ) -> Result<bool, PlatformError> {
+        let output = match self
+            .run_management_probe("/usr/bin/hostapd_cli", &["-i", LAN_MEMBER, "status"])
+        {
+            Ok(output) => output,
+            Err(error) if is_management_probe_timeout(&error) => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        let Some((width, center)) = channel.vht_geometry() else {
+            return Ok(false);
+        };
+        Ok(hostapd_status_ready(&output, Some(channel))
+            && unique_status_value(&output, "ieee80211ac") == Some("1")
+            && unique_status_value(&output, "vht_oper_chwidth")
+                .and_then(|value| value.parse::<u8>().ok())
+                == Some(width)
+            && unique_status_value(&output, "vht_oper_centr_freq_seg0_idx")
+                .and_then(|value| value.parse::<u8>().ok())
+                == Some(center))
     }
 
     fn wait_for_sta_channel(
@@ -937,15 +1031,17 @@ impl super::process::LinuxRouterPlatform {
         config: &NetworkConfigV1,
         channel: ApRadioChannel,
         timeout: Duration,
+        require_sta_association: bool,
     ) -> Result<(), PlatformError> {
-        // The single radio only accepts the AP channel once it is operationally there: the STA
-        // confirmed on the shared channel AND the driver's current supported-channel set listing
-        // it. Both signals still precede the exact VHT80 readiness (the AP settles into it tens of
-        // seconds later), which the longer AP_READY_WAIT absorbs. Without any upstream the STA can
-        // never confirm the channel, so the gate degrades to the recorded-channel start.
+        // The single radio only accepts the AP channel once the driver lists it. The normal
+        // startup path also requires the committed STA to be associated on that channel; a
+        // matching last-good record is sufficient for the fast management-LAN path.
         let mut ready = || {
             if !radio_currently_supports_channel(WAN_INTERFACE, channel)? {
                 return Ok(false);
+            }
+            if !require_sta_association {
+                return Ok(true);
             }
             match self.sta_associated_with(&config.sta, channel) {
                 Ok(ready) => Ok(ready),
@@ -986,9 +1082,87 @@ impl super::process::LinuxRouterPlatform {
             )
         })?;
         self.detach_ap()?;
-        self.start_hostapd_on_channel(&config.ap, channel)?;
+        let profile = radio_ap_profile(WAN_INTERFACE, channel)?;
+        self.start_hostapd_on_channel(&config.ap, channel, profile)?;
         self.attach_ap()?;
         Ok(channel)
+    }
+
+    /// Try one bounded VHT80 cutover after the management AP is already serving.
+    /// `None` means the STA/radio is not ready yet; `Some(false)` means HT20 was preserved.
+    pub fn try_upgrade_ap_to_vht80(&self) -> Result<Option<bool>, PlatformError> {
+        let config = committed_network_config()?;
+        let Some(channel) = self.current_sta_channel()? else {
+            return Ok(None);
+        };
+        if !self.sta_associated_with(&config.sta, channel)?
+            || !radio_currently_supports_channel(WAN_INTERFACE, channel)?
+            || !self.hostapd_enabled_on_channel(channel)?
+        {
+            return Ok(None);
+        }
+        if self.hostapd_vht80_enabled_on_channel(channel)? {
+            return Ok(Some(true));
+        }
+        if !radio_currently_supports_vht80(WAN_INTERFACE, channel)? {
+            self.record_vht80_upgrade_log(&format!(
+                "result=ht20_retained channel={} reason=driver_has_no_80M_operating_class\n",
+                channel.number()
+            ));
+            return Ok(Some(false));
+        }
+
+        match self.reload_hostapd_on_channel(&config.ap, channel, ApRadioProfile::Vht80) {
+            Ok(()) => {
+                let status = self.hostapd_status_diagnostic();
+                self.record_vht80_upgrade_log(&format!(
+                    "result=vht80_enabled channel={} hostapd_status={status}\n",
+                    channel.number()
+                ));
+                eprintln!(
+                    "hyz-router: upgraded management AP to VHT80 on channel {}",
+                    channel.number()
+                );
+                Ok(Some(true))
+            }
+            Err(error) => {
+                let vht80_error = sanitize_diagnostic_value(&error.to_string());
+                let vht80_status = self.hostapd_status_diagnostic();
+                eprintln!(
+                    "hyz-router: VHT80 AP upgrade failed; restoring HT20 management AP: {error}"
+                );
+                let mut ht20_restore = "reload_ok";
+                if let Err(reload_error) =
+                    self.reload_hostapd_on_channel(&config.ap, channel, ApRadioProfile::Ht20)
+                {
+                    let reload_error_text = sanitize_diagnostic_value(&reload_error.to_string());
+                    match self.start_hostapd_on_channel(&config.ap, channel, ApRadioProfile::Ht20) {
+                        Ok(()) => {
+                            ht20_restore = "restart_after_reload_failure";
+                        }
+                        Err(restore) => {
+                            let restore_text = sanitize_diagnostic_value(&restore.to_string());
+                            self.record_vht80_upgrade_log(&format!(
+                                "result=upgrade_and_restore_failed channel={} vht80_error={vht80_error} vht80_status={vht80_status} ht20_reload_error={reload_error_text} ht20_restart_error={restore_text}\n",
+                                channel.number()
+                            ));
+                            return Err(PlatformError::InvalidState(format!(
+                                "VHT80 AP upgrade failed ({error}); HT20 reload failed ({reload_error}); HT20 restart failed: {restore}"
+                            )));
+                        }
+                    }
+                }
+                self.record_vht80_upgrade_log(&format!(
+                    "result=ht20_retained channel={} vht80_error={vht80_error} vht80_status={vht80_status} ht20_restore={ht20_restore}\n",
+                    channel.number()
+                ));
+                eprintln!(
+                    "hyz-router: retained HT20 management AP on shared channel {}",
+                    channel.number()
+                );
+                Ok(Some(false))
+            }
+        }
     }
 
     pub(crate) fn wait_for_sta_route(&self, timeout: Duration) -> Result<(), PlatformError> {
@@ -1697,7 +1871,7 @@ fn apply_wifi_country(country: WifiCountry) -> Result<(), PlatformError> {
             "iw reg get did not report exactly one self-managed phy#0 country".to_owned(),
         )
     })?;
-    if observed == country.as_str() || observed == "00" {
+    if observed == country.as_str() {
         Ok(())
     } else {
         Err(PlatformError::Conflict(format!(
@@ -1737,14 +1911,15 @@ fn prepare_runtime_configs(
     channel: ApRadioChannel,
 ) -> Result<(), PlatformError> {
     let wpa = render_wpa_supplicant(&config.sta);
-    let hostapd = render_hostapd_on_channel(&config.ap, channel);
+    let hostapd = render_hostapd_on_channel_with_profile(&config.ap, channel, ApRadioProfile::Ht20);
     storage::atomic_write_private(WPA_RUNTIME_CONFIG, wpa.as_bytes())?;
     storage::atomic_write_private(HOSTAPD_RUNTIME_CONFIG, hostapd.as_bytes())?;
     storage::atomic_write_private(DNSMASQ_RUNTIME_CONFIG, DNSMASQ_CONFIG.as_bytes())
 }
 
 fn committed_network_config() -> Result<NetworkConfigV1, PlatformError> {
-    NetworkConfigStore::default()
+    let store = NetworkConfigStore::default();
+    let mut config = store
         .read_or_migrate()
         .map_err(network_config_error)?
         .ok_or_else(|| {
@@ -1752,7 +1927,12 @@ fn committed_network_config() -> Result<NetworkConfigV1, PlatformError> {
                 "canonical network-config-v1 is absent and legacy migration was unavailable"
                     .to_owned(),
             )
-        })
+        })?;
+    if config.ap.country != PRODUCT_WIFI_COUNTRY {
+        config.ap.country = PRODUCT_WIFI_COUNTRY;
+        persist_network_config_verified(&store, &config)?;
+    }
+    Ok(config)
 }
 
 /// Read the persisted last-good STA channel record. This is a runtime-derived cache: a missing,
@@ -2182,31 +2362,47 @@ fn hostapd_status_ready(output: &str, expected_channel: Option<ApRadioChannel>) 
     let Some(channel) = expected_channel else {
         return true;
     };
-    if unique_status_value(output, "channel").and_then(|value| value.parse::<u8>().ok())
-        != Some(channel.number())
-        || unique_status_value(output, "secondary_channel")
-            .and_then(|value| value.parse::<i8>().ok())
-            != Some(channel.secondary_channel())
-        || unique_status_value(output, "ieee80211n") != Some("1")
-        || unique_status_value(output, "ieee80211ac")
-            != Some(if channel.ieee80211ac() { "1" } else { "0" })
-    {
-        return false;
-    }
-    match channel.vht_geometry() {
-        Some((width, center)) => {
-            unique_status_value(output, "vht_oper_chwidth")
-                .and_then(|value| value.parse::<u8>().ok())
-                == Some(width)
-                && unique_status_value(output, "vht_oper_centr_freq_seg0_idx")
-                    .and_then(|value| value.parse::<u8>().ok())
-                    == Some(center)
-        }
-        None => {
-            unique_status_value(output, "vht_oper_chwidth").is_none()
-                && unique_status_value(output, "vht_oper_centr_freq_seg0_idx").is_none()
-        }
-    }
+    // The management gate requires an enabled AP on the selected primary channel. Secondary
+    // channel and VHT geometry can settle after hostapd reaches ENABLED on the shared radio, so
+    // they are status data rather than a cold-start blocker.
+    unique_status_value(output, "channel").and_then(|value| value.parse::<u8>().ok())
+        == Some(channel.number())
+}
+
+fn summarize_hostapd_status(output: &str) -> String {
+    const FIELDS: [&str; 8] = [
+        "state",
+        "freq",
+        "channel",
+        "secondary_channel",
+        "ieee80211n",
+        "ieee80211ac",
+        "vht_oper_chwidth",
+        "vht_oper_centr_freq_seg0_idx",
+    ];
+    FIELDS
+        .into_iter()
+        .map(|key| {
+            let value = unique_status_value(output, key).unwrap_or("<missing-or-duplicate>");
+            format!("{key}={}", sanitize_diagnostic_value(value))
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn sanitize_diagnostic_value(value: &str) -> String {
+    value
+        .trim()
+        .chars()
+        .take(128)
+        .map(|character| {
+            if character.is_ascii_graphic() || character == ' ' {
+                character
+            } else {
+                '?'
+            }
+        })
+        .collect()
 }
 
 fn unique_status_value<'a>(output: &'a str, key: &str) -> Option<&'a str> {
@@ -2269,19 +2465,73 @@ fn current_driver_channel_set_contains(content: &str, channel_number: u8) -> boo
     })
 }
 
+fn current_driver_channel_set_contains_with_bandwidth(
+    content: &str,
+    channel_number: u8,
+    bandwidth: &str,
+) -> bool {
+    content.lines().any(|line| {
+        let mut fields = line.split_whitespace();
+        let Some(class) = fields.next() else {
+            return false;
+        };
+        if class.parse::<u8>().is_err() {
+            return false;
+        }
+        fields.next();
+        if fields.next() != Some(bandwidth) {
+            return false;
+        }
+        fields.any(|token| token.parse::<u8>() == Ok(channel_number))
+    })
+}
+
+fn ap_radio_profile_from_driver_channels(content: &str, channel: ApRadioChannel) -> ApRadioProfile {
+    if channel.vht_geometry().is_some_and(|(width, _)| width == 1)
+        && current_driver_channel_set_contains_with_bandwidth(content, channel.number(), "80M")
+    {
+        ApRadioProfile::Vht80
+    } else {
+        ApRadioProfile::Ht20
+    }
+}
+
+fn current_driver_channels(interface: &str) -> Result<String, PlatformError> {
+    let path = format!("/proc/net/rtl8852bs/{interface}/cur_spt_op_class_ch");
+    fs::read_to_string(&path).map_err(|error| {
+        PlatformError::ProbeFailed(format!(
+            "read {interface} current supported channels: {error}"
+        ))
+    })
+}
+
+fn radio_ap_profile(
+    interface: &str,
+    channel: ApRadioChannel,
+) -> Result<ApRadioProfile, PlatformError> {
+    let content = current_driver_channels(interface)?;
+    Ok(ap_radio_profile_from_driver_channels(&content, channel))
+}
+
 fn radio_currently_supports_channel(
     interface: &str,
     channel: ApRadioChannel,
 ) -> Result<bool, PlatformError> {
-    let path = format!("/proc/net/rtl8852bs/{interface}/cur_spt_op_class_ch");
-    let content = fs::read_to_string(&path).map_err(|error| {
-        PlatformError::ProbeFailed(format!(
-            "read {interface} current supported channels: {error}"
-        ))
-    })?;
+    let content = current_driver_channels(interface)?;
     Ok(current_driver_channel_set_contains(
         &content,
         channel.number(),
+    ))
+}
+
+fn radio_currently_supports_vht80(
+    interface: &str,
+    channel: ApRadioChannel,
+) -> Result<bool, PlatformError> {
+    let content = current_driver_channels(interface)?;
+    Ok(matches!(
+        ap_radio_profile_from_driver_channels(&content, channel),
+        ApRadioProfile::Vht80
     ))
 }
 
@@ -3096,6 +3346,31 @@ fn publish_selected_resolver_surface() -> Result<(), PlatformError> {
     }
 }
 
+#[cfg(test)]
+mod hostapd_tests {
+    use super::*;
+
+    #[test]
+    fn ap_readiness_accepts_enabled_primary_channel_before_vht_settles() {
+        let channel = ApRadioChannel::ghz5(161).expect("valid channel");
+        let status = "state=ENABLED\nchannel=161\nsecondary_channel=0\nieee80211n=1\nieee80211ac=0\nvht_oper_chwidth=0\nvht_oper_centr_freq_seg0_idx=0\n";
+
+        assert!(hostapd_status_ready(status, Some(channel)));
+    }
+
+    #[test]
+    fn vht80_diagnostic_keeps_only_bounded_radio_status_fields() {
+        let status = "state=ENABLED\nfreq=5805\nchannel=161\nsecondary_channel=0\nieee80211n=1\nieee80211ac=0\nvht_oper_chwidth=0\nvht_oper_centr_freq_seg0_idx=0\nssid=do-not-log\n";
+        let summary = summarize_hostapd_status(status);
+
+        assert!(summary.contains("state=ENABLED"));
+        assert!(summary.contains("ieee80211ac=0"));
+        assert!(summary.contains("vht_oper_chwidth=0"));
+        assert!(!summary.contains("do-not-log"));
+        assert!(!summary.contains("ssid="));
+    }
+}
+
 fn resolve_resolver_symlink_target(entry: &Path) -> Result<PathBuf, PlatformError> {
     let link = fs::read_link(entry)
         .map_err(|error| PlatformError::Io(format!("read resolver symlink: {error}")))?;
@@ -3454,6 +3729,25 @@ mod tests {
     }
 
     #[test]
+    fn driver_vht80_profile_requires_an_80m_operating_class_entry() {
+        let channels = "class band bw      ch_list\n\
+  124   5G    20M  149 153 157 161\n\
+  128   5G    80M  149 153 157 161\n";
+        assert_eq!(
+            ap_radio_profile_from_driver_channels(channels, ApRadioChannel::ghz5(161).unwrap()),
+            ApRadioProfile::Vht80
+        );
+        assert_eq!(
+            ap_radio_profile_from_driver_channels(channels, ApRadioChannel::ghz5(165).unwrap()),
+            ApRadioProfile::Ht20
+        );
+        assert_eq!(
+            ap_radio_profile_from_driver_channels(channels, ApRadioChannel::ghz2(6).unwrap()),
+            ApRadioProfile::Ht20
+        );
+    }
+
+    #[test]
     fn sta_status_requires_candidate_completed_on_expected_channel() {
         let channel_6 = ApRadioChannel::ghz2(6).unwrap();
         let channel_11 = ApRadioChannel::ghz2(11).unwrap();
@@ -3480,31 +3774,16 @@ mod tests {
     }
 
     #[test]
-    fn hostapd_status_requires_exact_ht_and_vht_radio_profile() {
+    fn hostapd_status_accepts_enabled_primary_channel_without_vht_settling() {
         let channel_6 = ApRadioChannel::ghz2(6).unwrap();
         let channel_161 = ApRadioChannel::ghz5(161).unwrap();
         let ghz2 = "state=ENABLED\nchannel=6\nsecondary_channel=0\nieee80211n=1\nieee80211ac=0\n";
-        let ghz5 = "state=ENABLED\nchannel=161\nsecondary_channel=-1\nieee80211n=1\nieee80211ac=1\nvht_oper_chwidth=1\nvht_oper_centr_freq_seg0_idx=155\n";
+        let ghz5 = "state=ENABLED\nchannel=161\nsecondary_channel=0\nieee80211n=1\nieee80211ac=0\nvht_oper_chwidth=0\nvht_oper_centr_freq_seg0_idx=0\n";
         assert!(hostapd_status_ready(ghz2, None));
         assert!(hostapd_status_ready(ghz2, Some(channel_6)));
         assert!(hostapd_status_ready(ghz5, Some(channel_161)));
         assert!(!hostapd_status_ready(
-            &ghz2.replace("ieee80211n=1", "ieee80211n=0"),
-            Some(channel_6)
-        ));
-        assert!(!hostapd_status_ready(
-            &ghz5.replace("ieee80211ac=1", "ieee80211ac=0"),
-            Some(channel_161)
-        ));
-        assert!(!hostapd_status_ready(
-            &ghz5.replace(
-                "vht_oper_centr_freq_seg0_idx=155",
-                "vht_oper_centr_freq_seg0_idx=42"
-            ),
-            Some(channel_161)
-        ));
-        assert!(!hostapd_status_ready(
-            &format!("{ghz5}channel=161\n"),
+            "state=ENABLED\nchannel=149\n",
             Some(channel_161)
         ));
         assert!(!hostapd_status_ready(
@@ -3514,7 +3793,7 @@ mod tests {
     }
 
     #[test]
-    fn country_request_accepts_exact_or_driver_world_readback_and_precedes_hostapd() {
+    fn country_readback_parser_distinguishes_exact_and_world_countries() {
         let exact = "global\ncountry 00: DFS-UNSET\n\nphy#0 (self-managed)\ncountry NZ: DFS-ETSI\n\t(2402 - 2482 @ 40), (N/A, 20), (N/A)\n";
         let driver_world = exact.replace("country NZ: DFS-ETSI", "country 00: DFS-UNSET");
         assert_eq!(self_managed_country(exact), Some("NZ"));
@@ -3544,12 +3823,13 @@ mod tests {
         assert!(helper.find("apply_wifi_country").unwrap() < helper.find("start_service").unwrap());
         assert!(source.contains("[\"reg\", \"set\", country.as_str()]"));
         assert!(source.contains("[\"reg\", \"get\"]"));
+        assert!(!source.contains("|| observed == \"00\""));
         assert!(!source.contains("set txpower"));
         assert!(!source.contains("rtw_tx_pwr_lmt_enable"));
     }
 
     #[test]
-    fn management_restart_preserves_the_board_validated_sta_first_vht80_sequence() {
+    fn management_restart_uses_last_good_channel_before_sta_association() {
         let source = include_str!("management.rs");
         assert!(source
             .contains("self.restart_management_services(&committed_network_config()?, false)"));
@@ -3586,18 +3866,19 @@ mod tests {
         let sta_channel = body
             .find(".wait_for_sta_channel(STA_CHANNEL_WAIT)?")
             .unwrap();
-        // The radio channel readiness gate must sit between the final channel choice (which covers
-        // the live STA channel, the recorded last-good fallback, and the fixed AP fallback) and the
-        // hostapd programming: it uses the same `channel` value in every branch.
+        // Both paths keep a bounded driver-channel gate before hostapd. The matching last-good
+        // path skips STA association waiting while the no-record path also requires STA sharing.
         let gate = body
-            .find("wait_for_radio_channel_ready(config, channel, RADIO_CHANNEL_READY_WAIT)?")
+            .find("self.wait_for_radio_channel_ready(")
             .expect("single-radio channel readiness gate before hostapd");
         let hostapd = body.find("self.start_hostapd_on_channel").unwrap();
         let dnsmasq = body
             .find("self.start_service(ManagementService::Dnsmasq)?")
             .unwrap();
         let attach = body.find("if restore_attachment").unwrap();
-        let management_ready = body.find("self.management_services_ready()?").unwrap();
+        let management_ready = body
+            .find("self.wait_for_management_services_ready(PROCESS_WAIT)?")
+            .unwrap();
         let record = body.find("write_last_good_channel(&record)").unwrap();
         assert!(
             preserve < detach
@@ -3618,17 +3899,30 @@ mod tests {
                 && attach < management_ready
                 && management_ready < record
         );
-        // The full STA-channel wait exists only in the slow path, exactly once. The last-good
-        // fast path must still keep a short radio-settling window (FAST_START_CONFIRM_WAIT) before
-        // programming hostapd; it uses a live STA channel when present and only falls back to the
-        // recorded channel when no upstream channel appears.
+        let fast_path = body
+            .find("StartupChannelPlan::FastStart { channel } => (\n                    ApRadioChannel::from_domain(channel).unwrap_or(ApRadioChannel::DEFAULT),\n                    false,\n                ),")
+            .unwrap();
+        let slow_path = body
+            .find("StartupChannelPlan::WaitForStaChannel => (\n                    self.wait_for_sta_channel(STA_CHANNEL_WAIT)?")
+            .unwrap();
+        assert!(
+            body.contains("let (channel, require_sta_association) = match plan")
+                && body.contains("self.wait_for_radio_channel_ready(")
+        );
+        assert!(
+            fast_path < slow_path
+                && slow_path < gate
+                && source.contains("if !require_sta_association")
+        );
+        // A fresh last-good channel is the fast-start decision. It must not wait for a live STA
+        // association or a second confirmation window before programming hostapd.
         assert_eq!(
             body.matches(".wait_for_sta_channel(STA_CHANNEL_WAIT)?")
                 .count(),
             1
         );
-        assert!(body.contains("wait_for_sta_channel(FAST_START_CONFIRM_WAIT)?"));
-        assert!(body.contains("Some(live) => live"));
+        assert!(!body.contains("FAST_START_CONFIRM_WAIT"));
+        assert!(!body.contains("Some(live) => live"));
         assert!(body.contains("if attach_after_start"));
         assert!(body.contains("StartupChannelPlan::WaitForStaChannel"));
         assert!(body.contains("read_last_good_channel()?.as_ref()"));
@@ -3650,7 +3944,7 @@ mod tests {
             .find(".start_service(ManagementService::Hostapd)")
             .unwrap();
         let ready = helper
-            .find("self.wait_for_hostapd(channel, AP_READY_WAIT)")
+            .find("self.wait_for_hostapd_profile(channel, profile, AP_READY_WAIT)")
             .unwrap();
         assert!(country < stop_hostapd && stop_hostapd < start && start < ready);
         assert!(helper.contains("for attempt in 0..2"));
@@ -3781,24 +4075,31 @@ mod tests {
     }
 
     #[test]
-    fn current_driver_channel_set_contains_reflects_the_board_observed_cold_start_state() {
-        // Settled state observed on the board (radio on ch161, STA COMPLETED): upper-5GHz classes
-        // carry 161, while the current 20M class only carries 36/40/48 (44 and 165 are in the
-        // static capability but not the current set).
+    fn current_driver_channel_set_contains_tracks_channels_and_80m_classes() {
+        // Settled state observed on the board (radio on ch161, STA COMPLETED): ch161 is present
+        // only in 20M classes, while the lower 5 GHz channels also have an 80M operating class.
         let settled = "class band bw      ch_list\n\
             81 2.4G    20M  1 2 3 4 5 6 7 8 9 10 11\n\
             83 2.4G    40M+ 1 2 3 4 5 6 7\n\
-            115   5G    20M  36 40 48\n\
+            115   5G    20M  36 40 44 48\n\
             124   5G    20M  149 153 157 161\n\
-            125   5G    20M  149 153 157 161\n\
-            128   5G    80M  149 153 157 161\n\
+            125   5G    40M+ 149 153 157 161\n\
+            128   5G    80M  36 40 44 48\n\
             op_class number:11\n";
         assert!(current_driver_channel_set_contains(settled, 161));
         assert!(current_driver_channel_set_contains(settled, 149));
         assert!(current_driver_channel_set_contains(settled, 6));
         assert!(current_driver_channel_set_contains(settled, 36));
-        assert!(!current_driver_channel_set_contains(settled, 44));
         assert!(!current_driver_channel_set_contains(settled, 165));
+        assert!(current_driver_channel_set_contains_with_bandwidth(
+            settled, 36, "80M"
+        ));
+        assert!(!current_driver_channel_set_contains_with_bandwidth(
+            settled, 161, "80M"
+        ));
+        assert!(current_driver_channel_set_contains_with_bandwidth(
+            settled, 161, "40M+"
+        ));
 
         // Early cold-start scanning state observed on the board: only 2.4G and lower-5GHz classes
         // are current, so the recorded upper-5GHz channel is not yet usable by hostapd.
@@ -3808,6 +4109,23 @@ mod tests {
             op_class number:3\n";
         assert!(!current_driver_channel_set_contains(scanning, 161));
         assert!(current_driver_channel_set_contains(scanning, 6));
+    }
+
+    #[test]
+    fn ap_radio_profile_requires_an_80m_operating_class() {
+        let settled = "128 5G 80M 36 40 44 48\n124 5G 20M 149 153 157 161\n";
+        assert_eq!(
+            ap_radio_profile_from_driver_channels(settled, ApRadioChannel::ghz5(36).unwrap()),
+            ApRadioProfile::Vht80
+        );
+        assert_eq!(
+            ap_radio_profile_from_driver_channels(settled, ApRadioChannel::ghz5(161).unwrap()),
+            ApRadioProfile::Ht20
+        );
+        assert_eq!(
+            ap_radio_profile_from_driver_channels(settled, ApRadioChannel::ghz2(6).unwrap()),
+            ApRadioProfile::Ht20
+        );
     }
 
     #[test]

@@ -15,7 +15,7 @@ apps/rust/camera    -> /usr/bin/hyz-camera（媒体进程，S82）
 - `hyz-things` 以「hyz things」个人网站形式承载管理面：LAN `192.168.8.1:8080`（HTTPS，自签证书）与精确 Tailscale IPv4 监听、管理员认证（Argon2id 凭据仍在 `/userdata/hyz-router/admin/credential.json`）、会话/CSRF、嵌入式 Yew SPA、camera 客户端与 Tailscale listener 管理。它等待 router ready 标记后才绑定 HTTPS，通过 `hyz-contract` client 驱动 router，通过 `/run/hyz-camera/control.sock` 驱动 camera。
 - `hyz-camera` 是独立媒体进程，接受受限状态、会话、旋转请求，媒体在浏览器与固定 `40000-40015/udp` 池之间直连；它不执行网络或防火墙命令。
 
-推送演进：`apps/rust/things/tools/deploy-app.sh` 支持对任一应用热推送新 ELF。推送 camera/things 只停止并重启对应 init 服务，**router 永不因此重启**；推送 router 是唯一会重启 router 的动作。停止任何服务之前，工具按注册表记录的协议版本做兼容性检查（见「热推送与协议兼容窗口」）。
+推送演进：`apps/rust/things/tools/deploy-app.sh` 只支持对 `hyz-things` 和 `hyz-camera` 热推送新 ELF。推送 camera/things 只停止并重启对应 init 服务，**router 永不因此重启**；`hyz-router` 的修改必须通过 OTA 发布。停止任何服务之前，工具按注册表记录的协议版本做兼容性检查（见「热推送与协议兼容窗口」）。
 
 旧的统一单 ELF 方案（Web/Axum/管理员认证内嵌于 `hyz-router`）已完成拆分；本文档 2026-08-16 之前的 OTA 验收记录均属于拆分前的统一 ELF，作为历史验收保留。`apps/router-panel/{shared,server,adapter-linux,frontend}` 多 crate 方案此前已被否决并从源码删除；独立 MetaCubeXD 静态包也已删除，产品只保留 hyz-things 这一套管理 Web UI。
 
@@ -379,13 +379,13 @@ LCD 的 DTS `default-brightness-level = <0>` 让 U-Boot/Linux 冷启动默认保
 
 ## 热推送与协议兼容窗口
 
-`apps/rust/things/tools/deploy-app.sh` 是每应用热推送工具（`make deploy-router|deploy-things|deploy-camera`，回滚 `make revert-*`，预检 `deploy-app.sh check NAME`）：
+`apps/rust/things/tools/deploy-app.sh` 只允许热推送 `hyz-things` 和 `hyz-camera`（`make deploy-things|deploy-camera`，回滚 `make revert-things|revert-camera`，预检 `deploy-app.sh check NAME`）。`hyz-router` 不属于热推送范围，所有 router 修改必须通过 OTA 发布。
 
-- 推送流程：adb 推送 ELF 到 `/userdata/hyz-things/apps/<name>/<sha256>/` → 远端 SHA-256 校验 → **只停止目标应用的 init 服务**（S81/S83/S82）→ 同文件系统原子替换 `/usr/bin/<app>` → 启动 → 就绪探针 → 写注册表。
-- 服务隔离：推送 camera/things 绝不调用 router 的 init 脚本；`assert_router_untouched` 在推送前后断言 `/run/hyz-router/ready` 仍在。推送 router 是唯一重启 router 的动作，门户保持运行并自动重连 UDS。
+- 推送流程：adb 推送 ELF 到 `/userdata/hyz-things/apps/<name>/<sha256>/` → 远端 SHA-256 校验 → **只停止目标应用的 init 服务**（S83/S82）→ 同文件系统原子替换 `/usr/bin/<app>` → 启动 → 就绪探针 → 写注册表。
+- 服务隔离：推送 camera/things 绝不调用 router 的 init 脚本；`assert_router_untouched` 在推送前后断言 `/run/hyz-router/ready` 仍在，门户保持运行并自动重连 UDS。
 - 注册表：持久 `/userdata/hyz-things/apps/registry.json` 记录每个已部署二进制的 sha256 与 wire 协议版本（`protocol_versions`），每次部署保留 previous 条目供回滚；`/run/hyz-things/apps/<name>.json` 是当前启动的易失快照。
-- 协议兼容窗口：`hyz-contract` 的 wire 契约版本化，服务端接受当前与前一版本（`[current, current - 1]`），客户端要求精确匹配。deploy 与 revert 在**停止任何服务之前**按注册表记录版本做兼容性检查：推送 router 时要求已装 things 的 router 协议版本相等；推送 things 时要求已装 router/camera 版本相等；推送 camera 时要求已装 things 的 camera 期望版本相等。回滚按 previous 条目**记录的**版本校验（而不是当前源码树），防止源码已前进时错误放行。
-- 测试：`tools/test-deploy-app.sh` 用 fake adb 断言服务隔离、先拒绝后停止、回滚按记录版本把关；`make check` 与 `check-static` 均覆盖。
+- 协议兼容窗口：`hyz-contract` 的 wire 契约版本化，服务端接受当前与前一版本（`[current, current - 1]`），客户端要求精确匹配。deploy 与 revert 在**停止任何服务之前**按注册表记录版本做兼容性检查：推送 things 时要求已装 router/camera 版本相等；推送 camera 时要求已装 things 的 camera 期望版本相等。回滚按 previous 条目**记录的**版本校验（而不是当前源码树），防止源码已前进时错误放行。
+- 测试：`tools/test-deploy-app.sh` 用 fake adb 断言 router 不可热推送、服务隔离、先拒绝后停止和回滚按记录版本把关；`make check` 与 `check-static` 均覆盖。
 
 ## 路由与 Mihomo direct adapter
 

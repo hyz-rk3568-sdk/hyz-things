@@ -2943,7 +2943,6 @@ struct SettingsProps {
 struct ApSettingsRefs<'a> {
     ssid: &'a NodeRef,
     password: &'a NodeRef,
-    country: &'a NodeRef,
     apply_button: &'a NodeRef,
 }
 
@@ -2967,7 +2966,6 @@ fn settings(props: &SettingsProps) -> Html {
     let sta_apply_button = use_node_ref();
     let ap_ssid = use_node_ref();
     let ap_password = use_node_ref();
-    let ap_country = use_node_ref();
     let ap_toggle = use_node_ref();
     let ap_apply_button = use_node_ref();
     let network_confirmation_panel = use_node_ref();
@@ -3116,20 +3114,18 @@ fn settings(props: &SettingsProps) -> Html {
         let csrf = csrf.clone();
         let ssid = ap_ssid.clone();
         let password = ap_password.clone();
-        let country = ap_country.clone();
         Callback::from(move |event: SubmitEvent| {
             event.prevent_default();
-            let (Some(ssid), Some(password), Some(country)) = (
+            let (Some(ssid), Some(password)) = (
                 ssid.cast::<HtmlInputElement>(),
                 password.cast::<HtmlInputElement>(),
-                country.cast::<HtmlSelectElement>(),
             ) else {
                 return;
             };
             let request = ApRequest {
                 ssid: ssid.value(),
                 passphrase: password.value(),
-                country: country.value(),
+                country: "CN".to_owned(),
             };
             password.set_value("");
             dispatch_settings_mutation(
@@ -3419,7 +3415,7 @@ fn settings(props: &SettingsProps) -> Html {
                             <div id="ap-settings-detail" class={DISCLOSURE_DETAIL} role="region" aria-labelledby="ap-settings-toggle">
                                 {render_ap_settings(
                                     state,
-                                    ApSettingsRefs { ssid: &ap_ssid, password: &ap_password, country: &ap_country, apply_button: &ap_apply_button },
+                                    ApSettingsRefs { ssid: &ap_ssid, password: &ap_password, apply_button: &ap_apply_button },
                                     ApSettingsActions { prepare: prepare_ap, apply: request_ap_apply, confirm: confirm_ap, cancel: cancel_ap },
                                     busy,
                                 )}
@@ -3734,7 +3730,7 @@ fn render_ap_settings(
                 <form class={FORM_GRID_COMPACT} onsubmit={actions.prepare} autocomplete="off">
                     <label class={FIELD}><span class={FIELD_LABEL}>{"SSID"}</span><input class={INPUT} ref={refs.ssid.clone()} required=true maxlength="32" autocomplete="off" /></label>
                     <label class={FIELD}><span class={FIELD_LABEL}>{"密码"}</span><input class={INPUT} ref={refs.password.clone()} type="password" required=true minlength="8" maxlength="63" autocomplete="new-password" /></label>
-                    <label class={FIELD}><span class={FIELD_LABEL}>{"国家 / 地区"}</span><select class={SELECT} ref={refs.country.clone()}><option value="CN">{"中国 (CN)"}</option><option value="US">{"美国 (US)"}</option><option value="JP">{"日本 (JP)"}</option><option value="SG">{"新加坡 (SG)"}</option><option value="TW">{"中国台湾 (TW)"}</option><option value="AU">{"澳大利亚 (AU)"}</option><option value="BR">{"巴西 (BR)"}</option><option value="CA">{"加拿大 (CA)"}</option><option value="DE">{"德国 (DE)"}</option><option value="FR">{"法国 (FR)"}</option><option value="GB">{"英国 (GB)"}</option><option value="IN">{"印度 (IN)"}</option><option value="KR">{"韩国 (KR)"}</option><option value="NZ">{"新西兰 (NZ)"}</option></select></label>
+                    <label class={FIELD}><span class={FIELD_LABEL}>{"国家 / 地区"}</span><input class={READONLY_INPUT} value="中国 (CN)" readonly=true aria-readonly="true" /></label>
                     <div class={FORM_ACTIONS}><button class={BUTTON_PRIMARY} type="submit" disabled={busy}>{"准备 AP 变更"}</button></div>
                 </form>
             </>

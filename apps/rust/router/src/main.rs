@@ -67,6 +67,8 @@ use tokio::{
 const DAEMON_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2 * 60);
 const MIHOMO_DIRECT_RECOVERY_INTERVAL: Duration = Duration::from_secs(2);
 const ETHERNET_DHCP_LIFECYCLE_INTERVAL: Duration = Duration::from_secs(1);
+const AP_VHT80_UPGRADE_INTERVAL: Duration = Duration::from_secs(2);
+const AP_VHT80_UPGRADE_GRACE: Duration = Duration::from_secs(30);
 
 fn arm_shutdown_deadline(deadline: TokioInstant) {
     std::thread::spawn(move || {
@@ -1476,6 +1478,42 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         return result.map_err(|error| Box::new(error) as Box<dyn Error>);
     }
 
+    let ap_upgrade_runtime = runtime.clone();
+    let mut ap_upgrade_shutdown = shutdown_rx.clone();
+    let mut ap_upgrade = tokio::spawn(async move {
+        let mut interval = tokio::time::interval_at(
+            TokioInstant::now() + AP_VHT80_UPGRADE_GRACE,
+            AP_VHT80_UPGRADE_INTERVAL,
+        );
+        let mut complete = false;
+        interval.tick().await;
+        loop {
+            tokio::select! {
+                _ = interval.tick(), if !complete => {
+                    let _serial = ap_upgrade_runtime.router_proxy.lock().await;
+                    let router = ap_upgrade_runtime.router.clone();
+                    match tokio::task::spawn_blocking(move || router.try_upgrade_ap_to_vht80()).await {
+                        Ok(Ok(Some(true))) => complete = true,
+                        Ok(Ok(Some(false))) => complete = true,
+                        Ok(Ok(None)) => {}
+                        Ok(Err(error)) => {
+                            eprintln!("hyz-router: deferred VHT80 AP upgrade stopped; HT20 management AP retained: {error}");
+                            complete = true;
+                        }
+                        Err(error) => {
+                            eprintln!("hyz-router: deferred VHT80 AP upgrade worker terminated; HT20 management AP retained: {error}");
+                            complete = true;
+                        }
+                    }
+                }
+                changed = ap_upgrade_shutdown.changed() => {
+                    let _ = changed;
+                    break;
+                }
+            }
+        }
+    });
+
     let ethernet_dhcp_runtime = runtime.clone();
     let mut ethernet_dhcp_shutdown = shutdown_rx.clone();
     let mut ethernet_dhcp = tokio::spawn(async move {
@@ -1616,6 +1654,17 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
             "control drain exceeded the daemon shutdown deadline",
         )),
     };
+    let ap_upgrade_task = match timeout_at(deadline, &mut ap_upgrade).await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(error)) => Err(std::io::Error::other(format!(
+            "VHT80 AP upgrade task terminated unexpectedly: {error}"
+        ))),
+        Err(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "VHT80 AP upgrade task drain exceeded the daemon shutdown deadline",
+        )),
+    };
+    let services = services.and(ap_upgrade_task);
     let ethernet_dhcp_task = match timeout_at(deadline, &mut ethernet_dhcp).await {
         Ok(Ok(())) => Ok(()),
         Ok(Err(error)) => Err(std::io::Error::other(format!(

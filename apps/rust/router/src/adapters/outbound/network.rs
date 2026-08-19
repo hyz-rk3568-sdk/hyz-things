@@ -122,7 +122,8 @@ impl LinuxRouterPlatform {
     }
 
     pub(crate) fn attach_ap(&self) -> Result<(), PlatformError> {
-        self.attach_lan_member(LAN_MEMBER)
+        self.attach_lan_member(LAN_MEMBER)?;
+        self.wait_for_management_services_ready(Duration::from_secs(5))
     }
 
     fn attach_lan_member(&self, interface: &'static str) -> Result<(), PlatformError> {
@@ -506,7 +507,7 @@ impl LinuxRouterPlatform {
         rule: &[String],
     ) -> Result<(), PlatformError> {
         let mut args = strings(&["-w", "-t", table, "-A", chain]);
-        args.extend(rule.iter().cloned());
+        args.extend(rule.iter().skip(2).cloned());
         self.run(Tool::Iptables, &args).map(|_| ())
     }
 

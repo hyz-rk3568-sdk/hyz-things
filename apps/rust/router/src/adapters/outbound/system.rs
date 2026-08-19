@@ -133,8 +133,7 @@ impl SystemProbePort for LinuxRouterPlatform {
         let bridge_up = if bridge_absent {
             Probe::Known(false)
         } else {
-            read_trimmed(format!("/sys/class/net/{LAN_BRIDGE}/operstate"))
-                .map(|state| state == "up")
+            observe_interface_admin_up(format!("/sys/class/net/{LAN_BRIDGE}/flags"))
         };
         let lan_address_present = if bridge_absent {
             Probe::Known(false)
@@ -1491,6 +1490,26 @@ fn effective_uid() -> Result<u32, PlatformError> {
     Ok(uid)
 }
 
+fn observe_interface_admin_up(path: impl AsRef<Path>) -> Probe<bool> {
+    match fs::read_to_string(path) {
+        Ok(value) => match parse_interface_flags(value.trim()) {
+            Ok(up) => Probe::Known(up),
+            Err(reason) => Probe::Unknown(reason.to_owned()),
+        },
+        Err(error) => Probe::Unknown(error.to_string()),
+    }
+}
+
+fn parse_interface_flags(value: &str) -> Result<bool, &'static str> {
+    let value = value.trim();
+    let value = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+        .ok_or("interface flags are missing the 0x prefix")?;
+    let flags = u32::from_str_radix(value, 16).map_err(|_| "interface flags are malformed")?;
+    Ok(flags & 0x1 != 0)
+}
+
 fn read_trimmed(path: impl AsRef<Path>) -> Probe<String> {
     match fs::read_to_string(path) {
         Ok(value) => Probe::Known(value.trim().to_owned()),
@@ -1505,6 +1524,15 @@ fn strings(values: &[&str]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interface_flags_use_administrative_up_bit() {
+        assert_eq!(parse_interface_flags("0x1003"), Ok(true));
+        assert_eq!(parse_interface_flags("0x1002"), Ok(false));
+        assert_eq!(parse_interface_flags("0X1"), Ok(true));
+        assert!(parse_interface_flags("up").is_err());
+        assert!(parse_interface_flags("1003").is_err());
+    }
 
     #[test]
     fn legacy_proxy_modes_migrate_without_authorizing_tailscaled() {

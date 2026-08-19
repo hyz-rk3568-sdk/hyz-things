@@ -254,7 +254,7 @@ impl Default for HarnessState {
                 version: NETWORK_CONFIG_VERSION,
                 ap_ssid: ssid("HYZ Router E2E"),
                 sta_ssid: ssid("E2E-Upstream"),
-                country: WifiCountry::Us,
+                country: WifiCountry::Cn,
             },
             pending_network: None,
             pending_network_applied: false,

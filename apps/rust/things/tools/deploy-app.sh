@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 
-# Per-application hot-push tool for the headless hyz-things board.
+# Per-application hot-push tool for the non-router hyz-things board applications.
 #
-# Every application (router, things, camera) has its own init service and
-# daemon binary. Pushing camera or things stops and restarts only that
-# service; the stable router core is never restarted by another application's
-# push. Pushing the router is the only action that restarts it.
+# Camera and things each have their own init service and daemon binary. Pushing
+# either application never stops or restarts the stable router core. Router
+# changes are delivered through the OTA path only.
 #
 # The wire contracts are versioned (hyz-contract). Servers accept their own
 # and the previous protocol version; clients require an exact match. The
@@ -20,7 +19,7 @@
 #   deploy-app.sh revert NAME
 #   deploy-app.sh check NAME
 #
-# NAME is one of: router things camera
+# NAME is one of: things camera
 
 set -euo pipefail
 
@@ -44,12 +43,10 @@ READY_WAIT_SECONDS=${READY_WAIT_SECONDS:-180}
 
 # Fixed per-application registry: name -> init script and daemon binary.
 declare -A INIT_SCRIPT=(
-    [router]=/etc/init.d/S81hyz-router
     [things]=/etc/init.d/S83hyz-things
     [camera]=/etc/init.d/S82hyz-camera
 )
 declare -A DAEMON=(
-    [router]=/usr/bin/hyz-router
     [things]=/usr/bin/hyz-things
     [camera]=/usr/bin/hyz-camera
 )
@@ -89,7 +86,7 @@ valid_app() {
 
 usage() {
     printf 'usage: %s {deploy NAME PATH_TO_BINARY|revert NAME|check NAME}\n' "$0" >&2
-    printf '       NAME is one of: router things camera\n' >&2
+    printf '       NAME is one of: things camera\n' >&2
 }
 
 wait_for_adb() {
@@ -146,7 +143,7 @@ protocol_version_of() { # app protocol
             file="$THINGS_DIR/src/adapters/outbound/camera.rs"
             pattern='^const CAMERA_CONTROL_PROTOCOL_VERSION: u16 = '
             ;;
-        things:router|router:router)
+        things:router)
             file="$CONTRACT_DIR/src/router.rs"
             pattern='^pub const PROTOCOL_VERSION: u16 = '
             ;;
@@ -173,9 +170,6 @@ protocol_version_of() { # app protocol
 
 pushed_protocol_versions() { # app -> "protocol version" lines
     case "$1" in
-        router)
-            printf 'router %s\n' "$(protocol_version_of router router)"
-            ;;
         things)
             printf 'router %s\ncamera %s\n' \
                 "$(protocol_version_of things router)" \
@@ -183,6 +177,10 @@ pushed_protocol_versions() { # app -> "protocol version" lines
             ;;
         camera)
             printf 'camera %s\n' "$(protocol_version_of camera camera)"
+            ;;
+        *)
+            printf 'unknown application %s\n' "$1" >&2
+            return 1
             ;;
     esac
 }
@@ -203,9 +201,12 @@ PY
 
 compat_edges() { # pushed app -> "protocol peer" lines
     case "$1" in
-        router) printf 'router things\n' ;;
         things) printf 'router router\ncamera camera\n' ;;
         camera) printf 'camera things\n' ;;
+        *)
+            printf 'unknown application %s\n' "$1" >&2
+            return 1
+            ;;
     esac
 }
 
@@ -385,7 +386,7 @@ deploy() {
     rm -f "$versions_file"
 
     remote_binary="$REMOTE_APPS_DIR/$APP_NAME/$host_sha"
-    if [[ "$APP_NAME" != "router" ]] && device_shell_rc "test -s '$ROUTER_READY_MARKER'"; then
+    if device_shell_rc "test -s '$ROUTER_READY_MARKER'"; then
         ROUTER_WAS_READY=true
     fi
 
@@ -429,7 +430,7 @@ revert() {
         printf 'previous %s binary is not present on the device: %s\n' "$APP_NAME" "$remote_previous" >&2
         return 1
     fi
-    if [[ "$APP_NAME" != "router" ]] && device_shell_rc "test -s '$ROUTER_READY_MARKER'"; then
+    if device_shell_rc "test -s '$ROUTER_READY_MARKER'"; then
         ROUTER_WAS_READY=true
     fi
     swap_binary "$remote_previous" "$previous_sha"
