@@ -32,6 +32,7 @@ use hyz_router::{
             MihomoDirectRecoveryApplication, MihomoDirectRecoveryResult, ProxyApplication,
             ProxyFeatureCoordinator,
         },
+        reconcile::forwarding_reconcile_needed,
         router::RouterApplication,
         shutdown::ShutdownApplication,
         status::{
@@ -645,14 +646,10 @@ impl ProductionRuntime {
     async fn reconcile_ethernet_dhcp(&self) -> Result<(), PlatformError> {
         let _serial = self.router_proxy.lock().await;
         let platform = self.router.clone();
-        let uplink_changed = tokio::task::spawn_blocking(move || {
-            let before = platform.observe_network()?.active_uplink_observation();
+        let needs_runtime_reconcile = tokio::task::spawn_blocking(move || {
             EthernetDhcpLifecycleApplication::new(platform.as_ref()).reconcile()?;
-            let after = platform.observe_network()?.active_uplink_observation();
-            Ok(matches!(
-                (before, after),
-                (Probe::Known(before), Probe::Known(after)) if before != after
-            ))
+            let after = platform.observe_network()?;
+            Ok(forwarding_reconcile_needed(&after))
         })
         .await
         .map_err(|_| {
@@ -660,7 +657,7 @@ impl ProductionRuntime {
                 "Ethernet DHCP lifecycle worker terminated unexpectedly".to_owned(),
             )
         })??;
-        if uplink_changed {
+        if needs_runtime_reconcile {
             let platform = self.router.clone();
             let tailscale = self.tailscale.clone();
             tokio::task::spawn_blocking(move || {

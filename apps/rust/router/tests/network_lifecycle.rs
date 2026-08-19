@@ -4,7 +4,9 @@ use hyz_router::{
     adapters::outbound::system::forward_hook_order_is_exact,
     application::{
         ports::{ClockPort, LifecycleLease, PlatformError, RouterPlatformPort, SystemProbePort},
-        reconcile::{forwarding_plan, management_plan, network_plan, proxy_plan},
+        reconcile::{
+            forwarding_plan, forwarding_reconcile_needed, management_plan, network_plan, proxy_plan,
+        },
         router::RouterApplication,
     },
     domain::{
@@ -365,6 +367,31 @@ fn owned_firewall_reconfigures_to_the_exact_current_wan_set() {
             token: "router-old".to_owned(),
             previous_wan_set: RouterWanSet::Wifi,
             wan_set: RouterWanSet::EthernetAndWifi,
+        }]
+    );
+}
+
+#[test]
+fn ethernet_linkdown_after_dual_wan_requires_wifi_only_firewall_reconcile() {
+    let mut observed = network(
+        true,
+        OwnedResource::Owned {
+            token: "router-old".to_owned(),
+        },
+    );
+    observed.firewall_wan_set = Probe::Known(Some(RouterWanSet::EthernetAndWifi));
+
+    assert_eq!(
+        observed.router_wan_set(),
+        Probe::Known(Some(RouterWanSet::Wifi))
+    );
+    assert!(forwarding_reconcile_needed(&observed));
+    assert_eq!(
+        forwarding_plan(&NetworkDesired::forwarding(), &observed, "new").unwrap(),
+        vec![NetworkAction::ReconfigureRouterFirewall {
+            token: "router-old".to_owned(),
+            previous_wan_set: RouterWanSet::EthernetAndWifi,
+            wan_set: RouterWanSet::Wifi,
         }]
     );
 }
@@ -864,6 +891,39 @@ fn fake_port_characterizes_enable_order_and_reprobes_before_ready() {
         ]
     );
     assert_eq!(*fake.releases.lock().expect("releases"), 1);
+}
+
+#[test]
+fn fake_port_reconciles_dual_wan_firewall_to_wifi_after_ethernet_cleanup() {
+    let mut stale = network(
+        true,
+        OwnedResource::Owned {
+            token: "router-old".to_owned(),
+        },
+    );
+    stale.firewall_wan_set = Probe::Known(Some(RouterWanSet::EthernetAndWifi));
+    let clean = network(
+        true,
+        OwnedResource::Owned {
+            token: "router-old".to_owned(),
+        },
+    );
+    let fake = Fake::with_observations(vec![stale.clone(), stale, clean.clone()]);
+
+    let result = RouterApplication::new(&fake, &fake, &fake)
+        .reconcile(&NetworkDesired::forwarding())
+        .expect("Wi-Fi fallback firewall reconcile");
+
+    assert_eq!(result.actions_applied, 1);
+    assert_eq!(
+        *fake.actions.lock().expect("actions"),
+        vec![NetworkAction::ReconfigureRouterFirewall {
+            token: "router-old".to_owned(),
+            previous_wan_set: RouterWanSet::EthernetAndWifi,
+            wan_set: RouterWanSet::Wifi,
+        }]
+    );
+    assert!(clean.ready_for(&NetworkDesired::forwarding()));
 }
 
 #[test]

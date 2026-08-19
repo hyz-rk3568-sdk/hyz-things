@@ -155,6 +155,12 @@ pub fn forwarding_plan(
     Ok(actions)
 }
 
+/// Returns true when a confirmed WAN exists but the forwarding data plane is not strictly ready.
+pub fn forwarding_reconcile_needed(observed: &NetworkObserved) -> bool {
+    matches!(observed.router_wan_set(), Probe::Known(Some(_)))
+        && !observed.ready_for(&NetworkDesired::forwarding())
+}
+
 fn push_forwarding_capture(
     actions: &mut Vec<NetworkAction>,
     previous: &Probe<Option<bool>>,
