@@ -202,6 +202,15 @@ expect_log_contains "'/etc/init.d/S82hyz-camera' start"
 expect_log_absent 'S81hyz-router'
 expect_log_absent 'S83hyz-things'
 expect_log_contains 'push /userdata/hyz-things/apps/registry.json.tmp'
+python3 - "$FAKE_DEVICE_ROOT/userdata/hyz-things/apps/registry.json.tmp" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    deployed = json.load(stream)["apps"]["camera"]["current"]
+assert isinstance(deployed["deployed_at_unix_ms"], int)
+assert deployed["deployed_at_unix_ms"] > 0
+PY
 
 # A things push stops only the things service and never the router.
 reset_log

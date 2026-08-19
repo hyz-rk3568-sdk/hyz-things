@@ -1,8 +1,10 @@
-use crate::application::ports::PlatformError;
+use crate::application::ports::{LifecycleLease, PlatformError};
 
 pub trait EthernetDhcpLifecyclePort: Send + Sync {
+    fn acquire_lifecycle_lock(&self) -> Result<LifecycleLease, PlatformError>;
+    fn release_lifecycle_lock(&self, lease: &LifecycleLease) -> Result<(), PlatformError>;
+    fn ensure_ethernet_link_up(&self) -> Result<(), PlatformError>;
     fn ethernet_carrier_up(&self) -> Result<bool, PlatformError>;
-    fn management_wifi_ready(&self) -> Result<bool, PlatformError>;
     fn start_ethernet_dhcp(&self) -> Result<(), PlatformError>;
     fn stop_ethernet_dhcp(&self) -> Result<(), PlatformError>;
 }
@@ -17,19 +19,34 @@ impl<'a> EthernetDhcpLifecycleApplication<'a> {
     }
 
     pub fn reconcile(&self) -> Result<(), PlatformError> {
-        if self.platform.ethernet_carrier_up()? {
-            if self.platform.management_wifi_ready()? {
-                self.platform.start_ethernet_dhcp()
-            } else {
-                Ok(())
-            }
-        } else {
-            self.platform.stop_ethernet_dhcp()
+        let lease = self.platform.acquire_lifecycle_lock()?;
+        let result = self.reconcile_locked();
+        let release = self.platform.release_lifecycle_lock(&lease);
+        match (result, release) {
+            (Err(error), _) => Err(error),
+            (Ok(()), Err(error)) => Err(error),
+            (Ok(()), Ok(())) => Ok(()),
         }
     }
 
     pub fn shutdown(&self) -> Result<(), PlatformError> {
-        self.platform.stop_ethernet_dhcp()
+        let lease = self.platform.acquire_lifecycle_lock()?;
+        let result = self.platform.stop_ethernet_dhcp();
+        let release = self.platform.release_lifecycle_lock(&lease);
+        match (result, release) {
+            (Err(error), _) => Err(error),
+            (Ok(()), Err(error)) => Err(error),
+            (Ok(()), Ok(())) => Ok(()),
+        }
+    }
+
+    fn reconcile_locked(&self) -> Result<(), PlatformError> {
+        self.platform.ensure_ethernet_link_up()?;
+        if self.platform.ethernet_carrier_up()? {
+            self.platform.start_ethernet_dhcp()
+        } else {
+            self.platform.stop_ethernet_dhcp()
+        }
     }
 }
 
@@ -40,19 +57,33 @@ mod tests {
 
     struct Fake {
         carrier_up: bool,
-        management_wifi_ready: bool,
         ethernet_actions: Mutex<Vec<&'static str>>,
-        wifi_process_actions: Mutex<Vec<&'static str>>,
-        wifi_ownership_actions: Mutex<Vec<&'static str>>,
+        lock_actions: Mutex<Vec<&'static str>>,
     }
 
     impl EthernetDhcpLifecyclePort for Fake {
-        fn ethernet_carrier_up(&self) -> Result<bool, PlatformError> {
-            Ok(self.carrier_up)
+        fn acquire_lifecycle_lock(&self) -> Result<LifecycleLease, PlatformError> {
+            self.lock_actions.lock().unwrap().push("acquire");
+            Ok(LifecycleLease {
+                path: "test",
+                identity: "test".to_owned(),
+                directory_device: 1,
+                directory_inode: 1,
+            })
         }
 
-        fn management_wifi_ready(&self) -> Result<bool, PlatformError> {
-            Ok(self.management_wifi_ready)
+        fn release_lifecycle_lock(&self, _: &LifecycleLease) -> Result<(), PlatformError> {
+            self.lock_actions.lock().unwrap().push("release");
+            Ok(())
+        }
+
+        fn ensure_ethernet_link_up(&self) -> Result<(), PlatformError> {
+            self.ethernet_actions.lock().unwrap().push("ensure");
+            Ok(())
+        }
+
+        fn ethernet_carrier_up(&self) -> Result<bool, PlatformError> {
+            Ok(self.carrier_up)
         }
 
         fn start_ethernet_dhcp(&self) -> Result<(), PlatformError> {
@@ -66,52 +97,58 @@ mod tests {
         }
     }
 
-    fn fake(carrier_up: bool, management_wifi_ready: bool) -> Fake {
+    fn fake(carrier_up: bool) -> Fake {
         Fake {
             carrier_up,
-            management_wifi_ready,
             ethernet_actions: Mutex::new(Vec::new()),
-            wifi_process_actions: Mutex::new(Vec::new()),
-            wifi_ownership_actions: Mutex::new(Vec::new()),
+            lock_actions: Mutex::new(Vec::new()),
         }
     }
 
     #[test]
-    fn carrier_up_starts_only_ethernet_dhcp_after_management_wifi_is_ready() {
-        let fake = fake(true, true);
+    fn carrier_up_starts_ethernet_dhcp_without_a_wifi_lease_dependency() {
+        let fake = fake(true);
 
         EthernetDhcpLifecycleApplication::new(&fake)
             .reconcile()
             .unwrap();
 
-        assert_eq!(*fake.ethernet_actions.lock().unwrap(), vec!["start"]);
-        assert!(fake.wifi_process_actions.lock().unwrap().is_empty());
-        assert!(fake.wifi_ownership_actions.lock().unwrap().is_empty());
+        assert_eq!(
+            *fake.ethernet_actions.lock().unwrap(),
+            vec!["ensure", "start"]
+        );
+        assert_eq!(
+            *fake.lock_actions.lock().unwrap(),
+            vec!["acquire", "release"]
+        );
+    }
+
+    #[test]
+    fn shutdown_stops_ethernet_dhcp_without_consulting_wifi_state() {
+        let fake = fake(true);
+
+        EthernetDhcpLifecycleApplication::new(&fake)
+            .shutdown()
+            .unwrap();
+
+        assert_eq!(*fake.ethernet_actions.lock().unwrap(), vec!["stop"]);
+        assert_eq!(
+            *fake.lock_actions.lock().unwrap(),
+            vec!["acquire", "release"]
+        );
     }
 
     #[test]
     fn carrier_down_cleans_up_only_ethernet_dhcp() {
-        let fake = fake(false, true);
+        let fake = fake(false);
 
         EthernetDhcpLifecycleApplication::new(&fake)
             .reconcile()
             .unwrap();
 
-        assert_eq!(*fake.ethernet_actions.lock().unwrap(), vec!["stop"]);
-        assert!(fake.wifi_process_actions.lock().unwrap().is_empty());
-        assert!(fake.wifi_ownership_actions.lock().unwrap().is_empty());
-    }
-
-    #[test]
-    fn carrier_up_does_not_start_dhcp_during_management_wifi_startup() {
-        let fake = fake(true, false);
-
-        EthernetDhcpLifecycleApplication::new(&fake)
-            .reconcile()
-            .unwrap();
-
-        assert!(fake.ethernet_actions.lock().unwrap().is_empty());
-        assert!(fake.wifi_process_actions.lock().unwrap().is_empty());
-        assert!(fake.wifi_ownership_actions.lock().unwrap().is_empty());
+        assert_eq!(
+            *fake.ethernet_actions.lock().unwrap(),
+            vec!["ensure", "stop"]
+        );
     }
 }

@@ -13,6 +13,8 @@ pub struct InstalledApp {
     #[serde(default)]
     pub sha256: Option<String>,
     #[serde(default)]
+    pub deployed_at_unix_ms: Option<u64>,
+    #[serde(default)]
     pub protocol_versions: BTreeMap<String, u32>,
 }
 
@@ -23,6 +25,7 @@ impl InstalledApp {
             binary: String::new(),
             init_script: String::new(),
             sha256: None,
+            deployed_at_unix_ms: None,
             protocol_versions: BTreeMap::new(),
         }
     }

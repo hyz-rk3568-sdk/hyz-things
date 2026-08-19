@@ -13,7 +13,7 @@ use crate::{
             DHCP_GENERATION_ENV, DHCP_HOOK_ROLE_ENV, DHCP_UPLINK_ENV,
         },
         ethernet_dhcp::EthernetDhcpLifecyclePort,
-        ports::{ClockPort, PlatformError},
+        ports::{ClockPort, LifecycleLease, PlatformError},
         wifi::{WifiPlatformPort, WifiScanEntry},
     },
     domain::{
@@ -619,6 +619,23 @@ impl super::process::LinuxRouterPlatform {
     }
 
     fn observe_ethernet_carrier(&self) -> Result<bool, PlatformError> {
+        let admin_up =
+            match fs::read_to_string(format!("/sys/class/net/{ETHERNET_WAN_INTERFACE}/flags")) {
+                Ok(flags) => parse_admin_up_flags(flags.trim()).map_err(|reason| {
+                    PlatformError::ProbeFailed(format!(
+                        "eth0 administrative flags are malformed: {reason}"
+                    ))
+                })?,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+                Err(error) => {
+                    return Err(PlatformError::ProbeFailed(format!(
+                        "read eth0 administrative flags: {error}"
+                    )))
+                }
+            };
+        if !admin_up {
+            return Ok(false);
+        }
         match fs::read_to_string(format!("/sys/class/net/{ETHERNET_WAN_INTERFACE}/carrier")) {
             Ok(carrier) => match carrier.trim() {
                 "1" => Ok(true),
@@ -662,11 +679,7 @@ impl super::process::LinuxRouterPlatform {
     }
 
     fn stop_ethernet_dhcp_process(&self) -> Result<(), PlatformError> {
-        self.stop_service(ManagementService::EthernetUdhcpc)?;
-        if let Some(generation) = read_active_dhcp_generation(DhcpUplink::Ethernet)? {
-            retire_active_dhcp_generation(DhcpUplink::Ethernet, &generation)?;
-        }
-        Ok(())
+        self.stop_owned_dhcp_uplink(ManagementService::EthernetUdhcpc, DhcpUplink::Ethernet)
     }
 
     fn start_service(&self, service: ManagementService) -> Result<(), PlatformError> {
@@ -744,21 +757,38 @@ impl super::process::LinuxRouterPlatform {
     }
 
     pub(crate) fn stop_owned_management_services(&self) -> Result<(), PlatformError> {
-        for service in SERVICES.into_iter().rev() {
-            self.stop_service(service)?;
-        }
-        let active = read_active_dhcp_generation(DhcpUplink::Wifi)?;
-        let owned = read_dhcp_ownership(DhcpUplink::Wifi)?;
+        self.stop_service(ManagementService::Dnsmasq)?;
+        self.stop_service(ManagementService::Hostapd)?;
+        self.stop_owned_dhcp_uplink(ManagementService::Udhcpc, DhcpUplink::Wifi)?;
+        self.stop_service(ManagementService::WpaSupplicant)
+    }
+
+    fn stop_owned_dhcp_uplink(
+        &self,
+        service: ManagementService,
+        uplink: DhcpUplink,
+    ) -> Result<(), PlatformError> {
+        self.stop_service(service)?;
+        self.cleanup_dhcp_uplink(uplink)
+    }
+
+    fn cleanup_dhcp_uplink(&self, uplink: DhcpUplink) -> Result<(), PlatformError> {
+        let active = read_active_dhcp_generation(uplink)?;
+        let owned = read_dhcp_ownership(uplink)?;
         if let Some(generation) = active {
             self.apply_dhcp_event_locked(&DhcpEvent::new(
-                DhcpUplink::Wifi,
+                uplink,
                 generation.clone(),
                 DhcpTransition::Deconfig,
             ))?;
-            retire_active_dhcp_generation(DhcpUplink::Wifi, &generation)?;
+            retire_active_dhcp_generation(uplink, &generation)?;
+            storage::remove_file_durable(dhcp_resolver_record(uplink))?;
+            publish_selected_resolver_surface()?;
         } else if let Some(owned) = owned {
-            reconcile_owned_generation(DhcpUplink::Wifi, Some(&owned), None)?;
-            storage::remove_file_durable(dhcp_ownership_record(DhcpUplink::Wifi))?;
+            reconcile_owned_generation(uplink, Some(&owned), None)?;
+            storage::remove_file_durable(dhcp_ownership_record(uplink))?;
+            storage::remove_file_durable(dhcp_resolver_record(uplink))?;
+            publish_selected_resolver_surface()?;
         }
         Ok(())
     }
@@ -781,16 +811,6 @@ impl super::process::LinuxRouterPlatform {
                 "refusing to stop {} because PID/start/exe/argv identity is not exact",
                 service.label()
             )));
-        }
-        if service == ManagementService::Udhcpc {
-            let _ = signal(identity.pid, "-USR2");
-            thread::sleep(Duration::from_secs(1));
-            if !identity.matches(service)? {
-                fs::remove_file(service.record()).map_err(|error| {
-                    PlatformError::Io(format!("remove {} identity: {error}", service.label()))
-                })?;
-                return Ok(());
-            }
         }
         signal(identity.pid, "-TERM")?;
         let deadline = Instant::now() + PROCESS_WAIT;
@@ -1261,24 +1281,13 @@ impl super::process::LinuxRouterPlatform {
                     })
                     .collect::<Vec<_>>();
                 let route = if defaults.len() == 1 {
-                    let routes = self.run_management_probe(
-                        "/usr/sbin/ip",
-                        &[
-                            "-4",
-                            "route",
-                            "show",
-                            "default",
-                            "dev",
-                            dhcp_uplink_interface(uplink),
-                        ],
-                    );
-                    routes
-                        .ok()
-                        .and_then(|routes| {
-                            crate::adapters::outbound::system::exact_default_gateway(&routes)
-                                .and_then(|gateway| gateway.parse().ok())
-                        })
-                        .filter(|gateway| *gateway == defaults[0].gateway)
+                    let routes = self
+                        .run_management_probe("/usr/sbin/ip", &["-4", "route", "show", "default"]);
+                    routes.ok().and_then(|routes| {
+                        let lines = default_route_lines_for_uplink(&routes, uplink);
+                        (lines.len() == 1 && ready_owned_route_line(uplink, lines[0], defaults[0]))
+                            .then_some(defaults[0].gateway)
+                    })
                 } else {
                     None
                 };
@@ -1478,12 +1487,34 @@ impl super::process::LinuxRouterPlatform {
 }
 
 impl EthernetDhcpLifecyclePort for super::process::LinuxRouterPlatform {
-    fn ethernet_carrier_up(&self) -> Result<bool, PlatformError> {
-        self.observe_ethernet_carrier()
+    fn acquire_lifecycle_lock(&self) -> Result<LifecycleLease, PlatformError> {
+        storage::acquire_lock(super::process::NETWORK_LOCK)
     }
 
-    fn management_wifi_ready(&self) -> Result<bool, PlatformError> {
-        self.management_services_ready()
+    fn release_lifecycle_lock(&self, lease: &LifecycleLease) -> Result<(), PlatformError> {
+        storage::release_lock(lease)
+    }
+
+    fn ensure_ethernet_link_up(&self) -> Result<(), PlatformError> {
+        let flags = fs::read_to_string(format!("/sys/class/net/{ETHERNET_WAN_INTERFACE}/flags"))
+            .map_err(|error| {
+                PlatformError::ProbeFailed(format!("read eth0 administrative flags: {error}"))
+            })?;
+        let admin_up = parse_admin_up_flags(flags.trim()).map_err(|reason| {
+            PlatformError::ProbeFailed(format!("eth0 administrative flags are malformed: {reason}"))
+        })?;
+        if !admin_up {
+            run_bounded(
+                "/usr/sbin/ip",
+                &["link", "set", "dev", ETHERNET_WAN_INTERFACE, "up"],
+                Duration::from_secs(3),
+            )?;
+        }
+        Ok(())
+    }
+
+    fn ethernet_carrier_up(&self) -> Result<bool, PlatformError> {
+        self.observe_ethernet_carrier()
     }
 
     fn start_ethernet_dhcp(&self) -> Result<(), PlatformError> {
@@ -2649,11 +2680,28 @@ fn address_output_contains(output: &str, cidr: &str) -> bool {
     })
 }
 
+fn parse_admin_up_flags(value: &str) -> Result<bool, &'static str> {
+    let value = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+        .ok_or("interface flags are missing the 0x prefix")?;
+    let flags = u32::from_str_radix(value, 16).map_err(|_| "interface flags are malformed")?;
+    Ok(flags & 0x1 != 0)
+}
+
 fn route_line_uses_interface(line: &str, interface: &str) -> bool {
     line.split_whitespace()
         .collect::<Vec<_>>()
         .windows(2)
         .any(|pair| pair == ["dev", interface])
+}
+
+fn default_route_lines_for_uplink(routes: &str, uplink: DhcpUplink) -> Vec<&str> {
+    routes
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter(|line| route_line_uses_interface(line, dhcp_uplink_interface(uplink)))
+        .collect()
 }
 
 fn exact_default_route_line(uplink: DhcpUplink, line: &str, route: &OwnedRoute) -> bool {
@@ -2834,9 +2882,16 @@ fn verify_owned_generation_prestate(
     previous: Option<&DhcpOwnership>,
     next: Option<&DhcpOwnership>,
 ) -> Result<(), PlatformError> {
+    let cleanup = next.is_none();
     let previous_address = previous.map(|ownership| &ownership.address);
     let next_address = next.map(|ownership| &ownership.address);
-    if previous_address != next_address {
+    let reapply_existing = match (previous, next) {
+        (Some(previous), Some(next)) => {
+            previous.address == next.address && previous.routes == next.routes
+        }
+        _ => false,
+    };
+    if previous_address != next_address || reapply_existing {
         let output = run_bounded(
             "/usr/sbin/ip",
             &[
@@ -2853,10 +2908,7 @@ fn verify_owned_generation_prestate(
             .lines()
             .filter(|line| !line.is_empty())
             .collect::<Vec<_>>();
-        let exact = previous_address
-            .map(|address| live.len() == 1 && exact_owned_address_line(live[0], address))
-            .unwrap_or_else(|| live.is_empty());
-        if !exact {
+        if !address_prestate_matches(&live, previous_address, cleanup, reapply_existing) {
             return Err(PlatformError::Conflict(
                 "WAN IPv4 address state no longer exactly matches recorded DHCP ownership"
                     .to_owned(),
@@ -2889,7 +2941,7 @@ fn verify_owned_generation_prestate(
             .flat_map(|ownership| ownership.routes.iter())
             .filter(|route| canonical_route_destination(&route.destination) == destination)
             .collect::<Vec<_>>();
-        if previous_routes == next_routes {
+        if previous_routes == next_routes && !reapply_existing {
             continue;
         }
         let output = run_bounded(
@@ -2901,25 +2953,66 @@ fn verify_owned_generation_prestate(
             .lines()
             .filter(|line| !line.is_empty())
             .collect::<Vec<_>>();
-        let mut unmatched = previous_routes;
-        for line in live {
-            let Some(index) = unmatched
-                .iter()
-                .position(|route| exact_owned_route_line(uplink, line, route))
-            else {
+        if !route_prestate_matches(uplink, &live, &previous_routes, cleanup, reapply_existing) {
+            if live.iter().any(|line| {
+                !previous_routes
+                    .iter()
+                    .any(|route| exact_owned_route_line(uplink, line, route))
+            }) {
                 return Err(PlatformError::Conflict(format!(
                     "route destination {destination} contains foreign or changed state"
                 )));
-            };
-            unmatched.remove(index);
-        }
-        if !unmatched.is_empty() {
+            }
             return Err(PlatformError::Conflict(format!(
                 "route destination {destination} is missing recorded DHCP-owned state"
             )));
         }
     }
     Ok(())
+}
+
+fn address_prestate_matches(
+    live: &[&str],
+    previous: Option<&OwnedAddress>,
+    cleanup: bool,
+    allow_missing_owned: bool,
+) -> bool {
+    match previous {
+        Some(address) => {
+            (cleanup && live.is_empty())
+                || (allow_missing_owned && live.is_empty())
+                || (live.len() == 1 && exact_owned_address_line(live[0], address))
+        }
+        None => live.is_empty(),
+    }
+}
+
+fn route_prestate_matches(
+    uplink: DhcpUplink,
+    live: &[&str],
+    previous: &[&OwnedRoute],
+    cleanup: bool,
+    allow_missing_owned: bool,
+) -> bool {
+    let live = live
+        .iter()
+        .copied()
+        .filter(|line| route_line_uses_interface(line, dhcp_uplink_interface(uplink)))
+        .collect::<Vec<_>>();
+    if allow_missing_owned && live.is_empty() {
+        return true;
+    }
+    let mut unmatched = previous.iter().collect::<Vec<_>>();
+    for line in live {
+        let Some(index) = unmatched
+            .iter()
+            .position(|route| exact_owned_route_line(uplink, line, route))
+        else {
+            return false;
+        };
+        unmatched.remove(index);
+    }
+    cleanup || unmatched.is_empty()
 }
 
 #[derive(Debug)]
@@ -2956,12 +3049,16 @@ fn reconcile_owned_generation(
             }
         }
         if let Some(next) = next {
-            if !previous.is_some_and(|previous| previous.address == next.address) {
+            if !previous.is_some_and(|previous| previous.address == next.address)
+                || !owned_address_present(uplink, &next.address)?
+            {
                 ensure_owned_address(uplink, &next.address)?;
                 journal.push(DhcpCompensation::RemoveAddress(next.address.clone()));
             }
             for route in &next.routes {
-                if !previous.is_some_and(|previous| previous.routes.contains(route)) {
+                if !previous.is_some_and(|previous| previous.routes.contains(route))
+                    || !owned_route_present(uplink, route)?
+                {
                     ensure_owned_route(uplink, route)?;
                     journal.push(DhcpCompensation::RemoveRoute(route.clone()));
                 }
@@ -3166,23 +3263,39 @@ fn owned_route_present(uplink: DhcpUplink, route: &OwnedRoute) -> Result<bool, P
     )?;
     Ok(output
         .lines()
-        .any(|line| exact_owned_route_line(uplink, line, route)))
+        .any(|line| ready_owned_route_line(uplink, line, route)))
 }
 
 fn exact_owned_route_line(uplink: DhcpUplink, line: &str, route: &OwnedRoute) -> bool {
+    let fields = line.split_whitespace().collect::<Vec<_>>();
     let destination = canonical_route_destination(&route.destination);
-    let mut expected = vec![
-        destination,
-        "via".to_owned(),
-        route.gateway.to_string(),
-        "dev".to_owned(),
-        dhcp_uplink_interface(uplink).to_owned(),
-    ];
-    if let Some(metric) = route.metric {
-        expected.extend(["metric".to_owned(), metric.to_string()]);
+    let gateway = route.gateway.to_string();
+    if fields.len() < 5
+        || fields[0] != destination
+        || fields[1] != "via"
+        || fields[2] != gateway.as_str()
+        || fields[3] != "dev"
+        || fields[4] != dhcp_uplink_interface(uplink)
+    {
+        return false;
     }
-    line.split_whitespace()
-        .eq(expected.iter().map(String::as_str))
+
+    let mut index = 5;
+    if let Some(metric) = route.metric {
+        let metric_text = metric.to_string();
+        if fields.get(index).copied() != Some("metric")
+            || fields.get(index + 1).copied() != Some(metric_text.as_str())
+        {
+            return false;
+        }
+        index += 2;
+    }
+    fields[index..].iter().all(|field| *field == "linkdown")
+}
+
+fn ready_owned_route_line(uplink: DhcpUplink, line: &str, route: &OwnedRoute) -> bool {
+    exact_owned_route_line(uplink, line, route)
+        && !line.split_whitespace().any(|field| field == "linkdown")
 }
 
 fn canonical_route_destination(destination: &str) -> String {
@@ -3608,6 +3721,92 @@ mod tests {
     use super::*;
     use crate::domain::network_config::WifiPassphrase;
     use crate::domain::wifi_startup::{ApBand, ApChannel};
+
+    #[test]
+    fn dhcp_route_cleanup_accepts_kernel_linkdown_annotation_but_readiness_does_not() {
+        let route = OwnedRoute {
+            destination: "default".to_owned(),
+            gateway: "192.0.2.1".parse().unwrap(),
+            metric: Some(100),
+        };
+        let live = "default via 192.0.2.1 dev eth0 metric 100";
+        let linkdown = "default via 192.0.2.1 dev eth0 metric 100 linkdown";
+        let changed = "default via 192.0.2.254 dev eth0 metric 100 linkdown";
+
+        assert!(exact_owned_route_line(DhcpUplink::Ethernet, live, &route));
+        assert!(exact_owned_route_line(
+            DhcpUplink::Ethernet,
+            linkdown,
+            &route
+        ));
+        assert!(ready_owned_route_line(DhcpUplink::Ethernet, live, &route));
+        assert!(!ready_owned_route_line(
+            DhcpUplink::Ethernet,
+            linkdown,
+            &route
+        ));
+        assert!(!exact_owned_route_line(
+            DhcpUplink::Ethernet,
+            changed,
+            &route
+        ));
+    }
+
+    #[test]
+    fn default_route_probe_filters_global_output_by_uplink() {
+        let routes = "default via 192.0.2.1 dev eth0 metric 100\ndefault via 192.0.2.2 dev wlan0 metric 600\n";
+
+        assert_eq!(
+            default_route_lines_for_uplink(routes, DhcpUplink::Ethernet),
+            vec!["default via 192.0.2.1 dev eth0 metric 100"]
+        );
+        assert_eq!(
+            default_route_lines_for_uplink(routes, DhcpUplink::Wifi),
+            vec!["default via 192.0.2.2 dev wlan0 metric 600"]
+        );
+    }
+
+    #[test]
+    fn dhcp_prestate_ignores_other_uplink_routes_but_rejects_same_uplink_changes() {
+        let wifi_route = "default via 192.0.2.2 dev wlan0 metric 600";
+        assert!(route_prestate_matches(
+            DhcpUplink::Ethernet,
+            &[wifi_route],
+            &[],
+            false,
+            false
+        ));
+
+        let changed_ethernet_route = "default via 192.0.2.254 dev eth0 metric 50";
+        assert!(!route_prestate_matches(
+            DhcpUplink::Ethernet,
+            &[changed_ethernet_route],
+            &[],
+            false,
+            false
+        ));
+
+        let ethernet_route = OwnedRoute {
+            destination: "default".to_owned(),
+            gateway: "192.0.2.1".parse().unwrap(),
+            metric: Some(100),
+        };
+        let exact_ethernet_route = "default via 192.0.2.1 dev eth0 metric 100";
+        assert!(route_prestate_matches(
+            DhcpUplink::Ethernet,
+            &[exact_ethernet_route, wifi_route],
+            &[&ethernet_route],
+            false,
+            false
+        ));
+    }
+
+    #[test]
+    fn ethernet_carrier_requires_the_administrative_up_bit() {
+        assert_eq!(parse_admin_up_flags("0x1003"), Ok(true));
+        assert_eq!(parse_admin_up_flags("0x1002"), Ok(false));
+        assert!(parse_admin_up_flags("up").is_err());
+    }
 
     #[test]
     fn dangling_relative_resolver_symlink_resolves_through_its_existing_parent() {
@@ -4471,6 +4670,59 @@ mod tests {
         let twice = replace_resolver_text(&once, &owned, &owned);
         assert_eq!(once, existing);
         assert_eq!(twice, once);
+    }
+
+    #[test]
+    fn dhcp_deconfig_and_renew_tolerate_missing_owned_state_but_not_lease_takeover() {
+        let address = OwnedAddress {
+            cidr: "192.0.2.5/24".to_owned(),
+            broadcast: Some("192.0.2.255".parse().unwrap()),
+        };
+        assert!(address_prestate_matches(&[], Some(&address), true, false));
+        assert!(address_prestate_matches(&[], Some(&address), false, true));
+        assert!(!address_prestate_matches(&[], Some(&address), false, false));
+
+        let route = OwnedRoute {
+            destination: "default".to_owned(),
+            gateway: "192.0.2.1".parse().unwrap(),
+            metric: Some(100),
+        };
+        let previous = vec![&route];
+        assert!(route_prestate_matches(
+            DhcpUplink::Ethernet,
+            &[],
+            &previous,
+            true,
+            false
+        ));
+        assert!(route_prestate_matches(
+            DhcpUplink::Ethernet,
+            &[],
+            &previous,
+            false,
+            true
+        ));
+        assert!(!route_prestate_matches(
+            DhcpUplink::Ethernet,
+            &[],
+            &previous,
+            false,
+            false
+        ));
+        assert!(route_prestate_matches(
+            DhcpUplink::Ethernet,
+            &["default via 192.0.2.1 dev eth0 metric 100"],
+            &previous,
+            true,
+            false
+        ));
+        assert!(!route_prestate_matches(
+            DhcpUplink::Ethernet,
+            &["default via 192.0.2.254 dev eth0 metric 100"],
+            &previous,
+            true,
+            false
+        ));
     }
 
     #[test]

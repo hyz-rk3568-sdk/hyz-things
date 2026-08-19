@@ -383,7 +383,7 @@ LCD 的 DTS `default-brightness-level = <0>` 让 U-Boot/Linux 冷启动默认保
 
 - 推送流程：adb 推送 ELF 到 `/userdata/hyz-things/apps/<name>/<sha256>/` → 远端 SHA-256 校验 → **只停止目标应用的 init 服务**（S83/S82）→ 同文件系统原子替换 `/usr/bin/<app>` → 启动 → 就绪探针 → 写注册表。
 - 服务隔离：推送 camera/things 绝不调用 router 的 init 脚本；`assert_router_untouched` 在推送前后断言 `/run/hyz-router/ready` 仍在，门户保持运行并自动重连 UDS。
-- 注册表：持久 `/userdata/hyz-things/apps/registry.json` 记录每个已部署二进制的 sha256 与 wire 协议版本（`protocol_versions`），每次部署保留 previous 条目供回滚；`/run/hyz-things/apps/<name>.json` 是当前启动的易失快照。
+- 注册表：持久 `/userdata/hyz-things/apps/registry.json` 记录每个已部署二进制的 sha256、部署时间 `deployed_at_unix_ms` 与 wire 协议版本（`protocol_versions`），每次部署保留 previous 条目供回滚；`/run/hyz-things/apps/<name>.json` 是当前启动的易失快照。
 - 协议兼容窗口：`hyz-contract` 的 wire 契约版本化，服务端接受当前与前一版本（`[current, current - 1]`），客户端要求精确匹配。deploy 与 revert 在**停止任何服务之前**按注册表记录版本做兼容性检查：推送 things 时要求已装 router/camera 版本相等；推送 camera 时要求已装 things 的 camera 期望版本相等。回滚按 previous 条目**记录的**版本校验（而不是当前源码树），防止源码已前进时错误放行。
 - 测试：`tools/test-deploy-app.sh` 用 fake adb 断言 router 不可热推送、服务隔离、先拒绝后停止和回滚按记录版本把关；`make check` 与 `check-static` 均覆盖。
 

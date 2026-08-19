@@ -1220,30 +1220,6 @@ fn normalized_rule(line: &str) -> Option<Vec<String>> {
     Some(words)
 }
 
-pub(crate) fn exact_default_gateway(routes: &str) -> Option<&str> {
-    let lines = routes
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .collect::<Vec<_>>();
-    if lines.len() != 1 {
-        return None;
-    }
-    let fields = lines[0].split_whitespace().collect::<Vec<_>>();
-    if fields.first() != Some(&"default") {
-        return None;
-    }
-    let gateways = fields
-        .windows(2)
-        .filter(|pair| pair[0] == "via")
-        .map(|pair| pair[1])
-        .collect::<Vec<_>>();
-    if gateways.len() == 1 {
-        Some(gateways[0])
-    } else {
-        None
-    }
-}
-
 fn policy_rule_probe(output: &str) -> Probe<bool> {
     let priority = format!("{MIHOMO_RULE_PRIORITY}:");
     let count = output

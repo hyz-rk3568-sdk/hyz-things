@@ -55,6 +55,7 @@ impl InstalledAppsPort for RegistryAdapter {
                     binary: current.binary,
                     init_script: current.init_script,
                     sha256: Some(current.sha256),
+                    deployed_at_unix_ms: current.deployed_at_unix_ms,
                     protocol_versions: current.protocol_versions,
                 })
             })
@@ -81,6 +82,8 @@ struct RegistryDeployment {
     binary: String,
     init_script: String,
     sha256: String,
+    #[serde(default)]
+    deployed_at_unix_ms: Option<u64>,
     #[serde(default)]
     protocol_versions: BTreeMap<String, u32>,
 }
@@ -122,6 +125,7 @@ mod tests {
                     "binary": "/usr/bin/hyz-router",
                     "init_script": "/etc/init.d/S81hyz-router",
                     "sha256": "abcd",
+                    "deployed_at_unix_ms": 1700000000000,
                     "protocol_versions": {{ "router": 2 }}
                   }},
                   "previous": {{ "binary": "/usr/bin/hyz-router", "init_script": "/etc/init.d/S81hyz-router", "sha256": "0123", "protocol_versions": {{ "router": 1 }} }}
@@ -148,6 +152,7 @@ mod tests {
         assert_eq!(apps[0].protocol_versions.get("camera"), Some(&1));
         assert_eq!(apps[1].name, "router");
         assert_eq!(apps[1].sha256.as_deref(), Some("abcd"));
+        assert_eq!(apps[1].deployed_at_unix_ms, Some(1_700_000_000_000));
         assert_eq!(apps[1].protocol_versions.get("router"), Some(&2));
     }
 

@@ -1362,7 +1362,6 @@ fn strings(values: &[&str]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::outbound::system::exact_default_gateway;
     use crate::adapters::outbound::system::expected_chain_rules;
 
     const SOURCE: &str = "tun:\n  enable: maybe\n  nested:\n    value: 1\n# consumed with tun block\nmode: rule\ntun: { enable: true }\n  child: true\ndns:\n  enable: true\n";
@@ -1516,21 +1515,6 @@ mod tests {
         assert_eq!(
             filter.last(),
             Some(&strings(&["-A", MIHOMO_FILTER_CHAIN, "-j", "RETURN"]))
-        );
-    }
-
-    #[test]
-    fn gateway_parser_requires_one_explicit_default_route() {
-        assert_eq!(
-            exact_default_gateway("default via 192.168.8.254 dev wlan0\n"),
-            Some("192.168.8.254")
-        );
-        assert_eq!(exact_default_gateway("default dev wlan0\n"), None);
-        assert_eq!(
-            exact_default_gateway(
-                "default via 192.168.8.254 dev wlan0\ndefault via 192.168.8.253 dev wlan0\n"
-            ),
-            None
         );
     }
 }

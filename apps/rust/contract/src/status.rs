@@ -174,7 +174,11 @@ pub struct UplinkStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub address_present: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub default_route_present: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_route_metric: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gateway: Option<Ipv4Addr>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -329,7 +333,9 @@ mod tests {
                     link_up: Some(true),
                     session_up: Some(true),
                     address_present: Some(true),
+                    address: Some("192.0.2.10/24".to_owned()),
                     default_route_present: Some(true),
+                    default_route_metric: Some(100),
                     gateway: Some("192.0.2.1".parse().unwrap()),
                     resolver_present: Some(true),
                 }),
@@ -337,7 +343,9 @@ mod tests {
                     link_up: Some(true),
                     session_up: Some(true),
                     address_present: Some(true),
+                    address: Some("198.51.100.10/24".to_owned()),
                     default_route_present: Some(true),
+                    default_route_metric: Some(600),
                     gateway: Some("198.51.100.1".parse().unwrap()),
                     resolver_present: Some(true),
                 }),

@@ -211,6 +211,7 @@ pub fn proxy_plan(
         }
     };
     require_known_proxy_ownership(observed)?;
+    let (tun_token, capture_tun) = tun_reconcile_token(observed, token)?;
     let mut actions = Vec::new();
     let direct_mac_change = match &observed.active_direct_macs {
         Probe::Known(active) => active != &desired.direct_macs,
@@ -301,22 +302,24 @@ pub fn proxy_plan(
             }
         };
         if !observed.lan_tun_ready(&desired.direct_macs) || tun_change {
+            if capture_tun {
+                actions.push(ProxyAction::WaitForTunInterface {
+                    token: tun_token.clone(),
+                });
+            }
             actions.extend([
-                ProxyAction::WaitForTunInterface {
-                    token: token.to_owned(),
-                },
                 ProxyAction::CreateTunChains {
-                    token: token.to_owned(),
+                    token: tun_token.clone(),
                     direct_macs: desired.direct_macs.clone(),
                     active,
                 },
                 ProxyAction::InstallTunForwardHook {
-                    token: token.to_owned(),
+                    token: tun_token.clone(),
                 },
                 ProxyAction::InstallPolicyRoute,
                 ProxyAction::InstallPolicyRule,
                 ProxyAction::InstallInterceptionEntry {
-                    token: token.to_owned(),
+                    token: tun_token.clone(),
                 },
                 ProxyAction::StartWatcher,
                 ProxyAction::WaitForWatcher,
@@ -327,6 +330,42 @@ pub fn proxy_plan(
         features: desired.features(),
     });
     Ok(actions)
+}
+
+fn tun_reconcile_token(
+    observed: &ProxyObserved,
+    fresh_token: &str,
+) -> Result<(String, bool), PlatformError> {
+    match (&observed.tun_interface, &observed.tun_firewall) {
+        (
+            Probe::Known(OwnedResource::Owned { token: interface }),
+            Probe::Known(OwnedResource::Owned { token: firewall }),
+        ) if interface == firewall => Ok((interface.clone(), false)),
+        (
+            Probe::Known(OwnedResource::Owned { token: interface }),
+            Probe::Known(OwnedResource::Absent),
+        ) => Ok((interface.clone(), false)),
+        (Probe::Known(OwnedResource::Absent), _) => Ok((fresh_token.to_owned(), true)),
+        (Probe::Known(OwnedResource::Owned { .. }), Probe::Known(OwnedResource::Owned { .. })) => {
+            Err(PlatformError::Conflict(
+                "Mihomo TUN and firewall ownership tokens disagree".to_owned(),
+            ))
+        }
+        (Probe::Known(OwnedResource::Owned { .. }), Probe::Known(OwnedResource::Foreign)) => {
+            Err(PlatformError::Conflict(
+                "refusing to reconcile an owned Mihomo TUN beside foreign chains".to_owned(),
+            ))
+        }
+        (Probe::Known(OwnedResource::Owned { .. }), Probe::Unknown(reason)) => Err(
+            PlatformError::ProbeFailed(format!("Mihomo firewall ownership is unknown: {reason}")),
+        ),
+        (Probe::Known(OwnedResource::Foreign), _) => Err(PlatformError::Conflict(
+            "refusing to reconcile a foreign Mihomo TUN interface".to_owned(),
+        )),
+        (Probe::Unknown(reason), _) => Err(PlatformError::ProbeFailed(format!(
+            "Mihomo TUN interface ownership is unknown: {reason}"
+        ))),
+    }
 }
 
 fn require_known_proxy_ownership(observed: &ProxyObserved) -> Result<(), PlatformError> {
@@ -567,4 +606,60 @@ fn cleanup_tun_plan(observed: &ProxyObserved) -> Result<Vec<ProxyAction>, Platfo
         actions.push(ProxyAction::RemoveTunChains { token });
     }
     Ok(actions)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn observed_with_tun(
+        tun_interface: OwnedResource,
+        tun_firewall: OwnedResource,
+    ) -> ProxyObserved {
+        let mut observed = ProxyObserved::unknown("test");
+        observed.tun_interface = Probe::Known(tun_interface);
+        observed.tun_firewall = Probe::Known(tun_firewall);
+        observed
+    }
+
+    #[test]
+    fn uplink_reconcile_reuses_matching_owned_tun_token() {
+        let observed = observed_with_tun(
+            OwnedResource::Owned {
+                token: "existing".to_owned(),
+            },
+            OwnedResource::Owned {
+                token: "existing".to_owned(),
+            },
+        );
+
+        assert_eq!(
+            tun_reconcile_token(&observed, "fresh").unwrap(),
+            ("existing".to_owned(), false)
+        );
+    }
+
+    #[test]
+    fn uplink_reconcile_captures_a_new_token_when_tun_is_absent() {
+        let observed = observed_with_tun(OwnedResource::Absent, OwnedResource::Absent);
+
+        assert_eq!(
+            tun_reconcile_token(&observed, "fresh").unwrap(),
+            ("fresh".to_owned(), true)
+        );
+    }
+
+    #[test]
+    fn uplink_reconcile_rejects_disagreeing_owned_tokens() {
+        let observed = observed_with_tun(
+            OwnedResource::Owned {
+                token: "interface".to_owned(),
+            },
+            OwnedResource::Owned {
+                token: "firewall".to_owned(),
+            },
+        );
+
+        assert!(tun_reconcile_token(&observed, "fresh").is_err());
+    }
 }

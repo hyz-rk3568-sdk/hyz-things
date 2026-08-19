@@ -10,7 +10,7 @@ use hyz_router::{
     domain::{
         network::{
             NetworkAction, NetworkDesired, NetworkObserved, OwnedResource, Probe, RouterWanSet,
-            UplinkObserved,
+            UplinkId, UplinkObserved,
         },
         proxy::{ProxyAction, ProxyDesired, ProxyFeaturesV1, ProxyObserved},
     },
@@ -288,6 +288,56 @@ fn fully_ready_ethernet_joins_wifi_in_the_exact_dual_wan_firewall_set() {
             NetworkAction::EnableIpv4Forwarding,
         ]
     );
+}
+
+#[test]
+fn active_uplink_prefers_ethernet_when_both_dhcp_sessions_are_ready() {
+    let mut observed = network(false, OwnedResource::Absent);
+    observed.ethernet_uplink = UplinkObserved {
+        link: Probe::Known(true),
+        session: Probe::Known(true),
+        address: Probe::Known(OwnedResource::Owned {
+            token: "ethernet-dhcp".to_owned(),
+        }),
+        default_route: Probe::Known(true),
+        gateway: Probe::Known(Some("192.0.2.2".parse().unwrap())),
+        resolver: Probe::Known(true),
+    };
+
+    assert_eq!(observed.active_uplink(), Some(UplinkId::Ethernet));
+    assert!(matches!(
+        observed.active_uplink_observation(),
+        Probe::Known(Some(ref active)) if active.uplink == UplinkId::Ethernet
+    ));
+}
+
+#[test]
+fn active_uplink_falls_back_to_wifi_when_ethernet_is_not_ready() {
+    let mut observed = network(false, OwnedResource::Absent);
+    observed.ethernet_uplink = UplinkObserved {
+        link: Probe::Known(true),
+        session: Probe::Known(true),
+        address: Probe::Known(OwnedResource::Owned {
+            token: "ethernet-dhcp".to_owned(),
+        }),
+        default_route: Probe::Known(false),
+        gateway: Probe::Known(None),
+        resolver: Probe::Known(false),
+    };
+
+    assert_eq!(observed.active_uplink(), Some(UplinkId::Wifi));
+    assert!(matches!(
+        observed.active_uplink_observation(),
+        Probe::Known(Some(ref active)) if active.uplink == UplinkId::Wifi
+    ));
+}
+
+#[test]
+fn no_ready_uplink_keeps_forwarding_unavailable() {
+    let mut observed = network(false, OwnedResource::Absent);
+    without_wifi_route(&mut observed);
+    assert_eq!(observed.active_uplink(), None);
+    assert_eq!(observed.active_uplink_probe(), Probe::Known(None));
 }
 
 #[test]

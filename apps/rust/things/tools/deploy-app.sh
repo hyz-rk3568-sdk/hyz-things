@@ -50,6 +50,11 @@ declare -A DAEMON=(
     [things]=/usr/bin/hyz-things
     [camera]=/usr/bin/hyz-camera
 )
+declare -A PEER_BINARY=(
+    [router]=/usr/bin/hyz-router
+    [things]=/usr/bin/hyz-things
+    [camera]=/usr/bin/hyz-camera
+)
 
 ROUTER_WAS_READY=false
 REGISTRY_FILE=
@@ -217,8 +222,12 @@ installed_peer_version() { # peer protocol
         printf '%s\n' "$version"
         return 0
     fi
-    if device_shell_rc "test -x '${DAEMON[$peer]}'"; then
-        version=$(protocol_version_of "$peer" "$protocol")
+    if device_shell_rc "test -x '${PEER_BINARY[$peer]}'"; then
+        if [[ "$peer:$protocol" == "router:router" ]]; then
+            version=$(protocol_version_of things router)
+        else
+            version=$(protocol_version_of "$peer" "$protocol")
+        fi
         printf 'registry has no %s entry; assuming installed firmware %s speaks %s protocol %s from source\n' \
             "$peer" "$peer" "$protocol" "$version" >&2
         printf '%s\n' "$version"
@@ -311,6 +320,7 @@ write_registry() { # sha
     entry_json=$(python3 - "$APP_NAME" "${DAEMON[$APP_NAME]}" "${INIT_SCRIPT[$APP_NAME]}" "$1" "$versions_file" <<'PY'
 import json
 import sys
+import time
 
 name, binary, init_script, sha, versions_file = sys.argv[1:6]
 versions = {}
@@ -324,6 +334,7 @@ print(json.dumps({
     "binary": binary,
     "init_script": init_script,
     "sha256": sha,
+    "deployed_at_unix_ms": time.time_ns() // 1_000_000,
     "protocol_versions": versions,
 }, sort_keys=True))
 PY

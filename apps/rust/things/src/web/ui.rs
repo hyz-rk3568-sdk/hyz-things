@@ -37,8 +37,14 @@ pub const TOPOLOGY_TITLE: &str = "text-sm font-bold";
 pub const TOPOLOGY_DETAIL: &str = "truncate text-xs text-base-content/65";
 pub const TOPOLOGY_LINK: &str =
     "grid place-items-center text-lg font-black max-lg:rotate-90 lg:px-1";
+pub const TOPOLOGY_UPLINKS: &str = "grid min-w-0 gap-2";
+pub const TOPOLOGY_UPLINKS_HEAD: &str = "flex items-center justify-between gap-3 px-1 text-[0.65rem] font-bold uppercase tracking-wider text-base-content/60";
+pub const TOPOLOGY_UPLINK_BADGE: &str =
+    "badge badge-success badge-outline shrink-0 text-[0.6rem] font-bold";
+pub const TOPOLOGY_BRANCH_STACK: &str =
+    "grid min-w-0 gap-2 lg:col-span-7 lg:mx-auto lg:w-full lg:max-w-xl";
 pub const TOPOLOGY_PROXY_ROW: &str =
-    "mt-1 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 lg:mx-auto lg:w-full lg:max-w-md";
+    "grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3";
 pub const TOPOLOGY_BRANCH: &str = "grid size-8 place-items-center text-xl text-secondary";
 
 pub const KPI_GRID: &str = "mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4";
