@@ -18,8 +18,11 @@ use crate::{
     },
     domain::{
         network::{
-            OwnedResource, Probe, UplinkObserved, ETHERNET_WAN_INTERFACE, LAN_BRIDGE, LAN_MEMBER,
-            WAN_INTERFACE,
+            OwnedResource, Probe, UplinkObserved, ETHERNET_POLICY_ADDRESS_RULE_PRIORITY,
+            ETHERNET_POLICY_LAN_RULE_PRIORITY, ETHERNET_POLICY_ROUTE_TABLE, ETHERNET_WAN_INTERFACE,
+            LAN_ADDRESS, LAN_BRIDGE, LAN_MEMBER, LAN_SUBNET, WAN_INTERFACE,
+            WIFI_POLICY_ADDRESS_RULE_PRIORITY, WIFI_POLICY_LAN_RULE_PRIORITY,
+            WIFI_POLICY_ROUTE_TABLE,
         },
         network_config::{
             ApConfig, NetworkConfigSummary, NetworkConfigV1, PendingNetworkConfigSummary,
@@ -98,6 +101,8 @@ struct DhcpOwnership {
     generation: Option<DhcpGeneration>,
     address: OwnedAddress,
     routes: Vec<OwnedRoute>,
+    #[serde(default)]
+    policy: Option<OwnedPolicyRouting>,
     resolver_entries: Vec<String>,
 }
 
@@ -114,6 +119,31 @@ struct OwnedRoute {
     destination: String,
     gateway: Ipv4Addr,
     metric: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OwnedPolicyRule {
+    priority: u32,
+    source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OwnedPolicyRoute {
+    destination: String,
+    gateway: Option<Ipv4Addr>,
+    source: Ipv4Addr,
+    device: String,
+    scope_link: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OwnedPolicyRouting {
+    table: u32,
+    rules: Vec<OwnedPolicyRule>,
+    routes: Vec<OwnedPolicyRoute>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -159,7 +189,7 @@ impl DhcpOwnership {
         uplink: DhcpUplink,
         generation: DhcpGeneration,
         lease: &crate::application::dhcp::DhcpLease,
-    ) -> Self {
+    ) -> Result<Self, PlatformError> {
         let routes = if lease.static_routes.is_empty() {
             lease
                 .routers
@@ -169,7 +199,7 @@ impl DhcpOwnership {
                     gateway: *gateway,
                     metric: Some(dhcp_uplink_metric(uplink)),
                 })
-                .collect()
+                .collect::<Vec<_>>()
         } else {
             lease
                 .static_routes
@@ -180,25 +210,28 @@ impl DhcpOwnership {
                     destination: destination.clone(),
                     gateway: *gateway,
                 })
-                .collect()
+                .collect::<Vec<_>>()
         };
-        Self {
-            version: 3,
+        let address = OwnedAddress {
+            cidr: format!("{}/{}", lease.address, lease.prefix),
+            broadcast: lease.broadcast,
+        };
+        let policy = Some(build_policy_routing(uplink, &address, &routes)?);
+        Ok(Self {
+            version: 4,
             uplink,
             generation: Some(generation),
-            address: OwnedAddress {
-                cidr: format!("{}/{}", lease.address, lease.prefix),
-                broadcast: lease.broadcast,
-            },
+            address,
             routes,
+            policy,
             resolver_entries: lease.resolver_lines(dhcp_uplink_interface(uplink)),
-        }
+        })
     }
 
     fn validate(&self) -> Result<(), PlatformError> {
         if !matches!(
-            (self.version, &self.generation),
-            (1, None) | (2, Some(_)) | (3, Some(_))
+            (self.version, &self.generation, &self.policy),
+            (1, None, None) | (2, Some(_), None) | (3, Some(_), None) | (4, Some(_), Some(_))
         ) || self.routes.len() > 64
             || self.resolver_entries.len() > 32
         {
@@ -224,6 +257,13 @@ impl DhcpOwnership {
                 return Err(invalid_dhcp_ownership());
             }
         }
+        if self.version == 4 {
+            let expected = build_policy_routing(self.uplink, &self.address, &self.routes)
+                .map_err(|_| invalid_dhcp_ownership())?;
+            if self.policy.as_ref() != Some(&expected) {
+                return Err(invalid_dhcp_ownership());
+            }
+        }
         if self.resolver_entries.iter().any(|entry| {
             entry.contains('\n')
                 || !entry.ends_with(&format!("# {}", dhcp_uplink_interface(self.uplink)))
@@ -232,6 +272,131 @@ impl DhcpOwnership {
             return Err(invalid_dhcp_ownership());
         }
         Ok(())
+    }
+}
+
+fn build_policy_routing(
+    uplink: DhcpUplink,
+    address: &OwnedAddress,
+    routes: &[OwnedRoute],
+) -> Result<OwnedPolicyRouting, PlatformError> {
+    let (source, prefix) = parse_ipv4_cidr(&address.cidr)?;
+    let (lan_source, lan_prefix) = parse_ipv4_cidr(LAN_ADDRESS)?;
+    let lan_network = network_address(lan_source, lan_prefix);
+    let network = network_address(source, prefix);
+    if prefix >= lan_prefix && network == lan_network {
+        return Err(PlatformError::InvalidState(
+            "DHCP WAN address overlaps the fixed LAN subnet".to_owned(),
+        ));
+    }
+    let uplink_device = dhcp_uplink_interface(uplink).to_owned();
+    let mut policy_routes = vec![
+        OwnedPolicyRoute {
+            destination: format!("{network}/{prefix}"),
+            gateway: None,
+            source,
+            device: uplink_device.clone(),
+            scope_link: true,
+        },
+        OwnedPolicyRoute {
+            destination: canonical_route_destination(LAN_SUBNET),
+            gateway: None,
+            source: lan_source,
+            device: LAN_BRIDGE.to_owned(),
+            scope_link: true,
+        },
+    ];
+    for route in routes {
+        if !matches!(route.destination.as_str(), "default" | "0.0.0.0/0") {
+            let (route_address, route_prefix) = parse_ipv4_cidr(&route.destination)?;
+            if route_prefix >= lan_prefix
+                && network_address(route_address, route_prefix) == lan_network
+            {
+                return Err(PlatformError::InvalidState(
+                    "DHCP static route overlaps the fixed LAN subnet".to_owned(),
+                ));
+            }
+        }
+        let gateway_destination = format!("{}/32", route.gateway);
+        let gateway_route = OwnedPolicyRoute {
+            destination: gateway_destination,
+            gateway: None,
+            source,
+            device: uplink_device.clone(),
+            scope_link: true,
+        };
+        if !policy_routes.contains(&gateway_route) {
+            policy_routes.push(gateway_route);
+        }
+        let policy_route = OwnedPolicyRoute {
+            destination: canonical_route_destination(&route.destination),
+            gateway: Some(route.gateway),
+            source,
+            device: uplink_device.clone(),
+            scope_link: false,
+        };
+        if !policy_routes.contains(&policy_route) {
+            policy_routes.push(policy_route);
+        }
+    }
+    Ok(OwnedPolicyRouting {
+        table: dhcp_policy_route_table(uplink),
+        rules: vec![
+            OwnedPolicyRule {
+                priority: dhcp_policy_lan_rule_priority(uplink),
+                source: LAN_SUBNET.to_owned(),
+            },
+            OwnedPolicyRule {
+                priority: dhcp_policy_address_rule_priority(uplink),
+                source: format!("{source}/32"),
+            },
+        ],
+        routes: policy_routes,
+    })
+}
+
+fn parse_ipv4_cidr(value: &str) -> Result<(Ipv4Addr, u8), PlatformError> {
+    let (address, prefix) = value
+        .split_once('/')
+        .ok_or_else(|| PlatformError::InvalidState("invalid IPv4 CIDR".to_owned()))?;
+    let address = address
+        .parse::<Ipv4Addr>()
+        .map_err(|_| PlatformError::InvalidState("invalid IPv4 CIDR address".to_owned()))?;
+    let prefix = prefix
+        .parse::<u8>()
+        .ok()
+        .filter(|prefix| *prefix <= 32)
+        .ok_or_else(|| PlatformError::InvalidState("invalid IPv4 CIDR prefix".to_owned()))?;
+    Ok((address, prefix))
+}
+
+fn network_address(address: Ipv4Addr, prefix: u8) -> Ipv4Addr {
+    let mask = if prefix == 0 {
+        0
+    } else {
+        u32::MAX << (32 - prefix)
+    };
+    Ipv4Addr::from(u32::from(address) & mask)
+}
+
+fn dhcp_policy_route_table(uplink: DhcpUplink) -> u32 {
+    match uplink {
+        DhcpUplink::Ethernet => ETHERNET_POLICY_ROUTE_TABLE,
+        DhcpUplink::Wifi => WIFI_POLICY_ROUTE_TABLE,
+    }
+}
+
+fn dhcp_policy_lan_rule_priority(uplink: DhcpUplink) -> u32 {
+    match uplink {
+        DhcpUplink::Ethernet => ETHERNET_POLICY_LAN_RULE_PRIORITY,
+        DhcpUplink::Wifi => WIFI_POLICY_LAN_RULE_PRIORITY,
+    }
+}
+
+fn dhcp_policy_address_rule_priority(uplink: DhcpUplink) -> u32 {
+    match uplink {
+        DhcpUplink::Ethernet => ETHERNET_POLICY_ADDRESS_RULE_PRIORITY,
+        DhcpUplink::Wifi => WIFI_POLICY_ADDRESS_RULE_PRIORITY,
     }
 }
 
@@ -1280,7 +1445,12 @@ impl super::process::LinuxRouterPlatform {
                             && route.metric == Some(dhcp_uplink_metric(uplink))
                     })
                     .collect::<Vec<_>>();
-                let route = if defaults.len() == 1 {
+                let policy_ready = ownership
+                    .policy
+                    .as_ref()
+                    .map(|policy| policy_state_is_exact(uplink, policy).unwrap_or(false))
+                    .unwrap_or(false);
+                let route = if defaults.len() == 1 && policy_ready {
                     let routes = self
                         .run_management_probe("/usr/sbin/ip", &["-4", "route", "show", "default"]);
                     routes.ok().and_then(|routes| {
@@ -1466,7 +1636,8 @@ impl super::process::LinuxRouterPlatform {
                 Ok(())
             }
             DhcpTransition::Lease { lease } => {
-                let next = DhcpOwnership::from_lease(event.uplink, event.generation.clone(), lease);
+                let next =
+                    DhcpOwnership::from_lease(event.uplink, event.generation.clone(), lease)?;
                 next.validate()?;
                 let previous = read_dhcp_ownership(event.uplink)?;
                 reconcile_owned_generation(event.uplink, previous.as_ref(), Some(&next))?;
@@ -2968,6 +3139,21 @@ fn verify_owned_generation_prestate(
             )));
         }
     }
+
+    let previous_policy = previous.and_then(|ownership| ownership.policy.as_ref());
+    let next_policy = next.and_then(|ownership| ownership.policy.as_ref());
+    if previous_policy != next_policy || reapply_existing {
+        let policy_is_ready = match previous_policy {
+            Some(policy) if cleanup => policy_state_is_cleanup_exact(uplink, policy)?,
+            Some(policy) => policy_state_is_exact(uplink, policy)?,
+            None => policy_state_is_absent(uplink)?,
+        };
+        if !policy_is_ready {
+            return Err(PlatformError::Conflict(
+                "DHCP policy-routing state no longer exactly matches recorded ownership".to_owned(),
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -3015,12 +3201,367 @@ fn route_prestate_matches(
     cleanup || unmatched.is_empty()
 }
 
+fn policy_state_is_exact(
+    uplink: DhcpUplink,
+    policy: &OwnedPolicyRouting,
+) -> Result<bool, PlatformError> {
+    policy_state_is_exact_with_linkdown(uplink, policy, false)
+}
+
+fn policy_state_is_cleanup_exact(
+    uplink: DhcpUplink,
+    policy: &OwnedPolicyRouting,
+) -> Result<bool, PlatformError> {
+    policy_state_is_exact_with_linkdown(uplink, policy, true)
+}
+
+fn policy_state_is_exact_with_linkdown(
+    uplink: DhcpUplink,
+    policy: &OwnedPolicyRouting,
+    allow_linkdown: bool,
+) -> Result<bool, PlatformError> {
+    if policy.table != dhcp_policy_route_table(uplink) {
+        return Ok(false);
+    }
+    let table = policy.table.to_string();
+    let routes = run_bounded(
+        "/usr/sbin/ip",
+        &["-4", "route", "show", "table", table.as_str()],
+        Duration::from_secs(3),
+    )?;
+    let rules = run_bounded(
+        "/usr/sbin/ip",
+        &["-4", "rule", "show"],
+        Duration::from_secs(3),
+    )?;
+    Ok(
+        policy_routes_are_exact(uplink, &routes, policy, allow_linkdown)
+            && policy_rules_are_exact(&rules, policy),
+    )
+}
+
+fn policy_state_is_absent(uplink: DhcpUplink) -> Result<bool, PlatformError> {
+    let table = dhcp_policy_route_table(uplink).to_string();
+    let routes = run_bounded(
+        "/usr/sbin/ip",
+        &["-4", "route", "show", "table", table.as_str()],
+        Duration::from_secs(3),
+    )?;
+    let rules = run_bounded(
+        "/usr/sbin/ip",
+        &["-4", "rule", "show"],
+        Duration::from_secs(3),
+    )?;
+    Ok(
+        routes.lines().all(|line| line.trim().is_empty())
+            && policy_rules_are_absent(uplink, &rules),
+    )
+}
+
+fn policy_routes_are_exact(
+    uplink: DhcpUplink,
+    output: &str,
+    policy: &OwnedPolicyRouting,
+    allow_linkdown: bool,
+) -> bool {
+    let lines = output
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect::<Vec<_>>();
+    lines.len() == policy.routes.len()
+        && policy.routes.iter().all(|route| {
+            lines
+                .iter()
+                .filter(|line| {
+                    policy_route_line_matches_with_linkdown(
+                        uplink,
+                        line,
+                        route,
+                        policy.table,
+                        allow_linkdown,
+                    )
+                })
+                .count()
+                == 1
+        })
+}
+
+fn policy_rules_are_exact(output: &str, policy: &OwnedPolicyRouting) -> bool {
+    let expected_priorities = policy
+        .rules
+        .iter()
+        .map(|rule| rule.priority)
+        .collect::<Vec<_>>();
+    let managed = output
+        .lines()
+        .filter_map(parse_rule_priority)
+        .filter(|priority| expected_priorities.contains(priority))
+        .collect::<Vec<_>>();
+    managed.len() == policy.rules.len()
+        && policy.rules.iter().all(|rule| {
+            output
+                .lines()
+                .filter(|line| parse_rule_priority(line) == Some(rule.priority))
+                .filter(|line| policy_rule_line_matches(line, rule, policy.table))
+                .count()
+                == 1
+        })
+}
+
+fn policy_rules_are_absent(uplink: DhcpUplink, output: &str) -> bool {
+    let priorities = [
+        dhcp_policy_lan_rule_priority(uplink),
+        dhcp_policy_address_rule_priority(uplink),
+    ];
+    output.lines().all(|line| {
+        parse_rule_priority(line).is_none_or(|priority| !priorities.contains(&priority))
+    })
+}
+
+fn parse_rule_priority(line: &str) -> Option<u32> {
+    line.split_whitespace()
+        .next()?
+        .strip_suffix(':')?
+        .parse()
+        .ok()
+}
+
+fn policy_rule_line_matches(line: &str, rule: &OwnedPolicyRule, table: u32) -> bool {
+    let fields = line.split_whitespace().collect::<Vec<_>>();
+    let priority = format!("{}:", rule.priority);
+    let table = table.to_string();
+    let source_matches = fields
+        .get(2)
+        .and_then(|source| canonical_rule_source(source))
+        .zip(canonical_rule_source(&rule.source))
+        .is_some_and(|(observed, expected)| observed == expected);
+    fields.len() == 5
+        && fields[0] == priority
+        && fields[1] == "from"
+        && source_matches
+        && (fields[3] == "lookup" || fields[3] == "table")
+        && fields[4] == table
+}
+
+fn canonical_rule_source(source: &str) -> Option<String> {
+    let (address, prefix) = source.split_once('/').unwrap_or((source, "32"));
+    let address = address.parse::<Ipv4Addr>().ok()?;
+    let prefix = prefix.parse::<u8>().ok().filter(|prefix| *prefix <= 32)?;
+    Some(format!("{}/{}", network_address(address, prefix), prefix))
+}
+
+fn policy_route_line_matches(
+    uplink: DhcpUplink,
+    line: &str,
+    route: &OwnedPolicyRoute,
+    table: u32,
+) -> bool {
+    policy_route_line_matches_with_linkdown(uplink, line, route, table, false)
+}
+
+fn policy_route_line_matches_with_linkdown(
+    uplink: DhcpUplink,
+    line: &str,
+    route: &OwnedPolicyRoute,
+    table: u32,
+    allow_linkdown: bool,
+) -> bool {
+    let fields = line.split_whitespace().collect::<Vec<_>>();
+    let destination = canonical_route_destination(&route.destination);
+    let observed_destination =
+        canonical_route_destination(fields.first().copied().unwrap_or_default());
+    if observed_destination != destination {
+        return false;
+    }
+    let gateway = route.gateway.map(|gateway| gateway.to_string());
+    let source = route.source.to_string();
+    let table = table.to_string();
+    let mut index = 1;
+    if let Some(gateway) = gateway.as_deref() {
+        if fields.get(index).copied() != Some("via")
+            || fields.get(index + 1).copied() != Some(gateway)
+        {
+            return false;
+        }
+        index += 2;
+    }
+    let allowed_uplink_device = dhcp_uplink_interface(uplink);
+    if route.device != allowed_uplink_device && route.device != LAN_BRIDGE {
+        return false;
+    }
+    if fields.get(index).copied() != Some("dev")
+        || fields.get(index + 1).copied() != Some(route.device.as_str())
+    {
+        return false;
+    }
+    index += 2;
+    let mut source_seen = false;
+    let mut scope_seen = false;
+    let mut linkdown_seen = false;
+    while index < fields.len() {
+        match fields[index] {
+            "src" if !source_seen && fields.get(index + 1).copied() == Some(source.as_str()) => {
+                source_seen = true;
+                index += 2;
+            }
+            "scope" if !scope_seen && fields.get(index + 1).copied() == Some("link") => {
+                scope_seen = true;
+                index += 2;
+            }
+            "proto"
+                if fields
+                    .get(index + 1)
+                    .copied()
+                    .is_some_and(|protocol| matches!(protocol, "boot" | "static")) =>
+            {
+                index += 2
+            }
+            "table" if fields.get(index + 1).copied() == Some(table.as_str()) => index += 2,
+            "linkdown" if allow_linkdown && !linkdown_seen => {
+                linkdown_seen = true;
+                index += 1;
+            }
+            _ => return false,
+        }
+    }
+    source_seen && scope_seen == route.scope_link
+}
+
+fn policy_route_present(
+    uplink: DhcpUplink,
+    policy: &OwnedPolicyRouting,
+    route: &OwnedPolicyRoute,
+) -> Result<bool, PlatformError> {
+    let table = policy.table.to_string();
+    let output = run_bounded(
+        "/usr/sbin/ip",
+        &["-4", "route", "show", "table", table.as_str()],
+        Duration::from_secs(3),
+    )?;
+    Ok(output
+        .lines()
+        .any(|line| policy_route_line_matches(uplink, line, route, policy.table)))
+}
+
+fn policy_rule_present(
+    policy: &OwnedPolicyRouting,
+    rule: &OwnedPolicyRule,
+) -> Result<bool, PlatformError> {
+    let output = run_bounded(
+        "/usr/sbin/ip",
+        &["-4", "rule", "show"],
+        Duration::from_secs(3),
+    )?;
+    Ok(output
+        .lines()
+        .any(|line| policy_rule_line_matches(line, rule, policy.table)))
+}
+
+fn policy_route_args(
+    operation: &str,
+    policy: &OwnedPolicyRouting,
+    route: &OwnedPolicyRoute,
+) -> Vec<String> {
+    let mut args = vec![
+        "-4".to_owned(),
+        "route".to_owned(),
+        operation.to_owned(),
+        route.destination.clone(),
+    ];
+    if let Some(gateway) = route.gateway {
+        args.extend(["via".to_owned(), gateway.to_string()]);
+    }
+    args.extend([
+        "dev".to_owned(),
+        route.device.clone(),
+        "src".to_owned(),
+        route.source.to_string(),
+    ]);
+    if route.scope_link {
+        args.extend(["scope".to_owned(), "link".to_owned()]);
+    }
+    args.extend(["table".to_owned(), policy.table.to_string()]);
+    args
+}
+
+fn policy_rule_args(
+    operation: &str,
+    policy: &OwnedPolicyRouting,
+    rule: &OwnedPolicyRule,
+) -> Vec<String> {
+    vec![
+        "-4".to_owned(),
+        "rule".to_owned(),
+        operation.to_owned(),
+        "priority".to_owned(),
+        rule.priority.to_string(),
+        "from".to_owned(),
+        rule.source.clone(),
+        "lookup".to_owned(),
+        policy.table.to_string(),
+    ]
+}
+
+fn ensure_owned_policy_route(
+    uplink: DhcpUplink,
+    policy: &OwnedPolicyRouting,
+    route: &OwnedPolicyRoute,
+) -> Result<(), PlatformError> {
+    run_ip_rechecked(&policy_route_args("replace", policy, route), || {
+        policy_route_present(uplink, policy, route)
+    })
+}
+
+fn remove_owned_policy_route(
+    uplink: DhcpUplink,
+    policy: &OwnedPolicyRouting,
+    route: &OwnedPolicyRoute,
+) -> Result<(), PlatformError> {
+    run_ip_rechecked(&policy_route_args("del", policy, route), || {
+        policy_route_present(uplink, policy, route).map(|present| !present)
+    })
+}
+
+fn ensure_owned_policy_rule(
+    policy: &OwnedPolicyRouting,
+    rule: &OwnedPolicyRule,
+) -> Result<(), PlatformError> {
+    run_ip_rechecked(&policy_rule_args("add", policy, rule), || {
+        policy_rule_present(policy, rule)
+    })
+}
+
+fn remove_owned_policy_rule(
+    policy: &OwnedPolicyRouting,
+    rule: &OwnedPolicyRule,
+) -> Result<(), PlatformError> {
+    run_ip_rechecked(&policy_rule_args("del", policy, rule), || {
+        policy_rule_present(policy, rule).map(|present| !present)
+    })
+}
+
 #[derive(Debug)]
 enum DhcpCompensation {
     EnsureAddress(OwnedAddress),
     RemoveAddress(OwnedAddress),
     EnsureRoute(OwnedRoute),
     RemoveRoute(OwnedRoute),
+    EnsurePolicyRoute {
+        policy: OwnedPolicyRouting,
+        route: OwnedPolicyRoute,
+    },
+    RemovePolicyRoute {
+        policy: OwnedPolicyRouting,
+        route: OwnedPolicyRoute,
+    },
+    EnsurePolicyRule {
+        policy: OwnedPolicyRouting,
+        rule: OwnedPolicyRule,
+    },
+    RemovePolicyRule {
+        policy: OwnedPolicyRouting,
+        rule: OwnedPolicyRule,
+    },
 }
 
 fn reconcile_owned_generation(
@@ -3037,6 +3578,32 @@ fn reconcile_owned_generation(
     let mut journal = Vec::new();
     let result = (|| {
         if let Some(previous) = previous {
+            if let Some(previous_policy) = previous.policy.as_ref() {
+                for rule in previous_policy.rules.iter().rev() {
+                    if !next
+                        .and_then(|next| next.policy.as_ref())
+                        .is_some_and(|policy| policy.rules.contains(rule))
+                    {
+                        remove_owned_policy_rule(previous_policy, rule)?;
+                        journal.push(DhcpCompensation::EnsurePolicyRule {
+                            policy: previous_policy.clone(),
+                            rule: rule.clone(),
+                        });
+                    }
+                }
+                for route in previous_policy.routes.iter().rev() {
+                    if !next
+                        .and_then(|next| next.policy.as_ref())
+                        .is_some_and(|policy| policy.routes.contains(route))
+                    {
+                        remove_owned_policy_route(uplink, previous_policy, route)?;
+                        journal.push(DhcpCompensation::EnsurePolicyRoute {
+                            policy: previous_policy.clone(),
+                            route: route.clone(),
+                        });
+                    }
+                }
+            }
             for route in previous.routes.iter().rev() {
                 if !next.is_some_and(|next| next.routes.contains(route)) {
                     remove_owned_route(uplink, route)?;
@@ -3063,12 +3630,38 @@ fn reconcile_owned_generation(
                     journal.push(DhcpCompensation::RemoveRoute(route.clone()));
                 }
             }
+            if let Some(next_policy) = next.policy.as_ref() {
+                let previous_policy = previous.and_then(|previous| previous.policy.as_ref());
+                for route in &next_policy.routes {
+                    if !previous_policy.is_some_and(|policy| policy.routes.contains(route))
+                        || !policy_route_present(uplink, next_policy, route)?
+                    {
+                        ensure_owned_policy_route(uplink, next_policy, route)?;
+                        journal.push(DhcpCompensation::RemovePolicyRoute {
+                            policy: next_policy.clone(),
+                            route: route.clone(),
+                        });
+                    }
+                }
+                for rule in &next_policy.rules {
+                    if !previous_policy.is_some_and(|policy| policy.rules.contains(rule))
+                        || !policy_rule_present(next_policy, rule)?
+                    {
+                        ensure_owned_policy_rule(next_policy, rule)?;
+                        journal.push(DhcpCompensation::RemovePolicyRule {
+                            policy: next_policy.clone(),
+                            rule: rule.clone(),
+                        });
+                    }
+                }
+            }
         }
         if owned_generation_matches(uplink, next)? {
             Ok(())
         } else {
             Err(PlatformError::UnsafeToCutOver(
-                "DHCP address, route, or resolver transaction failed strict read-back".to_owned(),
+                "DHCP address, route, policy routing, or resolver transaction failed strict read-back"
+                    .to_owned(),
             ))
         }
     })();
@@ -3112,6 +3705,85 @@ fn apply_dhcp_compensation(
             require_route_state(uplink, &route.destination, Some(&route))?;
             remove_owned_route(uplink, &route)
         }
+        DhcpCompensation::EnsurePolicyRoute { policy, route } => {
+            require_policy_route_state(uplink, &policy, &route, false)?;
+            ensure_owned_policy_route(uplink, &policy, &route)
+        }
+        DhcpCompensation::RemovePolicyRoute { policy, route } => {
+            require_policy_route_state(uplink, &policy, &route, true)?;
+            remove_owned_policy_route(uplink, &policy, &route)
+        }
+        DhcpCompensation::EnsurePolicyRule { policy, rule } => {
+            require_policy_rule_state(&policy, &rule, false)?;
+            ensure_owned_policy_rule(&policy, &rule)
+        }
+        DhcpCompensation::RemovePolicyRule { policy, rule } => {
+            require_policy_rule_state(&policy, &rule, true)?;
+            remove_owned_policy_rule(&policy, &rule)
+        }
+    }
+}
+
+fn require_policy_route_state(
+    uplink: DhcpUplink,
+    policy: &OwnedPolicyRouting,
+    route: &OwnedPolicyRoute,
+    present: bool,
+) -> Result<(), PlatformError> {
+    let table = policy.table.to_string();
+    let output = run_bounded(
+        "/usr/sbin/ip",
+        &["-4", "route", "show", "table", table.as_str()],
+        Duration::from_secs(3),
+    )?;
+    let lines = output
+        .lines()
+        .filter(|line| {
+            canonical_route_destination(line.split_whitespace().next().unwrap_or_default())
+                == canonical_route_destination(&route.destination)
+        })
+        .collect::<Vec<_>>();
+    let matches = if present {
+        lines.len() == 1 && policy_route_line_matches(uplink, lines[0], route, policy.table)
+    } else {
+        lines.is_empty()
+    };
+    if matches {
+        Ok(())
+    } else {
+        Err(PlatformError::Conflict(format!(
+            "policy route destination {} changed before DHCP rollback",
+            route.destination
+        )))
+    }
+}
+
+fn require_policy_rule_state(
+    policy: &OwnedPolicyRouting,
+    rule: &OwnedPolicyRule,
+    present: bool,
+) -> Result<(), PlatformError> {
+    let output = run_bounded(
+        "/usr/sbin/ip",
+        &["-4", "rule", "show"],
+        Duration::from_secs(3),
+    )?;
+    let lines = output
+        .lines()
+        .filter(|line| parse_rule_priority(line) == Some(rule.priority))
+        .collect::<Vec<_>>();
+    let matches = if present {
+        lines.len() == 1 && policy_rule_line_matches(lines[0], rule, policy.table)
+    } else {
+        lines.is_empty()
+    };
+    if matches {
+        Ok(())
+    } else {
+        Err(PlatformError::Conflict(format!(
+            "policy rule priority {} changed before DHCP rollback",
+            rule.priority
+        )))
     }
 }
 
@@ -3303,7 +3975,10 @@ fn canonical_route_destination(destination: &str) -> String {
         return "default".to_owned();
     }
     let Some((address, prefix)) = destination.split_once('/') else {
-        return destination.to_owned();
+        return destination
+            .parse::<Ipv4Addr>()
+            .map(|address| format!("{address}/32"))
+            .unwrap_or_else(|_| destination.to_owned());
     };
     let (Ok(address), Ok(prefix)) = (address.parse::<Ipv4Addr>(), prefix.parse::<u8>()) else {
         return destination.to_owned();
@@ -3331,6 +4006,12 @@ fn owned_generation_matches(
             if !owned_route_present(uplink, route)? {
                 return Ok(false);
             }
+        }
+        let Some(policy) = ownership.policy.as_ref() else {
+            return Ok(false);
+        };
+        if !policy_state_is_exact(uplink, policy)? {
+            return Ok(false);
         }
     }
     Ok(true)
@@ -3481,6 +4162,177 @@ mod hostapd_tests {
         assert!(summary.contains("vht_oper_chwidth=0"));
         assert!(!summary.contains("do-not-log"));
         assert!(!summary.contains("ssid="));
+    }
+}
+
+#[cfg(test)]
+mod dhcp_policy_tests {
+    use super::*;
+
+    fn ethernet_policy() -> OwnedPolicyRouting {
+        let address = OwnedAddress {
+            cidr: "192.168.0.107/24".to_owned(),
+            broadcast: Some("192.168.0.255".parse().expect("valid broadcast")),
+        };
+        let routes = vec![OwnedRoute {
+            destination: "default".to_owned(),
+            gateway: "192.168.0.1".parse().expect("valid gateway"),
+            metric: Some(100),
+        }];
+        build_policy_routing(DhcpUplink::Ethernet, &address, &routes)
+            .expect("valid Ethernet DHCP ownership")
+    }
+
+    #[test]
+    fn policy_routing_uses_dedicated_table_and_ethernet_first_priorities() {
+        let policy = ethernet_policy();
+
+        assert_eq!(policy.table, ETHERNET_POLICY_ROUTE_TABLE);
+        assert_eq!(
+            policy.rules,
+            vec![
+                OwnedPolicyRule {
+                    priority: ETHERNET_POLICY_LAN_RULE_PRIORITY,
+                    source: LAN_SUBNET.to_owned(),
+                },
+                OwnedPolicyRule {
+                    priority: ETHERNET_POLICY_ADDRESS_RULE_PRIORITY,
+                    source: "192.168.0.107/32".to_owned(),
+                },
+            ]
+        );
+        assert_eq!(
+            policy.routes,
+            vec![
+                OwnedPolicyRoute {
+                    destination: "192.168.0.0/24".to_owned(),
+                    gateway: None,
+                    source: "192.168.0.107".parse().expect("valid address"),
+                    device: ETHERNET_WAN_INTERFACE.to_owned(),
+                    scope_link: true,
+                },
+                OwnedPolicyRoute {
+                    destination: LAN_SUBNET.to_owned(),
+                    gateway: None,
+                    source: "192.168.8.1".parse().expect("valid LAN address"),
+                    device: LAN_BRIDGE.to_owned(),
+                    scope_link: true,
+                },
+                OwnedPolicyRoute {
+                    destination: "192.168.0.1/32".to_owned(),
+                    gateway: None,
+                    source: "192.168.0.107".parse().expect("valid address"),
+                    device: ETHERNET_WAN_INTERFACE.to_owned(),
+                    scope_link: true,
+                },
+                OwnedPolicyRoute {
+                    destination: "default".to_owned(),
+                    gateway: Some("192.168.0.1".parse().expect("valid gateway")),
+                    source: "192.168.0.107".parse().expect("valid address"),
+                    device: ETHERNET_WAN_INTERFACE.to_owned(),
+                    scope_link: false,
+                },
+            ]
+        );
+        assert!(
+            ETHERNET_POLICY_LAN_RULE_PRIORITY < WIFI_POLICY_LAN_RULE_PRIORITY,
+            "Ethernet LAN source rule must be evaluated before Wi-Fi"
+        );
+    }
+
+    #[test]
+    fn policy_routing_rejects_lan_overlap_and_more_specific_lan_routes() {
+        let overlapping_address = OwnedAddress {
+            cidr: LAN_ADDRESS.to_owned(),
+            broadcast: None,
+        };
+        assert!(build_policy_routing(DhcpUplink::Ethernet, &overlapping_address, &[]).is_err());
+
+        let address = OwnedAddress {
+            cidr: "192.168.0.107/24".to_owned(),
+            broadcast: None,
+        };
+        let routes = vec![OwnedRoute {
+            destination: "192.168.8.0/25".to_owned(),
+            gateway: "192.168.0.1".parse().expect("valid gateway"),
+            metric: None,
+        }];
+        assert!(build_policy_routing(DhcpUplink::Ethernet, &address, &routes).is_err());
+    }
+
+    #[test]
+    fn policy_output_matches_same_subnet_connected_and_default_routes() {
+        let policy = ethernet_policy();
+
+        assert!(policy_route_line_matches(
+            DhcpUplink::Ethernet,
+            "192.168.0.0/24 dev eth0 scope link src 192.168.0.107",
+            &policy.routes[0],
+            policy.table,
+        ));
+        assert!(policy_route_line_matches(
+            DhcpUplink::Ethernet,
+            "192.168.8.0/24 dev br-lan scope link src 192.168.8.1",
+            &policy.routes[1],
+            policy.table,
+        ));
+        assert!(policy_route_line_matches(
+            DhcpUplink::Ethernet,
+            "192.168.0.1 dev eth0 scope link src 192.168.0.107",
+            &policy.routes[2],
+            policy.table,
+        ));
+        assert!(policy_route_line_matches(
+            DhcpUplink::Ethernet,
+            "default via 192.168.0.1 dev eth0 proto boot src 192.168.0.107",
+            &policy.routes[3],
+            policy.table,
+        ));
+        assert!(!policy_route_line_matches(
+            DhcpUplink::Ethernet,
+            "192.168.8.0/24 dev br-lan scope link src 192.168.8.1 linkdown",
+            &policy.routes[1],
+            policy.table,
+        ));
+        assert!(policy_route_line_matches_with_linkdown(
+            DhcpUplink::Ethernet,
+            "192.168.8.0/24 dev br-lan scope link src 192.168.8.1 linkdown",
+            &policy.routes[1],
+            policy.table,
+            true,
+        ));
+        assert!(!policy_route_line_matches(
+            DhcpUplink::Ethernet,
+            "default via 192.168.0.1 dev wlan0 src 192.168.0.107",
+            &policy.routes[3],
+            policy.table,
+        ));
+    }
+
+    #[test]
+    fn policy_rule_output_requires_exact_source_and_table() {
+        let policy = ethernet_policy();
+
+        assert!(policy_rule_line_matches(
+            "12000: from 192.168.8.0/24 lookup 101",
+            &policy.rules[0],
+            policy.table,
+        ));
+        assert!(policy_rule_line_matches(
+            "12010: from 192.168.0.107 table 101",
+            &policy.rules[1],
+            policy.table,
+        ));
+        assert!(!policy_rule_line_matches(
+            "12000: from 192.168.8.0/24 lookup 102",
+            &policy.rules[0],
+            policy.table,
+        ));
+        assert!(!policy_rule_line_matches(
+            "12000: from 192.168.8.0/24 fwmark 1 lookup 101",
+            &policy.rules[0],
+            policy.table,
+        ));
     }
 }
 
@@ -4540,16 +5392,19 @@ mod tests {
             search: vec!["example.test".to_owned()],
         };
         let generation = DhcpGeneration::new("dhcp-test-generation".to_owned()).unwrap();
-        let ownership = DhcpOwnership::from_lease(DhcpUplink::Wifi, generation.clone(), &lease);
+        let ownership =
+            DhcpOwnership::from_lease(DhcpUplink::Wifi, generation.clone(), &lease).unwrap();
         let encoded = serde_json::to_string(&ownership).unwrap();
         let decoded: DhcpOwnership = serde_json::from_str(&encoded).unwrap();
         decoded.validate().unwrap();
         assert_eq!(decoded, ownership);
         assert_eq!(decoded.generation, Some(generation));
-        let legacy = encoded
-            .replace("\"version\":3,", "\"version\":1,")
-            .replace("\"generation\":\"dhcp-test-generation\",", "");
-        let legacy: DhcpOwnership = serde_json::from_str(&legacy).unwrap();
+        let mut legacy: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+        let object = legacy.as_object_mut().unwrap();
+        object.insert("version".to_owned(), serde_json::Value::from(1_u8));
+        object.remove("generation");
+        object.remove("policy");
+        let legacy: DhcpOwnership = serde_json::from_value(legacy).unwrap();
         legacy.validate().unwrap();
         assert_eq!(legacy.generation, None);
         assert_eq!(
@@ -4600,7 +5455,8 @@ mod tests {
             search: vec!["example.test".to_owned()],
         };
         let generation = DhcpGeneration::new("ethernet-dhcp-test-generation".to_owned()).unwrap();
-        let ownership = DhcpOwnership::from_lease(DhcpUplink::Ethernet, generation, &lease);
+        let ownership =
+            DhcpOwnership::from_lease(DhcpUplink::Ethernet, generation, &lease).unwrap();
 
         assert_eq!(dhcp_uplink_interface(DhcpUplink::Ethernet), "eth0");
         assert_eq!(dhcp_uplink_metric(DhcpUplink::Ethernet), 100);

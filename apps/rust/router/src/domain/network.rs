@@ -10,6 +10,14 @@ pub const ETHERNET_WAN_INTERFACE: &str = "eth0";
 pub const WIFI_WAN_INTERFACE: &str = "wlan0";
 /// Backwards-compatible name for the current Wi-Fi WAN during the topology migration.
 pub const WAN_INTERFACE: &str = WIFI_WAN_INTERFACE;
+/// Dedicated policy-routing tables for the two DHCP-owned uplinks. 110 is reserved by Mihomo.
+pub const ETHERNET_POLICY_ROUTE_TABLE: u32 = 101;
+pub const WIFI_POLICY_ROUTE_TABLE: u32 = 102;
+/// Source rules intentionally run after Mihomo's fwmark rule at priority 11000.
+pub const ETHERNET_POLICY_LAN_RULE_PRIORITY: u32 = 12000;
+pub const WIFI_POLICY_LAN_RULE_PRIORITY: u32 = 12001;
+pub const ETHERNET_POLICY_ADDRESS_RULE_PRIORITY: u32 = 12010;
+pub const WIFI_POLICY_ADDRESS_RULE_PRIORITY: u32 = 12011;
 pub const LAN_ADDRESS: &str = "192.168.8.1/24";
 pub const LAN_SUBNET: &str = "192.168.8.0/24";
 pub const ROUTER_FILTER_CHAIN: &str = "HYZ_ROUTER_FWD";

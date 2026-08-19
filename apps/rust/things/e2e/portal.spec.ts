@@ -39,6 +39,11 @@ test("renders the portal home and applies the anonymous display control", async 
   const deployedApps = page.getByRole("region", { name: "已部署应用" });
   await expect(deployedApps).toBeVisible();
   await expect(deployedApps.getByText("部署时间：", { exact: false }).first()).toBeVisible();
+  const systemStatus = page.locator("article").filter({ hasText: "系统 / 流量" });
+  await expect(systemStatus.getByText("WAN 总接收", { exact: true })).toBeVisible();
+  await expect(systemStatus.getByText("34.1 MiB", { exact: true })).toBeVisible();
+  await expect(systemStatus.getByText("WAN 总发送", { exact: true })).toBeVisible();
+  await expect(systemStatus.getByText("6.6 MiB", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "路由 / LAN" })).toBeVisible();
   await expect(
     page.getByText("Ethernet WAN", { exact: true }).first(),

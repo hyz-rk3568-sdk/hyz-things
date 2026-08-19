@@ -783,6 +783,14 @@ impl ProductionRuntime {
     }
 
     async fn shutdown(&self) -> Result<(), String> {
+        // Stop queued DHCP callbacks before taking the runtime shutdown path. A callback may hold
+        // the shared network lifecycle lock while the Ethernet DHCP shutdown needs that same lock.
+        let dispatcher_result = self
+            .dhcp
+            .stop_and_join()
+            .await
+            .map_err(|error| format!("DHCP dispatcher shutdown failed: {error}"));
+
         let _serial = self.router_proxy.lock().await;
         let runtime_result = async {
             self.shutdown_ethernet_dhcp()
@@ -802,12 +810,6 @@ impl ProductionRuntime {
             .map_err(|error| error.to_string())
         }
         .await;
-
-        let dispatcher_result = self
-            .dhcp
-            .stop_and_join()
-            .await
-            .map_err(|error| format!("DHCP dispatcher shutdown failed: {error}"));
 
         match (runtime_result, dispatcher_result) {
             (Err(runtime), Err(dispatcher)) => Err(format!("{runtime}; {dispatcher}")),

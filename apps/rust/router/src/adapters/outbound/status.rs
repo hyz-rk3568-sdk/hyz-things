@@ -347,12 +347,17 @@ fn read_system_stats() -> Component<SystemStats> {
     let cpu_temperature_millidegrees = fs::read_to_string("/sys/class/thermal/thermal_zone0/temp")
         .ok()
         .and_then(|value| value.trim().parse::<i64>().ok());
-    let interfaces = [LAN_BRIDGE, WAN_INTERFACE, LAN_MEMBER]
-        .into_iter()
-        .filter_map(interface_stats)
-        .collect::<Vec<_>>();
+    let interfaces = [
+        LAN_BRIDGE,
+        ETHERNET_WAN_INTERFACE,
+        WAN_INTERFACE,
+        LAN_MEMBER,
+    ]
+    .into_iter()
+    .filter_map(interface_stats)
+    .collect::<Vec<_>>();
     let complete =
-        uptime_seconds.is_some() && cpu_temperature_millidegrees.is_some() && interfaces.len() == 3;
+        uptime_seconds.is_some() && cpu_temperature_millidegrees.is_some() && interfaces.len() == 4;
     let stats = SystemStats {
         uptime_seconds,
         cpu_temperature_millidegrees,

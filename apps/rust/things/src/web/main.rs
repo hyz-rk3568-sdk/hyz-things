@@ -4224,13 +4224,13 @@ fn render_dashboard(snapshot: &StatusSnapshot) -> Html {
                 .unwrap_or_else(missing),
         ),
         (
-            "WAN 接收",
+            "WAN 总接收",
             wan_traffic(system)
                 .map(|v| format_bytes(v.0))
                 .unwrap_or_else(missing),
         ),
         (
-            "WAN 发送",
+            "WAN 总发送",
             wan_traffic(system)
                 .map(|v| format_bytes(v.1))
                 .unwrap_or_else(missing),
@@ -4971,11 +4971,23 @@ fn wan_traffic(
     component: &Component<hyz_things::domain::status::SystemStats>,
 ) -> Option<(u64, u64)> {
     component.data.as_ref().and_then(|stats| {
-        stats
-            .interfaces
-            .iter()
-            .find(|interface| interface.name == "wlan0")
-            .map(|interface| (interface.rx_bytes, interface.tx_bytes))
+        let ((rx_bytes, tx_bytes), found) = stats.interfaces.iter().fold(
+            ((0_u64, 0_u64), false),
+            |((rx_total, tx_total), found), interface| {
+                if matches!(interface.name.as_str(), "eth0" | "wlan0") {
+                    (
+                        (
+                            rx_total.saturating_add(interface.rx_bytes),
+                            tx_total.saturating_add(interface.tx_bytes),
+                        ),
+                        true,
+                    )
+                } else {
+                    ((rx_total, tx_total), found)
+                }
+            },
+        );
+        found.then_some((rx_bytes, tx_bytes))
     })
 }
 
@@ -5013,6 +5025,52 @@ fn format_bool(value: bool) -> String {
 
 fn missing() -> String {
     MISSING.to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wan_traffic;
+    use hyz_things::domain::status::{Component, InterfaceStats, SystemStats};
+
+    #[test]
+    fn wan_traffic_sums_ethernet_and_wifi_only() {
+        let component = Component::available(SystemStats {
+            interfaces: vec![
+                InterfaceStats {
+                    name: "eth0".to_owned(),
+                    rx_bytes: 10,
+                    tx_bytes: 20,
+                },
+                InterfaceStats {
+                    name: "wlan0".to_owned(),
+                    rx_bytes: 3,
+                    tx_bytes: 5,
+                },
+                InterfaceStats {
+                    name: "br-lan".to_owned(),
+                    rx_bytes: 100,
+                    tx_bytes: 200,
+                },
+            ],
+            ..SystemStats::default()
+        });
+
+        assert_eq!(wan_traffic(&component), Some((13, 25)));
+    }
+
+    #[test]
+    fn wan_traffic_is_missing_without_an_uplink_interface() {
+        let component = Component::available(SystemStats {
+            interfaces: vec![InterfaceStats {
+                name: "br-lan".to_owned(),
+                rx_bytes: 100,
+                tx_bytes: 200,
+            }],
+            ..SystemStats::default()
+        });
+
+        assert_eq!(wan_traffic(&component), None);
+    }
 }
 
 fn main() {
