@@ -3,18 +3,28 @@ use super::{
     process::{LinuxRouterPlatform, Tool},
     storage,
     system::{
-        chain_output_is_exact, exact_chain_references, expected_chain_rules,
-        forward_hook_order_is_exact, normalized_chain_rules, owned_forward_hook_is_exact,
+        chain_output_is_exact, exact_chain_references, expected_router_chain_rules,
+        forward_hook_order_is_exact, input_hook_order_is_exact, normalized_chain_rules,
+        owned_forward_hook_is_exact, owned_hook_is_exact,
     },
 };
 use crate::{
     application::ports::PlatformError,
     domain::network::{
-        NetworkAction, LAN_ADDRESS, LAN_BRIDGE, LAN_MEMBER, LAN_SUBNET, ROUTER_FILTER_CHAIN,
-        ROUTER_NAT_CHAIN, WAN_INTERFACE,
+        NetworkAction, ETHERNET_LAN_INTERFACE, LAN_ADDRESS, LAN_BRIDGE, LAN_MEMBER,
+        ROUTER_FILTER_CHAIN, ROUTER_INPUT_CHAIN, ROUTER_NAT_CHAIN,
     },
 };
 use std::{fs, time::Duration};
+
+#[derive(Default)]
+struct RouterFirewallInstall {
+    input_hook_created: bool,
+    filter_chain_created: bool,
+    filter_hook_created: bool,
+    nat_chain_created: bool,
+    nat_hook_created: bool,
+}
 
 impl LinuxRouterPlatform {
     pub(crate) fn apply_network_action(&self, action: &NetworkAction) -> Result<(), PlatformError> {
@@ -45,14 +55,25 @@ impl LinuxRouterPlatform {
             }
             NetworkAction::AttachAp => self.attach_ap(),
             NetworkAction::DetachAp => self.detach_ap(),
+            NetworkAction::AttachEthernetLan => self.attach_lan_member(ETHERNET_LAN_INTERFACE),
+            NetworkAction::DetachEthernetLan => self.detach_lan_member(ETHERNET_LAN_INTERFACE),
             NetworkAction::EnsureManagementServices => self.ensure_management_services(),
             NetworkAction::StopManagementServices => self.stop_owned_management_services(),
             NetworkAction::WaitForWanRoute => self.wait_for_sta_route(Duration::from_secs(30)),
             NetworkAction::CaptureIpv4Forwarding => self.capture_forwarding(),
             NetworkAction::EnableIpv4Forwarding => self.enable_forwarding(),
             NetworkAction::DisableIpv4Forwarding => self.disable_forwarding(),
-            NetworkAction::InstallRouterFirewall { token } => self.install_router_firewall(token),
-            NetworkAction::RemoveRouterFirewall { token } => self.remove_router_firewall(token),
+            NetworkAction::InstallRouterFirewall { token, wan_set } => {
+                self.install_router_firewall(token, *wan_set)
+            }
+            NetworkAction::ReconfigureRouterFirewall {
+                token,
+                previous_wan_set,
+                wan_set,
+            } => self.reconfigure_router_firewall(token, *previous_wan_set, *wan_set),
+            NetworkAction::RemoveRouterFirewall { token } => {
+                self.remove_router_firewall(token, self.observe_router_wan_set(token)?)
+            }
             NetworkAction::RestoreIpv4Forwarding => self.restore_forwarding(),
         }
     }
@@ -101,26 +122,35 @@ impl LinuxRouterPlatform {
     }
 
     pub(crate) fn attach_ap(&self) -> Result<(), PlatformError> {
-        wait_for_interface_presence(LAN_MEMBER, Duration::from_secs(20))?;
-        self.ip(&["link", "set", "dev", LAN_MEMBER, "master", LAN_BRIDGE])
+        self.attach_lan_member(LAN_MEMBER)?;
+        self.wait_for_management_services_ready(Duration::from_secs(5))
+    }
+
+    fn attach_lan_member(&self, interface: &'static str) -> Result<(), PlatformError> {
+        wait_for_interface_presence(interface, Duration::from_secs(20))?;
+        self.ip(&["link", "set", "dev", interface, "master", LAN_BRIDGE])
     }
 
     pub(crate) fn detach_ap(&self) -> Result<(), PlatformError> {
-        let master = match fs::read_link(format!("/sys/class/net/{LAN_MEMBER}/master")) {
+        self.detach_lan_member(LAN_MEMBER)
+    }
+
+    fn detach_lan_member(&self, interface: &str) -> Result<(), PlatformError> {
+        let master = match fs::read_link(format!("/sys/class/net/{interface}/master")) {
             Ok(master) => master,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
             Err(error) => {
                 return Err(PlatformError::ProbeFailed(format!(
-                    "read AP bridge master: {error}"
+                    "read bridge master for {interface}: {error}"
                 )))
             }
         };
         if master.file_name().and_then(|name| name.to_str()) != Some(LAN_BRIDGE) {
-            return Err(PlatformError::Conflict(
-                "AP master changed before rollback; refusing detach".to_owned(),
-            ));
+            return Err(PlatformError::Conflict(format!(
+                "{interface} master changed before rollback; refusing detach"
+            )));
         }
-        self.ip(&["link", "set", "dev", LAN_MEMBER, "nomaster"])
+        self.ip(&["link", "set", "dev", interface, "nomaster"])
     }
 
     fn remove_owned_bridge(&self, token: &str) -> Result<(), PlatformError> {
@@ -213,181 +243,67 @@ impl LinuxRouterPlatform {
             .map_err(|error| PlatformError::Io(format!("remove forwarding marker: {error}")))
     }
 
-    fn install_router_firewall(&self, token: &str) -> Result<(), PlatformError> {
+    fn install_router_firewall(
+        &self,
+        token: &str,
+        wan_set: crate::domain::network::RouterWanSet,
+    ) -> Result<(), PlatformError> {
         storage::validate_token(token)?;
-        let filter_hook_comment = token.to_owned();
-        let nat_hook_comment = token.to_owned();
-        let forward = self
-            .run(
-                Tool::Iptables,
-                &strings(&["-w", "-t", "filter", "-S", "FORWARD"]),
-            )?
-            .stdout;
-        let owned_hook = |marker: &str, chain: &str| -> Result<bool, PlatformError> {
-            let token = storage::read_private_small_optional(marker, 128)?;
-            let references = exact_chain_references(&forward, chain).ok_or_else(|| {
-                PlatformError::ProbeFailed(format!("cannot parse {chain} FORWARD references"))
-            })?;
-            match token {
-                Some(token) => {
-                    let token = token.trim();
-                    storage::validate_token(token)?;
-                    let expected = strings(&[
-                        "-A",
-                        "FORWARD",
-                        "-m",
-                        "comment",
-                        "--comment",
-                        token,
-                        "-j",
-                        chain,
-                    ]);
-                    if references != [expected] {
-                        return Err(PlatformError::Conflict(format!(
-                            "{chain} FORWARD hook is not exact and unique"
-                        )));
-                    }
-                    Ok(true)
-                }
-                None if references.is_empty() => Ok(false),
-                None => Err(PlatformError::Conflict(format!(
-                    "unowned {chain} FORWARD references make router insertion unsafe"
-                ))),
-            }
-        };
-        let mihomo_present = owned_hook(
-            storage::TUN_FIREWALL_OWNER,
-            crate::domain::proxy::MIHOMO_FILTER_CHAIN,
-        )?;
-        let tailscale_present = owned_hook(
-            storage::TAILSCALE_FIREWALL_OWNER,
-            crate::domain::tailscale::TAILSCALE_FORWARD_CHAIN,
-        )?;
-        if !forward_hook_order_is_exact(&forward, mihomo_present, tailscale_present, false) {
+        if storage::read_private_small_optional(storage::ROUTER_FIREWALL_OWNER, 128)?.is_some() {
             return Err(PlatformError::Conflict(
-                "managed FORWARD hooks are not in Mihomo, Tailscale order".to_owned(),
+                "router firewall owner marker already exists".to_owned(),
             ));
         }
-        let router_position = 1 + usize::from(mihomo_present) + usize::from(tailscale_present);
-        self.iptables(&["-w", "-t", "filter", "-N", ROUTER_FILTER_CHAIN])?;
-        let mut filter_hook_created = false;
-        let mut nat_chain_created = false;
-        let mut nat_hook_created = false;
+        self.ensure_router_hook_preconditions()?;
+
+        let mut installed = RouterFirewallInstall::default();
         let result = (|| {
+            self.iptables(&["-w", "-t", "filter", "-N", ROUTER_INPUT_CHAIN])?;
+            for rule in expected_router_chain_rules(ROUTER_INPUT_CHAIN, token, wan_set) {
+                self.append_chain_rule("filter", ROUTER_INPUT_CHAIN, &rule)?;
+            }
             self.iptables(&[
                 "-w",
                 "-t",
                 "filter",
-                "-A",
-                ROUTER_FILTER_CHAIN,
+                "-I",
+                "INPUT",
+                &self.router_input_position()?.to_string(),
                 "-m",
                 "comment",
                 "--comment",
                 token,
-            ])?;
-            self.iptables(&[
-                "-w",
-                "-t",
-                "filter",
-                "-A",
-                ROUTER_FILTER_CHAIN,
-                "-i",
-                LAN_BRIDGE,
-                "-s",
-                LAN_SUBNET,
-                "-o",
-                WAN_INTERFACE,
-                "-m",
-                "conntrack",
-                "--ctstate",
-                "NEW,ESTABLISHED,RELATED",
                 "-j",
-                "ACCEPT",
+                ROUTER_INPUT_CHAIN,
             ])?;
-            self.iptables(&[
-                "-w",
-                "-t",
-                "filter",
-                "-A",
-                ROUTER_FILTER_CHAIN,
-                "-i",
-                WAN_INTERFACE,
-                "-o",
-                LAN_BRIDGE,
-                "-d",
-                LAN_SUBNET,
-                "-m",
-                "conntrack",
-                "--ctstate",
-                "ESTABLISHED,RELATED",
-                "-j",
-                "ACCEPT",
-            ])?;
-            self.iptables(&[
-                "-w",
-                "-t",
-                "filter",
-                "-A",
-                ROUTER_FILTER_CHAIN,
-                "-i",
-                WAN_INTERFACE,
-                "-o",
-                LAN_BRIDGE,
-                "-j",
-                "DROP",
-            ])?;
-            self.iptables(&[
-                "-w",
-                "-t",
-                "filter",
-                "-A",
-                ROUTER_FILTER_CHAIN,
-                "-i",
-                LAN_BRIDGE,
-                "-j",
-                "DROP",
-            ])?;
+            installed.input_hook_created = true;
+
+            self.iptables(&["-w", "-t", "filter", "-N", ROUTER_FILTER_CHAIN])?;
+            installed.filter_chain_created = true;
+            for rule in expected_router_chain_rules(ROUTER_FILTER_CHAIN, token, wan_set) {
+                self.append_chain_rule("filter", ROUTER_FILTER_CHAIN, &rule)?;
+            }
             self.iptables(&[
                 "-w",
                 "-t",
                 "filter",
                 "-I",
                 "FORWARD",
-                &router_position.to_string(),
-                "-m",
-                "comment",
-                "--comment",
-                &filter_hook_comment,
-                "-j",
-                ROUTER_FILTER_CHAIN,
-            ])?;
-            filter_hook_created = true;
-            self.iptables(&["-w", "-t", "nat", "-N", ROUTER_NAT_CHAIN])?;
-            nat_chain_created = true;
-            self.iptables(&[
-                "-w",
-                "-t",
-                "nat",
-                "-A",
-                ROUTER_NAT_CHAIN,
+                &self.router_forward_position()?.to_string(),
                 "-m",
                 "comment",
                 "--comment",
                 token,
-            ])?;
-            self.iptables(&[
-                "-w",
-                "-t",
-                "nat",
-                "-A",
-                ROUTER_NAT_CHAIN,
-                "-s",
-                LAN_SUBNET,
-                "-o",
-                WAN_INTERFACE,
                 "-j",
-                "MASQUERADE",
+                ROUTER_FILTER_CHAIN,
             ])?;
+            installed.filter_hook_created = true;
+
+            self.iptables(&["-w", "-t", "nat", "-N", ROUTER_NAT_CHAIN])?;
+            installed.nat_chain_created = true;
+            for rule in expected_router_chain_rules(ROUTER_NAT_CHAIN, token, wan_set) {
+                self.append_chain_rule("nat", ROUTER_NAT_CHAIN, &rule)?;
+            }
             self.iptables(&[
                 "-w",
                 "-t",
@@ -398,84 +314,250 @@ impl LinuxRouterPlatform {
                 "-m",
                 "comment",
                 "--comment",
-                &nat_hook_comment,
+                token,
                 "-j",
                 ROUTER_NAT_CHAIN,
             ])?;
-            nat_hook_created = true;
+            installed.nat_hook_created = true;
             storage::atomic_write_private(
                 storage::ROUTER_FIREWALL_OWNER,
                 format!("{token}\n").as_bytes(),
             )
         })();
         if result.is_err() {
-            self.rollback_created_router_firewall(
-                token,
-                filter_hook_created,
-                nat_chain_created,
-                nat_hook_created,
-            );
+            self.rollback_created_router_firewall(token, wan_set, &installed);
         }
         result
+    }
+
+    fn reconfigure_router_firewall(
+        &self,
+        token: &str,
+        previous_wan_set: crate::domain::network::RouterWanSet,
+        wan_set: crate::domain::network::RouterWanSet,
+    ) -> Result<(), PlatformError> {
+        if previous_wan_set == wan_set {
+            return Ok(());
+        }
+        self.verify_router_firewall(token, previous_wan_set)?;
+        self.replace_router_chain_rules(
+            "filter",
+            ROUTER_FILTER_CHAIN,
+            token,
+            previous_wan_set,
+            wan_set,
+        )?;
+        if let Err(error) = self.replace_router_chain_rules(
+            "nat",
+            ROUTER_NAT_CHAIN,
+            token,
+            previous_wan_set,
+            wan_set,
+        ) {
+            return match self.replace_router_chain_rules(
+                "filter",
+                ROUTER_FILTER_CHAIN,
+                token,
+                wan_set,
+                previous_wan_set,
+            ) {
+                Ok(()) => Err(error),
+                Err(rollback) => Err(PlatformError::InvalidState(format!(
+                    "router firewall NAT reconfiguration failed: {error}; exact FORWARD rollback failed: {rollback}"
+                ))),
+            };
+        }
+        Ok(())
+    }
+
+    fn replace_router_chain_rules(
+        &self,
+        table: &str,
+        chain: &str,
+        token: &str,
+        previous_wan_set: crate::domain::network::RouterWanSet,
+        wan_set: crate::domain::network::RouterWanSet,
+    ) -> Result<(), PlatformError> {
+        let previous = expected_router_chain_rules(chain, token, previous_wan_set);
+        let next = expected_router_chain_rules(chain, token, wan_set);
+        if previous.len() != next.len() || previous.first() != next.first() {
+            return Err(PlatformError::InvalidState(
+                "router firewall chains must keep an exact fixed replacement shape".to_owned(),
+            ));
+        }
+        let mut replaced = Vec::new();
+        for (index, (previous_rule, next_rule)) in previous.iter().zip(&next).enumerate().skip(1) {
+            if previous_rule == next_rule {
+                continue;
+            }
+            let mut args = strings(&["-w", "-t", table, "-R", chain, &(index + 1).to_string()]);
+            args.extend(next_rule.iter().skip(2).cloned());
+            if let Err(error) = self.run(Tool::Iptables, &args) {
+                let rollback = replaced.into_iter().rev().try_for_each(
+                    |(position, rule): (usize, &Vec<String>)| {
+                        let mut rollback =
+                            strings(&["-w", "-t", table, "-R", chain, &(position + 1).to_string()]);
+                        rollback.extend(rule.iter().skip(2).cloned());
+                        self.run(Tool::Iptables, &rollback).map(|_| ())
+                    },
+                );
+                return match rollback {
+                    Ok(()) => Err(error),
+                    Err(rollback) => Err(PlatformError::InvalidState(format!(
+                        "router firewall {chain} replacement failed: {error}; exact rollback failed: {rollback}"
+                    ))),
+                };
+            }
+            replaced.push((index, previous_rule));
+        }
+        Ok(())
+    }
+
+    fn ensure_router_hook_preconditions(&self) -> Result<(), PlatformError> {
+        let forward = self
+            .run(
+                Tool::Iptables,
+                &strings(&["-w", "-t", "filter", "-S", "FORWARD"]),
+            )?
+            .stdout;
+        let input = self
+            .run(
+                Tool::Iptables,
+                &strings(&["-w", "-t", "filter", "-S", "INPUT"]),
+            )?
+            .stdout;
+        let router_forward = exact_chain_references(&forward, ROUTER_FILTER_CHAIN);
+        let router_input = exact_chain_references(&input, ROUTER_INPUT_CHAIN);
+        if !router_forward.is_some_and(|rules| rules.is_empty())
+            || !router_input.is_some_and(|rules| rules.is_empty())
+        {
+            return Err(PlatformError::Conflict(
+                "router firewall references already exist or are unparseable".to_owned(),
+            ));
+        }
+        let mihomo = owned_forward_hook_is_exact(
+            &forward,
+            storage::TUN_FIREWALL_OWNER,
+            crate::domain::proxy::MIHOMO_FILTER_CHAIN,
+        )?;
+        let tailscale = owned_forward_hook_is_exact(
+            &forward,
+            storage::TAILSCALE_FIREWALL_OWNER,
+            crate::domain::tailscale::TAILSCALE_FORWARD_CHAIN,
+        )?;
+        if !forward_hook_order_is_exact(&forward, mihomo, tailscale, false) {
+            return Err(PlatformError::Conflict(
+                "managed FORWARD hooks are not in exact Mihomo, Tailscale order".to_owned(),
+            ));
+        }
+        let tailscale_input = owned_hook_is_exact(
+            &input,
+            "INPUT",
+            storage::TAILSCALE_FIREWALL_OWNER,
+            crate::domain::tailscale::TAILSCALE_INPUT_CHAIN,
+        )?;
+        if !input_hook_order_is_exact(&input, tailscale_input, false) {
+            return Err(PlatformError::Conflict(
+                "managed INPUT hooks are not in exact Tailscale, router order".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn router_forward_position(&self) -> Result<String, PlatformError> {
+        let forward = self
+            .run(
+                Tool::Iptables,
+                &strings(&["-w", "-t", "filter", "-S", "FORWARD"]),
+            )?
+            .stdout;
+        let mihomo = owned_forward_hook_is_exact(
+            &forward,
+            storage::TUN_FIREWALL_OWNER,
+            crate::domain::proxy::MIHOMO_FILTER_CHAIN,
+        )?;
+        let tailscale = owned_forward_hook_is_exact(
+            &forward,
+            storage::TAILSCALE_FIREWALL_OWNER,
+            crate::domain::tailscale::TAILSCALE_FORWARD_CHAIN,
+        )?;
+        Ok((1 + usize::from(mihomo) + usize::from(tailscale)).to_string())
+    }
+
+    fn router_input_position(&self) -> Result<String, PlatformError> {
+        let input = self
+            .run(
+                Tool::Iptables,
+                &strings(&["-w", "-t", "filter", "-S", "INPUT"]),
+            )?
+            .stdout;
+        let tailscale = owned_hook_is_exact(
+            &input,
+            "INPUT",
+            storage::TAILSCALE_FIREWALL_OWNER,
+            crate::domain::tailscale::TAILSCALE_INPUT_CHAIN,
+        )?;
+        Ok((1 + usize::from(tailscale)).to_string())
+    }
+
+    fn append_chain_rule(
+        &self,
+        table: &str,
+        chain: &str,
+        rule: &[String],
+    ) -> Result<(), PlatformError> {
+        let mut args = strings(&["-w", "-t", table, "-A", chain]);
+        args.extend(rule.iter().skip(2).cloned());
+        self.run(Tool::Iptables, &args).map(|_| ())
     }
 
     fn rollback_created_router_firewall(
         &self,
         token: &str,
-        filter_hook_created: bool,
-        nat_chain_created: bool,
-        nat_hook_created: bool,
+        wan_set: crate::domain::network::RouterWanSet,
+        installed: &RouterFirewallInstall,
     ) {
-        if nat_hook_created {
-            let _ = self.iptables(&[
-                "-w",
-                "-t",
-                "nat",
-                "-D",
-                "POSTROUTING",
-                "-m",
-                "comment",
-                "--comment",
-                token,
-                "-j",
-                ROUTER_NAT_CHAIN,
-            ]);
+        if installed.nat_hook_created {
+            let _ = self.delete_router_hook("nat", "POSTROUTING", token, ROUTER_NAT_CHAIN);
         }
-        if nat_chain_created {
-            self.rollback_created_chain("nat", ROUTER_NAT_CHAIN, token);
+        if installed.nat_chain_created {
+            self.rollback_created_chain("nat", ROUTER_NAT_CHAIN, token, wan_set);
         }
-        if filter_hook_created {
-            let _ = self.iptables(&[
-                "-w",
-                "-t",
-                "filter",
-                "-D",
-                "FORWARD",
-                "-m",
-                "comment",
-                "--comment",
-                token,
-                "-j",
-                ROUTER_FILTER_CHAIN,
-            ]);
+        if installed.filter_hook_created {
+            let _ = self.delete_router_hook("filter", "FORWARD", token, ROUTER_FILTER_CHAIN);
         }
-        self.rollback_created_chain("filter", ROUTER_FILTER_CHAIN, token);
+        if installed.filter_chain_created {
+            self.rollback_created_chain("filter", ROUTER_FILTER_CHAIN, token, wan_set);
+        }
+        if installed.input_hook_created {
+            let _ = self.delete_router_hook("filter", "INPUT", token, ROUTER_INPUT_CHAIN);
+        }
+        self.rollback_created_chain("filter", ROUTER_INPUT_CHAIN, token, wan_set);
     }
 
-    fn rollback_created_chain(&self, table: &str, chain: &str, token: &str) {
-        for rule in expected_chain_rules(chain, token, None).into_iter().rev() {
-            let mut args = strings(&["-w", "-t", table]);
-            args.push("-D".to_owned());
-            args.push(chain.to_owned());
-            args.extend(rule.into_iter().skip(2));
+    fn rollback_created_chain(
+        &self,
+        table: &str,
+        chain: &str,
+        token: &str,
+        wan_set: crate::domain::network::RouterWanSet,
+    ) {
+        for rule in expected_router_chain_rules(chain, token, wan_set)
+            .into_iter()
+            .rev()
+        {
+            let mut args = strings(&["-w", "-t", table, "-D", chain]);
+            args.extend(rule);
             let _ = self.run(Tool::Iptables, &args);
         }
-        // Never flush during partial-install rollback. -X succeeds only if no modified or
-        // foreign rules/references remain.
         let _ = self.iptables(&["-w", "-t", table, "-X", chain]);
     }
 
-    fn remove_router_firewall(&self, token: &str) -> Result<(), PlatformError> {
+    fn remove_router_firewall(
+        &self,
+        token: &str,
+        wan_set: crate::domain::network::RouterWanSet,
+    ) -> Result<(), PlatformError> {
         storage::validate_token(token)?;
         let marker = storage::read_private_small_optional(storage::ROUTER_FIREWALL_OWNER, 128)?
             .ok_or_else(|| {
@@ -486,113 +568,65 @@ impl LinuxRouterPlatform {
                 "router ownership token does not match".to_owned(),
             ));
         }
-        let filter = self
-            .run(
-                Tool::Iptables,
-                &strings(&["-w", "-t", "filter", "-S", ROUTER_FILTER_CHAIN]),
-            )?
-            .stdout;
-        let nat = self
-            .run(
-                Tool::Iptables,
-                &strings(&["-w", "-t", "nat", "-S", ROUTER_NAT_CHAIN]),
-            )?
-            .stdout;
-        if !chain_output_is_exact(
-            &filter,
-            ROUTER_FILTER_CHAIN,
-            &expected_chain_rules(ROUTER_FILTER_CHAIN, token, None),
-        ) || !chain_output_is_exact(
-            &nat,
-            ROUTER_NAT_CHAIN,
-            &expected_chain_rules(ROUTER_NAT_CHAIN, token, None),
-        ) {
-            return Err(PlatformError::Conflict(
-                "live router chain bodies do not exactly match the owned installer rules"
-                    .to_owned(),
-            ));
-        }
-        self.verify_router_hooks(token)?;
-        // Remove NAT first so any failure leaves the restrictive FORWARD hook in place.
-        self.delete_router_hooks(token)?;
-
-        let filter = self
-            .run(
-                Tool::Iptables,
-                &strings(&["-w", "-t", "filter", "-S", ROUTER_FILTER_CHAIN]),
-            )?
-            .stdout;
-        let nat = self
-            .run(
-                Tool::Iptables,
-                &strings(&["-w", "-t", "nat", "-S", ROUTER_NAT_CHAIN]),
-            )?
-            .stdout;
-        if !chain_output_is_exact(
-            &filter,
-            ROUTER_FILTER_CHAIN,
-            &expected_chain_rules(ROUTER_FILTER_CHAIN, token, None),
-        ) || !chain_output_is_exact(
-            &nat,
-            ROUTER_NAT_CHAIN,
-            &expected_chain_rules(ROUTER_NAT_CHAIN, token, None),
-        ) || !self
-            .router_references("filter", ROUTER_FILTER_CHAIN)?
-            .is_empty()
-            || !self.router_references("nat", ROUTER_NAT_CHAIN)?.is_empty()
-        {
-            return Err(PlatformError::Conflict(
-                "router chains changed or gained references after hook deletion".to_owned(),
-            ));
-        }
-        self.iptables(&["-w", "-t", "filter", "-F", ROUTER_FILTER_CHAIN])?;
-        self.iptables(&["-w", "-t", "filter", "-X", ROUTER_FILTER_CHAIN])?;
-        self.iptables(&["-w", "-t", "nat", "-F", ROUTER_NAT_CHAIN])?;
-        self.iptables(&["-w", "-t", "nat", "-X", ROUTER_NAT_CHAIN])?;
+        self.verify_router_firewall(token, wan_set)?;
+        self.delete_router_hook("nat", "POSTROUTING", token, ROUTER_NAT_CHAIN)?;
+        self.delete_router_hook("filter", "FORWARD", token, ROUTER_FILTER_CHAIN)?;
+        self.delete_router_hook("filter", "INPUT", token, ROUTER_INPUT_CHAIN)?;
+        self.remove_exact_router_chain("filter", ROUTER_INPUT_CHAIN, token, wan_set)?;
+        self.remove_exact_router_chain("filter", ROUTER_FILTER_CHAIN, token, wan_set)?;
+        self.remove_exact_router_chain("nat", ROUTER_NAT_CHAIN, token, wan_set)?;
         storage::remove_file_durable(storage::ROUTER_FIREWALL_OWNER)
     }
 
-    fn router_references(
+    fn remove_exact_router_chain(
         &self,
         table: &str,
         chain: &str,
-    ) -> Result<Vec<Vec<String>>, PlatformError> {
+        token: &str,
+        wan_set: crate::domain::network::RouterWanSet,
+    ) -> Result<(), PlatformError> {
         let output = self
-            .run(Tool::Iptables, &strings(&["-w", "-t", table, "-S"]))?
+            .run(Tool::Iptables, &strings(&["-w", "-t", table, "-S", chain]))?
             .stdout;
-        exact_chain_references(&output, chain).ok_or_else(|| {
-            PlatformError::ProbeFailed(format!("cannot parse {table} table references"))
-        })
+        let expected = expected_router_chain_rules(chain, token, wan_set);
+        if !chain_output_is_exact(&output, chain, &expected) {
+            return Err(PlatformError::Conflict(format!(
+                "live {table}/{chain} body does not exactly match the owned installer rules"
+            )));
+        }
+        self.iptables(&["-w", "-t", table, "-F", chain])?;
+        self.iptables(&["-w", "-t", table, "-X", chain])
     }
 
-    fn verify_router_hooks(&self, token: &str) -> Result<(), PlatformError> {
-        let filter_hook = strings(&[
-            "-A",
-            "FORWARD",
-            "-m",
-            "comment",
-            "--comment",
-            token,
-            "-j",
-            ROUTER_FILTER_CHAIN,
-        ]);
-        let nat_hook = strings(&[
-            "-A",
-            "POSTROUTING",
-            "-m",
-            "comment",
-            "--comment",
-            token,
-            "-j",
-            ROUTER_NAT_CHAIN,
-        ]);
-        if self.router_references("filter", ROUTER_FILTER_CHAIN)? != [filter_hook.clone()]
-            || self.router_references("nat", ROUTER_NAT_CHAIN)? != [nat_hook.clone()]
-        {
-            return Err(PlatformError::Conflict(
-                "router hooks are not exact unique owned references".to_owned(),
-            ));
+    fn verify_router_firewall(
+        &self,
+        token: &str,
+        wan_set: crate::domain::network::RouterWanSet,
+    ) -> Result<(), PlatformError> {
+        for (table, chain) in [
+            ("filter", ROUTER_INPUT_CHAIN),
+            ("filter", ROUTER_FILTER_CHAIN),
+            ("nat", ROUTER_NAT_CHAIN),
+        ] {
+            let output = self
+                .run(Tool::Iptables, &strings(&["-w", "-t", table, "-S", chain]))?
+                .stdout;
+            if !chain_output_is_exact(
+                &output,
+                chain,
+                &expected_router_chain_rules(chain, token, wan_set),
+            ) {
+                return Err(PlatformError::Conflict(format!(
+                    "live {table}/{chain} body does not exactly match the owned installer rules"
+                )));
+            }
         }
+        let input = self
+            .run(
+                Tool::Iptables,
+                &strings(&["-w", "-t", "filter", "-S", "INPUT"]),
+            )?
+            .stdout;
         let forward = self
             .run(
                 Tool::Iptables,
@@ -605,58 +639,105 @@ impl LinuxRouterPlatform {
                 &strings(&["-w", "-t", "nat", "-S", "POSTROUTING"]),
             )?
             .stdout;
-        let mihomo_present = owned_forward_hook_is_exact(
+        self.verify_exact_router_hook(&input, "INPUT", token, ROUTER_INPUT_CHAIN, 1)?;
+        self.verify_exact_router_hook(&forward, "FORWARD", token, ROUTER_FILTER_CHAIN, 1)?;
+        self.verify_exact_router_hook(&postrouting, "POSTROUTING", token, ROUTER_NAT_CHAIN, 0)?;
+        let mihomo = owned_forward_hook_is_exact(
             &forward,
             storage::TUN_FIREWALL_OWNER,
             crate::domain::proxy::MIHOMO_FILTER_CHAIN,
         )?;
-        let tailscale_present = owned_forward_hook_is_exact(
+        let tailscale_forward = owned_forward_hook_is_exact(
             &forward,
             storage::TAILSCALE_FIREWALL_OWNER,
             crate::domain::tailscale::TAILSCALE_FORWARD_CHAIN,
         )?;
-        if !forward_hook_order_is_exact(&forward, mihomo_present, tailscale_present, true) {
+        let tailscale_input = owned_hook_is_exact(
+            &input,
+            "INPUT",
+            storage::TAILSCALE_FIREWALL_OWNER,
+            crate::domain::tailscale::TAILSCALE_INPUT_CHAIN,
+        )?;
+        if !forward_hook_order_is_exact(&forward, mihomo, tailscale_forward, true)
+            || !input_hook_order_is_exact(&input, tailscale_input, true)
+        {
             return Err(PlatformError::Conflict(
-                "FORWARD hooks are not in exact Mihomo, Tailscale, router order".to_owned(),
-            ));
-        }
-        let postrouting = normalized_chain_rules(&postrouting, "POSTROUTING").ok_or_else(|| {
-            PlatformError::ProbeFailed("cannot parse POSTROUTING rules".to_owned())
-        })?;
-        if postrouting.first() != Some(&nat_hook) {
-            return Err(PlatformError::Conflict(
-                "router hooks are not in exact installer order".to_owned(),
+                "router hook order is not exact".to_owned(),
             ));
         }
         Ok(())
     }
 
-    fn delete_router_hooks(&self, token: &str) -> Result<(), PlatformError> {
-        self.iptables(&[
-            "-w",
-            "-t",
-            "nat",
-            "-D",
-            "POSTROUTING",
+    fn verify_exact_router_hook(
+        &self,
+        output: &str,
+        parent: &str,
+        token: &str,
+        chain: &str,
+        position_after_tailscale: usize,
+    ) -> Result<(), PlatformError> {
+        let expected = strings(&[
+            "-A",
+            parent,
             "-m",
             "comment",
             "--comment",
             token,
             "-j",
-            ROUTER_NAT_CHAIN,
-        ])?;
+            chain,
+        ]);
+        if exact_chain_references(output, chain) != Some(vec![expected.clone()]) {
+            return Err(PlatformError::Conflict(format!(
+                "{chain} hook is not exact and unique"
+            )));
+        }
+        if parent == "POSTROUTING" {
+            if normalized_chain_rules(output, parent).and_then(|rules| rules.first().cloned())
+                != Some(expected)
+            {
+                return Err(PlatformError::Conflict(
+                    "router NAT hook is not first".to_owned(),
+                ));
+            }
+        } else if parent == "INPUT" {
+            let tailscale = owned_hook_is_exact(
+                output,
+                "INPUT",
+                storage::TAILSCALE_FIREWALL_OWNER,
+                crate::domain::tailscale::TAILSCALE_INPUT_CHAIN,
+            )?;
+            let expected_position = position_after_tailscale - 1 + usize::from(tailscale);
+            if normalized_chain_rules(output, parent)
+                .and_then(|rules| rules.get(expected_position).cloned())
+                != Some(expected)
+            {
+                return Err(PlatformError::Conflict(
+                    "router INPUT hook is not after Tailscale".to_owned(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn delete_router_hook(
+        &self,
+        table: &str,
+        parent: &str,
+        token: &str,
+        chain: &str,
+    ) -> Result<(), PlatformError> {
         self.iptables(&[
             "-w",
             "-t",
-            "filter",
+            table,
             "-D",
-            "FORWARD",
+            parent,
             "-m",
             "comment",
             "--comment",
             token,
             "-j",
-            ROUTER_FILTER_CHAIN,
+            chain,
         ])
     }
 }

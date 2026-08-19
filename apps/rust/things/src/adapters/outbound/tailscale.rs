@@ -16,9 +16,7 @@ use hyz_contract::router::{ControlOperation, ControlResult};
 use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::{
-    adapters::inbound::http::{
-        app_with_admin_camera_control_at_address, TlsListener,
-    },
+    adapters::inbound::http::{app_with_admin_camera_control_at_address, TlsListener},
     application::{
         admin::AdminApplication,
         camera::CameraApplication,

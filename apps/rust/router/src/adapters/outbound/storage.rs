@@ -14,6 +14,7 @@ use std::{
 pub const BRIDGE_OWNER: &str = "/run/hyz-router/br-lan.owned";
 pub const ROUTER_FIREWALL_OWNER: &str = "/run/hyz-router/firewall.owned";
 pub const TUN_FIREWALL_OWNER: &str = "/run/hyz-mihomo/tun.owned";
+pub const TUN_FIREWALL_UPLINK: &str = "/run/hyz-mihomo/tun.uplink";
 pub const TAILSCALE_FIREWALL_OWNER: &str = super::paths::TAILSCALE_FIREWALL_OWNER;
 pub const TAILSCALE_SUBNET_FIREWALL_OWNER: &str = super::paths::TAILSCALE_SUBNET_FIREWALL_OWNER;
 pub const PREVIOUS_FORWARDING: &str = "/run/hyz-router/ip-forward.previous";
@@ -318,7 +319,11 @@ fn acquire_lock_with(
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                 remove_owned_lock_directory(&temporary, required_uid, temporary_identity);
-                reclaim_stale_lock(path, required_uid, &mut process_start_time)?;
+                match reclaim_stale_lock(path, required_uid, &mut process_start_time) {
+                    Ok(()) => {}
+                    Err(error) if is_lock_disappearance_race(&error) => continue,
+                    Err(error) => return Err(error),
+                }
             }
             Err(error) => {
                 remove_owned_lock_directory(&temporary, required_uid, temporary_identity);
@@ -362,6 +367,15 @@ fn detach_lock_directory(
             }
         }
     }
+}
+
+fn is_lock_disappearance_race(error: &PlatformError) -> bool {
+    matches!(
+        error,
+        PlatformError::Conflict(reason)
+            if reason == "lifecycle lock directory disappeared"
+                || reason.starts_with("lifecycle lock directory disappeared during ")
+    )
 }
 
 fn reclaim_stale_lock(
@@ -805,6 +819,28 @@ mod tests {
 
         assert!(matches!(error, PlatformError::InvalidState(_)));
         assert!(lock.path().exists());
+    }
+
+    #[test]
+    fn lock_release_race_is_retried_after_directory_disappears() {
+        let lock = TestLock::new();
+        lock.create("100:200\n");
+        let mut released = false;
+
+        let lease = acquire_lock_with(lock.path, lock.uid, current_identity(), |pid| {
+            assert_eq!(pid, 100);
+            if !released {
+                released = true;
+                fs::remove_file(lock.path().join(LOCK_OWNER_NAME)).unwrap();
+                fs::remove_dir(lock.path()).unwrap();
+            }
+            Ok(None)
+        })
+        .unwrap();
+
+        assert_eq!(lease.identity, "900:901\n");
+        release_lock_with(&lease, lock.uid).unwrap();
+        assert!(!lock.path().exists());
     }
 
     #[test]

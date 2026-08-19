@@ -6,6 +6,7 @@ pub use hyz_contract::network_config::{
 };
 
 pub const NETWORK_CONFIG_VERSION: u8 = 1;
+pub const PRODUCT_WIFI_COUNTRY: WifiCountry = WifiCountry::Cn;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

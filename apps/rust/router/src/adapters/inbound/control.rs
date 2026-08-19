@@ -331,7 +331,7 @@ async fn handle_connection(
     let request: ControlRequest = timeout(IO_TIMEOUT, read_frame(&mut stream))
         .await
         .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "control request timed out"))??;
-    let response = if request.version != PROTOCOL_VERSION {
+    let response = if !(PROTOCOL_VERSION - 1..=PROTOCOL_VERSION).contains(&request.version) {
         ControlResponse::error(
             "unsupported_version",
             "unsupported control protocol version",

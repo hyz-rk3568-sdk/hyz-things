@@ -158,6 +158,39 @@ pub enum TailscaleProxyFallback {
     NotConfirmed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UplinkId {
+    Ethernet,
+    Wifi,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct UplinkStatus {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_up: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_up: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address_present: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_route_present: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_route_metric: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gateway: Option<Ipv4Addr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolver_present: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActiveResolverStatus {
+    pub uplink: UplinkId,
+    pub nameservers: Vec<Ipv4Addr>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct RouterStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -186,6 +219,14 @@ pub struct RouterStatus {
     pub ipv4_forwarding: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub masquerade_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ethernet: Option<UplinkStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wifi: Option<UplinkStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_uplink: Option<UplinkId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_resolver: Option<ActiveResolverStatus>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -288,6 +329,31 @@ mod tests {
                 ap_attached_to_lan: Some(true),
                 ipv4_forwarding: Some(true),
                 masquerade_enabled: Some(true),
+                ethernet: Some(UplinkStatus {
+                    link_up: Some(true),
+                    session_up: Some(true),
+                    address_present: Some(true),
+                    address: Some("192.0.2.10/24".to_owned()),
+                    default_route_present: Some(true),
+                    default_route_metric: Some(100),
+                    gateway: Some("192.0.2.1".parse().unwrap()),
+                    resolver_present: Some(true),
+                }),
+                wifi: Some(UplinkStatus {
+                    link_up: Some(true),
+                    session_up: Some(true),
+                    address_present: Some(true),
+                    address: Some("198.51.100.10/24".to_owned()),
+                    default_route_present: Some(true),
+                    default_route_metric: Some(600),
+                    gateway: Some("198.51.100.1".parse().unwrap()),
+                    resolver_present: Some(true),
+                }),
+                active_uplink: Some(UplinkId::Ethernet),
+                active_resolver: Some(ActiveResolverStatus {
+                    uplink: UplinkId::Ethernet,
+                    nameservers: vec!["192.0.2.53".parse().unwrap()],
+                }),
             }),
             proxy: Component::unavailable(Issue::new(
                 "proxy_unavailable",
@@ -331,5 +397,42 @@ mod tests {
         assert!(!json.contains("node_key"));
         let decoded: StatusSnapshot = serde_json::from_str(&json).expect("deserialize snapshot");
         assert_eq!(decoded, snapshot);
+    }
+
+    #[test]
+    fn legacy_router_status_deserializes_without_uplink_fields() {
+        let json = r#"{
+            "state":"degraded",
+            "observed_at_unix_ms":7,
+            "router":{
+                "state":"available",
+                "data":{
+                    "sta_state":"up",
+                    "sta_ssid":"Example Wi-Fi",
+                    "sta_address":"10.0.0.23/24",
+                    "sta_signal_dbm":-48,
+                    "default_route_present":true,
+                    "default_route_metric":600,
+                    "ap_state":"up",
+                    "ap_client_count":0,
+                    "lan_present":true,
+                    "lan_address":"192.168.8.1/24",
+                    "ap_attached_to_lan":true,
+                    "ipv4_forwarding":true,
+                    "masquerade_enabled":true
+                }
+            },
+            "proxy":{"state":"unavailable"},
+            "tailscale":{"state":"unavailable"},
+            "system":{"state":"available","data":{"interfaces":[]}}
+        }"#;
+
+        let snapshot: StatusSnapshot =
+            serde_json::from_str(json).expect("legacy status must decode");
+        let router = snapshot.router.data.expect("router data");
+        assert_eq!(router.active_uplink, None);
+        assert_eq!(router.active_resolver, None);
+        assert_eq!(router.ethernet, None);
+        assert_eq!(router.wifi, None);
     }
 }

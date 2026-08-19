@@ -36,11 +36,21 @@ test("renders the portal home and applies the anonymous display control", async 
   ).toBeVisible();
   await expect(page.getByRole("article", { name: "路由器管理" })).toBeVisible();
   await expect(page.getByRole("article", { name: "摄像头直播" })).toBeVisible();
+  const deployedApps = page.getByRole("region", { name: "已部署应用" });
+  await expect(deployedApps).toBeVisible();
+  await expect(deployedApps.getByText("部署时间：", { exact: false }).first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "路由 / LAN" })).toBeVisible();
   await expect(
-    page
-      .getByRole("region", { name: "已部署应用" })
-      .getByText("sha256:e2e-router-s", { exact: false }),
+    page.getByText("Ethernet WAN", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Wi-Fi WAN", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Ethernet · metric 100", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "路由器", exact: true }),
   ).toBeVisible();
 
   const homeAccessibility = await new AxeBuilder({ page }).analyze();
@@ -52,6 +62,16 @@ test("renders the portal home and applies the anonymous display control", async 
     page.getByRole("button", { name: "总览", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("heading", { name: "网络拓扑" })).toBeVisible();
+  await expect(
+    page.getByText("Ethernet WAN", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Wi-Fi WAN", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(page.getByText("主用", { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByText("Ethernet 优先", { exact: false }).first(),
+  ).toBeVisible();
   await expect(page.getByRole("heading", { name: "路由 / LAN" })).toBeVisible();
   await expect(
     page.getByText("E2E-Upstream", { exact: false }).first(),
@@ -96,6 +116,25 @@ test("renders the portal home and applies the anonymous display control", async 
   expect(accessibility.violations).toEqual([]);
   await expectNoHorizontalOverflow(page);
   expect(browserErrors).toEqual([]);
+});
+
+test("renders the dual-uplink topology without mobile overflow", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "路由器", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "网络拓扑" })).toBeVisible();
+  await expect(
+    page.getByText("Ethernet WAN", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Wi-Fi WAN", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(page.getByText("主用", { exact: true }).first()).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
 });
 
 test("keeps the last dashboard while a component becomes degraded", async ({
@@ -180,7 +219,7 @@ test("serves the generated bundle through the strict production-shaped HTTP boun
   const apps = await request.get("/api/v1/apps");
   expect(apps.status()).toBe(200);
   const appsBody = (await apps.json()) as {
-    apps: Array<{ name: string; sha256: string | null }>;
+    apps: Array<{ name: string; sha256: string | null; deployed_at_unix_ms: number | null }>;
   };
   expect(appsBody.apps.map((app) => app.name)).toEqual([
     "camera",
@@ -188,6 +227,11 @@ test("serves the generated bundle through the strict production-shaped HTTP boun
     "things",
   ]);
   expect(appsBody.apps.every((app) => app.sha256 !== null)).toBeTruthy();
+  expect(
+    appsBody.apps.every(
+      (app) => typeof app.deployed_at_unix_ms === "number" && app.deployed_at_unix_ms > 0,
+    ),
+  ).toBeTruthy();
   // 匿名 viewer 令牌只允许创建/关闭自己的会话，profile/rotation 仍是管理员专属。
   const viewerToken = await request.post("/api/v1/camera/viewer-token", {
     headers: { Origin: webOrigin, "Content-Type": "application/json" },
@@ -335,15 +379,11 @@ test("plays the camera anonymously and controls it as an administrator", async (
     .toEqual({ playbackState: "playing", title: "摄像头直播" });
 
   // 视频尚未有可播放数据时，画中画按钮保留但置灰；首帧就绪后才允许点击。
-  await page.evaluate(() =>
-    (window as any).__hyzCameraSetVideoReady(false),
-  );
+  await page.evaluate(() => (window as any).__hyzCameraSetVideoReady(false));
   const pipButton = camera.getByRole("button", { name: "画面准备中" });
   await expect(pipButton).toBeVisible();
   await expect(pipButton).toBeDisabled();
-  await page.evaluate(() =>
-    (window as any).__hyzCameraSetVideoReady(true),
-  );
+  await page.evaluate(() => (window as any).__hyzCameraSetVideoReady(true));
   await expect(
     camera.getByRole("button", { name: "进入画中画" }),
   ).toBeEnabled();
@@ -483,15 +523,15 @@ test("plays the camera anonymously and controls it as an administrator", async (
 
   await camera.getByRole("button", { name: "停止直播" }).click();
   await expect(camera.getByText("未播放", { exact: true })).toBeVisible();
-  await expect(camera.getByRole("status").filter({ hasText: "摄像头直播已停止" })).toBeVisible();
-  await expect
-    .poll(readMediaSession)
-    .toEqual({
-      playbackState: "none",
-      title: null,
-      artist: null,
-      handlers: { play: false, pause: false, stop: false },
-    });
+  await expect(
+    camera.getByRole("status").filter({ hasText: "摄像头直播已停止" }),
+  ).toBeVisible();
+  await expect.poll(readMediaSession).toEqual({
+    playbackState: "none",
+    title: null,
+    artist: null,
+    handlers: { play: false, pause: false, stop: false },
+  });
   await expect
     .poll(async () => {
       const state = await readHarnessState(request);
@@ -558,9 +598,7 @@ test("enables full-duplex intercom with a real microphone track and cleans up", 
   // 点击开启对讲：真实 getUserMedia（fake device）提供麦克风轨道并挂载到 sender。
   await talkButton.click();
   await expect(camera.getByText("对讲已开启", { exact: false })).toBeVisible();
-  await expect(
-    camera.getByRole("button", { name: "关闭对讲" }),
-  ).toBeVisible();
+  await expect(camera.getByRole("button", { name: "关闭对讲" })).toBeVisible();
   await expect
     .poll(async () =>
       page.evaluate(() => (window as any).__hyzCameraReplaceTrackCalls),
@@ -969,7 +1007,7 @@ test("supports the administrator, STA, AP, and write-only subscription journey",
   const apRegion = page.getByRole("region", { name: "下游 Wi-Fi (AP)" });
   await apRegion.getByLabel("SSID").fill("HYZ-New-AP");
   await apRegion.getByLabel("密码").fill("new-ap-password");
-  await apRegion.getByLabel("国家 / 地区").selectOption("US");
+  await expect(apRegion.getByLabel("国家 / 地区")).toHaveValue("中国 (CN)");
   await apRegion.getByRole("button", { name: "准备 AP 变更" }).click();
   await expect(apRegion.getByText("HYZ-New-AP", { exact: true })).toBeVisible();
   await apRegion.getByRole("button", { name: "检查风险并应用" }).click();
@@ -1175,7 +1213,8 @@ test("supports the administrator Tailscale login, approval, disable, and logout 
   await expect(tailscale.getByText("路由批准", { exact: true })).toHaveCount(0);
   await expect(tailscale.getByText(/外部确认/)).toHaveCount(0);
   await expect(tailscale.getByText(/当前 LAN Access/)).toBeVisible();
-  await expect(tailscale.getByText("Direct", { exact: true })).toBeVisible();
+  await expect(tailscale.getByText("连接", { exact: true })).toHaveCount(0);
+  await expect(tailscale.getByText("Direct", { exact: true })).toHaveCount(0);
   const enabledButton = tailscale.getByRole("button", {
     name: "远程 LAN 访问已启用",
   });

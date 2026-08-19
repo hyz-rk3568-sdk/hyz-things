@@ -9,10 +9,10 @@ use super::{
     },
     storage,
     system::{
-        chain_output_is_exact, exact_chain_references, exact_default_gateway,
-        expected_chain_rules_with_direct, expected_interception_rule, forward_hook_order_is_exact,
-        normalized_chain_rules, owned_forward_hook_is_exact, parse_direct_mac_rules,
-        policy_route_state_is_exact, policy_rule_state_is_exact,
+        chain_output_is_exact, exact_chain_references, expected_chain_rules_with_direct,
+        expected_interception_rule, forward_hook_order_is_exact, normalized_chain_rules,
+        owned_forward_hook_is_exact, parse_direct_mac_rules, policy_route_state_is_exact,
+        policy_rule_state_is_exact,
     },
 };
 use crate::{
@@ -53,9 +53,11 @@ impl LinuxRouterPlatform {
             ProxyAction::StartCore => self.start_mihomo(),
             ProxyAction::WaitForMixedPort => self.wait_for_mixed_port(),
             ProxyAction::WaitForTunInterface { token } => self.wait_for_tun(token),
-            ProxyAction::CreateTunChains { token, direct_macs } => {
-                self.create_tun_chains(token, direct_macs)
-            }
+            ProxyAction::CreateTunChains {
+                token,
+                direct_macs,
+                active,
+            } => self.create_tun_chains(token, direct_macs, active),
             ProxyAction::InstallTunForwardHook { token } => self.install_tun_hook(token),
             ProxyAction::InstallPolicyRoute => self.install_policy_route(),
             ProxyAction::InstallPolicyRule => {
@@ -333,26 +335,15 @@ impl LinuxRouterPlatform {
     }
 
     fn tun_gateway(&self) -> Result<String, PlatformError> {
-        let routes = self
-            .run(
-                Tool::Ip,
-                &strings(&[
-                    "-4",
-                    "route",
-                    "show",
-                    "default",
-                    "dev",
-                    crate::domain::network::WAN_INTERFACE,
-                ]),
-            )?
-            .stdout;
-        exact_default_gateway(&routes)
-            .map(str::to_owned)
+        self.read_tun_firewall_context()?
+            .map(|context| context.gateway.to_string())
             .ok_or_else(|| {
-                PlatformError::Conflict(
-                    "wlan0 default gateway is not exactly and uniquely identifiable".to_owned(),
-                )
+                PlatformError::Conflict("Mihomo TUN gateway sidecar is absent".to_owned())
             })
+    }
+
+    fn read_tun_firewall_context(&self) -> Result<Option<TunFirewallContext>, PlatformError> {
+        read_tun_firewall_context()
     }
 
     fn verify_tun_chain_bodies(&self, token: &str) -> Result<(), PlatformError> {
@@ -519,26 +510,10 @@ impl LinuxRouterPlatform {
         &self,
         token: &str,
         direct_macs: &std::collections::BTreeSet<crate::domain::device_policy::LanDeviceMac>,
+        active: &crate::domain::network::ActiveUplinkObserved,
     ) -> Result<(), PlatformError> {
         storage::validate_token(token)?;
-        let route = self
-            .run(
-                Tool::Ip,
-                &strings(&[
-                    "-4",
-                    "route",
-                    "show",
-                    "default",
-                    "dev",
-                    crate::domain::network::WAN_INTERFACE,
-                ]),
-            )?
-            .stdout;
-        let gateway = exact_default_gateway(&route).ok_or_else(|| {
-            PlatformError::UnsafeToCutOver(
-                "wlan0 default gateway is not exactly and uniquely explicit".to_owned(),
-            )
-        })?;
+        let gateway = active.gateway.to_string();
         self.proxy_iptables(&["-w", "-t", "mangle", "-N", MIHOMO_MANGLE_CHAIN])?;
         let mut filter_created = false;
         let result = (|| {
@@ -714,10 +689,14 @@ impl LinuxRouterPlatform {
             storage::atomic_write_private(
                 storage::TUN_FIREWALL_OWNER,
                 format!("{token}\n").as_bytes(),
+            )?;
+            storage::atomic_write_private(
+                storage::TUN_FIREWALL_UPLINK,
+                format!("{token}\n{:?}\n{}\n", active.uplink, active.gateway).as_bytes(),
             )
         })();
         if result.is_err() {
-            self.rollback_created_tun_chains(token, gateway, filter_created, direct_macs);
+            self.rollback_created_tun_chains(token, &gateway, filter_created, direct_macs);
         }
         result
     }
@@ -974,6 +953,7 @@ impl LinuxRouterPlatform {
         self.proxy_iptables(&["-w", "-t", "mangle", "-X", MIHOMO_MANGLE_CHAIN])?;
         self.proxy_iptables(&["-w", "-t", "filter", "-F", MIHOMO_FILTER_CHAIN])?;
         self.proxy_iptables(&["-w", "-t", "filter", "-X", MIHOMO_FILTER_CHAIN])?;
+        storage::remove_file_durable(storage::TUN_FIREWALL_UPLINK)?;
         storage::remove_file_durable(storage::TUN_FIREWALL_OWNER)
     }
 
@@ -996,6 +976,53 @@ impl LinuxRouterPlatform {
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TunFirewallContext {
+    pub token: String,
+    pub uplink: crate::domain::network::UplinkId,
+    pub gateway: std::net::Ipv4Addr,
+}
+
+pub(crate) fn read_tun_firewall_context() -> Result<Option<TunFirewallContext>, PlatformError> {
+    let Some(record) = storage::read_private_small_optional(storage::TUN_FIREWALL_UPLINK, 256)?
+    else {
+        return Ok(None);
+    };
+    let mut lines = record.lines();
+    let token = lines
+        .next()
+        .ok_or_else(|| {
+            PlatformError::InvalidState("Mihomo TUN gateway sidecar token is absent".to_owned())
+        })?
+        .to_owned();
+    storage::validate_token(&token)?;
+    let uplink = match lines.next() {
+        Some("Ethernet") => crate::domain::network::UplinkId::Ethernet,
+        Some("Wifi") => crate::domain::network::UplinkId::Wifi,
+        _ => {
+            return Err(PlatformError::InvalidState(
+                "Mihomo TUN gateway sidecar uplink is invalid".to_owned(),
+            ))
+        }
+    };
+    let gateway = lines
+        .next()
+        .and_then(|value| value.parse().ok())
+        .ok_or_else(|| {
+            PlatformError::InvalidState("Mihomo TUN gateway sidecar gateway is invalid".to_owned())
+        })?;
+    if lines.next().is_some() {
+        return Err(PlatformError::InvalidState(
+            "Mihomo TUN gateway sidecar has unexpected fields".to_owned(),
+        ));
+    }
+    Ok(Some(TunFirewallContext {
+        token,
+        uplink,
+        gateway,
+    }))
 }
 
 const MAX_TUN_IDENTITY_SIZE: usize = 512;
@@ -1488,21 +1515,6 @@ mod tests {
         assert_eq!(
             filter.last(),
             Some(&strings(&["-A", MIHOMO_FILTER_CHAIN, "-j", "RETURN"]))
-        );
-    }
-
-    #[test]
-    fn gateway_parser_requires_one_explicit_default_route() {
-        assert_eq!(
-            exact_default_gateway("default via 192.168.8.254 dev wlan0\n"),
-            Some("192.168.8.254")
-        );
-        assert_eq!(exact_default_gateway("default dev wlan0\n"), None);
-        assert_eq!(
-            exact_default_gateway(
-                "default via 192.168.8.254 dev wlan0\ndefault via 192.168.8.253 dev wlan0\n"
-            ),
-            None
         );
     }
 }

@@ -196,6 +196,12 @@ pub fn render_wpa_supplicant(config: &StaConfig) -> Zeroizing<String> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ApRadioProfile {
+    Ht20,
+    Vht80,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ApRadioBand {
     Ghz2,
     Ghz5,
@@ -246,40 +252,31 @@ impl ApRadioChannel {
         }
     }
 
-    fn hostapd_radio_profile(self) -> &'static str {
-        match (self.band, self.number) {
-            (ApRadioBand::Ghz2, _) => {
-                "wmm_enabled=1\nieee80211n=1\nieee80211ac=0\n"
-            }
-            (ApRadioBand::Ghz5, 36 | 44) => {
+    fn hostapd_radio_profile(self, profile: ApRadioProfile) -> &'static str {
+        if matches!(self.band, ApRadioBand::Ghz2) {
+            return "wmm_enabled=1\nieee80211n=1\nieee80211ac=0\n";
+        }
+        if matches!(profile, ApRadioProfile::Ht20) {
+            return "wmm_enabled=1\nieee80211n=1\nht_capab=[HT20]\nieee80211ac=0\n";
+        }
+        match self.number {
+            36 | 44 => {
                 "wmm_enabled=1\nieee80211n=1\nht_capab=[HT40+]\nieee80211ac=1\nvht_oper_chwidth=1\nvht_oper_centr_freq_seg0_idx=42\n"
             }
-            (ApRadioBand::Ghz5, 40 | 48) => {
+            40 | 48 => {
                 "wmm_enabled=1\nieee80211n=1\nht_capab=[HT40-]\nieee80211ac=1\nvht_oper_chwidth=1\nvht_oper_centr_freq_seg0_idx=42\n"
             }
-            (ApRadioBand::Ghz5, 149 | 157) => {
+            149 | 157 => {
                 "wmm_enabled=1\nieee80211n=1\nht_capab=[HT40+]\nieee80211ac=1\nvht_oper_chwidth=1\nvht_oper_centr_freq_seg0_idx=155\n"
             }
-            (ApRadioBand::Ghz5, 153 | 161) => {
+            153 | 161 => {
                 "wmm_enabled=1\nieee80211n=1\nht_capab=[HT40-]\nieee80211ac=1\nvht_oper_chwidth=1\nvht_oper_centr_freq_seg0_idx=155\n"
             }
-            (ApRadioBand::Ghz5, 165) => {
+            165 => {
                 "wmm_enabled=1\nieee80211n=1\nieee80211ac=1\nvht_oper_chwidth=0\nvht_oper_centr_freq_seg0_idx=165\n"
             }
             _ => unreachable!("ApRadioChannel constructors enforce a fixed channel set"),
         }
-    }
-
-    pub(crate) const fn secondary_channel(self) -> i8 {
-        match (self.band, self.number) {
-            (ApRadioBand::Ghz5, 36 | 44 | 149 | 157) => 1,
-            (ApRadioBand::Ghz5, 40 | 48 | 153 | 161) => -1,
-            _ => 0,
-        }
-    }
-
-    pub(crate) const fn ieee80211ac(self) -> bool {
-        matches!(self.band, ApRadioBand::Ghz5)
     }
 
     pub(crate) const fn vht_geometry(self) -> Option<(u8, u8)> {
@@ -312,12 +309,13 @@ impl ApRadioChannel {
 }
 
 pub fn render_hostapd(config: &ApConfig) -> Zeroizing<String> {
-    render_hostapd_on_channel(config, ApRadioChannel::DEFAULT)
+    render_hostapd_on_channel_with_profile(config, ApRadioChannel::DEFAULT, ApRadioProfile::Vht80)
 }
 
-pub(crate) fn render_hostapd_on_channel(
+pub(crate) fn render_hostapd_on_channel_with_profile(
     config: &ApConfig,
     channel: ApRadioChannel,
+    profile: ApRadioProfile,
 ) -> Zeroizing<String> {
     let ssid = encode_hex(config.ssid.as_bytes());
     let psk = config.psk.to_hex();
@@ -339,7 +337,7 @@ pub(crate) fn render_hostapd_on_channel(
         config.country.as_str(),
         channel.hostapd_mode(),
         channel.number(),
-        channel.hostapd_radio_profile(),
+        channel.hostapd_radio_profile(profile),
         psk.as_str()
     ))
 }
@@ -579,10 +577,22 @@ mod tests {
     #[test]
     fn hostapd_renderer_selects_exact_ht_and_vht_radio_profiles() {
         let config = config();
-        let ghz2 = render_hostapd_on_channel(&config.ap, ApRadioChannel::ghz2(6).unwrap());
+        let ghz2 = render_hostapd_on_channel_with_profile(
+            &config.ap,
+            ApRadioChannel::ghz2(6).unwrap(),
+            ApRadioProfile::Vht80,
+        );
         assert!(ghz2.contains("hw_mode=g\nchannel=6\nwmm_enabled=1\nieee80211n=1\nieee80211ac=0\n"));
         assert!(!ghz2.contains("ht_capab="));
-        assert!(!ghz2.contains("vht_oper_"));
+        let bootstrap = render_hostapd_on_channel_with_profile(
+            &config.ap,
+            ApRadioChannel::ghz5(161).unwrap(),
+            ApRadioProfile::Ht20,
+        );
+        assert!(bootstrap.contains(
+            "hw_mode=a\nchannel=161\nwmm_enabled=1\nieee80211n=1\nht_capab=[HT20]\nieee80211ac=0\n"
+        ));
+        assert!(!bootstrap.contains("vht_oper_"));
 
         for (primary, ht, center) in [
             (36, "[HT40+]", 42),
@@ -594,14 +604,21 @@ mod tests {
             (157, "[HT40+]", 155),
             (161, "[HT40-]", 155),
         ] {
-            let rendered =
-                render_hostapd_on_channel(&config.ap, ApRadioChannel::ghz5(primary).unwrap());
+            let rendered = render_hostapd_on_channel_with_profile(
+                &config.ap,
+                ApRadioChannel::ghz5(primary).unwrap(),
+                ApRadioProfile::Vht80,
+            );
             assert!(rendered.contains(&format!(
                 "hw_mode=a\nchannel={primary}\nwmm_enabled=1\nieee80211n=1\nht_capab={ht}\nieee80211ac=1\nvht_oper_chwidth=1\nvht_oper_centr_freq_seg0_idx={center}\n"
             )));
         }
 
-        let channel_165 = render_hostapd_on_channel(&config.ap, ApRadioChannel::ghz5(165).unwrap());
+        let channel_165 = render_hostapd_on_channel_with_profile(
+            &config.ap,
+            ApRadioChannel::ghz5(165).unwrap(),
+            ApRadioProfile::Vht80,
+        );
         assert!(channel_165.contains(
             "hw_mode=a\nchannel=165\nwmm_enabled=1\nieee80211n=1\nieee80211ac=1\nvht_oper_chwidth=0\nvht_oper_centr_freq_seg0_idx=165\n"
         ));

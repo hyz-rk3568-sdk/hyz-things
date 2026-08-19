@@ -35,8 +35,8 @@ adb -P 5038 -s 192.168.8.1:5555 shell id   # 验证（serial 是 IP:5555）
 
 ## 部署工具用法
 
-`deploy-app.sh`、`make router-deploy-dev` 等工具以 `ADB`/`ADB_SERIAL`
-变量驱动 adb：
+`deploy-app.sh`、`make deploy-things` 和 `make deploy-camera` 等工具以 `ADB`/`ADB_SERIAL`
+变量驱动 adb；`hyz-router` 修改必须走 OTA，不提供 ADB 热部署。
 
 ```sh
 ADB="adb -P 5038" ADB_SERIAL="192.168.8.1:5555" \

@@ -2,6 +2,7 @@ use crate::{
     application::ports::PlatformError,
     domain::network_config::{
         ApConfig, NetworkConfigSummary, NetworkConfigV1, PendingNetworkConfigSummary, StaConfig,
+        PRODUCT_WIFI_COUNTRY,
     },
 };
 
@@ -115,8 +116,13 @@ impl<'a, P: WifiPlatformPort> WifiApplication<'a, P> {
         request: ApPrepareRequest,
         staged_at_unix_ms: u64,
     ) -> Result<PendingNetworkConfigSummary, PlatformError> {
+        if request.country != PRODUCT_WIFI_COUNTRY {
+            return Err(PlatformError::Conflict(
+                "product Wi-Fi country is fixed to CN".to_owned(),
+            ));
+        }
         let candidate =
-            ApConfig::from_passphrase(request.ssid, &request.passphrase, request.country);
+            ApConfig::from_passphrase(request.ssid, &request.passphrase, PRODUCT_WIFI_COUNTRY);
         self.platform
             .prepare_ap_candidate(candidate, staged_at_unix_ms)
     }
@@ -314,6 +320,24 @@ mod tests {
         fn ap_candidate_applied(&self) -> Result<bool, PlatformError> {
             unreachable!()
         }
+    }
+
+    #[test]
+    fn prepare_ap_rejects_non_cn_country() {
+        let platform = FakeWifiPlatform::new(FailurePoint::None, false);
+        let request = ApPrepareRequest {
+            ssid: WifiSsid::new("candidate-ap").unwrap(),
+            passphrase: WifiPassphrase::new("candidate-password").unwrap(),
+            country: WifiCountry::Us,
+        };
+        let error = WifiApplication::new(&platform)
+            .prepare_ap(request, 1_000)
+            .expect_err("non-CN AP country must be rejected");
+        assert_eq!(
+            error,
+            PlatformError::Conflict("product Wi-Fi country is fixed to CN".to_owned())
+        );
+        assert!(platform.calls().is_empty());
     }
 
     #[test]

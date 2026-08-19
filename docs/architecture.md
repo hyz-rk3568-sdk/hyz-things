@@ -15,7 +15,7 @@ apps/rust/camera    -> /usr/bin/hyz-camera（媒体进程，S82）
 - `hyz-things` 以「hyz things」个人网站形式承载管理面：LAN `192.168.8.1:8080`（HTTPS，自签证书）与精确 Tailscale IPv4 监听、管理员认证（Argon2id 凭据仍在 `/userdata/hyz-router/admin/credential.json`）、会话/CSRF、嵌入式 Yew SPA、camera 客户端与 Tailscale listener 管理。它等待 router ready 标记后才绑定 HTTPS，通过 `hyz-contract` client 驱动 router，通过 `/run/hyz-camera/control.sock` 驱动 camera。
 - `hyz-camera` 是独立媒体进程，接受受限状态、会话、旋转请求，媒体在浏览器与固定 `40000-40015/udp` 池之间直连；它不执行网络或防火墙命令。
 
-推送演进：`apps/rust/things/tools/deploy-app.sh` 支持对任一应用热推送新 ELF。推送 camera/things 只停止并重启对应 init 服务，**router 永不因此重启**；推送 router 是唯一会重启 router 的动作。停止任何服务之前，工具按注册表记录的协议版本做兼容性检查（见「热推送与协议兼容窗口」）。
+推送演进：`apps/rust/things/tools/deploy-app.sh` 只支持对 `hyz-things` 和 `hyz-camera` 热推送新 ELF。推送 camera/things 只停止并重启对应 init 服务，**router 永不因此重启**；`hyz-router` 的修改必须通过 OTA 发布。停止任何服务之前，工具按注册表记录的协议版本做兼容性检查（见「热推送与协议兼容窗口」）。
 
 旧的统一单 ELF 方案（Web/Axum/管理员认证内嵌于 `hyz-router`）已完成拆分；本文档 2026-08-16 之前的 OTA 验收记录均属于拆分前的统一 ELF，作为历史验收保留。`apps/router-panel/{shared,server,adapter-linux,frontend}` 多 crate 方案此前已被否决并从源码删除；独立 MetaCubeXD 静态包也已删除，产品只保留 hyz-things 这一套管理 Web UI。
 
@@ -273,6 +273,16 @@ control socket 可服务不等于 router 已就绪，router ready 标记也不�
 
 WAN DHCP 租约按地址、metric `600` 路由、resolver 条目和 ownership record 整体提交；任一步失败都按精确动作逆序回滚。Buildroot 的 `/etc/resolv.conf -> ../tmp/resolv.conf` 在冷启动时允许目标尚不存在：adapter 只解析并校验固定 allowlist 中的目标父目录，再原子创建 `/tmp/resolv.conf`，不能因 dangling symlink 撤销已收到的有效租约。
 
+### Ethernet DHCP 双上游演进边界
+
+当前生产代码仍是 Wi-Fi-only：`br-lan = p2p0`、单一 `wlan0` DHCP generation/ownership、metric `600` 默认路由以及固定 `wlan0` NAT/FORWARD。`eth1` LAN member、`eth0` carrier/DHCP、有线与 Wi-Fi 共存、per-uplink resolver ownership 和 active uplink 尚未实现，不能把在线插入网线视为已支持能力。
+
+目标演进先把固定 LAN 扩展为 `br-lan = eth1 + p2p0`，再以受限 typed uplink model 表达 `Ethernet` 与 `Wifi`。每条 uplink 分别观察 link/session/address/default-route/resolver/ownership，DHCP callback 绑定固定 uplink identity 和独立 generation；active uplink 只在 runtime-owned 地址、默认路由、NAT/FORWARD 与 resolver generation 全部严格确认后提交。`eth0` metric `100` 优先于 `wlan0` metric `600`，但 carrier 单独出现不能触发切换。
+
+双出口 firewall 将一次性包含 `br-lan ↔ eth0` 与 `br-lan ↔ wlan0` 的固定 FORWARD、MASQUERADE 和 WAN INPUT 边界，route 切换不重建整套 chain。dnsmasq 原子使用当前 active uplink 的 resolver set；一个 uplink 的 renew/deconfig 或 stale callback 不得删除另一个 uplink 的地址、路由或 DNS。Mihomo direct/TUN、Tailscale outbound 和状态聚合必须依赖 active uplink，而不是继续读取固定 `wlan0` gateway。
+
+这里的“下游无扰动”只保证插拔 WAN 网线时不重建 `br-lan`、不改变 LAN 地址或合法 lease、不重启 dnsmasq/AP/管理 HTTP，并保持 `eth1`、AP、LAN 内通信与本地管理入口；有线严格 ready 前新连接继续走 Wi-Fi，ready 后新连接走有线。不同出口地址和 NAT 映射下的既有 TCP/UDP 会话允许中断，不承诺会话迁移或零丢包。完整分阶段实施和验收见 [`soft-router-ethernet-dhcp-plan.md`](soft-router-ethernet-dhcp-plan.md)。
+
 ### RTL8852BS 冷启动固定流程
 
 RTL8852BS 单射频并发启动采用稳定优先的固定顺序，不以减少 init launch 次数为目标：
@@ -369,22 +379,22 @@ LCD 的 DTS `default-brightness-level = <0>` 让 U-Boot/Linux 冷启动默认保
 
 ## 热推送与协议兼容窗口
 
-`apps/rust/things/tools/deploy-app.sh` 是每应用热推送工具（`make deploy-router|deploy-things|deploy-camera`，回滚 `make revert-*`，预检 `deploy-app.sh check NAME`）：
+`apps/rust/things/tools/deploy-app.sh` 只允许热推送 `hyz-things` 和 `hyz-camera`（`make deploy-things|deploy-camera`，回滚 `make revert-things|revert-camera`，预检 `deploy-app.sh check NAME`）。`hyz-router` 不属于热推送范围，所有 router 修改必须通过 OTA 发布。
 
-- 推送流程：adb 推送 ELF 到 `/userdata/hyz-things/apps/<name>/<sha256>/` → 远端 SHA-256 校验 → **只停止目标应用的 init 服务**（S81/S83/S82）→ 同文件系统原子替换 `/usr/bin/<app>` → 启动 → 就绪探针 → 写注册表。
-- 服务隔离：推送 camera/things 绝不调用 router 的 init 脚本；`assert_router_untouched` 在推送前后断言 `/run/hyz-router/ready` 仍在。推送 router 是唯一重启 router 的动作，门户保持运行并自动重连 UDS。
-- 注册表：持久 `/userdata/hyz-things/apps/registry.json` 记录每个已部署二进制的 sha256 与 wire 协议版本（`protocol_versions`），每次部署保留 previous 条目供回滚；`/run/hyz-things/apps/<name>.json` 是当前启动的易失快照。
-- 协议兼容窗口：`hyz-contract` 的 wire 契约版本化，服务端接受当前与前一版本（`[current, current - 1]`），客户端要求精确匹配。deploy 与 revert 在**停止任何服务之前**按注册表记录版本做兼容性检查：推送 router 时要求已装 things 的 router 协议版本相等；推送 things 时要求已装 router/camera 版本相等；推送 camera 时要求已装 things 的 camera 期望版本相等。回滚按 previous 条目**记录的**版本校验（而不是当前源码树），防止源码已前进时错误放行。
-- 测试：`tools/test-deploy-app.sh` 用 fake adb 断言服务隔离、先拒绝后停止、回滚按记录版本把关；`make check` 与 `check-static` 均覆盖。
+- 推送流程：adb 推送 ELF 到 `/userdata/hyz-things/apps/<name>/<sha256>/` → 远端 SHA-256 校验 → **只停止目标应用的 init 服务**（S83/S82）→ 同文件系统原子替换 `/usr/bin/<app>` → 启动 → 就绪探针 → 写注册表。
+- 服务隔离：推送 camera/things 绝不调用 router 的 init 脚本；`assert_router_untouched` 在推送前后断言 `/run/hyz-router/ready` 仍在，门户保持运行并自动重连 UDS。
+- 注册表：持久 `/userdata/hyz-things/apps/registry.json` 记录每个已部署二进制的 sha256、部署时间 `deployed_at_unix_ms` 与 wire 协议版本（`protocol_versions`），每次部署保留 previous 条目供回滚；`/run/hyz-things/apps/<name>.json` 是当前启动的易失快照。
+- 协议兼容窗口：`hyz-contract` 的 wire 契约版本化，服务端接受当前与前一版本（`[current, current - 1]`），客户端要求精确匹配。deploy 与 revert 在**停止任何服务之前**按注册表记录版本做兼容性检查：推送 things 时要求已装 router/camera 版本相等；推送 camera 时要求已装 things 的 camera 期望版本相等。回滚按 previous 条目**记录的**版本校验（而不是当前源码树），防止源码已前进时错误放行。
+- 测试：`tools/test-deploy-app.sh` 用 fake adb 断言 router 不可热推送、服务隔离、先拒绝后停止和回滚按记录版本把关；`make check` 与 `check-static` 均覆盖。
 
 ## 路由与 Mihomo direct adapter
 
-已建立的领域模型把管理平面和转发平面分开：
+当前已建立的领域模型把管理平面和转发平面分开，但生产实现仍是单 Wi-Fi WAN：
 
-- management LAN：`br-lan`、`p2p0`、DHCP/DNS；
-- WAN：`wlan0`、DHCP、metric `600`；
-- forwarding：IPv4 forwarding 和普通 NAT；
-- proxy：独立的 `lan_tun_enabled` 与 `tailscale_explicit_proxy_enabled`，共享派生的 Mihomo core。
+- management LAN：当前为 `br-lan`、`p2p0`、DHCP/DNS；目标在独立 member 生命周期完成后扩展为 `br-lan = eth1 + p2p0`；
+- WAN：当前为 `wlan0`、单一 DHCP generation/ownership、metric `600`；目标为 typed `Ethernet/Wifi`、per-uplink DHCP/route/resolver ownership 与显式 active uplink；
+- forwarding：IPv4 forwarding 和普通 NAT；当前 exact rules 固定 `wlan0`，双上游阶段扩展为固定 `eth0`/`wlan0` 双出口且切换不重建 chain；
+- proxy：独立的 `lan_tun_enabled` 与 `tailscale_explicit_proxy_enabled`，共享派生的 Mihomo core；双上游后 direct/TUN 出口跟随严格确认的 active uplink。
 
 `router disable` 的模型先把 Tailscale LAN path 降到 RouterOnly，再以 runtime-only reconcile 撤销 LAN TUN interception，最后移除 ordinary forwarding/NAT；管理 LAN、页面、Tailscale 认证状态、Tailscale access mode 以及两个 proxy feature desired 均保留。恢复 forwarding 后会重新 reconcile 持久 Tailscale 与 proxy feature intent。
 

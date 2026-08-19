@@ -825,7 +825,7 @@ mod tests {
     use crate::{
         application::ports::LifecycleLease,
         domain::{
-            network::{NetworkObserved, OwnedResource},
+            network::{NetworkObserved, OwnedResource, UplinkObserved},
             tailscale::{TailscaleBackendState, TailscalePreferences, TailscaleProcessState},
         },
     };
@@ -1014,6 +1014,7 @@ mod tests {
             } else {
                 OwnedResource::Absent
             }),
+            tun_active_uplink: Probe::Known(None),
             policy_rule_present: Probe::Known(lan),
             policy_route_present: Probe::Known(lan),
             interception_entry_present: Probe::Known(lan),
@@ -1120,10 +1121,15 @@ mod tests {
                         token: token.clone(),
                     })
                 }
-                ProxyAction::CreateTunChains { token, direct_macs } => {
+                ProxyAction::CreateTunChains {
+                    token,
+                    direct_macs,
+                    active,
+                } => {
                     observed.tun_firewall = Probe::Known(OwnedResource::Owned {
                         token: token.clone(),
                     });
+                    observed.tun_active_uplink = Probe::Known(Some(active.clone()));
                     observed.active_direct_macs = Probe::Known(direct_macs.clone());
                 }
                 ProxyAction::InstallPolicyRoute => {
@@ -1144,12 +1150,14 @@ mod tests {
                 }
                 ProxyAction::RemoveTunChains { .. } => {
                     observed.tun_firewall = Probe::Known(OwnedResource::Absent);
+                    observed.tun_active_uplink = Probe::Known(None);
                     observed.active_direct_macs = Probe::Known(Default::default());
                 }
                 ProxyAction::StopCore => {
                     observed.process_identity_valid = Probe::Known(false);
                     observed.mixed_port_ready = Probe::Known(false);
                     observed.tun_interface = Probe::Known(OwnedResource::Absent);
+                    observed.tun_active_uplink = Probe::Known(None);
                 }
                 ProxyAction::RemoveRuntimeState => {
                     observed.runtime_config_valid = Probe::Known(false)
@@ -1173,13 +1181,18 @@ mod tests {
                 bridge_up: Probe::Known(true),
                 lan_address_present: Probe::Known(true),
                 ap_attached: Probe::Known(true),
+                ethernet_lan_attached: Probe::Known(true),
                 management_services_healthy: Probe::Known(true),
-                wan_default_route_present: Probe::Known(self.ordinary_router_ready),
+                ethernet_uplink: UplinkObserved::unavailable(),
+                wifi_uplink: UplinkObserved::wifi_only_route(Probe::Known(
+                    self.ordinary_router_ready,
+                )),
                 ipv4_forwarding: Probe::Known(true),
                 previous_ipv4_forwarding: Probe::Known(Some(false)),
                 router_firewall: Probe::Known(OwnedResource::Owned {
                     token: "router".to_owned(),
                 }),
+                firewall_wan_set: Probe::Known(Some(crate::domain::network::RouterWanSet::Wifi)),
             })
         }
 

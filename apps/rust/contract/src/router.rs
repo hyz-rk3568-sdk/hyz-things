@@ -23,7 +23,7 @@ use super::{
     wifi::{ApPrepareRequest, StaCandidateRequest, WifiScanEntry},
 };
 
-pub const PROTOCOL_VERSION: u16 = 10;
+pub const PROTOCOL_VERSION: u16 = 11;
 pub const CONTROL_SOCKET: &str = "/run/hyz-router/control.sock";
 pub const MAX_FRAME_BYTES: usize = 64 * 1024;
 pub const IO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
@@ -372,7 +372,7 @@ mod tests {
         let request = ControlRequest::new(ControlOperation::Status {});
         let encoded = serde_json::to_vec(&request).unwrap();
         assert!(encoded.len() < MAX_FRAME_BYTES);
-        assert_eq!(PROTOCOL_VERSION, 10);
+        assert_eq!(PROTOCOL_VERSION, 11);
         let policy = ControlOperation::DevicePoliciesSet {
             request: DevicePolicyUpdateRequest {
                 expected_generation: 0,
@@ -479,6 +479,7 @@ mod tests {
         };
         assert!(ControlOperation::Dhcp {
             event: crate::dhcp::DhcpEvent::new(
+                crate::dhcp::DhcpUplink::Wifi,
                 crate::dhcp::DhcpGeneration::new("test-generation".to_owned()).unwrap(),
                 DhcpTransition::Lease { lease },
             )

@@ -20,6 +20,7 @@ use hyz_router::{
     application::{
         device_policy::DevicePolicyApplication,
         dhcp::{DhcpApplication, DhcpEvent, DhcpPlatformPort},
+        ethernet_dhcp::EthernetDhcpLifecycleApplication,
         fail_open::{MihomoFailOpenApplication, WatcherInvocation},
         ota::{InstallMode, OtaService},
         panel::PanelApplication,
@@ -28,7 +29,8 @@ use hyz_router::{
             TailnetPeerReadPort, TailscalePlatformPort, TailscaleProbePort,
         },
         proxy::{
-            MihomoDirectRecoveryApplication, MihomoDirectRecoveryResult, ProxyFeatureCoordinator,
+            MihomoDirectRecoveryApplication, MihomoDirectRecoveryResult, ProxyApplication,
+            ProxyFeatureCoordinator,
         },
         router::RouterApplication,
         shutdown::ShutdownApplication,
@@ -64,6 +66,9 @@ use tokio::{
 
 const DAEMON_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2 * 60);
 const MIHOMO_DIRECT_RECOVERY_INTERVAL: Duration = Duration::from_secs(2);
+const ETHERNET_DHCP_LIFECYCLE_INTERVAL: Duration = Duration::from_secs(1);
+const AP_VHT80_UPGRADE_INTERVAL: Duration = Duration::from_secs(2);
+const AP_VHT80_UPGRADE_GRACE: Duration = Duration::from_secs(30);
 
 fn arm_shutdown_deadline(deadline: TokioInstant) {
     std::thread::spawn(move || {
@@ -224,8 +229,47 @@ struct DhcpDispatcher {
     state: Arc<AsyncMutex<DhcpDispatcherState>>,
 }
 
+fn reconcile_post_dhcp_runtime(
+    platform: &LinuxRouterPlatform,
+    tailscale: &ProductionTailscalePlatform,
+) -> Result<(), PlatformError> {
+    RouterApplication::new(platform, platform, platform).reconcile(&NetworkDesired::forwarding())?;
+    let observed = platform.observe_proxy()?;
+    let features = match observed.persisted_features {
+        Probe::Known(features) if features.supported() => features,
+        Probe::Known(_) => {
+            return Err(PlatformError::ProbeFailed(
+                "persisted proxy feature version is unsupported".to_owned(),
+            ))
+        }
+        Probe::Unknown(reason) => {
+            return Err(PlatformError::ProbeFailed(format!(
+                "persisted proxy features are unknown: {reason}"
+            )))
+        }
+    };
+    ProxyApplication::new(platform, platform, platform).reconcile(&ProxyDesired {
+        lan_tun_enabled: features.lan_tun_enabled,
+        tailscale_explicit_proxy_enabled: features.tailscale_explicit_proxy_enabled,
+        direct_macs: platform.load_device_policy()?.direct_macs(),
+    })?;
+    let tailscale_observed = tailscale.observe_tailscale()?;
+    let mode = match tailscale_observed.persisted_mode {
+        Probe::Known(Some(mode)) => mode,
+        Probe::Known(None) => TailscaleMode::Disabled,
+        Probe::Unknown(reason) => {
+            return Err(PlatformError::ProbeFailed(format!(
+                "Tailscale persisted mode is unknown after DHCP transition: {reason}"
+            )))
+        }
+    };
+    TailscaleApplication::new(tailscale, tailscale, platform, platform)
+        .reconcile(&TailscaleDesired { mode })
+        .map(|_| ())
+}
+
 impl DhcpDispatcher {
-    fn new(router: Arc<LinuxRouterPlatform>) -> Self {
+    fn new(router: Arc<LinuxRouterPlatform>, tailscale: Arc<ProductionTailscalePlatform>) -> Self {
         let (sender, mut receiver) = mpsc::channel::<DhcpWorkerCommand>(8);
         let task = tokio::spawn(async move {
             while let Some(command) = receiver.recv().await {
@@ -235,7 +279,9 @@ impl DhcpDispatcher {
                 let DhcpDispatch { event } = dispatch;
                 let platform = router.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    if platform.active_dhcp_generation()?.as_ref() != Some(&event.generation) {
+                    if platform.active_dhcp_generation(event.uplink)?.as_ref()
+                        != Some(&event.generation)
+                    {
                         return Err(PlatformError::Conflict(
                             "DHCP callback generation is stale".to_owned(),
                         ));
@@ -247,8 +293,24 @@ impl DhcpDispatcher {
                     PlatformError::CommandFailed("DHCP worker terminated unexpectedly".to_owned())
                 })
                 .and_then(|result| result);
-                if let Err(error) = result {
-                    eprintln!("hyz-router: queued DHCP event failed: {error}");
+                match result {
+                    Ok(()) => {
+                        // DhcpApplication releases the lifecycle lease before this follow-up.
+                        // The worker is serialized, so DHCP callbacks cannot interleave router or
+                        // proxy reconciliation; any failure leaves the management LAN intact.
+                        let platform = router.clone();
+                        let tailscale = tailscale.clone();
+                        let follow_up = tokio::task::spawn_blocking(move || {
+                            reconcile_post_dhcp_runtime(platform.as_ref(), tailscale.as_ref())
+                        })
+                        .await;
+                        match follow_up {
+                            Ok(Ok(())) => {}
+                            Ok(Err(error)) => eprintln!("hyz-router: post-DHCP router/proxy/Tailscale reconciliation failed; management LAN retained: {error}"),
+                            Err(error) => eprintln!("hyz-router: post-DHCP router/proxy/Tailscale reconciliation worker terminated; management LAN retained: {error}"),
+                        }
+                    }
+                    Err(error) => eprintln!("hyz-router: queued DHCP event failed: {error}"),
                 }
             }
         });
@@ -316,7 +378,7 @@ impl ProductionRuntime {
     fn build() -> Result<Self, PlatformError> {
         let router = Arc::new(LinuxRouterPlatform::new());
         let tailscale = Arc::new(ProductionTailscalePlatform::new(router.clone()));
-        let dhcp = DhcpDispatcher::new(router.clone());
+        let dhcp = DhcpDispatcher::new(router.clone(), tailscale.clone());
         let resolver = Arc::new(SystemSubscriptionResolver);
         Ok(Self {
             router,
@@ -580,6 +642,53 @@ impl ProductionRuntime {
         })?
     }
 
+    async fn reconcile_ethernet_dhcp(&self) -> Result<(), PlatformError> {
+        let _serial = self.router_proxy.lock().await;
+        let platform = self.router.clone();
+        let uplink_changed = tokio::task::spawn_blocking(move || {
+            let before = platform.observe_network()?.active_uplink_observation();
+            EthernetDhcpLifecycleApplication::new(platform.as_ref()).reconcile()?;
+            let after = platform.observe_network()?.active_uplink_observation();
+            Ok(matches!(
+                (before, after),
+                (Probe::Known(before), Probe::Known(after)) if before != after
+            ))
+        })
+        .await
+        .map_err(|_| {
+            PlatformError::CommandFailed(
+                "Ethernet DHCP lifecycle worker terminated unexpectedly".to_owned(),
+            )
+        })??;
+        if uplink_changed {
+            let platform = self.router.clone();
+            let tailscale = self.tailscale.clone();
+            tokio::task::spawn_blocking(move || {
+                reconcile_post_dhcp_runtime(platform.as_ref(), tailscale.as_ref())
+            })
+            .await
+            .map_err(|_| {
+                PlatformError::CommandFailed(
+                    "post-carrier-change runtime worker terminated unexpectedly".to_owned(),
+                )
+            })??;
+        }
+        Ok(())
+    }
+
+    async fn shutdown_ethernet_dhcp(&self) -> Result<(), PlatformError> {
+        let platform = self.router.clone();
+        tokio::task::spawn_blocking(move || {
+            EthernetDhcpLifecycleApplication::new(platform.as_ref()).shutdown()
+        })
+        .await
+        .map_err(|_| {
+            PlatformError::CommandFailed(
+                "Ethernet DHCP shutdown worker terminated unexpectedly".to_owned(),
+            )
+        })?
+    }
+
     async fn initialize(&self) -> Result<(), String> {
         // DHCP bypasses the async router/proxy guard, but its bounded worker shares the lifecycle
         // lock. Startup commits only strict management readiness; WAN-dependent restoration runs
@@ -608,10 +717,11 @@ impl ProductionRuntime {
                     "deferred WAN readiness probe terminated unexpectedly".to_owned(),
                 )
             })??;
-        match observed.wan_default_route_present {
-            Probe::Known(ready) => Ok(ready),
+        match observed.router_wan_set() {
+            Probe::Known(Some(_)) => Ok(true),
+            Probe::Known(None) => Ok(false),
             Probe::Unknown(reason) => Err(PlatformError::ProbeFailed(format!(
-                "deferred WAN route readiness is unknown: {reason}"
+                "deferred active uplink readiness is unknown: {reason}"
             ))),
         }
     }
@@ -674,22 +784,37 @@ impl ProductionRuntime {
 
     async fn shutdown(&self) -> Result<(), String> {
         let _serial = self.router_proxy.lock().await;
-        self.dhcp
+        let runtime_result = async {
+            self.shutdown_ethernet_dhcp()
+                .await
+                .map_err(|error| format!("Ethernet DHCP shutdown failed: {error}"))?;
+            self.shutdown_tailscale()
+                .await
+                .map_err(|error| format!("Tailscale-first shutdown failed: {error}"))?;
+            let platform = self.router.clone();
+            tokio::task::spawn_blocking(move || {
+                ShutdownApplication::new(platform.as_ref(), platform.as_ref())
+                    .execute()
+                    .map(|_| ())
+            })
+            .await
+            .map_err(|_| "shutdown worker terminated unexpectedly".to_owned())?
+            .map_err(|error| error.to_string())
+        }
+        .await;
+
+        let dispatcher_result = self
+            .dhcp
             .stop_and_join()
             .await
-            .map_err(|error| format!("DHCP dispatcher shutdown failed: {error}"))?;
-        self.shutdown_tailscale()
-            .await
-            .map_err(|error| format!("Tailscale-first shutdown failed: {error}"))?;
-        let platform = self.router.clone();
-        tokio::task::spawn_blocking(move || {
-            ShutdownApplication::new(platform.as_ref(), platform.as_ref())
-                .execute()
-                .map(|_| ())
-        })
-        .await
-        .map_err(|_| "shutdown worker terminated unexpectedly".to_owned())?
-        .map_err(|error| error.to_string())
+            .map_err(|error| format!("DHCP dispatcher shutdown failed: {error}"));
+
+        match (runtime_result, dispatcher_result) {
+            (Err(runtime), Err(dispatcher)) => Err(format!("{runtime}; {dispatcher}")),
+            (Err(runtime), Ok(())) => Err(runtime),
+            (Ok(()), Err(dispatcher)) => Err(dispatcher),
+            (Ok(()), Ok(())) => Ok(()),
+        }
     }
 }
 
@@ -1394,6 +1519,64 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         return result.map_err(|error| Box::new(error) as Box<dyn Error>);
     }
 
+    let ap_upgrade_runtime = runtime.clone();
+    let mut ap_upgrade_shutdown = shutdown_rx.clone();
+    let mut ap_upgrade = tokio::spawn(async move {
+        let mut interval = tokio::time::interval_at(
+            TokioInstant::now() + AP_VHT80_UPGRADE_GRACE,
+            AP_VHT80_UPGRADE_INTERVAL,
+        );
+        let mut complete = false;
+        interval.tick().await;
+        loop {
+            tokio::select! {
+                _ = interval.tick(), if !complete => {
+                    let _serial = ap_upgrade_runtime.router_proxy.lock().await;
+                    let router = ap_upgrade_runtime.router.clone();
+                    match tokio::task::spawn_blocking(move || router.try_upgrade_ap_to_vht80()).await {
+                        Ok(Ok(Some(true))) => complete = true,
+                        Ok(Ok(Some(false))) => complete = true,
+                        Ok(Ok(None)) => {}
+                        Ok(Err(error)) => {
+                            eprintln!("hyz-router: deferred VHT80 AP upgrade stopped; HT20 management AP retained: {error}");
+                            complete = true;
+                        }
+                        Err(error) => {
+                            eprintln!("hyz-router: deferred VHT80 AP upgrade worker terminated; HT20 management AP retained: {error}");
+                            complete = true;
+                        }
+                    }
+                }
+                changed = ap_upgrade_shutdown.changed() => {
+                    let _ = changed;
+                    break;
+                }
+            }
+        }
+    });
+
+    let ethernet_dhcp_runtime = runtime.clone();
+    let mut ethernet_dhcp_shutdown = shutdown_rx.clone();
+    // The daemon reaches this loop only after management initialization. Ethernet DHCP is then
+    // carrier-driven and independent of the Wi-Fi DHCP lease; uplink selection uses route metrics.
+    let mut ethernet_dhcp = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(ETHERNET_DHCP_LIFECYCLE_INTERVAL);
+        interval.tick().await;
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    if let Err(error) = ethernet_dhcp_runtime.reconcile_ethernet_dhcp().await {
+                        eprintln!("hyz-router: Ethernet DHCP lifecycle reconciliation failed: {error}");
+                    }
+                }
+                changed = ethernet_dhcp_shutdown.changed() => {
+                    let _ = changed;
+                    break;
+                }
+            }
+        }
+    });
+
     let timeout_runtime = runtime.clone();
     let mut timeout_shutdown = shutdown_rx.clone();
     let mut wifi_timeout = tokio::spawn(async move {
@@ -1514,6 +1697,28 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
             "control drain exceeded the daemon shutdown deadline",
         )),
     };
+    let ap_upgrade_task = match timeout_at(deadline, &mut ap_upgrade).await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(error)) => Err(std::io::Error::other(format!(
+            "VHT80 AP upgrade task terminated unexpectedly: {error}"
+        ))),
+        Err(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "VHT80 AP upgrade task drain exceeded the daemon shutdown deadline",
+        )),
+    };
+    let services = services.and(ap_upgrade_task);
+    let ethernet_dhcp_task = match timeout_at(deadline, &mut ethernet_dhcp).await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(error)) => Err(std::io::Error::other(format!(
+            "Ethernet DHCP lifecycle task terminated unexpectedly: {error}"
+        ))),
+        Err(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "Ethernet DHCP lifecycle task drain exceeded the daemon shutdown deadline",
+        )),
+    };
+    let services = services.and(ethernet_dhcp_task);
     let timeout_task = match timeout_at(deadline, &mut wifi_timeout).await {
         Ok(Ok(())) => Ok(()),
         Ok(Err(error)) => Err(std::io::Error::other(format!(
@@ -1916,7 +2121,7 @@ mod source_boundaries {
             .split("fn apply_dhcp_event_locked")
             .nth(1)
             .unwrap()
-            .split("impl DhcpPlatformPort")
+            .split("impl EthernetDhcpLifecyclePort")
             .next()
             .unwrap();
         assert!(!dhcp_apply.contains("NETWORK_LOCK"));

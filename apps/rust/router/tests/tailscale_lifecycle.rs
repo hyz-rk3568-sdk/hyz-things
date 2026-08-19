@@ -11,7 +11,7 @@ use hyz_router::{
         tailscale::{TailscaleApplication, TailscaleReconcileState},
     },
     domain::{
-        network::{NetworkObserved, OwnedResource, Probe},
+        network::{NetworkObserved, OwnedResource, Probe, UplinkObserved},
         proxy::{ProxyFeaturesV1, ProxyObserved},
         status::{
             ComponentState, TailscaleErrorCategory, TailscaleExplicitProxyPath,
@@ -103,11 +103,14 @@ fn network_ready() -> NetworkObserved {
         bridge_up: Probe::Known(true),
         lan_address_present: Probe::Known(true),
         ap_attached: Probe::Known(true),
+        ethernet_lan_attached: Probe::Known(true),
         management_services_healthy: Probe::Known(true),
-        wan_default_route_present: Probe::Known(true),
+        ethernet_uplink: UplinkObserved::unavailable(),
+        wifi_uplink: UplinkObserved::wifi_only_route(Probe::Known(true)),
         ipv4_forwarding: Probe::Known(true),
         previous_ipv4_forwarding: Probe::Known(Some(false)),
         router_firewall: owned("router"),
+        firewall_wan_set: Probe::Known(Some(hyz_router::domain::network::RouterWanSet::Wifi)),
     }
 }
 
@@ -126,6 +129,7 @@ fn stopped_proxy() -> ProxyObserved {
         mixed_port_ready: Probe::Known(false),
         tun_interface: Probe::Known(OwnedResource::Absent),
         tun_firewall: Probe::Known(OwnedResource::Absent),
+        tun_active_uplink: Probe::Known(None),
         policy_rule_present: Probe::Known(false),
         policy_route_present: Probe::Known(false),
         interception_entry_present: Probe::Known(false),

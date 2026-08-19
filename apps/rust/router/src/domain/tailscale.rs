@@ -16,6 +16,7 @@ pub const TAILSCALE_INTERFACE: &str = "tailscale0";
 pub const TAILSCALE_LAN_ROUTE: &str = "192.168.8.0/24";
 pub const TAILSCALE_CGNAT_SUBNET: &str = "100.64.0.0/10";
 pub const TAILSCALE_UDP_PORT: u16 = 41_641;
+pub const TAILSCALE_ADB_PORT: u16 = 5_555;
 pub const TAILSCALE_INPUT_CHAIN: &str = "HYZ_TS_INPUT";
 pub const TAILSCALE_FORWARD_CHAIN: &str = "HYZ_TS_FWD";
 pub const TAILSCALE_NAT_CHAIN: &str = "HYZ_TS_NAT";

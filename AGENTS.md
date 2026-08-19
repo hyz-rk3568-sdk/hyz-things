@@ -111,6 +111,6 @@ composition root in its own Cargo package:
 - 先运行静态检查再构建。除非用户明确要求，不启动 Rust、前端、SDK、
   Buildroot、kernel、rootfs 或 firmware 构建。
 
-## 构建测试入口
+## 构建，验证以及测试入口
 
 @./Makefile

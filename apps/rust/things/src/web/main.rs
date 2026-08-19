@@ -18,9 +18,9 @@ use hyz_things::domain::{
         DisplayRequest, PanelBootstrap, ProxyDelayRefreshRequest, ProxyGroup, ProxySelectionRequest,
     },
     status::{
-        Component, ComponentState, LanTunEffective, LinkState, ProxyResourceState, SnapshotState,
-        StatusSnapshot, TailscaleConnectionType, TailscaleErrorCategory,
-        TailscaleExplicitProxyPath, TailscaleProxyFallback, TailscaleStatus,
+        Component, ComponentState, LanTunEffective, ProxyResourceState, SnapshotState,
+        StatusSnapshot, TailscaleErrorCategory, TailscaleExplicitProxyPath, TailscaleProxyFallback,
+        TailscaleStatus, UplinkId, UplinkStatus,
     },
     tailscale::{
         TailscaleBackendState, TailscaleEnvironment, TailscaleMode, TailscalePeerSnapshot,
@@ -102,7 +102,11 @@ struct InstalledAppDto {
     name: String,
     binary: String,
     init_script: String,
+    #[serde(default)]
     sha256: Option<String>,
+    #[serde(default)]
+    deployed_at_unix_ms: Option<u64>,
+    #[serde(default)]
     protocol_versions: std::collections::BTreeMap<String, u32>,
 }
 
@@ -2303,11 +2307,12 @@ fn render_deployed_apps(state: &UseReducerHandle<AppState>) -> Html {
                             .collect::<Vec<_>>()
                             .join(" · ")
                     };
+                    let deployed_at = deployment_time_label(app.deployed_at_unix_ms);
                     html! {
                         <li class="grid min-w-0 gap-2 rounded-box border border-base-content/10 p-3 sm:grid-cols-[minmax(0,1fr)_auto]" key={app.name.clone()}>
                             <div class="min-w-0">
                                 <strong class="block truncate">{&app.name}</strong>
-                                <span class={HELP_TEXT}>{format!("{} · {}", sha, versions)}</span>
+                                <span class={HELP_TEXT}>{format!("部署时间：{deployed_at} · {} · {}", sha, versions)}</span>
                             </div>
                         </li>
                     }
@@ -2943,7 +2948,6 @@ struct SettingsProps {
 struct ApSettingsRefs<'a> {
     ssid: &'a NodeRef,
     password: &'a NodeRef,
-    country: &'a NodeRef,
     apply_button: &'a NodeRef,
 }
 
@@ -2967,7 +2971,6 @@ fn settings(props: &SettingsProps) -> Html {
     let sta_apply_button = use_node_ref();
     let ap_ssid = use_node_ref();
     let ap_password = use_node_ref();
-    let ap_country = use_node_ref();
     let ap_toggle = use_node_ref();
     let ap_apply_button = use_node_ref();
     let network_confirmation_panel = use_node_ref();
@@ -3116,20 +3119,18 @@ fn settings(props: &SettingsProps) -> Html {
         let csrf = csrf.clone();
         let ssid = ap_ssid.clone();
         let password = ap_password.clone();
-        let country = ap_country.clone();
         Callback::from(move |event: SubmitEvent| {
             event.prevent_default();
-            let (Some(ssid), Some(password), Some(country)) = (
+            let (Some(ssid), Some(password)) = (
                 ssid.cast::<HtmlInputElement>(),
                 password.cast::<HtmlInputElement>(),
-                country.cast::<HtmlSelectElement>(),
             ) else {
                 return;
             };
             let request = ApRequest {
                 ssid: ssid.value(),
                 passphrase: password.value(),
-                country: country.value(),
+                country: "CN".to_owned(),
             };
             password.set_value("");
             dispatch_settings_mutation(
@@ -3419,7 +3420,7 @@ fn settings(props: &SettingsProps) -> Html {
                             <div id="ap-settings-detail" class={DISCLOSURE_DETAIL} role="region" aria-labelledby="ap-settings-toggle">
                                 {render_ap_settings(
                                     state,
-                                    ApSettingsRefs { ssid: &ap_ssid, password: &ap_password, country: &ap_country, apply_button: &ap_apply_button },
+                                    ApSettingsRefs { ssid: &ap_ssid, password: &ap_password, apply_button: &ap_apply_button },
                                     ApSettingsActions { prepare: prepare_ap, apply: request_ap_apply, confirm: confirm_ap, cancel: cancel_ap },
                                     busy,
                                 )}
@@ -3734,7 +3735,7 @@ fn render_ap_settings(
                 <form class={FORM_GRID_COMPACT} onsubmit={actions.prepare} autocomplete="off">
                     <label class={FIELD}><span class={FIELD_LABEL}>{"SSID"}</span><input class={INPUT} ref={refs.ssid.clone()} required=true maxlength="32" autocomplete="off" /></label>
                     <label class={FIELD}><span class={FIELD_LABEL}>{"密码"}</span><input class={INPUT} ref={refs.password.clone()} type="password" required=true minlength="8" maxlength="63" autocomplete="new-password" /></label>
-                    <label class={FIELD}><span class={FIELD_LABEL}>{"国家 / 地区"}</span><select class={SELECT} ref={refs.country.clone()}><option value="CN">{"中国 (CN)"}</option><option value="US">{"美国 (US)"}</option><option value="JP">{"日本 (JP)"}</option><option value="SG">{"新加坡 (SG)"}</option><option value="TW">{"中国台湾 (TW)"}</option><option value="AU">{"澳大利亚 (AU)"}</option><option value="BR">{"巴西 (BR)"}</option><option value="CA">{"加拿大 (CA)"}</option><option value="DE">{"德国 (DE)"}</option><option value="FR">{"法国 (FR)"}</option><option value="GB">{"英国 (GB)"}</option><option value="IN">{"印度 (IN)"}</option><option value="KR">{"韩国 (KR)"}</option><option value="NZ">{"新西兰 (NZ)"}</option></select></label>
+                    <label class={FIELD}><span class={FIELD_LABEL}>{"国家 / 地区"}</span><input class={READONLY_INPUT} value="中国 (CN)" readonly=true aria-readonly="true" /></label>
                     <div class={FORM_ACTIONS}><button class={BUTTON_PRIMARY} type="submit" disabled={busy}>{"准备 AP 变更"}</button></div>
                 </form>
             </>
@@ -3768,6 +3769,17 @@ fn current_time() -> String {
     value.get(0..8).unwrap_or(value.as_str()).to_owned()
 }
 
+fn deployment_time_label(unix_ms: Option<u64>) -> String {
+    const MAX_DATE_MILLIS: u64 = 8_640_000_000_000_000;
+    let Some(unix_ms) = unix_ms.filter(|value| *value <= MAX_DATE_MILLIS) else {
+        return "未记录".to_owned();
+    };
+    js_sys::Date::new(&JsValue::from_f64(unix_ms as f64))
+        .to_iso_string()
+        .as_string()
+        .unwrap_or_else(|| "未记录".to_owned())
+}
+
 fn overall_status(state: &AppState) -> (&'static str, Tone) {
     match (&state.snapshot, &state.poll_error) {
         (None, Some(_)) => ("连接失败", Tone::Bad),
@@ -3799,37 +3811,48 @@ fn render_notice(state: &AppState) -> Html {
 fn render_topology(snapshot: &StatusSnapshot) -> Html {
     let router = snapshot.router.data.as_ref();
     let proxy = snapshot.proxy.data.as_ref();
-    let internet_tone = match router {
-        Some(router)
-            if router.sta_state == Some(LinkState::Up)
-                && router.default_route_present == Some(true) =>
-        {
-            Tone::Good
-        }
-        Some(router) if router.sta_state == Some(LinkState::Connecting) => Tone::Warn,
-        Some(router)
-            if router.sta_state == Some(LinkState::Down)
-                || router.default_route_present == Some(false) =>
-        {
-            Tone::Bad
-        }
-        _ => Tone::Neutral,
-    };
-    let sta_detail = router.map_or_else(
-        || "等待链路数据".to_owned(),
-        |router| {
-            let ssid = router.sta_ssid.as_deref().unwrap_or(MISSING);
-            router.sta_signal_dbm.map_or_else(
-                || ssid.to_owned(),
-                |signal| format!("{ssid} · {signal} dBm"),
-            )
+    let tailscale = snapshot.tailscale.data.as_ref();
+    let active_uplink = router.and_then(|value| value.active_uplink);
+    let ethernet = router.and_then(|value| value.ethernet.as_ref());
+    let wifi = router.and_then(|value| value.wifi.as_ref());
+    let active_status = active_uplink.and_then(|uplink| match uplink {
+        UplinkId::Ethernet => ethernet,
+        UplinkId::Wifi => wifi,
+    });
+    let internet_tone = active_status
+        .map(|status| uplink_tone(Some(status)))
+        .unwrap_or_else(|| {
+            if [ethernet, wifi]
+                .into_iter()
+                .flatten()
+                .any(|status| status.session_up == Some(true))
+            {
+                Tone::Warn
+            } else if [ethernet, wifi]
+                .into_iter()
+                .flatten()
+                .all(|status| status.link_up == Some(false))
+            {
+                Tone::Bad
+            } else {
+                Tone::Neutral
+            }
+        });
+    let internet_detail = active_uplink.map_or_else(
+        || "没有确认的活动上行".to_owned(),
+        |uplink| {
+            let metric = active_status
+                .and_then(|status| status.default_route_metric)
+                .map_or_else(|| "未知".to_owned(), |metric| metric.to_string());
+            format!("活动 {} · 默认路由 metric {metric}", uplink_label(uplink))
         },
     );
     let router_detail = router.map_or_else(
         || "等待转发状态".to_owned(),
         |router| {
             format!(
-                "转发 {} · NAT {}",
+                "活动 {} · 转发 {} · NAT {}",
+                router.active_uplink.map(uplink_label).unwrap_or(MISSING),
                 router
                     .ipv4_forwarding
                     .map(format_bool)
@@ -3861,25 +3884,48 @@ fn render_topology(snapshot: &StatusSnapshot) -> Html {
             )
         },
     );
+    let tailscale_detail = tailscale.map_or_else(
+        || "Tailscale 状态不可用".to_owned(),
+        |tailscale| {
+            format!(
+                "{} · {}",
+                tailscale
+                    .effective_mode
+                    .map(tailscale_mode_label)
+                    .unwrap_or("未知"),
+                tailscale_proxy_status_label(tailscale)
+            )
+        },
+    );
 
     html! {
         <section class={TOPOLOGY} aria-labelledby="topology-title">
             <div class={SECTION_HEAD_CENTERED}>
                 <div><p class={EYEBROW}>{"PATH"}</p><h2 id="topology-title" class={SECTION_TITLE}>{"网络拓扑"}</h2></div>
-                <span class={SECTION_META}>{"从上游连接到管理 LAN 的实时路径"}</span>
+                <span class={SECTION_META}>{"Ethernet 优先，Wi-Fi 保持备用；下游同时经过 Router/NAT 与代理运行时"}</span>
             </div>
             <div class={TOPOLOGY_FLOW}>
-                {topology_node("WAN", "互联网", router.and_then(|value| value.sta_address.clone()).unwrap_or_else(|| "等待 WAN 地址".to_owned()), internet_tone)}
+                {topology_node("WAN", "互联网", internet_detail, internet_tone)}
                 {topology_link(internet_tone)}
-                {topology_node("STA", "上游 Wi-Fi", sta_detail, component_tone(&snapshot.router))}
-                {topology_link(component_tone(&snapshot.router))}
+                <div class={TOPOLOGY_UPLINKS}>
+                    <div class={TOPOLOGY_UPLINKS_HEAD}><span>{"上游双链路"}</span><span>{"Ethernet 优先 · Wi-Fi fallback"}</span></div>
+                    {topology_uplink_node("ETH", "Ethernet WAN", uplink_status_detail(ethernet), uplink_tone(ethernet), active_uplink == Some(UplinkId::Ethernet))}
+                    {topology_uplink_node("STA", "Wi-Fi WAN", wifi_uplink_status_detail(router), uplink_tone(wifi), active_uplink == Some(UplinkId::Wifi))}
+                </div>
+                {topology_link(internet_tone)}
                 {topology_node("RTR", "Router / NAT", router_detail, component_tone(&snapshot.router))}
                 {topology_link(component_tone(&snapshot.router))}
                 {topology_node("LAN", "AP / LAN", ap_detail, component_tone(&snapshot.router))}
             </div>
-            <div class={TOPOLOGY_PROXY_ROW}>
-                <span class={TOPOLOGY_BRANCH} aria-hidden="true">{"↳"}</span>
-                {topology_node("PX", "Mihomo / 代理数据面", proxy_detail, component_tone(&snapshot.proxy))}
+            <div class={TOPOLOGY_BRANCH_STACK}>
+                <div class={TOPOLOGY_PROXY_ROW}>
+                    <span class={TOPOLOGY_BRANCH} aria-hidden="true">{"↳"}</span>
+                    {topology_node("PX", "Mihomo / 代理数据面", proxy_detail, component_tone(&snapshot.proxy))}
+                </div>
+                <div class={TOPOLOGY_PROXY_ROW}>
+                    <span class={TOPOLOGY_BRANCH} aria-hidden="true">{"↳"}</span>
+                    {topology_node("TS", "Tailscale", tailscale_detail, component_tone(&snapshot.tailscale))}
+                </div>
             </div>
         </section>
     }
@@ -3890,6 +3936,29 @@ fn topology_node(icon: &'static str, title: &'static str, detail: String, tone: 
         <article class={TOPOLOGY_NODE}>
             <span class={classes!(TOPOLOGY_ICON, tone.class())} aria-hidden="true">{icon}</span>
             <span class={TOPOLOGY_COPY}><strong class={TOPOLOGY_TITLE}>{title}</strong><small class={TOPOLOGY_DETAIL} title={detail.clone()}>{detail}</small></span>
+        </article>
+    }
+}
+
+fn topology_uplink_node(
+    icon: &'static str,
+    title: &'static str,
+    detail: String,
+    tone: Tone,
+    active: bool,
+) -> Html {
+    html! {
+        <article class={TOPOLOGY_NODE}>
+            <span class={classes!(TOPOLOGY_ICON, tone.class())} aria-hidden="true">{icon}</span>
+            <span class={TOPOLOGY_COPY}>
+                <span class="flex min-w-0 items-center gap-2">
+                    <strong class={classes!(TOPOLOGY_TITLE, "truncate")}>{title}</strong>
+                    if active {
+                        <span class={TOPOLOGY_UPLINK_BADGE}>{"主用"}</span>
+                    }
+                </span>
+                <small class={TOPOLOGY_DETAIL} title={detail.clone()}>{detail}</small>
+            </span>
         </article>
     }
 }
@@ -3906,31 +3975,129 @@ fn component_tone<T>(component: &Component<T>) -> Tone {
     }
 }
 
+fn uplink_tone(status: Option<&UplinkStatus>) -> Tone {
+    let Some(status) = status else {
+        return Tone::Neutral;
+    };
+    if status.link_up == Some(false) {
+        Tone::Bad
+    } else if status.session_up == Some(false)
+        || status.address_present == Some(false)
+        || status.default_route_present == Some(false)
+    {
+        Tone::Warn
+    } else if status.link_up == Some(true)
+        && status.session_up == Some(true)
+        && status.address_present == Some(true)
+        && status.default_route_present == Some(true)
+        && status.gateway.is_some()
+    {
+        Tone::Good
+    } else {
+        Tone::Warn
+    }
+}
+
+fn uplink_status_detail(status: Option<&UplinkStatus>) -> String {
+    let Some(status) = status else {
+        return "状态不可用".to_owned();
+    };
+    let link = match status.link_up {
+        Some(true) => "链路正常",
+        Some(false) => "链路断开",
+        None => "链路未知",
+    };
+    let dhcp = match status.session_up {
+        Some(true) => "DHCP 已建立",
+        Some(false) => "DHCP 未建立",
+        None => "DHCP 未知",
+    };
+    let address = status.address.as_deref().unwrap_or(MISSING);
+    let gateway = status
+        .gateway
+        .map(|value| value.to_string())
+        .unwrap_or_else(missing);
+    let route = status
+        .default_route_metric
+        .map(|metric| format!("默认路由 metric {metric}"))
+        .unwrap_or_else(|| "默认路由未确认".to_owned());
+    format!("{link} · {dhcp} · IPv4 {address} · 网关 {gateway} · {route}")
+}
+
+fn wifi_uplink_status_detail(router: Option<&hyz_things::domain::status::RouterStatus>) -> String {
+    let detail = uplink_status_detail(router.and_then(|router| router.wifi.as_ref()));
+    let ssid = router
+        .and_then(|router| router.sta_ssid.as_deref())
+        .unwrap_or(MISSING);
+    let signal = router
+        .and_then(|router| router.sta_signal_dbm)
+        .map(|value| format!(" · 信号 {value} dBm"))
+        .unwrap_or_default();
+    format!("{detail} · SSID {ssid}{signal}")
+}
+
+fn uplink_label(uplink: UplinkId) -> &'static str {
+    match uplink {
+        UplinkId::Ethernet => "Ethernet",
+        UplinkId::Wifi => "Wi-Fi",
+    }
+}
+
+fn active_uplink_detail(router: Option<&hyz_things::domain::status::RouterStatus>) -> String {
+    router
+        .and_then(|router| router.active_uplink)
+        .map(|uplink| {
+            let metric = router
+                .and_then(|router| match uplink {
+                    UplinkId::Ethernet => router.ethernet.as_ref(),
+                    UplinkId::Wifi => router.wifi.as_ref(),
+                })
+                .and_then(|status| status.default_route_metric)
+                .map_or_else(|| "未知".to_owned(), |metric| metric.to_string());
+            format!("{} · metric {metric}", uplink_label(uplink))
+        })
+        .unwrap_or_else(|| "未确认".to_owned())
+}
+
+fn active_resolver_detail(router: Option<&hyz_things::domain::status::RouterStatus>) -> String {
+    router
+        .and_then(|router| router.active_resolver.as_ref())
+        .map(|resolver| {
+            let nameservers = resolver
+                .nameservers
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{} · {nameservers}", uplink_label(resolver.uplink))
+        })
+        .unwrap_or_else(|| "未确认".to_owned())
+}
+
 fn render_kpis(snapshot: &StatusSnapshot) -> Html {
     let router = snapshot.router.data.as_ref();
     let proxy = snapshot.proxy.data.as_ref();
-    let wan = router
-        .and_then(|value| value.sta_address.clone())
+    let ethernet = router.and_then(|value| value.ethernet.as_ref());
+    let wifi = router.and_then(|value| value.wifi.as_ref());
+    let active = active_uplink_detail(router);
+    let ethernet_address = ethernet
+        .and_then(|status| status.address.clone())
         .unwrap_or_else(missing);
-    let sta = router.map_or_else(missing, |router| {
-        let ssid = router.sta_ssid.as_deref().unwrap_or(MISSING);
-        router.sta_signal_dbm.map_or_else(
-            || ssid.to_owned(),
-            |signal| format!("{ssid} · {signal} dBm"),
-        )
-    });
+    let wifi_address = wifi
+        .and_then(|status| status.address.clone())
+        .unwrap_or_else(missing);
     let proxy_path = proxy.map(lan_tun_status_label).unwrap_or_else(missing);
     let clients = router
         .and_then(|value| value.ap_client_count)
-        .map(|value| format!("{value} 台"))
-        .unwrap_or_else(missing);
+        .map(|value| format!("{value} 台 · {proxy_path}"))
+        .unwrap_or_else(|| proxy_path.clone());
 
     html! {
         <section class={KPI_GRID} aria-label="关键网络指标">
-            {kpi("WAN IPv4", wan, "上游地址")}
-            {kpi("上游 Wi-Fi", sta, "当前连接")}
-            {kpi("LAN 代理", proxy_path, "透明代理 / 普通 NAT")}
-            {kpi("AP 客户端", clients, "下游设备")}
+            {kpi("活动上行", active, "Ethernet 优先 · Wi-Fi fallback")}
+            {kpi("Ethernet WAN", ethernet_address, "DHCP / 默认路由 metric 100")}
+            {kpi("Wi-Fi WAN", wifi_address, "DHCP / 默认路由 metric 600")}
+            {kpi("LAN 数据面", clients, "代理 TUN / 普通 NAT · AP 客户端")}
         </section>
     }
 }
@@ -3950,56 +4117,39 @@ fn render_dashboard(snapshot: &StatusSnapshot) -> Html {
     let proxy = &snapshot.proxy;
     let tailscale = &snapshot.tailscale;
     let system = &snapshot.system;
+    let router_data = router.data.as_ref();
     let router_rows = vec![
+        ("活动上行", active_uplink_detail(router_data)),
         (
-            "Wi-Fi",
-            router
-                .data
-                .as_ref()
-                .and_then(|v| v.sta_ssid.clone())
-                .unwrap_or_else(missing),
+            "Ethernet WAN",
+            uplink_status_detail(router_data.and_then(|v| v.ethernet.as_ref())),
         ),
-        (
-            "WAN IPv4",
-            router
-                .data
-                .as_ref()
-                .and_then(|v| v.sta_address.clone())
-                .unwrap_or_else(missing),
-        ),
-        (
-            "WAN 链路",
-            router
-                .data
-                .as_ref()
-                .and_then(|v| v.sta_state)
-                .map(link_state_label)
-                .unwrap_or(MISSING)
-                .to_owned(),
-        ),
+        ("Wi-Fi WAN", wifi_uplink_status_detail(router_data)),
+        ("活动解析器", active_resolver_detail(router_data)),
         (
             "LAN 地址",
-            router
-                .data
-                .as_ref()
+            router_data
                 .and_then(|v| v.lan_address.clone())
                 .unwrap_or_else(missing),
         ),
         (
             "AP 客户端",
-            router
-                .data
-                .as_ref()
+            router_data
                 .and_then(|v| v.ap_client_count)
                 .map(|v| format!("{v} 台"))
                 .unwrap_or_else(missing),
         ),
         (
             "IPv4 转发",
-            router
-                .data
-                .as_ref()
+            router_data
                 .and_then(|v| v.ipv4_forwarding)
+                .map(format_bool)
+                .unwrap_or_else(missing),
+        ),
+        (
+            "IPv4 NAT",
+            router_data
+                .and_then(|v| v.masquerade_enabled)
                 .map(format_bool)
                 .unwrap_or_else(missing),
         ),
@@ -4330,7 +4480,6 @@ fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf: &str) -> H
         .effective_mode
         .map(tailscale_mode_label)
         .unwrap_or("尚未就绪");
-    let connection = tailscale_connection_label(tailscale);
     let needs_login = tailscale.backend_state == TailscaleBackendState::NeedsLogin
         || tailscale.authenticated == Some(false)
             && tailscale.desired_mode != Some(TailscaleMode::Disabled);
@@ -4364,7 +4513,6 @@ fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf: &str) -> H
                 <dl class={METRIC_LIST}>
                     <div class={METRIC}><dt class={METRIC_LABEL}>{"认证"}</dt><dd class={METRIC_VALUE}>{tailscale.authenticated.map(|value| if value { "已认证" } else { "需要登录" }).unwrap_or("未知")}</dd></div>
                     <div class={METRIC}><dt class={METRIC_LABEL}>{"Tailscale IPv4"}</dt><dd class={METRIC_VALUE}>{tailscale.ipv4.map(|value| value.to_string()).unwrap_or_else(missing)}</dd></div>
-                    <div class={METRIC}><dt class={METRIC_LABEL}>{"连接"}</dt><dd class={METRIC_VALUE}>{connection}</dd></div>
                     <div class={METRIC}><dt class={METRIC_LABEL}>{"本地路由 / 防火墙"}</dt><dd class={METRIC_VALUE}>{format!("路由 {} · 防火墙 {}", tailscale.route_advertised.map(format_bool).unwrap_or_else(missing), tailscale.local_firewall_ready.map(format_bool).unwrap_or_else(missing))}</dd></div>
                 </dl>
                 {render_tailscale_peers(state)}
@@ -4714,33 +4862,11 @@ fn component_card_status<T>(component: &Component<T>) -> (&'static str, Tone) {
     }
 }
 
-fn link_state_label(state: LinkState) -> &'static str {
-    match state {
-        LinkState::Up => "已连接",
-        LinkState::Down => "已断开",
-        LinkState::Connecting => "连接中",
-        LinkState::Unknown => "未知",
-    }
-}
-
 fn tailscale_mode_label(mode: TailscaleMode) -> &'static str {
     match mode {
         TailscaleMode::Disabled => "已停用",
         TailscaleMode::RouterOnly => "RouterOnly（仅路由器）",
         TailscaleMode::LanSubnetAccess => "LAN Access",
-    }
-}
-
-fn tailscale_connection_label(status: &TailscaleStatus) -> String {
-    match status.connection.kind {
-        TailscaleConnectionType::Direct => "Direct".to_owned(),
-        TailscaleConnectionType::PeerRelay => "Peer Relay".to_owned(),
-        TailscaleConnectionType::Derp => status
-            .connection
-            .derp_region
-            .as_ref()
-            .map_or_else(|| "DERP".to_owned(), |region| format!("DERP · {region}")),
-        TailscaleConnectionType::Unknown => "未知".to_owned(),
     }
 }
 

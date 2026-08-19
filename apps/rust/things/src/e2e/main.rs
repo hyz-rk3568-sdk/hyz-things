@@ -39,7 +39,7 @@ use hyz_things::{
             MihomoCoreStatus, ProxyResourceState, ProxyStatus, RouterStatus, SnapshotState,
             StatusSnapshot, SystemStats, TailscaleConnectionStatus, TailscaleConnectionType,
             TailscaleExplicitProxyPath, TailscaleProxyFallback, TailscaleRouteApproval,
-            TailscaleStatus,
+            TailscaleStatus, UplinkId, UplinkStatus,
         },
         subscription::{SubscriptionSummary, SubscriptionSummaryState},
         tailscale::{
@@ -108,9 +108,7 @@ impl Default for HarnessCameraState {
                 },
                 access: hyz_things::domain::camera::CameraAccessKind::Lan,
                 error_category: None,
-                audio: Some(hyz_things::domain::camera::CameraAudioStatus {
-                    supported: true,
-                }),
+                audio: Some(hyz_things::domain::camera::CameraAudioStatus { supported: true }),
             },
             create_count: 0,
             close_count: 0,
@@ -180,6 +178,28 @@ impl Default for HarnessState {
                 ap_attached_to_lan: Some(true),
                 ipv4_forwarding: Some(true),
                 masquerade_enabled: Some(true),
+                ethernet: Some(UplinkStatus {
+                    link_up: Some(true),
+                    session_up: Some(true),
+                    address_present: Some(true),
+                    address: Some("192.0.2.20/24".to_owned()),
+                    default_route_present: Some(true),
+                    default_route_metric: Some(100),
+                    gateway: Some(Ipv4Addr::new(192, 0, 2, 1)),
+                    resolver_present: Some(true),
+                }),
+                wifi: Some(UplinkStatus {
+                    link_up: Some(true),
+                    session_up: Some(true),
+                    address_present: Some(true),
+                    address: Some("192.0.2.10/24".to_owned()),
+                    default_route_present: Some(true),
+                    default_route_metric: Some(600),
+                    gateway: Some(Ipv4Addr::new(192, 0, 2, 1)),
+                    resolver_present: Some(true),
+                }),
+                active_uplink: Some(UplinkId::Ethernet),
+                ..RouterStatus::default()
             }),
             proxy: Component::available(ProxyStatus {
                 configured: true,
@@ -235,11 +255,18 @@ impl Default for HarnessState {
             system: Component::available(SystemStats {
                 uptime_seconds: Some(3_600),
                 cpu_temperature_millidegrees: Some(46_000),
-                interfaces: vec![InterfaceStats {
-                    name: "wlan0".to_owned(),
-                    rx_bytes: 12_345_678,
-                    tx_bytes: 2_345_678,
-                }],
+                interfaces: vec![
+                    InterfaceStats {
+                        name: "eth0".to_owned(),
+                        rx_bytes: 23_456_789,
+                        tx_bytes: 4_567_890,
+                    },
+                    InterfaceStats {
+                        name: "wlan0".to_owned(),
+                        rx_bytes: 12_345_678,
+                        tx_bytes: 2_345_678,
+                    },
+                ],
             }),
             camera: HarnessCameraState::default(),
             panel: PanelSnapshot {
@@ -255,7 +282,7 @@ impl Default for HarnessState {
                 version: NETWORK_CONFIG_VERSION,
                 ap_ssid: ssid("HYZ Router E2E"),
                 sta_ssid: ssid("E2E-Upstream"),
-                country: WifiCountry::Us,
+                country: WifiCountry::Cn,
             },
             pending_network: None,
             pending_network_applied: false,
@@ -307,6 +334,7 @@ fn e2e_installed_apps() -> Vec<InstalledApp> {
             binary: "/usr/bin/hyz-router".to_owned(),
             init_script: "/etc/init.d/S81hyz-router".to_owned(),
             sha256: Some("e2e-router-sha-0001".to_owned()),
+            deployed_at_unix_ms: Some(1_700_000_000_000),
             protocol_versions: versions(&[("router", 2)]),
         },
         InstalledApp {
@@ -314,6 +342,7 @@ fn e2e_installed_apps() -> Vec<InstalledApp> {
             binary: "/usr/bin/hyz-things".to_owned(),
             init_script: "/etc/init.d/S83hyz-things".to_owned(),
             sha256: Some("e2e-things-sha-0001".to_owned()),
+            deployed_at_unix_ms: Some(1_700_000_100_000),
             protocol_versions: versions(&[("router", 2), ("camera", 1)]),
         },
         InstalledApp {
@@ -321,6 +350,7 @@ fn e2e_installed_apps() -> Vec<InstalledApp> {
             binary: "/usr/bin/hyz-camera".to_owned(),
             init_script: "/etc/init.d/S82hyz-camera".to_owned(),
             sha256: Some("e2e-camera-sha-0001".to_owned()),
+            deployed_at_unix_ms: Some(1_700_000_200_000),
             protocol_versions: versions(&[("camera", 1)]),
         },
     ];

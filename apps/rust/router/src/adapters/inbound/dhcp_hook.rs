@@ -1,12 +1,12 @@
 use crate::{
     application::{
         dhcp::{
-            DhcpEvent, DhcpGeneration, DhcpLease, DhcpTransition, DHCP_GENERATION_ENV,
-            DHCP_HOOK_ROLE_ENV,
+            DhcpEvent, DhcpGeneration, DhcpLease, DhcpTransition, DhcpUplink, DHCP_GENERATION_ENV,
+            DHCP_HOOK_ROLE_ENV, DHCP_UPLINK_ENV,
         },
         ports::PlatformError,
     },
-    domain::network::WAN_INTERFACE,
+    domain::network::{ETHERNET_WAN_INTERFACE, WIFI_WAN_INTERFACE},
 };
 use std::net::Ipv4Addr;
 
@@ -36,9 +36,22 @@ pub fn parse_dhcp_event(
             PlatformError::InvalidState("DHCP hook generation is absent".to_owned())
         })?)
         .map_err(|message| PlatformError::InvalidState(message.to_owned()))?;
-    if get("interface").as_deref() != Some(WAN_INTERFACE) {
+    let uplink = match get(DHCP_UPLINK_ENV).as_deref() {
+        Some("wifi") => DhcpUplink::Wifi,
+        Some("ethernet") => DhcpUplink::Ethernet,
+        _ => {
+            return Err(PlatformError::InvalidState(
+                "DHCP hook uplink is absent or invalid".to_owned(),
+            ))
+        }
+    };
+    let expected_interface = match uplink {
+        DhcpUplink::Ethernet => ETHERNET_WAN_INTERFACE,
+        DhcpUplink::Wifi => WIFI_WAN_INTERFACE,
+    };
+    if get("interface").as_deref() != Some(expected_interface) {
         return Err(PlatformError::InvalidState(
-            "DHCP hook interface is not the managed WAN".to_owned(),
+            "DHCP hook interface does not match the managed uplink".to_owned(),
         ));
     }
     let transition = match action {
@@ -83,7 +96,7 @@ pub fn parse_dhcp_event(
             ))
         }
     };
-    Ok(DhcpEvent::new(generation, transition))
+    Ok(DhcpEvent::new(uplink, generation, transition))
 }
 
 fn parse_ipv4(value: Option<String>, label: &str) -> Result<Ipv4Addr, PlatformError> {
@@ -192,6 +205,7 @@ mod tests {
     fn parser_is_typed_and_preserves_route_inputs() {
         let values = [
             (DHCP_GENERATION_ENV, "dhcp-test-generation"),
+            (DHCP_UPLINK_ENV, "wifi"),
             ("interface", "wlan0"),
             ("ip", "192.0.2.5"),
             ("subnet", "255.255.255.0"),
@@ -209,5 +223,26 @@ mod tests {
         .unwrap();
         assert!(matches!(event.transition, DhcpTransition::Lease { .. }));
         assert!(netmask_prefix("255.0.255.0").is_err());
+    }
+
+    #[test]
+    fn ethernet_hook_is_a_normal_typed_dhcp_event() {
+        let values = [
+            (DHCP_GENERATION_ENV, "dhcp-test-generation"),
+            (DHCP_UPLINK_ENV, "ethernet"),
+            ("interface", "eth0"),
+            ("ip", "192.0.2.5"),
+            ("subnet", "255.255.255.0"),
+            ("router", "192.0.2.1"),
+        ];
+        let event = parse_dhcp_event("bound", |key| {
+            values
+                .iter()
+                .find(|(name, _)| *name == key)
+                .map(|(_, value)| (*value).to_owned())
+        })
+        .expect("Ethernet hook must parse into a dispatchable event");
+        assert_eq!(event.uplink, DhcpUplink::Ethernet);
+        assert!(matches!(event.transition, DhcpTransition::Lease { .. }));
     }
 }
