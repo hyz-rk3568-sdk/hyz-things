@@ -21,7 +21,7 @@
 - 可选的本机摄像头 WebRTC 实时观看；
 - 可选的 Mihomo 显式代理与 TUN 透明代理。
 
-当前 Wi-Fi-only 增量的实现与验证状态：
+当前源码、主机测试与板端基线的实现状态：
 
 - Buildroot 源码保留固定的 Mihomo `v1.19.29` Linux ARM64 官方静态二进制包、SHA-256 和许可证哈希；
 - 历史固件曾验证 MetaCubeXD 静态文件安装，但 Controller 从未启用；该冗余包现已从源码删除；
@@ -39,9 +39,13 @@
 - 统一 Web UI 的状态、LCD/代理模式、节点选择和受控延迟刷新已完成板端功能验证；inline proxies 组级测速、超时标记和后续 panel 缓存已按 16/16 匿名覆盖验证；S81 已改为总 deadline 内封顶退避，并通过最终 recovery-free OTA 的冷启动和 restart 验证；
 - 管理员认证、强制首次改密、默认折叠登录表单、typed AP/STA 设置、两阶段 AP 回滚和 write-only Mihomo HTTPS 订阅更新已经进入 hyz-things 门户；错误 STA 自动恢复、AP 未确认超时回滚、无秘密摘要以及凭据型订阅刷新已通过板测，成功切换另一组真实 STA 和管理员实际改密仍待操作者输入本地凭据；
 - 独立 `hyz-camera`、受限 HTTP SDP 信令、V4L2 + GStreamer + Rockchip MPP H.264、`str0m` 和固定 UDP 端口池已进入最终 recovery-free OTA；固定 `1920×1080 @ 30 FPS` 中央裁剪、full-range H.264 SPS/VUI、真实 canvas 非黑像素和全屏交互已通过 LAN 与 Tailscale、桌面与移动端四组真实 MJS/Playwright 播放/停止验收；
-- 三进程拆分（无头 `hyz-router` + `hyz-things` 门户 + `hyz-camera` 媒体）已完成：`deploy-app.sh` 只支持热推送 things/camera，且不重启 router；router 修改统一走 recovery-free OTA，协议版本不匹配时在停止服务前拒绝；
-- 门户 UI 改为 `首页 / 路由器 / 摄像头` 形态：首页聚合应用入口、`/api/v1/apps` 热推送部署记录与运行概览；摄像头直播免登录可看（15 分钟短时 viewer 令牌），画面分辨率与旋转设置保留管理员专属；
-- DNS 接管、8 小时路由+代理稳定性、节点全部失效/live-hang 自动回退仍未完成，因此代理 Epic 仍不得整体标记完成。
+- 门户 UI 已改为 `首页 / 路由器 / 摄像头` 形态：首页聚合应用入口、`/api/v1/apps` 热推送部署记录与运行概览；摄像头直播免登录可看（15 分钟短时 viewer 令牌），画面分辨率与旋转设置保留管理员专属；
+- 三进程拆分（无头 `hyz-router` + `hyz-things` 门户 + `hyz-camera` 媒体）已完成：`deploy-app.sh` 只支持热推送 things/camera，且不重启 router；协议版本不匹配时在停止服务前拒绝；
+- router 开发/授权维护的热替换规则已固定：USB ADB 先上传、校验并备份，再执行 `stop → 原子替换 → start`；网络 ADB（物理 LAN 或 TCP 5555 可达的 Tailscale 路径）在旧进程仍运行时完成校验、备份和原子替换，再执行 `reboot`；正式发布仍通过 recovery-free OTA；
+- `hyz-router` 源码与主机测试已完成 typed `Ethernet/Wi-Fi` 双上游、metric `100/600`、active uplink、按 uplink 隔离的 DHCP/resolver ownership、双出口 firewall/status，以及管理页面的双上游展示；完整板端切换矩阵仍待验收；
+- Tailscale 状态已支持本机/peer、active、online/offline、direct/relay、last seen、收发流量；UDP `41641` 的 runtime-owned WAN INPUT 同时覆盖固定 `eth0` 和 `wlan0`；
+- Tailscale 显式代理路径已增加固定 `controlplane.tailscale.com:443` CONNECT 探测：连续 3 次确认不可用时运行时回退 Direct，`unknown` 不触发回退；Direct 冷却 30 秒后自动恢复 `MihomoExplicit`，且不修改用户持久化开关。该逻辑已通过主机测试，板端故障注入仍待验证；
+- DNS 接管、8 小时路由+代理稳定性、所有代理节点失效和 Mihomo live-hang 自动回退仍未完成，因此代理 Epic 仍不得整体标记完成。
 
 变化的是上游接入方式，不是 LAN 拓扑。完整基础产品必须支持：
 
@@ -163,12 +167,14 @@ RouterOnly ready 不代表 LAN subnet 已开放，LanSubnetAccess 也不代表�
 
 ## 4. 当前实现状态
 
-当前实现是完整产品的 Wi-Fi-only 增量：
+当前板端已验收基线仍是 Wi-Fi-only；源码与主机测试已扩展固定双上游目标拓扑：
 
 ```text
-WAN = wlan0 STA DHCP，metric 600
-LAN = br-lan = p2p0
+WAN = eth0 DHCP，metric 100；wlan0 STA DHCP，metric 600
+LAN = br-lan = eth1 + p2p0
 ```
+
+板端已完成的基线仍是 `wlan0` 上游和 `br-lan = p2p0`；`eth1`、`eth0` DHCP、双上游切换和完整 `br-lan` 拓扑尚未完成同等范围的实机验收。
 
 已建立的基础包括：
 
@@ -177,22 +183,21 @@ LAN = br-lan = p2p0
 - 无头 `hyz-router`：root-only control socket、ready 标记门控，以及各进程独立的 Rust composition root；
 - 保守的 ownership、readiness、rollback、management-only、shutdown 和 fail-open；
 - Mihomo `explicit`、`tun`、`disabled`，以及核心退出时回退普通 NAT；
+- typed `Ethernet/Wi-Fi` uplink model、独立 DHCP generation/address/route/resolver ownership、active uplink 选择、metric `100/600`、双出口 firewall 和按 uplink 输出状态已完成源码与主机测试；
 - recovery-free OTA、固定 staging、RKFW/SHA-256 和 BCB 验证；
 - `hyz-things` 门户：内嵌 Yew 状态与受限本地控制页面、管理员认证、LAN/Tailscale exact listeners；
 - 独立 `hyz-camera`、固定媒体 profile、LAN/Tailscale WebRTC 和真实设备自动验收；
-- 受协议兼容检查保护的 `deploy-app.sh` 热推送：只推送 camera/things，不重启 router；router 修改走 OTA。
+- `deploy-app.sh` 受协议兼容检查保护，只推送 camera/things，不重启 router；router 的 USB/network ADB 开发热替换路径与正式 OTA 边界已另行固定。
 
-当前尚未完成：
+当前仍未完成的事项：
 
-- `eth1` 加入 `br-lan`；
-- DHCP 地址池源码已从 `.100-.199` 扩展到 `.100-.249`，host golden/边界与 lease 不删除契约测试已通过；现有 lease 兼容和边界分配仍待板端验证；
-- `eth0` DHCP；
-- 有线和 Wi-Fi 默认路由共存与自动切换；
-- 每个 uplink 独立的 DHCP、route 和 DNS ownership；
+- `eth1` 加入 `br-lan`、`eth0` DHCP、双上游在线共存、Ethernet 优先和 Wi-Fi 热备用的完整板端验收；
+- DHCP 地址池 `.100-.249` 的现有 lease 兼容、`.200`/`.249` 边界地址和 SR-09 设备矩阵；源码 golden、边界与 lease 不删除契约测试已通过；
+- 在线插拔、20 次切换、8 小时稳定性、客户端 DNS/HTTPS 和 management-only 故障注入；
 - PPPoE、可选 VLAN、`ppp0` 防火墙和 MTU/MSS；
 - 家庭网络黑匣子的结构化事件、指标、断网时间线和诊断快照；
 - 本地 DNS 过滤、家庭域名和按客户端策略；
-- Tailscale RouterOnly 与固定 LAN subnet access 已完成代码、构建、recovery-free OTA 和板端/Tailnet 验收；
+- 既有 Tailscale RouterOnly/LanSubnetAccess 的板端/Tailnet 验收记录已保留；本次新增的双 WAN `41641` 防火墙规则和显式代理 Direct fallback/recovery 仍待部署新 router ELF 后做板端验证；
 - 完整基础产品及上述可选能力的稳定性和端到端测试矩阵。
 
 历史和板端验证记录：
@@ -544,6 +549,9 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 3. 普通 NAT 对当前 active uplink 保持可用。
 4. unknown 或 foreign process、rule、route 不被当作 owned。
 5. shutdown 先撤销代理，再撤销普通 forwarding。
+6. 当用户持久化启用 Tailscale 显式代理且运行时环境为 `MihomoExplicit` 时，使用固定 `controlplane.tailscale.com:443` 目标，经 `127.0.0.1:7890` 发送固定 HTTP CONNECT；探测前后确认 Mihomo 进程身份和 listener 未被替换，只接受完整合法的 HTTP `200` 响应。
+7. 显式代理路径连续 3 次确认不可用后，运行时回退到 `Direct`；探测结果为 `unknown` 时保持当前环境，不触发回退；回退不修改用户持久化的显式代理开关。
+8. 进入 `Direct` 后按 30 秒冷却窗口重新探测；路径恢复且 `MihomoExplicit` 切回成功后，运行时环境恢复为显式代理；恢复失败继续保持 `Direct`。
 
 ### PX-04：提供受限管理页面
 
@@ -565,6 +573,9 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 3. 代理关闭后不残留 rule、route、mark、process 或端口。
 4. 管理 API 和代理端口从 WAN 不可达。
 5. 运行至少 8 小时路由+代理稳定性测试。
+6. Tailscale 显式代理开启时，固定 control-plane CONNECT 探测、3 次确认失败后的 `Direct` 回退、`unknown` 不误回退、30 秒后恢复 `MihomoExplicit` 以及持久化开关不变必须可重复；该项源码和主机测试已通过，板端故障注入仍待执行。
+
+当前已完成的是固定 Tailscale control-plane 路径的可用性保护，不等同于“所有代理节点失效”或 Mihomo live-hang 的完整质量判断；后两者以及 DNS 接管仍属于未完成范围。
 
 ## 8. 非功能要求
 
@@ -607,22 +618,24 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 
 详细实施顺序、下游无扰动边界、TDD、回滚和板端矩阵见 [`soft-router-ethernet-dhcp-plan.md`](plan/soft-router-ethernet-dhcp-plan.md)。
 
-- [ ] 将固定 `WAN_INTERFACE=wlan0` 重构为受限 typed uplink model。
-- [ ] 保持现有 Wi-Fi-only 行为不变地完成第一步 domain/application 重构。
-- [ ] 将 network observed state 改为按 Ethernet、Wi-Fi 和 active uplink 分别观察。
-- [ ] 将 DHCP event、generation、地址、route 和 resolver ownership 按 uplink 隔离。
-- [ ] 将 `eth1` 加入 `br-lan`，实现 `br-lan = eth1 + p2p0`。
-- [ ] 将 DHCP 地址池从 `.100-.199` 扩展到 `.100-.249`，保留合法 lease 并验收边界地址。
-- [ ] 验证 AP 失败不影响 `eth1`，`eth1` 插拔不影响 AP。
-- [ ] 实现 `eth0` carrier 和 DHCP lifecycle。
-- [ ] 安装 `eth0` metric `100` 与 `wlan0` metric `600` 默认路由。
-- [ ] 实现有线优先、Wi-Fi 热备用和新连接自动切换。
+**状态口径：** 以下 `[x]` 表示源码、静态检查和主机测试已完成，或已有明确板端证据；标注“板端待验收”的条目不能替代 SR-09 实机矩阵。
+
+- [x] 将固定 `WAN_INTERFACE=wlan0` 重构为受限 typed uplink model。
+- [x] 保持现有 Wi-Fi-only 行为不变地完成第一步 domain/application 重构。
+- [x] 将 network observed state 改为按 Ethernet、Wi-Fi 和 active uplink 分别观察。
+- [x] 将 DHCP event、generation、地址、route 和 resolver ownership 按 uplink 隔离。
+- [x] 将 `eth1` 加入 `br-lan` 的 lifecycle、ownership 和独立修复动作加入源码及主机测试；板端拓扑仍待验收。
+- [x] 将 DHCP 地址池从 `.100-.199` 扩展到 `.100-.249`，源码 golden、边界地址和合法 lease 不删除契约测试已通过；板端现有 lease 兼容仍待验收。
+- [x] 验证 AP 失败不影响 `eth1`、`eth1` 插拔不影响 AP 的 application planner 和 fake-port 边界；板端插拔仍待验收。
+- [x] 实现 `eth0` carrier 和 DHCP lifecycle；板端 carrier、租约和回收仍待验收。
+- [x] 安装 `eth0` metric `100` 与 `wlan0` metric `600` 默认路由。
+- [x] 实现有线优先、Wi-Fi 热备用和新连接自动切换的 typed 选择与 runtime reconcile；板端切换仍待验收。
 - [ ] 验证在线插线期间 LAN 地址、合法 lease、AP、`eth1`、dnsmasq 和管理入口不变；有线严格 ready 前新连接继续使用 Wi-Fi。
-- [ ] 让 dnsmasq 原子使用当前 active uplink 的 resolver set，并验证同地址 DNS 的 ownership 隔离。
-- [ ] 将普通 NAT/FORWARD 扩展到 `eth0` 与 `wlan0` 固定出口。
-- [ ] 增加 WAN INPUT 默认拒绝和 DHCP 所需精确例外，并从两个 WAN 验证。
-- [ ] 更新 status、CLI、Web 状态和问题报告以显示每个 uplink 与 active resolver set。
-- [ ] 用 fake ports 覆盖 exact action order、rollback、stale callback 和 unknown rejection。
+- [x] 让 dnsmasq 原子使用当前 active uplink 的 resolver set，并按 uplink/generation 隔离同地址 DNS 的 ownership；板端切换仍待验收。
+- [x] 将普通 NAT/FORWARD 扩展到 `eth0` 与 `wlan0` 固定出口，并覆盖 dual-WAN firewall rule golden；板端数据面仍待验收。
+- [x] 增加 WAN INPUT 默认拒绝和 DHCP 所需精确例外，并覆盖两个 WAN 的 exact rule 测试；板端入站边界仍待验收。
+- [x] 更新 status、CLI、Web 状态和问题报告以显示每个 uplink 与 active resolver set。
+- [x] 用 fake ports 覆盖 exact action order、rollback、stale callback 和 unknown rejection。
 - [x] 构建并安装包含 S81 封顶指数退避修正的新固件，并完成自动冷启动验收。
 - [ ] 在强制 forwarding/WAN 故障下重新验收 management-only 可访问性。
 - [ ] 完成客户端 DNS/HTTPS、上游换信道和多客户端持续流量测试。
@@ -681,10 +694,12 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 - [x] 路由器自身保持 `accept-dns=false`，Tailscale 不得覆盖 active uplink resolver ownership 或本地 DNS 决策。
 - [x] 为 `tailscale0` 安装独立、最小、runtime-owned 防火墙规则，不把该接口等同于可信 LAN。
 - [x] Tailscale 登录、控制面、DERP 或进程失败不得影响 LAN、DHCP、DNS、普通 NAT、uplink fallback、management-only 或 router readiness；代码包含独立降级和保守清理路径。
-- [x] Tailscale 连接策略不把 direct 作为 readiness 条件；当前固定状态 schema 无法证明活动 peer 路径时保守显示 `unknown`，不猜测 direct/relay。
-- [x] 为公网 IPv6/IPv4 direct 使用固定 UDP `41641` 和精确 WAN INPUT 规则；未满足 direct 条件时不得因此判定 Tailscale 不可用。
-- [x] 状态只显示 enabled、authenticated、可证明的连接类型和错误类别，不返回 node key、auth key、完整登录 URL 历史或 peer secret。
-- [ ] 验证首次登录、注销、重启、失去公网、上联切换、OTA 保留、恢复出厂清理和 8 小时稳定性。
+- [x] Tailscale 连接策略不把 direct 作为 readiness 条件；当前状态保留可证明的 direct/relay/DERP/unknown，并不猜测未知路径。
+- [x] 为公网 IPv6/IPv4 direct 使用固定 UDP `41641`，runtime-owned WAN INPUT 同时覆盖固定 `eth0` 和 `wlan0`；未满足 direct 条件时不得因此判定 Tailscale 不可用。
+- [x] 状态显示 enabled、authenticated、本机/peer 的 online/offline、active、direct/relay、last seen、收发流量和错误类别，不返回 node key、auth key、完整登录 URL 历史或 peer secret。
+- [x] 首次登录、认证冷启动、重启后状态保留、route approval 前置条件、远程管理和固定 LAN subnet HTTP 路径已有板端/Tailnet 验收记录。
+- [x] Tailscale 显式代理路径的固定 CONNECT 探测、连续 3 次失败回退 Direct、`unknown` 不回退、Direct 冷却 30 秒恢复 `MihomoExplicit` 和持久化开关不变已通过主机测试；板端故障注入仍待验证。
+- [ ] 注销、恢复出厂清理、失去公网/上联切换、新增 router 逻辑的 OTA/热替换后保留验证和 8 小时稳定性仍待补齐。
 
 ### P5：增加 Tailscale LAN subnet access
 
@@ -694,34 +709,28 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 - [x] 默认拒绝 `br-lan -> tailscale0` 主动新连接，并继续拒绝 `tailscale0 -> WAN`；第一版不提供 exit node。
 - [ ] 将 Tailscale 远程客户端访问本地 DNS 中心和 `home.arpa` 作为独立受控选项，不改变路由器自身 DNS。
 - [x] mode disable、注销、进程退出和 shutdown 的代码路径清理 subnet route、forwarding rule 和监听端口，并保留严格 ownership 检查。
-- [x] 验证远程管理、LAN 设备访问、DNS、ACL/Grants 拒绝、WAN 切换、控制面离线和故障回退。
+- [x] 已验证 RouterOnly 远程管理、route approval 后的固定 subnet HTTP 访问、控制面离线和故障回退；远端 LAN 设备的 Grants 授权访问、SSH/其他服务和远程 DNS 仍待验证。
 - [x] 板端证明 Tailscale subnet 功能失败不会改变 Complete Router Baseline 或 RouterOnly 的安全边界。
 
 ### P6：让代理适配多 uplink
 
-- [ ] 将 proxy readiness 从固定 `wlan0` 改为已确认 active uplink。
-- [ ] 验证 Ethernet DHCP、Wi-Fi fallback 和 PPPoE 下的 explicit/TUN。
-- [ ] 验证 WAN 切换后 Mihomo 新连接跟随主路由表。
-- [ ] 验证 core crash 后普通 NAT 回到当前 active uplink。
-- [ ] 完成 DNS 接管、节点全部失效和 live-hang 回退策略。
+- [x] 将 proxy readiness 从固定 `wlan0` 改为已确认 active uplink；源码、主机测试和状态/UI 已同步。
+- [ ] 验证 Ethernet DHCP、Wi-Fi fallback 和 PPPoE 下的 explicit/TUN；双 DHCP 的板端矩阵仍待执行，PPPoE 尚未实现。
+- [x] Mihomo TUN 记录并校验 active uplink gateway，WAN 切换时 planner 会要求重新收敛；双上游板端新连接验证仍待执行。
+- [x] core crash 后普通 NAT 回退和 active uplink 依赖已覆盖现有 Wi-Fi 板测及主机测试；双上游板端故障注入仍待执行。
+- [x] 固定 Tailscale control-plane CONNECT 探测和显式代理 Direct fallback/recovery 已完成代码与主机测试；所有代理节点失效、DNS 接管和 Mihomo live-hang 的完整策略仍未完成。
 - [ ] 完成路由+代理 8 小时稳定性测试。
 
 ## 11. 推荐实施顺序
 
-1. 保持当前 Wi-Fi-only 行为，先引入 typed uplink 和按 uplink ownership。
-2. 完成固定 LAN：`br-lan = eth1 + p2p0`。
-3. 实现 Ethernet DHCP 和 metric `100`。
-4. 实现 Ethernet/Wi-Fi 共存、Wi-Fi metric `600` 和自动 fallback。
-5. 完成 DHCP 双上游 NAT、DNS、状态和 SR-09 测试。
-6. 完成当前稳定性与 management-only 故障降级遗留项。
-7. 实现 PPPoE 系统能力、安全配置和 `ppp0` lifecycle。
-8. 实现 PPPoE NAT、MTU/MSS、DNS 和 Wi-Fi fallback。
-9. 完成 PW-05 和完整基础产品验收。
-10. 在基础路由事件产生点加入结构化事件，完成网络黑匣子的有界存储、断网时间线、指标和诊断快照。
-11. 集成固定 DNS 过滤引擎，完成家庭域名、按客户端策略、active resolver 原子切换和隐私边界。
-12. 集成 Tailscale `RouterOnly`，只开放受限远程管理，不允许 LAN/WAN forwarding。
-13. 在 RouterOnly 稳定后增加固定 `192.168.8.0/24` 的 `LanSubnetAccess`，继续禁止 exit node。
-14. 最后补齐 Mihomo 对 Ethernet、Wi-Fi fallback、PPPoE、本地 DNS 中心和 Tailscale 共存场景的组合测试。
+1. 已完成源码和主机测试：typed uplink、按 uplink ownership、固定 LAN 生命周期、Ethernet DHCP、metric `100/600`、双出口 firewall、active resolver 和状态/UI。
+2. 当前优先按 USB ADB 或网络 ADB 热替换规则部署新 router ELF，补齐 `br-lan = eth1 + p2p0`、Ethernet DHCP、Ethernet/Wi-Fi 共存和 WAN 切换的板端验证；网络 ADB 路径不能先 stop。
+3. 完成 SR-09 的在线插拔、20 次切换、management-only 故障注入、客户端 DNS/HTTPS、多客户端和 8 小时稳定性矩阵。
+4. 在 DHCP 双上游基线稳定后，实现 PPPoE 系统能力、安全配置、`ppp0` lifecycle、NAT、MTU/MSS、DNS、Wi-Fi fallback 和 PW-05。
+5. 在基础路由事件产生点加入结构化事件，完成网络黑匣子的有界存储、断网时间线、指标和诊断快照。
+6. 集成固定 DNS 过滤引擎，完成家庭域名、按客户端策略、active resolver 原子切换和隐私边界。
+7. Tailscale `RouterOnly` 与固定 `192.168.8.0/24` 的 `LanSubnetAccess` 已完成主要代码和既有板端/Tailnet 验收；继续补齐注销、恢复出厂、Grants 授权的远端 LAN 设备访问、远程 DNS 和长时间稳定性。
+8. 最后补齐 Mihomo 对 Ethernet、Wi-Fi fallback、PPPoE、本地 DNS 中心和 Tailscale 共存场景的组合测试，并完成显式代理路径故障注入、所有代理节点失效和 live-hang 策略。
 
 每一步都先更新 domain desired/observed model 和 fake-port 测试，再扩展 application planner，最后实现 Linux adapter。不得以 shell wrapper、任意字符串命令或浏览器直接配置 Linux 资源绕过架构。
 
