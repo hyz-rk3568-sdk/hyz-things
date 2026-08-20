@@ -36,6 +36,8 @@ use zeroize::Zeroizing;
 const O_NOFOLLOW: i32 = 0o400000;
 const SUBSCRIPTION_USER_AGENT: &str = "clash.meta";
 const SUBSCRIPTION_ACCEPT: &str = "application/yaml, text/yaml, text/plain";
+const SUBSCRIPTION_ACCEPT_ENCODING: &str = "identity";
+const SUBSCRIPTION_CONNECTION: &str = "close";
 const URL_FILE: &str = "subscription.url";
 const STATUS_FILE: &str = "status";
 const CURRENT_FILE: &str = "current";
@@ -121,7 +123,7 @@ impl UreqSubscriptionTransport {
             .max_redirects(0)
             .user_agent(SUBSCRIPTION_USER_AGENT)
             .accept(SUBSCRIPTION_ACCEPT)
-            .accept_encoding("")
+            .accept_encoding(SUBSCRIPTION_ACCEPT_ENCODING)
             .timeout_global(Some(Duration::from_secs(30)))
             .tls_config(TlsConfig::builder().provider(TlsProvider::Rustls).build())
             .build();
@@ -145,6 +147,7 @@ impl SubscriptionTransportPort for UreqSubscriptionTransport {
         let mut response = self
             .agent
             .get(secret.as_str())
+            .header("Connection", SUBSCRIPTION_CONNECTION)
             .call()
             .map_err(|_| PlatformError::Io("subscription HTTPS request failed".to_owned()))?;
         if response.status().is_redirection() {
@@ -660,10 +663,23 @@ mod tests {
             other => panic!("unexpected subscription Accept configuration: {other:?}"),
         }
         assert_eq!(config.max_redirects(), 0);
-        assert!(matches!(
-            config.accept_encoding(),
-            ureq::config::AutoHeaderValue::None
-        ));
+        match config.accept_encoding() {
+            ureq::config::AutoHeaderValue::Provided(value) => {
+                assert_eq!(value.as_str(), SUBSCRIPTION_ACCEPT_ENCODING);
+            }
+            other => panic!("unexpected subscription Accept-Encoding configuration: {other:?}"),
+        }
+        let request = transport
+            .agent
+            .get("https://example.invalid/")
+            .header("Connection", SUBSCRIPTION_CONNECTION);
+        assert_eq!(
+            request
+                .headers_ref()
+                .and_then(|headers| headers.get("Connection"))
+                .and_then(|value| value.to_str().ok()),
+            Some(SUBSCRIPTION_CONNECTION)
+        );
     }
 
     #[test]
