@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+
+exec /usr/bin/tailscale --socket /run/hyz-tailscale/tailscaled.sock "$@"

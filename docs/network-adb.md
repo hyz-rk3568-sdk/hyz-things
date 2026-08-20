@@ -61,6 +61,15 @@ router 开发热替换不使用 `deploy-app.sh`；网络 ADB 路径必须遵循 
 
 Tailscale 地址可以作为网络 ADB 地址使用，但必须由设备防火墙明确允许 TCP 5555。网络 ADB router 热替换仍必须使用“原子替换、reboot”流程；不能通过 Tailscale ADB 先执行 router stop，因为 shutdown 可能同时清理 Tailscale runtime，导致控制通道断开。
 
+板端 Tailscale 使用 root-only 私有 socket `/run/hyz-tailscale/tailscaled.sock`。rootfs 提供固定 helper，检查状态时使用：
+
+```sh
+hyz-tailscale status
+hyz-tailscale netcheck
+```
+
+不要创建公开的 `/var/run/tailscale/tailscaled.sock` 兼容链接；这会绕过产品的私有 socket 安全边界。
+
 ## 传输注意
 
 - 网络 ADB 不做大文件 `adb push`（可能长时间停在部分文件大小）；OTA
