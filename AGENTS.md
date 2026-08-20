@@ -88,6 +88,16 @@ composition root in its own Cargo package:
 
 测试即文档。
 
+### Red-Green-Refactor（强制流程）
+
+所有行为或代码变更必须按以下顺序循环，不能只做到测试变绿：
+
+1. **Red**：先写一个只描述单一外部行为的失败测试；运行最小范围测试，确认失败原因正是缺少该行为。
+2. **Green**：用最小实现让测试通过，不夹带无关功能或重构。
+3. **Refactor**：测试变绿后必须整理代码和测试，消除重复、收敛抽象、修正依赖方向或改善命名；每次整理后重新运行测试。没有完成 Refactor，就不能视为任务完成。
+
+一次只推进一个行为；完成 Refactor 后再补边界、错误、回滚和并发场景，并继续从 Red 开始下一轮。
+
 ### Test guardrails
 
 - 测试通过 domain 函数、application 用例、ports、`ControlHandler`（router
