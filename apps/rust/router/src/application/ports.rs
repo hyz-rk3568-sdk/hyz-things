@@ -149,6 +149,7 @@ pub trait SubscriptionTransportPort: Send + Sync {
 
 pub trait SubscriptionStorePort: Send + Sync {
     fn store_url(&self, url: &SubscriptionUrl) -> Result<(), PlatformError>;
+    fn clear_url(&self) -> Result<(), PlatformError>;
     fn load_url(&self) -> Result<Option<SubscriptionUrl>, PlatformError>;
     fn store_subscription_status(&self, status: &SubscriptionStatus) -> Result<(), PlatformError>;
     fn load_subscription_status(&self) -> Result<Option<SubscriptionStatus>, PlatformError>;

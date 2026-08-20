@@ -1138,8 +1138,7 @@ impl ControlHandler for ProductionRuntime {
                             clock: platform.as_ref(),
                         },
                     );
-                    subscription.set_url(url.expose().to_owned())?;
-                    subscription.refresh()
+                    subscription.replace_url_and_refresh(url.expose().to_owned())
                 })
                 .await
                 .map_err(|_| "subscription URL worker terminated unexpectedly".to_owned())?

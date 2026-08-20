@@ -13,7 +13,7 @@ use std::error::Error;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{
@@ -29,7 +29,7 @@ use ureq::{
         resolver::{ResolvedSocketAddrs, Resolver},
         transport::NextTimeout,
     },
-    Agent,
+    Agent, Proxy, ProxyProtocol,
 };
 use zeroize::Zeroizing;
 
@@ -38,6 +38,10 @@ const SUBSCRIPTION_USER_AGENT: &str = "clash.meta";
 const SUBSCRIPTION_ACCEPT: &str = "application/yaml, text/yaml, text/plain";
 const SUBSCRIPTION_ACCEPT_ENCODING: &str = "identity";
 const SUBSCRIPTION_CONNECTION: &str = "close";
+const SUBSCRIPTION_PROXY_HOST: &str = "127.0.0.1";
+const SUBSCRIPTION_PROXY_PORT: u16 = 7_890;
+#[cfg(test)]
+const SUBSCRIPTION_PROXY_URL: &str = "http://127.0.0.1:7890/";
 const URL_FILE: &str = "subscription.url";
 const STATUS_FILE: &str = "status";
 const CURRENT_FILE: &str = "current";
@@ -110,43 +114,99 @@ impl Resolver for PinnedResolver {
     }
 }
 
+#[derive(Clone, Debug)]
+struct SubscriptionProxyResolver {
+    target: PinnedResolver,
+}
+
+impl Resolver for SubscriptionProxyResolver {
+    fn resolve(
+        &self,
+        uri: &Uri,
+        config: &Config,
+        timeout: NextTimeout,
+    ) -> Result<ResolvedSocketAddrs, ureq::Error> {
+        // Only the fixed local Mihomo listener bypasses public-address validation.
+        if uri.host() == Some(SUBSCRIPTION_PROXY_HOST)
+            && uri.port_u16() == Some(SUBSCRIPTION_PROXY_PORT)
+        {
+            let mut resolved = self.empty();
+            resolved.push(SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                SUBSCRIPTION_PROXY_PORT,
+            ));
+            return Ok(resolved);
+        }
+        self.target.resolve(uri, config, timeout)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SubscriptionRoute {
+    Direct,
+    MihomoProxy,
+}
+
+fn fetch_subscription_with_fallback<F>(url: &str, mut fetch: F) -> Result<Vec<u8>, PlatformError>
+where
+    F: FnMut(SubscriptionRoute, &str) -> Result<Vec<u8>, PlatformError>,
+{
+    match fetch(SubscriptionRoute::Direct, url) {
+        Ok(bytes) => Ok(bytes),
+        Err(direct_error) => fetch(SubscriptionRoute::MihomoProxy, url).or(Err(direct_error)),
+    }
+}
+
+fn subscription_agent_config(proxy: Option<Proxy>) -> Config {
+    Agent::config_builder()
+        .https_only(true)
+        .proxy(proxy)
+        .max_redirects(0)
+        .user_agent(SUBSCRIPTION_USER_AGENT)
+        .accept(SUBSCRIPTION_ACCEPT)
+        .accept_encoding(SUBSCRIPTION_ACCEPT_ENCODING)
+        .timeout_global(Some(Duration::from_secs(30)))
+        .tls_config(TlsConfig::builder().provider(TlsProvider::Rustls).build())
+        .build()
+}
+
 #[derive(Clone)]
 pub struct UreqSubscriptionTransport {
-    agent: Agent,
+    direct_agent: Agent,
+    proxy_agent: Agent,
 }
 
 impl UreqSubscriptionTransport {
     pub fn new(resolver: Arc<dyn SubscriptionResolverPort>) -> Self {
-        let config = Agent::config_builder()
-            .https_only(true)
-            .proxy(None)
-            .max_redirects(0)
-            .user_agent(SUBSCRIPTION_USER_AGENT)
-            .accept(SUBSCRIPTION_ACCEPT)
-            .accept_encoding(SUBSCRIPTION_ACCEPT_ENCODING)
-            .timeout_global(Some(Duration::from_secs(30)))
-            .tls_config(TlsConfig::builder().provider(TlsProvider::Rustls).build())
-            .build();
-        let agent = Agent::with_parts(
-            config,
+        let direct_agent = Agent::with_parts(
+            subscription_agent_config(None),
             ureq::unversioned::transport::DefaultConnector::default(),
-            PinnedResolver { resolver },
+            PinnedResolver {
+                resolver: resolver.clone(),
+            },
         );
-        Self { agent }
+        let proxy = Proxy::builder(ProxyProtocol::Http)
+            .host(SUBSCRIPTION_PROXY_HOST)
+            .port(SUBSCRIPTION_PROXY_PORT)
+            .resolve_target(false)
+            .build()
+            .expect("fixed Mihomo subscription proxy must be valid");
+        let proxy_agent = Agent::with_parts(
+            subscription_agent_config(Some(proxy)),
+            ureq::unversioned::transport::DefaultConnector::default(),
+            SubscriptionProxyResolver {
+                target: PinnedResolver { resolver },
+            },
+        );
+        Self {
+            direct_agent,
+            proxy_agent,
+        }
     }
-}
 
-impl SubscriptionTransportPort for UreqSubscriptionTransport {
-    fn fetch(&self, url: &SubscriptionUrl) -> Result<Vec<u8>, PlatformError> {
-        let mut secret = Zeroizing::new(Vec::with_capacity(MAX_SUBSCRIPTION_URL_BYTES));
-        url.write_secret(&mut *secret)
-            .map_err(|_| PlatformError::Io("could not encode subscription URL".to_owned()))?;
-        let secret = Zeroizing::new(String::from_utf8(std::mem::take(&mut *secret)).map_err(
-            |_| PlatformError::InvalidState("subscription URL encoding is invalid".to_owned()),
-        )?);
-        let mut response = self
-            .agent
-            .get(secret.as_str())
+    fn fetch_with_agent(agent: &Agent, url: &str) -> Result<Vec<u8>, PlatformError> {
+        let mut response = agent
+            .get(url)
             .header("Connection", SUBSCRIPTION_CONNECTION)
             .call()
             .map_err(|_| PlatformError::Io("subscription HTTPS request failed".to_owned()))?;
@@ -181,6 +241,23 @@ impl SubscriptionTransportPort for UreqSubscriptionTransport {
             ));
         }
         Ok(bytes)
+    }
+}
+
+impl SubscriptionTransportPort for UreqSubscriptionTransport {
+    fn fetch(&self, url: &SubscriptionUrl) -> Result<Vec<u8>, PlatformError> {
+        let mut secret = Zeroizing::new(Vec::with_capacity(MAX_SUBSCRIPTION_URL_BYTES));
+        url.write_secret(&mut *secret)
+            .map_err(|_| PlatformError::Io("could not encode subscription URL".to_owned()))?;
+        let secret = Zeroizing::new(String::from_utf8(std::mem::take(&mut *secret)).map_err(
+            |_| PlatformError::InvalidState("subscription URL encoding is invalid".to_owned()),
+        )?);
+        fetch_subscription_with_fallback(secret.as_str(), |route, request_url| match route {
+            SubscriptionRoute::Direct => Self::fetch_with_agent(&self.direct_agent, request_url),
+            SubscriptionRoute::MihomoProxy => {
+                Self::fetch_with_agent(&self.proxy_agent, request_url)
+            }
+        })
     }
 }
 
@@ -228,6 +305,17 @@ impl SubscriptionStore {
             url.write_secret(file)
                 .map_err(storage_io("write subscription URL"))
         })
+    }
+
+    pub fn clear_url(&self) -> Result<(), SubscriptionStorageError> {
+        self.initialize()?;
+        let path = self.root.join(URL_FILE);
+        let _ = read_optional_private(&path, MAX_SUBSCRIPTION_URL_BYTES)?;
+        match fs::remove_file(&path) {
+            Ok(()) => sync_directory(&self.root),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(storage_io("remove subscription URL")(error)),
+        }
     }
 
     pub fn load_url(&self) -> Result<Option<SubscriptionUrl>, SubscriptionStorageError> {
@@ -379,6 +467,10 @@ impl SubscriptionStore {
 impl SubscriptionStorePort for SubscriptionStore {
     fn store_url(&self, url: &SubscriptionUrl) -> Result<(), PlatformError> {
         SubscriptionStore::store_url(self, url).map_err(subscription_storage_error)
+    }
+
+    fn clear_url(&self) -> Result<(), PlatformError> {
+        SubscriptionStore::clear_url(self).map_err(subscription_storage_error)
     }
 
     fn load_url(&self) -> Result<Option<SubscriptionUrl>, PlatformError> {
@@ -649,7 +741,7 @@ mod tests {
     #[test]
     fn transport_requests_mihomo_yaml_without_enabling_redirects_or_compression() {
         let transport = UreqSubscriptionTransport::new(Arc::new(SystemSubscriptionResolver));
-        let config = transport.agent.config();
+        let config = transport.direct_agent.config();
 
         match config.user_agent() {
             ureq::config::AutoHeaderValue::Provided(value) => {
@@ -671,7 +763,7 @@ mod tests {
             other => panic!("unexpected subscription Accept-Encoding configuration: {other:?}"),
         }
         let request = transport
-            .agent
+            .direct_agent
             .get("https://example.invalid/")
             .header("Connection", SUBSCRIPTION_CONNECTION);
         assert_eq!(
@@ -680,6 +772,38 @@ mod tests {
                 .and_then(|headers| headers.get("Connection"))
                 .and_then(|value| value.to_str().ok()),
             Some(SUBSCRIPTION_CONNECTION)
+        );
+    }
+
+    #[test]
+    fn transport_has_fixed_mihomo_proxy_fallback() {
+        let transport = UreqSubscriptionTransport::new(Arc::new(SystemSubscriptionResolver));
+        let proxy = transport
+            .proxy_agent
+            .config()
+            .proxy()
+            .expect("subscription proxy fallback must be configured");
+        assert_eq!(proxy.uri().to_string(), SUBSCRIPTION_PROXY_URL);
+        assert!(!proxy.resolve_target());
+    }
+
+    #[test]
+    fn failed_direct_subscription_fetch_retries_through_mihomo_proxy() {
+        let mut routes = Vec::new();
+        let result = fetch_subscription_with_fallback("https://example.invalid/", |route, _url| {
+            routes.push(route);
+            match route {
+                SubscriptionRoute::Direct => {
+                    Err(PlatformError::Io("direct request failed".to_owned()))
+                }
+                SubscriptionRoute::MihomoProxy => Ok(b"proxies:\n  - name: test\n".to_vec()),
+            }
+        });
+
+        assert_eq!(result, Ok(b"proxies:\n  - name: test\n".to_vec()));
+        assert_eq!(
+            routes,
+            vec![SubscriptionRoute::Direct, SubscriptionRoute::MihomoProxy]
         );
     }
 
