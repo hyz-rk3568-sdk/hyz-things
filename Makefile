@@ -15,7 +15,8 @@ CAMERA_APP := $(CURDIR)/apps/rust/camera
 THINGS_APP := $(CURDIR)/apps/rust/things
 CONTRACT_APP := $(CURDIR)/apps/rust/contract
 THINGS_FRONTEND_BUNDLE := $(CURDIR)/target/frontend-bundle/hyz-things-frontend.tar
-ROUTER_TRUNK := $(CURDIR)/.tools/trunk/bin/trunk
+LOCAL_TRUNK_BIN := $(CURDIR)/.tools/trunk/bin
+ROUTER_TRUNK := $(LOCAL_TRUNK_BIN)/trunk
 ROUTER_BINARY := $(ROUTER_APP)/target/$(RUST_TARGET)/release/hyz-router
 CAMERA_BINARY := $(CAMERA_APP)/target/$(RUST_TARGET)/release/hyz-camera
 THINGS_BINARY := $(THINGS_APP)/target/$(RUST_TARGET)/release/hyz-things
@@ -36,7 +37,7 @@ HOST_NODE_DIR := $(dir $(HOST_NODE))
 # and whitespace entries, but keep the rest of the environment PATH so user
 # tools (e.g. adb under platform-tools) stay usable inside make.
 ENV_PATH := $(shell printf '%s\n' "$$PATH" | tr ':' '\n' | grep -v '^/mnt/' | grep -v ' ' | paste -sd: -)
-BUILD_PATH := $(BR_HOST)/bin:$(ENV_PATH)
+BUILD_PATH := $(BR_HOST)/bin:$(LOCAL_TRUNK_BIN):$(ENV_PATH)
 export PATH := $(BUILD_PATH)
 export RK_TOOLCHAIN_PREFIX := $(TOOLCHAIN_PREFIX)
 
@@ -97,13 +98,13 @@ things-frontend:
 	test -x "$(HOST_NODE)" && test -x "$(HOST_NPM)" || { echo 'Node.js and npm must be available when make starts; override HOST_NODE/HOST_NPM if needed.' >&2; exit 1; }
 	test -x "$(THINGS_APP)/node_modules/.bin/tailwindcss" || { echo 'run npm ci in apps/rust/things first.' >&2; exit 1; }
 	rustup target add wasm32-unknown-unknown
-	PATH="$(HOST_NODE_DIR):$(dir $(ROUTER_TRUNK)):$(PATH)" bash "$(THINGS_APP)/tools/build-frontend-bundle.sh"
+	PATH="$(HOST_NODE_DIR):$(PATH)" bash "$(THINGS_APP)/tools/build-frontend-bundle.sh"
 	test -s "$(THINGS_FRONTEND_BUNDLE)"
 
 things-e2e:
 	test -x "$(ROUTER_TRUNK)" || { echo 'repository-local Trunk 0.21.14 is required under .tools/trunk.' >&2; exit 1; }
 	test -x "$(HOST_NODE)" && test -x "$(HOST_NPM)" || { echo 'Node.js and npm must be available when make starts; override HOST_NODE/HOST_NPM if needed.' >&2; exit 1; }
-	cd "$(THINGS_APP)" && PATH="$(HOST_NODE_DIR):$(dir $(ROUTER_TRUNK)):$(PATH)" "$(HOST_NPM)" run test:e2e
+	cd "$(THINGS_APP)" && PATH="$(HOST_NODE_DIR):$(PATH)" "$(HOST_NPM)" run test:e2e
 
 things-app: toolchain things-frontend
 	rustup target add $(RUST_TARGET)
