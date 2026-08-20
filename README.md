@@ -1,176 +1,237 @@
-# hyz_things
+# hyz-things
 
-Product workspace for the ATK RK3568 board. The product repository owns the
-one-command build, the unified Rust router application, rootfs overlay, and release
-contract. Rockchip vendor sources remain separate repositories pinned by an
-Android `repo` manifest.
+`hyz-things` 是一个面向 ATK RK3568 的个人软路由与家庭设备项目。它把设备网络、管理门户、Tailscale、Mihomo 代理和本地摄像头拆分为三个独立的 Linux 服务，并通过类型化的 root-only Unix socket 协议协作。
 
-## Build from a clean clone
+项目不是通用 OpenWrt 后台，也不提供运行时插件 ABI 或任意 Linux 网络配置器。网络、进程、防火墙和固件操作都由产品代码中的固定用例和受限 adapter 驱动。
 
-Host requirements: Linux x86-64, Git, curl, Python 3, GNU Make, Rustup,
-and the normal Buildroot host packages. The unified router frontend uses
-repository-local Trunk 0.21.14 under `.tools/trunk`. The build creates its own compatible CMake, flex, lz4, and dtc under the
-Buildroot host directory; a system Python 2 installation is not required.
+> 当前项目处于持续的 RK3568 板端 bring-up 和验证阶段。源码结构、主机测试和部分板端能力已经完成；完整双上游切换、代理故障注入和长期稳定性验证仍在进行。
 
-```sh
-git clone https://github.com/hyz-rk3568-sdk/hyz-things.git
-cd hyz-things
-make
+## 产品组成
+
+```text
+apps/rust/contract  共享版本化 wire 契约
+apps/rust/router    无头路由核心，板端 /usr/bin/hyz-router，S81
+apps/rust/things    管理门户，板端 /usr/bin/hyz-things，S83
+apps/rust/camera    媒体进程，板端 /usr/bin/hyz-camera，S82
 ```
 
-On the first run, `make` bootstraps and syncs the development SDK manifest
-automatically. Later builds reuse the existing SDK checkout; run `make sdk`
-explicitly when you intend to synchronize it. For the exact component commits
-used by a verified firmware build, run
-`make MANIFEST=hyz-things-release.xml`; normal development uses
-`hyz-things.xml`.
+### `hyz-router`
 
-`make upgrade` performs these stages in dependency order:
+无头路由控制核心，不提供 HTTP、Web UI、管理员认证或摄像头信令。它负责：
 
-1. Selects `hyz_things_rk3568_defconfig`.
-2. Builds the Buildroot AArch64 glibc toolchain.
-3. Builds the deterministic Yew bundle and cross-builds the unified `hyz-router` ELF.
-4. Stages only `/usr/bin/hyz-router` and product metadata into the product overlay.
-5. Builds Buildroot rootfs, kernel, loader/boot, and the source-controlled
-   `output/recovery.img` with its SHA-256 file.
-6. Packs the normal Rockchip OTA without `recovery.img` as
-   `output/upgrade.fw` and writes `output/upgrade.fw.sha256`.
+- 固定 LAN：`br-lan = eth1 + p2p0`，管理地址 `192.168.8.1/24`；
+- LAN DHCP、DNS、IPv4 forwarding、NAT 和最小安全防火墙；
+- `eth0` 有线 WAN DHCP，默认路由 metric `100`；
+- `wlan0` Wi-Fi STA DHCP，默认路由 metric `600`，作为有线线路的热备用；
+- Mihomo 显式代理、LAN TUN、Direct fallback 和恢复；
+- Tailscale 生命周期、peer 状态和 runtime-owned 防火墙规则；
+- recovery-free OTA、shutdown、DHCP hook 和状态聚合；
+- root-only `/run/hyz-router/control.sock` 和管理面就绪标记 `/run/hyz-router/ready`。
 
-The control plane is consolidated as one hexagonal Rust package at
-`apps/rust/router`, with one native `hyz-router` composition root for the
-root-only daemon/control socket, LAN-only Axum/Yew status, typed display/proxy
-controls, administrator-protected AP/STA and subscription settings, OTA, DHCP,
-router, and Mihomo/TUN lifecycle. Wi-Fi changes use committed/pending generations
-and rollback; subscription refresh accepts only constrained HTTPS/public targets,
-sanitizes strict provider YAML, validates a Mihomo candidate, and cuts over last.
-The same ELF also provides the internal udhcpc and detached fail-open watcher
-roles. `make apps` builds this single product application, and `make overlay`
-stages it only as `/usr/bin/hyz-router`; the Buildroot board overlay supplies the
-minimal `S81hyz-router` init script. The legacy shell router/Mihomo wrappers,
-separate DHCP hook, standalone OTA app, and Rust/Flutter hello demos have been
-removed from active source staging. The previously unified runtime and embedded
-Web UI were installed through recovery-free OTA and functionally validated on
-RK3568. The new administrator/settings implementation and the capped init retry
-backoff are source-only: neither has been compiled, installed, or hardware-tested.
-Automatic cold-boot and settings acceptance therefore remain open.
+`hyz-router` 只有在管理 LAN、AP、DNS 等资源经过严格 reconcile 后才写入 ready 标记。WAN 或代理不可用时，设备可以继续保持 management-only 管理路径。
 
-The product profile reports itself to ADB as `product:hyz_things`,
-`model:HYZ_RK3568`, and `device:rk3568`. It keeps one Simplified Chinese
-regular font face and omits the kernel `System.map` from the runtime image. The OTA package
-also deliberately excludes `userdata.img`, so an update does not reformat the
-existing userdata partition; factory firmware generation still creates that
-partition image.
+### `hyz-things`
 
-The verified conservative base profile produced a roughly 334 MiB update image
-instead of the original 400 MiB image. The latest installed unified Router/Web
-validation image is 378,495,562 bytes; it remains a validation artifact rather
-than a release because the source-only cold-boot backoff correction has not yet
-been rebuilt and installed. MetaCubeXD has been retired in favor of the Yew UI
-embedded in `hyz-router`. Wi-Fi and Bluetooth remain in the broad `ALL_AP`
-compatibility configuration until the exact production module has been confirmed
-on hardware.
+管理门户和浏览器侧 driving adapter，负责：
 
-### Recovery OTA policy
+- HTTPS 管理页面：固定 LAN 地址 `https://192.168.8.1:8080`；
+- 精确绑定的 Tailscale IPv4 管理 listener；
+- Argon2id 管理员凭据、首次改密、会话和 CSRF；
+- 嵌入式 Yew/WASM SPA 与 Axum API；
+- router、WAN、代理、Tailscale、系统和应用状态聚合；
+- 摄像头状态、会话和受限 SDP 信令；
+- 通过注册表展示 `hyz-things`/`hyz-camera` 应用的热推送状态。
 
-Recovery is built from the manifest-controlled `external/recovery` component
-on every full firmware build, but the normal `output/upgrade.fw` deliberately
-does not update it. This avoids rewriting the recovery environment for routine
-application, rootfs, or kernel releases.
+门户会等待 `/run/hyz-router/ready` 后才绑定管理地址。它不直接执行网络命令，而是通过 `hyz-contract` 客户端访问 router control socket，通过 `/run/hyz-camera/control.sock` 访问 camera。
 
-When recovery itself or its firmware compatibility changes, build both OTA
-variants explicitly:
+### `hyz-camera`
+
+独立媒体进程，负责：
+
+- V4L2 摄像头采集；
+- GStreamer 与 Rockchip MPP H.264 编码；
+- 固定分辨率、码率和旋转预设；
+- WebRTC/str0m 会话；
+- 固定 `40000-40015/udp` 媒体端口池；
+- 音频采集、RNNoise/VAD、Opus 编码和对讲回放。
+
+摄像头不执行 `ip`、`iptables` 或其他网络配置命令。浏览器和摄像头之间的媒体流不经过 Axum 或 router 转发。
+
+## 运行时边界
+
+```text
+浏览器
+   │ HTTPS / typed HTTP API
+   ▼
+hyz-things ── versioned JSON frame ──> hyz-router
+     │                                  │
+     └──── versioned camera frame ────> hyz-camera
+
+hyz-router 是网络和防火墙的唯一 authority；
+hyz-things 是管理门户；hyz-camera 是媒体进程。
+```
+
+三个进程各自拥有独立的 composition root 和板端 ELF。共享协议位于 `apps/rust/contract`，服务端接受当前和前一协议版本，客户端要求精确匹配。
+
+## 当前实现状态
+
+已完成或已进入主机验证的主要内容：
+
+- 三进程拆分：无头 router、things 门户和 camera 媒体进程；
+- router ready 门控和 management-only 降级边界；
+- typed Ethernet/Wi-Fi 双上游模型、有线优先 route metric 和 uplink ownership 隔离；
+- Tailscale 本机/peer 状态、online/offline、active、direct/relay、last seen 和收发流量；
+- UDP `41641` 防火墙规则同时覆盖 `eth0` 和 `wlan0`；
+- Mihomo 显式代理 CONNECT 探测，连续 3 次确认失败后运行时回退 Direct；
+- Direct 冷却 30 秒后自动恢复 `MihomoExplicit`，不修改用户持久化开关；
+- things/camera 热推送只重启对应应用，router 保持运行；
+- router 开发热替换规则：USB ADB 使用 `stop → 原子替换 → start`，网络 ADB 使用 `原子替换 → reboot`；
+- 摄像头 WebRTC、固定媒体端口池和匿名短时 viewer 会话边界。
+
+仍需要板端或更长时间验证的内容包括：
+
+- Ethernet、`eth1` 和双上游完整切换矩阵；
+- SR-09 反复切换和长时间稳定性；
+- 板端显式代理不可用 → Direct → `MihomoExplicit` 恢复故障注入；
+- DNS 接管、所有代理节点失效和 Mihomo live-hang 回退；
+- PPPoE、DNS 中心和黑匣子等后续产品范围。
+
+详细验收状态见 [`docs/soft-router-user-stories.md`](docs/soft-router-user-stories.md)。
+
+## 开发环境
+
+当前产品构建面向 Linux x86-64 主机和 ATK RK3568 目标板。
+
+基本依赖：
+
+- Git、curl、Python 3、GNU Make；
+- Rustup 和 Rust `1.85` 或更新版本；
+- Node.js `20` 或更新版本、npm；
+- Buildroot 所需的常规 Linux 主机工具；
+- 仓库本地 Trunk：`.tools/trunk/bin/trunk`；
+- Android `repo` 工具会在首次使用 SDK 目标时自动下载到 `.tools/repo`。
+
+Rockchip vendor source、Buildroot 和内核位于 `sdk/`，由 Android `repo` manifest 固定具体组件版本；产品应用位于 `apps/`。
+
+## 构建和检查
+
+首次同步 SDK：
+
+```sh
+make sdk
+```
+
+完整固件构建使用默认目标 `upgrade`：
+
+```sh
+make
+# 或
+make upgrade
+```
+
+常用开发目标：
+
+```sh
+make check-static    # shell、Python、manifest 和源码引用检查，不编译固件
+make check           # fmt、host tests、Clippy 和部署工具测试
+make things-frontend # 构建确定性的 Yew/Tailwind 前端 bundle
+make things-e2e      # 运行 loopback Axum/Playwright 浏览器测试
+make router-app      # 构建 hyz-router AArch64 ELF
+make things-app      # 构建 hyz-things AArch64 ELF
+make camera-app      # 构建 hyz-camera AArch64 ELF
+make apps            # 构建三个产品 ELF
+make overlay         # 将三个 ELF 和产品元数据放入 rootfs overlay
+```
+
+`make check` 不会构建 Buildroot 固件；完整 firmware、kernel、rootfs 和 loader 构建由 `make upgrade` 触发。
+
+构建产物主要位于：
+
+```text
+output/upgrade.fw
+output/upgrade.fw.sha256
+output/upgrade-recovery.fw
+output/recovery.img
+```
+
+普通 `upgrade.fw` 是 recovery-free OTA，不更新 recovery 和 userdata。只有 recovery 本身或固件兼容性发生变化时，才显式运行：
 
 ```sh
 make upgrade-recovery
 ```
 
-This first produces the normal `output/upgrade.fw`, then creates
-`output/upgrade-recovery.fw` and its SHA-256 file from a separate package list
-that includes `recovery.img`. Both OTA variants exclude `userdata.img`.
-Publish the recovery variant only as an intentional infrastructure update;
-do not substitute it for routine OTA releases.
+## 板端部署
 
-Useful smaller targets are listed by `make help`. `make check-static` runs
-shell, Python, source-reference, package, kernel-symbol, and manifest checks
-without compiling or generating a Buildroot defconfig. `make check` additionally
-runs router formatting, native tests, and strict Clippy, but still does not build
-firmware.
+### Things 和 camera 热推送
 
-The retired Sony Flutter prototype and its setup history remain documented in
-[`docs/flutter-elinux-setup.md`](docs/flutter-elinux-setup.md), but they are no
-longer part of the product application graph. The hardware profile still uses
-the ATK 5.5-inch `1080x1920` MIPI-DSI panel target
-`rk3568-atk-evb1-mipi-dsi-1080p`.
-The panel's accepted low-gray brightness boundary is recorded as a stopped
-known issue in
-[`docs/display-low-gray-known-issue.md`](docs/display-low-gray-known-issue.md).
-The approved soft-router scope, wired-first WAN policy, and acceptance criteria
-are defined in
-[`docs/soft-router-user-stories.md`](docs/soft-router-user-stories.md). The Wi-Fi-only
-`br-lan = p2p0` source migration, kernel prerequisites, and pending board test plan
-are recorded in
-[`docs/validation/soft-router-br-lan-validation.md`](docs/validation/soft-router-br-lan-validation.md).
-The pinned Mihomo input, historical proxy-dashboard validation, firmware hashes,
-rootfs audit, and remaining board tests are recorded in
-[`docs/soft-router-proxy-integration.md`](docs/soft-router-proxy-integration.md).
-The source-level, LAN-only Mihomo TUN policy, persistent mode controls, and
-fail-open boundaries are documented in
-[`docs/soft-router-tun.md`](docs/soft-router-tun.md), including the final
-recovery-free OTA hashes and board-validated TCP/UDP/fail-open results. The
-LAN-only Axum/Yew status and constrained display/proxy controls, API boundary,
-TDD coverage and remaining validation work are documented in
-[`docs/architecture.md`](docs/architecture.md).
-
-## Minimal OTA test
-
-For the preferred USB ADB path, the network ADB fallback, interrupted-transfer handling, package audit, and post-boot readiness checks, follow [`docs/ota-deployment.md`](docs/ota-deployment.md). The minimal HTTP flow is:
-
-Serve the two release files from any HTTP server:
+只热推送非 router 应用：
 
 ```sh
-cd output
-python3 -m http.server 8000
+ADB_SERIAL=<serial> make deploy-things
+ADB_SERIAL=<serial> make deploy-camera
 ```
 
-On the RK3568 target, download and verify with the Rust client:
+部署工具会先检查 wire protocol 兼容性和 ELF 校验和，只停止并重启对应的 `S83hyz-things` 或 `S82hyz-camera`，不会重启 router。回滚使用：
 
 ```sh
-SHA256=$(wget -qO- http://SERVER:8000/upgrade.fw.sha256 | awk '{print $1}')
-hyz-router ota download http://SERVER:8000/upgrade.fw "$SHA256"
+ADB_SERIAL=<serial> make revert-things
+ADB_SERIAL=<serial> make revert-camera
 ```
 
-Install without automatic reboot first:
+### Router 开发热替换
 
-```sh
-hyz-router ota install /userdata/hyz-router/ota/upgrade.fw "$SHA256"
+router 不使用 `deploy-app.sh`：
+
+- USB ADB：上传、校验、备份后执行 `stop → 原子替换 → start`；
+- 网络 ADB：旧进程仍运行时完成校验、备份和原子替换，然后 `adb reboot`；
+- 网络 ADB 可以使用物理 LAN 或明确可达的 Tailscale TCP `5555`；
+- 正式发布使用 OTA，不把开发热替换当作正式发布流程。
+
+完整步骤见 [`docs/router-app-debug.md`](docs/router-app-debug.md) 和 [`docs/network-adb.md`](docs/network-adb.md)。
+
+### OTA
+
+OTA 构建、传输、SHA-256 校验、安装和重启流程见 [`docs/ota-deployment.md`](docs/ota-deployment.md)。当前 OTA 的 SHA-256 只提供传输完整性校验，还没有发布者签名、anti-rollback 或 A/B 回滚机制，因此不应直接视为最终生产发布系统。
+
+## 仓库结构
+
+```text
+apps/rust/contract/  共享 serde wire 契约
+apps/rust/router/    无头路由核心
+apps/rust/things/    HTTPS 管理门户、Yew SPA 和部署工具
+apps/rust/camera/    V4L2/GStreamer/MPP/WebRTC 媒体进程
+product/             Buildroot rootfs overlay 和 init 脚本
+sdk/                 Android repo 管理的 Rockchip/Buildroot/kernel 组件
+output/              本地构建产物，不应提交
+.tools/              本地构建工具，不应提交
+
+docs/architecture.md
+  三进程架构、composition root 和启动边界
+
+docs/soft-router-user-stories.md
+  产品范围、用户故事和验收状态
+
+docs/camera-hardware-e2e.md
+  摄像头真实硬件验收
 ```
 
-Or download, verify, install, and reboot in one command:
+更多文档入口：
 
-```sh
-hyz-router ota apply http://SERVER:8000/upgrade.fw "$SHA256" --reboot
-```
+- [`apps/rust/things/README.md`](apps/rust/things/README.md)：门户进程、HTTP 安全边界和前端测试；
+- [`apps/rust/router/README.md`](apps/rust/router/README.md)：router 用例、CLI、持久化配置和 OTA；
+- [`docs/architecture.md`](docs/architecture.md)：完整架构和启动时序；
+- [`docs/soft-router-user-stories.md`](docs/soft-router-user-stories.md)：当前产品状态和未完成验收；
+- [`docs/router-app-debug.md`](docs/router-app-debug.md)：router 开发热替换；
+- [`docs/network-adb.md`](docs/network-adb.md)：物理 LAN/Tailscale 网络 ADB；
+- [`docs/ota-deployment.md`](docs/ota-deployment.md)：OTA 部署和回滚边界。
 
-`hyz-router ota` uses `ureq` with Rustls for HTTP(S), `sha2` for streaming SHA-256,
-and validates the Rockchip `RKFW` header. Routine recovery-free packages are
-staged by writing and reading back Rockchip's 1088-byte bootloader control
-block at the 16 KiB offset of `misc`; recovery then flashes the fixed
-non-A/B partition mask. The explicit recovery image path uses a separate
-command so updating recovery is never accidental:
+## 安全和公开发布注意事项
 
-```sh
-hyz-router ota install-recovery /userdata/upgrade-recovery.fw "$SHA256"
-```
+公开仓库前必须单独审计：
 
-That command invokes Rockchip `updateEngine` to install recovery first and
-rejects its misleading zero exit status unless the resulting BCB exactly
-matches the requested package.
+- `.env`、设备密码、测试凭据和签名材料；
+- Tailscale 地址、内部 IP、ADB 地址和设备路径；
+- Buildroot、Rockchip SDK、内核和第三方组件的许可证；
+- 生成产物、交叉工具链、`target/`、`output/` 和本地部署记录。
 
-## Current safety boundary
-
-This is a bring-up OTA chain, not the final production updater. SHA-256 protects
-against transfer corruption but is not publisher authentication because an
-attacker controlling the server could replace both files. Before field use,
-add signed release metadata, anti-rollback state, A/B support or another
-rollback strategy, health-confirmed activation, and power-loss/fault-injection
-tests.
+本仓库的产品代码与 vendor SDK 不是同一个发布单元。vendor source 的公开范围和许可证必须以各自组件仓库为准。
