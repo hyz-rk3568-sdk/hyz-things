@@ -159,7 +159,7 @@ Tailscale 模式术语固定如下：
 - **LanSubnetAccess**：Tailscale 可以经过软路由访问固定 `192.168.8.0/24`，是远程访问未安装 Tailscale 的 LAN 设备的最终使用模式。
 - **Exit Node**：远程客户端通过软路由访问互联网；本产品第一版明确不提供。
 
-RouterOnly ready 不代表 LAN subnet 已开放，LanSubnetAccess 也不代表软路由成为 Exit Node。详细设计见 [`soft-router-tailscale-plan.md`](soft-router-tailscale-plan.md)。
+RouterOnly ready 不代表 LAN subnet 已开放，LanSubnetAccess 也不代表软路由成为 Exit Node。详细设计见 [`soft-router-tailscale-plan.md`](plan/soft-router-tailscale-plan.md)。
 
 ## 4. 当前实现状态
 
@@ -197,10 +197,10 @@ LAN = br-lan = p2p0
 
 历史和板端验证记录：
 
-- [`soft-router-sta-validation.md`](soft-router-sta-validation.md)
-- [`soft-router-sta-ap-validation.md`](soft-router-sta-ap-validation.md)
-- [`soft-router-sta-ap-nat-validation.md`](soft-router-sta-ap-nat-validation.md)
-- [`soft-router-br-lan-validation.md`](soft-router-br-lan-validation.md)
+- [`soft-router-sta-validation.md`](validation/soft-router-sta-validation.md)
+- [`soft-router-sta-ap-validation.md`](validation/soft-router-sta-ap-validation.md)
+- [`soft-router-sta-ap-nat-validation.md`](validation/soft-router-sta-ap-nat-validation.md)
+- [`soft-router-br-lan-validation.md`](validation/soft-router-br-lan-validation.md)
 - [`soft-router-proxy-integration.md`](soft-router-proxy-integration.md)
 - [`soft-router-tun.md`](soft-router-tun.md)
 
@@ -399,7 +399,7 @@ LAN = br-lan = p2p0
 14. 运行至少 8 小时，记录吞吐、丢包、RSSI、CPU、内存、conntrack 和驱动错误。
 15. 每个场景记录地址、路由、DNS、NAT、DHCP lease、active uplink、active resolver set 和关键日志。
 16. 已有跨 WAN 长连接中断按第一阶段边界记录但不判失败；LAN 控制面中断、已有可用 Wi-Fi 时新连接中断、lease 被清除或下游服务重启均判失败。
-17. 完整实施、测试、回滚与板端矩阵见 [`soft-router-ethernet-dhcp-plan.md`](soft-router-ethernet-dhcp-plan.md)。
+17. 完整实施、测试、回滚与板端矩阵见 [`soft-router-ethernet-dhcp-plan.md`](plan/soft-router-ethernet-dhcp-plan.md)。
 
 ## 6. Epic PW：PPPoE 主路由
 
@@ -605,7 +605,7 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 
 ### P0：完成并稳定 DHCP 双上游基础路由
 
-详细实施顺序、下游无扰动边界、TDD、回滚和板端矩阵见 [`soft-router-ethernet-dhcp-plan.md`](soft-router-ethernet-dhcp-plan.md)。
+详细实施顺序、下游无扰动边界、TDD、回滚和板端矩阵见 [`soft-router-ethernet-dhcp-plan.md`](plan/soft-router-ethernet-dhcp-plan.md)。
 
 - [ ] 将固定 `WAN_INTERFACE=wlan0` 重构为受限 typed uplink model。
 - [ ] 保持现有 Wi-Fi-only 行为不变地完成第一步 domain/application 重构。
@@ -671,7 +671,7 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 
 ### P4：集成 Tailscale RouterOnly
 
-详细设计、实施阶段和验收矩阵见 [`soft-router-tailscale-plan.md`](soft-router-tailscale-plan.md)。本轮目标是在 RouterOnly 安全基础通过后，于同一交付周期继续完成固定 LAN subnet access。
+详细设计、实施阶段和验收矩阵见 [`soft-router-tailscale-plan.md`](plan/soft-router-tailscale-plan.md)。本轮目标是在 RouterOnly 安全基础通过后，于同一交付周期继续完成固定 LAN subnet access。
 
 - [x] 固定 Tailscale `1.102.2` ARM64 版本、校验值、许可证、Buildroot 输入以及 TUN 和所需内核能力静态断言。
 - [x] 定义 `Disabled` 与 `RouterOnly` typed mode，通过固定 executable、typed argv 和受身份约束的 `tailscaled` adapter 管理生命周期。

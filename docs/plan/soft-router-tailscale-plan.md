@@ -211,7 +211,7 @@ RouterOnly 规则：
 - `tailscale0 -> br-lan` 拒绝。
 - `tailscale0 -> WAN` 拒绝。
 - 非 `tailscale0` 接口伪造 `100.64.0.0/10` 源地址拒绝。
-- active WAN 上固定 UDP 41641 只作为 direct 优化；没有该能力仍可经 relay ready。
+- 固定受管 WAN 接口 `eth0`/`wlan0` 上允许 UDP 41641；默认路由仍按 active uplink 选择；没有该能力仍可经 relay ready。
 
 LanSubnetAccess 增量规则：
 

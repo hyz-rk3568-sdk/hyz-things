@@ -23,7 +23,8 @@ use hyz_things::domain::{
         TailscaleStatus, UplinkId, UplinkStatus,
     },
     tailscale::{
-        TailscaleBackendState, TailscaleEnvironment, TailscaleMode, TailscalePeerSnapshot,
+        TailscaleBackendState, TailscaleEnvironment, TailscaleMode, TailscalePeer,
+        TailscalePeerConnection, TailscalePeerSnapshot,
     },
 };
 use js_sys::{Function, Promise, Reflect};
@@ -4354,7 +4355,8 @@ fn render_tailscale_peers(state: &UseReducerHandle<AppState>) -> Html {
         (Some(snapshot), error) => {
             let summary = format!(
                 "Tailnet 设备 · {} / {} 在线",
-                snapshot.online, snapshot.total
+                snapshot.device_online(),
+                snapshot.device_total()
             );
             html! {
                 <div class="grid gap-3 rounded-box border border-base-content/10 bg-base-200/40 p-4" role="region" aria-label="Tailnet 设备">
@@ -4368,25 +4370,16 @@ fn render_tailscale_peers(state: &UseReducerHandle<AppState>) -> Html {
                     if let Some(error) = error {
                         <div class={RISK_NOTE} role="status">{format!("设备列表读取失败，当前显示上次成功数据，数据可能已过期：{error}")}</div>
                     }
-                    if snapshot.peers.is_empty() {
-                        <div class={SETTINGS_EMPTY} role="status">{"暂无其他 Tailnet 设备"}</div>
+                    if snapshot.device_total() == 0 {
+                        <div class={SETTINGS_EMPTY} role="status">{"暂无 Tailnet 设备"}</div>
                     } else {
                         <details class="group rounded-box border border-base-content/10 bg-base-100/70 p-3">
                             <summary class="cursor-pointer font-medium">{"查看设备列表"}</summary>
                             <ul class="mt-3 grid gap-2">
-                                {for snapshot.peers.iter().map(|peer| {
-                                    let status = if peer.online { "在线" } else { "离线" };
-                                    let tone = if peer.online { Tone::Good } else { Tone::Neutral };
-                                    html! {
-                                        <li class="grid min-w-0 gap-2 rounded-box border border-base-content/10 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" key={peer.ipv4.to_string()}>
-                                            <div class="min-w-0">
-                                                <strong class="block truncate" title={peer.name.clone()}>{&peer.name}</strong>
-                                                <span class={HELP_TEXT}>{format!("{}{}", peer.ipv4, peer.os.as_ref().map_or_else(String::new, |os| format!(" · {os}")))}</span>
-                                            </div>
-                                            <span class={classes!(STATUS_BADGE, tone.class())}><span class={STATUS_DOT_SMALL} aria-hidden="true"></span>{status}</span>
-                                        </li>
-                                    }
-                                })}
+                                if let Some(local) = snapshot.self_node.as_ref() {
+                                    {render_tailscale_peer(local, true)}
+                                }
+                                {for snapshot.peers.iter().map(|peer| render_tailscale_peer(peer, false))}
                             </ul>
                         </details>
                     }
@@ -4403,6 +4396,90 @@ fn render_tailscale_peers(state: &UseReducerHandle<AppState>) -> Html {
         (None, None) => html! {
             <div class={SETTINGS_EMPTY} role="status">{"正在读取 Tailnet 设备列表…"}</div>
         },
+    }
+}
+
+fn render_tailscale_peer(peer: &TailscalePeer, local: bool) -> Html {
+    let status = if peer.online { "在线" } else { "离线" };
+    let tone = if peer.online {
+        Tone::Good
+    } else {
+        Tone::Neutral
+    };
+    let platform = peer
+        .os
+        .as_deref()
+        .map_or_else(String::new, |os| format!(" · {os}"));
+    let detail = tailscale_peer_detail(peer);
+    html! {
+        <li class="grid min-w-0 gap-2 rounded-box border border-base-content/10 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" key={format!("{}-{}", if local { "self" } else { "peer" }, peer.ipv4)}>
+            <div class="min-w-0">
+                <div class="flex min-w-0 items-center gap-2">
+                    <strong class="block truncate" title={peer.name.clone()}>{&peer.name}</strong>
+                    if local {
+                        <span class="badge badge-primary badge-outline shrink-0 text-[0.6rem] font-bold">{"本机"}</span>
+                    }
+                </div>
+                <span class={HELP_TEXT}>{format!("{}{platform}", peer.ipv4)}</span>
+                <small class="block text-xs text-base-content/65">{detail}</small>
+            </div>
+            <span class={classes!(STATUS_BADGE, tone.class())}><span class={STATUS_DOT_SMALL} aria-hidden="true"></span>{status}</span>
+        </li>
+    }
+}
+
+fn tailscale_peer_detail(peer: &TailscalePeer) -> String {
+    let mut details = Vec::new();
+    if peer.online {
+        if peer.active == Some(true) {
+            details.push("active".to_owned());
+            if let Some(connection) = &peer.connection {
+                details.push(tailscale_connection_label(connection));
+            }
+            if let (Some(tx), Some(rx)) = (peer.tx_bytes, peer.rx_bytes) {
+                details.push(format!("tx {} · rx {}", format_bytes(tx), format_bytes(rx)));
+            }
+        } else {
+            details.push("-".to_owned());
+        }
+    } else {
+        details.push("offline".to_owned());
+        if let Some(last_seen) = peer.last_seen_unix_ms {
+            details.push(format!("最近看到 {}", tailscale_last_seen_label(last_seen)));
+        }
+    }
+    details.join(" · ")
+}
+
+fn tailscale_connection_label(connection: &TailscalePeerConnection) -> String {
+    match connection {
+        TailscalePeerConnection::Direct { address } => format!("direct {address}"),
+        TailscalePeerConnection::Relay { region } => format!("relay \"{region}\""),
+    }
+}
+
+fn tailscale_last_seen_label(unix_ms: u64) -> String {
+    const MAX_DATE_MILLIS: u64 = 8_640_000_000_000_000;
+    let now = js_sys::Date::now();
+    if !now.is_finite() || unix_ms > MAX_DATE_MILLIS {
+        return "未知".to_owned();
+    }
+    let seen = unix_ms as f64;
+    if seen >= now {
+        return "刚刚".to_owned();
+    }
+    let minutes = ((now - seen) / 60_000.0).floor() as u64;
+    if minutes < 1 {
+        "刚刚".to_owned()
+    } else if minutes < 60 {
+        format!("{minutes} 分钟前")
+    } else {
+        let hours = minutes / 60;
+        if hours < 24 {
+            format!("{hours} 小时前")
+        } else {
+            format!("{} 天前", hours / 24)
+        }
     }
 }
 

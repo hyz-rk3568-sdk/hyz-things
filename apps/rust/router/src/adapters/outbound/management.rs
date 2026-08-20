@@ -4234,10 +4234,12 @@ mod dhcp_policy_tests {
                 },
             ]
         );
-        assert!(
-            ETHERNET_POLICY_LAN_RULE_PRIORITY < WIFI_POLICY_LAN_RULE_PRIORITY,
-            "Ethernet LAN source rule must be evaluated before Wi-Fi"
-        );
+        const {
+            assert!(
+                ETHERNET_POLICY_LAN_RULE_PRIORITY < WIFI_POLICY_LAN_RULE_PRIORITY,
+                "Ethernet LAN source rule must be evaluated before Wi-Fi"
+            );
+        }
     }
 
     #[test]

@@ -31,7 +31,7 @@ npm run test:hardware-camera -- \
   https://TAILSCALE_ADDRESS:8080
 ```
 
-管理页面只提供 HTTPS（设备自签证书，见 `docs/soft-router-camera-audio-intercom-plan.md` 的 HTTPS 一节）。脚本为显式传入的 origin 启动 Chromium 的 `--ignore-certificate-errors`，使本地受控测试可以绕过自签证书拦截页，同时页面仍是 secure context（`navigator.mediaDevices.getUserMedia` 对讲依赖这一点）。真实用户首次访问 `https://192.168.8.1:8080` 时需要在浏览器里手动通过一次自签证书警告。
+管理页面只提供 HTTPS（设备自签证书，见 `docs/plan/soft-router-camera-audio-intercom-plan.md` 的 HTTPS 一节）。脚本为显式传入的 origin 启动 Chromium 的 `--ignore-certificate-errors`，使本地受控测试可以绕过自签证书拦截页，同时页面仍是 secure context（`navigator.mediaDevices.getUserMedia` 对讲依赖这一点）。真实用户首次访问 `https://192.168.8.1:8080` 时需要在浏览器里手动通过一次自签证书警告。
 
 ## 首次改密测试
 

@@ -38,12 +38,24 @@ test("renders the portal home and applies the anonymous display control", async 
   await expect(page.getByRole("article", { name: "摄像头直播" })).toBeVisible();
   const deployedApps = page.getByRole("region", { name: "已部署应用" });
   await expect(deployedApps).toBeVisible();
-  await expect(deployedApps.getByText("部署时间：", { exact: false }).first()).toBeVisible();
-  const systemStatus = page.locator("article").filter({ hasText: "系统 / 流量" });
-  await expect(systemStatus.getByText("WAN 总接收", { exact: true })).toBeVisible();
-  await expect(systemStatus.getByText("34.1 MiB", { exact: true })).toBeVisible();
-  await expect(systemStatus.getByText("WAN 总发送", { exact: true })).toBeVisible();
-  await expect(systemStatus.getByText("6.6 MiB", { exact: true })).toBeVisible();
+  await expect(
+    deployedApps.getByText("部署时间：", { exact: false }).first(),
+  ).toBeVisible();
+  const systemStatus = page
+    .locator("article")
+    .filter({ hasText: "系统 / 流量" });
+  await expect(
+    systemStatus.getByText("WAN 总接收", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    systemStatus.getByText("34.1 MiB", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    systemStatus.getByText("WAN 总发送", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    systemStatus.getByText("6.6 MiB", { exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole("heading", { name: "路由 / LAN" })).toBeVisible();
   await expect(
     page.getByText("Ethernet WAN", { exact: true }).first(),
@@ -224,7 +236,11 @@ test("serves the generated bundle through the strict production-shaped HTTP boun
   const apps = await request.get("/api/v1/apps");
   expect(apps.status()).toBe(200);
   const appsBody = (await apps.json()) as {
-    apps: Array<{ name: string; sha256: string | null; deployed_at_unix_ms: number | null }>;
+    apps: Array<{
+      name: string;
+      sha256: string | null;
+      deployed_at_unix_ms: number | null;
+    }>;
   };
   expect(appsBody.apps.map((app) => app.name)).toEqual([
     "camera",
@@ -234,7 +250,9 @@ test("serves the generated bundle through the strict production-shaped HTTP boun
   expect(appsBody.apps.every((app) => app.sha256 !== null)).toBeTruthy();
   expect(
     appsBody.apps.every(
-      (app) => typeof app.deployed_at_unix_ms === "number" && app.deployed_at_unix_ms > 0,
+      (app) =>
+        typeof app.deployed_at_unix_ms === "number" &&
+        app.deployed_at_unix_ms > 0,
     ),
   ).toBeTruthy();
   // 匿名 viewer 令牌只允许创建/关闭自己的会话，profile/rotation 仍是管理员专属。
@@ -1201,17 +1219,34 @@ test("supports the administrator Tailscale login, approval, disable, and logout 
   ).toBeTruthy();
   await tailscale.getByRole("button", { name: "已完成登录，继续启用" }).click();
   await expect(tailscale.getByText("本机远程 LAN 访问已启用")).toBeVisible();
-  await expect(tailscale.getByText("Tailnet 设备 · 1 / 2 在线")).toBeVisible();
+  await expect(tailscale.getByText("Tailnet 设备 · 3 / 4 在线")).toBeVisible();
   await expect(
     tailscale.getByText("laptop", { exact: true }),
   ).not.toBeVisible();
+  await expect(
+    tailscale.getByText("hyz-router", { exact: true }),
+  ).not.toBeVisible();
   await tailscale.getByText("查看设备列表", { exact: true }).click();
+  await expect(
+    tailscale.getByText("hyz-router", { exact: true }),
+  ).toBeVisible();
   await expect(tailscale.getByText("laptop", { exact: true })).toBeVisible();
+  await expect(
+    tailscale.getByText("hyz-iphone", { exact: true }),
+  ).toBeVisible();
   await expect(tailscale.getByText("tablet", { exact: true })).toBeVisible();
+  await expect(tailscale.getByText(/100\.64\.0\.7 · linux/)).toBeVisible();
   await expect(tailscale.getByText(/100\.64\.0\.8 · linux/)).toBeVisible();
   await expect(tailscale.getByText(/100\.64\.0\.9 · android/)).toBeVisible();
-  await expect(tailscale.getByText("在线", { exact: true })).toBeVisible();
-  await expect(tailscale.getByText("离线", { exact: true })).toBeVisible();
+  await expect(tailscale.getByText(/100\.64\.0\.10 · iOS/)).toBeVisible();
+  await expect(
+    tailscale.getByText(/active · direct 192\.168\.1\.3:41641/),
+  ).toHaveCount(2);
+  await expect(tailscale.getByText(/active · relay "sfo"/)).toBeVisible();
+  await expect(tailscale.getByText(/tx 1\.2 KiB · rx 789 B/)).toBeVisible();
+  await expect(tailscale.getByText(/最近看到/)).toBeVisible();
+  await expect(tailscale.getByText("在线", { exact: true })).toHaveCount(3);
+  await expect(tailscale.getByText("离线", { exact: true })).toHaveCount(1);
   await expect(
     tailscale.getByText(/不表示它正在访问本路由器的 LAN/),
   ).toBeVisible();
@@ -1293,7 +1328,7 @@ test("shows Tailnet peer empty, initial-error, stale, and recovery states", asyn
     (await request.put(`${harnessOrigin}/state`, { data: state })).ok(),
   ).toBeTruthy();
   await tailscale.getByRole("button", { name: "重新读取设备" }).click();
-  await expect(tailscale.getByText("Tailnet 设备 · 1 / 2 在线")).toBeVisible();
+  await expect(tailscale.getByText("Tailnet 设备 · 3 / 4 在线")).toBeVisible();
   await tailscale.getByText("查看设备列表", { exact: true }).click();
   await expect(tailscale.getByText("laptop", { exact: true })).toBeVisible();
 
@@ -1313,7 +1348,7 @@ test("shows Tailnet peer empty, initial-error, stale, and recovery states", asyn
     (await request.put(`${harnessOrigin}/state`, { data: state })).ok(),
   ).toBeTruthy();
   await tailscale.getByRole("button", { name: "重新读取设备" }).click();
-  await expect(tailscale.getByText("暂无其他 Tailnet 设备")).toBeVisible();
+  await expect(tailscale.getByText("暂无 Tailnet 设备")).toBeVisible();
   await expect(tailscale.getByText("laptop", { exact: true })).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
 });

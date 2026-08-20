@@ -1,14 +1,25 @@
 //! Tailscale wire DTOs: modes, backend state, peer snapshots and login URLs.
 
 use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
-use std::{fmt, net::Ipv4Addr};
+use std::{
+    fmt,
+    net::{Ipv4Addr, SocketAddr},
+};
 
 pub const MAX_TAILSCALE_PEERS: usize = 128;
 pub const MAX_TAILSCALE_PEER_NAME_BYTES: usize = 64;
 pub const MAX_TAILSCALE_PEER_OS_BYTES: usize = 32;
+pub const MAX_TAILSCALE_RELAY_BYTES: usize = 32;
 /// Fixed TCP port for the management-plane HTTP listener on the Tailscale
 /// interface. The router firewall opens it; the portal binds it.
 pub const TAILSCALE_MANAGEMENT_HTTP_PORT: u16 = 8080;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TailscalePeerConnection {
+    Direct { address: SocketAddr },
+    Relay { region: String },
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -18,6 +29,16 @@ pub struct TailscalePeer {
     pub online: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub os: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection: Option<TailscalePeerConnection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_seen_unix_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rx_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tx_bytes: Option<u64>,
 }
 
 impl TailscalePeer {
@@ -27,12 +48,30 @@ impl TailscalePeer {
         online: bool,
         os: Option<String>,
     ) -> Option<Self> {
+        Self::with_details(name, ipv4, online, os, None, None, None, None, None)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_details(
+        name: impl Into<String>,
+        ipv4: Ipv4Addr,
+        online: bool,
+        os: Option<String>,
+        active: Option<bool>,
+        connection: Option<TailscalePeerConnection>,
+        last_seen_unix_ms: Option<u64>,
+        rx_bytes: Option<u64>,
+        tx_bytes: Option<u64>,
+    ) -> Option<Self> {
         let name = name.into();
         if !valid_peer_text(&name, MAX_TAILSCALE_PEER_NAME_BYTES)
             || !is_tailscale_cgnat_ipv4(ipv4)
             || os
                 .as_deref()
                 .is_some_and(|value| !valid_peer_text(value, MAX_TAILSCALE_PEER_OS_BYTES))
+            || connection
+                .as_ref()
+                .is_some_and(|value| !valid_peer_connection(value))
         {
             return None;
         }
@@ -41,7 +80,21 @@ impl TailscalePeer {
             ipv4,
             online,
             os,
+            active,
+            connection,
+            last_seen_unix_ms,
+            rx_bytes,
+            tx_bytes,
         })
+    }
+}
+
+fn valid_peer_connection(connection: &TailscalePeerConnection) -> bool {
+    match connection {
+        TailscalePeerConnection::Direct { .. } => true,
+        TailscalePeerConnection::Relay { region } => {
+            valid_peer_text(region, MAX_TAILSCALE_RELAY_BYTES)
+        }
     }
 }
 
@@ -57,11 +110,31 @@ impl<'de> Deserialize<'de> for TailscalePeer {
             ipv4: Ipv4Addr,
             online: bool,
             os: Option<String>,
+            #[serde(default)]
+            active: Option<bool>,
+            #[serde(default)]
+            connection: Option<TailscalePeerConnection>,
+            #[serde(default)]
+            last_seen_unix_ms: Option<u64>,
+            #[serde(default)]
+            rx_bytes: Option<u64>,
+            #[serde(default)]
+            tx_bytes: Option<u64>,
         }
 
         let wire = WirePeer::deserialize(deserializer)?;
-        Self::new(wire.name, wire.ipv4, wire.online, wire.os)
-            .ok_or_else(|| D::Error::custom("invalid Tailscale peer"))
+        Self::with_details(
+            wire.name,
+            wire.ipv4,
+            wire.online,
+            wire.os,
+            wire.active,
+            wire.connection,
+            wire.last_seen_unix_ms,
+            wire.rx_bytes,
+            wire.tx_bytes,
+        )
+        .ok_or_else(|| D::Error::custom("invalid Tailscale peer"))
     }
 }
 
@@ -71,11 +144,26 @@ pub struct TailscalePeerSnapshot {
     pub total: usize,
     pub online: usize,
     pub peers: Vec<TailscalePeer>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub self_node: Option<TailscalePeer>,
 }
 
 impl TailscalePeerSnapshot {
-    pub fn new(mut peers: Vec<TailscalePeer>) -> Option<Self> {
+    pub fn new(peers: Vec<TailscalePeer>) -> Option<Self> {
+        Self::new_with_self(None, peers)
+    }
+
+    pub fn new_with_self(
+        self_node: Option<TailscalePeer>,
+        mut peers: Vec<TailscalePeer>,
+    ) -> Option<Self> {
         if peers.len() > MAX_TAILSCALE_PEERS {
+            return None;
+        }
+        if self_node
+            .as_ref()
+            .is_some_and(|local| peers.iter().any(|peer| peer.ipv4 == local.ipv4))
+        {
             return None;
         }
         peers.sort_by(|left, right| {
@@ -97,7 +185,16 @@ impl TailscalePeerSnapshot {
             total: peers.len(),
             online,
             peers,
+            self_node,
         })
+    }
+
+    pub fn device_total(&self) -> usize {
+        self.total + usize::from(self.self_node.is_some())
+    }
+
+    pub fn device_online(&self) -> usize {
+        self.online + usize::from(self.self_node.as_ref().is_some_and(|node| node.online))
     }
 
     pub fn empty() -> Self {
@@ -105,6 +202,7 @@ impl TailscalePeerSnapshot {
             total: 0,
             online: 0,
             peers: Vec::new(),
+            self_node: None,
         }
     }
 }
@@ -120,10 +218,12 @@ impl<'de> Deserialize<'de> for TailscalePeerSnapshot {
             total: usize,
             online: usize,
             peers: Vec<TailscalePeer>,
+            #[serde(default)]
+            self_node: Option<TailscalePeer>,
         }
 
         let wire = WireSnapshot::deserialize(deserializer)?;
-        let snapshot = Self::new(wire.peers)
+        let snapshot = Self::new_with_self(wire.self_node, wire.peers)
             .ok_or_else(|| D::Error::custom("invalid Tailscale peer snapshot"))?;
         if snapshot.total != wire.total || snapshot.online != wire.online {
             return Err(D::Error::custom("inconsistent Tailscale peer counts"));
@@ -214,6 +314,58 @@ impl TailscaleLoginUrl {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn peer_snapshot_preserves_optional_connection_details_and_local_node() {
+        let local = TailscalePeer::with_details(
+            "hyz-things",
+            Ipv4Addr::new(100, 64, 0, 7),
+            false,
+            Some("linux".to_owned()),
+            Some(false),
+            None,
+            Some(1_786_000_000_000),
+            Some(123),
+            Some(456),
+        )
+        .unwrap();
+        let peer = TailscalePeer::with_details(
+            "desktop",
+            Ipv4Addr::new(100, 64, 0, 8),
+            true,
+            Some("windows".to_owned()),
+            Some(true),
+            Some(TailscalePeerConnection::Direct {
+                address: "192.168.1.3:41641".parse().unwrap(),
+            }),
+            None,
+            Some(789),
+            Some(1_234),
+        )
+        .unwrap();
+        let snapshot =
+            TailscalePeerSnapshot::new_with_self(Some(local.clone()), vec![peer.clone()]).unwrap();
+
+        assert_eq!(snapshot.device_total(), 2);
+        assert_eq!(snapshot.device_online(), 1);
+        assert_eq!(snapshot.self_node, Some(local));
+        assert_eq!(snapshot.peers, vec![peer]);
+
+        let encoded = serde_json::to_string(&snapshot).unwrap();
+        let decoded: TailscalePeerSnapshot = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, snapshot);
+    }
+
+    #[test]
+    fn legacy_peer_snapshot_without_optional_details_remains_valid() {
+        let decoded: TailscalePeerSnapshot = serde_json::from_str(
+            r#"{"total":1,"online":1,"peers":[{"name":"laptop","ipv4":"100.64.0.8","online":true,"os":"linux"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(decoded.device_total(), 1);
+        assert_eq!(decoded.peers[0].active, None);
+        assert_eq!(decoded.peers[0].connection, None);
+    }
 
     #[test]
     fn peer_snapshot_enforces_bounds_uniqueness_and_stable_order() {

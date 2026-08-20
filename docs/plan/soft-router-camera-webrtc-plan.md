@@ -6,7 +6,7 @@
 
 实现保持本文定义的独立 `hyz-camera`、HTTP SDP 信令、固定 LAN/Tailscale candidate、V4L2 + GStreamer + Rockchip MPP H.264、`str0m` 和多观看者边界（`MAX_VIEWERS=4`）。真实 Chromium 已分别通过 LAN 与 Tailscale origin，在桌面和移动端完成播放、H.264 解码、canvas 可见像素、全屏、停止与 session 清理验收；同一账号两个页面可同时观看同一路直播（`active_sessions=2`），关闭其一不影响另一个。最终 OTA 中的插件、Camera 和 Router 与构建产物逐字节一致；板端采集码流经 `ffprobe` 确认为 full-range `color_range=pc`。camera 纯测试（SDP 校验、控制协议 v2、水印与旋转 domain、FrameHub 扇出与多会话生命周期）已交叉编译并在板端全部通过。4K 预设间歇 HTTP 503 已定位为 4K 冷启动首帧超过 3 秒管线启动截止时间（实测 4.3-4.5s），截止时间上调至 10s 后 4K 稳定出流。
 
-本文继续记录第一版管理页面摄像头直播的产品边界、进程架构、信令协议、WebRTC 媒体路径、Tailscale 集成、安全约束、测试顺序和验收矩阵。真实设备测试方法见 [`camera-hardware-e2e.md`](camera-hardware-e2e.md)。
+本文继续记录第一版管理页面摄像头直播的产品边界、进程架构、信令协议、WebRTC 媒体路径、Tailscale 集成、安全约束、测试顺序和验收矩阵。真实设备测试方法见 [`camera-hardware-e2e.md`](../camera-hardware-e2e.md)。
 
 计划日期：2026-08-14。
 完成日期：2026-08-14。

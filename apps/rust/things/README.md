@@ -14,7 +14,7 @@
 - 管理员认证：Argon2id 凭据持久化在 `/userdata/hyz-router/admin/credential.json`，bootstrap 密码强制改密、会话与 CSRF 边界沿用原安全模型。
 - 状态聚合 `PortalStatus`：router 不可用时返回明确 degraded 快照，health 保持纯存活探针。
 - 固定 LAN 监听与 Tailscale exact listener 管理：地址变化时先停旧 listener 再绑定新地址，永不回退 `0.0.0.0`。
-- 热推送：`tools/deploy-app.sh` 支持对 router/things/camera 任一应用推送新 ELF 而**不重启其他应用**，并在停止服务前做协议版本兼容性检查。
+- 非 router 应用热推送：`tools/deploy-app.sh` 只支持对 `hyz-things` 和 `hyz-camera` 推送新 ELF，不重启其他应用，并在停止服务前做协议版本兼容性检查。router 的开发热替换使用独立的受控流程：USB ADB 执行 `stop → 原子替换 → start`，网络 ADB 执行 `原子替换 → reboot`；正式发布仍通过 OTA。
 
 ## 代码结构
 

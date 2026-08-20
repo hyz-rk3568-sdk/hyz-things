@@ -109,7 +109,7 @@ are defined in
 [`docs/soft-router-user-stories.md`](docs/soft-router-user-stories.md). The Wi-Fi-only
 `br-lan = p2p0` source migration, kernel prerequisites, and pending board test plan
 are recorded in
-[`docs/soft-router-br-lan-validation.md`](docs/soft-router-br-lan-validation.md).
+[`docs/validation/soft-router-br-lan-validation.md`](docs/validation/soft-router-br-lan-validation.md).
 The pinned Mihomo input, historical proxy-dashboard validation, firmware hashes,
 rootfs audit, and remaining board tests are recorded in
 [`docs/soft-router-proxy-integration.md`](docs/soft-router-proxy-integration.md).

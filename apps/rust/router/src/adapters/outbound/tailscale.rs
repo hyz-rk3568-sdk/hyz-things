@@ -22,14 +22,15 @@ use crate::{
     },
     domain::{
         network::{
-            OwnedResource, Probe, LAN_BRIDGE, LAN_SUBNET, ROUTER_FILTER_CHAIN, WAN_INTERFACE,
+            OwnedResource, Probe, ETHERNET_WAN_INTERFACE, LAN_BRIDGE, LAN_SUBNET,
+            ROUTER_FILTER_CHAIN, WIFI_WAN_INTERFACE,
         },
         proxy::{MIHOMO_FILTER_CHAIN, MIHOMO_MIXED_ADDRESS},
         tailscale::{
             TailscaleAction, TailscaleBackendState, TailscaleConnectionKind, TailscaleEnvironment,
             TailscaleLoginUrl, TailscaleMode, TailscaleObserved, TailscalePeer,
-            TailscalePeerSnapshot, TailscalePreferences, TailscaleProcessState,
-            MAX_TAILSCALE_PEERS, TAILSCALE_ADB_PORT, TAILSCALE_CGNAT_SUBNET,
+            TailscalePeerConnection, TailscalePeerSnapshot, TailscalePreferences,
+            TailscaleProcessState, MAX_TAILSCALE_PEERS, TAILSCALE_ADB_PORT, TAILSCALE_CGNAT_SUBNET,
             TAILSCALE_FORWARD_CHAIN, TAILSCALE_INPUT_CHAIN, TAILSCALE_INTERFACE,
             TAILSCALE_LAN_ROUTE, TAILSCALE_MANAGEMENT_HTTP_PORT, TAILSCALE_NAT_CHAIN,
             TAILSCALE_UDP_PORT,
@@ -70,6 +71,7 @@ const EXPLICIT_PROXY_PROBE_TARGET: &str = "controlplane.tailscale.com";
 const EXPLICIT_PROXY_PROBE_PORT: u16 = 443;
 const EXPLICIT_PROXY_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_EXPLICIT_PROXY_PROBE_RESPONSE: usize = 4 * 1024;
+const TAILSCALE_DIRECT_WAN_INTERFACES: [&str; 2] = [ETHERNET_WAN_INTERFACE, WIFI_WAN_INTERFACE];
 
 #[derive(Debug, Default, Clone)]
 pub struct LinuxTailscalePlatform {
@@ -1616,19 +1618,35 @@ struct StatusFixture {
 #[serde(rename_all = "PascalCase")]
 struct PeerStatusFixture {
     backend_state: String,
+    #[serde(default, rename = "TailscaleIPs")]
+    tailscale_ips: Value,
+    #[serde(rename = "Self")]
+    self_node: Option<NodeFixture>,
     #[serde(rename = "Peer")]
     peers: Value,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct PeerFixture {
+struct NodeFixture {
     host_name: String,
-    #[serde(rename = "TailscaleIPs")]
-    tailscale_ips: Value,
+    #[serde(default, rename = "TailscaleIPs")]
+    tailscale_ips: Option<Value>,
     online: bool,
     #[serde(rename = "OS")]
     os: Option<String>,
+    #[serde(default)]
+    active: Option<bool>,
+    #[serde(default)]
+    cur_addr: Option<String>,
+    #[serde(default)]
+    relay: Option<String>,
+    #[serde(default)]
+    rx_bytes: Option<u64>,
+    #[serde(default)]
+    tx_bytes: Option<u64>,
+    #[serde(default)]
+    last_seen: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1735,7 +1753,13 @@ fn parse_peer_snapshot_json(input: &str) -> Result<TailscalePeerSnapshot, Platfo
             "Tailscale peer status JSON lacks the narrow required shape".to_owned(),
         )
     })?;
-    let peer_values = match fixture.peers {
+    let PeerStatusFixture {
+        backend_state,
+        tailscale_ips,
+        self_node,
+        peers: peers_value,
+    } = fixture;
+    let peer_values = match peers_value {
         Value::Null => serde_json::Map::new(),
         Value::Object(peers) => peers,
         _ => {
@@ -1749,69 +1773,234 @@ fn parse_peer_snapshot_json(input: &str) -> Result<TailscalePeerSnapshot, Platfo
             "Tailscale peer count exceeds limit".to_owned(),
         ));
     }
-    if fixture.backend_state != "Running" {
-        if peer_values.is_empty()
-            && matches!(fixture.backend_state.as_str(), "Stopped" | "NeedsLogin")
-        {
+    if backend_state != "Running" {
+        if peer_values.is_empty() && matches!(backend_state.as_str(), "Stopped" | "NeedsLogin") {
             return Ok(TailscalePeerSnapshot::empty());
         }
         return Err(PlatformError::ProbeFailed(
             "Tailscale peer inventory is inconsistent with backend state".to_owned(),
         ));
     }
+    let self_node = self_node
+        .map(|node| parse_node_fixture(node, Some(&tailscale_ips)))
+        .transpose()?;
     let peers = peer_values
         .values()
         .map(|value| {
-            let peer: PeerFixture = serde_json::from_value(value.clone()).map_err(|_| {
+            let node: NodeFixture = serde_json::from_value(value.clone()).map_err(|_| {
                 PlatformError::ProbeFailed(
                     "Tailscale peer entry lacks the narrow required shape".to_owned(),
                 )
             })?;
-            let address_values = peer.tailscale_ips.as_array().ok_or_else(|| {
-                PlatformError::ProbeFailed("Tailscale peer addresses are not an array".to_owned())
-            })?;
-            let ipv4s = address_values
-                .iter()
-                .map(|value| {
-                    value
-                        .as_str()
-                        .ok_or_else(|| {
-                            PlatformError::ProbeFailed(
-                                "Tailscale peer contains a non-string IP address".to_owned(),
-                            )
-                        })?
-                        .parse::<std::net::IpAddr>()
-                        .map_err(|_| {
-                            PlatformError::ProbeFailed(
-                                "Tailscale peer contains a malformed IP address".to_owned(),
-                            )
-                        })
-                })
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .filter_map(|address| match address {
-                    std::net::IpAddr::V4(address) => Some(address),
-                    std::net::IpAddr::V6(_) => None,
-                })
-                .collect::<Vec<_>>();
-            let [ipv4] = ipv4s.as_slice() else {
-                return Err(PlatformError::ProbeFailed(
-                    "Tailscale peer must contain exactly one IPv4 address".to_owned(),
-                ));
-            };
-            let os = peer.os.filter(|value| !value.is_empty());
-            TailscalePeer::new(peer.host_name, *ipv4, peer.online, os).ok_or_else(|| {
-                PlatformError::ProbeFailed(
-                    "Tailscale peer fields exceed bounds or contain an unsafe value".to_owned(),
-                )
-            })
+            parse_node_fixture(node, None)
         })
         .collect::<Result<Vec<_>, _>>()?;
-    TailscalePeerSnapshot::new(peers).ok_or_else(|| {
+    TailscalePeerSnapshot::new_with_self(self_node, peers).ok_or_else(|| {
         PlatformError::ProbeFailed(
             "Tailscale peer inventory is oversized or contains duplicate IPv4 addresses".to_owned(),
         )
     })
+}
+
+fn parse_node_fixture(
+    node: NodeFixture,
+    fallback_ips: Option<&Value>,
+) -> Result<TailscalePeer, PlatformError> {
+    let address_values = node
+        .tailscale_ips
+        .as_ref()
+        .filter(|value| !value.is_null())
+        .or_else(|| fallback_ips.filter(|value| !value.is_null()));
+    let ipv4 = parse_single_tailscale_ipv4(address_values)?;
+    let connection =
+        parse_active_connection(node.active, node.cur_addr.as_deref(), node.relay.as_deref())?;
+    let last_seen_unix_ms = parse_last_seen_unix_ms(node.last_seen.as_deref())?;
+    let os = node.os.filter(|value| !value.is_empty());
+    TailscalePeer::with_details(
+        node.host_name,
+        ipv4,
+        node.online,
+        os,
+        node.active,
+        connection,
+        last_seen_unix_ms,
+        node.rx_bytes,
+        node.tx_bytes,
+    )
+    .ok_or_else(|| {
+        PlatformError::ProbeFailed(
+            "Tailscale peer fields exceed bounds or contain an unsafe value".to_owned(),
+        )
+    })
+}
+
+fn parse_single_tailscale_ipv4(value: Option<&Value>) -> Result<Ipv4Addr, PlatformError> {
+    let address_values = value.and_then(Value::as_array).ok_or_else(|| {
+        PlatformError::ProbeFailed("Tailscale peer addresses are not an array".to_owned())
+    })?;
+    let ipv4s = address_values
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .ok_or_else(|| {
+                    PlatformError::ProbeFailed(
+                        "Tailscale peer contains a non-string IP address".to_owned(),
+                    )
+                })?
+                .parse::<std::net::IpAddr>()
+                .map_err(|_| {
+                    PlatformError::ProbeFailed(
+                        "Tailscale peer contains a malformed IP address".to_owned(),
+                    )
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .filter_map(|address| match address {
+            std::net::IpAddr::V4(address) => Some(address),
+            std::net::IpAddr::V6(_) => None,
+        })
+        .collect::<Vec<_>>();
+    let [ipv4] = ipv4s.as_slice() else {
+        return Err(PlatformError::ProbeFailed(
+            "Tailscale peer must contain exactly one IPv4 address".to_owned(),
+        ));
+    };
+    if !is_tailscale_ipv4(*ipv4) {
+        return Err(PlatformError::ProbeFailed(
+            "Tailscale peer IPv4 address is outside 100.64.0.0/10".to_owned(),
+        ));
+    }
+    Ok(*ipv4)
+}
+
+fn parse_active_connection(
+    active: Option<bool>,
+    cur_addr: Option<&str>,
+    relay: Option<&str>,
+) -> Result<Option<TailscalePeerConnection>, PlatformError> {
+    if active != Some(true) {
+        return Ok(None);
+    }
+    if let Some(address) = cur_addr.filter(|value| !value.is_empty()) {
+        let address = address.parse::<SocketAddr>().map_err(|_| {
+            PlatformError::ProbeFailed("Tailscale peer direct address is malformed".to_owned())
+        })?;
+        return Ok(Some(TailscalePeerConnection::Direct { address }));
+    }
+    if let Some(region) = relay.filter(|value| !value.is_empty()) {
+        return Ok(Some(TailscalePeerConnection::Relay {
+            region: region.to_owned(),
+        }));
+    }
+    Ok(None)
+}
+
+fn parse_last_seen_unix_ms(value: Option<&str>) -> Result<Option<u64>, PlatformError> {
+    let Some(value) = value.filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    if value.starts_with("0001-01-01T00:00:00") {
+        return Ok(None);
+    }
+    parse_rfc3339_utc_millis(value)
+        .map(Some)
+        .map_err(|_| PlatformError::ProbeFailed("Tailscale peer LastSeen is malformed".to_owned()))
+}
+
+fn parse_rfc3339_utc_millis(value: &str) -> Result<u64, ()> {
+    let bytes = value.as_bytes();
+    if bytes.len() < 20
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || bytes[10] != b'T'
+        || bytes[13] != b':'
+        || bytes[16] != b':'
+    {
+        return Err(());
+    }
+    let year = parse_fixed_digits(bytes, 0, 4)? as i32;
+    let month = parse_fixed_digits(bytes, 5, 2)? as u32;
+    let day = parse_fixed_digits(bytes, 8, 2)? as u32;
+    let hour = parse_fixed_digits(bytes, 11, 2)? as u32;
+    let minute = parse_fixed_digits(bytes, 14, 2)? as u32;
+    let second = parse_fixed_digits(bytes, 17, 2)? as u32;
+    if hour > 23 || minute > 59 || second > 59 || !valid_calendar_date(year, month, day) {
+        return Err(());
+    }
+    let milliseconds = match bytes[19] {
+        b'Z' if bytes.len() == 20 => 0,
+        b'.' => {
+            let Some(zulu) = bytes[20..].iter().position(|byte| *byte == b'Z') else {
+                return Err(());
+            };
+            let end = 20 + zulu;
+            if end + 1 != bytes.len() || end == 20 {
+                return Err(());
+            }
+            let fraction = &bytes[20..end];
+            if !fraction.iter().all(u8::is_ascii_digit) {
+                return Err(());
+            }
+            let mut milliseconds = 0_u32;
+            for index in 0..3 {
+                milliseconds *= 10;
+                if let Some(byte) = fraction.get(index) {
+                    milliseconds += u32::from(*byte - b'0');
+                }
+            }
+            milliseconds
+        }
+        _ => return Err(()),
+    };
+    let days = days_from_civil(year, month, day);
+    let seconds = days
+        .checked_mul(86_400)
+        .ok_or(())?
+        .checked_add(i64::from(hour) * 3_600)
+        .and_then(|value| value.checked_add(i64::from(minute) * 60))
+        .and_then(|value| value.checked_add(i64::from(second)))
+        .ok_or(())?;
+    let millis = seconds
+        .checked_mul(1_000)
+        .ok_or(())?
+        .checked_add(i64::from(milliseconds))
+        .ok_or(())?;
+    u64::try_from(millis).map_err(|_| ())
+}
+
+fn parse_fixed_digits(bytes: &[u8], start: usize, length: usize) -> Result<u32, ()> {
+    let slice = bytes.get(start..start + length).ok_or(())?;
+    if !slice.iter().all(u8::is_ascii_digit) {
+        return Err(());
+    }
+    Ok(slice
+        .iter()
+        .fold(0_u32, |value, byte| value * 10 + u32::from(*byte - b'0')))
+}
+
+fn valid_calendar_date(year: i32, month: u32, day: u32) -> bool {
+    (1..=12).contains(&month) && (1..=days_in_month(year, month)).contains(&day)
+}
+
+fn days_in_month(year: i32, month: u32) -> u32 {
+    match month {
+        2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    }
+}
+
+fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
+    let year = i64::from(year) - i64::from(month <= 2);
+    let era = (if year >= 0 { year } else { year - 399 }) / 400;
+    let year_of_era = year - era * 400;
+    let month = i64::from(month);
+    let day_of_year = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + i64::from(day) - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
 }
 
 fn parse_ip_output(input: &str) -> Result<Option<Ipv4Addr>, PlatformError> {
@@ -2034,8 +2223,23 @@ fn tailscaled_argv() -> Vec<Vec<u8>> {
     .collect()
 }
 
+fn tailscale_direct_udp_rule(interface: &str) -> Vec<String> {
+    words(&[
+        "-i",
+        interface,
+        "-p",
+        "udp",
+        "-m",
+        "udp",
+        "--dport",
+        &TAILSCALE_UDP_PORT.to_string(),
+        "-j",
+        "ACCEPT",
+    ])
+}
+
 fn tailscale_input_rules(token: &str) -> Vec<Vec<String>> {
-    vec![
+    let mut rules = vec![
         words(&["-m", "comment", "--comment", token]),
         words(&[
             "-s",
@@ -2046,18 +2250,11 @@ fn tailscale_input_rules(token: &str) -> Vec<Vec<String>> {
             "-j",
             "DROP",
         ]),
-        words(&[
-            "-i",
-            WAN_INTERFACE,
-            "-p",
-            "udp",
-            "-m",
-            "udp",
-            "--dport",
-            &TAILSCALE_UDP_PORT.to_string(),
-            "-j",
-            "ACCEPT",
-        ]),
+    ];
+    for interface in TAILSCALE_DIRECT_WAN_INTERFACES {
+        rules.push(tailscale_direct_udp_rule(interface));
+    }
+    rules.extend([
         words(&[
             "-i",
             TAILSCALE_INTERFACE,
@@ -2098,7 +2295,8 @@ fn tailscale_input_rules(token: &str) -> Vec<Vec<String>> {
         ]),
         words(&["-i", TAILSCALE_INTERFACE, "-j", "DROP"]),
         words(&["-j", "RETURN"]),
-    ]
+    ]);
+    rules
 }
 
 fn tailscale_forward_rules(router_token: &str, subnet_token: Option<&str>) -> Vec<Vec<String>> {
@@ -2753,9 +2951,34 @@ mod tests {
         let snapshot = parse_peer_snapshot_json(STATUS_PEERS).unwrap();
         assert_eq!(snapshot.total, 2);
         assert_eq!(snapshot.online, 1);
+        assert_eq!(snapshot.device_total(), 3);
+        assert_eq!(snapshot.device_online(), 2);
+        assert_eq!(
+            snapshot.self_node.as_ref().map(|node| node.name.as_str()),
+            Some("hyz-router")
+        );
+        assert_eq!(
+            snapshot
+                .self_node
+                .as_ref()
+                .and_then(|node| node.connection.as_ref()),
+            Some(&TailscalePeerConnection::Direct {
+                address: "192.168.1.3:41641".parse().unwrap(),
+            })
+        );
         assert_eq!(snapshot.peers[0].name, "laptop");
         assert_eq!(snapshot.peers[0].ipv4, Ipv4Addr::new(100, 64, 0, 8));
         assert_eq!(snapshot.peers[0].os.as_deref(), Some("linux"));
+        assert_eq!(snapshot.peers[0].active, Some(true));
+        assert_eq!(
+            snapshot.peers[0].connection,
+            Some(TailscalePeerConnection::Direct {
+                address: "192.168.1.3:41641".parse().unwrap(),
+            })
+        );
+        assert_eq!(snapshot.peers[0].rx_bytes, Some(1_234));
+        assert_eq!(snapshot.peers[0].tx_bytes, Some(5_678));
+        assert!(snapshot.peers[1].last_seen_unix_ms.is_some());
         let serialized = serde_json::to_string(&snapshot).unwrap();
         assert!(!serialized.contains("secret@example.com"));
         assert!(!serialized.contains("must-not-be-exposed"));
@@ -2763,9 +2986,15 @@ mod tests {
         assert!(!serialized.contains("DNSName"));
         let mut empty: Value = serde_json::from_str(STATUS_PEERS).unwrap();
         empty["Peer"] = Value::Null;
+        let empty_snapshot =
+            parse_peer_snapshot_json(&serde_json::to_string(&empty).unwrap()).unwrap();
+        assert!(empty_snapshot.peers.is_empty());
         assert_eq!(
-            parse_peer_snapshot_json(&serde_json::to_string(&empty).unwrap()).unwrap(),
-            TailscalePeerSnapshot::empty()
+            empty_snapshot
+                .self_node
+                .as_ref()
+                .map(|node| node.name.as_str()),
+            Some("hyz-router")
         );
     }
 
@@ -2956,6 +3185,20 @@ mod tests {
     }
 
     #[test]
+    fn direct_udp_accept_is_scoped_to_both_fixed_wan_interfaces() {
+        let port = TAILSCALE_UDP_PORT.to_string();
+        let direct = tailscale_input_rules("router")
+            .into_iter()
+            .filter(|rule| rule.iter().any(|word| word == &port))
+            .collect::<Vec<_>>();
+        let expected = TAILSCALE_DIRECT_WAN_INTERFACES
+            .into_iter()
+            .map(tailscale_direct_udp_rule)
+            .collect::<Vec<_>>();
+        assert_eq!(direct, expected);
+    }
+
+    #[test]
     fn firewall_rules_match_target_iptables_canonical_output() {
         let input = tailscale_input_rules("router");
         let forward = tailscale_forward_rules("router", None);
@@ -2972,7 +3215,7 @@ mod tests {
         assert_eq!(forward[1], canonical_drop);
 
         let input_output = format!(
-            "-N {TAILSCALE_INPUT_CHAIN}\n-A {TAILSCALE_INPUT_CHAIN} -m comment --comment router\n-A {TAILSCALE_INPUT_CHAIN} -s {TAILSCALE_CGNAT_SUBNET} ! -i {TAILSCALE_INTERFACE} -j DROP\n-A {TAILSCALE_INPUT_CHAIN} -i {WAN_INTERFACE} -p udp -m udp --dport {TAILSCALE_UDP_PORT} -j ACCEPT\n-A {TAILSCALE_INPUT_CHAIN} -i {TAILSCALE_INTERFACE} -p tcp -m tcp --dport {TAILSCALE_MANAGEMENT_HTTP_PORT} -j ACCEPT\n-A {TAILSCALE_INPUT_CHAIN} -s {TAILSCALE_CGNAT_SUBNET} -i {TAILSCALE_INTERFACE} -p tcp -m tcp --dport {TAILSCALE_ADB_PORT} -j ACCEPT\n-A {TAILSCALE_INPUT_CHAIN} -i {TAILSCALE_INTERFACE} -p udp -m udp --dport {CAMERA_UDP_PORT_START}:{CAMERA_UDP_PORT_END} -j ACCEPT\n-A {TAILSCALE_INPUT_CHAIN} -i {TAILSCALE_INTERFACE} -j DROP\n-A {TAILSCALE_INPUT_CHAIN} -j RETURN\n"
+            "-N {TAILSCALE_INPUT_CHAIN}\n-A {TAILSCALE_INPUT_CHAIN} -m comment --comment router\n-A {TAILSCALE_INPUT_CHAIN} -s {TAILSCALE_CGNAT_SUBNET} ! -i {TAILSCALE_INTERFACE} -j DROP\n-A {TAILSCALE_INPUT_CHAIN} -i {ETHERNET_WAN_INTERFACE} -p udp -m udp --dport {TAILSCALE_UDP_PORT} -j ACCEPT\n-A {TAILSCALE_INPUT_CHAIN} -i {WIFI_WAN_INTERFACE} -p udp -m udp --dport {TAILSCALE_UDP_PORT} -j ACCEPT\n-A {TAILSCALE_INPUT_CHAIN} -i {TAILSCALE_INTERFACE} -p tcp -m tcp --dport {TAILSCALE_MANAGEMENT_HTTP_PORT} -j ACCEPT\n-A {TAILSCALE_INPUT_CHAIN} -s {TAILSCALE_CGNAT_SUBNET} -i {TAILSCALE_INTERFACE} -p tcp -m tcp --dport {TAILSCALE_ADB_PORT} -j ACCEPT\n-A {TAILSCALE_INPUT_CHAIN} -i {TAILSCALE_INTERFACE} -p udp -m udp --dport {CAMERA_UDP_PORT_START}:{CAMERA_UDP_PORT_END} -j ACCEPT\n-A {TAILSCALE_INPUT_CHAIN} -i {TAILSCALE_INTERFACE} -j DROP\n-A {TAILSCALE_INPUT_CHAIN} -j RETURN\n"
         );
         let qualified = input
             .iter()

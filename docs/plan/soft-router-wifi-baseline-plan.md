@@ -22,7 +22,7 @@ p2p0 AP
 下游客户端
 ```
 
-只有在本文列出的代码、host 测试、固件审计和板端验收全部通过并留下受限证据后，才能在 [`soft-router-user-stories.md`](soft-router-user-stories.md) 中勾选对应任务。
+只有在本文列出的代码、host 测试、固件审计和板端验收全部通过并留下受限证据后，才能在 [`soft-router-user-stories.md`](../soft-router-user-stories.md) 中勾选对应任务。
 
 ## 1. 目标
 
@@ -323,9 +323,9 @@ dhcp-range=192.168.8.100,192.168.8.249,255.255.255.0,10m
 全部验收通过后：
 
 1. 将本文状态改为“已完成”，填写验证日期、固件哈希、结果和已知限制；
-2. 更新 [`architecture.md`](architecture.md) 的当前统一固件验证状态；
-3. 更新 [`soft-router-br-lan-validation.md`](soft-router-br-lan-validation.md) 顶部说明，指向本文的最终统一固件结果，同时保留其历史基线性质；
-4. 在 [`soft-router-user-stories.md`](soft-router-user-stories.md) 中勾选：
+2. 更新 [`architecture.md`](../architecture.md) 的当前统一固件验证状态；
+3. 更新 [`soft-router-br-lan-validation.md`](../validation/soft-router-br-lan-validation.md) 顶部说明，指向本文的最终统一固件结果，同时保留其历史基线性质；
+4. 在 [`soft-router-user-stories.md`](../soft-router-user-stories.md) 中勾选：
 
 ```markdown
 - [x] 将 DHCP 地址池从 `.100-.199` 扩展到 `.100-.249`，保留合法 lease 并验收边界地址。

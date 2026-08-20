@@ -124,3 +124,9 @@ composition root in its own Cargo package:
 ## 构建，验证以及测试入口
 
 @./Makefile
+
+## 开发部署与板端验证速查
+
+- 非 router 应用通过 `apps/rust/things/tools/deploy-app.sh` 热部署：使用 `deploy <app> <ELF>` 和 `revert <app>`；工具会先做协议兼容性和 SHA-256 校验，只重启目标应用。
+- router 也可以在授权设备上做不经 OTA 的临时热替换验证：执行 `make router-app`。USB ADB 场景先上传、校验并备份候选/旧 ELF，再执行 `/etc/init.d/S81hyz-router stop`、原子替换和 `start`；网络 ADB 场景不得先 stop，必须在旧进程仍运行时上传、校验、备份并原子替换，然后执行 `adb reboot`，等待选定的网络 ADB 恢复并验收。两条路径都必须核对主机/设备 SHA-256、wire protocol 和回滚文件；它们属于开发调试用的受控热替换，不是正式发布，router 正式发布仍必须走 OTA。
+- 详细流程见 [`docs/router-app-debug.md`](docs/router-app-debug.md)，ADB 连接参数见 [`docs/network-adb.md`](docs/network-adb.md)。

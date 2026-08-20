@@ -44,7 +44,7 @@ use hyz_things::{
         subscription::{SubscriptionSummary, SubscriptionSummaryState},
         tailscale::{
             TailscaleBackendState, TailscaleEnvironment, TailscaleLoginUrl, TailscaleMode,
-            TailscalePeer, TailscalePeerSnapshot,
+            TailscalePeer, TailscalePeerConnection, TailscalePeerSnapshot,
         },
         wifi::WifiScanEntry,
     },
@@ -234,22 +234,66 @@ impl Default for HarnessState {
                 proxy_fallback: TailscaleProxyFallback::NotNeeded,
                 error_category: None,
             }),
-            tailscale_peers: TailscalePeerSnapshot::new(vec![
-                TailscalePeer::new(
-                    "laptop",
-                    Ipv4Addr::new(100, 64, 0, 8),
-                    true,
-                    Some("linux".to_owned()),
-                )
-                .unwrap(),
-                TailscalePeer::new(
-                    "tablet",
-                    Ipv4Addr::new(100, 64, 0, 9),
-                    false,
-                    Some("android".to_owned()),
-                )
-                .unwrap(),
-            ])
+            tailscale_peers: TailscalePeerSnapshot::new_with_self(
+                Some(
+                    TailscalePeer::with_details(
+                        "hyz-router",
+                        Ipv4Addr::new(100, 64, 0, 7),
+                        true,
+                        Some("linux".to_owned()),
+                        Some(true),
+                        Some(TailscalePeerConnection::Direct {
+                            address: "192.168.1.3:41641".parse().unwrap(),
+                        }),
+                        None,
+                        Some(1_024),
+                        Some(2_048),
+                    )
+                    .unwrap(),
+                ),
+                vec![
+                    TailscalePeer::with_details(
+                        "laptop",
+                        Ipv4Addr::new(100, 64, 0, 8),
+                        true,
+                        Some("linux".to_owned()),
+                        Some(true),
+                        Some(TailscalePeerConnection::Direct {
+                            address: "192.168.1.3:41641".parse().unwrap(),
+                        }),
+                        None,
+                        Some(789),
+                        Some(1_234),
+                    )
+                    .unwrap(),
+                    TailscalePeer::with_details(
+                        "hyz-iphone",
+                        Ipv4Addr::new(100, 64, 0, 10),
+                        true,
+                        Some("iOS".to_owned()),
+                        Some(true),
+                        Some(TailscalePeerConnection::Relay {
+                            region: "sfo".to_owned(),
+                        }),
+                        None,
+                        Some(2_727_352),
+                        Some(446_096),
+                    )
+                    .unwrap(),
+                    TailscalePeer::with_details(
+                        "tablet",
+                        Ipv4Addr::new(100, 64, 0, 9),
+                        false,
+                        Some("android".to_owned()),
+                        Some(false),
+                        None,
+                        Some(1_786_320_000_000),
+                        Some(0),
+                        Some(0),
+                    )
+                    .unwrap(),
+                ],
+            )
             .unwrap(),
             tailscale_peers_failure: false,
             system: Component::available(SystemStats {
@@ -1050,19 +1094,21 @@ fn validate_harness_state(state: &HarnessState) -> HarnessResult<()> {
     }) {
         return Err("pending network summary version is unsupported".to_owned());
     }
-    let validated_peers = TailscalePeerSnapshot::new(
-        state
-            .tailscale_peers
-            .peers
-            .iter()
-            .map(|peer| {
-                TailscalePeer::new(peer.name.clone(), peer.ipv4, peer.online, peer.os.clone())
-                    .ok_or_else(|| "Tailscale peer state violates field bounds".to_owned())
-            })
-            .collect::<HarnessResult<Vec<_>>>()?,
-    )
-    .ok_or_else(|| "Tailscale peer snapshot violates count or uniqueness bounds".to_owned())?;
-    if validated_peers != state.tailscale_peers {
+    let validated_self = state
+        .tailscale_peers
+        .self_node
+        .as_ref()
+        .map(validate_tailscale_peer)
+        .transpose()?;
+    let validated_peers = state
+        .tailscale_peers
+        .peers
+        .iter()
+        .map(validate_tailscale_peer)
+        .collect::<HarnessResult<Vec<_>>>()?;
+    let validated_snapshot = TailscalePeerSnapshot::new_with_self(validated_self, validated_peers)
+        .ok_or_else(|| "Tailscale peer snapshot violates count or uniqueness bounds".to_owned())?;
+    if validated_snapshot != state.tailscale_peers {
         return Err("Tailscale peer snapshot counts or ordering are inconsistent".to_owned());
     }
     if let Some(display) = &state.panel.display.data {
@@ -1085,6 +1131,21 @@ fn validate_harness_state(state: &HarnessState) -> HarnessResult<()> {
         }
     }
     Ok(())
+}
+
+fn validate_tailscale_peer(peer: &TailscalePeer) -> HarnessResult<TailscalePeer> {
+    TailscalePeer::with_details(
+        peer.name.clone(),
+        peer.ipv4,
+        peer.online,
+        peer.os.clone(),
+        peer.active,
+        peer.connection.clone(),
+        peer.last_seen_unix_ms,
+        peer.rx_bytes,
+        peer.tx_bytes,
+    )
+    .ok_or_else(|| "Tailscale peer state violates field bounds".to_owned())
 }
 
 fn validate_component<T>(label: &str, component: &Component<T>) -> HarnessResult<()> {

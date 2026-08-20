@@ -8,8 +8,8 @@ use super::network::{OwnedResource, Probe};
 
 pub use hyz_contract::tailscale::{
     TailscaleBackendState, TailscaleEnvironment, TailscaleLoginUrl, TailscaleMode, TailscalePeer,
-    TailscalePeerSnapshot, MAX_TAILSCALE_PEERS, MAX_TAILSCALE_PEER_NAME_BYTES,
-    MAX_TAILSCALE_PEER_OS_BYTES, TAILSCALE_MANAGEMENT_HTTP_PORT,
+    TailscalePeerConnection, TailscalePeerSnapshot, MAX_TAILSCALE_PEERS,
+    MAX_TAILSCALE_PEER_NAME_BYTES, MAX_TAILSCALE_PEER_OS_BYTES, TAILSCALE_MANAGEMENT_HTTP_PORT,
 };
 
 pub const TAILSCALE_INTERFACE: &str = "tailscale0";

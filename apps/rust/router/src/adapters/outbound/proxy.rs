@@ -1227,6 +1227,14 @@ fn migrate_legacy_persisted_source(source: &str) -> String {
     remove_top_level_fields(source, LEGACY_CONTROLLED_FIELDS)
 }
 
+pub(crate) fn migrate_legacy_persisted_source_bytes(
+    source: &[u8],
+) -> Result<Vec<u8>, PlatformError> {
+    let source = std::str::from_utf8(source)
+        .map_err(|_| PlatformError::InvalidState("Mihomo source config is not UTF-8".to_owned()))?;
+    Ok(migrate_legacy_persisted_source(source).into_bytes())
+}
+
 fn remove_controlled_listener_fields(source: &str) -> String {
     const KEYS: &[&str] = &[
         "mixed-port",
@@ -1431,6 +1439,16 @@ mod tests {
         assert!(!runtime.contains("bind-address: 0.0.0.0"));
         assert!(runtime.contains("allow-lan: false"));
         assert!(runtime.contains("bind-address: 127.0.0.1"));
+    }
+
+    #[test]
+    fn subscription_candidate_migrates_legacy_persisted_listener_fields() {
+        let legacy = b"mixed-port: 7890\nallow-lan: true\nbind-address: 0.0.0.0\nmode: rule\n";
+        let migrated = migrate_legacy_persisted_source_bytes(legacy).unwrap();
+        let migrated = String::from_utf8(migrated).unwrap();
+
+        assert_eq!(migrated, "mode: rule\n");
+        assert!(validate_source_config(&migrated).is_ok());
     }
 
     #[test]

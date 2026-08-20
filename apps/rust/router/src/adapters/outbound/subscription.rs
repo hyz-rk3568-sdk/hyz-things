@@ -424,7 +424,8 @@ impl SubscriptionSourcePort for super::process::LinuxRouterPlatform {
         subscription: &ValidatedSubscription,
         lan_tun_enabled: bool,
     ) -> Result<Vec<u8>, PlatformError> {
-        let mut source: Value = serde_yaml::from_slice(current_source).map_err(|_| {
+        let current_source = super::proxy::migrate_legacy_persisted_source_bytes(current_source)?;
+        let mut source: Value = serde_yaml::from_slice(&current_source).map_err(|_| {
             PlatformError::InvalidState("Mihomo source config is not valid YAML".to_owned())
         })?;
         let top = source.as_mapping_mut().ok_or_else(|| {

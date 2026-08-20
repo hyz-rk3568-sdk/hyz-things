@@ -2,6 +2,18 @@
   "Version": "1.84.2-tf0a12c1e8-g6b2f6f630",
   "BackendState": "Running",
   "TailscaleIPs": ["100.64.0.7"],
+  "Self": {
+    "HostName": "hyz-router",
+    "OS": "linux",
+    "TailscaleIPs": ["100.64.0.7"],
+    "Online": true,
+    "Active": true,
+    "CurAddr": "192.168.1.3:41641",
+    "Relay": "hkg",
+    "RxBytes": 111,
+    "TxBytes": 222,
+    "LastSeen": "0001-01-01T00:00:00Z"
+  },
   "Peer": {
     "nodekey:redacted-laptop": {
       "HostName": "laptop",
@@ -9,7 +21,12 @@
       "OS": "linux",
       "TailscaleIPs": ["100.64.0.8", "fd7a:115c:a1e0::8"],
       "Online": true,
-      "LastSeen": "2026-08-14T08:00:00Z",
+      "Active": true,
+      "CurAddr": "192.168.1.3:41641",
+      "Relay": "sfo",
+      "RxBytes": 1234,
+      "TxBytes": 5678,
+      "LastSeen": "0001-01-01T00:00:00Z",
       "PublicKey": "nodekey:must-not-be-exposed"
     },
     "nodekey:redacted-tablet": {
@@ -18,6 +35,11 @@
       "OS": "android",
       "TailscaleIPs": ["100.64.0.9"],
       "Online": false,
+      "Active": false,
+      "CurAddr": "",
+      "Relay": "sfo",
+      "RxBytes": 0,
+      "TxBytes": 0,
       "LastSeen": "2026-08-13T08:00:00Z"
     }
   },

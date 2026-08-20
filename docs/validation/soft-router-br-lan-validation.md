@@ -2,7 +2,7 @@
 
 ## 状态
 
-> 本文的安装路径和大部分板测数据对应已完成的旧 shell runtime，保留为 bridge/NAT parity 历史基线。当前 active source 已切换为统一 `/usr/bin/hyz-router`、`/run/hyz-network.lock` 和 Rust 内部 ownership records；统一运行时的构建、OTA 与功能板测见 [`architecture.md`](architecture.md)，本文不再代表当前验证状态。
+> 本文的安装路径和大部分板测数据对应已完成的旧 shell runtime，保留为 bridge/NAT parity 历史基线。当前 active source 已切换为统一 `/usr/bin/hyz-router`、`/run/hyz-network.lock` 和 Rust 内部 ownership records；统一运行时的构建、OTA 与功能板测见 [`architecture.md`](../architecture.md)，本文不再代表当前验证状态。
 
 **recovery-free OTA 编译、产物审计、安装、板端控制面及下游关联/DHCP/普通 NAT 路径已通过；客户端应用层 DNS/HTTPS 仍待用户确认。**
 
@@ -135,7 +135,7 @@ ADB 会早于完整 SysV 启动流程上线。OTA 后第一次检查发生在 ST
 1. 由用户在下游客户端确认 DNS 和普通 HTTP/HTTPS 应用访问；关联、DHCP、客户端 ping 和 direct NAT 计数已经通过。
 2. 重新执行弱信号吞吐基线，确认迁移 bridge 没有引入额外明显损失。
 3. 执行失败注入、8 小时稳定性和多客户端压力测试。
-4. PX-04 TUN 的源码设计和待授权板端计划已转入 [`soft-router-tun.md`](soft-router-tun.md)；DNS 接管仍是后续阶段。
+4. PX-04 TUN 的源码设计和待授权板端计划已转入 [`soft-router-tun.md`](../soft-router-tun.md)；DNS 接管仍是后续阶段。
 
 ## 回退条件
 
