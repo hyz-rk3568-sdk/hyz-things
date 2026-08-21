@@ -80,9 +80,8 @@ hyz-things 是管理门户；hyz-camera 是媒体进程。
 - 三进程拆分：无头 router、things 门户和 camera 媒体进程；
 - router ready 门控和 management-only 降级边界；
 - typed Ethernet/Wi-Fi 双上游模型、有线优先 route metric 和 uplink ownership 隔离；
-- Tailscale 本机/peer 状态、online/offline、active、direct/relay、last seen 和收发流量；
-- UDP `41641` 防火墙规则同时覆盖 `eth0` 和 `wlan0`；
-- Tailscale 显式代理按受控生命周期切换，不主动探测固定 control-plane 路径，也不自动回退或恢复环境；
+- 本机系统代理使用 Mihomo 固定 loopback mixed port `127.0.0.1:7890`，只提供本机 HTTP/HTTPS 显式代理，不接管所有本机流量，也不控制 `tailscaled`；
+- Tailscale 生命周期、RouterOnly/LAN subnet access、peer 状态与 direct/relay/DERP 观测独立运行；
 - things/camera 热推送只重启对应应用，router 保持运行；
 - router 开发热替换规则：USB ADB 使用 `stop → 原子替换 → start`，网络 ADB 使用 `原子替换 → reboot`；
 - 摄像头 WebRTC、固定媒体端口池和匿名短时 viewer 会话边界。

@@ -10,7 +10,7 @@
 
 ## 能力
 
-- 嵌入式 Yew/WASM 页面（`hyz things` 品牌）与 Axum API，全部经由类型化 `PortalControlHandler` 调用 router/camera 用例。
+- 代理设置页保留 LAN TUN 开关，并将原代理开关迁移为“本机系统代理”：使用 Mihomo `127.0.0.1:7890` 提供本机 HTTP/HTTPS 显式代理，不接管所有本机流量，也不控制 Tailscale。
 - 管理员认证：Argon2id 凭据持久化在 `/userdata/hyz-router/admin/credential.json`，bootstrap 密码强制改密、会话与 CSRF 边界沿用原安全模型。
 - 状态聚合 `PortalStatus`：router 不可用时返回明确 degraded 快照，health 保持纯存活探针。
 - 固定 LAN 监听与 Tailscale exact listener 管理：地址变化时先停旧 listener 再绑定新地址，永不回退 `0.0.0.0`。

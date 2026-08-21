@@ -15,11 +15,12 @@ use crate::{
             ForwardingDesired, NetworkDesired, NetworkObserved, OwnedResource, Probe, UplinkId,
             UplinkObserved, ETHERNET_WAN_INTERFACE, LAN_BRIDGE, LAN_MEMBER, WAN_INTERFACE,
         },
-        proxy::{ProxyDesired, ProxyObserved},
+        proxy::{ProxyDesired, ProxyFeaturesV1, ProxyObserved},
         status::{
             ActiveResolverStatus, Component, InterfaceStats, Issue, LanTunEffective, LanTunStatus,
-            LinkState, MihomoCoreStatus, ProxyResourceState, ProxyStatus, RouterStatus,
-            SystemStats, UplinkId as ContractUplinkId, UplinkStatus,
+            LinkState, LocalSystemProxyEffective, LocalSystemProxyStatus, MihomoCoreStatus,
+            ProxyResourceState, ProxyStatus, RouterStatus, SystemStats,
+            UplinkId as ContractUplinkId, UplinkStatus,
         },
     },
 };
@@ -307,11 +308,12 @@ fn proxy_status_from_observed(
             effective: lan_effective,
             ordinary_nat_fallback: known_bool(&observed.ordinary_nat_confirmed),
         },
+        local_system_proxy: local_system_proxy_status(features, observed),
     };
     let ready = match (features, desired_macs) {
         (Some(features), Some(macs)) => observed.ready_for(&ProxyDesired {
             lan_tun_enabled: features.lan_tun_enabled,
-            tailscale_explicit_proxy_enabled: features.tailscale_explicit_proxy_enabled,
+            local_system_proxy_enabled: features.local_system_proxy_enabled,
             direct_macs: macs.clone(),
         }),
         _ => false,
@@ -327,6 +329,19 @@ fn proxy_status_from_observed(
             ),
         )
     }
+}
+
+fn local_system_proxy_status(
+    features: Option<ProxyFeaturesV1>,
+    observed: &ProxyObserved,
+) -> LocalSystemProxyStatus {
+    let desired = features.map(|features| features.local_system_proxy_enabled);
+    let effective = match desired {
+        Some(false) => LocalSystemProxyEffective::Disabled,
+        Some(true) if observed.core_ready() => LocalSystemProxyEffective::Ready,
+        Some(true) | None => LocalSystemProxyEffective::NotConfirmed,
+    };
+    LocalSystemProxyStatus { desired, effective }
 }
 
 fn resource_state(probe: &Probe<bool>, required: Option<bool>) -> ProxyResourceState {
@@ -557,12 +572,12 @@ mod tests {
 
     #[test]
     fn layered_status_distinguishes_shared_core_and_lan_tun() {
-        let tailscale_only = proxy_status_from_observed(
+        let local_system_proxy_only = proxy_status_from_observed(
             &proxy_observed(ProxyFeaturesV1::new(false, true)),
             true,
             Probe::Known(Default::default()),
         );
-        let data = tailscale_only.data.unwrap();
+        let data = local_system_proxy_only.data.unwrap();
         assert_eq!(data.mihomo.process, ProxyResourceState::Ready);
         assert_eq!(data.lan_tun.effective, LanTunEffective::OrdinaryNat);
 

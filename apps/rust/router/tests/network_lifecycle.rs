@@ -481,7 +481,7 @@ fn foreign_same_name_mihomo_tun_is_neither_ready_nor_routed_or_deleted() {
     );
     let desired = ProxyDesired {
         lan_tun_enabled: true,
-        tailscale_explicit_proxy_enabled: false,
+        local_system_proxy_enabled: false,
         direct_macs: Default::default(),
     };
 
@@ -494,7 +494,7 @@ fn foreign_same_name_mihomo_tun_is_neither_ready_nor_routed_or_deleted() {
         proxy_plan(
             &ProxyDesired {
                 lan_tun_enabled: false,
-                tailscale_explicit_proxy_enabled: false,
+                local_system_proxy_enabled: false,
                 direct_macs: Default::default(),
             },
             &observed,
@@ -510,7 +510,7 @@ fn lan_tun_plan_is_interception_last_and_feature_commit_last() {
     let actions = proxy_plan(
         &ProxyDesired {
             lan_tun_enabled: true,
-            tailscale_explicit_proxy_enabled: false,
+            local_system_proxy_enabled: false,
             direct_macs: Default::default(),
         },
         &stopped_proxy(),
@@ -545,11 +545,11 @@ fn lan_tun_plan_is_interception_last_and_feature_commit_last() {
 }
 
 #[test]
-fn tailscale_only_plan_starts_core_without_lan_resources() {
+fn local_system_proxy_only_plan_starts_core_without_lan_resources() {
     let actions = proxy_plan(
         &ProxyDesired {
             lan_tun_enabled: false,
-            tailscale_explicit_proxy_enabled: true,
+            local_system_proxy_enabled: true,
             direct_macs: Default::default(),
         },
         &stopped_proxy(),
@@ -583,9 +583,9 @@ fn proxy_planner_covers_shared_core_transition_matrix() {
             token: "router".to_owned(),
         },
     );
-    let desired = |lan_tun_enabled, tailscale_explicit_proxy_enabled| ProxyDesired {
+    let desired = |lan_tun_enabled, local_system_proxy_enabled| ProxyDesired {
         lan_tun_enabled,
-        tailscale_explicit_proxy_enabled,
+        local_system_proxy_enabled,
         direct_macs: Default::default(),
     };
 
@@ -618,20 +618,20 @@ fn proxy_planner_covers_shared_core_transition_matrix() {
     );
     assert!(!both_to_lan.contains(&ProxyAction::StopCore));
 
-    let tailscale_to_both = proxy_plan(
+    let local_system_proxy_to_both = proxy_plan(
         &desired(true, true),
         &ready_proxy(ProxyFeaturesV1::new(false, true)),
         &forwarding,
         "new",
     )
     .unwrap();
-    assert!(tailscale_to_both.contains(&ProxyAction::StopCore));
-    assert!(tailscale_to_both.contains(&ProxyAction::WaitForMixedPort));
-    assert!(tailscale_to_both
+    assert!(local_system_proxy_to_both.contains(&ProxyAction::StopCore));
+    assert!(local_system_proxy_to_both.contains(&ProxyAction::WaitForMixedPort));
+    assert!(local_system_proxy_to_both
         .iter()
         .any(|action| matches!(action, ProxyAction::InstallInterceptionEntry { .. })));
 
-    let both_to_tailscale = proxy_plan(
+    let both_to_local_system_proxy = proxy_plan(
         &desired(false, true),
         &ready_proxy(ProxyFeaturesV1::new(true, true)),
         &forwarding,
@@ -639,13 +639,13 @@ fn proxy_planner_covers_shared_core_transition_matrix() {
     )
     .unwrap();
     assert!(matches!(
-        both_to_tailscale.first(),
+        both_to_local_system_proxy.first(),
         Some(ProxyAction::StopWatcher)
     ));
-    assert!(both_to_tailscale.contains(&ProxyAction::StopCore));
-    assert!(both_to_tailscale.contains(&ProxyAction::WaitForMixedPort));
+    assert!(both_to_local_system_proxy.contains(&ProxyAction::StopCore));
+    assert!(both_to_local_system_proxy.contains(&ProxyAction::WaitForMixedPort));
     assert_eq!(
-        both_to_tailscale.last(),
+        both_to_local_system_proxy.last(),
         Some(&ProxyAction::CommitFeatures {
             features: ProxyFeaturesV1::new(false, true),
         })
@@ -680,7 +680,7 @@ fn device_policy_change_refreshes_only_direct_mac_rules_in_place() {
     let actions = proxy_plan(
         &ProxyDesired {
             lan_tun_enabled: true,
-            tailscale_explicit_proxy_enabled: true,
+            local_system_proxy_enabled: true,
             direct_macs: [desired_mac].into_iter().collect(),
         },
         &observed,
@@ -718,7 +718,7 @@ fn enabling_lan_tun_with_macs_is_a_full_rebuild_not_an_inplace_refresh() {
     let actions = proxy_plan(
         &ProxyDesired {
             lan_tun_enabled: true,
-            tailscale_explicit_proxy_enabled: true,
+            local_system_proxy_enabled: true,
             direct_macs: [desired_mac].into_iter().collect(),
         },
         &observed,
@@ -749,7 +749,7 @@ fn device_policy_change_with_degraded_tun_still_rebuilds_lan_tun_and_keeps_core(
     let actions = proxy_plan(
         &ProxyDesired {
             lan_tun_enabled: true,
-            tailscale_explicit_proxy_enabled: true,
+            local_system_proxy_enabled: true,
             direct_macs: [desired_mac].into_iter().collect(),
         },
         &observed,
@@ -770,13 +770,14 @@ fn device_policy_change_with_degraded_tun_still_rebuilds_lan_tun_and_keeps_core(
 }
 
 #[test]
-fn proxy_planner_rejects_lan_commit_without_ordinary_forwarding_but_allows_tailscale_core() {
+fn proxy_planner_rejects_lan_commit_without_ordinary_forwarding_but_allows_local_system_proxy_core()
+{
     let management_only = network(false, OwnedResource::Absent);
     assert!(matches!(
         proxy_plan(
             &ProxyDesired {
                 lan_tun_enabled: true,
-                tailscale_explicit_proxy_enabled: false,
+                local_system_proxy_enabled: false,
                 direct_macs: Default::default(),
             },
             &stopped_proxy(),
@@ -788,7 +789,7 @@ fn proxy_planner_rejects_lan_commit_without_ordinary_forwarding_but_allows_tails
     assert!(proxy_plan(
         &ProxyDesired {
             lan_tun_enabled: false,
-            tailscale_explicit_proxy_enabled: true,
+            local_system_proxy_enabled: true,
             direct_macs: Default::default(),
         },
         &stopped_proxy(),
@@ -1193,13 +1194,13 @@ fn feature_readiness_is_independent_but_core_is_shared() {
     observed.mixed_port_ready = Probe::Known(true);
     assert!(observed.ready_for(&ProxyDesired {
         lan_tun_enabled: false,
-        tailscale_explicit_proxy_enabled: true,
+        local_system_proxy_enabled: true,
         direct_macs: Default::default(),
     }));
     observed.persisted_features = Probe::Known(ProxyFeaturesV1::new(true, true));
     assert!(!observed.ready_for(&ProxyDesired {
         lan_tun_enabled: true,
-        tailscale_explicit_proxy_enabled: true,
+        local_system_proxy_enabled: true,
         direct_macs: Default::default(),
     }));
 }
@@ -1210,7 +1211,7 @@ fn unknown_probe_fields_are_never_ready() {
     assert!(
         !ProxyObserved::unknown("probe failed").ready_for(&ProxyDesired {
             lan_tun_enabled: false,
-            tailscale_explicit_proxy_enabled: false,
+            local_system_proxy_enabled: false,
             direct_macs: Default::default(),
         })
     );

@@ -124,7 +124,7 @@ impl<'a> DevicePolicyApplication<'a> {
         }
         Ok(observed.ready_for(&ProxyDesired {
             lan_tun_enabled: true,
-            tailscale_explicit_proxy_enabled: features.tailscale_explicit_proxy_enabled,
+            local_system_proxy_enabled: features.local_system_proxy_enabled,
             direct_macs: config.direct_macs(),
         }))
     }
@@ -149,7 +149,7 @@ impl<'a> DevicePolicyApplication<'a> {
         ProxyApplication::new(self.platform, self.probe, self.clock)
             .reconcile_locked(&ProxyDesired {
                 lan_tun_enabled: features.lan_tun_enabled,
-                tailscale_explicit_proxy_enabled: features.tailscale_explicit_proxy_enabled,
+                local_system_proxy_enabled: features.local_system_proxy_enabled,
                 direct_macs: config.direct_macs(),
             })
             .map(|_| ())

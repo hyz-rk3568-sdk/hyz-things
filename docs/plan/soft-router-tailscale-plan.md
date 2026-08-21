@@ -41,7 +41,7 @@
 - 只允许发布固定 `192.168.8.0/24`，不支持任意 subnet、exit node、Tailscale SSH 或 accept-routes。
 - 目标 IP 和端口权限由 Tailnet Grants 管理；产品不增加任意端口或防火墙编辑器。
 - 本地 Web 提供完整的启用、一次性登录 URL、认证状态、LAN Access 和注销流程；不接收或保存 reusable auth key。
-- Tailscale 与 Mihomo 并列运行。`tailscale0 -> br-lan` 和返回流量必须绕过 Mihomo interception；LAN 普通公网流量仍按 Mihomo 策略处理。
+- Tailscale 与 Mihomo 并列运行；Tailscale-to-LAN 和 Tailscale-to-router 流量不进入 Mihomo LAN interception。本机系统代理只提供本机 `127.0.0.1:7890` 的 HTTP/HTTPS 显式代理入口，且不触发、停止或修改 `tailscaled`。
 
 ### 模式术语与产品边界
 
@@ -239,7 +239,7 @@ LanSubnetAccess 增量规则：
 - `apps/rust/router/src/adapters/outbound/system.rs`
 - `apps/rust/router/tests/network_lifecycle.rs`
 
-测试组合包括无 hook、router only、proxy+router、tailscale+router、proxy+tailscale+router，以及每种 install/remove/restart 顺序；所有 hook 必须 exact、unique、owned，foreign reference 一律冲突。
+测试组合包括无 hook、router+Mihomo TUN、router+本机系统代理、router+Tailscale、router+Mihomo TUN+本机系统代理+Tailscale，以及每种 install/remove/restart 顺序；所有 hook 必须 exact、unique、owned，foreign reference 一律冲突。
 
 Mihomo 共存要求：
 
@@ -398,7 +398,7 @@ Web 交互：
    - SSH 到 `192.168.8.x:22`，进入 tmux。
    - 浏览器访问设备启动的 `python3 -m http.server 8088` 图片目录。
    - LAN 设备无需安装 Tailscale 或增加 `100.64.0.0/10` 回程路由。
-6. 分别在 Mihomo `disabled`、`explicit`、`tun` 下重复；Tailscale 流量不计入代理 interception，LAN 普通公网代理行为不变。
+6. 分别在 Mihomo `disabled`、本机系统代理、`tun` 下重复；Tailscale 流量不计入代理 interception，LAN 普通公网代理行为不变，本机系统代理也不改变 Tailscale direct/relay/DERP 选择。
 7. 观察 direct；阻断或破坏 direct UDP 后确认自动回退 DERP/Peer Relay，SSH/tmux 仍可用。
 8. 未批准 route、无 Grants、错误目标网段、LAN 主动连接 tailnet、`tailscale0` 访问 WAN 均失败。
 9. kill exact `tailscaled`：普通 LAN、DHCP、DNS、NAT、Mihomo、本地管理继续 ready；不把残留或 foreign 状态视为 ready。
@@ -433,4 +433,4 @@ Web 交互：
 - 产品内 ACL/Grants 编辑器、Tailscale API token 或自动修改 tailnet policy。
 - LAN 设备反向主动访问 tailnet。
 - IPv6 subnet access。
-- 将 Tailscale 底层连接强制通过 Mihomo 香港代理。
+- 不提供“让 Tailscale 底层连接强制使用 Mihomo”的能力；本机系统代理开关不控制 `tailscaled`，Tailscale 运行环境固定为 Direct。

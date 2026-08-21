@@ -18,12 +18,13 @@ use hyz_things::domain::{
         DisplayRequest, PanelBootstrap, ProxyDelayRefreshRequest, ProxyGroup, ProxySelectionRequest,
     },
     status::{
-        Component, ComponentState, LanTunEffective, ProxyResourceState, SnapshotState,
-        StatusSnapshot, TailscaleErrorCategory, TailscaleStatus, UplinkId, UplinkStatus,
+        Component, ComponentState, LanTunEffective, LocalSystemProxyEffective, ProxyResourceState,
+        ProxyStatus, SnapshotState, StatusSnapshot, TailscaleConnectionType,
+        TailscaleErrorCategory, TailscaleStatus, UplinkId, UplinkStatus,
     },
     tailscale::{
-        TailscaleBackendState, TailscaleEnvironment, TailscaleMode, TailscalePeer,
-        TailscalePeerConnection, TailscalePeerSnapshot,
+        TailscaleBackendState, TailscaleMode, TailscalePeer, TailscalePeerConnection,
+        TailscalePeerSnapshot,
     },
 };
 use js_sys::{Date, Function, Promise, Reflect};
@@ -44,7 +45,7 @@ const STATUS_ENDPOINT: &str = "/api/v1/status";
 const PANEL_ENDPOINT: &str = "/api/v1/panel";
 const DISPLAY_ENDPOINT: &str = "/api/v1/control/display";
 const PROXY_LAN_TUN_ENDPOINT: &str = "/api/v1/control/proxy/lan-tun";
-const PROXY_TAILSCALE_ENDPOINT: &str = "/api/v1/control/proxy/tailscale";
+const PROXY_LOCAL_SYSTEM_ENDPOINT: &str = "/api/v1/control/proxy/local-system";
 const PROXY_SELECTION_ENDPOINT: &str = "/api/v1/control/proxy/selection";
 const PROXY_DELAYS_ENDPOINT: &str = "/api/v1/control/proxy/delays";
 const AUTH_LOGIN_ENDPOINT: &str = "/api/v1/auth/login";
@@ -600,8 +601,8 @@ struct AppState {
     display_busy: bool,
     lan_tun_notice: Option<String>,
     lan_tun_busy: bool,
-    tailscale_proxy_notice: Option<String>,
-    tailscale_proxy_busy: bool,
+    local_system_proxy_notice: Option<String>,
+    local_system_proxy_busy: bool,
     node_notice: Option<String>,
     node_busy: bool,
     loading: bool,
@@ -626,7 +627,7 @@ struct AppState {
 enum ControlArea {
     Display,
     LanTun,
-    TailscaleProxy,
+    LocalSystemProxy,
     Nodes,
 }
 
@@ -696,9 +697,9 @@ impl Reducible for AppState {
                         next.lan_tun_busy = true;
                         next.lan_tun_notice = None;
                     }
-                    ControlArea::TailscaleProxy => {
-                        next.tailscale_proxy_busy = true;
-                        next.tailscale_proxy_notice = None;
+                    ControlArea::LocalSystemProxy => {
+                        next.local_system_proxy_busy = true;
+                        next.local_system_proxy_notice = None;
                     }
                     ControlArea::Nodes => {
                         next.node_busy = true;
@@ -722,9 +723,9 @@ impl Reducible for AppState {
                         next.lan_tun_busy = false;
                         next.lan_tun_notice = notice;
                     }
-                    ControlArea::TailscaleProxy => {
-                        next.tailscale_proxy_busy = false;
-                        next.tailscale_proxy_notice = notice;
+                    ControlArea::LocalSystemProxy => {
+                        next.local_system_proxy_busy = false;
+                        next.local_system_proxy_notice = notice;
                     }
                     ControlArea::Nodes => {
                         next.node_busy = false;
@@ -4372,16 +4373,7 @@ fn render_topology(snapshot: &StatusSnapshot) -> Html {
     );
     let tailscale_detail = tailscale.map_or_else(
         || "Tailscale 状态不可用".to_owned(),
-        |tailscale| {
-            format!(
-                "{} · {}",
-                tailscale
-                    .effective_mode
-                    .map(tailscale_mode_label)
-                    .unwrap_or("未知"),
-                tailscale_proxy_status_label(tailscale)
-            )
-        },
+        tailscale_status_detail,
     );
 
     html! {
@@ -4601,7 +4593,6 @@ fn kpi(label: &'static str, value: String, meta: &'static str) -> Html {
 fn render_dashboard(snapshot: &StatusSnapshot) -> Html {
     let router = &snapshot.router;
     let proxy = &snapshot.proxy;
-    let tailscale = &snapshot.tailscale;
     let system = &snapshot.system;
     let router_data = router.data.as_ref();
     let router_rows = vec![
@@ -4674,11 +4665,11 @@ fn render_dashboard(snapshot: &StatusSnapshot) -> Html {
                 .unwrap_or_else(missing),
         ),
         (
-            "Tailscale 中继代理",
-            tailscale
+            "本机系统代理",
+            proxy
                 .data
                 .as_ref()
-                .map(tailscale_proxy_status_label)
+                .map(local_system_proxy_status_label)
                 .unwrap_or_else(missing),
         ),
     ];
@@ -5137,15 +5128,13 @@ fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
         .snapshot
         .as_ref()
         .and_then(|snapshot| snapshot.proxy.data.as_ref());
-    let tailscale = state
-        .snapshot
-        .as_ref()
-        .and_then(|snapshot| snapshot.tailscale.data.as_ref());
     let lan_desired = proxy.and_then(|status| status.lan_tun.desired);
-    let tailscale_desired = tailscale.and_then(|status| status.explicit_proxy_desired);
+    let local_system_proxy_desired = proxy.and_then(|status| status.local_system_proxy.desired);
     let lan_status = proxy.map_or_else(|| "未知".to_owned(), lan_tun_status_label);
-    let tailscale_status =
-        tailscale.map_or_else(|| "未知 · 未确认".to_owned(), tailscale_proxy_status_label);
+    let local_system_proxy_status = proxy.map_or_else(
+        || "未知 · 未确认".to_owned(),
+        local_system_proxy_status_label,
+    );
     let mihomo_status = proxy.map_or_else(|| "未知".to_owned(), mihomo_core_status_label);
     let selected_node = bootstrap
         .panel
@@ -5175,7 +5164,7 @@ fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
             );
         })
     };
-    let toggle_tailscale = {
+    let toggle_local_system_proxy = {
         let state = state.clone();
         let csrf = csrf.clone();
         Callback::from(move |event: Event| {
@@ -5183,14 +5172,14 @@ fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
             let enabled = input.checked();
             dispatch_control(
                 state.clone(),
-                ControlArea::TailscaleProxy,
-                PROXY_TAILSCALE_ENDPOINT,
+                ControlArea::LocalSystemProxy,
+                PROXY_LOCAL_SYSTEM_ENDPOINT,
                 csrf.clone(),
                 ProxyFeatureRequestDto { enabled },
                 if enabled {
-                    "Tailscale 中继代理已启用"
+                    "本机系统代理已启用"
                 } else {
-                    "Tailscale 中继代理已关闭，已使用 Direct"
+                    "本机系统代理已关闭，普通本机 HTTP/HTTPS 连接不使用该显式代理"
                 }
                 .to_owned(),
             );
@@ -5222,13 +5211,13 @@ fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
                     }
                     <label class="flex min-w-0 items-center justify-between gap-4 rounded-box border border-base-content/10 bg-base-200/40 p-4">
                         <span class="grid min-w-0 gap-1">
-                            <strong class={CONTROL_HEADING}>{"Tailscale 中继代理"}</strong>
-                            <small class={HELP_TEXT}>{"只让 tailscaled 的 HTTP/HTTPS 和 DERP 连接使用当前 Mihomo 节点；UDP direct 仍直接探测。"}</small>
-                            <span class={CONTROL_META}>{tailscale_status}</span>
+                            <strong class={CONTROL_HEADING}>{"本机系统代理"}</strong>
+                            <small class={HELP_TEXT}>{"为本机 HTTP/HTTPS 显式代理；使用 Mihomo 127.0.0.1:7890，不接管所有本机流量。"}</small>
+                            <span class={CONTROL_META}>{local_system_proxy_status}</span>
                         </span>
-                        <input class="toggle toggle-secondary shrink-0" type="checkbox" role="switch" aria-label="Tailscale 中继代理" checked={tailscale_desired == Some(true)} onchange={toggle_tailscale} disabled={state.tailscale_proxy_busy || tailscale_desired.is_none()} />
+                        <input class="toggle toggle-secondary shrink-0" type="checkbox" role="switch" aria-label="本机系统代理" checked={local_system_proxy_desired == Some(true)} onchange={toggle_local_system_proxy} disabled={state.local_system_proxy_busy || local_system_proxy_desired.is_none()} />
                     </label>
-                    if let Some(notice) = &state.tailscale_proxy_notice {
+                    if let Some(notice) = &state.local_system_proxy_notice {
                         <div class={FEEDBACK} role="status" aria-live="polite" aria-atomic="true">{notice}</div>
                     }
                 </div>
@@ -5485,14 +5474,36 @@ fn lan_tun_status_label(status: &hyz_things::domain::status::ProxyStatus) -> Str
     }
 }
 
-fn tailscale_proxy_status_label(status: &TailscaleStatus) -> String {
-    match (status.explicit_proxy_desired, status.environment) {
-        (Some(true), Some(TailscaleEnvironment::MihomoExplicit)) => "已启用".to_owned(),
-        (Some(true), Some(TailscaleEnvironment::Direct)) => "已降级 · Direct".to_owned(),
-        (Some(false), Some(TailscaleEnvironment::Direct)) => "已关闭 · Direct".to_owned(),
-        (None, _) | (_, None) => "未知 · 未确认".to_owned(),
-        _ => "已降级 · 未确认".to_owned(),
+fn local_system_proxy_status_label(status: &ProxyStatus) -> String {
+    match (
+        status.local_system_proxy.desired,
+        status.local_system_proxy.effective,
+    ) {
+        (Some(true), LocalSystemProxyEffective::Ready) => "已启用".to_owned(),
+        (Some(true), LocalSystemProxyEffective::NotConfirmed)
+        | (Some(true), LocalSystemProxyEffective::Disabled) => "已降级 · 未确认".to_owned(),
+        (Some(false), LocalSystemProxyEffective::Disabled) => "已关闭".to_owned(),
+        (Some(false), _) => "未知 · 状态冲突".to_owned(),
+        (None, _) => "未知 · 未确认".to_owned(),
     }
+}
+
+fn tailscale_status_detail(status: &TailscaleStatus) -> String {
+    let mode = status
+        .effective_mode
+        .map(tailscale_mode_label)
+        .unwrap_or("未知");
+    let connection = match status.connection.kind {
+        TailscaleConnectionType::Direct => "Direct".to_owned(),
+        TailscaleConnectionType::PeerRelay => "Peer relay".to_owned(),
+        TailscaleConnectionType::Derp => status
+            .connection
+            .derp_region
+            .as_deref()
+            .map_or_else(|| "DERP".to_owned(), |region| format!("DERP {region}")),
+        TailscaleConnectionType::Unknown => "连接未知".to_owned(),
+    };
+    format!("{mode} · {connection}")
 }
 
 fn wan_traffic(

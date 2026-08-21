@@ -3,9 +3,8 @@ use crate::{
         ports::{
             ClockPort, PlatformError, RouterPlatformPort, SubscriptionSourcePort,
             SubscriptionStorePort, SubscriptionTransportPort, SystemProbePort,
-            TailscalePlatformPort, TailscaleProbePort,
         },
-        proxy::ProxyFeatureCoordinator,
+        proxy::ProxyApplication,
     },
     domain::{
         network::Probe,
@@ -20,8 +19,6 @@ use crate::{
 pub struct SubscriptionRuntimePorts<'a> {
     pub platform: &'a dyn RouterPlatformPort,
     pub probe: &'a dyn SystemProbePort,
-    pub tailscale: &'a dyn TailscalePlatformPort,
-    pub tailscale_probe: &'a dyn TailscaleProbePort,
     pub clock: &'a dyn ClockPort,
 }
 
@@ -31,8 +28,6 @@ pub struct SubscriptionApplication<'a> {
     source: &'a dyn SubscriptionSourcePort,
     platform: &'a dyn RouterPlatformPort,
     probe: &'a dyn SystemProbePort,
-    tailscale: &'a dyn TailscalePlatformPort,
-    tailscale_probe: &'a dyn TailscaleProbePort,
     clock: &'a dyn ClockPort,
 }
 
@@ -49,8 +44,6 @@ impl<'a> SubscriptionApplication<'a> {
             source,
             platform: ports.platform,
             probe: ports.probe,
-            tailscale: ports.tailscale,
-            tailscale_probe: ports.tailscale_probe,
             clock: ports.clock,
         }
     }
@@ -174,18 +167,10 @@ impl<'a> SubscriptionApplication<'a> {
             return Ok(generation);
         }
 
-        let proxy = || {
-            ProxyFeatureCoordinator::new(
-                self.platform,
-                self.probe,
-                self.tailscale,
-                self.tailscale_probe,
-                self.clock,
-            )
-        };
+        let proxy = || ProxyApplication::new(self.platform, self.probe, self.clock);
         proxy().reconcile_runtime_preserving_features(&ProxyDesired {
             lan_tun_enabled: false,
-            tailscale_explicit_proxy_enabled: false,
+            local_system_proxy_enabled: false,
             direct_macs: direct_macs.clone(),
         })?;
         let mut url_committed = false;
@@ -194,7 +179,7 @@ impl<'a> SubscriptionApplication<'a> {
             proxy()
                 .reconcile_runtime_preserving_features(&ProxyDesired {
                     lan_tun_enabled: features.lan_tun_enabled,
-                    tailscale_explicit_proxy_enabled: features.tailscale_explicit_proxy_enabled,
+                    local_system_proxy_enabled: features.local_system_proxy_enabled,
                     direct_macs: direct_macs.clone(),
                 })
                 .map(|_| ())?;
@@ -247,32 +232,20 @@ impl<'a> SubscriptionApplication<'a> {
         features: ProxyFeaturesV1,
         direct_macs: &std::collections::BTreeSet<crate::domain::device_policy::LanDeviceMac>,
     ) -> Result<(), PlatformError> {
-        ProxyFeatureCoordinator::new(
-            self.platform,
-            self.probe,
-            self.tailscale,
-            self.tailscale_probe,
-            self.clock,
-        )
-        .reconcile_runtime_preserving_features(&ProxyDesired {
-            lan_tun_enabled: false,
-            tailscale_explicit_proxy_enabled: false,
-            direct_macs: direct_macs.clone(),
-        })?;
+        ProxyApplication::new(self.platform, self.probe, self.clock)
+            .reconcile_runtime_preserving_features(&ProxyDesired {
+                lan_tun_enabled: false,
+                local_system_proxy_enabled: false,
+                direct_macs: direct_macs.clone(),
+            })?;
         self.source.store_source(old_source)?;
-        ProxyFeatureCoordinator::new(
-            self.platform,
-            self.probe,
-            self.tailscale,
-            self.tailscale_probe,
-            self.clock,
-        )
-        .reconcile_runtime_preserving_features(&ProxyDesired {
-            lan_tun_enabled: features.lan_tun_enabled,
-            tailscale_explicit_proxy_enabled: features.tailscale_explicit_proxy_enabled,
-            direct_macs: direct_macs.clone(),
-        })
-        .map(|_| ())
+        ProxyApplication::new(self.platform, self.probe, self.clock)
+            .reconcile_runtime_preserving_features(&ProxyDesired {
+                lan_tun_enabled: features.lan_tun_enabled,
+                local_system_proxy_enabled: features.local_system_proxy_enabled,
+                direct_macs: direct_macs.clone(),
+            })
+            .map(|_| ())
     }
 }
 
@@ -285,7 +258,6 @@ mod tests {
             network::{NetworkAction, NetworkObserved},
             proxy::{ProxyAction, ProxyObserved},
             subscription::ValidatedSubscription,
-            tailscale::{TailscaleAction, TailscaleLoginUrl, TailscaleObserved},
         },
     };
     use std::sync::Mutex;
@@ -415,38 +387,6 @@ mod tests {
         }
     }
 
-    struct NeverCalledTailscale;
-
-    impl TailscalePlatformPort for NeverCalledTailscale {
-        fn acquire_tailscale_lock(&self) -> Result<LifecycleLease, PlatformError> {
-            unexpected()
-        }
-
-        fn release_tailscale_lock(&self, _lease: &LifecycleLease) -> Result<(), PlatformError> {
-            unexpected()
-        }
-
-        fn apply_tailscale(&self, _action: &TailscaleAction) -> Result<(), PlatformError> {
-            unexpected()
-        }
-
-        fn request_login(&self) -> Result<TailscaleLoginUrl, PlatformError> {
-            unexpected()
-        }
-
-        fn logout(&self) -> Result<(), PlatformError> {
-            unexpected()
-        }
-    }
-
-    struct NeverCalledTailscaleProbe;
-
-    impl TailscaleProbePort for NeverCalledTailscaleProbe {
-        fn observe_tailscale(&self) -> Result<TailscaleObserved, PlatformError> {
-            unexpected()
-        }
-    }
-
     struct FixedClock;
 
     impl ClockPort for FixedClock {
@@ -464,8 +404,6 @@ mod tests {
         };
         let router = NeverCalledRouter;
         let probe = NeverCalledProbe;
-        let tailscale = NeverCalledTailscale;
-        let tailscale_probe = NeverCalledTailscaleProbe;
         let clock = FixedClock;
         let application = SubscriptionApplication::new(
             &store,
@@ -474,8 +412,6 @@ mod tests {
             SubscriptionRuntimePorts {
                 platform: &router,
                 probe: &probe,
-                tailscale: &tailscale,
-                tailscale_probe: &tailscale_probe,
                 clock: &clock,
             },
         );

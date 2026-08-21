@@ -84,7 +84,8 @@ impl LinuxTailscalePlatform {
     fn apply(&self, action: &TailscaleAction) -> Result<(), PlatformError> {
         match action {
             TailscaleAction::StartBackend { token, environment } => {
-                self.start_backend(token, *environment)
+                Self::validate_start_environment(*environment)?;
+                self.start_backend(token)
             }
             TailscaleAction::WaitForBackend => self.wait_for_backend(),
             TailscaleAction::StopBackend { token } => self.stop_backend(token),
@@ -159,11 +160,16 @@ impl LinuxTailscalePlatform {
             .map(|_| ())
     }
 
-    fn start_backend(
-        &self,
-        token: &str,
-        environment: TailscaleEnvironment,
-    ) -> Result<(), PlatformError> {
+    fn validate_start_environment(environment: TailscaleEnvironment) -> Result<(), PlatformError> {
+        match environment {
+            TailscaleEnvironment::Direct => Ok(()),
+            TailscaleEnvironment::MihomoExplicit => Err(PlatformError::InvalidState(
+                "new Tailscale backends must start with the Direct environment".to_owned(),
+            )),
+        }
+    }
+
+    fn start_backend(&self, token: &str) -> Result<(), PlatformError> {
         storage::validate_token(token)?;
         if storage::read_private_small_optional(TAILSCALE_PID_RECORD, MAX_IDENTITY_RECORD)?
             .is_some()
@@ -202,10 +208,6 @@ impl LinuxTailscalePlatform {
             .env_clear()
             .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
             .env("LC_ALL", "C");
-        if environment == TailscaleEnvironment::MihomoExplicit {
-            command.env("HTTP_PROXY", "http://127.0.0.1:7890");
-            command.env("HTTPS_PROXY", "http://127.0.0.1:7890");
-        }
         let mut child = command
             .stdin(Stdio::null())
             .stdout(Stdio::from(log))
@@ -221,7 +223,7 @@ impl LinuxTailscalePlatform {
             start_time,
             executable: PathBuf::from(TAILSCALED_EXECUTABLE),
             argv,
-            environment,
+            environment: TailscaleEnvironment::Direct,
             token: token.to_owned(),
             socket: None,
             interface_ifindex: None,
@@ -3235,6 +3237,18 @@ mod tests {
         ));
         assert!(!recorded_node_removal_allowed(None, Some(recorded)));
         assert!(!recorded_node_removal_allowed(Some(9_u32), Some(10_u32)));
+    }
+
+    #[test]
+    fn new_tailscale_backend_rejects_legacy_mihomo_environment() {
+        assert!(LinuxTailscalePlatform::validate_start_environment(
+            TailscaleEnvironment::MihomoExplicit
+        )
+        .is_err());
+        assert!(
+            LinuxTailscalePlatform::validate_start_environment(TailscaleEnvironment::Direct)
+                .is_ok()
+        );
     }
 
     #[test]

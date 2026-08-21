@@ -493,8 +493,8 @@ fn app_with_assets(
             on(MethodFilter::POST, control_proxy_lan_tun),
         )
         .route(
-            "/api/v1/control/proxy/tailscale",
-            on(MethodFilter::POST, control_proxy_tailscale),
+            "/api/v1/control/proxy/local-system",
+            on(MethodFilter::POST, control_proxy_local_system),
         )
         .route(
             "/api/v1/control/proxy/selection",
@@ -1597,13 +1597,13 @@ async fn control_proxy_lan_tun(
     .await
 }
 
-async fn control_proxy_tailscale(
+async fn control_proxy_local_system(
     State(state): State<AppState>,
     headers: HeaderMap,
     payload: Result<Json<ProxyFeatureRequest>, JsonRejection>,
 ) -> Response {
     control_proxy_feature(&state, &headers, payload, |enabled| {
-        ControlOperation::ProxyTailscale { enabled }
+        ControlOperation::ProxyLocalSystem { enabled }
     })
     .await
 }
@@ -1951,7 +1951,7 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/control/tailscale/logout"
             | "/api/v1/control/display"
             | "/api/v1/control/proxy/lan-tun"
-            | "/api/v1/control/proxy/tailscale"
+            | "/api/v1/control/proxy/local-system"
             | "/api/v1/control/proxy/selection"
             | "/api/v1/control/proxy/delay"
             | "/api/v1/control/proxy/delays"
@@ -2242,7 +2242,8 @@ mod tests {
         assert!(is_post_path("/api/v1/control/tailscale/logout"));
         assert!(is_post_path("/api/v1/control/display"));
         assert!(is_post_path("/api/v1/control/proxy/lan-tun"));
-        assert!(is_post_path("/api/v1/control/proxy/tailscale"));
+        assert!(is_post_path("/api/v1/control/proxy/local-system"));
+        assert!(!is_post_path("/api/v1/control/proxy/tailscale"));
         assert!(!is_post_path("/api/v1/control/proxy/mode"));
         assert!(!is_post_path("/api/v1/auth/session"));
         assert!(!is_post_path("/api/v1/admin/login"));

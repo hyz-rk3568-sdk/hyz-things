@@ -18,8 +18,9 @@ use hyz_things::{
     domain::{
         panel::{DisplayStatus, PanelSnapshot},
         status::{
-            Component, Issue, LanTunEffective, LanTunStatus, MihomoCoreStatus, ProxyResourceState,
-            ProxyStatus, RouterStatus, SnapshotState, StatusSnapshot, SystemStats,
+            Component, Issue, LanTunEffective, LanTunStatus, LocalSystemProxyEffective,
+            LocalSystemProxyStatus, MihomoCoreStatus, ProxyResourceState, ProxyStatus,
+            RouterStatus, SnapshotState, StatusSnapshot, SystemStats,
         },
     },
 };
@@ -459,8 +460,13 @@ fn typed_proxy_dto_keeps_layered_wire_values_stable() {
             effective: LanTunEffective::Ready,
             ordinary_nat_fallback: Some(false),
         },
+        local_system_proxy: LocalSystemProxyStatus {
+            desired: Some(false),
+            effective: LocalSystemProxyEffective::Disabled,
+        },
     })
     .expect("serialize proxy DTO");
     assert_eq!(value["mihomo"]["process"], "ready");
     assert_eq!(value["lan_tun"]["effective"], "ready");
+    assert_eq!(value["local_system_proxy"]["effective"], "disabled");
 }

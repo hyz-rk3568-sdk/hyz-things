@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
 
-use super::tailscale::{TailscaleBackendState, TailscaleEnvironment, TailscaleMode};
+use super::tailscale::{TailscaleBackendState, TailscaleMode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -133,8 +133,6 @@ pub struct TailscaleStatus {
     pub local_firewall_ready: Option<bool>,
     pub route_approval: TailscaleRouteApproval,
     pub connection: TailscaleConnectionStatus,
-    pub explicit_proxy_desired: Option<bool>,
-    pub environment: Option<TailscaleEnvironment>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_category: Option<TailscaleErrorCategory>,
 }
@@ -228,12 +226,28 @@ pub enum ProxyMode {
     Unknown,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LocalSystemProxyEffective {
+    Ready,
+    Disabled,
+    NotConfirmed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LocalSystemProxyStatus {
+    pub desired: Option<bool>,
+    pub effective: LocalSystemProxyEffective,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProxyStatus {
     pub configured: bool,
     pub mihomo: MihomoCoreStatus,
     pub lan_tun: LanTunStatus,
+    pub local_system_proxy: LocalSystemProxyStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -353,8 +367,6 @@ mod tests {
                     kind: TailscaleConnectionType::Derp,
                     derp_region: Some("sfo".to_owned()),
                 },
-                explicit_proxy_desired: Some(true),
-                environment: Some(TailscaleEnvironment::MihomoExplicit),
                 error_category: None,
             }),
             system: Component::available(SystemStats {
@@ -376,6 +388,29 @@ mod tests {
         assert!(!json.contains("node_key"));
         let decoded: StatusSnapshot = serde_json::from_str(&json).expect("deserialize snapshot");
         assert_eq!(decoded, snapshot);
+    }
+
+    #[test]
+    fn proxy_status_accepts_local_system_proxy_state() {
+        let json = r#"{
+            "configured": true,
+            "mihomo": {
+                "configured_required": true,
+                "process": "ready",
+                "runtime_config": "ready",
+                "mixed_port": "ready"
+            },
+            "lan_tun": {
+                "desired": false,
+                "effective": "ordinary_nat",
+                "ordinary_nat_fallback": true
+            },
+            "local_system_proxy": {
+                "desired": true,
+                "effective": "ready"
+            }
+        }"#;
+        assert!(serde_json::from_str::<ProxyStatus>(json).is_ok());
     }
 
     #[test]

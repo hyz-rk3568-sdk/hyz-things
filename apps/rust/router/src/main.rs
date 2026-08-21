@@ -28,10 +28,7 @@ use hyz_router::{
             ClockPort, DevicePolicyStorePort, LifecycleLease, PlatformError, SystemProbePort,
             TailnetPeerReadPort, TailscalePlatformPort, TailscaleProbePort,
         },
-        proxy::{
-            MihomoDirectRecoveryApplication, MihomoDirectRecoveryResult, ProxyApplication,
-            ProxyFeatureCoordinator,
-        },
+        proxy::ProxyApplication,
         reconcile::forwarding_reconcile_needed,
         router::RouterApplication,
         shutdown::ShutdownApplication,
@@ -66,8 +63,8 @@ use tokio::{
 };
 
 const DAEMON_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2 * 60);
-const MIHOMO_DIRECT_RECOVERY_INTERVAL: Duration = Duration::from_secs(2);
 const ETHERNET_DHCP_LIFECYCLE_INTERVAL: Duration = Duration::from_secs(1);
+const DEFERRED_RUNTIME_RECONCILE_INTERVAL: Duration = Duration::from_secs(2);
 const AP_VHT80_UPGRADE_INTERVAL: Duration = Duration::from_secs(2);
 const AP_VHT80_UPGRADE_GRACE: Duration = Duration::from_secs(30);
 
@@ -105,7 +102,7 @@ fn remove_ready_marker() -> io::Result<()> {
     fs::remove_file(READY_MARKER)
 }
 
-const USAGE: &str = "Usage:\n  hyz-router daemon\n  hyz-router status [--json]\n  hyz-router router enable|disable\n  hyz-router proxy lan-tun enable|disable\n  hyz-router proxy tailscale enable|disable\n  hyz-router wifi status|scan\n  hyz-router wifi ap apply|confirm|cancel\n  hyz-router subscription get [--json]\n  hyz-router subscription refresh\n  hyz-router ota ...";
+const USAGE: &str = "Usage:\n  hyz-router daemon\n  hyz-router status [--json]\n  hyz-router router enable|disable\n  hyz-router proxy lan-tun enable|disable\n  hyz-router proxy local-system enable|disable\n  hyz-router wifi status|scan\n  hyz-router wifi ap apply|confirm|cancel\n  hyz-router subscription get [--json]\n  hyz-router subscription refresh\n  hyz-router ota ...";
 
 #[derive(Clone)]
 struct ProductionTailscalePlatform {
@@ -170,13 +167,8 @@ impl StatusTailscalePlatformPort for ProductionTailscalePlatform {
                 .router
                 .observe_network()
                 .map_err(|error| error.to_string())?;
-            let proxy = tailscale
-                .router
-                .observe_proxy()
-                .map_err(|error| error.to_string())?;
             Ok::<_, String>(tailscale_status_component_from_observed(
                 &observed,
-                &proxy.persisted_features,
                 network.ready_for(&NetworkDesired::forwarding()),
             ))
         })
@@ -232,7 +224,7 @@ fn reconcile_post_dhcp_runtime(
     };
     ProxyApplication::new(platform, platform, platform).reconcile(&ProxyDesired {
         lan_tun_enabled: features.lan_tun_enabled,
-        tailscale_explicit_proxy_enabled: features.tailscale_explicit_proxy_enabled,
+        local_system_proxy_enabled: features.local_system_proxy_enabled,
         direct_macs: platform.load_device_policy()?.direct_macs(),
     })?;
     let tailscale_observed = tailscale.observe_tailscale()?;
@@ -404,7 +396,7 @@ impl ProductionRuntime {
             };
             Ok(ProxyDesired {
                 lan_tun_enabled: features.lan_tun_enabled,
-                tailscale_explicit_proxy_enabled: features.tailscale_explicit_proxy_enabled,
+                local_system_proxy_enabled: features.local_system_proxy_enabled,
                 direct_macs: platform.load_device_policy()?.direct_macs(),
             })
         })
@@ -419,17 +411,10 @@ impl ProductionRuntime {
         desired: ProxyDesired,
     ) -> Result<usize, PlatformError> {
         let router = self.router.clone();
-        let tailscale = self.tailscale.clone();
         tokio::task::spawn_blocking(move || {
-            ProxyFeatureCoordinator::new(
-                router.as_ref(),
-                router.as_ref(),
-                tailscale.as_ref(),
-                tailscale.as_ref(),
-                router.as_ref(),
-            )
-            .reconcile(&desired)
-            .map(|result| result.proxy_actions_applied + result.tailscale_actions_applied)
+            ProxyApplication::new(router.as_ref(), router.as_ref(), router.as_ref())
+                .reconcile(&desired)
+                .map(|result| result.actions_applied)
         })
         .await
         .map_err(|_| {
@@ -442,45 +427,15 @@ impl ProductionRuntime {
         desired: ProxyDesired,
     ) -> Result<usize, PlatformError> {
         let router = self.router.clone();
-        let tailscale = self.tailscale.clone();
         tokio::task::spawn_blocking(move || {
-            ProxyFeatureCoordinator::new(
-                router.as_ref(),
-                router.as_ref(),
-                tailscale.as_ref(),
-                tailscale.as_ref(),
-                router.as_ref(),
-            )
-            .reconcile_runtime_preserving_features(&desired)
-            .map(|result| result.proxy_actions_applied + result.tailscale_actions_applied)
+            ProxyApplication::new(router.as_ref(), router.as_ref(), router.as_ref())
+                .reconcile_runtime_preserving_features(&desired)
+                .map(|result| result.actions_applied)
         })
         .await
         .map_err(|_| {
             PlatformError::CommandFailed(
                 "proxy runtime recovery worker terminated unexpectedly".to_owned(),
-            )
-        })?
-    }
-
-    async fn recover_tailscale_direct_if_mihomo_unavailable(
-        &self,
-    ) -> Result<MihomoDirectRecoveryResult, PlatformError> {
-        let router = self.router.clone();
-        let tailscale = self.tailscale.clone();
-        tokio::task::spawn_blocking(move || {
-            MihomoDirectRecoveryApplication::new(
-                router.as_ref(),
-                router.as_ref(),
-                tailscale.as_ref(),
-                tailscale.as_ref(),
-                router.as_ref(),
-            )
-            .recover_if_core_unavailable()
-        })
-        .await
-        .map_err(|_| {
-            PlatformError::CommandFailed(
-                "Mihomo Direct recovery worker terminated unexpectedly".to_owned(),
             )
         })?
     }
@@ -920,7 +875,6 @@ impl ControlHandler for ProductionRuntime {
                 let store = self.subscription_store.clone();
                 let transport = self.subscription_transport.clone();
                 let platform = self.router.clone();
-                let tailscale = self.tailscale.clone();
                 let summary = tokio::task::spawn_blocking(move || {
                     SubscriptionApplication::new(
                         &store,
@@ -929,8 +883,6 @@ impl ControlHandler for ProductionRuntime {
                         SubscriptionRuntimePorts {
                             platform: platform.as_ref(),
                             probe: platform.as_ref(),
-                            tailscale: tailscale.as_ref(),
-                            tailscale_probe: tailscale.as_ref(),
                             clock: platform.as_ref(),
                         },
                     )
@@ -946,7 +898,6 @@ impl ControlHandler for ProductionRuntime {
                 let store = self.subscription_store.clone();
                 let transport = self.subscription_transport.clone();
                 let platform = self.router.clone();
-                let tailscale = self.tailscale.clone();
                 let summary = tokio::task::spawn_blocking(move || {
                     let subscription = SubscriptionApplication::new(
                         &store,
@@ -955,8 +906,6 @@ impl ControlHandler for ProductionRuntime {
                         SubscriptionRuntimePorts {
                             platform: platform.as_ref(),
                             probe: platform.as_ref(),
-                            tailscale: tailscale.as_ref(),
-                            tailscale_probe: tailscale.as_ref(),
                             clock: platform.as_ref(),
                         },
                     );
@@ -972,7 +921,6 @@ impl ControlHandler for ProductionRuntime {
                 let store = self.subscription_store.clone();
                 let transport = self.subscription_transport.clone();
                 let platform = self.router.clone();
-                let tailscale = self.tailscale.clone();
                 let summary = tokio::task::spawn_blocking(move || {
                     SubscriptionApplication::new(
                         &store,
@@ -981,8 +929,6 @@ impl ControlHandler for ProductionRuntime {
                         SubscriptionRuntimePorts {
                             platform: platform.as_ref(),
                             probe: platform.as_ref(),
-                            tailscale: tailscale.as_ref(),
-                            tailscale_probe: tailscale.as_ref(),
                             clock: platform.as_ref(),
                         },
                     )
@@ -1115,11 +1061,12 @@ impl ControlHandler for ProductionRuntime {
                     .await
                     .map_err(|error| error.to_string())?;
                 match mode {
-                    ControlProxyMode::Explicit | ControlProxyMode::Disabled => {
-                        desired.lan_tun_enabled = false;
-                        desired.tailscale_explicit_proxy_enabled = false;
-                    }
+                    ControlProxyMode::Explicit => desired.local_system_proxy_enabled = true,
                     ControlProxyMode::Tun => desired.lan_tun_enabled = true,
+                    ControlProxyMode::Disabled => {
+                        desired.lan_tun_enabled = false;
+                        desired.local_system_proxy_enabled = false;
+                    }
                 }
                 let actions = self
                     .reconcile_proxy_features(desired)
@@ -1142,19 +1089,19 @@ impl ControlHandler for ProductionRuntime {
                     .map_err(|error| error.to_string())?;
                 Ok(completed(format!("LAN TUN reconciled; actions={actions}")))
             }
-            ControlOperation::ProxyTailscale { enabled } => {
+            ControlOperation::ProxyLocalSystem { enabled } => {
                 let _serial = self.router_proxy.lock().await;
                 let mut desired = self
                     .proxy_desired()
                     .await
                     .map_err(|error| error.to_string())?;
-                desired.tailscale_explicit_proxy_enabled = enabled;
+                desired.local_system_proxy_enabled = enabled;
                 let actions = self
                     .reconcile_proxy_features(desired)
                     .await
                     .map_err(|error| error.to_string())?;
                 Ok(completed(format!(
-                    "Tailscale proxy reconciled; actions={actions}"
+                    "local system proxy reconciled; actions={actions}"
                 )))
             }
             ControlOperation::WifiStatus { .. } => {
@@ -1312,14 +1259,14 @@ async fn run(args: Vec<String>) -> Result<(), Box<dyn Error>> {
         }
         [group, feature, action]
             if group == "proxy"
-                && matches!(feature.as_str(), "lan-tun" | "tailscale")
+                && matches!(feature.as_str(), "lan-tun" | "local-system")
                 && matches!(action.as_str(), "enable" | "disable") =>
         {
             let enabled = action == "enable";
             let operation = if feature == "lan-tun" {
                 ControlOperation::ProxyLanTun { enabled }
             } else {
-                ControlOperation::ProxyTailscale { enabled }
+                ControlOperation::ProxyLocalSystem { enabled }
             };
             print_completed(request(operation).await?)?;
         }
@@ -1556,44 +1503,24 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    let timeout_runtime = runtime.clone();
-    let mut timeout_shutdown = shutdown_rx.clone();
-    let mut wifi_timeout = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(1));
-        loop {
-            tokio::select! {
-                _ = interval.tick() => {
-                    if let Err(error) = timeout_runtime.expire_pending_ap().await {
-                        eprintln!("hyz-router: AP transaction timeout rollback failed: {error}");
-                    }
-                }
-                changed = timeout_shutdown.changed() => {
-                    let _ = changed;
-                    break;
-                }
-            }
-        }
-    });
-
-    let recovery_runtime = runtime.clone();
-    let mut recovery_shutdown = shutdown_rx.clone();
-    let mut direct_recovery = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(MIHOMO_DIRECT_RECOVERY_INTERVAL);
+    let deferred_runtime = runtime.clone();
+    let mut deferred_runtime_shutdown = shutdown_rx.clone();
+    let mut deferred_runtime_task = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(DEFERRED_RUNTIME_RECONCILE_INTERVAL);
         let mut runtime_restored = false;
         let mut last_restore_error = None;
-        let mut last_direct_error = None;
         interval.tick().await;
         loop {
             tokio::select! {
                 _ = interval.tick() => {
-                    let _serial = recovery_runtime.router_proxy.lock().await;
-                    match recovery_runtime.wan_route_ready().await {
+                    let _serial = deferred_runtime.router_proxy.lock().await;
+                    match deferred_runtime.wan_route_ready().await {
                         Ok(false) => {
                             runtime_restored = false;
                             last_restore_error = None;
                         }
                         Ok(true) if !runtime_restored => {
-                            match recovery_runtime.restore_persisted_runtime_if_wan_ready().await {
+                            match deferred_runtime.restore_persisted_runtime_if_wan_ready().await {
                                 Ok(true) => {
                                     runtime_restored = true;
                                     last_restore_error = None;
@@ -1622,26 +1549,27 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                             }
                         }
                     }
-                    match recovery_runtime.recover_tailscale_direct_if_mihomo_unavailable().await {
-                        Ok(MihomoDirectRecoveryResult::Restored { tailscale_actions_applied }) => {
-                            last_direct_error = None;
-                            eprintln!(
-                                "hyz-router: Mihomo core unavailable; restored tailscaled Direct environment with {tailscale_actions_applied} typed actions"
-                            );
-                        }
-                        Ok(MihomoDirectRecoveryResult::NotNeeded | MihomoDirectRecoveryResult::AlreadyDirect) => {
-                            last_direct_error = None;
-                        }
-                        Err(error) => {
-                            let detail = error.to_string();
-                            if last_direct_error.as_deref() != Some(detail.as_str()) {
-                                eprintln!("hyz-router: bounded tailscaled Direct recovery failed: {detail}");
-                                last_direct_error = Some(detail);
-                            }
-                        }
+                }
+                changed = deferred_runtime_shutdown.changed() => {
+                    let _ = changed;
+                    break;
+                }
+            }
+        }
+    });
+
+    let timeout_runtime = runtime.clone();
+    let mut timeout_shutdown = shutdown_rx.clone();
+    let mut wifi_timeout = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(1));
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    if let Err(error) = timeout_runtime.expire_pending_ap().await {
+                        eprintln!("hyz-router: AP transaction timeout rollback failed: {error}");
                     }
                 }
-                changed = recovery_shutdown.changed() => {
+                changed = timeout_shutdown.changed() => {
                     let _ = changed;
                     break;
                 }
@@ -1698,6 +1626,17 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         )),
     };
     let services = services.and(ethernet_dhcp_task);
+    let deferred_runtime_task = match timeout_at(deadline, &mut deferred_runtime_task).await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(error)) => Err(std::io::Error::other(format!(
+            "deferred runtime reconciliation task terminated unexpectedly: {error}"
+        ))),
+        Err(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "deferred runtime reconciliation task drain exceeded the daemon shutdown deadline",
+        )),
+    };
+    let services = services.and(deferred_runtime_task);
     let timeout_task = match timeout_at(deadline, &mut wifi_timeout).await {
         Ok(Ok(())) => Ok(()),
         Ok(Err(error)) => Err(std::io::Error::other(format!(
@@ -1709,18 +1648,6 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         )),
     };
     let services = services.and(timeout_task);
-    let recovery_task = match timeout_at(deadline, &mut direct_recovery).await {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(error)) => Err(std::io::Error::other(format!(
-            "Mihomo Direct recovery task terminated unexpectedly: {error}"
-        ))),
-        Err(_) => Err(std::io::Error::new(
-            std::io::ErrorKind::TimedOut,
-            "Mihomo Direct recovery task drain exceeded the daemon shutdown deadline",
-        )),
-    };
-    let services = services.and(recovery_task);
-
     // Runtime cleanup starts only after all request handlers have drained. If drain misses the
     // absolute deadline, the process exits with ownership evidence intact instead of cancelling a
     // blocking mutation and releasing its lock while the blocking worker is still running.

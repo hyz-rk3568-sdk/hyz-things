@@ -23,7 +23,7 @@ use super::{
     wifi::{ApPrepareRequest, StaCandidateRequest, WifiScanEntry},
 };
 
-pub const PROTOCOL_VERSION: u16 = 11;
+pub const PROTOCOL_VERSION: u16 = 12;
 pub const CONTROL_SOCKET: &str = "/run/hyz-router/control.sock";
 pub const MAX_FRAME_BYTES: usize = 64 * 1024;
 pub const IO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
@@ -54,7 +54,7 @@ pub enum ControlOperation {
     Router { enabled: bool },
     Proxy { mode: ControlProxyMode },
     ProxyLanTun { enabled: bool },
-    ProxyTailscale { enabled: bool },
+    ProxyLocalSystem { enabled: bool },
     ProxySelection { request: ProxySelectionRequest },
     ProxyDelay { request: ProxyDelayRequest },
     ProxyDelayRefresh { request: ProxyDelayRefreshRequest },
@@ -115,7 +115,7 @@ impl ControlOperation {
             | Self::Router { .. }
             | Self::Proxy { .. }
             | Self::ProxyLanTun { .. }
-            | Self::ProxyTailscale { .. }
+            | Self::ProxyLocalSystem { .. }
             | Self::WifiStatus { .. }
             | Self::WifiPending { .. }
             | Self::WifiScan { .. }
@@ -372,7 +372,7 @@ mod tests {
         let request = ControlRequest::new(ControlOperation::Status {});
         let encoded = serde_json::to_vec(&request).unwrap();
         assert!(encoded.len() < MAX_FRAME_BYTES);
-        assert_eq!(PROTOCOL_VERSION, 11);
+        assert_eq!(PROTOCOL_VERSION, 12);
         let policy = ControlOperation::DevicePoliciesSet {
             request: DevicePolicyUpdateRequest {
                 expected_generation: 0,
@@ -434,6 +434,16 @@ mod tests {
             serde_json::from_slice::<ControlRequest>(&encoded).unwrap(),
             request
         );
+    }
+
+    #[test]
+    fn local_system_proxy_operation_is_typed_and_validated() {
+        let operation = serde_json::from_str::<ControlOperation>(
+            r#"{"op":"proxy_local_system","enabled":true}"#,
+        )
+        .expect("local system proxy operation must decode");
+        assert!(operation.mutates());
+        assert!(operation.validate().is_ok());
     }
 
     #[test]

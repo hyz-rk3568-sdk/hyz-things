@@ -36,14 +36,15 @@ use hyz_things::{
         },
         status::{
             Component, ComponentState, InterfaceStats, LanTunEffective, LanTunStatus, LinkState,
-            MihomoCoreStatus, ProxyResourceState, ProxyStatus, RouterStatus, SnapshotState,
-            StatusSnapshot, SystemStats, TailscaleConnectionStatus, TailscaleConnectionType,
+            LocalSystemProxyEffective, LocalSystemProxyStatus, MihomoCoreStatus,
+            ProxyResourceState, ProxyStatus, RouterStatus, SnapshotState, StatusSnapshot,
+            SystemStats, TailscaleConnectionStatus, TailscaleConnectionType,
             TailscaleRouteApproval, TailscaleStatus, UplinkId, UplinkStatus,
         },
         subscription::{SubscriptionSummary, SubscriptionSummaryState},
         tailscale::{
-            TailscaleBackendState, TailscaleEnvironment, TailscaleLoginUrl, TailscaleMode,
-            TailscalePeer, TailscalePeerConnection, TailscalePeerSnapshot,
+            TailscaleBackendState, TailscaleLoginUrl, TailscaleMode, TailscalePeer,
+            TailscalePeerConnection, TailscalePeerSnapshot,
         },
         wifi::WifiScanEntry,
     },
@@ -77,7 +78,7 @@ type HarnessResult<T> = Result<T, String>;
 #[serde(deny_unknown_fields)]
 struct HarnessProxyFailures {
     lan_tun: bool,
-    tailscale: bool,
+    local_system_proxy: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -213,6 +214,10 @@ impl Default for HarnessState {
                     effective: LanTunEffective::Ready,
                     ordinary_nat_fallback: Some(true),
                 },
+                local_system_proxy: LocalSystemProxyStatus {
+                    desired: Some(false),
+                    effective: LocalSystemProxyEffective::Disabled,
+                },
             }),
             tailscale: Component::available(TailscaleStatus {
                 desired_mode: Some(TailscaleMode::Disabled),
@@ -227,8 +232,6 @@ impl Default for HarnessState {
                     kind: TailscaleConnectionType::Unknown,
                     derp_region: None,
                 },
-                explicit_proxy_desired: Some(false),
-                environment: Some(TailscaleEnvironment::Direct),
                 error_category: None,
             }),
             tailscale_peers: TailscalePeerSnapshot::new_with_self(
@@ -560,26 +563,44 @@ impl PortalControlHandler for HarnessBackend {
                 Ok(completed("display applied"))
             }
             ControlOperation::Proxy { mode } => {
-                let (lan_tun_enabled, tailscale_enabled) = match mode {
-                    ControlProxyMode::Tun => (true, false),
-                    ControlProxyMode::Explicit | ControlProxyMode::Disabled => (false, false),
+                let (mut lan_tun_enabled, mut local_system_proxy_enabled) = {
+                    let proxy = state
+                        .proxy
+                        .data
+                        .as_ref()
+                        .ok_or_else(|| "proxy status is unavailable".to_owned())?;
+                    (
+                        proxy.lan_tun.desired.unwrap_or(false),
+                        proxy.local_system_proxy.desired.unwrap_or(false),
+                    )
                 };
-                set_proxy_features(&mut state, lan_tun_enabled, tailscale_enabled)?;
+                match mode {
+                    ControlProxyMode::Tun => lan_tun_enabled = true,
+                    ControlProxyMode::Explicit => local_system_proxy_enabled = true,
+                    ControlProxyMode::Disabled => {
+                        lan_tun_enabled = false;
+                        local_system_proxy_enabled = false;
+                    }
+                }
+                set_proxy_features(&mut state, lan_tun_enabled, local_system_proxy_enabled)?;
                 Ok(completed("legacy proxy mode applied"))
             }
             ControlOperation::ProxyLanTun { enabled } => {
                 if state.proxy_failures.lan_tun {
                     return Err("injected LAN TUN failure".to_owned());
                 }
-                let tailscale_enabled = tailscale_status(&state)?
-                    .explicit_proxy_desired
+                let local_system_proxy_enabled = state
+                    .proxy
+                    .data
+                    .as_ref()
+                    .and_then(|status| status.local_system_proxy.desired)
                     .unwrap_or(false);
-                set_proxy_features(&mut state, enabled, tailscale_enabled)?;
+                set_proxy_features(&mut state, enabled, local_system_proxy_enabled)?;
                 Ok(completed("LAN TUN applied"))
             }
-            ControlOperation::ProxyTailscale { enabled } => {
-                if state.proxy_failures.tailscale {
-                    return Err("injected Tailscale proxy failure".to_owned());
+            ControlOperation::ProxyLocalSystem { enabled } => {
+                if state.proxy_failures.local_system_proxy {
+                    return Err("injected local system proxy failure".to_owned());
                 }
                 let lan_tun_enabled = state
                     .proxy
@@ -588,7 +609,7 @@ impl PortalControlHandler for HarnessBackend {
                     .and_then(|status| status.lan_tun.desired)
                     .unwrap_or(false);
                 set_proxy_features(&mut state, lan_tun_enabled, enabled)?;
-                Ok(completed("Tailscale proxy applied"))
+                Ok(completed("local system proxy applied"))
             }
             ControlOperation::ProxySelection { request } => {
                 let groups = proxy_groups_mut(&mut state)?;
@@ -1167,9 +1188,9 @@ fn validate_component<T>(label: &str, component: &Component<T>) -> HarnessResult
 fn set_proxy_features(
     state: &mut HarnessState,
     lan_tun_enabled: bool,
-    tailscale_enabled: bool,
+    local_system_proxy_enabled: bool,
 ) -> HarnessResult<()> {
-    let core_required = lan_tun_enabled || tailscale_enabled;
+    let core_required = lan_tun_enabled || local_system_proxy_enabled;
     let core_state = if core_required {
         ProxyResourceState::Ready
     } else {
@@ -1191,20 +1212,15 @@ fn set_proxy_features(
         LanTunEffective::OrdinaryNat
     };
     proxy.lan_tun.ordinary_nat_fallback = Some(true);
+    proxy.local_system_proxy.desired = Some(local_system_proxy_enabled);
+    proxy.local_system_proxy.effective = if local_system_proxy_enabled {
+        LocalSystemProxyEffective::Ready
+    } else {
+        LocalSystemProxyEffective::Disabled
+    };
     state.proxy.state = hyz_things::domain::status::ComponentState::Available;
     state.proxy.issue = None;
     state.device_policies.effective = lan_tun_enabled;
-
-    let tailscale = tailscale_status_mut(state)?;
-    tailscale.explicit_proxy_desired = Some(tailscale_enabled);
-    tailscale.environment = Some(if tailscale_enabled {
-        TailscaleEnvironment::MihomoExplicit
-    } else {
-        TailscaleEnvironment::Direct
-    });
-    tailscale.error_category = None;
-    state.tailscale.state = hyz_things::domain::status::ComponentState::Available;
-    state.tailscale.issue = None;
     Ok(())
 }
 

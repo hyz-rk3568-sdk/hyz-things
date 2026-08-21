@@ -94,6 +94,37 @@ fn lan_access(mode: Option<TailscaleMode>) -> TailscaleObserved {
     observed
 }
 
+#[test]
+fn legacy_mihomo_environment_is_restarted_as_direct_before_tailscale_ready() {
+    let mut legacy = router_only(Some(TailscaleMode::RouterOnly));
+    legacy.environment = Probe::Known(TailscaleEnvironment::MihomoExplicit);
+
+    let actions = tailscale_plan(
+        &TailscaleDesired::router_only(),
+        &legacy,
+        &network_ready(),
+        "new",
+    )
+    .expect("legacy Tailscale environment must be normalizable");
+
+    assert!(actions.iter().any(|action| matches!(
+        action,
+        TailscaleAction::StartBackend {
+            environment: TailscaleEnvironment::Direct,
+            ..
+        }
+    )));
+    assert!(actions
+        .iter()
+        .any(|action| matches!(action, TailscaleAction::StopBackend { .. })));
+    assert!(!actions.iter().any(|action| matches!(
+        action,
+        TailscaleAction::StartBackend {
+            environment: TailscaleEnvironment::MihomoExplicit,
+            ..
+        }
+    )));
+}
 fn network_ready() -> NetworkObserved {
     NetworkObserved {
         bridge: owned("router"),
@@ -359,57 +390,37 @@ fn unready_or_unknown_router_falls_back_to_confirmed_router_only() {
 }
 
 #[test]
-fn desired_lan_access_effective_router_only_is_typed_degraded_status() {
-    let component = tailscale_status_component_from_observed(
-        &router_only(Some(TailscaleMode::LanSubnetAccess)),
-        &Probe::Known(ProxyFeaturesV1::disabled()),
-        false,
-    );
-    assert_eq!(component.state, ComponentState::Degraded);
-    assert_eq!(
-        component.data.unwrap().error_category,
-        Some(TailscaleErrorCategory::NotReady)
-    );
-}
-
-#[test]
-fn explicit_proxy_status_reports_desired_flag_and_environment_without_path_probe() {
+fn tailscale_status_keeps_proxy_state_out_of_tailscale_read_model() {
     let direct = router_only(Some(TailscaleMode::RouterOnly));
-    let direct_component = tailscale_status_component_from_observed(
-        &direct,
-        &Probe::Known(ProxyFeaturesV1::new(false, true)),
-        true,
-    );
+    let direct_component = tailscale_status_component_from_observed(&direct, true);
     assert_eq!(direct_component.state, ComponentState::Available);
     let direct_status = direct_component.data.unwrap();
-    assert_eq!(direct_status.explicit_proxy_desired, Some(true));
+    assert_eq!(direct_status.desired_mode, Some(TailscaleMode::RouterOnly));
     assert_eq!(
-        direct_status.environment,
-        Some(TailscaleEnvironment::Direct)
+        direct_status.effective_mode,
+        Some(TailscaleMode::RouterOnly)
+    );
+    assert_eq!(direct_status.error_category, None);
+
+    let mut legacy = direct.clone();
+    legacy.environment = Probe::Known(TailscaleEnvironment::MihomoExplicit);
+    let legacy_component = tailscale_status_component_from_observed(&legacy, true);
+    assert_eq!(legacy_component.state, ComponentState::Degraded);
+    let legacy_status = legacy_component.data.unwrap();
+    assert_eq!(legacy_status.desired_mode, Some(TailscaleMode::RouterOnly));
+    assert_eq!(legacy_status.effective_mode, None);
+    assert_eq!(
+        legacy_status.error_category,
+        Some(TailscaleErrorCategory::NotReady)
     );
 
-    let mut proxied = direct.clone();
-    proxied.environment = Probe::Known(TailscaleEnvironment::MihomoExplicit);
-    let proxied_component = tailscale_status_component_from_observed(
-        &proxied,
-        &Probe::Known(ProxyFeaturesV1::new(false, true)),
-        true,
-    );
-    assert_eq!(proxied_component.state, ComponentState::Available);
-    let proxied_status = proxied_component.data.unwrap();
-    assert_eq!(proxied_status.explicit_proxy_desired, Some(true));
-    assert_eq!(
-        proxied_status.environment,
-        Some(TailscaleEnvironment::MihomoExplicit)
-    );
-
-    let unknown = tailscale_status_component_from_observed(
-        &proxied,
-        &Probe::Unknown("features unreadable".to_owned()),
-        true,
-    );
+    legacy.environment = Probe::Unknown("environment unreadable".to_owned());
+    let unknown = tailscale_status_component_from_observed(&legacy, true);
     assert_eq!(unknown.state, ComponentState::Degraded);
-    assert_eq!(unknown.data.unwrap().explicit_proxy_desired, None);
+    assert_eq!(
+        unknown.data.unwrap().error_category,
+        Some(TailscaleErrorCategory::ProbeFailed)
+    );
 }
 
 #[test]

@@ -190,7 +190,7 @@ impl TailscaleObserved {
 
     fn enabled_base_ready(&self) -> bool {
         self.backend_state == Probe::Known(TailscaleBackendState::Running)
-            && matches!(self.environment, Probe::Known(_))
+            && self.environment == Probe::Known(TailscaleEnvironment::Direct)
             && matches!(
                 (&self.process, &self.socket, &self.interface),
                 (

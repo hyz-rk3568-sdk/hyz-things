@@ -43,7 +43,8 @@
 - 三进程拆分（无头 `hyz-router` + `hyz-things` 门户 + `hyz-camera` 媒体）已完成：`deploy-app.sh` 只支持热推送 things/camera，且不重启 router；协议版本不匹配时在停止服务前拒绝；
 - router 开发/授权维护的热替换规则已固定：USB ADB 先上传、校验并备份，再执行 `stop → 原子替换 → start`；网络 ADB（物理 LAN 或 TCP 5555 可达的 Tailscale 路径）在旧进程仍运行时完成校验、备份和原子替换，再执行 `reboot`；正式发布仍通过 recovery-free OTA；
 - `hyz-router` 源码与主机测试已完成 typed `Ethernet/Wi-Fi` 双上游、metric `100/600`、active uplink、按 uplink 隔离的 DHCP/resolver ownership、双出口 firewall/status，以及管理页面的双上游展示；完整板端切换矩阵仍待验收；
-- Tailscale 状态已支持本机/peer、active、online/offline、direct/relay、last seen、收发流量；UDP `41641` 的 runtime-owned WAN INPUT 同时覆盖固定 `eth0` 和 `wlan0`；显式代理环境只按受控生命周期与当前观测状态展示，不主动探测外部 control-plane 路径，也不自动回退或恢复环境；
+- Tailscale 状态已支持本机/peer、active、online/offline、direct/relay、last seen、收发流量；UDP `41641` 的 runtime-owned WAN INPUT 同时覆盖固定 `eth0` 和 `wlan0`；Tailscale 生命周期与本机系统代理相互独立，Tailscale 始终以 Direct 环境启动，状态只观测 direct/relay/DERP，不由代理开关控制；
+- 本机系统代理使用 Mihomo `127.0.0.1:7890` 提供本机 HTTP/HTTPS 显式代理，不安装本机 `OUTPUT` 接管、不接管所有本机流量，也不修改 `tailscaled`；
 - DNS 接管、8 小时路由+代理稳定性、所有代理节点失效和 Mihomo live-hang 自动回退仍未完成，因此代理 Epic 仍不得整体标记完成。
 
 变化的是上游接入方式，不是 LAN 拓扑。完整基础产品必须支持：
@@ -691,7 +692,7 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 - [x] 为公网 IPv6/IPv4 direct 使用固定 UDP `41641`，runtime-owned WAN INPUT 同时覆盖固定 `eth0` 和 `wlan0`；未满足 direct 条件时不得因此判定 Tailscale 不可用。
 - [x] 状态显示 enabled、authenticated、本机/peer 的 online/offline、active、direct/relay、last seen、收发流量和错误类别，不返回 node key、auth key、完整登录 URL 历史或 peer secret。
 - [x] 首次登录、认证冷启动、重启后状态保留、route approval 前置条件、远程管理和固定 LAN subnet HTTP 路径已有板端/Tailnet 验收记录。
-- [x] Tailscale 显式代理环境切换、普通 direct/relay 状态观测和持久化开关保持已通过主机测试；板端故障注入和长时间稳定性仍待验证。
+- [x] Tailscale lifecycle、普通 direct/relay/DERP 状态观测和本机系统代理状态已拆分；本机系统代理的持久化开关只控制 Mihomo loopback mixed port，不控制 `tailscaled`；板端故障注入和长时间稳定性仍待验证。
 - [ ] 注销、恢复出厂清理、失去公网/上联切换、新增 router 逻辑的 OTA/热替换后保留验证和 8 小时稳定性仍待补齐。
 
 ### P5：增加 Tailscale LAN subnet access
@@ -711,7 +712,7 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 - [ ] 验证 Ethernet DHCP、Wi-Fi fallback 和 PPPoE 下的 explicit/TUN；双 DHCP 的板端矩阵仍待执行，PPPoE 尚未实现。
 - [x] Mihomo TUN 记录并校验 active uplink gateway，WAN 切换时 planner 会要求重新收敛；双上游板端新连接验证仍待执行。
 - [x] core crash 后普通 NAT 回退和 active uplink 依赖已覆盖现有 Wi-Fi 板测及主机测试；双上游板端故障注入仍待执行。
-- [x] Tailscale 本机/peer 状态、direct/relay、UDP `41641` 防火墙和显式代理环境切换已完成代码与主机测试；代理节点质量、DNS 接管和 Mihomo live-hang 的完整策略仍未完成。
+- [x] Tailscale 本机/peer 状态、direct/relay/DERP、UDP `41641` 防火墙和本机系统代理独立状态已完成代码与主机测试；代理节点质量、DNS 接管和 Mihomo live-hang 的完整策略仍未完成。
 - [ ] 完成路由+代理 8 小时稳定性测试。
 
 ## 11. 推荐实施顺序
@@ -723,7 +724,7 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 5. 在基础路由事件产生点加入结构化事件，完成网络黑匣子的有界存储、断网时间线、指标和诊断快照。
 6. 集成固定 DNS 过滤引擎，完成家庭域名、按客户端策略、active resolver 原子切换和隐私边界。
 7. Tailscale `RouterOnly` 与固定 `192.168.8.0/24` 的 `LanSubnetAccess` 已完成主要代码和既有板端/Tailnet 验收；继续补齐注销、恢复出厂、Grants 授权的远端 LAN 设备访问、远程 DNS 和长时间稳定性。
-8. 最后补齐 Mihomo 对 Ethernet、Wi-Fi fallback、PPPoE、本地 DNS 中心和 Tailscale 共存场景的组合测试，并完成显式代理路径故障注入、所有代理节点失效和 live-hang 策略。
+8. 最后补齐 Mihomo 对 Ethernet、Wi-Fi fallback、PPPoE、本地 DNS 中心和 Tailscale 共存场景的组合测试，并完成本机系统代理路径故障注入、所有代理节点失效和 live-hang 策略。
 
 每一步都先更新 domain desired/observed model 和 fake-port 测试，再扩展 application planner，最后实现 Linux adapter。不得以 shell wrapper、任意字符串命令或浏览器直接配置 Linux 资源绕过架构。
 

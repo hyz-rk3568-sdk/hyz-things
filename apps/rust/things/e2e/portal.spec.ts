@@ -200,7 +200,7 @@ test("renders the portal home and applies the anonymous display control", async 
     actual_brightness: 180,
   });
   expect(state.proxy.data.lan_tun.desired).toBe(true);
-  expect(state.tailscale.data.explicit_proxy_desired).toBe(false);
+  expect(state.proxy.data.local_system_proxy.desired).toBe(false);
   expect(state.panel.proxy_groups.data[0].selected).toBe("东京");
 
   const accessibility = await new AxeBuilder({ page }).analyze();
@@ -436,7 +436,7 @@ test("serves the generated bundle through the strict production-shaped HTTP boun
   });
   expect(anonymousLanTun.status()).toBe(401);
   const anonymousTailscaleProxy = await request.post(
-    "/api/v1/control/proxy/tailscale",
+    "/api/v1/control/proxy/local-system",
     {
       headers: { Origin: webOrigin, "X-HYZ-CSRF": csrf },
       data: { enabled: true },
@@ -950,13 +950,13 @@ test("controls all four proxy combinations with isolated failures on desktop and
 }) => {
   await loginAsAdmin(page);
   const lanTun = page.getByRole("switch", { name: "LAN 透明代理" });
-  const tailscaleProxy = page.getByRole("switch", {
-    name: "Tailscale 中继代理",
+  const localSystemProxy = page.getByRole("switch", {
+    name: "本机系统代理",
   });
 
   const expectCombination = async (
     lanEnabled: boolean,
-    tailscaleEnabled: boolean,
+    localSystemProxyEnabled: boolean,
   ) => {
     await expect
       .poll(async () => {
@@ -964,34 +964,34 @@ test("controls all four proxy combinations with isolated failures on desktop and
         return {
           lanDesired: state.proxy.data.lan_tun.desired,
           lanEffective: state.proxy.data.lan_tun.effective,
-          tailscaleDesired: state.tailscale.data.explicit_proxy_desired,
-          environment: state.tailscale.data.environment,
+          localSystemProxyDesired: state.proxy.data.local_system_proxy.desired,
+          localSystemProxyEffective: state.proxy.data.local_system_proxy.effective,
           core: state.proxy.data.mihomo.process,
         };
       })
       .toEqual({
         lanDesired: lanEnabled,
         lanEffective: lanEnabled ? "ready" : "ordinary_nat",
-        tailscaleDesired: tailscaleEnabled,
-        environment: tailscaleEnabled ? "mihomo_explicit" : "direct",
-        core: lanEnabled || tailscaleEnabled ? "ready" : "absent",
+        localSystemProxyDesired: localSystemProxyEnabled,
+        localSystemProxyEffective: localSystemProxyEnabled ? "ready" : "disabled",
+        core: lanEnabled || localSystemProxyEnabled ? "ready" : "absent",
       });
     await expect(lanTun).toBeChecked({ checked: lanEnabled });
-    await expect(tailscaleProxy).toBeChecked({ checked: tailscaleEnabled });
+    await expect(localSystemProxy).toBeChecked({ checked: localSystemProxyEnabled });
   };
 
   await expectCombination(true, false);
-  await tailscaleProxy.click();
+  await localSystemProxy.click();
   await expectCombination(true, true);
   await lanTun.click();
   await expectCombination(false, true);
-  await tailscaleProxy.click();
+  await localSystemProxy.click();
   await expectCombination(false, false);
   await lanTun.click();
   await expectCombination(true, false);
 
   await page.setViewportSize({ width: 360, height: 800 });
-  await tailscaleProxy.click();
+  await localSystemProxy.click();
   await expectCombination(true, true);
   await lanTun.click();
   await expectCombination(false, true);
@@ -1011,15 +1011,15 @@ test("controls all four proxy combinations with isolated failures on desktop and
     page.getByRole("status").filter({ hasText: "操作失败" }),
   ).toBeVisible();
   await expectCombination(false, true);
-  await expect(tailscaleProxy).toBeChecked();
+  await expect(localSystemProxy).toBeChecked();
 
   state = await readHarnessState(request);
   state.proxy_failures.lan_tun = false;
-  state.proxy_failures.tailscale = true;
+  state.proxy_failures.local_system_proxy = true;
   expect(
     (await request.put(`${harnessOrigin}/state`, { data: state })).ok(),
   ).toBeTruthy();
-  await tailscaleProxy.click();
+  await localSystemProxy.click();
   await expect(
     page.getByRole("status").filter({ hasText: "操作失败" }),
   ).toHaveCount(2);
@@ -1027,7 +1027,7 @@ test("controls all four proxy combinations with isolated failures on desktop and
   await expect(lanTun).not.toBeChecked();
 
   state = await readHarnessState(request);
-  state.proxy_failures.tailscale = false;
+  state.proxy_failures.local_system_proxy = false;
   expect(
     (await request.put(`${harnessOrigin}/state`, { data: state })).ok(),
   ).toBeTruthy();
@@ -1040,7 +1040,7 @@ test("controls all four proxy combinations with isolated failures on desktop and
         (await readHarnessState(request)).panel.proxy_groups.data[0].selected,
     )
     .toBe("新加坡");
-  await expect(tailscaleProxy).toBeEnabled();
+  await expect(localSystemProxy).toBeEnabled();
   await expectNoHorizontalOverflow(page);
 
   const csrf = (
@@ -1050,7 +1050,7 @@ test("controls all four proxy combinations with isolated failures on desktop and
   ).csrf_token;
   for (const path of [
     "/api/v1/control/proxy/lan-tun",
-    "/api/v1/control/proxy/tailscale",
+    "/api/v1/control/proxy/local-system",
   ]) {
     const forbidden = await page.evaluate(
       async ({ path, csrf }) =>
@@ -1089,7 +1089,7 @@ test("controls all four proxy combinations with isolated failures on desktop and
   expect(oversized).toBe(413);
 });
 
-test("shows Tailscale proxy environment without path fallback wording", async ({
+test("shows local system proxy status from ProxyStatus without Tailscale coupling", async ({
   page,
   request,
 }) => {
@@ -1097,18 +1097,13 @@ test("shows Tailscale proxy environment without path fallback wording", async ({
   const state = await readHarnessState(request);
   state.proxy.state = "degraded";
   state.proxy.issue = {
-    code: "lan_tun_not_confirmed",
-    message: "LAN TUN 未确认",
+    code: "local_system_proxy_not_confirmed",
+    message: "本机系统代理未确认",
   };
   state.proxy.data.lan_tun.desired = true;
   state.proxy.data.lan_tun.effective = "not_confirmed";
-  state.tailscale.state = "degraded";
-  state.tailscale.issue = {
-    code: "tailscale_not_ready",
-    message: "Tailscale state does not satisfy strict readiness",
-  };
-  state.tailscale.data.explicit_proxy_desired = true;
-  state.tailscale.data.environment = "direct";
+  state.proxy.data.local_system_proxy.desired = true;
+  state.proxy.data.local_system_proxy.effective = "not_confirmed";
   expect(
     (await request.put(`${harnessOrigin}/state`, { data: state })).ok(),
   ).toBeTruthy();
@@ -1116,23 +1111,22 @@ test("shows Tailscale proxy environment without path fallback wording", async ({
   const proxyCapabilities = page.getByLabel("代理能力");
   await expect(
     proxyCapabilities.getByText("已降级 · 未确认", { exact: true }),
-  ).toBeVisible({
-    timeout: 7_500,
-  });
-  await expect(
-    proxyCapabilities.getByText("已降级 · Direct", { exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(2);
   await expect(
     proxyCapabilities.getByText(/代理路径|已恢复 Direct/),
   ).toHaveCount(0);
 
-  const proxied = await readHarnessState(request);
-  proxied.tailscale.state = "available";
-  proxied.tailscale.issue = null;
-  proxied.tailscale.data.explicit_proxy_desired = true;
-  proxied.tailscale.data.environment = "mihomo_explicit";
+  const ready = await readHarnessState(request);
+  ready.proxy.state = "available";
+  ready.proxy.issue = null;
+  ready.proxy.data.mihomo.configured_required = true;
+  ready.proxy.data.mihomo.process = "ready";
+  ready.proxy.data.mihomo.runtime_config = "ready";
+  ready.proxy.data.mihomo.mixed_port = "ready";
+  ready.proxy.data.local_system_proxy.desired = true;
+  ready.proxy.data.local_system_proxy.effective = "ready";
   expect(
-    (await request.put(`${harnessOrigin}/state`, { data: proxied })).ok(),
+    (await request.put(`${harnessOrigin}/state`, { data: ready })).ok(),
   ).toBeTruthy();
   await expect(
     proxyCapabilities.getByText("已启用", { exact: true }),
@@ -1142,8 +1136,8 @@ test("shows Tailscale proxy environment without path fallback wording", async ({
   unknown.proxy.data.mihomo.configured_required = null;
   unknown.proxy.data.mihomo.process = "unknown";
   unknown.proxy.data.lan_tun.desired = null;
-  unknown.tailscale.data.explicit_proxy_desired = null;
-  unknown.tailscale.data.environment = null;
+  unknown.proxy.data.local_system_proxy.desired = null;
+  unknown.proxy.data.local_system_proxy.effective = "not_confirmed";
   expect(
     (await request.put(`${harnessOrigin}/state`, { data: unknown })).ok(),
   ).toBeTruthy();
@@ -1157,7 +1151,7 @@ test("shows Tailscale proxy environment without path fallback wording", async ({
     page.getByRole("switch", { name: "LAN 透明代理" }),
   ).toBeDisabled();
   await expect(
-    page.getByRole("switch", { name: "Tailscale 中继代理" }),
+    page.getByRole("switch", { name: "本机系统代理" }),
   ).toBeDisabled();
 });
 

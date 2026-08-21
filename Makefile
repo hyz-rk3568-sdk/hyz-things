@@ -268,7 +268,7 @@ check-static:
 	grep -q '"/api/v1/control/proxy/delay"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
 	grep -q '"/api/v1/control/proxy/delays"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
 	grep -q '"/api/v1/control/proxy/lan-tun"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
-	grep -q '"/api/v1/control/proxy/tailscale"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
+	grep -q '"/api/v1/control/proxy/local-system"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
 	grep -q '"/api/v1/tailscale/peers"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
 	! grep -q '\.route("/api/v1/control/proxy/mode"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
 	grep -q '"/api/v1/apps"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
@@ -390,7 +390,7 @@ check-static:
 	grep -q 'chmod 0755 .*S83hyz-things' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	! grep -qE 'hyz-mihomo (explicit|tun|disable)|hyz-mihomo removes' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/hyz-router/mihomo-config.yaml.example
 	grep -q 'hyz-router proxy lan-tun enable|disable' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/hyz-router/mihomo-config.yaml.example
-	grep -q 'hyz-router proxy tailscale enable|disable' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/hyz-router/mihomo-config.yaml.example
+	grep -q 'hyz-router proxy local-system enable|disable' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/hyz-router/mihomo-config.yaml.example
 	! grep -qE '^(mixed-port|port|socks-port|redir-port|tproxy-port|allow-lan|bind-address|external-controller|secret|tun):' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/hyz-router/mihomo-config.yaml.example
 	test ! -e sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-mihomo
 	test ! -e sdk/buildroot/board/rockchip/hyz_things/fs-overlay/usr/sbin/hyz-router

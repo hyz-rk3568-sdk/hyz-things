@@ -235,7 +235,7 @@ sequenceDiagram
     par 后台等待 DHCP-owned WAN route
         Daemon->>Network: 仅在默认路由已确认后 reconcile forwarding
         Network-->>Daemon: 普通 NAT 已确认
-        Daemon->>Proxy: 按 forwarding → Tailscale → proxy 顺序恢复持久运行时
+        Daemon->>Proxy: 独立恢复 Tailscale 与 Mihomo 运行时
     and 门户等待核心确认
         InitT->>Marker: 轮询 ready 标记（有界 300s）
         Marker-->>InitT: 存在
@@ -245,7 +245,7 @@ sequenceDiagram
     end
 ```
 
-control socket 可服务不等于 router 已就绪，router ready 标记也不等于门户已就绪。ready 标记是核心对管理面严格 reconcile 的最终确认，只有它出现后 `S83hyz-things` 才会启动门户并绑定 LAN HTTP；即使 WAN/DHCP 不可用，核心的管理 LAN/AP/DNS 也保持可用。后台恢复任务每次先确认 DHCP-owned 默认路由，再在同一 `router_proxy` 串行区内按 forwarding、Tailscale、proxy 顺序恢复；`unknown`、外部所有权或复核失败都不会被提升为 ready。push camera/things 时 router 进程与 ready 标记都不受影响；push router 后门户保持运行并自动重连 UDS。
+control socket 可服务不等于 router 已就绪，router ready 标记也不等于门户已就绪。ready 标记是核心对管理面严格 reconcile 的最终确认，只有它出现后 `S83hyz-things` 才会启动门户并绑定 LAN HTTP；即使 WAN/DHCP 不可用，核心的管理 LAN/AP/DNS 也保持可用。后台恢复任务每次先确认 DHCP-owned 默认路由，再在同一 `router_proxy` 串行区内独立恢复 forwarding、Tailscale 和 Mihomo 运行时；`unknown`、外部所有权或复核失败都不会被提升为 ready。push camera/things 时 router 进程与 ready 标记都不受影响；push router 后门户保持运行并自动重连 UDS。
 
 WAN DHCP 租约按地址、metric `600` 路由、resolver 条目和 ownership record 整体提交；任一步失败都按精确动作逆序回滚。Buildroot 的 `/etc/resolv.conf -> ../tmp/resolv.conf` 在冷启动时允许目标尚不存在：adapter 只解析并校验固定 allowlist 中的目标父目录，再原子创建 `/tmp/resolv.conf`，不能因 dangling symlink 撤销已收到的有效租约。
 
@@ -264,7 +264,7 @@ hyz-router daemon
 hyz-router status [--json]
 hyz-router router enable|disable
 hyz-router proxy lan-tun enable|disable
-hyz-router proxy tailscale enable|disable
+hyz-router proxy local-system enable|disable
 hyz-router wifi status|scan
 hyz-router wifi ap apply|confirm|cancel
 hyz-router subscription get [--json]
@@ -274,7 +274,7 @@ hyz-router ota verify|download|install|install-recovery|apply ...
 
 `daemon` 是正常控制路径中唯一构造完整生产 adapter 的角色。普通 CLI、同一 ELF 的 udhcpc hook 和 `hyz-things` 都是 `/run/hyz-router/control.sock` 客户端；socket 位于 root-only `0700` 目录，文件模式 `0600`，并用 Linux peer credentials 再次要求 UID 0。Mihomo watcher 是唯一的最小特权例外：它由同一 composition root 装配，只能按已记录的 core PID/start/exe/argv 身份执行 fail-open，不提供公开 CLI、HTTP 或 control operation。
 
-OTA 和 router enable/disable 仍不通过 LAN API 暴露。匿名 LAN 页面只保留状态展示、LCD 控制和受限测速；LAN TUN、Tailscale 中继代理与已验证组内节点选择现与 AP/STA、设备别名/策略及订阅来源一起，只通过固定 typed API 暴露给已完成强制改密的管理员 session。浏览器不能提交命令、路径、原始 wpa_supplicant/hostapd/Mihomo 配置、provider 名、测试 URL 或 timeout。凭据和订阅 URL 不回显，也不允许通过 CLI 参数输入，避免进入进程列表。
+OTA 和 router enable/disable 仍不通过 LAN API 暴露。匿名 LAN 页面只保留状态展示、LCD 控制和受限测速；LAN TUN、本机系统代理与已验证组内节点选择现与 AP/STA、设备别名/策略及订阅来源一起，只通过固定 typed API 暴露给已完成强制改密的管理员 session。本机系统代理只提供固定 `127.0.0.1:7890` 的 HTTP/HTTPS 显式代理入口，不接管所有本机流量，也不控制 `tailscaled`；浏览器不能提交命令、路径、原始 wpa_supplicant/hostapd/Mihomo 配置、provider 名、测试 URL 或 timeout。凭据和订阅 URL 不回显，也不允许通过 CLI 参数输入，避免进入进程列表。
 
 ## 六边形依赖规则
 

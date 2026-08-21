@@ -20,7 +20,8 @@
 ## 能力
 
 - 分两阶段收敛管理网络和转发网络；转发失败时优先保留可访问的管理 LAN。
-- 支持普通 NAT，以及 Mihomo `explicit`、`tun`、`disabled` 三种模式。
+- 支持普通 NAT，以及独立的 LAN TUN 和本机系统代理能力；Mihomo core 只在至少一个能力启用时运行。
+- 本机系统代理固定使用 `127.0.0.1:7890`，只处理本机 HTTP/HTTPS 显式代理，不安装本机 `OUTPUT` 接管，也不控制 Tailscale 生命周期。
 - 通过 root-only Unix socket 统一承接 CLI、udhcpc hook、OTA 和门户操作。
 - 校验 RKFW magic 与 SHA-256，并通过固定 staging 路径提交 BCB 或调用 `updateEngine`。
 - 仅清理自身拥有的 bridge、iptables、进程和运行时文件；未知或外部资源不会被当作可安全接管的状态。

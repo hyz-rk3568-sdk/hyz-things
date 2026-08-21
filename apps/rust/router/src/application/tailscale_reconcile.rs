@@ -3,8 +3,8 @@ use crate::{
     domain::{
         network::{NetworkDesired, NetworkObserved, OwnedResource, Probe},
         tailscale::{
-            TailscaleAction, TailscaleBackendState, TailscaleDesired, TailscaleMode,
-            TailscaleObserved, TailscalePreferences, TailscaleProcessState,
+            TailscaleAction, TailscaleBackendState, TailscaleDesired, TailscaleEnvironment,
+            TailscaleMode, TailscaleObserved, TailscalePreferences, TailscaleProcessState,
         },
     },
 };
@@ -110,36 +110,92 @@ pub fn tailscale_plan(
     }
 
     let mut actions = Vec::new();
-    match desired.mode {
-        TailscaleMode::Disabled => {
-            remove_lan_path(observed, &mut actions)?;
-            remove_router_surface(observed, &mut actions)?;
-            match &observed.process {
-                Probe::Known(
-                    TailscaleProcessState::OwnedLive { token }
-                    | TailscaleProcessState::OwnedExited { token },
-                ) => {
-                    actions.push(TailscaleAction::StopBackend {
-                        token: token.clone(),
-                    });
-                }
-                Probe::Known(TailscaleProcessState::Absent) => {}
-                _ => unreachable!("observation validation rejects unsafe process state"),
+    let normalize_legacy_environment = if desired.mode == TailscaleMode::Disabled {
+        false
+    } else {
+        match observed.environment {
+            Probe::Known(TailscaleEnvironment::Direct) => false,
+            Probe::Known(TailscaleEnvironment::MihomoExplicit) => true,
+            Probe::Unknown(ref reason) => {
+                return Err(PlatformError::ProbeFailed(format!(
+                    "Tailscale environment is unknown: {reason}"
+                )))
             }
         }
-        TailscaleMode::RouterOnly | TailscaleMode::LanSubnetAccess => {
-            require_authenticated_backend(observed)?;
-            remove_lan_path(observed, &mut actions)?;
-            ensure_fixed_preferences(observed, &mut actions)?;
-            ensure_router_surface(observed, token, &mut actions)?;
+    };
 
-            if desired.mode == TailscaleMode::LanSubnetAccess
-                && network.ready_for(&NetworkDesired::forwarding())
-            {
-                actions.push(TailscaleAction::AdvertiseLanRoute);
-                actions.push(TailscaleAction::InstallSubnetFirewall {
+    if normalize_legacy_environment {
+        remove_lan_path(observed, &mut actions)?;
+        remove_router_surface(observed, &mut actions)?;
+        match &observed.process {
+            Probe::Known(
+                TailscaleProcessState::OwnedLive { token: process }
+                | TailscaleProcessState::OwnedExited { token: process },
+            ) => actions.push(TailscaleAction::StopBackend {
+                token: process.clone(),
+            }),
+            Probe::Known(TailscaleProcessState::Absent) => {
+                return Err(PlatformError::Conflict(
+                    "legacy Tailscale proxy environment has no owned backend to normalize"
+                        .to_owned(),
+                ))
+            }
+            Probe::Known(TailscaleProcessState::Foreign) => {
+                unreachable!("observation validation rejects foreign Tailscale processes")
+            }
+            Probe::Unknown(_) => {
+                unreachable!("observation validation rejects unknown Tailscale processes")
+            }
+        }
+        actions.extend([
+            TailscaleAction::StartBackend {
+                token: token.to_owned(),
+                environment: TailscaleEnvironment::Direct,
+            },
+            TailscaleAction::WaitForBackend,
+            TailscaleAction::SetFixedPreferences,
+            TailscaleAction::InstallRouterFirewall {
+                token: token.to_owned(),
+            },
+        ]);
+        if desired.mode == TailscaleMode::LanSubnetAccess && ordinary_router_ready {
+            actions.extend([
+                TailscaleAction::AdvertiseLanRoute,
+                TailscaleAction::InstallSubnetFirewall {
                     token: token.to_owned(),
-                });
+                },
+            ]);
+        }
+    } else {
+        match desired.mode {
+            TailscaleMode::Disabled => {
+                remove_lan_path(observed, &mut actions)?;
+                remove_router_surface(observed, &mut actions)?;
+                match &observed.process {
+                    Probe::Known(
+                        TailscaleProcessState::OwnedLive { token }
+                        | TailscaleProcessState::OwnedExited { token },
+                    ) => {
+                        actions.push(TailscaleAction::StopBackend {
+                            token: token.clone(),
+                        });
+                    }
+                    Probe::Known(TailscaleProcessState::Absent) => {}
+                    _ => unreachable!("observation validation rejects unsafe process state"),
+                }
+            }
+            TailscaleMode::RouterOnly | TailscaleMode::LanSubnetAccess => {
+                require_authenticated_backend(observed)?;
+                remove_lan_path(observed, &mut actions)?;
+                ensure_fixed_preferences(observed, &mut actions)?;
+                ensure_router_surface(observed, token, &mut actions)?;
+
+                if desired.mode == TailscaleMode::LanSubnetAccess && ordinary_router_ready {
+                    actions.push(TailscaleAction::AdvertiseLanRoute);
+                    actions.push(TailscaleAction::InstallSubnetFirewall {
+                        token: token.to_owned(),
+                    });
+                }
             }
         }
     }

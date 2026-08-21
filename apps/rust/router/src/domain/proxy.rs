@@ -26,7 +26,8 @@ pub const CONTROLLED_LOCAL_MIXED: &str =
 pub struct ProxyFeaturesV1 {
     pub version: u8,
     pub lan_tun_enabled: bool,
-    pub tailscale_explicit_proxy_enabled: bool,
+    #[serde(alias = "tailscale_explicit_proxy_enabled")]
+    pub local_system_proxy_enabled: bool,
 }
 
 impl ProxyFeaturesV1 {
@@ -36,20 +37,20 @@ impl ProxyFeaturesV1 {
         Self {
             version: Self::VERSION,
             lan_tun_enabled: false,
-            tailscale_explicit_proxy_enabled: false,
+            local_system_proxy_enabled: false,
         }
     }
 
-    pub const fn new(lan_tun_enabled: bool, tailscale_explicit_proxy_enabled: bool) -> Self {
+    pub const fn new(lan_tun_enabled: bool, local_system_proxy_enabled: bool) -> Self {
         Self {
             version: Self::VERSION,
             lan_tun_enabled,
-            tailscale_explicit_proxy_enabled,
+            local_system_proxy_enabled,
         }
     }
 
     pub const fn mihomo_required(self) -> bool {
-        self.lan_tun_enabled || self.tailscale_explicit_proxy_enabled
+        self.lan_tun_enabled || self.local_system_proxy_enabled
     }
 
     pub const fn supported(self) -> bool {
@@ -60,17 +61,17 @@ impl ProxyFeaturesV1 {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProxyDesired {
     pub lan_tun_enabled: bool,
-    pub tailscale_explicit_proxy_enabled: bool,
+    pub local_system_proxy_enabled: bool,
     pub direct_macs: BTreeSet<LanDeviceMac>,
 }
 
 impl ProxyDesired {
     pub const fn features(&self) -> ProxyFeaturesV1 {
-        ProxyFeaturesV1::new(self.lan_tun_enabled, self.tailscale_explicit_proxy_enabled)
+        ProxyFeaturesV1::new(self.lan_tun_enabled, self.local_system_proxy_enabled)
     }
 
     pub const fn mihomo_required(&self) -> bool {
-        self.lan_tun_enabled || self.tailscale_explicit_proxy_enabled
+        self.lan_tun_enabled || self.local_system_proxy_enabled
     }
 }
 
@@ -276,13 +277,25 @@ mod tests {
     }
 
     #[test]
+    fn legacy_persisted_feature_field_is_accepted_and_rewritten_with_new_name() {
+        let features: ProxyFeaturesV1 = serde_json::from_str(
+            r#"{"version":1,"lan_tun_enabled":false,"tailscale_explicit_proxy_enabled":true}"#,
+        )
+        .unwrap();
+        assert_eq!(features, ProxyFeaturesV1::new(false, true));
+        let encoded = serde_json::to_value(features).unwrap();
+        assert_eq!(encoded["local_system_proxy_enabled"], true);
+        assert!(encoded.get("tailscale_explicit_proxy_enabled").is_none());
+    }
+
+    #[test]
     fn versioned_features_reject_unknown_fields_and_versions() {
         assert!(serde_json::from_str::<ProxyFeaturesV1>(
-            r#"{"version":1,"lan_tun_enabled":true,"tailscale_explicit_proxy_enabled":false,"port":7890}"#
+            r#"{"version":1,"lan_tun_enabled":true,"local_system_proxy_enabled":false,"port":7890}"#
         )
         .is_err());
         let unsupported: ProxyFeaturesV1 = serde_json::from_str(
-            r#"{"version":2,"lan_tun_enabled":false,"tailscale_explicit_proxy_enabled":false}"#,
+            r#"{"version":2,"lan_tun_enabled":false,"local_system_proxy_enabled":false}"#,
         )
         .unwrap();
         assert!(!unsupported.supported());
