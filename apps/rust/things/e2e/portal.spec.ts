@@ -227,10 +227,14 @@ test("renders the upcoming exam countdown in chronological order", async ({
     "hunan-civil-service",
     "hunan-public-institution",
   ]);
-  await expect(countdown.getByText("下一次国考", { exact: true })).toBeVisible();
+  await expect(
+    countdown.getByText("下一次国考", { exact: true }),
+  ).toBeVisible();
   await expect(countdown.getByText("广东省考", { exact: true })).toBeVisible();
   await expect(countdown.getByText("湖南省考", { exact: true })).toBeVisible();
-  await expect(countdown.getByText("湖南事业编", { exact: true })).toBeVisible();
+  await expect(
+    countdown.getByText("湖南事业编", { exact: true }),
+  ).toBeVisible();
   await expect(countdown.locator("progress")).toHaveCount(4);
   await expect(countdown.locator("progress").first()).toHaveAttribute(
     "aria-label",
@@ -242,42 +246,404 @@ test("renders the upcoming exam countdown in chronological order", async ({
   expect(accessibility.violations).toEqual([]);
 });
 
-test("opens one exam card in fullscreen focus mode with a double click", async ({
+test("serves a standalone PWA manifest", async ({ request }) => {
+  const root = await request.get("/");
+  expect(root.ok()).toBeTruthy();
+  expect(await root.text()).toContain('rel="manifest"');
+
+  const manifestResponse = await request.get("/manifest.webmanifest");
+  expect(manifestResponse.ok()).toBeTruthy();
+  expect(manifestResponse.headers()["content-type"]).toContain("manifest+json");
+  const manifest = await manifestResponse.json();
+  expect(manifest).toMatchObject({
+    id: "/",
+    start_url: "/",
+    scope: "/",
+    display: "standalone",
+    display_override: ["standalone", "fullscreen"],
+  });
+  expect(manifest.icons).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        src: "/pwa-icon-192.svg",
+        sizes: "192x192",
+      }),
+      expect.objectContaining({
+        src: "/pwa-icon-512.svg",
+        sizes: "512x512",
+      }),
+    ]),
+  );
+});
+
+test("keeps exam countdown cards dark and low-contrast", async ({ page }) => {
+  await page.goto("/");
+
+  const countdown = page.getByRole("region", { name: "考试冲刺倒计时" });
+  const cards = countdown.locator("[data-exam-id]");
+  await expect(cards.first()).toHaveClass(/bg-base-300\/90/);
+  await expect(cards.first().locator('[aria-live="polite"]')).toHaveClass(
+    /text-base-content/,
+  );
+});
+
+async function readCountdownTotal(target: Page): Promise<number> {
+  return target.evaluate(() => {
+    const counter = document.querySelector("[data-countdown-values]");
+    if (!counter) {
+      return 0;
+    }
+    let total = 0;
+    counter.querySelectorAll("strong[data-value]").forEach((element) => {
+      total += Number(element.textContent);
+    });
+    return total;
+  });
+}
+
+test("opens an exam countdown in a picture-in-picture window with a double click", async ({
   page,
+  context,
 }) => {
   await page.goto("/");
 
-  const countdown = page.getByRole("region", { name: "考试冲刺倒计时" });
-  const card = countdown.locator('[data-exam-id="national-exam"]');
-  await card.dblclick();
+  const pipPagePromise = context.waitForEvent("page");
+  await page
+    .getByRole("region", { name: "考试冲刺倒计时" })
+    .locator('[data-exam-id="national-exam"]')
+    .dblclick();
+  const pipPage = await pipPagePromise;
 
-  const focus = page.getByRole("dialog", { name: "下一次国考专注模式" });
-  await expect(focus).toBeVisible();
-  await expect(focus.locator("[data-exam-id]")).toHaveCount(1);
-  await expect(focus.getByText("下一次国考", { exact: true })).toBeVisible();
+  const pipCard = pipPage.locator('[data-exam-id="national-exam"]');
+  await expect(pipCard).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "退出全屏", exact: true }),
+    pipPage.getByRole("button", { name: "关闭画中画" }),
   ).toBeVisible();
-  await expectNoHorizontalOverflow(page);
 
-  await page.keyboard.press("Escape");
-  await expect(focus).toHaveCount(0);
+  // 样式表已复制进画中画窗口：卡片计算样式与主页面一致。
+  const mainBackground = await page.evaluate(
+    () =>
+      getComputedStyle(
+        document.querySelector('[data-exam-id="national-exam"]'),
+      ).backgroundColor,
+  );
+  await expect
+    .poll(() =>
+      pipPage.evaluate(
+        () =>
+          getComputedStyle(
+            document.querySelector('[data-exam-id="national-exam"]'),
+          ).backgroundColor,
+      ),
+    )
+    .toBe(mainBackground);
+
+  // 数值与主页面一致（画中画刚打开，允许 1 秒的展示偏差）。
+  const pipTotal = await readCountdownTotal(pipPage);
+  const mainTotal = await readCountdownTotal(page);
+  expect(Math.abs(mainTotal - pipTotal)).toBeLessThanOrEqual(1);
+  await expectNoHorizontalOverflow(page);
 });
 
-test("opens and closes exam focus mode on mobile", async ({ page }) => {
+test("keeps the countdown ticking inside the picture-in-picture window", async ({
+  page,
+  context,
+}) => {
+  await page.goto("/");
+  const pipPagePromise = context.waitForEvent("page");
+  await page
+    .getByRole("region", { name: "考试冲刺倒计时" })
+    .locator('[data-exam-id="hunan-civil-service"]')
+    .dblclick();
+  const pipPage = await pipPagePromise;
+  await expect(
+    pipPage.getByRole("button", { name: "关闭画中画" }),
+  ).toBeVisible();
+
+  const before = await readCountdownTotal(pipPage);
+  await pipPage.waitForTimeout(2_300);
+  const after = await readCountdownTotal(pipPage);
+  const diff = before - after;
+  expect(diff).toBeGreaterThanOrEqual(1);
+  expect(diff).toBeLessThanOrEqual(4);
+});
+
+test("closes the picture-in-picture window with Escape and reopens it", async ({
+  page,
+  context,
+}) => {
+  await page.goto("/");
+  const firstPipPromise = context.waitForEvent("page");
+  await page
+    .getByRole("region", { name: "考试冲刺倒计时" })
+    .locator('[data-exam-id="national-exam"]')
+    .dblclick();
+  const pipPage = await firstPipPromise;
+  await expect(
+    pipPage.getByRole("button", { name: "关闭画中画" }),
+  ).toBeVisible();
+
+  // Esc 会让画中画窗口立刻关闭，Playwright 在按键派发中途发现目标页已关闭
+  // 会抛 "Target page ... has been closed"，行为本身符合预期，容忍该错误。
+  await pipPage.keyboard.press("Escape").catch(() => {});
+  await expect.poll(() => context.pages().length).toBe(1);
+
+  const secondPipPromise = context.waitForEvent("page");
+  await page
+    .getByRole("region", { name: "考试冲刺倒计时" })
+    .locator('[data-exam-id="national-exam"]')
+    .dblclick();
+  const secondPip = await secondPipPromise;
+  await expect(
+    secondPip.getByRole("button", { name: "关闭画中画" }),
+  ).toBeVisible();
+});
+
+test("opens a countdown picture-in-picture window on mobile", async ({
+  page,
+  context,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
 
-  const countdown = page.getByRole("region", { name: "考试冲刺倒计时" });
-  await countdown.locator('[data-exam-id="hunan-public-institution"]').dblclick();
+  const pipPagePromise = context.waitForEvent("page");
+  await page
+    .getByRole("region", { name: "考试冲刺倒计时" })
+    .locator('[data-exam-id="hunan-public-institution"]')
+    .dblclick();
+  const pipPage = await pipPagePromise;
 
-  const focus = page.getByRole("dialog", { name: "湖南事业编专注模式" });
-  await expect(focus).toBeVisible();
-  await expect(focus.locator("[data-exam-id]")).toHaveCount(1);
+  await expect(
+    pipPage.locator('[data-exam-id="hunan-public-institution"]'),
+  ).toBeVisible();
   await expectNoHorizontalOverflow(page);
+});
 
-  await focus.getByRole("button", { name: "退出全屏", exact: true }).click();
-  await expect(focus).toHaveCount(0);
+test("falls back to a canvas video stream when documentPictureInPicture is missing", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "documentPictureInPicture", {
+      configurable: true,
+      value: undefined,
+    });
+    const calls: string[] = [];
+    let inPip = false;
+    (window as any).__hyzCountdownVideoInPip = () => inPip;
+    Object.defineProperty(HTMLVideoElement.prototype, "requestPictureInPicture", {
+      configurable: true,
+      value: function () {
+        calls.push("request");
+        inPip = true;
+        return Promise.resolve();
+      },
+    });
+    (window as any).__hyzCountdownVideoPipCalls = calls;
+  });
+  await page.goto("/");
+  // addInitScript 里的 document 是导航前的空文档，属性定义不生效；
+  // 导航后再桩掉 pictureInPictureElement：请求成功后才返回倒计时 video，
+  // 模拟系统画中画真的激活（避免轮询在请求前就误判已激活）。
+  await page.evaluate(() => {
+    Object.defineProperty(document, "pictureInPictureElement", {
+      configurable: true,
+      get() {
+        return (window as any).__hyzCountdownVideoInPip()
+          ? document.querySelector("video[data-countdown-pip-active]") || null
+          : null;
+      },
+    });
+  });
+
+  await page
+    .getByRole("region", { name: "考试冲刺倒计时" })
+    .locator('[data-exam-id="guangdong-exam"]')
+    .dblclick();
+
+  await expect(
+    page.locator("canvas[data-countdown-canvas]").first(),
+  ).toBeAttached();
+  await expect(
+    page.locator("video[data-countdown-video]").first(),
+  ).toBeAttached();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).__hyzCountdownVideoPipCalls.length,
+      ),
+    )
+    .toBe(1);
+  // 画布首帧已绘制（背景不透明，不是空白/黑屏）。
+  const pixel = await page.evaluate(() => {
+    const canvas = document.querySelector(
+      "canvas[data-countdown-canvas]",
+    ) as HTMLCanvasElement;
+    const context = canvas.getContext("2d") as CanvasRenderingContext2D;
+    return Array.from(context.getImageData(10, 10, 1, 1).data);
+  });
+  expect(pixel[3]).toBe(255);
+  await expectNoHorizontalOverflow(page);
+});
+
+test("pumps WebCodecs frames into a WebKit-style picture-in-picture stream", async ({
+  page,
+}) => {
+  // 模拟 iPadOS Safari：无 Document PiP，有 VideoTrackGenerator、
+  // webkitSetPresentationMode，但没有可靠 captureStream 语义——
+  // 前端必须走 WebCodecs 轨道生成器路径并真实泵帧。
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "documentPictureInPicture", {
+      configurable: true,
+      value: undefined,
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, "webkitSetPresentationMode", {
+      configurable: true,
+      value: function () {},
+    });
+    const calls: string[] = [];
+    let inPip = false;
+    (window as any).__hyzCountdownVideoInPip = () => inPip;
+    Object.defineProperty(HTMLVideoElement.prototype, "requestPictureInPicture", {
+      configurable: true,
+      value: function () {
+        calls.push("request");
+        inPip = true;
+        return Promise.resolve();
+      },
+    });
+    (window as any).__hyzCountdownVideoPipCalls = calls;
+    (window as any).__hyzPipFrameWrites = 0;
+    class FakeVideoTrackGenerator {
+      track: MediaStreamTrack;
+      writable: { getWriter: () => { write: (frame: VideoFrame) => Promise<void> } };
+      constructor() {
+        const canvas = document.createElement("canvas");
+        const stream = (canvas as any).captureStream(10);
+        this.track = stream.getVideoTracks()[0];
+        this.writable = {
+          getWriter: () => ({
+            write: (frame: VideoFrame) => {
+              (window as any).__hyzPipFrameWrites += 1;
+              frame.close();
+              return Promise.resolve();
+            },
+          }),
+        };
+      }
+    }
+    Object.defineProperty(window, "VideoTrackGenerator", {
+      configurable: true,
+      value: FakeVideoTrackGenerator,
+    });
+  });
+  await page.goto("/");
+  await page.evaluate(() => {
+    Object.defineProperty(document, "pictureInPictureElement", {
+      configurable: true,
+      get() {
+        return (window as any).__hyzCountdownVideoInPip()
+          ? document.querySelector("video[data-countdown-pip-active]") || null
+          : null;
+      },
+    });
+  });
+
+  // WebKit 路径不创建 captureStream 复制 canvas。
+  await expect(
+    page.locator("canvas[data-countdown-capture-canvas]"),
+  ).toHaveCount(0);
+  // 轨道生成器持续收到真实 VideoFrame。
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as any).__hyzPipFrameWrites as number),
+    )
+    .toBeGreaterThan(0);
+
+  await page
+    .getByRole("region", { name: "考试冲刺倒计时" })
+    .locator('[data-exam-id="guangdong-exam"]')
+    .dblclick();
+
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).__hyzCountdownVideoPipCalls.length,
+      ),
+    )
+    .toBe(1);
+  await expect(page.locator("video[data-countdown-pip-active]")).toHaveCount(1);
+  // 源 canvas 首帧已绘制（背景不透明，不是空白/黑屏）。
+  const pixel = await page.evaluate(() => {
+    const canvas = document.querySelector(
+      "canvas[data-countdown-canvas]",
+    ) as HTMLCanvasElement;
+    const context = canvas.getContext("2d") as CanvasRenderingContext2D;
+    return Array.from(context.getImageData(10, 10, 1, 1).data);
+  });
+  expect(pixel[3]).toBe(255);
+  await expectNoHorizontalOverflow(page);
+});
+
+test("shows an activation-failure notice when the picture-in-picture request is rejected", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "documentPictureInPicture", {
+      configurable: true,
+      value: undefined,
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, "requestPictureInPicture", {
+      configurable: true,
+      value: function () {
+        throw new DOMException("Not allowed", "NotAllowedError");
+      },
+    });
+  });
+  await page.goto("/");
+
+  await page
+    .getByRole("region", { name: "考试冲刺倒计时" })
+    .locator('[data-exam-id="guangdong-exam"]')
+    .dblclick();
+
+  await expect(page.locator("[data-exam-countdown-notice]")).toContainText(
+    "画中画激活失败，请再试一次",
+  );
+  // 预创建的隐藏视频常驻 DOM；断言的是没有视频进入激活中的画中画状态。
+  await expect(page.locator("video[data-countdown-pip-active]")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("shows a notice when no picture-in-picture API is available", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "documentPictureInPicture", {
+      configurable: true,
+      value: undefined,
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, "requestPictureInPicture", {
+      configurable: true,
+      value: undefined,
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, "webkitSetPresentationMode", {
+      configurable: true,
+      value: undefined,
+    });
+  });
+  await page.goto("/");
+
+  await page
+    .getByRole("region", { name: "考试冲刺倒计时" })
+    .locator('[data-exam-id="national-exam"]')
+    .dblclick();
+
+  await expect(page.locator("[data-exam-countdown-notice]")).toContainText(
+    "当前浏览器不支持画中画",
+  );
+  // API 全缺时不会预创建隐藏视频，更不会进入激活中的画中画状态。
+  await expect(page.locator("video[data-countdown-pip-active]")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
 test("keeps the exam countdown usable on mobile", async ({ page }) => {
@@ -287,7 +653,9 @@ test("keeps the exam countdown usable on mobile", async ({ page }) => {
   const countdown = page.getByRole("region", { name: "考试冲刺倒计时" });
   await expect(countdown).toBeVisible();
   await expect(countdown.locator("[data-exam-id]")).toHaveCount(4);
-  await expect(countdown.getByText("湖南事业编", { exact: true })).toBeVisible();
+  await expect(
+    countdown.getByText("湖南事业编", { exact: true }),
+  ).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
   const accessibility = await new AxeBuilder({ page }).analyze();
@@ -965,7 +1333,8 @@ test("controls all four proxy combinations with isolated failures on desktop and
           lanDesired: state.proxy.data.lan_tun.desired,
           lanEffective: state.proxy.data.lan_tun.effective,
           localSystemProxyDesired: state.proxy.data.local_system_proxy.desired,
-          localSystemProxyEffective: state.proxy.data.local_system_proxy.effective,
+          localSystemProxyEffective:
+            state.proxy.data.local_system_proxy.effective,
           core: state.proxy.data.mihomo.process,
         };
       })
@@ -973,11 +1342,15 @@ test("controls all four proxy combinations with isolated failures on desktop and
         lanDesired: lanEnabled,
         lanEffective: lanEnabled ? "ready" : "ordinary_nat",
         localSystemProxyDesired: localSystemProxyEnabled,
-        localSystemProxyEffective: localSystemProxyEnabled ? "ready" : "disabled",
+        localSystemProxyEffective: localSystemProxyEnabled
+          ? "ready"
+          : "disabled",
         core: lanEnabled || localSystemProxyEnabled ? "ready" : "absent",
       });
     await expect(lanTun).toBeChecked({ checked: lanEnabled });
-    await expect(localSystemProxy).toBeChecked({ checked: localSystemProxyEnabled });
+    await expect(localSystemProxy).toBeChecked({
+      checked: localSystemProxyEnabled,
+    });
   };
 
   await expectCombination(true, false);

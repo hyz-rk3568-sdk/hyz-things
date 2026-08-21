@@ -1,0 +1,27 @@
+{
+  "name": "hyz things",
+  "short_name": "hyz things",
+  "description": "hyz things 个人门户与设备管理页面",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "id": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "fullscreen"],
+  "background_color": "#282a36",
+  "theme_color": "#282a36",
+  "icons": [
+    {
+      "src": "/pwa-icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/pwa-icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

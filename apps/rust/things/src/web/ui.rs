@@ -29,51 +29,40 @@ pub const APP_CARD: &str =
     "card min-w-0 gap-4 border border-base-content/10 bg-base-100/60 p-5 shadow-sm";
 
 pub const EXAM_SECTION: &str =
-    "card relative isolate overflow-hidden border border-error/30 bg-gradient-to-br from-error/15 via-warning/10 to-base-100/70 p-4 shadow-xl shadow-error/10 sm:p-6";
+    "card relative isolate overflow-hidden border border-base-content/10 bg-base-300/95 p-4 shadow-xl shadow-black/20 sm:p-6";
 pub const EXAM_DECORATION: &str =
-    "pointer-events-none absolute -right-16 -top-16 -z-10 size-48 rounded-full bg-error/15 blur-3xl";
+    "pointer-events-none absolute -right-16 -top-16 -z-10 size-48 rounded-full bg-base-content/5 blur-3xl";
 pub const EXAM_HEAD: &str = "flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between";
 pub const EXAM_HEAD_META: &str =
     "flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-base-content/65";
 pub const EXAM_BADGE: &str =
-    "badge badge-error gap-1.5 border-error/30 bg-error/10 text-[0.65rem] font-bold text-error";
+    "badge badge-outline gap-1.5 border-base-content/20 bg-base-content/5 text-[0.65rem] font-bold text-base-content/70";
 pub const EXAM_GRID: &str = "mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4";
 pub const EXAM_CARD: &str =
-    "card min-w-0 gap-3 border border-warning/30 bg-base-100/75 p-4 shadow-lg shadow-black/10 transition-shadow";
-pub const EXAM_CARD_FOCUS: &str =
-    "min-h-[70vh] content-center gap-6 border-error/50 bg-base-100 p-6 shadow-2xl shadow-error/20 sm:min-h-[75vh] sm:p-10";
-pub const EXAM_FOCUS_BACKDROP: &str =
-    "fixed inset-0 z-50 grid min-h-dvh place-items-center overflow-y-auto bg-base-300 p-4 sm:p-8";
-pub const EXAM_FOCUS_PANEL: &str = "relative w-full max-w-5xl";
-pub const EXAM_FOCUS_CLOSE: &str =
-    "btn btn-circle btn-sm absolute right-3 top-3 z-10 border-base-content/15 bg-base-200/90 text-base-content shadow-lg hover:bg-base-300 sm:right-5 sm:top-5";
-pub const EXAM_COUNTER_VALUE_FOCUS: &str =
-    "text-5xl font-black leading-none tracking-tighter sm:text-7xl";
-pub const EXAM_COUNTER_UNIT_FOCUS: &str = "text-sm font-bold text-base-content/65 sm:text-base";
-pub const EXAM_CARD_TITLE_FOCUS: &str = "text-2xl font-black sm:text-4xl";
-pub const EXAM_PROGRESS_FOCUS: &str = "progress progress-error h-3 w-full bg-base-content/10";
-pub const EXAM_CARD_FINISHED: &str = "border-base-content/10 bg-base-200/60 opacity-75 shadow-sm";
-pub const EXAM_CARD_URGENT: &str =
-    "border-error/50 bg-error/10 shadow-error/15 motion-safe:animate-pulse";
-pub const EXAM_CARD_SOON: &str = "border-warning/50 bg-warning/10 shadow-warning/10";
+    "card min-w-0 touch-manipulation gap-3 border border-base-content/10 bg-base-300/90 p-4 shadow-lg shadow-black/20 transition-shadow";
+pub const EXAM_PIP_NOTICE: &str =
+    "mt-3 rounded-box border border-base-content/10 bg-base-200/70 px-3 py-2 text-xs text-base-content/70";
+pub const EXAM_COUNTER_VALUE: &str =
+    "text-3xl font-black leading-none tracking-tighter sm:text-4xl";
+pub const EXAM_CARD_URGENT: &str = "border-error/60 bg-base-300/95 shadow-black/25";
+pub const EXAM_CARD_SOON: &str = "border-warning/60 bg-base-300/95 shadow-black/25";
+pub const EXAM_CARD_FINISHED: &str = "border-base-content/10 bg-base-300/60 opacity-75 shadow-sm";
 pub const EXAM_CARD_HEAD: &str = "flex min-w-0 items-start justify-between gap-2";
 pub const EXAM_CARD_INDEX: &str =
-    "grid size-7 shrink-0 place-items-center rounded-full bg-error/15 font-mono text-xs font-black text-error";
+    "grid size-7 shrink-0 place-items-center rounded-full bg-base-content/10 font-mono text-xs font-black text-base-content/75";
 pub const EXAM_CARD_COPY: &str = "grid min-w-0 gap-0.5";
 pub const EXAM_CARD_EYEBROW: &str =
     "text-[0.6rem] font-bold uppercase tracking-wider text-base-content/60";
-pub const EXAM_CARD_TITLE: &str = "truncate text-base font-black";
+pub const EXAM_CARD_TITLE: &str = "truncate text-base font-black text-base-content/85";
 pub const EXAM_STATUS: &str = "badge badge-outline shrink-0 text-[0.6rem] font-bold";
 pub const EXAM_COUNTER: &str =
-    "flex min-w-0 items-baseline gap-1 overflow-hidden font-mono text-error";
-pub const EXAM_COUNTER_VALUE: &str =
-    "text-3xl font-black leading-none tracking-tighter sm:text-4xl";
-pub const EXAM_COUNTER_UNIT: &str = "text-xs font-bold text-base-content/65";
+    "flex min-w-0 items-baseline gap-1 overflow-hidden font-mono text-base-content/80";
+pub const EXAM_COUNTER_UNIT: &str = "text-xs font-bold text-base-content/55";
 pub const EXAM_COUNTER_FINISHED: &str = "text-2xl font-black leading-none text-base-content/65";
 pub const EXAM_META: &str =
-    "flex items-center justify-between gap-2 text-[0.65rem] text-base-content/65";
-pub const EXAM_DATE: &str = "shrink-0 font-mono font-bold text-base-content";
-pub const EXAM_PROGRESS: &str = "progress progress-error h-2 w-full bg-base-content/10";
+    "flex items-center justify-between gap-2 text-[0.65rem] text-base-content/60";
+pub const EXAM_DATE: &str = "shrink-0 font-mono font-bold text-base-content/75";
+pub const EXAM_PROGRESS: &str = "progress progress-neutral h-2 w-full bg-base-content/10";
 pub const EXAM_PROGRESS_META: &str =
     "flex items-center justify-between gap-2 text-[0.6rem] text-base-content/60";
 

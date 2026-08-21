@@ -1919,6 +1919,7 @@ fn static_asset_path(path: &str) -> bool {
                 | "png"
                 | "svg"
                 | "wasm"
+                | "webmanifest"
                 | "webp"
                 | "woff"
                 | "woff2"

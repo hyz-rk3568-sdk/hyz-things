@@ -27,15 +27,17 @@ use hyz_things::domain::{
         TailscalePeerSnapshot,
     },
 };
-use js_sys::{Date, Function, Promise, Reflect};
+use js_sys::{Date, Function, Object, Promise, Reflect};
 use wasm_bindgen::{closure::Closure, JsCast, JsValue};
 use wasm_bindgen_futures::{spawn_local, JsFuture};
 use web_sys::{
-    Element, Event, HtmlElement, HtmlInputElement, HtmlMediaElement, HtmlSelectElement,
-    HtmlVideoElement, KeyboardEvent, MediaStream, MediaStreamConstraints, MediaStreamTrack,
-    MediaTrackConstraints, PointerEvent, RequestCredentials, RtcIceGatheringState,
-    RtcPeerConnection, RtcPeerConnectionState, RtcRtpSender, RtcRtpTransceiverDirection,
-    RtcRtpTransceiverInit, RtcSdpType, RtcSessionDescriptionInit, RtcTrackEvent,
+    AudioContext, CanvasRenderingContext2d, Document, Element, Event, HtmlCanvasElement,
+    HtmlElement, HtmlInputElement, HtmlMediaElement, HtmlSelectElement, HtmlVideoElement,
+    KeyboardEvent, MediaStream, MediaStreamAudioDestinationNode, MediaStreamConstraints,
+    MediaStreamTrack, MediaTrackConstraints, PointerEvent, RequestCredentials,
+    RtcIceGatheringState, RtcPeerConnection, RtcPeerConnectionState, RtcRtpSender,
+    RtcRtpTransceiverDirection, RtcRtpTransceiverInit, RtcSdpType, RtcSessionDescriptionInit,
+    RtcTrackEvent, VideoFrame, VideoFrameInit, Window,
 };
 use yew::prelude::*;
 
@@ -93,7 +95,22 @@ const EXAM_COUNTDOWN_TICK_MS: u32 = 1_000;
 const EXAM_DAY_SECONDS: u64 = 24 * 60 * 60;
 const EXAM_SOON_SECONDS: u64 = 120 * EXAM_DAY_SECONDS;
 const EXAM_URGENT_SECONDS: u64 = 45 * EXAM_DAY_SECONDS;
-
+// 画中画：Document PiP（Chromium）优先；Safari/其他走 canvas 视频流 PiP；
+// 都不支持时只显示一条提示，不再有全屏弹窗。
+const EXAM_PIP_SCRIPT: &str = "/pip-countdown.js";
+const EXAM_PIP_WINDOW_WIDTH: u32 = 520;
+const EXAM_PIP_WINDOW_HEIGHT: u32 = 400;
+const EXAM_PIP_NOTICE_MS: u32 = 5_000;
+const EXAM_VIDEO_PIP_WIDTH: u32 = 960;
+const EXAM_VIDEO_PIP_HEIGHT: u32 = 540;
+const EXAM_VIDEO_PIP_FPS: f64 = 10.0;
+// Safari 对 1fps 的画布流更易出现黑帧/不更新，用较高频率泵帧；
+// 倒计时内容本身每秒才变化，多出的帧只是重复内容。
+const EXAM_VIDEO_PIP_TICK_MS: u32 = 250;
+// WebCodecs VideoFrame 时间戳单位是微秒；10fps 一帧间隔 100ms。
+const EXAM_VIDEO_PIP_FRAME_US: u64 = 100_000;
+const EXAM_VIDEO_PIP_POLL_MS: u32 = 150;
+const EXAM_VIDEO_PIP_ACTIVATE_TIMEOUT_MS: u32 = 5_000;
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct ExamCountdownTarget {
     id: &'static str,
@@ -207,6 +224,855 @@ fn exam_status_label(snapshot: CountdownSnapshot) -> &'static str {
     } else {
         "备考中"
     }
+}
+
+/// 已打开的 Document PiP 窗口及其 pagehide 监听（窗口关闭后清理状态）。
+struct DocumentPipHandles {
+    window: Window,
+    _on_hide: Closure<dyn FnMut(Event)>,
+}
+
+/// 预创建的 canvas 视频流 PiP 单元：canvas 每秒重绘，captureStream 喂给隐藏
+/// video，video 持续静音播放。双击时视频已就绪并在播放中，手势内同步请求
+/// 系统画中画才能同时满足 WebKit 的两条约束：正在处理手势（280837）且视频
+/// 正在播放（iOS 拒绝未播放视频的画中画请求）。Safari/iPadOS 没有 Document
+/// PiP，走这条路径；生命周期由倒计时面板的挂载/卸载管理。
+struct PreparedVideoPip {
+    video: HtmlVideoElement,
+    source_canvas: HtmlCanvasElement,
+    frame_source: PipFrameSource,
+    stream: MediaStream,
+    cancelled: Rc<Cell<bool>>,
+    _audio: Option<(AudioContext, MediaStreamAudioDestinationNode)>,
+    _on_leave: Closure<dyn FnMut(Event)>,
+}
+
+/// 倒计时视频帧来源。Safari/iPadOS 的 canvas.captureStream 不可靠
+/// （WebKit 235215 未修复，视频出黑帧/不更新），WebKit 上用 WebCodecs
+/// VideoFrame + VideoTrackGenerator 泵真实视频帧；Chromium 继续用
+/// captureStream（第二 canvas 复制帧，安卓已验证稳定）。
+enum PipFrameSource {
+    CanvasCapture(HtmlCanvasElement),
+    TrackGenerator {
+        generator: Rc<JsValue>,
+        writer: Rc<JsValue>,
+    },
+}
+
+/// WebKit（Safari/iPadOS）没有 Document PiP，且其 canvas.captureStream
+/// 存在黑帧问题；取流方式与同步请求策略都以它为准。
+fn is_webkit_only(window: &Window) -> bool {
+    let Some(document) = window.document() else {
+        return false;
+    };
+    let Ok(video_element) = document.create_element("video") else {
+        return false;
+    };
+    let video_target: JsValue = video_element.into();
+    picture_in_picture_method(&video_target, "webkitSetPresentationMode").is_some()
+        || window.navigator().user_agent().is_ok_and(|agent| {
+            agent.contains("AppleWebKit")
+                && !agent.contains("Chrome")
+                && !agent.contains("CriOS")
+                && !agent.contains("Chromium")
+        })
+}
+
+/// 尝试创建 WebCodecs VideoTrackGenerator（Safari 18+/iPadOS 26）。
+/// 返回 (generator, writer)；老 Safari 没有该 API 时返回 None。
+fn try_build_track_generator(window: &Window) -> Option<(Rc<JsValue>, Rc<JsValue>)> {
+    let ctor_value = Reflect::get(window, &JsValue::from_str("VideoTrackGenerator")).ok()?;
+    if !ctor_value.is_function() {
+        return None;
+    }
+    let ctor: Function = ctor_value.dyn_into().ok()?;
+    let generator = Reflect::construct(&ctor, &js_sys::Array::new()).ok()?;
+    let track = Reflect::get(&generator, &JsValue::from_str("track")).ok()?;
+    if track.is_undefined() || track.is_null() || !track.has_type::<MediaStreamTrack>() {
+        return None;
+    }
+    let writable = Reflect::get(&generator, &JsValue::from_str("writable")).ok()?;
+    let get_writer: Function = Reflect::get(&writable, &JsValue::from_str("getWriter"))
+        .ok()?
+        .dyn_into()
+        .ok()?;
+    let writer = get_writer.call0(&writable).ok()?;
+    Some((Rc::new(generator), Rc::new(writer)))
+}
+
+/// 构建倒计时视频流：WebKit 优先 WebCodecs 轨道生成器（真实视频帧），
+/// 其余浏览器用 captureStream（第二 canvas 复制帧，Chrome 上稳定）。
+fn build_pip_frame_source(
+    window: &Window,
+    document: &Document,
+    body: &Element,
+    canvas: &HtmlCanvasElement,
+) -> Option<(MediaStream, PipFrameSource)> {
+    if is_webkit_only(window) {
+        if let Some((generator, writer)) = try_build_track_generator(window) {
+            let track = Reflect::get(&generator, &JsValue::from_str("track"))
+                .ok()?
+                .dyn_into::<MediaStreamTrack>()
+                .ok()?;
+            let stream = MediaStream::new().ok()?;
+            stream.add_track(&track);
+            return Some((stream, PipFrameSource::TrackGenerator { generator, writer }));
+        }
+    }
+    // captureStream：把源 canvas 内容复制到第二张 canvas，对第二张取流。
+    // capture canvas 放视口内但 opacity:0：保证 WebKit 确实绘制/合成它，
+    // 同时完全不可见、不挡交互；多张卡叠在右下角也无妨。
+    let Ok(capture_element) = document.create_element("canvas") else {
+        return None;
+    };
+    let Ok(capture_canvas) = capture_element.dyn_into::<HtmlCanvasElement>() else {
+        return None;
+    };
+    capture_canvas.set_width(EXAM_VIDEO_PIP_WIDTH);
+    capture_canvas.set_height(EXAM_VIDEO_PIP_HEIGHT);
+    let _ = capture_canvas.set_attribute("data-countdown-capture-canvas", "");
+    let _ = capture_canvas.set_attribute("aria-hidden", "true");
+    let capture_style = capture_canvas.style();
+    let _ = capture_style.set_property("position", "fixed");
+    let _ = capture_style.set_property("right", "0");
+    let _ = capture_style.set_property("bottom", "0");
+    let _ = capture_style.set_property("opacity", "0");
+    let _ = capture_style.set_property("pointer-events", "none");
+    if body.append_child(&capture_canvas).is_err() {
+        return None;
+    }
+    // 首帧立即复制进 capture canvas，取流后马上有内容。
+    copy_countdown_canvas(canvas, &capture_canvas);
+    let capture = picture_in_picture_method(&capture_canvas.clone().into(), "captureStream")?;
+    let stream_value = capture
+        .call1(
+            &capture_canvas.clone().into(),
+            &JsValue::from_f64(EXAM_VIDEO_PIP_FPS),
+        )
+        .ok()?;
+    let Ok(stream) = stream_value.dyn_into::<MediaStream>() else {
+        return None;
+    };
+    Some((stream, PipFrameSource::CanvasCapture(capture_canvas)))
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PipActivation {
+    Activated,
+    Failed,
+    TimedOut,
+}
+
+fn has_document_picture_in_picture(window: &Window) -> bool {
+    Reflect::get(
+        window.as_ref(),
+        &JsValue::from_str("documentPictureInPicture"),
+    )
+    .map(|value| value.is_object())
+    .unwrap_or(false)
+}
+
+/// 必须在用户手势里同步调用（transient activation 要求）。
+fn request_document_pip_window(window: &Window, width: u32, height: u32) -> Option<Promise> {
+    let target = Reflect::get(
+        window.as_ref(),
+        &JsValue::from_str("documentPictureInPicture"),
+    )
+    .ok()?;
+    if !target.is_object() {
+        return None;
+    }
+    let request_window = picture_in_picture_method(&target, "requestWindow")?;
+    let options = Object::new();
+    Reflect::set(
+        &options,
+        &JsValue::from_str("width"),
+        &JsValue::from_f64(width as f64),
+    )
+    .ok()?;
+    Reflect::set(
+        &options,
+        &JsValue::from_str("height"),
+        &JsValue::from_f64(height as f64),
+    )
+    .ok()?;
+    let promise = request_window.call1(&target, &options.into()).ok()?;
+    promise.dyn_into::<Promise>().ok()
+}
+
+/// 在画中画窗口里重建卡片：复制主题/样式表与卡片 DOM，注入倒计时引擎脚本。
+/// 引擎脚本在画中画窗口自己的上下文里每秒重算，主标签页被切后台也不停。
+fn populate_pip_window(pip_window: &Window, target: &ExamCountdownTarget) -> Result<(), JsValue> {
+    let parent_window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
+    let parent_document = parent_window
+        .document()
+        .ok_or_else(|| JsValue::from_str("no parent document"))?;
+    let pip_document = pip_window
+        .document()
+        .ok_or_else(|| JsValue::from_str("no pip document"))?;
+
+    if let Some(parent_html) = parent_document.document_element() {
+        if let Some(pip_html) = pip_document.document_element() {
+            for name in ["data-theme", "lang", "class"] {
+                if let Some(value) = parent_html.get_attribute(name) {
+                    pip_html.set_attribute(name, &value)?;
+                }
+            }
+        }
+    }
+    // 样式表复制（同源 <link>，满足 style-src 'self'；内联 <style> 会被 CSP 拦下，忽略即可）。
+    let styles = parent_document.query_selector_all("style, link[rel='stylesheet']")?;
+    if let Some(pip_head) = pip_document.head() {
+        for index in 0..styles.length() {
+            if let Some(node) = styles.item(index) {
+                let clone = node.clone_node_with_deep(true)?;
+                pip_head.append_child(&clone)?;
+            }
+        }
+    }
+    let selector = format!("[data-exam-id=\"{}\"]", target.id);
+    let card = parent_document
+        .query_selector(&selector)?
+        .ok_or_else(|| JsValue::from_str("card missing"))?;
+    let card_clone = card.clone_node_with_deep(true)?;
+    if let Some(pip_body) = pip_document.body() {
+        pip_body.append_child(&card_clone)?;
+    }
+    Reflect::set(
+        pip_window.as_ref(),
+        &JsValue::from_str("__hyzPipExamId"),
+        &JsValue::from_str(target.id),
+    )?;
+    Reflect::set(
+        pip_window.as_ref(),
+        &JsValue::from_str("__hyzPipStartMs"),
+        &JsValue::from_f64(exam_timestamp(target.start_iso) as f64),
+    )?;
+    Reflect::set(
+        pip_window.as_ref(),
+        &JsValue::from_str("__hyzPipTargetMs"),
+        &JsValue::from_f64(exam_timestamp(target.target_iso) as f64),
+    )?;
+    // 引擎脚本最后注入：脚本加载时会立刻查询卡片 DOM。
+    let script = pip_document.create_element("script")?;
+    script.set_attribute("src", EXAM_PIP_SCRIPT)?;
+    if let Some(pip_head) = pip_document.head() {
+        pip_head.append_child(&script)?;
+    }
+    Ok(())
+}
+
+fn populate_document_pip(
+    pip_window: &Window,
+    target: ExamCountdownTarget,
+    index: usize,
+    pip_document: &Rc<RefCell<Option<DocumentPipHandles>>>,
+    pip_exam: &UseStateHandle<Option<usize>>,
+    pip_notice: &UseStateHandle<Option<&'static str>>,
+    pip_notice_seq: &Rc<RefCell<u32>>,
+) {
+    if populate_pip_window(pip_window, &target).is_err() {
+        let _ = pip_window.close();
+        show_pip_notice(pip_notice, pip_notice_seq, "画中画内容初始化失败");
+        return;
+    }
+    let pip_exam = pip_exam.clone();
+    let pip_exam_for_hide = pip_exam.clone();
+    let pip_document_for_hide = pip_document.clone();
+    let on_hide = Closure::<dyn FnMut(Event)>::new(move |_event: Event| {
+        *pip_document_for_hide.borrow_mut() = None;
+        pip_exam_for_hide.set(None);
+    });
+    if pip_window
+        .add_event_listener_with_callback("pagehide", on_hide.as_ref().unchecked_ref())
+        .is_err()
+    {
+        let _ = pip_window.close();
+        show_pip_notice(pip_notice, pip_notice_seq, "画中画内容初始化失败");
+        return;
+    }
+    *pip_document.borrow_mut() = Some(DocumentPipHandles {
+        window: pip_window.clone(),
+        _on_hide: on_hide,
+    });
+    pip_exam.set(Some(index));
+}
+
+fn show_pip_notice(
+    pip_notice: &UseStateHandle<Option<&'static str>>,
+    pip_notice_seq: &Rc<RefCell<u32>>,
+    message: &'static str,
+) {
+    let sequence = {
+        let mut sequence = pip_notice_seq.borrow_mut();
+        *sequence += 1;
+        *sequence
+    };
+    pip_notice.set(Some(message));
+    let pip_notice = pip_notice.clone();
+    let pip_notice_seq = pip_notice_seq.clone();
+    spawn_local(async move {
+        TimeoutFuture::new(EXAM_PIP_NOTICE_MS).await;
+        if *pip_notice_seq.borrow() == sequence {
+            pip_notice.set(None);
+        }
+    });
+}
+
+/// 双击卡片的统一入口：优先 Document PiP（Chromium），其次 canvas 视频流
+/// PiP（Safari/iPadOS、Firefox 等），都不支持时只显示一条提示。
+fn handle_open_pip(
+    index: usize,
+    target: &ExamCountdownTarget,
+    pip_document: &Rc<RefCell<Option<DocumentPipHandles>>>,
+    pip_exam: &UseStateHandle<Option<usize>>,
+    pip_notice: &UseStateHandle<Option<&'static str>>,
+    pip_notice_seq: &Rc<RefCell<u32>>,
+    prepared: &Rc<RefCell<Option<Vec<PreparedVideoPip>>>>,
+) {
+    if **pip_exam == Some(index) {
+        if let Some(handles) = pip_document.borrow().as_ref() {
+            let _ = handles.window.close();
+        }
+        *pip_document.borrow_mut() = None;
+        pip_exam.set(None);
+        return;
+    }
+    if pip_document.borrow().is_some() {
+        if let Some(handles) = pip_document.borrow().as_ref() {
+            let _ = handles.window.close();
+        }
+        *pip_document.borrow_mut() = None;
+    }
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    if has_document_picture_in_picture(&window) {
+        if let Some(promise) =
+            request_document_pip_window(&window, EXAM_PIP_WINDOW_WIDTH, EXAM_PIP_WINDOW_HEIGHT)
+        {
+            let target = *target;
+            let pip_document = pip_document.clone();
+            let pip_exam = pip_exam.clone();
+            let pip_notice = pip_notice.clone();
+            let pip_notice_seq = pip_notice_seq.clone();
+            spawn_local(async move {
+                match JsFuture::from(promise).await {
+                    // requestWindow 解析出的 Window 属于画中画窗口自己的 realm，
+                    // dyn_into 的 instanceof 检查跨 realm 必失败，这里直接无校验包装。
+                    Ok(value) => {
+                        let pip_window = Window::from(value);
+                        populate_document_pip(
+                            &pip_window,
+                            target,
+                            index,
+                            &pip_document,
+                            &pip_exam,
+                            &pip_notice,
+                            &pip_notice_seq,
+                        );
+                    }
+                    Err(_) => {
+                        show_pip_notice(&pip_notice, &pip_notice_seq, "画中画打开失败");
+                    }
+                }
+            });
+            return;
+        }
+    }
+    // video 流画中画：该卡片已在画中画时再次双击 = 退出，否则打开。
+    if let Some(item) = prepared.borrow().as_ref().and_then(|list| list.get(index)) {
+        if picture_in_picture_active(&item.video) {
+            let _ = picture_in_picture_exit(&item.video);
+            return;
+        }
+    }
+    if video_pip_capable(&window)
+        && open_video_pip(index, &window, prepared, pip_notice, pip_notice_seq)
+    {
+        return;
+    }
+    show_pip_notice(pip_notice, pip_notice_seq, "当前浏览器不支持画中画");
+}
+
+fn video_pip_capable(window: &Window) -> bool {
+    let Some(document) = window.document() else {
+        return false;
+    };
+    let Ok(canvas) = document.create_element("canvas") else {
+        return false;
+    };
+    let has_capture = picture_in_picture_method(&canvas.into(), "captureStream").is_some()
+        || Reflect::get(window, &JsValue::from_str("VideoTrackGenerator"))
+            .is_ok_and(|ctor| ctor.is_function());
+    let Ok(video_element) = document.create_element("video") else {
+        return false;
+    };
+    let target: JsValue = video_element.into();
+    let has_request = picture_in_picture_method(&target, "requestPictureInPicture").is_some();
+    let has_webkit = picture_in_picture_method(&target, "webkitSetPresentationMode").is_some();
+    has_capture && (has_request || has_webkit)
+}
+
+/// 预创建所有卡片的隐藏 canvas 视频流（见 `PreparedVideoPip`）。返回 None
+/// 表示当前浏览器没有可用的视频画中画 API（与 `video_pip_capable` 一致），
+/// 面板不挂任何隐藏元素。
+fn prepare_exam_pip_videos(targets: &[ExamCountdownTarget]) -> Option<Vec<PreparedVideoPip>> {
+    let window = web_sys::window()?;
+    let document = window.document()?;
+    let body = document.body()?;
+    if !video_pip_capable(&window) {
+        return None;
+    }
+    let mut prepared = Vec::with_capacity(targets.len());
+    for target in targets.iter() {
+        if let Some(item) = prepare_exam_pip_video(target, &window, &document, &body) {
+            prepared.push(item);
+        }
+    }
+    (!prepared.is_empty()).then_some(prepared)
+}
+
+fn prepare_exam_pip_video(
+    target: &ExamCountdownTarget,
+    window: &Window,
+    document: &Document,
+    body: &Element,
+) -> Option<PreparedVideoPip> {
+    let Ok(canvas_element) = document.create_element("canvas") else {
+        return None;
+    };
+    let Ok(canvas) = canvas_element.dyn_into::<HtmlCanvasElement>() else {
+        return None;
+    };
+    canvas.set_width(EXAM_VIDEO_PIP_WIDTH);
+    canvas.set_height(EXAM_VIDEO_PIP_HEIGHT);
+    let _ = canvas.set_attribute("data-countdown-canvas", "");
+    // 源 canvas 挂到 DOM（屏幕外），方便调试与测试断言。
+    let _ = canvas.set_attribute("aria-hidden", "true");
+    let canvas_style = canvas.style();
+    let _ = canvas_style.set_property("position", "fixed");
+    let _ = canvas_style.set_property("left", "-10000px");
+    let _ = canvas_style.set_property("top", "0");
+    let _ = canvas_style.set_property("pointer-events", "none");
+    if body.append_child(&canvas).is_err() {
+        return None;
+    }
+    // 先画首帧再取流：确保后续帧都带内容。
+    draw_countdown_canvas(
+        &canvas,
+        target,
+        countdown_snapshot(
+            Date::now() as i64,
+            exam_timestamp(target.start_iso),
+            exam_timestamp(target.target_iso),
+        ),
+    );
+    let (stream, frame_source) = build_pip_frame_source(window, document, body, &canvas)?;
+    // iPadOS 对纯视频（无音轨）的画布流进画中画有兼容性问题，静默补一条
+    // 静音音轨；创建失败（如 autoplay 策略）则退回纯视频流。引用保存在
+    // 单元里，保证 AudioContext/节点不被 GC，teardown 时再释放。
+    let audio = (|| -> Option<(AudioContext, MediaStreamAudioDestinationNode)> {
+        let context = AudioContext::new().ok()?;
+        let destination = context.create_media_stream_destination().ok()?;
+        let audio_track = destination.stream().get_audio_tracks().get(0);
+        let Ok(audio_track) = audio_track.dyn_into::<MediaStreamTrack>() else {
+            return None;
+        };
+        stream.add_track(&audio_track);
+        Some((context, destination))
+    })();
+    let Ok(video_element) = document.create_element("video") else {
+        return None;
+    };
+    let Ok(video) = video_element.dyn_into::<HtmlVideoElement>() else {
+        return None;
+    };
+    video.set_muted(true);
+    video.set_autoplay(true);
+    let _ = video.set_attribute("playsinline", "");
+    let _ = video.set_attribute("webkit-playsinline", "");
+    let _ = video.set_attribute("aria-hidden", "true");
+    let _ = video.set_attribute("data-countdown-video", "");
+    // WebKit 241152：muted 的 video 若在视口外设置 srcObject，WebKit
+    // 不渲染它、直接黑屏（画中画随之黑）。必须先放进视口（右下角、
+    // opacity:0 不可见、不挡交互）再赋 srcObject。
+    let style = video.style();
+    let _ = style.set_property("position", "fixed");
+    let _ = style.set_property("right", "0");
+    let _ = style.set_property("bottom", "0");
+    let _ = style.set_property("opacity", "0");
+    let _ = style.set_property("width", &format!("{}px", EXAM_VIDEO_PIP_WIDTH));
+    let _ = style.set_property("height", &format!("{}px", EXAM_VIDEO_PIP_HEIGHT));
+    let _ = style.set_property("pointer-events", "none");
+    if body.append_child(&video).is_err() {
+        return None;
+    }
+    // WebKit 262479：Safari 对 srcObject 视频流进画中画会渲染黑帧，
+    // 官方绕法是在赋值 srcObject 之前打开 controls、赋值后立刻关闭。
+    video.set_controls(true);
+    video.set_src_object(Some(&stream));
+    video.set_controls(false);
+    // 持续以较高频率泵帧，让流一直有内容；video 静音自动播放，
+    // 双击发起画中画时视频已就绪且正在播放。
+    play_media_ignoring_interruption(&video);
+    let cancelled = Rc::new(Cell::new(false));
+    {
+        let cancelled = cancelled.clone();
+        let canvas = canvas.clone();
+        let pump_source = match &frame_source {
+            PipFrameSource::CanvasCapture(capture) => {
+                PipFrameSource::CanvasCapture(capture.clone())
+            }
+            PipFrameSource::TrackGenerator { generator, writer } => {
+                PipFrameSource::TrackGenerator {
+                    generator: generator.clone(),
+                    writer: writer.clone(),
+                }
+            }
+        };
+        let target = *target;
+        spawn_local(async move {
+            let mut frame_seq: u64 = 0;
+            while !cancelled.get() {
+                TimeoutFuture::new(EXAM_VIDEO_PIP_TICK_MS).await;
+                if !cancelled.get() {
+                    draw_countdown_canvas(
+                        &canvas,
+                        &target,
+                        countdown_snapshot(
+                            Date::now() as i64,
+                            exam_timestamp(target.start_iso),
+                            exam_timestamp(target.target_iso),
+                        ),
+                    );
+                    match &pump_source {
+                        PipFrameSource::CanvasCapture(capture) => {
+                            copy_countdown_canvas(&canvas, capture);
+                        }
+                        PipFrameSource::TrackGenerator { writer, .. } => {
+                            let init = VideoFrameInit::new();
+                            init.set_timestamp_f64((frame_seq * EXAM_VIDEO_PIP_FRAME_US) as f64);
+                            init.set_duration_f64(EXAM_VIDEO_PIP_FRAME_US as f64);
+                            if let Ok(frame) =
+                                VideoFrame::new_with_html_canvas_element_and_video_frame_init(
+                                    &canvas, &init,
+                                )
+                            {
+                                let write =
+                                    Reflect::get(writer.as_ref(), &JsValue::from_str("write"))
+                                        .and_then(|f| f.dyn_into::<Function>())
+                                        .and_then(|f| f.call1(writer.as_ref(), &frame));
+                                match write {
+                                    Ok(promise) => {
+                                        // 写入由轨道生成器接管；等待其完成以串行化写入。
+                                        let _ = JsFuture::from(Promise::from(promise)).await;
+                                    }
+                                    Err(_) => {
+                                        // 同步抛错时帧未被接管，主动关闭防止泄漏。
+                                        frame.close();
+                                    }
+                                }
+                                frame_seq += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+    // 退出画中画（系统关闭按钮或 Esc）后复位状态：隐藏 video 继续静音播放。
+    let on_leave = {
+        let video = video.clone();
+        Closure::<dyn FnMut(Event)>::new(move |_event: Event| {
+            video.set_muted(true);
+            let _ = video.remove_attribute("data-countdown-pip-active");
+        })
+    };
+    let _ = video.add_event_listener_with_callback(
+        "leavepictureinpicture",
+        on_leave.as_ref().unchecked_ref(),
+    );
+    Some(PreparedVideoPip {
+        video,
+        source_canvas: canvas,
+        frame_source,
+        stream,
+        cancelled,
+        _audio: audio,
+        _on_leave: on_leave,
+    })
+}
+
+/// 让某张卡片的预创建 video 进入系统画中画。必须在 dblclick 手势栈内
+/// 同步调用（WebKit 280837）；预播放保证请求时视频已就绪且正在播放
+/// （iOS 拒绝未播放视频的画中画请求）。
+fn open_video_pip(
+    index: usize,
+    window: &Window,
+    prepared: &Rc<RefCell<Option<Vec<PreparedVideoPip>>>>,
+    pip_notice: &UseStateHandle<Option<&'static str>>,
+    pip_notice_seq: &Rc<RefCell<u32>>,
+) -> bool {
+    let (video, audio_to_resume) = {
+        let prepared_guard = prepared.borrow();
+        let Some(item) = prepared_guard.as_ref().and_then(|list| list.get(index)) else {
+            return false;
+        };
+        (
+            item.video.clone(),
+            item._audio.as_ref().map(|(context, _)| context.clone()),
+        )
+    };
+    // 双击手势内解除静音（音轨本身是静音，无声音）并恢复音频上下文，
+    // 让 iOS 认为视频“有音频且正在播放”，提升画中画受理率。
+    video.set_muted(false);
+    if let Some(context) = audio_to_resume {
+        let _ = context.resume();
+    }
+    play_media_ignoring_interruption(&video);
+    let _ = video.set_attribute("data-countdown-pip-active", "");
+
+    let outcome = Rc::new(RefCell::new(None::<PipActivation>));
+    let requested = Rc::new(Cell::new(false));
+    // 手势栈内同步发起请求：Safari/iPadOS 只认“正在处理手势”（WebKit
+    // 280837），且 WebKit 不消耗 transient activation（313741）。
+    // Chromium 恰好相反：请求时会先消耗激活（就绪前还会拒绝），所以
+    // Chromium 只在视频已就绪时才同步请求，避免浪费激活导致后续异步
+    // 重试必然失败（NotAllowedError）。
+    let webkit_only = is_webkit_only(window);
+    if video.ready_state() >= 2 || webkit_only {
+        if let Ok(value) = picture_in_picture_request(&video) {
+            requested.set(true);
+            if !value.is_undefined() && !value.is_null() {
+                let requested = requested.clone();
+                let video = video.clone();
+                spawn_local(async move {
+                    if await_picture_in_picture(value).await.is_err()
+                        && !picture_in_picture_active(&video)
+                    {
+                        requested.set(false);
+                    }
+                });
+            }
+        }
+    }
+    {
+        let video = video.clone();
+        let outcome = outcome.clone();
+        let requested = requested.clone();
+        spawn_local(async move {
+            let mut elapsed_ms = 0u32;
+            loop {
+                TimeoutFuture::new(EXAM_VIDEO_PIP_POLL_MS).await;
+                elapsed_ms += EXAM_VIDEO_PIP_POLL_MS;
+                if picture_in_picture_active(&video) {
+                    *outcome.borrow_mut() = Some(PipActivation::Activated);
+                    return;
+                }
+                if elapsed_ms >= EXAM_VIDEO_PIP_ACTIVATE_TIMEOUT_MS {
+                    *outcome.borrow_mut() = Some(PipActivation::TimedOut);
+                    return;
+                }
+                if !requested.get() && video.ready_state() >= 2 {
+                    match picture_in_picture_request(&video) {
+                        Ok(value) => {
+                            requested.set(true);
+                            if !value.is_undefined() && !value.is_null() {
+                                let video = video.clone();
+                                let outcome = outcome.clone();
+                                spawn_local(async move {
+                                    if await_picture_in_picture(value).await.is_err()
+                                        && !picture_in_picture_active(&video)
+                                        && outcome.borrow().is_none()
+                                    {
+                                        *outcome.borrow_mut() = Some(PipActivation::Failed);
+                                    }
+                                });
+                            }
+                        }
+                        Err(_) => {
+                            if outcome.borrow().is_none() {
+                                *outcome.borrow_mut() = Some(PipActivation::Failed);
+                            }
+                            return;
+                        }
+                    }
+                }
+            }
+        });
+    }
+    {
+        let video = video.clone();
+        let outcome = outcome.clone();
+        let pip_notice = pip_notice.clone();
+        let pip_notice_seq = pip_notice_seq.clone();
+        spawn_local(async move {
+            loop {
+                TimeoutFuture::new(EXAM_VIDEO_PIP_POLL_MS).await;
+                match *outcome.borrow() {
+                    Some(PipActivation::Activated) => return,
+                    Some(PipActivation::Failed) | Some(PipActivation::TimedOut) => {
+                        video.set_muted(true);
+                        let _ = video.remove_attribute("data-countdown-pip-active");
+                        show_pip_notice(&pip_notice, &pip_notice_seq, "画中画激活失败，请再试一次");
+                        return;
+                    }
+                    None => {}
+                }
+            }
+        });
+    }
+    true
+}
+
+/// 面板卸载时释放所有预创建单元：退出画中画、停流、关音频、移除元素。
+fn teardown_prepared_videos(prepared: &mut Vec<PreparedVideoPip>) {
+    for mut item in prepared.drain(..) {
+        item.cancelled.set(true);
+        if picture_in_picture_active(&item.video) {
+            let _ = picture_in_picture_exit(&item.video);
+        }
+        if let Some((context, _destination)) = item._audio.take() {
+            let _ = context.close();
+        }
+        for track in item.stream.get_tracks().iter() {
+            if let Ok(track) = track.dyn_into::<MediaStreamTrack>() {
+                track.stop();
+            }
+        }
+        if let Some(parent) = item.video.parent_node() {
+            let _ = parent.remove_child(&item.video);
+        }
+        if let Some(parent) = item.source_canvas.parent_node() {
+            let _ = parent.remove_child(&item.source_canvas);
+        }
+        if let PipFrameSource::CanvasCapture(capture) = &item.frame_source {
+            if let Some(parent) = capture.parent_node() {
+                let _ = parent.remove_child(capture);
+            }
+        }
+    }
+}
+
+/// 把源 canvas 内容复制到 capture canvas（Safari 黑帧绕法的核心）。
+fn copy_countdown_canvas(source: &HtmlCanvasElement, target: &HtmlCanvasElement) {
+    let Ok(context) = target.get_context("2d") else {
+        return;
+    };
+    let Some(context) = context.and_then(|value| value.dyn_into::<CanvasRenderingContext2d>().ok())
+    else {
+        return;
+    };
+    let _ = context.draw_image_with_html_canvas_element(source, 0.0, 0.0);
+}
+
+fn draw_countdown_canvas(
+    canvas: &HtmlCanvasElement,
+    target: &ExamCountdownTarget,
+    snapshot: CountdownSnapshot,
+) {
+    let Ok(context) = canvas.get_context("2d") else {
+        return;
+    };
+    let Some(context) = context.and_then(|value| value.dyn_into::<CanvasRenderingContext2d>().ok())
+    else {
+        return;
+    };
+    let width = EXAM_VIDEO_PIP_WIDTH as f64;
+    let height = EXAM_VIDEO_PIP_HEIGHT as f64;
+    let font_stack = "system-ui, -apple-system, 'PingFang SC', 'Noto Sans CJK SC', sans-serif";
+    let mono_stack = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+
+    context.set_fill_style_str("#282a36");
+    context.fill_rect(0.0, 0.0, width, height);
+    context.set_stroke_style_str("#44475a");
+    context.set_line_width(2.0);
+    context.stroke_rect(1.0, 1.0, width - 2.0, height - 2.0);
+
+    context.set_font(&format!("700 24px {font_stack}"));
+    context.set_fill_style_str("#6272a4");
+    context.set_text_align("left");
+    let _ = context.fill_text(target.eyebrow, 64.0, 100.0);
+    let status = exam_status_label(snapshot);
+    context.set_font(&format!("700 22px {font_stack}"));
+    context.set_text_align("right");
+    let _ = context.fill_text(status, width - 64.0, 100.0);
+
+    context.set_text_align("left");
+    context.set_font(&format!("800 46px {font_stack}"));
+    context.set_fill_style_str("#f8f8f2");
+    let _ = context.fill_text(target.title, 64.0, 176.0);
+
+    let mut x = 64.0;
+    let baseline = 330.0;
+    if snapshot.finished {
+        context.set_font(&format!("700 88px {mono_stack}"));
+        context.set_fill_style_str("#f8f8f2");
+        let _ = context.fill_text("考试日已过", x, baseline);
+    } else {
+        let days = format!("{}", snapshot.days);
+        let hours = format!("{:02}", snapshot.hours);
+        let minutes = format!("{:02}", snapshot.minutes);
+        let seconds = format!("{:02}", snapshot.seconds);
+        for (value, unit) in [
+            (&days, "天"),
+            (&hours, "时"),
+            (&minutes, "分"),
+            (&seconds, "秒"),
+        ] {
+            context.set_font(&format!("700 104px {mono_stack}"));
+            context.set_fill_style_str("#f8f8f2");
+            let _ = context.fill_text(value, x, baseline);
+            x += context
+                .measure_text(value)
+                .map(|metrics| metrics.width())
+                .unwrap_or(0.0)
+                + 10.0;
+            context.set_font(&format!("700 34px {font_stack}"));
+            context.set_fill_style_str("#6272a4");
+            let _ = context.fill_text(unit, x, baseline - 22.0);
+            x += context
+                .measure_text(unit)
+                .map(|metrics| metrics.width())
+                .unwrap_or(0.0)
+                + 48.0;
+        }
+    }
+
+    let track_x = 64.0;
+    let track_width = width - 128.0;
+    let track_y = 400.0;
+    let track_height = 14.0;
+    context.set_fill_style_str("#44475a");
+    context.fill_rect(track_x, track_y, track_width, track_height);
+    context.set_fill_style_str("#bd93f9");
+    context.fill_rect(
+        track_x,
+        track_y,
+        track_width * snapshot.progress_percent as f64 / 100.0,
+        track_height,
+    );
+
+    context.set_font(&format!("600 22px {font_stack}"));
+    context.set_fill_style_str("#6272a4");
+    let _ = context.fill_text("年度备考进度", 64.0, 452.0);
+    context.set_text_align("right");
+    context.set_fill_style_str("#f8f8f2");
+    let _ = context.fill_text(
+        &format!("{}%", snapshot.progress_percent),
+        width - 64.0,
+        452.0,
+    );
+    context.set_text_align("left");
+
+    context.set_font(&format!("500 20px {font_stack}"));
+    context.set_fill_style_str("#6272a4");
+    let _ = context.fill_text(target.target_note, 64.0, 498.0);
+    context.set_text_align("right");
+    context.set_fill_style_str("#f8f8f2");
+    let _ = context.fill_text(target.target_label, width - 64.0, 498.0);
+    context.set_text_align("left");
 }
 
 fn is_escape_key(event: &KeyboardEvent) -> bool {
@@ -2531,61 +3397,34 @@ fn render_exam_countdown_card(
     target: &ExamCountdownTarget,
     snapshot: CountdownSnapshot,
     index: usize,
-    focused: bool,
     on_double_click: Callback<MouseEvent>,
 ) -> Html {
     let status = exam_status_label(snapshot);
     let tone = exam_card_tone(snapshot);
-    let card_tone = focused.then_some(EXAM_CARD_FOCUS);
-    let title_id = if focused {
-        format!("{}-focus-title", target.id)
-    } else {
-        format!("{}-title", target.id)
-    };
     let card_label = if snapshot.finished {
         format!("{}，考试已结束", target.title)
     } else {
         format!("{}，距离考试 {} 天", target.title, snapshot.days)
-    };
-    let counter_value_class = if focused {
-        EXAM_COUNTER_VALUE_FOCUS
-    } else {
-        EXAM_COUNTER_VALUE
-    };
-    let counter_unit_class = if focused {
-        EXAM_COUNTER_UNIT_FOCUS
-    } else {
-        EXAM_COUNTER_UNIT
-    };
-    let card_title_class = if focused {
-        EXAM_CARD_TITLE_FOCUS
-    } else {
-        EXAM_CARD_TITLE
-    };
-    let progress_class = if focused {
-        EXAM_PROGRESS_FOCUS
-    } else {
-        EXAM_PROGRESS
     };
     let countdown = if snapshot.finished {
         html! { <strong class={EXAM_COUNTER_FINISHED}>{"考试日已过"}</strong> }
     } else {
         html! {
             <>
-                <strong class={counter_value_class}>{snapshot.days}</strong><span class={counter_unit_class}> {"天"}</span>
-                <strong class={counter_value_class}>{format!("{:02}", snapshot.hours)}</strong><span class={counter_unit_class}> {"时"}</span>
-                <strong class={counter_value_class}>{format!("{:02}", snapshot.minutes)}</strong><span class={counter_unit_class}> {"分"}</span>
-                <strong class={counter_value_class}>{format!("{:02}", snapshot.seconds)}</strong><span class={counter_unit_class}> {"秒"}</span>
+                <strong data-value="days" class={EXAM_COUNTER_VALUE}>{snapshot.days}</strong><span class={EXAM_COUNTER_UNIT}> {"天"}</span>
+                <strong data-value="hours" class={EXAM_COUNTER_VALUE}>{format!("{:02}", snapshot.hours)}</strong><span class={EXAM_COUNTER_UNIT}> {"时"}</span>
+                <strong data-value="minutes" class={EXAM_COUNTER_VALUE}>{format!("{:02}", snapshot.minutes)}</strong><span class={EXAM_COUNTER_UNIT}> {"分"}</span>
+                <strong data-value="seconds" class={EXAM_COUNTER_VALUE}>{format!("{:02}", snapshot.seconds)}</strong><span class={EXAM_COUNTER_UNIT}> {"秒"}</span>
             </>
         }
     };
 
     html! {
         <article
-            class={classes!(EXAM_CARD, tone, card_tone)}
+            class={classes!(EXAM_CARD, tone)}
             aria-label={card_label}
             data-exam-id={target.id}
-            title={if focused { "倒计时专注模式" } else { "双击进入全屏" }}
+            title="双击开启画中画"
             ondblclick={on_double_click}
         >
             <div class={EXAM_CARD_HEAD}>
@@ -2593,12 +3432,12 @@ fn render_exam_countdown_card(
                     <span class={EXAM_CARD_INDEX} aria-hidden="true">{format!("{:02}", index + 1)}</span>
                     <div class={EXAM_CARD_COPY}>
                         <p class={EXAM_CARD_EYEBROW}>{target.eyebrow}</p>
-                        <h3 id={title_id} class={card_title_class}>{target.title}</h3>
+                        <h3 class={EXAM_CARD_TITLE}>{target.title}</h3>
                     </div>
                 </div>
-                <span class={classes!(EXAM_STATUS, (snapshot.finished).then_some("text-base-content/60"), (!snapshot.finished).then_some("text-error"))}>{status}</span>
+                <span data-status="" class={classes!(EXAM_STATUS, (snapshot.finished).then_some("text-base-content/60"), (!snapshot.finished).then_some("text-base-content/70"))}>{status}</span>
             </div>
-            <div class={EXAM_COUNTER} aria-live="polite">
+            <div class={EXAM_COUNTER} data-countdown-values="" aria-live="polite">
                 {countdown}
             </div>
             <div class={EXAM_META}>
@@ -2606,12 +3445,12 @@ fn render_exam_countdown_card(
                 <time class={EXAM_DATE} datetime={target.target_iso}>{target.target_label}</time>
             </div>
             <progress
-                class={progress_class}
+                class={EXAM_PROGRESS}
                 max="100"
                 value={snapshot.progress_percent.to_string()}
                 aria-label={format!("{}冲刺进度 {}%", target.title, snapshot.progress_percent)}
             ></progress>
-            <div class={EXAM_PROGRESS_META}>
+            <div class={EXAM_PROGRESS_META} data-progress-meta="">
                 <span>{"年度备考进度"}</span>
                 <span>{format!("{}%", snapshot.progress_percent)}</span>
             </div>
@@ -2622,8 +3461,11 @@ fn render_exam_countdown_card(
 #[function_component(ExamCountdownPanel)]
 fn exam_countdown_panel() -> Html {
     let now_ms = use_state(|| Date::now() as i64);
-    let active_exam = use_state(|| None::<usize>);
-    let close_button_ref = use_node_ref();
+    let pip_document = use_mut_ref(|| None::<DocumentPipHandles>);
+    let pip_exam = use_state(|| None::<usize>);
+    let pip_notice = use_state(|| None::<&'static str>);
+    let pip_notice_seq = use_mut_ref(|| 0u32);
+    let prepared = use_mut_ref(|| None::<Vec<PreparedVideoPip>>);
 
     {
         let now_ms = now_ms.clone();
@@ -2642,132 +3484,98 @@ fn exam_countdown_panel() -> Html {
         });
     }
 
+    // 预创建并持续播放所有卡片的隐藏视频流，保证双击手势内视频已就绪
+    // （iOS 画中画要求正在播放 + WebKit 要求手势内同步请求，二者缺一不可）。
     {
-        let active_exam = active_exam.clone();
+        let prepared = prepared.clone();
         use_effect_with((), move |_| {
-            let document = web_sys::window().and_then(|window| window.document());
+            *prepared.borrow_mut() = prepare_exam_pip_videos(&EXAM_COUNTDOWN_TARGETS);
+            move || {
+                if let Some(list) = prepared.borrow_mut().as_mut() {
+                    teardown_prepared_videos(list);
+                }
+            }
+        });
+    }
+
+    // Esc 退出 video 流画中画（Document PiP 窗口自己有 Esc 处理）。
+    {
+        let prepared = prepared.clone();
+        use_effect_with((), move |_| {
             let listener =
                 Closure::<dyn FnMut(KeyboardEvent)>::new(move |key_event: KeyboardEvent| {
-                    if is_escape_key(&key_event) && (*active_exam).is_some() {
-                        key_event.prevent_default();
-                        active_exam.set(None);
+                    if !is_escape_key(&key_event) {
+                        return;
+                    }
+                    if let Some(list) = prepared.borrow().as_ref() {
+                        for item in list {
+                            if picture_in_picture_active(&item.video) {
+                                let _ = picture_in_picture_exit(&item.video);
+                            }
+                        }
                     }
                 });
+            let document = web_sys::window().and_then(|window| window.document());
             if let Some(document) = document.as_ref() {
-                for event_name in ["keydown", "keyup"] {
-                    let _ = document.add_event_listener_with_callback(
-                        event_name,
-                        listener.as_ref().unchecked_ref(),
-                    );
-                }
+                let _ = document
+                    .add_event_listener_with_callback("keydown", listener.as_ref().unchecked_ref());
             }
             move || {
                 if let Some(document) = document.as_ref() {
-                    for event_name in ["keydown", "keyup"] {
-                        let _ = document.remove_event_listener_with_callback(
-                            event_name,
-                            listener.as_ref().unchecked_ref(),
-                        );
-                    }
+                    let _ = document.remove_event_listener_with_callback(
+                        "keydown",
+                        listener.as_ref().unchecked_ref(),
+                    );
                 }
                 drop(listener);
             }
         });
     }
 
-    {
-        let close_button_ref = close_button_ref.clone();
-        use_effect_with(*active_exam, move |active| {
-            if active.is_some() {
-                if let Some(button) = close_button_ref.cast::<HtmlElement>() {
-                    let _ = button.focus();
-                }
-            }
-            || ()
-        });
-    }
-
-    let close_on_escape = {
-        let active_exam = active_exam.clone();
-        Callback::from(move |event: KeyboardEvent| {
-            if is_escape_key(&event) && (*active_exam).is_some() {
-                event.prevent_default();
-                active_exam.set(None);
-            }
-        })
-    };
-    let close_focus = {
-        let active_exam = active_exam.clone();
-        Callback::from(move |_| active_exam.set(None))
-    };
-    let focus_overlay = (*active_exam).and_then(|index| {
-        EXAM_COUNTDOWN_TARGETS.get(index).map(|target| {
-            let snapshot = countdown_snapshot(
-                *now_ms,
-                exam_timestamp(target.start_iso),
-                exam_timestamp(target.target_iso),
-            );
-            let dialog_label = format!("{}专注模式", target.title);
-            let noop_double_click = Callback::from(|_: MouseEvent| {});
-            html! {
-                <div
-                    class={EXAM_FOCUS_BACKDROP}
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label={dialog_label}
-                    tabindex="-1"
-                    onkeydown={close_on_escape.clone()}
-                    onkeyup={close_on_escape.clone()}
-                >
-                    <div class={EXAM_FOCUS_PANEL}>
-                        <button
-                            class={EXAM_FOCUS_CLOSE}
-                            type="button"
-                            aria-label="退出全屏"
-                            ref={close_button_ref.clone()}
-                            autofocus=true
-                            onkeydown={close_on_escape.clone()}
-                            onkeyup={close_on_escape.clone()}
-                            onclick={close_focus.clone()}
-                        >
-                            <span aria-hidden="true">{"×"}</span>
-                        </button>
-                        {render_exam_countdown_card(target, snapshot, index, true, noop_double_click)}
-                    </div>
-                </div>
-            }
-        })
-    });
-
     html! {
-        <>
-            <section id="exam-countdown" class={EXAM_SECTION} role="region" aria-labelledby="exam-countdown-title">
-                <span class={EXAM_DECORATION} aria-hidden="true"></span>
-                <div class={EXAM_HEAD}>
-                    <div>
-                        <p class={EYEBROW}>{"EXAM COUNTDOWN"}</p>
-                        <h2 id="exam-countdown-title" class={SECTION_TITLE}>{"考试冲刺倒计时"}</h2>
-                    </div>
-                    <div class={EXAM_HEAD_META}>
-                        <span class={EXAM_BADGE}><span aria-hidden="true">{"!"}</span>{"按时间先后排序"}</span>
-                        <span>{"双击卡片进入专注全屏 · 预计日期以官方公告为准"}</span>
-                    </div>
+        <section id="exam-countdown" class={EXAM_SECTION} role="region" aria-labelledby="exam-countdown-title">
+            <span class={EXAM_DECORATION} aria-hidden="true"></span>
+            <div class={EXAM_HEAD}>
+                <div>
+                    <p class={EYEBROW}>{"EXAM COUNTDOWN"}</p>
+                    <h2 id="exam-countdown-title" class={SECTION_TITLE}>{"考试冲刺倒计时"}</h2>
                 </div>
-                <div class={EXAM_GRID}>
-                    {for EXAM_COUNTDOWN_TARGETS.iter().enumerate().map(|(index, target)| {
-                        let active_exam = active_exam.clone();
-                        let open_focus = Callback::from(move |_: MouseEvent| active_exam.set(Some(index)));
-                        let snapshot = countdown_snapshot(
-                            *now_ms,
-                            exam_timestamp(target.start_iso),
-                            exam_timestamp(target.target_iso),
+                <div class={EXAM_HEAD_META}>
+                    <span class={EXAM_BADGE}><span aria-hidden="true">{"!"}</span>{"按时间先后排序"}</span>
+                    <span>{"双击卡片开启画中画 · 预计日期以官方公告为准"}</span>
+                </div>
+            </div>
+            if let Some(message) = *pip_notice {
+                <p class={EXAM_PIP_NOTICE} data-exam-countdown-notice="" role="status">{message}</p>
+            }
+            <div class={EXAM_GRID}>
+                {for EXAM_COUNTDOWN_TARGETS.iter().enumerate().map(|(index, target)| {
+                    let pip_document = pip_document.clone();
+                    let pip_exam = pip_exam.clone();
+                    let pip_notice = pip_notice.clone();
+                    let pip_notice_seq = pip_notice_seq.clone();
+                    let prepared = prepared.clone();
+                    let open_pip = Callback::from(move |event: MouseEvent| {
+                        event.prevent_default();
+                        handle_open_pip(
+                            index,
+                            target,
+                            &pip_document,
+                            &pip_exam,
+                            &pip_notice,
+                            &pip_notice_seq,
+                            &prepared,
                         );
-                        render_exam_countdown_card(target, snapshot, index, false, open_focus)
-                    })}
-                </div>
-            </section>
-            {focus_overlay}
-        </>
+                    });
+                    let snapshot = countdown_snapshot(
+                        *now_ms,
+                        exam_timestamp(target.start_iso),
+                        exam_timestamp(target.target_iso),
+                    );
+                    render_exam_countdown_card(target, snapshot, index, open_pip)
+                })}
+            </div>
+        </section>
     }
 }
 
