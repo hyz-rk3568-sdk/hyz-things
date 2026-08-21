@@ -27,15 +27,15 @@ use hyz_things::domain::{
         TailscalePeerConnection, TailscalePeerSnapshot,
     },
 };
-use js_sys::{Function, Promise, Reflect};
+use js_sys::{Date, Function, Promise, Reflect};
 use wasm_bindgen::{closure::Closure, JsCast, JsValue};
 use wasm_bindgen_futures::{spawn_local, JsFuture};
 use web_sys::{
-    Event, HtmlElement, HtmlInputElement, HtmlMediaElement, HtmlSelectElement, HtmlVideoElement,
-    MediaStream, MediaStreamConstraints, MediaStreamTrack, MediaTrackConstraints,
-    RequestCredentials, RtcIceGatheringState, RtcPeerConnection, RtcPeerConnectionState,
-    RtcRtpSender, RtcRtpTransceiverDirection, RtcRtpTransceiverInit, RtcSdpType,
-    RtcSessionDescriptionInit, RtcTrackEvent,
+    Element, Event, HtmlElement, HtmlInputElement, HtmlMediaElement, HtmlSelectElement,
+    HtmlVideoElement, KeyboardEvent, MediaStream, MediaStreamConstraints, MediaStreamTrack,
+    MediaTrackConstraints, PointerEvent, RequestCredentials, RtcIceGatheringState,
+    RtcPeerConnection, RtcPeerConnectionState, RtcRtpSender, RtcRtpTransceiverDirection,
+    RtcRtpTransceiverInit, RtcSdpType, RtcSessionDescriptionInit, RtcTrackEvent,
 };
 use yew::prelude::*;
 
@@ -89,6 +89,129 @@ const NETWORK_APPLY_PAINT_DELAY_MS: u32 = 150;
 const CAMERA_UPDATE_RETRY_ATTEMPTS: u8 = 3;
 const CAMERA_UPDATE_RETRY_DELAY_MS: u32 = 1_000;
 const MISSING: &str = "—";
+const EXAM_COUNTDOWN_TICK_MS: u32 = 1_000;
+const EXAM_DAY_SECONDS: u64 = 24 * 60 * 60;
+const EXAM_SOON_SECONDS: u64 = 120 * EXAM_DAY_SECONDS;
+const EXAM_URGENT_SECONDS: u64 = 45 * EXAM_DAY_SECONDS;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct ExamCountdownTarget {
+    id: &'static str,
+    title: &'static str,
+    eyebrow: &'static str,
+    target_iso: &'static str,
+    target_label: &'static str,
+    target_note: &'static str,
+    start_iso: &'static str,
+}
+
+// 2027 年度考试公告尚未全部发布；未确认日期统一标注“预计”，并按预计首个笔试日排序。
+const EXAM_COUNTDOWN_TARGETS: [ExamCountdownTarget; 4] = [
+    ExamCountdownTarget {
+        id: "national-exam",
+        title: "下一次国考",
+        eyebrow: "2027 年度 · 预计",
+        target_iso: "2026-11-29T00:00:00+08:00",
+        target_label: "预计 2026.11.29",
+        target_note: "预计公共科目笔试日",
+        start_iso: "2025-11-29T00:00:00+08:00",
+    },
+    ExamCountdownTarget {
+        id: "guangdong-exam",
+        title: "广东省考",
+        eyebrow: "2027 年度 · 预计",
+        target_iso: "2026-12-06T00:00:00+08:00",
+        target_label: "预计 2026.12.06",
+        target_note: "预计首个笔试日",
+        start_iso: "2025-12-06T00:00:00+08:00",
+    },
+    ExamCountdownTarget {
+        id: "hunan-civil-service",
+        title: "湖南省考",
+        eyebrow: "2027 年 · 预计",
+        target_iso: "2027-03-14T00:00:00+08:00",
+        target_label: "预计 2027.03.14",
+        target_note: "预计首个笔试日",
+        start_iso: "2026-03-14T00:00:00+08:00",
+    },
+    ExamCountdownTarget {
+        id: "hunan-public-institution",
+        title: "湖南事业编",
+        eyebrow: "2027 年第一次 · 预计",
+        target_iso: "2027-03-27T00:00:00+08:00",
+        target_label: "预计 2027.03.27",
+        target_note: "参考 2026 年第一次首个笔试日",
+        start_iso: "2026-03-27T00:00:00+08:00",
+    },
+];
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct CountdownSnapshot {
+    remaining_seconds: u64,
+    days: u64,
+    hours: u64,
+    minutes: u64,
+    seconds: u64,
+    progress_percent: u8,
+    finished: bool,
+}
+
+fn countdown_snapshot(now_ms: i64, start_ms: i64, target_ms: i64) -> CountdownSnapshot {
+    let total_ms = target_ms.saturating_sub(start_ms).max(0);
+    let remaining_ms = target_ms.saturating_sub(now_ms).max(0);
+    let elapsed_ms = now_ms.saturating_sub(start_ms).clamp(0, total_ms);
+    let progress_percent = if total_ms == 0 {
+        u8::from(now_ms >= target_ms) * 100
+    } else {
+        ((elapsed_ms.saturating_mul(100) / total_ms).min(100)) as u8
+    };
+    let remaining_seconds = remaining_ms
+        .saturating_add(999)
+        .checked_div(1_000)
+        .unwrap_or(0) as u64;
+
+    CountdownSnapshot {
+        remaining_seconds,
+        days: remaining_seconds / EXAM_DAY_SECONDS,
+        hours: (remaining_seconds % EXAM_DAY_SECONDS) / (60 * 60),
+        minutes: (remaining_seconds % (60 * 60)) / 60,
+        seconds: remaining_seconds % 60,
+        progress_percent,
+        finished: now_ms >= target_ms,
+    }
+}
+
+fn exam_timestamp(iso: &str) -> i64 {
+    Date::parse(iso) as i64
+}
+
+fn exam_card_tone(snapshot: CountdownSnapshot) -> &'static str {
+    if snapshot.finished {
+        EXAM_CARD_FINISHED
+    } else if snapshot.remaining_seconds <= EXAM_URGENT_SECONDS {
+        EXAM_CARD_URGENT
+    } else if snapshot.remaining_seconds <= EXAM_SOON_SECONDS {
+        EXAM_CARD_SOON
+    } else {
+        ""
+    }
+}
+
+fn exam_status_label(snapshot: CountdownSnapshot) -> &'static str {
+    if snapshot.finished {
+        "已结束"
+    } else if snapshot.remaining_seconds <= EXAM_URGENT_SECONDS {
+        "冲刺期"
+    } else if snapshot.remaining_seconds <= EXAM_SOON_SECONDS {
+        "临近"
+    } else {
+        "备考中"
+    }
+}
+
+fn is_escape_key(event: &KeyboardEvent) -> bool {
+    matches!(event.key().as_str(), "Escape" | "Esc") || event.code() == "Escape"
+}
 
 #[derive(Clone, PartialEq, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -819,6 +942,69 @@ impl PortalView {
             Self::Router => "路由器",
             Self::Camera => "摄像头",
         }
+    }
+}
+
+const PORTAL_SWIPE_THRESHOLD_PX: i32 = 48;
+
+impl PortalView {
+    const fn next(self) -> Option<Self> {
+        match self {
+            Self::Home => Some(Self::Router),
+            Self::Router => Some(Self::Camera),
+            Self::Camera => None,
+        }
+    }
+
+    const fn previous(self) -> Option<Self> {
+        match self {
+            Self::Home => None,
+            Self::Router => Some(Self::Home),
+            Self::Camera => Some(Self::Router),
+        }
+    }
+}
+
+fn portal_view_for_swipe(
+    current: PortalView,
+    start_x: i32,
+    start_y: i32,
+    end_x: i32,
+    end_y: i32,
+) -> Option<PortalView> {
+    let horizontal = end_x - start_x;
+    let vertical = end_y - start_y;
+    if horizontal.abs() < PORTAL_SWIPE_THRESHOLD_PX || horizontal.abs() <= vertical.abs() {
+        return None;
+    }
+
+    if horizontal < 0 {
+        current.next()
+    } else {
+        current.previous()
+    }
+}
+
+fn swipe_start_allowed(event: &PointerEvent) -> bool {
+    let Some(mut element) = event
+        .target()
+        .and_then(|target| target.dyn_into::<Element>().ok())
+    else {
+        return true;
+    };
+
+    loop {
+        if matches!(
+            element.tag_name().as_str(),
+            "A" | "AUDIO" | "BUTTON" | "INPUT" | "SELECT" | "TEXTAREA" | "VIDEO"
+        ) || element.get_attribute("data-swipe-ignore").is_some()
+        {
+            return false;
+        }
+        let Some(parent) = element.parent_element() else {
+            return true;
+        };
+        element = parent;
     }
 }
 
@@ -2341,6 +2527,250 @@ fn render_deployed_apps(state: &UseReducerHandle<AppState>) -> Html {
     }
 }
 
+fn render_exam_countdown_card(
+    target: &ExamCountdownTarget,
+    snapshot: CountdownSnapshot,
+    index: usize,
+    focused: bool,
+    on_double_click: Callback<MouseEvent>,
+) -> Html {
+    let status = exam_status_label(snapshot);
+    let tone = exam_card_tone(snapshot);
+    let card_tone = focused.then_some(EXAM_CARD_FOCUS);
+    let title_id = if focused {
+        format!("{}-focus-title", target.id)
+    } else {
+        format!("{}-title", target.id)
+    };
+    let card_label = if snapshot.finished {
+        format!("{}，考试已结束", target.title)
+    } else {
+        format!("{}，距离考试 {} 天", target.title, snapshot.days)
+    };
+    let counter_value_class = if focused {
+        EXAM_COUNTER_VALUE_FOCUS
+    } else {
+        EXAM_COUNTER_VALUE
+    };
+    let counter_unit_class = if focused {
+        EXAM_COUNTER_UNIT_FOCUS
+    } else {
+        EXAM_COUNTER_UNIT
+    };
+    let card_title_class = if focused {
+        EXAM_CARD_TITLE_FOCUS
+    } else {
+        EXAM_CARD_TITLE
+    };
+    let progress_class = if focused {
+        EXAM_PROGRESS_FOCUS
+    } else {
+        EXAM_PROGRESS
+    };
+    let countdown = if snapshot.finished {
+        html! { <strong class={EXAM_COUNTER_FINISHED}>{"考试日已过"}</strong> }
+    } else {
+        html! {
+            <>
+                <strong class={counter_value_class}>{snapshot.days}</strong><span class={counter_unit_class}> {"天"}</span>
+                <strong class={counter_value_class}>{format!("{:02}", snapshot.hours)}</strong><span class={counter_unit_class}> {"时"}</span>
+                <strong class={counter_value_class}>{format!("{:02}", snapshot.minutes)}</strong><span class={counter_unit_class}> {"分"}</span>
+                <strong class={counter_value_class}>{format!("{:02}", snapshot.seconds)}</strong><span class={counter_unit_class}> {"秒"}</span>
+            </>
+        }
+    };
+
+    html! {
+        <article
+            class={classes!(EXAM_CARD, tone, card_tone)}
+            aria-label={card_label}
+            data-exam-id={target.id}
+            title={if focused { "倒计时专注模式" } else { "双击进入全屏" }}
+            ondblclick={on_double_click}
+        >
+            <div class={EXAM_CARD_HEAD}>
+                <div class="flex min-w-0 items-start gap-2">
+                    <span class={EXAM_CARD_INDEX} aria-hidden="true">{format!("{:02}", index + 1)}</span>
+                    <div class={EXAM_CARD_COPY}>
+                        <p class={EXAM_CARD_EYEBROW}>{target.eyebrow}</p>
+                        <h3 id={title_id} class={card_title_class}>{target.title}</h3>
+                    </div>
+                </div>
+                <span class={classes!(EXAM_STATUS, (snapshot.finished).then_some("text-base-content/60"), (!snapshot.finished).then_some("text-error"))}>{status}</span>
+            </div>
+            <div class={EXAM_COUNTER} aria-live="polite">
+                {countdown}
+            </div>
+            <div class={EXAM_META}>
+                <span class="min-w-0 truncate">{target.target_note}</span>
+                <time class={EXAM_DATE} datetime={target.target_iso}>{target.target_label}</time>
+            </div>
+            <progress
+                class={progress_class}
+                max="100"
+                value={snapshot.progress_percent.to_string()}
+                aria-label={format!("{}冲刺进度 {}%", target.title, snapshot.progress_percent)}
+            ></progress>
+            <div class={EXAM_PROGRESS_META}>
+                <span>{"年度备考进度"}</span>
+                <span>{format!("{}%", snapshot.progress_percent)}</span>
+            </div>
+        </article>
+    }
+}
+
+#[function_component(ExamCountdownPanel)]
+fn exam_countdown_panel() -> Html {
+    let now_ms = use_state(|| Date::now() as i64);
+    let active_exam = use_state(|| None::<usize>);
+    let close_button_ref = use_node_ref();
+
+    {
+        let now_ms = now_ms.clone();
+        use_effect_with((), move |_| {
+            let cancelled = Rc::new(Cell::new(false));
+            let task_cancelled = cancelled.clone();
+            spawn_local(async move {
+                while !task_cancelled.get() {
+                    TimeoutFuture::new(EXAM_COUNTDOWN_TICK_MS).await;
+                    if !task_cancelled.get() {
+                        now_ms.set(Date::now() as i64);
+                    }
+                }
+            });
+            move || cancelled.set(true)
+        });
+    }
+
+    {
+        let active_exam = active_exam.clone();
+        use_effect_with((), move |_| {
+            let document = web_sys::window().and_then(|window| window.document());
+            let listener =
+                Closure::<dyn FnMut(KeyboardEvent)>::new(move |key_event: KeyboardEvent| {
+                    if is_escape_key(&key_event) && (*active_exam).is_some() {
+                        key_event.prevent_default();
+                        active_exam.set(None);
+                    }
+                });
+            if let Some(document) = document.as_ref() {
+                for event_name in ["keydown", "keyup"] {
+                    let _ = document.add_event_listener_with_callback(
+                        event_name,
+                        listener.as_ref().unchecked_ref(),
+                    );
+                }
+            }
+            move || {
+                if let Some(document) = document.as_ref() {
+                    for event_name in ["keydown", "keyup"] {
+                        let _ = document.remove_event_listener_with_callback(
+                            event_name,
+                            listener.as_ref().unchecked_ref(),
+                        );
+                    }
+                }
+                drop(listener);
+            }
+        });
+    }
+
+    {
+        let close_button_ref = close_button_ref.clone();
+        use_effect_with(*active_exam, move |active| {
+            if active.is_some() {
+                if let Some(button) = close_button_ref.cast::<HtmlElement>() {
+                    let _ = button.focus();
+                }
+            }
+            || ()
+        });
+    }
+
+    let close_on_escape = {
+        let active_exam = active_exam.clone();
+        Callback::from(move |event: KeyboardEvent| {
+            if is_escape_key(&event) && (*active_exam).is_some() {
+                event.prevent_default();
+                active_exam.set(None);
+            }
+        })
+    };
+    let close_focus = {
+        let active_exam = active_exam.clone();
+        Callback::from(move |_| active_exam.set(None))
+    };
+    let focus_overlay = (*active_exam).and_then(|index| {
+        EXAM_COUNTDOWN_TARGETS.get(index).map(|target| {
+            let snapshot = countdown_snapshot(
+                *now_ms,
+                exam_timestamp(target.start_iso),
+                exam_timestamp(target.target_iso),
+            );
+            let dialog_label = format!("{}专注模式", target.title);
+            let noop_double_click = Callback::from(|_: MouseEvent| {});
+            html! {
+                <div
+                    class={EXAM_FOCUS_BACKDROP}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={dialog_label}
+                    tabindex="-1"
+                    onkeydown={close_on_escape.clone()}
+                    onkeyup={close_on_escape.clone()}
+                >
+                    <div class={EXAM_FOCUS_PANEL}>
+                        <button
+                            class={EXAM_FOCUS_CLOSE}
+                            type="button"
+                            aria-label="退出全屏"
+                            ref={close_button_ref.clone()}
+                            autofocus=true
+                            onkeydown={close_on_escape.clone()}
+                            onkeyup={close_on_escape.clone()}
+                            onclick={close_focus.clone()}
+                        >
+                            <span aria-hidden="true">{"×"}</span>
+                        </button>
+                        {render_exam_countdown_card(target, snapshot, index, true, noop_double_click)}
+                    </div>
+                </div>
+            }
+        })
+    });
+
+    html! {
+        <>
+            <section id="exam-countdown" class={EXAM_SECTION} role="region" aria-labelledby="exam-countdown-title">
+                <span class={EXAM_DECORATION} aria-hidden="true"></span>
+                <div class={EXAM_HEAD}>
+                    <div>
+                        <p class={EYEBROW}>{"EXAM COUNTDOWN"}</p>
+                        <h2 id="exam-countdown-title" class={SECTION_TITLE}>{"考试冲刺倒计时"}</h2>
+                    </div>
+                    <div class={EXAM_HEAD_META}>
+                        <span class={EXAM_BADGE}><span aria-hidden="true">{"!"}</span>{"按时间先后排序"}</span>
+                        <span>{"双击卡片进入专注全屏 · 预计日期以官方公告为准"}</span>
+                    </div>
+                </div>
+                <div class={EXAM_GRID}>
+                    {for EXAM_COUNTDOWN_TARGETS.iter().enumerate().map(|(index, target)| {
+                        let active_exam = active_exam.clone();
+                        let open_focus = Callback::from(move |_: MouseEvent| active_exam.set(Some(index)));
+                        let snapshot = countdown_snapshot(
+                            *now_ms,
+                            exam_timestamp(target.start_iso),
+                            exam_timestamp(target.target_iso),
+                        );
+                        render_exam_countdown_card(target, snapshot, index, false, open_focus)
+                    })}
+                </div>
+            </section>
+            {focus_overlay}
+        </>
+    }
+}
+
 fn render_home(
     state: &UseReducerHandle<AppState>,
     select_router: Callback<MouseEvent>,
@@ -2357,6 +2787,7 @@ fn render_home(
         .unwrap_or_default();
     html! {
         <>
+            <ExamCountdownPanel />
             <section class={SECTION} aria-labelledby="apps-title">
                 <div class={SECTION_HEAD}>
                     <div><p class={EYEBROW}>{"APPS"}</p><h2 id="apps-title" class={SECTION_TITLE}>{"应用"}</h2></div>
@@ -2430,6 +2861,8 @@ fn app() -> Html {
     let portal_view = use_state(|| PortalView::Home);
     let router_view = use_state(|| WorkspaceView::Overview);
     let camera_stop_generation = use_state(|| 0u32);
+    let swipe_start = use_mut_ref(|| None::<(i32, i32)>);
+    let portal_swipe_surface = use_node_ref();
 
     {
         let state = state.clone();
@@ -2517,6 +2950,50 @@ fn app() -> Html {
         .session
         .as_ref()
         .is_some_and(|session| session.authenticated && !session.must_change);
+    let on_portal_pointer_down = {
+        let portal_swipe_surface = portal_swipe_surface.clone();
+        let swipe_start = swipe_start.clone();
+        Callback::from(move |event: PointerEvent| {
+            if event.pointer_type() != "touch" || !event.is_primary() {
+                return;
+            }
+            if !swipe_start_allowed(&event) {
+                *swipe_start.borrow_mut() = None;
+                return;
+            }
+            *swipe_start.borrow_mut() = Some((event.client_x(), event.client_y()));
+            if let Some(target) = portal_swipe_surface.cast::<Element>() {
+                let _ = target.set_pointer_capture(event.pointer_id());
+            }
+        })
+    };
+    let on_portal_pointer_up = {
+        let portal_view = portal_view.clone();
+        let swipe_start = swipe_start.clone();
+        Callback::from(move |event: PointerEvent| {
+            if event.pointer_type() != "touch" || !event.is_primary() {
+                return;
+            }
+            let Some((start_x, start_y)) = swipe_start.borrow_mut().take() else {
+                return;
+            };
+            if let Some(next) = portal_view_for_swipe(
+                *portal_view,
+                start_x,
+                start_y,
+                event.client_x(),
+                event.client_y(),
+            ) {
+                portal_view.set(next);
+            }
+        })
+    };
+    let on_portal_pointer_cancel = {
+        let swipe_start = swipe_start.clone();
+        Callback::from(move |_event: PointerEvent| {
+            *swipe_start.borrow_mut() = None;
+        })
+    };
     let select_home = {
         let portal_view = portal_view.clone();
         Callback::from(move |_| portal_view.set(PortalView::Home))
@@ -2619,6 +3096,7 @@ fn app() -> Html {
                     <CameraLiveView admin_csrf={admin_csrf} is_admin={is_admin} stop_generation={*camera_stop_generation} />
                 </section>
             }
+            </div>
             <footer class={FOOTER}>{"数据约每 2 秒自动刷新 · 写操作仅接受同源令牌保护的类型化请求"}</footer>
         </main>
     }

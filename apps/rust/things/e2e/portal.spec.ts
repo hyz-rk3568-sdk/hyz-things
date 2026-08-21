@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   expectNoHorizontalOverflow,
   harnessOrigin,
@@ -9,6 +9,80 @@ import {
   resetHarness,
   webOrigin,
 } from "./fixtures";
+
+async function swipePortal(
+  page: Page,
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+) {
+  const surface = page.locator("#portal-swipe-surface");
+  const event = {
+    bubbles: true,
+    button: 0,
+    clientX: fromX,
+    clientY: fromY,
+    isPrimary: true,
+    pointerId: 1,
+    pointerType: "touch",
+  };
+  await surface.dispatchEvent("pointerdown", event);
+  await surface.dispatchEvent("pointerup", {
+    ...event,
+    clientX: toX,
+    clientY: toY,
+  });
+}
+
+async function realTouchSwipe(page: Page, direction: "left" | "right") {
+  const surface = page.locator("#portal-swipe-surface");
+  const box = await surface.boundingBox();
+  if (!box) throw new Error("portal swipe surface has no bounding box");
+  const client = await page.context().newCDPSession(page);
+  await client.send("Emulation.setTouchEmulationEnabled", {
+    enabled: true,
+    configuration: "mobile",
+  });
+
+  const startX = Math.round(
+    box.x + box.width * (direction === "left" ? 0.72 : 0.18),
+  );
+  const endX = Math.round(
+    box.x + box.width * (direction === "left" ? 0.18 : 0.72),
+  );
+  const y = Math.round(box.y + 180);
+  const touchPoint = (x: number, y: number) => ({
+    x,
+    y,
+    radiusX: 8,
+    radiusY: 8,
+    force: 1,
+    id: 1,
+  });
+
+  await client.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [touchPoint(startX, y)],
+    modifiers: 0,
+  });
+  for (const x of [
+    startX + (endX - startX) * 0.35,
+    startX + (endX - startX) * 0.7,
+    endX,
+  ]) {
+    await client.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [touchPoint(Math.round(x), y + 4)],
+      modifiers: 0,
+    });
+  }
+  await client.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+    modifiers: 0,
+  });
+}
 
 test.beforeEach(async ({ request }) => {
   await resetHarness(request);
@@ -133,6 +207,154 @@ test("renders the portal home and applies the anonymous display control", async 
   expect(accessibility.violations).toEqual([]);
   await expectNoHorizontalOverflow(page);
   expect(browserErrors).toEqual([]);
+});
+
+test("renders the upcoming exam countdown in chronological order", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  const countdown = page.getByRole("region", { name: "考试冲刺倒计时" });
+  await expect(countdown).toBeVisible();
+  const cards = countdown.locator("[data-exam-id]");
+  await expect(cards).toHaveCount(4);
+  const cardIds = await cards.evaluateAll((elements) =>
+    elements.map((element) => element.getAttribute("data-exam-id")),
+  );
+  expect(cardIds).toEqual([
+    "national-exam",
+    "guangdong-exam",
+    "hunan-civil-service",
+    "hunan-public-institution",
+  ]);
+  await expect(countdown.getByText("下一次国考", { exact: true })).toBeVisible();
+  await expect(countdown.getByText("广东省考", { exact: true })).toBeVisible();
+  await expect(countdown.getByText("湖南省考", { exact: true })).toBeVisible();
+  await expect(countdown.getByText("湖南事业编", { exact: true })).toBeVisible();
+  await expect(countdown.locator("progress")).toHaveCount(4);
+  await expect(countdown.locator("progress").first()).toHaveAttribute(
+    "aria-label",
+    /冲刺进度/,
+  );
+  await expectNoHorizontalOverflow(page);
+
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+});
+
+test("opens one exam card in fullscreen focus mode with a double click", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  const countdown = page.getByRole("region", { name: "考试冲刺倒计时" });
+  const card = countdown.locator('[data-exam-id="national-exam"]');
+  await card.dblclick();
+
+  const focus = page.getByRole("dialog", { name: "下一次国考专注模式" });
+  await expect(focus).toBeVisible();
+  await expect(focus.locator("[data-exam-id]")).toHaveCount(1);
+  await expect(focus.getByText("下一次国考", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "退出全屏", exact: true }),
+  ).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+
+  await page.keyboard.press("Escape");
+  await expect(focus).toHaveCount(0);
+});
+
+test("opens and closes exam focus mode on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  const countdown = page.getByRole("region", { name: "考试冲刺倒计时" });
+  await countdown.locator('[data-exam-id="hunan-public-institution"]').dblclick();
+
+  const focus = page.getByRole("dialog", { name: "湖南事业编专注模式" });
+  await expect(focus).toBeVisible();
+  await expect(focus.locator("[data-exam-id]")).toHaveCount(1);
+  await expectNoHorizontalOverflow(page);
+
+  await focus.getByRole("button", { name: "退出全屏", exact: true }).click();
+  await expect(focus).toHaveCount(0);
+});
+
+test("keeps the exam countdown usable on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  const countdown = page.getByRole("region", { name: "考试冲刺倒计时" });
+  await expect(countdown).toBeVisible();
+  await expect(countdown.locator("[data-exam-id]")).toHaveCount(4);
+  await expect(countdown.getByText("湖南事业编", { exact: true })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+});
+
+test("switches portal pages with horizontal touch swipes", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(
+    page.getByRole("button", { name: "首页", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await swipePortal(page, 300, 240, 80, 250);
+  await expect(
+    page.getByRole("button", { name: "路由器", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("heading", { name: "网络拓扑" })).toBeVisible();
+
+  await swipePortal(page, 300, 240, 80, 250);
+  await expect(
+    page.getByRole("button", { name: "摄像头", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("heading", { name: "摄像头直播" })).toBeVisible();
+
+  await swipePortal(page, 80, 240, 300, 250);
+  await expect(
+    page.getByRole("button", { name: "路由器", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await swipePortal(page, 200, 240, 170, 360);
+  await expect(
+    page.getByRole("button", { name: "路由器", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await swipePortal(page, 80, 240, 300, 250);
+  await expect(
+    page.getByRole("button", { name: "首页", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await swipePortal(page, 80, 240, 300, 250);
+  await expect(
+    page.getByRole("button", { name: "首页", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: "摄像头", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "摄像头", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+});
+
+test("switches portal pages from browser touch input", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(
+    page.getByRole("button", { name: "首页", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await realTouchSwipe(page, "left");
+  await expect(
+    page.getByRole("button", { name: "路由器", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await realTouchSwipe(page, "right");
+  await expect(
+    page.getByRole("button", { name: "首页", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
 });
 
 test("renders the dual-uplink topology without mobile overflow", async ({
