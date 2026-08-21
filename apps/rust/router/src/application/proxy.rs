@@ -170,245 +170,6 @@ fn rollback_compensation(action: &ProxyAction) -> Option<ProxyAction> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExplicitProxyPathObservation {
-    Ready,
-    Unavailable,
-    Unknown,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExplicitProxyFallbackDecision {
-    Hold,
-    FallbackToDirect,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct ExplicitProxyFallbackTracker {
-    consecutive_failures: u8,
-}
-
-impl ExplicitProxyFallbackTracker {
-    pub const FAILURE_THRESHOLD: u8 = 3;
-
-    pub const fn consecutive_failures(self) -> u8 {
-        self.consecutive_failures
-    }
-
-    pub fn observe(
-        &mut self,
-        observation: ExplicitProxyPathObservation,
-    ) -> ExplicitProxyFallbackDecision {
-        match observation {
-            ExplicitProxyPathObservation::Ready | ExplicitProxyPathObservation::Unknown => {
-                self.consecutive_failures = 0;
-                ExplicitProxyFallbackDecision::Hold
-            }
-            ExplicitProxyPathObservation::Unavailable => {
-                self.consecutive_failures = self.consecutive_failures.saturating_add(1);
-                if self.consecutive_failures >= Self::FAILURE_THRESHOLD {
-                    self.consecutive_failures = 0;
-                    ExplicitProxyFallbackDecision::FallbackToDirect
-                } else {
-                    ExplicitProxyFallbackDecision::Hold
-                }
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TailscaleProxyFallbackResult {
-    NotNeeded,
-    DirectRestored { tailscale_actions_applied: usize },
-    ExplicitRestored { tailscale_actions_applied: usize },
-}
-
-pub struct TailscaleProxyFallbackApplication<'a> {
-    platform: &'a dyn RouterPlatformPort,
-    probe: &'a dyn SystemProbePort,
-    tailscale: &'a dyn TailscalePlatformPort,
-    tailscale_probe: &'a dyn TailscaleProbePort,
-    clock: &'a dyn ClockPort,
-}
-
-impl<'a> TailscaleProxyFallbackApplication<'a> {
-    pub fn new(
-        platform: &'a dyn RouterPlatformPort,
-        probe: &'a dyn SystemProbePort,
-        tailscale: &'a dyn TailscalePlatformPort,
-        tailscale_probe: &'a dyn TailscaleProbePort,
-        clock: &'a dyn ClockPort,
-    ) -> Self {
-        Self {
-            platform,
-            probe,
-            tailscale,
-            tailscale_probe,
-            clock,
-        }
-    }
-
-    pub fn fallback_to_direct_if_unavailable(
-        &self,
-    ) -> Result<TailscaleProxyFallbackResult, PlatformError> {
-        let lease = self.platform.acquire_lifecycle_lock()?;
-        let result = self.fallback_to_direct_locked();
-        let release = self.platform.release_lifecycle_lock(&lease);
-        match (result, release) {
-            (Err(error), _) => Err(error),
-            (Ok(_), Err(error)) => Err(error),
-            (Ok(result), Ok(())) => Ok(result),
-        }
-    }
-
-    pub fn restore_explicit_if_proxy_path_ready(
-        &self,
-    ) -> Result<TailscaleProxyFallbackResult, PlatformError> {
-        let lease = self.platform.acquire_lifecycle_lock()?;
-        let result = self.restore_explicit_locked();
-        let release = self.platform.release_lifecycle_lock(&lease);
-        match (result, release) {
-            (Err(error), _) => Err(error),
-            (Ok(_), Err(error)) => Err(error),
-            (Ok(result), Ok(())) => Ok(result),
-        }
-    }
-
-    fn fallback_to_direct_locked(&self) -> Result<TailscaleProxyFallbackResult, PlatformError> {
-        let features = self.persisted_features()?;
-        if !features.tailscale_explicit_proxy_enabled {
-            return Ok(TailscaleProxyFallbackResult::NotNeeded);
-        }
-        let observed = self.tailscale_probe.observe_tailscale()?;
-        let mode = persisted_tailscale_mode(&observed)?;
-        if mode == TailscaleMode::Disabled {
-            return Ok(TailscaleProxyFallbackResult::NotNeeded);
-        }
-        match observed.environment {
-            Probe::Known(TailscaleEnvironment::Direct) => {
-                return Ok(TailscaleProxyFallbackResult::NotNeeded)
-            }
-            Probe::Known(TailscaleEnvironment::MihomoExplicit) => {}
-            Probe::Unknown(reason) => {
-                return Err(PlatformError::ProbeFailed(format!(
-                    "tailscaled environment is unknown: {reason}"
-                )))
-            }
-        }
-        if self.tailscale_probe.probe_explicit_proxy_path()? {
-            return Ok(TailscaleProxyFallbackResult::NotNeeded);
-        }
-
-        let tailscale_actions_applied =
-            self.restart_tailscale(&observed, TailscaleEnvironment::Direct)?;
-        let final_observed = self.tailscale_probe.observe_tailscale()?;
-        self.require_environment_and_readiness(&final_observed, TailscaleEnvironment::Direct)?;
-        Ok(TailscaleProxyFallbackResult::DirectRestored {
-            tailscale_actions_applied,
-        })
-    }
-
-    fn restore_explicit_locked(&self) -> Result<TailscaleProxyFallbackResult, PlatformError> {
-        let features = self.persisted_features()?;
-        if !features.tailscale_explicit_proxy_enabled {
-            return Ok(TailscaleProxyFallbackResult::NotNeeded);
-        }
-        let observed = self.tailscale_probe.observe_tailscale()?;
-        let mode = persisted_tailscale_mode(&observed)?;
-        if mode == TailscaleMode::Disabled {
-            return Ok(TailscaleProxyFallbackResult::NotNeeded);
-        }
-        match observed.environment {
-            Probe::Known(TailscaleEnvironment::MihomoExplicit) => {
-                return Ok(TailscaleProxyFallbackResult::NotNeeded)
-            }
-            Probe::Known(TailscaleEnvironment::Direct) => {}
-            Probe::Unknown(reason) => {
-                return Err(PlatformError::ProbeFailed(format!(
-                    "tailscaled environment is unknown: {reason}"
-                )))
-            }
-        }
-        if !self.tailscale_probe.probe_explicit_proxy_path()? {
-            return Ok(TailscaleProxyFallbackResult::NotNeeded);
-        }
-
-        let tailscale_actions_applied =
-            self.restart_tailscale(&observed, TailscaleEnvironment::MihomoExplicit)?;
-        let final_observed = self.tailscale_probe.observe_tailscale()?;
-        if final_observed.environment != Probe::Known(TailscaleEnvironment::MihomoExplicit) {
-            return Err(PlatformError::UnsafeToCutOver(
-                "tailscaled explicit-proxy recovery did not reach the exact fixed environment"
-                    .to_owned(),
-            ));
-        }
-        if !self.tailscale_probe.probe_explicit_proxy_path()? {
-            let direct_recovery = self
-                .restart_tailscale(&final_observed, TailscaleEnvironment::Direct)
-                .map(|_| ());
-            return match direct_recovery {
-                Ok(()) => Err(PlatformError::UnsafeToCutOver(
-                    "explicit-proxy recovery lost its path; restored Direct environment".to_owned(),
-                )),
-                Err(error) => Err(PlatformError::UnsafeToCutOver(format!(
-                    "explicit-proxy recovery lost its path and Direct recovery failed: {error}"
-                ))),
-            };
-        }
-        Ok(TailscaleProxyFallbackResult::ExplicitRestored {
-            tailscale_actions_applied,
-        })
-    }
-
-    fn persisted_features(&self) -> Result<ProxyFeaturesV1, PlatformError> {
-        let observed = self.probe.observe_proxy()?;
-        read_supported_proxy_features(&observed)
-    }
-
-    fn restart_tailscale(
-        &self,
-        observed: &crate::domain::tailscale::TailscaleObserved,
-        environment: TailscaleEnvironment,
-    ) -> Result<usize, PlatformError> {
-        ProxyFeatureCoordinator::new(
-            self.platform,
-            self.probe,
-            self.tailscale,
-            self.tailscale_probe,
-            self.clock,
-        )
-        .restart_tailscale(observed, environment)
-    }
-
-    fn require_environment_and_readiness(
-        &self,
-        observed: &crate::domain::tailscale::TailscaleObserved,
-        environment: TailscaleEnvironment,
-    ) -> Result<(), PlatformError> {
-        if observed.environment != Probe::Known(environment) {
-            return Err(PlatformError::UnsafeToCutOver(format!(
-                "tailscaled recovery did not reach the exact {environment:?} environment"
-            )));
-        }
-        let mode = persisted_tailscale_mode(observed)?;
-        let ordinary_router_ready = self
-            .probe
-            .observe_network()?
-            .ready_for(&crate::domain::network::NetworkDesired::forwarding());
-        let desired = TailscaleDesired { mode };
-        if mode != TailscaleMode::Disabled
-            && !observed.ready_for(&desired, ordinary_router_ready)
-            && !surface_free_login_ready(observed, &desired)
-        {
-            return Err(PlatformError::UnsafeToCutOver(
-                "tailscaled recovery did not restore ready or surface-free login state".to_owned(),
-            ));
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MihomoDirectRecoveryResult {
     NotNeeded,
     AlreadyDirect,
@@ -837,29 +598,6 @@ impl<'a> ProxyFeatureCoordinator<'a> {
                     tailscale_transition,
                 ));
             }
-            match self.tailscale_probe.probe_explicit_proxy_path() {
-                Ok(true) => {}
-                Ok(false) => {
-                    return Err(self.recover_after_failure(
-                        PlatformError::UnsafeToCutOver(
-                            "fixed Tailscale explicit proxy path is unavailable".to_owned(),
-                        ),
-                        previous,
-                        &desired.direct_macs,
-                        current_environment,
-                        tailscale_transition,
-                    ));
-                }
-                Err(error) => {
-                    return Err(self.recover_after_failure(
-                        error,
-                        previous,
-                        &desired.direct_macs,
-                        current_environment,
-                        tailscale_transition,
-                    ));
-                }
-            }
         }
         if commit_features {
             if let Some(commit) = commit {
@@ -1267,7 +1005,6 @@ mod tests {
     struct CoordinatorFake {
         proxy: Mutex<ProxyObserved>,
         tailscale: Mutex<crate::domain::tailscale::TailscaleObserved>,
-        proxy_path_ready: Mutex<bool>,
         events: Mutex<Vec<String>>,
         replace_tun_before_interception: bool,
         start_requires_login: bool,
@@ -1282,7 +1019,6 @@ mod tests {
             Self {
                 proxy: Mutex::new(coordinator_proxy(features)),
                 tailscale: Mutex::new(tailscale),
-                proxy_path_ready: Mutex::new(true),
                 events: Mutex::new(Vec::new()),
                 replace_tun_before_interception: false,
                 start_requires_login: false,
@@ -1560,14 +1296,6 @@ mod tests {
         ) -> Result<crate::domain::tailscale::TailscaleObserved, PlatformError> {
             Ok(self.tailscale.lock().unwrap().clone())
         }
-
-        fn probe_explicit_proxy_path(&self) -> Result<bool, PlatformError> {
-            self.events
-                .lock()
-                .unwrap()
-                .push("tailscale:path-probe".to_owned());
-            Ok(*self.proxy_path_ready.lock().unwrap())
-        }
     }
 
     impl ClockPort for CoordinatorFake {
@@ -1618,60 +1346,19 @@ mod tests {
             .iter()
             .position(|event| event.contains("environment: MihomoExplicit"))
             .unwrap();
-        let path_probe = events
-            .iter()
-            .position(|event| event == "tailscale:path-probe")
-            .unwrap();
         let commit = events
             .iter()
             .position(|event| event.contains("proxy:CommitFeatures"))
             .unwrap();
         assert!(mixed < stop_backend);
-        assert!(stop_backend < proxied && proxied < path_probe);
-        assert!(path_probe < commit);
+        assert!(stop_backend < proxied && proxied < commit);
+        assert!(!events.iter().any(|event| event == "tailscale:path-probe"));
         assert!(!events
             .iter()
             .any(|event| event.starts_with("tailscale:lock")));
         assert!(!events
             .iter()
             .any(|event| event.starts_with("tailscale:release")));
-    }
-
-    #[test]
-    fn unavailable_explicit_proxy_path_blocks_commit_and_preserves_ready_lan_tun() {
-        let fake = CoordinatorFake::new(
-            ProxyFeaturesV1::new(true, false),
-            TailscaleEnvironment::Direct,
-        );
-        *fake.proxy_path_ready.lock().unwrap() = false;
-
-        assert!(matches!(
-            ProxyFeatureCoordinator::new(&fake, &fake, &fake, &fake, &fake).reconcile(
-                &ProxyDesired {
-                    lan_tun_enabled: true,
-                    tailscale_explicit_proxy_enabled: true,
-                    direct_macs: Default::default(),
-                }
-            ),
-            Err(PlatformError::UnsafeToCutOver(_))
-        ));
-
-        let proxy = fake.proxy.lock().unwrap().clone();
-        assert_eq!(
-            proxy.persisted_features,
-            Probe::Known(ProxyFeaturesV1::new(true, false))
-        );
-        assert!(proxy.lan_tun_ready(&Default::default()));
-        assert_eq!(
-            fake.tailscale.lock().unwrap().environment,
-            Probe::Known(TailscaleEnvironment::Direct)
-        );
-        let events = fake.events();
-        assert!(events.iter().any(|event| event == "tailscale:path-probe"));
-        assert!(!events.iter().any(|event| {
-            event.contains("CommitFeatures")
-                && event.contains("tailscale_explicit_proxy_enabled: true")
-        }));
     }
 
     #[test]
@@ -1983,123 +1670,6 @@ mod tests {
             Probe::Known(TailscaleProcessState::Absent)
         );
         assert_eq!(fake.events(), vec!["router:lock", "router:release"]);
-    }
-
-    #[test]
-    fn explicit_proxy_path_fallback_requires_three_confirmed_failures() {
-        let mut tracker = ExplicitProxyFallbackTracker::default();
-
-        assert_eq!(
-            tracker.observe(ExplicitProxyPathObservation::Unavailable),
-            ExplicitProxyFallbackDecision::Hold
-        );
-        assert_eq!(
-            tracker.observe(ExplicitProxyPathObservation::Unavailable),
-            ExplicitProxyFallbackDecision::Hold
-        );
-        assert_eq!(
-            tracker.observe(ExplicitProxyPathObservation::Unavailable),
-            ExplicitProxyFallbackDecision::FallbackToDirect
-        );
-        assert_eq!(tracker.consecutive_failures(), 0);
-
-        assert_eq!(
-            tracker.observe(ExplicitProxyPathObservation::Ready),
-            ExplicitProxyFallbackDecision::Hold
-        );
-        assert_eq!(tracker.consecutive_failures(), 0);
-    }
-
-    #[test]
-    fn explicit_proxy_path_unknown_does_not_trigger_fallback() {
-        let mut tracker = ExplicitProxyFallbackTracker::default();
-
-        for _ in 0..10 {
-            assert_eq!(
-                tracker.observe(ExplicitProxyPathObservation::Unknown),
-                ExplicitProxyFallbackDecision::Hold
-            );
-        }
-        assert_eq!(tracker.consecutive_failures(), 0);
-    }
-
-    #[test]
-    fn explicit_proxy_path_fallback_restores_direct_without_committing_proxy_features() {
-        let fake = CoordinatorFake::new(
-            ProxyFeaturesV1::new(false, true),
-            TailscaleEnvironment::MihomoExplicit,
-        );
-        *fake.proxy_path_ready.lock().unwrap() = false;
-
-        let result = TailscaleProxyFallbackApplication::new(&fake, &fake, &fake, &fake, &fake)
-            .fallback_to_direct_if_unavailable()
-            .unwrap();
-
-        assert!(matches!(
-            result,
-            TailscaleProxyFallbackResult::DirectRestored { .. }
-        ));
-        assert_eq!(
-            fake.proxy.lock().unwrap().persisted_features,
-            Probe::Known(ProxyFeaturesV1::new(false, true))
-        );
-        assert_eq!(
-            fake.tailscale.lock().unwrap().environment,
-            Probe::Known(TailscaleEnvironment::Direct)
-        );
-        assert!(!fake
-            .events()
-            .iter()
-            .any(|event| event.contains("CommitFeatures")));
-    }
-
-    #[test]
-    fn explicit_proxy_path_recovers_to_mihomo_without_committing_proxy_features() {
-        let fake = CoordinatorFake::new(
-            ProxyFeaturesV1::new(false, true),
-            TailscaleEnvironment::Direct,
-        );
-
-        let result = TailscaleProxyFallbackApplication::new(&fake, &fake, &fake, &fake, &fake)
-            .restore_explicit_if_proxy_path_ready()
-            .unwrap();
-
-        assert!(matches!(
-            result,
-            TailscaleProxyFallbackResult::ExplicitRestored { .. }
-        ));
-        assert_eq!(
-            fake.proxy.lock().unwrap().persisted_features,
-            Probe::Known(ProxyFeaturesV1::new(false, true))
-        );
-        assert_eq!(
-            fake.tailscale.lock().unwrap().environment,
-            Probe::Known(TailscaleEnvironment::MihomoExplicit)
-        );
-        assert!(!fake
-            .events()
-            .iter()
-            .any(|event| event.contains("CommitFeatures")));
-    }
-
-    #[test]
-    fn explicit_proxy_path_recovery_waits_when_path_is_still_unavailable() {
-        let fake = CoordinatorFake::new(
-            ProxyFeaturesV1::new(false, true),
-            TailscaleEnvironment::Direct,
-        );
-        *fake.proxy_path_ready.lock().unwrap() = false;
-
-        assert_eq!(
-            TailscaleProxyFallbackApplication::new(&fake, &fake, &fake, &fake, &fake)
-                .restore_explicit_if_proxy_path_ready()
-                .unwrap(),
-            TailscaleProxyFallbackResult::NotNeeded
-        );
-        assert_eq!(
-            fake.tailscale.lock().unwrap().environment,
-            Probe::Known(TailscaleEnvironment::Direct)
-        );
     }
 
     #[test]

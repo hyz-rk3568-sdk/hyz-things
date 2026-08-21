@@ -16,7 +16,7 @@ USB ADB 不依赖板端管理网络，可以执行完整的 stop/start 流程：
 4. 执行 `/etc/init.d/S81hyz-router stop`，等待进程、socket、ready、bridge、地址、路由、防火墙和 ownership runtime 清理；
 5. 将候选 ELF 安装到临时目标、再次校验后原子替换 `/usr/bin/hyz-router`，并同步目录；
 6. 执行 `/etc/init.d/S81hyz-router start`，等待 `/run/hyz-router/ready`；
-7. 执行双上行状态矩阵、代理回退/恢复和 ownership 测试；失败时通过 USB 恢复备份 ELF 并重新启动。
+7. 执行双上行状态矩阵、Mihomo core crash/fail-open 和 ownership 测试；失败时通过 USB 恢复备份 ELF 并重新启动。
 
 `S81hyz-router stop` 的 runtime 清理等待上限为 130 秒，`start` 的 readiness 等待上限为 300 秒。停止期间板端网络可能完全不可用，但 USB ADB 应保持可用。
 
@@ -30,7 +30,7 @@ USB ADB 不依赖板端管理网络，可以执行完整的 stop/start 流程：
 4. 将候选文件写入 `.next`、校验后使用原子 `mv` 替换 `/usr/bin/hyz-router`，并同步目录；当前运行中的旧进程继续使用已加载的旧 ELF；
 5. 执行 `adb reboot`，让启动流程加载新的 `/usr/bin/hyz-router`；
 6. 等待选定的网络 ADB 恢复，再核对新 ELF SHA-256、router readiness 和完整状态；
-7. 执行双上行状态矩阵、代理回退/恢复和 ownership 测试。
+7. 执行双上行状态矩阵、Mihomo core crash/fail-open 和 ownership 测试。
 
 网络 ADB 热替换只适合已经通过主机验证、候选 ELF 已完成协议和 SHA-256 检查，并且现场存在 USB ADB、串口或其他物理恢复通道的开发验证。新 ELF 启动失败时，网络 ADB 可能无法恢复，不能把网络 ADB 热替换当作无条件可回滚的远程发布流程。网络 ADB 可以使用物理 LAN 或 Tailscale 地址，但必须在操作前确认选定路径和 TCP 5555 可达；无论使用哪种网络路径，都不能先 stop。
 

@@ -29,10 +29,8 @@ use hyz_router::{
             TailnetPeerReadPort, TailscalePlatformPort, TailscaleProbePort,
         },
         proxy::{
-            ExplicitProxyFallbackDecision, ExplicitProxyFallbackTracker,
-            ExplicitProxyPathObservation, MihomoDirectRecoveryApplication,
-            MihomoDirectRecoveryResult, ProxyApplication, ProxyFeatureCoordinator,
-            TailscaleProxyFallbackApplication, TailscaleProxyFallbackResult,
+            MihomoDirectRecoveryApplication, MihomoDirectRecoveryResult, ProxyApplication,
+            ProxyFeatureCoordinator,
         },
         reconcile::forwarding_reconcile_needed,
         router::RouterApplication,
@@ -49,8 +47,7 @@ use hyz_router::{
         proxy::ProxyDesired,
         status::{Component, Issue, TailscaleStatus},
         tailscale::{
-            TailscaleAction, TailscaleDesired, TailscaleEnvironment, TailscaleLoginUrl,
-            TailscaleMode, TailscaleObserved,
+            TailscaleAction, TailscaleDesired, TailscaleLoginUrl, TailscaleMode, TailscaleObserved,
         },
     },
 };
@@ -70,7 +67,6 @@ use tokio::{
 
 const DAEMON_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2 * 60);
 const MIHOMO_DIRECT_RECOVERY_INTERVAL: Duration = Duration::from_secs(2);
-const TAILSCALE_PROXY_RESTORE_INTERVAL: Duration = Duration::from_secs(30);
 const ETHERNET_DHCP_LIFECYCLE_INTERVAL: Duration = Duration::from_secs(1);
 const AP_VHT80_UPGRADE_INTERVAL: Duration = Duration::from_secs(2);
 const AP_VHT80_UPGRADE_GRACE: Duration = Duration::from_secs(30);
@@ -152,10 +148,6 @@ impl TailscaleProbePort for ProductionTailscalePlatform {
     fn observe_tailscale(&self) -> Result<TailscaleObserved, PlatformError> {
         self.linux.observe_tailscale()
     }
-
-    fn probe_explicit_proxy_path(&self) -> Result<bool, PlatformError> {
-        self.linux.probe_explicit_proxy_path()
-    }
 }
 
 impl TailnetPeerReadPort for ProductionTailscalePlatform {
@@ -182,25 +174,10 @@ impl StatusTailscalePlatformPort for ProductionTailscalePlatform {
                 .router
                 .observe_proxy()
                 .map_err(|error| error.to_string())?;
-            let explicit_proxy_path = match (&proxy.persisted_features, &observed.environment) {
-                (
-                    Probe::Known(features),
-                    Probe::Known(
-                        hyz_router::domain::tailscale::TailscaleEnvironment::MihomoExplicit,
-                    ),
-                ) if features.supported() && features.tailscale_explicit_proxy_enabled => {
-                    match tailscale.probe_explicit_proxy_path() {
-                        Ok(ready) => Probe::Known(ready),
-                        Err(error) => Probe::Unknown(error.to_string()),
-                    }
-                }
-                _ => Probe::Known(false),
-            };
             Ok::<_, String>(tailscale_status_component_from_observed(
                 &observed,
                 &proxy.persisted_features,
                 network.ready_for(&NetworkDesired::forwarding()),
-                &explicit_proxy_path,
             ))
         })
         .await
@@ -506,161 +483,6 @@ impl ProductionRuntime {
                 "Mihomo Direct recovery worker terminated unexpectedly".to_owned(),
             )
         })?
-    }
-
-    async fn probe_explicit_proxy_path(
-        &self,
-    ) -> Result<Option<(TailscaleEnvironment, bool)>, PlatformError> {
-        let router = self.router.clone();
-        let tailscale = self.tailscale.clone();
-        tokio::task::spawn_blocking(move || {
-            let proxy = router.observe_proxy()?;
-            let features = match proxy.persisted_features {
-                Probe::Known(features) if features.supported() => features,
-                Probe::Known(_) => {
-                    return Err(PlatformError::ProbeFailed(
-                        "persisted proxy feature version is unsupported".to_owned(),
-                    ))
-                }
-                Probe::Unknown(reason) => {
-                    return Err(PlatformError::ProbeFailed(format!(
-                        "persisted proxy features are unknown: {reason}"
-                    )))
-                }
-            };
-            if !features.tailscale_explicit_proxy_enabled {
-                return Ok(None);
-            }
-            let observed = tailscale.observe_tailscale()?;
-            let environment = match observed.environment {
-                Probe::Known(environment) => environment,
-                Probe::Unknown(reason) => {
-                    return Err(PlatformError::ProbeFailed(format!(
-                        "tailscaled environment is unknown: {reason}"
-                    )))
-                }
-            };
-            let path_ready = tailscale.probe_explicit_proxy_path()?;
-            Ok(Some((environment, path_ready)))
-        })
-        .await
-        .map_err(|_| {
-            PlatformError::CommandFailed(
-                "Tailscale explicit-proxy path probe worker terminated unexpectedly".to_owned(),
-            )
-        })?
-    }
-
-    async fn fallback_tailscale_direct_if_proxy_unavailable(
-        &self,
-    ) -> Result<TailscaleProxyFallbackResult, PlatformError> {
-        let router = self.router.clone();
-        let tailscale = self.tailscale.clone();
-        tokio::task::spawn_blocking(move || {
-            TailscaleProxyFallbackApplication::new(
-                router.as_ref(),
-                router.as_ref(),
-                tailscale.as_ref(),
-                tailscale.as_ref(),
-                router.as_ref(),
-            )
-            .fallback_to_direct_if_unavailable()
-        })
-        .await
-        .map_err(|_| {
-            PlatformError::CommandFailed(
-                "Tailscale direct-fallback worker terminated unexpectedly".to_owned(),
-            )
-        })?
-    }
-
-    async fn restore_tailscale_explicit_if_proxy_available(
-        &self,
-    ) -> Result<TailscaleProxyFallbackResult, PlatformError> {
-        let router = self.router.clone();
-        let tailscale = self.tailscale.clone();
-        tokio::task::spawn_blocking(move || {
-            TailscaleProxyFallbackApplication::new(
-                router.as_ref(),
-                router.as_ref(),
-                tailscale.as_ref(),
-                tailscale.as_ref(),
-                router.as_ref(),
-            )
-            .restore_explicit_if_proxy_path_ready()
-        })
-        .await
-        .map_err(|_| {
-            PlatformError::CommandFailed(
-                "Tailscale explicit-proxy restore worker terminated unexpectedly".to_owned(),
-            )
-        })?
-    }
-
-    async fn reconcile_tailscale_proxy_fallback(
-        &self,
-        tracker: &mut ExplicitProxyFallbackTracker,
-        next_restore_at: &mut Option<TokioInstant>,
-    ) -> Result<TailscaleProxyFallbackResult, PlatformError> {
-        let path = match self.probe_explicit_proxy_path().await {
-            Ok(path) => path,
-            Err(error) => {
-                tracker.observe(ExplicitProxyPathObservation::Unknown);
-                return Err(error);
-            }
-        };
-        let Some((environment, path_ready)) = path else {
-            tracker.observe(ExplicitProxyPathObservation::Ready);
-            *next_restore_at = None;
-            return Ok(TailscaleProxyFallbackResult::NotNeeded);
-        };
-        let now = TokioInstant::now();
-        match environment {
-            TailscaleEnvironment::MihomoExplicit => {
-                *next_restore_at = None;
-                let observation = if path_ready {
-                    ExplicitProxyPathObservation::Ready
-                } else {
-                    ExplicitProxyPathObservation::Unavailable
-                };
-                if tracker.observe(observation) != ExplicitProxyFallbackDecision::FallbackToDirect {
-                    return Ok(TailscaleProxyFallbackResult::NotNeeded);
-                }
-                let result = self
-                    .fallback_tailscale_direct_if_proxy_unavailable()
-                    .await?;
-                if matches!(result, TailscaleProxyFallbackResult::DirectRestored { .. }) {
-                    *next_restore_at = Some(now + TAILSCALE_PROXY_RESTORE_INTERVAL);
-                }
-                Ok(result)
-            }
-            TailscaleEnvironment::Direct => {
-                tracker.observe(ExplicitProxyPathObservation::Ready);
-                if !path_ready {
-                    if next_restore_at.is_none() {
-                        *next_restore_at = Some(now + TAILSCALE_PROXY_RESTORE_INTERVAL);
-                    }
-                    return Ok(TailscaleProxyFallbackResult::NotNeeded);
-                }
-                let Some(retry_at) = *next_restore_at else {
-                    *next_restore_at = Some(now + TAILSCALE_PROXY_RESTORE_INTERVAL);
-                    return Ok(TailscaleProxyFallbackResult::NotNeeded);
-                };
-                if now < retry_at {
-                    return Ok(TailscaleProxyFallbackResult::NotNeeded);
-                }
-                let result = self.restore_tailscale_explicit_if_proxy_available().await?;
-                if matches!(
-                    result,
-                    TailscaleProxyFallbackResult::ExplicitRestored { .. }
-                ) {
-                    *next_restore_at = None;
-                } else {
-                    *next_restore_at = Some(now + TAILSCALE_PROXY_RESTORE_INTERVAL);
-                }
-                Ok(result)
-            }
-        }
     }
 
     async fn tailscale_desired(&self) -> Result<TailscaleDesired, PlatformError> {
@@ -1760,9 +1582,6 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         let mut runtime_restored = false;
         let mut last_restore_error = None;
         let mut last_direct_error = None;
-        let mut explicit_proxy_tracker = ExplicitProxyFallbackTracker::default();
-        let mut next_explicit_proxy_restore_at = None;
-        let mut last_proxy_fallback_error = None;
         interval.tick().await;
         loop {
             tokio::select! {
@@ -1818,42 +1637,6 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                             if last_direct_error.as_deref() != Some(detail.as_str()) {
                                 eprintln!("hyz-router: bounded tailscaled Direct recovery failed: {detail}");
                                 last_direct_error = Some(detail);
-                            }
-                        }
-                    }
-                    match recovery_runtime
-                        .reconcile_tailscale_proxy_fallback(
-                            &mut explicit_proxy_tracker,
-                            &mut next_explicit_proxy_restore_at,
-                        )
-                        .await
-                    {
-                        Ok(TailscaleProxyFallbackResult::DirectRestored {
-                            tailscale_actions_applied,
-                        }) => {
-                            last_proxy_fallback_error = None;
-                            eprintln!(
-                                "hyz-router: explicit Tailscale proxy path unavailable; restored Direct environment with {tailscale_actions_applied} typed actions"
-                            );
-                        }
-                        Ok(TailscaleProxyFallbackResult::ExplicitRestored {
-                            tailscale_actions_applied,
-                        }) => {
-                            last_proxy_fallback_error = None;
-                            eprintln!(
-                                "hyz-router: explicit Tailscale proxy path recovered; restored MihomoExplicit environment with {tailscale_actions_applied} typed actions"
-                            );
-                        }
-                        Ok(TailscaleProxyFallbackResult::NotNeeded) => {
-                            last_proxy_fallback_error = None;
-                        }
-                        Err(error) => {
-                            let detail = error.to_string();
-                            if last_proxy_fallback_error.as_deref() != Some(detail.as_str()) {
-                                eprintln!(
-                                    "hyz-router: Tailscale explicit-proxy fallback/recovery failed: {detail}"
-                                );
-                                last_proxy_fallback_error = Some(detail);
                             }
                         }
                     }

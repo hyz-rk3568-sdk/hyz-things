@@ -38,8 +38,7 @@ use hyz_things::{
             Component, ComponentState, InterfaceStats, LanTunEffective, LanTunStatus, LinkState,
             MihomoCoreStatus, ProxyResourceState, ProxyStatus, RouterStatus, SnapshotState,
             StatusSnapshot, SystemStats, TailscaleConnectionStatus, TailscaleConnectionType,
-            TailscaleExplicitProxyPath, TailscaleProxyFallback, TailscaleRouteApproval,
-            TailscaleStatus, UplinkId, UplinkStatus,
+            TailscaleRouteApproval, TailscaleStatus, UplinkId, UplinkStatus,
         },
         subscription::{SubscriptionSummary, SubscriptionSummaryState},
         tailscale::{
@@ -230,8 +229,6 @@ impl Default for HarnessState {
                 },
                 explicit_proxy_desired: Some(false),
                 environment: Some(TailscaleEnvironment::Direct),
-                explicit_proxy_path: TailscaleExplicitProxyPath::NotRequired,
-                proxy_fallback: TailscaleProxyFallback::NotNeeded,
                 error_category: None,
             }),
             tailscale_peers: TailscalePeerSnapshot::new_with_self(
@@ -1205,12 +1202,6 @@ fn set_proxy_features(
     } else {
         TailscaleEnvironment::Direct
     });
-    tailscale.explicit_proxy_path = if tailscale_enabled {
-        TailscaleExplicitProxyPath::Ready
-    } else {
-        TailscaleExplicitProxyPath::NotRequired
-    };
-    tailscale.proxy_fallback = TailscaleProxyFallback::NotNeeded;
     tailscale.error_category = None;
     state.tailscale.state = hyz_things::domain::status::ComponentState::Available;
     state.tailscale.issue = None;

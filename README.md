@@ -23,7 +23,7 @@ apps/rust/camera    媒体进程，板端 /usr/bin/hyz-camera，S82
 - LAN DHCP、DNS、IPv4 forwarding、NAT 和最小安全防火墙；
 - `eth0` 有线 WAN DHCP，默认路由 metric `100`；
 - `wlan0` Wi-Fi STA DHCP，默认路由 metric `600`，作为有线线路的热备用；
-- Mihomo 显式代理、LAN TUN、Direct fallback 和恢复；
+- Mihomo 显式代理、LAN TUN、普通 NAT fail-open 与受控核心故障恢复；
 - Tailscale 生命周期、peer 状态和 runtime-owned 防火墙规则；
 - recovery-free OTA、shutdown、DHCP hook 和状态聚合；
 - root-only `/run/hyz-router/control.sock` 和管理面就绪标记 `/run/hyz-router/ready`。
@@ -82,8 +82,7 @@ hyz-things 是管理门户；hyz-camera 是媒体进程。
 - typed Ethernet/Wi-Fi 双上游模型、有线优先 route metric 和 uplink ownership 隔离；
 - Tailscale 本机/peer 状态、online/offline、active、direct/relay、last seen 和收发流量；
 - UDP `41641` 防火墙规则同时覆盖 `eth0` 和 `wlan0`；
-- Mihomo 显式代理 CONNECT 探测，连续 3 次确认失败后运行时回退 Direct；
-- Direct 冷却 30 秒后自动恢复 `MihomoExplicit`，不修改用户持久化开关；
+- Tailscale 显式代理按受控生命周期切换，不主动探测固定 control-plane 路径，也不自动回退或恢复环境；
 - things/camera 热推送只重启对应应用，router 保持运行；
 - router 开发热替换规则：USB ADB 使用 `stop → 原子替换 → start`，网络 ADB 使用 `原子替换 → reboot`；
 - 摄像头 WebRTC、固定媒体端口池和匿名短时 viewer 会话边界。
@@ -92,7 +91,6 @@ hyz-things 是管理门户；hyz-camera 是媒体进程。
 
 - Ethernet、`eth1` 和双上游完整切换矩阵；
 - SR-09 反复切换和长时间稳定性；
-- 板端显式代理不可用 → Direct → `MihomoExplicit` 恢复故障注入；
 - DNS 接管、所有代理节点失效和 Mihomo live-hang 回退；
 - PPPoE、DNS 中心和黑匣子等后续产品范围。
 

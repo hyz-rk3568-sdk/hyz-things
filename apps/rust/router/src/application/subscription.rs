@@ -445,10 +445,6 @@ mod tests {
         fn observe_tailscale(&self) -> Result<TailscaleObserved, PlatformError> {
             unexpected()
         }
-
-        fn probe_explicit_proxy_path(&self) -> Result<bool, PlatformError> {
-            unexpected()
-        }
     }
 
     struct FixedClock;

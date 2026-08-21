@@ -13,10 +13,7 @@ use hyz_router::{
     domain::{
         network::{NetworkObserved, OwnedResource, Probe, UplinkObserved},
         proxy::{ProxyFeaturesV1, ProxyObserved},
-        status::{
-            ComponentState, TailscaleErrorCategory, TailscaleExplicitProxyPath,
-            TailscaleProxyFallback,
-        },
+        status::{ComponentState, TailscaleErrorCategory},
         tailscale::{
             TailscaleAction, TailscaleBackendState, TailscaleConnectionKind, TailscaleDesired,
             TailscaleEnvironment, TailscaleLoginUrl, TailscaleMode, TailscaleObserved,
@@ -367,7 +364,6 @@ fn desired_lan_access_effective_router_only_is_typed_degraded_status() {
         &router_only(Some(TailscaleMode::LanSubnetAccess)),
         &Probe::Known(ProxyFeaturesV1::disabled()),
         false,
-        &Probe::Known(false),
     );
     assert_eq!(component.state, ComponentState::Degraded);
     assert_eq!(
@@ -377,81 +373,40 @@ fn desired_lan_access_effective_router_only_is_typed_degraded_status() {
 }
 
 #[test]
-fn explicit_proxy_status_distinguishes_ready_direct_fallback_and_unknown_desired() {
+fn explicit_proxy_status_reports_desired_flag_and_environment_without_path_probe() {
     let direct = router_only(Some(TailscaleMode::RouterOnly));
-    let restored = tailscale_status_component_from_observed(
+    let direct_component = tailscale_status_component_from_observed(
         &direct,
         &Probe::Known(ProxyFeaturesV1::new(false, true)),
         true,
-        &Probe::Known(false),
     );
-    let restored = restored.data.unwrap();
-    assert_eq!(restored.explicit_proxy_desired, Some(true));
+    assert_eq!(direct_component.state, ComponentState::Available);
+    let direct_status = direct_component.data.unwrap();
+    assert_eq!(direct_status.explicit_proxy_desired, Some(true));
     assert_eq!(
-        restored.proxy_fallback,
-        TailscaleProxyFallback::DirectRestored
+        direct_status.environment,
+        Some(TailscaleEnvironment::Direct)
     );
 
     let mut proxied = direct.clone();
     proxied.environment = Probe::Known(TailscaleEnvironment::MihomoExplicit);
-    let ready = tailscale_status_component_from_observed(
+    let proxied_component = tailscale_status_component_from_observed(
         &proxied,
         &Probe::Known(ProxyFeaturesV1::new(false, true)),
         true,
-        &Probe::Known(true),
     );
-    assert_eq!(ready.state, ComponentState::Available);
-    let ready = ready.data.unwrap();
-    assert_eq!(ready.proxy_fallback, TailscaleProxyFallback::NotNeeded);
-    assert_eq!(ready.explicit_proxy_path, TailscaleExplicitProxyPath::Ready);
-
-    let unavailable = tailscale_status_component_from_observed(
-        &proxied,
-        &Probe::Known(ProxyFeaturesV1::new(false, true)),
-        true,
-        &Probe::Known(false),
-    );
-    assert_eq!(unavailable.state, ComponentState::Degraded);
+    assert_eq!(proxied_component.state, ComponentState::Available);
+    let proxied_status = proxied_component.data.unwrap();
+    assert_eq!(proxied_status.explicit_proxy_desired, Some(true));
     assert_eq!(
-        unavailable.issue.as_ref().map(|issue| issue.code.as_str()),
-        Some("tailscale_proxy_path_unavailable")
-    );
-    let unavailable = unavailable.data.unwrap();
-    assert_eq!(
-        unavailable.explicit_proxy_path,
-        TailscaleExplicitProxyPath::Unavailable
-    );
-    assert_eq!(
-        unavailable.error_category,
-        Some(TailscaleErrorCategory::NotReady)
-    );
-    assert_eq!(
-        unavailable.proxy_fallback,
-        TailscaleProxyFallback::NotConfirmed
-    );
-
-    let path_unknown = tailscale_status_component_from_observed(
-        &proxied,
-        &Probe::Known(ProxyFeaturesV1::new(false, true)),
-        true,
-        &Probe::Unknown("fixed path probe failed".to_owned()),
-    );
-    assert_eq!(path_unknown.state, ComponentState::Degraded);
-    let path_unknown = path_unknown.data.unwrap();
-    assert_eq!(
-        path_unknown.explicit_proxy_path,
-        TailscaleExplicitProxyPath::Unknown
-    );
-    assert_eq!(
-        path_unknown.error_category,
-        Some(TailscaleErrorCategory::ProbeFailed)
+        proxied_status.environment,
+        Some(TailscaleEnvironment::MihomoExplicit)
     );
 
     let unknown = tailscale_status_component_from_observed(
         &proxied,
         &Probe::Unknown("features unreadable".to_owned()),
         true,
-        &Probe::Known(true),
     );
     assert_eq!(unknown.state, ComponentState::Degraded);
     assert_eq!(unknown.data.unwrap().explicit_proxy_desired, None);
@@ -566,10 +521,6 @@ impl TailscaleProbePort for Fake {
             .unwrap()
             .pop_front()
             .ok_or_else(|| PlatformError::ProbeFailed("no Tailscale observation".to_owned()))
-    }
-
-    fn probe_explicit_proxy_path(&self) -> Result<bool, PlatformError> {
-        Ok(true)
     }
 }
 

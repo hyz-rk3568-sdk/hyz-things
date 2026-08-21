@@ -19,8 +19,7 @@ use hyz_things::domain::{
     },
     status::{
         Component, ComponentState, LanTunEffective, ProxyResourceState, SnapshotState,
-        StatusSnapshot, TailscaleErrorCategory, TailscaleExplicitProxyPath, TailscaleProxyFallback,
-        TailscaleStatus, UplinkId, UplinkStatus,
+        StatusSnapshot, TailscaleErrorCategory, TailscaleStatus, UplinkId, UplinkStatus,
     },
     tailscale::{
         TailscaleBackendState, TailscaleEnvironment, TailscaleMode, TailscalePeer,
@@ -3050,6 +3049,14 @@ fn app() -> Html {
                 <button id={PortalView::Router.tab_id()} class={classes!(PORTAL_TAB, (portal == PortalView::Router).then_some(PORTAL_TAB_ACTIVE))} type="button" aria-pressed={(portal == PortalView::Router).to_string()} onclick={select_router.clone()}>{PortalView::Router.label()}</button>
                 <button id={PortalView::Camera.tab_id()} class={classes!(PORTAL_TAB, (portal == PortalView::Camera).then_some(PORTAL_TAB_ACTIVE))} type="button" aria-pressed={(portal == PortalView::Camera).to_string()} onclick={select_camera.clone()}>{PortalView::Camera.label()}</button>
             </nav>
+            <div
+                ref={portal_swipe_surface}
+                id="portal-swipe-surface"
+                class={PORTAL_SWIPE_SURFACE}
+                onpointerdown={on_portal_pointer_down}
+                onpointerup={on_portal_pointer_up}
+                onpointercancel={on_portal_pointer_cancel}
+            >
             if portal == PortalView::Home {
                 <section id={PortalView::Home.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={PortalView::Home.tab_id()}>
                     {render_home(&state, select_router.clone(), select_camera.clone(), select_router_settings.clone())}
@@ -5479,45 +5486,11 @@ fn lan_tun_status_label(status: &hyz_things::domain::status::ProxyStatus) -> Str
 }
 
 fn tailscale_proxy_status_label(status: &TailscaleStatus) -> String {
-    match (
-        status.explicit_proxy_desired,
-        status.environment,
-        status.explicit_proxy_path,
-        status.proxy_fallback,
-    ) {
-        (
-            Some(true),
-            Some(TailscaleEnvironment::MihomoExplicit),
-            TailscaleExplicitProxyPath::Ready,
-            TailscaleProxyFallback::NotNeeded,
-        ) => "已启用".to_owned(),
-        (
-            Some(true),
-            Some(TailscaleEnvironment::MihomoExplicit),
-            TailscaleExplicitProxyPath::Unavailable,
-            _,
-        ) => "已降级 · 代理路径不可用".to_owned(),
-        (
-            Some(true),
-            Some(TailscaleEnvironment::MihomoExplicit),
-            TailscaleExplicitProxyPath::Unknown,
-            _,
-        ) => "未知 · 代理路径未确认".to_owned(),
-        (
-            Some(true),
-            Some(TailscaleEnvironment::Direct),
-            _,
-            TailscaleProxyFallback::DirectRestored,
-        ) => "已降级 · 已恢复 Direct".to_owned(),
-        (
-            Some(false),
-            Some(TailscaleEnvironment::Direct),
-            TailscaleExplicitProxyPath::NotRequired,
-            TailscaleProxyFallback::NotNeeded,
-        ) => "已关闭 · Direct".to_owned(),
-        (None, _, _, _) | (_, None, _, _) | (_, _, _, TailscaleProxyFallback::NotConfirmed) => {
-            "未知 · 未确认".to_owned()
-        }
+    match (status.explicit_proxy_desired, status.environment) {
+        (Some(true), Some(TailscaleEnvironment::MihomoExplicit)) => "已启用".to_owned(),
+        (Some(true), Some(TailscaleEnvironment::Direct)) => "已降级 · Direct".to_owned(),
+        (Some(false), Some(TailscaleEnvironment::Direct)) => "已关闭 · Direct".to_owned(),
+        (None, _) | (_, None) => "未知 · 未确认".to_owned(),
         _ => "已降级 · 未确认".to_owned(),
     }
 }
@@ -5584,8 +5557,43 @@ fn missing() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::wan_traffic;
+    use super::{countdown_snapshot, wan_traffic, EXAM_COUNTDOWN_TARGETS};
     use hyz_things::domain::status::{Component, InterfaceStats, SystemStats};
+
+    #[test]
+    fn upcoming_exam_targets_are_sorted_chronologically() {
+        let dates: Vec<_> = EXAM_COUNTDOWN_TARGETS
+            .iter()
+            .map(|target| target.target_iso)
+            .collect();
+        assert_eq!(
+            dates,
+            vec![
+                "2026-11-29T00:00:00+08:00",
+                "2026-12-06T00:00:00+08:00",
+                "2027-03-14T00:00:00+08:00",
+                "2027-03-27T00:00:00+08:00",
+            ]
+        );
+    }
+
+    #[test]
+    fn countdown_snapshot_tracks_progress_and_clamps_after_exam_day() {
+        let before = countdown_snapshot(0, 0, 1_000);
+        assert_eq!(before.remaining_seconds, 1);
+        assert_eq!(before.progress_percent, 0);
+        assert!(!before.finished);
+
+        let during = countdown_snapshot(250, 0, 1_000);
+        assert_eq!(during.remaining_seconds, 1);
+        assert_eq!(during.progress_percent, 25);
+        assert!(!during.finished);
+
+        let after = countdown_snapshot(1_500, 0, 1_000);
+        assert_eq!(after.remaining_seconds, 0);
+        assert_eq!(after.progress_percent, 100);
+        assert!(after.finished);
+    }
 
     #[test]
     fn wan_traffic_sums_ethernet_and_wifi_only() {

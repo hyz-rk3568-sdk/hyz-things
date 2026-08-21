@@ -1089,7 +1089,7 @@ test("controls all four proxy combinations with isolated failures on desktop and
   expect(oversized).toBe(413);
 });
 
-test("shows layered direct-restored, degraded, and unknown proxy wording", async ({
+test("shows Tailscale proxy environment without path fallback wording", async ({
   page,
   request,
 }) => {
@@ -1104,12 +1104,11 @@ test("shows layered direct-restored, degraded, and unknown proxy wording", async
   state.proxy.data.lan_tun.effective = "not_confirmed";
   state.tailscale.state = "degraded";
   state.tailscale.issue = {
-    code: "tailscale_proxy_direct_restored",
-    message: "代理已回退",
+    code: "tailscale_not_ready",
+    message: "Tailscale state does not satisfy strict readiness",
   };
   state.tailscale.data.explicit_proxy_desired = true;
   state.tailscale.data.environment = "direct";
-  state.tailscale.data.proxy_fallback = "direct_restored";
   expect(
     (await request.put(`${harnessOrigin}/state`, { data: state })).ok(),
   ).toBeTruthy();
@@ -1121,19 +1120,22 @@ test("shows layered direct-restored, degraded, and unknown proxy wording", async
     timeout: 7_500,
   });
   await expect(
-    proxyCapabilities.getByText("已降级 · 已恢复 Direct", { exact: true }),
+    proxyCapabilities.getByText("已降级 · Direct", { exact: true }),
   ).toBeVisible();
+  await expect(
+    proxyCapabilities.getByText(/代理路径|已恢复 Direct/),
+  ).toHaveCount(0);
 
-  const unavailable = await readHarnessState(request);
-  unavailable.tailscale.data.explicit_proxy_desired = true;
-  unavailable.tailscale.data.environment = "mihomo_explicit";
-  unavailable.tailscale.data.explicit_proxy_path = "unavailable";
-  unavailable.tailscale.data.proxy_fallback = "not_confirmed";
+  const proxied = await readHarnessState(request);
+  proxied.tailscale.state = "available";
+  proxied.tailscale.issue = null;
+  proxied.tailscale.data.explicit_proxy_desired = true;
+  proxied.tailscale.data.environment = "mihomo_explicit";
   expect(
-    (await request.put(`${harnessOrigin}/state`, { data: unavailable })).ok(),
+    (await request.put(`${harnessOrigin}/state`, { data: proxied })).ok(),
   ).toBeTruthy();
   await expect(
-    proxyCapabilities.getByText("已降级 · 代理路径不可用", { exact: true }),
+    proxyCapabilities.getByText("已启用", { exact: true }),
   ).toBeVisible({ timeout: 7_500 });
 
   const unknown = await readHarnessState(request);
@@ -1142,7 +1144,6 @@ test("shows layered direct-restored, degraded, and unknown proxy wording", async
   unknown.proxy.data.lan_tun.desired = null;
   unknown.tailscale.data.explicit_proxy_desired = null;
   unknown.tailscale.data.environment = null;
-  unknown.tailscale.data.proxy_fallback = "not_confirmed";
   expect(
     (await request.put(`${harnessOrigin}/state`, { data: unknown })).ok(),
   ).toBeTruthy();

@@ -5,9 +5,9 @@ use super::{
         TAILSCALE_STATE_FILE, TAILSCALE_SUBNET_FIREWALL_OWNER,
     },
     process::{
-        count_executable_processes, mihomo_process_owns_tcp_listener, process_identity_matches,
-        process_start_time, process_stat_identity, reap_in_background, wait_for_identity_match,
-        LinuxRouterPlatform, Tool, NETWORK_LOCK,
+        count_executable_processes, process_identity_matches, process_start_time,
+        process_stat_identity, reap_in_background, wait_for_identity_match, LinuxRouterPlatform,
+        Tool, NETWORK_LOCK,
     },
     storage,
     system::{
@@ -25,7 +25,7 @@ use crate::{
             OwnedResource, Probe, ETHERNET_WAN_INTERFACE, LAN_BRIDGE, LAN_SUBNET,
             ROUTER_FILTER_CHAIN, WIFI_WAN_INTERFACE,
         },
-        proxy::{MIHOMO_FILTER_CHAIN, MIHOMO_MIXED_ADDRESS},
+        proxy::MIHOMO_FILTER_CHAIN,
         tailscale::{
             TailscaleAction, TailscaleBackendState, TailscaleConnectionKind, TailscaleEnvironment,
             TailscaleLoginUrl, TailscaleMode, TailscaleObserved, TailscalePeer,
@@ -42,8 +42,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Read, Write},
-    net::{Ipv4Addr, SocketAddr, TcpStream},
+    io::{self, Read},
+    net::{Ipv4Addr, SocketAddr},
     os::unix::{
         ffi::OsStrExt,
         fs::{FileTypeExt, MetadataExt, OpenOptionsExt},
@@ -67,10 +67,6 @@ const LOGIN_URL_WAIT_TIMEOUT: Duration = Duration::from_secs(60);
 const LOGIN_URL_WAIT_POLL: Duration = Duration::from_millis(50);
 const EXIT_ATTEMPTS: usize = 60;
 const EXIT_POLL: Duration = Duration::from_millis(50);
-const EXPLICIT_PROXY_PROBE_TARGET: &str = "controlplane.tailscale.com";
-const EXPLICIT_PROXY_PROBE_PORT: u16 = 443;
-const EXPLICIT_PROXY_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
-const MAX_EXPLICIT_PROXY_PROBE_RESPONSE: usize = 4 * 1024;
 const TAILSCALE_DIRECT_WAN_INTERFACES: [&str; 2] = [ETHERNET_WAN_INTERFACE, WIFI_WAN_INTERFACE];
 
 #[derive(Debug, Default, Clone)]
@@ -1185,75 +1181,6 @@ impl TailscaleProbePort for LinuxTailscalePlatform {
             connection,
         })
     }
-
-    fn probe_explicit_proxy_path(&self) -> Result<bool, PlatformError> {
-        let deadline = Instant::now() + EXPLICIT_PROXY_PROBE_TIMEOUT;
-        let address: SocketAddr = MIHOMO_MIXED_ADDRESS.parse().expect("fixed mixed address");
-        let Some(core) = self.platform.mihomo_identity()? else {
-            return Ok(false);
-        };
-        if !mihomo_process_owns_tcp_listener(core.core, address)? {
-            return Ok(false);
-        }
-        let Ok(mut stream) = TcpStream::connect_timeout(&address, EXPLICIT_PROXY_PROBE_TIMEOUT)
-        else {
-            return Ok(false);
-        };
-        let request = fixed_explicit_proxy_connect_request();
-        let mut written = 0;
-        while written < request.len() {
-            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
-                return Ok(false);
-            };
-            if remaining.is_zero() {
-                return Ok(false);
-            }
-            stream.set_write_timeout(Some(remaining)).map_err(|_| {
-                PlatformError::ProbeFailed(
-                    "could not configure fixed explicit proxy-path write deadline".to_owned(),
-                )
-            })?;
-            match stream.write(&request.as_bytes()[written..]) {
-                Ok(0) | Err(_) => return Ok(false),
-                Ok(count) => written += count,
-            }
-        }
-
-        let mut response = Vec::with_capacity(512);
-        let mut chunk = [0_u8; 512];
-        loop {
-            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
-                return Ok(false);
-            };
-            if remaining.is_zero() {
-                return Ok(false);
-            }
-            if response.len() >= MAX_EXPLICIT_PROXY_PROBE_RESPONSE {
-                return Ok(false);
-            }
-            stream.set_read_timeout(Some(remaining)).map_err(|_| {
-                PlatformError::ProbeFailed(
-                    "could not configure fixed explicit proxy-path read deadline".to_owned(),
-                )
-            })?;
-            let available = (MAX_EXPLICIT_PROXY_PROBE_RESPONSE - response.len()).min(chunk.len());
-            match stream.read(&mut chunk[..available]) {
-                Ok(0) => return Ok(false),
-                Ok(read) => {
-                    response.extend_from_slice(&chunk[..read]);
-                    if let Some(ready) = fixed_connect_response_ready(&response) {
-                        if self.platform.mihomo_identity()?.as_ref() != Some(&core)
-                            || !mihomo_process_owns_tcp_listener(core.core, address)?
-                        {
-                            return Ok(false);
-                        }
-                        return Ok(ready);
-                    }
-                }
-                Err(_) => return Ok(false),
-            }
-        }
-    }
 }
 
 impl TailnetPeerReadPort for LinuxTailscalePlatform {
@@ -1306,35 +1233,6 @@ impl TailnetPeerReadPort for LinuxTailscalePlatform {
         }
         parse_peer_snapshot_json(&status.stdout)
     }
-}
-
-fn fixed_explicit_proxy_connect_request() -> String {
-    format!(
-        "CONNECT {EXPLICIT_PROXY_PROBE_TARGET}:{EXPLICIT_PROXY_PROBE_PORT} HTTP/1.1\r\nHost: {EXPLICIT_PROXY_PROBE_TARGET}:{EXPLICIT_PROXY_PROBE_PORT}\r\nProxy-Connection: close\r\n\r\n"
-    )
-}
-
-fn fixed_connect_response_ready(response: &[u8]) -> Option<bool> {
-    if response.len() > MAX_EXPLICIT_PROXY_PROBE_RESPONSE {
-        return Some(false);
-    }
-    let header_end = response
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")?;
-    let Ok(header) = std::str::from_utf8(&response[..header_end]) else {
-        return Some(false);
-    };
-    let Some(status) = header.lines().next() else {
-        return Some(false);
-    };
-    let mut fields = status.split_ascii_whitespace();
-    let (Some(version), Some(code)) = (fields.next(), fields.next()) else {
-        return Some(false);
-    };
-    if !matches!(version, "HTTP/1.0" | "HTTP/1.1") || code.len() != 3 {
-        return Some(false);
-    }
-    Some(code == "200")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2882,44 +2780,6 @@ fn parse_nonzero(value: Option<&str>, label: &str) -> Result<u64, PlatformError>
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn fixed_proxy_path_parser_accepts_only_a_complete_successful_connect_response() {
-        assert_eq!(EXPLICIT_PROXY_PROBE_TARGET, "controlplane.tailscale.com");
-        assert_eq!(EXPLICIT_PROXY_PROBE_PORT, 443);
-        assert_eq!(EXPLICIT_PROXY_PROBE_TIMEOUT, Duration::from_secs(3));
-        assert_eq!(
-            fixed_explicit_proxy_connect_request(),
-            "CONNECT controlplane.tailscale.com:443 HTTP/1.1\r\nHost: controlplane.tailscale.com:443\r\nProxy-Connection: close\r\n\r\n"
-        );
-        assert!(!fixed_explicit_proxy_connect_request().contains("Authorization"));
-        assert_eq!(
-            fixed_connect_response_ready(
-                b"HTTP/1.1 200 Connection established\r\nProxy-Agent: fixed\r\n\r\n"
-            ),
-            Some(true)
-        );
-        assert_eq!(
-            fixed_connect_response_ready(b"HTTP/1.0 200 OK\r\n\r\n"),
-            Some(true)
-        );
-        assert_eq!(
-            fixed_connect_response_ready(b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n"),
-            Some(false)
-        );
-        assert_eq!(
-            fixed_connect_response_ready(b"HTTP/1.1 502 Bad Gateway\r\n\r\n"),
-            Some(false)
-        );
-        assert_eq!(
-            fixed_connect_response_ready(b"HTTP/1.1 200 Connection established\r\n"),
-            None
-        );
-        assert_eq!(
-            fixed_connect_response_ready(b"not-http 200 nope\r\n\r\n"),
-            Some(false)
-        );
-    }
 
     const STATUS_RUNNING: &str =
         include_str!("../../../tests/fixtures/tailscale-status-running.json");

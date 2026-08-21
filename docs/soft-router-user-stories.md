@@ -43,8 +43,7 @@
 - 三进程拆分（无头 `hyz-router` + `hyz-things` 门户 + `hyz-camera` 媒体）已完成：`deploy-app.sh` 只支持热推送 things/camera，且不重启 router；协议版本不匹配时在停止服务前拒绝；
 - router 开发/授权维护的热替换规则已固定：USB ADB 先上传、校验并备份，再执行 `stop → 原子替换 → start`；网络 ADB（物理 LAN 或 TCP 5555 可达的 Tailscale 路径）在旧进程仍运行时完成校验、备份和原子替换，再执行 `reboot`；正式发布仍通过 recovery-free OTA；
 - `hyz-router` 源码与主机测试已完成 typed `Ethernet/Wi-Fi` 双上游、metric `100/600`、active uplink、按 uplink 隔离的 DHCP/resolver ownership、双出口 firewall/status，以及管理页面的双上游展示；完整板端切换矩阵仍待验收；
-- Tailscale 状态已支持本机/peer、active、online/offline、direct/relay、last seen、收发流量；UDP `41641` 的 runtime-owned WAN INPUT 同时覆盖固定 `eth0` 和 `wlan0`；
-- Tailscale 显式代理路径已增加固定 `controlplane.tailscale.com:443` CONNECT 探测：连续 3 次确认不可用时运行时回退 Direct，`unknown` 不触发回退；Direct 冷却 30 秒后自动恢复 `MihomoExplicit`，且不修改用户持久化开关。该逻辑已通过主机测试，板端故障注入仍待验证；
+- Tailscale 状态已支持本机/peer、active、online/offline、direct/relay、last seen、收发流量；UDP `41641` 的 runtime-owned WAN INPUT 同时覆盖固定 `eth0` 和 `wlan0`；显式代理环境只按受控生命周期与当前观测状态展示，不主动探测外部 control-plane 路径，也不自动回退或恢复环境；
 - DNS 接管、8 小时路由+代理稳定性、所有代理节点失效和 Mihomo live-hang 自动回退仍未完成，因此代理 Epic 仍不得整体标记完成。
 
 变化的是上游接入方式，不是 LAN 拓扑。完整基础产品必须支持：
@@ -197,7 +196,7 @@ LAN = br-lan = eth1 + p2p0
 - PPPoE、可选 VLAN、`ppp0` 防火墙和 MTU/MSS；
 - 家庭网络黑匣子的结构化事件、指标、断网时间线和诊断快照；
 - 本地 DNS 过滤、家庭域名和按客户端策略；
-- 既有 Tailscale RouterOnly/LanSubnetAccess 的板端/Tailnet 验收记录已保留；本次新增的双 WAN `41641` 防火墙规则和显式代理 Direct fallback/recovery 仍待部署新 router ELF 后做板端验证；
+- 既有 Tailscale RouterOnly/LanSubnetAccess 的板端/Tailnet 验收记录已保留；本次新增的双 WAN `41641` 防火墙规则仍待部署新 router ELF 后做板端验证；
 - 完整基础产品及上述可选能力的稳定性和端到端测试矩阵。
 
 历史和板端验证记录：
@@ -549,9 +548,6 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 3. 普通 NAT 对当前 active uplink 保持可用。
 4. unknown 或 foreign process、rule、route 不被当作 owned。
 5. shutdown 先撤销代理，再撤销普通 forwarding。
-6. 当用户持久化启用 Tailscale 显式代理且运行时环境为 `MihomoExplicit` 时，使用固定 `controlplane.tailscale.com:443` 目标，经 `127.0.0.1:7890` 发送固定 HTTP CONNECT；探测前后确认 Mihomo 进程身份和 listener 未被替换，只接受完整合法的 HTTP `200` 响应。
-7. 显式代理路径连续 3 次确认不可用后，运行时回退到 `Direct`；探测结果为 `unknown` 时保持当前环境，不触发回退；回退不修改用户持久化的显式代理开关。
-8. 进入 `Direct` 后按 30 秒冷却窗口重新探测；路径恢复且 `MihomoExplicit` 切回成功后，运行时环境恢复为显式代理；恢复失败继续保持 `Direct`。
 
 ### PX-04：提供受限管理页面
 
@@ -573,9 +569,6 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 3. 代理关闭后不残留 rule、route、mark、process 或端口。
 4. 管理 API 和代理端口从 WAN 不可达。
 5. 运行至少 8 小时路由+代理稳定性测试。
-6. Tailscale 显式代理开启时，固定 control-plane CONNECT 探测、3 次确认失败后的 `Direct` 回退、`unknown` 不误回退、30 秒后恢复 `MihomoExplicit` 以及持久化开关不变必须可重复；该项源码和主机测试已通过，板端故障注入仍待执行。
-
-当前已完成的是固定 Tailscale control-plane 路径的可用性保护，不等同于“所有代理节点失效”或 Mihomo live-hang 的完整质量判断；后两者以及 DNS 接管仍属于未完成范围。
 
 ## 8. 非功能要求
 
@@ -698,7 +691,7 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 - [x] 为公网 IPv6/IPv4 direct 使用固定 UDP `41641`，runtime-owned WAN INPUT 同时覆盖固定 `eth0` 和 `wlan0`；未满足 direct 条件时不得因此判定 Tailscale 不可用。
 - [x] 状态显示 enabled、authenticated、本机/peer 的 online/offline、active、direct/relay、last seen、收发流量和错误类别，不返回 node key、auth key、完整登录 URL 历史或 peer secret。
 - [x] 首次登录、认证冷启动、重启后状态保留、route approval 前置条件、远程管理和固定 LAN subnet HTTP 路径已有板端/Tailnet 验收记录。
-- [x] Tailscale 显式代理路径的固定 CONNECT 探测、连续 3 次失败回退 Direct、`unknown` 不回退、Direct 冷却 30 秒恢复 `MihomoExplicit` 和持久化开关不变已通过主机测试；板端故障注入仍待验证。
+- [x] Tailscale 显式代理环境切换、普通 direct/relay 状态观测和持久化开关保持已通过主机测试；板端故障注入和长时间稳定性仍待验证。
 - [ ] 注销、恢复出厂清理、失去公网/上联切换、新增 router 逻辑的 OTA/热替换后保留验证和 8 小时稳定性仍待补齐。
 
 ### P5：增加 Tailscale LAN subnet access
@@ -718,7 +711,7 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 - [ ] 验证 Ethernet DHCP、Wi-Fi fallback 和 PPPoE 下的 explicit/TUN；双 DHCP 的板端矩阵仍待执行，PPPoE 尚未实现。
 - [x] Mihomo TUN 记录并校验 active uplink gateway，WAN 切换时 planner 会要求重新收敛；双上游板端新连接验证仍待执行。
 - [x] core crash 后普通 NAT 回退和 active uplink 依赖已覆盖现有 Wi-Fi 板测及主机测试；双上游板端故障注入仍待执行。
-- [x] 固定 Tailscale control-plane CONNECT 探测和显式代理 Direct fallback/recovery 已完成代码与主机测试；所有代理节点失效、DNS 接管和 Mihomo live-hang 的完整策略仍未完成。
+- [x] Tailscale 本机/peer 状态、direct/relay、UDP `41641` 防火墙和显式代理环境切换已完成代码与主机测试；代理节点质量、DNS 接管和 Mihomo live-hang 的完整策略仍未完成。
 - [ ] 完成路由+代理 8 小时稳定性测试。
 
 ## 11. 推荐实施顺序

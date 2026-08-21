@@ -135,27 +135,8 @@ pub struct TailscaleStatus {
     pub connection: TailscaleConnectionStatus,
     pub explicit_proxy_desired: Option<bool>,
     pub environment: Option<TailscaleEnvironment>,
-    pub explicit_proxy_path: TailscaleExplicitProxyPath,
-    pub proxy_fallback: TailscaleProxyFallback,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_category: Option<TailscaleErrorCategory>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TailscaleExplicitProxyPath {
-    NotRequired,
-    Ready,
-    Unavailable,
-    Unknown,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TailscaleProxyFallback {
-    NotNeeded,
-    DirectRestored,
-    NotConfirmed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -374,8 +355,6 @@ mod tests {
                 },
                 explicit_proxy_desired: Some(true),
                 environment: Some(TailscaleEnvironment::MihomoExplicit),
-                explicit_proxy_path: TailscaleExplicitProxyPath::Ready,
-                proxy_fallback: TailscaleProxyFallback::NotNeeded,
                 error_category: None,
             }),
             system: Component::available(SystemStats {
