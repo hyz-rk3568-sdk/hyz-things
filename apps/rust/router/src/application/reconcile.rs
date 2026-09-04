@@ -194,13 +194,23 @@ pub fn proxy_plan(
     network: &NetworkObserved,
     token: &str,
 ) -> Result<Vec<ProxyAction>, PlatformError> {
+    proxy_plan_with_runtime_config_change(desired, observed, network, token, false)
+}
+
+pub(crate) fn proxy_plan_with_runtime_config_change(
+    desired: &ProxyDesired,
+    observed: &ProxyObserved,
+    network: &NetworkObserved,
+    token: &str,
+    runtime_config_changed: bool,
+) -> Result<Vec<ProxyAction>, PlatformError> {
     let active_gateway = network.active_uplink_observation();
     let tun_gateway_matches = !desired.lan_tun_enabled
         || matches!(
             (&active_gateway, &observed.tun_active_uplink),
             (Probe::Known(Some(active)), Probe::Known(Some(current))) if active == current
         );
-    if observed.ready_for(desired) && tun_gateway_matches {
+    if !runtime_config_changed && observed.ready_for(desired) && tun_gateway_matches {
         return Ok(Vec::new());
     }
     let current = match &observed.persisted_features {
@@ -228,7 +238,8 @@ pub fn proxy_plan(
         }
         Probe::Unknown(_) => false,
     };
-    let runtime_change = current.lan_tun_enabled != desired.lan_tun_enabled
+    let runtime_change = runtime_config_changed
+        || current.lan_tun_enabled != desired.lan_tun_enabled
         || observed.runtime_config_valid != Probe::Known(true);
     let tun_change = runtime_change || direct_mac_change || !tun_gateway_matches;
 
@@ -667,5 +678,53 @@ mod tests {
         );
 
         assert!(tun_reconcile_token(&observed, "fresh").is_err());
+    }
+
+    #[test]
+    fn source_config_change_forces_mihomo_runtime_reload() {
+        let desired = ProxyDesired {
+            lan_tun_enabled: false,
+            local_system_proxy_enabled: true,
+            direct_macs: std::collections::BTreeSet::new(),
+        };
+        let mut observed = ProxyObserved::unknown("test");
+        observed.persisted_features = Probe::Known(desired.features());
+        observed.process_identity_valid = Probe::Known(true);
+        observed.watcher_identity_valid = Probe::Known(false);
+        observed.runtime_config_valid = Probe::Known(true);
+        observed.mixed_port_ready = Probe::Known(true);
+        observed.tun_interface = Probe::Known(OwnedResource::Absent);
+        observed.tun_firewall = Probe::Known(OwnedResource::Absent);
+        observed.tun_active_uplink = Probe::Known(None);
+        observed.policy_rule_present = Probe::Known(false);
+        observed.policy_route_present = Probe::Known(false);
+        observed.interception_entry_present = Probe::Known(false);
+        observed.ordinary_nat_confirmed = Probe::Known(true);
+        observed.active_direct_macs = Probe::Known(std::collections::BTreeSet::new());
+
+        let actions = proxy_plan_with_runtime_config_change(
+            &desired,
+            &observed,
+            &NetworkObserved::unknown("test"),
+            "proxy-token",
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(
+            actions,
+            vec![
+                ProxyAction::StopCore,
+                ProxyAction::WriteRuntimeConfig {
+                    lan_tun_enabled: false,
+                },
+                ProxyAction::ValidateRuntimeConfig,
+                ProxyAction::StartCore,
+                ProxyAction::WaitForMixedPort,
+                ProxyAction::CommitFeatures {
+                    features: desired.features(),
+                },
+            ]
+        );
     }
 }

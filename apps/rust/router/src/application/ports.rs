@@ -160,15 +160,26 @@ pub trait SubscriptionStorePort: Send + Sync {
     fn activate_generation(&self, generation: &GenerationId) -> Result<(), PlatformError>;
 }
 
+#[derive(Clone, PartialEq, Eq)]
+pub struct SubscriptionProviderState {
+    pub contents: Option<Vec<u8>>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct SubscriptionSourceState {
+    pub source: Vec<u8>,
+    pub provider: Option<SubscriptionProviderState>,
+}
+
 pub trait SubscriptionSourcePort: Send + Sync {
-    fn load_source(&self) -> Result<Vec<u8>, PlatformError>;
+    fn load_source(&self) -> Result<SubscriptionSourceState, PlatformError>;
     fn prepare_candidate(
         &self,
         current_source: &[u8],
         subscription: &ValidatedSubscription,
         lan_tun_enabled: bool,
     ) -> Result<Vec<u8>, PlatformError>;
-    fn store_source(&self, source: &[u8]) -> Result<(), PlatformError>;
+    fn store_source(&self, source: &SubscriptionSourceState) -> Result<(), PlatformError>;
 }
 
 pub trait ClockPort: Send + Sync {

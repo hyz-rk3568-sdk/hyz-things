@@ -1,8 +1,9 @@
 use crate::{
     application::{
         ports::{
-            ClockPort, PlatformError, RouterPlatformPort, SubscriptionSourcePort,
-            SubscriptionStorePort, SubscriptionTransportPort, SystemProbePort,
+            ClockPort, PlatformError, RouterPlatformPort, SubscriptionProviderState,
+            SubscriptionSourcePort, SubscriptionSourceState, SubscriptionStorePort,
+            SubscriptionTransportPort, SystemProbePort,
         },
         proxy::ProxyApplication,
     },
@@ -15,6 +16,22 @@ use crate::{
         },
     },
 };
+
+fn candidate_source_state(
+    current: &SubscriptionSourceState,
+    source: Vec<u8>,
+    subscription: &crate::domain::subscription::ValidatedSubscription,
+) -> SubscriptionSourceState {
+    SubscriptionSourceState {
+        source,
+        provider: current
+            .provider
+            .as_ref()
+            .map(|_| SubscriptionProviderState {
+                contents: Some(subscription.as_bytes().to_vec()),
+            }),
+    }
+}
 
 pub struct SubscriptionRuntimePorts<'a> {
     pub platform: &'a dyn RouterPlatformPort,
@@ -132,9 +149,12 @@ impl<'a> SubscriptionApplication<'a> {
             }
         };
         let old_source = self.source.load_source()?;
-        let candidate =
-            self.source
-                .prepare_candidate(&old_source, &subscription, features.lan_tun_enabled)?;
+        let candidate_source = self.source.prepare_candidate(
+            &old_source.source,
+            &subscription,
+            features.lan_tun_enabled,
+        )?;
+        let candidate = candidate_source_state(&old_source, candidate_source, &subscription);
         let generation = GenerationId::parse(format!("g-{}", self.clock.unix_time_millis()))
             .map_err(|_| {
                 PlatformError::InvalidState("could not allocate subscription generation".to_owned())
@@ -177,7 +197,7 @@ impl<'a> SubscriptionApplication<'a> {
         let cutover = (|| {
             self.source.store_source(&candidate)?;
             proxy()
-                .reconcile_runtime_preserving_features(&ProxyDesired {
+                .reconcile_runtime_preserving_features_after_source_change(&ProxyDesired {
                     lan_tun_enabled: features.lan_tun_enabled,
                     local_system_proxy_enabled: features.local_system_proxy_enabled,
                     direct_macs: direct_macs.clone(),
@@ -228,7 +248,7 @@ impl<'a> SubscriptionApplication<'a> {
 
     fn restore_live_source(
         &self,
-        old_source: &[u8],
+        old_source: &SubscriptionSourceState,
         features: ProxyFeaturesV1,
         direct_macs: &std::collections::BTreeSet<crate::domain::device_policy::LanDeviceMac>,
     ) -> Result<(), PlatformError> {
@@ -240,7 +260,7 @@ impl<'a> SubscriptionApplication<'a> {
             })?;
         self.source.store_source(old_source)?;
         ProxyApplication::new(self.platform, self.probe, self.clock)
-            .reconcile_runtime_preserving_features(&ProxyDesired {
+            .reconcile_runtime_preserving_features_after_source_change(&ProxyDesired {
                 lan_tun_enabled: features.lan_tun_enabled,
                 local_system_proxy_enabled: features.local_system_proxy_enabled,
                 direct_macs: direct_macs.clone(),
@@ -256,7 +276,7 @@ mod tests {
         application::ports::LifecycleLease,
         domain::{
             network::{NetworkAction, NetworkObserved},
-            proxy::{ProxyAction, ProxyObserved},
+            proxy::{ProxyAction, ProxyFeaturesV1, ProxyObserved},
             subscription::ValidatedSubscription,
         },
     };
@@ -318,11 +338,11 @@ mod tests {
             _generation: &GenerationId,
             _subscription: &ValidatedSubscription,
         ) -> Result<(), PlatformError> {
-            unexpected()
+            Ok(())
         }
 
         fn activate_generation(&self, _generation: &GenerationId) -> Result<(), PlatformError> {
-            unexpected()
+            Ok(())
         }
     }
 
@@ -337,7 +357,7 @@ mod tests {
     struct NeverCalledSource;
 
     impl SubscriptionSourcePort for NeverCalledSource {
-        fn load_source(&self) -> Result<Vec<u8>, PlatformError> {
+        fn load_source(&self) -> Result<SubscriptionSourceState, PlatformError> {
             unexpected()
         }
 
@@ -350,8 +370,56 @@ mod tests {
             unexpected()
         }
 
-        fn store_source(&self, _source: &[u8]) -> Result<(), PlatformError> {
+        fn store_source(&self, _source: &SubscriptionSourceState) -> Result<(), PlatformError> {
             unexpected()
+        }
+    }
+
+    struct RecordingSource {
+        state: Mutex<SubscriptionSourceState>,
+        stored: Mutex<Option<SubscriptionSourceState>>,
+    }
+
+    impl SubscriptionSourcePort for RecordingSource {
+        fn load_source(&self) -> Result<SubscriptionSourceState, PlatformError> {
+            Ok(self.state.lock().unwrap().clone())
+        }
+
+        fn prepare_candidate(
+            &self,
+            _current_source: &[u8],
+            _subscription: &ValidatedSubscription,
+            _lan_tun_enabled: bool,
+        ) -> Result<Vec<u8>, PlatformError> {
+            Ok(b"candidate-source".to_vec())
+        }
+
+        fn store_source(&self, source: &SubscriptionSourceState) -> Result<(), PlatformError> {
+            *self.stored.lock().unwrap() = Some(source.clone());
+            Ok(())
+        }
+    }
+
+    struct SuccessfulTransport;
+
+    impl SubscriptionTransportPort for SuccessfulTransport {
+        fn fetch(&self, _url: &SubscriptionUrl) -> Result<Vec<u8>, PlatformError> {
+            Ok(b"proxies:\n  - name: new-node\n".to_vec())
+        }
+    }
+
+    struct DisabledProbe;
+
+    impl SystemProbePort for DisabledProbe {
+        fn observe_network(&self) -> Result<NetworkObserved, PlatformError> {
+            unexpected()
+        }
+
+        fn observe_proxy(&self) -> Result<ProxyObserved, PlatformError> {
+            let mut observed = ProxyObserved::unknown("subscription test");
+            observed.persisted_features = Probe::Known(ProxyFeaturesV1::disabled());
+            observed.active_direct_macs = Probe::Known(std::collections::BTreeSet::new());
+            Ok(observed)
         }
     }
 
@@ -426,5 +494,45 @@ mod tests {
                 "manual refresh failed".to_owned()
             ))
         );
+    }
+
+    #[test]
+    fn refresh_updates_managed_provider_through_application() {
+        let source = RecordingSource {
+            state: Mutex::new(SubscriptionSourceState {
+                source: b"old-source".to_vec(),
+                provider: Some(SubscriptionProviderState {
+                    contents: Some(b"old-provider".to_vec()),
+                }),
+            }),
+            stored: Mutex::new(None),
+        };
+        let store = FakeStore::default();
+        let router = NeverCalledRouter;
+        let probe = DisabledProbe;
+        let clock = FixedClock;
+        let application = SubscriptionApplication::new(
+            &store,
+            &SuccessfulTransport,
+            &source,
+            SubscriptionRuntimePorts {
+                platform: &router,
+                probe: &probe,
+                clock: &clock,
+            },
+        );
+
+        let summary = application
+            .replace_url_and_refresh("https://1.1.1.1/new".to_owned())
+            .unwrap();
+        let stored = source.stored.lock().unwrap().clone().unwrap();
+        let expected = parse_mihomo_subscription(b"proxies:\n  - name: new-node\n")
+            .unwrap()
+            .as_bytes()
+            .to_vec();
+
+        assert!(summary.configured);
+        assert_eq!(stored.source, b"candidate-source");
+        assert_eq!(stored.provider.unwrap().contents, Some(expected));
     }
 }

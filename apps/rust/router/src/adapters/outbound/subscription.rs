@@ -1,7 +1,7 @@
 use crate::{
     application::ports::{
-        PlatformError, SubscriptionResolverPort, SubscriptionSourcePort, SubscriptionStorePort,
-        SubscriptionTransportPort,
+        PlatformError, SubscriptionProviderState, SubscriptionResolverPort, SubscriptionSourcePort,
+        SubscriptionSourceState, SubscriptionStorePort, SubscriptionTransportPort,
     },
     domain::subscription::{
         validate_dns_results, GenerationId, SubscriptionStatus, SubscriptionUrl,
@@ -47,6 +47,8 @@ const STATUS_FILE: &str = "status";
 const CURRENT_FILE: &str = "current";
 const GENERATIONS_DIR: &str = "generations";
 const MAX_STATUS_BYTES: usize = 1_100;
+const SUBSCRIPTION_PROVIDER_PATH: &str = "/userdata/hyz-router/mihomo/providers/subscription.yaml";
+const SUBSCRIPTION_PROVIDER_REFERENCE: &str = "./providers/subscription.yaml";
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub const DEFAULT_SUBSCRIPTION_ROOT: &str = "/userdata/hyz-router/mihomo/subscription";
@@ -501,13 +503,24 @@ impl SubscriptionStorePort for SubscriptionStore {
 }
 
 impl SubscriptionSourcePort for super::process::LinuxRouterPlatform {
-    fn load_source(&self) -> Result<Vec<u8>, PlatformError> {
-        super::storage::read_private_small_optional(
+    fn load_source(&self) -> Result<SubscriptionSourceState, PlatformError> {
+        let source = super::storage::read_private_small_optional(
             super::paths::MIHOMO_SOURCE_CONFIG,
             MAX_SUBSCRIPTION_BYTES,
         )?
         .map(String::into_bytes)
-        .ok_or_else(|| PlatformError::InvalidState("Mihomo source config is absent".to_owned()))
+        .ok_or_else(|| PlatformError::InvalidState("Mihomo source config is absent".to_owned()))?;
+        let provider = if source_uses_managed_subscription_provider(&source)? {
+            let contents = super::storage::read_private_small_optional(
+                SUBSCRIPTION_PROVIDER_PATH,
+                MAX_SUBSCRIPTION_BYTES,
+            )?
+            .map(String::into_bytes);
+            Some(SubscriptionProviderState { contents })
+        } else {
+            None
+        };
+        Ok(SubscriptionSourceState { source, provider })
     }
 
     fn prepare_candidate(
@@ -548,10 +561,48 @@ impl SubscriptionSourcePort for super::process::LinuxRouterPlatform {
         Ok(candidate)
     }
 
-    fn store_source(&self, source: &[u8]) -> Result<(), PlatformError> {
-        std::str::from_utf8(source)
+    fn store_source(&self, state: &SubscriptionSourceState) -> Result<(), PlatformError> {
+        std::str::from_utf8(&state.source)
             .map_err(|_| PlatformError::InvalidState("candidate source is not UTF-8".to_owned()))?;
-        super::storage::atomic_write_private(super::paths::MIHOMO_SOURCE_CONFIG, source)
+        if let Some(provider) = &state.provider {
+            match &provider.contents {
+                Some(contents) => {
+                    super::storage::atomic_write_private(SUBSCRIPTION_PROVIDER_PATH, contents)?;
+                }
+                None => remove_private_file_if_present(SUBSCRIPTION_PROVIDER_PATH)?,
+            }
+        }
+        super::storage::atomic_write_private(super::paths::MIHOMO_SOURCE_CONFIG, &state.source)
+    }
+}
+
+fn source_uses_managed_subscription_provider(source: &[u8]) -> Result<bool, PlatformError> {
+    let document: Value = serde_yaml::from_slice(source).map_err(|_| {
+        PlatformError::InvalidState("Mihomo source config is not valid YAML".to_owned())
+    })?;
+    let provider = document
+        .get("proxy-providers")
+        .and_then(Value::as_mapping)
+        .and_then(|providers| providers.get(Value::String("subscription".to_owned())))
+        .and_then(Value::as_mapping);
+    Ok(provider
+        .and_then(|provider| provider.get(Value::String("type".to_owned())))
+        .and_then(Value::as_str)
+        == Some("file")
+        && provider
+            .and_then(|provider| provider.get(Value::String("path".to_owned())))
+            .and_then(Value::as_str)
+            == Some(SUBSCRIPTION_PROVIDER_REFERENCE))
+}
+
+fn remove_private_file_if_present(path: &str) -> Result<(), PlatformError> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => {
+            super::storage::require_private_root_file(path)?;
+            super::storage::remove_file_durable(path)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(PlatformError::Io(format!("inspect {path}: {error}"))),
     }
 }
 

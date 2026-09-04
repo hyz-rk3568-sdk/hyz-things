@@ -1,7 +1,7 @@
 use crate::{
     application::{
         ports::{ClockPort, PlatformError, RouterPlatformPort, SystemProbePort},
-        reconcile::proxy_plan,
+        reconcile::proxy_plan_with_runtime_config_change,
     },
     domain::{
         network::Probe,
@@ -51,23 +51,36 @@ impl<'a> ProxyApplication<'a> {
     }
 
     pub fn reconcile(&self, desired: &ProxyDesired) -> Result<ProxyReconcileResult, PlatformError> {
-        self.reconcile_with_persistence(desired, true)
+        self.reconcile_with_persistence(desired, true, false)
     }
 
     pub fn reconcile_runtime_preserving_features(
         &self,
         desired: &ProxyDesired,
     ) -> Result<ProxyReconcileResult, PlatformError> {
-        self.reconcile_with_persistence(desired, false)
+        self.reconcile_with_persistence(desired, false, false)
+    }
+
+    /// Rebuild the runtime from a newly stored source while preserving persisted feature flags.
+    pub fn reconcile_runtime_preserving_features_after_source_change(
+        &self,
+        desired: &ProxyDesired,
+    ) -> Result<ProxyReconcileResult, PlatformError> {
+        self.reconcile_with_persistence(desired, false, true)
     }
 
     fn reconcile_with_persistence(
         &self,
         desired: &ProxyDesired,
         commit_features: bool,
+        runtime_config_changed: bool,
     ) -> Result<ProxyReconcileResult, PlatformError> {
         let lease = self.platform.acquire_lifecycle_lock()?;
-        let result = self.reconcile_locked_with_persistence(desired, commit_features);
+        let result = self.reconcile_locked_with_persistence(
+            desired,
+            commit_features,
+            runtime_config_changed,
+        );
         let release = self.platform.release_lifecycle_lock(&lease);
         match (result, release) {
             (Err(error), _) => Err(error),
@@ -80,13 +93,14 @@ impl<'a> ProxyApplication<'a> {
         &self,
         desired: &ProxyDesired,
     ) -> Result<ProxyReconcileResult, PlatformError> {
-        self.reconcile_locked_with_persistence(desired, true)
+        self.reconcile_locked_with_persistence(desired, true, false)
     }
 
     fn reconcile_locked_with_persistence(
         &self,
         desired: &ProxyDesired,
         commit_features: bool,
+        runtime_config_changed: bool,
     ) -> Result<ProxyReconcileResult, PlatformError> {
         let network = self.probe.observe_network()?;
         let observed = self.probe.observe_proxy()?;
@@ -104,7 +118,13 @@ impl<'a> ProxyApplication<'a> {
             }
         };
         let token = self.clock.ownership_token("hyz-mihomo")?;
-        let mut actions = proxy_plan(desired, &observed, &network, &token)?;
+        let mut actions = proxy_plan_with_runtime_config_change(
+            desired,
+            &observed,
+            &network,
+            &token,
+            runtime_config_changed,
+        )?;
         if !commit_features && matches!(actions.last(), Some(ProxyAction::CommitFeatures { .. })) {
             actions.pop();
         }
