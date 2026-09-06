@@ -37,7 +37,7 @@ use web_sys::{
     MediaStreamTrack, MediaTrackConstraints, PointerEvent, RequestCredentials,
     RtcIceGatheringState, RtcPeerConnection, RtcPeerConnectionState, RtcRtpSender,
     RtcRtpTransceiverDirection, RtcRtpTransceiverInit, RtcSdpType, RtcSessionDescriptionInit,
-    RtcTrackEvent, VideoFrame, VideoFrameInit, Window,
+    RtcTrackEvent, Storage, VideoFrame, VideoFrameInit, Window,
 };
 use yew::prelude::*;
 
@@ -95,6 +95,9 @@ const EXAM_COUNTDOWN_TICK_MS: u32 = 1_000;
 const EXAM_DAY_SECONDS: u64 = 24 * 60 * 60;
 const EXAM_SOON_SECONDS: u64 = 120 * EXAM_DAY_SECONDS;
 const EXAM_URGENT_SECONDS: u64 = 45 * EXAM_DAY_SECONDS;
+const CUSTOM_COUNTDOWN_STORAGE_KEY: &str = "hyz-things.custom-countdown.v1";
+const CUSTOM_COUNTDOWN_DEFAULT_SECONDS: u64 = 25 * 60;
+const CUSTOM_COUNTDOWN_MAX_HOURS: u64 = 99;
 // 画中画：Document PiP（Chromium）优先；Safari/其他走 canvas 视频流 PiP；
 // 都不支持时只显示一条提示，不再有全屏弹窗。
 const EXAM_PIP_SCRIPT: &str = "/pip-countdown.js";
@@ -121,6 +124,16 @@ struct ExamCountdownTarget {
     target_note: &'static str,
     start_iso: &'static str,
 }
+
+const CUSTOM_COUNTDOWN_TARGET: ExamCountdownTarget = ExamCountdownTarget {
+    id: "custom-countdown",
+    title: "自定义倒计时",
+    eyebrow: "PERSONAL TIMER",
+    target_iso: "1970-01-01T00:00:00+00:00",
+    target_label: "由上方设置",
+    target_note: "设置时长后开始",
+    start_iso: "1970-01-01T00:00:00+00:00",
+};
 
 // 2027 年度考试公告尚未全部发布；未确认日期统一标注“预计”，并按预计首个笔试日排序。
 const EXAM_COUNTDOWN_TARGETS: [ExamCountdownTarget; 4] = [
@@ -198,6 +211,284 @@ fn countdown_snapshot(now_ms: i64, start_ms: i64, target_ms: i64) -> CountdownSn
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct CustomCountdownTimer {
+    total_seconds: u64,
+    start_ms: i64,
+    target_ms: i64,
+    paused: bool,
+    remaining_seconds: u64,
+    progress_percent: u8,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct CustomCountdownState {
+    duration_seconds: u64,
+    timer: Option<CustomCountdownTimer>,
+}
+
+impl Default for CustomCountdownState {
+    fn default() -> Self {
+        Self {
+            duration_seconds: CUSTOM_COUNTDOWN_DEFAULT_SECONDS,
+            timer: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct PipCountdownConfig {
+    target: ExamCountdownTarget,
+    start_ms: i64,
+    target_ms: i64,
+    total_seconds: u64,
+    paused: bool,
+    remaining_seconds: u64,
+    progress_percent: u8,
+}
+
+impl PipCountdownConfig {
+    fn snapshot(self, now_ms: i64) -> CountdownSnapshot {
+        if self.paused {
+            frozen_countdown_snapshot(
+                self.total_seconds,
+                self.remaining_seconds,
+                self.progress_percent,
+            )
+        } else {
+            countdown_snapshot(now_ms, self.start_ms, self.target_ms)
+        }
+    }
+}
+
+fn frozen_countdown_snapshot(
+    total_seconds: u64,
+    remaining_seconds: u64,
+    progress_percent: u8,
+) -> CountdownSnapshot {
+    let remaining_seconds = remaining_seconds.min(total_seconds);
+    CountdownSnapshot {
+        remaining_seconds,
+        days: remaining_seconds / EXAM_DAY_SECONDS,
+        hours: (remaining_seconds % EXAM_DAY_SECONDS) / (60 * 60),
+        minutes: (remaining_seconds % (60 * 60)) / 60,
+        seconds: remaining_seconds % 60,
+        progress_percent: progress_percent.min(100),
+        finished: remaining_seconds == 0,
+    }
+}
+
+fn custom_countdown_snapshot(now_ms: i64, state: CustomCountdownState) -> CountdownSnapshot {
+    match state.timer {
+        Some(timer) if timer.paused => frozen_countdown_snapshot(
+            timer.total_seconds,
+            timer.remaining_seconds,
+            timer.progress_percent,
+        ),
+        Some(timer) => countdown_snapshot(now_ms, timer.start_ms, timer.target_ms),
+        None => {
+            let remaining_seconds = state.duration_seconds;
+            CountdownSnapshot {
+                remaining_seconds,
+                days: remaining_seconds / EXAM_DAY_SECONDS,
+                hours: (remaining_seconds % EXAM_DAY_SECONDS) / (60 * 60),
+                minutes: (remaining_seconds % (60 * 60)) / 60,
+                seconds: remaining_seconds % 60,
+                progress_percent: 0,
+                finished: false,
+            }
+        }
+    }
+}
+
+fn custom_duration_from_parts(hours: u64, minutes: u64, seconds: u64) -> Result<u64, &'static str> {
+    if hours > CUSTOM_COUNTDOWN_MAX_HOURS {
+        return Err("小时必须在 0–99 之间");
+    }
+    if minutes > 59 {
+        return Err("分钟必须在 0–59 之间");
+    }
+    if seconds > 59 {
+        return Err("秒必须在 0–59 之间");
+    }
+    let total = hours * 60 * 60 + minutes * 60 + seconds;
+    if total == 0 {
+        return Err("倒计时时长至少为 1 秒");
+    }
+    Ok(total)
+}
+
+fn custom_duration_parts(seconds: u64) -> (u64, u64, u64) {
+    (
+        seconds / (60 * 60),
+        (seconds % (60 * 60)) / 60,
+        seconds % 60,
+    )
+}
+
+fn duration_millis(seconds: u64) -> i64 {
+    seconds.saturating_mul(1_000).min(i64::MAX as u64) as i64
+}
+
+fn custom_pip_config(state: CustomCountdownState, now_ms: i64) -> PipCountdownConfig {
+    let (start_ms, target_ms, total_seconds, paused, remaining_seconds, progress_percent) =
+        match state.timer {
+            Some(timer) => {
+                let snapshot = custom_countdown_snapshot(now_ms, state);
+                (
+                    timer.start_ms,
+                    timer.target_ms,
+                    timer.total_seconds,
+                    timer.paused,
+                    snapshot.remaining_seconds,
+                    snapshot.progress_percent,
+                )
+            }
+            None => (
+                now_ms,
+                now_ms.saturating_add(duration_millis(state.duration_seconds)),
+                state.duration_seconds,
+                true,
+                state.duration_seconds,
+                0,
+            ),
+        };
+    PipCountdownConfig {
+        target: CUSTOM_COUNTDOWN_TARGET,
+        start_ms,
+        target_ms,
+        total_seconds,
+        paused,
+        remaining_seconds,
+        progress_percent,
+    }
+}
+
+fn exam_pip_config(target: &ExamCountdownTarget, now_ms: i64) -> PipCountdownConfig {
+    let start_ms = exam_timestamp(target.start_iso);
+    let target_ms = exam_timestamp(target.target_iso);
+    let snapshot = countdown_snapshot(now_ms, start_ms, target_ms);
+    PipCountdownConfig {
+        target: *target,
+        start_ms,
+        target_ms,
+        total_seconds: target_ms
+            .saturating_sub(start_ms)
+            .checked_div(1_000)
+            .unwrap_or(0) as u64,
+        paused: false,
+        remaining_seconds: snapshot.remaining_seconds,
+        progress_percent: snapshot.progress_percent,
+    }
+}
+
+fn custom_countdown_status(
+    state: CustomCountdownState,
+    snapshot: CountdownSnapshot,
+) -> &'static str {
+    match state.timer {
+        None => "待开始",
+        Some(_) if snapshot.finished => "已结束",
+        Some(timer) if timer.paused => "已暂停",
+        Some(_) => "计时中",
+    }
+}
+
+fn custom_card_tone(state: CustomCountdownState, snapshot: CountdownSnapshot) -> &'static str {
+    if snapshot.finished && state.timer.is_some() {
+        EXAM_CARD_FINISHED
+    } else if state.timer.is_some_and(|timer| timer.paused) {
+        EXAM_CARD_SOON
+    } else {
+        ""
+    }
+}
+
+fn custom_countdown_storage() -> Option<Storage> {
+    web_sys::window()?.local_storage().ok().flatten()
+}
+
+fn encode_custom_countdown_state(state: CustomCountdownState) -> String {
+    match state.timer {
+        Some(timer) => format!(
+            "1|{}|{}|{}|{}|{}|{}|{}",
+            state.duration_seconds,
+            if timer.paused { "paused" } else { "running" },
+            timer.total_seconds,
+            timer.start_ms,
+            timer.target_ms,
+            timer.remaining_seconds,
+            timer.progress_percent,
+        ),
+        None => format!("1|{}|idle", state.duration_seconds),
+    }
+}
+
+fn decode_custom_countdown_state(value: &str) -> Option<CustomCountdownState> {
+    let mut fields = value.split('|');
+    if fields.next()? != "1" {
+        return None;
+    }
+    let duration_seconds = fields.next()?.parse::<u64>().ok()?;
+    let (hours, minutes, seconds) = custom_duration_parts(duration_seconds);
+    if custom_duration_from_parts(hours, minutes, seconds).is_err() {
+        return None;
+    }
+    match fields.next()? {
+        "idle" if fields.next().is_none() => Some(CustomCountdownState {
+            duration_seconds,
+            timer: None,
+        }),
+        status @ ("running" | "paused") => {
+            let total_seconds = fields.next()?.parse::<u64>().ok()?;
+            let start_ms = fields.next()?.parse::<i64>().ok()?;
+            let target_ms = fields.next()?.parse::<i64>().ok()?;
+            let remaining_seconds = fields.next()?.parse::<u64>().ok()?;
+            let progress_percent = fields.next()?.parse::<u8>().ok()?;
+            if fields.next().is_some()
+                || total_seconds == 0
+                || remaining_seconds > total_seconds
+                || progress_percent > 100
+            {
+                return None;
+            }
+            Some(CustomCountdownState {
+                duration_seconds,
+                timer: Some(CustomCountdownTimer {
+                    total_seconds,
+                    start_ms,
+                    target_ms,
+                    paused: status == "paused",
+                    remaining_seconds,
+                    progress_percent,
+                }),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn load_custom_countdown_state() -> CustomCountdownState {
+    custom_countdown_storage()
+        .and_then(|storage| {
+            storage
+                .get_item(CUSTOM_COUNTDOWN_STORAGE_KEY)
+                .ok()
+                .flatten()
+        })
+        .and_then(|value| decode_custom_countdown_state(&value))
+        .unwrap_or_default()
+}
+
+fn save_custom_countdown_state(state: CustomCountdownState) {
+    if let Some(storage) = custom_countdown_storage() {
+        let _ = storage.set_item(
+            CUSTOM_COUNTDOWN_STORAGE_KEY,
+            &encode_custom_countdown_state(state),
+        );
+    }
+}
+
 fn exam_timestamp(iso: &str) -> i64 {
     Date::parse(iso) as i64
 }
@@ -226,7 +517,20 @@ fn exam_status_label(snapshot: CountdownSnapshot) -> &'static str {
     }
 }
 
-/// 已打开的 Document PiP 窗口及其 pagehide 监听（窗口关闭后清理状态）。
+fn pip_countdown_status(config: &PipCountdownConfig, snapshot: CountdownSnapshot) -> &'static str {
+    if config.target.id == CUSTOM_COUNTDOWN_TARGET.id {
+        if snapshot.finished {
+            "已结束"
+        } else if config.paused {
+            "已暂停"
+        } else {
+            "计时中"
+        }
+    } else {
+        exam_status_label(snapshot)
+    }
+}
+
 struct DocumentPipHandles {
     window: Window,
     _on_hide: Closure<dyn FnMut(Event)>,
@@ -242,6 +546,7 @@ struct PreparedVideoPip {
     source_canvas: HtmlCanvasElement,
     frame_source: PipFrameSource,
     stream: MediaStream,
+    countdown: Rc<RefCell<PipCountdownConfig>>,
     cancelled: Rc<Cell<bool>>,
     _audio: Option<(AudioContext, MediaStreamAudioDestinationNode)>,
     _on_leave: Closure<dyn FnMut(Event)>,
@@ -402,7 +707,7 @@ fn request_document_pip_window(window: &Window, width: u32, height: u32) -> Opti
 
 /// 在画中画窗口里重建卡片：复制主题/样式表与卡片 DOM，注入倒计时引擎脚本。
 /// 引擎脚本在画中画窗口自己的上下文里每秒重算，主标签页被切后台也不停。
-fn populate_pip_window(pip_window: &Window, target: &ExamCountdownTarget) -> Result<(), JsValue> {
+fn populate_pip_window(pip_window: &Window, config: &PipCountdownConfig) -> Result<(), JsValue> {
     let parent_window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
     let parent_document = parent_window
         .document()
@@ -430,7 +735,7 @@ fn populate_pip_window(pip_window: &Window, target: &ExamCountdownTarget) -> Res
             }
         }
     }
-    let selector = format!("[data-exam-id=\"{}\"]", target.id);
+    let selector = format!("[data-exam-id=\"{}\"]", config.target.id);
     let card = parent_document
         .query_selector(&selector)?
         .ok_or_else(|| JsValue::from_str("card missing"))?;
@@ -441,17 +746,46 @@ fn populate_pip_window(pip_window: &Window, target: &ExamCountdownTarget) -> Res
     Reflect::set(
         pip_window.as_ref(),
         &JsValue::from_str("__hyzPipExamId"),
-        &JsValue::from_str(target.id),
+        &JsValue::from_str(config.target.id),
     )?;
     Reflect::set(
         pip_window.as_ref(),
         &JsValue::from_str("__hyzPipStartMs"),
-        &JsValue::from_f64(exam_timestamp(target.start_iso) as f64),
+        &JsValue::from_f64(config.start_ms as f64),
     )?;
     Reflect::set(
         pip_window.as_ref(),
         &JsValue::from_str("__hyzPipTargetMs"),
-        &JsValue::from_f64(exam_timestamp(target.target_iso) as f64),
+        &JsValue::from_f64(config.target_ms as f64),
+    )?;
+    Reflect::set(
+        pip_window.as_ref(),
+        &JsValue::from_str("__hyzPipTotalSeconds"),
+        &JsValue::from_f64(config.total_seconds as f64),
+    )?;
+    Reflect::set(
+        pip_window.as_ref(),
+        &JsValue::from_str("__hyzPipPaused"),
+        &JsValue::from_bool(config.paused),
+    )?;
+    Reflect::set(
+        pip_window.as_ref(),
+        &JsValue::from_str("__hyzPipRemainingSeconds"),
+        &JsValue::from_f64(config.remaining_seconds as f64),
+    )?;
+    Reflect::set(
+        pip_window.as_ref(),
+        &JsValue::from_str("__hyzPipProgressPercent"),
+        &JsValue::from_f64(config.progress_percent as f64),
+    )?;
+    Reflect::set(
+        pip_window.as_ref(),
+        &JsValue::from_str("__hyzPipMode"),
+        &JsValue::from_str(if config.target.id == CUSTOM_COUNTDOWN_TARGET.id {
+            "custom"
+        } else {
+            "exam"
+        }),
     )?;
     // 引擎脚本最后注入：脚本加载时会立刻查询卡片 DOM。
     let script = pip_document.create_element("script")?;
@@ -464,14 +798,14 @@ fn populate_pip_window(pip_window: &Window, target: &ExamCountdownTarget) -> Res
 
 fn populate_document_pip(
     pip_window: &Window,
-    target: ExamCountdownTarget,
+    config: PipCountdownConfig,
     index: usize,
     pip_document: &Rc<RefCell<Option<DocumentPipHandles>>>,
     pip_exam: &UseStateHandle<Option<usize>>,
     pip_notice: &UseStateHandle<Option<&'static str>>,
     pip_notice_seq: &Rc<RefCell<u32>>,
 ) {
-    if populate_pip_window(pip_window, &target).is_err() {
+    if populate_pip_window(pip_window, &config).is_err() {
         let _ = pip_window.close();
         show_pip_notice(pip_notice, pip_notice_seq, "画中画内容初始化失败");
         return;
@@ -523,7 +857,7 @@ fn show_pip_notice(
 /// PiP（Safari/iPadOS、Firefox 等），都不支持时只显示一条提示。
 fn handle_open_pip(
     index: usize,
-    target: &ExamCountdownTarget,
+    config: PipCountdownConfig,
     pip_document: &Rc<RefCell<Option<DocumentPipHandles>>>,
     pip_exam: &UseStateHandle<Option<usize>>,
     pip_notice: &UseStateHandle<Option<&'static str>>,
@@ -551,7 +885,6 @@ fn handle_open_pip(
         if let Some(promise) =
             request_document_pip_window(&window, EXAM_PIP_WINDOW_WIDTH, EXAM_PIP_WINDOW_HEIGHT)
         {
-            let target = *target;
             let pip_document = pip_document.clone();
             let pip_exam = pip_exam.clone();
             let pip_notice = pip_notice.clone();
@@ -564,7 +897,7 @@ fn handle_open_pip(
                         let pip_window = Window::from(value);
                         populate_document_pip(
                             &pip_window,
-                            target,
+                            config,
                             index,
                             &pip_document,
                             &pip_exam,
@@ -580,8 +913,9 @@ fn handle_open_pip(
             return;
         }
     }
-    // video 流画中画：该卡片已在画中画时再次双击 = 退出，否则打开。
+    // video 流画中画：该单元已在画中画时再次点击 = 退出，否则打开。
     if let Some(item) = prepared.borrow().as_ref().and_then(|list| list.get(index)) {
+        *item.countdown.borrow_mut() = config;
         if picture_in_picture_active(&item.video) {
             let _ = picture_in_picture_exit(&item.video);
             return;
@@ -633,8 +967,39 @@ fn prepare_exam_pip_videos(targets: &[ExamCountdownTarget]) -> Option<Vec<Prepar
     (!prepared.is_empty()).then_some(prepared)
 }
 
+fn prepare_custom_pip_videos(
+    countdown: Rc<RefCell<PipCountdownConfig>>,
+) -> Option<Vec<PreparedVideoPip>> {
+    let window = web_sys::window()?;
+    let document = window.document()?;
+    let body = document.body()?;
+    if !video_pip_capable(&window) {
+        return None;
+    }
+    prepare_custom_pip_video(countdown, &window, &document, &body).map(|item| vec![item])
+}
+
 fn prepare_exam_pip_video(
     target: &ExamCountdownTarget,
+    window: &Window,
+    document: &Document,
+    body: &Element,
+) -> Option<PreparedVideoPip> {
+    let countdown = Rc::new(RefCell::new(exam_pip_config(target, Date::now() as i64)));
+    prepare_countdown_pip_video(countdown, window, document, body)
+}
+
+fn prepare_custom_pip_video(
+    countdown: Rc<RefCell<PipCountdownConfig>>,
+    window: &Window,
+    document: &Document,
+    body: &Element,
+) -> Option<PreparedVideoPip> {
+    prepare_countdown_pip_video(countdown, window, document, body)
+}
+
+fn prepare_countdown_pip_video(
+    countdown: Rc<RefCell<PipCountdownConfig>>,
     window: &Window,
     document: &Document,
     body: &Element,
@@ -659,14 +1024,11 @@ fn prepare_exam_pip_video(
         return None;
     }
     // 先画首帧再取流：确保后续帧都带内容。
+    let initial_config = *countdown.borrow();
     draw_countdown_canvas(
         &canvas,
-        target,
-        countdown_snapshot(
-            Date::now() as i64,
-            exam_timestamp(target.start_iso),
-            exam_timestamp(target.target_iso),
-        ),
+        &initial_config,
+        initial_config.snapshot(Date::now() as i64),
     );
     let (stream, frame_source) = build_pip_frame_source(window, document, body, &canvas)?;
     // iPadOS 对纯视频（无音轨）的画布流进画中画有兼容性问题，静默补一条
@@ -731,20 +1093,17 @@ fn prepare_exam_pip_video(
                 }
             }
         };
-        let target = *target;
+        let pump_countdown = countdown.clone();
         spawn_local(async move {
             let mut frame_seq: u64 = 0;
             while !cancelled.get() {
                 TimeoutFuture::new(EXAM_VIDEO_PIP_TICK_MS).await;
                 if !cancelled.get() {
+                    let current_config = *pump_countdown.borrow();
                     draw_countdown_canvas(
                         &canvas,
-                        &target,
-                        countdown_snapshot(
-                            Date::now() as i64,
-                            exam_timestamp(target.start_iso),
-                            exam_timestamp(target.target_iso),
-                        ),
+                        &current_config,
+                        current_config.snapshot(Date::now() as i64),
                     );
                     match &pump_source {
                         PipFrameSource::CanvasCapture(capture) => {
@@ -798,6 +1157,7 @@ fn prepare_exam_pip_video(
         source_canvas: canvas,
         frame_source,
         stream,
+        countdown,
         cancelled,
         _audio: audio,
         _on_leave: on_leave,
@@ -969,7 +1329,7 @@ fn copy_countdown_canvas(source: &HtmlCanvasElement, target: &HtmlCanvasElement)
 
 fn draw_countdown_canvas(
     canvas: &HtmlCanvasElement,
-    target: &ExamCountdownTarget,
+    config: &PipCountdownConfig,
     snapshot: CountdownSnapshot,
 ) {
     let Ok(context) = canvas.get_context("2d") else {
@@ -993,8 +1353,8 @@ fn draw_countdown_canvas(
     context.set_font(&format!("700 24px {font_stack}"));
     context.set_fill_style_str("#6272a4");
     context.set_text_align("left");
-    let _ = context.fill_text(target.eyebrow, 64.0, 100.0);
-    let status = exam_status_label(snapshot);
+    let _ = context.fill_text(config.target.eyebrow, 64.0, 100.0);
+    let status = pip_countdown_status(config, snapshot);
     context.set_font(&format!("700 22px {font_stack}"));
     context.set_text_align("right");
     let _ = context.fill_text(status, width - 64.0, 100.0);
@@ -1002,14 +1362,22 @@ fn draw_countdown_canvas(
     context.set_text_align("left");
     context.set_font(&format!("800 46px {font_stack}"));
     context.set_fill_style_str("#f8f8f2");
-    let _ = context.fill_text(target.title, 64.0, 176.0);
+    let _ = context.fill_text(config.target.title, 64.0, 176.0);
 
     let mut x = 64.0;
     let baseline = 330.0;
     if snapshot.finished {
         context.set_font(&format!("700 88px {mono_stack}"));
         context.set_fill_style_str("#f8f8f2");
-        let _ = context.fill_text("考试日已过", x, baseline);
+        let _ = context.fill_text(
+            if config.target.id == CUSTOM_COUNTDOWN_TARGET.id {
+                "时间到"
+            } else {
+                "考试日已过"
+            },
+            x,
+            baseline,
+        );
     } else {
         let days = format!("{}", snapshot.days);
         let hours = format!("{:02}", snapshot.hours);
@@ -1056,7 +1424,15 @@ fn draw_countdown_canvas(
 
     context.set_font(&format!("600 22px {font_stack}"));
     context.set_fill_style_str("#6272a4");
-    let _ = context.fill_text("年度备考进度", 64.0, 452.0);
+    let _ = context.fill_text(
+        if config.target.id == CUSTOM_COUNTDOWN_TARGET.id {
+            "倒计时进度"
+        } else {
+            "年度备考进度"
+        },
+        64.0,
+        452.0,
+    );
     context.set_text_align("right");
     context.set_fill_style_str("#f8f8f2");
     let _ = context.fill_text(
@@ -1068,10 +1444,10 @@ fn draw_countdown_canvas(
 
     context.set_font(&format!("500 20px {font_stack}"));
     context.set_fill_style_str("#6272a4");
-    let _ = context.fill_text(target.target_note, 64.0, 498.0);
+    let _ = context.fill_text(config.target.target_note, 64.0, 498.0);
     context.set_text_align("right");
     context.set_fill_style_str("#f8f8f2");
-    let _ = context.fill_text(target.target_label, width - 64.0, 498.0);
+    let _ = context.fill_text(config.target.target_label, width - 64.0, 498.0);
     context.set_text_align("left");
 }
 
@@ -3393,21 +3769,102 @@ fn render_deployed_apps(state: &UseReducerHandle<AppState>) -> Html {
     }
 }
 
-fn render_exam_countdown_card(
+fn custom_timer_for_duration(total_seconds: u64, now_ms: i64) -> CustomCountdownTimer {
+    CustomCountdownTimer {
+        total_seconds,
+        start_ms: now_ms,
+        target_ms: now_ms.saturating_add(duration_millis(total_seconds)),
+        paused: false,
+        remaining_seconds: total_seconds,
+        progress_percent: 0,
+    }
+}
+
+fn restart_custom_countdown(state: CustomCountdownState, now_ms: i64) -> CustomCountdownState {
+    CustomCountdownState {
+        timer: Some(custom_timer_for_duration(state.duration_seconds, now_ms)),
+        ..state
+    }
+}
+
+fn pause_custom_countdown(state: CustomCountdownState, now_ms: i64) -> CustomCountdownState {
+    let Some(timer) = state.timer else {
+        return state;
+    };
+    let snapshot = custom_countdown_snapshot(now_ms, state);
+    if timer.paused || snapshot.finished {
+        return state;
+    }
+    CustomCountdownState {
+        timer: Some(CustomCountdownTimer {
+            paused: true,
+            remaining_seconds: snapshot.remaining_seconds,
+            progress_percent: snapshot.progress_percent,
+            ..timer
+        }),
+        ..state
+    }
+}
+
+fn resume_custom_countdown(state: CustomCountdownState, now_ms: i64) -> CustomCountdownState {
+    let Some(timer) = state.timer else {
+        return state;
+    };
+    if !timer.paused || timer.remaining_seconds == 0 {
+        return state;
+    }
+    let elapsed_seconds = timer.total_seconds.saturating_sub(timer.remaining_seconds);
+    CustomCountdownState {
+        timer: Some(CustomCountdownTimer {
+            start_ms: now_ms.saturating_sub(duration_millis(elapsed_seconds)),
+            target_ms: now_ms.saturating_add(duration_millis(timer.remaining_seconds)),
+            paused: false,
+            ..timer
+        }),
+        ..state
+    }
+}
+
+#[derive(Clone, Copy)]
+enum CustomDurationPart {
+    Hours,
+    Minutes,
+    Seconds,
+}
+
+fn update_custom_duration(
+    state: CustomCountdownState,
+    part: CustomDurationPart,
+    value: u64,
+) -> CustomCountdownState {
+    let (mut hours, mut minutes, mut seconds) = custom_duration_parts(state.duration_seconds);
+    match part {
+        CustomDurationPart::Hours => hours = value.min(CUSTOM_COUNTDOWN_MAX_HOURS),
+        CustomDurationPart::Minutes => minutes = value.min(59),
+        CustomDurationPart::Seconds => seconds = value.min(59),
+    }
+    let duration_seconds = custom_duration_from_parts(hours, minutes, seconds).unwrap_or(0);
+    CustomCountdownState {
+        duration_seconds,
+        ..state
+    }
+}
+
+fn render_countdown_card(
     target: &ExamCountdownTarget,
     snapshot: CountdownSnapshot,
     index: usize,
+    status: &'static str,
+    tone: &'static str,
+    card_label: String,
+    finished_label: &'static str,
+    progress_label: &'static str,
+    progress_aria_label: String,
     on_double_click: Callback<MouseEvent>,
 ) -> Html {
-    let status = exam_status_label(snapshot);
-    let tone = exam_card_tone(snapshot);
-    let card_label = if snapshot.finished {
-        format!("{}，考试已结束", target.title)
-    } else {
-        format!("{}，距离考试 {} 天", target.title, snapshot.days)
-    };
+    let is_custom = target.id == CUSTOM_COUNTDOWN_TARGET.id;
     let countdown = if snapshot.finished {
-        html! { <strong class={EXAM_COUNTER_FINISHED}>{"考试日已过"}</strong> }
+        html! { <strong class={EXAM_COUNTER_FINISHED}>{finished_label}</strong> }
     } else {
         html! {
             <>
@@ -3424,6 +3881,7 @@ fn render_exam_countdown_card(
             class={classes!(EXAM_CARD, tone)}
             aria-label={card_label}
             data-exam-id={target.id}
+            data-remaining-seconds={snapshot.remaining_seconds.to_string()}
             title="双击开启画中画"
             ondblclick={on_double_click}
         >
@@ -3437,7 +3895,7 @@ fn render_exam_countdown_card(
                 </div>
                 <span data-status="" class={classes!(EXAM_STATUS, (snapshot.finished).then_some("text-base-content/60"), (!snapshot.finished).then_some("text-base-content/70"))}>{status}</span>
             </div>
-            <div class={EXAM_COUNTER} data-countdown-values="" aria-live="polite">
+            <div class={EXAM_COUNTER} data-countdown-values={(!is_custom).then_some("")} data-custom-countdown-values={is_custom.then_some("")} aria-live="polite">
                 {countdown}
             </div>
             <div class={EXAM_META}>
@@ -3448,13 +3906,322 @@ fn render_exam_countdown_card(
                 class={EXAM_PROGRESS}
                 max="100"
                 value={snapshot.progress_percent.to_string()}
-                aria-label={format!("{}冲刺进度 {}%", target.title, snapshot.progress_percent)}
+                aria-label={progress_aria_label}
             ></progress>
             <div class={EXAM_PROGRESS_META} data-progress-meta="">
-                <span>{"年度备考进度"}</span>
+                <span>{progress_label}</span>
                 <span>{format!("{}%", snapshot.progress_percent)}</span>
             </div>
         </article>
+    }
+}
+
+fn render_exam_countdown_card(
+    target: &ExamCountdownTarget,
+    snapshot: CountdownSnapshot,
+    index: usize,
+    on_double_click: Callback<MouseEvent>,
+) -> Html {
+    let status = exam_status_label(snapshot);
+    let tone = exam_card_tone(snapshot);
+    let card_label = if snapshot.finished {
+        format!("{}，考试已结束", target.title)
+    } else {
+        format!("{}，距离考试 {} 天", target.title, snapshot.days)
+    };
+    render_countdown_card(
+        target,
+        snapshot,
+        index,
+        status,
+        tone,
+        card_label,
+        "考试日已过",
+        "年度备考进度",
+        format!("{}冲刺进度 {}%", target.title, snapshot.progress_percent),
+        on_double_click,
+    )
+}
+
+#[function_component(CustomCountdownPanel)]
+fn custom_countdown_panel() -> Html {
+    let now_ms = use_state(|| Date::now() as i64);
+    let countdown_state = use_state(load_custom_countdown_state);
+    let pip_document = use_mut_ref(|| None::<DocumentPipHandles>);
+    let pip_index = use_state(|| None::<usize>);
+    let pip_notice = use_state(|| None::<&'static str>);
+    let pip_notice_seq = use_mut_ref(|| 0u32);
+    let prepared = use_mut_ref(|| None::<Vec<PreparedVideoPip>>);
+    let pip_config = use_mut_ref(|| custom_pip_config(*countdown_state, *now_ms));
+
+    {
+        let now_ms = now_ms.clone();
+        use_effect_with((), move |_| {
+            let cancelled = Rc::new(Cell::new(false));
+            let task_cancelled = cancelled.clone();
+            spawn_local(async move {
+                while !task_cancelled.get() {
+                    TimeoutFuture::new(EXAM_COUNTDOWN_TICK_MS).await;
+                    if !task_cancelled.get() {
+                        now_ms.set(Date::now() as i64);
+                    }
+                }
+            });
+            move || cancelled.set(true)
+        });
+    }
+
+    {
+        let state = *countdown_state;
+        use_effect_with(state, move |state| {
+            save_custom_countdown_state(*state);
+            || ()
+        });
+    }
+
+    {
+        let pip_config = pip_config.clone();
+        let state = *countdown_state;
+        let now_ms = *now_ms;
+        use_effect_with((state, now_ms), move |(state, now_ms)| {
+            *pip_config.borrow_mut() = custom_pip_config(*state, *now_ms);
+            || ()
+        });
+    }
+
+    {
+        let prepared = prepared.clone();
+        let pip_config = pip_config.clone();
+        use_effect_with((), move |_| {
+            *prepared.borrow_mut() = prepare_custom_pip_videos(pip_config);
+            move || {
+                if let Some(list) = prepared.borrow_mut().as_mut() {
+                    teardown_prepared_videos(list);
+                }
+            }
+        });
+    }
+
+    // Esc 退出 video 流画中画（Document PiP 窗口自己有 Esc 处理）。
+    {
+        let prepared = prepared.clone();
+        use_effect_with((), move |_| {
+            let listener =
+                Closure::<dyn FnMut(KeyboardEvent)>::new(move |key_event: KeyboardEvent| {
+                    if !is_escape_key(&key_event) {
+                        return;
+                    }
+                    if let Some(list) = prepared.borrow().as_ref() {
+                        for item in list {
+                            if picture_in_picture_active(&item.video) {
+                                let _ = picture_in_picture_exit(&item.video);
+                            }
+                        }
+                    }
+                });
+            let document = web_sys::window().and_then(|window| window.document());
+            if let Some(document) = document.as_ref() {
+                let _ = document
+                    .add_event_listener_with_callback("keydown", listener.as_ref().unchecked_ref());
+            }
+            move || {
+                if let Some(document) = document.as_ref() {
+                    let _ = document.remove_event_listener_with_callback(
+                        "keydown",
+                        listener.as_ref().unchecked_ref(),
+                    );
+                }
+            }
+        });
+    }
+
+    let close_pip = {
+        let pip_document = pip_document.clone();
+        let pip_index = pip_index.clone();
+        let prepared = prepared.clone();
+        Rc::new(move || {
+            if *pip_index == Some(0) {
+                if let Some(handles) = pip_document.borrow().as_ref() {
+                    let _ = handles.window.close();
+                }
+                *pip_document.borrow_mut() = None;
+                pip_index.set(None);
+            }
+            if let Some(list) = prepared.borrow().as_ref() {
+                for item in list {
+                    if picture_in_picture_active(&item.video) {
+                        let _ = picture_in_picture_exit(&item.video);
+                    }
+                }
+            }
+        })
+    };
+
+    let set_duration = |part: CustomDurationPart| {
+        let countdown_state = countdown_state.clone();
+        Callback::from(move |event: InputEvent| {
+            let input: HtmlInputElement = event.target_unchecked_into();
+            let value = input.value().parse::<u64>().unwrap_or(0);
+            countdown_state.set(update_custom_duration(*countdown_state, part, value));
+        })
+    };
+    let set_hours = set_duration(CustomDurationPart::Hours);
+    let set_minutes = set_duration(CustomDurationPart::Minutes);
+    let set_seconds = set_duration(CustomDurationPart::Seconds);
+
+    let restart = {
+        let countdown_state = countdown_state.clone();
+        let close_pip = close_pip.clone();
+        let notice = pip_notice.clone();
+        Callback::from(move |_| {
+            if countdown_state.duration_seconds == 0 {
+                notice.set(Some("倒计时时长至少为 1 秒"));
+                return;
+            }
+            close_pip();
+            countdown_state.set(restart_custom_countdown(
+                *countdown_state,
+                Date::now() as i64,
+            ));
+            notice.set(Some("倒计时已重新开始"));
+        })
+    };
+
+    let pause = {
+        let countdown_state = countdown_state.clone();
+        let close_pip = close_pip.clone();
+        let notice = pip_notice.clone();
+        Callback::from(move |_| {
+            let current = *countdown_state;
+            let next = pause_custom_countdown(current, Date::now() as i64);
+            if next != current {
+                close_pip();
+                countdown_state.set(next);
+                notice.set(Some("倒计时已暂停"));
+            }
+        })
+    };
+
+    let resume = {
+        let countdown_state = countdown_state.clone();
+        let close_pip = close_pip.clone();
+        let notice = pip_notice.clone();
+        Callback::from(move |_| {
+            let current = *countdown_state;
+            let next = resume_custom_countdown(current, Date::now() as i64);
+            if next != current {
+                close_pip();
+                countdown_state.set(next);
+                notice.set(Some("倒计时已继续"));
+            }
+        })
+    };
+
+    let open_pip = {
+        let countdown_state = countdown_state.clone();
+        let pip_document = pip_document.clone();
+        let pip_index = pip_index.clone();
+        let pip_notice = pip_notice.clone();
+        let pip_notice_seq = pip_notice_seq.clone();
+        let prepared = prepared.clone();
+        Callback::from(move |_| {
+            if countdown_state.timer.is_none() {
+                pip_notice.set(Some("请先开始倒计时"));
+                return;
+            }
+            handle_open_pip(
+                0,
+                custom_pip_config(*countdown_state, Date::now() as i64),
+                &pip_document,
+                &pip_index,
+                &pip_notice,
+                &pip_notice_seq,
+                &prepared,
+            );
+        })
+    };
+
+    let snapshot = custom_countdown_snapshot(*now_ms, *countdown_state);
+    let status = custom_countdown_status(*countdown_state, snapshot);
+    let tone = custom_card_tone(*countdown_state, snapshot);
+    let card_label = if snapshot.finished && countdown_state.timer.is_some() {
+        "自定义倒计时已结束".to_owned()
+    } else if countdown_state.timer.is_some_and(|timer| timer.paused) {
+        format!("自定义倒计时已暂停，剩余 {} 秒", snapshot.remaining_seconds)
+    } else if countdown_state.timer.is_some() {
+        format!("自定义倒计时，剩余 {} 秒", snapshot.remaining_seconds)
+    } else {
+        "自定义倒计时，待开始".to_owned()
+    };
+    let (hours, minutes, seconds) = custom_duration_parts(countdown_state.duration_seconds);
+    let can_pause = countdown_state.timer.is_some_and(|timer| !timer.paused) && !snapshot.finished;
+    let can_resume = countdown_state.timer.is_some_and(|timer| timer.paused) && !snapshot.finished;
+
+    html! {
+        <section id="custom-countdown" class={EXAM_SECTION} role="region" aria-labelledby="custom-countdown-title">
+            <span class={EXAM_DECORATION} aria-hidden="true"></span>
+            <div class={EXAM_HEAD}>
+                <div>
+                    <p class={EYEBROW}>{"PERSONAL TIMER"}</p>
+                    <h2 id="custom-countdown-title" class={SECTION_TITLE}>{"自定义倒计时"}</h2>
+                </div>
+                <div class={EXAM_HEAD_META}>
+                    <span class={EXAM_BADGE}><span aria-hidden="true">{"↻"}</span>{"刷新页面后保留状态"}</span>
+                    <span>{"支持暂停、继续和画中画"}</span>
+                </div>
+            </div>
+            if let Some(message) = *pip_notice {
+                <p class={EXAM_PIP_NOTICE} data-custom-countdown-notice="" role="status" aria-live="polite">{message}</p>
+            }
+            <div class="mt-5 grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(22rem,0.95fr)_minmax(0,1.05fr)] lg:items-start">
+                <div class={INNER_CARD}>
+                    <div class={CONTROL_TITLE}>
+                        <div>
+                            <h3 class={CONTROL_HEADING}>{"设置时长"}</h3>
+                            <p class={CONTROL_META}>{"最多 99 小时，输入会自动保存到当前浏览器"}</p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-3">
+                        <label class={FIELD}>
+                            <span class={FIELD_LABEL}>{"小时"}</span>
+                            <input class={INPUT} type="number" min="0" max="99" inputmode="numeric" value={hours.to_string()} oninput={set_hours} aria-label="小时" />
+                        </label>
+                        <label class={FIELD}>
+                            <span class={FIELD_LABEL}>{"分钟"}</span>
+                            <input class={INPUT} type="number" min="0" max="59" inputmode="numeric" value={minutes.to_string()} oninput={set_minutes} aria-label="分钟" />
+                        </label>
+                        <label class={FIELD}>
+                            <span class={FIELD_LABEL}>{"秒"}</span>
+                            <input class={INPUT} type="number" min="0" max="59" inputmode="numeric" value={seconds.to_string()} oninput={set_seconds} aria-label="秒" />
+                        </label>
+                    </div>
+                    <div class={BUTTON_ROW}>
+                        <button class={BUTTON_PRIMARY} type="button" onclick={restart} aria-label={if countdown_state.timer.is_some() { "重新开始倒计时" } else { "开始倒计时" }}>{if countdown_state.timer.is_some() { "重新开始" } else { "开始倒计时" }}</button>
+                        if can_pause {
+                            <button class={BUTTON} type="button" onclick={pause} aria-label="暂停倒计时">{"暂停"}</button>
+                        }
+                        if can_resume {
+                            <button class={BUTTON} type="button" onclick={resume} aria-label="继续倒计时">{"继续"}</button>
+                        }
+                        <button class={BUTTON_GHOST} type="button" onclick={open_pip.clone()} disabled={countdown_state.timer.is_none()} aria-label="进入画中画">{"进入画中画"}</button>
+                    </div>
+                    <p class={HELP_TEXT}>{"倒计时运行和暂停状态会保存在本机浏览器；刷新页面后会从当前状态继续，画中画需要重新点击进入。"}</p>
+                    <p class={CAMERA_NOTICE} role="status" aria-live="polite">{status}</p>
+                </div>
+                {render_countdown_card(
+                    &CUSTOM_COUNTDOWN_TARGET,
+                    snapshot,
+                    0,
+                    status,
+                    tone,
+                    card_label,
+                    "时间到",
+                    "倒计时进度",
+                    format!("自定义倒计时进度 {}%", snapshot.progress_percent),
+                    open_pip,
+                )}
+            </div>
+        </section>
     }
 }
 
@@ -3559,7 +4326,7 @@ fn exam_countdown_panel() -> Html {
                         event.prevent_default();
                         handle_open_pip(
                             index,
-                            target,
+                            exam_pip_config(target, Date::now() as i64),
                             &pip_document,
                             &pip_exam,
                             &pip_notice,
@@ -3595,6 +4362,7 @@ fn render_home(
         .unwrap_or_default();
     html! {
         <>
+            <CustomCountdownPanel />
             <ExamCountdownPanel />
             <section class={SECTION} aria-labelledby="apps-title">
                 <div class={SECTION_HEAD}>

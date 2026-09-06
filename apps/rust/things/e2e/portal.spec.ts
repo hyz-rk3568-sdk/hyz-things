@@ -246,6 +246,153 @@ test("renders the upcoming exam countdown in chronological order", async ({
   expect(accessibility.violations).toEqual([]);
 });
 
+test("renders the configurable picture-in-picture countdown controls", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  const timer = page.getByRole("region", { name: "自定义倒计时" });
+  await expect(timer).toBeVisible();
+  await expect(
+    timer.getByRole("heading", {
+      name: "自定义倒计时",
+      exact: true,
+      level: 2,
+    }),
+  ).toBeVisible();
+  await expect(timer.getByLabel("小时")).toHaveAttribute("type", "number");
+  await expect(timer.getByLabel("分钟")).toHaveAttribute("type", "number");
+  await expect(timer.getByLabel("秒")).toHaveAttribute("type", "number");
+  await expect(
+    timer.getByRole("button", { name: "开始倒计时", exact: true }),
+  ).toBeVisible();
+  await expect(
+    timer.getByRole("button", { name: "进入画中画", exact: true }),
+  ).toBeVisible();
+});
+
+test("pauses and restores the custom countdown after a page refresh", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const timer = page.getByRole("region", { name: "自定义倒计时" });
+
+  await timer.getByLabel("小时").fill("0");
+  await timer.getByLabel("分钟").fill("1");
+  await timer.getByLabel("秒").fill("0");
+  await timer.getByRole("button", { name: "开始倒计时", exact: true }).click();
+  await expect(
+    timer.getByRole("button", { name: "暂停倒计时", exact: true }),
+  ).toBeVisible();
+
+  await page.waitForTimeout(1_100);
+  await timer.getByRole("button", { name: "暂停倒计时", exact: true }).click();
+  const pausedTotal = await readCustomCountdownTotal(page);
+  await expect(
+    timer.getByRole("button", { name: "继续倒计时", exact: true }),
+  ).toBeVisible();
+
+  await page.reload();
+  const restoredTimer = page.getByRole("region", { name: "自定义倒计时" });
+  await expect(restoredTimer.getByLabel("分钟")).toHaveValue("1");
+  await expect(
+    restoredTimer.getByRole("button", { name: "继续倒计时", exact: true }),
+  ).toBeVisible();
+  await expect.poll(() => readCustomCountdownTotal(page)).toBe(pausedTotal);
+
+  await restoredTimer
+    .getByRole("button", { name: "继续倒计时", exact: true })
+    .click();
+  await expect
+    .poll(() => readCustomCountdownTotal(page), { timeout: 4_000 })
+    .toBeLessThan(pausedTotal);
+  const runningTotalBeforeReload = await readCustomCountdownTotal(page);
+  await page.reload();
+  const runningTimer = page.getByRole("region", { name: "自定义倒计时" });
+  await expect(
+    runningTimer.getByRole("button", { name: "暂停倒计时", exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(() => readCustomCountdownTotal(page))
+    .toBeLessThanOrEqual(runningTotalBeforeReload);
+});
+
+test("restarts the custom countdown from the configured duration", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const timer = page.getByRole("region", { name: "自定义倒计时" });
+
+  await timer.getByLabel("分钟").fill("0");
+  await timer.getByLabel("秒").fill("3");
+  await timer.getByRole("button", { name: "开始倒计时", exact: true }).click();
+  await expect(
+    timer.getByRole("button", { name: "暂停倒计时", exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(() => readCustomCountdownTotal(page), { timeout: 4_000 })
+    .toBeLessThan(3);
+
+  await timer
+    .getByRole("button", { name: "重新开始倒计时", exact: true })
+    .click();
+  await expect
+    .poll(() => readCustomCountdownTotal(page), { timeout: 2_000 })
+    .toBeGreaterThanOrEqual(2);
+});
+
+test("opens the custom countdown in a picture-in-picture window", async ({
+  page,
+  context,
+}) => {
+  await page.goto("/");
+  const timer = page.getByRole("region", { name: "自定义倒计时" });
+
+  await timer.getByLabel("分钟").fill("0");
+  await timer.getByLabel("秒").fill("10");
+  await timer.getByRole("button", { name: "开始倒计时", exact: true }).click();
+
+  const pipPagePromise = context.waitForEvent("page");
+  await timer.getByRole("button", { name: "进入画中画", exact: true }).click();
+  const pipPage = await pipPagePromise;
+  await expect(
+    pipPage.locator('[data-exam-id="custom-countdown"]'),
+  ).toBeVisible();
+  await expect(
+    pipPage.getByRole("button", { name: "关闭画中画" }),
+  ).toBeVisible();
+  await pipPage.getByRole("button", { name: "关闭画中画" }).click();
+});
+
+test("persists the completed custom countdown after a page refresh", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const timer = page.getByRole("region", { name: "自定义倒计时" });
+
+  await timer.getByLabel("分钟").fill("0");
+  await timer.getByLabel("秒").fill("1");
+  await timer.getByRole("button", { name: "开始倒计时", exact: true }).click();
+  await expect(
+    timer.getByRole("article", { name: "自定义倒计时已结束", exact: true }),
+  ).toBeVisible({ timeout: 4_000 });
+
+  await page.reload();
+  const restoredTimer = page.getByRole("region", { name: "自定义倒计时" });
+  await expect(
+    restoredTimer.getByRole("article", {
+      name: "自定义倒计时已结束",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    restoredTimer.getByRole("button", {
+      name: "重新开始倒计时",
+      exact: true,
+    }),
+  ).toBeVisible();
+});
+
 test("serves a standalone PWA manifest", async ({ request }) => {
   const root = await request.get("/");
   expect(root.ok()).toBeTruthy();
@@ -298,6 +445,13 @@ async function readCountdownTotal(target: Page): Promise<number> {
       total += Number(element.textContent);
     });
     return total;
+  });
+}
+
+async function readCustomCountdownTotal(target: Page): Promise<number> {
+  return target.evaluate(() => {
+    const card = document.querySelector('[data-exam-id="custom-countdown"]');
+    return Number(card?.getAttribute("data-remaining-seconds") ?? 0);
   });
 }
 
