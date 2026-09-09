@@ -118,6 +118,14 @@ pub const FEEDBACK: &str =
     "alert min-h-12 border border-base-content/10 bg-base-100/50 text-xs text-base-content/70";
 pub const INNER_CARD: &str =
     "card min-w-0 gap-4 border border-base-content/10 bg-base-100/60 p-4 shadow-sm sm:p-5";
+pub const CUSTOM_TIMER_GRID: &str =
+    "mt-4 grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3";
+pub const CUSTOM_TIMER_CARD: &str =
+    "card min-w-0 gap-3 border border-base-content/10 bg-base-100/60 p-3 shadow-sm sm:p-4";
+pub const CUSTOM_TIMER_HEAD: &str = "flex min-w-0 items-center justify-between gap-2";
+pub const CUSTOM_TIMER_TITLE: &str = "text-base font-black";
+pub const CUSTOM_TIMER_INPUTS: &str = "grid grid-cols-3 gap-2";
+pub const CUSTOM_TIMER_ACTIONS: &str = "flex flex-wrap gap-2";
 pub const CONTROL_TITLE: &str =
     "flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between";
 pub const CONTROL_HEADING: &str = "text-sm font-bold";

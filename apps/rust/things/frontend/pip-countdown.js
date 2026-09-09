@@ -15,7 +15,9 @@
   var paused = Boolean(window.__hyzPipPaused);
   var pausedRemainingSeconds = Number(window.__hyzPipRemainingSeconds);
   var pausedProgressPercent = Number(window.__hyzPipProgressPercent);
-  var isCustom = window.__hyzPipMode === "custom" || examId === "custom-countdown";
+  var isCustom =
+    window.__hyzPipMode === "custom" ||
+    (typeof examId === "string" && examId.indexOf("custom-") === 0);
   if (!examId || (!(targetMs > 0) && !(totalSeconds > 0))) {
     return;
   }
