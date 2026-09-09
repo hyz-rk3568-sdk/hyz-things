@@ -11,6 +11,7 @@
   var examId = window.__hyzPipExamId;
   var startMs = Number(window.__hyzPipStartMs);
   var targetMs = Number(window.__hyzPipTargetMs);
+  var completionMs = Number(window.__hyzPipCompletionMs);
   var totalSeconds = Number(window.__hyzPipTotalSeconds);
   var paused = Boolean(window.__hyzPipPaused);
   var pausedRemainingSeconds = Number(window.__hyzPipRemainingSeconds);
@@ -40,6 +41,50 @@
       valueEls[el.getAttribute("data-value")] = el;
     });
   }
+  function completionTimestamp(nowMs) {
+    return paused && pausedRemainingSeconds > 0
+      ? nowMs + pausedRemainingSeconds * 1000
+      : completionMs;
+  }
+
+  function formatCompletionTime(timestamp, nowMs) {
+    if (!(timestamp > 0)) {
+      return "";
+    }
+    var date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) {
+      return "";
+    }
+    var current = new Date(nowMs);
+    var time = pad(date.getHours()) + ":" + pad(date.getMinutes());
+    if (
+      date.getFullYear() === current.getFullYear() &&
+      date.getMonth() === current.getMonth() &&
+      date.getDate() === current.getDate()
+    ) {
+      return time;
+    }
+    return (
+      date.getFullYear() +
+      "年" +
+      pad(date.getMonth() + 1) +
+      "月" +
+      pad(date.getDate()) +
+      "日 " +
+      time
+    );
+  }
+
+  var completionEl = document.createElement("p");
+  completionEl.setAttribute("data-pip-completion", "");
+  completionEl.style.cssText =
+    "margin:0.25rem 0 0;color:rgba(248,248,242,0.72);font-size:0.9rem;line-height:1.4;";
+  if (counter && counter.parentNode) {
+    counter.parentNode.insertBefore(completionEl, counter.nextSibling);
+  } else {
+    card.appendChild(completionEl);
+  }
+
   var finishedShown = false;
 
   function pad(value) {
@@ -70,6 +115,13 @@
       ? Math.max(0, Math.ceil(pausedRemainingSeconds))
       : Math.ceil(remainingMs / 1000);
     var finished = paused ? remainingSeconds === 0 : now >= targetMs;
+    var completionText = formatCompletionTime(completionTimestamp(now), now);
+    if (completionEl) {
+      completionEl.textContent = completionText
+        ? (finished ? "完成于" : paused ? "继续后预计完成" : "预计完成") + " " + completionText
+        : "";
+      completionEl.hidden = !completionText;
+    }
     var percent = paused
       ? Math.max(0, Math.min(100, Number.isFinite(pausedProgressPercent) ? pausedProgressPercent : 0))
       : totalMs === 0

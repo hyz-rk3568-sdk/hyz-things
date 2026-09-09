@@ -266,6 +266,7 @@ struct PipCountdownConfig {
     target: ExamCountdownTarget,
     start_ms: i64,
     target_ms: i64,
+    completion_ms: i64,
     total_seconds: u64,
     paused: bool,
     remaining_seconds: u64,
@@ -360,32 +361,50 @@ fn custom_pip_config(
     state: CustomCountdownState,
     now_ms: i64,
 ) -> PipCountdownConfig {
-    let (start_ms, target_ms, total_seconds, paused, remaining_seconds, progress_percent) =
-        match state.timer {
-            Some(timer) => {
-                let snapshot = custom_countdown_snapshot(now_ms, state);
-                (
-                    timer.start_ms,
-                    timer.target_ms,
-                    timer.total_seconds,
-                    timer.paused,
-                    snapshot.remaining_seconds,
-                    snapshot.progress_percent,
-                )
-            }
-            None => (
+    let (
+        start_ms,
+        target_ms,
+        total_seconds,
+        paused,
+        remaining_seconds,
+        progress_percent,
+        completion_ms,
+    ) = match state.timer {
+        Some(timer) => {
+            let snapshot = custom_countdown_snapshot(now_ms, state);
+            let completion_ms = if timer.paused && snapshot.remaining_seconds > 0 {
+                now_ms.saturating_add(duration_millis(snapshot.remaining_seconds))
+            } else {
+                timer.target_ms
+            };
+            (
+                timer.start_ms,
+                timer.target_ms,
+                timer.total_seconds,
+                timer.paused,
+                snapshot.remaining_seconds,
+                snapshot.progress_percent,
+                completion_ms,
+            )
+        }
+        None => {
+            let completion_ms = now_ms.saturating_add(duration_millis(state.duration_seconds));
+            (
                 now_ms,
-                now_ms.saturating_add(duration_millis(state.duration_seconds)),
+                completion_ms,
                 state.duration_seconds,
                 true,
                 state.duration_seconds,
                 0,
-            ),
-        };
+                completion_ms,
+            )
+        }
+    };
     PipCountdownConfig {
         target: *target,
         start_ms,
         target_ms,
+        completion_ms,
         total_seconds,
         paused,
         remaining_seconds,
@@ -407,6 +426,7 @@ fn exam_pip_config(target: &ExamCountdownTarget, now_ms: i64) -> PipCountdownCon
         target: *target,
         start_ms,
         target_ms,
+        completion_ms: target_ms,
         total_seconds: target_ms
             .saturating_sub(start_ms)
             .checked_div(1_000)
@@ -827,6 +847,11 @@ fn populate_pip_window(pip_window: &Window, config: &PipCountdownConfig) -> Resu
         pip_window.as_ref(),
         &JsValue::from_str("__hyzPipTargetMs"),
         &JsValue::from_f64(config.target_ms as f64),
+    )?;
+    Reflect::set(
+        pip_window.as_ref(),
+        &JsValue::from_str("__hyzPipCompletionMs"),
+        &JsValue::from_f64(config.completion_ms as f64),
     )?;
     Reflect::set(
         pip_window.as_ref(),
@@ -1405,6 +1430,54 @@ fn copy_countdown_canvas(source: &HtmlCanvasElement, target: &HtmlCanvasElement)
     let _ = context.draw_image_with_html_canvas_element(source, 0.0, 0.0);
 }
 
+fn pip_completion_ms(config: &PipCountdownConfig, snapshot: CountdownSnapshot, now_ms: i64) -> i64 {
+    if config.paused && snapshot.remaining_seconds > 0 {
+        now_ms.saturating_add(duration_millis(snapshot.remaining_seconds))
+    } else {
+        config.completion_ms
+    }
+}
+
+fn format_pip_completion(
+    config: &PipCountdownConfig,
+    snapshot: CountdownSnapshot,
+    now_ms: i64,
+) -> String {
+    let completion_ms = pip_completion_ms(config, snapshot, now_ms);
+    if completion_ms <= 0 {
+        return String::new();
+    }
+    let completion = Date::new(&JsValue::from_f64(completion_ms as f64));
+    let current = Date::new(&JsValue::from_f64(now_ms as f64));
+    let time = format!(
+        "{:02}:{:02}",
+        completion.get_hours(),
+        completion.get_minutes()
+    );
+    let datetime = if completion.get_full_year() == current.get_full_year()
+        && completion.get_month() == current.get_month()
+        && completion.get_date() == current.get_date()
+    {
+        time
+    } else {
+        format!(
+            "{}年{:02}月{:02}日 {}",
+            completion.get_full_year(),
+            completion.get_month() + 1,
+            completion.get_date(),
+            time,
+        )
+    };
+    let prefix = if snapshot.finished {
+        "完成于"
+    } else if config.paused {
+        "继续后预计完成"
+    } else {
+        "预计完成"
+    };
+    format!("{prefix} {datetime}")
+}
+
 fn draw_countdown_canvas(
     canvas: &HtmlCanvasElement,
     config: &PipCountdownConfig,
@@ -1521,11 +1594,9 @@ fn draw_countdown_canvas(
     context.set_text_align("left");
 
     context.set_font(&format!("500 20px {font_stack}"));
-    context.set_fill_style_str("#6272a4");
-    let _ = context.fill_text(config.target.target_note, 64.0, 498.0);
-    context.set_text_align("right");
     context.set_fill_style_str("#f8f8f2");
-    let _ = context.fill_text(config.target.target_label, width - 64.0, 498.0);
+    let completion = format_pip_completion(config, snapshot, Date::now() as i64);
+    let _ = context.fill_text(&completion, 64.0, 498.0);
     context.set_text_align("left");
 }
 

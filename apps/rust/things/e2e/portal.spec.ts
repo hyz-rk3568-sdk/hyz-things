@@ -372,6 +372,53 @@ test("opens the selected custom countdown in a picture-in-picture window", async
   await expect(
     pipPage.getByRole("button", { name: "关闭画中画" }),
   ).toBeVisible();
+  await expect(pipPage.locator("[data-pip-completion]")).toHaveText(
+    /^预计完成 \d{2}:\d{2}$/,
+  );
+  await pipPage.getByRole("button", { name: "关闭画中画" }).click();
+});
+
+test("shows running, paused, and completed custom countdown completion times in picture-in-picture", async ({
+  page,
+  context,
+}) => {
+  await page.goto("/");
+  const timer = page.getByRole("region", { name: "自定义倒计时" });
+
+  await timer.getByLabel("下午分钟").fill("0");
+  await timer.getByLabel("下午秒").fill("30");
+  await timer.getByRole("button", { name: "开始下午倒计时", exact: true }).click();
+
+  let pipPagePromise = context.waitForEvent("page");
+  await timer.getByRole("button", { name: "进入下午画中画", exact: true }).click();
+  let pipPage = await pipPagePromise;
+  await expect(pipPage.locator("[data-pip-completion]")).toHaveText(
+    /^预计完成 \d{2}:\d{2}$/,
+  );
+  await pipPage.getByRole("button", { name: "关闭画中画" }).click();
+
+  await timer.getByRole("button", { name: "暂停下午倒计时", exact: true }).click();
+  pipPagePromise = context.waitForEvent("page");
+  await timer.getByRole("button", { name: "进入下午画中画", exact: true }).click();
+  pipPage = await pipPagePromise;
+  await expect(pipPage.locator("[data-pip-completion]")).toHaveText(
+    /^继续后预计完成 \d{2}:\d{2}$/,
+  );
+  await pipPage.getByRole("button", { name: "关闭画中画" }).click();
+
+  await timer.getByLabel("晚上分钟").fill("0");
+  await timer.getByLabel("晚上秒").fill("1");
+  await timer.getByRole("button", { name: "开始晚上倒计时", exact: true }).click();
+  await expect(
+    timer.getByRole("article", { name: "晚上倒计时已结束", exact: true }),
+  ).toBeVisible({ timeout: 4_000 });
+
+  pipPagePromise = context.waitForEvent("page");
+  await timer.getByRole("button", { name: "进入晚上画中画", exact: true }).click();
+  pipPage = await pipPagePromise;
+  await expect(pipPage.locator("[data-pip-completion]")).toHaveText(
+    /^完成于 \d{2}:\d{2}$/,
+  );
   await pipPage.getByRole("button", { name: "关闭画中画" }).click();
 });
 
@@ -450,9 +497,11 @@ test("keeps exam countdown cards dark and low-contrast", async ({ page }) => {
   );
 });
 
-async function readCountdownTotal(target: Page): Promise<number> {
-  return target.evaluate(() => {
-    const counter = document.querySelector("[data-countdown-values]");
+async function readCountdownTotal(target: Page, cardId: string): Promise<number> {
+  return target.evaluate((id) => {
+    const counter = document.querySelector(
+      `[data-exam-id="${id}"] [data-countdown-values]`,
+    );
     if (!counter) {
       return 0;
     }
@@ -461,7 +510,7 @@ async function readCountdownTotal(target: Page): Promise<number> {
       total += Number(element.textContent);
     });
     return total;
-  });
+  }, cardId);
 }
 
 async function readCustomCountdownTotal(
@@ -492,6 +541,9 @@ test("opens an exam countdown in a picture-in-picture window with a double click
   await expect(
     pipPage.getByRole("button", { name: "关闭画中画" }),
   ).toBeVisible();
+  await expect(pipPage.locator("[data-pip-completion]")).toHaveText(
+    /^预计完成 \d{4}年\d{2}月\d{2}日 \d{2}:\d{2}$/,
+  );
 
   // 样式表已复制进画中画窗口：卡片计算样式与主页面一致。
   const mainBackground = await page.evaluate(
@@ -512,8 +564,8 @@ test("opens an exam countdown in a picture-in-picture window with a double click
     .toBe(mainBackground);
 
   // 数值与主页面一致（画中画刚打开，允许 1 秒的展示偏差）。
-  const pipTotal = await readCountdownTotal(pipPage);
-  const mainTotal = await readCountdownTotal(page);
+  const pipTotal = await readCountdownTotal(pipPage, "national-exam");
+  const mainTotal = await readCountdownTotal(page, "national-exam");
   expect(Math.abs(mainTotal - pipTotal)).toBeLessThanOrEqual(1);
   await expectNoHorizontalOverflow(page);
 });
@@ -533,9 +585,9 @@ test("keeps the countdown ticking inside the picture-in-picture window", async (
     pipPage.getByRole("button", { name: "关闭画中画" }),
   ).toBeVisible();
 
-  const before = await readCountdownTotal(pipPage);
+  const before = await readCountdownTotal(pipPage, "hunan-civil-service");
   await pipPage.waitForTimeout(2_300);
-  const after = await readCountdownTotal(pipPage);
+  const after = await readCountdownTotal(pipPage, "hunan-civil-service");
   const diff = before - after;
   expect(diff).toBeGreaterThanOrEqual(1);
   expect(diff).toBeLessThanOrEqual(4);
