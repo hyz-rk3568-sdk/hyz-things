@@ -36,7 +36,10 @@ jobs:
         run: |
           python3 apps/rust/things/tools/web-refactor-checkpoint.py
           python3 apps/rust/things/tools/web-refactor-static.py
-          python3 apps/rust/things/tools/web-refactor-e2e.py
+          if [[ -f apps/rust/things/e2e/portal.spec.ts ]]; then
+            python3 apps/rust/things/tools/web-refactor-e2e.py
+          fi
+          python3 apps/rust/things/tools/web-refactor-e2e-split.py
           python3 apps/rust/things/tools/web-refactor-components.py
           python3 apps/rust/things/tools/web-refactor-countdown-components.py
           python3 apps/rust/things/tools/web-refactor-shell-components.py
