@@ -45,7 +45,9 @@ jobs:
             python3 apps/rust/things/tools/web-refactor-countdown-components.py
             python3 apps/rust/things/tools/web-refactor-shell-components.py
           fi
-          python3 apps/rust/things/tools/web-refactor-overview.py
+          if ! grep -q 'render_health_summary(snapshot)' apps/rust/things/src/web/pages/overview.rs; then
+            python3 apps/rust/things/tools/web-refactor-overview.py
+          fi
           python3 apps/rust/things/tools/web-refactor-overview-health.py
       - name: Format changed Rust
         run: cargo fmt --manifest-path apps/rust/things/Cargo.toml --all
