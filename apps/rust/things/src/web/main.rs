@@ -444,75 +444,123 @@ impl Tone {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum PortalView {
-    Home,
-    Router,
+enum AppPage {
+    Overview,
+    Network,
+    Proxy,
+    Tailscale,
     Camera,
+    Apps,
+    System,
 }
 
-impl PortalView {
+impl AppPage {
+    const ALL: [Self; 7] = [
+        Self::Overview,
+        Self::Network,
+        Self::Proxy,
+        Self::Tailscale,
+        Self::Camera,
+        Self::Apps,
+        Self::System,
+    ];
+
     const fn tab_id(self) -> &'static str {
         match self {
-            Self::Home => "portal-home-tab",
-            Self::Router => "portal-router-tab",
-            Self::Camera => "portal-camera-tab",
+            Self::Overview => "app-overview-tab",
+            Self::Network => "app-network-tab",
+            Self::Proxy => "app-proxy-tab",
+            Self::Tailscale => "app-tailscale-tab",
+            Self::Camera => "app-camera-tab",
+            Self::Apps => "app-apps-tab",
+            Self::System => "app-system-tab",
         }
     }
 
     const fn panel_id(self) -> &'static str {
         match self {
-            Self::Home => "portal-home-panel",
-            Self::Router => "portal-router-panel",
-            Self::Camera => "portal-camera-panel",
+            Self::Overview => "app-overview-panel",
+            Self::Network => "app-network-panel",
+            Self::Proxy => "app-proxy-panel",
+            Self::Tailscale => "app-tailscale-panel",
+            Self::Camera => "app-camera-panel",
+            Self::Apps => "app-apps-panel",
+            Self::System => "app-system-panel",
         }
     }
 
     const fn label(self) -> &'static str {
         match self {
-            Self::Home => "首页",
-            Self::Router => "路由器",
+            Self::Overview => "总览",
+            Self::Network => "网络",
+            Self::Proxy => "代理",
+            Self::Tailscale => "Tailscale",
             Self::Camera => "摄像头",
+            Self::Apps => "应用",
+            Self::System => "系统",
+        }
+    }
+
+    const fn next(self) -> Option<Self> {
+        match self {
+            Self::Overview => Some(Self::Network),
+            Self::Network => Some(Self::Proxy),
+            Self::Proxy => Some(Self::Tailscale),
+            Self::Tailscale => Some(Self::Camera),
+            Self::Camera => Some(Self::Apps),
+            Self::Apps => Some(Self::System),
+            Self::System => None,
+        }
+    }
+
+    const fn previous(self) -> Option<Self> {
+        match self {
+            Self::Overview => None,
+            Self::Network => Some(Self::Overview),
+            Self::Proxy => Some(Self::Network),
+            Self::Tailscale => Some(Self::Proxy),
+            Self::Camera => Some(Self::Tailscale),
+            Self::Apps => Some(Self::Camera),
+            Self::System => Some(Self::Apps),
         }
     }
 }
 
 const PORTAL_SWIPE_THRESHOLD_PX: i32 = 48;
 
-impl PortalView {
-    const fn next(self) -> Option<Self> {
-        match self {
-            Self::Home => Some(Self::Router),
-            Self::Router => Some(Self::Camera),
-            Self::Camera => None,
-        }
-    }
-
-    const fn previous(self) -> Option<Self> {
-        match self {
-            Self::Home => None,
-            Self::Router => Some(Self::Home),
-            Self::Camera => Some(Self::Router),
-        }
-    }
-}
-
-fn portal_view_for_swipe(
-    current: PortalView,
+fn app_page_for_swipe(
+    current: AppPage,
     start_x: i32,
     start_y: i32,
     end_x: i32,
     end_y: i32,
-) -> Option<PortalView> {
+) -> Option<AppPage> {
     let horizontal = end_x - start_x;
     let vertical = end_y - start_y;
     if horizontal.abs() < PORTAL_SWIPE_THRESHOLD_PX || horizontal.abs() <= vertical.abs() {
         return None;
     }
-
     if horizontal < 0 {
         current.next()
     } else {
         current.previous()
+    }
+}
+
+fn app_nav_button(candidate: AppPage, current: AppPage, selected: UseStateHandle<AppPage>) -> Html {
+    let active = candidate == current;
+    let onclick = Callback::from(move |_| selected.set(candidate));
+    html! {
+        <button
+            id={candidate.tab_id()}
+            class={classes!(PORTAL_TAB, active.then_some(PORTAL_TAB_ACTIVE))}
+            type="button"
+            aria-pressed={active.to_string()}
+            aria-controls={candidate.panel_id()}
+            onclick={onclick}
+        >
+            {candidate.label()}
+        </button>
     }
 }
 
@@ -539,114 +587,35 @@ fn swipe_start_allowed(event: &PointerEvent) -> bool {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum WorkspaceView {
-    Overview,
-    Network,
-}
-
-impl WorkspaceView {
-    const fn tab_id(self) -> &'static str {
-        match self {
-            Self::Overview => "overview-tab",
-            Self::Network => "network-tab",
-        }
-    }
-
-    const fn panel_id(self) -> &'static str {
-        match self {
-            Self::Overview => "overview-panel",
-            Self::Network => "network-panel",
-        }
-    }
-
-    const fn label(self) -> &'static str {
-        match self {
-            Self::Overview => "总览",
-            Self::Network => "网络设置",
-        }
-    }
-}
-
-fn render_home(
-    state: &UseReducerHandle<AppState>,
-    select_router: Callback<MouseEvent>,
-    select_camera: Callback<MouseEvent>,
-    select_router_settings: Callback<MouseEvent>,
-) -> Html {
-    let router_status = state
-        .snapshot
-        .as_ref()
-        .map(|snapshot| {
-            let (label, tone) = component_card_status(&snapshot.router);
-            html! { <span class={classes!(STATUS_BADGE, tone.class())}><span class={STATUS_DOT_SMALL} aria-hidden="true"></span>{label}</span> }
-        })
-        .unwrap_or_default();
+fn render_overview(state: &UseReducerHandle<AppState>) -> Html {
     html! {
         <>
-            <CustomCountdownPanel />
-            <ExamCountdownPanel />
-            <section class={SECTION} aria-labelledby="apps-title">
-                <div class={SECTION_HEAD}>
-                    <div><p class={EYEBROW}>{"APPS"}</p><h2 id="apps-title" class={SECTION_TITLE}>{"应用"}</h2></div>
-                    <span class={SECTION_META}>{"门户聚合各独立应用；热推送不重启路由器"}</span>
-                </div>
-                <div class={APP_GRID}>
-                    <article class={APP_CARD} aria-labelledby="app-router-title">
-                        <div class={CONTROL_TITLE}>
-                            <div>
-                                <p class={EYEBROW}>{"ROUTER"}</p>
-                                <h3 id="app-router-title" class={CONTROL_HEADING}>{"路由器管理"}</h3>
-                            </div>
-                            {router_status}
-                        </div>
-                        <p class={HELP_TEXT}>{"无头路由核心的管理界面：网络拓扑、代理、Tailscale、无线与设备策略。"}</p>
-                        <div class={BUTTON_ROW}><button class={BUTTON_PRIMARY} type="button" onclick={select_router}>{"进入路由器"}</button></div>
-                    </article>
-                    <article class={APP_CARD} aria-labelledby="app-camera-title">
-                        <div class={CONTROL_TITLE}>
-                            <div>
-                                <p class={EYEBROW}>{"CAMERA"}</p>
-                                <h3 id="app-camera-title" class={CONTROL_HEADING}>{"摄像头直播"}</h3>
-                            </div>
-                            <CameraAvailability />
-                        </div>
-                        <p class={HELP_TEXT}>{"免登录实时查看摄像头画面；分辨率与旋转设置需要管理员登录。"}</p>
-                        <div class={BUTTON_ROW}><button class={BUTTON_PRIMARY} type="button" onclick={select_camera}>{"进入直播"}</button></div>
-                    </article>
-                    <article class={APP_CARD} aria-labelledby="app-portal-title">
-                        <div class={CONTROL_TITLE}>
-                            <div>
-                                <p class={EYEBROW}>{"THINGS"}</p>
-                                <h3 id="app-portal-title" class={CONTROL_HEADING}>{"门户与设置"}</h3>
-                            </div>
-                            <span class={STATUS_BADGE}><span class={STATUS_DOT_SMALL} aria-hidden="true"></span>{"本门户"}</span>
-                        </div>
-                        <p class={HELP_TEXT}>{"hyz things 门户自身：管理员登录、订阅与设备策略等写操作入口。"}</p>
-                        <div class={BUTTON_ROW}><button class={BUTTON} type="button" onclick={select_router_settings}>{"前往设置"}</button></div>
-                    </article>
-                </div>
-                {render_deployed_apps(state)}
-            </section>
-            <div class={VIEW_HEADING}>
-                <div><p class={EYEBROW}>{"HEALTH"}</p><h2 class={SECTION_TITLE}>{"运行概览"}</h2></div>
-                <span class={SECTION_META}>{"最近一次成功快照"}</span>
-            </div>
             if let Some(snapshot) = &state.snapshot {
-                {render_dashboard(snapshot)}
+                {render_topology(snapshot)}
+                {render_kpis(snapshot)}
                 {render_issues(snapshot)}
+                <div class={VIEW_HEADING}>
+                    <div><p class={EYEBROW}>{"DETAILS"}</p><h2 class={SECTION_TITLE}>{"运行详情"}</h2></div>
+                    <span class={SECTION_META}>{"保留最近一次成功快照"}</span>
+                </div>
+                {render_dashboard(snapshot)}
+                if let Some(panel) = &state.panel {
+                    {render_proxy_groups_read_only(&panel.panel.proxy_groups)}
+                }
             } else if state.loading {
-                <section class={LOADING_GRID} aria-labelledby="home-loading-title" aria-busy="true">
-                    <h2 id="home-loading-title" class="sr-only">{"正在加载状态"}</h2>
+                <section class={LOADING_GRID} aria-labelledby="overview-loading-title" aria-busy="true">
+                    <h2 id="overview-loading-title" class="sr-only">{"正在加载状态"}</h2>
                     {for (0..3).map(|_| html! { <div class={SKELETON} aria-hidden="true"></div> })}
                 </section>
             } else {
-                <section class={EMPTY_STATE} role="alert" aria-labelledby="home-empty-title">
+                <section class={EMPTY_STATE} role="alert" aria-labelledby="overview-empty-title">
                     <span class={EMPTY_ICON} aria-hidden="true">{"!"}</span>
-                    <h2 id="home-empty-title" class={EMPTY_TITLE}>{"暂时无法读取状态"}</h2>
+                    <h2 id="overview-empty-title" class={EMPTY_TITLE}>{"暂时无法读取状态"}</h2>
                     <p class={EMPTY_COPY}>{"面板会自动重试，无需刷新页面。"}</p>
                 </section>
             }
+            <CustomCountdownPanel />
+            <ExamCountdownPanel />
         </>
     }
 }
@@ -656,8 +625,7 @@ fn app() -> Html {
     let state = use_reducer(AppState::default);
     let brightness = use_state(|| 128u16);
     let delay_refresh_started = use_state(|| false);
-    let portal_view = use_state(|| PortalView::Home);
-    let router_view = use_state(|| WorkspaceView::Overview);
+    let app_page = use_state(|| AppPage::Overview);
     let camera_stop_generation = use_state(|| 0u32);
     let swipe_start = use_mut_ref(|| None::<(i32, i32)>);
     let portal_swipe_surface = use_node_ref();
@@ -681,7 +649,6 @@ fn app() -> Html {
                         )),
                         Err(error) => state.dispatch(Action::Failure(error)),
                     }
-                    // Delay after completion so requests never overlap.
                     TimeoutFuture::new(POLL_DELAY_MS).await;
                 }
             });
@@ -748,6 +715,7 @@ fn app() -> Html {
         .session
         .as_ref()
         .is_some_and(|session| session.authenticated && !session.must_change);
+
     let on_portal_pointer_down = {
         let portal_swipe_surface = portal_swipe_surface.clone();
         let swipe_start = swipe_start.clone();
@@ -766,7 +734,7 @@ fn app() -> Html {
         })
     };
     let on_portal_pointer_up = {
-        let portal_view = portal_view.clone();
+        let app_page = app_page.clone();
         let swipe_start = swipe_start.clone();
         Callback::from(move |event: PointerEvent| {
             if event.pointer_type() != "touch" || !event.is_primary() {
@@ -775,53 +743,31 @@ fn app() -> Html {
             let Some((start_x, start_y)) = swipe_start.borrow_mut().take() else {
                 return;
             };
-            if let Some(next) = portal_view_for_swipe(
-                *portal_view,
+            if let Some(next) = app_page_for_swipe(
+                *app_page,
                 start_x,
                 start_y,
                 event.client_x(),
                 event.client_y(),
             ) {
-                portal_view.set(next);
+                app_page.set(next);
             }
         })
     };
     let on_portal_pointer_cancel = {
         let swipe_start = swipe_start.clone();
-        Callback::from(move |_event: PointerEvent| {
-            *swipe_start.borrow_mut() = None;
-        })
+        Callback::from(move |_event: PointerEvent| *swipe_start.borrow_mut() = None)
     };
-    let select_home = {
-        let portal_view = portal_view.clone();
-        Callback::from(move |_| portal_view.set(PortalView::Home))
+    let page = *app_page;
+    let admin_required = || {
+        html! {
+            <section class={EMPTY_STATE} role="status">
+                <span class={EMPTY_ICON} aria-hidden="true">{"🔒"}</span>
+                <h2 class={EMPTY_TITLE}>{"需要管理员登录"}</h2>
+                <p class={EMPTY_COPY}>{"请先在“网络”页面完成管理员登录，再使用此配置页面。"}</p>
+            </section>
+        }
     };
-    let select_router = {
-        let portal_view = portal_view.clone();
-        Callback::from(move |_| portal_view.set(PortalView::Router))
-    };
-    let select_camera = {
-        let portal_view = portal_view.clone();
-        Callback::from(move |_| portal_view.set(PortalView::Camera))
-    };
-    let select_overview = {
-        let router_view = router_view.clone();
-        Callback::from(move |_| router_view.set(WorkspaceView::Overview))
-    };
-    let select_network = {
-        let router_view = router_view.clone();
-        Callback::from(move |_| router_view.set(WorkspaceView::Network))
-    };
-    let select_router_settings = {
-        let portal_view = portal_view.clone();
-        let router_view = router_view.clone();
-        Callback::from(move |_| {
-            router_view.set(WorkspaceView::Network);
-            portal_view.set(PortalView::Router);
-        })
-    };
-    let portal = *portal_view;
-    let workspace = *router_view;
 
     html! {
         <main class={PAGE}>
@@ -843,10 +789,8 @@ fn app() -> Html {
                 </div>
             </header>
             {render_notice(&state)}
-            <nav class={PORTAL_TABS} aria-label="门户视图">
-                <button id={PortalView::Home.tab_id()} class={classes!(PORTAL_TAB, (portal == PortalView::Home).then_some(PORTAL_TAB_ACTIVE))} type="button" aria-pressed={(portal == PortalView::Home).to_string()} onclick={select_home}>{PortalView::Home.label()}</button>
-                <button id={PortalView::Router.tab_id()} class={classes!(PORTAL_TAB, (portal == PortalView::Router).then_some(PORTAL_TAB_ACTIVE))} type="button" aria-pressed={(portal == PortalView::Router).to_string()} onclick={select_router.clone()}>{PortalView::Router.label()}</button>
-                <button id={PortalView::Camera.tab_id()} class={classes!(PORTAL_TAB, (portal == PortalView::Camera).then_some(PORTAL_TAB_ACTIVE))} type="button" aria-pressed={(portal == PortalView::Camera).to_string()} onclick={select_camera.clone()}>{PortalView::Camera.label()}</button>
+            <nav class={PORTAL_TABS} aria-label="主导航">
+                {for AppPage::ALL.into_iter().map(|candidate| app_nav_button(candidate, page, app_page.clone()))}
             </nav>
             <div
                 ref={portal_swipe_surface}
@@ -856,52 +800,63 @@ fn app() -> Html {
                 onpointerup={on_portal_pointer_up}
                 onpointercancel={on_portal_pointer_cancel}
             >
-            if portal == PortalView::Home {
-                <section id={PortalView::Home.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={PortalView::Home.tab_id()}>
-                    {render_home(&state, select_router.clone(), select_camera.clone(), select_router_settings.clone())}
-                </section>
-            } else if portal == PortalView::Router {
-                <section id={PortalView::Router.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={PortalView::Router.tab_id()}>
-                    <nav class={WORKSPACE_TABS} aria-label="路由器视图">
-                        <button id={WorkspaceView::Overview.tab_id()} class={classes!(WORKSPACE_TAB, (workspace == WorkspaceView::Overview).then_some(WORKSPACE_TAB_ACTIVE))} type="button" aria-pressed={(workspace == WorkspaceView::Overview).to_string()} aria-controls={WorkspaceView::Overview.panel_id()} onclick={select_overview}>{WorkspaceView::Overview.label()}</button>
-                        <button id={WorkspaceView::Network.tab_id()} class={classes!(WORKSPACE_TAB, (workspace == WorkspaceView::Network).then_some(WORKSPACE_TAB_ACTIVE))} type="button" aria-pressed={(workspace == WorkspaceView::Network).to_string()} aria-controls={WorkspaceView::Network.panel_id()} onclick={select_network}>{WorkspaceView::Network.label()}</button>
-                    </nav>
-                    <section id={WorkspaceView::Overview.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={WorkspaceView::Overview.tab_id()} hidden={workspace != WorkspaceView::Overview}>
-                        if let Some(snapshot) = &state.snapshot {
-                            {render_topology(snapshot)}
-                            {render_kpis(snapshot)}
-                            {render_issues(snapshot)}
-                            <div class={VIEW_HEADING}>
-                                <div><p class={EYEBROW}>{"DETAILS"}</p><h2 class={SECTION_TITLE}>{"运行详情"}</h2></div>
-                                <span class={SECTION_META}>{"保留最近一次成功快照"}</span>
-                            </div>
-                            {render_dashboard(snapshot)}
-                            if let Some(panel) = &state.panel {
-                                {render_proxy_groups_read_only(&panel.panel.proxy_groups)}
+                {match page {
+                    AppPage::Overview => html! {
+                        <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
+                            {render_overview(&state)}
+                        </section>
+                    },
+                    AppPage::Network => html! {
+                        <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
+                            <Settings state={state.clone()} camera_stop_generation={camera_stop_generation.clone()} />
+                        </section>
+                    },
+                    AppPage::Proxy => html! {
+                        <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
+                            if is_admin { {render_proxy_control(&state)} } else { {admin_required()} }
+                        </section>
+                    },
+                    AppPage::Tailscale => html! {
+                        <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
+                            if is_admin { {render_tailscale_control(&state, &admin_csrf)} } else { {admin_required()} }
+                        </section>
+                    },
+                    AppPage::Camera => html! {
+                        <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
+                            <CameraLiveView admin_csrf={admin_csrf.clone()} is_admin={is_admin} stop_generation={*camera_stop_generation} />
+                        </section>
+                    },
+                    AppPage::Apps => html! {
+                        <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
+                            <section class={SECTION} aria-labelledby="apps-title">
+                                <div class={SECTION_HEAD}>
+                                    <div><p class={EYEBROW}>{"APPS"}</p><h2 id="apps-title" class={SECTION_TITLE}>{"应用"}</h2></div>
+                                    <span class={SECTION_META}>{"部署记录与独立能力入口"}</span>
+                                </div>
+                                <div class={APP_GRID}>
+                                    <article class={APP_CARD} aria-labelledby="apps-camera-title">
+                                        <div class={CONTROL_TITLE}><h3 id="apps-camera-title" class={CONTROL_HEADING}>{"摄像头直播"}</h3><CameraAvailability /></div>
+                                        <p class={HELP_TEXT}>{"实时查看摄像头画面；画面配置需要管理员身份。"}</p>
+                                    </article>
+                                    <article class={APP_CARD} aria-labelledby="apps-router-title">
+                                        <div class={CONTROL_TITLE}><h3 id="apps-router-title" class={CONTROL_HEADING}>{"路由器控制面"}</h3></div>
+                                        <p class={HELP_TEXT}>{"网络、代理、Tailscale 与系统能力已拆分为一级页面。"}</p>
+                                    </article>
+                                </div>
+                                {render_deployed_apps(&state)}
+                            </section>
+                        </section>
+                    },
+                    AppPage::System => html! {
+                        <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
+                            if let Some(snapshot) = &state.snapshot {
+                                {render_dashboard(snapshot)}
+                                {render_issues(snapshot)}
                             }
-                        } else if state.loading {
-                            <section class={LOADING_GRID} aria-labelledby="loading-title" aria-busy="true">
-                                <h2 id="loading-title" class="sr-only">{"正在加载路由器状态"}</h2>
-                                {for (0..3).map(|_| html! { <div class={SKELETON} aria-hidden="true"></div> })}
-                            </section>
-                        } else {
-                            <section class={EMPTY_STATE} role="alert" aria-labelledby="empty-title">
-                                <span class={EMPTY_ICON} aria-hidden="true">{"!"}</span>
-                                <h2 id="empty-title" class={EMPTY_TITLE}>{"暂时无法读取状态"}</h2>
-                                <p class={EMPTY_COPY}>{"面板会自动重试，无需刷新页面。"}</p>
-                            </section>
-                        }
-                        {render_display_control(&state, brightness.clone())}
-                    </section>
-                    <section id={WorkspaceView::Network.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={WorkspaceView::Network.tab_id()} hidden={workspace != WorkspaceView::Network}>
-                        <Settings state={state.clone()} camera_stop_generation={camera_stop_generation.clone()} />
-                    </section>
-                </section>
-            } else {
-                <section id={PortalView::Camera.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={PortalView::Camera.tab_id()}>
-                    <CameraLiveView admin_csrf={admin_csrf} is_admin={is_admin} stop_generation={*camera_stop_generation} />
-                </section>
-            }
+                            {render_display_control(&state, brightness.clone())}
+                        </section>
+                    },
+                }}
             </div>
             <footer class={FOOTER}>{"数据约每 2 秒自动刷新 · 写操作仅接受同源令牌保护的类型化请求"}</footer>
         </main>
