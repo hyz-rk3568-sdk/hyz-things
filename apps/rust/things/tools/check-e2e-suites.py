@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the capability-oriented Playwright suite layout."""
+"""Validate the capability-oriented Playwright suite layout and runnable baseline."""
 
 from collections import Counter
 from pathlib import Path
@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[4]
 E2E = ROOT / "apps/rust/things/e2e"
 SUPPORT = E2E / "support.ts"
 PORTAL = E2E / "portal.spec.ts"
+PLAYWRIGHT_CONFIG = ROOT / "apps/rust/things/playwright.config.ts"
 
 REQUIRED_SPECS = (
     "shell.spec.ts",
@@ -21,6 +22,8 @@ REQUIRED_SPECS = (
 )
 TEST_TITLE = re.compile(r'(?m)^test\("([^"]+)"')
 EXPECTED_MARKER = re.compile(r"(?m)^// expected-tests: (\d+)$")
+EXPECTED_RUNNABLE_MARKER = re.compile(r"(?m)^// expected-runnable-tests: (\d+)$")
+EXCLUDED_TITLE = "switches portal pages from browser touch input"
 
 
 def fail(message: str) -> None:
@@ -32,6 +35,8 @@ def main() -> None:
         fail("portal.spec.ts must not return after the capability split")
     if not SUPPORT.is_file():
         fail("support.ts is missing")
+    if not PLAYWRIGHT_CONFIG.is_file():
+        fail("playwright.config.ts is missing")
 
     actual_specs = tuple(sorted(path.name for path in E2E.glob("*.spec.ts")))
     expected_specs = tuple(sorted(REQUIRED_SPECS))
@@ -42,9 +47,13 @@ def main() -> None:
 
     support = SUPPORT.read_text()
     marker = EXPECTED_MARKER.search(support)
+    runnable_marker = EXPECTED_RUNNABLE_MARKER.search(support)
     if marker is None:
         fail("support.ts expected-test marker is missing")
+    if runnable_marker is None:
+        fail("support.ts expected-runnable-test marker is missing")
     expected_total = int(marker.group(1))
+    expected_runnable = int(runnable_marker.group(1))
 
     titles: list[str] = []
     counts: dict[str, int] = {}
@@ -64,10 +73,20 @@ def main() -> None:
     if len(titles) != expected_total:
         fail(f"expected-test marker={expected_total}, discovered={len(titles)}")
 
+    config = PLAYWRIGHT_CONFIG.read_text()
+    expected_grep = f"grepInvert: /{EXCLUDED_TITLE}/"
+    if expected_grep not in config:
+        fail("the intentional real-touch grepInvert changed without updating the E2E baseline")
+    if EXCLUDED_TITLE not in titles:
+        fail("the grepInvert exclusion no longer matches a declared test")
+    runnable = len(titles) - 1
+    if runnable != expected_runnable:
+        fail(f"expected-runnable marker={expected_runnable}, discovered={runnable}")
+
     print(
         "capability Playwright suites valid: "
         + ", ".join(f"{name}={counts[name]}" for name in REQUIRED_SPECS)
-        + f"; total={len(titles)}"
+        + f"; declared={len(titles)}; runnable={runnable}"
     )
 
 

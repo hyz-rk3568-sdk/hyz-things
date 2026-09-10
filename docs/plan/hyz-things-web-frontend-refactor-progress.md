@@ -25,12 +25,26 @@ This file records implementation evidence while `hyz-things-web-frontend-refacto
 - Human-authored CI run `34483983476` passed the committed diff/static checks, contract format/tests/Clippy, deterministic frontend bundle, Rust formatting, browser-side web unit logic, native tests, and strict Clippy.
 - The same run's Playwright job executed `Running 32 tests using 1 worker` and completed with `32 passed (2.5m)`.
 
-**Shared-component stage result: passed.** Plan section 7 is green. Overview redesign, theme work, and visual cleanup remain deferred until the capability-focused E2E organization below is green.
+**Shared-component stage result: passed.** Plan section 7 is green.
 
-## Current stage — capability-focused Playwright suites
+## 2026-09-10 — capability-focused Playwright checkpoint
 
-- Replace the ~80 KB `e2e/portal.spec.ts` monolith with capability suites for shell/overview, countdown, HTTP/security boundary, camera, proxy, network, and Tailscale.
-- Move only genuinely shared browser helpers into `e2e/support.ts`; keep harness/network setup in `fixtures.ts`.
-- Preserve every existing top-level Playwright test block and the per-test harness reset instead of weakening assertions or rewriting behavior during the move.
-- The migration is required to be idempotent, reject duplicate test titles, reject empty capability suites, and verify the total test count against a generated marker before deleting the monolith.
-- Full PR CI must still report the same 32 passing Chromium tests after the split before work proceeds to the Overview information-priority redesign.
+- The former ~80 KB `e2e/portal.spec.ts` monolith is gone. Playwright coverage is organized into `shell.spec.ts`, `countdown.spec.ts`, `security.spec.ts`, `camera.spec.ts`, `proxy.spec.ts`, `network.spec.ts`, and `tailscale.spec.ts`.
+- Shared browser-only helpers live in `e2e/support.ts`; harness/network setup remains in `fixtures.ts`.
+- The generated split preserves every former top-level test block and each suite resets the deterministic harness in `test.beforeEach`.
+- `tools/check-e2e-suites.py` is a durable CI gate: it rejects a returning monolith, missing/extra capability suites, empty suites, missing harness reset, duplicate titles, declared-test drift, and runnable-test drift.
+- There are 33 declared top-level tests. `playwright.config.ts` intentionally excludes exactly one real-CDP touch-input case with `grepInvert`, leaving a runnable CI baseline of 32 tests. The static gate records both values rather than confusing declared and runnable counts.
+- Human-authored head `09403dc7ecbc616cbaf02fb8d4f0dece815e7488`, CI run `34487713839`, passed the suite-layout gate, `git diff --check`, `make check-static`, contract format/tests/Clippy, deterministic frontend build, things format, browser-side unit tests, native tests, and strict Clippy.
+- The same run's Playwright job reported `Running 32 tests using 1 worker` and `32 passed (2.5m)` after the capability split.
+
+**Capability-focused Playwright stage result: passed.** The refactor can now proceed to the Overview information-priority work without weakening the E2E baseline.
+
+## Current stage — Overview information priority
+
+- Put Internet/WAN, LAN/Wi-Fi, Proxy, and Tailscale health in the first visual layer, with explicit text status so color is supplementary rather than the only signal.
+- Keep degraded/unknown/unavailable semantics honest; do not show an unconfirmed state as healthy.
+- Move the existing network topology below the core health summary while retaining the real dual-uplink, Router/NAT, Proxy, and Tailscale data path.
+- Keep issues prominent and preserve the most recent successful snapshot behavior.
+- Keep Camera/Apps/countdown auxiliary to core device/network health; countdown stays on Overview and does not become first-level navigation.
+- Preserve existing data sources and control behavior. Extend the capability-focused E2E assertions rather than adding selectors tied to Tailwind or DOM implementation detail.
+- Full human-authored PR CI, including the 32-test runnable Playwright baseline, is required before this stage is marked green.
