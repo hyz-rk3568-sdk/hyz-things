@@ -1,0 +1,52 @@
+name: web refactor driver
+
+on:
+  push:
+    branches:
+      - refactor/web-frontend-structure
+    paths:
+      - "apps/rust/things/src/web/**"
+      - "apps/rust/things/tools/web-refactor.py"
+      - ".github/workflows/web-refactor-driver.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: web-refactor-driver-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  refactor:
+    if: ${{ !contains(github.event.head_commit.message, '[web-refactor-generated]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/web-frontend-structure
+          fetch-depth: 0
+      - name: Install Rust 1.88 formatter
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal --component rustfmt
+          rustup default 1.88.0
+      - name: Run refactor driver
+        run: python3 apps/rust/things/tools/web-refactor.py
+      - name: Format changed Rust
+        run: cargo fmt --manifest-path apps/rust/things/Cargo.toml --all
+      - name: Show diff summary
+        run: |
+          git diff --check
+          git diff --stat
+      - name: Commit generated refactor
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/rust/things/src/web apps/rust/things/tools/web-refactor.py
+          git commit -m "refactor(web): generate frontend module split [web-refactor-generated]"
+          git push origin HEAD:refactor/web-frontend-structure
