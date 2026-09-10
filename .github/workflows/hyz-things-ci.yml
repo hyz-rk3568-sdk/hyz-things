@@ -120,6 +120,12 @@ jobs:
       - name: Check hyz-things formatting
         run: cargo fmt --manifest-path apps/rust/things/Cargo.toml --all -- --check
 
+      # Keep browser-side pure logic covered by an executable unit-test target.
+      # This specifically protects deterministic countdown/date/storage helpers
+      # without depending on wall clock, DOM, browser storage, or Playwright.
+      - name: Test hyz-things web unit logic
+        run: cargo test --locked --manifest-path apps/rust/things/Cargo.toml --no-default-features --features web --bin hyz-things-web
+
       - name: Test hyz-things native
         run: cargo test --locked --manifest-path apps/rust/things/Cargo.toml --features native
 
