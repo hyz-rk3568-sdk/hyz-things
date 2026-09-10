@@ -113,7 +113,7 @@ fn generate_certificate(
             .parent()
             .expect("certificate path must have a parent"),
     )
-    .map_err(|error| format!("cannot create {}: {error}", CERT_DIRECTORY))?;
+    .map_err(|error| format!("cannot create {CERT_DIRECTORY}: {error}"))?;
     write_private(certificate_path, certificate.pem().as_bytes())?;
     write_private(private_key_path, key_pair.serialize_pem().as_bytes())?;
 
