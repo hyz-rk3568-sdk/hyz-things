@@ -44,6 +44,7 @@ jobs:
           python3 apps/rust/things/tools/web-refactor-countdown-components.py
           python3 apps/rust/things/tools/web-refactor-shell-components.py
           python3 apps/rust/things/tools/web-refactor-overview.py
+          python3 apps/rust/things/tools/web-refactor-overview-health.py
       - name: Format changed Rust
         run: cargo fmt --manifest-path apps/rust/things/Cargo.toml --all
       - name: Check generated WASM frontend
