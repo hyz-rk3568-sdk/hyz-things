@@ -6,6 +6,7 @@ on:
       - refactor/web-frontend-structure
     paths:
       - "apps/rust/things/src/web/**"
+      - "apps/rust/things/e2e/**"
       - "apps/rust/things/tools/web-refactor*.py"
       - ".github/workflows/web-refactor-driver.yml"
 
@@ -31,8 +32,10 @@ jobs:
           rustup toolchain install 1.88.0 --profile minimal --component rustfmt
           rustup default 1.88.0
           rustup target add wasm32-unknown-unknown --toolchain 1.88.0
-      - name: Update refactor static contracts
-        run: python3 apps/rust/things/tools/web-refactor-static.py
+      - name: Run pending refactor migrations
+        run: |
+          python3 apps/rust/things/tools/web-refactor-static.py
+          python3 apps/rust/things/tools/web-refactor-e2e.py
       - name: Format changed Rust
         run: cargo fmt --manifest-path apps/rust/things/Cargo.toml --all
       - name: Check generated WASM frontend
@@ -50,6 +53,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Makefile apps/rust/things/src/web apps/rust/things/tools/web-refactor*.py
-          git commit -m "ci: guard unavailable SDK-only static checks [web-refactor-generated]"
+          git add Makefile apps/rust/things/src/web apps/rust/things/e2e apps/rust/things/tools/web-refactor*.py
+          git commit -m "test(e2e): migrate navigation contracts [web-refactor-generated]"
           git push origin HEAD:refactor/web-frontend-structure
