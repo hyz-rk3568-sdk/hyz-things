@@ -2,6 +2,20 @@
 @plugin "daisyui" {
   themes: light --default, dracula --prefersdark;
 }
+@plugin "daisyui/theme" {
+  name: "light";
+  default: true;
+  color-scheme: light;
+  --color-base-content: #101010;
+  --color-info: #0369a1;
+  --color-info-content: #ffffff;
+  --color-success: #15803d;
+  --color-success-content: #ffffff;
+  --color-warning: #a16207;
+  --color-warning-content: #ffffff;
+  --color-error: #b91c1c;
+  --color-error-content: #ffffff;
+}
 @source "../src/web/**/*.rs";
 
 @layer base {
@@ -21,5 +35,11 @@
 
   noscript {
     @apply block p-10 text-center text-base-content;
+  }
+}
+
+@layer components {
+  .tab:not(.tab-active) {
+    @apply text-base-content/75;
   }
 }
