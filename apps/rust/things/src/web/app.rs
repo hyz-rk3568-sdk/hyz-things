@@ -599,37 +599,22 @@ pub(super) fn app() -> Html {
         }
     };
 
+    let navigation = html! {
+        <>{for AppPage::ALL.into_iter().map(|candidate| app_nav_button(candidate, page, app_page.clone()))}</>
+    };
+
     html! {
-        <main class={PAGE}>
-            <header class={APP_HEADER}>
-                <div class={BRAND}>
-                    <span class={BRAND_MARK} aria-hidden="true">{"HYZ"}</span>
-                    <div>
-                        <p class={EYEBROW}>{"LOCAL CONTROL PLANE"}</p>
-                        <h1 class={PAGE_TITLE}>{"hyz things"}</h1>
-                        <p class={SUBTITLE}>{"个人门户 · 设备与应用管理"}</p>
-                    </div>
-                </div>
-                <div class={classes!(OVERALL, overall_tone.class())} role="status" aria-live="polite" aria-atomic="true">
-                    <span class={STATUS_DOT} aria-hidden="true"></span>
-                    <div class={OVERALL_COPY}>
-                        <strong class={OVERALL_TITLE}>{overall_text}</strong>
-                        <small class={OVERALL_META}>{format!("最后更新：{updated}")}</small>
-                    </div>
-                </div>
-            </header>
-            {render_notice(&state)}
-            <nav class={PORTAL_TABS} aria-label="主导航">
-                {for AppPage::ALL.into_iter().map(|candidate| app_nav_button(candidate, page, app_page.clone()))}
-            </nav>
-            <div
-                ref={portal_swipe_surface}
-                id="portal-swipe-surface"
-                class={PORTAL_SWIPE_SURFACE}
-                onpointerdown={on_portal_pointer_down}
-                onpointerup={on_portal_pointer_up}
-                onpointercancel={on_portal_pointer_cancel}
-            >
+        <AppShell
+            overall_text={AttrValue::from(overall_text.to_owned())}
+            overall_tone={classes!(overall_tone.class())}
+            updated={AttrValue::from(updated.to_owned())}
+            notice={render_notice(&state)}
+            navigation={navigation}
+            swipe_surface={portal_swipe_surface}
+            on_pointer_down={on_portal_pointer_down}
+            on_pointer_up={on_portal_pointer_up}
+            on_pointer_cancel={on_portal_pointer_cancel}
+        >
                 // Overview and Network stay mounted so local drafts/timers survive page switches.
                 // The other inactive pages keep empty panel targets in the DOM so every aria-controls
                 // relationship remains valid. Camera content itself is still mounted only while active,
@@ -682,11 +667,10 @@ pub(super) fn app() -> Html {
                     },
                     AppPage::Apps => html! {
                         <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
-                            <section class={SECTION} aria-labelledby="apps-title">
-                                <div class={SECTION_HEAD}>
-                                    <div><p class={EYEBROW}>{"APPS"}</p><h2 id="apps-title" class={SECTION_TITLE}>{"应用"}</h2></div>
+                            <SectionCard title_id="apps-title">
+                                <PageHeader title_id="apps-title" eyebrow="APPS" title="应用">
                                     <span class={SECTION_META}>{"部署记录与独立能力入口"}</span>
-                                </div>
+                                </PageHeader>
                                 <div class={APP_GRID}>
                                     <article class={APP_CARD} aria-labelledby="apps-camera-title">
                                         <div class={CONTROL_TITLE}><h3 id="apps-camera-title" class={CONTROL_HEADING}>{"摄像头直播"}</h3><CameraAvailability /></div>
@@ -698,7 +682,7 @@ pub(super) fn app() -> Html {
                                     </article>
                                 </div>
                                 {render_deployed_apps(&state)}
-                            </section>
+                            </SectionCard>
                         </section>
                     },
                     AppPage::System => html! {
@@ -707,9 +691,7 @@ pub(super) fn app() -> Html {
                         </section>
                     },
                 }}
-            </div>
-            <footer class={FOOTER}>{"数据约每 2 秒自动刷新 · 写操作仅接受同源令牌保护的类型化请求"}</footer>
-        </main>
+        </AppShell>
     }
 }
 
