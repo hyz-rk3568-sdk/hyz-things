@@ -41,3 +41,9 @@
 nav.tabs > button.tab:not(.tab-active) {
   color: var(--color-base-content);
 }
+
+.card.shadow-xl,
+.card.shadow-lg,
+.tabs-box.shadow-lg {
+  box-shadow: var(--shadow-sm);
+}
