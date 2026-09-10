@@ -37,6 +37,7 @@ jobs:
           python3 apps/rust/things/tools/web-refactor-checkpoint.py
           python3 apps/rust/things/tools/web-refactor-static.py
           python3 apps/rust/things/tools/web-refactor-e2e.py
+          python3 apps/rust/things/tools/web-refactor-components.py
       - name: Format changed Rust
         run: cargo fmt --manifest-path apps/rust/things/Cargo.toml --all
       - name: Check generated WASM frontend
@@ -55,5 +56,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Makefile apps/rust/things/src/web apps/rust/things/e2e apps/rust/things/tools/web-refactor*.py
-          git commit -m "refactor(web): finish structural checkpoint [web-refactor-generated]"
+          git commit -m "refactor(web): extract shared presentation components [web-refactor-generated]"
           git push origin HEAD:refactor/web-frontend-structure
