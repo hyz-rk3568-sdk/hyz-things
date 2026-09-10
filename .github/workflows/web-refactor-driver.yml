@@ -34,6 +34,7 @@ jobs:
           rustup target add wasm32-unknown-unknown --toolchain 1.88.0
       - name: Run pending refactor migrations
         run: |
+          python3 apps/rust/things/tools/web-refactor-checkpoint.py
           python3 apps/rust/things/tools/web-refactor-static.py
           python3 apps/rust/things/tools/web-refactor-e2e.py
       - name: Format changed Rust
@@ -54,5 +55,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Makefile apps/rust/things/src/web apps/rust/things/e2e apps/rust/things/tools/web-refactor*.py
-          git commit -m "test(e2e): migrate navigation contracts [web-refactor-generated]"
+          git commit -m "refactor(web): finish structural checkpoint [web-refactor-generated]"
           git push origin HEAD:refactor/web-frontend-structure
