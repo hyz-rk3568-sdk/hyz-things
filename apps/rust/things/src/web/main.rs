@@ -2,6 +2,7 @@
 
 mod api;
 mod app;
+mod components;
 mod ui;
 
 mod hooks;
@@ -9,6 +10,7 @@ mod pages;
 
 use api::*;
 use app::*;
+use components::*;
 use hooks::*;
 use pages::*;
 

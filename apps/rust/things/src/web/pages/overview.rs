@@ -16,16 +16,13 @@ pub(crate) fn render_overview(state: &UseReducerHandle<AppState>) -> Html {
                     {render_proxy_groups_read_only(&panel.panel.proxy_groups)}
                 }
             } else if state.loading {
-                <section class={LOADING_GRID} aria-labelledby="overview-loading-title" aria-busy="true">
-                    <h2 id="overview-loading-title" class="sr-only">{"正在加载状态"}</h2>
-                    {for (0..3).map(|_| html! { <div class={SKELETON} aria-hidden="true"></div> })}
-                </section>
+                <LoadingState title_id="overview-loading-title" title="正在加载状态" />
             } else {
-                <section class={EMPTY_STATE} role="alert" aria-labelledby="overview-empty-title">
-                    <span class={EMPTY_ICON} aria-hidden="true">{"!"}</span>
-                    <h2 id="overview-empty-title" class={EMPTY_TITLE}>{"暂时无法读取状态"}</h2>
-                    <p class={EMPTY_COPY}>{"面板会自动重试，无需刷新页面。"}</p>
-                </section>
+                <EmptyState
+                    title_id="overview-empty-title"
+                    title="暂时无法读取状态"
+                    message="面板会自动重试，无需刷新页面。"
+                />
             }
             <CustomCountdownPanel />
             <ExamCountdownPanel />
@@ -386,20 +383,10 @@ pub(crate) fn render_kpis(snapshot: &StatusSnapshot) -> Html {
 
     html! {
         <section class={KPI_GRID} aria-label="关键网络指标">
-            {kpi("活动上行", active, "Ethernet 优先 · Wi-Fi fallback")}
-            {kpi("Ethernet WAN", ethernet_address, "DHCP / 默认路由 metric 100")}
-            {kpi("Wi-Fi WAN", wifi_address, "DHCP / 默认路由 metric 600")}
-            {kpi("LAN 数据面", clients, "代理 TUN / 普通 NAT · AP 客户端")}
+            <MetricCard label="活动上行" value={active} meta="Ethernet 优先 · Wi-Fi fallback" />
+            <MetricCard label="Ethernet WAN" value={ethernet_address} meta="DHCP / 默认路由 metric 100" />
+            <MetricCard label="Wi-Fi WAN" value={wifi_address} meta="DHCP / 默认路由 metric 600" />
+            <MetricCard label="LAN 数据面" value={clients} meta="代理 TUN / 普通 NAT · AP 客户端" />
         </section>
-    }
-}
-
-pub(crate) fn kpi(label: &'static str, value: String, meta: &'static str) -> Html {
-    html! {
-        <article class={KPI_CARD}>
-            <span class={KPI_LABEL}>{label}</span>
-            <strong class={KPI_VALUE} title={value.clone()}>{value}</strong>
-            <small class={KPI_META}>{meta}</small>
-        </article>
     }
 }
