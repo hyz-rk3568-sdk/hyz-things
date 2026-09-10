@@ -37,18 +37,26 @@ pub(crate) fn app_shell(props: &AppShellProps) -> Html {
                 </div>
             </header>
             {props.notice.clone()}
-            <nav class={PORTAL_TABS} aria-label="主导航">
-                {props.navigation.clone()}
-            </nav>
-            <div
-                ref={props.swipe_surface.clone()}
-                id="portal-swipe-surface"
-                class={PORTAL_SWIPE_SURFACE}
-                onpointerdown={props.on_pointer_down.clone()}
-                onpointerup={props.on_pointer_up.clone()}
-                onpointercancel={props.on_pointer_cancel.clone()}
-            >
-                {for props.children.iter()}
+            <div class="grid min-w-0 gap-4 lg:grid-cols-[12rem_minmax(0,1fr)] lg:items-start">
+                <nav
+                    class={classes!(
+                        PORTAL_TABS,
+                        "max-lg:grid-cols-4 lg:mt-0 lg:grid-cols-1 lg:self-start lg:overflow-visible [&_.tab]:min-w-0 lg:[&_.tab]:w-full lg:[&_.tab]:justify-start lg:[&_.tab]:px-3",
+                    )}
+                    aria-label="主导航"
+                >
+                    {props.navigation.clone()}
+                </nav>
+                <div
+                    ref={props.swipe_surface.clone()}
+                    id="portal-swipe-surface"
+                    class={PORTAL_SWIPE_SURFACE}
+                    onpointerdown={props.on_pointer_down.clone()}
+                    onpointerup={props.on_pointer_up.clone()}
+                    onpointercancel={props.on_pointer_cancel.clone()}
+                >
+                    {for props.children.iter()}
+                </div>
             </div>
             <footer class={FOOTER}>{"数据约每 2 秒自动刷新 · 写操作仅接受同源令牌保护的类型化请求"}</footer>
         </main>

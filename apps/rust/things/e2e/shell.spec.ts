@@ -38,6 +38,25 @@ test("renders the overview, apps, and anonymous system control", async ({
   await expect(
     page.getByRole("button", { name: "总览", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
+
+  const desktopNavigation = page.getByRole("navigation", { name: "主导航" });
+  const overviewPanel = page.locator("#app-overview-panel");
+  const [desktopNavigationBox, overviewPanelBox, overviewTabBox, networkTabBox] =
+    await Promise.all([
+      desktopNavigation.boundingBox(),
+      overviewPanel.boundingBox(),
+      page.getByRole("button", { name: "总览", exact: true }).boundingBox(),
+      page.getByRole("button", { name: "网络", exact: true }).boundingBox(),
+    ]);
+  expect(desktopNavigationBox).not.toBeNull();
+  expect(overviewPanelBox).not.toBeNull();
+  expect(overviewTabBox).not.toBeNull();
+  expect(networkTabBox).not.toBeNull();
+  expect(desktopNavigationBox!.x + desktopNavigationBox!.width).toBeLessThan(
+    overviewPanelBox!.x,
+  );
+  expect(networkTabBox!.y).toBeGreaterThan(overviewTabBox!.y);
+
   const coreHealth = page.getByRole("region", { name: "核心健康状态" });
   await expect(coreHealth).toBeVisible();
   for (const label of ["Internet / WAN", "LAN / Wi-Fi", "Proxy", "Tailscale"]) {
@@ -329,6 +348,27 @@ test("fits a narrow portal screen without horizontal overflow", async ({
   for (const name of ["总览", "网络", "代理", "Tailscale", "摄像头", "应用", "系统"] as const) {
     await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
   }
+
+  const mobileNavigation = page.getByRole("navigation", { name: "主导航" });
+  const mobileOverviewPanel = page.locator("#app-overview-panel");
+  const [mobileNavigationBox, mobilePanelBox, mobileOverviewTabBox, mobileTailscaleTabBox, mobileCameraTabBox] =
+    await Promise.all([
+      mobileNavigation.boundingBox(),
+      mobileOverviewPanel.boundingBox(),
+      page.getByRole("button", { name: "总览", exact: true }).boundingBox(),
+      page.getByRole("button", { name: "Tailscale", exact: true }).boundingBox(),
+      page.getByRole("button", { name: "摄像头", exact: true }).boundingBox(),
+    ]);
+  expect(mobileNavigationBox).not.toBeNull();
+  expect(mobilePanelBox).not.toBeNull();
+  expect(mobileOverviewTabBox).not.toBeNull();
+  expect(mobileTailscaleTabBox).not.toBeNull();
+  expect(mobileCameraTabBox).not.toBeNull();
+  expect(mobileNavigationBox!.y + mobileNavigationBox!.height).toBeLessThanOrEqual(
+    mobilePanelBox!.y,
+  );
+  expect(Math.abs(mobileTailscaleTabBox!.y - mobileOverviewTabBox!.y)).toBeLessThan(2);
+  expect(mobileCameraTabBox!.y).toBeGreaterThan(mobileOverviewTabBox!.y);
 
   await goToAppPage(page, "网络");
   await expect(page.getByRole("button", { name: "管理员登录" })).toBeVisible();

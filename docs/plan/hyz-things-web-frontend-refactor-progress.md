@@ -39,16 +39,27 @@ This file records implementation evidence while `hyz-things-web-frontend-refacto
 
 **Capability-focused Playwright stage result: passed.** The refactor can now proceed to the Overview information-priority work without weakening the E2E baseline.
 
-## Current stage — Overview information priority
+## 2026-09-10 — Overview information-priority checkpoint
 
-- The generated Overview implementation now puts Internet/WAN, LAN/Wi-Fi, Proxy, and Tailscale in the first visual layer, with explicit `正常` / `需检查` / `不可用` / `未知` labels. Issues remain immediately after the health summary and the existing network topology is below it.
+- The generated Overview implementation puts Internet/WAN, LAN/Wi-Fi, Proxy, and Tailscale in the first visual layer, with explicit `正常` / `需检查` / `不可用` / `未知` labels. Issues remain immediately after the health summary and the existing network topology is below it.
 - `MetricCard` supports a presentation-only `StatusBadge`; the health grid starts as one column on small screens, becomes two columns, and reaches four columns on wide screens.
 - Core health no longer equates `ComponentState::Available` with healthy. LAN requires confirmed LAN/AP readiness; Proxy requires consistent known Mihomo, LAN TUN, and local-system-proxy state; Tailscale requires desired/effective mode agreement and the relevant backend/authentication/route/firewall/approval state.
 - Unknown runtime fields remain neutral instead of being promoted to green. Explicit mismatches become warning/error tones, while intentionally disabled but internally consistent Proxy/Tailscale states can still be healthy.
 - Four deterministic browser-side unit tests cover LAN unknown/down readiness, Proxy three-part consistency, Tailscale mode/LAN-route readiness, and the invariant that a degraded top-level component cannot render as healthy.
 - The obsolete `WORKSPACE_TABS`, `WORKSPACE_TAB`, and `WORKSPACE_TAB_ACTIVE` style tokens were removed after the AppShell/portal navigation migration made them unreachable.
-- Refactor driver run `34491355789` on human head `aeee812f29cdc2e7da19f55530b0cd1fd10e2bce` passed migration, rustfmt, WASM `cargo check`, `git diff --check`, and generated commit `b923051104da967ccc544f92d6d704be7ed45c51`.
+- Refactor driver run `34491355789` passed migration, rustfmt, WASM `cargo check`, `git diff --check`, and generated the semantic health changes in `b923051104da967ccc544f92d6d704be7ed45c51`.
 - The temporary driver now skips completed shared-component and first-pass Overview migrations by stage markers. This prevents earlier migration scripts from rewriting evolved component markup or failing on formatter-induced source layout changes.
-- Camera/Apps/countdown remain auxiliary to core device/network health; countdown stays on Overview and does not become first-level navigation.
-- Existing data sources and control behavior remain unchanged. Capability-focused E2E assertions cover the new health region and degraded Proxy status without selecting Tailwind classes.
-- **Pending checkpoint:** a human-authored commit on top of generated head `b923051104da967ccc544f92d6d704be7ed45c51` must pass the complete PR CI, including the new web unit tests and the 32-test runnable Playwright baseline, before this stage is marked green.
+- Human-authored head `3228801f1a13e11721d53bd1201ad0a11756a870`, CI run `34492752834`, passed the capability-suite gate, committed diff/static checks, contract format/tests/Clippy, deterministic frontend bundle, Rust formatting, all 13 browser-side web unit tests, native tests, and strict Clippy.
+- The same run's Playwright job executed `Running 32 tests using 1 worker` and completed with `32 passed (2.3m)`. The healthy baseline explicitly checks all four core health cards, while the degraded Proxy journey separately checks `需检查`.
+
+**Overview information-priority stage result: passed.** Plan section 9 is green.
+
+## Current stage — Application shell and responsive navigation
+
+- Keep the existing seven first-level destinations and the current `AppPage` state/ARIA relationships; navigation layout changes must remain presentation-only.
+- On desktop, render the first-level navigation as a sticky single-column rail to the left of the active page content.
+- On narrow/mobile viewports, keep the same navigation reachable above the page content in a compact four-plus-three grid; horizontal swipe navigation remains available.
+- Preserve Overview/Network mounted-state behavior, Camera stop-on-page-leave lifecycle, admin authorization boundaries, and all mutation flows.
+- Extend the existing `shell.spec.ts` journeys with geometry assertions: desktop navigation must be left of the Overview panel and vertically stacked; mobile navigation must be above the panel, with Tailscale still on the first row and Camera beginning the second row.
+- Continue to assert no page-level horizontal overflow and avoid Tailwind-class selectors in E2E.
+- **Pending checkpoint:** this responsive AppShell change must pass the complete human-authored PR CI, including the 32-test runnable Playwright baseline, before plan section 8 is marked green.
