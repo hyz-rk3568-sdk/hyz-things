@@ -20,20 +20,23 @@ jobs:
   refactor:
     if: ${{ !contains(github.event.head_commit.message, '[web-refactor-generated]') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
           ref: refactor/web-frontend-structure
           fetch-depth: 0
-      - name: Install Rust 1.88 formatter
+      - name: Install Rust 1.88
         run: |
           rustup toolchain install 1.88.0 --profile minimal --component rustfmt
           rustup default 1.88.0
+          rustup target add wasm32-unknown-unknown --toolchain 1.88.0
       - name: Run refactor driver
         run: python3 apps/rust/things/tools/web-refactor.py
       - name: Format changed Rust
         run: cargo fmt --manifest-path apps/rust/things/Cargo.toml --all
+      - name: Check generated WASM frontend
+        run: cargo check --locked --manifest-path apps/rust/things/Cargo.toml --features web --target wasm32-unknown-unknown
       - name: Show diff summary
         run: |
           git diff --check
