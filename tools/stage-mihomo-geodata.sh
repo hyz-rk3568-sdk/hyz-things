@@ -30,7 +30,11 @@ stage_asset() {
     rm -f "${temporary}"
     exit 1
   fi
-  printf '%s  %s\n' "${expected_sha256}" "${temporary}" | sha256sum --check --status
+  if ! printf '%s  %s\n' "${expected_sha256}" "${temporary}" | sha256sum --check --status; then
+    echo "${name}: SHA-256 verification failed" >&2
+    rm -f "${temporary}"
+    exit 1
+  fi
   chmod 0644 "${temporary}"
   mv -f "${temporary}" "${target}"
 }
