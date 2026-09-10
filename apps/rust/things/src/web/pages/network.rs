@@ -442,8 +442,6 @@ pub(super) fn settings(props: &SettingsProps) -> Html {
                 </div>
             } else {
                 <>
-                    {render_proxy_control(state)}
-                    {render_tailscale_control(state, &csrf)}
                     <div class={SETTINGS_GRID}>
                     <article class={DISCLOSURE}>
                         <button id="sta-settings-toggle" ref={sta_toggle} class={DISCLOSURE_TOGGLE} type="button" onclick={toggle_sta} aria-expanded={sta_expanded.to_string()} aria-controls="sta-settings-detail">

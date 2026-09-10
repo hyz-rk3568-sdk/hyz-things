@@ -1,5 +1,3 @@
-use super::*;
-
 pub(crate) const AUTH_LOGIN_ENDPOINT: &str = "/api/v1/auth/login";
 
 pub(crate) const AUTH_LOGOUT_ENDPOINT: &str = "/api/v1/auth/logout";

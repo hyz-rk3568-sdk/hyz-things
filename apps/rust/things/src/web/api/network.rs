@@ -1,5 +1,3 @@
-use super::*;
-
 pub(crate) const NETWORK_CONFIG_ENDPOINT: &str = "/api/v1/network/config";
 
 pub(crate) const NETWORK_PENDING_ENDPOINT: &str = "/api/v1/network/pending";

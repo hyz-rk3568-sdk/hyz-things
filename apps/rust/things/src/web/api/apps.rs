@@ -1,5 +1,3 @@
-use super::*;
-
 pub(crate) const APPS_ENDPOINT: &str = "/api/v1/apps";
 
 #[derive(Clone, PartialEq, serde::Deserialize)]
