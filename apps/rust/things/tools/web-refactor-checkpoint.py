@@ -145,7 +145,7 @@ use pages::*;
 
     hooks_mod = HOOKS / "mod.rs"
     hooks_mod.write_text(
-        "use super::*;\n\nmod countdown;\n\npub(crate) use countdown::*;\n"
+        "use super::*;\n\nmod countdown;\n\n#[cfg(test)]\nmod countdown_tests;\n\npub(crate) use countdown::*;\n"
     )
 
     pages_mod = PAGES / "mod.rs"
@@ -266,6 +266,7 @@ def repair_e2e_contracts() -> None:
 def validate_structure() -> None:
     main = MAIN.read_text()
     app = APP.read_text()
+    hooks_mod = (HOOKS / "mod.rs").read_text()
     portal = PORTAL.read_text()
     e2e_driver = E2E_DRIVER.read_text()
 
@@ -275,6 +276,7 @@ def validate_structure() -> None:
         PAGES / "system.rs",
         HOOKS / "mod.rs",
         HOOKS / "countdown.rs",
+        HOOKS / "countdown_tests.rs",
     ]
     missing = [str(path.relative_to(ROOT)) for path in required_files if not path.exists()]
     if missing:
@@ -291,6 +293,8 @@ def validate_structure() -> None:
     for call in ["render_overview(&state)", "render_system(&state, brightness.clone())"]:
         if call not in app:
             raise SystemExit(f"app.rs missing page composition call: {call}")
+    if "#[cfg(test)]\nmod countdown_tests;" not in hooks_mod:
+        raise SystemExit("countdown deterministic tests are not registered")
     if "const weights = [86_400, 3_600, 60, 1];" not in portal:
         raise SystemExit("Playwright countdown helper is not unit-aware")
 
