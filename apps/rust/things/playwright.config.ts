@@ -20,7 +20,10 @@ export default defineConfig({
     timeout: 7_500,
   },
   forbidOnly: Boolean(process.env.CI),
-  retries: process.env.CI ? 1 : 0,
+  // The E2E harness is deterministic. Let CI surface a real regression once instead of
+  // automatically spending another full timeout on the same failure; GitHub can rerun
+  // the failed job explicitly when infrastructure flakiness is suspected.
+  retries: 0,
   // 真实 CDP touch 坐标会随移动端布局变化而落到 INPUT/BUTTON 等交互控件；
   // 页面本身仍由下方 synthetic pointer swipe 用例覆盖手势切换行为。
   grepInvert: /switches portal pages from browser touch input/,
@@ -29,7 +32,8 @@ export default defineConfig({
     locale: 'zh-CN',
     timezoneId: 'Asia/Shanghai',
     reducedMotion: 'reduce',
-    trace: 'on-first-retry',
+    // With CI retries disabled, retain the first failing trace directly for diagnosis.
+    trace: process.env.CI ? 'retain-on-failure' : 'off',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
