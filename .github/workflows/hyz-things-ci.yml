@@ -31,14 +31,27 @@ env:
   RUST_BACKTRACE: "1"
 
 jobs:
-  verify:
-    name: Host + frontend + E2E
+  static:
+    name: Static + unit + frontend
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 35
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check committed diff
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git diff --check "origin/${{ github.base_ref }}...HEAD"
+          elif git rev-parse HEAD^ >/dev/null 2>&1; then
+            git diff --check HEAD^ HEAD
+          else
+            git diff --check
+          fi
 
       - name: Install Rust 1.88
         shell: bash
@@ -50,6 +63,16 @@ jobs:
           rustup default 1.88.0
           rustc --version
           cargo --version
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/rust/things/package-lock.json
+
+      - name: Run source and configuration checks
+        run: make check-static
 
       - name: Cache Cargo
         uses: actions/cache@v4
@@ -73,13 +96,6 @@ jobs:
 
       - name: Clippy contract
         run: cargo clippy --locked --manifest-path apps/rust/contract/Cargo.toml --all-targets -- -D warnings
-
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: apps/rust/things/package-lock.json
 
       - name: Install frontend dependencies
         working-directory: apps/rust/things
@@ -107,6 +123,60 @@ jobs:
 
       - name: Clippy hyz-things
         run: cargo clippy --locked --manifest-path apps/rust/things/Cargo.toml --all-targets --features e2e -- -D warnings
+
+  e2e:
+    name: Playwright E2E
+    needs: static
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust 1.88
+        shell: bash
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup default 1.88.0
+          rustc --version
+          cargo --version
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/trunk
+            apps/rust/contract/target
+            apps/rust/things/target
+          key: ${{ runner.os }}-rust-1.88-trunk-0.21.14-${{ hashFiles('apps/rust/contract/Cargo.lock', 'apps/rust/things/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-rust-1.88-trunk-0.21.14-
+            ${{ runner.os }}-rust-1.88-
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/rust/things/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: apps/rust/things
+        run: npm ci
+
+      - name: Install WASM target
+        run: rustup target add wasm32-unknown-unknown --toolchain 1.88.0
+
+      - name: Install Trunk 0.21.14
+        shell: bash
+        run: |
+          if ! command -v trunk >/dev/null 2>&1 || [[ "$(trunk --version)" != "trunk 0.21.14" ]]; then
+            cargo install trunk --version 0.21.14 --locked
+          fi
+          trunk --version
 
       - name: Install Playwright Chromium
         working-directory: apps/rust/things
