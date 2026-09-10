@@ -40,9 +40,11 @@ jobs:
             python3 apps/rust/things/tools/web-refactor-e2e.py
           fi
           python3 apps/rust/things/tools/web-refactor-e2e-split.py
-          python3 apps/rust/things/tools/web-refactor-components.py
-          python3 apps/rust/things/tools/web-refactor-countdown-components.py
-          python3 apps/rust/things/tools/web-refactor-shell-components.py
+          if [[ ! -f apps/rust/things/src/web/components/app_shell.rs ]]; then
+            python3 apps/rust/things/tools/web-refactor-components.py
+            python3 apps/rust/things/tools/web-refactor-countdown-components.py
+            python3 apps/rust/things/tools/web-refactor-shell-components.py
+          fi
           python3 apps/rust/things/tools/web-refactor-overview.py
           python3 apps/rust/things/tools/web-refactor-overview-health.py
       - name: Format changed Rust
