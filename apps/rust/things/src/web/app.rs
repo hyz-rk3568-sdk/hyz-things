@@ -630,17 +630,41 @@ pub(super) fn app() -> Html {
                 onpointerup={on_portal_pointer_up}
                 onpointercancel={on_portal_pointer_cancel}
             >
+                // Overview and Network stay mounted so local drafts/timers survive page switches.
+                // The other inactive pages keep empty panel targets in the DOM so every aria-controls
+                // relationship remains valid. Camera content itself is still mounted only while active,
+                // preserving the existing stop-on-page-leave session lifecycle.
+                <section
+                    id={AppPage::Overview.panel_id()}
+                    class={WORKSPACE_PANEL}
+                    aria-labelledby={AppPage::Overview.tab_id()}
+                    hidden={page != AppPage::Overview}
+                >
+                    {render_overview(&state)}
+                </section>
+                <section
+                    id={AppPage::Network.panel_id()}
+                    class={WORKSPACE_PANEL}
+                    aria-labelledby={AppPage::Network.tab_id()}
+                    hidden={page != AppPage::Network}
+                >
+                    <Settings state={state.clone()} camera_stop_generation={camera_stop_generation.clone()} />
+                </section>
+                {for AppPage::ALL.into_iter()
+                    .filter(|candidate| {
+                        *candidate != page
+                            && !matches!(candidate, AppPage::Overview | AppPage::Network)
+                    })
+                    .map(|candidate| html! {
+                        <section
+                            id={candidate.panel_id()}
+                            class={WORKSPACE_PANEL}
+                            aria-labelledby={candidate.tab_id()}
+                            hidden=true
+                        ></section>
+                    })}
                 {match page {
-                    AppPage::Overview => html! {
-                        <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
-                            {render_overview(&state)}
-                        </section>
-                    },
-                    AppPage::Network => html! {
-                        <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
-                            <Settings state={state.clone()} camera_stop_generation={camera_stop_generation.clone()} />
-                        </section>
-                    },
+                    AppPage::Overview | AppPage::Network => Html::default(),
                     AppPage::Proxy => html! {
                         <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
                             if is_admin { {render_proxy_control(&state)} } else { {admin_required()} }

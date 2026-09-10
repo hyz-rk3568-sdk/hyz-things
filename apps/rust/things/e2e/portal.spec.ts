@@ -2,6 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import {
   expectNoHorizontalOverflow,
+  goToAppPage,
   harnessOrigin,
   installCameraWebRtcMock,
   loginAsAdmin,
@@ -88,7 +89,7 @@ test.beforeEach(async ({ request }) => {
   await resetHarness(request);
 });
 
-test("renders the portal home and applies the anonymous display control", async ({
+test("renders the overview, apps, and anonymous system control", async ({
   page,
   request,
 }) => {
@@ -102,53 +103,6 @@ test("renders the portal home and applies the anonymous display control", async 
   await expect(
     page.getByRole("heading", { name: "hyz things", level: 1 }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "首页", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    page.getByRole("heading", { name: "应用", exact: true }),
-  ).toBeVisible();
-  await expect(page.getByRole("article", { name: "路由器管理" })).toBeVisible();
-  await expect(page.getByRole("article", { name: "摄像头直播" })).toBeVisible();
-  const deployedApps = page.getByRole("region", { name: "已部署应用" });
-  await expect(deployedApps).toBeVisible();
-  await expect(
-    deployedApps.getByText("部署时间：", { exact: false }).first(),
-  ).toBeVisible();
-  const systemStatus = page
-    .locator("article")
-    .filter({ hasText: "系统 / 流量" });
-  await expect(
-    systemStatus.getByText("WAN 总接收", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    systemStatus.getByText("34.1 MiB", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    systemStatus.getByText("WAN 总发送", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    systemStatus.getByText("6.6 MiB", { exact: true }),
-  ).toBeVisible();
-  await expect(page.getByRole("heading", { name: "路由 / LAN" })).toBeVisible();
-  await expect(
-    page.getByText("Ethernet WAN", { exact: true }).first(),
-  ).toBeVisible();
-  await expect(
-    page.getByText("Wi-Fi WAN", { exact: true }).first(),
-  ).toBeVisible();
-  await expect(
-    page.getByText("Ethernet · metric 100", { exact: true }).first(),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "路由器", exact: true }),
-  ).toBeVisible();
-
-  const homeAccessibility = await new AxeBuilder({ page }).analyze();
-  expect(homeAccessibility.violations).toEqual([]);
-  await expectNoHorizontalOverflow(page);
-
-  await page.getByRole("button", { name: "路由器", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "总览", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
@@ -168,17 +122,12 @@ test("renders the portal home and applies the anonymous display control", async 
     page.getByText("E2E-Upstream", { exact: false }).first(),
   ).toBeVisible();
 
-  const slider = page.getByRole("slider", { name: "点亮亮度" });
-  await slider.fill("180");
-  await page.getByRole("button", { name: "点亮", exact: true }).click();
-  await expect(
-    page.getByRole("status").filter({ hasText: "背光已开启" }),
-  ).toBeVisible();
+  const systemStatus = page.locator("article").filter({ hasText: "系统 / 流量" });
+  await expect(systemStatus.getByText("WAN 总接收", { exact: true })).toBeVisible();
+  await expect(systemStatus.getByText("34.1 MiB", { exact: true })).toBeVisible();
+  await expect(systemStatus.getByText("WAN 总发送", { exact: true })).toBeVisible();
+  await expect(systemStatus.getByText("6.6 MiB", { exact: true })).toBeVisible();
 
-  await expect(
-    page.getByRole("button", { name: "代理", exact: true }),
-  ).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "代理状态" })).toBeVisible();
   const readonlyProxy = page.getByRole("region", { name: "当前代理与延迟" });
   await expect(readonlyProxy.getByText("当前选择 · 东京")).toBeVisible();
   await expect
@@ -192,6 +141,34 @@ test("renders the portal home and applies the anonymous display control", async 
   await expect(readonlyProxy.getByText("新加坡 · 新加坡")).toBeVisible();
   await expect(readonlyProxy.getByRole("combobox")).toHaveCount(0);
   await expect(readonlyProxy.getByRole("button")).toHaveCount(0);
+
+  const overviewAccessibility = await new AxeBuilder({ page }).analyze();
+  expect(overviewAccessibility.violations).toEqual([]);
+  await expectNoHorizontalOverflow(page);
+
+  await goToAppPage(page, "应用");
+  await expect(page.getByRole("heading", { name: "应用", exact: true })).toBeVisible();
+  await expect(page.getByRole("article", { name: "路由器控制面" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "摄像头直播" })).toBeVisible();
+  const deployedApps = page.getByRole("region", { name: "已部署应用" });
+  await expect(deployedApps).toBeVisible();
+  await expect(
+    deployedApps.getByText("部署时间：", { exact: false }).first(),
+  ).toBeVisible();
+
+  // Anonymous users can see the Proxy entry but must not receive its admin controls.
+  await goToAppPage(page, "代理");
+  await expect(page.getByRole("heading", { name: "需要管理员登录" })).toBeVisible();
+  await expect(page.getByRole("switch", { name: "LAN 透明代理" })).toHaveCount(0);
+  await expect(page.getByRole("switch", { name: "本机系统代理" })).toHaveCount(0);
+
+  await goToAppPage(page, "系统");
+  const slider = page.getByRole("slider", { name: "点亮亮度" });
+  await slider.fill("180");
+  await page.getByRole("button", { name: "点亮", exact: true }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "背光已开启" }),
+  ).toBeVisible();
 
   const state = await readHarnessState(request);
   expect(state.panel.display.data).toMatchObject({
@@ -890,63 +867,45 @@ test("keeps the exam countdown usable on mobile", async ({ page }) => {
 test("switches portal pages with horizontal touch swipes", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await expect(
-    page.getByRole("button", { name: "首页", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+  const pageButton = (name: "总览" | "网络" | "代理" | "Tailscale" | "摄像头" | "应用" | "系统") =>
+    page.getByRole("button", { name, exact: true });
 
-  await swipePortal(page, 300, 240, 80, 250);
-  await expect(
-    page.getByRole("button", { name: "路由器", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByRole("heading", { name: "网络拓扑" })).toBeVisible();
+  await expect(pageButton("总览")).toHaveAttribute("aria-pressed", "true");
+  for (const name of ["网络", "代理", "Tailscale", "摄像头", "应用", "系统"] as const) {
+    await swipePortal(page, 300, 240, 80, 250);
+    await expect(pageButton(name)).toHaveAttribute("aria-pressed", "true");
+  }
 
+  // The last page is a hard boundary.
   await swipePortal(page, 300, 240, 80, 250);
-  await expect(
-    page.getByRole("button", { name: "摄像头", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByRole("heading", { name: "摄像头直播" })).toBeVisible();
+  await expect(pageButton("系统")).toHaveAttribute("aria-pressed", "true");
 
   await swipePortal(page, 80, 240, 300, 250);
-  await expect(
-    page.getByRole("button", { name: "路由器", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(pageButton("应用")).toHaveAttribute("aria-pressed", "true");
 
+  // A mostly vertical gesture must not switch pages.
   await swipePortal(page, 200, 240, 170, 360);
-  await expect(
-    page.getByRole("button", { name: "路由器", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(pageButton("应用")).toHaveAttribute("aria-pressed", "true");
 
-  await swipePortal(page, 80, 240, 300, 250);
-  await expect(
-    page.getByRole("button", { name: "首页", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
-
-  await swipePortal(page, 80, 240, 300, 250);
-  await expect(
-    page.getByRole("button", { name: "首页", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
-
-  await page.getByRole("button", { name: "摄像头", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "摄像头", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await goToAppPage(page, "摄像头");
+  await expect(page.getByRole("heading", { name: "摄像头直播" })).toBeVisible();
 });
 
 test("switches portal pages from browser touch input", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await expect(
-    page.getByRole("button", { name: "首页", exact: true }),
+    page.getByRole("button", { name: "总览", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
 
   await realTouchSwipe(page, "left");
   await expect(
-    page.getByRole("button", { name: "路由器", exact: true }),
+    page.getByRole("button", { name: "网络", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
 
   await realTouchSwipe(page, "right");
   await expect(
-    page.getByRole("button", { name: "首页", exact: true }),
+    page.getByRole("button", { name: "总览", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
 });
 
@@ -955,7 +914,6 @@ test("renders the dual-uplink topology without mobile overflow", async ({
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await page.getByRole("button", { name: "路由器", exact: true }).click();
   await expect(page.getByRole("heading", { name: "网络拓扑" })).toBeVisible();
   await expect(
     page.getByText("Ethernet WAN", { exact: true }).first(),
@@ -1161,7 +1119,7 @@ test("plays the camera anonymously and controls it as an administrator", async (
 }) => {
   await installCameraWebRtcMock(page);
   await page.goto("/");
-  // 首页只有应用入口卡片，直播卡片在摄像头视图内。
+  // 总览不自动启动摄像头；直播能力在摄像头一级页面内。
   await expect(
     page.getByText("视频不会自动启动", { exact: false }),
   ).toHaveCount(0);
@@ -1293,8 +1251,7 @@ test("plays the camera anonymously and controls it as an administrator", async (
   await expect(camera.getByRole("button", { name: "旋转画面" })).toHaveCount(0);
 
   // 登录后回到摄像头视图：画面设置可用，切换视图时匿名会话已停止。
-  await page.getByRole("button", { name: "路由器", exact: true }).click();
-  await page.getByRole("button", { name: "网络设置", exact: true }).click();
+  await goToAppPage(page, "网络");
   await page.getByRole("button", { name: "管理员登录" }).click();
   await page.getByLabel("密码").fill("admin");
   await page.getByRole("button", { name: "登录", exact: true }).click();
@@ -1302,9 +1259,9 @@ test("plays the camera anonymously and controls it as an administrator", async (
   await page.getByLabel("新密码", { exact: true }).fill("router-e2e-password");
   await page.getByLabel("确认新密码").fill("router-e2e-password");
   await page.getByRole("button", { name: "修改密码" }).click();
-  await expect(page.getByRole("heading", { name: "代理设置" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "上游 Wi-Fi (STA)" })).toBeVisible();
 
-  await page.getByRole("button", { name: "摄像头", exact: true }).click();
+  await goToAppPage(page, "摄像头");
   await expect(camera.getByText("未播放", { exact: true })).toBeVisible();
   await expect(presetSelect).toBeEnabled();
   await camera.getByRole("button", { name: "播放直播" }).click();
@@ -1402,8 +1359,7 @@ test("plays the camera anonymously and controls it as an administrator", async (
   await verifyRotation();
 
   // 离开摄像头视图（去网络设置注销）会立即停止会话。
-  await page.getByRole("button", { name: "路由器", exact: true }).click();
-  await page.getByRole("button", { name: "网络设置", exact: true }).click();
+  await goToAppPage(page, "网络");
   await expect
     .poll(async () => (await readHarnessState(request)).camera.sessions)
     .toEqual([]);
@@ -1542,6 +1498,7 @@ test("controls all four proxy combinations with isolated failures on desktop and
   request,
 }) => {
   await loginAsAdmin(page);
+  await goToAppPage(page, "代理");
   const lanTun = page.getByRole("switch", { name: "LAN 透明代理" });
   const localSystemProxy = page.getByRole("switch", {
     name: "本机系统代理",
@@ -1692,6 +1649,7 @@ test("shows local system proxy status from ProxyStatus without Tailscale couplin
   request,
 }) => {
   await loginAsAdmin(page);
+  await goToAppPage(page, "代理");
   const state = await readHarnessState(request);
   state.proxy.state = "degraded";
   state.proxy.issue = {
@@ -1758,10 +1716,9 @@ test("supports the administrator, STA, AP, and write-only subscription journey",
   request,
 }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "路由器", exact: true }).click();
-  await page.getByRole("button", { name: "网络设置", exact: true }).click();
+  await goToAppPage(page, "网络");
   await expect(
-    page.getByRole("button", { name: "网络设置", exact: true }),
+    page.getByRole("button", { name: "网络", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
 
   await page.getByRole("button", { name: "管理员登录" }).click();
@@ -1778,6 +1735,10 @@ test("supports the administrator, STA, AP, and write-only subscription journey",
   await expect(
     page.getByRole("button", { name: "上游 Wi-Fi (STA)" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "上游 Wi-Fi (STA)" }),
+  ).toBeVisible();
+  await goToAppPage(page, "代理");
   await expect(page.getByRole("heading", { name: "代理设置" })).toBeVisible();
   await page
     .getByRole("combobox", { name: "自动选择 节点" })
@@ -1789,14 +1750,15 @@ test("supports the administrator, STA, AP, and write-only subscription journey",
     )
     .toBe("新加坡");
 
+  await goToAppPage(page, "网络");
   await page.getByRole("button", { name: "上游 Wi-Fi (STA)" }).click();
   const staRegion = page.getByRole("region", { name: "上游 Wi-Fi (STA)" });
   await page.getByRole("button", { name: "扫描", exact: true }).click();
   await page.getByRole("button", { name: "选择网络 Guest-Network" }).click();
   await staRegion.getByLabel("密码").fill("guest-password");
 
-  await page.getByRole("button", { name: "总览", exact: true }).click();
-  await page.getByRole("button", { name: "网络设置", exact: true }).click();
+  await goToAppPage(page, "总览");
+  await goToAppPage(page, "网络");
   await expect(staRegion.getByLabel("SSID")).toHaveValue("Guest-Network");
   await expect(staRegion.getByLabel("密码")).toHaveValue("guest-password");
 
@@ -1911,8 +1873,7 @@ test("supports the administrator, STA, AP, and write-only subscription journey",
   ).toBeVisible();
 
   await page.reload();
-  await page.getByRole("button", { name: "路由器", exact: true }).click();
-  await page.getByRole("button", { name: "网络设置", exact: true }).click();
+  await goToAppPage(page, "网络");
   const reloadedPolicies = page.getByRole("article", { name: "设备代理" });
   await expect(reloadedPolicies.getByRole("combobox")).toHaveValue("direct");
   await expect(
@@ -1957,8 +1918,7 @@ test("supports the administrator, STA, AP, and write-only subscription journey",
     (await request.put(`${harnessOrigin}/state`, { data: offline })).ok(),
   ).toBeTruthy();
   await page.reload();
-  await page.getByRole("button", { name: "路由器", exact: true }).click();
-  await page.getByRole("button", { name: "网络设置", exact: true }).click();
+  await goToAppPage(page, "网络");
   await page
     .getByRole("button", { name: "清除 02:00:00:00:00:20 的名称和设备策略" })
     .click();
@@ -1999,8 +1959,7 @@ test("supports the administrator Tailscale login, approval, disable, and logout 
   await page.goto("/");
   await expect(page.getByText("laptop", { exact: true })).toHaveCount(0);
   await expect(page.getByText("100.64.0.8", { exact: false })).toHaveCount(0);
-  await page.getByRole("button", { name: "路由器", exact: true }).click();
-  await page.getByRole("button", { name: "网络设置", exact: true }).click();
+  await goToAppPage(page, "网络");
   await page.getByRole("button", { name: "管理员登录" }).click();
   await page.getByLabel("密码").fill("admin");
   await page.getByRole("button", { name: "登录", exact: true }).click();
@@ -2009,6 +1968,7 @@ test("supports the administrator Tailscale login, approval, disable, and logout 
   await page.getByLabel("确认新密码").fill("router-e2e-password");
   await page.getByRole("button", { name: "修改密码" }).click();
 
+  await goToAppPage(page, "Tailscale");
   const tailscale = page.getByRole("region", {
     name: "Tailscale 远程 LAN 状态",
   });
@@ -2131,6 +2091,7 @@ test("shows Tailnet peer empty, initial-error, stale, and recovery states", asyn
   ).toBeTruthy();
 
   await loginAsAdmin(page);
+  await goToAppPage(page, "Tailscale");
   const tailscale = page.getByRole("region", {
     name: "Tailscale 远程 LAN 状态",
   });
@@ -2177,22 +2138,17 @@ test("fits a narrow portal screen without horizontal overflow", async ({
     page.getByRole("heading", { name: "hyz things", level: 1 }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "首页", exact: true }),
+    page.getByRole("button", { name: "总览", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    page.getByRole("heading", { name: "应用", exact: true }),
-  ).toBeVisible();
-  await expect(page.getByRole("heading", { name: "路由 / LAN" })).toBeVisible();
-  await expectNoHorizontalOverflow(page);
-
-  await expect(
-    page.getByRole("button", { name: "代理", exact: true }),
-  ).toHaveCount(0);
-  await page.getByRole("button", { name: "路由器", exact: true }).click();
   await expect(page.getByRole("heading", { name: "网络拓扑" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "路由 / LAN" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
-  await page.getByRole("button", { name: "网络设置", exact: true }).click();
+
+  for (const name of ["总览", "网络", "代理", "Tailscale", "摄像头", "应用", "系统"] as const) {
+    await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  }
+
+  await goToAppPage(page, "网络");
   await expect(page.getByRole("button", { name: "管理员登录" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
