@@ -116,16 +116,21 @@ use network_page::*;
 use proxy_page::*;
 use tailscale_page::*;
 '''
-    text = replace_once(
-        text,
-        old_uses,
-        '''use api::*;
+    # Later plan stages may insert additional root imports (for example
+    # `use components::*;`) between the structural imports. Treat hooks/pages
+    # presence as the durable completion invariant instead of requiring the
+    # original imports to remain one contiguous block forever.
+    if not ("use hooks::*;" in text and "use pages::*;" in text):
+        text = replace_once(
+            text,
+            old_uses,
+            '''use api::*;
 use app::*;
 use hooks::*;
 use pages::*;
 ''',
-        "module imports",
-    )
+            "module imports",
+        )
     MAIN.write_text(text)
 
     # The old direct-root modules used pub(super) to expose their composition API
