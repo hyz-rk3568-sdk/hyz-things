@@ -12,6 +12,10 @@ pub const MAX_YAML_NODES: usize = 32_768;
 pub const MAX_YAML_DEPTH: usize = 64;
 pub const MAX_YAML_SCALAR_BYTES: usize = 256 * 1024;
 pub const MAX_GENERATION_ID_BYTES: usize = 64;
+pub const HYZ_PROXY_GROUP: &str = "HYZ-PROXY";
+pub const HYZ_AUTO_GROUP: &str = "HYZ-AUTO";
+pub const HYZ_AUTO_TEST_URL: &str = "https://www.gstatic.com/generate_204";
+pub const HYZ_AUTO_INTERVAL_SECONDS: u64 = 600;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct GenerationId(String);
@@ -108,20 +112,14 @@ pub fn parse_mihomo_subscription(input: &[u8]) -> Result<ValidatedSubscription, 
         return Err(SubscriptionError::ProxyCount);
     }
 
-    let mut names = HashSet::with_capacity(proxies.len());
-    for proxy in proxies {
-        let mapping = proxy.as_mapping().ok_or(SubscriptionError::InvalidShape(
-            "each proxy must be a mapping",
-        ))?;
-        let name = mapping
-            .get(Value::String("name".to_owned()))
-            .and_then(Value::as_str)
-            .ok_or(SubscriptionError::InvalidShape(
-                "each proxy must have a string name",
-            ))?;
-        if name.is_empty() || !names.insert(name.to_owned()) {
-            return Err(SubscriptionError::DuplicateProxyName);
-        }
+    let names = proxy_names(proxies)?;
+    if names
+        .iter()
+        .any(|name| matches!(name.as_str(), HYZ_PROXY_GROUP | HYZ_AUTO_GROUP))
+    {
+        return Err(SubscriptionError::InvalidShape(
+            "proxy name conflicts with a reserved HYZ group",
+        ));
     }
 
     let mut output = Mapping::new();
@@ -136,6 +134,133 @@ pub fn parse_mihomo_subscription(input: &[u8]) -> Result<ValidatedSubscription, 
         yaml,
         proxy_count: proxies.len(),
     })
+}
+
+/// Compose the trusted proxy inventory with product-owned routing policy while preserving
+/// unrelated local source fields. `mode`, `proxy-groups`, and `rules` are always overwritten.
+pub fn compose_managed_mihomo_source(
+    current_source: &[u8],
+    subscription: &ValidatedSubscription,
+) -> Result<Vec<u8>, SubscriptionError> {
+    let mut source: Value = serde_yaml::from_slice(current_source)
+        .map_err(|error| SubscriptionError::InvalidYaml(error.to_string()))?;
+    let top = source
+        .as_mapping_mut()
+        .ok_or(SubscriptionError::InvalidShape(
+            "Mihomo source top level must be a mapping",
+        ))?;
+
+    let provider: Value = serde_yaml::from_slice(subscription.as_bytes())
+        .map_err(|error| SubscriptionError::InvalidYaml(error.to_string()))?;
+    let proxies = provider
+        .as_mapping()
+        .and_then(|mapping| mapping.get(Value::String("proxies".to_owned())))
+        .and_then(Value::as_sequence)
+        .ok_or(SubscriptionError::InvalidShape(
+            "validated subscription has no proxies",
+        ))?;
+    let names = proxy_names(proxies)?;
+
+    top.insert(
+        Value::String("proxies".to_owned()),
+        Value::Sequence(proxies.clone()),
+    );
+    top.insert(
+        Value::String("mode".to_owned()),
+        Value::String("rule".to_owned()),
+    );
+    top.insert(
+        Value::String("proxy-groups".to_owned()),
+        Value::Sequence(vec![
+            managed_selector_group(&names),
+            managed_auto_group(&names),
+        ]),
+    );
+    top.insert(
+        Value::String("rules".to_owned()),
+        Value::Sequence(
+            [
+                "GEOSITE,cn,DIRECT",
+                "GEOIP,CN,DIRECT,no-resolve",
+                "MATCH,HYZ-PROXY",
+            ]
+            .into_iter()
+            .map(|rule| Value::String(rule.to_owned()))
+            .collect(),
+        ),
+    );
+
+    serde_yaml::to_string(&source)
+        .map(|yaml| yaml.into_bytes())
+        .map_err(|error| SubscriptionError::InvalidYaml(error.to_string()))
+}
+
+fn proxy_names(proxies: &[Value]) -> Result<Vec<String>, SubscriptionError> {
+    let mut unique = HashSet::with_capacity(proxies.len());
+    let mut names = Vec::with_capacity(proxies.len());
+    for proxy in proxies {
+        let mapping = proxy.as_mapping().ok_or(SubscriptionError::InvalidShape(
+            "each proxy must be a mapping",
+        ))?;
+        let name = mapping
+            .get(Value::String("name".to_owned()))
+            .and_then(Value::as_str)
+            .ok_or(SubscriptionError::InvalidShape(
+                "each proxy must have a string name",
+            ))?;
+        if name.is_empty() || !unique.insert(name.to_owned()) {
+            return Err(SubscriptionError::DuplicateProxyName);
+        }
+        names.push(name.to_owned());
+    }
+    Ok(names)
+}
+
+fn managed_selector_group(names: &[String]) -> Value {
+    let mut group = Mapping::new();
+    group.insert(
+        Value::String("name".to_owned()),
+        Value::String(HYZ_PROXY_GROUP.to_owned()),
+    );
+    group.insert(
+        Value::String("type".to_owned()),
+        Value::String("select".to_owned()),
+    );
+    group.insert(
+        Value::String("proxies".to_owned()),
+        Value::Sequence(
+            std::iter::once(HYZ_AUTO_GROUP.to_owned())
+                .chain(names.iter().cloned())
+                .map(Value::String)
+                .collect(),
+        ),
+    );
+    Value::Mapping(group)
+}
+
+fn managed_auto_group(names: &[String]) -> Value {
+    let mut group = Mapping::new();
+    group.insert(
+        Value::String("name".to_owned()),
+        Value::String(HYZ_AUTO_GROUP.to_owned()),
+    );
+    group.insert(
+        Value::String("type".to_owned()),
+        Value::String("url-test".to_owned()),
+    );
+    group.insert(
+        Value::String("proxies".to_owned()),
+        Value::Sequence(names.iter().cloned().map(Value::String).collect()),
+    );
+    group.insert(
+        Value::String("url".to_owned()),
+        Value::String(HYZ_AUTO_TEST_URL.to_owned()),
+    );
+    group.insert(
+        Value::String("interval".to_owned()),
+        Value::Number(HYZ_AUTO_INTERVAL_SECONDS.into()),
+    );
+    Value::Mapping(group)
 }
 
 fn validate_value_limits(
@@ -246,6 +371,84 @@ mod tests {
         assert!(!output.contains_key(Value::String("external-controller".to_owned())));
         assert!(!output.contains_key(Value::String("proxy-groups".to_owned())));
         assert!(!output.contains_key(Value::String("rules".to_owned())));
+    }
+
+    #[test]
+    fn parser_rejects_reserved_product_group_names() {
+        for reserved in [HYZ_PROXY_GROUP, HYZ_AUTO_GROUP] {
+            let document = format!("proxies:\n  - name: {reserved}\n    type: ss\n");
+            assert!(matches!(
+                parse_mihomo_subscription(document.as_bytes()),
+                Err(SubscriptionError::InvalidShape(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn managed_policy_overwrites_source_policy_and_tracks_subscription_nodes() {
+        let subscription = parse_mihomo_subscription(
+            b"proxies:\n  - name: node-a\n    type: ss\n  - name: node-b\n    type: vmess\nrules: [MATCH,DIRECT]\n",
+        )
+        .unwrap();
+        let source = compose_managed_mihomo_source(
+            b"mode: global\nlog-level: warning\nproxy-groups:\n  - name: stale\n    type: select\n    proxies: [DIRECT]\nrules:\n  - MATCH,DIRECT\nproxies:\n  - name: stale-node\n",
+            &subscription,
+        )
+        .unwrap();
+        let source: Value = serde_yaml::from_slice(&source).unwrap();
+        let top = source.as_mapping().unwrap();
+
+        assert_eq!(top.get("mode").and_then(Value::as_str), Some("rule"));
+        assert_eq!(top.get("log-level").and_then(Value::as_str), Some("warning"));
+        let proxies = top.get("proxies").and_then(Value::as_sequence).unwrap();
+        assert_eq!(
+            proxy_names(proxies).unwrap(),
+            vec!["node-a".to_owned(), "node-b".to_owned()]
+        );
+
+        let groups = top
+            .get("proxy-groups")
+            .and_then(Value::as_sequence)
+            .unwrap();
+        assert_eq!(groups.len(), 2);
+        let selector = groups[0].as_mapping().unwrap();
+        assert_eq!(selector.get("name").and_then(Value::as_str), Some(HYZ_PROXY_GROUP));
+        assert_eq!(selector.get("type").and_then(Value::as_str), Some("select"));
+        assert_eq!(
+            selector
+                .get("proxies")
+                .and_then(Value::as_sequence)
+                .unwrap(),
+            &vec![
+                Value::String(HYZ_AUTO_GROUP.to_owned()),
+                Value::String("node-a".to_owned()),
+                Value::String("node-b".to_owned()),
+            ]
+        );
+        let auto = groups[1].as_mapping().unwrap();
+        assert_eq!(auto.get("name").and_then(Value::as_str), Some(HYZ_AUTO_GROUP));
+        assert_eq!(auto.get("type").and_then(Value::as_str), Some("url-test"));
+        assert_eq!(auto.get("url").and_then(Value::as_str), Some(HYZ_AUTO_TEST_URL));
+        assert_eq!(
+            auto.get("interval").and_then(Value::as_u64),
+            Some(HYZ_AUTO_INTERVAL_SECONDS)
+        );
+        assert_eq!(
+            auto.get("proxies").and_then(Value::as_sequence).unwrap(),
+            &vec![
+                Value::String("node-a".to_owned()),
+                Value::String("node-b".to_owned()),
+            ]
+        );
+
+        assert_eq!(
+            top.get("rules").and_then(Value::as_sequence).unwrap(),
+            &vec![
+                Value::String("GEOSITE,cn,DIRECT".to_owned()),
+                Value::String("GEOIP,CN,DIRECT,no-resolve".to_owned()),
+                Value::String("MATCH,HYZ-PROXY".to_owned()),
+            ]
+        );
     }
 
     #[test]
