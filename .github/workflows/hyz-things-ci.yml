@@ -74,15 +74,6 @@ jobs:
       - name: Clippy contract
         run: cargo clippy --locked --manifest-path apps/rust/contract/Cargo.toml --all-targets -- -D warnings
 
-      - name: Check hyz-things formatting
-        run: cargo fmt --manifest-path apps/rust/things/Cargo.toml --all -- --check
-
-      - name: Test hyz-things native
-        run: cargo test --locked --manifest-path apps/rust/things/Cargo.toml --features native
-
-      - name: Clippy hyz-things
-        run: cargo clippy --locked --manifest-path apps/rust/things/Cargo.toml --all-targets --features e2e -- -D warnings
-
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
@@ -107,6 +98,15 @@ jobs:
 
       - name: Build deterministic frontend bundle
         run: bash apps/rust/things/tools/build-frontend-bundle.sh
+
+      - name: Check hyz-things formatting
+        run: cargo fmt --manifest-path apps/rust/things/Cargo.toml --all -- --check
+
+      - name: Test hyz-things native
+        run: cargo test --locked --manifest-path apps/rust/things/Cargo.toml --features native
+
+      - name: Clippy hyz-things
+        run: cargo clippy --locked --manifest-path apps/rust/things/Cargo.toml --all-targets --features e2e -- -D warnings
 
       - name: Install Playwright Chromium
         working-directory: apps/rust/things
