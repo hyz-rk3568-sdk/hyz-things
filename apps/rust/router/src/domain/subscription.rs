@@ -115,7 +115,7 @@ pub fn parse_mihomo_subscription(input: &[u8]) -> Result<ValidatedSubscription, 
     let names = proxy_names(proxies)?;
     if names
         .iter()
-        .any(|name| matches!(name.as_str(), HYZ_PROXY_GROUP | HYZ_AUTO_GROUP))
+        .any(|name| name == HYZ_PROXY_GROUP || name == HYZ_AUTO_GROUP)
     {
         return Err(SubscriptionError::InvalidShape(
             "proxy name conflicts with a reserved HYZ group",
@@ -357,6 +357,10 @@ fn reject_yaml_references(input: &[u8]) -> Result<(), SubscriptionError> {
 mod tests {
     use super::*;
 
+    fn key(name: &str) -> Value {
+        Value::String(name.to_owned())
+    }
+
     #[test]
     fn parser_extracts_only_proxies_from_full_config() {
         let parsed = parse_mihomo_subscription(
@@ -367,10 +371,10 @@ mod tests {
         let output: Value = serde_yaml::from_slice(parsed.as_bytes()).unwrap();
         let output = output.as_mapping().unwrap();
         assert_eq!(output.len(), 1);
-        assert!(output.contains_key(Value::String("proxies".to_owned())));
-        assert!(!output.contains_key(Value::String("external-controller".to_owned())));
-        assert!(!output.contains_key(Value::String("proxy-groups".to_owned())));
-        assert!(!output.contains_key(Value::String("rules".to_owned())));
+        assert!(output.contains_key(key("proxies")));
+        assert!(!output.contains_key(key("external-controller")));
+        assert!(!output.contains_key(key("proxy-groups")));
+        assert!(!output.contains_key(key("rules")));
     }
 
     #[test]
@@ -398,25 +402,37 @@ mod tests {
         let source: Value = serde_yaml::from_slice(&source).unwrap();
         let top = source.as_mapping().unwrap();
 
-        assert_eq!(top.get("mode").and_then(Value::as_str), Some("rule"));
-        assert_eq!(top.get("log-level").and_then(Value::as_str), Some("warning"));
-        let proxies = top.get("proxies").and_then(Value::as_sequence).unwrap();
+        assert_eq!(top.get(key("mode")).and_then(Value::as_str), Some("rule"));
+        assert_eq!(
+            top.get(key("log-level")).and_then(Value::as_str),
+            Some("warning")
+        );
+        let proxies = top
+            .get(key("proxies"))
+            .and_then(Value::as_sequence)
+            .unwrap();
         assert_eq!(
             proxy_names(proxies).unwrap(),
             vec!["node-a".to_owned(), "node-b".to_owned()]
         );
 
         let groups = top
-            .get("proxy-groups")
+            .get(key("proxy-groups"))
             .and_then(Value::as_sequence)
             .unwrap();
         assert_eq!(groups.len(), 2);
         let selector = groups[0].as_mapping().unwrap();
-        assert_eq!(selector.get("name").and_then(Value::as_str), Some(HYZ_PROXY_GROUP));
-        assert_eq!(selector.get("type").and_then(Value::as_str), Some("select"));
+        assert_eq!(
+            selector.get(key("name")).and_then(Value::as_str),
+            Some(HYZ_PROXY_GROUP)
+        );
+        assert_eq!(
+            selector.get(key("type")).and_then(Value::as_str),
+            Some("select")
+        );
         assert_eq!(
             selector
-                .get("proxies")
+                .get(key("proxies"))
                 .and_then(Value::as_sequence)
                 .unwrap(),
             &vec![
@@ -426,15 +442,26 @@ mod tests {
             ]
         );
         let auto = groups[1].as_mapping().unwrap();
-        assert_eq!(auto.get("name").and_then(Value::as_str), Some(HYZ_AUTO_GROUP));
-        assert_eq!(auto.get("type").and_then(Value::as_str), Some("url-test"));
-        assert_eq!(auto.get("url").and_then(Value::as_str), Some(HYZ_AUTO_TEST_URL));
         assert_eq!(
-            auto.get("interval").and_then(Value::as_u64),
+            auto.get(key("name")).and_then(Value::as_str),
+            Some(HYZ_AUTO_GROUP)
+        );
+        assert_eq!(
+            auto.get(key("type")).and_then(Value::as_str),
+            Some("url-test")
+        );
+        assert_eq!(
+            auto.get(key("url")).and_then(Value::as_str),
+            Some(HYZ_AUTO_TEST_URL)
+        );
+        assert_eq!(
+            auto.get(key("interval")).and_then(Value::as_u64),
             Some(HYZ_AUTO_INTERVAL_SECONDS)
         );
         assert_eq!(
-            auto.get("proxies").and_then(Value::as_sequence).unwrap(),
+            auto.get(key("proxies"))
+                .and_then(Value::as_sequence)
+                .unwrap(),
             &vec![
                 Value::String("node-a".to_owned()),
                 Value::String("node-b".to_owned()),
@@ -442,7 +469,7 @@ mod tests {
         );
 
         assert_eq!(
-            top.get("rules").and_then(Value::as_sequence).unwrap(),
+            top.get(key("rules")).and_then(Value::as_sequence).unwrap(),
             &vec![
                 Value::String("GEOSITE,cn,DIRECT".to_owned()),
                 Value::String("GEOIP,CN,DIRECT,no-resolve".to_owned()),
