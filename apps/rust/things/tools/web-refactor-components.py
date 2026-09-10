@@ -185,13 +185,34 @@ def validate() -> None:
     main = MAIN.read_text()
     overview = OVERVIEW.read_text()
 
-    for path in [
+    component_paths = [
         COMPONENTS / "mod.rs",
         COMPONENTS / "metric_card.rs",
         COMPONENTS / "states.rs",
-    ]:
+    ]
+    for path in component_paths:
         if not path.exists():
             raise SystemExit(f"shared component file missing: {path.relative_to(ROOT)}")
+
+    # Section 7 components stay presentation-only: capability state and API DTOs
+    # remain owned by app/pages instead of leaking into reusable visual primitives.
+    forbidden_component_dependencies = [
+        "AppState",
+        "UseReducerHandle",
+        "StatusSnapshot",
+        "NetworkConfigDto",
+        "ProxyStatus",
+        "TailscaleStatus",
+        "CameraStatus",
+        "Request::",
+    ]
+    for path in component_paths[1:]:
+        content = path.read_text()
+        leaked = [name for name in forbidden_component_dependencies if name in content]
+        if leaked:
+            raise SystemExit(
+                f"{path.relative_to(ROOT)} leaks capability state/API dependencies: {', '.join(leaked)}"
+            )
 
     for marker in ["mod components;", "use components::*;"]:
         if marker not in main:
