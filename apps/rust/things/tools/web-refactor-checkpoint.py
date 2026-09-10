@@ -3,7 +3,8 @@
 
 This temporary migration is deterministic and idempotent. It moves the remaining
 Overview/System page ownership out of web/main.rs, introduces normal hooks/pages
-module roots, and repairs two Playwright migration defects found by CI.
+module roots, repairs two Playwright migration defects found by CI, and preserves
+crate-internal visibility after adding the extra module layer.
 """
 from __future__ import annotations
 
@@ -22,12 +23,12 @@ PORTAL = ROOT / "apps/rust/things/e2e/portal.spec.ts"
 def export_top_level(text: str) -> str:
     text = re.sub(
         r"(?m)^(?P<prefix>(?:async\s+)?)fn\s+",
-        lambda m: f"pub(super) {m.group('prefix')}fn ",
+        lambda m: f"pub(crate) {m.group('prefix')}fn ",
         text,
     )
     text = re.sub(
         r"(?m)^(const|struct|enum|type|trait)\s+",
-        lambda m: f"pub(super) {m.group(1)} ",
+        lambda m: f"pub(crate) {m.group(1)} ",
         text,
     )
     return text
@@ -40,6 +41,14 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     if count != 1:
         raise SystemExit(f"{label}: expected exactly one match, found {count}")
     return text.replace(old, new, 1)
+
+
+def promote_nested_module_visibility(path: Path) -> None:
+    """`pub(super)` used to mean the web root; after nesting it is too narrow."""
+    text = path.read_text()
+    promoted = text.replace("pub(super)", "pub(crate)")
+    if promoted != text:
+        path.write_text(promoted)
 
 
 def extract_remaining_pages() -> None:
@@ -58,7 +67,7 @@ def extract_remaining_pages() -> None:
         start = text.index("fn render_dashboard")
         end = text.index("#[cfg(test)]", start)
         block = text[start:end].rstrip() + "\n\n"
-        wrapper = '''pub(super) fn render_system(
+        wrapper = '''pub(crate) fn render_system(
     state: &UseReducerHandle<AppState>,
     brightness: UseStateHandle<u16>,
 ) -> Html {
@@ -117,14 +126,29 @@ use pages::*;
     )
     MAIN.write_text(text)
 
+    # The old direct-root modules used pub(super) to expose their composition API
+    # to web/main.rs. Once nested under pages/ and hooks/, keep the same effective
+    # boundary by promoting those declarations to crate-only visibility.
+    for path in [
+        PAGES / "apps.rs",
+        PAGES / "camera.rs",
+        PAGES / "network.rs",
+        PAGES / "overview.rs",
+        PAGES / "proxy.rs",
+        PAGES / "system.rs",
+        PAGES / "tailscale.rs",
+        HOOKS / "countdown.rs",
+    ]:
+        promote_nested_module_visibility(path)
+
     hooks_mod = HOOKS / "mod.rs"
-    if not hooks_mod.exists():
-        hooks_mod.write_text("use super::*;\n\nmod countdown;\n\npub(super) use countdown::*;\n")
+    hooks_mod.write_text(
+        "use super::*;\n\nmod countdown;\n\npub(crate) use countdown::*;\n"
+    )
 
     pages_mod = PAGES / "mod.rs"
-    if not pages_mod.exists():
-        pages_mod.write_text(
-            '''use super::*;
+    pages_mod.write_text(
+        '''use super::*;
 
 mod apps;
 mod camera;
@@ -134,15 +158,15 @@ mod proxy;
 mod system;
 mod tailscale;
 
-pub(super) use apps::*;
-pub(super) use camera::*;
-pub(super) use network::*;
-pub(super) use overview::*;
-pub(super) use proxy::*;
-pub(super) use system::*;
-pub(super) use tailscale::*;
+pub(crate) use apps::*;
+pub(crate) use camera::*;
+pub(crate) use network::*;
+pub(crate) use overview::*;
+pub(crate) use proxy::*;
+pub(crate) use system::*;
+pub(crate) use tailscale::*;
 '''
-        )
+    )
 
     app = APP.read_text()
     old_system = '''                    AppPage::System => html! {
