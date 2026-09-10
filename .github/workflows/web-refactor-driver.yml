@@ -35,6 +35,7 @@ jobs:
         run: |
           python3 apps/rust/things/tools/web-refactor.py
           python3 apps/rust/things/tools/web-refactor-pages.py
+          python3 apps/rust/things/tools/web-refactor-navigation.py
       - name: Format changed Rust
         run: cargo fmt --manifest-path apps/rust/things/Cargo.toml --all
       - name: Check generated WASM frontend
@@ -53,5 +54,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add apps/rust/things/src/web apps/rust/things/tools/web-refactor*.py
-          git commit -m "refactor(web): generate capability page split [web-refactor-generated]"
+          git commit -m "refactor(web): generate capability navigation [web-refactor-generated]"
           git push origin HEAD:refactor/web-frontend-structure
