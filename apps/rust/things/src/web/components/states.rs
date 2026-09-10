@@ -35,3 +35,13 @@ pub(crate) fn empty_state(props: &EmptyStateProps) -> Html {
         </section>
     }
 }
+
+#[derive(Properties, PartialEq)]
+pub(crate) struct ErrorStateProps {
+    pub(crate) message: AttrValue,
+}
+
+#[function_component(ErrorState)]
+pub(crate) fn error_state(props: &ErrorStateProps) -> Html {
+    html! { <div class={RISK_NOTE} role="status">{props.message.clone()}</div> }
+}

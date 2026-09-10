@@ -22,7 +22,7 @@ pub(crate) fn render_tailscale_peers(state: &UseReducerHandle<AppState>) -> Html
                         <button class={BUTTON} type="button" onclick={refresh.clone()} disabled={state.settings_busy}>{"重新读取设备"}</button>
                     </div>
                     if let Some(error) = error {
-                        <div class={RISK_NOTE} role="status">{format!("设备列表读取失败，当前显示上次成功数据，数据可能已过期：{error}")}</div>
+                        <ErrorState message={format!("设备列表读取失败，当前显示上次成功数据，数据可能已过期：{error}")} />
                     }
                     if snapshot.device_total() == 0 {
                         <div class={SETTINGS_EMPTY} role="status">{"暂无 Tailnet 设备"}</div>
@@ -43,7 +43,7 @@ pub(crate) fn render_tailscale_peers(state: &UseReducerHandle<AppState>) -> Html
         }
         (None, Some(error)) => html! {
             <div class="grid gap-3">
-                <div class={RISK_NOTE} role="status">{format!("Tailnet 设备列表暂不可用：{error}")}</div>
+                <ErrorState message={format!("Tailnet 设备列表暂不可用：{error}")} />
                 <div class={BUTTON_ROW}><button class={BUTTON} type="button" onclick={refresh.clone()} disabled={state.settings_busy}>{"重新读取设备"}</button></div>
             </div>
         },
@@ -77,7 +77,7 @@ pub(crate) fn render_tailscale_peer(peer: &TailscalePeer, local: bool) -> Html {
                 <span class={HELP_TEXT}>{format!("{}{platform}", peer.ipv4)}</span>
                 <small class="block text-xs text-base-content/65">{detail}</small>
             </div>
-            <span class={classes!(STATUS_BADGE, tone.class())}><span class={STATUS_DOT_SMALL} aria-hidden="true"></span>{status}</span>
+            <StatusBadge label={status} tone={classes!(tone.class())} />
         </li>
     }
 }
@@ -141,7 +141,7 @@ pub(crate) fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf:
     let Some(tailscale) = state.tailscale.as_ref() else {
         return html! {
             <section class={SECTION} aria-labelledby="tailscale-title">
-                <div class={SECTION_HEAD}><div><p class={EYEBROW}>{"REMOTE LAN"}</p><h2 id="tailscale-title" class={SECTION_TITLE}>{"Tailscale 远程 LAN"}</h2></div></div>
+                <PageHeader title_id="tailscale-title" eyebrow="REMOTE LAN" title="Tailscale 远程 LAN" />
                 <div class={SETTINGS_EMPTY} role="status">{"正在读取 Tailscale 状态…"}</div>
             </section>
         };
@@ -235,10 +235,9 @@ pub(crate) fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf:
 
     html! {
         <section class={SECTION} aria-labelledby="tailscale-title" aria-busy={busy.to_string()}>
-            <div class={SECTION_HEAD}>
-                <div><p class={EYEBROW}>{"REMOTE LAN"}</p><h2 id="tailscale-title" class={SECTION_TITLE}>{"Tailscale 远程 LAN"}</h2></div>
+            <PageHeader title_id="tailscale-title" eyebrow="REMOTE LAN" title="Tailscale 远程 LAN">
                 <span class={SECTION_META}>{"固定 192.168.8.0/24 · 不提供 Exit Node"}</span>
-            </div>
+            </PageHeader>
             <article class={INNER_CARD} role="region" aria-label="Tailscale 远程 LAN 状态">
                 <div class={CONTROL_TITLE}><h3 class={CONTROL_HEADING}>{"LAN Access"}</h3><span class={CONTROL_META}>{format!("期望 {desired} · 当前 {effective}")}</span></div>
                 <dl class={METRIC_LIST}>

@@ -178,10 +178,9 @@ pub(crate) fn render_topology(snapshot: &StatusSnapshot) -> Html {
 
     html! {
         <section class={TOPOLOGY} aria-labelledby="topology-title">
-            <div class={SECTION_HEAD_CENTERED}>
-                <div><p class={EYEBROW}>{"PATH"}</p><h2 id="topology-title" class={SECTION_TITLE}>{"网络拓扑"}</h2></div>
+            <PageHeader title_id="topology-title" eyebrow="PATH" title="网络拓扑" centered=true>
                 <span class={SECTION_META}>{"Ethernet 优先，Wi-Fi 保持备用；下游同时经过 Router/NAT 与代理运行时"}</span>
-            </div>
+            </PageHeader>
             <div class={TOPOLOGY_FLOW}>
                 {topology_node("WAN", "互联网", internet_detail, internet_tone)}
                 {topology_link(internet_tone)}

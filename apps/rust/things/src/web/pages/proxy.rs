@@ -68,11 +68,10 @@ pub(crate) fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
     };
 
     html! {
-        <section class={classes!(SECTION, "gap-6")} aria-labelledby="proxy-controls-title">
-            <div class={SECTION_HEAD}>
-                <div><p class={EYEBROW}>{"PROXY"}</p><h2 id="proxy-controls-title" class={SECTION_TITLE}>{"代理设置"}</h2></div>
+        <SectionCard title_id="proxy-controls-title" extra_class={classes!("gap-6")}>
+            <PageHeader title_id="proxy-controls-title" eyebrow="PROXY" title="代理设置">
                 <span class={SECTION_META}>{"两个数据面独立切换，共享 Mihomo core"}</span>
-            </div>
+            </PageHeader>
             <article class={INNER_CARD} aria-labelledby="proxy-features-title">
                 <div class={CONTROL_TITLE}>
                     <h3 id="proxy-features-title" class={CONTROL_HEADING}>{"代理能力"}</h3>
@@ -88,7 +87,7 @@ pub(crate) fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
                         <input class="toggle toggle-primary shrink-0" type="checkbox" role="switch" aria-label="LAN 透明代理" checked={lan_desired == Some(true)} onchange={toggle_lan} disabled={state.lan_tun_busy || lan_desired.is_none()} />
                     </label>
                     if let Some(notice) = &state.lan_tun_notice {
-                        <div class={FEEDBACK} role="status" aria-live="polite" aria-atomic="true">{notice}</div>
+                        <FeedbackState message={AttrValue::from(notice.clone())} />
                     }
                     <label class="flex min-w-0 items-center justify-between gap-4 rounded-box border border-base-content/10 bg-base-200/40 p-4">
                         <span class="grid min-w-0 gap-1">
@@ -99,19 +98,19 @@ pub(crate) fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
                         <input class="toggle toggle-secondary shrink-0" type="checkbox" role="switch" aria-label="本机系统代理" checked={local_system_proxy_desired == Some(true)} onchange={toggle_local_system_proxy} disabled={state.local_system_proxy_busy || local_system_proxy_desired.is_none()} />
                     </label>
                     if let Some(notice) = &state.local_system_proxy_notice {
-                        <div class={FEEDBACK} role="status" aria-live="polite" aria-atomic="true">{notice}</div>
+                        <FeedbackState message={AttrValue::from(notice.clone())} />
                     }
                 </div>
                 <div class={SUMMARY}><span>{"当前代理节点"}</span><strong>{selected_node}</strong></div>
                 <small class={HELP_TEXT}>{"停用后保留订阅配置；普通 NAT 在路由启用时保持可用；浏览器不能直连 Mihomo Controller。"}</small>
             </article>
             if let Some(notice) = &state.node_notice {
-                <div class={FEEDBACK} role="status" aria-live="polite" aria-atomic="true">{notice}</div>
+                <FeedbackState message={AttrValue::from(notice.clone())} />
             }
             <div class={PROXY_GROUPS} aria-busy={state.node_busy.to_string()}>
                 {render_proxy_groups(&bootstrap.panel.proxy_groups, state, &csrf, state.node_busy)}
             </div>
-        </section>
+        </SectionCard>
     }
 }
 
@@ -123,11 +122,10 @@ pub(crate) fn render_proxy_groups_read_only(component: &Component<Vec<ProxyGroup
         return Html::default();
     }
     html! {
-        <section class={SECTION} aria-labelledby="proxy-readonly-title">
-            <div class={SECTION_HEAD}>
-                <div><p class={EYEBROW}>{"PROXY STATUS"}</p><h2 id="proxy-readonly-title" class={SECTION_TITLE}>{"当前代理与延迟"}</h2></div>
+        <SectionCard title_id="proxy-readonly-title">
+            <PageHeader title_id="proxy-readonly-title" eyebrow="PROXY STATUS" title="当前代理与延迟">
                 <span class={SECTION_META}>{"只读 · 修改需管理员登录"}</span>
-            </div>
+            </PageHeader>
             <div class={PROXY_GROUPS}>
                 {for groups.iter().map(|group| {
                     let selected = group.selected.as_deref().unwrap_or(MISSING);
@@ -159,7 +157,7 @@ pub(crate) fn render_proxy_groups_read_only(component: &Component<Vec<ProxyGroup
                     }
                 })}
             </div>
-        </section>
+        </SectionCard>
     }
 }
 

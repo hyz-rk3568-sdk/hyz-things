@@ -367,12 +367,8 @@ pub(crate) fn settings(props: &SettingsProps) -> Html {
     };
 
     html! {
-        <section class={SECTION} aria-labelledby="settings-title" aria-busy={busy.to_string()}>
-            <div class={SECTION_HEAD_CENTERED}>
-                <div>
-                    <p class={EYEBROW}>{"ADMIN"}</p>
-                    <h2 id="settings-title" class={SECTION_TITLE}>{"管理设置"}</h2>
-                </div>
+        <SectionCard title_id="settings-title" busy={Some(busy)}>
+            <PageHeader title_id="settings-title" eyebrow="ADMIN" title="管理设置" centered=true>
                 if authenticated {
                     <div class={SESSION_ACTIONS}>
                         <span>{"管理员 · admin"}</span>
@@ -381,9 +377,9 @@ pub(crate) fn settings(props: &SettingsProps) -> Html {
                 } else {
                     <span class={SECTION_META}>{"状态面板无需登录，设置需要管理员身份"}</span>
                 }
-            </div>
+            </PageHeader>
             if let Some(notice) = &state.settings_notice {
-                <div class={FEEDBACK} role="status" aria-live="polite" aria-atomic="true">{notice}</div>
+                <FeedbackState message={AttrValue::from(notice.clone())} />
             }
             if let Some((title, message)) = network_confirmation {
                 <section ref={network_confirmation_panel} id="network-confirmation-panel" class={CONFIRMATION_PANEL} role="region" aria-live="assertive" aria-atomic="true" aria-labelledby="network-confirmation-title" aria-describedby="network-confirmation-message">
@@ -501,7 +497,7 @@ pub(crate) fn settings(props: &SettingsProps) -> Html {
                     </div>
                 </>
             }
-        </section>
+        </SectionCard>
     }
 }
 

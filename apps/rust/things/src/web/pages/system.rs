@@ -212,14 +212,14 @@ pub(crate) fn render_display_control(
 
     html! {
         if display.is_some() {
-            <section class={SECTION} aria-labelledby="display-controls-title" aria-busy={busy.to_string()}>
-                <div class={SECTION_HEAD}>
-                    <div><p class={EYEBROW}>{"QUICK CONTROL"}</p><h2 id="display-controls-title" class={SECTION_TITLE}>{"设备快捷控制"}</h2></div>
+            <SectionCard title_id="display-controls-title" busy={Some(busy)}>
+                <PageHeader title_id="display-controls-title" eyebrow="QUICK CONTROL" title="设备快捷控制">
                     <span class={SECTION_META}>{"仅限管理 LAN · 同源令牌保护"}</span>
-                </div>
-                <div class={classes!(FEEDBACK, state.display_notice.is_none().then_some("invisible"))} role="status" aria-live="polite" aria-atomic="true">
-                    {state.display_notice.as_deref().unwrap_or("等待操作")}
-                </div>
+                </PageHeader>
+                <FeedbackState
+                    message={AttrValue::from(state.display_notice.clone().unwrap_or_else(|| "等待操作".to_owned()))}
+                    hidden={state.display_notice.is_none()}
+                />
                 <article class={INNER_CARD} aria-labelledby="display-control-title">
                     <div class={CONTROL_TITLE}><h3 id="display-control-title" class={CONTROL_HEADING}>{"LCD 背光"}</h3><span class={CONTROL_META}>{display_label}</span></div>
                     <label class={RANGE_LABEL} for="brightness"><span>{"点亮亮度"}</span><strong>{*brightness}</strong></label>
@@ -227,7 +227,7 @@ pub(crate) fn render_display_control(
                     <div class={BUTTON_ROW}><button class={BUTTON_PRIMARY} type="button" onclick={display_on} disabled={busy}>{"点亮"}</button><button class={BUTTON} type="button" onclick={display_off} disabled={busy}>{"黑屏"}</button></div>
                     <small class={HELP_TEXT}>{"黑屏会将 PWM 亮度设为 0；面板 5V 是共享电源，无法单独物理断开。"}</small>
                 </article>
-            </section>
+            </SectionCard>
         }
     }
 }
@@ -275,7 +275,7 @@ pub(crate) fn status_card(
                 <div class={STATUS_CARD_HEAD}>
                     <span class={classes!(STATUS_ICON, icon_accent)} aria-hidden="true">{icon}</span>
                     <h2 class={STATUS_TITLE}>{title}</h2>
-                    <span class={classes!(STATUS_BADGE, status.1.class())}><span class={STATUS_DOT_SMALL} aria-hidden="true"></span>{status.0}</span>
+                    <StatusBadge label={status.0} tone={classes!(status.1.class())} />
                 </div>
                 <dl class={METRIC_LIST}>{for rows.into_iter().map(|(label, value)| html! { <div class={METRIC}><dt class={METRIC_LABEL}>{label}</dt><dd class={METRIC_VALUE} title={value.clone()}>{value}</dd></div> })}</dl>
             </div>
