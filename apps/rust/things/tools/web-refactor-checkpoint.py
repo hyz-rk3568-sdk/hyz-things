@@ -18,7 +18,10 @@ MAIN = WEB / "main.rs"
 APP = WEB / "app.rs"
 PAGES = WEB / "pages"
 HOOKS = WEB / "hooks"
-PORTAL = ROOT / "apps/rust/things/e2e/portal.spec.ts"
+E2E = ROOT / "apps/rust/things/e2e"
+PORTAL = E2E / "portal.spec.ts"
+E2E_SUPPORT = E2E / "support.ts"
+NETWORK_SPEC = E2E / "network.spec.ts"
 E2E_DRIVER = ROOT / "apps/rust/things/tools/web-refactor-e2e.py"
 
 
@@ -116,10 +119,6 @@ use network_page::*;
 use proxy_page::*;
 use tailscale_page::*;
 '''
-    # Later plan stages may insert additional root imports (for example
-    # `use components::*;`) between the structural imports. Treat hooks/pages
-    # presence as the durable completion invariant instead of requiring the
-    # original imports to remain one contiguous block forever.
     if not ("use hooks::*;" in text and "use pages::*;" in text):
         text = replace_once(
             text,
@@ -133,9 +132,6 @@ use pages::*;
         )
     MAIN.write_text(text)
 
-    # The old direct-root modules used pub(super) to expose their composition API
-    # to web/main.rs. Once nested under pages/ and hooks/, keep the same effective
-    # boundary by promoting those declarations to crate-only visibility.
     for path in [
         PAGES / "apps.rs",
         PAGES / "camera.rs",
@@ -219,8 +215,16 @@ def repair_e2e_driver() -> None:
 
 
 def repair_e2e_contracts() -> None:
-    text = PORTAL.read_text()
+    """Repair the old monolith only while it still exists.
 
+    Once capability suites have been generated, support.ts/network.spec.ts are the
+    durable owners of these contracts and the structural checkpoint must become a
+    read-only validator instead of trying to recreate portal.spec.ts.
+    """
+    if not PORTAL.exists():
+        return
+
+    text = PORTAL.read_text()
     old_counter = '''    let total = 0;
     counter.querySelectorAll("strong[data-value]").forEach((element) => {
       total += Number(element.textContent);
@@ -259,20 +263,26 @@ def repair_e2e_contracts() -> None:
   await goToAppPage(page, "代理");
   await expect(page.getByRole("heading", { name: "代理设置" })).toBeVisible();
 '''
-    segment = (
-        segment[:password_end]
-        + canonical_transition
-        + segment[proxy_start:]
-    )
+    segment = segment[:password_end] + canonical_transition + segment[proxy_start:]
     text = text[:test_start] + segment + text[next_test:]
     PORTAL.write_text(text)
+
+
+def current_e2e_contract_sources() -> tuple[str, str]:
+    """Return countdown-helper and administrator-journey sources pre/post split."""
+    if PORTAL.exists():
+        portal = PORTAL.read_text()
+        return portal, portal
+    if not E2E_SUPPORT.exists() or not NETWORK_SPEC.exists():
+        raise SystemExit("capability E2E split is missing support.ts or network.spec.ts")
+    return E2E_SUPPORT.read_text(), NETWORK_SPEC.read_text()
 
 
 def validate_structure() -> None:
     main = MAIN.read_text()
     app = APP.read_text()
     hooks_mod = (HOOKS / "mod.rs").read_text()
-    portal = PORTAL.read_text()
+    countdown_source, admin_source = current_e2e_contract_sources()
     e2e_driver = E2E_DRIVER.read_text()
 
     required_files = [
@@ -300,14 +310,16 @@ def validate_structure() -> None:
             raise SystemExit(f"app.rs missing page composition call: {call}")
     if "#[cfg(test)]\nmod countdown_tests;" not in hooks_mod:
         raise SystemExit("countdown deterministic tests are not registered")
-    if "const weights = [86_400, 3_600, 60, 1];" not in portal:
+    if "const weights = [86_400, 3_600, 60, 1];" not in countdown_source:
         raise SystemExit("Playwright countdown helper is not unit-aware")
 
-    test_start = portal.index(
+    test_start = admin_source.index(
         'test("supports the administrator, STA, AP, and write-only subscription journey"'
     )
-    next_test = portal.find('\ntest("', test_start + 1)
-    admin_segment = portal[test_start:] if next_test < 0 else portal[test_start:next_test]
+    next_test = admin_source.find('\ntest("', test_start + 1)
+    admin_segment = (
+        admin_source[test_start:] if next_test < 0 else admin_source[test_start:next_test]
+    )
     canonical_transition = '''  await expect(
     page.getByRole("button", { name: "上游 Wi-Fi (STA)" }),
   ).toBeVisible();

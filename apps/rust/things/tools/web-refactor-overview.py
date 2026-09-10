@@ -239,6 +239,11 @@ pub(crate) fn render_health_summary(snapshot: &StatusSnapshot) -> Html {
 def migrate_e2e() -> None:
     text = SHELL_SPEC.read_text()
     if 'name: "核心健康状态"' not in text:
+        test_start = text.index(
+            'test("renders the overview, apps, and anonymous system control"'
+        )
+        next_test = text.index('\ntest("', test_start + 1)
+        segment = text[test_start:next_test]
         anchor = r'''  await expect(
     page.getByRole("button", { name: "总览", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
@@ -251,14 +256,20 @@ def migrate_e2e() -> None:
     await expect(card.getByText(/正常|需检查|不可用|未知/, { exact: true })).toBeVisible();
   }
 '''
-        text = replace_once(text, anchor, assertions, "Overview core-health E2E")
+        segment = replace_once(segment, anchor, assertions, "Overview core-health E2E")
+        text = text[:test_start] + segment + text[next_test:]
 
-    degraded_anchor = r'''  await expect(page.getByText("代理探测暂时不可用")).toBeVisible({
+    degraded_title = 'test("keeps the last dashboard while a component becomes degraded"'
+    if 'const proxyHealth = page.getByRole("region", { name: "核心健康状态" })' not in text:
+        test_start = text.index(degraded_title)
+        next_test = text.find('\ntest("', test_start + 1)
+        next_test = len(text) if next_test < 0 else next_test
+        segment = text[test_start:next_test]
+        degraded_anchor = r'''  await expect(page.getByText("代理探测暂时不可用")).toBeVisible({
     timeout: 7_500,
   });
   await expect(page.getByRole("heading", { name: "代理状态" })).toBeVisible();
 '''
-    if 'const proxyHealth = page.getByRole("region", { name: "核心健康状态" })' not in text:
         degraded_new = r'''  await expect(page.getByText("代理探测暂时不可用")).toBeVisible({
     timeout: 7_500,
   });
@@ -269,7 +280,13 @@ def migrate_e2e() -> None:
   await expect(proxyHealth.getByText("需检查", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "代理状态" })).toBeVisible();
 '''
-        text = replace_once(text, degraded_anchor, degraded_new, "degraded Proxy health E2E")
+        segment = replace_once(
+            segment,
+            degraded_anchor,
+            degraded_new,
+            "degraded Proxy health E2E",
+        )
+        text = text[:test_start] + segment + text[next_test:]
     SHELL_SPEC.write_text(text)
 
 
