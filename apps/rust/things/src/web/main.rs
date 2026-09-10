@@ -1,10 +1,12 @@
 #![cfg(feature = "web")]
 
+mod api;
 mod ui;
 
 #[path = "hooks/countdown.rs"]
 mod countdown;
 
+use api::*;
 use countdown::*;
 
 use std::{
@@ -48,42 +50,6 @@ use yew::prelude::*;
 
 use ui::*;
 
-const STATUS_ENDPOINT: &str = "/api/v1/status";
-const PANEL_ENDPOINT: &str = "/api/v1/panel";
-const DISPLAY_ENDPOINT: &str = "/api/v1/control/display";
-const PROXY_LAN_TUN_ENDPOINT: &str = "/api/v1/control/proxy/lan-tun";
-const PROXY_LOCAL_SYSTEM_ENDPOINT: &str = "/api/v1/control/proxy/local-system";
-const PROXY_SELECTION_ENDPOINT: &str = "/api/v1/control/proxy/selection";
-const PROXY_DELAYS_ENDPOINT: &str = "/api/v1/control/proxy/delays";
-const AUTH_LOGIN_ENDPOINT: &str = "/api/v1/auth/login";
-const AUTH_LOGOUT_ENDPOINT: &str = "/api/v1/auth/logout";
-const AUTH_SESSION_ENDPOINT: &str = "/api/v1/auth/session";
-const AUTH_PASSWORD_ENDPOINT: &str = "/api/v1/auth/password";
-const NETWORK_CONFIG_ENDPOINT: &str = "/api/v1/network/config";
-const NETWORK_PENDING_ENDPOINT: &str = "/api/v1/network/pending";
-const STA_SCAN_ENDPOINT: &str = "/api/v1/control/network/sta/scan";
-const STA_APPLY_ENDPOINT: &str = "/api/v1/control/network/sta/apply";
-const AP_PREPARE_ENDPOINT: &str = "/api/v1/control/network/ap/prepare";
-const AP_APPLY_ENDPOINT: &str = "/api/v1/control/network/ap/apply";
-const AP_CONFIRM_ENDPOINT: &str = "/api/v1/control/network/ap/confirm";
-const AP_CANCEL_ENDPOINT: &str = "/api/v1/control/network/ap/cancel";
-const SUBSCRIPTION_ENDPOINT: &str = "/api/v1/proxy/subscription";
-const SUBSCRIPTION_SOURCE_ENDPOINT: &str = "/api/v1/control/proxy/subscription/source";
-const SUBSCRIPTION_REFRESH_ENDPOINT: &str = "/api/v1/control/proxy/subscription/refresh";
-const DEVICE_POLICIES_ENDPOINT: &str = "/api/v1/proxy/device-policies";
-const DEVICE_POLICIES_UPDATE_ENDPOINT: &str = "/api/v1/control/proxy/device-policies";
-const TAILSCALE_ENDPOINT: &str = "/api/v1/tailscale";
-const TAILSCALE_PEERS_ENDPOINT: &str = "/api/v1/tailscale/peers";
-const TAILSCALE_MODE_ENDPOINT: &str = "/api/v1/control/tailscale/mode";
-const TAILSCALE_LOGIN_ENDPOINT: &str = "/api/v1/control/tailscale/login";
-const TAILSCALE_LOGOUT_ENDPOINT: &str = "/api/v1/control/tailscale/logout";
-const CAMERA_STATUS_ENDPOINT: &str = "/api/v1/camera/status";
-const CAMERA_VIEWER_TOKEN_ENDPOINT: &str = "/api/v1/camera/viewer-token";
-const CAMERA_SESSION_CREATE_ENDPOINT: &str = "/api/v1/control/camera/session/create";
-const CAMERA_SESSION_CLOSE_ENDPOINT: &str = "/api/v1/control/camera/session/close";
-const CAMERA_PROFILE_UPDATE_ENDPOINT: &str = "/api/v1/control/camera/profile";
-const CAMERA_ROTATION_UPDATE_ENDPOINT: &str = "/api/v1/control/camera/rotation";
-const APPS_ENDPOINT: &str = "/api/v1/apps";
 const CAMERA_ICE_GATHER_TIMEOUT_MS: u32 = 10_000;
 const CAMERA_ICE_POLL_MS: u32 = 50;
 // 页面隐藏后不立即关闭直播会话：宽限期内回来就继续，超时才真正关闭
@@ -98,91 +64,6 @@ const CAMERA_UPDATE_RETRY_DELAY_MS: u32 = 1_000;
 const MISSING: &str = "—";
 fn is_escape_key(event: &KeyboardEvent) -> bool {
     matches!(event.key().as_str(), "Escape" | "Esc") || event.code() == "Escape"
-}
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct AuthSessionDto {
-    authenticated: bool,
-    must_change: bool,
-}
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct InstalledAppDto {
-    name: String,
-    binary: String,
-    init_script: String,
-    #[serde(default)]
-    sha256: Option<String>,
-    #[serde(default)]
-    deployed_at_unix_ms: Option<u64>,
-    #[serde(default)]
-    protocol_versions: std::collections::BTreeMap<String, u32>,
-}
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct AppsResponseDto {
-    apps: Vec<InstalledAppDto>,
-}
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CameraViewerTokenDto {
-    token: String,
-    expires_in_seconds: u64,
-}
-
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CameraStatusResponseDto {
-    camera: CameraStatus,
-    available_presets: Vec<CameraStreamPreset>,
-}
-
-#[derive(serde::Serialize)]
-#[serde(deny_unknown_fields)]
-struct CameraProfileUpdateRequestDto {
-    preset: CameraStreamPreset,
-}
-
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CameraProfileUpdateResponseDto {
-    applied: bool,
-}
-
-#[derive(serde::Serialize)]
-#[serde(deny_unknown_fields)]
-struct CameraRotationUpdateRequestDto {
-    rotation: CameraRotation,
-}
-
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CameraRotationUpdateResponseDto {
-    applied: bool,
-}
-
-#[derive(serde::Serialize)]
-#[serde(deny_unknown_fields)]
-struct CameraSessionCreateRequestDto {
-    offer_sdp: String,
-}
-
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CameraSessionCreateResponseDto {
-    session_id: String,
-    answer_sdp: String,
-    negotiation_timeout_seconds: u16,
-}
-
-#[derive(serde::Serialize)]
-#[serde(deny_unknown_fields)]
-struct CameraSessionCloseRequestDto {
-    session_id: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -218,38 +99,6 @@ struct CameraSessionRuntime {
 
 type CameraRuntime = Rc<RefCell<Option<CameraSessionRuntime>>>;
 
-#[derive(Clone, Copy, PartialEq, Eq, serde::Deserialize)]
-enum WifiCountryDto {
-    #[serde(rename = "AU")]
-    Au,
-    #[serde(rename = "BR")]
-    Br,
-    #[serde(rename = "CA")]
-    Ca,
-    #[serde(rename = "CN")]
-    Cn,
-    #[serde(rename = "DE")]
-    De,
-    #[serde(rename = "FR")]
-    Fr,
-    #[serde(rename = "GB")]
-    Gb,
-    #[serde(rename = "IN")]
-    In,
-    #[serde(rename = "JP")]
-    Jp,
-    #[serde(rename = "KR")]
-    Kr,
-    #[serde(rename = "NZ")]
-    Nz,
-    #[serde(rename = "SG")]
-    Sg,
-    #[serde(rename = "TW")]
-    Tw,
-    #[serde(rename = "US")]
-    Us,
-}
-
 impl WifiCountryDto {
     const fn as_str(self) -> &'static str {
         match self {
@@ -271,153 +120,6 @@ impl WifiCountryDto {
     }
 }
 
-#[derive(Clone, PartialEq, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct NetworkConfigDto {
-    version: u8,
-    ap_ssid: String,
-    sta_ssid: String,
-    country: WifiCountryDto,
-}
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PendingConfigDto {
-    version: u8,
-    #[serde(rename = "staged_at_unix_ms")]
-    _staged_at_unix_ms: u64,
-    config: NetworkConfigDto,
-}
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct NetworkPendingDto {
-    pending: Option<PendingConfigDto>,
-    applied: bool,
-    remaining_seconds: Option<u64>,
-}
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct WifiScanDto {
-    ssid: String,
-    bssid: String,
-    frequency_mhz: u16,
-    signal_dbm: i16,
-    secured: bool,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum SubscriptionStateDto {
-    Idle,
-    Fetching,
-    Active,
-    Failed,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum DevicePolicyDto {
-    Direct,
-    Proxy,
-}
-
-#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct DevicePolicyEntryDto {
-    mac: String,
-    label: String,
-    policy: DevicePolicyDto,
-}
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct DevicePolicyConfigDto {
-    version: u8,
-    generation: u64,
-    entries: Vec<DevicePolicyEntryDto>,
-}
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct LanClientDto {
-    mac: String,
-    lease_address: Option<String>,
-    hostname: Option<String>,
-    associated: bool,
-    policy: DevicePolicyDto,
-}
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct DevicePolicySnapshotDto {
-    config: DevicePolicyConfigDto,
-    clients: Vec<LanClientDto>,
-    effective: bool,
-}
-
-#[derive(serde::Serialize)]
-#[serde(deny_unknown_fields)]
-struct DevicePolicyUpdateDto {
-    expected_generation: u64,
-    entries: Vec<DevicePolicyEntryDto>,
-}
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SubscriptionDto {
-    configured: bool,
-    state: SubscriptionStateDto,
-}
-
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct NetworkConfigResponseDto {
-    config: NetworkConfigDto,
-}
-
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct NetworkScanResponseDto {
-    entries: Vec<WifiScanDto>,
-}
-
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SubscriptionResponseDto {
-    subscription: SubscriptionDto,
-}
-
-#[derive(serde::Serialize)]
-#[serde(deny_unknown_fields)]
-struct EmptyRequest {}
-
-#[derive(serde::Serialize)]
-#[serde(deny_unknown_fields)]
-struct LoginRequest {
-    password: String,
-}
-
-#[derive(serde::Serialize)]
-#[serde(deny_unknown_fields)]
-struct PasswordRequest {
-    current_password: String,
-    new_password: String,
-}
-
-#[derive(serde::Serialize)]
-#[serde(deny_unknown_fields)]
-struct StaRequest {
-    ssid: String,
-    passphrase: String,
-}
-
-enum NetworkApplyIntent {
-    Sta(StaRequest),
-    Ap,
-}
-
 impl NetworkApplyIntent {
     const fn confirmation(&self) -> (&'static str, &'static str) {
         match self {
@@ -431,51 +133,6 @@ impl NetworkApplyIntent {
             ),
         }
     }
-}
-
-#[derive(serde::Serialize)]
-#[serde(deny_unknown_fields)]
-struct ApRequest {
-    ssid: String,
-    passphrase: String,
-    country: String,
-}
-
-#[derive(serde::Serialize)]
-#[serde(deny_unknown_fields)]
-struct SubscriptionSourceRequest {
-    url: String,
-}
-
-#[derive(serde::Serialize)]
-#[serde(deny_unknown_fields)]
-struct ProxyFeatureRequestDto {
-    enabled: bool,
-}
-
-#[derive(serde::Serialize)]
-#[serde(deny_unknown_fields)]
-struct TailscaleModeRequestDto {
-    mode: TailscaleMode,
-}
-
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TailscaleResponseDto {
-    tailscale: TailscaleStatus,
-}
-
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TailscalePeersResponseDto {
-    peers: TailscalePeerSnapshot,
-}
-
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TailscaleMutationResponseDto {
-    tailscale: TailscaleStatus,
-    login_url: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Default)]
@@ -2754,31 +2411,6 @@ fn app() -> Html {
     }
 }
 
-async fn fetch_dashboard() -> Result<(StatusSnapshot, PanelBootstrap), String> {
-    let status = fetch_json::<StatusSnapshot>(STATUS_ENDPOINT, "状态").await?;
-    let panel = fetch_json::<PanelBootstrap>(PANEL_ENDPOINT, "控制面").await?;
-    Ok((status, panel))
-}
-
-async fn fetch_json<T: serde::de::DeserializeOwned>(
-    endpoint: &str,
-    label: &str,
-) -> Result<T, String> {
-    let response = Request::get(endpoint)
-        .credentials(RequestCredentials::SameOrigin)
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .map_err(|error| format!("无法连接{label}接口：{error}"))?;
-    if !response.ok() {
-        return Err(format!("{label}接口返回 HTTP {}", response.status()));
-    }
-    response
-        .json::<T>()
-        .await
-        .map_err(|error| format!("{label}数据格式无效：{error}"))
-}
-
 fn dispatch_control<T>(
     state: UseReducerHandle<AppState>,
     area: ControlArea,
@@ -2815,12 +2447,6 @@ fn dispatch_control<T>(
     });
 }
 
-#[derive(serde::Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-enum DelayRefreshControlResponse {
-    ProxyDelays { groups: Vec<ProxyGroup> },
-}
-
 fn dispatch_delay_refresh(state: UseReducerHandle<AppState>, csrf_token: String) {
     state.dispatch(Action::ControlStarted(ControlArea::Nodes));
     spawn_local(async move {
@@ -2850,42 +2476,6 @@ fn dispatch_delay_refresh(state: UseReducerHandle<AppState>, csrf_token: String)
         };
         state.dispatch(Action::ProxyDelaysFinished(result));
     });
-}
-
-async fn post_json<T: serde::Serialize>(
-    endpoint: &str,
-    csrf: &str,
-    body: &T,
-    label: &str,
-) -> Result<gloo_net::http::Response, String> {
-    let request = Request::post(endpoint)
-        .credentials(RequestCredentials::SameOrigin)
-        .header("Accept", "application/json")
-        .header("X-HYZ-CSRF", csrf)
-        .json(body)
-        .map_err(|error| format!("无法编码{label}请求：{error}"))?;
-    let response = request
-        .send()
-        .await
-        .map_err(|error| format!("无法连接{label}接口：{error}"))?;
-    if response.ok() {
-        Ok(response)
-    } else {
-        Err(format!("{label}接口返回 HTTP {}", response.status()))
-    }
-}
-
-async fn post_json_response<T: serde::Serialize, R: serde::de::DeserializeOwned>(
-    endpoint: &str,
-    csrf: &str,
-    body: &T,
-    label: &str,
-) -> Result<R, String> {
-    post_json(endpoint, csrf, body, label)
-        .await?
-        .json::<R>()
-        .await
-        .map_err(|error| format!("{label}响应格式无效：{error}"))
 }
 
 async fn fetch_settings_data() -> Result<SettingsData, String> {
