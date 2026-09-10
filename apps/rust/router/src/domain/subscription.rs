@@ -137,7 +137,7 @@ pub fn parse_mihomo_subscription(input: &[u8]) -> Result<ValidatedSubscription, 
 }
 
 /// Compose the trusted proxy inventory with product-owned routing policy while preserving
-/// unrelated local source fields. `mode`, `proxy-groups`, and `rules` are always overwritten.
+/// unrelated local source fields. Product policy and GeoData mode always override source values.
 pub fn compose_managed_mihomo_source(
     current_source: &[u8],
     subscription: &ValidatedSubscription,
@@ -168,6 +168,14 @@ pub fn compose_managed_mihomo_source(
     top.insert(
         Value::String("mode".to_owned()),
         Value::String("rule".to_owned()),
+    );
+    top.insert(
+        Value::String("geodata-mode".to_owned()),
+        Value::Bool(false),
+    );
+    top.insert(
+        Value::String("geo-auto-update".to_owned()),
+        Value::Bool(false),
     );
     top.insert(
         Value::String("proxy-groups".to_owned()),
@@ -395,7 +403,7 @@ mod tests {
         )
         .unwrap();
         let source = compose_managed_mihomo_source(
-            b"mode: global\nlog-level: warning\nproxy-groups:\n  - name: stale\n    type: select\n    proxies: [DIRECT]\nrules:\n  - MATCH,DIRECT\nproxies:\n  - name: stale-node\n",
+            b"mode: global\ngeodata-mode: true\ngeo-auto-update: true\nlog-level: warning\nproxy-groups:\n  - name: stale\n    type: select\n    proxies: [DIRECT]\nrules:\n  - MATCH,DIRECT\nproxies:\n  - name: stale-node\n",
             &subscription,
         )
         .unwrap();
@@ -403,6 +411,14 @@ mod tests {
         let top = source.as_mapping().unwrap();
 
         assert_eq!(top.get(key("mode")).and_then(Value::as_str), Some("rule"));
+        assert_eq!(
+            top.get(key("geodata-mode")).and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            top.get(key("geo-auto-update")).and_then(Value::as_bool),
+            Some(false)
+        );
         assert_eq!(
             top.get(key("log-level")).and_then(Value::as_str),
             Some("warning")
