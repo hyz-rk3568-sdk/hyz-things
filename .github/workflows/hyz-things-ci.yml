@@ -1,0 +1,126 @@
+name: hyz-things CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/rust/things/**"
+      - "apps/rust/contract/**"
+      - "Makefile"
+      - ".github/workflows/hyz-things-ci.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "apps/rust/things/**"
+      - "apps/rust/contract/**"
+      - "Makefile"
+      - ".github/workflows/hyz-things-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hyz-things-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  verify:
+    name: Host + frontend + E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust 1.85
+        shell: bash
+        run: |
+          rustup toolchain install 1.85.0 \
+            --profile minimal \
+            --component rustfmt \
+            --component clippy
+          rustup default 1.85.0
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/trunk
+            apps/rust/contract/target
+            apps/rust/things/target
+          key: ${{ runner.os }}-rust-1.85-trunk-0.21.14-${{ hashFiles('apps/rust/contract/Cargo.lock', 'apps/rust/things/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-rust-1.85-trunk-0.21.14-
+            ${{ runner.os }}-rust-1.85-
+
+      - name: Check contract formatting
+        run: cargo fmt --manifest-path apps/rust/contract/Cargo.toml --all -- --check
+
+      - name: Test contract
+        run: cargo test --locked --manifest-path apps/rust/contract/Cargo.toml
+
+      - name: Clippy contract
+        run: cargo clippy --locked --manifest-path apps/rust/contract/Cargo.toml --all-targets -- -D warnings
+
+      - name: Check hyz-things formatting
+        run: cargo fmt --manifest-path apps/rust/things/Cargo.toml --all -- --check
+
+      - name: Test hyz-things native
+        run: cargo test --locked --manifest-path apps/rust/things/Cargo.toml --features native
+
+      - name: Clippy hyz-things
+        run: cargo clippy --locked --manifest-path apps/rust/things/Cargo.toml --all-targets --features e2e -- -D warnings
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/rust/things/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: apps/rust/things
+        run: npm ci
+
+      - name: Install WASM target
+        run: rustup target add wasm32-unknown-unknown --toolchain 1.85.0
+
+      - name: Install Trunk 0.21.14
+        shell: bash
+        run: |
+          if ! command -v trunk >/dev/null 2>&1 || [[ "$(trunk --version)" != "trunk 0.21.14" ]]; then
+            cargo install trunk --version 0.21.14 --locked
+          fi
+          trunk --version
+
+      - name: Build deterministic frontend bundle
+        run: bash apps/rust/things/tools/build-frontend-bundle.sh
+
+      - name: Install Playwright Chromium
+        working-directory: apps/rust/things
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E
+        working-directory: apps/rust/things
+        run: npm run test:e2e
+
+      - name: Upload Playwright failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyz-things-playwright-failure-${{ github.run_id }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            apps/rust/things/playwright-report/
+            apps/rust/things/test-results/
