@@ -503,8 +503,6 @@ pub(crate) fn proxy_health_tone(component: &Component<ProxyStatus>) -> Tone {
 }
 
 fn tailscale_runtime_tone(status: &TailscaleStatus) -> Tone {
-    use hyz_things::domain::status::TailscaleRouteApproval;
-
     if status.error_category.is_some() {
         return Tone::Warn;
     }
@@ -546,12 +544,13 @@ fn tailscale_runtime_tone(status: &TailscaleStatus) -> Tone {
             }
         }
         TailscaleMode::LanSubnetAccess => {
+            // Tailnet route approval is an external control-plane prerequisite and is not
+            // reliably observable from this device, so it must not downgrade local health.
             if status.effective_mode == Some(TailscaleMode::LanSubnetAccess)
                 && status.backend_state == TailscaleBackendState::Running
                 && status.authenticated == Some(true)
                 && status.route_advertised == Some(true)
                 && status.local_firewall_ready == Some(true)
-                && status.route_approval == TailscaleRouteApproval::Approved
             {
                 Tone::Good
             } else if status
@@ -564,7 +563,6 @@ fn tailscale_runtime_tone(status: &TailscaleStatus) -> Tone {
                 || status.authenticated == Some(false)
                 || status.route_advertised == Some(false)
                 || status.local_firewall_ready == Some(false)
-                || status.route_approval == TailscaleRouteApproval::UnknownExternalApprovalRequired
             {
                 Tone::Warn
             } else {
@@ -774,7 +772,7 @@ mod health_tests {
     }
 
     #[test]
-    fn tailscale_health_requires_confirmed_mode_and_lan_route_readiness() {
+    fn tailscale_health_uses_local_lan_readiness_not_external_route_approval() {
         let disabled = disabled_tailscale();
         assert!(matches!(
             tailscale_health_tone(&Component::available(disabled.clone())),
@@ -788,18 +786,12 @@ mod health_tests {
         lan.authenticated = Some(true);
         lan.route_advertised = Some(true);
         lan.local_firewall_ready = Some(true);
+        lan.route_approval = TailscaleRouteApproval::UnknownExternalApprovalRequired;
         assert!(matches!(
             tailscale_health_tone(&Component::available(lan.clone())),
             Tone::Good
         ));
 
-        lan.route_approval = TailscaleRouteApproval::UnknownExternalApprovalRequired;
-        assert!(matches!(
-            tailscale_health_tone(&Component::available(lan.clone())),
-            Tone::Warn
-        ));
-
-        lan.route_approval = TailscaleRouteApproval::Approved;
         lan.route_advertised = None;
         assert!(matches!(
             tailscale_health_tone(&Component::available(lan)),
