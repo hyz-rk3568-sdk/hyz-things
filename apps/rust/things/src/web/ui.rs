@@ -13,9 +13,6 @@ pub const OVERALL_META: &str = "text-xs text-base-content/65";
 pub const STATUS_DOT: &str = "size-2 shrink-0 rounded-full bg-current";
 pub const STATUS_DOT_SMALL: &str = "size-1.5 shrink-0 rounded-full bg-current";
 
-pub const WORKSPACE_TABS: &str = "tabs tabs-box sticky top-2 z-20 mt-3 grid grid-cols-2 overflow-x-auto border border-base-content/10 bg-base-200/90 p-1 shadow-lg shadow-black/10 backdrop-blur";
-pub const WORKSPACE_TAB: &str = "tab h-10 min-w-24 rounded-field text-xs font-bold sm:text-sm";
-pub const WORKSPACE_TAB_ACTIVE: &str = "tab-active bg-primary text-primary-content";
 pub const WORKSPACE_PANEL: &str = "min-w-0 outline-none";
 
 pub const PORTAL_TABS: &str = "tabs tabs-box sticky top-2 z-20 mt-3 grid grid-cols-3 overflow-x-auto border border-base-content/10 bg-base-200/90 p-1 shadow-lg shadow-black/10 backdrop-blur";
