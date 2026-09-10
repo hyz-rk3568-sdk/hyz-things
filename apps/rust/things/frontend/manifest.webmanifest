@@ -8,8 +8,6 @@
   "id": "/",
   "display": "standalone",
   "display_override": ["standalone", "fullscreen"],
-  "background_color": "#282a36",
-  "theme_color": "#282a36",
   "icons": [
     {
       "src": "/pwa-icon-192.svg",

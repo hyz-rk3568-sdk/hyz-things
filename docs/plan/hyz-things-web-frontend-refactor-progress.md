@@ -54,12 +54,25 @@ This file records implementation evidence while `hyz-things-web-frontend-refacto
 
 **Overview information-priority stage result: passed.** Plan section 9 is green.
 
-## Current stage — Application shell and responsive navigation
+## 2026-09-10 — Application shell and responsive navigation checkpoint
 
-- Keep the existing seven first-level destinations and the current `AppPage` state/ARIA relationships; navigation layout changes must remain presentation-only.
-- On desktop, render the first-level navigation as a sticky single-column rail to the left of the active page content.
-- On narrow/mobile viewports, keep the same navigation reachable above the page content in a compact four-plus-three grid; horizontal swipe navigation remains available.
-- Preserve Overview/Network mounted-state behavior, Camera stop-on-page-leave lifecycle, admin authorization boundaries, and all mutation flows.
-- Extend the existing `shell.spec.ts` journeys with geometry assertions: desktop navigation must be left of the Overview panel and vertically stacked; mobile navigation must be above the panel, with Tailscale still on the first row and Camera beginning the second row.
-- Continue to assert no page-level horizontal overflow and avoid Tailwind-class selectors in E2E.
-- **Pending checkpoint:** this responsive AppShell change must pass the complete human-authored PR CI, including the 32-test runnable Playwright baseline, before plan section 8 is marked green.
+- The seven existing first-level destinations and `AppPage` state/ARIA relationships are unchanged; only AppShell presentation layout moved.
+- On desktop, `主导航` is a sticky single-column rail to the left of active page content. On narrow/mobile viewports the same seven destinations render above content in a compact four-plus-three grid, while horizontal touch swipe remains available.
+- Overview/Network mounted-state behavior, Camera stop-on-page-leave lifecycle, admin authorization boundaries, and mutation flows remain owned by the application layer and were not moved into `AppShell`.
+- Existing `shell.spec.ts` journeys now use actual bounding boxes rather than CSS-class selectors: desktop navigation must be left of Overview and vertically stacked; at 360 px the navigation must be above content, Tailscale remains in row one, Camera begins row two, and there is no page-level horizontal overflow.
+- Driver run `34494788296` on human head `9058db57eafdb363fddffdd0e15bf08fe28b26b4` passed migrations, rustfmt, WASM `cargo check`, and diff/commit gates without generating a follow-up commit.
+- Full PR CI run `34494793676` on the same human head passed capability-suite/static checks, contract format/tests/Clippy, deterministic frontend bundle, all 13 browser-side unit tests, native tests, strict Clippy, and artifact verification.
+- The same run's Playwright job executed `Running 32 tests using 1 worker` and completed with `32 passed (2.4m)`, so both new desktop and mobile geometry assertions passed in Chromium.
+
+**Application-shell/navigation stage result: passed.** Plan section 8 is green.
+
+## Current stage — Semantic light/dark theme and visual cleanup
+
+- Keep Tailwind CSS 4 and daisyUI 5 as the only component/theming system.
+- Replace the fixed Dracula-only root contract with daisyUI semantic themes: `light` is the default and `dracula` is selected by `prefers-color-scheme: dark`.
+- Remove the hard-coded `data-theme="dracula"` and dark-only `color-scheme` declaration from the HTML shell. Browser theme-color metadata follows the operating-system light/dark preference.
+- Remove fixed Dracula background/theme colors from the PWA manifest instead of publishing a single color as if it represented both themes.
+- Keep components on semantic `base-*`, `primary`, `success`, `warning`, `error`, and related tokens; do not fork component markup by theme.
+- Extend the existing shell E2E journey to switch Playwright media preference light → dark → light and verify the daisyUI `--color-base-300` token changes and restores. The number and capability organization of E2E suites remain unchanged.
+- After semantic theme support is green, audit remaining heavy shadows/surfaces and responsive spacing as a separate visual-cleanup pass rather than changing behavior in the theme commit.
+- **Pending checkpoint:** this theme-contract change must pass the complete human-authored PR CI, including the 32-test runnable Playwright baseline, before the semantic-theme portion of plan section 10 is marked green.

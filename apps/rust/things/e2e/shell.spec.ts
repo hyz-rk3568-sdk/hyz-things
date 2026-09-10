@@ -31,7 +31,23 @@ test("renders the overview, apps, and anonymous system control", async ({
   });
   page.on("pageerror", (error) => browserErrors.push(error.message));
 
+  await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/");
+  const semanticBase = () =>
+    page.evaluate(() =>
+      getComputedStyle(document.documentElement)
+        .getPropertyValue("--color-base-300")
+        .trim(),
+    );
+  const lightBase = await semanticBase();
+  expect(lightBase).not.toBe("");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect.poll(semanticBase).not.toBe(lightBase);
+  const darkBase = await semanticBase();
+  expect(darkBase).not.toBe("");
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect.poll(semanticBase).toBe(lightBase);
+
   await expect(
     page.getByRole("heading", { name: "hyz things", level: 1 }),
   ).toBeVisible();
@@ -160,6 +176,8 @@ test("serves a standalone PWA manifest", async ({ request }) => {
     display: "standalone",
     display_override: ["standalone", "fullscreen"],
   });
+  expect(manifest).not.toHaveProperty("background_color");
+  expect(manifest).not.toHaveProperty("theme_color");
   expect(manifest.icons).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
