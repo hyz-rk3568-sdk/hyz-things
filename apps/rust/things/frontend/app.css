@@ -1,6 +1,20 @@
 @import "tailwindcss";
 @plugin "daisyui" {
-  themes: dracula --default;
+  themes: light --default, dracula --prefersdark;
+}
+@plugin "daisyui/theme" {
+  name: "light";
+  default: true;
+  color-scheme: light;
+  --color-base-content: #101010;
+  --color-info: #075985;
+  --color-info-content: #ffffff;
+  --color-success: #166534;
+  --color-success-content: #ffffff;
+  --color-warning: #854d0e;
+  --color-warning-content: #ffffff;
+  --color-error: #991b1b;
+  --color-error-content: #ffffff;
 }
 @source "../src/web/**/*.rs";
 
@@ -22,4 +36,14 @@
   noscript {
     @apply block p-10 text-center text-base-content;
   }
+}
+
+nav.tabs > button.tab:not(.tab-active) {
+  color: var(--color-base-content);
+}
+
+.card.shadow-xl,
+.card.shadow-lg,
+.tabs-box.shadow-lg {
+  box-shadow: var(--shadow-sm);
 }

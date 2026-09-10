@@ -281,8 +281,8 @@ check-static:
 	grep -q '{}://{LAN_ADDRESS}:{port}' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
 	grep -q 'axum::serve(TlsListener' "$(THINGS_APP)/src/main.rs"
 	grep -q 'PORTAL_READY_MARKER: &str = "/run/hyz-things/ready"' "$(THINGS_APP)/src/main.rs"
-	grep -q 'portal-camera-tab' "$(THINGS_APP)/src/web/main.rs"
-	grep -q '免登录实时查看摄像头画面' "$(THINGS_APP)/src/web/main.rs"
+	grep -q 'app-camera-tab' "$(THINGS_APP)/src/web/app.rs"
+	grep -q '\[function_component(CameraLiveView)\]' "$(THINGS_APP)/src/web/pages/camera.rs"
 	grep -q 'MIHOMO_CONTROLLER_ADDRESS: &str = "127.0.0.1:9090"' "$(ROUTER_APP)/src/adapters/outbound/paths.rs"
 	grep -q 'TAILSCALED_EXECUTABLE: &str = "/usr/bin/tailscaled"' "$(ROUTER_APP)/src/adapters/outbound/paths.rs"
 	grep -q 'TAILSCALE_EXECUTABLE: &str = "/usr/bin/tailscale"' "$(ROUTER_APP)/src/adapters/outbound/paths.rs"
@@ -299,8 +299,12 @@ check-static:
 	  "$(ROUTER_APP)/src/adapters/inbound/control.rs" \
 	  "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
 	! grep -R -qE '127\.0\.0\.1:9090|controller\.secret' "$(THINGS_APP)/src/web" "$(THINGS_APP)/frontend"
+ifneq ($(wildcard sdk/kernel/arch/arm64/boot/dts/rockchip/rk3568-atk-evb1-mipi-dsi-1080p.dts),)
 	grep -q 'default-brightness-level = <0>' sdk/kernel/arch/arm64/boot/dts/rockchip/rk3568-atk-evb1-mipi-dsi-1080p.dts
 	! grep -qE '&(dsi1|dsi1_panel|backlight1)[[:space:]]*\{[[:space:]]*status = "disabled"' sdk/kernel/arch/arm64/boot/dts/rockchip/rk3568-atk-evb1-mipi-dsi-1080p.dts
+else
+	@printf '%s\n' 'SKIP: SDK display static checks (SDK tree is not present)'
+endif
 	! grep -R -E -q 'TcpListener::bind\([^)]*(UNSPECIFIED|\[0,[[:space:]]*0,[[:space:]]*0,[[:space:]]*0\])|Ipv4Addr::UNSPECIFIED|CorsLayer::permissive|/usr/sbin/hyz-mihomo' "$(ROUTER_APP)/src" "$(THINGS_APP)/src"
 	! grep -R -q 'Command::new("sh")\|Command::new("bash")' "$(ROUTER_APP)/src" "$(THINGS_APP)/src"
 	test -f "$(CAMERA_APP)/Cargo.lock"
@@ -333,14 +337,19 @@ check-static:
 	grep -q 'struct FrameHub' "$(CAMERA_APP)/src/domain/stream.rs"
 	grep -q 'fn subscribe(&self) -> Arc<BoundedFrameQueue>' "$(CAMERA_APP)/src/application/ports.rs"
 	grep -q 'sessions: Vec<ActiveSession>' "$(CAMERA_APP)/src/application/lifecycle.rs"
+ifneq ($(wildcard sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c),)
 	grep -q 'GST_VIDEO_COLOR_RANGE_0_255' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c
 	grep -q 'MPP_FRAME_RANGE_JPEG' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c
 	grep -q 'mpp_enc_cfg_set_s32 (self->mpp_cfg, "prep:range", range)' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c
 	grep -q 'failed to set input color range' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c
 	grep -q 'self->prop_dirty = TRUE' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c
+else
+	@printf '%s\n' 'SKIP: SDK GStreamer static checks (SDK tree is not present)'
+endif
 	grep -q 'network-config-sta-rollback-v1.json' "$(ROUTER_APP)/src/adapters/outbound/network_config.rs"
 	grep -q 'let cleanup_succeeded = cleanup.is_ok()' "$(ROUTER_APP)/src/main.rs"
 	test ! -d "$(ROUTER_APP)/adapter-linux"
+ifneq ($(wildcard sdk/buildroot/board/rockchip/hyz_things/post-build.sh),)
 	sh -n sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	grep -q 'TARGET_DIR/usr/bin/hyz-ota' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	grep -q 'TARGET_DIR/usr/sbin/hyz-router' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
@@ -476,6 +485,9 @@ check-static:
 	test "$$(grep -c '<project ' sdk/.repo/manifests/hyz-things.xml)" -eq 20
 	test "$$(grep -c '<project ' sdk/.repo/manifests/hyz-things-release.xml)" -eq 20
 	test "$$(grep -cE 'revision="[0-9a-f]{40}"' sdk/.repo/manifests/hyz-things-release.xml)" -eq 20
+else
+	@printf '%s\n' 'SKIP: SDK Buildroot/kernel/manifest static checks (SDK tree is not present)'
+endif
 
 clean:
 	rm -rf "$(OVERLAY)" \

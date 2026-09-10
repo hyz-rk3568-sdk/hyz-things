@@ -2,9 +2,10 @@
 
 ## 状态
 
-**计划中。**
+**完成。**
 
 创建日期：2026-09-10。
+完成日期：2026-09-11。
 
 本文用于重构 `apps/rust/things` 的 Yew/WASM 管理门户。当前 Web 能力已经覆盖状态总览、网络配置、Mihomo 代理、Tailscale、Camera、Apps、系统状态和考试倒计时，但浏览器侧实现主要集中在 `src/web/main.rs`，API 调用、页面渲染、轮询、Camera/WebRTC、PiP、浏览器存储和倒计时等职责耦合较深。
 
@@ -238,7 +239,6 @@ nth-child
 ```
 
 不能为了让测试变绿删除用户行为断言。
-
 结构重构阶段，如果页面外部行为没有变化，现有 E2E 原则上也不应发生大规模修改。
 
 ### 6.3 抽离 HTTP API client
@@ -478,7 +478,6 @@ RK3568
  ├── Mihomo
  └── Tailscale
 ```
-
 拓扑只用于帮助理解当前状态，不增加装饰性 animation 或虚假的实时关系。
 
 unknown、not-confirmed 和 degraded 不得渲染成正常 connected。
@@ -598,7 +597,6 @@ e2e/
 2. Green：最小实现新 UI 行为；
 3. Refactor：收敛 component/class/state；
 4. 再进入下一个行为。
-
 推荐总体顺序：
 
 ```text
@@ -692,15 +690,17 @@ make things-e2e
 
 | 项目 | 状态 | 证据/备注 |
 | --- | --- | --- |
-| `git diff --check` | 待执行 | |
-| `make check-static` | 待执行 | |
-| things format | 待执行 | |
-| things native tests | 待执行 | |
-| things strict Clippy | 待执行 | |
-| `make things-frontend` | 待执行 | |
-| `make things-e2e` | 待执行 | |
+| `git diff --check` | 通过 | PR CI #95 / run `34506198144` 的 `Check committed diff` 通过。 |
+| `make check-static` | 通过 | 同一 run 的 `Run source and configuration checks` 直接执行该 target 并通过。 |
+| things format | 通过 | 同一 run 的 `cargo fmt --manifest-path apps/rust/things/Cargo.toml --all -- --check` 通过。 |
+| things native tests | 通过 | 同一 run 的 `cargo test --locked --manifest-path apps/rust/things/Cargo.toml --features native` 通过。 |
+| things strict Clippy | 通过 | 同一 run 的 `cargo clippy --locked --manifest-path apps/rust/things/Cargo.toml --all-targets --features e2e -- -D warnings` 通过。 |
+| `make things-frontend` | 未直接执行；等价构建通过 | CI 使用该 target 的核心构建路径 `tools/build-frontend-bundle.sh` 生成 deterministic bundle，并成功上传/复用于 E2E；仓库本地 `make` target 额外要求 `.tools/trunk`，GitHub runner 不走该本地包装层。 |
+| `make things-e2e` | 未直接执行；等价浏览器路径通过 | CI 在已验证 bundle 上直接执行该 target 的核心命令 `npm run test:e2e`，使用 loopback `hyz-things-e2e` harness；日志为 `Running 32 tests using 1 worker`、`32 passed (2.3m)`。 |
 
-实施 Agent 必须填写实际结果，未执行项保持“待执行”或写明原因，不得推断通过。
+最终 UI/主题/视觉 checkpoint 为 human commit `5d56cf69437c06543de842dfed1f2ab8067a3310`，PR CI #95 / run `34506198144` 的 Static + unit + frontend 与 Playwright E2E 两个 job 均通过。浏览器侧纯逻辑、native tests、strict Clippy、deterministic frontend bundle 与 capability-oriented Playwright baseline 均保持绿色。
+
+合并前清理一次性实施基础设施：删除临时 `web refactor driver` workflow、`web-refactor*.py` migration 脚本和过程 progress 文档；长期 `tools/check-e2e-suites.py` 保留为正式 CI contract。最终清理提交仍必须通过正常 PR CI 后才能合并。
 
 ## 14. 分阶段通过标准
 
@@ -718,7 +718,6 @@ make things-e2e
 - frontend build 和现有 E2E 通过。
 
 ### 14.2 UI component 阶段
-
 通过标准：
 
 - 高频重复状态 UI 使用统一 component；

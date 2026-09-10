@@ -15,10 +15,24 @@ export async function readHarnessState(request: APIRequestContext) {
   return response.json();
 }
 
+export type AppPageName =
+  | '总览'
+  | '网络'
+  | '代理'
+  | 'Tailscale'
+  | '摄像头'
+  | '应用'
+  | '系统';
+
+export async function goToAppPage(page: Page, name: AppPageName) {
+  const button = page.getByRole('button', { name, exact: true });
+  await button.click();
+  await expect(button).toHaveAttribute('aria-pressed', 'true');
+}
+
 export async function loginAsAdmin(page: Page) {
   await page.goto('/');
-  await page.getByRole('button', { name: '路由器', exact: true }).click();
-  await page.getByRole('button', { name: '网络设置', exact: true }).click();
+  await goToAppPage(page, '网络');
   await page.getByRole('button', { name: '管理员登录' }).click();
   await page.getByLabel('密码').fill('admin');
   await page.getByRole('button', { name: '登录', exact: true }).click();
@@ -26,7 +40,7 @@ export async function loginAsAdmin(page: Page) {
   await page.getByLabel('新密码', { exact: true }).fill('router-e2e-password');
   await page.getByLabel('确认新密码').fill('router-e2e-password');
   await page.getByRole('button', { name: '修改密码' }).click();
-  await expect(page.getByRole('heading', { name: '代理设置' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '上游 Wi-Fi (STA)' })).toBeVisible();
 }
 
 export async function installCameraWebRtcMock(page: Page) {

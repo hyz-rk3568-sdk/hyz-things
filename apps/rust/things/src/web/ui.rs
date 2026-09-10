@@ -13,9 +13,6 @@ pub const OVERALL_META: &str = "text-xs text-base-content/65";
 pub const STATUS_DOT: &str = "size-2 shrink-0 rounded-full bg-current";
 pub const STATUS_DOT_SMALL: &str = "size-1.5 shrink-0 rounded-full bg-current";
 
-pub const WORKSPACE_TABS: &str = "tabs tabs-box sticky top-2 z-20 mt-3 grid grid-cols-2 overflow-x-auto border border-base-content/10 bg-base-200/90 p-1 shadow-lg shadow-black/10 backdrop-blur";
-pub const WORKSPACE_TAB: &str = "tab h-10 min-w-24 rounded-field text-xs font-bold sm:text-sm";
-pub const WORKSPACE_TAB_ACTIVE: &str = "tab-active bg-primary text-primary-content";
 pub const WORKSPACE_PANEL: &str = "min-w-0 outline-none";
 
 pub const PORTAL_TABS: &str = "tabs tabs-box sticky top-2 z-20 mt-3 grid grid-cols-3 overflow-x-auto border border-base-content/10 bg-base-200/90 p-1 shadow-lg shadow-black/10 backdrop-blur";
@@ -87,7 +84,8 @@ pub const TOPOLOGY_PROXY_ROW: &str =
     "grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3";
 pub const TOPOLOGY_BRANCH: &str = "grid size-8 place-items-center text-xl text-secondary";
 
-pub const KPI_GRID: &str = "mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4";
+pub const KPI_GRID: &str = "mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4";
+pub const KPI_HEAD: &str = "flex min-w-0 items-center justify-between gap-2";
 pub const KPI_CARD: &str =
     "grid min-w-0 gap-1 rounded-box border border-base-content/10 bg-base-100/50 p-4 shadow-sm";
 pub const KPI_LABEL: &str =
