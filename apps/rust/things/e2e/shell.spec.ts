@@ -43,7 +43,7 @@ test("renders the overview, apps, and anonymous system control", async ({
   for (const label of ["Internet / WAN", "LAN / Wi-Fi", "Proxy", "Tailscale"]) {
     const card = coreHealth.locator("article").filter({ hasText: label });
     await expect(card).toBeVisible();
-    await expect(card.getByText(/正常|需检查|不可用|未知/, { exact: true })).toBeVisible();
+    await expect(card.getByText("正常", { exact: true })).toBeVisible();
   }
   await expect(page.getByRole("heading", { name: "网络拓扑" })).toBeVisible();
   await expect(
