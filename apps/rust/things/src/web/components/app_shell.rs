@@ -41,7 +41,15 @@ pub(crate) fn app_shell(props: &AppShellProps) -> Html {
                 <nav
                     class={classes!(
                         PORTAL_TABS,
-                        "max-lg:grid-cols-4 lg:mt-0 lg:grid-cols-1 lg:self-start lg:overflow-visible [&_.tab]:min-w-0 lg:[&_.tab]:w-full lg:[&_.tab]:justify-start lg:[&_.tab]:px-3",
+                        "max-lg:grid-cols-4",
+                        "lg:mt-0",
+                        "lg:grid-cols-1",
+                        "lg:self-start",
+                        "lg:overflow-visible",
+                        "[&_.tab]:min-w-0",
+                        "lg:[&_.tab]:w-full",
+                        "lg:[&_.tab]:justify-start",
+                        "lg:[&_.tab]:px-3",
                     )}
                     aria-label="主导航"
                 >
