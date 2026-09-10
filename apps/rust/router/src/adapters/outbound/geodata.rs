@@ -2,7 +2,7 @@ use crate::application::ports::PlatformError;
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{Read, Write},
+    io::Read,
     os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
 };
@@ -87,10 +87,14 @@ fn install_asset(source: &Path, destination: &Path, asset: GeoAsset) -> Result<(
 
 fn verify_asset(path: &Path, asset: GeoAsset, private: bool) -> Result<(), PlatformError> {
     let metadata = fs::symlink_metadata(path).map_err(|error| {
-        PlatformError::InvalidState(format!("required Mihomo GeoData {} is unavailable: {error}", path.display()))
+        PlatformError::InvalidState(format!(
+            "required Mihomo GeoData {} is unavailable: {error}",
+            path.display()
+        ))
     })?;
     if !metadata.file_type().is_file()
         || metadata.uid() != 0
+        || metadata.mode() & 0o022 != 0
         || (private && metadata.mode() & 0o077 != 0)
         || metadata.len() != asset.size
     {
