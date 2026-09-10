@@ -3,8 +3,9 @@
 
 This temporary migration is deterministic and idempotent. It moves the remaining
 Overview/System page ownership out of web/main.rs, introduces normal hooks/pages
-module roots, repairs two Playwright migration defects found by CI, and preserves
-crate-internal visibility after adding the extra module layer.
+module roots, repairs two Playwright migration defects found by CI, preserves
+crate-internal visibility after adding the extra module layer, and verifies that
+the resulting structure stays at the intended checkpoint.
 """
 from __future__ import annotations
 
@@ -240,7 +241,41 @@ def repair_e2e_contracts() -> None:
     PORTAL.write_text(text)
 
 
+def validate_structure() -> None:
+    main = MAIN.read_text()
+    app = APP.read_text()
+    portal = PORTAL.read_text()
+
+    required_files = [
+        PAGES / "mod.rs",
+        PAGES / "overview.rs",
+        PAGES / "system.rs",
+        HOOKS / "mod.rs",
+        HOOKS / "countdown.rs",
+    ]
+    missing = [str(path.relative_to(ROOT)) for path in required_files if not path.exists()]
+    if missing:
+        raise SystemExit(f"structural checkpoint missing files: {', '.join(missing)}")
+
+    forbidden_root_ownership = ["fn render_overview", "fn render_dashboard", "fn render_system"]
+    leaked = [symbol for symbol in forbidden_root_ownership if symbol in main]
+    if leaked:
+        raise SystemExit(f"main.rs still owns page implementation: {', '.join(leaked)}")
+
+    for declaration in ["mod hooks;", "mod pages;"]:
+        if declaration not in main:
+            raise SystemExit(f"main.rs missing module root: {declaration}")
+    for call in ["render_overview(&state)", "render_system(&state, brightness.clone())"]:
+        if call not in app:
+            raise SystemExit(f"app.rs missing page composition call: {call}")
+    if "const weights = [86_400, 3_600, 60, 1];" not in portal:
+        raise SystemExit("Playwright countdown helper is not unit-aware")
+    if portal.count('await goToAppPage(page, "代理");\n  await expect(page.getByRole("heading", { name: "代理设置" }))') != 1:
+        raise SystemExit("administrator journey proxy transition is duplicated or missing")
+
+
 if __name__ == "__main__":
     repair_e2e_contracts()
     extract_remaining_pages()
-    print("completed structural checkpoint and repaired CI E2E contracts")
+    validate_structure()
+    print("completed and validated structural checkpoint plus E2E contract repairs")
