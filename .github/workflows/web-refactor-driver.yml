@@ -39,12 +39,60 @@ jobs:
 
           path = Path("Makefile")
           text = path.read_text()
-          old = '''\tgrep -q 'portal-camera-tab' "$(THINGS_APP)/src/web/main.rs"\n\tgrep -q '免登录实时查看摄像头画面' "$(THINGS_APP)/src/web/main.rs"'''
-          new = '''\tgrep -q 'app-camera-tab' "$(THINGS_APP)/src/web/app.rs"\n\tgrep -q '\\[function_component(CameraLiveView)\\]' "$(THINGS_APP)/src/web/pages/camera.rs"'''
-          if old in text:
-              path.write_text(text.replace(old, new, 1))
-          elif new not in text:
+
+          legacy_camera = '''\tgrep -q 'portal-camera-tab' "$(THINGS_APP)/src/web/main.rs"\n\tgrep -q '免登录实时查看摄像头画面' "$(THINGS_APP)/src/web/main.rs"'''
+          refactored_camera = '''\tgrep -q 'app-camera-tab' "$(THINGS_APP)/src/web/app.rs"\n\tgrep -q '\\[function_component(CameraLiveView)\\]' "$(THINGS_APP)/src/web/pages/camera.rs"'''
+          if legacy_camera in text:
+              text = text.replace(legacy_camera, refactored_camera, 1)
+          elif refactored_camera not in text:
               raise SystemExit("expected legacy or refactored camera static contract not found")
+
+          display_sdk = '''\tgrep -q 'default-brightness-level = <0>' sdk/kernel/arch/arm64/boot/dts/rockchip/rk3568-atk-evb1-mipi-dsi-1080p.dts
+\t! grep -qE '&(dsi1|dsi1_panel|backlight1)[[:space:]]*\\{[[:space:]]*status = "disabled"' sdk/kernel/arch/arm64/boot/dts/rockchip/rk3568-atk-evb1-mipi-dsi-1080p.dts'''
+          display_guarded = '''ifneq ($(wildcard sdk/kernel/arch/arm64/boot/dts/rockchip/rk3568-atk-evb1-mipi-dsi-1080p.dts),)
+\tgrep -q 'default-brightness-level = <0>' sdk/kernel/arch/arm64/boot/dts/rockchip/rk3568-atk-evb1-mipi-dsi-1080p.dts
+\t! grep -qE '&(dsi1|dsi1_panel|backlight1)[[:space:]]*\\{[[:space:]]*status = "disabled"' sdk/kernel/arch/arm64/boot/dts/rockchip/rk3568-atk-evb1-mipi-dsi-1080p.dts
+else
+\t@printf '%s\\n' 'SKIP: SDK display static checks (SDK tree is not present)'
+endif'''
+          if display_sdk in text:
+              text = text.replace(display_sdk, display_guarded, 1)
+
+          gst_sdk = '''\tgrep -q 'GST_VIDEO_COLOR_RANGE_0_255' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c
+\tgrep -q 'MPP_FRAME_RANGE_JPEG' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c
+\tgrep -q 'mpp_enc_cfg_set_s32 (self->mpp_cfg, "prep:range", range)' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c
+\tgrep -q 'failed to set input color range' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c
+\tgrep -q 'self->prop_dirty = TRUE' sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c'''
+          gst_guarded = '''ifneq ($(wildcard sdk/external/gstreamer-rockchip/gst/rockchipmpp/gstmppenc.c),)
+''' + gst_sdk + '''
+else
+\t@printf '%s\\n' 'SKIP: SDK GStreamer static checks (SDK tree is not present)'
+endif'''
+          if gst_sdk in text:
+              text = text.replace(gst_sdk, gst_guarded, 1)
+
+          sdk_block_start = '\tsh -n sdk/buildroot/board/rockchip/hyz_things/post-build.sh\n'
+          sdk_block_end = '\ttest "$$(grep -cE \'revision="[0-9a-f]{40}"\' sdk/.repo/manifests/hyz-things-release.xml)" -eq 20\n'
+          guard_marker = "SKIP: SDK Buildroot/kernel/manifest static checks"
+          if guard_marker not in text:
+              start = text.find(sdk_block_start)
+              if start == -1:
+                  raise SystemExit("SDK static block start not found")
+              end_start = text.find(sdk_block_end, start)
+              if end_start == -1:
+                  raise SystemExit("SDK static block end not found")
+              end = end_start + len(sdk_block_end)
+              block = text[start:end]
+              guarded = (
+                  'ifneq ($(wildcard sdk/buildroot/board/rockchip/hyz_things/post-build.sh),)\n'
+                  + block
+                  + 'else\n'
+                  + "\t@printf '%s\\\\n' 'SKIP: SDK Buildroot/kernel/manifest static checks (SDK tree is not present)'\n"
+                  + 'endif\n'
+              )
+              text = text[:start] + guarded + text[end:]
+
+          path.write_text(text)
           PY
       - name: Format changed Rust
         run: cargo fmt --manifest-path apps/rust/things/Cargo.toml --all
@@ -64,5 +112,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Makefile apps/rust/things/src/web apps/rust/things/tools/web-refactor*.py
-          git commit -m "refactor(web): update generated structure contracts [web-refactor-generated]"
+          git commit -m "ci: guard unavailable SDK-only static checks [web-refactor-generated]"
           git push origin HEAD:refactor/web-frontend-structure
