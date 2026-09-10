@@ -38,6 +38,13 @@ test("renders the overview, apps, and anonymous system control", async ({
   await expect(
     page.getByRole("button", { name: "总览", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
+  const coreHealth = page.getByRole("region", { name: "核心健康状态" });
+  await expect(coreHealth).toBeVisible();
+  for (const label of ["Internet / WAN", "LAN / Wi-Fi", "Proxy", "Tailscale"]) {
+    const card = coreHealth.locator("article").filter({ hasText: label });
+    await expect(card).toBeVisible();
+    await expect(card.getByText(/正常|需检查|不可用|未知/, { exact: true })).toBeVisible();
+  }
   await expect(page.getByRole("heading", { name: "网络拓扑" })).toBeVisible();
   await expect(
     page.getByText("Ethernet WAN", { exact: true }).first(),
@@ -296,6 +303,11 @@ test("keeps the last dashboard while a component becomes degraded", async ({
   await expect(page.getByText("代理探测暂时不可用")).toBeVisible({
     timeout: 7_500,
   });
+  const proxyHealth = page
+    .getByRole("region", { name: "核心健康状态" })
+    .locator("article")
+    .filter({ hasText: "Proxy" });
+  await expect(proxyHealth.getByText("需检查", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "代理状态" })).toBeVisible();
 });
 
