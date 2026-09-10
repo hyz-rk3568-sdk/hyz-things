@@ -36,7 +36,7 @@ jobs:
       - name: Format changed Rust
         run: cargo fmt --manifest-path apps/rust/things/Cargo.toml --all
       - name: Check generated WASM frontend
-        run: cargo check --locked --manifest-path apps/rust/things/Cargo.toml --features web --target wasm32-unknown-unknown
+        run: cargo check --locked --manifest-path apps/rust/things/Cargo.toml --no-default-features --features web --bin hyz-things-web --target wasm32-unknown-unknown
       - name: Show diff summary
         run: |
           git diff --check
