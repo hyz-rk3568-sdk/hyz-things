@@ -38,8 +38,6 @@
   }
 }
 
-@layer components {
-  .tab:not(.tab-active) {
-    @apply text-base-content/75;
-  }
+nav.tabs > button.tab:not(.tab-active) {
+  color: var(--color-base-content);
 }
