@@ -58,17 +58,13 @@ endif""",
     guard_marker = "SKIP: SDK Buildroot/kernel/manifest static checks"
     if guard_marker not in text:
         start_marker = "\tsh -n sdk/buildroot/board/rockchip/hyz_things/post-build.sh\n"
-        end_marker = (
-            "\ttest \"$$(grep -cE 'revision=\\\"[0-9a-f]{40}\\\"' "
-            "sdk/.repo/manifests/hyz-things-release.xml)\" -eq 20\n"
-        )
+        clean_marker = "\nclean:\n"
         start = text.find(start_marker)
         if start == -1:
             raise SystemExit("SDK static block start not found")
-        end_start = text.find(end_marker, start)
-        if end_start == -1:
-            raise SystemExit("SDK static block end not found")
-        end = end_start + len(end_marker)
+        end = text.find(clean_marker, start)
+        if end == -1:
+            raise SystemExit("clean target boundary not found")
         block = text[start:end]
         guarded = (
             "ifneq ($(wildcard sdk/buildroot/board/rockchip/hyz_things/post-build.sh),)\n"
