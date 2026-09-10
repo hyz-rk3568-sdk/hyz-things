@@ -31,12 +31,6 @@ jobs:
           rustup toolchain install 1.88.0 --profile minimal --component rustfmt
           rustup default 1.88.0
           rustup target add wasm32-unknown-unknown --toolchain 1.88.0
-      - name: Run refactor drivers
-        run: |
-          python3 apps/rust/things/tools/web-refactor.py
-          python3 apps/rust/things/tools/web-refactor-pages.py
-          python3 apps/rust/things/tools/web-refactor-navigation.py
-          python3 apps/rust/things/tools/web-refactor-app.py
       - name: Update refactor static contracts
         shell: bash
         run: |
