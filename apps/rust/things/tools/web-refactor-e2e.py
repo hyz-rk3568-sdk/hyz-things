@@ -435,9 +435,11 @@ def update_portal() -> None:
     .getByRole("combobox", { name: "自动选择 节点" })
     .selectOption("新加坡");
 '''
-        if old in segment:
+        if new in segment:
+            pass
+        elif old in segment:
             segment = segment.replace(old, new, 1)
-        elif new not in segment:
+        else:
             raise SystemExit("administrator journey: Proxy migration anchor not found")
 
         return_marker = '''    .toBe("新加坡");
