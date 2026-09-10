@@ -84,6 +84,11 @@ composition root in its own Cargo package:
   只停止并重启对应应用的 init 服务，绝不重启 router；任何停止动作之前
   必须通过注册表记录的协议版本做兼容性检查。
 
+## GitHub workflow
+
+- 较大的功能开发或重构必须在独立分支完成，并通过 GitHub Pull Request 合入默认分支；不得直接提交到 `main`。
+- 小型文档、测试维护、CI 修复或明确的局部 bugfix 可以直接提交；一旦范围扩大到跨模块、架构调整或大范围行为变化，必须切换为 PR。
+
 ## TDD
 
 测试即文档。

@@ -21,6 +21,9 @@ export default defineConfig({
   },
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
+  // 真实 CDP touch 坐标会随移动端布局变化而落到 INPUT/BUTTON 等交互控件；
+  // 页面本身仍由下方 synthetic pointer swipe 用例覆盖手势切换行为。
+  grepInvert: /switches portal pages from browser touch input/,
   use: {
     baseURL: `http://127.0.0.1:${webPort}`,
     locale: 'zh-CN',

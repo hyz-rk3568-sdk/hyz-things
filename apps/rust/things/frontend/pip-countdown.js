@@ -226,7 +226,10 @@
     "border:1px solid rgba(248,248,242,0.25);background:rgba(40,42,54,0.92);" +
     "color:rgba(248,248,242,0.85);font-size:1.25rem;line-height:1;cursor:pointer;";
   closeButton.addEventListener("click", function () {
-    window.close();
+    // 下一任务再关闭，避免点击派发仍在进行时窗口销毁。
+    setTimeout(function () {
+      window.close();
+    }, 0);
   });
   document.body.appendChild(closeButton);
 
