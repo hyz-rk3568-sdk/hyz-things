@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Migrate the existing Playwright contracts to the seven-page app shell.
 
-This is a temporary, deterministic refactor driver.  It deliberately preserves
+This is a temporary, deterministic refactor driver. It deliberately preserves
 existing behavior assertions instead of weakening timeouts or deleting tests.
+After migration, the normal PR CI is the source of truth for the full E2E run.
 """
 
 from pathlib import Path
