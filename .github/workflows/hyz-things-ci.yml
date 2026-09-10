@@ -126,6 +126,15 @@ jobs:
       - name: Clippy hyz-things
         run: cargo clippy --locked --manifest-path apps/rust/things/Cargo.toml --all-targets --features e2e -- -D warnings
 
+      - name: Upload verified frontend bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyz-things-frontend-${{ github.run_id }}
+          path: target/frontend-bundle/hyz-things-frontend.tar
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
   e2e:
     name: Playwright E2E
     # Browser tests only start after source/config, formatting, unit, clippy,
@@ -137,6 +146,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download verified frontend bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: hyz-things-frontend-${{ github.run_id }}
+          path: target/frontend-bundle
 
       - name: Install Rust 1.88
         shell: bash
@@ -152,7 +167,6 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            ~/.cargo/bin/trunk
             apps/rust/contract/target
             apps/rust/things/target
           key: ${{ runner.os }}-rust-1.88-trunk-0.21.14-${{ hashFiles('apps/rust/contract/Cargo.lock', 'apps/rust/things/Cargo.lock') }}
@@ -171,23 +185,14 @@ jobs:
         working-directory: apps/rust/things
         run: npm ci
 
-      - name: Install WASM target
-        run: rustup target add wasm32-unknown-unknown --toolchain 1.88.0
-
-      - name: Install Trunk 0.21.14
-        shell: bash
-        run: |
-          if ! command -v trunk >/dev/null 2>&1 || [[ "$(trunk --version)" != "trunk 0.21.14" ]]; then
-            cargo install trunk --version 0.21.14 --locked
-          fi
-          trunk --version
-
       - name: Install Playwright Chromium
         working-directory: apps/rust/things
         run: npx playwright install --with-deps chromium
 
       - name: Run Playwright E2E
         working-directory: apps/rust/things
+        env:
+          HYZ_THINGS_E2E_REUSE_FRONTEND_BUNDLE: "1"
         run: npm run test:e2e
 
       - name: Upload Playwright failure artifacts
