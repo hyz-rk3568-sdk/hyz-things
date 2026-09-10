@@ -41,10 +41,14 @@ This file records implementation evidence while `hyz-things-web-frontend-refacto
 
 ## Current stage — Overview information priority
 
-- Put Internet/WAN, LAN/Wi-Fi, Proxy, and Tailscale health in the first visual layer, with explicit text status so color is supplementary rather than the only signal.
-- Keep degraded/unknown/unavailable semantics honest; do not show an unconfirmed state as healthy.
-- Move the existing network topology below the core health summary while retaining the real dual-uplink, Router/NAT, Proxy, and Tailscale data path.
-- Keep issues prominent and preserve the most recent successful snapshot behavior.
-- Keep Camera/Apps/countdown auxiliary to core device/network health; countdown stays on Overview and does not become first-level navigation.
-- Preserve existing data sources and control behavior. Extend the capability-focused E2E assertions rather than adding selectors tied to Tailwind or DOM implementation detail.
-- Full human-authored PR CI, including the 32-test runnable Playwright baseline, is required before this stage is marked green.
+- The generated Overview implementation now puts Internet/WAN, LAN/Wi-Fi, Proxy, and Tailscale in the first visual layer, with explicit `正常` / `需检查` / `不可用` / `未知` labels. Issues remain immediately after the health summary and the existing network topology is below it.
+- `MetricCard` supports a presentation-only `StatusBadge`; the health grid starts as one column on small screens, becomes two columns, and reaches four columns on wide screens.
+- Core health no longer equates `ComponentState::Available` with healthy. LAN requires confirmed LAN/AP readiness; Proxy requires consistent known Mihomo, LAN TUN, and local-system-proxy state; Tailscale requires desired/effective mode agreement and the relevant backend/authentication/route/firewall/approval state.
+- Unknown runtime fields remain neutral instead of being promoted to green. Explicit mismatches become warning/error tones, while intentionally disabled but internally consistent Proxy/Tailscale states can still be healthy.
+- Four deterministic browser-side unit tests cover LAN unknown/down readiness, Proxy three-part consistency, Tailscale mode/LAN-route readiness, and the invariant that a degraded top-level component cannot render as healthy.
+- The obsolete `WORKSPACE_TABS`, `WORKSPACE_TAB`, and `WORKSPACE_TAB_ACTIVE` style tokens were removed after the AppShell/portal navigation migration made them unreachable.
+- Refactor driver run `34491355789` on human head `aeee812f29cdc2e7da19f55530b0cd1fd10e2bce` passed migration, rustfmt, WASM `cargo check`, `git diff --check`, and generated commit `b923051104da967ccc544f92d6d704be7ed45c51`.
+- The temporary driver now skips completed shared-component and first-pass Overview migrations by stage markers. This prevents earlier migration scripts from rewriting evolved component markup or failing on formatter-induced source layout changes.
+- Camera/Apps/countdown remain auxiliary to core device/network health; countdown stays on Overview and does not become first-level navigation.
+- Existing data sources and control behavior remain unchanged. Capability-focused E2E assertions cover the new health region and degraded Proxy status without selecting Tailwind classes.
+- **Pending checkpoint:** a human-authored commit on top of generated head `b923051104da967ccc544f92d6d704be7ed45c51` must pass the complete PR CI, including the new web unit tests and the 32-test runnable Playwright baseline, before this stage is marked green.
