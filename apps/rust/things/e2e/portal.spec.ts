@@ -1739,6 +1739,10 @@ test("supports the administrator, STA, AP, and write-only subscription journey",
     page.getByRole("button", { name: "上游 Wi-Fi (STA)" }),
   ).toBeVisible();
   await goToAppPage(page, "代理");
+  await expect(
+    page.getByRole("button", { name: "上游 Wi-Fi (STA)" }),
+  ).toBeVisible();
+  await goToAppPage(page, "代理");
   await expect(page.getByRole("heading", { name: "代理设置" })).toBeVisible();
   await page
     .getByRole("combobox", { name: "自动选择 节点" })
