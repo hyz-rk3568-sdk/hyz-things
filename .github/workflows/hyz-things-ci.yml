@@ -126,6 +126,8 @@ jobs:
 
   e2e:
     name: Playwright E2E
+    # Browser tests only start after source/config, formatting, unit, clippy,
+    # and deterministic frontend bundle verification are all green.
     needs: static
     runs-on: ubuntu-latest
     timeout-minutes: 30
