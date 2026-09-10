@@ -703,11 +703,7 @@ pub(super) fn app() -> Html {
                     },
                     AppPage::System => html! {
                         <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
-                            if let Some(snapshot) = &state.snapshot {
-                                {render_dashboard(snapshot)}
-                                {render_issues(snapshot)}
-                            }
-                            {render_display_control(&state, brightness.clone())}
+                            {render_system(&state, brightness.clone())}
                         </section>
                     },
                 }}

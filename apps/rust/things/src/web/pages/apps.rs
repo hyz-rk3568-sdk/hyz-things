@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn render_deployed_apps(state: &UseReducerHandle<AppState>) -> Html {
+pub(crate) fn render_deployed_apps(state: &UseReducerHandle<AppState>) -> Html {
     let body = match (&state.apps, &state.apps_error) {
         (Some(apps), _) if !apps.is_empty() => html! {
             <ul class="grid gap-2">

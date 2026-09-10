@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn render_tailscale_peers(state: &UseReducerHandle<AppState>) -> Html {
+pub(crate) fn render_tailscale_peers(state: &UseReducerHandle<AppState>) -> Html {
     let refresh = {
         let state = state.clone();
         Callback::from(move |_| dispatch_settings_refresh(state.clone()))
@@ -53,7 +53,7 @@ pub(super) fn render_tailscale_peers(state: &UseReducerHandle<AppState>) -> Html
     }
 }
 
-pub(super) fn render_tailscale_peer(peer: &TailscalePeer, local: bool) -> Html {
+pub(crate) fn render_tailscale_peer(peer: &TailscalePeer, local: bool) -> Html {
     let status = if peer.online { "在线" } else { "离线" };
     let tone = if peer.online {
         Tone::Good
@@ -82,7 +82,7 @@ pub(super) fn render_tailscale_peer(peer: &TailscalePeer, local: bool) -> Html {
     }
 }
 
-pub(super) fn tailscale_peer_detail(peer: &TailscalePeer) -> String {
+pub(crate) fn tailscale_peer_detail(peer: &TailscalePeer) -> String {
     let mut details = Vec::new();
     if peer.online {
         if peer.active == Some(true) {
@@ -105,14 +105,14 @@ pub(super) fn tailscale_peer_detail(peer: &TailscalePeer) -> String {
     details.join(" · ")
 }
 
-pub(super) fn tailscale_connection_label(connection: &TailscalePeerConnection) -> String {
+pub(crate) fn tailscale_connection_label(connection: &TailscalePeerConnection) -> String {
     match connection {
         TailscalePeerConnection::Direct { address } => format!("direct {address}"),
         TailscalePeerConnection::Relay { region } => format!("relay \"{region}\""),
     }
 }
 
-pub(super) fn tailscale_last_seen_label(unix_ms: u64) -> String {
+pub(crate) fn tailscale_last_seen_label(unix_ms: u64) -> String {
     const MAX_DATE_MILLIS: u64 = 8_640_000_000_000_000;
     let now = js_sys::Date::now();
     if !now.is_finite() || unix_ms > MAX_DATE_MILLIS {
@@ -137,7 +137,7 @@ pub(super) fn tailscale_last_seen_label(unix_ms: u64) -> String {
     }
 }
 
-pub(super) fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf: &str) -> Html {
+pub(crate) fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf: &str) -> Html {
     let Some(tailscale) = state.tailscale.as_ref() else {
         return html! {
             <section class={SECTION} aria-labelledby="tailscale-title">

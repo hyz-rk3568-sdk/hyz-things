@@ -1,18 +1,18 @@
 use super::*;
 
 #[derive(Properties, PartialEq)]
-pub(super) struct SettingsProps {
-    pub(super) state: UseReducerHandle<AppState>,
-    pub(super) camera_stop_generation: UseStateHandle<u32>,
+pub(crate) struct SettingsProps {
+    pub(crate) state: UseReducerHandle<AppState>,
+    pub(crate) camera_stop_generation: UseStateHandle<u32>,
 }
 
-pub(super) struct ApSettingsRefs<'a> {
+pub(crate) struct ApSettingsRefs<'a> {
     ssid: &'a NodeRef,
     password: &'a NodeRef,
     apply_button: &'a NodeRef,
 }
 
-pub(super) struct ApSettingsActions {
+pub(crate) struct ApSettingsActions {
     prepare: Callback<SubmitEvent>,
     apply: Callback<MouseEvent>,
     confirm: Callback<MouseEvent>,
@@ -20,7 +20,7 @@ pub(super) struct ApSettingsActions {
 }
 
 #[function_component(Settings)]
-pub(super) fn settings(props: &SettingsProps) -> Html {
+pub(crate) fn settings(props: &SettingsProps) -> Html {
     let state = &props.state;
     let login_password = use_node_ref();
     let current_password = use_node_ref();
@@ -505,7 +505,7 @@ pub(super) fn settings(props: &SettingsProps) -> Html {
     }
 }
 
-pub(super) fn dispatch_device_policy_update(
+pub(crate) fn dispatch_device_policy_update(
     state: UseReducerHandle<AppState>,
     csrf: String,
     generation: u64,
@@ -542,13 +542,13 @@ pub(super) fn dispatch_device_policy_update(
 }
 
 #[derive(Properties, PartialEq)]
-pub(super) struct DevicePoliciesProps {
+pub(crate) struct DevicePoliciesProps {
     state: UseReducerHandle<AppState>,
     csrf: String,
 }
 
 #[function_component(DevicePolicies)]
-pub(super) fn device_policies(props: &DevicePoliciesProps) -> Html {
+pub(crate) fn device_policies(props: &DevicePoliciesProps) -> Html {
     let manual_mac = use_node_ref();
     let manual_label = use_node_ref();
     let Some(snapshot) = props.state.device_policies.as_ref() else {
@@ -611,7 +611,7 @@ pub(super) fn device_policies(props: &DevicePoliciesProps) -> Html {
 }
 
 #[derive(Properties, PartialEq)]
-pub(super) struct DevicePolicyRowProps {
+pub(crate) struct DevicePolicyRowProps {
     state: UseReducerHandle<AppState>,
     csrf: String,
     generation: u64,
@@ -620,7 +620,7 @@ pub(super) struct DevicePolicyRowProps {
 }
 
 #[function_component(DevicePolicyRow)]
-pub(super) fn device_policy_row(props: &DevicePolicyRowProps) -> Html {
+pub(crate) fn device_policy_row(props: &DevicePolicyRowProps) -> Html {
     let persisted_label = props
         .configured
         .iter()
@@ -745,7 +745,7 @@ pub(super) fn device_policy_row(props: &DevicePolicyRowProps) -> Html {
     }
 }
 
-pub(super) fn render_ap_settings(
+pub(crate) fn render_ap_settings(
     state: &AppState,
     refs: ApSettingsRefs<'_>,
     actions: ApSettingsActions,

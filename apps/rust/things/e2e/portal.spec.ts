@@ -482,11 +482,15 @@ async function readCountdownTotal(target: Page, cardId: string): Promise<number>
     if (!counter) {
       return 0;
     }
-    let total = 0;
-    counter.querySelectorAll("strong[data-value]").forEach((element) => {
-      total += Number(element.textContent);
-    });
-    return total;
+    const values = Array.from(
+      counter.querySelectorAll("strong[data-value]"),
+      (element) => Number(element.textContent),
+    );
+    const weights = [86_400, 3_600, 60, 1];
+    return values.reduce(
+      (total, value, index) => total + value * (weights[index] ?? 0),
+      0,
+    );
   }, cardId);
 }
 
@@ -1732,9 +1736,6 @@ test("supports the administrator, STA, AP, and write-only subscription journey",
   await page.getByLabel("新密码", { exact: true }).fill("router-e2e-password");
   await page.getByLabel("确认新密码").fill("router-e2e-password");
   await page.getByRole("button", { name: "修改密码" }).click();
-  await expect(
-    page.getByRole("button", { name: "上游 Wi-Fi (STA)" }),
-  ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "上游 Wi-Fi (STA)" }),
   ).toBeVisible();

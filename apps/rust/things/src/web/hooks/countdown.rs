@@ -1,41 +1,41 @@
 use super::*;
 
-pub(super) const EXAM_COUNTDOWN_TICK_MS: u32 = 1_000;
-pub(super) const EXAM_DAY_SECONDS: u64 = 24 * 60 * 60;
-pub(super) const EXAM_SOON_SECONDS: u64 = 120 * EXAM_DAY_SECONDS;
-pub(super) const EXAM_URGENT_SECONDS: u64 = 45 * EXAM_DAY_SECONDS;
-pub(super) const CUSTOM_COUNTDOWN_STORAGE_KEY: &str = "hyz-things.custom-countdowns.v2";
-pub(super) const LEGACY_CUSTOM_COUNTDOWN_STORAGE_KEY: &str = "hyz-things.custom-countdown.v1";
-pub(super) const CUSTOM_COUNTDOWN_DEFAULT_SECONDS: u64 = 25 * 60;
-pub(super) const CUSTOM_COUNTDOWN_MAX_HOURS: u64 = 99;
+pub(crate) const EXAM_COUNTDOWN_TICK_MS: u32 = 1_000;
+pub(crate) const EXAM_DAY_SECONDS: u64 = 24 * 60 * 60;
+pub(crate) const EXAM_SOON_SECONDS: u64 = 120 * EXAM_DAY_SECONDS;
+pub(crate) const EXAM_URGENT_SECONDS: u64 = 45 * EXAM_DAY_SECONDS;
+pub(crate) const CUSTOM_COUNTDOWN_STORAGE_KEY: &str = "hyz-things.custom-countdowns.v2";
+pub(crate) const LEGACY_CUSTOM_COUNTDOWN_STORAGE_KEY: &str = "hyz-things.custom-countdown.v1";
+pub(crate) const CUSTOM_COUNTDOWN_DEFAULT_SECONDS: u64 = 25 * 60;
+pub(crate) const CUSTOM_COUNTDOWN_MAX_HOURS: u64 = 99;
 // 画中画：Document PiP（Chromium）优先；Safari/其他走 canvas 视频流 PiP；
 // 都不支持时只显示一条提示，不再有全屏弹窗。
-pub(super) const EXAM_PIP_SCRIPT: &str = "/pip-countdown.js";
-pub(super) const EXAM_PIP_WINDOW_WIDTH: u32 = 520;
-pub(super) const EXAM_PIP_WINDOW_HEIGHT: u32 = 400;
-pub(super) const EXAM_PIP_NOTICE_MS: u32 = 5_000;
-pub(super) const EXAM_VIDEO_PIP_WIDTH: u32 = 960;
-pub(super) const EXAM_VIDEO_PIP_HEIGHT: u32 = 540;
-pub(super) const EXAM_VIDEO_PIP_FPS: f64 = 10.0;
+pub(crate) const EXAM_PIP_SCRIPT: &str = "/pip-countdown.js";
+pub(crate) const EXAM_PIP_WINDOW_WIDTH: u32 = 520;
+pub(crate) const EXAM_PIP_WINDOW_HEIGHT: u32 = 400;
+pub(crate) const EXAM_PIP_NOTICE_MS: u32 = 5_000;
+pub(crate) const EXAM_VIDEO_PIP_WIDTH: u32 = 960;
+pub(crate) const EXAM_VIDEO_PIP_HEIGHT: u32 = 540;
+pub(crate) const EXAM_VIDEO_PIP_FPS: f64 = 10.0;
 // Safari 对 1fps 的画布流更易出现黑帧/不更新，用较高频率泵帧；
 // 倒计时内容本身每秒才变化，多出的帧只是重复内容。
-pub(super) const EXAM_VIDEO_PIP_TICK_MS: u32 = 250;
+pub(crate) const EXAM_VIDEO_PIP_TICK_MS: u32 = 250;
 // WebCodecs VideoFrame 时间戳单位是微秒；10fps 一帧间隔 100ms。
-pub(super) const EXAM_VIDEO_PIP_FRAME_US: u64 = 100_000;
-pub(super) const EXAM_VIDEO_PIP_POLL_MS: u32 = 150;
-pub(super) const EXAM_VIDEO_PIP_ACTIVATE_TIMEOUT_MS: u32 = 5_000;
+pub(crate) const EXAM_VIDEO_PIP_FRAME_US: u64 = 100_000;
+pub(crate) const EXAM_VIDEO_PIP_POLL_MS: u32 = 150;
+pub(crate) const EXAM_VIDEO_PIP_ACTIVATE_TIMEOUT_MS: u32 = 5_000;
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) struct ExamCountdownTarget {
-    pub(super) id: &'static str,
-    pub(super) title: &'static str,
-    pub(super) eyebrow: &'static str,
-    pub(super) target_iso: &'static str,
-    pub(super) target_label: &'static str,
-    pub(super) target_note: &'static str,
-    pub(super) start_iso: &'static str,
+pub(crate) struct ExamCountdownTarget {
+    pub(crate) id: &'static str,
+    pub(crate) title: &'static str,
+    pub(crate) eyebrow: &'static str,
+    pub(crate) target_iso: &'static str,
+    pub(crate) target_label: &'static str,
+    pub(crate) target_note: &'static str,
+    pub(crate) start_iso: &'static str,
 }
 
-pub(super) const CUSTOM_COUNTDOWN_TARGETS: [ExamCountdownTarget; 3] = [
+pub(crate) const CUSTOM_COUNTDOWN_TARGETS: [ExamCountdownTarget; 3] = [
     ExamCountdownTarget {
         id: "custom-morning-countdown",
         title: "上午",
@@ -66,7 +66,7 @@ pub(super) const CUSTOM_COUNTDOWN_TARGETS: [ExamCountdownTarget; 3] = [
 ];
 
 // 2027 年度考试公告尚未全部发布；未确认日期统一标注“预计”，并按预计首个笔试日排序。
-pub(super) const EXAM_COUNTDOWN_TARGETS: [ExamCountdownTarget; 4] = [
+pub(crate) const EXAM_COUNTDOWN_TARGETS: [ExamCountdownTarget; 4] = [
     ExamCountdownTarget {
         id: "national-exam",
         title: "下一次国考",
@@ -105,22 +105,22 @@ pub(super) const EXAM_COUNTDOWN_TARGETS: [ExamCountdownTarget; 4] = [
     },
 ];
 
-pub(super) fn is_custom_countdown_target(target: &ExamCountdownTarget) -> bool {
+pub(crate) fn is_custom_countdown_target(target: &ExamCountdownTarget) -> bool {
     target.id.starts_with("custom-")
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) struct CountdownSnapshot {
-    pub(super) remaining_seconds: u64,
-    pub(super) days: u64,
-    pub(super) hours: u64,
-    pub(super) minutes: u64,
-    pub(super) seconds: u64,
-    pub(super) progress_percent: u8,
-    pub(super) finished: bool,
+pub(crate) struct CountdownSnapshot {
+    pub(crate) remaining_seconds: u64,
+    pub(crate) days: u64,
+    pub(crate) hours: u64,
+    pub(crate) minutes: u64,
+    pub(crate) seconds: u64,
+    pub(crate) progress_percent: u8,
+    pub(crate) finished: bool,
 }
 
-pub(super) fn countdown_snapshot(now_ms: i64, start_ms: i64, target_ms: i64) -> CountdownSnapshot {
+pub(crate) fn countdown_snapshot(now_ms: i64, start_ms: i64, target_ms: i64) -> CountdownSnapshot {
     let total_ms = target_ms.saturating_sub(start_ms).max(0);
     let remaining_ms = target_ms.saturating_sub(now_ms).max(0);
     let elapsed_ms = now_ms.saturating_sub(start_ms).clamp(0, total_ms);
@@ -146,7 +146,7 @@ pub(super) fn countdown_snapshot(now_ms: i64, start_ms: i64, target_ms: i64) -> 
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) struct CustomCountdownTimer {
+pub(crate) struct CustomCountdownTimer {
     total_seconds: u64,
     start_ms: i64,
     target_ms: i64,
@@ -156,7 +156,7 @@ pub(super) struct CustomCountdownTimer {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) struct CustomCountdownState {
+pub(crate) struct CustomCountdownState {
     duration_seconds: u64,
     timer: Option<CustomCountdownTimer>,
 }
@@ -171,7 +171,7 @@ impl Default for CustomCountdownState {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) struct PipCountdownConfig {
+pub(crate) struct PipCountdownConfig {
     target: ExamCountdownTarget,
     start_ms: i64,
     target_ms: i64,
@@ -196,7 +196,7 @@ impl PipCountdownConfig {
     }
 }
 
-pub(super) fn frozen_countdown_snapshot(
+pub(crate) fn frozen_countdown_snapshot(
     total_seconds: u64,
     remaining_seconds: u64,
     progress_percent: u8,
@@ -213,7 +213,7 @@ pub(super) fn frozen_countdown_snapshot(
     }
 }
 
-pub(super) fn custom_countdown_snapshot(
+pub(crate) fn custom_countdown_snapshot(
     now_ms: i64,
     state: CustomCountdownState,
 ) -> CountdownSnapshot {
@@ -239,7 +239,7 @@ pub(super) fn custom_countdown_snapshot(
     }
 }
 
-pub(super) fn custom_duration_from_parts(
+pub(crate) fn custom_duration_from_parts(
     hours: u64,
     minutes: u64,
     seconds: u64,
@@ -260,7 +260,7 @@ pub(super) fn custom_duration_from_parts(
     Ok(total)
 }
 
-pub(super) fn custom_duration_parts(seconds: u64) -> (u64, u64, u64) {
+pub(crate) fn custom_duration_parts(seconds: u64) -> (u64, u64, u64) {
     (
         seconds / (60 * 60),
         (seconds % (60 * 60)) / 60,
@@ -268,11 +268,11 @@ pub(super) fn custom_duration_parts(seconds: u64) -> (u64, u64, u64) {
     )
 }
 
-pub(super) fn duration_millis(seconds: u64) -> i64 {
+pub(crate) fn duration_millis(seconds: u64) -> i64 {
     seconds.saturating_mul(1_000).min(i64::MAX as u64) as i64
 }
 
-pub(super) fn custom_pip_config(
+pub(crate) fn custom_pip_config(
     target: &ExamCountdownTarget,
     state: CustomCountdownState,
     now_ms: i64,
@@ -328,7 +328,7 @@ pub(super) fn custom_pip_config(
     }
 }
 
-pub(super) fn custom_pip_configs(
+pub(crate) fn custom_pip_configs(
     states: [CustomCountdownState; 3],
     now_ms: i64,
 ) -> [PipCountdownConfig; 3] {
@@ -337,7 +337,7 @@ pub(super) fn custom_pip_configs(
     })
 }
 
-pub(super) fn exam_pip_config(target: &ExamCountdownTarget, now_ms: i64) -> PipCountdownConfig {
+pub(crate) fn exam_pip_config(target: &ExamCountdownTarget, now_ms: i64) -> PipCountdownConfig {
     let start_ms = exam_timestamp(target.start_iso);
     let target_ms = exam_timestamp(target.target_iso);
     let snapshot = countdown_snapshot(now_ms, start_ms, target_ms);
@@ -356,7 +356,7 @@ pub(super) fn exam_pip_config(target: &ExamCountdownTarget, now_ms: i64) -> PipC
     }
 }
 
-pub(super) fn custom_countdown_status(
+pub(crate) fn custom_countdown_status(
     state: CustomCountdownState,
     snapshot: CountdownSnapshot,
 ) -> &'static str {
@@ -368,7 +368,7 @@ pub(super) fn custom_countdown_status(
     }
 }
 
-pub(super) fn custom_card_tone(
+pub(crate) fn custom_card_tone(
     state: CustomCountdownState,
     snapshot: CountdownSnapshot,
 ) -> &'static str {
@@ -381,11 +381,11 @@ pub(super) fn custom_card_tone(
     }
 }
 
-pub(super) fn custom_countdown_storage() -> Option<Storage> {
+pub(crate) fn custom_countdown_storage() -> Option<Storage> {
     web_sys::window()?.local_storage().ok().flatten()
 }
 
-pub(super) fn encode_custom_countdown_state(state: CustomCountdownState) -> String {
+pub(crate) fn encode_custom_countdown_state(state: CustomCountdownState) -> String {
     match state.timer {
         Some(timer) => format!(
             "1|{}|{}|{}|{}|{}|{}|{}",
@@ -401,7 +401,7 @@ pub(super) fn encode_custom_countdown_state(state: CustomCountdownState) -> Stri
     }
 }
 
-pub(super) fn decode_custom_countdown_state(value: &str) -> Option<CustomCountdownState> {
+pub(crate) fn decode_custom_countdown_state(value: &str) -> Option<CustomCountdownState> {
     let mut fields = value.split('|');
     if fields.next()? != "1" {
         return None;
@@ -445,7 +445,7 @@ pub(super) fn decode_custom_countdown_state(value: &str) -> Option<CustomCountdo
     }
 }
 
-pub(super) fn encode_custom_countdowns(states: [CustomCountdownState; 3]) -> String {
+pub(crate) fn encode_custom_countdowns(states: [CustomCountdownState; 3]) -> String {
     let encoded = states
         .iter()
         .map(|state| encode_custom_countdown_state(*state))
@@ -453,7 +453,7 @@ pub(super) fn encode_custom_countdowns(states: [CustomCountdownState; 3]) -> Str
     format!("2;{}", encoded.join(";"))
 }
 
-pub(super) fn decode_custom_countdowns(value: &str) -> Option<[CustomCountdownState; 3]> {
+pub(crate) fn decode_custom_countdowns(value: &str) -> Option<[CustomCountdownState; 3]> {
     let mut fields = value.split(';');
     if fields.next()? != "2" {
         return None;
@@ -466,7 +466,7 @@ pub(super) fn decode_custom_countdowns(value: &str) -> Option<[CustomCountdownSt
     fields.next().is_none().then_some(states)
 }
 
-pub(super) fn load_custom_countdown_states() -> [CustomCountdownState; 3] {
+pub(crate) fn load_custom_countdown_states() -> [CustomCountdownState; 3] {
     let Some(storage) = custom_countdown_storage() else {
         return [CustomCountdownState::default(); 3];
     };
@@ -492,7 +492,7 @@ pub(super) fn load_custom_countdown_states() -> [CustomCountdownState; 3] {
         .unwrap_or([CustomCountdownState::default(); 3])
 }
 
-pub(super) fn save_custom_countdown_states(states: [CustomCountdownState; 3]) {
+pub(crate) fn save_custom_countdown_states(states: [CustomCountdownState; 3]) {
     if let Some(storage) = custom_countdown_storage() {
         let _ = storage.set_item(
             CUSTOM_COUNTDOWN_STORAGE_KEY,
@@ -501,11 +501,11 @@ pub(super) fn save_custom_countdown_states(states: [CustomCountdownState; 3]) {
     }
 }
 
-pub(super) fn exam_timestamp(iso: &str) -> i64 {
+pub(crate) fn exam_timestamp(iso: &str) -> i64 {
     Date::parse(iso) as i64
 }
 
-pub(super) fn exam_card_tone(snapshot: CountdownSnapshot) -> &'static str {
+pub(crate) fn exam_card_tone(snapshot: CountdownSnapshot) -> &'static str {
     if snapshot.finished {
         EXAM_CARD_FINISHED
     } else if snapshot.remaining_seconds <= EXAM_URGENT_SECONDS {
@@ -517,7 +517,7 @@ pub(super) fn exam_card_tone(snapshot: CountdownSnapshot) -> &'static str {
     }
 }
 
-pub(super) fn exam_status_label(snapshot: CountdownSnapshot) -> &'static str {
+pub(crate) fn exam_status_label(snapshot: CountdownSnapshot) -> &'static str {
     if snapshot.finished {
         "已结束"
     } else if snapshot.remaining_seconds <= EXAM_URGENT_SECONDS {
@@ -529,7 +529,7 @@ pub(super) fn exam_status_label(snapshot: CountdownSnapshot) -> &'static str {
     }
 }
 
-pub(super) fn pip_countdown_status(
+pub(crate) fn pip_countdown_status(
     config: &PipCountdownConfig,
     snapshot: CountdownSnapshot,
 ) -> &'static str {
@@ -546,7 +546,7 @@ pub(super) fn pip_countdown_status(
     }
 }
 
-pub(super) struct DocumentPipHandles {
+pub(crate) struct DocumentPipHandles {
     window: Window,
     _on_hide: Closure<dyn FnMut(Event)>,
 }
@@ -556,7 +556,7 @@ pub(super) struct DocumentPipHandles {
 /// 系统画中画才能同时满足 WebKit 的两条约束：正在处理手势（280837）且视频
 /// 正在播放（iOS 拒绝未播放视频的画中画请求）。Safari/iPadOS 没有 Document
 /// PiP，走这条路径；生命周期由倒计时面板的挂载/卸载管理。
-pub(super) struct PreparedVideoPip {
+pub(crate) struct PreparedVideoPip {
     video: HtmlVideoElement,
     source_canvas: HtmlCanvasElement,
     frame_source: PipFrameSource,
@@ -571,7 +571,7 @@ pub(super) struct PreparedVideoPip {
 /// （WebKit 235215 未修复，视频出黑帧/不更新），WebKit 上用 WebCodecs
 /// VideoFrame + VideoTrackGenerator 泵真实视频帧；Chromium 继续用
 /// captureStream（第二 canvas 复制帧，安卓已验证稳定）。
-pub(super) enum PipFrameSource {
+pub(crate) enum PipFrameSource {
     CanvasCapture(HtmlCanvasElement),
     TrackGenerator {
         generator: Rc<JsValue>,
@@ -581,7 +581,7 @@ pub(super) enum PipFrameSource {
 
 /// WebKit（Safari/iPadOS）没有 Document PiP，且其 canvas.captureStream
 /// 存在黑帧问题；取流方式与同步请求策略都以它为准。
-pub(super) fn is_webkit_only(window: &Window) -> bool {
+pub(crate) fn is_webkit_only(window: &Window) -> bool {
     let Some(document) = window.document() else {
         return false;
     };
@@ -600,7 +600,7 @@ pub(super) fn is_webkit_only(window: &Window) -> bool {
 
 /// 尝试创建 WebCodecs VideoTrackGenerator（Safari 18+/iPadOS 26）。
 /// 返回 (generator, writer)；老 Safari 没有该 API 时返回 None。
-pub(super) fn try_build_track_generator(window: &Window) -> Option<(Rc<JsValue>, Rc<JsValue>)> {
+pub(crate) fn try_build_track_generator(window: &Window) -> Option<(Rc<JsValue>, Rc<JsValue>)> {
     let ctor_value = Reflect::get(window, &JsValue::from_str("VideoTrackGenerator")).ok()?;
     if !ctor_value.is_function() {
         return None;
@@ -622,7 +622,7 @@ pub(super) fn try_build_track_generator(window: &Window) -> Option<(Rc<JsValue>,
 
 /// 构建倒计时视频流：WebKit 优先 WebCodecs 轨道生成器（真实视频帧），
 /// 其余浏览器用 captureStream（第二 canvas 复制帧，Chrome 上稳定）。
-pub(super) fn build_pip_frame_source(
+pub(crate) fn build_pip_frame_source(
     window: &Window,
     document: &Document,
     body: &Element,
@@ -677,13 +677,13 @@ pub(super) fn build_pip_frame_source(
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum PipActivation {
+pub(crate) enum PipActivation {
     Activated,
     Failed,
     TimedOut,
 }
 
-pub(super) fn has_document_picture_in_picture(window: &Window) -> bool {
+pub(crate) fn has_document_picture_in_picture(window: &Window) -> bool {
     Reflect::get(
         window.as_ref(),
         &JsValue::from_str("documentPictureInPicture"),
@@ -693,7 +693,7 @@ pub(super) fn has_document_picture_in_picture(window: &Window) -> bool {
 }
 
 /// 必须在用户手势里同步调用（transient activation 要求）。
-pub(super) fn request_document_pip_window(
+pub(crate) fn request_document_pip_window(
     window: &Window,
     width: u32,
     height: u32,
@@ -726,7 +726,7 @@ pub(super) fn request_document_pip_window(
 
 /// 在画中画窗口里重建卡片：复制主题/样式表与卡片 DOM，注入倒计时引擎脚本。
 /// 引擎脚本在画中画窗口自己的上下文里每秒重算，主标签页被切后台也不停。
-pub(super) fn populate_pip_window(
+pub(crate) fn populate_pip_window(
     pip_window: &Window,
     config: &PipCountdownConfig,
 ) -> Result<(), JsValue> {
@@ -823,7 +823,7 @@ pub(super) fn populate_pip_window(
     Ok(())
 }
 
-pub(super) fn populate_document_pip(
+pub(crate) fn populate_document_pip(
     pip_window: &Window,
     config: PipCountdownConfig,
     index: usize,
@@ -859,7 +859,7 @@ pub(super) fn populate_document_pip(
     pip_exam.set(Some(index));
 }
 
-pub(super) fn show_pip_notice(
+pub(crate) fn show_pip_notice(
     pip_notice: &UseStateHandle<Option<&'static str>>,
     pip_notice_seq: &Rc<RefCell<u32>>,
     message: &'static str,
@@ -882,7 +882,7 @@ pub(super) fn show_pip_notice(
 
 /// 双击卡片的统一入口：优先 Document PiP（Chromium），其次 canvas 视频流
 /// PiP（Safari/iPadOS、Firefox 等），都不支持时只显示一条提示。
-pub(super) fn handle_open_pip(
+pub(crate) fn handle_open_pip(
     index: usize,
     config: PipCountdownConfig,
     pip_document: &Rc<RefCell<Option<DocumentPipHandles>>>,
@@ -956,7 +956,7 @@ pub(super) fn handle_open_pip(
     show_pip_notice(pip_notice, pip_notice_seq, "当前浏览器不支持画中画");
 }
 
-pub(super) fn video_pip_capable(window: &Window) -> bool {
+pub(crate) fn video_pip_capable(window: &Window) -> bool {
     let Some(document) = window.document() else {
         return false;
     };
@@ -978,7 +978,7 @@ pub(super) fn video_pip_capable(window: &Window) -> bool {
 /// 预创建所有卡片的隐藏 canvas 视频流（见 `PreparedVideoPip`）。返回 None
 /// 表示当前浏览器没有可用的视频画中画 API（与 `video_pip_capable` 一致），
 /// 面板不挂任何隐藏元素。
-pub(super) fn prepare_exam_pip_videos(
+pub(crate) fn prepare_exam_pip_videos(
     targets: &[ExamCountdownTarget],
 ) -> Option<Vec<PreparedVideoPip>> {
     let window = web_sys::window()?;
@@ -996,7 +996,7 @@ pub(super) fn prepare_exam_pip_videos(
     (!prepared.is_empty()).then_some(prepared)
 }
 
-pub(super) fn prepare_custom_pip_videos(
+pub(crate) fn prepare_custom_pip_videos(
     countdowns: [Rc<RefCell<PipCountdownConfig>>; 3],
 ) -> Option<Vec<PreparedVideoPip>> {
     let window = web_sys::window()?;
@@ -1016,7 +1016,7 @@ pub(super) fn prepare_custom_pip_videos(
     Some(prepared)
 }
 
-pub(super) fn prepare_exam_pip_video(
+pub(crate) fn prepare_exam_pip_video(
     target: &ExamCountdownTarget,
     window: &Window,
     document: &Document,
@@ -1026,7 +1026,7 @@ pub(super) fn prepare_exam_pip_video(
     prepare_countdown_pip_video(countdown, window, document, body)
 }
 
-pub(super) fn prepare_custom_pip_video(
+pub(crate) fn prepare_custom_pip_video(
     countdown: Rc<RefCell<PipCountdownConfig>>,
     window: &Window,
     document: &Document,
@@ -1035,7 +1035,7 @@ pub(super) fn prepare_custom_pip_video(
     prepare_countdown_pip_video(countdown, window, document, body)
 }
 
-pub(super) fn prepare_countdown_pip_video(
+pub(crate) fn prepare_countdown_pip_video(
     countdown: Rc<RefCell<PipCountdownConfig>>,
     window: &Window,
     document: &Document,
@@ -1204,7 +1204,7 @@ pub(super) fn prepare_countdown_pip_video(
 /// 让某张卡片的预创建 video 进入系统画中画。必须在 dblclick 手势栈内
 /// 同步调用（WebKit 280837）；预播放保证请求时视频已就绪且正在播放
 /// （iOS 拒绝未播放视频的画中画请求）。
-pub(super) fn open_video_pip(
+pub(crate) fn open_video_pip(
     index: usize,
     window: &Window,
     prepared: &Rc<RefCell<Option<Vec<PreparedVideoPip>>>>,
@@ -1324,7 +1324,7 @@ pub(super) fn open_video_pip(
 }
 
 /// 面板卸载时释放所有预创建单元：退出画中画、停流、关音频、移除元素。
-pub(super) fn teardown_prepared_videos(prepared: &mut Vec<PreparedVideoPip>) {
+pub(crate) fn teardown_prepared_videos(prepared: &mut Vec<PreparedVideoPip>) {
     for mut item in prepared.drain(..) {
         item.cancelled.set(true);
         if picture_in_picture_active(&item.video) {
@@ -1353,7 +1353,7 @@ pub(super) fn teardown_prepared_videos(prepared: &mut Vec<PreparedVideoPip>) {
 }
 
 /// 把源 canvas 内容复制到 capture canvas（Safari 黑帧绕法的核心）。
-pub(super) fn copy_countdown_canvas(source: &HtmlCanvasElement, target: &HtmlCanvasElement) {
+pub(crate) fn copy_countdown_canvas(source: &HtmlCanvasElement, target: &HtmlCanvasElement) {
     let Ok(context) = target.get_context("2d") else {
         return;
     };
@@ -1364,7 +1364,7 @@ pub(super) fn copy_countdown_canvas(source: &HtmlCanvasElement, target: &HtmlCan
     let _ = context.draw_image_with_html_canvas_element(source, 0.0, 0.0);
 }
 
-pub(super) fn pip_completion_ms(
+pub(crate) fn pip_completion_ms(
     config: &PipCountdownConfig,
     snapshot: CountdownSnapshot,
     now_ms: i64,
@@ -1376,7 +1376,7 @@ pub(super) fn pip_completion_ms(
     }
 }
 
-pub(super) fn format_pip_completion(
+pub(crate) fn format_pip_completion(
     config: &PipCountdownConfig,
     snapshot: CountdownSnapshot,
     now_ms: i64,
@@ -1416,7 +1416,7 @@ pub(super) fn format_pip_completion(
     format!("{prefix} {datetime}")
 }
 
-pub(super) fn draw_countdown_canvas(
+pub(crate) fn draw_countdown_canvas(
     canvas: &HtmlCanvasElement,
     config: &PipCountdownConfig,
     snapshot: CountdownSnapshot,
@@ -1538,7 +1538,7 @@ pub(super) fn draw_countdown_canvas(
     context.set_text_align("left");
 }
 
-pub(super) fn custom_timer_for_duration(total_seconds: u64, now_ms: i64) -> CustomCountdownTimer {
+pub(crate) fn custom_timer_for_duration(total_seconds: u64, now_ms: i64) -> CustomCountdownTimer {
     CustomCountdownTimer {
         total_seconds,
         start_ms: now_ms,
@@ -1549,7 +1549,7 @@ pub(super) fn custom_timer_for_duration(total_seconds: u64, now_ms: i64) -> Cust
     }
 }
 
-pub(super) fn restart_custom_countdown(
+pub(crate) fn restart_custom_countdown(
     state: CustomCountdownState,
     now_ms: i64,
 ) -> CustomCountdownState {
@@ -1559,7 +1559,7 @@ pub(super) fn restart_custom_countdown(
     }
 }
 
-pub(super) fn pause_custom_countdown(
+pub(crate) fn pause_custom_countdown(
     state: CustomCountdownState,
     now_ms: i64,
 ) -> CustomCountdownState {
@@ -1581,7 +1581,7 @@ pub(super) fn pause_custom_countdown(
     }
 }
 
-pub(super) fn resume_custom_countdown(
+pub(crate) fn resume_custom_countdown(
     state: CustomCountdownState,
     now_ms: i64,
 ) -> CustomCountdownState {
@@ -1604,13 +1604,13 @@ pub(super) fn resume_custom_countdown(
 }
 
 #[derive(Clone, Copy)]
-pub(super) enum CustomDurationPart {
+pub(crate) enum CustomDurationPart {
     Hours,
     Minutes,
     Seconds,
 }
 
-pub(super) fn update_custom_duration(
+pub(crate) fn update_custom_duration(
     state: CustomCountdownState,
     part: CustomDurationPart,
     value: u64,
@@ -1628,7 +1628,7 @@ pub(super) fn update_custom_duration(
     }
 }
 
-pub(super) fn render_countdown_values(
+pub(crate) fn render_countdown_values(
     snapshot: CountdownSnapshot,
     finished_label: &'static str,
 ) -> Html {
@@ -1646,7 +1646,7 @@ pub(super) fn render_countdown_values(
     }
 }
 
-pub(super) fn custom_duration_input_callback(
+pub(crate) fn custom_duration_input_callback(
     states: &UseStateHandle<[CustomCountdownState; 3]>,
     index: usize,
     part: CustomDurationPart,
@@ -1661,7 +1661,7 @@ pub(super) fn custom_duration_input_callback(
     })
 }
 
-pub(super) fn render_custom_timer_card(
+pub(crate) fn render_custom_timer_card(
     target: &ExamCountdownTarget,
     state: CustomCountdownState,
     snapshot: CountdownSnapshot,
@@ -1752,7 +1752,7 @@ pub(super) fn render_custom_timer_card(
     }
 }
 
-pub(super) fn render_countdown_card(
+pub(crate) fn render_countdown_card(
     target: &ExamCountdownTarget,
     snapshot: CountdownSnapshot,
     index: usize,
@@ -1807,7 +1807,7 @@ pub(super) fn render_countdown_card(
     }
 }
 
-pub(super) fn render_exam_countdown_card(
+pub(crate) fn render_exam_countdown_card(
     target: &ExamCountdownTarget,
     snapshot: CountdownSnapshot,
     index: usize,
@@ -1835,7 +1835,7 @@ pub(super) fn render_exam_countdown_card(
 }
 
 #[function_component(CustomCountdownPanel)]
-pub(super) fn custom_countdown_panel() -> Html {
+pub(crate) fn custom_countdown_panel() -> Html {
     let now_ms = use_state(|| Date::now() as i64);
     let countdown_states = use_state(load_custom_countdown_states);
     let pip_document = use_mut_ref(|| None::<DocumentPipHandles>);
@@ -2078,7 +2078,7 @@ pub(super) fn custom_countdown_panel() -> Html {
 }
 
 #[function_component(ExamCountdownPanel)]
-pub(super) fn exam_countdown_panel() -> Html {
+pub(crate) fn exam_countdown_panel() -> Html {
     let now_ms = use_state(|| Date::now() as i64);
     let pip_document = use_mut_ref(|| None::<DocumentPipHandles>);
     let pip_exam = use_state(|| None::<usize>);

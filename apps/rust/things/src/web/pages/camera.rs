@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum CameraViewPhase {
+pub(crate) enum CameraViewPhase {
     Idle,
     Starting,
     Connecting,
@@ -19,7 +19,7 @@ impl CameraViewPhase {
     }
 }
 
-pub(super) struct CameraSessionRuntime {
+pub(crate) struct CameraSessionRuntime {
     peer: RtcPeerConnection,
     _on_track: Closure<dyn FnMut(RtcTrackEvent)>,
     _on_connection_state_change: Closure<dyn FnMut(Event)>,
@@ -31,21 +31,21 @@ pub(super) struct CameraSessionRuntime {
     mic_track: Option<MediaStreamTrack>,
 }
 
-pub(super) type CameraRuntime = Rc<RefCell<Option<CameraSessionRuntime>>>;
+pub(crate) type CameraRuntime = Rc<RefCell<Option<CameraSessionRuntime>>>;
 
 #[derive(Properties, PartialEq)]
-pub(super) struct CameraLiveViewProps {
+pub(crate) struct CameraLiveViewProps {
     /// Panel bootstrap CSRF token, used only for administrator mutations
     /// (profile/rotation) while an administrator session is present.
-    pub(super) admin_csrf: String,
+    pub(crate) admin_csrf: String,
     /// Whether an administrator session is currently authenticated without a
     /// forced password change. Anonymous viewers must not use the (public)
     /// panel CSRF as their session token; they get a short-lived viewer token.
-    pub(super) is_admin: bool,
-    pub(super) stop_generation: u32,
+    pub(crate) is_admin: bool,
+    pub(crate) stop_generation: u32,
 }
 
-pub(super) fn camera_pipeline_label(state: CameraPipelineState) -> &'static str {
+pub(crate) fn camera_pipeline_label(state: CameraPipelineState) -> &'static str {
     match state {
         CameraPipelineState::Stopped => "已停止",
         CameraPipelineState::Starting => "启动中",
@@ -56,14 +56,14 @@ pub(super) fn camera_pipeline_label(state: CameraPipelineState) -> &'static str 
     }
 }
 
-pub(super) fn camera_access_label(access: CameraAccessKind) -> &'static str {
+pub(crate) fn camera_access_label(access: CameraAccessKind) -> &'static str {
     match access {
         CameraAccessKind::Lan => "LAN",
         CameraAccessKind::Tailscale => "Tailscale",
     }
 }
 
-pub(super) fn camera_error_label(error: CameraErrorCategory) -> &'static str {
+pub(crate) fn camera_error_label(error: CameraErrorCategory) -> &'static str {
     match error {
         CameraErrorCategory::CameraNotFound => "未找到摄像头",
         CameraErrorCategory::CameraBusy => "摄像头占用中",
@@ -77,7 +77,7 @@ pub(super) fn camera_error_label(error: CameraErrorCategory) -> &'static str {
     }
 }
 
-pub(super) fn icon_play() -> Html {
+pub(crate) fn icon_play() -> Html {
     html! {
         <svg class={CAMERA_ICON} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M8 5.14v13.72a1 1 0 0 0 1.53.85l10.29-6.86a1 1 0 0 0 0-1.66L9.53 4.29A1 1 0 0 0 8 5.14Z" />
@@ -85,7 +85,7 @@ pub(super) fn icon_play() -> Html {
     }
 }
 
-pub(super) fn icon_pause() -> Html {
+pub(crate) fn icon_pause() -> Html {
     html! {
         <svg class={CAMERA_ICON} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <rect x="6" y="5" width="4" height="14" rx="1" />
@@ -94,7 +94,7 @@ pub(super) fn icon_pause() -> Html {
     }
 }
 
-pub(super) fn icon_stop() -> Html {
+pub(crate) fn icon_stop() -> Html {
     html! {
         <svg class={CAMERA_ICON} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <rect x="5" y="5" width="14" height="14" rx="2" />
@@ -102,7 +102,7 @@ pub(super) fn icon_stop() -> Html {
     }
 }
 
-pub(super) fn icon_microphone(enabled: bool) -> Html {
+pub(crate) fn icon_microphone(enabled: bool) -> Html {
     html! {
         <svg class={CAMERA_ICON} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="9" y="3" width="6" height="11" rx="3" />
@@ -116,7 +116,7 @@ pub(super) fn icon_microphone(enabled: bool) -> Html {
     }
 }
 
-pub(super) fn icon_picture_in_picture() -> Html {
+pub(crate) fn icon_picture_in_picture() -> Html {
     html! {
         <svg class={CAMERA_ICON} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="3" y="5" width="18" height="14" rx="2" />
@@ -125,7 +125,7 @@ pub(super) fn icon_picture_in_picture() -> Html {
     }
 }
 
-pub(super) fn icon_rotate() -> Html {
+pub(crate) fn icon_rotate() -> Html {
     html! {
         <svg class={CAMERA_ICON} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M20 11a8 8 0 0 0-14.9-3.9L3 10" />
@@ -136,12 +136,12 @@ pub(super) fn icon_rotate() -> Html {
     }
 }
 
-pub(super) struct MediaSessionRegistration {
+pub(crate) struct MediaSessionRegistration {
     session: JsValue,
     _handlers: Vec<Closure<dyn FnMut(JsValue)>>,
 }
 
-pub(super) fn browser_media_session() -> Option<JsValue> {
+pub(crate) fn browser_media_session() -> Option<JsValue> {
     let window = web_sys::window()?;
     let navigator: JsValue = window.navigator().into();
     Reflect::get(&navigator, &JsValue::from_str("mediaSession"))
@@ -149,7 +149,7 @@ pub(super) fn browser_media_session() -> Option<JsValue> {
         .filter(|value| !value.is_null() && !value.is_undefined())
 }
 
-pub(super) fn media_session_set_action_handler(
+pub(crate) fn media_session_set_action_handler(
     session: &JsValue,
     action: &str,
     handler: Option<&JsValue>,
@@ -164,7 +164,7 @@ pub(super) fn media_session_set_action_handler(
     let _ = method.call2(session, &JsValue::from_str(action), &callback);
 }
 
-pub(super) fn clear_media_session(session: &JsValue) {
+pub(crate) fn clear_media_session(session: &JsValue) {
     let _ = Reflect::set(session, &JsValue::from_str("metadata"), &JsValue::NULL);
     let _ = Reflect::set(
         session,
@@ -176,7 +176,7 @@ pub(super) fn clear_media_session(session: &JsValue) {
     }
 }
 
-pub(super) fn media_metadata_value() -> JsValue {
+pub(crate) fn media_metadata_value() -> JsValue {
     let init = js_sys::Object::new();
     let _ = Reflect::set(
         &init,
@@ -196,7 +196,7 @@ pub(super) fn media_metadata_value() -> JsValue {
     constructed.unwrap_or_else(|| init.into())
 }
 
-pub(super) fn install_media_session(
+pub(crate) fn install_media_session(
     paused: bool,
     on_play: Rc<dyn Fn()>,
     on_pause: Rc<dyn Fn()>,
@@ -239,13 +239,13 @@ pub(super) fn install_media_session(
     })
 }
 
-pub(super) fn picture_in_picture_method(target: &JsValue, name: &str) -> Option<Function> {
+pub(crate) fn picture_in_picture_method(target: &JsValue, name: &str) -> Option<Function> {
     Reflect::get(target, &JsValue::from_str(name))
         .ok()
         .and_then(|value| value.dyn_into::<Function>().ok())
 }
 
-pub(super) fn picture_in_picture_supported(video: &HtmlVideoElement) -> bool {
+pub(crate) fn picture_in_picture_supported(video: &HtmlVideoElement) -> bool {
     let target: JsValue = video.clone().into();
     if picture_in_picture_method(&target, "requestPictureInPicture").is_some() {
         return true;
@@ -260,12 +260,12 @@ pub(super) fn picture_in_picture_supported(video: &HtmlVideoElement) -> bool {
         .unwrap_or(false)
 }
 
-pub(super) fn picture_in_picture_ready(video: &HtmlVideoElement) -> bool {
+pub(crate) fn picture_in_picture_ready(video: &HtmlVideoElement) -> bool {
     // HAVE_FUTURE_DATA：视频至少已经有可播放的媒体数据，避免在 WebRTC 首帧到达前调用 PiP。
     video.ready_state() >= 3
 }
 
-pub(super) fn picture_in_picture_active(video: &HtmlVideoElement) -> bool {
+pub(crate) fn picture_in_picture_active(video: &HtmlVideoElement) -> bool {
     let target: JsValue = video.clone().into();
     let standard_active = web_sys::window()
         .and_then(|window| window.document())
@@ -284,7 +284,7 @@ pub(super) fn picture_in_picture_active(video: &HtmlVideoElement) -> bool {
     standard_active || webkit_active
 }
 
-pub(super) fn picture_in_picture_request(video: &HtmlVideoElement) -> Result<JsValue, JsValue> {
+pub(crate) fn picture_in_picture_request(video: &HtmlVideoElement) -> Result<JsValue, JsValue> {
     let target: JsValue = video.clone().into();
     if let Some(method) = picture_in_picture_method(&target, "requestPictureInPicture") {
         return method.call0(&target);
@@ -296,7 +296,7 @@ pub(super) fn picture_in_picture_request(video: &HtmlVideoElement) -> Result<JsV
     Err(JsValue::from_str("浏览器不支持画中画"))
 }
 
-pub(super) fn picture_in_picture_exit(video: &HtmlVideoElement) -> Result<JsValue, JsValue> {
+pub(crate) fn picture_in_picture_exit(video: &HtmlVideoElement) -> Result<JsValue, JsValue> {
     let target: JsValue = video.clone().into();
     if let Some(document) = web_sys::window().and_then(|window| window.document()) {
         let document_value: JsValue = document.into();
@@ -314,7 +314,7 @@ pub(super) fn picture_in_picture_exit(video: &HtmlVideoElement) -> Result<JsValu
     Err(JsValue::from_str("无法退出画中画"))
 }
 
-pub(super) async fn await_picture_in_picture(value: JsValue) -> Result<(), JsValue> {
+pub(crate) async fn await_picture_in_picture(value: JsValue) -> Result<(), JsValue> {
     if value.is_undefined() || value.is_null() {
         return Ok(());
     }
@@ -322,14 +322,14 @@ pub(super) async fn await_picture_in_picture(value: JsValue) -> Result<(), JsVal
     JsFuture::from(promise).await.map(|_| ())
 }
 
-pub(super) fn camera_js_error(context: &str, error: JsValue) -> String {
+pub(crate) fn camera_js_error(context: &str, error: JsValue) -> String {
     let detail = error.as_string().unwrap_or_else(|| format!("{error:?}"));
     format!("{context}：{detail}")
 }
 
 /// 播放/暂停竞争（清理时 pause 打断 play）会让 play() 的 Promise 拒绝；await 并
 /// 忽略其结果，避免未处理拒绝变成 pageerror。
-pub(super) fn play_media_ignoring_interruption(element: &HtmlMediaElement) {
+pub(crate) fn play_media_ignoring_interruption(element: &HtmlMediaElement) {
     if let Ok(promise) = element.play() {
         spawn_local(async move {
             let _ = JsFuture::from(promise).await;
@@ -337,17 +337,17 @@ pub(super) fn play_media_ignoring_interruption(element: &HtmlMediaElement) {
     }
 }
 
-pub(super) fn next_camera_generation(generation: &Rc<RefCell<u64>>) -> u64 {
+pub(crate) fn next_camera_generation(generation: &Rc<RefCell<u64>>) -> u64 {
     let mut current = generation.borrow_mut();
     *current = current.wrapping_add(1);
     *current
 }
 
-pub(super) fn camera_generation_is_current(generation: &Rc<RefCell<u64>>, expected: u64) -> bool {
+pub(crate) fn camera_generation_is_current(generation: &Rc<RefCell<u64>>, expected: u64) -> bool {
     *generation.borrow() == expected
 }
 
-pub(super) async fn close_camera_session(session_id: String, csrf: String) {
+pub(crate) async fn close_camera_session(session_id: String, csrf: String) {
     let _ = post_json(
         CAMERA_SESSION_CLOSE_ENDPOINT,
         &csrf,
@@ -357,7 +357,7 @@ pub(super) async fn close_camera_session(session_id: String, csrf: String) {
     .await;
 }
 
-pub(super) async fn fetch_camera_viewer_token() -> Result<String, String> {
+pub(crate) async fn fetch_camera_viewer_token() -> Result<String, String> {
     let response = Request::post(CAMERA_VIEWER_TOKEN_ENDPOINT)
         .credentials(RequestCredentials::SameOrigin)
         .header("Accept", "application/json")
@@ -375,7 +375,7 @@ pub(super) async fn fetch_camera_viewer_token() -> Result<String, String> {
         .map_err(|error| format!("观看凭证数据格式无效：{error}"))
 }
 
-pub(super) fn take_camera_runtime(
+pub(crate) fn take_camera_runtime(
     runtime: &CameraRuntime,
     video: &NodeRef,
     audio: &NodeRef,
@@ -408,7 +408,7 @@ pub(super) fn take_camera_runtime(
     session
 }
 
-pub(super) fn close_camera_runtime(runtime: &CameraRuntime, video: &NodeRef, audio: &NodeRef) {
+pub(crate) fn close_camera_runtime(runtime: &CameraRuntime, video: &NodeRef, audio: &NodeRef) {
     if let Some((session_id, csrf)) = take_camera_runtime(runtime, video, audio) {
         spawn_local(close_camera_session(session_id, csrf));
     }
@@ -416,7 +416,7 @@ pub(super) fn close_camera_runtime(runtime: &CameraRuntime, video: &NodeRef, aud
 
 /// 取消页面隐藏时的延迟关闭计时（页面恢复可见 / 页面卸载 / 会话被其他路径
 /// 关闭时调用）。句柄取出即视为取消，即使 window 不可用也清掉本地状态。
-pub(super) fn cancel_hidden_close_timer(
+pub(crate) fn cancel_hidden_close_timer(
     timer: &Rc<RefCell<Option<i32>>>,
     window: Option<&web_sys::Window>,
 ) {
@@ -427,7 +427,7 @@ pub(super) fn cancel_hidden_close_timer(
     }
 }
 
-pub(super) async fn wait_for_camera_ice(peer: &RtcPeerConnection) -> Result<(), String> {
+pub(crate) async fn wait_for_camera_ice(peer: &RtcPeerConnection) -> Result<(), String> {
     let mut waited = 0;
     while peer.ice_gathering_state() != RtcIceGatheringState::Complete {
         if waited >= CAMERA_ICE_GATHER_TIMEOUT_MS {
@@ -439,7 +439,7 @@ pub(super) async fn wait_for_camera_ice(peer: &RtcPeerConnection) -> Result<(), 
     Ok(())
 }
 
-pub(super) async fn refresh_camera_status(
+pub(crate) async fn refresh_camera_status(
     status: UseStateHandle<Option<CameraStatus>>,
     presets: UseStateHandle<Vec<CameraStreamPreset>>,
     error: UseStateHandle<Option<String>>,
@@ -459,7 +459,7 @@ pub(super) async fn refresh_camera_status(
 }
 
 #[function_component(CameraLiveView)]
-pub(super) fn camera_live_view(props: &CameraLiveViewProps) -> Html {
+pub(crate) fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     let video = use_node_ref();
     let audio = use_node_ref();
     let stage = use_node_ref();
@@ -1442,7 +1442,7 @@ pub(super) fn camera_live_view(props: &CameraLiveViewProps) -> Html {
 }
 
 #[function_component(CameraAvailability)]
-pub(super) fn camera_availability() -> Html {
+pub(crate) fn camera_availability() -> Html {
     let status = use_state(|| None::<CameraStatus>);
     let presets = use_state(Vec::<CameraStreamPreset>::new);
     let status_error = use_state(|| None::<String>);

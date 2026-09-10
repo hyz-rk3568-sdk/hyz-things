@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
+pub(crate) fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
     let Some(bootstrap) = state.panel.as_ref() else {
         return Html::default();
     };
@@ -115,7 +115,7 @@ pub(super) fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
     }
 }
 
-pub(super) fn render_proxy_groups_read_only(component: &Component<Vec<ProxyGroup>>) -> Html {
+pub(crate) fn render_proxy_groups_read_only(component: &Component<Vec<ProxyGroup>>) -> Html {
     let Some(groups) = component.data.as_ref() else {
         return Html::default();
     };
@@ -163,7 +163,7 @@ pub(super) fn render_proxy_groups_read_only(component: &Component<Vec<ProxyGroup
     }
 }
 
-pub(super) fn render_proxy_groups(
+pub(crate) fn render_proxy_groups(
     component: &Component<Vec<ProxyGroup>>,
     state: &UseReducerHandle<AppState>,
     csrf: &str,
@@ -223,7 +223,7 @@ pub(super) fn render_proxy_groups(
     }
 }
 
-pub(super) fn group_kind_label(group: &ProxyGroup) -> &'static str {
+pub(crate) fn group_kind_label(group: &ProxyGroup) -> &'static str {
     use hyz_things::domain::panel::ProxyGroupKind;
     match group.kind {
         ProxyGroupKind::Selector => "手动选择",
