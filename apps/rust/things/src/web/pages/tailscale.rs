@@ -140,10 +140,10 @@ pub(crate) fn tailscale_last_seen_label(unix_ms: u64) -> String {
 pub(crate) fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf: &str) -> Html {
     let Some(tailscale) = state.tailscale.as_ref() else {
         return html! {
-            <section class={SECTION} aria-labelledby="tailscale-title">
+            <SectionCard title_id="tailscale-title">
                 <PageHeader title_id="tailscale-title" eyebrow="REMOTE LAN" title="Tailscale 远程 LAN" />
                 <div class={SETTINGS_EMPTY} role="status">{"正在读取 Tailscale 状态…"}</div>
-            </section>
+            </SectionCard>
         };
     };
     let busy = state.settings_busy;
@@ -234,7 +234,7 @@ pub(crate) fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf:
     };
 
     html! {
-        <section class={SECTION} aria-labelledby="tailscale-title" aria-busy={busy.to_string()}>
+        <SectionCard title_id="tailscale-title" busy={Some(busy)}>
             <PageHeader title_id="tailscale-title" eyebrow="REMOTE LAN" title="Tailscale 远程 LAN">
                 <span class={SECTION_META}>{"固定 192.168.8.0/24 · 不提供 Exit Node"}</span>
             </PageHeader>
@@ -292,6 +292,6 @@ pub(crate) fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf:
                 </div>
                 <small class={HELP_TEXT}>{"仅支持固定 RouterOnly / LAN Access 安全模式；浏览器不能输入 URL、auth key、子网、端口或控制参数。"}</small>
             </article>
-        </section>
+        </SectionCard>
     }
 }

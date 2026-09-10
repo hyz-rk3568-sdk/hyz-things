@@ -1628,24 +1628,6 @@ pub(crate) fn update_custom_duration(
     }
 }
 
-pub(crate) fn render_countdown_values(
-    snapshot: CountdownSnapshot,
-    finished_label: &'static str,
-) -> Html {
-    if snapshot.finished {
-        html! { <strong class={EXAM_COUNTER_FINISHED}>{finished_label}</strong> }
-    } else {
-        html! {
-            <>
-                <strong data-value="days" class={EXAM_COUNTER_VALUE}>{snapshot.days}</strong><span class={EXAM_COUNTER_UNIT}> {"天"}</span>
-                <strong data-value="hours" class={EXAM_COUNTER_VALUE}>{format!("{:02}", snapshot.hours)}</strong><span class={EXAM_COUNTER_UNIT}> {"时"}</span>
-                <strong data-value="minutes" class={EXAM_COUNTER_VALUE}>{format!("{:02}", snapshot.minutes)}</strong><span class={EXAM_COUNTER_UNIT}> {"分"}</span>
-                <strong data-value="seconds" class={EXAM_COUNTER_VALUE}>{format!("{:02}", snapshot.seconds)}</strong><span class={EXAM_COUNTER_UNIT}> {"秒"}</span>
-            </>
-        }
-    }
-}
-
 pub(crate) fn custom_duration_input_callback(
     states: &UseStateHandle<[CustomCountdownState; 3]>,
     index: usize,
@@ -1661,149 +1643,15 @@ pub(crate) fn custom_duration_input_callback(
     })
 }
 
-pub(crate) fn render_custom_timer_card(
-    target: &ExamCountdownTarget,
-    state: CustomCountdownState,
-    snapshot: CountdownSnapshot,
-    status: &'static str,
-    tone: &'static str,
-    hours: u64,
-    minutes: u64,
-    seconds: u64,
-    on_hours: Callback<InputEvent>,
-    on_minutes: Callback<InputEvent>,
-    on_seconds: Callback<InputEvent>,
-    on_restart: Callback<MouseEvent>,
-    on_pause: Callback<MouseEvent>,
-    on_resume: Callback<MouseEvent>,
-    on_open_pip: Callback<MouseEvent>,
-) -> Html {
-    let active = state.timer.is_some();
-    let can_pause = state.timer.is_some_and(|timer| !timer.paused) && !snapshot.finished;
-    let can_resume = state.timer.is_some_and(|timer| timer.paused) && !snapshot.finished;
-    let card_label = if snapshot.finished && active {
-        format!("{}倒计时已结束", target.title)
-    } else if state.timer.is_some_and(|timer| timer.paused) {
-        format!(
-            "{}倒计时已暂停，剩余 {} 秒",
-            target.title, snapshot.remaining_seconds
-        )
-    } else if active {
-        format!(
-            "{}倒计时，剩余 {} 秒",
-            target.title, snapshot.remaining_seconds
-        )
-    } else {
-        format!("{}倒计时，待开始", target.title)
-    };
-    let start_label = if active {
-        format!("重新开始{}倒计时", target.title)
-    } else {
-        format!("开始{}倒计时", target.title)
-    };
-
-    html! {
-        <article
-            class={classes!(CUSTOM_TIMER_CARD, tone)}
-            aria-label={card_label}
-            data-exam-id={target.id}
-            data-remaining-seconds={snapshot.remaining_seconds.to_string()}
-            title="双击开启画中画"
-            ondblclick={on_open_pip.clone()}
-        >
-            <div class={CUSTOM_TIMER_HEAD}>
-                <h3 class={CUSTOM_TIMER_TITLE}>{target.title}</h3>
-                <span data-status="" class={classes!(EXAM_STATUS, (snapshot.finished).then_some("text-base-content/60"), (!snapshot.finished).then_some("text-base-content/70"))}>{status}</span>
-            </div>
-            <div class={EXAM_COUNTER} data-countdown-values="" data-custom-countdown-values="" aria-live="polite">
-                {render_countdown_values(snapshot, "时间到")}
-            </div>
-            <div class={CUSTOM_TIMER_INPUTS}>
-                <label class={FIELD}>
-                    <span class={FIELD_LABEL}>{"时"}</span>
-                    <input class={INPUT} type="number" min="0" max="99" inputmode="numeric" value={hours.to_string()} oninput={on_hours} aria-label={format!("{}小时", target.title)} />
-                </label>
-                <label class={FIELD}>
-                    <span class={FIELD_LABEL}>{"分"}</span>
-                    <input class={INPUT} type="number" min="0" max="59" inputmode="numeric" value={minutes.to_string()} oninput={on_minutes} aria-label={format!("{}分钟", target.title)} />
-                </label>
-                <label class={FIELD}>
-                    <span class={FIELD_LABEL}>{"秒"}</span>
-                    <input class={INPUT} type="number" min="0" max="59" inputmode="numeric" value={seconds.to_string()} oninput={on_seconds} aria-label={format!("{}秒", target.title)} />
-                </label>
-            </div>
-            <div class={CUSTOM_TIMER_ACTIONS}>
-                <button class={BUTTON_PRIMARY} type="button" onclick={on_restart} aria-label={start_label}>{if active { "重新开始" } else { "开始" }}</button>
-                if can_pause {
-                    <button class={BUTTON} type="button" onclick={on_pause} aria-label={format!("暂停{}倒计时", target.title)}> {"暂停"} </button>
-                }
-                if can_resume {
-                    <button class={BUTTON} type="button" onclick={on_resume} aria-label={format!("继续{}倒计时", target.title)}> {"继续"} </button>
-                }
-                <button class={BUTTON_GHOST} type="button" onclick={on_open_pip} disabled={!active} aria-label={format!("进入{}画中画", target.title)}>{"画中画"}</button>
-            </div>
-            <progress
-                class={EXAM_PROGRESS}
-                max="100"
-                value={snapshot.progress_percent.to_string()}
-                aria-label={format!("{}倒计时进度 {}%", target.title, snapshot.progress_percent)}
-            ></progress>
-        </article>
-    }
-}
-
-pub(crate) fn render_countdown_card(
-    target: &ExamCountdownTarget,
-    snapshot: CountdownSnapshot,
-    index: usize,
-    status: &'static str,
-    tone: &'static str,
-    card_label: String,
-    finished_label: &'static str,
-    progress_label: &'static str,
-    progress_aria_label: String,
-    on_double_click: Callback<MouseEvent>,
-) -> Html {
-    let is_custom = is_custom_countdown_target(target);
-    let countdown = render_countdown_values(snapshot, finished_label);
-
-    html! {
-        <article
-            class={classes!(EXAM_CARD, tone)}
-            aria-label={card_label}
-            data-exam-id={target.id}
-            data-remaining-seconds={snapshot.remaining_seconds.to_string()}
-            title="双击开启画中画"
-            ondblclick={on_double_click}
-        >
-            <div class={EXAM_CARD_HEAD}>
-                <div class="flex min-w-0 items-start gap-2">
-                    <span class={EXAM_CARD_INDEX} aria-hidden="true">{format!("{:02}", index + 1)}</span>
-                    <div class={EXAM_CARD_COPY}>
-                        <p class={EXAM_CARD_EYEBROW}>{target.eyebrow}</p>
-                        <h3 class={EXAM_CARD_TITLE}>{target.title}</h3>
-                    </div>
-                </div>
-                <span data-status="" class={classes!(EXAM_STATUS, (snapshot.finished).then_some("text-base-content/60"), (!snapshot.finished).then_some("text-base-content/70"))}>{status}</span>
-            </div>
-            <div class={EXAM_COUNTER} data-countdown-values="" data-custom-countdown-values={is_custom.then_some("")} aria-live="polite">
-                {countdown}
-            </div>
-            <div class={EXAM_META}>
-                <span class="min-w-0 truncate">{target.target_note}</span>
-                <time class={EXAM_DATE} datetime={target.target_iso}>{target.target_label}</time>
-            </div>
-            <progress
-                class={EXAM_PROGRESS}
-                max="100"
-                value={snapshot.progress_percent.to_string()}
-                aria-label={progress_aria_label}
-            ></progress>
-            <div class={EXAM_PROGRESS_META} data-progress-meta="">
-                <span>{progress_label}</span>
-                <span>{format!("{}%", snapshot.progress_percent)}</span>
-            </div>
-        </article>
+pub(crate) fn countdown_display(snapshot: CountdownSnapshot) -> CountdownDisplay {
+    CountdownDisplay {
+        remaining_seconds: snapshot.remaining_seconds,
+        days: snapshot.days,
+        hours: snapshot.hours,
+        minutes: snapshot.minutes,
+        seconds: snapshot.seconds,
+        progress_percent: snapshot.progress_percent,
+        finished: snapshot.finished,
     }
 }
 
@@ -1820,18 +1668,25 @@ pub(crate) fn render_exam_countdown_card(
     } else {
         format!("{}，距离考试 {} 天", target.title, snapshot.days)
     };
-    render_countdown_card(
-        target,
-        snapshot,
-        index,
-        status,
-        tone,
-        card_label,
-        "考试日已过",
-        "年度备考进度",
-        format!("{}冲刺进度 {}%", target.title, snapshot.progress_percent),
-        on_double_click,
-    )
+    html! {
+        <CountdownCard
+            id={target.id}
+            title={target.title}
+            eyebrow={target.eyebrow}
+            target_iso={target.target_iso}
+            target_label={target.target_label}
+            target_note={target.target_note}
+            display={countdown_display(snapshot)}
+            index={index}
+            status={status}
+            tone={classes!(tone)}
+            card_label={card_label}
+            finished_label="考试日已过"
+            progress_label="年度备考进度"
+            progress_aria_label={format!("{}冲刺进度 {}%", target.title, snapshot.progress_percent)}
+            on_double_click={on_double_click}
+        />
+    }
 }
 
 #[function_component(CustomCountdownPanel)]
@@ -2043,23 +1898,54 @@ pub(crate) fn custom_countdown_panel() -> Html {
                 })
             };
 
-            render_custom_timer_card(
-                target,
-                state,
-                snapshot,
-                status,
-                tone,
-                hours,
-                minutes,
-                seconds,
-                set_hours,
-                set_minutes,
-                set_seconds,
-                restart,
-                pause,
-                resume,
-                open_pip,
-            )
+            let active = state.timer.is_some();
+            let can_pause = state.timer.is_some_and(|timer| !timer.paused) && !snapshot.finished;
+            let can_resume = state.timer.is_some_and(|timer| timer.paused) && !snapshot.finished;
+            let card_label = if snapshot.finished && active {
+                format!("{}倒计时已结束", target.title)
+            } else if state.timer.is_some_and(|timer| timer.paused) {
+                format!(
+                    "{}倒计时已暂停，剩余 {} 秒",
+                    target.title, snapshot.remaining_seconds
+                )
+            } else if active {
+                format!(
+                    "{}倒计时，剩余 {} 秒",
+                    target.title, snapshot.remaining_seconds
+                )
+            } else {
+                format!("{}倒计时，待开始", target.title)
+            };
+            let start_label = if active {
+                format!("重新开始{}倒计时", target.title)
+            } else {
+                format!("开始{}倒计时", target.title)
+            };
+
+            html! {
+                <CountdownEditor
+                    id={target.id}
+                    title={target.title}
+                    display={countdown_display(snapshot)}
+                    status={status}
+                    tone={classes!(tone)}
+                    hours={hours}
+                    minutes={minutes}
+                    seconds={seconds}
+                    active={active}
+                    can_pause={can_pause}
+                    can_resume={can_resume}
+                    card_label={card_label}
+                    start_label={start_label}
+                    on_hours={set_hours}
+                    on_minutes={set_minutes}
+                    on_seconds={set_seconds}
+                    on_restart={restart}
+                    on_pause={pause}
+                    on_resume={resume}
+                    on_open_pip={open_pip}
+                />
+            }
         })
         .collect::<Vec<_>>();
 

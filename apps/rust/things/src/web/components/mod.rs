@@ -1,5 +1,7 @@
 use super::*;
 
+mod countdown_card;
+mod countdown_editor;
 mod feedback;
 mod metric_card;
 mod page_header;
@@ -7,6 +9,8 @@ mod section_card;
 mod states;
 mod status_badge;
 
+pub(crate) use countdown_card::*;
+pub(crate) use countdown_editor::*;
 pub(crate) use feedback::*;
 pub(crate) use metric_card::*;
 pub(crate) use page_header::*;
