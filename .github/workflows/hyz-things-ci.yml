@@ -71,6 +71,8 @@ jobs:
           cache: npm
           cache-dependency-path: apps/rust/things/package-lock.json
 
+      # check-static reports explicit SKIP lines for SDK-only assertions when
+      # the external SDK tree is not present in the ordinary GitHub checkout.
       - name: Run source and configuration checks
         run: make check-static
 
