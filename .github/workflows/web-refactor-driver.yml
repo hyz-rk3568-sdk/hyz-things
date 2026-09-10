@@ -37,6 +37,21 @@ jobs:
           python3 apps/rust/things/tools/web-refactor-pages.py
           python3 apps/rust/things/tools/web-refactor-navigation.py
           python3 apps/rust/things/tools/web-refactor-app.py
+      - name: Update refactor static contracts
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("Makefile")
+          text = path.read_text()
+          old = '''\tgrep -q 'portal-camera-tab' "$(THINGS_APP)/src/web/main.rs"\n\tgrep -q '免登录实时查看摄像头画面' "$(THINGS_APP)/src/web/main.rs"'''
+          new = '''\tgrep -q 'app-camera-tab' "$(THINGS_APP)/src/web/app.rs"\n\tgrep -q '\\[function_component(CameraLiveView)\\]' "$(THINGS_APP)/src/web/pages/camera.rs"'''
+          if old in text:
+              path.write_text(text.replace(old, new, 1))
+          elif new not in text:
+              raise SystemExit("expected legacy or refactored camera static contract not found")
+          PY
       - name: Format changed Rust
         run: cargo fmt --manifest-path apps/rust/things/Cargo.toml --all
       - name: Check generated WASM frontend
@@ -54,6 +69,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add apps/rust/things/src/web apps/rust/things/tools/web-refactor*.py
-          git commit -m "refactor(web): generate app composition split [web-refactor-generated]"
+          git add Makefile apps/rust/things/src/web apps/rust/things/tools/web-refactor*.py
+          git commit -m "refactor(web): update generated structure contracts [web-refactor-generated]"
           git push origin HEAD:refactor/web-frontend-structure
