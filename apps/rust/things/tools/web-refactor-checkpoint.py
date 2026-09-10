@@ -3,7 +3,7 @@
 
 This temporary migration is deterministic and idempotent. It moves the remaining
 Overview/System page ownership out of web/main.rs, introduces normal hooks/pages
-module roots, repairs two Playwright migration defects found by CI, preserves
+module roots, repairs Playwright migration defects found by CI, preserves
 crate-internal visibility after adding the extra module layer, and verifies that
 the resulting structure stays at the intended checkpoint.
 """
@@ -19,6 +19,7 @@ APP = WEB / "app.rs"
 PAGES = WEB / "pages"
 HOOKS = WEB / "hooks"
 PORTAL = ROOT / "apps/rust/things/e2e/portal.spec.ts"
+E2E_DRIVER = ROOT / "apps/rust/things/tools/web-refactor-e2e.py"
 
 
 def export_top_level(text: str) -> str:
@@ -190,6 +191,28 @@ pub(crate) use tailscale::*;
     APP.write_text(app)
 
 
+def repair_e2e_driver() -> None:
+    """Make the temporary navigation migration safe to run more than once."""
+    text = E2E_DRIVER.read_text()
+    old = '''        if old in segment:
+            segment = segment.replace(old, new, 1)
+        elif new not in segment:
+            raise SystemExit("administrator journey: Proxy migration anchor not found")
+'''
+    new = '''        if new in segment:
+            pass
+        elif old in segment:
+            segment = segment.replace(old, new, 1)
+        else:
+            raise SystemExit("administrator journey: Proxy migration anchor not found")
+'''
+    if old in text:
+        text = text.replace(old, new, 1)
+    elif new not in text:
+        raise SystemExit("E2E migration driver: administrator idempotency anchor not found")
+    E2E_DRIVER.write_text(text)
+
+
 def repair_e2e_contracts() -> None:
     text = PORTAL.read_text()
 
@@ -214,30 +237,29 @@ def repair_e2e_contracts() -> None:
     elif new_counter not in text:
         raise SystemExit("PiP countdown reader: expected helper body not found")
 
-    broken_admin = '''  await expect(
-    page.getByRole("button", { name: "上游 Wi-Fi (STA)" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "上游 Wi-Fi (STA)" }),
-  ).toBeVisible();
-  await goToAppPage(page, "代理");
-  await expect(
-    page.getByRole("button", { name: "上游 Wi-Fi (STA)" }),
-  ).toBeVisible();
-  await goToAppPage(page, "代理");
-  await expect(page.getByRole("heading", { name: "代理设置" })).toBeVisible();
-'''
-    fixed_admin = '''  await expect(
+    test_start = text.index(
+        'test("supports the administrator, STA, AP, and write-only subscription journey"'
+    )
+    next_test = text.find('\ntest("', test_start + 1)
+    if next_test < 0:
+        next_test = len(text)
+    segment = text[test_start:next_test]
+    password_anchor = '  await page.getByRole("button", { name: "修改密码" }).click();\n'
+    proxy_anchor = '  await page\n    .getByRole("combobox", { name: "自动选择 节点" })\n'
+    password_end = segment.index(password_anchor) + len(password_anchor)
+    proxy_start = segment.index(proxy_anchor, password_end)
+    canonical_transition = '''  await expect(
     page.getByRole("button", { name: "上游 Wi-Fi (STA)" }),
   ).toBeVisible();
   await goToAppPage(page, "代理");
   await expect(page.getByRole("heading", { name: "代理设置" })).toBeVisible();
 '''
-    if broken_admin in text:
-        text = text.replace(broken_admin, fixed_admin, 1)
-    elif fixed_admin not in text:
-        raise SystemExit("administrator journey: expected navigation checkpoint not found")
-
+    segment = (
+        segment[:password_end]
+        + canonical_transition
+        + segment[proxy_start:]
+    )
+    text = text[:test_start] + segment + text[next_test:]
     PORTAL.write_text(text)
 
 
@@ -245,6 +267,7 @@ def validate_structure() -> None:
     main = MAIN.read_text()
     app = APP.read_text()
     portal = PORTAL.read_text()
+    e2e_driver = E2E_DRIVER.read_text()
 
     required_files = [
         PAGES / "mod.rs",
@@ -270,11 +293,26 @@ def validate_structure() -> None:
             raise SystemExit(f"app.rs missing page composition call: {call}")
     if "const weights = [86_400, 3_600, 60, 1];" not in portal:
         raise SystemExit("Playwright countdown helper is not unit-aware")
-    if portal.count('await goToAppPage(page, "代理");\n  await expect(page.getByRole("heading", { name: "代理设置" }))') != 1:
-        raise SystemExit("administrator journey proxy transition is duplicated or missing")
+
+    test_start = portal.index(
+        'test("supports the administrator, STA, AP, and write-only subscription journey"'
+    )
+    next_test = portal.find('\ntest("', test_start + 1)
+    admin_segment = portal[test_start:] if next_test < 0 else portal[test_start:next_test]
+    canonical_transition = '''  await expect(
+    page.getByRole("button", { name: "上游 Wi-Fi (STA)" }),
+  ).toBeVisible();
+  await goToAppPage(page, "代理");
+  await expect(page.getByRole("heading", { name: "代理设置" })).toBeVisible();
+'''
+    if admin_segment.count(canonical_transition) != 1:
+        raise SystemExit("administrator journey Proxy transition is duplicated or missing")
+    if '        if new in segment:\n            pass\n        elif old in segment:' not in e2e_driver:
+        raise SystemExit("E2E migration driver is not idempotent")
 
 
 if __name__ == "__main__":
+    repair_e2e_driver()
     repair_e2e_contracts()
     extract_remaining_pages()
     validate_structure()
