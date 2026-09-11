@@ -89,9 +89,8 @@ impl CameraMediaPort for GStreamerMediaAdapter {
     }
 
     fn start(&self, profile: CameraStreamProfile) -> Result<Box<dyn RunningMedia>, MediaError> {
-        self.probe().map_err(|error| {
+        self.probe().inspect_err(|&error| {
             eprintln!("video probe failed before start: {error:?}");
-            error
         })?;
         let pipeline = gst::Pipeline::with_name("hyz-camera-pipeline");
         let source = make("v4l2src", "camera-source")?;
@@ -476,8 +475,7 @@ fn stop_pipeline_bounded(pipeline: &gst::Pipeline, tag: &str) -> CameraPipelineS
         }
         Err(_) => {
             eprintln!(
-                "{tag} pipeline stop timed out after {:?}; element states:",
-                PIPELINE_STOP_DEADLINE
+                "{tag} pipeline stop timed out after {PIPELINE_STOP_DEADLINE:?}; element states:"
             );
             for child in pipeline.children() {
                 eprintln!("  {} state {:?}", child.name(), child.current_state());
@@ -701,9 +699,8 @@ impl CameraAudioPort for GStreamerAudioAdapter {
     }
 
     fn start(&self) -> Result<Box<dyn RunningAudioMedia>, MediaError> {
-        self.probe().map_err(|error| {
+        self.probe().inspect_err(|&error| {
             eprintln!("audio probe failed before start: {error:?}");
-            error
         })?;
         let pipeline = gst::Pipeline::with_name("hyz-camera-audio-pipeline");
 
