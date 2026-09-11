@@ -132,6 +132,10 @@ test("controls all four proxy combinations with isolated failures on desktop and
   expect(
     (await request.put(`${harnessOrigin}/state`, { data: state })).ok(),
   ).toBeTruthy();
+
+  // Freeze dashboard polling so this verifies the selection response updates the
+  // local proxy summary immediately instead of waiting for the next /panel poll.
+  await page.route("**/api/v1/panel", (route) => route.abort());
   await page
     .getByRole("combobox", { name: "HYZ-PROXY 节点" })
     .selectOption("新加坡");
