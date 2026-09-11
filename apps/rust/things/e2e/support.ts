@@ -1,5 +1,5 @@
-// expected-tests: 34
-// expected-runnable-tests: 33
+// expected-tests: 37
+// expected-runnable-tests: 36
 import type { Page } from "@playwright/test";
 
 export async function swipePortal(
