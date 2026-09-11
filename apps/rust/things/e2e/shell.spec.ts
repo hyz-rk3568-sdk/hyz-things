@@ -31,7 +31,7 @@ test("renders the dashboard shell and public overview", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "代理状态" })).toBeVisible();
   const topology = page.getByRole("region", { name: "网络拓扑" });
   await expect(topology.getByText("Tailscale", { exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "系统资源" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "运行详情" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
 
@@ -70,7 +70,9 @@ test("keeps local custom countdown state across portal page switches", async ({ 
 test("keeps the countdown canvas alive across page switches", async ({ page }) => {
   await installCountdownVideoPipMock(page);
   await page.goto("/");
-  const canvas = page.locator("canvas[data-countdown-canvas]");
+  const canvas = page
+    .locator('[data-exam-id="guangdong-exam"] canvas[data-countdown-canvas]')
+    .first();
   await expect(canvas).toBeVisible();
   await goToAppPage(page, "网络");
   await goToAppPage(page, "总览");
@@ -80,7 +82,10 @@ test("keeps the countdown canvas alive across page switches", async ({ page }) =
 test("opens countdown video picture-in-picture", async ({ page }) => {
   await installCountdownVideoPipMock(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "画中画" }).click();
+  await page
+    .getByRole("region", { name: "考试冲刺倒计时" })
+    .locator('[data-exam-id="guangdong-exam"]')
+    .dblclick();
   await expect
     .poll(async () =>
       page.evaluate(
@@ -90,7 +95,7 @@ test("opens countdown video picture-in-picture", async ({ page }) => {
     .toBe(1);
   const pixel = await page.evaluate(() => {
     const canvas = document.querySelector(
-      "canvas[data-countdown-canvas]",
+      '[data-exam-id="guangdong-exam"] canvas[data-countdown-canvas]',
     ) as HTMLCanvasElement;
     const context = canvas.getContext("2d") as CanvasRenderingContext2D;
     return Array.from(context.getImageData(10, 10, 1, 1).data);
