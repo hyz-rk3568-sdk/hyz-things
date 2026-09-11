@@ -94,7 +94,9 @@ fn parse_connections(
         .get("connections")
         .and_then(Value::as_array)
         .ok_or_else(|| {
-            PlatformError::ProbeFailed("Mihomo connections response has no connection list".to_owned())
+            PlatformError::ProbeFailed(
+                "Mihomo connections response has no connection list".to_owned(),
+            )
         })?;
     if connections.len() > MAX_CONTROLLER_CONNECTIONS {
         return Err(PlatformError::ProbeFailed(
@@ -126,7 +128,11 @@ fn parse_connection(
         MAX_ACTIVITY_CONNECTION_ID_BYTES,
     )?;
     let metadata = connection.get("metadata")?.as_object()?;
-    let source_address = metadata.get("sourceIP")?.as_str()?.parse::<Ipv4Addr>().ok()?;
+    let source_address = metadata
+        .get("sourceIP")?
+        .as_str()?
+        .parse::<Ipv4Addr>()
+        .ok()?;
     let mac = *clients_by_ip.get(&source_address)?;
     let destination_address = metadata
         .get("destinationIP")
@@ -178,7 +184,10 @@ fn parse_connection(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    let upload_bytes = connection.get("upload").and_then(Value::as_u64).unwrap_or(0);
+    let upload_bytes = connection
+        .get("upload")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
     let download_bytes = connection
         .get("download")
         .and_then(Value::as_u64)
@@ -212,10 +221,8 @@ fn value_port(value: &Value) -> Option<u16> {
 
 fn bounded_exact(value: &str, max_bytes: usize) -> Option<String> {
     let value = value.trim();
-    (!value.is_empty()
-        && value.len() <= max_bytes
-        && !value.chars().any(char::is_control))
-    .then(|| value.to_owned())
+    (!value.is_empty() && value.len() <= max_bytes && !value.chars().any(char::is_control))
+        .then(|| value.to_owned())
 }
 
 fn bounded_prefer(value: &str, fallback: &str, max_bytes: usize) -> Option<String> {
@@ -270,9 +277,7 @@ fn merge_history(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::device_policy::{
-        DevicePolicyEntry, DeviceRoutePolicy, LanDeviceLabel,
-    };
+    use crate::domain::device_policy::{DevicePolicyEntry, DeviceRoutePolicy, LanDeviceLabel};
 
     fn config(label: &str) -> DevicePolicyConfigV1 {
         DevicePolicyConfigV1::new(

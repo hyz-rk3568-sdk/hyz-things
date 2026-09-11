@@ -67,7 +67,11 @@ impl LanActivityRecord {
             MAX_DEVICE_LABEL_BYTES.max(17),
             "device name is invalid",
         )?;
-        validate_text(&target, MAX_ACTIVITY_TARGET_BYTES, "activity target is invalid")?;
+        validate_text(
+            &target,
+            MAX_ACTIVITY_TARGET_BYTES,
+            "activity target is invalid",
+        )?;
         if destination_port == 0 {
             return Err("activity destination port must be non-zero");
         }
@@ -182,20 +186,15 @@ mod tests {
             true,
         )
         .is_err());
-        assert!(LanActivitySnapshot::new(
-            2,
-            (0..=MAX_ACTIVITY_RECORDS).map(record).collect(),
-        )
-        .is_err());
+        assert!(
+            LanActivitySnapshot::new(2, (0..=MAX_ACTIVITY_RECORDS).map(record).collect(),).is_err()
+        );
     }
 
     #[test]
     fn maximum_activity_snapshot_fits_the_router_control_frame() {
-        let snapshot = LanActivitySnapshot::new(
-            2,
-            (0..MAX_ACTIVITY_RECORDS).map(record).collect(),
-        )
-        .unwrap();
+        let snapshot =
+            LanActivitySnapshot::new(2, (0..MAX_ACTIVITY_RECORDS).map(record).collect()).unwrap();
         assert!(serde_json::to_vec(&snapshot).unwrap().len() < 64 * 1024);
     }
 }
