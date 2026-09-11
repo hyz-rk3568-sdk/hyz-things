@@ -39,6 +39,9 @@ test("controls all four proxy combinations with isolated failures on desktop and
   const localSystemProxy = page.getByRole("switch", {
     name: "本机系统代理",
   });
+  const currentProxySummary = page
+    .getByText("当前代理节点", { exact: true })
+    .locator("..");
 
   const expectCombination = async (
     lanEnabled: boolean,
@@ -72,6 +75,7 @@ test("controls all four proxy combinations with isolated failures on desktop and
   };
 
   await expectCombination(true, false);
+  await expect(currentProxySummary).toContainText("东京");
   await expect(page.getByText("东京", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("combobox", { name: "HYZ-PROXY 节点" }),
@@ -137,6 +141,7 @@ test("controls all four proxy combinations with isolated failures on desktop and
       return groups.find((group) => group.name === "HYZ-PROXY")?.selected;
     })
     .toBe("新加坡");
+  await expect(currentProxySummary).toContainText("新加坡");
   await expect(page.getByText("新加坡", { exact: true })).toBeVisible();
   await expect(localSystemProxy).toBeEnabled();
   await expectNoHorizontalOverflow(page);
