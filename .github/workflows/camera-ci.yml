@@ -1,74 +1,71 @@
-name: Rust services CI
+name: Camera CI
 
 on:
   push:
     branches:
       - main
     paths:
-      - "apps/rust/router/**"
       - "apps/rust/camera/**"
       - "apps/rust/contract/**"
-      - ".github/workflows/rust-services-ci.yml"
+      - "Makefile"
+      - ".github/workflows/camera-ci.yml"
   pull_request:
     branches:
       - main
     paths:
-      - "apps/rust/router/**"
       - "apps/rust/camera/**"
       - "apps/rust/contract/**"
-      - ".github/workflows/rust-services-ci.yml"
+      - "Makefile"
+      - ".github/workflows/camera-ci.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: rust-services-ci-${{ github.workflow }}-${{ github.ref }}
+  group: camera-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
 jobs:
-  router:
-    name: Router fmt/test/clippy
+  static:
+    name: Static checks
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Install Rust 1.88
+      - name: Check committed diff
         shell: bash
         run: |
-          rustup toolchain install 1.88.0 \
-            --profile minimal \
-            --component rustfmt \
-            --component clippy
-          rustup default 1.88.0
-          rustc --version
-          cargo --version
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git diff --check "origin/${{ github.base_ref }}...HEAD"
+          elif git rev-parse HEAD^ >/dev/null 2>&1; then
+            git diff --check HEAD^ HEAD
+          else
+            git diff --check
+          fi
 
-      - name: Cache Cargo
-        uses: actions/cache@v4
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            apps/rust/router/target
-          key: ${{ runner.os }}-router-1.88-${{ hashFiles('apps/rust/router/Cargo.lock', 'apps/rust/contract/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-router-1.88-
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/rust/things/package-lock.json
 
-      - name: Check formatting
-        run: cargo fmt --manifest-path apps/rust/router/Cargo.toml --all -- --check
-
-      - name: Test
-        run: cargo test --locked --manifest-path apps/rust/router/Cargo.toml --all-features
-
-      - name: Clippy
-        run: cargo clippy --locked --manifest-path apps/rust/router/Cargo.toml --all-targets --all-features -- -D warnings
+      - name: Run source and configuration checks
+        run: make check-static
 
   camera:
     name: Camera fmt/test/clippy
+    needs: static
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
