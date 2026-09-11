@@ -17,6 +17,7 @@ REQUIRED_SPECS = (
     "security.spec.ts",
     "camera.spec.ts",
     "proxy.spec.ts",
+    "activity.spec.ts",
     "network.spec.ts",
     "tailscale.spec.ts",
 )

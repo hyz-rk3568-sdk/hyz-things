@@ -1,25 +1,54 @@
 use super::*;
 
 const PRIMARY_PROXY_GROUP: &str = "HYZ-PROXY";
-const AUTO_PROXY_GROUP: &str = "HYZ-AUTO";
 
 fn current_proxy_summary(groups: &[ProxyGroup]) -> String {
-    let Some(primary) = groups
+    groups
         .iter()
         .find(|group| group.name == PRIMARY_PROXY_GROUP)
-    else {
-        return MISSING.to_owned();
-    };
-    match primary.selected.as_deref() {
-        Some(AUTO_PROXY_GROUP) => groups
-            .iter()
-            .find(|group| group.name == AUTO_PROXY_GROUP)
-            .and_then(|group| group.selected.as_deref())
-            .map(|node| format!("自动选择 · {node}"))
-            .unwrap_or_else(|| "自动选择".to_owned()),
-        Some(node) => node.to_owned(),
-        None => MISSING.to_owned(),
-    }
+        .and_then(|group| group.selected.as_deref())
+        .unwrap_or(MISSING)
+        .to_owned()
+}
+
+fn dispatch_proxy_selection(
+    state: UseReducerHandle<AppState>,
+    csrf: String,
+    group_name: String,
+    proxy: String,
+    mut groups: Vec<ProxyGroup>,
+) {
+    state.dispatch(Action::ControlStarted(ControlArea::Nodes));
+    spawn_local(async move {
+        let result = post_json(
+            PROXY_SELECTION_ENDPOINT,
+            &csrf,
+            &ProxySelectionRequest {
+                group: group_name.clone(),
+                proxy: proxy.clone(),
+            },
+            "代理节点切换",
+        )
+        .await;
+        match result {
+            Ok(_) => {
+                if let Some(group) = groups.iter_mut().find(|group| group.name == group_name) {
+                    group.selected = Some(proxy);
+                }
+                // The router confirms Mihomo's selected node before the HTTP control call returns
+                // success. Mirror that confirmed state immediately instead of waiting for the next
+                // dashboard /panel poll.
+                state.dispatch(Action::ProxyDelaysFinished(Ok(groups)));
+                state.dispatch(Action::ControlFinished(
+                    ControlArea::Nodes,
+                    Ok("代理节点已切换".to_owned()),
+                ));
+            }
+            Err(error) => {
+                state.dispatch(Action::ControlFinished(ControlArea::Nodes, Err(error)));
+            }
+        }
+    });
 }
 
 pub(crate) fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
@@ -210,15 +239,15 @@ pub(crate) fn render_proxy_groups(
                 let group_name = group.name.clone();
                 let selection_state = state.clone();
                 let selection_csrf = csrf.to_owned();
+                let selection_groups = groups.to_vec();
                 let on_selection = Callback::from(move |event: Event| {
                     let select: HtmlSelectElement = event.target_unchecked_into();
-                    dispatch_control(
+                    dispatch_proxy_selection(
                         selection_state.clone(),
-                        ControlArea::Nodes,
-                        PROXY_SELECTION_ENDPOINT,
                         selection_csrf.clone(),
-                        ProxySelectionRequest { group: group_name.clone(), proxy: select.value() },
-                        "代理节点已切换".to_owned(),
+                        group_name.clone(),
+                        select.value(),
+                        selection_groups.clone(),
                     );
                 });
                 let selected = group.selected.clone();

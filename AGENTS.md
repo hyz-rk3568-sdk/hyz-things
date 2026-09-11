@@ -89,6 +89,17 @@ composition root in its own Cargo package:
 - 较大的功能开发或重构必须在独立分支完成，并通过 GitHub Pull Request 合入默认分支；不得直接提交到 `main`。
 - 小型文档、测试维护、CI 修复或明确的局部 bugfix 可以直接提交；一旦范围扩大到跨模块、架构调整或大范围行为变化，必须切换为 PR。
 
+### CI batching and push discipline
+
+- 不要为了每个小修复、格式调整、测试定位器修改或单个 Red/Green 循环分别 push 并触发 GitHub Actions。
+- TDD 的“一个行为一个 Red-Green-Refactor 循环”约束的是实现与验证粒度，不等于“一次循环一个 commit / 一次 push / 一轮 CI”。
+- 在同一任务和同一分支内，多个彼此独立、不会互相掩盖失败原因的修改应先在工作树中累计成一个有意义的 checkpoint，再统一 commit/push。
+- 优先按功能批次触发 CI。例如一个功能可以同时包含 contract / DTO、application / adapter 实现、Web/API、unit / E2E，以及同一轮已经明确发现的相关回归修复。
+- 对纯格式、测试 locator、文案、计数基线等机械性修复，除非它本身阻塞后续分析，否则不要单独 push；与下一批相关代码一起提交。
+- 一轮 CI 失败后，先完整检查该轮所有失败 job 和日志，尽量一次收集并修复所有互不冲突的问题，再触发下一轮 CI；不要只修第一个错误就立即 push。
+- 仅在以下情况优先单独触发 CI：需要 CI 环境才能确认根因；修改涉及高风险共享契约、workflow 或安全边界，适合先建立独立检查点；当前批次过大，继续累积会降低可审查性或让失败归因变得困难；用户明确要求立即验证某个提交。
+- 合入 PR 前必须在最终候选 HEAD 上完整通过所有相关 CI；中间减少 CI 触发次数不得降低最终验证覆盖率。
+
 ## TDD
 
 测试即文档。
@@ -101,7 +112,7 @@ composition root in its own Cargo package:
 2. **Green**：用最小实现让测试通过，不夹带无关功能或重构。
 3. **Refactor**：测试变绿后必须整理代码和测试，消除重复、收敛抽象、修正依赖方向或改善命名；每次整理后重新运行测试。没有完成 Refactor，就不能视为任务完成。
 
-一次只推进一个行为；完成 Refactor 后再补边界、错误、回滚和并发场景，并继续从 Red 开始下一轮。
+一次只推进一个行为；完成 Refactor 后再补边界、错误、回滚和并发场景，并继续从 Red 开始下一轮。这里的“一次只推进一个行为”指开发与测试设计粒度；多个已完成的 Red-Green-Refactor 循环可以在不影响失败归因和可审查性的前提下，批量组成一次 commit/push 和一次远端 CI 验证。
 
 ### Test guardrails
 

@@ -307,6 +307,7 @@ pub(super) enum AppPage {
     Overview,
     Network,
     Proxy,
+    Activity,
     Tailscale,
     Camera,
     Apps,
@@ -314,10 +315,11 @@ pub(super) enum AppPage {
 }
 
 impl AppPage {
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 8] = [
         Self::Overview,
         Self::Network,
         Self::Proxy,
+        Self::Activity,
         Self::Tailscale,
         Self::Camera,
         Self::Apps,
@@ -329,6 +331,7 @@ impl AppPage {
             Self::Overview => "app-overview-tab",
             Self::Network => "app-network-tab",
             Self::Proxy => "app-proxy-tab",
+            Self::Activity => "app-activity-tab",
             Self::Tailscale => "app-tailscale-tab",
             Self::Camera => "app-camera-tab",
             Self::Apps => "app-apps-tab",
@@ -341,6 +344,7 @@ impl AppPage {
             Self::Overview => "app-overview-panel",
             Self::Network => "app-network-panel",
             Self::Proxy => "app-proxy-panel",
+            Self::Activity => "app-activity-panel",
             Self::Tailscale => "app-tailscale-panel",
             Self::Camera => "app-camera-panel",
             Self::Apps => "app-apps-panel",
@@ -353,6 +357,7 @@ impl AppPage {
             Self::Overview => "总览",
             Self::Network => "网络",
             Self::Proxy => "代理",
+            Self::Activity => "活动",
             Self::Tailscale => "Tailscale",
             Self::Camera => "摄像头",
             Self::Apps => "应用",
@@ -364,7 +369,8 @@ impl AppPage {
         match self {
             Self::Overview => Some(Self::Network),
             Self::Network => Some(Self::Proxy),
-            Self::Proxy => Some(Self::Tailscale),
+            Self::Proxy => Some(Self::Activity),
+            Self::Activity => Some(Self::Tailscale),
             Self::Tailscale => Some(Self::Camera),
             Self::Camera => Some(Self::Apps),
             Self::Apps => Some(Self::System),
@@ -377,7 +383,8 @@ impl AppPage {
             Self::Overview => None,
             Self::Network => Some(Self::Overview),
             Self::Proxy => Some(Self::Network),
-            Self::Tailscale => Some(Self::Proxy),
+            Self::Activity => Some(Self::Proxy),
+            Self::Tailscale => Some(Self::Activity),
             Self::Camera => Some(Self::Tailscale),
             Self::Apps => Some(Self::Camera),
             Self::System => Some(Self::Apps),
@@ -653,6 +660,11 @@ pub(super) fn app() -> Html {
                     AppPage::Proxy => html! {
                         <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
                             if is_admin { {render_proxy_control(&state)} } else { {admin_required()} }
+                        </section>
+                    },
+                    AppPage::Activity => html! {
+                        <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
+                            if is_admin { {render_activity()} } else { {admin_required()} }
                         </section>
                     },
                     AppPage::Tailscale => html! {

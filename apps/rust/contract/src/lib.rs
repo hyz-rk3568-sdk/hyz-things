@@ -7,7 +7,7 @@
 //!   optional pure Unix socket transport in [`client`] (`client` feature);
 //! - the `hyz-camera` root-only Unix control protocol ([`camera`]);
 //! - the payload DTOs those protocols embed (status, panel, tailscale,
-//!   subscription, network config, device policy, Wi-Fi and DHCP requests).
+//!   subscription, network config, device policy, activity, Wi-Fi and DHCP requests).
 //!
 //! The crate must not depend on Axum, Yew, Linux process execution, concrete
 //! adapters, or any application-specific behavior. Every type is a serde wire
@@ -19,6 +19,7 @@
 //! previous version (`[current, current - 1]`) to allow rolling application
 //! pushes without restarting the stable router core.
 
+pub mod activity;
 pub mod admin;
 pub mod camera;
 pub mod device_policy;

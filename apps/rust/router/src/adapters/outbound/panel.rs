@@ -22,8 +22,10 @@ use crate::{
 
 const BACKLIGHT_DIR: &str = "/sys/class/backlight/backlight1";
 const CONTROLLER_RESPONSE_LIMIT: usize = 2 * 1024 * 1024;
+const CONTROLLER_TIMEOUT: Duration = Duration::from_secs(8);
 const DELAY_TEST_URL: &str = "https://www.gstatic.com/generate_204";
-const DELAY_TIMEOUT_MS: u32 = 5_000;
+const DELAY_TIMEOUT_MS: u32 = 10_000;
+const DELAY_CONTROLLER_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_DELAY_GROUP_CALLS: usize = 16;
 type ProxyMetadata = (Option<u32>, Option<bool>);
 type DelayCache = HashMap<String, ProxyMetadata>;
@@ -129,7 +131,7 @@ impl PanelPlatformPort for LinuxRouterPlatform {
             percent_encode(proxy),
             percent_encode(DELAY_TEST_URL)
         );
-        let value = controller_json("GET", &path, None)?;
+        let value = controller_json_with_timeout("GET", &path, None, DELAY_CONTROLLER_TIMEOUT)?;
         let delay = value
             .get("delay")
             .and_then(Value::as_u64)
@@ -158,7 +160,10 @@ impl PanelPlatformPort for LinuxRouterPlatform {
                 percent_encode(&group.name),
                 percent_encode(DELAY_TEST_URL)
             );
-            merge_group_delay_response(&controller_json("GET", &path, None)?, &mut measured)?;
+            merge_group_delay_response(
+                &controller_json_with_timeout("GET", &path, None, DELAY_CONTROLLER_TIMEOUT)?,
+                &mut measured,
+            )?;
         }
 
         apply_group_delay_measurements(&mut groups, &tested, &measured);
@@ -225,6 +230,15 @@ fn write_backlight(name: &str, value: u16) -> Result<(), PlatformError> {
 }
 
 fn controller_json(method: &str, path: &str, body: Option<&str>) -> Result<Value, PlatformError> {
+    controller_json_with_timeout(method, path, body, CONTROLLER_TIMEOUT)
+}
+
+fn controller_json_with_timeout(
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+    timeout: Duration,
+) -> Result<Value, PlatformError> {
     let secret =
         storage::read_private_small_optional(MIHOMO_CONTROLLER_SECRET, 128)?.ok_or_else(|| {
             PlatformError::InvalidState("Mihomo controller secret is absent".to_owned())
@@ -238,7 +252,7 @@ fn controller_json(method: &str, path: &str, body: Option<&str>) -> Result<Value
     let url = format!("http://{MIHOMO_CONTROLLER_ADDRESS}{path}");
     let authorization = format!("Bearer {secret}");
     let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(8)))
+        .timeout_global(Some(timeout))
         .max_redirects(0)
         .proxy(None)
         .build()
@@ -656,6 +670,13 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    #[test]
+    fn delay_probe_window_is_long_enough_for_a_group_request() {
+        assert_eq!(DELAY_TIMEOUT_MS, 10_000);
+        assert_eq!(DELAY_CONTROLLER_TIMEOUT, Duration::from_secs(30));
+        assert!(DELAY_CONTROLLER_TIMEOUT >= Duration::from_millis(u64::from(DELAY_TIMEOUT_MS)));
     }
 
     #[test]

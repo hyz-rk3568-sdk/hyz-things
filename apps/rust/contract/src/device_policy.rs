@@ -3,6 +3,8 @@
 use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 use std::{collections::BTreeSet, fmt, net::Ipv4Addr, str::FromStr};
 
+use crate::activity::LanActivitySnapshot;
+
 pub const DEVICE_POLICY_VERSION: u8 = 1;
 pub const MAX_DEVICE_POLICIES: usize = 32;
 pub const MAX_DEVICE_LABEL_BYTES: usize = 32;
@@ -234,6 +236,8 @@ pub struct DevicePolicySnapshot {
     pub config: DevicePolicyConfigV1,
     pub clients: Vec<LanClientObservation>,
     pub effective: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activity: Option<LanActivitySnapshot>,
 }
 
 pub fn validate_hostname(value: &str) -> bool {

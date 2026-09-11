@@ -1,3 +1,4 @@
+mod activity;
 pub mod device_policy;
 pub mod firmware;
 pub mod geodata;

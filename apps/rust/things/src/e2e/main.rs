@@ -360,6 +360,7 @@ impl Default for HarnessState {
                     policy: DeviceRoutePolicy::Proxy,
                 }],
                 effective: true,
+                activity: None,
             },
             proxy_failures: HarnessProxyFailures::default(),
             installed_apps: e2e_installed_apps(),

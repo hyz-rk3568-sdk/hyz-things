@@ -60,12 +60,58 @@ pub(crate) struct LanClientDto {
     pub(crate) policy: DevicePolicyDto,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ActivityNetworkDto {
+    Tcp,
+    Udp,
+    Other,
+}
+
+impl ActivityNetworkDto {
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::Tcp => "TCP",
+            Self::Udp => "UDP",
+            Self::Other => "OTHER",
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ActivityRecordDto {
+    pub(crate) connection_id: String,
+    pub(crate) mac: String,
+    pub(crate) device_name: String,
+    pub(crate) source_address: String,
+    pub(crate) target: String,
+    pub(crate) destination_port: u16,
+    pub(crate) network: ActivityNetworkDto,
+    pub(crate) rule: String,
+    pub(crate) chains: Vec<String>,
+    pub(crate) upload_bytes: u64,
+    pub(crate) download_bytes: u64,
+    pub(crate) first_seen_unix_ms: u64,
+    pub(crate) last_seen_unix_ms: u64,
+    pub(crate) active: bool,
+}
+
+#[derive(Clone, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ActivitySnapshotDto {
+    pub(crate) observed_at_unix_ms: u64,
+    pub(crate) records: Vec<ActivityRecordDto>,
+}
+
 #[derive(Clone, PartialEq, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DevicePolicySnapshotDto {
     pub(crate) config: DevicePolicyConfigDto,
     pub(crate) clients: Vec<LanClientDto>,
     pub(crate) effective: bool,
+    #[serde(default)]
+    pub(crate) activity: Option<ActivitySnapshotDto>,
 }
 
 #[derive(serde::Serialize)]
