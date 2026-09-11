@@ -2,6 +2,34 @@
 // expected-runnable-tests: 36
 import type { Page } from "@playwright/test";
 
+export async function installCountdownVideoPipMock(page: Page) {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "documentPictureInPicture", {
+      configurable: true,
+      value: undefined,
+    });
+    const calls: string[] = [];
+    let inPip = false;
+    (window as any).__hyzCountdownVideoPipCalls = calls;
+    Object.defineProperty(HTMLVideoElement.prototype, "requestPictureInPicture", {
+      configurable: true,
+      value: function () {
+        calls.push("request");
+        inPip = true;
+        return Promise.resolve();
+      },
+    });
+    Object.defineProperty(Document.prototype, "pictureInPictureElement", {
+      configurable: true,
+      get() {
+        return inPip
+          ? document.querySelector("video[data-countdown-pip-active]") || null
+          : null;
+      },
+    });
+  });
+}
+
 export async function swipePortal(
   page: Page,
   fromX: number,
@@ -76,11 +104,12 @@ export async function realTouchSwipe(page: Page, direction: "left" | "right") {
   });
 }
 
-export async function readCountdownTotal(target: Page, cardId: string): Promise<number> {
+export async function readCountdownTotal(target: Page, cardId?: string): Promise<number> {
   return target.evaluate((id) => {
-    const counter = document.querySelector(
-      `[data-exam-id="${id}"] [data-countdown-values]`,
-    );
+    const selector = id
+      ? `[data-exam-id="${id}"] [data-countdown-values]`
+      : "[data-countdown-values]";
+    const counter = document.querySelector(selector);
     if (!counter) {
       return 0;
     }
@@ -98,10 +127,12 @@ export async function readCountdownTotal(target: Page, cardId: string): Promise<
 
 export async function readCustomCountdownTotal(
   target: Page,
-  cardId: string,
+  cardId?: string,
 ): Promise<number> {
   return target.evaluate((id) => {
-    const card = document.querySelector(`[data-exam-id="${id}"]`);
+    const card = id
+      ? document.querySelector(`[data-exam-id="${id}"]`)
+      : document.querySelector("[data-remaining-seconds]");
     return Number(card?.getAttribute("data-remaining-seconds") ?? 0);
   }, cardId);
 }
