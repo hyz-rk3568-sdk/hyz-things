@@ -19,6 +19,7 @@ export type AppPageName =
   | '总览'
   | '网络'
   | '代理'
+  | '活动'
   | 'Tailscale'
   | '摄像头'
   | '应用'
