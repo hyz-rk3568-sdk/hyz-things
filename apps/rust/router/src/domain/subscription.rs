@@ -16,6 +16,8 @@ pub const HYZ_PROXY_GROUP: &str = "HYZ-PROXY";
 pub const HYZ_AUTO_GROUP: &str = "HYZ-AUTO";
 pub const HYZ_AUTO_TEST_URL: &str = "https://www.gstatic.com/generate_204";
 pub const HYZ_AUTO_INTERVAL_SECONDS: u64 = 600;
+const MANAGED_SUBSCRIPTION_PROVIDER_NAME: &str = "subscription";
+const MANAGED_SUBSCRIPTION_PROVIDER_REFERENCE: &str = "./providers/subscription.yaml";
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct GenerationId(String);
@@ -165,6 +167,8 @@ pub fn compose_managed_mihomo_source(
         Value::String("proxies".to_owned()),
         Value::Sequence(proxies.clone()),
     );
+    let uses_managed_subscription_provider = has_managed_subscription_provider(top);
+    disable_managed_subscription_provider_health_check(top);
     top.insert(
         Value::String("mode".to_owned()),
         Value::String("rule".to_owned()),
@@ -178,7 +182,7 @@ pub fn compose_managed_mihomo_source(
         Value::String("proxy-groups".to_owned()),
         Value::Sequence(vec![
             managed_selector_group(&names),
-            managed_auto_group(&names),
+            managed_auto_group(&names, uses_managed_subscription_provider),
         ]),
     );
     top.insert(
@@ -198,6 +202,50 @@ pub fn compose_managed_mihomo_source(
     serde_yaml::to_string(&source)
         .map(|yaml| yaml.into_bytes())
         .map_err(|error| SubscriptionError::InvalidYaml(error.to_string()))
+}
+
+fn has_managed_subscription_provider(top: &Mapping) -> bool {
+    top.get(Value::String("proxy-providers".to_owned()))
+        .and_then(Value::as_mapping)
+        .and_then(|providers| {
+            providers.get(Value::String(MANAGED_SUBSCRIPTION_PROVIDER_NAME.to_owned()))
+        })
+        .and_then(Value::as_mapping)
+        .is_some_and(is_managed_subscription_provider)
+}
+
+fn is_managed_subscription_provider(provider: &Mapping) -> bool {
+    provider
+        .get(Value::String("type".to_owned()))
+        .and_then(Value::as_str)
+        == Some("file")
+        && provider
+            .get(Value::String("path".to_owned()))
+            .and_then(Value::as_str)
+            == Some(MANAGED_SUBSCRIPTION_PROVIDER_REFERENCE)
+}
+
+fn disable_managed_subscription_provider_health_check(top: &mut Mapping) {
+    let Some(provider) = top
+        .get_mut(Value::String("proxy-providers".to_owned()))
+        .and_then(Value::as_mapping_mut)
+        .and_then(|providers| {
+            providers.get_mut(Value::String(MANAGED_SUBSCRIPTION_PROVIDER_NAME.to_owned()))
+        })
+        .and_then(Value::as_mapping_mut)
+    else {
+        return;
+    };
+
+    if !is_managed_subscription_provider(provider) {
+        return;
+    }
+
+    if let Some(Value::Mapping(health_check)) =
+        provider.get_mut(Value::String("health-check".to_owned()))
+    {
+        health_check.insert(Value::String("enable".to_owned()), Value::Bool(false));
+    }
 }
 
 fn proxy_names(proxies: &[Value]) -> Result<Vec<String>, SubscriptionError> {
@@ -243,7 +291,7 @@ fn managed_selector_group(names: &[String]) -> Value {
     Value::Mapping(group)
 }
 
-fn managed_auto_group(names: &[String]) -> Value {
+fn managed_auto_group(names: &[String], uses_managed_subscription_provider: bool) -> Value {
     let mut group = Mapping::new();
     group.insert(
         Value::String("name".to_owned()),
@@ -253,18 +301,27 @@ fn managed_auto_group(names: &[String]) -> Value {
         Value::String("type".to_owned()),
         Value::String("url-test".to_owned()),
     );
-    group.insert(
-        Value::String("proxies".to_owned()),
-        Value::Sequence(names.iter().cloned().map(Value::String).collect()),
-    );
-    group.insert(
-        Value::String("url".to_owned()),
-        Value::String(HYZ_AUTO_TEST_URL.to_owned()),
-    );
-    group.insert(
-        Value::String("interval".to_owned()),
-        Value::Number(HYZ_AUTO_INTERVAL_SECONDS.into()),
-    );
+    if uses_managed_subscription_provider {
+        group.insert(
+            Value::String("use".to_owned()),
+            Value::Sequence(vec![Value::String(
+                MANAGED_SUBSCRIPTION_PROVIDER_NAME.to_owned(),
+            )]),
+        );
+    } else {
+        group.insert(
+            Value::String("proxies".to_owned()),
+            Value::Sequence(names.iter().cloned().map(Value::String).collect()),
+        );
+        group.insert(
+            Value::String("url".to_owned()),
+            Value::String(HYZ_AUTO_TEST_URL.to_owned()),
+        );
+        group.insert(
+            Value::String("interval".to_owned()),
+            Value::Number(HYZ_AUTO_INTERVAL_SECONDS.into()),
+        );
+    }
     Value::Mapping(group)
 }
 
@@ -489,6 +546,95 @@ mod tests {
                 Value::String("MATCH,HYZ-PROXY".to_owned()),
             ]
         );
+    }
+
+    #[test]
+    fn managed_subscription_provider_disables_automatic_health_checks() {
+        let subscription = parse_mihomo_subscription(
+            b"proxies:\n  - name: node-a\n    type: vmess\n    server: example.com\n    port: 443\n    uuid: 00000000-0000-4000-8000-000000000000\n    cipher: auto\n",
+        )
+        .unwrap();
+        let source = compose_managed_mihomo_source(
+            b"proxy-providers:\n  subscription:\n    type: file\n    path: ./providers/subscription.yaml\n    health-check:\n      enable: true\n      url: http://www.gstatic.com/generate_204\n      interval: 600\nmode: rule\nproxies: []\n",
+            &subscription,
+        )
+        .unwrap();
+        let source: Value = serde_yaml::from_slice(&source).unwrap();
+        let provider = source
+            .get(key("proxy-providers"))
+            .and_then(Value::as_mapping)
+            .and_then(|providers| providers.get(key("subscription")))
+            .and_then(Value::as_mapping)
+            .unwrap();
+        let health_check = provider
+            .get(key("health-check"))
+            .and_then(Value::as_mapping)
+            .unwrap();
+        assert_eq!(
+            health_check.get(key("enable")).and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            provider.get(key("path")).and_then(Value::as_str),
+            Some("./providers/subscription.yaml")
+        );
+    }
+
+    #[test]
+    fn managed_auto_group_uses_subscription_provider_without_explicit_probe() {
+        let subscription = parse_mihomo_subscription(
+            b"proxies:\n  - name: node-a\n    type: vmess\n    server: example.com\n    port: 443\n    uuid: 00000000-0000-4000-8000-000000000000\n    cipher: auto\n",
+        )
+        .unwrap();
+        let source = compose_managed_mihomo_source(
+            b"proxy-providers:\n  subscription:\n    type: file\n    path: ./providers/subscription.yaml\n    health-check:\n      enable: true\n      url: http://www.gstatic.com/generate_204\n      interval: 600\nmode: rule\nproxies: []\n",
+            &subscription,
+        )
+        .unwrap();
+        let source: Value = serde_yaml::from_slice(&source).unwrap();
+        let auto = source
+            .get(key("proxy-groups"))
+            .and_then(Value::as_sequence)
+            .and_then(|groups| {
+                groups.iter().find(|group| {
+                    group.get(key("name")).and_then(Value::as_str) == Some(HYZ_AUTO_GROUP)
+                })
+            })
+            .and_then(Value::as_mapping)
+            .unwrap();
+
+        assert_eq!(
+            auto.get(key("use")).and_then(Value::as_sequence),
+            Some(&vec![Value::String(
+                MANAGED_SUBSCRIPTION_PROVIDER_NAME.to_owned()
+            )])
+        );
+        assert!(!auto.contains_key(key("proxies")));
+        assert!(!auto.contains_key(key("url")));
+    }
+
+    #[test]
+    fn unrelated_file_provider_keeps_automatic_health_checks() {
+        let subscription = parse_mihomo_subscription(
+            b"proxies:\n  - name: node-a\n    type: vmess\n    server: example.com\n    port: 443\n    uuid: 00000000-0000-4000-8000-000000000000\n    cipher: auto\n",
+        )
+        .unwrap();
+        let source = compose_managed_mihomo_source(
+            b"proxy-providers:\n  subscription:\n    type: file\n    path: ./providers/other.yaml\n    health-check:\n      enable: true\n      url: http://www.gstatic.com/generate_204\n      interval: 600\nmode: rule\nproxies: []\n",
+            &subscription,
+        )
+        .unwrap();
+        let source: Value = serde_yaml::from_slice(&source).unwrap();
+        let enabled = source
+            .get(key("proxy-providers"))
+            .and_then(Value::as_mapping)
+            .and_then(|providers| providers.get(key("subscription")))
+            .and_then(Value::as_mapping)
+            .and_then(|provider| provider.get(key("health-check")))
+            .and_then(Value::as_mapping)
+            .and_then(|health_check| health_check.get(key("enable")))
+            .and_then(Value::as_bool);
+        assert_eq!(enabled, Some(true));
     }
 
     #[test]

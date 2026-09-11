@@ -2,9 +2,10 @@
 
 ## 状态
 
-**草案，待实施。**
+**代码已实施，目标板验收待完成。**
 
 创建日期：2026-09-11。
+最后更新日期：2026-09-11。
 
 本文用于优化 `hyz-things` 当前 Mihomo LAN TUN 的流量分流策略。
 
@@ -46,6 +47,7 @@ Web 正确展示 selector / url-test
 - 用户从 Web 选择节点时，只改变“需要代理的流量”的出口；
 - Web 正确区分 `Selector` 与 `UrlTest` group；
 - 订阅更新后自动同步 proxy group 节点集合；
+- 对产品托管的本地订阅 provider 禁用 Mihomo 自启动健康检查；`HYZ-AUTO` 通过 `use: [subscription]` 复用该 provider，不再由 inline `proxies` 配置隐式创建另一份后台健康检查；节点测速只通过有界的产品请求执行；
 - 保持现有 LAN TUN lifecycle、ordinary NAT fail-open、device policy 和本机系统代理边界；
 - 在目标板验证真实 CN DIRECT 和 foreign PROXY。
 
@@ -195,20 +197,28 @@ chosen proxy
 
 ### 5.2 HYZ-AUTO
 
-建立固定 `url-test`：
+建立固定 `url-test`，复用产品托管的本地 `subscription` provider：
 
 ```yaml
+proxy-providers:
+  subscription:
+    type: file
+    path: ./providers/subscription.yaml
+    health-check:
+      enable: false
+
+proxy-groups:
   - name: HYZ-AUTO
     type: url-test
-    proxies:
-      - <subscription node 1>
-      - <subscription node 2>
-      - <subscription node 3>
-    url: https://www.gstatic.com/generate_204
-    interval: 600
+    use:
+      - subscription
 ```
 
-具体参数必须通过当前固定 Mihomo 版本的：
+`HYZ-AUTO` 不再同时写入 inline `proxies`、`url` 和 `interval`。在 Mihomo v1.19.29 中，`url-test` 使用 inline `proxies` 会隐式创建兼容 provider，并在启动时立即对组内节点执行健康检查；复用已关闭自动健康检查的产品 provider，可以避免同一批订阅节点被重复并发探测。
+
+`HYZ-AUTO` 的节点集合仍由当前订阅同步，产品 panel 只在用户请求测速或刷新时发起有界探测。单节点探测窗口为 10 秒，Controller 传输超时为 30 秒。
+
+具体字段必须通过当前固定 Mihomo 版本的：
 
 ```sh
 mihomo -t
@@ -219,8 +229,7 @@ mihomo -t
 `HYZ-AUTO`：
 
 - 不允许用户手工选择内部节点；
-- 自动测试节点；
-- 自动选择当前合适节点；
+- 根据产品发起的测速结果自动选择当前合适节点；
 - Web 只展示其当前选择、alive 和 delay。
 
 当前 router panel 已能识别 `Selector`、`URLTest`、`Fallback`、`LoadBalance`、`Relay` 等 Mihomo group，并且只有 `Selector` 应当允许用户直接选择。
@@ -735,7 +744,9 @@ subscription strips remote proxy-groups
 
 HYZ-PROXY includes HYZ-AUTO
 HYZ-PROXY includes all current subscription nodes
-HYZ-AUTO includes subscription nodes
+HYZ-AUTO reuses the managed subscription provider
+managed subscription provider startup health checks are disabled
+HYZ-AUTO does not add a second inline health-check provider
 removed subscription node disappears from both groups
 reserved group-name collision is rejected
 
@@ -895,7 +906,8 @@ docs(proxy): document tun split-routing behavior
 - 最终 `MATCH` 固定进入 `HYZ-PROXY`；
 - 用户节点选择只影响 proxy traffic；
 - CN traffic 不因用户节点选择而进入机场；
-- AUTO 可工作；
+- `HYZ-AUTO` 可工作；
+- 分组测速使用独立且有界的 10 秒探测窗口和 30 秒 Controller 传输超时；
 - Web 正确区分 selector 与 url-test；
 - Direct device policy 不回归；
 - LAN TUN 与本机系统代理独立开关不回归；
