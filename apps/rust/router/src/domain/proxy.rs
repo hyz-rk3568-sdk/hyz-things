@@ -18,8 +18,7 @@ pub const MIHOMO_MIXED_ADDRESS: &str = "127.0.0.1:7890";
 
 pub const CONTROLLED_TUN_ENABLED: &str = "\ntun:\n  enable: true\n  stack: system\n  device: hyz-mihomo\n  auto-route: false\n  auto-redirect: false\n  auto-detect-interface: false\n  strict-route: false\n  dns-hijack: []\n  mtu: 1500\n";
 pub const CONTROLLED_TUN_DISABLED: &str = "\ntun:\n  enable: false\n";
-pub const CONTROLLED_LOCAL_MIXED: &str =
-    "\nmixed-port: 7890\nallow-lan: false\nbind-address: 127.0.0.1\nauthentication: []\n";
+pub const CONTROLLED_LOCAL_MIXED: &str = "\nmixed-port: 7890\nallow-lan: false\nbind-address: 127.0.0.1\nauthentication: []\nsniffer:\n  enable: true\n  parse-pure-ip: true\n  override-destination: false\n  sniff:\n    HTTP:\n      ports: [80, 8080-8880]\n    TLS:\n      ports: [443, 8443]\n    QUIC:\n      ports: [443, 8443]\n";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -274,6 +273,17 @@ mod tests {
         assert!(ProxyFeaturesV1::new(true, false).mihomo_required());
         assert!(ProxyFeaturesV1::new(false, true).mihomo_required());
         assert!(ProxyFeaturesV1::new(true, true).mihomo_required());
+    }
+
+    #[test]
+    fn controlled_local_runtime_enables_non_rewriting_domain_sniffing() {
+        assert!(CONTROLLED_LOCAL_MIXED.contains("\nsniffer:\n  enable: true\n"));
+        assert!(CONTROLLED_LOCAL_MIXED.contains("  parse-pure-ip: true\n"));
+        assert!(CONTROLLED_LOCAL_MIXED.contains("  override-destination: false\n"));
+        assert!(CONTROLLED_LOCAL_MIXED.contains("    HTTP:\n      ports: [80, 8080-8880]\n"));
+        assert!(CONTROLLED_LOCAL_MIXED.contains("    TLS:\n      ports: [443, 8443]\n"));
+        assert!(CONTROLLED_LOCAL_MIXED.contains("    QUIC:\n      ports: [443, 8443]\n"));
+        assert!(!CONTROLLED_LOCAL_MIXED.contains("override-destination: true"));
     }
 
     #[test]
