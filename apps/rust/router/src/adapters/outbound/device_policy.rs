@@ -8,6 +8,7 @@ use crate::{
         validate_hostname, DevicePolicyConfigV1, LanClientObservation, LanDeviceMac,
     },
 };
+use hyz_contract::activity::LanActivitySnapshot;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -124,6 +125,14 @@ impl LanClientDiscoveryPort for LinuxRouterPlatform {
                 }
             })
             .collect())
+    }
+
+    fn discover_lan_activity(
+        &self,
+        config: &DevicePolicyConfigV1,
+        clients: &[LanClientObservation],
+    ) -> Result<Option<LanActivitySnapshot>, PlatformError> {
+        super::activity::read_lan_activity(self, config, clients).map(Some)
     }
 }
 

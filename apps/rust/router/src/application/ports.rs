@@ -6,6 +6,7 @@ use crate::domain::{
     subscription::{GenerationId, SubscriptionStatus, SubscriptionUrl, ValidatedSubscription},
     tailscale::{TailscaleAction, TailscaleLoginUrl, TailscaleObserved, TailscalePeerSnapshot},
 };
+use hyz_contract::activity::LanActivitySnapshot;
 use std::{error::Error, fmt, net::SocketAddr, time::Duration};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +58,14 @@ pub trait LanClientDiscoveryPort: Send + Sync {
         &self,
         config: &DevicePolicyConfigV1,
     ) -> Result<Vec<LanClientObservation>, PlatformError>;
+
+    fn discover_lan_activity(
+        &self,
+        _config: &DevicePolicyConfigV1,
+        _clients: &[LanClientObservation],
+    ) -> Result<Option<LanActivitySnapshot>, PlatformError> {
+        Ok(None)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

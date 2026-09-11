@@ -40,11 +40,17 @@ impl<'a> DevicePolicyApplication<'a> {
     pub fn snapshot(&self) -> Result<DevicePolicySnapshot, PlatformError> {
         let config = self.store.load_device_policy()?;
         let clients = self.discovery.discover_lan_clients(&config)?;
+        let activity = self
+            .discovery
+            .discover_lan_activity(&config, &clients)
+            .ok()
+            .flatten();
         let effective = self.effective_for(&config)?;
         Ok(DevicePolicySnapshot {
             config,
             clients,
             effective,
+            activity,
         })
     }
 
@@ -77,6 +83,7 @@ impl<'a> DevicePolicyApplication<'a> {
                 config: candidate,
                 clients,
                 effective: features.lan_tun_enabled,
+                activity: None,
             })
         })();
         let release = self.platform.release_lifecycle_lock(&lease);
@@ -466,6 +473,7 @@ mod tests {
             config,
             clients,
             effective: false,
+            activity: None,
         };
         assert!(serde_json::to_vec(&snapshot).unwrap().len() < 64 * 1024);
     }
