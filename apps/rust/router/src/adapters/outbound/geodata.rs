@@ -130,7 +130,15 @@ fn sha256_file(path: &Path) -> Result<String, PlatformError> {
         }
         digest.update(&buffer[..read]);
     }
-    Ok(format!("{:x}", digest.finalize()))
+
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let digest = digest.finalize();
+    let mut encoded = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        encoded.push(HEX[(byte >> 4) as usize] as char);
+        encoded.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    Ok(encoded)
 }
 
 fn unique_temporary(destination: &Path) -> PathBuf {
