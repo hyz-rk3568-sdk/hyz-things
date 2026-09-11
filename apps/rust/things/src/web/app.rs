@@ -867,7 +867,7 @@ pub(super) fn dispatch_tailscale_mutation<T: serde::Serialize + 'static>(
         )
         .await
         .map(|response| (response.tailscale, response.login_url, success.to_owned()));
-    let refresh_peers = result.is_ok() && endpoint != TAILSCALE_LOGOUT_ENDPOINT;
+        let refresh_peers = result.is_ok() && endpoint != TAILSCALE_LOGOUT_ENDPOINT;
         state.dispatch(Action::TailscaleMutationFinished(result));
         if refresh_peers {
             state.dispatch(Action::TailscalePeersFinished(
