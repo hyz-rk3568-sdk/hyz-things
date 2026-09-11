@@ -1,5 +1,6 @@
 use super::*;
 
+mod activity;
 mod apps;
 mod camera;
 mod network;
@@ -8,6 +9,7 @@ mod proxy;
 mod system;
 mod tailscale;
 
+pub(crate) use activity::*;
 pub(crate) use apps::*;
 pub(crate) use camera::*;
 pub(crate) use network::*;
