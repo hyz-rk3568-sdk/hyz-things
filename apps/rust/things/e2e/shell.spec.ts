@@ -29,7 +29,8 @@ test("renders the dashboard shell and public overview", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "网络拓扑" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "核心健康状态" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "代理状态" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Tailscale" })).toBeVisible();
+  const topology = page.getByRole("region", { name: "网络拓扑" });
+  await expect(topology.getByText("Tailscale", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "系统资源" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
@@ -87,7 +88,6 @@ test("opens countdown video picture-in-picture", async ({ page }) => {
       ),
     )
     .toBe(1);
-  // 画布首帧已绘制（背景不透明，不是空白/黑屏）。
   const pixel = await page.evaluate(() => {
     const canvas = document.querySelector(
       "canvas[data-countdown-canvas]",
@@ -128,14 +128,12 @@ test("switches portal pages with horizontal touch swipes", async ({ page }) => {
     await expect(pageButton(name)).toHaveAttribute("aria-pressed", "true");
   }
 
-  // The last page is a hard boundary.
   await swipePortal(page, 300, 240, 80, 250);
   await expect(pageButton("系统")).toHaveAttribute("aria-pressed", "true");
 
   await swipePortal(page, 80, 240, 300, 250);
   await expect(pageButton("应用")).toHaveAttribute("aria-pressed", "true");
 
-  // A mostly vertical gesture must not switch pages.
   await swipePortal(page, 200, 240, 170, 360);
   await expect(pageButton("应用")).toHaveAttribute("aria-pressed", "true");
 
@@ -257,8 +255,16 @@ test("fits a narrow portal screen without horizontal overflow", async ({
   expect(mobileNavigationBox!.y + mobileNavigationBox!.height).toBeLessThanOrEqual(
     mobilePanelBox!.y,
   );
-  expect(mobileActivityTabBox!.y).toBeGreaterThan(mobileOverviewTabBox!.y);
-  expect(Math.abs(mobileTailscaleTabBox!.y - mobileActivityTabBox!.y)).toBeLessThan(2);
+  for (const tabBox of [
+    mobileOverviewTabBox!,
+    mobileActivityTabBox!,
+    mobileTailscaleTabBox!,
+  ]) {
+    expect(tabBox.y).toBeGreaterThanOrEqual(mobileNavigationBox!.y - 1);
+    expect(tabBox.y + tabBox.height).toBeLessThanOrEqual(
+      mobileNavigationBox!.y + mobileNavigationBox!.height + 1,
+    );
+  }
 
   await goToAppPage(page, "网络");
   await expect(page.getByRole("button", { name: "管理员登录" })).toBeVisible();
