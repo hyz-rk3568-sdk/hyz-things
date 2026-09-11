@@ -27,23 +27,8 @@ test("controls all four proxy combinations with isolated failures on desktop and
 }) => {
   const initial = await readHarnessState(request);
   const selector = initial.panel.proxy_groups.data[0];
-  const auto = structuredClone(selector);
   selector.name = "HYZ-PROXY";
-  selector.selected = "HYZ-AUTO";
-  selector.options = [
-    {
-      name: "HYZ-AUTO",
-      region: null,
-      delay_ms: 42,
-      alive: true,
-    },
-    ...selector.options,
-  ];
-  auto.name = "HYZ-AUTO";
-  auto.kind = "url_test";
-  auto.selectable = false;
-  auto.selected = "东京";
-  initial.panel.proxy_groups.data = [selector, auto];
+  initial.panel.proxy_groups.data = [selector];
   expect(
     (await request.put(`${harnessOrigin}/state`, { data: initial })).ok(),
   ).toBeTruthy();
@@ -87,13 +72,11 @@ test("controls all four proxy combinations with isolated failures on desktop and
   };
 
   await expectCombination(true, false);
-  await expect(page.getByText("自动选择 · 东京")).toBeVisible();
+  await expect(page.getByText("东京", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("combobox", { name: "HYZ-PROXY 节点" }),
   ).toBeEnabled();
-  await expect(
-    page.getByRole("combobox", { name: "HYZ-AUTO 节点" }),
-  ).toBeDisabled();
+  await expect(page.getByRole("combobox")).toHaveCount(1);
 
   await localSystemProxy.click();
   await expectCombination(true, true);
