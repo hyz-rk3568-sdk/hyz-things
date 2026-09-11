@@ -351,10 +351,7 @@ mod tests {
             Err(SubscriptionError::InvalidShape(_))
         ));
 
-        assert!(parse_mihomo_subscription(
-            b"proxies:\n  - name: HYZ-AUTO\n    type: ss\n"
-        )
-        .is_ok());
+        assert!(parse_mihomo_subscription(b"proxies:\n  - name: HYZ-AUTO\n    type: ss\n").is_ok());
     }
 
     #[test]
