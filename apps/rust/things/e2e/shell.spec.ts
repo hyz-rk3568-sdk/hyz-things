@@ -70,9 +70,7 @@ test("keeps local custom countdown state across portal page switches", async ({ 
 test("keeps the countdown canvas alive across page switches", async ({ page }) => {
   await installCountdownVideoPipMock(page);
   await page.goto("/");
-  const canvas = page
-    .locator('[data-exam-id="guangdong-exam"] canvas[data-countdown-canvas]')
-    .first();
+  const canvas = page.locator("canvas[data-countdown-canvas]").first();
   await expect(canvas).toBeVisible();
   await goToAppPage(page, "网络");
   await goToAppPage(page, "总览");
@@ -95,7 +93,7 @@ test("opens countdown video picture-in-picture", async ({ page }) => {
     .toBe(1);
   const pixel = await page.evaluate(() => {
     const canvas = document.querySelector(
-      '[data-exam-id="guangdong-exam"] canvas[data-countdown-canvas]',
+      "canvas[data-countdown-canvas]",
     ) as HTMLCanvasElement;
     const context = canvas.getContext("2d") as CanvasRenderingContext2D;
     return Array.from(context.getImageData(10, 10, 1, 1).data);
