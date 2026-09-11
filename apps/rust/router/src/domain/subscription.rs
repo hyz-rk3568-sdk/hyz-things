@@ -169,10 +169,7 @@ pub fn compose_managed_mihomo_source(
         Value::String("mode".to_owned()),
         Value::String("rule".to_owned()),
     );
-    top.insert(
-        Value::String("geodata-mode".to_owned()),
-        Value::Bool(false),
-    );
+    top.insert(Value::String("geodata-mode".to_owned()), Value::Bool(false));
     top.insert(
         Value::String("geo-auto-update".to_owned()),
         Value::Bool(false),

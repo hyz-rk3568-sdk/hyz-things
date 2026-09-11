@@ -530,11 +530,12 @@ impl SubscriptionSourcePort for super::process::LinuxRouterPlatform {
         lan_tun_enabled: bool,
     ) -> Result<Vec<u8>, PlatformError> {
         let current_source = super::proxy::migrate_legacy_persisted_source_bytes(current_source)?;
-        let candidate = compose_managed_mihomo_source(&current_source, subscription).map_err(|error| {
-            PlatformError::InvalidState(format!(
-                "managed Mihomo subscription candidate was rejected: {error}"
-            ))
-        })?;
+        let candidate =
+            compose_managed_mihomo_source(&current_source, subscription).map_err(|error| {
+                PlatformError::InvalidState(format!(
+                    "managed Mihomo subscription candidate was rejected: {error}"
+                ))
+            })?;
         if candidate.is_empty() || candidate.len() > MAX_SUBSCRIPTION_BYTES {
             return Err(PlatformError::InvalidState(
                 "candidate config is empty or exceeds size limit".to_owned(),
