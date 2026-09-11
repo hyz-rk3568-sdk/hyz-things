@@ -138,10 +138,14 @@ fn parse_connection(
         .get("destinationIP")
         .and_then(Value::as_str)
         .and_then(|value| value.parse::<Ipv4Addr>().ok());
-    let target = metadata
-        .get("host")
-        .and_then(Value::as_str)
-        .and_then(|value| bounded_exact(value, MAX_ACTIVITY_TARGET_BYTES))
+    let target = ["host", "sniffHost"]
+        .into_iter()
+        .find_map(|key| {
+            metadata
+                .get(key)
+                .and_then(Value::as_str)
+                .and_then(|value| bounded_exact(value, MAX_ACTIVITY_TARGET_BYTES))
+        })
         .or_else(|| destination_address.map(|address| address.to_string()))?;
     let destination_port = value_port(metadata.get("destinationPort")?)?;
     let network = match metadata
@@ -328,6 +332,33 @@ mod tests {
                 }
             }]
         })
+    }
+
+    fn sniff_host_fixture() -> Value {
+        serde_json::json!({
+            "connections": [{
+                "id": "c-sniff",
+                "metadata": {
+                    "network": "tcp",
+                    "sourceIP": "192.168.8.10",
+                    "destinationIP": "203.0.113.8",
+                    "destinationPort": "443",
+                    "host": "",
+                    "sniffHost": "sniffed.example"
+                },
+                "upload": 1,
+                "download": 2,
+                "chains": ["HYZ-PROXY"],
+                "rule": "MATCH"
+            }]
+        })
+    }
+
+    #[test]
+    fn parser_uses_sniff_host_when_host_is_empty() {
+        let records =
+            parse_connections(&sniff_host_fixture(), &config(""), &clients(), 100).unwrap();
+        assert_eq!(records[0].target, "sniffed.example");
     }
 
     #[test]
