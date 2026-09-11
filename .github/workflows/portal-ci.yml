@@ -108,49 +108,6 @@ jobs:
       - name: Clippy
         run: cargo clippy --locked --manifest-path apps/rust/contract/Cargo.toml --all-targets -- -D warnings
 
-  things-native:
-    name: Things native fmt/test/clippy
-    needs: static
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust 1.88
-        shell: bash
-        run: |
-          rustup toolchain install 1.88.0 \
-            --profile minimal \
-            --component rustfmt \
-            --component clippy
-          rustup default 1.88.0
-          rustc --version
-          cargo --version
-
-      - name: Cache Cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            apps/rust/contract/target
-            apps/rust/things/target
-          key: ${{ runner.os }}-things-native-1.88-${{ hashFiles('apps/rust/contract/Cargo.lock', 'apps/rust/things/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-things-native-1.88-
-            ${{ runner.os }}-rust-1.88-
-
-      - name: Check formatting
-        run: cargo fmt --manifest-path apps/rust/things/Cargo.toml --all -- --check
-
-      - name: Test native
-        run: cargo test --locked --manifest-path apps/rust/things/Cargo.toml --features native
-
-      - name: Clippy
-        run: cargo clippy --locked --manifest-path apps/rust/things/Cargo.toml --all-targets --features e2e -- -D warnings
-
   frontend:
     name: Frontend build + web unit
     needs: static
@@ -219,6 +176,55 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
+
+  things-native:
+    name: Things native fmt/test/clippy
+    needs: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download verified frontend bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: hyz-things-frontend-${{ github.run_id }}
+          path: target/frontend-bundle
+
+      - name: Install Rust 1.88
+        shell: bash
+        run: |
+          rustup toolchain install 1.88.0 \
+            --profile minimal \
+            --component rustfmt \
+            --component clippy
+          rustup default 1.88.0
+          rustc --version
+          cargo --version
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/rust/contract/target
+            apps/rust/things/target
+          key: ${{ runner.os }}-things-native-1.88-${{ hashFiles('apps/rust/contract/Cargo.lock', 'apps/rust/things/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-things-native-1.88-
+            ${{ runner.os }}-rust-1.88-
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path apps/rust/things/Cargo.toml --all -- --check
+
+      - name: Test native
+        run: cargo test --locked --manifest-path apps/rust/things/Cargo.toml --features native
+
+      - name: Clippy
+        run: cargo clippy --locked --manifest-path apps/rust/things/Cargo.toml --all-targets --features e2e -- -D warnings
 
   e2e:
     name: Playwright E2E
