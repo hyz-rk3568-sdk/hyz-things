@@ -4,7 +4,10 @@ const PRIMARY_PROXY_GROUP: &str = "HYZ-PROXY";
 const AUTO_PROXY_GROUP: &str = "HYZ-AUTO";
 
 fn current_proxy_summary(groups: &[ProxyGroup]) -> String {
-    let Some(primary) = groups.iter().find(|group| group.name == PRIMARY_PROXY_GROUP) else {
+    let Some(primary) = groups
+        .iter()
+        .find(|group| group.name == PRIMARY_PROXY_GROUP)
+    else {
         return MISSING.to_owned();
     };
     match primary.selected.as_deref() {
