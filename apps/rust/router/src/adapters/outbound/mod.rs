@@ -1,5 +1,6 @@
 pub mod device_policy;
 pub mod firmware;
+pub mod geodata;
 pub mod management;
 pub mod network;
 pub mod network_config;

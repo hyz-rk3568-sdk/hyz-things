@@ -25,6 +25,29 @@ test("controls all four proxy combinations with isolated failures on desktop and
   page,
   request,
 }) => {
+  const initial = await readHarnessState(request);
+  const selector = initial.panel.proxy_groups.data[0];
+  const auto = structuredClone(selector);
+  selector.name = "HYZ-PROXY";
+  selector.selected = "HYZ-AUTO";
+  selector.options = [
+    {
+      name: "HYZ-AUTO",
+      region: null,
+      delay_ms: 42,
+      alive: true,
+    },
+    ...selector.options,
+  ];
+  auto.name = "HYZ-AUTO";
+  auto.kind = "url_test";
+  auto.selectable = false;
+  auto.selected = "东京";
+  initial.panel.proxy_groups.data = [selector, auto];
+  expect(
+    (await request.put(`${harnessOrigin}/state`, { data: initial })).ok(),
+  ).toBeTruthy();
+
   await loginAsAdmin(page);
   await goToAppPage(page, "代理");
   const lanTun = page.getByRole("switch", { name: "LAN 透明代理" });
@@ -64,6 +87,14 @@ test("controls all four proxy combinations with isolated failures on desktop and
   };
 
   await expectCombination(true, false);
+  await expect(page.getByText("自动选择 · 东京")).toBeVisible();
+  await expect(
+    page.getByRole("combobox", { name: "HYZ-PROXY 节点" }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("combobox", { name: "HYZ-AUTO 节点" }),
+  ).toBeDisabled();
+
   await localSystemProxy.click();
   await expectCombination(true, true);
   await lanTun.click();
@@ -81,7 +112,7 @@ test("controls all four proxy combinations with isolated failures on desktop and
   await expectNoHorizontalOverflow(page);
   await expect(page.getByText("当前代理节点")).toBeVisible();
   await expect(
-    page.getByRole("combobox", { name: "自动选择 节点" }),
+    page.getByRole("combobox", { name: "HYZ-PROXY 节点" }),
   ).toBeEnabled();
 
   let state = await readHarnessState(request);
@@ -115,14 +146,15 @@ test("controls all four proxy combinations with isolated failures on desktop and
     (await request.put(`${harnessOrigin}/state`, { data: state })).ok(),
   ).toBeTruthy();
   await page
-    .getByRole("combobox", { name: "自动选择 节点" })
+    .getByRole("combobox", { name: "HYZ-PROXY 节点" })
     .selectOption("新加坡");
   await expect
-    .poll(
-      async () =>
-        (await readHarnessState(request)).panel.proxy_groups.data[0].selected,
-    )
+    .poll(async () => {
+      const groups = (await readHarnessState(request)).panel.proxy_groups.data;
+      return groups.find((group) => group.name === "HYZ-PROXY")?.selected;
+    })
     .toBe("新加坡");
+  await expect(page.getByText("新加坡", { exact: true })).toBeVisible();
   await expect(localSystemProxy).toBeEnabled();
   await expectNoHorizontalOverflow(page);
 

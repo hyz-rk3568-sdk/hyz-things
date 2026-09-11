@@ -49,6 +49,9 @@ pub(crate) fn ensure_private_dir(path: &str) -> Result<(), PlatformError> {
     }
     fs::set_permissions(path, fs::Permissions::from_mode(0o700))
         .map_err(|error| PlatformError::Io(format!("chmod private directory {path}: {error}")))?;
+    if path == super::paths::MIHOMO_DATA_DIR {
+        super::geodata::ensure_mihomo_geodata(path)?;
+    }
     Ok(())
 }
 

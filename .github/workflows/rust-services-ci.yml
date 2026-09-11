@@ -1,0 +1,117 @@
+name: Rust services CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/rust/router/**"
+      - "apps/rust/camera/**"
+      - "apps/rust/contract/**"
+      - ".github/workflows/rust-services-ci.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "apps/rust/router/**"
+      - "apps/rust/camera/**"
+      - "apps/rust/contract/**"
+      - ".github/workflows/rust-services-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-services-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  router:
+    name: Router fmt/test/clippy
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust 1.88
+        shell: bash
+        run: |
+          rustup toolchain install 1.88.0 \
+            --profile minimal \
+            --component rustfmt \
+            --component clippy
+          rustup default 1.88.0
+          rustc --version
+          cargo --version
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/rust/router/target
+          key: ${{ runner.os }}-router-1.88-${{ hashFiles('apps/rust/router/Cargo.lock', 'apps/rust/contract/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-router-1.88-
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path apps/rust/router/Cargo.toml --all -- --check
+
+      - name: Test
+        run: cargo test --locked --manifest-path apps/rust/router/Cargo.toml --all-features
+
+      - name: Clippy
+        run: cargo clippy --locked --manifest-path apps/rust/router/Cargo.toml --all-targets --all-features -- -D warnings
+
+  camera:
+    name: Camera fmt/test/clippy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust 1.88
+        shell: bash
+        run: |
+          rustup toolchain install 1.88.0 \
+            --profile minimal \
+            --component rustfmt \
+            --component clippy
+          rustup default 1.88.0
+          rustc --version
+          cargo --version
+
+      - name: Install camera build dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/rust/camera/target
+          key: ${{ runner.os }}-camera-1.88-${{ hashFiles('apps/rust/camera/Cargo.lock', 'apps/rust/contract/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-camera-1.88-
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path apps/rust/camera/Cargo.toml --all -- --check
+
+      - name: Test
+        run: cargo test --locked --manifest-path apps/rust/camera/Cargo.toml
+
+      - name: Clippy
+        run: cargo clippy --locked --manifest-path apps/rust/camera/Cargo.toml --all-targets -- -D warnings

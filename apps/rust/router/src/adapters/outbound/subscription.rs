@@ -4,8 +4,8 @@ use crate::{
         SubscriptionSourceState, SubscriptionStorePort, SubscriptionTransportPort,
     },
     domain::subscription::{
-        validate_dns_results, GenerationId, SubscriptionStatus, SubscriptionUrl,
-        ValidatedSubscription, MAX_SUBSCRIPTION_BYTES, MAX_SUBSCRIPTION_URL_BYTES,
+        compose_managed_mihomo_source, validate_dns_results, GenerationId, SubscriptionStatus,
+        SubscriptionUrl, ValidatedSubscription, MAX_SUBSCRIPTION_BYTES, MAX_SUBSCRIPTION_URL_BYTES,
     },
 };
 use serde_yaml::Value;
@@ -530,28 +530,12 @@ impl SubscriptionSourcePort for super::process::LinuxRouterPlatform {
         lan_tun_enabled: bool,
     ) -> Result<Vec<u8>, PlatformError> {
         let current_source = super::proxy::migrate_legacy_persisted_source_bytes(current_source)?;
-        let mut source: Value = serde_yaml::from_slice(&current_source).map_err(|_| {
-            PlatformError::InvalidState("Mihomo source config is not valid YAML".to_owned())
-        })?;
-        let top = source.as_mapping_mut().ok_or_else(|| {
-            PlatformError::InvalidState("Mihomo source config must be a mapping".to_owned())
-        })?;
-        let provider: Value = serde_yaml::from_slice(subscription.as_bytes()).map_err(|_| {
-            PlatformError::InvalidState("validated subscription could not be decoded".to_owned())
-        })?;
-        let proxies = provider
-            .as_mapping()
-            .and_then(|mapping| mapping.get(Value::String("proxies".to_owned())))
-            .cloned()
-            .ok_or_else(|| {
-                PlatformError::InvalidState("validated subscription has no proxies".to_owned())
+        let candidate =
+            compose_managed_mihomo_source(&current_source, subscription).map_err(|error| {
+                PlatformError::InvalidState(format!(
+                    "managed Mihomo subscription candidate was rejected: {error}"
+                ))
             })?;
-        top.insert(Value::String("proxies".to_owned()), proxies);
-        let candidate = serde_yaml::to_string(&source)
-            .map_err(|_| {
-                PlatformError::InvalidState("candidate config encoding failed".to_owned())
-            })?
-            .into_bytes();
         if candidate.is_empty() || candidate.len() > MAX_SUBSCRIPTION_BYTES {
             return Err(PlatformError::InvalidState(
                 "candidate config is empty or exceeds size limit".to_owned(),
