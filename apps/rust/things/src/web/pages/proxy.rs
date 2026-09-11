@@ -1,25 +1,14 @@
 use super::*;
 
 const PRIMARY_PROXY_GROUP: &str = "HYZ-PROXY";
-const AUTO_PROXY_GROUP: &str = "HYZ-AUTO";
 
 fn current_proxy_summary(groups: &[ProxyGroup]) -> String {
-    let Some(primary) = groups
+    groups
         .iter()
         .find(|group| group.name == PRIMARY_PROXY_GROUP)
-    else {
-        return MISSING.to_owned();
-    };
-    match primary.selected.as_deref() {
-        Some(AUTO_PROXY_GROUP) => groups
-            .iter()
-            .find(|group| group.name == AUTO_PROXY_GROUP)
-            .and_then(|group| group.selected.as_deref())
-            .map(|node| format!("自动选择 · {node}"))
-            .unwrap_or_else(|| "自动选择".to_owned()),
-        Some(node) => node.to_owned(),
-        None => MISSING.to_owned(),
-    }
+        .and_then(|group| group.selected.as_deref())
+        .unwrap_or(MISSING)
+        .to_owned()
 }
 
 pub(crate) fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
