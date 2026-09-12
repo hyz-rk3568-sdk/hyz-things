@@ -105,7 +105,6 @@ test("supports the administrator Tailscale login, approval, disable, and logout 
   await expect(page.getByText("laptop", { exact: true })).toHaveCount(0);
   await expect(page.getByText("100.64.0.8", { exact: false })).toHaveCount(0);
   await goToAppPage(page, "网络");
-  await page.getByRole("button", { name: "管理员登录" }).click();
   await page.getByLabel("密码").fill("admin");
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await page.getByLabel("当前密码").fill("admin");
