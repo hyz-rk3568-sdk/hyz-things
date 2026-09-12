@@ -50,12 +50,8 @@ impl ClockPort for TestPlatform {
 #[test]
 fn administrator_session_stays_valid_until_thirty_days() {
     let platform = Arc::new(TestPlatform::default());
-    let app = AdminApplication::initialize(
-        platform.clone(),
-        platform.clone(),
-        platform.clone(),
-    )
-    .unwrap();
+    let app =
+        AdminApplication::initialize(platform.clone(), platform.clone(), platform.clone()).unwrap();
     let session = app
         .login(&AdminLoginRequest {
             password: SecretString::new(DEFAULT_ADMIN_BOOTSTRAP_PASSWORD),
@@ -72,9 +68,7 @@ fn administrator_session_stays_valid_until_thirty_days() {
         Err(AdminError::PasswordChangeRequired)
     ));
 
-    platform
-        .now
-        .store(thirty_days_millis, Ordering::Relaxed);
+    platform.now.store(thirty_days_millis, Ordering::Relaxed);
     assert!(matches!(
         app.authorize(&session),
         Err(AdminError::InvalidSession)
