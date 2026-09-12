@@ -31,7 +31,6 @@ test("supports the administrator, STA, AP, and write-only subscription journey",
     page.getByRole("button", { name: "网络", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
 
-  await page.getByRole("button", { name: "管理员登录" }).click();
   await page.getByLabel("密码").fill("admin");
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(
