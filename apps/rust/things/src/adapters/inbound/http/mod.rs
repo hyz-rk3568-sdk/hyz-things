@@ -22,7 +22,7 @@ use hyz_contract::router::{ControlOperation, ControlResult};
 
 use crate::{
     application::{
-        admin::{AdminApplication, AdminError},
+        admin::{AdminApplication, AdminError, SESSION_RETENTION_SECONDS},
         camera::{CameraApplication, CameraError},
         ports::{InstalledAppsPort, PortalControlHandler},
         status::PortalStatus,
@@ -1074,7 +1074,7 @@ fn admin_session_token(headers: &HeaderMap) -> Option<SecretString> {
 fn session_cookie(token: &str, secure: bool) -> Option<HeaderValue> {
     let secure_attribute = if secure { "; Secure" } else { "" };
     HeaderValue::from_str(&format!(
-        "{ADMIN_SESSION_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/{secure_attribute}"
+        "{ADMIN_SESSION_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_RETENTION_SECONDS}{secure_attribute}"
     ))
     .ok()
 }
@@ -2095,6 +2095,7 @@ mod tests {
         assert!(plain.contains("; HttpOnly"));
         assert!(plain.contains("; SameSite=Strict"));
         assert!(plain.contains("; Path=/"));
+        assert!(plain.contains(&format!("; Max-Age={SESSION_RETENTION_SECONDS}")));
         assert!(!plain.contains("; Secure"));
 
         let secured = session_cookie(&token, true)
@@ -2102,6 +2103,7 @@ mod tests {
             .to_str()
             .unwrap()
             .to_owned();
+        assert!(secured.contains(&format!("; Max-Age={SESSION_RETENTION_SECONDS}")));
         assert!(secured.contains("; Secure"));
 
         let mut headers = HeaderMap::new();

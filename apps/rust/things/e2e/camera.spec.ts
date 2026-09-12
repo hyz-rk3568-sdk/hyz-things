@@ -160,7 +160,6 @@ test("plays the camera anonymously and controls it as an administrator", async (
 
   // 登录后回到摄像头视图：画面设置可用，切换视图时匿名会话已停止。
   await goToAppPage(page, "网络");
-  await page.getByRole("button", { name: "管理员登录" }).click();
   await page.getByLabel("密码").fill("admin");
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await page.getByLabel("当前密码").fill("admin");
@@ -272,7 +271,7 @@ test("plays the camera anonymously and controls it as an administrator", async (
     .poll(async () => (await readHarnessState(request)).camera.sessions)
     .toEqual([]);
   await page.getByRole("button", { name: "退出登录" }).click();
-  await expect(page.getByRole("button", { name: "管理员登录" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "管理员登录" })).toBeVisible();
   await expect
     .poll(async () => (await readHarnessState(request)).camera.sessions)
     .toEqual([]);

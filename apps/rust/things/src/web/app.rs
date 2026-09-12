@@ -457,6 +457,161 @@ pub(super) fn swipe_start_allowed(event: &PointerEvent) -> bool {
     }
 }
 
+#[derive(Properties, PartialEq)]
+struct AdminAuthGateProps {
+    state: UseReducerHandle<AppState>,
+}
+
+#[function_component(AdminAuthGate)]
+fn admin_auth_gate(props: &AdminAuthGateProps) -> Html {
+    let state = &props.state;
+    let login_password = use_node_ref();
+    let current_password = use_node_ref();
+    let new_password = use_node_ref();
+    let confirm_password = use_node_ref();
+    let csrf = state
+        .panel
+        .as_ref()
+        .map(|panel| panel.csrf_token.clone())
+        .unwrap_or_default();
+    let authenticated = state
+        .session
+        .as_ref()
+        .is_some_and(|session| session.authenticated);
+    let must_change = state
+        .session
+        .as_ref()
+        .is_some_and(|session| session.authenticated && session.must_change);
+    let busy = state.settings_busy;
+
+    let login = {
+        let state = state.clone();
+        let csrf = csrf.clone();
+        let input = login_password.clone();
+        Callback::from(move |event: SubmitEvent| {
+            event.prevent_default();
+            let Some(input) = input.cast::<HtmlInputElement>() else {
+                return;
+            };
+            let password = input.value();
+            input.set_value("");
+            dispatch_auth(
+                state.clone(),
+                AUTH_LOGIN_ENDPOINT,
+                csrf.clone(),
+                LoginRequest { password },
+                "已登录",
+            );
+        })
+    };
+    let change_password = {
+        let state = state.clone();
+        let csrf = csrf.clone();
+        let current = current_password.clone();
+        let new = new_password.clone();
+        let confirm = confirm_password.clone();
+        Callback::from(move |event: SubmitEvent| {
+            event.prevent_default();
+            let (Some(current), Some(new), Some(confirm)) = (
+                current.cast::<HtmlInputElement>(),
+                new.cast::<HtmlInputElement>(),
+                confirm.cast::<HtmlInputElement>(),
+            ) else {
+                return;
+            };
+            let current_value = current.value();
+            let new_value = new.value();
+            let confirm_value = confirm.value();
+            current.set_value("");
+            new.set_value("");
+            confirm.set_value("");
+            if !(12..=1_024).contains(&new_value.len()) {
+                state.dispatch(Action::SettingsNotice(
+                    "新密码长度必须为 12–1024 字节".to_owned(),
+                ));
+                return;
+            }
+            if new_value != confirm_value {
+                state.dispatch(Action::SettingsNotice("两次输入的新密码不一致".to_owned()));
+                return;
+            }
+            dispatch_auth(
+                state.clone(),
+                AUTH_PASSWORD_ENDPOINT,
+                csrf.clone(),
+                PasswordRequest {
+                    current_password: current_value,
+                    new_password: new_value,
+                },
+                "密码已更新",
+            );
+        })
+    };
+
+    if !state.session_checked {
+        return html! {
+            <section class={EMPTY_STATE} role="status">
+                <h2 class={EMPTY_TITLE}>{"正在检查登录状态…"}</h2>
+            </section>
+        };
+    }
+
+    if !authenticated {
+        return html! {
+            <SectionCard title_id="admin-login-title" busy={Some(busy)}>
+                <PageHeader title_id="admin-login-title" eyebrow="ADMIN" title="管理员登录" centered=true>
+                    <span class={SECTION_META}>{"登录后继续当前页面"}</span>
+                </PageHeader>
+                if let Some(notice) = &state.settings_notice {
+                    <FeedbackState message={AttrValue::from(notice.clone())} />
+                }
+                <form class={AUTH_FORM} onsubmit={login} autocomplete="on">
+                    <label class={FIELD}>
+                        <span class={FIELD_LABEL}>{"用户名"}</span>
+                        <input class={READONLY_INPUT} value="admin" readonly=true autocomplete="username" />
+                    </label>
+                    <label class={FIELD}>
+                        <span class={FIELD_LABEL}>{"密码"}</span>
+                        <input class={INPUT} ref={login_password} type="password" required=true autocomplete="current-password" />
+                    </label>
+                    <button class={BUTTON_BLOCK_MOBILE} type="submit" disabled={busy || csrf.is_empty()}>{if busy { "登录中…" } else { "登录" }}</button>
+                    <small class={HELP_TEXT}>{"新设备首次登录密码为 admin；登录后必须立即修改。"}</small>
+                </form>
+            </SectionCard>
+        };
+    }
+
+    if must_change {
+        return html! {
+            <SectionCard title_id="admin-password-title" busy={Some(busy)}>
+                <PageHeader title_id="admin-password-title" eyebrow="ADMIN" title="修改管理员密码" centered=true>
+                    <span class={SECTION_META}>{"完成后继续当前页面"}</span>
+                </PageHeader>
+                if let Some(notice) = &state.settings_notice {
+                    <FeedbackState message={AttrValue::from(notice.clone())} />
+                }
+                <div class={FORCED_PASSWORD}>
+                    <div class={classes!(RISK_ALERT, "alert-error", "border-error/20")} role="alert">
+                        <div>
+                            <strong>{"必须先修改默认密码"}</strong>
+                            <p class={RISK_COPY}>{"新密码至少 12 字节，不能继续使用默认密码。完成前其他设置保持锁定。"}</p>
+                        </div>
+                    </div>
+                    <form class={FORM_GRID} onsubmit={change_password} autocomplete="on" aria-describedby="password-policy">
+                        <label class={FIELD}><span class={FIELD_LABEL}>{"当前密码"}</span><input class={INPUT} ref={current_password} type="password" required=true autocomplete="current-password" /></label>
+                        <label class={FIELD}><span class={FIELD_LABEL}>{"新密码"}</span><input class={INPUT} ref={new_password} type="password" required=true maxlength="1024" autocomplete="new-password" /></label>
+                        <label class={FIELD}><span class={FIELD_LABEL}>{"确认新密码"}</span><input class={INPUT} ref={confirm_password} type="password" required=true maxlength="1024" autocomplete="new-password" /></label>
+                        <p id="password-policy" class="sr-only">{"新密码长度必须为 12 至 1024 字节，且两次输入必须一致。"}</p>
+                        <div class={FORM_ACTIONS}><button class={BUTTON_PRIMARY} type="submit" disabled={busy || csrf.is_empty()}>{"修改密码"}</button></div>
+                    </form>
+                </div>
+            </SectionCard>
+        };
+    }
+
+    Html::default()
+}
+
 #[function_component(App)]
 pub(super) fn app() -> Html {
     let state = use_reducer(AppState::default);
@@ -596,15 +751,6 @@ pub(super) fn app() -> Html {
         Callback::from(move |_event: PointerEvent| *swipe_start.borrow_mut() = None)
     };
     let page = *app_page;
-    let admin_required = || {
-        html! {
-            <section class={EMPTY_STATE} role="status">
-                <span class={EMPTY_ICON} aria-hidden="true">{"🔒"}</span>
-                <h2 class={EMPTY_TITLE}>{"需要管理员登录"}</h2>
-                <p class={EMPTY_COPY}>{"请先在“网络”页面完成管理员登录，再使用此配置页面。"}</p>
-            </section>
-        }
-    };
 
     let navigation = html! {
         <>{for AppPage::ALL.into_iter().map(|candidate| app_nav_button(candidate, page, app_page.clone()))}</>
@@ -622,10 +768,11 @@ pub(super) fn app() -> Html {
             on_pointer_up={on_portal_pointer_up}
             on_pointer_cancel={on_portal_pointer_cancel}
         >
-                // Overview and Network stay mounted so local drafts/timers survive page switches.
-                // The other inactive pages keep empty panel targets in the DOM so every aria-controls
-                // relationship remains valid. Camera content itself is still mounted only while active,
-                // preserving the existing stop-on-page-leave session lifecycle.
+                // Overview stays mounted so local timers survive page switches. Once authenticated,
+                // Network also stays mounted so local configuration drafts survive page switches.
+                // Other inactive pages keep empty panel targets so every aria-controls relationship
+                // remains valid. Camera content itself is mounted only while active, preserving the
+                // existing stop-on-page-leave session lifecycle.
                 <section
                     id={AppPage::Overview.panel_id()}
                     class={WORKSPACE_PANEL}
@@ -640,7 +787,11 @@ pub(super) fn app() -> Html {
                     aria-labelledby={AppPage::Network.tab_id()}
                     hidden={page != AppPage::Network}
                 >
-                    <Settings state={state.clone()} camera_stop_generation={camera_stop_generation.clone()} />
+                    if is_admin {
+                        <Settings state={state.clone()} camera_stop_generation={camera_stop_generation.clone()} />
+                    } else if page == AppPage::Network {
+                        <AdminAuthGate state={state.clone()} />
+                    }
                 </section>
                 {for AppPage::ALL.into_iter()
                     .filter(|candidate| {
@@ -659,17 +810,17 @@ pub(super) fn app() -> Html {
                     AppPage::Overview | AppPage::Network => Html::default(),
                     AppPage::Proxy => html! {
                         <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
-                            if is_admin { {render_proxy_control(&state)} } else { {admin_required()} }
+                            if is_admin { {render_proxy_control(&state)} } else { <AdminAuthGate state={state.clone()} /> }
                         </section>
                     },
                     AppPage::Activity => html! {
                         <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
-                            if is_admin { {render_activity()} } else { {admin_required()} }
+                            if is_admin { {render_activity()} } else { <AdminAuthGate state={state.clone()} /> }
                         </section>
                     },
                     AppPage::Tailscale => html! {
                         <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
-                            if is_admin { {render_tailscale_control(&state, &admin_csrf)} } else { {admin_required()} }
+                            if is_admin { {render_tailscale_control(&state, &admin_csrf)} } else { <AdminAuthGate state={state.clone()} /> }
                         </section>
                     },
                     AppPage::Camera => html! {

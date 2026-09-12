@@ -183,4 +183,19 @@ test("serves the generated bundle through the strict production-shaped HTTP boun
   expect((await readHarnessState(request)).panel.display.data).toEqual(
     displayBefore,
   );
+
+  const login = await request.post("/api/v1/auth/login", {
+    headers: {
+      Origin: webOrigin,
+      "X-HYZ-CSRF": csrf,
+      "Content-Type": "application/json",
+    },
+    data: { password: "admin" },
+  });
+  expect(login.status()).toBe(200);
+  const administratorCookie = login.headers()["set-cookie"] ?? "";
+  expect(administratorCookie).toContain("HttpOnly");
+  expect(administratorCookie).toContain("SameSite=Strict");
+  expect(administratorCookie).toContain("Path=/");
+  expect(administratorCookie).toContain("Max-Age=2592000");
 });

@@ -34,7 +34,6 @@ export async function goToAppPage(page: Page, name: AppPageName) {
 export async function loginAsAdmin(page: Page) {
   await page.goto('/');
   await goToAppPage(page, '网络');
-  await page.getByRole('button', { name: '管理员登录' }).click();
   await page.getByLabel('密码').fill('admin');
   await page.getByRole('button', { name: '登录', exact: true }).click();
   await page.getByLabel('当前密码').fill('admin');

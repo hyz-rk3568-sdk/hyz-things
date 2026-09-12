@@ -37,14 +37,10 @@ test("renders the dashboard shell and public overview", async ({ page }) => {
 
 test("requires administrator authentication for configuration pages", async ({ page }) => {
   await page.goto("/");
-  await goToAppPage(page, "网络");
-  await expect(page.getByRole("button", { name: "管理员登录" })).toBeVisible();
-  await goToAppPage(page, "代理");
-  await expect(page.getByRole("heading", { name: "需要管理员登录" })).toBeVisible();
-  await goToAppPage(page, "活动");
-  await expect(page.getByRole("heading", { name: "需要管理员登录" })).toBeVisible();
-  await goToAppPage(page, "Tailscale");
-  await expect(page.getByRole("heading", { name: "需要管理员登录" })).toBeVisible();
+  for (const name of ["网络", "代理", "活动", "Tailscale"] as const) {
+    await goToAppPage(page, name);
+    await expect(page.getByRole("heading", { name: "管理员登录" })).toBeVisible();
+  }
 });
 
 test("keeps local countdown state across portal page switches", async ({ page }) => {
@@ -270,6 +266,6 @@ test("fits a narrow portal screen without horizontal overflow", async ({
   }
 
   await goToAppPage(page, "网络");
-  await expect(page.getByRole("button", { name: "管理员登录" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "管理员登录" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
