@@ -20,8 +20,8 @@ use crate::{
     },
 };
 
-pub const SESSION_IDLE_TIMEOUT_MILLIS: u64 = 15 * 60 * 1_000;
-pub const SESSION_ABSOLUTE_TIMEOUT_MILLIS: u64 = 8 * 60 * 60 * 1_000;
+pub const SESSION_IDLE_TIMEOUT_MILLIS: u64 = 30 * 24 * 60 * 60 * 1_000;
+pub const SESSION_ABSOLUTE_TIMEOUT_MILLIS: u64 = 30 * 24 * 60 * 60 * 1_000;
 pub const MAX_ADMIN_SESSIONS: usize = 64;
 pub const LOGIN_RATE_WINDOW_MILLIS: u64 = 60 * 1_000;
 pub const MAX_LOGIN_FAILURES_PER_WINDOW: usize = 5;
