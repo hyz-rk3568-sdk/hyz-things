@@ -17,6 +17,7 @@ export async function readHarnessState(request: APIRequestContext) {
 
 export type AppPageName =
   | '总览'
+  | '学习'
   | '网络'
   | '代理'
   | '活动'

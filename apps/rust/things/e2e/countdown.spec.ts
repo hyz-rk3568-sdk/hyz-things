@@ -21,10 +21,15 @@ test.beforeEach(async ({ request }) => {
   await resetHarness(request);
 });
 
+async function openStudyPage(page: Page) {
+  await page.goto("/");
+  await goToAppPage(page, "学习");
+}
+
 test("renders the upcoming exam countdown in chronological order", async ({
   page,
 }) => {
-  await page.goto("/");
+  await openStudyPage(page);
 
   const countdown = page.getByRole("region", { name: "考试冲刺倒计时" });
   await expect(countdown).toBeVisible();
@@ -61,7 +66,7 @@ test("renders the upcoming exam countdown in chronological order", async ({
 test("renders three compact configurable countdown timers", async ({
   page,
 }) => {
-  await page.goto("/");
+  await openStudyPage(page);
 
   const timer = page.getByRole("region", { name: "自定义倒计时" });
   await expect(timer).toBeVisible();
@@ -106,7 +111,7 @@ test("renders three compact configurable countdown timers", async ({
 test("keeps the three custom countdowns independent after refresh", async ({
   page,
 }) => {
-  await page.goto("/");
+  await openStudyPage(page);
   const timer = page.getByRole("region", { name: "自定义倒计时" });
 
   await timer.getByLabel("上午分钟").fill("1");
@@ -128,6 +133,7 @@ test("keeps the three custom countdowns independent after refresh", async ({
   ).toBeVisible();
 
   await page.reload();
+  await goToAppPage(page, "学习");
   const restoredTimer = page.getByRole("region", { name: "自定义倒计时" });
   await expect(restoredTimer.getByLabel("上午分钟")).toHaveValue("1");
   await expect(
@@ -142,7 +148,7 @@ test("keeps the three custom countdowns independent after refresh", async ({
 test("restarts the selected custom countdown from its configured duration", async ({
   page,
 }) => {
-  await page.goto("/");
+  await openStudyPage(page);
   const timer = page.getByRole("region", { name: "自定义倒计时" });
   const cardId = "custom-evening-countdown";
 
@@ -168,7 +174,7 @@ test("opens the selected custom countdown in a picture-in-picture window", async
   page,
   context,
 }) => {
-  await page.goto("/");
+  await openStudyPage(page);
   const timer = page.getByRole("region", { name: "自定义倒计时" });
 
   await timer.getByLabel("下午分钟").fill("0");
@@ -194,7 +200,7 @@ test("shows running, paused, and completed custom countdown completion times in 
   page,
   context,
 }) => {
-  await page.goto("/");
+  await openStudyPage(page);
   const timer = page.getByRole("region", { name: "自定义倒计时" });
 
   await timer.getByLabel("下午分钟").fill("0");
@@ -237,7 +243,7 @@ test("shows running, paused, and completed custom countdown completion times in 
 test("persists the completed selected countdown after a page refresh", async ({
   page,
 }) => {
-  await page.goto("/");
+  await openStudyPage(page);
   const timer = page.getByRole("region", { name: "自定义倒计时" });
   const cardId = "custom-evening-countdown";
 
@@ -249,6 +255,7 @@ test("persists the completed selected countdown after a page refresh", async ({
   ).toBeVisible({ timeout: 4_000 });
 
   await page.reload();
+  await goToAppPage(page, "学习");
   const restoredTimer = page.getByRole("region", { name: "自定义倒计时" });
   await expect(
     restoredTimer.getByRole("article", {
@@ -269,7 +276,7 @@ test("persists the completed selected countdown after a page refresh", async ({
 });
 
 test("keeps exam countdown cards dark and low-contrast", async ({ page }) => {
-  await page.goto("/");
+  await openStudyPage(page);
 
   const countdown = page.getByRole("region", { name: "考试冲刺倒计时" });
   const cards = countdown.locator("[data-exam-id]");
@@ -283,7 +290,7 @@ test("opens an exam countdown in a picture-in-picture window with a double click
   page,
   context,
 }) => {
-  await page.goto("/");
+  await openStudyPage(page);
 
   const pipPagePromise = context.waitForEvent("page");
   await page
@@ -330,7 +337,7 @@ test("keeps the countdown ticking inside the picture-in-picture window", async (
   page,
   context,
 }) => {
-  await page.goto("/");
+  await openStudyPage(page);
   const pipPagePromise = context.waitForEvent("page");
   await page
     .getByRole("region", { name: "考试冲刺倒计时" })
@@ -353,7 +360,7 @@ test("closes the picture-in-picture window with Escape and reopens it", async ({
   page,
   context,
 }) => {
-  await page.goto("/");
+  await openStudyPage(page);
   const firstPipPromise = context.waitForEvent("page");
   await page
     .getByRole("region", { name: "考试冲刺倒计时" })
@@ -385,7 +392,7 @@ test("opens a countdown picture-in-picture window on mobile", async ({
   context,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await openStudyPage(page);
 
   const pipPagePromise = context.waitForEvent("page");
   await page
@@ -451,7 +458,7 @@ test("pumps WebCodecs frames into a WebKit-style picture-in-picture stream", asy
       value: FakeVideoTrackGenerator,
     });
   });
-  await page.goto("/");
+  await openStudyPage(page);
   await page.evaluate(() => {
     Object.defineProperty(document, "pictureInPictureElement", {
       configurable: true,
@@ -514,7 +521,7 @@ test("shows an activation-failure notice when the picture-in-picture request is 
       },
     });
   });
-  await page.goto("/");
+  await openStudyPage(page);
 
   await page
     .getByRole("region", { name: "考试冲刺倒计时" })
@@ -546,7 +553,7 @@ test("shows a notice when no picture-in-picture API is available", async ({
       value: undefined,
     });
   });
-  await page.goto("/");
+  await openStudyPage(page);
 
   await page
     .getByRole("region", { name: "考试冲刺倒计时" })
@@ -563,7 +570,7 @@ test("shows a notice when no picture-in-picture API is available", async ({
 
 test("keeps the exam countdown usable on mobile", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await openStudyPage(page);
 
   const countdown = page.getByRole("region", { name: "考试冲刺倒计时" });
   await expect(countdown).toBeVisible();
