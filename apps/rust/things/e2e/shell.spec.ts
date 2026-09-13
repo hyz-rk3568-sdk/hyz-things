@@ -32,6 +32,19 @@ test("renders the dashboard shell and public overview", async ({ page }) => {
   const topology = page.getByRole("region", { name: "网络拓扑" });
   await expect(topology.getByText("Tailscale", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "运行详情" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "自定义倒计时" })).toBeHidden();
+  await expect(page.getByRole("region", { name: "考试冲刺倒计时" })).toBeHidden();
+  await expectNoHorizontalOverflow(page);
+});
+
+test("renders countdowns on the public Study page", async ({ page }) => {
+  await page.goto("/");
+  await goToAppPage(page, "学习");
+  await expect(
+    page.getByRole("heading", { name: "学习", level: 2, exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("region", { name: "自定义倒计时" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "考试冲刺倒计时" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
 
@@ -45,9 +58,10 @@ test("requires administrator authentication for configuration pages", async ({ p
 
 test("keeps local countdown state across portal page switches", async ({ page }) => {
   await page.goto("/");
+  await goToAppPage(page, "学习");
   const initial = await readCountdownTotal(page);
   await goToAppPage(page, "网络");
-  await goToAppPage(page, "总览");
+  await goToAppPage(page, "学习");
   await expect
     .poll(async () => readCountdownTotal(page), { timeout: 7_500 })
     .toBeLessThanOrEqual(initial);
@@ -55,9 +69,10 @@ test("keeps local countdown state across portal page switches", async ({ page })
 
 test("keeps local custom countdown state across portal page switches", async ({ page }) => {
   await page.goto("/");
+  await goToAppPage(page, "学习");
   const initial = await readCustomCountdownTotal(page);
   await goToAppPage(page, "网络");
-  await goToAppPage(page, "总览");
+  await goToAppPage(page, "学习");
   await expect
     .poll(async () => readCustomCountdownTotal(page), { timeout: 7_500 })
     .toBeLessThanOrEqual(initial);
@@ -66,16 +81,18 @@ test("keeps local custom countdown state across portal page switches", async ({ 
 test("keeps the countdown canvas alive across page switches", async ({ page }) => {
   await installCountdownVideoPipMock(page);
   await page.goto("/");
+  await goToAppPage(page, "学习");
   const canvas = page.locator("canvas[data-countdown-canvas]").first();
   await expect(canvas).toBeVisible();
   await goToAppPage(page, "网络");
-  await goToAppPage(page, "总览");
+  await goToAppPage(page, "学习");
   await expect(canvas).toBeVisible();
 });
 
 test("opens countdown video picture-in-picture", async ({ page }) => {
   await installCountdownVideoPipMock(page);
   await page.goto("/");
+  await goToAppPage(page, "学习");
   await page
     .getByRole("region", { name: "考试冲刺倒计时" })
     .locator('[data-exam-id="guangdong-exam"]')
@@ -104,6 +121,7 @@ test("switches portal pages with horizontal touch swipes", async ({ page }) => {
   const pageButton = (
     name:
       | "总览"
+      | "学习"
       | "网络"
       | "代理"
       | "活动"
@@ -115,6 +133,7 @@ test("switches portal pages with horizontal touch swipes", async ({ page }) => {
 
   await expect(pageButton("总览")).toHaveAttribute("aria-pressed", "true");
   for (const name of [
+    "学习",
     "网络",
     "代理",
     "活动",
@@ -149,7 +168,7 @@ test("switches portal pages from browser touch input", async ({ page }) => {
 
   await realTouchSwipe(page, "left");
   await expect(
-    page.getByRole("button", { name: "网络", exact: true }),
+    page.getByRole("button", { name: "学习", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
 
   await realTouchSwipe(page, "right");
@@ -220,6 +239,7 @@ test("fits a narrow portal screen without horizontal overflow", async ({
 
   for (const name of [
     "总览",
+    "学习",
     "网络",
     "代理",
     "活动",

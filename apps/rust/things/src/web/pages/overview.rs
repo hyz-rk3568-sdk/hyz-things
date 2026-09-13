@@ -24,8 +24,6 @@ pub(crate) fn render_overview(state: &UseReducerHandle<AppState>) -> Html {
                     message="面板会自动重试，无需刷新页面。"
                 />
             }
-            <CustomCountdownPanel />
-            <ExamCountdownPanel />
         </>
     }
 }

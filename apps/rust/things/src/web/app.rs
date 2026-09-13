@@ -305,6 +305,7 @@ impl Reducible for AppState {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum AppPage {
     Overview,
+    Study,
     Network,
     Proxy,
     Activity,
@@ -315,8 +316,9 @@ pub(super) enum AppPage {
 }
 
 impl AppPage {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 9] = [
         Self::Overview,
+        Self::Study,
         Self::Network,
         Self::Proxy,
         Self::Activity,
@@ -329,6 +331,7 @@ impl AppPage {
     const fn tab_id(self) -> &'static str {
         match self {
             Self::Overview => "app-overview-tab",
+            Self::Study => "app-study-tab",
             Self::Network => "app-network-tab",
             Self::Proxy => "app-proxy-tab",
             Self::Activity => "app-activity-tab",
@@ -342,6 +345,7 @@ impl AppPage {
     const fn panel_id(self) -> &'static str {
         match self {
             Self::Overview => "app-overview-panel",
+            Self::Study => "app-study-panel",
             Self::Network => "app-network-panel",
             Self::Proxy => "app-proxy-panel",
             Self::Activity => "app-activity-panel",
@@ -355,6 +359,7 @@ impl AppPage {
     const fn label(self) -> &'static str {
         match self {
             Self::Overview => "总览",
+            Self::Study => "学习",
             Self::Network => "网络",
             Self::Proxy => "代理",
             Self::Activity => "活动",
@@ -367,7 +372,8 @@ impl AppPage {
 
     const fn next(self) -> Option<Self> {
         match self {
-            Self::Overview => Some(Self::Network),
+            Self::Overview => Some(Self::Study),
+            Self::Study => Some(Self::Network),
             Self::Network => Some(Self::Proxy),
             Self::Proxy => Some(Self::Activity),
             Self::Activity => Some(Self::Tailscale),
@@ -381,7 +387,8 @@ impl AppPage {
     const fn previous(self) -> Option<Self> {
         match self {
             Self::Overview => None,
-            Self::Network => Some(Self::Overview),
+            Self::Study => Some(Self::Overview),
+            Self::Network => Some(Self::Study),
             Self::Proxy => Some(Self::Network),
             Self::Activity => Some(Self::Proxy),
             Self::Tailscale => Some(Self::Activity),
@@ -389,6 +396,22 @@ impl AppPage {
             Self::Apps => Some(Self::Camera),
             Self::System => Some(Self::Apps),
         }
+    }
+}
+
+#[cfg(test)]
+mod page_tests {
+    use super::*;
+
+    #[test]
+    fn study_is_a_first_class_portal_page() {
+        assert!(AppPage::ALL.contains(&AppPage::Study));
+        assert_eq!(AppPage::Study.label(), "学习");
+        assert_eq!(AppPage::Study.tab_id(), "app-study-tab");
+        assert_eq!(AppPage::Study.panel_id(), "app-study-panel");
+        assert_eq!(AppPage::Overview.next(), Some(AppPage::Study));
+        assert_eq!(AppPage::Study.previous(), Some(AppPage::Overview));
+        assert_eq!(AppPage::Study.next(), Some(AppPage::Network));
     }
 }
 
@@ -768,11 +791,11 @@ pub(super) fn app() -> Html {
             on_pointer_up={on_portal_pointer_up}
             on_pointer_cancel={on_portal_pointer_cancel}
         >
-                // Overview stays mounted so local timers survive page switches. Once authenticated,
-                // Network also stays mounted so local configuration drafts survive page switches.
-                // Other inactive pages keep empty panel targets so every aria-controls relationship
-                // remains valid. Camera content itself is mounted only while active, preserving the
-                // existing stop-on-page-leave session lifecycle.
+                // Overview, Study, and authenticated Network stay mounted. Study remains mounted
+                // so countdown state and the hidden PiP canvas survive page switches; Network keeps
+                // local configuration drafts. Other inactive pages keep empty panel targets so every
+                // aria-controls relationship remains valid. Camera content itself is mounted only
+                // while active, preserving the existing stop-on-page-leave session lifecycle.
                 <section
                     id={AppPage::Overview.panel_id()}
                     class={WORKSPACE_PANEL}
@@ -780,6 +803,14 @@ pub(super) fn app() -> Html {
                     hidden={page != AppPage::Overview}
                 >
                     {render_overview(&state)}
+                </section>
+                <section
+                    id={AppPage::Study.panel_id()}
+                    class={WORKSPACE_PANEL}
+                    aria-labelledby={AppPage::Study.tab_id()}
+                    hidden={page != AppPage::Study}
+                >
+                    {render_study()}
                 </section>
                 <section
                     id={AppPage::Network.panel_id()}
@@ -796,7 +827,10 @@ pub(super) fn app() -> Html {
                 {for AppPage::ALL.into_iter()
                     .filter(|candidate| {
                         *candidate != page
-                            && !matches!(candidate, AppPage::Overview | AppPage::Network)
+                            && !matches!(
+                                candidate,
+                                AppPage::Overview | AppPage::Study | AppPage::Network
+                            )
                     })
                     .map(|candidate| html! {
                         <section
@@ -807,7 +841,7 @@ pub(super) fn app() -> Html {
                         ></section>
                     })}
                 {match page {
-                    AppPage::Overview | AppPage::Network => Html::default(),
+                    AppPage::Overview | AppPage::Study | AppPage::Network => Html::default(),
                     AppPage::Proxy => html! {
                         <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
                             if is_admin { {render_proxy_control(&state)} } else { <AdminAuthGate state={state.clone()} /> }
