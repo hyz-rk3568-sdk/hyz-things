@@ -695,10 +695,8 @@ pub(super) fn app() -> Html {
             let changed = Closure::<dyn FnMut(Event)>::new(move |_| {
                 app_page.set(current_page());
             });
-            let _ = window.add_event_listener_with_callback(
-                "hashchange",
-                changed.as_ref().unchecked_ref(),
-            );
+            let _ = window
+                .add_event_listener_with_callback("hashchange", changed.as_ref().unchecked_ref());
             move || {
                 let _ = window.remove_event_listener_with_callback(
                     "hashchange",
