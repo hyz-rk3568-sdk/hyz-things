@@ -20,6 +20,7 @@ fn dispatch_proxy_selection(
     mut groups: Vec<ProxyGroup>,
 ) {
     state.dispatch(Action::ControlStarted(ControlArea::Nodes));
+    let epoch = state.auth_epoch;
     spawn_local(async move {
         let result = post_json(
             PROXY_SELECTION_ENDPOINT,
@@ -43,6 +44,7 @@ fn dispatch_proxy_selection(
                 ));
             }
             Err(error) => {
+                expire_protected_auth(&state, epoch, &error);
                 state.dispatch(Action::ControlFinished(ControlArea::Nodes, Err(error)));
             }
         }
@@ -154,7 +156,7 @@ pub(crate) fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
         Callback::from(move |event: Event| {
             let input: HtmlInputElement = event.target_unchecked_into();
             let enabled = input.checked();
-            dispatch_control(
+            dispatch_protected_control(
                 state.clone(),
                 ControlArea::LanTun,
                 PROXY_LAN_TUN_ENDPOINT,
@@ -175,7 +177,7 @@ pub(crate) fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
         Callback::from(move |event: Event| {
             let input: HtmlInputElement = event.target_unchecked_into();
             let enabled = input.checked();
-            dispatch_control(
+            dispatch_protected_control(
                 state.clone(),
                 ControlArea::LocalSystemProxy,
                 PROXY_LOCAL_SYSTEM_ENDPOINT,
@@ -283,7 +285,7 @@ pub(crate) fn render_proxy_groups(
     let refresh_delays = {
         let state = state.clone();
         let csrf = csrf.to_owned();
-        Callback::from(move |_| dispatch_delay_refresh(state.clone(), csrf.clone()))
+        Callback::from(move |_| dispatch_protected_delay_refresh(state.clone(), csrf.clone()))
     };
     html! {
         <>
