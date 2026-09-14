@@ -51,6 +51,92 @@ fn dispatch_proxy_selection(
     });
 }
 
+#[derive(Properties, PartialEq)]
+struct SubscriptionSettingsProps {
+    state: UseReducerHandle<AppState>,
+    csrf: String,
+}
+
+#[function_component(SubscriptionSettings)]
+fn subscription_settings(props: &SubscriptionSettingsProps) -> Html {
+    let subscription_url = use_node_ref();
+    let busy = props.state.settings_busy;
+    let save_subscription = {
+        let state = props.state.clone();
+        let csrf = props.csrf.clone();
+        let input = subscription_url.clone();
+        Callback::from(move |event: SubmitEvent| {
+            event.prevent_default();
+            let Some(input) = input.cast::<HtmlInputElement>() else {
+                return;
+            };
+            let url = input.value();
+            input.set_value("");
+            dispatch_subscription_source(state.clone(), csrf.clone(), url);
+        })
+    };
+    let refresh_subscription = {
+        let state = props.state.clone();
+        let csrf = props.csrf.clone();
+        Callback::from(move |_| {
+            dispatch_settings_mutation(
+                state.clone(),
+                SUBSCRIPTION_REFRESH_ENDPOINT,
+                csrf.clone(),
+                EmptyRequest {},
+                "订阅更新",
+                "订阅已更新",
+            )
+        })
+    };
+
+    html! {
+        <article class={INNER_CARD} aria-labelledby="proxy-subscription-title">
+            <div class={CONTROL_TITLE}>
+                <h3 id="proxy-subscription-title" class={CONTROL_HEADING}>{"代理订阅"}</h3>
+                <span class={CONTROL_META}>{"来源只写"}</span>
+            </div>
+            if let Some(subscription) = &props.state.subscription {
+                <div class={SUMMARY}>
+                    <span>{if subscription.configured { "已配置" } else { "未配置" }}</span>
+                    <strong class={subscription_tone(subscription.state)}>{subscription_state_label(subscription.state)}</strong>
+                </div>
+            }
+            if let Some(notice) = &props.state.settings_notice {
+                <FeedbackState message={AttrValue::from(notice.clone())} />
+            }
+            <form class={FORM_GRID_COMPACT} onsubmit={save_subscription} autocomplete="off">
+                <label class={FIELD}>
+                    <span class={FIELD_LABEL}>{"订阅 URL"}</span>
+                    <input
+                        class={INPUT}
+                        ref={subscription_url}
+                        type="url"
+                        required=true
+                        placeholder="https://…"
+                        autocomplete="off"
+                        autocapitalize="none"
+                        spellcheck="false"
+                        aria-describedby="proxy-subscription-secret-note"
+                    />
+                </label>
+                <small id="proxy-subscription-secret-note" class={HELP_TEXT}>{"已保存的 URL 永不回显；输入只用于本次提交。"}</small>
+                <div class={FORM_ACTIONS}>
+                    <button class={BUTTON_PRIMARY} type="submit" disabled={busy}>{"保存并立即更新"}</button>
+                    <button
+                        class={BUTTON}
+                        type="button"
+                        onclick={refresh_subscription}
+                        disabled={busy || !props.state.subscription.as_ref().is_some_and(|value| value.configured)}
+                    >
+                        {"手动刷新"}
+                    </button>
+                </div>
+            </form>
+        </article>
+    }
+}
+
 pub(crate) fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
     let Some(bootstrap) = state.panel.as_ref() else {
         return Html::default();
@@ -155,6 +241,7 @@ pub(crate) fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
                 <div class={SUMMARY}><span>{"当前代理节点"}</span><strong>{selected_node}</strong></div>
                 <small class={HELP_TEXT}>{"停用后保留订阅配置；普通 NAT 在路由启用时保持可用；浏览器不能直连 Mihomo Controller。"}</small>
             </article>
+            <SubscriptionSettings state={state.clone()} csrf={csrf.clone()} />
             if let Some(notice) = &state.node_notice {
                 <FeedbackState message={AttrValue::from(notice.clone())} />
             }
