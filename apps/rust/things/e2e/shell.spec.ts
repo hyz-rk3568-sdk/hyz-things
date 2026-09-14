@@ -289,3 +289,13 @@ test("fits a narrow portal screen without horizontal overflow", async ({
   await expect(page.getByRole("heading", { name: "管理员登录" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
+
+test("restores the selected portal page after reload", async ({ page }) => {
+  await page.goto("/");
+  await goToAppPage(page, "学习");
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "学习", level: 2, exact: true }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/#\/study$/);
+});
