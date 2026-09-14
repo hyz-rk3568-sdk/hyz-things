@@ -3,6 +3,9 @@
 mod api;
 mod app;
 mod components;
+mod navigation;
+mod protected_control;
+mod resources;
 mod ui;
 
 mod hooks;
@@ -12,7 +15,10 @@ use api::*;
 use app::*;
 use components::*;
 use hooks::*;
+use navigation::*;
 use pages::*;
+use protected_control::*;
+use resources::*;
 
 use std::{
     cell::{Cell, RefCell},

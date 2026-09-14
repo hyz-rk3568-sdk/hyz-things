@@ -1,38 +1,82 @@
 use super::*;
 
+fn dispatch_tailscale_mutation_scoped<T: serde::Serialize + 'static>(
+    state: UseReducerHandle<AppState>,
+    endpoint: &'static str,
+    csrf: String,
+    body: T,
+    success: &'static str,
+) {
+    state.dispatch(Action::TailscaleMutationStarted);
+    let epoch = state.auth_epoch;
+    // Advance this resource generation before the write starts. Any status GET that was already
+    // in flight now belongs to an older generation and cannot overwrite the mutation response.
+    let request_id = state.tailscale_meta.request_id.saturating_add(1);
+    state.dispatch(Action::TailscaleStarted(request_id, epoch));
+    spawn_local(async move {
+        match post_json_response::<_, TailscaleMutationResponseDto>(
+            endpoint,
+            &csrf,
+            &body,
+            "Tailscale",
+        )
+        .await
+        {
+            Ok(response) => {
+                let logged_out = response.tailscale.authenticated == Some(false)
+                    && response.tailscale.desired_mode == Some(TailscaleMode::Disabled);
+                state.dispatch(Action::TailscaleFinished(
+                    request_id,
+                    epoch,
+                    Ok(response.tailscale.clone()),
+                ));
+                state.dispatch(Action::TailscaleMutationFinished(Ok((
+                    response.tailscale,
+                    response.login_url,
+                    success.to_owned(),
+                ))));
+                if !logged_out {
+                    dispatch_tailscale_peers_refresh(state.clone());
+                }
+            }
+            Err(error) => {
+                expire_protected_auth(&state, epoch, &error);
+                state.dispatch(Action::TailscaleFinished(
+                    request_id,
+                    epoch,
+                    Err(error.clone()),
+                ));
+                state.dispatch(Action::TailscaleMutationFinished(Err(error)));
+            }
+        }
+    });
+}
+
 pub(crate) fn render_tailscale_peers(state: &UseReducerHandle<AppState>) -> Html {
     let refresh = {
         let state = state.clone();
-        Callback::from(move |_| dispatch_settings_refresh(state.clone()))
+        Callback::from(move |_| dispatch_tailscale_peers_refresh(state.clone()))
     };
     match (&state.tailscale_peers, &state.tailscale_peers_error) {
         (Some(snapshot), error) => {
             let summary = format!(
-                "Tailnet 设备 · {} / {} 在线",
+                "Tailnet 设备 · {} / {} 在线 · {}",
                 snapshot.device_online(),
-                snapshot.device_total()
+                snapshot.device_total(),
+                state.tailscale_peers_meta.status_text(),
             );
             html! {
                 <div class="grid gap-3 rounded-box border border-base-content/10 bg-base-200/40 p-4" role="region" aria-label="Tailnet 设备">
-                    <div class={CONTROL_TITLE}>
-                        <h3 class={CONTROL_HEADING}>{"Tailnet 设备"}</h3>
-                        <span class={CONTROL_META}>{summary}</span>
-                    </div>
-                    <div class={BUTTON_ROW}>
-                        <button class={BUTTON} type="button" onclick={refresh.clone()} disabled={state.settings_busy}>{"重新读取设备"}</button>
-                    </div>
-                    if let Some(error) = error {
-                        <ErrorState message={format!("设备列表读取失败，当前显示上次成功数据，数据可能已过期：{error}")} />
-                    }
+                    <div class={CONTROL_TITLE}><h3 class={CONTROL_HEADING}>{"Tailnet 设备"}</h3><span class={CONTROL_META}>{summary}</span></div>
+                    <div class={BUTTON_ROW}><button class={BUTTON} type="button" onclick={refresh.clone()} disabled={state.tailscale_peers_meta.loading || state.tailscale_busy}>{"重新读取设备"}</button></div>
+                    if let Some(error) = error { <ErrorState message={format!("设备列表读取失败，当前显示上次成功数据，数据可能已过期：{error}")} /> }
                     if snapshot.device_total() == 0 {
                         <div class={SETTINGS_EMPTY} role="status">{"暂无 Tailnet 设备"}</div>
                     } else {
                         <details class="group rounded-box border border-base-content/10 bg-base-100/70 p-3">
                             <summary class="cursor-pointer font-medium">{"查看设备列表"}</summary>
                             <ul class="mt-3 grid gap-2">
-                                if let Some(local) = snapshot.self_node.as_ref() {
-                                    {render_tailscale_peer(local, true)}
-                                }
+                                if let Some(local) = snapshot.self_node.as_ref() { {render_tailscale_peer(local, true)} }
                                 {for snapshot.peers.iter().map(|peer| render_tailscale_peer(peer, false))}
                             </ul>
                         </details>
@@ -42,14 +86,11 @@ pub(crate) fn render_tailscale_peers(state: &UseReducerHandle<AppState>) -> Html
             }
         }
         (None, Some(error)) => html! {
-            <div class="grid gap-3">
-                <ErrorState message={format!("Tailnet 设备列表暂不可用：{error}")} />
-                <div class={BUTTON_ROW}><button class={BUTTON} type="button" onclick={refresh.clone()} disabled={state.settings_busy}>{"重新读取设备"}</button></div>
-            </div>
+            <div class="grid gap-3"><ErrorState message={format!("Tailnet 设备列表暂不可用：{error}")} /><div class={BUTTON_ROW}><button class={BUTTON} type="button" onclick={refresh.clone()} disabled={state.tailscale_peers_meta.loading || state.tailscale_busy}>{"重新读取设备"}</button></div></div>
         },
-        (None, None) => html! {
-            <div class={SETTINGS_EMPTY} role="status">{"正在读取 Tailnet 设备列表…"}</div>
-        },
+        (None, None) => {
+            html! { <div class={SETTINGS_EMPTY} role="status">{"正在读取 Tailnet 设备列表…"}</div> }
+        }
     }
 }
 
@@ -68,14 +109,8 @@ pub(crate) fn render_tailscale_peer(peer: &TailscalePeer, local: bool) -> Html {
     html! {
         <li class="grid min-w-0 gap-2 rounded-box border border-base-content/10 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" key={format!("{}-{}", if local { "self" } else { "peer" }, peer.ipv4)}>
             <div class="min-w-0">
-                <div class="flex min-w-0 items-center gap-2">
-                    <strong class="block truncate" title={peer.name.clone()}>{&peer.name}</strong>
-                    if local {
-                        <span class="badge badge-primary badge-outline shrink-0 text-[0.6rem] font-bold">{"本机"}</span>
-                    }
-                </div>
-                <span class={HELP_TEXT}>{format!("{}{platform}", peer.ipv4)}</span>
-                <small class="block text-xs text-base-content/65">{detail}</small>
+                <div class="flex min-w-0 items-center gap-2"><strong class="block truncate" title={peer.name.clone()}>{&peer.name}</strong>{if local { html! { <span class="badge badge-primary badge-outline shrink-0 text-[0.6rem] font-bold">{"本机"}</span> } } else { Html::default() }}</div>
+                <span class={HELP_TEXT}>{format!("{}{platform}", peer.ipv4)}</span><small class="block text-xs text-base-content/65">{detail}</small>
             </div>
             <StatusBadge label={status} tone={classes!(tone.class())} />
         </li>
@@ -138,20 +173,26 @@ pub(crate) fn tailscale_last_seen_label(unix_ms: u64) -> String {
 }
 
 pub(crate) fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf: &str) -> Html {
+    let retry_status = {
+        let state = state.clone();
+        Callback::from(move |_| dispatch_tailscale_refresh(state.clone()))
+    };
     let Some(tailscale) = state.tailscale.as_ref() else {
         return html! {
             <SectionCard title_id="tailscale-title">
-                <PageHeader title_id="tailscale-title" eyebrow="REMOTE LAN" title="Tailscale 远程 LAN" />
-                <div class={SETTINGS_EMPTY} role="status">{"正在读取 Tailscale 状态…"}</div>
+                <PageHeader title_id="tailscale-title" eyebrow="REMOTE LAN" title="Tailscale 远程 LAN"><span class={SECTION_META}>{state.tailscale_meta.status_text()}</span></PageHeader>
+                if let Some(error) = &state.tailscale_meta.error { <ErrorState message={format!("Tailscale 状态读取失败：{error}")} /> }
+                <div class={BUTTON_ROW}><button class={BUTTON} type="button" onclick={retry_status} disabled={state.tailscale_meta.loading || state.tailscale_busy}>{"重试 Tailscale 状态"}</button></div>
             </SectionCard>
         };
     };
-    let busy = state.settings_busy;
+    let busy = state.tailscale_busy;
+    let resource_busy = busy || state.tailscale_meta.loading;
     let enable = {
         let state = state.clone();
         let csrf = csrf.to_owned();
         Callback::from(move |_| {
-            dispatch_tailscale_mutation(
+            dispatch_tailscale_mutation_scoped(
                 state.clone(),
                 TAILSCALE_MODE_ENDPOINT,
                 csrf.clone(),
@@ -166,7 +207,7 @@ pub(crate) fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf:
         let state = state.clone();
         let csrf = csrf.to_owned();
         Callback::from(move |_| {
-            dispatch_tailscale_mutation(
+            dispatch_tailscale_mutation_scoped(
                 state.clone(),
                 TAILSCALE_MODE_ENDPOINT,
                 csrf.clone(),
@@ -181,7 +222,7 @@ pub(crate) fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf:
         let state = state.clone();
         let csrf = csrf.to_owned();
         Callback::from(move |_| {
-            dispatch_tailscale_mutation(
+            dispatch_tailscale_mutation_scoped(
                 state.clone(),
                 TAILSCALE_LOGIN_ENDPOINT,
                 csrf.clone(),
@@ -194,7 +235,7 @@ pub(crate) fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf:
         let state = state.clone();
         let csrf = csrf.to_owned();
         Callback::from(move |_| {
-            dispatch_tailscale_mutation(
+            dispatch_tailscale_mutation_scoped(
                 state.clone(),
                 TAILSCALE_LOGOUT_ENDPOINT,
                 csrf.clone(),
@@ -235,9 +276,9 @@ pub(crate) fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf:
 
     html! {
         <SectionCard title_id="tailscale-title" busy={Some(busy)}>
-            <PageHeader title_id="tailscale-title" eyebrow="REMOTE LAN" title="Tailscale 远程 LAN">
-                <span class={SECTION_META}>{"固定 192.168.8.0/24 · 不提供 Exit Node"}</span>
-            </PageHeader>
+            <PageHeader title_id="tailscale-title" eyebrow="REMOTE LAN" title="Tailscale 远程 LAN"><span class={SECTION_META}>{format!("固定 192.168.8.0/24 · {}", state.tailscale_meta.status_text())}</span></PageHeader>
+            if let Some(error) = &state.tailscale_meta.error { <div class="grid gap-2"><ErrorState message={format!("Tailscale 状态刷新失败，保留最近数据：{error}")} /><div class={BUTTON_ROW}><button class={BUTTON} type="button" onclick={retry_status} disabled={state.tailscale_meta.loading || busy}>{"重试状态"}</button></div></div> }
+            if let Some(notice) = &state.tailscale_notice { <FeedbackState message={AttrValue::from(notice.clone())} /> }
             <article class={INNER_CARD} role="region" aria-label="Tailscale 远程 LAN 状态">
                 <div class={CONTROL_TITLE}><h3 class={CONTROL_HEADING}>{"LAN Access"}</h3><span class={CONTROL_META}>{format!("期望 {desired} · 当前 {effective}")}</span></div>
                 <dl class={METRIC_LIST}>
@@ -247,48 +288,19 @@ pub(crate) fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf:
                 </dl>
                 {render_tailscale_peers(state)}
                 if needs_login {
-                    <div class={classes!(RISK_ALERT, "alert-warning", "border-warning/20")} role="alert">
-                        <div>
-                            <strong>{"需要完成 Tailscale 登录"}</strong>
-                            <p class={RISK_COPY}>{"登录链接只在本次管理员写操作响应中返回，不会保存或出现在状态 GET 中。"}</p>
-                        </div>
-                    </div>
+                    <div class={classes!(RISK_ALERT, "alert-warning", "border-warning/20")} role="alert"><div><strong>{"需要完成 Tailscale 登录"}</strong><p class={RISK_COPY}>{"登录链接只在本次管理员写操作响应中返回，不会保存或出现在状态 GET 中。"}</p></div></div>
                     if let Some(login_url) = &state.tailscale_login_url {
-                        <div class={BUTTON_ROW}>
-                            <a class={BUTTON_PRIMARY} href={login_url.clone()} target="_blank" rel="noopener noreferrer">{"打开一次性 Tailscale 登录链接"}</a>
-                            <button class={BUTTON} type="button" onclick={enable.clone()} disabled={busy}>{"已完成登录，继续启用"}</button>
-                        </div>
+                        <div class={BUTTON_ROW}><a class={BUTTON_PRIMARY} href={login_url.clone()} target="_blank" rel="noopener noreferrer">{"打开一次性 Tailscale 登录链接"}</a><button class={BUTTON} type="button" onclick={enable.clone()} disabled={resource_busy}>{"已完成登录，继续启用"}</button></div>
                     } else {
-                        <button class={BUTTON_PRIMARY} type="button" onclick={request_login.clone()} disabled={busy}>{"取得一次性登录链接"}</button>
+                        <button class={BUTTON_PRIMARY} type="button" onclick={request_login.clone()} disabled={resource_busy}>{"取得一次性登录链接"}</button>
                     }
                 }
-                if lan_access_ready {
-                    <div class={classes!(RISK_ALERT, "alert-success", "border-success/20")} role="status">
-                        <div>
-                            <strong>{"本机远程 LAN 访问已启用"}</strong>
-                            <p class={RISK_COPY}>{"Tailscale 已认证，固定子网路由和本地防火墙均已就绪。"}</p>
-                        </div>
-                    </div>
-                }
-                if let Some(category) = tailscale.error_category {
-                    <div class={RISK_NOTE} role="note">{format!("错误类别：{}", tailscale_error_label(category))}</div>
-                }
+                if lan_access_ready { <div class={classes!(RISK_ALERT, "alert-success", "border-success/20")} role="status"><div><strong>{"本机远程 LAN 访问已启用"}</strong><p class={RISK_COPY}>{"Tailscale 已认证，固定子网路由和本地防火墙均已就绪。"}</p></div></div> }
+                if let Some(category) = tailscale.error_category { <div class={RISK_NOTE} role="note">{format!("错误类别：{}", tailscale_error_label(category))}</div> }
                 <div class={BUTTON_ROW} role="group" aria-label="Tailscale 操作">
-                    <button
-                        class={if lan_access_ready { BUTTON } else { BUTTON_PRIMARY }}
-                        type="button"
-                        onclick={enable}
-                        disabled={busy || lan_access_ready}
-                        aria-pressed={lan_access_ready.to_string()}
-                    >{enable_label}</button>
-                    <button
-                        class={BUTTON}
-                        type="button"
-                        onclick={disable}
-                        disabled={busy || disabled_ready}
-                        aria-pressed={disabled_ready.to_string()}
-                    >{disable_label}</button>
-                    <button class={BUTTON_ERROR} type="button" onclick={logout} disabled={busy}>{"注销并移除认证"}</button>
+                    <button class={if lan_access_ready { BUTTON } else { BUTTON_PRIMARY }} type="button" onclick={enable} disabled={resource_busy || lan_access_ready} aria-pressed={lan_access_ready.to_string()}>{enable_label}</button>
+                    <button class={BUTTON} type="button" onclick={disable} disabled={resource_busy || disabled_ready} aria-pressed={disabled_ready.to_string()}>{disable_label}</button>
+                    <button class={BUTTON_ERROR} type="button" onclick={logout} disabled={resource_busy}>{"注销并移除认证"}</button>
                 </div>
                 <small class={HELP_TEXT}>{"仅支持固定 RouterOnly / LAN Access 安全模式；浏览器不能输入 URL、auth key、子网、端口或控制参数。"}</small>
             </article>

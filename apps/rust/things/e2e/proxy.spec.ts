@@ -24,7 +24,7 @@ test.beforeEach(async ({ request }) => {
 test("shows the administrator login form directly on every protected page", async ({ page }) => {
   await page.goto("/");
 
-  for (const name of ["网络", "代理", "活动", "Tailscale"] as const) {
+  for (const name of ["网络", "代理", "设备", "Tailscale"] as const) {
     await goToAppPage(page, name);
     await expect(page.getByRole("heading", { name: "管理员登录" })).toBeVisible();
     await expect(page.getByLabel("用户名")).toHaveValue("admin");
@@ -227,4 +227,42 @@ test("controls all four proxy combinations with isolated failures on desktop and
     csrf,
   );
   expect(oversized).toBe(413);
+});
+
+test("expires the admin session when a protected proxy mutation returns 401", async ({ page }) => {
+  await loginAsAdmin(page);
+  await goToAppPage(page, "代理");
+  await page.route("**/api/v1/control/proxy/lan-tun", (route) =>
+    route.fulfill({ status: 401, contentType: "application/json", body: "{}" }),
+  );
+
+  await page.getByRole("switch", { name: "LAN 透明代理" }).click();
+
+  await expect(page.getByRole("heading", { name: "管理员登录" })).toBeVisible();
+  await expect(page).toHaveURL(/#\/proxy$/);
+  await expect(page.getByRole("heading", { name: "代理设置" })).toHaveCount(0);
+});
+
+test("isolates subscription read failures and never auto-runs proxy mutations", async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.route("**/api/v1/proxy/subscription", (route) =>
+    route.fulfill({ status: 503, contentType: "application/json", body: "{}" }),
+  );
+  const automaticMutations: string[] = [];
+  page.on("request", (request) => {
+    if (
+      request.method() === "POST" &&
+      (/\/api\/v1\/control\/proxy\/delays$/.test(request.url()) ||
+        /\/api\/v1\/control\/proxy\/subscription\/refresh$/.test(request.url()))
+    ) {
+      automaticMutations.push(request.url());
+    }
+  });
+
+  await goToAppPage(page, "代理");
+  await expect(page.getByText(/订阅状态读取失败/)).toBeVisible();
+  await expect(page.getByRole("switch", { name: "LAN 透明代理" })).toBeEnabled();
+  await expect(page.getByRole("switch", { name: "本机系统代理" })).toBeEnabled();
+  await page.waitForTimeout(2_500);
+  expect(automaticMutations).toEqual([]);
 });

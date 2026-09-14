@@ -20,7 +20,7 @@ export type AppPageName =
   | '学习'
   | '网络'
   | '代理'
-  | '活动'
+  | '设备'
   | 'Tailscale'
   | '摄像头'
   | '应用'
@@ -102,9 +102,6 @@ export async function installCameraWebRtcMock(page: Page) {
 
       addTransceiver(kind: string) {
         transceivers.push(kind);
-        // audio transceiver 需要 sender().replaceTrack()（对讲挂载麦克风）。
-        // 真实 RTCRtpTransceiver 的 `sender` 是 getter 属性，web-sys 按属性访问；
-        // web-sys 把 Rust `None` 映射为 JS `undefined`（不是 null），需宽松判断。
         return {
           sender: {
             replaceTrack: (track: MediaStreamTrack | null | undefined) => {
