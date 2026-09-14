@@ -176,8 +176,6 @@ pub const DISCLOSURE_TITLE: &str = "text-sm font-bold";
 pub const DISCLOSURE_SUMMARY: &str = "truncate text-xs text-base-content/65";
 pub const DISCLOSURE_ACTION: &str = "shrink-0 text-xs font-semibold text-primary";
 pub const DISCLOSURE_DETAIL: &str = "border-t border-base-content/10 px-5 pb-5";
-pub const LOGIN_DISCLOSURE: &str =
-    "max-w-3xl overflow-hidden rounded-box border border-base-content/10 bg-base-100/60 shadow-sm";
 pub const AUTH_FORM: &str = "grid max-w-3xl grid-cols-1 items-end gap-4 pt-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]";
 pub const FORM_GRID: &str = "grid grid-cols-1 gap-4 md:grid-cols-3";
 pub const FORM_GRID_COMPACT: &str = "grid grid-cols-1 gap-4 sm:grid-cols-2";

@@ -896,35 +896,6 @@ pub(crate) fn dispatch_device_policy_update(
     });
 }
 
-pub(crate) fn dispatch_tailscale_mutation<T: serde::Serialize + 'static>(
-    state: UseReducerHandle<AppState>,
-    endpoint: &'static str,
-    csrf: String,
-    body: T,
-    success: &'static str,
-) {
-    state.dispatch(Action::TailscaleMutationStarted);
-    let epoch = state.auth_epoch;
-    spawn_local(async move {
-        let result = post_json_response::<_, TailscaleMutationResponseDto>(
-            endpoint,
-            &csrf,
-            &body,
-            "Tailscale",
-        )
-        .await
-        .map(|response| (response.tailscale, response.login_url, success.to_owned()));
-        if let Err(error) = &result {
-            maybe_expire_auth(&state, epoch, error);
-        }
-        let refresh_peers = result.is_ok() && endpoint != TAILSCALE_LOGOUT_ENDPOINT;
-        state.dispatch(Action::TailscaleMutationFinished(result));
-        if refresh_peers {
-            let _ = read_tailscale_peers_now(state.clone(), epoch, true).await;
-        }
-    });
-}
-
 pub(crate) fn dispatch_control<T>(
     state: UseReducerHandle<AppState>,
     area: ControlArea,
@@ -952,23 +923,6 @@ pub(crate) fn dispatch_control<T>(
                 ControlArea::Nodes => {}
             }
         }
-    });
-}
-
-pub(crate) fn dispatch_delay_refresh(state: UseReducerHandle<AppState>, csrf_token: String) {
-    state.dispatch(Action::ControlStarted(ControlArea::Nodes));
-    spawn_local(async move {
-        let result = post_json_response::<_, DelayRefreshControlResponse>(
-            PROXY_DELAYS_ENDPOINT,
-            &csrf_token,
-            &ProxyDelayRefreshRequest {},
-            "代理测速",
-        )
-        .await
-        .and_then(|response| match response {
-            DelayRefreshControlResponse::ProxyDelays { groups } => Ok(groups),
-        });
-        state.dispatch(Action::ProxyDelaysFinished(result));
     });
 }
 
