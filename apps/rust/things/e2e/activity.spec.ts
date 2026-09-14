@@ -79,15 +79,15 @@ test("merges discovered, configured-offline, and activity-only devices into list
 
   await goToAppPage(page, "设备");
   await expect(page.getByRole("heading", { name: "设备", exact: true })).toBeVisible();
-  await expect(page.getByRole("article", { name: "设备 我的 iPhone" })).toBeVisible();
-  await expect(page.getByRole("article", { name: "设备 离线平板" })).toContainText("当前未发现");
-  await expect(page.getByRole("article", { name: "设备 02:00:00:00:00:11" })).toBeVisible();
+  await expect(page.getByRole("listitem", { name: "设备 我的 iPhone" })).toBeVisible();
+  await expect(page.getByRole("listitem", { name: "设备 离线平板" })).toContainText("当前未发现");
+  await expect(page.getByRole("listitem", { name: "设备 02:00:00:00:00:11" })).toBeVisible();
 
   await page.getByLabel("筛选设备").fill("iPhone");
   await page.getByRole("button", { name: "应用筛选" }).click();
   await expect(page).toHaveURL(/#\/devices\?q=iPhone$/);
-  await expect(page.getByRole("article", { name: "设备 我的 iPhone" })).toBeVisible();
-  await expect(page.getByRole("article", { name: "设备 离线平板" })).toHaveCount(0);
+  await expect(page.getByRole("listitem", { name: "设备 我的 iPhone" })).toBeVisible();
+  await expect(page.getByRole("listitem", { name: "设备 离线平板" })).toHaveCount(0);
 
   const opener = page.getByRole("button", { name: "打开设备 我的 iPhone" });
   await opener.click();
@@ -108,7 +108,7 @@ test("edits policy from device detail and preserves a dirty draft across a 409",
   await loginAsAdmin(page);
   await goToAppPage(page, "设备");
   await page.getByRole("button", { name: "打开设备 e2e-phone" }).click();
-  const detail = page.getByRole("dialog", { name: "e2e-phone" });
+  const detail = page.getByRole("dialog");
   const nameInput = detail.getByLabel("02:00:00:00:00:10 显示名");
   const policy = detail.getByLabel("02:00:00:00:00:10 代理策略");
   await nameInput.fill("我的 iPhone");
@@ -143,7 +143,7 @@ test("reports save success separately when device readback fails", async ({ page
   });
   await goToAppPage(page, "设备");
   await page.getByRole("button", { name: "打开设备 e2e-phone" }).click();
-  const detail = page.getByRole("dialog", { name: "e2e-phone" });
+  const detail = page.getByRole("dialog");
   await detail.getByLabel("02:00:00:00:00:10 显示名").fill("readback-test");
   failReads = true;
   await detail.getByRole("button", { name: "保存设备设置" }).click();

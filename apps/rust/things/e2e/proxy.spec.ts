@@ -24,7 +24,7 @@ test.beforeEach(async ({ request }) => {
 test("shows the administrator login form directly on every protected page", async ({ page }) => {
   await page.goto("/");
 
-  for (const name of ["网络", "代理", "活动", "Tailscale"] as const) {
+  for (const name of ["网络", "代理", "设备", "Tailscale"] as const) {
     await goToAppPage(page, name);
     await expect(page.getByRole("heading", { name: "管理员登录" })).toBeVisible();
     await expect(page.getByLabel("用户名")).toHaveValue("admin");
