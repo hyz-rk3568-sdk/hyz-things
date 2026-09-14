@@ -228,3 +228,17 @@ test("controls all four proxy combinations with isolated failures on desktop and
   );
   expect(oversized).toBe(413);
 });
+
+test("expires the admin session when a protected proxy mutation returns 401", async ({ page }) => {
+  await loginAsAdmin(page);
+  await goToAppPage(page, "代理");
+  await page.route("**/api/v1/control/proxy/lan-tun", (route) =>
+    route.fulfill({ status: 401, contentType: "application/json", body: "{}" }),
+  );
+
+  await page.getByRole("switch", { name: "LAN 透明代理" }).click();
+
+  await expect(page.getByRole("heading", { name: "管理员登录" })).toBeVisible();
+  await expect(page).toHaveURL(/#\/proxy$/);
+  await expect(page.getByRole("heading", { name: "代理设置" })).toHaveCount(0);
+});
