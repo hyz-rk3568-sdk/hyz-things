@@ -4,6 +4,7 @@ mod api;
 mod app_v2;
 mod components;
 mod navigation;
+mod protected_control;
 mod resources;
 mod ui;
 
@@ -16,6 +17,7 @@ use components::*;
 use hooks::*;
 use navigation::*;
 use pages::*;
+use protected_control::*;
 use resources::*;
 
 use std::{
