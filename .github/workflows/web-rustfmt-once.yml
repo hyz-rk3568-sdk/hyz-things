@@ -1,0 +1,41 @@
+name: Web rustfmt once
+
+on:
+  push:
+    branches:
+      - feat/web-page-data-and-devices
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, 'chore(web): apply rustfmt')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/web-page-data-and-devices
+          fetch-depth: 0
+      - name: Install Rust 1.88 rustfmt
+        shell: bash
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal --component rustfmt
+          rustup default 1.88.0
+      - name: Format things crate and commit only formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path apps/rust/things/Cargo.toml --all
+          git diff --check
+          if git diff --quiet; then
+            echo 'No rustfmt changes required.'
+            exit 0
+          fi
+          git diff --stat
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/rust/things
+          git commit -m 'chore(web): apply rustfmt'
+          git push origin HEAD:feat/web-page-data-and-devices
