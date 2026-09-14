@@ -361,19 +361,19 @@ pub(crate) fn app() -> Html {
                 if tracked_page != current_page {
                     refresh_failures.set((current_page, 0));
                 }
-                return || ();
-            }
-            let next_failures = if has_error {
-                if tracked_page == current_page {
-                    current_failures.saturating_add(1).min(12)
-                } else {
-                    1
-                }
             } else {
-                0
-            };
-            if tracked_page != current_page || current_failures != next_failures {
-                refresh_failures.set((current_page, next_failures));
+                let next_failures = if has_error {
+                    if tracked_page == current_page {
+                        current_failures.saturating_add(1).min(12)
+                    } else {
+                        1
+                    }
+                } else {
+                    0
+                };
+                if tracked_page != current_page || current_failures != next_failures {
+                    refresh_failures.set((current_page, next_failures));
+                }
             }
             || ()
         });
