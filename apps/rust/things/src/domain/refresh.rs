@@ -10,17 +10,27 @@ pub struct RefreshSchedule {
     pub should_refresh: bool,
 }
 
-/// Baseline-equivalent policy extracted before changing portal behavior.
-///
-/// The red tests below intentionally describe the target policy from the page-data plan.
-pub const fn refresh_schedule(hidden: bool, _consecutive_failures: u8) -> RefreshSchedule {
+pub const fn refresh_schedule(hidden: bool, consecutive_failures: u8) -> RefreshSchedule {
+    if hidden {
+        return RefreshSchedule {
+            delay_ms: HIDDEN_RESOURCE_DELAY_MS,
+            should_refresh: true,
+        };
+    }
+
+    let shift = if consecutive_failures > 4 {
+        4
+    } else {
+        consecutive_failures
+    };
+    let exponential = VISIBLE_RESOURCE_DELAY_MS.saturating_mul(1_u32 << shift);
     RefreshSchedule {
-        delay_ms: if hidden {
-            HIDDEN_RESOURCE_DELAY_MS
+        delay_ms: if exponential > MAX_RESOURCE_BACKOFF_MS {
+            MAX_RESOURCE_BACKOFF_MS
         } else {
-            VISIBLE_RESOURCE_DELAY_MS
+            exponential
         },
-        should_refresh: !hidden,
+        should_refresh: true,
     }
 }
 
