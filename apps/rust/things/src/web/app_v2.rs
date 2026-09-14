@@ -1,7 +1,5 @@
 use super::*;
 
-const HIDDEN_RESOURCE_DELAY_MS: u32 = 60_000;
-
 #[derive(Properties, PartialEq)]
 struct AdminAuthGateProps {
     state: UseReducerHandle<AppState>,
@@ -226,6 +224,23 @@ fn dispatch_dynamic_resources(state: UseReducerHandle<AppState>, page: AppPage, 
     }
 }
 
+fn dynamic_refresh_marker(state: &AppState, page: AppPage, is_admin: bool) -> (u64, bool, bool) {
+    let metas: Vec<&ResourceMeta> = match page {
+        AppPage::Overview | AppPage::System => vec![&state.status_meta, &state.panel_meta],
+        AppPage::Network if is_admin => vec![&state.pending_meta],
+        AppPage::Proxy if is_admin => vec![&state.status_meta, &state.panel_meta],
+        AppPage::Devices if is_admin => vec![&state.device_meta],
+        AppPage::Tailscale if is_admin => {
+            vec![&state.tailscale_meta, &state.tailscale_peers_meta]
+        }
+        _ => Vec::new(),
+    };
+    let request_id = metas.iter().map(|meta| meta.request_id).max().unwrap_or(0);
+    let has_error = metas.iter().any(|meta| meta.error.is_some());
+    let loading = metas.iter().any(|meta| meta.loading);
+    (request_id, has_error, loading)
+}
+
 fn document_hidden() -> bool {
     web_sys::window()
         .and_then(|window| window.document())
@@ -238,6 +253,9 @@ pub(crate) fn app() -> Html {
     let brightness = use_state(|| 128u16);
     let route = use_state(|| current_route().0);
     let refresh_signal = use_state(|| 0_u64);
+    let refresh_generation = use_mut_ref(|| 0_u64);
+    let initial_page = route.page;
+    let refresh_failures = use_state(move || (initial_page, 0_u8));
     let camera_stop_generation = use_state(|| 0u32);
     let swipe_start = use_mut_ref(|| None::<(i32, i32)>);
     let portal_swipe_surface = use_node_ref();
@@ -278,13 +296,20 @@ pub(crate) fn app() -> Html {
 
     {
         let refresh_signal = refresh_signal.clone();
+        let refresh_generation = refresh_generation.clone();
         use_effect_with((), move |_| {
             let window = web_sys::window().expect("browser window");
             let document = window.document().expect("browser document");
             let signal = refresh_signal.clone();
+            let generation = refresh_generation.clone();
             let refresh = Closure::<dyn FnMut(Event)>::new(move |_| {
                 if !document_hidden() {
-                    signal.set((*signal).wrapping_add(1));
+                    let next = {
+                        let mut current = generation.borrow_mut();
+                        *current = current.wrapping_add(1);
+                        *current
+                    };
+                    signal.set(next);
                 }
             });
             let _ = document.add_event_listener_with_callback(
@@ -326,28 +351,69 @@ pub(crate) fn app() -> Html {
         .session
         .as_ref()
         .is_some_and(|session| session.authenticated && !session.must_change);
+    let refresh_marker = dynamic_refresh_marker(&state, page, is_admin);
+    {
+        let refresh_failures = refresh_failures.clone();
+        use_effect_with((page, is_admin, refresh_marker), move |deps| {
+            let (current_page, _, (_, has_error, loading)) = *deps;
+            let (tracked_page, current_failures) = *refresh_failures;
+            if loading {
+                if tracked_page != current_page {
+                    refresh_failures.set((current_page, 0));
+                }
+                return || ();
+            }
+            let next_failures = if has_error {
+                if tracked_page == current_page {
+                    current_failures.saturating_add(1).min(12)
+                } else {
+                    1
+                }
+            } else {
+                0
+            };
+            if tracked_page != current_page || current_failures != next_failures {
+                refresh_failures.set((current_page, next_failures));
+            }
+            || ()
+        });
+    }
     {
         let state = state.clone();
         let refresh_signal = *refresh_signal;
         use_effect_with((page, is_admin, refresh_signal), move |_| {
+            dispatch_page_resources(state.clone(), page, is_admin);
+            || ()
+        });
+    }
+    {
+        let state = state.clone();
+        let (failure_page, failures) = *refresh_failures;
+        let consecutive_failures = if failure_page == page { failures } else { 0 };
+        use_effect_with((page, is_admin, consecutive_failures), move |_| {
+            debug_assert_eq!(
+                POLL_DELAY_MS,
+                hyz_things::domain::refresh::VISIBLE_RESOURCE_DELAY_MS
+            );
             let cancelled = Rc::new(Cell::new(false));
             let task_cancelled = cancelled.clone();
-            dispatch_page_resources(state.clone(), page, is_admin);
             spawn_local(async move {
                 loop {
-                    let delay = if document_hidden() {
-                        HIDDEN_RESOURCE_DELAY_MS
-                    } else {
-                        POLL_DELAY_MS
-                    };
-                    TimeoutFuture::new(delay).await;
+                    let scheduled_hidden = document_hidden();
+                    let schedule = hyz_things::domain::refresh::refresh_schedule(
+                        scheduled_hidden,
+                        consecutive_failures,
+                    );
+                    TimeoutFuture::new(schedule.delay_ms).await;
                     if task_cancelled.get() {
                         break;
                     }
-                    if document_hidden() {
+                    if scheduled_hidden != document_hidden() {
                         continue;
                     }
-                    dispatch_dynamic_resources(state.clone(), page, is_admin);
+                    if schedule.should_refresh {
+                        dispatch_dynamic_resources(state.clone(), page, is_admin);
+                    }
                 }
             });
             move || cancelled.set(true)
