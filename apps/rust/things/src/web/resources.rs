@@ -687,13 +687,13 @@ async fn read_tailscale_peers_now(
     let id = if wait {
         wait_for_resource(ResourceKey::TailscalePeers).await?
     } else {
-        begin_resource(ResourceKey::TailscalePeers)
-            .ok_or_else(|| "读取已在进行".to_owned())?
+        begin_resource(ResourceKey::TailscalePeers).ok_or_else(|| "读取已在进行".to_owned())?
     };
     state.dispatch(Action::TailscalePeersStarted(id, epoch));
-    let result = fetch_json::<TailscalePeersResponseDto>(TAILSCALE_PEERS_ENDPOINT, "Tailscale 设备列表")
-        .await
-        .map(|response| response.peers);
+    let result =
+        fetch_json::<TailscalePeersResponseDto>(TAILSCALE_PEERS_ENDPOINT, "Tailscale 设备列表")
+            .await
+            .map(|response| response.peers);
     if let Err(error) = &result {
         maybe_expire_auth(&state, epoch, error);
     }
@@ -777,7 +777,10 @@ pub(crate) fn dispatch_network_mutation<T: serde::Serialize + 'static>(
         let message = match result {
             Ok(_) => {
                 let mut readback_error = None;
-                let refresh_network = matches!(endpoint, STA_APPLY_ENDPOINT | AP_CONFIRM_ENDPOINT | AP_CANCEL_ENDPOINT);
+                let refresh_network = matches!(
+                    endpoint,
+                    STA_APPLY_ENDPOINT | AP_CONFIRM_ENDPOINT | AP_CANCEL_ENDPOINT
+                );
                 if refresh_network {
                     if let Err(error) = read_network_now(state.clone(), epoch, true).await {
                         readback_error = Some(error);
@@ -934,7 +937,9 @@ pub(crate) fn dispatch_control<T>(
 {
     state.dispatch(Action::ControlStarted(area));
     spawn_local(async move {
-        let result = post_json(endpoint, &csrf_token, &body, "控制").await.map(|_| success);
+        let result = post_json(endpoint, &csrf_token, &body, "控制")
+            .await
+            .map(|_| success);
         let ok = result.is_ok();
         state.dispatch(Action::ControlFinished(area, result));
         if ok {

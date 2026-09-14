@@ -36,14 +36,23 @@ pub(crate) fn render_tailscale_peers(state: &UseReducerHandle<AppState>) -> Html
         (None, Some(error)) => html! {
             <div class="grid gap-3"><ErrorState message={format!("Tailnet 设备列表暂不可用：{error}")} /><div class={BUTTON_ROW}><button class={BUTTON} type="button" onclick={refresh.clone()} disabled={state.tailscale_peers_meta.loading}>{"重新读取设备"}</button></div></div>
         },
-        (None, None) => html! { <div class={SETTINGS_EMPTY} role="status">{"正在读取 Tailnet 设备列表…"}</div> },
+        (None, None) => {
+            html! { <div class={SETTINGS_EMPTY} role="status">{"正在读取 Tailnet 设备列表…"}</div> }
+        }
     }
 }
 
 pub(crate) fn render_tailscale_peer(peer: &TailscalePeer, local: bool) -> Html {
     let status = if peer.online { "在线" } else { "离线" };
-    let tone = if peer.online { Tone::Good } else { Tone::Neutral };
-    let platform = peer.os.as_deref().map_or_else(String::new, |os| format!(" · {os}"));
+    let tone = if peer.online {
+        Tone::Good
+    } else {
+        Tone::Neutral
+    };
+    let platform = peer
+        .os
+        .as_deref()
+        .map_or_else(String::new, |os| format!(" · {os}"));
     let detail = tailscale_peer_detail(peer);
     html! {
         <li class="grid min-w-0 gap-2 rounded-box border border-base-content/10 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" key={format!("{}-{}", if local { "self" } else { "peer" }, peer.ipv4)}>
@@ -61,14 +70,20 @@ pub(crate) fn tailscale_peer_detail(peer: &TailscalePeer) -> String {
     if peer.online {
         if peer.active == Some(true) {
             details.push("active".to_owned());
-            if let Some(connection) = &peer.connection { details.push(tailscale_connection_label(connection)); }
-            if let (Some(tx), Some(rx)) = (peer.tx_bytes, peer.rx_bytes) { details.push(format!("tx {} · rx {}", format_bytes(tx), format_bytes(rx))); }
+            if let Some(connection) = &peer.connection {
+                details.push(tailscale_connection_label(connection));
+            }
+            if let (Some(tx), Some(rx)) = (peer.tx_bytes, peer.rx_bytes) {
+                details.push(format!("tx {} · rx {}", format_bytes(tx), format_bytes(rx)));
+            }
         } else {
             details.push("-".to_owned());
         }
     } else {
         details.push("offline".to_owned());
-        if let Some(last_seen) = peer.last_seen_unix_ms { details.push(format!("最近看到 {}", tailscale_last_seen_label(last_seen))); }
+        if let Some(last_seen) = peer.last_seen_unix_ms {
+            details.push(format!("最近看到 {}", tailscale_last_seen_label(last_seen)));
+        }
     }
     details.join(" · ")
 }
@@ -83,11 +98,26 @@ pub(crate) fn tailscale_connection_label(connection: &TailscalePeerConnection) -
 pub(crate) fn tailscale_last_seen_label(unix_ms: u64) -> String {
     const MAX_DATE_MILLIS: u64 = 8_640_000_000_000_000;
     let now = js_sys::Date::now();
-    if !now.is_finite() || unix_ms > MAX_DATE_MILLIS { return "未知".to_owned(); }
+    if !now.is_finite() || unix_ms > MAX_DATE_MILLIS {
+        return "未知".to_owned();
+    }
     let seen = unix_ms as f64;
-    if seen >= now { return "刚刚".to_owned(); }
+    if seen >= now {
+        return "刚刚".to_owned();
+    }
     let minutes = ((now - seen) / 60_000.0).floor() as u64;
-    if minutes < 1 { "刚刚".to_owned() } else if minutes < 60 { format!("{minutes} 分钟前") } else { let hours = minutes / 60; if hours < 24 { format!("{hours} 小时前") } else { format!("{} 天前", hours / 24) } }
+    if minutes < 1 {
+        "刚刚".to_owned()
+    } else if minutes < 60 {
+        format!("{minutes} 分钟前")
+    } else {
+        let hours = minutes / 60;
+        if hours < 24 {
+            format!("{hours} 小时前")
+        } else {
+            format!("{} 天前", hours / 24)
+        }
+    }
 }
 
 pub(crate) fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf: &str) -> Html {
@@ -106,24 +136,72 @@ pub(crate) fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf:
     };
     let busy = state.tailscale_busy;
     let enable = {
-        let state = state.clone(); let csrf = csrf.to_owned();
-        Callback::from(move |_| dispatch_tailscale_mutation(state.clone(), TAILSCALE_MODE_ENDPOINT, csrf.clone(), TailscaleModeRequestDto { mode: TailscaleMode::LanSubnetAccess }, "已请求启用远程 LAN 访问"))
+        let state = state.clone();
+        let csrf = csrf.to_owned();
+        Callback::from(move |_| {
+            dispatch_tailscale_mutation(
+                state.clone(),
+                TAILSCALE_MODE_ENDPOINT,
+                csrf.clone(),
+                TailscaleModeRequestDto {
+                    mode: TailscaleMode::LanSubnetAccess,
+                },
+                "已请求启用远程 LAN 访问",
+            )
+        })
     };
     let disable = {
-        let state = state.clone(); let csrf = csrf.to_owned();
-        Callback::from(move |_| dispatch_tailscale_mutation(state.clone(), TAILSCALE_MODE_ENDPOINT, csrf.clone(), TailscaleModeRequestDto { mode: TailscaleMode::Disabled }, "Tailscale 已停用，设备认证已保留"))
+        let state = state.clone();
+        let csrf = csrf.to_owned();
+        Callback::from(move |_| {
+            dispatch_tailscale_mutation(
+                state.clone(),
+                TAILSCALE_MODE_ENDPOINT,
+                csrf.clone(),
+                TailscaleModeRequestDto {
+                    mode: TailscaleMode::Disabled,
+                },
+                "Tailscale 已停用，设备认证已保留",
+            )
+        })
     };
     let request_login = {
-        let state = state.clone(); let csrf = csrf.to_owned();
-        Callback::from(move |_| dispatch_tailscale_mutation(state.clone(), TAILSCALE_LOGIN_ENDPOINT, csrf.clone(), EmptyRequest {}, "已取得一次性登录链接"))
+        let state = state.clone();
+        let csrf = csrf.to_owned();
+        Callback::from(move |_| {
+            dispatch_tailscale_mutation(
+                state.clone(),
+                TAILSCALE_LOGIN_ENDPOINT,
+                csrf.clone(),
+                EmptyRequest {},
+                "已取得一次性登录链接",
+            )
+        })
     };
     let logout = {
-        let state = state.clone(); let csrf = csrf.to_owned();
-        Callback::from(move |_| dispatch_tailscale_mutation(state.clone(), TAILSCALE_LOGOUT_ENDPOINT, csrf.clone(), EmptyRequest {}, "Tailscale 已注销并停用"))
+        let state = state.clone();
+        let csrf = csrf.to_owned();
+        Callback::from(move |_| {
+            dispatch_tailscale_mutation(
+                state.clone(),
+                TAILSCALE_LOGOUT_ENDPOINT,
+                csrf.clone(),
+                EmptyRequest {},
+                "Tailscale 已注销并停用",
+            )
+        })
     };
-    let desired = tailscale.desired_mode.map(tailscale_mode_label).unwrap_or("未知");
-    let effective = tailscale.effective_mode.map(tailscale_mode_label).unwrap_or("尚未就绪");
-    let needs_login = tailscale.backend_state == TailscaleBackendState::NeedsLogin || tailscale.authenticated == Some(false) && tailscale.desired_mode != Some(TailscaleMode::Disabled);
+    let desired = tailscale
+        .desired_mode
+        .map(tailscale_mode_label)
+        .unwrap_or("未知");
+    let effective = tailscale
+        .effective_mode
+        .map(tailscale_mode_label)
+        .unwrap_or("尚未就绪");
+    let needs_login = tailscale.backend_state == TailscaleBackendState::NeedsLogin
+        || tailscale.authenticated == Some(false)
+            && tailscale.desired_mode != Some(TailscaleMode::Disabled);
     let lan_access_ready = tailscale.effective_mode == Some(TailscaleMode::LanSubnetAccess)
         && tailscale.backend_state == TailscaleBackendState::Running
         && tailscale.authenticated == Some(true)
@@ -132,8 +210,16 @@ pub(crate) fn render_tailscale_control(state: &UseReducerHandle<AppState>, csrf:
     let disabled_ready = tailscale.desired_mode == Some(TailscaleMode::Disabled)
         && tailscale.effective_mode == Some(TailscaleMode::Disabled)
         && tailscale.backend_state == TailscaleBackendState::Stopped;
-    let enable_label = if lan_access_ready { "远程 LAN 访问已启用" } else { "启用远程 LAN 访问" };
-    let disable_label = if disabled_ready { "Tailscale 已停用" } else { "停用（保留认证）" };
+    let enable_label = if lan_access_ready {
+        "远程 LAN 访问已启用"
+    } else {
+        "启用远程 LAN 访问"
+    };
+    let disable_label = if disabled_ready {
+        "Tailscale 已停用"
+    } else {
+        "停用（保留认证）"
+    };
 
     html! {
         <SectionCard title_id="tailscale-title" busy={Some(busy)}>

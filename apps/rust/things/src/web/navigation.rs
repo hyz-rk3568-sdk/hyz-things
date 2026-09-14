@@ -84,7 +84,10 @@ impl AppPage {
     }
 
     pub(crate) const fn protected(self) -> bool {
-        matches!(self, Self::Network | Self::Proxy | Self::Devices | Self::Tailscale)
+        matches!(
+            self,
+            Self::Network | Self::Proxy | Self::Devices | Self::Tailscale
+        )
     }
 
     pub(crate) const fn next(self) -> Option<Self> {
@@ -147,7 +150,11 @@ impl PortalRoute {
                 hash.push('/');
                 hash.push_str(device_id);
             }
-            if let Some(filter) = self.device_filter.as_deref().filter(|value| !value.is_empty()) {
+            if let Some(filter) = self
+                .device_filter
+                .as_deref()
+                .filter(|value| !value.is_empty())
+            {
                 let query = url::form_urlencoded::Serializer::new(String::new())
                     .append_pair("q", filter)
                     .finish();
@@ -190,9 +197,7 @@ impl PortalRoute {
                 .find(|(key, _)| key == "q")
                 .map(|(_, value)| value.into_owned())
                 .filter(|value| {
-                    !value.is_empty()
-                        && value.len() <= 64
-                        && !value.chars().any(char::is_control)
+                    !value.is_empty() && value.len() <= 64 && !value.chars().any(char::is_control)
                 });
         }
 
@@ -211,7 +216,10 @@ impl PortalRoute {
 }
 
 fn canonical_device_id(value: &str) -> Option<String> {
-    value.parse::<LanDeviceMac>().ok().map(|mac| mac.to_string())
+    value
+        .parse::<LanDeviceMac>()
+        .ok()
+        .map(|mac| mac.to_string())
 }
 
 pub(crate) fn current_route() -> (PortalRoute, bool) {
@@ -248,9 +256,8 @@ pub(crate) fn app_nav_button(
     selected: UseStateHandle<PortalRoute>,
 ) -> Html {
     let active = candidate == current;
-    let onclick = Callback::from(move |_| {
-        navigate_route(&selected, PortalRoute::for_page(candidate), false)
-    });
+    let onclick =
+        Callback::from(move |_| navigate_route(&selected, PortalRoute::for_page(candidate), false));
     html! {
         <button
             id={candidate.tab_id()}

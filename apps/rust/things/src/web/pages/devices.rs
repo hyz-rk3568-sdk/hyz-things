@@ -278,7 +278,12 @@ pub(crate) fn devices_page(props: &DevicesPageProps) -> Html {
         .unwrap_or_default();
     let snapshot = props.state.device_policies.as_ref();
     let devices = snapshot.map(merged_devices).unwrap_or_default();
-    let filter = props.route.device_filter.as_deref().unwrap_or("").to_lowercase();
+    let filter = props
+        .route
+        .device_filter
+        .as_deref()
+        .unwrap_or("")
+        .to_lowercase();
     let visible_devices = devices
         .iter()
         .filter(|device| {
@@ -543,7 +548,10 @@ fn device_detail(props: &DeviceDetailProps) -> Html {
         || "状态未知".to_owned(),
         |snapshot| {
             if snapshot.effective {
-                format!("当前观测策略 {} · 配置代次生效状态待确认", policy_label(initial_policy))
+                format!(
+                    "当前观测策略 {} · 配置代次生效状态待确认",
+                    policy_label(initial_policy)
+                )
             } else {
                 "策略已保存，等待启用 TUN".to_owned()
             }

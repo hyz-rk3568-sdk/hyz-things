@@ -19,7 +19,10 @@ fn admin_auth_gate(props: &AdminAuthGateProps) -> Html {
         .as_ref()
         .map(|panel| panel.csrf_token.clone())
         .unwrap_or_default();
-    let authenticated = state.session.as_ref().is_some_and(|session| session.authenticated);
+    let authenticated = state
+        .session
+        .as_ref()
+        .is_some_and(|session| session.authenticated);
     let must_change = state
         .session
         .as_ref()
@@ -32,10 +35,18 @@ fn admin_auth_gate(props: &AdminAuthGateProps) -> Html {
         let input = login_password.clone();
         Callback::from(move |event: SubmitEvent| {
             event.prevent_default();
-            let Some(input) = input.cast::<HtmlInputElement>() else { return; };
+            let Some(input) = input.cast::<HtmlInputElement>() else {
+                return;
+            };
             let password = input.value();
             input.set_value("");
-            dispatch_auth(state.clone(), AUTH_LOGIN_ENDPOINT, csrf.clone(), LoginRequest { password }, "已登录");
+            dispatch_auth(
+                state.clone(),
+                AUTH_LOGIN_ENDPOINT,
+                csrf.clone(),
+                LoginRequest { password },
+                "已登录",
+            );
         })
     };
     let change_password = {
@@ -50,7 +61,9 @@ fn admin_auth_gate(props: &AdminAuthGateProps) -> Html {
                 current.cast::<HtmlInputElement>(),
                 new.cast::<HtmlInputElement>(),
                 confirm.cast::<HtmlInputElement>(),
-            ) else { return; };
+            ) else {
+                return;
+            };
             let current_value = current.value();
             let new_value = new.value();
             let confirm_value = confirm.value();
@@ -58,7 +71,9 @@ fn admin_auth_gate(props: &AdminAuthGateProps) -> Html {
             new.set_value("");
             confirm.set_value("");
             if !(12..=1_024).contains(&new_value.len()) {
-                state.dispatch(Action::SettingsNotice("新密码长度必须为 12–1024 字节".to_owned()));
+                state.dispatch(Action::SettingsNotice(
+                    "新密码长度必须为 12–1024 字节".to_owned(),
+                ));
                 return;
             }
             if new_value != confirm_value {
@@ -69,7 +84,10 @@ fn admin_auth_gate(props: &AdminAuthGateProps) -> Html {
                 state.clone(),
                 AUTH_PASSWORD_ENDPOINT,
                 csrf.clone(),
-                PasswordRequest { current_password: current_value, new_password: new_value },
+                PasswordRequest {
+                    current_password: current_value,
+                    new_password: new_value,
+                },
                 "密码已更新",
             );
         })
@@ -116,20 +134,49 @@ fn admin_auth_gate(props: &AdminAuthGateProps) -> Html {
 
 fn page_updated(state: &AppState, page: AppPage) -> String {
     let values: Vec<Option<&String>> = match page {
-        AppPage::Overview | AppPage::System => vec![state.status_meta.last_success.as_ref(), state.panel_meta.last_success.as_ref()],
+        AppPage::Overview | AppPage::System => vec![
+            state.status_meta.last_success.as_ref(),
+            state.panel_meta.last_success.as_ref(),
+        ],
         AppPage::Study => Vec::new(),
-        AppPage::Network => vec![state.network_meta.last_success.as_ref(), state.pending_meta.last_success.as_ref()],
-        AppPage::Proxy => vec![state.status_meta.last_success.as_ref(), state.panel_meta.last_success.as_ref(), state.subscription_meta.last_success.as_ref()],
+        AppPage::Network => vec![
+            state.network_meta.last_success.as_ref(),
+            state.pending_meta.last_success.as_ref(),
+        ],
+        AppPage::Proxy => vec![
+            state.status_meta.last_success.as_ref(),
+            state.panel_meta.last_success.as_ref(),
+            state.subscription_meta.last_success.as_ref(),
+        ],
         AppPage::Devices => vec![state.device_meta.last_success.as_ref()],
-        AppPage::Tailscale => vec![state.tailscale_meta.last_success.as_ref(), state.tailscale_peers_meta.last_success.as_ref()],
+        AppPage::Tailscale => vec![
+            state.tailscale_meta.last_success.as_ref(),
+            state.tailscale_peers_meta.last_success.as_ref(),
+        ],
         AppPage::Camera => vec![state.panel_meta.last_success.as_ref()],
         AppPage::Apps => vec![state.apps_meta.last_success.as_ref()],
     };
-    values.into_iter().flatten().max().cloned().unwrap_or_else(|| if page == AppPage::Study { "本地状态".to_owned() } else { "尚未更新".to_owned() })
+    values
+        .into_iter()
+        .flatten()
+        .max()
+        .cloned()
+        .unwrap_or_else(|| {
+            if page == AppPage::Study {
+                "本地状态".to_owned()
+            } else {
+                "尚未更新".to_owned()
+            }
+        })
 }
 
 fn dispatch_page_resources(state: UseReducerHandle<AppState>, page: AppPage, is_admin: bool) {
-    if page.protected() || matches!(page, AppPage::Overview | AppPage::Proxy | AppPage::Camera | AppPage::System) {
+    if page.protected()
+        || matches!(
+            page,
+            AppPage::Overview | AppPage::Proxy | AppPage::Camera | AppPage::System
+        )
+    {
         dispatch_panel_refresh(state.clone());
     }
     match page {
@@ -151,7 +198,11 @@ fn dispatch_page_resources(state: UseReducerHandle<AppState>, page: AppPage, is_
             dispatch_tailscale_peers_refresh(state.clone());
         }
         AppPage::Apps => dispatch_apps_refresh(state.clone()),
-        AppPage::Camera | AppPage::Network | AppPage::Proxy | AppPage::Devices | AppPage::Tailscale => {}
+        AppPage::Camera
+        | AppPage::Network
+        | AppPage::Proxy
+        | AppPage::Devices
+        | AppPage::Tailscale => {}
     }
 }
 
@@ -208,11 +259,19 @@ pub(crate) fn app() -> Html {
                     navigate_route(&changed_route, next, true);
                 }
             });
-            let _ = window.add_event_listener_with_callback("popstate", changed.as_ref().unchecked_ref());
-            let _ = window.add_event_listener_with_callback("hashchange", changed.as_ref().unchecked_ref());
+            let _ = window
+                .add_event_listener_with_callback("popstate", changed.as_ref().unchecked_ref());
+            let _ = window
+                .add_event_listener_with_callback("hashchange", changed.as_ref().unchecked_ref());
             move || {
-                let _ = window.remove_event_listener_with_callback("popstate", changed.as_ref().unchecked_ref());
-                let _ = window.remove_event_listener_with_callback("hashchange", changed.as_ref().unchecked_ref());
+                let _ = window.remove_event_listener_with_callback(
+                    "popstate",
+                    changed.as_ref().unchecked_ref(),
+                );
+                let _ = window.remove_event_listener_with_callback(
+                    "hashchange",
+                    changed.as_ref().unchecked_ref(),
+                );
             }
         });
     }
@@ -228,13 +287,25 @@ pub(crate) fn app() -> Html {
                     signal.set((*signal).wrapping_add(1));
                 }
             });
-            let _ = document.add_event_listener_with_callback("visibilitychange", refresh.as_ref().unchecked_ref());
-            let _ = window.add_event_listener_with_callback("focus", refresh.as_ref().unchecked_ref());
-            let _ = window.add_event_listener_with_callback("online", refresh.as_ref().unchecked_ref());
+            let _ = document.add_event_listener_with_callback(
+                "visibilitychange",
+                refresh.as_ref().unchecked_ref(),
+            );
+            let _ =
+                window.add_event_listener_with_callback("focus", refresh.as_ref().unchecked_ref());
+            let _ =
+                window.add_event_listener_with_callback("online", refresh.as_ref().unchecked_ref());
             move || {
-                let _ = document.remove_event_listener_with_callback("visibilitychange", refresh.as_ref().unchecked_ref());
-                let _ = window.remove_event_listener_with_callback("focus", refresh.as_ref().unchecked_ref());
-                let _ = window.remove_event_listener_with_callback("online", refresh.as_ref().unchecked_ref());
+                let _ = document.remove_event_listener_with_callback(
+                    "visibilitychange",
+                    refresh.as_ref().unchecked_ref(),
+                );
+                let _ = window
+                    .remove_event_listener_with_callback("focus", refresh.as_ref().unchecked_ref());
+                let _ = window.remove_event_listener_with_callback(
+                    "online",
+                    refresh.as_ref().unchecked_ref(),
+                );
             }
         });
     }
@@ -264,10 +335,18 @@ pub(crate) fn app() -> Html {
             dispatch_page_resources(state.clone(), page, is_admin);
             spawn_local(async move {
                 loop {
-                    let delay = if document_hidden() { HIDDEN_RESOURCE_DELAY_MS } else { POLL_DELAY_MS };
+                    let delay = if document_hidden() {
+                        HIDDEN_RESOURCE_DELAY_MS
+                    } else {
+                        POLL_DELAY_MS
+                    };
                     TimeoutFuture::new(delay).await;
-                    if task_cancelled.get() { break; }
-                    if document_hidden() { continue; }
+                    if task_cancelled.get() {
+                        break;
+                    }
+                    if document_hidden() {
+                        continue;
+                    }
                     dispatch_dynamic_resources(state.clone(), page, is_admin);
                 }
             });
@@ -275,7 +354,11 @@ pub(crate) fn app() -> Html {
         });
     }
 
-    let admin_csrf = state.panel.as_ref().map(|panel| panel.csrf_token.clone()).unwrap_or_default();
+    let admin_csrf = state
+        .panel
+        .as_ref()
+        .map(|panel| panel.csrf_token.clone())
+        .unwrap_or_default();
     let (overall_text, overall_tone) = if state.snapshot.is_none() && page == AppPage::Study {
         ("按页面加载", Tone::Neutral)
     } else {
@@ -287,22 +370,36 @@ pub(crate) fn app() -> Html {
         let portal_swipe_surface = portal_swipe_surface.clone();
         let swipe_start = swipe_start.clone();
         Callback::from(move |event: PointerEvent| {
-            if event.pointer_type() != "touch" || !event.is_primary() { return; }
+            if event.pointer_type() != "touch" || !event.is_primary() {
+                return;
+            }
             if !swipe_start_allowed(&event) {
                 *swipe_start.borrow_mut() = None;
                 return;
             }
             *swipe_start.borrow_mut() = Some((event.client_x(), event.client_y()));
-            if let Some(target) = portal_swipe_surface.cast::<Element>() { let _ = target.set_pointer_capture(event.pointer_id()); }
+            if let Some(target) = portal_swipe_surface.cast::<Element>() {
+                let _ = target.set_pointer_capture(event.pointer_id());
+            }
         })
     };
     let on_portal_pointer_up = {
         let route = route.clone();
         let swipe_start = swipe_start.clone();
         Callback::from(move |event: PointerEvent| {
-            if event.pointer_type() != "touch" || !event.is_primary() { return; }
-            let Some((start_x, start_y)) = swipe_start.borrow_mut().take() else { return; };
-            if let Some(next) = app_page_for_swipe(route.page, start_x, start_y, event.client_x(), event.client_y()) {
+            if event.pointer_type() != "touch" || !event.is_primary() {
+                return;
+            }
+            let Some((start_x, start_y)) = swipe_start.borrow_mut().take() else {
+                return;
+            };
+            if let Some(next) = app_page_for_swipe(
+                route.page,
+                start_x,
+                start_y,
+                event.client_x(),
+                event.client_y(),
+            ) {
                 navigate_route(&route, PortalRoute::for_page(next), false);
             }
         })

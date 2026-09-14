@@ -260,7 +260,11 @@ pub(crate) fn settings(props: &SettingsProps) -> Html {
             |(applied, candidate)| {
                 format!(
                     "{} · {}",
-                    if applied { "等待确认" } else { "候选待应用" },
+                    if applied {
+                        "等待确认"
+                    } else {
+                        "候选待应用"
+                    },
                     candidate.config.ap_ssid
                 )
             },

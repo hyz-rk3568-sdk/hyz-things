@@ -129,7 +129,10 @@ pub(crate) fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
         };
     };
     let csrf = bootstrap.csrf_token.clone();
-    let proxy = state.snapshot.as_ref().and_then(|snapshot| snapshot.proxy.data.as_ref());
+    let proxy = state
+        .snapshot
+        .as_ref()
+        .and_then(|snapshot| snapshot.proxy.data.as_ref());
     let lan_desired = proxy.and_then(|status| status.lan_tun.desired);
     let local_system_proxy_desired = proxy.and_then(|status| status.local_system_proxy.desired);
     let lan_status = proxy.map_or_else(|| "未知".to_owned(), lan_tun_status_label);
@@ -157,7 +160,12 @@ pub(crate) fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
                 PROXY_LAN_TUN_ENDPOINT,
                 csrf.clone(),
                 ProxyFeatureRequestDto { enabled },
-                if enabled { "LAN 透明代理已启用" } else { "LAN 透明代理已关闭，普通 NAT 保持可用" }.to_owned(),
+                if enabled {
+                    "LAN 透明代理已启用"
+                } else {
+                    "LAN 透明代理已关闭，普通 NAT 保持可用"
+                }
+                .to_owned(),
             );
         })
     };
@@ -173,7 +181,12 @@ pub(crate) fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
                 PROXY_LOCAL_SYSTEM_ENDPOINT,
                 csrf.clone(),
                 ProxyFeatureRequestDto { enabled },
-                if enabled { "本机系统代理已启用" } else { "本机系统代理已关闭，普通本机 HTTP/HTTPS 连接不使用该显式代理" }.to_owned(),
+                if enabled {
+                    "本机系统代理已启用"
+                } else {
+                    "本机系统代理已关闭，普通本机 HTTP/HTTPS 连接不使用该显式代理"
+                }
+                .to_owned(),
             );
         })
     };
@@ -225,8 +238,12 @@ pub(crate) fn render_proxy_control(state: &UseReducerHandle<AppState>) -> Html {
 }
 
 pub(crate) fn render_proxy_groups_read_only(component: &Component<Vec<ProxyGroup>>) -> Html {
-    let Some(groups) = component.data.as_ref() else { return Html::default(); };
-    if groups.is_empty() { return Html::default(); }
+    let Some(groups) = component.data.as_ref() else {
+        return Html::default();
+    };
+    if groups.is_empty() {
+        return Html::default();
+    }
     html! {
         <SectionCard title_id="proxy-readonly-title">
             <PageHeader title_id="proxy-readonly-title" eyebrow="PROXY STATUS" title="当前代理与延迟"><span class={SECTION_META}>{"只读 · 修改需管理员登录"}</span></PageHeader>
@@ -257,8 +274,12 @@ pub(crate) fn render_proxy_groups(
     csrf: &str,
     busy: bool,
 ) -> Html {
-    let Some(groups) = component.data.as_ref() else { return Html::default(); };
-    if groups.is_empty() { return Html::default(); }
+    let Some(groups) = component.data.as_ref() else {
+        return Html::default();
+    };
+    if groups.is_empty() {
+        return Html::default();
+    }
     let refresh_delays = {
         let state = state.clone();
         let csrf = csrf.to_owned();
