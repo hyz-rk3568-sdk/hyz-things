@@ -32,7 +32,7 @@ pub(crate) fn app_shell(props: &AppShellProps) -> Html {
                     <span class={STATUS_DOT} aria-hidden="true"></span>
                     <div class={OVERALL_COPY}>
                         <strong class={OVERALL_TITLE}>{props.overall_text.clone()}</strong>
-                        <small class={OVERALL_META}>{format!("最后更新：{}", props.updated)}</small>
+                        <small class={OVERALL_META}>{format!("当前页最后成功更新：{}", props.updated)}</small>
                     </div>
                 </div>
             </header>
@@ -66,7 +66,7 @@ pub(crate) fn app_shell(props: &AppShellProps) -> Html {
                     {for props.children.iter()}
                 </div>
             </div>
-            <footer class={FOOTER}>{"数据约每 2 秒自动刷新 · 写操作仅接受同源令牌保护的类型化请求"}</footer>
+            <footer class={FOOTER}>{"仅当前页面订阅所需资源 · 前台动态状态按基线刷新 · 后台降频/暂停 · 写操作使用同源类型化请求"}</footer>
         </main>
     }
 }

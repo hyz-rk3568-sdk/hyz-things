@@ -1,18 +1,22 @@
 #![cfg(feature = "web")]
 
 mod api;
-mod app;
+mod app_v2;
 mod components;
+mod navigation;
+mod resources;
 mod ui;
 
 mod hooks;
 mod pages;
 
 use api::*;
-use app::*;
+use app_v2::*;
 use components::*;
 use hooks::*;
+use navigation::*;
 use pages::*;
+use resources::*;
 
 use std::{
     cell::{Cell, RefCell},
