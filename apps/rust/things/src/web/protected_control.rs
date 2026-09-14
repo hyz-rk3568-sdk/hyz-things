@@ -1,10 +1,6 @@
 use super::*;
 
-pub(crate) fn expire_protected_auth(
-    state: &UseReducerHandle<AppState>,
-    epoch: u64,
-    error: &str,
-) {
+pub(crate) fn expire_protected_auth(state: &UseReducerHandle<AppState>, epoch: u64, error: &str) {
     if error.contains("HTTP 401") {
         state.dispatch(Action::AuthenticationExpired(
             epoch,
