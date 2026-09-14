@@ -97,7 +97,7 @@ test("merges discovered, configured-offline, and activity-only devices into list
   await expect(detail.getByText("api.openai.com:443")).toBeVisible();
   await expect(detail.getByText(/MATCH · HYZ-PROXY/)).toBeVisible();
   await expect(detail.getByText(/出口 新加坡 → HYZ-PROXY/)).toBeVisible();
-  await expect(detail.getByText(/↑ 1.0 KiB · ↓ 2.0 KiB/)).toBeVisible();
+  await expect(detail.getByRole("strong").filter({ hasText: "↑ 1.0 KiB · ↓ 2.0 KiB" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(detail).toHaveCount(0);
   await expect(opener).toBeFocused();
