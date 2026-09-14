@@ -235,6 +235,7 @@ test("supports the administrator, STA, AP, and write-only subscription journey",
     (await readHarnessState(request)).device_policies.config.entries,
   ).toEqual([]);
 
+  await goToAppPage(page, "代理");
   const subscription = page.getByRole("article", { name: "代理订阅" });
   const subscriptionInput = subscription.getByLabel("订阅 URL");
   await subscriptionInput.fill("https://example.com/router-e2e.yaml");
