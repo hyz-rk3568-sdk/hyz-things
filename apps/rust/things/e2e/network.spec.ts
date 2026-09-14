@@ -234,6 +234,7 @@ test("supports the administrator, STA, AP, and write-only subscription journey",
   expect(
     (await readHarnessState(request)).device_policies.config.entries,
   ).toEqual([]);
+  await expect(page.getByRole("article", { name: "代理订阅" })).toHaveCount(0);
 
   await goToAppPage(page, "代理");
   const subscription = page.getByRole("article", { name: "代理订阅" });
