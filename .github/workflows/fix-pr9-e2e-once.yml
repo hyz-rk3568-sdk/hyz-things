@@ -1,0 +1,47 @@
+name: Fix PR9 E2E once
+
+on:
+  push:
+    branches:
+      - feat/web-page-data-and-devices
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/web-page-data-and-devices
+          fetch-depth: 0
+      - name: Align E2E selectors with devices UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          activity = Path('apps/rust/things/e2e/activity.spec.ts')
+          text = activity.read_text()
+          text = text.replace('getByRole("article", { name: "设备 ', 'getByRole("listitem", { name: "设备 ')
+          text = text.replace('const detail = page.getByRole("dialog", { name: "e2e-phone" });', 'const detail = page.getByRole("dialog");')
+          activity.write_text(text)
+
+          proxy = Path('apps/rust/things/e2e/proxy.spec.ts')
+          text = proxy.read_text().replace('["网络", "代理", "活动", "Tailscale"]', '["网络", "代理", "设备", "Tailscale"]')
+          proxy.write_text(text)
+          PY
+          git diff --check
+          if git diff --quiet; then
+            echo 'No E2E selector changes required.'
+            exit 0
+          fi
+          git diff -- apps/rust/things/e2e/activity.spec.ts apps/rust/things/e2e/proxy.spec.ts
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/rust/things/e2e/activity.spec.ts apps/rust/things/e2e/proxy.spec.ts
+          git commit -m 'test(web): align device E2E selectors'
+          git push origin HEAD:feat/web-page-data-and-devices
