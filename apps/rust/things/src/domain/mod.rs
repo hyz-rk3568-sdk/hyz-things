@@ -4,6 +4,7 @@ pub mod camera;
 pub mod device_policy;
 pub mod network_config;
 pub mod panel;
+pub mod refresh;
 pub mod status;
 pub mod subscription;
 pub mod tailscale;
