@@ -120,6 +120,17 @@ fn policy_label(policy: DevicePolicyDto) -> &'static str {
     }
 }
 
+fn reconcile_draft<T>(current: &T, dirty: bool, server: &T) -> (T, bool)
+where
+    T: Clone + PartialEq,
+{
+    if !dirty || current == server {
+        (server.clone(), false)
+    } else {
+        (current.clone(), true)
+    }
+}
+
 fn activity_for_device(snapshot: &DevicePolicySnapshotDto, mac: &str) -> Vec<ActivityRecordDto> {
     let mut seen = BTreeSet::new();
     let mut records = snapshot
@@ -467,7 +478,7 @@ fn device_detail(props: &DeviceDetailProps) -> Html {
             .iter()
             .find(|entry| entry.mac.eq_ignore_ascii_case(&props.selected_mac))
     });
-    let initial_label = persisted
+    let server_label = persisted
         .map(|entry| entry.label.clone())
         .filter(|label| !label.is_empty())
         .or_else(|| {
@@ -480,25 +491,64 @@ fn device_detail(props: &DeviceDetailProps) -> Html {
             })
         })
         .unwrap_or_default();
-    let initial_policy = props
+    let observed_policy = props
         .device
         .as_ref()
         .map(|device| device.policy)
         .or_else(|| persisted.map(|entry| entry.policy))
         .unwrap_or(DevicePolicyDto::Proxy);
-    let label = use_state(|| initial_label);
-    let policy = use_state(|| initial_policy);
+    let server_policy = persisted
+        .map(|entry| entry.policy)
+        .or_else(|| props.device.as_ref().map(|device| device.policy))
+        .unwrap_or(DevicePolicyDto::Proxy);
+    let label = use_state(|| server_label.clone());
+    let policy = use_state(|| server_policy);
+    let label_dirty = use_state(|| false);
+    let policy_dirty = use_state(|| false);
+    {
+        let label = label.clone();
+        let policy = policy.clone();
+        let label_dirty = label_dirty.clone();
+        let policy_dirty = policy_dirty.clone();
+        use_effect_with(
+            (server_label.clone(), server_policy),
+            move |(server_label, server_policy)| {
+                let (next_label, next_label_dirty) =
+                    reconcile_draft(&*label, *label_dirty, server_label);
+                if *label != next_label {
+                    label.set(next_label);
+                }
+                if *label_dirty != next_label_dirty {
+                    label_dirty.set(next_label_dirty);
+                }
+
+                let (next_policy, next_policy_dirty) =
+                    reconcile_draft(&*policy, *policy_dirty, server_policy);
+                if *policy != next_policy {
+                    policy.set(next_policy);
+                }
+                if *policy_dirty != next_policy_dirty {
+                    policy_dirty.set(next_policy_dirty);
+                }
+                || ()
+            },
+        );
+    }
     let on_label = {
         let label = label.clone();
+        let label_dirty = label_dirty.clone();
         Callback::from(move |event: InputEvent| {
             let input: HtmlInputElement = event.target_unchecked_into();
+            label_dirty.set(true);
             label.set(input.value());
         })
     };
     let on_policy = {
         let policy = policy.clone();
+        let policy_dirty = policy_dirty.clone();
         Callback::from(move |event: Event| {
             let select: HtmlSelectElement = event.target_unchecked_into();
+            policy_dirty.set(true);
             policy.set(if select.value() == "direct" {
                 DevicePolicyDto::Direct
             } else {
@@ -557,7 +607,7 @@ fn device_detail(props: &DeviceDetailProps) -> Html {
         || "状态未知".to_owned(),
         |snapshot| {
             if snapshot.effective {
-                format!("当前观测策略 {} · 已生效", policy_label(initial_policy))
+                format!("当前观测策略 {} · 已生效", policy_label(observed_policy))
             } else {
                 "策略已保存，等待启用 TUN".to_owned()
             }
@@ -625,5 +675,28 @@ fn device_detail(props: &DeviceDetailProps) -> Html {
                 </div>
             </section>
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn device_policy_draft_tracks_refresh_without_overwriting_dirty_edits() {
+        let (clean_value, clean_dirty) =
+            reconcile_draft(&DevicePolicyDto::Direct, false, &DevicePolicyDto::Proxy);
+        assert!(clean_value == DevicePolicyDto::Proxy);
+        assert!(!clean_dirty);
+
+        let (dirty_value, dirty_stays_dirty) =
+            reconcile_draft(&DevicePolicyDto::Direct, true, &DevicePolicyDto::Proxy);
+        assert!(dirty_value == DevicePolicyDto::Direct);
+        assert!(dirty_stays_dirty);
+
+        let (saved_value, saved_dirty) =
+            reconcile_draft(&DevicePolicyDto::Proxy, true, &DevicePolicyDto::Proxy);
+        assert!(saved_value == DevicePolicyDto::Proxy);
+        assert!(!saved_dirty);
     }
 }
