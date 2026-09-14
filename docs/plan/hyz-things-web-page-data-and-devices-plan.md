@@ -4,7 +4,7 @@
 
 **代码已实施，目标板验收待完成。**
 
-创建日期：2026-09-14。  
+创建日期：2026-09-14。
 实施完成日期：2026-09-15。
 
 本文承接 [Web 前端结构与界面重构计划](hyz-things-web-frontend-refactor-plan.md)，定义门户页面数据、刷新调度、设备操作与 URL 导航的实施范围。功能代码在独立分支 `feat/web-page-data-and-devices`、PR #9 中完成。
@@ -212,12 +212,12 @@ Tailscale 写操作开始时暂停该页状态/peers 周期调度，并推进 Ta
 
 ### 10.1 Red 证据
 
-示例 Red commit：`bc78e8e36c30e6dee328b87cd9427e7cb70ec756`。  
+示例 Red commit：`bc78e8e36c30e6dee328b87cd9427e7cb70ec756`。
 Portal CI #50 / run `34863968744`：39 passed，1 failed。唯一失败是新增断言“网络页不应再包含代理订阅”，当时页面仍显示该模块，故为预期 Red。
 
 ### 10.2 完整 Green 候选
 
-代码候选 commit：`d980a14a587342d272f5ba17987d7dce1afcc4f1`。  
+代码候选 commit：`d980a14a587342d272f5ba17987d7dce1afcc4f1`。
 Portal CI #73 / run `34883024079` 全绿：
 
 | Job | 结果 |
