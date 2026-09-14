@@ -316,6 +316,27 @@ pub(super) enum AppPage {
 }
 
 impl AppPage {
+    pub(super) const fn hash(self) -> &'static str {
+        match self {
+            Self::Overview => "#/overview",
+            Self::Study => "#/study",
+            Self::Network => "#/network",
+            Self::Proxy => "#/proxy",
+            Self::Activity => "#/activity",
+            Self::Tailscale => "#/tailscale",
+            Self::Camera => "#/camera",
+            Self::Apps => "#/apps",
+            Self::System => "#/system",
+        }
+    }
+
+    pub(super) fn from_hash(hash: &str) -> Self {
+        Self::ALL
+            .into_iter()
+            .find(|page| page.hash() == hash)
+            .unwrap_or(Self::Overview)
+    }
+
     const ALL: [Self; 9] = [
         Self::Overview,
         Self::Study,
@@ -442,7 +463,7 @@ pub(super) fn app_nav_button(
     selected: UseStateHandle<AppPage>,
 ) -> Html {
     let active = candidate == current;
-    let onclick = Callback::from(move |_| selected.set(candidate));
+    let onclick = Callback::from(move |_| navigate_page(&selected, candidate));
     html! {
         <button
             id={candidate.tab_id()}
@@ -635,15 +656,57 @@ fn admin_auth_gate(props: &AdminAuthGateProps) -> Html {
     Html::default()
 }
 
+fn current_page() -> AppPage {
+    let hash = web_sys::window()
+        .and_then(|window| window.location().hash().ok())
+        .unwrap_or_default();
+    AppPage::from_hash(&hash)
+}
+
+fn navigate_page(selected: &UseStateHandle<AppPage>, page: AppPage) {
+    if let Some(window) = web_sys::window() {
+        if window.location().hash().ok().as_deref() != Some(page.hash()) {
+            let _ = window.location().set_hash(page.hash());
+        }
+    }
+    selected.set(page);
+}
+
 #[function_component(App)]
 pub(super) fn app() -> Html {
     let state = use_reducer(AppState::default);
     let brightness = use_state(|| 128u16);
     let delay_refresh_started = use_state(|| false);
-    let app_page = use_state(|| AppPage::Overview);
+    let app_page = use_state(current_page);
     let camera_stop_generation = use_state(|| 0u32);
     let swipe_start = use_mut_ref(|| None::<(i32, i32)>);
     let portal_swipe_surface = use_node_ref();
+
+    {
+        let app_page = app_page.clone();
+        use_effect_with((), move |_| {
+            let window = web_sys::window().expect("browser window");
+            let page = current_page();
+            if window.location().hash().ok().as_deref() != Some(page.hash()) {
+                if let Ok(history) = window.history() {
+                    let _ = history.replace_state_with_url(&JsValue::NULL, "", Some(page.hash()));
+                }
+            }
+            let changed = Closure::<dyn FnMut(Event)>::new(move |_| {
+                app_page.set(current_page());
+            });
+            let _ = window.add_event_listener_with_callback(
+                "hashchange",
+                changed.as_ref().unchecked_ref(),
+            );
+            move || {
+                let _ = window.remove_event_listener_with_callback(
+                    "hashchange",
+                    changed.as_ref().unchecked_ref(),
+                );
+            }
+        });
+    }
 
     {
         let state = state.clone();
@@ -765,7 +828,7 @@ pub(super) fn app() -> Html {
                 event.client_x(),
                 event.client_y(),
             ) {
-                app_page.set(next);
+                navigate_page(&app_page, next);
             }
         })
     };
