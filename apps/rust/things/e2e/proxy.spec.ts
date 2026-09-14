@@ -242,3 +242,27 @@ test("expires the admin session when a protected proxy mutation returns 401", as
   await expect(page).toHaveURL(/#\/proxy$/);
   await expect(page.getByRole("heading", { name: "代理设置" })).toHaveCount(0);
 });
+
+test("isolates subscription read failures and never auto-runs proxy mutations", async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.route("**/api/v1/proxy/subscription", (route) =>
+    route.fulfill({ status: 503, contentType: "application/json", body: "{}" }),
+  );
+  const automaticMutations: string[] = [];
+  page.on("request", (request) => {
+    if (
+      request.method() === "POST" &&
+      (/\/api\/v1\/control\/proxy\/delays$/.test(request.url()) ||
+        /\/api\/v1\/control\/proxy\/subscription\/refresh$/.test(request.url()))
+    ) {
+      automaticMutations.push(request.url());
+    }
+  });
+
+  await goToAppPage(page, "代理");
+  await expect(page.getByText(/订阅状态读取失败/)).toBeVisible();
+  await expect(page.getByRole("switch", { name: "LAN 透明代理" })).toBeEnabled();
+  await expect(page.getByRole("switch", { name: "本机系统代理" })).toBeEnabled();
+  await page.waitForTimeout(2_500);
+  expect(automaticMutations).toEqual([]);
+});

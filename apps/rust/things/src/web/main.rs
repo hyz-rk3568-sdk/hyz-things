@@ -1,7 +1,7 @@
 #![cfg(feature = "web")]
 
 mod api;
-mod app_v2;
+mod app;
 mod components;
 mod navigation;
 mod protected_control;
@@ -12,7 +12,7 @@ mod hooks;
 mod pages;
 
 use api::*;
-use app_v2::*;
+use app::*;
 use components::*;
 use hooks::*;
 use navigation::*;

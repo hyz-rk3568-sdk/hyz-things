@@ -191,7 +191,7 @@ fn dispatch_page_resources(state: UseReducerHandle<AppState>, page: AppPage, is_
             dispatch_subscription_refresh_read(state.clone());
         }
         AppPage::Devices if is_admin => dispatch_devices_refresh(state.clone()),
-        AppPage::Tailscale if is_admin => {
+        AppPage::Tailscale if is_admin && !state.tailscale_busy => {
             dispatch_tailscale_refresh(state.clone());
             dispatch_tailscale_peers_refresh(state.clone());
         }
@@ -216,7 +216,7 @@ fn dispatch_dynamic_resources(state: UseReducerHandle<AppState>, page: AppPage, 
             dispatch_panel_refresh(state.clone());
         }
         AppPage::Devices if is_admin => dispatch_devices_refresh(state.clone()),
-        AppPage::Tailscale if is_admin => {
+        AppPage::Tailscale if is_admin && !state.tailscale_busy => {
             dispatch_tailscale_refresh(state.clone());
             dispatch_tailscale_peers_refresh(state.clone());
         }
@@ -351,6 +351,7 @@ pub(crate) fn app() -> Html {
         .session
         .as_ref()
         .is_some_and(|session| session.authenticated && !session.must_change);
+    let tailscale_mutation_busy = state.tailscale_busy;
     let refresh_marker = dynamic_refresh_marker(&state, page, is_admin);
     {
         let refresh_failures = refresh_failures.clone();
@@ -381,43 +382,49 @@ pub(crate) fn app() -> Html {
     {
         let state = state.clone();
         let refresh_signal = *refresh_signal;
-        use_effect_with((page, is_admin, refresh_signal), move |_| {
-            dispatch_page_resources(state.clone(), page, is_admin);
-            || ()
-        });
+        use_effect_with(
+            (page, is_admin, refresh_signal, tailscale_mutation_busy),
+            move |_| {
+                dispatch_page_resources(state.clone(), page, is_admin);
+                || ()
+            },
+        );
     }
     {
         let state = state.clone();
         let (failure_page, failures) = *refresh_failures;
         let consecutive_failures = if failure_page == page { failures } else { 0 };
-        use_effect_with((page, is_admin, consecutive_failures), move |_| {
-            debug_assert_eq!(
-                POLL_DELAY_MS,
-                hyz_things::domain::refresh::VISIBLE_RESOURCE_DELAY_MS
-            );
-            let cancelled = Rc::new(Cell::new(false));
-            let task_cancelled = cancelled.clone();
-            spawn_local(async move {
-                loop {
-                    let scheduled_hidden = document_hidden();
-                    let schedule = hyz_things::domain::refresh::refresh_schedule(
-                        scheduled_hidden,
-                        consecutive_failures,
-                    );
-                    TimeoutFuture::new(schedule.delay_ms).await;
-                    if task_cancelled.get() {
-                        break;
+        use_effect_with(
+            (page, is_admin, consecutive_failures, tailscale_mutation_busy),
+            move |_| {
+                debug_assert_eq!(
+                    POLL_DELAY_MS,
+                    hyz_things::domain::refresh::VISIBLE_RESOURCE_DELAY_MS
+                );
+                let cancelled = Rc::new(Cell::new(false));
+                let task_cancelled = cancelled.clone();
+                spawn_local(async move {
+                    loop {
+                        let scheduled_hidden = document_hidden();
+                        let schedule = hyz_things::domain::refresh::refresh_schedule(
+                            scheduled_hidden,
+                            consecutive_failures,
+                        );
+                        TimeoutFuture::new(schedule.delay_ms).await;
+                        if task_cancelled.get() {
+                            break;
+                        }
+                        if scheduled_hidden != document_hidden() {
+                            continue;
+                        }
+                        if schedule.should_refresh {
+                            dispatch_dynamic_resources(state.clone(), page, is_admin);
+                        }
                     }
-                    if scheduled_hidden != document_hidden() {
-                        continue;
-                    }
-                    if schedule.should_refresh {
-                        dispatch_dynamic_resources(state.clone(), page, is_admin);
-                    }
-                }
-            });
-            move || cancelled.set(true)
-        });
+                });
+                move || cancelled.set(true)
+            },
+        );
     }
 
     let admin_csrf = state
@@ -431,6 +438,10 @@ pub(crate) fn app() -> Html {
         overall_status(&state)
     };
     let updated = page_updated(&state, page);
+    let retry_apps = {
+        let state = state.clone();
+        Callback::from(move |_| dispatch_apps_refresh(state.clone()))
+    };
 
     let on_portal_pointer_down = {
         let portal_swipe_surface = portal_swipe_surface.clone();
@@ -506,7 +517,9 @@ pub(crate) fn app() -> Html {
                     <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
                         <SectionCard title_id="apps-title">
                             <PageHeader title_id="apps-title" eyebrow="APPS" title="应用"><span class={SECTION_META}>{state.apps_meta.status_text()}</span></PageHeader>
-                            if let Some(error) = &state.apps_error { <ErrorState message={format!("部署记录读取失败：{error}")} /> }
+                            if let Some(error) = &state.apps_error {
+                                <div class="grid gap-2"><ErrorState message={format!("部署记录读取失败：{error}")} /><div class={BUTTON_ROW}><button class={BUTTON} type="button" onclick={retry_apps.clone()} disabled={state.apps_meta.loading}>{"重试应用状态"}</button></div></div>
+                            }
                             <div class={APP_GRID}>
                                 <article class={APP_CARD} aria-labelledby="apps-camera-title"><div class={CONTROL_TITLE}><h3 id="apps-camera-title" class={CONTROL_HEADING}>{"摄像头直播"}</h3><CameraAvailability /></div><p class={HELP_TEXT}>{"实时查看摄像头画面；画面配置需要管理员身份。"}</p></article>
                                 <article class={APP_CARD} aria-labelledby="apps-router-title"><div class={CONTROL_TITLE}><h3 id="apps-router-title" class={CONTROL_HEADING}>{"路由器控制面"}</h3></div><p class={HELP_TEXT}>{"网络、代理、设备、Tailscale 与系统能力已拆分为一级页面。"}</p></article>

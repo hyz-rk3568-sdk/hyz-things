@@ -272,3 +272,39 @@ test("shows Tailnet peer empty, initial-error, stale, and recovery states", asyn
   await expect(tailscale.getByText("laptop", { exact: true })).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
 });
+
+test("pauses Tailscale status polling while a mutation is in flight", async ({ page, request }) => {
+  const initial = await readHarnessState(request);
+  initial.tailscale.data.authenticated = true;
+  initial.tailscale.data.backend_state = "running";
+  initial.tailscale.data.desired_mode = "router_only";
+  initial.tailscale.data.effective_mode = "router_only";
+  expect(
+    (await request.put(`${harnessOrigin}/state`, { data: initial })).ok(),
+  ).toBeTruthy();
+
+  await loginAsAdmin(page);
+  await goToAppPage(page, "Tailscale");
+  const enable = page.getByRole("button", { name: "启用远程 LAN 访问" });
+  await expect(enable).toBeEnabled();
+
+  let statusReads = 0;
+  page.on("request", (request) => {
+    if (
+      request.method() === "GET" &&
+      new URL(request.url()).pathname === "/api/v1/tailscale"
+    ) {
+      statusReads += 1;
+    }
+  });
+  await page.route("**/api/v1/control/tailscale/mode", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+    await route.continue();
+  });
+
+  const baseline = statusReads;
+  await enable.click();
+  await page.waitForTimeout(2_300);
+  expect(statusReads).toBe(baseline);
+  await expect.poll(() => statusReads, { timeout: 7_500 }).toBeGreaterThan(baseline);
+});

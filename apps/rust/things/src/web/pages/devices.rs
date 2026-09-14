@@ -347,6 +347,15 @@ pub(crate) fn devices_page(props: &DevicesPageProps) -> Html {
             restore_list_focus(scroll, opener.clone());
         })
     };
+    let device_notice = props.state.device_notice.as_ref().map(|notice| {
+        if notice == "设备策略已保存，生效状态待确认"
+            && snapshot.is_some_and(|snapshot| snapshot.effective)
+        {
+            "设备策略已保存，已生效".to_owned()
+        } else {
+            notice.clone()
+        }
+    });
 
     html! {
         <>
@@ -354,8 +363,8 @@ pub(crate) fn devices_page(props: &DevicesPageProps) -> Html {
                 <PageHeader title_id="devices-title" eyebrow="LAN DEVICES" title="设备">
                     <span class={SECTION_META}>{props.state.device_meta.status_text()}</span>
                 </PageHeader>
-                if let Some(notice) = &props.state.device_notice {
-                    <FeedbackState message={AttrValue::from(notice.clone())} />
+                if let Some(notice) = device_notice {
+                    <FeedbackState message={AttrValue::from(notice)} />
                 }
                 if let Some(error) = &props.state.device_meta.error {
                     <div class="grid gap-2">
@@ -548,10 +557,7 @@ fn device_detail(props: &DeviceDetailProps) -> Html {
         || "状态未知".to_owned(),
         |snapshot| {
             if snapshot.effective {
-                format!(
-                    "当前观测策略 {} · 配置代次生效状态待确认",
-                    policy_label(initial_policy)
-                )
+                format!("当前观测策略 {} · 已生效", policy_label(initial_policy))
             } else {
                 "策略已保存，等待启用 TUN".to_owned()
             }
@@ -574,7 +580,11 @@ fn device_detail(props: &DeviceDetailProps) -> Html {
                     if props.device.is_none() {
                         <div class={RISK_NOTE} role="status">{"当前未发现该设备；若它有已保存配置，配置仍保留。"}</div>
                     } else if let Some(device) = &props.device {
-                        <div class={SUMMARY}><span>{match device.associated { Some(true) => "在线", Some(false) => "离线", None => "当前在线状态未知" }}</span><strong>{device.lease_address.as_deref().unwrap_or("无租约 IP")}</strong></div>
+                        if device.configured && device.associated.is_none() {
+                            <div class={RISK_NOTE} role="status">{"当前未发现该设备；已保存配置仍保留。"}</div>
+                        } else {
+                            <div class={SUMMARY}><span>{match device.associated { Some(true) => "在线", Some(false) => "离线", None => "当前在线状态未知" }}</span><strong>{device.lease_address.as_deref().unwrap_or("无租约 IP")}</strong></div>
+                        }
                     }
                     <article class={INNER_CARD} aria-labelledby="device-policy-detail-title">
                         <div class={CONTROL_TITLE}><h3 id="device-policy-detail-title" class={CONTROL_HEADING}>{"代理策略"}</h3><span class={CONTROL_META}>{runtime}</span></div>
@@ -582,7 +592,7 @@ fn device_detail(props: &DeviceDetailProps) -> Html {
                             <div class={FORM_GRID_COMPACT}>
                                 <label class={FIELD}><span class={FIELD_LABEL}>{"显示名"}</span><input class={INPUT} value={(*label).clone()} oninput={on_label} maxlength="32" aria-label={format!("{} 显示名", props.selected_mac)} /></label>
                                 <label class={FIELD}><span class={FIELD_LABEL}>{"路由策略"}</span><select class={SELECT} value={if *policy == DevicePolicyDto::Direct { "direct" } else { "proxy" }} onchange={on_policy} aria-label={format!("{} 代理策略", props.selected_mac)}><option value="proxy">{"按规则分流"}</option><option value="direct">{"直连"}</option></select></label>
-                                <small class={HELP_TEXT}>{format!("当前配置代次 {}。保存成功只证明配置已持久化；接口未提供“该代次已应用”的确认字段。", snapshot.config.generation)}</small>
+                                <small class={HELP_TEXT}>{format!("当前配置代次 {}。写入成功先表示“已保存”；成功回读且 effective=true 时，表示当前配置的设备规则已由运行态确认应用。", snapshot.config.generation)}</small>
                                 <div class={FORM_ACTIONS}>
                                     if let Some(save) = save { <button class={BUTTON_PRIMARY} type="button" onclick={save} disabled={props.state.device_busy || props.csrf.is_empty()}>{"保存设备设置"}</button> }
                                     if let Some(clear) = clear { <button class={BUTTON_GHOST} type="button" onclick={clear} disabled={props.state.device_busy || props.csrf.is_empty()}>{"清除名称和自定义策略"}</button> }
