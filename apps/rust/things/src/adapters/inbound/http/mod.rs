@@ -1422,7 +1422,7 @@ async fn invoke_tailscale_mutation_authorized(
             .into_response()
         }
         Ok(_) => service_unavailable_json(),
-        Err(_) => control_failed_json(),
+        Err(error) => control_failed_json(&error),
     }
 }
 
@@ -1574,7 +1574,7 @@ async fn invoke_sensitive_control_authorized(
             Json(TailscalePeersResponse { peers: snapshot }).into_response()
         }
         (_, Ok(_)) => service_unavailable_json(),
-        (_, Err(_)) => control_failed_json(),
+        (_, Err(error)) => control_failed_json(&error),
     }
 }
 
@@ -1685,7 +1685,7 @@ async fn invoke_control_authorized(state: &AppState, operation: ControlOperation
         | Ok(result @ ControlResult::ProxyDelay { .. })
         | Ok(result @ ControlResult::ProxyDelays { .. }) => Json(result).into_response(),
         Ok(_) => service_unavailable_json(),
-        Err(_) => control_failed_json(),
+        Err(error) => control_failed_json(&error),
     }
 }
 
@@ -1831,14 +1831,14 @@ fn tailscale_self_stop_conflict_json() -> Response {
         .into_response()
 }
 
-fn control_failed_json() -> Response {
-    (
-        StatusCode::CONFLICT,
-        Json(serde_json::json!({
-            "error": { "code": "control_failed", "message": "Control operation did not complete" }
-        })),
-    )
-        .into_response()
+fn control_failed_payload(message: &str) -> serde_json::Value {
+    serde_json::json!({
+        "error": { "code": "control_failed", "message": message }
+    })
+}
+
+fn control_failed_json(message: &str) -> Response {
+    (StatusCode::CONFLICT, Json(control_failed_payload(message))).into_response()
 }
 
 fn service_unavailable_json() -> Response {
@@ -2060,6 +2060,20 @@ mod tests {
         let second = SecretString::new("b".repeat(64));
         assert_ne!(camera_session_owner(&first), camera_session_owner(&second));
         assert_eq!(camera_session_owner(&first), camera_session_owner(&first));
+    }
+
+    #[test]
+    fn control_failure_echoes_the_sanitized_router_message() {
+        let message = "an AP transaction is already pending";
+        assert_eq!(
+            control_failed_payload(message),
+            serde_json::json!({
+                "error": {
+                    "code": "control_failed",
+                    "message": "an AP transaction is already pending"
+                }
+            })
+        );
     }
 
     #[test]

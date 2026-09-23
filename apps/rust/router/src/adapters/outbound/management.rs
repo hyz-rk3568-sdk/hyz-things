@@ -1257,22 +1257,6 @@ impl super::process::LinuxRouterPlatform {
         ))
     }
 
-    fn follow_sta_channel(
-        &self,
-        config: &NetworkConfigV1,
-    ) -> Result<ApRadioChannel, PlatformError> {
-        let channel = self.current_sta_channel()?.ok_or_else(|| {
-            PlatformError::ProbeFailed(
-                "ready STA did not report an associated frequency".to_owned(),
-            )
-        })?;
-        self.detach_ap()?;
-        let profile = radio_ap_profile(WAN_INTERFACE, channel)?;
-        self.start_hostapd_on_channel(&config.ap, channel, profile)?;
-        self.attach_ap()?;
-        Ok(channel)
-    }
-
     /// Try one bounded VHT80 cutover after the management AP is already serving.
     /// `None` means the STA/radio is not ready yet; `Some(false)` means HT20 was preserved.
     pub fn try_upgrade_ap_to_vht80(&self) -> Result<Option<bool>, PlatformError> {
@@ -1759,17 +1743,17 @@ impl WifiPlatformPort for super::process::LinuxRouterPlatform {
         Ok(committed_network_config()?.summary())
     }
 
-    fn begin_sta_candidate(&self) -> Result<NetworkConfigV1, PlatformError> {
+    fn apply_sta(&self, candidate: &StaConfig) -> Result<NetworkConfigSummary, PlatformError> {
         let store = NetworkConfigStore::default();
-        if store
-            .read_sta_rollback()
-            .map_err(network_config_error)?
-            .is_some()
-        {
-            return Err(PlatformError::Conflict(
-                "an interrupted STA transaction requires recovery".to_owned(),
-            ));
+        // A durable STA rollback journal can only be left by the old live-swap transaction.
+        // Resolve it eagerly exactly like startup recovery (restore the durable pre-transaction
+        // snapshot and drop the journal) so the direct-commit flow is never blocked by a stale
+        // journal, and no new journal is created here.
+        if let Some(snapshot) = store.read_sta_rollback().map_err(network_config_error)? {
+            persist_network_config_verified(&store, &snapshot)?;
+            store.remove_sta_rollback().map_err(network_config_error)?;
         }
+        // Never clobber an in-flight AP staging transaction.
         if store
             .read_pending()
             .map_err(network_config_error)?
@@ -1779,99 +1763,16 @@ impl WifiPlatformPort for super::process::LinuxRouterPlatform {
                 "an AP transaction is already pending".to_owned(),
             ));
         }
-        let committed = committed_network_config()?;
-        store
-            .persist_sta_rollback(&committed)
-            .map_err(network_config_error)?;
-        Ok(committed)
-    }
-
-    fn apply_sta_candidate(&self, candidate: &StaConfig) -> Result<(), PlatformError> {
         let mut config = committed_network_config()?;
         config.sta = candidate.clone();
-        self.restart_management_services(&config, true)
-    }
-
-    fn sta_candidate_ready(&self, candidate: &StaConfig) -> Result<bool, PlatformError> {
-        if self.wait_for_sta_route(Duration::from_secs(30)).is_err() {
-            return Ok(false);
-        }
-        let mut config = committed_network_config()?;
-        config.sta = candidate.clone();
-        let channel = self.follow_sta_channel(&config)?;
-        // Require two coherent post-restart observations so a driver disconnect cannot be hidden
-        // briefly by a stale DHCP address/default route while udhcpc processes deconfiguration.
-        for observation in 0..2 {
-            if !self.sta_associated_with(candidate, channel)?
-                || !self.hostapd_enabled_on_channel(channel)?
-                || !self.owned_sta_address_and_route_ready()?
-            {
-                return Ok(false);
-            }
-            if observation == 0 {
-                thread::sleep(Duration::from_millis(500));
-            }
-        }
-        Ok(true)
-    }
-
-    fn commit_sta_candidate(
-        &self,
-        candidate: StaConfig,
-    ) -> Result<NetworkConfigSummary, PlatformError> {
-        let store = NetworkConfigStore::default();
-        let committed = store
-            .read_sta_rollback()
-            .map_err(network_config_error)?
-            .ok_or_else(|| {
-                PlatformError::InvalidState("STA rollback journal is absent".to_owned())
-            })?;
-        let mut config = committed.clone();
-        config.sta = candidate;
+        // Persist before applying so a crash between the two settles on the persisted config.
         persist_network_config_verified(&store, &config)?;
-        if let Err(removal) = store.remove_sta_rollback().map_err(network_config_error) {
-            // An unlink followed by a failed directory fsync is ambiguous. Recreate the old
-            // journal and restore the canonical file before reporting failure; the application
-            // still owns the in-memory snapshot and will restore runtime services next.
-            let journal = store
-                .persist_sta_rollback(&committed)
-                .map_err(network_config_error);
-            let persistence = persist_network_config_verified(&store, &committed);
-            return match (journal, persistence) {
-                (Ok(()), Ok(())) => Err(removal),
-                (journal, persistence) => Err(PlatformError::InvalidState(format!(
-                    "STA commit journal removal failed: {removal}; journal restoration={journal:?}; canonical restoration={persistence:?}"
-                ))),
-            };
-        }
+        // Apply by reusing the proven cold-start management sequence on the freshly persisted
+        // committed config: the STA associates first, then the AP is brought up on the shared
+        // channel (FastStart when a fresh last-good channel matches). A failed upstream keeps the
+        // management AP fail-open, so the portal stays reachable for a retry.
+        self.restart_management_services(&config, false)?;
         Ok(config.summary())
-    }
-
-    fn rollback_sta_candidate(&self, committed: &NetworkConfigV1) -> Result<(), PlatformError> {
-        let store = NetworkConfigStore::default();
-        let persistence = persist_network_config_verified(&store, committed);
-        let runtime = self
-            .restart_management_services(committed, true)
-            .and_then(|()| self.wait_for_sta_route(Duration::from_secs(30)))
-            .and_then(|()| {
-                if self.management_services_ready()? && self.owned_sta_address_and_route_ready()? {
-                    Ok(())
-                } else {
-                    Err(PlatformError::UnsafeToCutOver(
-                        "committed STA/AP restoration did not pass strict readiness".to_owned(),
-                    ))
-                }
-            });
-        match (persistence, runtime) {
-            (Ok(()), Ok(())) => store
-                .remove_sta_rollback()
-                .map_err(network_config_error),
-            (Err(persistence), Ok(())) => Err(persistence),
-            (Ok(()), Err(runtime)) => Err(runtime),
-            (Err(persistence), Err(runtime)) => Err(PlatformError::InvalidState(format!(
-                "committed persistence restoration failed: {persistence}; runtime restoration also failed: {runtime}"
-            ))),
-        }
     }
 
     fn prepare_ap_candidate(
