@@ -1768,10 +1768,15 @@ impl WifiPlatformPort for super::process::LinuxRouterPlatform {
         // Persist before applying so a crash between the two settles on the persisted config.
         persist_network_config_verified(&store, &config)?;
         // Apply by reusing the proven cold-start management sequence on the freshly persisted
-        // committed config: the STA associates first, then the AP is brought up on the shared
-        // channel (FastStart when a fresh last-good channel matches). A failed upstream keeps the
-        // management AP fail-open, so the portal stays reachable for a retry.
-        self.restart_management_services(&config, false)?;
+        // committed config. The commit is already durable, so a transient first-pass restart error
+        // (e.g. the shared radio mid cross-band change) must not misreport a successful commit as
+        // a failure: the reconciliation loop converges management, and the status endpoint reports
+        // the real observed state (STA/AP/link) which the portal shows for any retry.
+        if let Err(error) = self.restart_management_services(&config, false) {
+            eprintln!(
+                "hyz-router: STA commit persisted; management restart deferred to reconcile: {error}"
+            );
+        }
         Ok(config.summary())
     }
 

@@ -14,9 +14,11 @@ pub trait WifiPlatformPort: Send + Sync {
     fn recover_interrupted_ap_transaction(&self) -> Result<(), PlatformError>;
     fn scan(&self) -> Result<Vec<WifiScanEntry>, PlatformError>;
     fn committed_config(&self) -> Result<NetworkConfigSummary, PlatformError>;
-    /// Persists `candidate` as the committed STA and applies it by reusing the proven cold-start
-    /// management sequence. No live-swap rollback journal is created: the management AP stays
-    /// fail-open, so a failed upstream remains reachable from the portal for a retry.
+    /// Persists `candidate` as the committed STA and triggers the proven cold-start management
+    /// sequence for it. No live-swap rollback journal is created: the commit is durable, and if
+    /// the shared-radio restart first pass is transiently blocked, the reconciliation loop
+    /// converges management while the status endpoint reports the real observed state so the
+    /// portal can be used to retry.
     fn apply_sta(&self, candidate: &StaConfig) -> Result<NetworkConfigSummary, PlatformError>;
     fn prepare_ap_candidate(
         &self,
