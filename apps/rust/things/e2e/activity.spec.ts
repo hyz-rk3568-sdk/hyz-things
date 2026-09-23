@@ -104,6 +104,42 @@ test("merges discovered, configured-offline, and activity-only devices into list
   await expect(page).toHaveURL(/#\/devices\?q=iPhone$/);
 });
 
+test("device detail dropdown shows the saved policy instead of defaulting to direct", async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.route("**/api/v1/proxy/device-policies", route =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        config: {
+          version: 1,
+          generation: 4,
+          entries: [{ mac: "02:00:00:00:00:10", label: "我的 iPhone", policy: "proxy" }],
+        },
+        clients: [
+          {
+            mac: "02:00:00:00:00:10",
+            lease_address: "192.168.8.10",
+            hostname: "e2e-phone",
+            associated: true,
+            policy: "proxy",
+          },
+        ],
+        effective: true,
+      }),
+    }),
+  );
+  await goToAppPage(page, "设备");
+  await page.getByRole("button", { name: "打开设备 我的 iPhone" }).click();
+  const detail = page.getByRole("dialog");
+  const policy = detail.getByLabel("02:00:00:00:00:10 代理策略");
+  // The dropdown must reflect the saved 按规则分流 (proxy) policy. A regression used the
+  // `value` HTML attribute on <select>, which never selects an option, so Chromium pinned the
+  // dropdown to the last option (`直连`) regardless of the device's real policy.
+  await expect(policy).toHaveValue("proxy");
+  await expect(policy.locator("option:checked")).toHaveText("按规则分流");
+});
+
 test("edits policy from device detail and preserves a dirty draft across a 409", async ({ page, request }) => {
   await loginAsAdmin(page);
   await goToAppPage(page, "设备");

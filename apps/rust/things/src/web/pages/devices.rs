@@ -641,7 +641,7 @@ fn device_detail(props: &DeviceDetailProps) -> Html {
                         if let Some(snapshot) = &props.snapshot {
                             <div class={FORM_GRID_COMPACT}>
                                 <label class={FIELD}><span class={FIELD_LABEL}>{"显示名"}</span><input class={INPUT} value={(*label).clone()} oninput={on_label} maxlength="32" aria-label={format!("{} 显示名", props.selected_mac)} /></label>
-                                <label class={FIELD}><span class={FIELD_LABEL}>{"路由策略"}</span><select class={SELECT} value={if *policy == DevicePolicyDto::Direct { "direct" } else { "proxy" }} onchange={on_policy} aria-label={format!("{} 代理策略", props.selected_mac)}><option value="proxy">{"按规则分流"}</option><option value="direct">{"直连"}</option></select></label>
+                                <label class={FIELD}><span class={FIELD_LABEL}>{"路由策略"}</span><select class={SELECT} onchange={on_policy} aria-label={format!("{} 代理策略", props.selected_mac)}><option value="proxy" selected={*policy == DevicePolicyDto::Proxy}>{"按规则分流"}</option><option value="direct" selected={*policy == DevicePolicyDto::Direct}>{"直连"}</option></select></label>
                                 <small class={HELP_TEXT}>{format!("当前配置代次 {}。写入成功先表示“已保存”；成功回读且 effective=true 时，表示当前配置的设备规则已由运行态确认应用。", snapshot.config.generation)}</small>
                                 <div class={FORM_ACTIONS}>
                                     if let Some(save) = save { <button class={BUTTON_PRIMARY} type="button" onclick={save} disabled={props.state.device_busy || props.csrf.is_empty()}>{"保存设备设置"}</button> }
