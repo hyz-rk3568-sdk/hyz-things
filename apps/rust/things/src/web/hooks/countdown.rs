@@ -564,6 +564,7 @@ pub(crate) struct PreparedVideoPip {
     countdown: Rc<RefCell<PipCountdownConfig>>,
     cancelled: Rc<Cell<bool>>,
     _audio: Option<(AudioContext, MediaStreamAudioDestinationNode)>,
+    pip_media_policy: PipMediaPolicy,
     _on_leave: Closure<dyn FnMut(Event)>,
 }
 
@@ -1177,11 +1178,14 @@ pub(crate) fn prepare_countdown_pip_video(
             }
         });
     }
-    // 退出画中画（系统关闭按钮或 Esc）后复位状态：隐藏 video 继续静音播放。
+    let pip_media_policy = Rc::new(RefCell::new(None::<PipMediaPolicyState>));
+    // 退出画中画（系统关闭按钮或 Esc）后复位状态：隐藏 video 继续静音播放，
+    // 同时恢复进入 PiP 前的页面音频会话类型。
     let on_leave = {
         let video = video.clone();
+        let pip_media_policy = pip_media_policy.clone();
         Closure::<dyn FnMut(Event)>::new(move |_event: Event| {
-            video.set_muted(true);
+            restore_pip_media_policy(&video, None, &pip_media_policy);
             let _ = video.remove_attribute("data-countdown-pip-active");
         })
     };
@@ -1197,6 +1201,7 @@ pub(crate) fn prepare_countdown_pip_video(
         countdown,
         cancelled,
         _audio: audio,
+        pip_media_policy,
         _on_leave: on_leave,
     })
 }
@@ -1211,7 +1216,7 @@ pub(crate) fn open_video_pip(
     pip_notice: &UseStateHandle<Option<&'static str>>,
     pip_notice_seq: &Rc<RefCell<u32>>,
 ) -> bool {
-    let (video, audio_to_resume) = {
+    let (video, audio_to_resume, pip_media_policy) = {
         let prepared_guard = prepared.borrow();
         let Some(item) = prepared_guard.as_ref().and_then(|list| list.get(index)) else {
             return false;
@@ -1219,11 +1224,13 @@ pub(crate) fn open_video_pip(
         (
             item.video.clone(),
             item._audio.as_ref().map(|(context, _)| context.clone()),
+            item.pip_media_policy.clone(),
         )
     };
-    // 双击手势内解除静音（音轨本身是静音，无声音）并恢复音频上下文，
-    // 让 iOS 认为视频“有音频且正在播放”，提升画中画受理率。
-    video.set_muted(false);
+    // iPadOS 仍需要现有的静音兼容音轨来提高 PiP 受理率，但 PiP 本身
+    // 必须保持 muted，并在恢复 AudioContext 前将页面音频会话切成 ambient，
+    // 避免暂停抖音、Spotify、YouTube 等其他媒体。
+    activate_pip_media_policy(&video, None, &pip_media_policy);
     if let Some(context) = audio_to_resume {
         let _ = context.resume();
     }
@@ -1304,13 +1311,14 @@ pub(crate) fn open_video_pip(
         let outcome = outcome.clone();
         let pip_notice = pip_notice.clone();
         let pip_notice_seq = pip_notice_seq.clone();
+        let pip_media_policy = pip_media_policy.clone();
         spawn_local(async move {
             loop {
                 TimeoutFuture::new(EXAM_VIDEO_PIP_POLL_MS).await;
                 match *outcome.borrow() {
                     Some(PipActivation::Activated) => return,
                     Some(PipActivation::Failed) | Some(PipActivation::TimedOut) => {
-                        video.set_muted(true);
+                        restore_pip_media_policy(&video, None, &pip_media_policy);
                         let _ = video.remove_attribute("data-countdown-pip-active");
                         show_pip_notice(&pip_notice, &pip_notice_seq, "画中画激活失败，请再试一次");
                         return;
@@ -1330,6 +1338,7 @@ pub(crate) fn teardown_prepared_videos(prepared: &mut Vec<PreparedVideoPip>) {
         if picture_in_picture_active(&item.video) {
             let _ = picture_in_picture_exit(&item.video);
         }
+        restore_pip_media_policy(&item.video, None, &item.pip_media_policy);
         if let Some((context, _destination)) = item._audio.take() {
             let _ = context.close();
         }

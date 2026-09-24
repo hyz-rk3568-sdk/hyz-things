@@ -3,6 +3,7 @@
 mod api;
 mod app;
 mod components;
+mod media;
 mod navigation;
 mod protected_control;
 mod resources;
@@ -15,6 +16,7 @@ use api::*;
 use app::*;
 use components::*;
 use hooks::*;
+use media::*;
 use navigation::*;
 use pages::*;
 use protected_control::*;

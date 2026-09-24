@@ -4,6 +4,7 @@ import {
   expectNoHorizontalOverflow,
   goToAppPage,
   harnessOrigin,
+  installAudioSessionMock,
   installCameraWebRtcMock,
   loginAsAdmin,
   readHarnessState,
@@ -410,6 +411,7 @@ test("opens a countdown picture-in-picture window on mobile", async ({
 test("pumps WebCodecs frames into a WebKit-style picture-in-picture stream", async ({
   page,
 }) => {
+  await installAudioSessionMock(page);
   // 模拟 iPadOS Safari：无 Document PiP，有 VideoTrackGenerator、
   // webkitSetPresentationMode，但没有可靠 captureStream 语义——
   // 前端必须走 WebCodecs 轨道生成器路径并真实泵帧。
@@ -474,6 +476,8 @@ test("pumps WebCodecs frames into a WebKit-style picture-in-picture stream", asy
   await expect(
     page.locator("canvas[data-countdown-capture-canvas]"),
   ).toHaveCount(0);
+  const preparedVideo = page.locator("video[data-countdown-video]").first();
+  await expect(preparedVideo).toHaveJSProperty("muted", true);
   // 轨道生成器持续收到真实 VideoFrame。
   await expect
     .poll(() =>
@@ -493,7 +497,12 @@ test("pumps WebCodecs frames into a WebKit-style picture-in-picture stream", asy
       ),
     )
     .toBe(1);
-  await expect(page.locator("video[data-countdown-pip-active]")).toHaveCount(1);
+  const activePipVideo = page.locator("video[data-countdown-pip-active]");
+  await expect(activePipVideo).toHaveCount(1);
+  await expect(activePipVideo).toHaveJSProperty("muted", true);
+  expect(
+    await page.evaluate(() => (window as any).__hyzAudioSession.type),
+  ).toBe("ambient");
   // 源 canvas 首帧已绘制（背景不透明，不是空白/黑屏）。
   const pixel = await page.evaluate(() => {
     const canvas = document.querySelector(

@@ -44,6 +44,28 @@ export async function loginAsAdmin(page: Page) {
   await expect(page.getByRole('button', { name: '上游 Wi-Fi (STA)' })).toBeVisible();
 }
 
+export async function installAudioSessionMock(page: Page) {
+  await page.addInitScript(() => {
+    const typeChanges: string[] = [];
+    let type = 'auto';
+    const audioSession = {} as { type: string };
+    Object.defineProperty(audioSession, 'type', {
+      configurable: true,
+      get: () => type,
+      set: (next: string) => {
+        type = next;
+        typeChanges.push(next);
+      },
+    });
+    Object.defineProperty(navigator, 'audioSession', {
+      configurable: true,
+      value: audioSession,
+    });
+    (window as any).__hyzAudioSession = audioSession;
+    (window as any).__hyzAudioSessionTypeChanges = typeChanges;
+  });
+}
+
 export async function installCameraWebRtcMock(page: Page) {
   await page.addInitScript(() => {
     const transceivers: string[] = [];
