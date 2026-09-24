@@ -4,6 +4,7 @@ import {
   expectNoHorizontalOverflow,
   goToAppPage,
   harnessOrigin,
+  installAudioSessionMock,
   installCameraWebRtcMock,
   loginAsAdmin,
   readHarnessState,
@@ -25,6 +26,7 @@ test("plays the camera anonymously and controls it as an administrator", async (
   page,
   request,
 }) => {
+  await installAudioSessionMock(page);
   await installCameraWebRtcMock(page);
   await page.goto("/");
   // 总览不自动启动摄像头；直播能力在摄像头一级页面内。
@@ -91,14 +93,24 @@ test("plays the camera anonymously and controls it as an administrator", async (
   await expect(
     camera.getByRole("button", { name: "进入画中画" }),
   ).toBeEnabled();
+  const cameraAudio = camera.locator('audio[aria-label="摄像头麦克风"]');
+  await expect(cameraAudio).toHaveJSProperty("muted", false);
   await camera.getByRole("button", { name: "进入画中画" }).click();
   await expect(
     camera.getByRole("button", { name: "退出画中画" }),
   ).toBeVisible();
+  await expect(cameraAudio).toHaveJSProperty("muted", true);
+  expect(
+    await page.evaluate(() => (window as any).__hyzAudioSession.type),
+  ).toBe("ambient");
   await camera.getByRole("button", { name: "退出画中画" }).click();
   await expect(
     camera.getByRole("button", { name: "进入画中画" }),
   ).toBeVisible();
+  await expect(cameraAudio).toHaveJSProperty("muted", false);
+  expect(
+    await page.evaluate(() => (window as any).__hyzAudioSession.type),
+  ).toBe("auto");
 
   const readMediaSession = () =>
     page.evaluate(() => {
