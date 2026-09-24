@@ -473,6 +473,7 @@ pub(crate) fn camera_live_view(props: &CameraLiveViewProps) -> Html {
     let pip_supported = use_state(|| false);
     let pip_ready = use_state(|| false);
     let pip_active = use_state(|| false);
+    let pip_media_policy = use_mut_ref(|| None::<PipMediaPolicyState>);
     let runtime = use_mut_ref(|| None::<CameraSessionRuntime>);
     let generation = use_mut_ref(|| 0u64);
     // 页面隐藏时的延迟关闭计时器句柄（None 表示无待触发计时）。
@@ -484,9 +485,11 @@ pub(crate) fn camera_live_view(props: &CameraLiveViewProps) -> Html {
 
     {
         let video = video.clone();
+        let audio = audio.clone();
         let pip_supported = pip_supported.clone();
         let pip_ready = pip_ready.clone();
         let pip_active = pip_active.clone();
+        let pip_media_policy = pip_media_policy.clone();
         use_effect_with((), move |_| {
             let video_element = video.cast::<HtmlVideoElement>();
             let supported = video_element
@@ -496,12 +499,66 @@ pub(crate) fn camera_live_view(props: &CameraLiveViewProps) -> Html {
             pip_ready
                 .set(supported && video_element.as_ref().is_some_and(picture_in_picture_ready));
             let entered = {
+                let video_element = video_element.clone();
+                let audio = audio.clone();
                 let pip_active = pip_active.clone();
-                Closure::<dyn FnMut(Event)>::new(move |_| pip_active.set(true))
+                let pip_media_policy = pip_media_policy.clone();
+                Closure::<dyn FnMut(Event)>::new(move |_| {
+                    if let Some(video_element) = video_element.as_ref() {
+                        let audio_element = audio.cast::<HtmlMediaElement>();
+                        activate_pip_media_policy(
+                            video_element,
+                            audio_element.as_ref(),
+                            &pip_media_policy,
+                        );
+                    }
+                    pip_active.set(true);
+                })
             };
             let left = {
+                let video_element = video_element.clone();
+                let audio = audio.clone();
                 let pip_active = pip_active.clone();
-                Closure::<dyn FnMut(Event)>::new(move |_| pip_active.set(false))
+                let pip_media_policy = pip_media_policy.clone();
+                Closure::<dyn FnMut(Event)>::new(move |_| {
+                    if let Some(video_element) = video_element.as_ref() {
+                        let audio_element = audio.cast::<HtmlMediaElement>();
+                        restore_pip_media_policy(
+                            video_element,
+                            audio_element.as_ref(),
+                            &pip_media_policy,
+                        );
+                    }
+                    pip_active.set(false);
+                })
+            };
+            let presentation_changed = {
+                let video_element = video_element.clone();
+                let audio = audio.clone();
+                let pip_active = pip_active.clone();
+                let pip_media_policy = pip_media_policy.clone();
+                Closure::<dyn FnMut(Event)>::new(move |_| {
+                    let active = video_element
+                        .as_ref()
+                        .is_some_and(picture_in_picture_active);
+                    if let Some(video_element) = video_element.as_ref() {
+                        let audio_element = audio.cast::<HtmlMediaElement>();
+                        if active {
+                            activate_pip_media_policy(
+                                video_element,
+                                audio_element.as_ref(),
+                                &pip_media_policy,
+                            );
+                        } else {
+                            restore_pip_media_policy(
+                                video_element,
+                                audio_element.as_ref(),
+                                &pip_media_policy,
+                            );
+                        }
+                    }
+                    pip_active.set(active);
+                })
             };
             let ready = {
                 let pip_ready = pip_ready.clone();
@@ -525,7 +582,7 @@ pub(crate) fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                 );
                 let _ = video_element.add_event_listener_with_callback(
                     "webkitpresentationmodechanged",
-                    left.as_ref().unchecked_ref(),
+                    presentation_changed.as_ref().unchecked_ref(),
                 );
                 for event_name in ["loadedmetadata", "canplay", "playing"] {
                     let _ = video_element.add_event_listener_with_callback(
@@ -552,7 +609,7 @@ pub(crate) fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                     );
                     let _ = video_element.remove_event_listener_with_callback(
                         "webkitpresentationmodechanged",
-                        left.as_ref().unchecked_ref(),
+                        presentation_changed.as_ref().unchecked_ref(),
                     );
                     for event_name in ["loadedmetadata", "canplay", "playing"] {
                         let _ = video_element.remove_event_listener_with_callback(
@@ -566,6 +623,12 @@ pub(crate) fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                             reset.as_ref().unchecked_ref(),
                         );
                     }
+                    let audio_element = audio.cast::<HtmlMediaElement>();
+                    restore_pip_media_policy(
+                        video_element,
+                        audio_element.as_ref(),
+                        &pip_media_policy,
+                    );
                 }
                 pip_ready.set(false);
             }
@@ -1201,7 +1264,9 @@ pub(crate) fn camera_live_view(props: &CameraLiveViewProps) -> Html {
 
     let toggle_pip = {
         let video = video.clone();
+        let audio = audio.clone();
         let pip_active = pip_active.clone();
+        let pip_media_policy = pip_media_policy.clone();
         let notice = notice.clone();
         Callback::from(move |_| {
             let Some(video_element) = video.cast::<HtmlVideoElement>() else {
@@ -1212,17 +1277,36 @@ pub(crate) fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                 return;
             }
             let was_active = picture_in_picture_active(&video_element);
+            if !was_active {
+                let audio_element = audio.cast::<HtmlMediaElement>();
+                activate_pip_media_policy(
+                    &video_element,
+                    audio_element.as_ref(),
+                    &pip_media_policy,
+                );
+            }
             let operation = if was_active {
                 picture_in_picture_exit(&video_element)
             } else {
                 picture_in_picture_request(&video_element)
             };
+            let task_video = video_element.clone();
+            let task_audio = audio.clone();
+            let task_policy = pip_media_policy.clone();
             let pip_active = pip_active.clone();
             let notice = notice.clone();
             spawn_local(async move {
                 match operation {
                     Ok(value) => {
                         if await_picture_in_picture(value).await.is_ok() {
+                            if was_active && !picture_in_picture_active(&task_video) {
+                                let audio_element = task_audio.cast::<HtmlMediaElement>();
+                                restore_pip_media_policy(
+                                    &task_video,
+                                    audio_element.as_ref(),
+                                    &task_policy,
+                                );
+                            }
                             pip_active.set(!was_active);
                             notice.set(Some(if was_active {
                                 "已退出画中画".to_owned()
@@ -1230,10 +1314,26 @@ pub(crate) fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                                 "已进入画中画".to_owned()
                             }));
                         } else {
+                            if !was_active {
+                                let audio_element = task_audio.cast::<HtmlMediaElement>();
+                                restore_pip_media_policy(
+                                    &task_video,
+                                    audio_element.as_ref(),
+                                    &task_policy,
+                                );
+                            }
                             notice.set(Some("当前浏览器或视频源不支持画中画".to_owned()));
                         }
                     }
                     Err(_) => {
+                        if !was_active {
+                            let audio_element = task_audio.cast::<HtmlMediaElement>();
+                            restore_pip_media_policy(
+                                &task_video,
+                                audio_element.as_ref(),
+                                &task_policy,
+                            );
+                        }
                         notice.set(Some("当前浏览器或视频源不支持画中画".to_owned()));
                     }
                 }

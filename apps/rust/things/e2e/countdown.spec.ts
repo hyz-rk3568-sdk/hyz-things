@@ -478,13 +478,6 @@ test("pumps WebCodecs frames into a WebKit-style picture-in-picture stream", asy
   ).toHaveCount(0);
   const preparedVideo = page.locator("video[data-countdown-video]").first();
   await expect(preparedVideo).toHaveJSProperty("muted", true);
-  expect(
-    await preparedVideo.evaluate((video: HTMLVideoElement) =>
-      video.srcObject instanceof MediaStream
-        ? video.srcObject.getAudioTracks().length
-        : -1,
-    ),
-  ).toBe(0);
   // 轨道生成器持续收到真实 VideoFrame。
   await expect
     .poll(() =>
