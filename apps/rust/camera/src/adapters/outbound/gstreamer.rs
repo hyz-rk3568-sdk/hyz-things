@@ -43,12 +43,33 @@ const RNNOISE_VOICE_GAIN_DB: f32 = 6.0;
 const RNNOISE_VAD_ON_THRESHOLD: f32 = 0.65;
 const RNNOISE_VAD_OFF_THRESHOLD: f32 = 0.35;
 const RNNOISE_VAD_ATTACK_FRAMES: f32 = 10.0;
+
+/// RK3568 上 V4L2/MPP 插件必须以进程内注册方式加载 `GST_REGISTRY_FORK=no`：
+/// `gst-plugin-scanner` 子进程会漏掉 video4linux2，导致 `v4l2src` 工厂无法
+/// 实例化、整条媒体管线在启动时失败（当前表现为会话创建 HTTP 503
+/// `camera_unavailable`）。守护进程必须在 `gst::init()` 之前保证该值生效，
+/// 不能依赖外部 init 脚本注入的环境。
+const IN_PROCESS_REGISTRY_FORK: &str = "no";
+
+/// 决定进程内注册策略需要写回的 `GST_REGISTRY_FORK` 值：当前已是 `no` 时不改动；
+/// 未设置或设成了其它值（会在子进程扫描中丢失 V4L2 工厂）都覆盖回 `no`。
+fn in_process_registry_fork(current: Option<&str>) -> Option<&'static str> {
+    match current {
+        Some(IN_PROCESS_REGISTRY_FORK) => None,
+        _ => Some(IN_PROCESS_REGISTRY_FORK),
+    }
+}
 const RNNOISE_VAD_RELEASE_FRAMES: f32 = 40.0;
 
 pub struct GStreamerMediaAdapter;
 
 impl GStreamerMediaAdapter {
     pub fn new() -> Result<Self, MediaError> {
+        if let Some(value) =
+            in_process_registry_fork(std::env::var("GST_REGISTRY_FORK").ok().as_deref())
+        {
+            std::env::set_var("GST_REGISTRY_FORK", value);
+        }
         gst::init().map_err(|_| MediaError::PipelineFailed)?;
         let registry = gst::Registry::get();
         registry.scan_path(SYSTEM_PLUGIN_DIRECTORY);
@@ -1210,7 +1231,7 @@ impl RunningAudioMedia for GStreamerRunningAudioMedia {
 
 #[cfg(test)]
 mod tests {
-    use super::audio_element_suffix;
+    use super::{audio_element_suffix, in_process_registry_fork};
 
     #[test]
     fn audio_element_suffix_is_unique_across_sessions_of_the_same_generation() {
@@ -1226,5 +1247,18 @@ mod tests {
         assert_eq!(first_suffix, "a".repeat(16));
         assert_eq!(second_suffix, "b".repeat(16));
         assert!(!first_suffix.starts_with(generation));
+    }
+
+    #[test]
+    fn media_adapter_forces_in_process_registry_registration_before_gst_init() {
+        // 未设置：守护进程自足，不依赖 init 脚本注入，默认进程内注册。
+        assert_eq!(in_process_registry_fork(None), Some("no"));
+        // 已是所需的进程内注册值：不覆盖。
+        assert_eq!(in_process_registry_fork(Some("no")), None);
+        // init 未配置或设成其它值时（子进程扫描会丢失 V4L2 工厂），覆盖回 no，
+        // 否则媒体管线启动失败并让会话创建返回 HTTP 503 camera_unavailable。
+        assert_eq!(in_process_registry_fork(Some("1")), Some("no"));
+        assert_eq!(in_process_registry_fork(Some("yes")), Some("no"));
+        assert_eq!(in_process_registry_fork(Some("")), Some("no"));
     }
 }
