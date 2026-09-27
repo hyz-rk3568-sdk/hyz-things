@@ -19,8 +19,8 @@ use hyz_router::{
             TailscaleEnvironment, TailscaleLoginUrl, TailscaleMode, TailscaleObserved,
             TailscalePreferences, TailscaleProcessState, TailscaleReadiness,
             TAILSCALE_CGNAT_SUBNET, TAILSCALE_FORWARD_CHAIN, TAILSCALE_INPUT_CHAIN,
-            TAILSCALE_INTERFACE, TAILSCALE_LAN_ROUTE, TAILSCALE_MANAGEMENT_HTTP_PORT,
-            TAILSCALE_NAT_CHAIN, TAILSCALE_UDP_PORT,
+            TAILSCALE_INTERFACE, TAILSCALE_IPV6_INPUT_CHAIN, TAILSCALE_LAN_ROUTE,
+            TAILSCALE_MANAGEMENT_HTTP_PORT, TAILSCALE_NAT_CHAIN, TAILSCALE_UDP_PORT,
         },
     },
 };
@@ -174,6 +174,7 @@ fn fixed_domain_contract_and_connection_kind_do_not_change_readiness() {
     assert_eq!(TAILSCALE_UDP_PORT, 41_641);
     assert_eq!(TAILSCALE_MANAGEMENT_HTTP_PORT, 8080);
     assert_eq!(TAILSCALE_INPUT_CHAIN, "HYZ_TS_INPUT");
+    assert_eq!(TAILSCALE_IPV6_INPUT_CHAIN, "HYZ_TS6_INPUT");
     assert_eq!(TAILSCALE_FORWARD_CHAIN, "HYZ_TS_FWD");
     assert_eq!(TAILSCALE_NAT_CHAIN, "HYZ_TS_NAT");
 
