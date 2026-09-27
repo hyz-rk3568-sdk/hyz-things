@@ -9,7 +9,7 @@ use std::{
 use axum::{
     body::Body,
     extract::{rejection::JsonRejection, DefaultBodyLimit, Path, Request, State},
-    http::{header, HeaderMap, HeaderValue, Method, StatusCode},
+    http::{header, HeaderMap, HeaderValue, Method, StatusCode, Uri},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, on, MethodFilter},
@@ -61,6 +61,10 @@ const MAX_CAMERA_HTTP_JSON_BODY_BYTES: usize = CAMERA_MAX_SDP_BYTES + 4 * 1024;
 const VIEWER_TOKEN_TTL: Duration = Duration::from_secs(15 * 60);
 const VIEWER_TOKEN_TTL_SECONDS: u64 = 15 * 60;
 const MAX_VIEWER_TOKENS: usize = 128;
+const INDEX_CACHE_CONTROL: &str = "no-cache, must-revalidate";
+const IMMUTABLE_ASSET_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
+const DEFAULT_ASSET_CACHE_CONTROL: &str = "public, max-age=3600";
+const UNVERSIONED_BOOTSTRAP_CACHE_CONTROL: &str = "no-store";
 
 #[derive(Clone)]
 struct AppState {
@@ -86,7 +90,26 @@ struct AppState {
 
 #[derive(Clone)]
 struct AssetStore {
-    files: Arc<HashMap<String, Arc<[u8]>>>,
+    files: Arc<HashMap<String, Arc<AssetFile>>>,
+}
+
+#[derive(Clone)]
+struct AssetFile {
+    contents: Arc<[u8]>,
+    etag: Arc<str>,
+}
+
+fn quoted_hex_digest(contents: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let digest = Sha256::digest(contents);
+    let mut etag = String::with_capacity(digest.len() * 2 + 2);
+    etag.push('"');
+    for byte in digest {
+        etag.push(HEX[(byte >> 4) as usize] as char);
+        etag.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    etag.push('"');
+    etag
 }
 
 impl AssetStore {
@@ -108,7 +131,14 @@ impl AssetStore {
             }
             let mut contents = Vec::new();
             item.read_to_end(&mut contents)?;
-            files.insert(path, Arc::from(contents));
+            let etag = quoted_hex_digest(&contents);
+            files.insert(
+                path,
+                Arc::new(AssetFile {
+                    contents: Arc::from(contents),
+                    etag: Arc::from(etag),
+                }),
+            );
         }
         if !files.contains_key("index.html") {
             return Err(io::Error::new(
@@ -121,7 +151,7 @@ impl AssetStore {
         })
     }
 
-    fn get(&self, path: &str) -> Option<Arc<[u8]>> {
+    fn get(&self, path: &str) -> Option<Arc<AssetFile>> {
         self.files.get(path).cloned()
     }
 }
@@ -1732,11 +1762,16 @@ fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
         == 0
 }
 
-async fn frontend_root(State(state): State<AppState>) -> Response {
-    asset_response(&state.assets, "index.html", true)
+async fn frontend_root(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    asset_response(&state.assets, "index.html", &headers, INDEX_CACHE_CONTROL)
 }
 
-async fn frontend_asset(State(state): State<AppState>, Path(path): Path<String>) -> Response {
+async fn frontend_asset(
+    State(state): State<AppState>,
+    Path(path): Path<String>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Response {
     if path == "api" || path.starts_with("api/") {
         return not_found_json();
     }
@@ -1744,11 +1779,12 @@ async fn frontend_asset(State(state): State<AppState>, Path(path): Path<String>)
         return StatusCode::NOT_FOUND.into_response();
     }
     if state.assets.get(&path).is_some() {
-        asset_response(&state.assets, &path, path == "router-bootstrap.js")
+        let cache_control = asset_cache_control(&path, uri.query());
+        asset_response(&state.assets, &path, &headers, cache_control)
     } else if static_asset_path(&path) {
         StatusCode::NOT_FOUND.into_response()
     } else {
-        asset_response(&state.assets, "index.html", true)
+        asset_response(&state.assets, "index.html", &headers, INDEX_CACHE_CONTROL)
     }
 }
 
@@ -1872,12 +1908,28 @@ fn method_not_allowed_json() -> Response {
         .into_response()
 }
 
-fn asset_response(assets: &AssetStore, path: &str, no_cache: bool) -> Response {
-    let Some(contents) = assets.get(path) else {
+fn asset_response(
+    assets: &AssetStore,
+    path: &str,
+    request_headers: &HeaderMap,
+    cache_control: &'static str,
+) -> Response {
+    let Some(asset) = assets.get(path) else {
         return StatusCode::NOT_FOUND.into_response();
     };
+    let etag = HeaderValue::from_str(&asset.etag).expect("asset etag must be a valid header value");
+    if if_none_match_matches(request_headers, &asset.etag) {
+        let mut response = StatusCode::NOT_MODIFIED.into_response();
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static(cache_control),
+        );
+        response.headers_mut().insert(header::ETAG, etag);
+        return response;
+    }
+
     let mime = mime_guess::from_path(path).first_or_octet_stream();
-    let mut response = Response::new(Body::from(contents.to_vec()));
+    let mut response = Response::new(Body::from(asset.contents.to_vec()));
     response.headers_mut().insert(
         header::CONTENT_TYPE,
         HeaderValue::from_str(mime.as_ref())
@@ -1885,13 +1937,61 @@ fn asset_response(assets: &AssetStore, path: &str, no_cache: bool) -> Response {
     );
     response.headers_mut().insert(
         header::CACHE_CONTROL,
-        HeaderValue::from_static(if no_cache {
-            "no-store"
-        } else {
-            "public, max-age=3600"
-        }),
+        HeaderValue::from_static(cache_control),
     );
+    response.headers_mut().insert(header::ETAG, etag);
     response
+}
+
+fn asset_cache_control(path: &str, query: Option<&str>) -> &'static str {
+    if path == "router-bootstrap.js" {
+        return if has_version_query(query) {
+            IMMUTABLE_ASSET_CACHE_CONTROL
+        } else {
+            UNVERSIONED_BOOTSTRAP_CACHE_CONTROL
+        };
+    }
+    if is_fingerprinted_asset(path) {
+        IMMUTABLE_ASSET_CACHE_CONTROL
+    } else {
+        DEFAULT_ASSET_CACHE_CONTROL
+    }
+}
+
+fn has_version_query(query: Option<&str>) -> bool {
+    query.is_some_and(|query| {
+        query.split('&').any(|parameter| {
+            let Some((name, value)) = parameter.split_once('=') else {
+                return false;
+            };
+            name == "v"
+                && value.len() == 16
+                && value.chars().all(|character| character.is_ascii_hexdigit())
+        })
+    })
+}
+
+fn is_fingerprinted_asset(path: &str) -> bool {
+    path.split('/').any(|component| {
+        component.split(['-', '_', '.']).any(|segment| {
+            segment.len() >= 12
+                && segment
+                    .chars()
+                    .all(|character| character.is_ascii_hexdigit())
+        })
+    })
+}
+
+fn if_none_match_matches(headers: &HeaderMap, etag: &str) -> bool {
+    headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value.split(',').any(|candidate| {
+                let candidate = candidate.trim();
+                candidate == "*" || candidate == etag || candidate.strip_prefix("W/") == Some(etag)
+            })
+        })
 }
 
 fn safe_asset_path(path: &str) -> bool {
@@ -2098,6 +2198,48 @@ mod tests {
     }
 
     #[test]
+    fn fingerprinted_assets_use_immutable_cache_policy() {
+        assert!(is_fingerprinted_asset("hyz-things-web-e8fa7bf98704dde.js"));
+        assert!(is_fingerprinted_asset(
+            "hyz-things-web-e8fa7bf98704dde_bg.wasm"
+        ));
+        assert!(is_fingerprinted_asset(
+            "snippets/hyz-things-6205990f64405306/inline0.js"
+        ));
+        assert!(!is_fingerprinted_asset("manifest.webmanifest"));
+        assert_eq!(
+            asset_cache_control("router-bootstrap.js", Some("v=ec5f1858296beff6")),
+            IMMUTABLE_ASSET_CACHE_CONTROL
+        );
+        assert_eq!(
+            asset_cache_control("router-bootstrap.js", None),
+            UNVERSIONED_BOOTSTRAP_CACHE_CONTROL
+        );
+        assert_eq!(
+            asset_cache_control("manifest.webmanifest", None),
+            DEFAULT_ASSET_CACHE_CONTROL
+        );
+    }
+
+    #[test]
+    fn if_none_match_accepts_weak_list_and_wildcard_tags() {
+        let etag = "\"asset-etag\"";
+        let mut headers = HeaderMap::new();
+
+        headers.insert(
+            header::IF_NONE_MATCH,
+            HeaderValue::from_static("\"other\", W/\"asset-etag\""),
+        );
+        assert!(if_none_match_matches(&headers, etag));
+
+        headers.insert(header::IF_NONE_MATCH, HeaderValue::from_static("*"));
+        assert!(if_none_match_matches(&headers, etag));
+
+        headers.insert(header::IF_NONE_MATCH, HeaderValue::from_static("\"other\""));
+        assert!(!if_none_match_matches(&headers, etag));
+    }
+
+    #[test]
     fn administrator_cookie_attributes_depend_on_tls_and_parse_strictly() {
         let token = "a".repeat(64);
         let plain = session_cookie(&token, false)
@@ -2199,7 +2341,10 @@ mod tests {
             .unwrap();
         let archive = builder.into_inner().unwrap();
         let assets = AssetStore::from_tar(&archive).unwrap();
-        assert_eq!(assets.get("index.html").unwrap().as_ref(), &index[..]);
+        assert_eq!(
+            assets.get("index.html").unwrap().contents.as_ref(),
+            &index[..]
+        );
 
         let empty_archive = tar::Builder::new(Vec::new()).into_inner().unwrap();
         assert!(AssetStore::from_tar(&empty_archive).is_err());
