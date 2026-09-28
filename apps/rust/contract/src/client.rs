@@ -111,12 +111,7 @@ fn effective_uid() -> io::Result<u32> {
     let line = status
         .lines()
         .find(|line| line.starts_with("Uid:"))
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "process UID is unavailable",
-            )
-        })?;
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "process UID is unavailable"))?;
     line.split_whitespace()
         .nth(2)
         .and_then(|value| value.parse().ok())

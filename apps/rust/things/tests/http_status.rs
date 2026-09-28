@@ -480,7 +480,6 @@ fn typed_proxy_dto_keeps_layered_wire_values_stable() {
     assert_eq!(value["local_system_proxy"]["effective"], "disabled");
 }
 
-
 #[test]
 fn error_contract_keeps_machine_readable_failure_semantics() {
     let http = include_str!("../src/adapters/inbound/http/mod.rs");

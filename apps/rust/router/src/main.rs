@@ -3,8 +3,8 @@ use hyz_router::{
         inbound::{
             control::{
                 acquire_daemon_ownership, bind_control_socket, remove_control_socket, request,
-                require_root, serve_control, ControlHandler, ControlOperation, ControlProxyMode,
-                ControlError, ControlResult,
+                require_root, serve_control, ControlError, ControlHandler, ControlOperation,
+                ControlProxyMode, ControlResult,
             },
             dhcp_hook,
             ota_cli::{parse_ota_cli, OtaCommand, OTA_USAGE},
@@ -791,7 +791,12 @@ impl ControlHandler for ProductionRuntime {
                     PanelApplication::new(platform.as_ref()).snapshot()
                 })
                 .await
-                .map_err(|_| worker_control_error("panel_status", "panel status worker terminated unexpectedly"))?;
+                .map_err(|_| {
+                    worker_control_error(
+                        "panel_status",
+                        "panel status worker terminated unexpectedly",
+                    )
+                })?;
                 Ok(ControlResult::PanelStatus {
                     snapshot: Box::new(snapshot),
                 })
@@ -803,7 +808,9 @@ impl ControlHandler for ProductionRuntime {
                     PanelApplication::new(platform.as_ref()).set_display(&request)
                 })
                 .await
-                .map_err(|_| worker_control_error("display", "display worker terminated unexpectedly"))?
+                .map_err(|_| {
+                    worker_control_error("display", "display worker terminated unexpectedly")
+                })?
                 .map_err(|error| platform_control_error("display", error))?;
                 Ok(completed(format!(
                     "display reconciled; enabled={}; brightness={}",
@@ -817,7 +824,12 @@ impl ControlHandler for ProductionRuntime {
                     PanelApplication::new(platform.as_ref()).select_proxy(&request)
                 })
                 .await
-                .map_err(|_| worker_control_error("proxy_selection", "proxy selection worker terminated unexpectedly"))?
+                .map_err(|_| {
+                    worker_control_error(
+                        "proxy_selection",
+                        "proxy selection worker terminated unexpectedly",
+                    )
+                })?
                 .map_err(|error| platform_control_error("proxy_selection", error))?;
                 Ok(completed("proxy selection applied"))
             }
@@ -837,7 +849,12 @@ impl ControlHandler for ProductionRuntime {
                     PanelApplication::new(platform.as_ref()).measure_proxy_delay(&request.proxy)
                 })
                 .await
-                .map_err(|_| worker_control_error("proxy_delay", "proxy delay worker terminated unexpectedly"))?
+                .map_err(|_| {
+                    worker_control_error(
+                        "proxy_delay",
+                        "proxy delay worker terminated unexpectedly",
+                    )
+                })?
                 .map_err(|error| platform_control_error("proxy_delay", error))?;
                 Ok(ControlResult::ProxyDelay { result })
             }
@@ -860,7 +877,12 @@ impl ControlHandler for ProductionRuntime {
                     }
                 })
                 .await
-                .map_err(|_| worker_control_error("proxy_delay", "proxy delay refresh worker terminated unexpectedly"))?
+                .map_err(|_| {
+                    worker_control_error(
+                        "proxy_delay",
+                        "proxy delay refresh worker terminated unexpectedly",
+                    )
+                })?
                 .map_err(|error| platform_control_error("proxy_delay", error))?;
                 Ok(ControlResult::ProxyDelays { groups })
             }
@@ -877,7 +899,12 @@ impl ControlHandler for ProductionRuntime {
                     .snapshot()
                 })
                 .await
-                .map_err(|_| worker_control_error("device_policy", "device-policy discovery worker terminated unexpectedly"))?
+                .map_err(|_| {
+                    worker_control_error(
+                        "device_policy",
+                        "device-policy discovery worker terminated unexpectedly",
+                    )
+                })?
                 .map_err(|error| platform_control_error("device_policy", error))?;
                 Ok(ControlResult::DevicePolicies { snapshot })
             }
@@ -895,7 +922,12 @@ impl ControlHandler for ProductionRuntime {
                     .update(request)
                 })
                 .await
-                .map_err(|_| worker_control_error("device_policy", "device-policy worker terminated unexpectedly"))?
+                .map_err(|_| {
+                    worker_control_error(
+                        "device_policy",
+                        "device-policy worker terminated unexpectedly",
+                    )
+                })?
                 .map_err(|error| platform_control_error("device_policy", error))?;
                 Ok(ControlResult::DevicePolicies { snapshot })
             }
@@ -917,7 +949,12 @@ impl ControlHandler for ProductionRuntime {
                     .summary()
                 })
                 .await
-                .map_err(|_| worker_control_error("subscription", "subscription summary worker terminated unexpectedly"))?
+                .map_err(|_| {
+                    worker_control_error(
+                        "subscription",
+                        "subscription summary worker terminated unexpectedly",
+                    )
+                })?
                 .map_err(|error| platform_control_error("subscription", error))?;
                 Ok(ControlResult::Subscription { summary })
             }
@@ -940,7 +977,12 @@ impl ControlHandler for ProductionRuntime {
                     subscription.replace_url_and_refresh(url.expose().to_owned())
                 })
                 .await
-                .map_err(|_| worker_control_error("subscription", "subscription URL worker terminated unexpectedly"))?
+                .map_err(|_| {
+                    worker_control_error(
+                        "subscription",
+                        "subscription URL worker terminated unexpectedly",
+                    )
+                })?
                 .map_err(|error| platform_control_error("subscription", error))?;
                 Ok(ControlResult::Subscription { summary })
             }
@@ -963,7 +1005,12 @@ impl ControlHandler for ProductionRuntime {
                     .refresh()
                 })
                 .await
-                .map_err(|_| worker_control_error("subscription", "subscription refresh worker terminated unexpectedly"))?
+                .map_err(|_| {
+                    worker_control_error(
+                        "subscription",
+                        "subscription refresh worker terminated unexpectedly",
+                    )
+                })?
                 .map_err(|error| platform_control_error("subscription", error))?;
                 Ok(ControlResult::Subscription { summary })
             }
@@ -987,7 +1034,12 @@ impl ControlHandler for ProductionRuntime {
                     ReadTailnetPeers::new(tailscale.as_ref()).execute()
                 })
                 .await
-                .map_err(|_| worker_control_error("tailscale_peers", "Tailscale peer probe terminated unexpectedly"))?
+                .map_err(|_| {
+                    worker_control_error(
+                        "tailscale_peers",
+                        "Tailscale peer probe terminated unexpectedly",
+                    )
+                })?
                 .map_err(|error| platform_control_error("tailscale_peers", error))?;
                 Ok(ControlResult::TailscalePeers { snapshot })
             }
@@ -1066,7 +1118,9 @@ impl ControlHandler for ProductionRuntime {
                         .map(|result| result.actions_applied)
                 })
                 .await
-                .map_err(|_| worker_control_error("network", "router worker terminated unexpectedly"))?
+                .map_err(|_| {
+                    worker_control_error("network", "router worker terminated unexpectedly")
+                })?
                 .map_err(|error| platform_control_error("router_control", error))?;
                 actions_applied += router_actions;
                 if let Err(error) = self.reconcile_persisted_tailscale().await {
@@ -1145,7 +1199,9 @@ impl ControlHandler for ProductionRuntime {
                     WifiApplication::new(platform.as_ref()).committed()
                 })
                 .await
-                .map_err(|_| worker_control_error("network", "Wi-Fi status worker terminated unexpectedly"))?
+                .map_err(|_| {
+                    worker_control_error("network", "Wi-Fi status worker terminated unexpectedly")
+                })?
                 .map_err(|error| platform_control_error("network", error))?;
                 Ok(ControlResult::WifiConfig { config })
             }
@@ -1156,7 +1212,9 @@ impl ControlHandler for ProductionRuntime {
                     WifiApplication::new(platform.as_ref()).pending_status()
                 })
                 .await
-                .map_err(|_| worker_control_error("network", "Wi-Fi pending worker terminated unexpectedly"))?
+                .map_err(|_| {
+                    worker_control_error("network", "Wi-Fi pending worker terminated unexpectedly")
+                })?
                 .map_err(|error| platform_control_error("router_control", error))?;
                 let remaining_seconds = if applied {
                     pending.as_ref().map(|pending| {
@@ -1184,7 +1242,9 @@ impl ControlHandler for ProductionRuntime {
                     WifiApplication::new(platform.as_ref()).scan()
                 })
                 .await
-                .map_err(|_| worker_control_error("network", "Wi-Fi scan worker terminated unexpectedly"))?
+                .map_err(|_| {
+                    worker_control_error("network", "Wi-Fi scan worker terminated unexpectedly")
+                })?
                 .map_err(|error| platform_control_error("network", error))?;
                 Ok(ControlResult::WifiScan { entries })
             }
@@ -1195,7 +1255,9 @@ impl ControlHandler for ProductionRuntime {
                     WifiApplication::new(platform.as_ref()).apply_sta(request)
                 })
                 .await
-                .map_err(|_| worker_control_error("network", "Wi-Fi STA worker terminated unexpectedly"))?
+                .map_err(|_| {
+                    worker_control_error("network", "Wi-Fi STA worker terminated unexpectedly")
+                })?
                 .map_err(|error| platform_control_error("network", error))?;
                 Ok(ControlResult::WifiConfig { config })
             }
@@ -1207,7 +1269,12 @@ impl ControlHandler for ProductionRuntime {
                     WifiApplication::new(platform.as_ref()).prepare_ap(request, staged_at)
                 })
                 .await
-                .map_err(|_| worker_control_error("network", "Wi-Fi AP prepare worker terminated unexpectedly"))?
+                .map_err(|_| {
+                    worker_control_error(
+                        "network",
+                        "Wi-Fi AP prepare worker terminated unexpectedly",
+                    )
+                })?
                 .map_err(|error| platform_control_error("network", error))?;
                 Ok(ControlResult::WifiPending { pending })
             }
@@ -1219,7 +1286,9 @@ impl ControlHandler for ProductionRuntime {
                     WifiApplication::new(platform.as_ref()).apply_ap(applied_at)
                 })
                 .await
-                .map_err(|_| worker_control_error("network", "Wi-Fi AP apply worker terminated unexpectedly"))?
+                .map_err(|_| {
+                    worker_control_error("network", "Wi-Fi AP apply worker terminated unexpectedly")
+                })?
                 .map_err(|error| platform_control_error("network", error))?;
                 Ok(ControlResult::WifiPending { pending })
             }
@@ -1230,7 +1299,12 @@ impl ControlHandler for ProductionRuntime {
                     WifiApplication::new(platform.as_ref()).confirm_ap()
                 })
                 .await
-                .map_err(|_| worker_control_error("network", "Wi-Fi AP confirm worker terminated unexpectedly"))?
+                .map_err(|_| {
+                    worker_control_error(
+                        "network",
+                        "Wi-Fi AP confirm worker terminated unexpectedly",
+                    )
+                })?
                 .map_err(|error| platform_control_error("network", error))?;
                 Ok(ControlResult::WifiConfig { config })
             }
@@ -1241,7 +1315,12 @@ impl ControlHandler for ProductionRuntime {
                     WifiApplication::new(platform.as_ref()).cancel_ap()
                 })
                 .await
-                .map_err(|_| worker_control_error("network", "Wi-Fi AP cancel worker terminated unexpectedly"))?
+                .map_err(|_| {
+                    worker_control_error(
+                        "network",
+                        "Wi-Fi AP cancel worker terminated unexpectedly",
+                    )
+                })?
                 .map_err(|error| platform_control_error("network", error))?;
                 Ok(ControlResult::WifiConfig { config })
             }
