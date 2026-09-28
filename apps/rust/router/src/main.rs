@@ -1104,7 +1104,7 @@ impl ControlHandler for ProductionRuntime {
                     let mut desired = self
                         .proxy_desired()
                         .await
-                        .map_err(|error| platform_control_error("tailscale", error))?;
+                        .map_err(|error| platform_control_error("proxy", error))?;
                     desired.lan_tun_enabled = false;
                     actions_applied += self
                         .reconcile_proxy_runtime_preserving_features(desired)
