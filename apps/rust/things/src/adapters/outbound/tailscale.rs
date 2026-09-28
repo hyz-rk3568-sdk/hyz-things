@@ -24,6 +24,7 @@ use crate::{
         status::PortalStatus,
     },
     domain::{status::TailscaleStatus, tailscale::TAILSCALE_MANAGEMENT_HTTP_PORT},
+    logging::{self, Level},
 };
 
 const ACCEPT_STOP_TIMEOUT: Duration = Duration::from_secs(1);
@@ -275,12 +276,30 @@ impl RunningTailscaleListener {
     fn log_completion(result: Result<std::io::Result<()>, tokio::task::JoinError>) {
         match result {
             Ok(Ok(())) => {}
-            Ok(Err(error)) => {
-                eprintln!("hyz-things: Tailscale management listener failed: {error}");
+            Ok(Err(_error)) => {
+                logging::event(
+                    Level::Error,
+                    "tailscale_listener",
+                    "serve",
+                    "operation_failed",
+                    Some("tailscale_listener_failed"),
+                    None,
+                    None,
+                    None,
+                );
             }
             Err(error) if error.is_cancelled() => {}
-            Err(error) => {
-                eprintln!("hyz-things: Tailscale management listener task failed: {error}");
+            Err(_error) => {
+                logging::event(
+                    Level::Error,
+                    "tailscale_listener",
+                    "task",
+                    "operation_failed",
+                    Some("tailscale_listener_task_failed"),
+                    None,
+                    None,
+                    None,
+                );
             }
         }
     }
