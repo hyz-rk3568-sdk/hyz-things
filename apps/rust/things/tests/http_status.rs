@@ -14,7 +14,10 @@ use async_trait::async_trait;
 use hyz_contract::router::{ControlOperation, ControlResult};
 use hyz_things::{
     adapters::inbound::http::{app, app_with_control},
-    application::{ports::PortalControlHandler, status::PortalStatus},
+    application::{
+        ports::{PortalControlError, PortalControlHandler},
+        status::PortalStatus,
+    },
     domain::{
         panel::{DisplayStatus, PanelSnapshot},
         status::{
@@ -32,7 +35,10 @@ struct FakeControl {
 
 #[async_trait]
 impl PortalControlHandler for FakeControl {
-    async fn handle(&self, operation: ControlOperation) -> Result<ControlResult, String> {
+    async fn handle(
+        &self,
+        operation: ControlOperation,
+    ) -> Result<ControlResult, PortalControlError> {
         match operation {
             ControlOperation::Status {} => Ok(ControlResult::Status {
                 snapshot: Box::new(StatusSnapshot {
@@ -73,7 +79,10 @@ impl PortalControlHandler for FakeControl {
             ControlOperation::ProxyDelayRefresh { .. } => {
                 Ok(ControlResult::ProxyDelays { groups: Vec::new() })
             }
-            _ => Err("unsupported fake operation".to_owned()),
+            _ => Err(PortalControlError::remote(
+                "test_unsupported_operation",
+                "unsupported fake operation",
+            )),
         }
     }
 }

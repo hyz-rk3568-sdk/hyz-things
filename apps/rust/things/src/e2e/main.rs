@@ -14,7 +14,7 @@ use hyz_things::{
         camera::{CameraApplication, CameraControlPort, CameraError, CameraSession},
         ports::{
             AdminCredentialStorePort, AdminRandomPort, ClockPort, InstalledAppsPort, PlatformError,
-            PortalControlHandler,
+            PortalControlError, PortalControlHandler,
         },
         status::PortalStatus,
     },
@@ -532,9 +532,8 @@ impl CameraControlPort for HarnessCamera {
     }
 }
 
-#[async_trait]
-impl PortalControlHandler for HarnessBackend {
-    async fn handle(&self, operation: ControlOperation) -> HarnessResult<ControlResult> {
+impl HarnessBackend {
+    async fn handle_control(&self, operation: ControlOperation) -> HarnessResult<ControlResult> {
         let mut state = self.state()?;
         match operation {
             ControlOperation::Status {} => Ok(ControlResult::Status {
@@ -877,6 +876,18 @@ impl PortalControlHandler for HarnessBackend {
                 Err("operation is outside the router web harness boundary".to_owned())
             }
         }
+    }
+}
+
+#[async_trait]
+impl PortalControlHandler for HarnessBackend {
+    async fn handle(
+        &self,
+        operation: ControlOperation,
+    ) -> Result<ControlResult, PortalControlError> {
+        self.handle_control(operation)
+            .await
+            .map_err(|message| PortalControlError::remote("harness_operation_failed", message))
     }
 }
 

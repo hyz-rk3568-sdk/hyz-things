@@ -32,7 +32,7 @@ const MAX_CONNECTIONS: usize = 16;
 
 #[async_trait]
 pub trait ControlHandler: Send + Sync + 'static {
-    async fn handle(&self, operation: ControlOperation) -> Result<ControlResult, String>;
+    async fn handle(&self, operation: ControlOperation) -> Result<ControlResult, ControlError>;
 }
 
 pub struct DaemonOwnership {
@@ -342,7 +342,10 @@ async fn handle_connection(
         let operation = request.operation;
         match handler.handle(operation).await {
             Ok(result) => ControlResponse::success(result),
-            Err(message) => ControlResponse::error("operation_failed", message),
+            Err(error) => ControlResponse {
+                version: PROTOCOL_VERSION,
+                result: Err(error),
+            },
         }
     };
     timeout(IO_TIMEOUT, write_frame(&mut stream, &response))

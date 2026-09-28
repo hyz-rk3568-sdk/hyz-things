@@ -4,7 +4,7 @@
 //! protocol; everything else (admin credentials, clock, randomness) is a
 //! small local port implemented by the composition root or adapters.
 
-use hyz_contract::router::{ControlOperation, ControlResult};
+use hyz_contract::router::{ControlError, ControlOperation, ControlResult};
 use std::error::Error;
 use std::fmt;
 
@@ -40,11 +40,50 @@ impl fmt::Display for PlatformError {
 
 impl Error for PlatformError {}
 
+#[derive(Debug)]
+pub enum PortalControlError {
+    Remote(ControlError),
+    Transport(String),
+    Protocol(String),
+}
+
+impl PortalControlError {
+    pub fn remote(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::Remote(ControlError {
+            code: code.into(),
+            message: message.into(),
+        })
+    }
+
+    pub fn code(&self) -> &str {
+        match self {
+            Self::Remote(error) => &error.code,
+            Self::Transport(_) => "router_unavailable",
+            Self::Protocol(_) => "router_protocol_error",
+        }
+    }
+}
+
+impl fmt::Display for PortalControlError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Remote(error) => write!(formatter, "{}: {}", error.code, error.message),
+            Self::Transport(detail) => write!(formatter, "router transport failed: {detail}"),
+            Self::Protocol(detail) => write!(formatter, "router protocol failed: {detail}"),
+        }
+    }
+}
+
+impl Error for PortalControlError {}
+
 /// Typed router control boundary used by the HTTP layer. Production uses the
 /// root-only Unix socket client; the host harness fakes it in-process.
 #[async_trait::async_trait]
 pub trait PortalControlHandler: Send + Sync + 'static {
-    async fn handle(&self, operation: ControlOperation) -> Result<ControlResult, String>;
+    async fn handle(
+        &self,
+        operation: ControlOperation,
+    ) -> Result<ControlResult, PortalControlError>;
 }
 
 pub trait AdminCredentialStorePort: Send + Sync {
