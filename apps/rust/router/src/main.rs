@@ -1990,6 +1990,35 @@ fn usage_error(message: &'static str) -> Box<dyn Error> {
 
 #[cfg(test)]
 mod source_boundaries {
+    use super::{platform_control_error, PlatformError};
+
+    #[test]
+    fn control_error_codes_keep_subsystem_and_failure_kind() {
+        let probe = platform_control_error(
+            "network",
+            PlatformError::ProbeFailed("internal probe detail".to_owned()),
+        );
+        assert_eq!(probe.code, "network_probe_failed");
+
+        let command = platform_control_error(
+            "proxy",
+            PlatformError::CommandFailed("internal command detail".to_owned()),
+        );
+        assert_eq!(command.code, "proxy_command_failed");
+
+        let generation = platform_control_error(
+            "device_policy",
+            PlatformError::Conflict("generation changed".to_owned()),
+        );
+        assert_eq!(generation.code, "device_policy_generation_conflict");
+
+        let production = include_str!("main.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(!production.contains("platform_control_error(\"router_control\""));
+    }
+
     #[test]
     fn daemon_serves_control_before_initialization_and_ready_marker_afterward() {
         let production = include_str!("main.rs")
