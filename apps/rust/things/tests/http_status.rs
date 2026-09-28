@@ -157,6 +157,7 @@ async fn serves_partial_degraded_status_with_strict_http_policy() {
     assert!(!status_lower.contains("'unsafe-inline'"));
     assert!(!status_lower.contains("script-src 'self' 'unsafe-eval'"));
     assert!(status_lower.contains("x-frame-options: deny"));
+    assert!(status_lower.contains("x-hyz-request-id:"));
     assert!(status_lower.contains(
         "permissions-policy: camera=(), microphone=(self), geolocation=(), payment=(), usb=()"
     ));
@@ -212,6 +213,8 @@ async fn serves_partial_degraded_status_with_strict_http_policy() {
     .await
     .expect("join approved authentication path client");
     assert!(auth.starts_with("HTTP/1.1 503 Service Unavailable\r\n"));
+    assert!(auth.contains("\"code\":\"auth_unavailable\""));
+    assert!(auth.to_ascii_lowercase().contains("x-hyz-request-id:"));
 
     let root_address = server_address(&server, address);
     let root = tokio::task::spawn_blocking(move || http_request(root_address, "GET", "/"))

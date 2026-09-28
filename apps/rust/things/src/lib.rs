@@ -15,3 +15,5 @@ pub mod adapters;
 #[cfg(feature = "native")]
 pub mod application;
 pub mod domain;
+#[cfg(feature = "native")]
+pub mod logging;

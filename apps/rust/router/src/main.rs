@@ -771,7 +771,12 @@ fn platform_control_error(component: &str, error: PlatformError) -> ControlError
         PlatformError::UnsafeToCutOver(_) => "unsafe_to_cut_over",
         PlatformError::Io(_) => "io_failed",
     };
-    control_error(format!("{component}_{suffix}"), error.to_string())
+    let code = if component == "device_policy" && matches!(error, PlatformError::Conflict(_)) {
+        "device_policy_generation_conflict".to_owned()
+    } else {
+        format!("{component}_{suffix}")
+    };
+    control_error(code, error.to_string())
 }
 
 fn worker_control_error(component: &str, message: &'static str) -> ControlError {

@@ -2,7 +2,10 @@ use std::{
     collections::HashMap,
     io::{self, Cursor, Read},
     net::{Ipv4Addr, SocketAddr},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
     time::{Duration, Instant},
 };
 
@@ -24,7 +27,7 @@ use crate::{
     application::{
         admin::{AdminApplication, AdminError, SESSION_RETENTION_SECONDS},
         camera::{CameraApplication, CameraError},
-        ports::{InstalledAppsPort, PortalControlHandler},
+        ports::{InstalledAppsPort, PortalControlError, PortalControlHandler},
         status::PortalStatus,
     },
     domain::{
@@ -44,6 +47,7 @@ use crate::{
         tailscale::{TailscaleMode, TailscalePeerSnapshot},
         wifi::{ApPrepareRequest, StaCandidateRequest, WifiScanEntry},
     },
+    logging::{self, Level},
 };
 
 mod tls;
@@ -61,6 +65,11 @@ const MAX_CAMERA_HTTP_JSON_BODY_BYTES: usize = CAMERA_MAX_SDP_BYTES + 4 * 1024;
 const VIEWER_TOKEN_TTL: Duration = Duration::from_secs(15 * 60);
 const VIEWER_TOKEN_TTL_SECONDS: u64 = 15 * 60;
 const MAX_VIEWER_TOKENS: usize = 128;
+const REQUEST_ID_HEADER: &str = "x-hyz-request-id";
+static FALLBACK_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Clone)]
+struct ResponseErrorCode(String);
 
 #[derive(Clone)]
 struct AppState {
@@ -513,6 +522,7 @@ fn app_with_assets(
         .fallback(api_or_method_not_found)
         .layer(DefaultBodyLimit::max(MAX_HTTP_JSON_BODY_BYTES))
         .layer(middleware::from_fn(security_headers))
+        .layer(middleware::from_fn(request_context))
         .with_state(AppState {
             read_status,
             control,
@@ -581,6 +591,52 @@ struct Health<'a> {
     version: &'a str,
 }
 
+fn request_id() -> String {
+    let mut bytes = [0u8; 16];
+    if getrandom::fill(&mut bytes).is_ok() {
+        return bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+    }
+    let fallback = FALLBACK_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+    format!("fallback{fallback:016x}")
+}
+
+async fn request_context(request: Request, next: Next) -> Response {
+    let method = request.method().as_str().to_owned();
+    let path = request.uri().path().to_owned();
+    let request_id = request_id();
+    let started = Instant::now();
+    let mut response = next.run(request).await;
+    response.headers_mut().insert(
+        REQUEST_ID_HEADER,
+        HeaderValue::from_str(&request_id)
+            .unwrap_or_else(|_| HeaderValue::from_static("request-id-unavailable")),
+    );
+    if response.status().is_client_error() || response.status().is_server_error() {
+        let status = response.status().as_u16();
+        let code = response
+            .extensions()
+            .get::<ResponseErrorCode>()
+            .map(|code| code.0.as_str())
+            .unwrap_or("http_error");
+        let level = if response.status().is_server_error() {
+            Level::Error
+        } else {
+            Level::Warn
+        };
+        logging::event(
+            level,
+            "http",
+            &format!("{method} {path}"),
+            "request_rejected",
+            Some(code),
+            Some(&request_id),
+            Some(status),
+            Some(started.elapsed().as_millis()),
+        );
+    }
+    response
+}
+
 async fn health() -> Json<Health<'static>> {
     Json(Health {
         status: "alive",
@@ -605,7 +661,8 @@ async fn panel(State(state): State<AppState>) -> Response {
             panel: *snapshot,
         })
         .into_response(),
-        Ok(_) | Err(_) => service_unavailable_json(),
+        Ok(_) => service_unavailable_json(),
+        Err(error) => control_error_json(&error),
     }
 }
 
@@ -999,27 +1056,23 @@ async fn close_all_camera_sessions(state: &AppState) {
 }
 
 fn camera_error_json(error: CameraError) -> Response {
-    let status = match error {
-        CameraError::InvalidRequest => StatusCode::BAD_REQUEST,
-        CameraError::NotReady | CameraError::Busy => StatusCode::CONFLICT,
-        CameraError::UnsupportedOffer => StatusCode::UNPROCESSABLE_ENTITY,
-        CameraError::ResourceExhausted | CameraError::Unavailable => {
-            StatusCode::SERVICE_UNAVAILABLE
-        }
-        CameraError::UnknownSession => StatusCode::NOT_FOUND,
-        CameraError::Forbidden => StatusCode::FORBIDDEN,
+    let (status, code) = match error {
+        CameraError::InvalidRequest => (StatusCode::BAD_REQUEST, "camera_invalid_request"),
+        CameraError::NotReady => (StatusCode::CONFLICT, "camera_not_ready"),
+        CameraError::Busy => (StatusCode::CONFLICT, "camera_busy"),
+        CameraError::UnsupportedOffer => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "camera_offer_unsupported",
+        ),
+        CameraError::ResourceExhausted => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "camera_resource_exhausted",
+        ),
+        CameraError::UnknownSession => (StatusCode::NOT_FOUND, "camera_session_not_found"),
+        CameraError::Forbidden => (StatusCode::FORBIDDEN, "camera_session_forbidden"),
+        CameraError::Unavailable => (StatusCode::SERVICE_UNAVAILABLE, "camera_unavailable"),
     };
-    let code = match error {
-        CameraError::InvalidRequest => "camera_invalid_request",
-        CameraError::NotReady => "camera_not_ready",
-        CameraError::Busy => "camera_busy",
-        CameraError::UnsupportedOffer => "camera_offer_unsupported",
-        CameraError::ResourceExhausted => "camera_resource_exhausted",
-        CameraError::UnknownSession => "camera_session_not_found",
-        CameraError::Forbidden => "camera_session_forbidden",
-        CameraError::Unavailable => "camera_unavailable",
-    };
-    (status, Json(serde_json::json!({ "error": code }))).into_response()
+    error_json(status, code, "Camera request failed")
 }
 
 /// Shared authorization boundary for future sensitive administrator routes. Normal routes reject a
@@ -1422,7 +1475,7 @@ async fn invoke_tailscale_mutation_authorized(
             .into_response()
         }
         Ok(_) => service_unavailable_json(),
-        Err(error) => control_failed_json(&error),
+        Err(error) => control_error_json(&error),
     }
 }
 
@@ -1574,7 +1627,7 @@ async fn invoke_sensitive_control_authorized(
             Json(TailscalePeersResponse { peers: snapshot }).into_response()
         }
         (_, Ok(_)) => service_unavailable_json(),
-        (_, Err(error)) => control_failed_json(&error),
+        (_, Err(error)) => control_error_json(&error),
     }
 }
 
@@ -1685,7 +1738,7 @@ async fn invoke_control_authorized(state: &AppState, operation: ControlOperation
         | Ok(result @ ControlResult::ProxyDelay { .. })
         | Ok(result @ ControlResult::ProxyDelays { .. }) => Json(result).into_response(),
         Ok(_) => service_unavailable_json(),
-        Err(error) => control_failed_json(&error),
+        Err(error) => control_error_json(&error),
     }
 }
 
@@ -1764,112 +1817,186 @@ async fn api_or_method_not_found(request: Request) -> Response {
     }
 }
 
-fn admin_error_json(error: AdminError) -> Response {
-    let status = match error {
-        AdminError::RateLimited => StatusCode::TOO_MANY_REQUESTS,
-        AdminError::InvalidNewPassword => StatusCode::BAD_REQUEST,
-        AdminError::PasswordChangeRequired => StatusCode::FORBIDDEN,
-        AdminError::InvalidCredentials | AdminError::InvalidSession => StatusCode::UNAUTHORIZED,
-        AdminError::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
-    };
-    authentication_error_json(status)
-}
-
-fn authentication_error_json(status: StatusCode) -> Response {
-    (
+fn error_json(status: StatusCode, code: &str, message: &str) -> Response {
+    let mut response = (
         status,
         Json(serde_json::json!({
             "error": {
-                "code": "authentication_failed",
-                "message": "Authentication request rejected"
+                "code": code,
+                "message": message,
             }
         })),
     )
-        .into_response()
+        .into_response();
+    response
+        .extensions_mut()
+        .insert(ResponseErrorCode(code.to_owned()));
+    response
+}
+
+fn admin_error_json(error: AdminError) -> Response {
+    let (status, code, message) = match error {
+        AdminError::RateLimited => (
+            StatusCode::TOO_MANY_REQUESTS,
+            "auth_rate_limited",
+            "Authentication requests are temporarily rate limited",
+        ),
+        AdminError::InvalidNewPassword => (
+            StatusCode::BAD_REQUEST,
+            "auth_invalid_new_password",
+            "New administrator password does not meet policy",
+        ),
+        AdminError::PasswordChangeRequired => (
+            StatusCode::FORBIDDEN,
+            "auth_password_change_required",
+            "Administrator password change is required",
+        ),
+        AdminError::InvalidCredentials => (
+            StatusCode::UNAUTHORIZED,
+            "auth_invalid_credentials",
+            "Administrator credentials were rejected",
+        ),
+        AdminError::InvalidSession => (
+            StatusCode::UNAUTHORIZED,
+            "auth_invalid_session",
+            "Administrator session is invalid or expired",
+        ),
+        AdminError::Unavailable(_) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "auth_unavailable",
+            "Administrator authentication is unavailable",
+        ),
+    };
+    error_json(status, code, message)
+}
+
+fn authentication_error_json(status: StatusCode) -> Response {
+    let (code, message) = match status {
+        StatusCode::BAD_REQUEST => ("auth_invalid_request", "Authentication request is invalid"),
+        StatusCode::UNAUTHORIZED => (
+            "auth_invalid_session",
+            "Administrator session is invalid or expired",
+        ),
+        StatusCode::FORBIDDEN => ("auth_forbidden", "Authentication request is forbidden"),
+        _ => (
+            "auth_unavailable",
+            "Administrator authentication is unavailable",
+        ),
+    };
+    error_json(status, code, message)
 }
 
 fn forbidden_json() -> Response {
-    (
+    error_json(
         StatusCode::FORBIDDEN,
-        Json(serde_json::json!({
-            "error": { "code": "forbidden", "message": "Control request rejected" }
-        })),
+        "forbidden",
+        "Control request rejected",
     )
-        .into_response()
 }
 
 fn payload_too_large_json() -> Response {
-    (
+    error_json(
         StatusCode::PAYLOAD_TOO_LARGE,
-        Json(serde_json::json!({
-            "error": { "code": "payload_too_large", "message": "Control request exceeds the body limit" }
-        })),
+        "payload_too_large",
+        "Control request exceeds the body limit",
     )
-        .into_response()
 }
 
 fn invalid_request_json() -> Response {
-    (
+    error_json(
         StatusCode::BAD_REQUEST,
-        Json(serde_json::json!({
-            "error": { "code": "invalid_request", "message": "Control request is invalid" }
-        })),
+        "invalid_request",
+        "Control request is invalid",
     )
-        .into_response()
 }
 
 fn tailscale_self_stop_conflict_json() -> Response {
-    (
+    error_json(
         StatusCode::CONFLICT,
-        Json(serde_json::json!({
-            "error": {
-                "code": "tailscale_self_stop_forbidden",
-                "message": "Operations that can restart or stop Tailscale must be requested from LAN management or the Unix control socket"
-            }
-        })),
+        "tailscale_self_stop_forbidden",
+        "Operations that can restart or stop Tailscale must be requested from LAN management or the Unix control socket",
     )
-        .into_response()
 }
 
-fn control_failed_payload(message: &str) -> serde_json::Value {
-    serde_json::json!({
-        "error": { "code": "control_failed", "message": message }
-    })
+fn valid_error_code(code: &str) -> bool {
+    !code.is_empty()
+        && code.len() <= 96
+        && code
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
 }
 
-fn control_failed_json(message: &str) -> Response {
-    (StatusCode::CONFLICT, Json(control_failed_payload(message))).into_response()
+fn control_error_parts(error: &PortalControlError) -> (StatusCode, &str, &'static str) {
+    let raw_code = error.code();
+    let code = if valid_error_code(raw_code) {
+        raw_code
+    } else {
+        "router_remote_error"
+    };
+    let status = match error {
+        PortalControlError::Transport(_) | PortalControlError::Protocol(_) => {
+            StatusCode::SERVICE_UNAVAILABLE
+        }
+        PortalControlError::Remote(_) if code == "proxy_delay_rate_limited" => {
+            StatusCode::TOO_MANY_REQUESTS
+        }
+        PortalControlError::Remote(_)
+            if code.ends_with("_busy")
+                || code.ends_with("_conflict")
+                || code.ends_with("_invalid_state")
+                || code.ends_with("_unsafe_to_cut_over") =>
+        {
+            StatusCode::CONFLICT
+        }
+        PortalControlError::Remote(_) if code.ends_with("_not_found") => StatusCode::NOT_FOUND,
+        PortalControlError::Remote(_) if code.ends_with("_forbidden") => StatusCode::FORBIDDEN,
+        PortalControlError::Remote(_) if code.ends_with("_invalid_request") => {
+            StatusCode::BAD_REQUEST
+        }
+        PortalControlError::Remote(_) if code.ends_with("_not_implemented") => {
+            StatusCode::NOT_IMPLEMENTED
+        }
+        PortalControlError::Remote(_) => StatusCode::SERVICE_UNAVAILABLE,
+    };
+    let message = match status {
+        StatusCode::BAD_REQUEST => "Router control request is invalid",
+        StatusCode::FORBIDDEN => "Router control request is forbidden",
+        StatusCode::NOT_FOUND => "Router control resource was not found",
+        StatusCode::CONFLICT => "Router control request conflicts with current state",
+        StatusCode::TOO_MANY_REQUESTS => "Router control request is rate limited",
+        StatusCode::NOT_IMPLEMENTED => "Router control operation is not implemented",
+        _ => "Router control service is unavailable",
+    };
+    (status, code, message)
+}
+
+fn control_error_json(error: &PortalControlError) -> Response {
+    let (status, code, message) = control_error_parts(error);
+    error_json(status, code, message)
 }
 
 fn service_unavailable_json() -> Response {
-    (
+    error_json(
         StatusCode::SERVICE_UNAVAILABLE,
-        Json(serde_json::json!({
-            "error": { "code": "service_unavailable", "message": "Control service is unavailable" }
-        })),
+        "service_unavailable",
+        "Control service is unavailable",
     )
-        .into_response()
 }
 
 fn not_found_json() -> Response {
-    (
-        StatusCode::NOT_FOUND,
-        Json(serde_json::json!({
-            "error": { "code": "not_found", "message": "Resource not found" }
-        })),
-    )
-        .into_response()
+    error_json(StatusCode::NOT_FOUND, "not_found", "Resource not found")
 }
 
 fn method_not_allowed_json() -> Response {
-    (
+    let mut response = error_json(
         StatusCode::METHOD_NOT_ALLOWED,
-        [(header::ALLOW, "GET, POST")],
-        Json(serde_json::json!({
-            "error": { "code": "method_not_allowed", "message": "Method is not allowed" }
-        })),
-    )
-        .into_response()
+        "method_not_allowed",
+        "Method is not allowed",
+    );
+    response
+        .headers_mut()
+        .insert(header::ALLOW, HeaderValue::from_static("GET, POST"));
+    response
 }
 
 fn asset_response(assets: &AssetStore, path: &str, no_cache: bool) -> Response {
@@ -2063,17 +2190,15 @@ mod tests {
     }
 
     #[test]
-    fn control_failure_echoes_the_sanitized_router_message() {
-        let message = "an AP transaction is already pending";
-        assert_eq!(
-            control_failed_payload(message),
-            serde_json::json!({
-                "error": {
-                    "code": "control_failed",
-                    "message": "an AP transaction is already pending"
-                }
-            })
+    fn control_failure_keeps_code_and_does_not_expose_remote_detail() {
+        let error = PortalControlError::remote(
+            "device_policy_generation_conflict",
+            "private platform detail must stay server-side",
         );
+        let (status, code, message) = control_error_parts(&error);
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(code, "device_policy_generation_conflict");
+        assert!(!message.contains("private platform detail"));
     }
 
     #[test]
