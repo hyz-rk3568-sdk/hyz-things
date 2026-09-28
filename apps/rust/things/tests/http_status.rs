@@ -505,7 +505,11 @@ async fn control_posts_require_exact_origin_token_and_typed_json() {
     })
     .await
     .expect("join unknown-field client");
-    assert!(unknown.starts_with("HTTP/1.1 422 Unprocessable Entity\r\n"));
+    assert!(unknown.starts_with("HTTP/1.1 400 Bad Request\r\n"));
+    assert!(unknown.contains(r#""code":"invalid_request""#));
+    assert!(unknown
+        .to_ascii_lowercase()
+        .contains("x-hyz-request-id:"));
     assert_eq!(control.display_mutations.load(Ordering::SeqCst), 1);
 
     server.abort();
