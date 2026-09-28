@@ -31,6 +31,7 @@ use hyz_things::{
 #[derive(Default)]
 struct FakeControl {
     display_mutations: AtomicUsize,
+    fail_display: bool,
 }
 
 #[async_trait]
@@ -72,9 +73,16 @@ impl PortalControlHandler for FakeControl {
             }),
             ControlOperation::Display { .. } => {
                 self.display_mutations.fetch_add(1, Ordering::SeqCst);
-                Ok(ControlResult::Completed {
-                    message: "display applied".to_owned(),
-                })
+                if self.fail_display {
+                    Err(PortalControlError::remote(
+                        "display_conflict",
+                        "internal sensitive detail: /userdata/credentials",
+                    ))
+                } else {
+                    Ok(ControlResult::Completed {
+                        message: "display applied".to_owned(),
+                    })
+                }
             }
             ControlOperation::ProxyDelayRefresh { .. } => {
                 Ok(ControlResult::ProxyDelays { groups: Vec::new() })
@@ -258,6 +266,56 @@ async fn serves_partial_degraded_status_with_strict_http_policy() {
             .expect("join SPA route client");
     assert!(route.starts_with("HTTP/1.1 200 OK\r\n"));
     assert!(route.contains("<!doctype html>"));
+
+    server.abort();
+}
+
+#[tokio::test]
+async fn remote_control_code_survives_http_mapping_without_leaking_remote_detail() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind remote error test listener");
+    let address = listener.local_addr().expect("read remote error test address");
+    let control = Arc::new(FakeControl {
+        fail_display: true,
+        ..FakeControl::default()
+    });
+    let server_control: Arc<dyn PortalControlHandler> = control;
+    let server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app_with_control(
+                read_status(server_control.clone()),
+                server_control,
+                "csrf-test".to_owned(),
+                address.port(),
+            ),
+        )
+        .await
+        .expect("serve remote error test app");
+    });
+
+    let origin = format!("http://192.168.8.1:{}", address.port());
+    let response = tokio::task::spawn_blocking(move || {
+        http_json_request(
+            address,
+            "/api/v1/control/display",
+            &origin,
+            Some("csrf-test"),
+            r#"{"enabled":true,"brightness":128}"#,
+        )
+    })
+    .await
+    .expect("join remote error client");
+
+    assert!(response.starts_with("HTTP/1.1 409 Conflict\r\n"));
+    assert!(response.contains(r#""code":"display_conflict""#));
+    assert!(response.contains("Router control request conflicts with current state"));
+    assert!(!response.contains("/userdata/credentials"));
+    assert!(!response.contains("internal sensitive detail"));
+    assert!(response
+        .to_ascii_lowercase()
+        .contains("x-hyz-request-id:"));
 
     server.abort();
 }
