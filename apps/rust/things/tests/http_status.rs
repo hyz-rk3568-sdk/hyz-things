@@ -470,3 +470,32 @@ fn typed_proxy_dto_keeps_layered_wire_values_stable() {
     assert_eq!(value["lan_tun"]["effective"], "ready");
     assert_eq!(value["local_system_proxy"]["effective"], "disabled");
 }
+
+
+#[test]
+fn error_contract_keeps_machine_readable_failure_semantics() {
+    let http = include_str!("../src/adapters/inbound/http/mod.rs");
+    let router_client = include_str!("../src/adapters/outbound/router.rs");
+    let ports = include_str!("../src/application/ports.rs");
+
+    assert!(
+        http.contains("\"auth_invalid_credentials\""),
+        "authentication errors need stable machine-readable codes"
+    );
+    assert!(
+        http.contains("\"auth_invalid_session\""),
+        "session expiry must be distinguishable from bad credentials"
+    );
+    assert!(
+        !http.contains("\"authentication_failed\""),
+        "known authentication failures must not collapse into one generic code"
+    );
+    assert!(
+        !router_client.contains("map_err(|error| error.to_string())"),
+        "router remote errors must keep their typed code instead of becoming strings"
+    );
+    assert!(
+        !ports.contains("Result<ControlResult, String>"),
+        "PortalControlHandler must preserve typed transport/remote failures"
+    );
+}
