@@ -328,10 +328,12 @@ impl axum::serve::Listener for ConfirmedTailscaleListener {
 
 pub async fn fetch_tailscale_status(
     control: &dyn PortalControlHandler,
-) -> Result<TailscaleStatus, String> {
+) -> Result<TailscaleStatus, crate::application::ports::PortalControlError> {
     match control.handle(ControlOperation::TailscaleGet {}).await? {
         ControlResult::Tailscale { status } => Ok(status),
-        _ => Err("Tailscale status contract mismatch".to_owned()),
+        _ => Err(crate::application::ports::PortalControlError::Protocol(
+            "Tailscale status contract mismatch".to_owned(),
+        )),
     }
 }
 
