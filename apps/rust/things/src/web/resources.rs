@@ -505,13 +505,26 @@ async fn wait_for_resource(key: ResourceKey) -> Result<u64, String> {
     Err("已有读取长时间未完成".to_owned())
 }
 
-fn maybe_expire_auth(state: &UseReducerHandle<AppState>, epoch: u64, error: &str) {
-    if error.contains("HTTP 401") {
+fn maybe_expire_auth(state: &UseReducerHandle<AppState>, epoch: u64, error: &ApiError) {
+    if error.is_auth_expired() {
         state.dispatch(Action::AuthenticationExpired(
             epoch,
             "登录已失效，请重新登录后继续当前页面".to_owned(),
         ));
     }
+}
+
+async fn fetch_protected_json<T: serde::de::DeserializeOwned>(
+    state: &UseReducerHandle<AppState>,
+    epoch: u64,
+    endpoint: &str,
+    label: &str,
+) -> Result<T, String> {
+    let result = fetch_json_typed::<T>(endpoint, label).await;
+    if let Err(error) = &result {
+        maybe_expire_auth(state, epoch, error);
+    }
+    result.map_err(|error| error.to_string())
 }
 
 pub(crate) fn dispatch_status_refresh(state: UseReducerHandle<AppState>) {
@@ -549,12 +562,14 @@ async fn read_network_now(
         begin_resource(ResourceKey::Network).ok_or_else(|| "读取已在进行".to_owned())?
     };
     state.dispatch(Action::NetworkStarted(id, epoch));
-    let result = fetch_json::<NetworkConfigResponseDto>(NETWORK_CONFIG_ENDPOINT, "网络配置")
-        .await
-        .map(|response| response.config);
-    if let Err(error) = &result {
-        maybe_expire_auth(&state, epoch, error);
-    }
+    let result = fetch_protected_json::<NetworkConfigResponseDto>(
+        &state,
+        epoch,
+        NETWORK_CONFIG_ENDPOINT,
+        "网络配置",
+    )
+    .await
+    .map(|response| response.config);
     state.dispatch(Action::NetworkFinished(id, epoch, result.clone()));
     finish_resource(ResourceKey::Network);
     result
@@ -578,10 +593,13 @@ async fn read_pending_now(
         begin_resource(ResourceKey::Pending).ok_or_else(|| "读取已在进行".to_owned())?
     };
     state.dispatch(Action::PendingStarted(id, epoch));
-    let result = fetch_json::<NetworkPendingDto>(NETWORK_PENDING_ENDPOINT, "待确认网络配置").await;
-    if let Err(error) = &result {
-        maybe_expire_auth(&state, epoch, error);
-    }
+    let result = fetch_protected_json::<NetworkPendingDto>(
+        &state,
+        epoch,
+        NETWORK_PENDING_ENDPOINT,
+        "待确认网络配置",
+    )
+    .await;
     state.dispatch(Action::PendingFinished(id, epoch, result.clone()));
     finish_resource(ResourceKey::Pending);
     result
@@ -605,12 +623,14 @@ async fn read_subscription_now(
         begin_resource(ResourceKey::Subscription).ok_or_else(|| "读取已在进行".to_owned())?
     };
     state.dispatch(Action::SubscriptionStarted(id, epoch));
-    let result = fetch_json::<SubscriptionResponseDto>(SUBSCRIPTION_ENDPOINT, "订阅状态")
-        .await
-        .map(|response| response.subscription);
-    if let Err(error) = &result {
-        maybe_expire_auth(&state, epoch, error);
-    }
+    let result = fetch_protected_json::<SubscriptionResponseDto>(
+        &state,
+        epoch,
+        SUBSCRIPTION_ENDPOINT,
+        "订阅状态",
+    )
+    .await
+    .map(|response| response.subscription);
     state.dispatch(Action::SubscriptionFinished(id, epoch, result.clone()));
     finish_resource(ResourceKey::Subscription);
     result
@@ -634,10 +654,13 @@ async fn read_devices_now(
         begin_resource(ResourceKey::Devices).ok_or_else(|| "读取已在进行".to_owned())?
     };
     state.dispatch(Action::DevicesStarted(id, epoch));
-    let result = fetch_json::<DevicePolicySnapshotDto>(DEVICE_POLICIES_ENDPOINT, "设备状态").await;
-    if let Err(error) = &result {
-        maybe_expire_auth(&state, epoch, error);
-    }
+    let result = fetch_protected_json::<DevicePolicySnapshotDto>(
+        &state,
+        epoch,
+        DEVICE_POLICIES_ENDPOINT,
+        "设备状态",
+    )
+    .await;
     state.dispatch(Action::DevicesFinished(id, epoch, result.clone()));
     finish_resource(ResourceKey::Devices);
     result
@@ -661,12 +684,14 @@ async fn read_tailscale_now(
         begin_resource(ResourceKey::Tailscale).ok_or_else(|| "读取已在进行".to_owned())?
     };
     state.dispatch(Action::TailscaleStarted(id, epoch));
-    let result = fetch_json::<TailscaleResponseDto>(TAILSCALE_ENDPOINT, "Tailscale 状态")
-        .await
-        .map(|response| response.tailscale);
-    if let Err(error) = &result {
-        maybe_expire_auth(&state, epoch, error);
-    }
+    let result = fetch_protected_json::<TailscaleResponseDto>(
+        &state,
+        epoch,
+        TAILSCALE_ENDPOINT,
+        "Tailscale 状态",
+    )
+    .await
+    .map(|response| response.tailscale);
     state.dispatch(Action::TailscaleFinished(id, epoch, result.clone()));
     finish_resource(ResourceKey::Tailscale);
     result
@@ -690,13 +715,14 @@ async fn read_tailscale_peers_now(
         begin_resource(ResourceKey::TailscalePeers).ok_or_else(|| "读取已在进行".to_owned())?
     };
     state.dispatch(Action::TailscalePeersStarted(id, epoch));
-    let result =
-        fetch_json::<TailscalePeersResponseDto>(TAILSCALE_PEERS_ENDPOINT, "Tailscale 设备列表")
-            .await
-            .map(|response| response.peers);
-    if let Err(error) = &result {
-        maybe_expire_auth(&state, epoch, error);
-    }
+    let result = fetch_protected_json::<TailscalePeersResponseDto>(
+        &state,
+        epoch,
+        TAILSCALE_PEERS_ENDPOINT,
+        "Tailscale 设备列表",
+    )
+    .await
+    .map(|response| response.peers);
     state.dispatch(Action::TailscalePeersFinished(id, epoch, result.clone()));
     finish_resource(ResourceKey::TailscalePeers);
     result
@@ -743,7 +769,7 @@ pub(crate) fn dispatch_scan(state: UseReducerHandle<AppState>, csrf: String) {
     state.dispatch(Action::SettingsStarted);
     let epoch = state.auth_epoch;
     spawn_local(async move {
-        let result = post_json_response::<_, NetworkScanResponseDto>(
+        let typed_result = post_json_response_typed::<_, NetworkScanResponseDto>(
             STA_SCAN_ENDPOINT,
             &csrf,
             &EmptyRequest {},
@@ -751,10 +777,12 @@ pub(crate) fn dispatch_scan(state: UseReducerHandle<AppState>, csrf: String) {
         )
         .await
         .map(|response| response.entries);
-        if let Err(error) = &result {
+        if let Err(error) = &typed_result {
             maybe_expire_auth(&state, epoch, error);
         }
-        state.dispatch(Action::ScanFinished(result));
+        state.dispatch(Action::ScanFinished(
+            typed_result.map_err(|error| error.to_string()),
+        ));
     });
 }
 
@@ -773,7 +801,7 @@ pub(crate) fn dispatch_network_mutation<T: serde::Serialize + 'static>(
         if paint_delay {
             TimeoutFuture::new(NETWORK_APPLY_PAINT_DELAY_MS).await;
         }
-        let result = post_json(endpoint, &csrf, &body, label).await;
+        let result = post_json_typed(endpoint, &csrf, &body, label).await;
         let message = match result {
             Ok(_) => {
                 let mut readback_error = None;
@@ -797,7 +825,7 @@ pub(crate) fn dispatch_network_mutation<T: serde::Serialize + 'static>(
             }
             Err(error) => {
                 maybe_expire_auth(&state, epoch, &error);
-                Err(error)
+                Err(error.to_string())
             }
         };
         state.dispatch(Action::SettingsMutationFinished(message));
@@ -812,7 +840,7 @@ pub(crate) fn dispatch_subscription_source(
     state.dispatch(Action::SubscriptionMutationStarted);
     let epoch = state.auth_epoch;
     spawn_local(async move {
-        let result = post_json(
+        let result = post_json_typed(
             SUBSCRIPTION_SOURCE_ENDPOINT,
             &csrf,
             &SubscriptionSourceRequest { url },
@@ -837,7 +865,7 @@ pub(crate) fn dispatch_subscription_refresh(state: UseReducerHandle<AppState>, c
     state.dispatch(Action::SubscriptionMutationStarted);
     let epoch = state.auth_epoch;
     spawn_local(async move {
-        let result = post_json(
+        let result = post_json_typed(
             SUBSCRIPTION_REFRESH_ENDPOINT,
             &csrf,
             &EmptyRequest {},
@@ -867,7 +895,7 @@ pub(crate) fn dispatch_device_policy_update(
     state.dispatch(Action::DeviceMutationStarted);
     let epoch = state.auth_epoch;
     spawn_local(async move {
-        let result = post_json(
+        let result = post_json_typed(
             DEVICE_POLICIES_UPDATE_ENDPOINT,
             &csrf,
             &DevicePolicyUpdateDto {
@@ -883,9 +911,12 @@ pub(crate) fn dispatch_device_policy_update(
                 Ok(_) => "设备策略已保存，生效状态待确认".to_owned(),
                 Err(_) => "设备策略已保存，状态刷新失败".to_owned(),
             },
-            Err(error) if error.contains("HTTP 409") => {
+            Err(error)
+                if error.status() == Some(409)
+                    || error.is_code("device_policy_generation_conflict") =>
+            {
                 let _ = read_devices_now(state.clone(), epoch, true).await;
-                "设备策略更新未完成（HTTP 409）；已刷新服务器状态，请核对后重试".to_owned()
+                "设备策略更新未完成；已刷新服务器状态，请核对后重试".to_owned()
             }
             Err(error) => {
                 maybe_expire_auth(&state, epoch, &error);
