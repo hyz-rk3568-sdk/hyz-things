@@ -2,7 +2,7 @@ use hyz_things::{
     adapters::{
         inbound::http::{
             app_with_admin_camera_control, bind_fixed_lan_with_retry, PortalTls, TlsListener,
-            DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT, LAN_ADDRESS,
+            DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
         },
         outbound::{
             admin::AdminFileAdapter,
