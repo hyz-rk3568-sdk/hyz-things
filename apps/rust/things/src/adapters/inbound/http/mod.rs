@@ -717,7 +717,7 @@ async fn admin_logout(State(state): State<AppState>, headers: HeaderMap) -> Resp
     let token = match require_admin(&state, &headers, AdminRequirement::PasswordChangeSession).await
     {
         Ok((token, _)) => token,
-        Err(response) => return response,
+        Err(error) => return error.response(),
     };
     close_owned_camera_session(&state, &token).await;
     let Some(admin) = state.admin.clone() else {
@@ -755,7 +755,7 @@ async fn admin_password(
     let token = match require_admin(&state, &headers, AdminRequirement::PasswordChangeSession).await
     {
         Ok((token, _)) => token,
-        Err(response) => return response,
+        Err(error) => return error.response(),
     };
     let Some(admin) = state.admin.clone() else {
         return authentication_error_json(StatusCode::SERVICE_UNAVAILABLE);
@@ -915,7 +915,7 @@ async fn camera_session_create(
 ) -> Response {
     let token = match authorize_camera_viewer(&state, &headers).await {
         Ok(token) => token,
-        Err(response) => return response,
+        Err(error) => return error.response(),
     };
     let Ok(Json(request)) = payload else {
         return invalid_request_json();
@@ -945,7 +945,7 @@ async fn camera_session_close(
 ) -> Response {
     let token = match authorize_camera_viewer(&state, &headers).await {
         Ok(token) => token,
-        Err(response) => return response,
+        Err(error) => return error.response(),
     };
     let Ok(Json(request)) = payload else {
         return invalid_request_json();
@@ -967,7 +967,7 @@ async fn camera_profile_update(
 ) -> Response {
     let (_, _) = match authorize_sensitive_control_admin(&state, &headers).await {
         Ok(result) => result,
-        Err(response) => return response,
+        Err(error) => return error.response(),
     };
     let Ok(Json(request)) = payload else {
         return invalid_request_json();
@@ -988,7 +988,7 @@ async fn camera_rotation_update(
 ) -> Response {
     let (_, _) = match authorize_sensitive_control_admin(&state, &headers).await {
         Ok(result) => result,
-        Err(response) => return response,
+        Err(error) => return error.response(),
     };
     let Ok(Json(request)) = payload else {
         return invalid_request_json();
@@ -1629,13 +1629,29 @@ async fn invoke_sensitive_control_authorized(
     }
 }
 
-fn decode_control_json<T>(payload: Result<Json<T>, JsonRejection>) -> Result<T, Response> {
+enum ControlJsonError {
+    PayloadTooLarge,
+    InvalidRequest,
+}
+
+impl ControlJsonError {
+    fn response(self) -> Response {
+        match self {
+            Self::PayloadTooLarge => payload_too_large_json(),
+            Self::InvalidRequest => invalid_request_json(),
+        }
+    }
+}
+
+fn decode_control_json<T>(
+    payload: Result<Json<T>, JsonRejection>,
+) -> Result<T, ControlJsonError> {
     match payload {
         Ok(Json(request)) => Ok(request),
         Err(rejection) if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE => {
-            Err(payload_too_large_json())
+            Err(ControlJsonError::PayloadTooLarge)
         }
-        Err(_) => Err(invalid_request_json()),
+        Err(_) => Err(ControlJsonError::InvalidRequest),
     }
 }
 
@@ -1649,7 +1665,7 @@ async fn control_display(
     }
     let request = match decode_control_json(payload) {
         Ok(request) => request,
-        Err(response) => return response,
+        Err(error) => return error.response(),
     };
     invoke_control_authorized(&state, ControlOperation::Display { request }).await
 }
@@ -1708,7 +1724,7 @@ async fn control_proxy_selection(
     }
     let request = match decode_control_json(payload) {
         Ok(request) => request,
-        Err(response) => return response,
+        Err(error) => return error.response(),
     };
     invoke_control_authorized(&state, ControlOperation::ProxySelection { request }).await
 }
@@ -1723,7 +1739,7 @@ async fn control_proxy_delay(
     }
     let request = match decode_control_json(payload) {
         Ok(request) => request,
-        Err(response) => return response,
+        Err(error) => return error.response(),
     };
     invoke_control_authorized(&state, ControlOperation::ProxyDelay { request }).await
 }
@@ -1738,7 +1754,7 @@ async fn control_proxy_delay_refresh(
     }
     let request = match decode_control_json(payload) {
         Ok(request) => request,
-        Err(response) => return response,
+        Err(error) => return error.response(),
     };
     invoke_control_authorized(&state, ControlOperation::ProxyDelayRefresh { request }).await
 }
