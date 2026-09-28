@@ -717,7 +717,7 @@ async fn admin_logout(State(state): State<AppState>, headers: HeaderMap) -> Resp
     let token = match require_admin(&state, &headers, AdminRequirement::PasswordChangeSession).await
     {
         Ok((token, _)) => token,
-        Err(error) => return error.response(),
+        Err(response) => return response,
     };
     close_owned_camera_session(&state, &token).await;
     let Some(admin) = state.admin.clone() else {
@@ -755,7 +755,7 @@ async fn admin_password(
     let token = match require_admin(&state, &headers, AdminRequirement::PasswordChangeSession).await
     {
         Ok((token, _)) => token,
-        Err(error) => return error.response(),
+        Err(response) => return response,
     };
     let Some(admin) = state.admin.clone() else {
         return authentication_error_json(StatusCode::SERVICE_UNAVAILABLE);
@@ -915,7 +915,7 @@ async fn camera_session_create(
 ) -> Response {
     let token = match authorize_camera_viewer(&state, &headers).await {
         Ok(token) => token,
-        Err(error) => return error.response(),
+        Err(response) => return response,
     };
     let Ok(Json(request)) = payload else {
         return invalid_request_json();
@@ -945,7 +945,7 @@ async fn camera_session_close(
 ) -> Response {
     let token = match authorize_camera_viewer(&state, &headers).await {
         Ok(token) => token,
-        Err(error) => return error.response(),
+        Err(response) => return response,
     };
     let Ok(Json(request)) = payload else {
         return invalid_request_json();
@@ -967,7 +967,7 @@ async fn camera_profile_update(
 ) -> Response {
     let (_, _) = match authorize_sensitive_control_admin(&state, &headers).await {
         Ok(result) => result,
-        Err(error) => return error.response(),
+        Err(response) => return response,
     };
     let Ok(Json(request)) = payload else {
         return invalid_request_json();
@@ -988,7 +988,7 @@ async fn camera_rotation_update(
 ) -> Response {
     let (_, _) = match authorize_sensitive_control_admin(&state, &headers).await {
         Ok(result) => result,
-        Err(error) => return error.response(),
+        Err(response) => return response,
     };
     let Ok(Json(request)) = payload else {
         return invalid_request_json();
