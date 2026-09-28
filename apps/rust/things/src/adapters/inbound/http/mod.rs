@@ -1743,17 +1743,6 @@ async fn control_proxy_delay_refresh(
     invoke_control_authorized(&state, ControlOperation::ProxyDelayRefresh { request }).await
 }
 
-async fn invoke_control(
-    state: &AppState,
-    headers: &HeaderMap,
-    operation: ControlOperation,
-) -> Response {
-    if !authorize_control(state, headers) {
-        return forbidden_json();
-    }
-    invoke_control_authorized(state, operation).await
-}
-
 async fn invoke_control_authorized(state: &AppState, operation: ControlOperation) -> Response {
     if operation.validate().is_err() {
         return invalid_request_json();
