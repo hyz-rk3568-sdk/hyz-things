@@ -14,7 +14,7 @@ fn dispatch_tailscale_mutation_scoped<T: serde::Serialize + 'static>(
     let request_id = state.tailscale_meta.request_id.saturating_add(1);
     state.dispatch(Action::TailscaleStarted(request_id, epoch));
     spawn_local(async move {
-        match post_json_response::<_, TailscaleMutationResponseDto>(
+        match post_json_response_typed::<_, TailscaleMutationResponseDto>(
             endpoint,
             &csrf,
             &body,
@@ -41,12 +41,13 @@ fn dispatch_tailscale_mutation_scoped<T: serde::Serialize + 'static>(
             }
             Err(error) => {
                 expire_protected_auth(&state, epoch, &error);
+                let message = error.to_string();
                 state.dispatch(Action::TailscaleFinished(
                     request_id,
                     epoch,
-                    Err(error.clone()),
+                    Err(message.clone()),
                 ));
-                state.dispatch(Action::TailscaleMutationFinished(Err(error)));
+                state.dispatch(Action::TailscaleMutationFinished(Err(message)));
             }
         }
     });
