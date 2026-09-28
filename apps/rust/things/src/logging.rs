@@ -103,6 +103,19 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn key_native_failure_paths_do_not_use_naked_stderr_logging() {
+        for source in [
+            include_str!("main.rs"),
+            include_str!("adapters/inbound/http/tls.rs"),
+            include_str!("adapters/outbound/tailscale.rs"),
+        ] {
+            let production = source.split("#[cfg(test)]").next().unwrap();
+            assert!(!production.contains("eprintln!("));
+            assert!(!production.contains("println!("));
+        }
+    }
+
     fn logging_contract_has_no_secret_detail_channel() {
         let source = include_str!("logging.rs");
         let production = source.split("#[cfg(test)]").next().unwrap();
