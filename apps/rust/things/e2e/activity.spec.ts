@@ -164,7 +164,7 @@ test("edits policy from device detail and preserves a dirty draft across a 409",
   await nameInput.fill("冲突时保留的草稿");
   await policy.selectOption("proxy");
   await detail.getByRole("button", { name: "保存设备设置" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "HTTP 409" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "设备策略更新未完成" })).toBeVisible();
   await expect(nameInput).toHaveValue("冲突时保留的草稿");
 });
 

@@ -22,7 +22,7 @@ fn dispatch_proxy_selection(
     state.dispatch(Action::ControlStarted(ControlArea::Nodes));
     let epoch = state.auth_epoch;
     spawn_local(async move {
-        let result = post_json(
+        let result = post_json_typed(
             PROXY_SELECTION_ENDPOINT,
             &csrf,
             &ProxySelectionRequest {
@@ -45,7 +45,10 @@ fn dispatch_proxy_selection(
             }
             Err(error) => {
                 expire_protected_auth(&state, epoch, &error);
-                state.dispatch(Action::ControlFinished(ControlArea::Nodes, Err(error)));
+                state.dispatch(Action::ControlFinished(
+                    ControlArea::Nodes,
+                    Err(error.to_string()),
+                ));
             }
         }
     });

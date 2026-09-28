@@ -14,7 +14,7 @@ use hyz_things::{
         camera::{CameraApplication, CameraControlPort, CameraError, CameraSession},
         ports::{
             AdminCredentialStorePort, AdminRandomPort, ClockPort, InstalledAppsPort, PlatformError,
-            PortalControlHandler,
+            PortalControlError, PortalControlHandler,
         },
         status::PortalStatus,
     },
@@ -73,6 +73,33 @@ const USAGE: &str =
     "Usage: router-web-e2e <frontend.tar> [web-port] [harness-control-port]\nPorts default to 0 (ephemeral) and always bind 127.0.0.1.";
 
 type HarnessResult<T> = Result<T, String>;
+
+struct HarnessControlError {
+    code: &'static str,
+    message: String,
+}
+
+impl HarnessControlError {
+    fn generic(message: impl Into<String>) -> Self {
+        Self {
+            code: "harness_operation_failed",
+            message: message.into(),
+        }
+    }
+
+    fn device_policy_generation_conflict() -> Self {
+        Self {
+            code: "device_policy_generation_conflict",
+            message: "device policy generation conflict".to_owned(),
+        }
+    }
+}
+
+impl From<String> for HarnessControlError {
+    fn from(message: String) -> Self {
+        Self::generic(message)
+    }
+}
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -532,9 +559,11 @@ impl CameraControlPort for HarnessCamera {
     }
 }
 
-#[async_trait]
-impl PortalControlHandler for HarnessBackend {
-    async fn handle(&self, operation: ControlOperation) -> HarnessResult<ControlResult> {
+impl HarnessBackend {
+    async fn handle_control(
+        &self,
+        operation: ControlOperation,
+    ) -> Result<ControlResult, HarnessControlError> {
         let mut state = self.state()?;
         match operation {
             ControlOperation::Status {} => Ok(ControlResult::Status {
@@ -554,7 +583,9 @@ impl PortalControlHandler for HarnessBackend {
                 display.brightness = if request.enabled {
                     let brightness = request.brightness.unwrap_or(display.brightness.max(1));
                     if brightness > display.max_brightness {
-                        return Err("display brightness exceeds the fake panel maximum".to_owned());
+                        return Err(HarnessControlError::generic(
+                            "display brightness exceeds the fake panel maximum",
+                        ));
                     }
                     brightness
                 } else {
@@ -588,7 +619,7 @@ impl PortalControlHandler for HarnessBackend {
             }
             ControlOperation::ProxyLanTun { enabled } => {
                 if state.proxy_failures.lan_tun {
-                    return Err("injected LAN TUN failure".to_owned());
+                    return Err(HarnessControlError::generic("injected LAN TUN failure"));
                 }
                 let local_system_proxy_enabled = state
                     .proxy
@@ -601,7 +632,9 @@ impl PortalControlHandler for HarnessBackend {
             }
             ControlOperation::ProxyLocalSystem { enabled } => {
                 if state.proxy_failures.local_system_proxy {
-                    return Err("injected local system proxy failure".to_owned());
+                    return Err(HarnessControlError::generic(
+                        "injected local system proxy failure",
+                    ));
                 }
                 let lan_tun_enabled = state
                     .proxy
@@ -623,7 +656,9 @@ impl PortalControlHandler for HarnessBackend {
                     .iter()
                     .any(|option| option.name == request.proxy)
                 {
-                    return Err("proxy is not a member of the selected group".to_owned());
+                    return Err(HarnessControlError::generic(
+                        "proxy is not a member of the selected group",
+                    ));
                 }
                 group.selected = Some(request.proxy);
                 Ok(completed("proxy selection applied"))
@@ -739,7 +774,7 @@ impl PortalControlHandler for HarnessBackend {
             }),
             ControlOperation::DevicePoliciesSet { request } => {
                 if request.expected_generation != state.device_policies.config.generation {
-                    return Err("device policy generation conflict".to_owned());
+                    return Err(HarnessControlError::device_policy_generation_conflict());
                 }
                 let candidate = request.candidate().map_err(str::to_owned)?;
                 for client in &mut state.device_policies.clients {
@@ -780,7 +815,9 @@ impl PortalControlHandler for HarnessBackend {
             }
             ControlOperation::SubscriptionRefresh {} => {
                 if !state.subscription.configured {
-                    return Err("subscription source is not configured".to_owned());
+                    return Err(HarnessControlError::generic(
+                        "subscription source is not configured",
+                    ));
                 }
                 state.subscription.state = SubscriptionSummaryState::Active;
                 Ok(ControlResult::Subscription {
@@ -796,7 +833,9 @@ impl PortalControlHandler for HarnessBackend {
                     || tailscale.backend_state != TailscaleBackendState::Running
                     || tailscale.authenticated != Some(true)
                 {
-                    Err("injected or unavailable Tailscale peers read".to_owned())
+                    Err(HarnessControlError::generic(
+                        "injected or unavailable Tailscale peers read",
+                    ))
                 } else {
                     Ok(ControlResult::TailscalePeers {
                         snapshot: state.tailscale_peers.clone(),
@@ -873,10 +912,22 @@ impl PortalControlHandler for HarnessBackend {
             }
             ControlOperation::Router { .. }
             | ControlOperation::Ota { .. }
-            | ControlOperation::Dhcp { .. } => {
-                Err("operation is outside the router web harness boundary".to_owned())
-            }
+            | ControlOperation::Dhcp { .. } => Err(HarnessControlError::generic(
+                "operation is outside the router web harness boundary",
+            )),
         }
+    }
+}
+
+#[async_trait]
+impl PortalControlHandler for HarnessBackend {
+    async fn handle(
+        &self,
+        operation: ControlOperation,
+    ) -> Result<ControlResult, PortalControlError> {
+        self.handle_control(operation)
+            .await
+            .map_err(|error| PortalControlError::remote(error.code, error.message))
     }
 }
 

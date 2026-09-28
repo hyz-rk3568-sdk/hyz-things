@@ -91,7 +91,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             pkg-config \
             libgstreamer1.0-dev \
-            libgstreamer-plugins-base1.0-dev
+            libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-plugins-good
 
       - name: Cache Cargo
         uses: actions/cache@v4

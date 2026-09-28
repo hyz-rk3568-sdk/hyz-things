@@ -2,7 +2,7 @@ use hyz_things::{
     adapters::{
         inbound::http::{
             app_with_admin_camera_control, bind_fixed_lan_with_retry, PortalTls, TlsListener,
-            DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT, LAN_ADDRESS,
+            DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
         },
         outbound::{
             admin::AdminFileAdapter,
@@ -18,6 +18,7 @@ use hyz_things::{
         ports::{ClockPort, PlatformError, PortalControlHandler},
         status::PortalStatus,
     },
+    logging::{self, Level},
 };
 use std::{error::Error, os::unix::fs::MetadataExt, sync::Arc, time::Duration};
 
@@ -144,12 +145,32 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                 _ = interval.tick() => {
                     match fetch_tailscale_status(tailscale_control.as_ref()).await {
                         Ok(status) => {
-                            if let Err(error) = tailscale_manager.reconcile(&status, tailscale_app.clone()) {
-                                eprintln!("hyz-things: Tailscale management listener reconcile failed: {error}");
+                            if let Err(_error) =
+                                tailscale_manager.reconcile(&status, tailscale_app.clone())
+                            {
+                                logging::event(
+                                    Level::Error,
+                                    "tailscale_listener",
+                                    "reconcile",
+                                    "reconcile_failed",
+                                    Some("tailscale_reconcile_failed"),
+                                    None,
+                                    None,
+                                    None,
+                                );
                             }
                         }
-                        Err(error) => {
-                            eprintln!("hyz-things: Tailscale status unavailable: {error}");
+                        Err(_error) => {
+                            logging::event(
+                                Level::Warn,
+                                "tailscale_listener",
+                                "status",
+                                "dependency_unavailable",
+                                Some("tailscale_status_unavailable"),
+                                None,
+                                None,
+                                None,
+                            );
                         }
                     }
                 }
@@ -180,7 +201,16 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         true,
     );
     std::fs::write(PORTAL_READY_MARKER, format!("{port}\n"))?;
-    eprintln!("hyz-things: management portal ready at https://{LAN_ADDRESS}:{port}");
+    logging::event(
+        Level::Info,
+        "http",
+        "listen_https",
+        "service_ready",
+        None,
+        None,
+        None,
+        None,
+    );
 
     let serve = axum::serve(TlsListener::new(listener, tls_acceptor.clone()), app)
         .with_graceful_shutdown(async move {
@@ -199,6 +229,18 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     let _ = tailscale_task.await;
     match tailscale.stop_all() {
         Ok(()) => Ok(()),
-        Err(error) => Err(format!("Tailscale management listener cleanup failed: {error}").into()),
+        Err(error) => {
+            logging::event(
+                Level::Error,
+                "tailscale_listener",
+                "shutdown",
+                "shutdown_failed",
+                Some("tailscale_listener_shutdown_failed"),
+                None,
+                None,
+                None,
+            );
+            Err(format!("Tailscale management listener cleanup failed: {error}").into())
+        }
     }
 }

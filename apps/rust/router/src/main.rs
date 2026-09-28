@@ -3,8 +3,8 @@ use hyz_router::{
         inbound::{
             control::{
                 acquire_daemon_ownership, bind_control_socket, remove_control_socket, request,
-                require_root, serve_control, ControlHandler, ControlOperation, ControlProxyMode,
-                ControlResult,
+                require_root, serve_control, ControlError, ControlHandler, ControlOperation,
+                ControlProxyMode, ControlResult,
             },
             dhcp_hook,
             ota_cli::{parse_ota_cli, OtaCommand, OTA_USAGE},
@@ -753,9 +753,39 @@ impl ProductionRuntime {
     }
 }
 
+fn control_error(code: impl Into<String>, message: impl Into<String>) -> ControlError {
+    ControlError {
+        code: code.into(),
+        message: message.into(),
+    }
+}
+
+fn platform_control_error(component: &str, error: PlatformError) -> ControlError {
+    let suffix = match &error {
+        PlatformError::Busy(_) => "busy",
+        PlatformError::Conflict(_) => "conflict",
+        PlatformError::ProbeFailed(_) => "probe_failed",
+        PlatformError::CommandFailed(_) => "command_failed",
+        PlatformError::InvalidState(_) => "invalid_state",
+        PlatformError::NotImplemented(_) => "not_implemented",
+        PlatformError::UnsafeToCutOver(_) => "unsafe_to_cut_over",
+        PlatformError::Io(_) => "io_failed",
+    };
+    let code = if component == "device_policy" && matches!(error, PlatformError::Conflict(_)) {
+        "device_policy_generation_conflict".to_owned()
+    } else {
+        format!("{component}_{suffix}")
+    };
+    control_error(code, error.to_string())
+}
+
+fn worker_control_error(component: &str, message: &'static str) -> ControlError {
+    control_error(format!("{component}_worker_failed"), message)
+}
+
 #[async_trait::async_trait]
 impl ControlHandler for ProductionRuntime {
-    async fn handle(&self, operation: ControlOperation) -> Result<ControlResult, String> {
+    async fn handle(&self, operation: ControlOperation) -> Result<ControlResult, ControlError> {
         match operation {
             ControlOperation::Status { .. } => Ok(ControlResult::Status {
                 snapshot: Box::new(self.status().execute().await),
@@ -766,7 +796,12 @@ impl ControlHandler for ProductionRuntime {
                     PanelApplication::new(platform.as_ref()).snapshot()
                 })
                 .await
-                .map_err(|_| "panel status worker terminated unexpectedly".to_owned())?;
+                .map_err(|_| {
+                    worker_control_error(
+                        "panel_status",
+                        "panel status worker terminated unexpectedly",
+                    )
+                })?;
                 Ok(ControlResult::PanelStatus {
                     snapshot: Box::new(snapshot),
                 })
@@ -778,8 +813,10 @@ impl ControlHandler for ProductionRuntime {
                     PanelApplication::new(platform.as_ref()).set_display(&request)
                 })
                 .await
-                .map_err(|_| "display worker terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| {
+                    worker_control_error("display", "display worker terminated unexpectedly")
+                })?
+                .map_err(|error| platform_control_error("display", error))?;
                 Ok(completed(format!(
                     "display reconciled; enabled={}; brightness={}",
                     observed.enabled, observed.actual_brightness
@@ -792,15 +829,23 @@ impl ControlHandler for ProductionRuntime {
                     PanelApplication::new(platform.as_ref()).select_proxy(&request)
                 })
                 .await
-                .map_err(|_| "proxy selection worker terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| {
+                    worker_control_error(
+                        "proxy_selection",
+                        "proxy selection worker terminated unexpectedly",
+                    )
+                })?
+                .map_err(|error| platform_control_error("proxy_selection", error))?;
                 Ok(completed("proxy selection applied"))
             }
             ControlOperation::ProxyDelay { request } => {
                 let _serial = self.router_proxy.lock().await;
                 let mut last = self.proxy_delay_last.lock().await;
                 if last.is_some_and(|last| last.elapsed() < Duration::from_secs(5)) {
-                    return Err("proxy delay tests are rate limited".to_owned());
+                    return Err(control_error(
+                        "proxy_delay_rate_limited",
+                        "proxy delay tests are rate limited",
+                    ));
                 }
                 *last = Some(Instant::now());
                 drop(last);
@@ -809,8 +854,13 @@ impl ControlHandler for ProductionRuntime {
                     PanelApplication::new(platform.as_ref()).measure_proxy_delay(&request.proxy)
                 })
                 .await
-                .map_err(|_| "proxy delay worker terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| {
+                    worker_control_error(
+                        "proxy_delay",
+                        "proxy delay worker terminated unexpectedly",
+                    )
+                })?
+                .map_err(|error| platform_control_error("proxy_delay", error))?;
                 Ok(ControlResult::ProxyDelay { result })
             }
             ControlOperation::ProxyDelayRefresh { .. } => {
@@ -832,8 +882,13 @@ impl ControlHandler for ProductionRuntime {
                     }
                 })
                 .await
-                .map_err(|_| "proxy delay refresh worker terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| {
+                    worker_control_error(
+                        "proxy_delay",
+                        "proxy delay refresh worker terminated unexpectedly",
+                    )
+                })?
+                .map_err(|error| platform_control_error("proxy_delay", error))?;
                 Ok(ControlResult::ProxyDelays { groups })
             }
             ControlOperation::DevicePoliciesGet { .. } => {
@@ -849,8 +904,13 @@ impl ControlHandler for ProductionRuntime {
                     .snapshot()
                 })
                 .await
-                .map_err(|_| "device-policy discovery worker terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| {
+                    worker_control_error(
+                        "device_policy",
+                        "device-policy discovery worker terminated unexpectedly",
+                    )
+                })?
+                .map_err(|error| platform_control_error("device_policy", error))?;
                 Ok(ControlResult::DevicePolicies { snapshot })
             }
             ControlOperation::DevicePoliciesSet { request } => {
@@ -867,8 +927,13 @@ impl ControlHandler for ProductionRuntime {
                     .update(request)
                 })
                 .await
-                .map_err(|_| "device-policy worker terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| {
+                    worker_control_error(
+                        "device_policy",
+                        "device-policy worker terminated unexpectedly",
+                    )
+                })?
+                .map_err(|error| platform_control_error("device_policy", error))?;
                 Ok(ControlResult::DevicePolicies { snapshot })
             }
             ControlOperation::SubscriptionGet { .. } => {
@@ -889,8 +954,13 @@ impl ControlHandler for ProductionRuntime {
                     .summary()
                 })
                 .await
-                .map_err(|_| "subscription summary worker terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| {
+                    worker_control_error(
+                        "subscription",
+                        "subscription summary worker terminated unexpectedly",
+                    )
+                })?
+                .map_err(|error| platform_control_error("subscription", error))?;
                 Ok(ControlResult::Subscription { summary })
             }
             ControlOperation::SubscriptionSet { url } => {
@@ -912,8 +982,13 @@ impl ControlHandler for ProductionRuntime {
                     subscription.replace_url_and_refresh(url.expose().to_owned())
                 })
                 .await
-                .map_err(|_| "subscription URL worker terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| {
+                    worker_control_error(
+                        "subscription",
+                        "subscription URL worker terminated unexpectedly",
+                    )
+                })?
+                .map_err(|error| platform_control_error("subscription", error))?;
                 Ok(ControlResult::Subscription { summary })
             }
             ControlOperation::SubscriptionRefresh { .. } => {
@@ -935,8 +1010,13 @@ impl ControlHandler for ProductionRuntime {
                     .refresh()
                 })
                 .await
-                .map_err(|_| "subscription refresh worker terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| {
+                    worker_control_error(
+                        "subscription",
+                        "subscription refresh worker terminated unexpectedly",
+                    )
+                })?
+                .map_err(|error| platform_control_error("subscription", error))?;
                 Ok(ControlResult::Subscription { summary })
             }
             ControlOperation::TailscaleGet { .. } => {
@@ -945,7 +1025,12 @@ impl ControlHandler for ProductionRuntime {
                     .read_tailscale_status()
                     .await
                     .data
-                    .ok_or_else(|| "Tailscale status is unavailable".to_owned())?;
+                    .ok_or_else(|| {
+                        control_error(
+                            "tailscale_status_unavailable",
+                            "Tailscale status is unavailable",
+                        )
+                    })?;
                 Ok(ControlResult::Tailscale { status })
             }
             ControlOperation::TailscalePeersGet { .. } => {
@@ -954,8 +1039,13 @@ impl ControlHandler for ProductionRuntime {
                     ReadTailnetPeers::new(tailscale.as_ref()).execute()
                 })
                 .await
-                .map_err(|_| "Tailscale peer probe terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| {
+                    worker_control_error(
+                        "tailscale_peers",
+                        "Tailscale peer probe terminated unexpectedly",
+                    )
+                })?
+                .map_err(|error| platform_control_error("tailscale_peers", error))?;
                 Ok(ControlResult::TailscalePeers { snapshot })
             }
             ControlOperation::TailscaleMode { mode } => {
@@ -963,7 +1053,7 @@ impl ControlHandler for ProductionRuntime {
                 let (status, login_url) = self
                     .reconcile_tailscale(TailscaleDesired { mode })
                     .await
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|error| platform_control_error("tailscale", error))?;
                 Ok(ControlResult::TailscaleMutation { status, login_url })
             }
             ControlOperation::TailscaleLogin { .. } => {
@@ -971,16 +1061,17 @@ impl ControlHandler for ProductionRuntime {
                 let desired = self
                     .tailscale_desired()
                     .await
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|error| platform_control_error("tailscale", error))?;
                 if desired.mode == TailscaleMode::Disabled {
-                    return Err(
-                        "select RouterOnly or LAN subnet access before requesting login".to_owned(),
-                    );
+                    return Err(control_error(
+                        "tailscale_invalid_state",
+                        "select RouterOnly or LAN subnet access before requesting login",
+                    ));
                 }
                 let (status, login_url) = self
                     .reconcile_tailscale(desired)
                     .await
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|error| platform_control_error("tailscale", error))?;
                 Ok(ControlResult::TailscaleMutation { status, login_url })
             }
             ControlOperation::TailscaleLogout { .. } => {
@@ -988,7 +1079,7 @@ impl ControlHandler for ProductionRuntime {
                 let status = self
                     .logout_tailscale()
                     .await
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|error| platform_control_error("tailscale", error))?;
                 Ok(ControlResult::TailscaleMutation {
                     status,
                     login_url: None,
@@ -998,7 +1089,7 @@ impl ControlHandler for ProductionRuntime {
                 self.dhcp
                     .dispatch(event)
                     .await
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|error| platform_control_error("dhcp", error))?;
                 Ok(completed("DHCP event queued"))
             }
             ControlOperation::Router { enabled } => {
@@ -1009,16 +1100,16 @@ impl ControlHandler for ProductionRuntime {
                     // still confirmed. Persisted Tailscale access mode and proxy intent survive.
                     self.degrade_tailscale_to_router_only()
                         .await
-                        .map_err(|error| error.to_string())?;
+                        .map_err(|error| platform_control_error("tailscale", error))?;
                     let mut desired = self
                         .proxy_desired()
                         .await
-                        .map_err(|error| error.to_string())?;
+                        .map_err(|error| platform_control_error("proxy", error))?;
                     desired.lan_tun_enabled = false;
                     actions_applied += self
                         .reconcile_proxy_runtime_preserving_features(desired)
                         .await
-                        .map_err(|error| error.to_string())?;
+                        .map_err(|error| platform_control_error("proxy", error))?;
                 }
                 let platform = self.router.clone();
                 let router_actions = tokio::task::spawn_blocking(move || {
@@ -1032,8 +1123,10 @@ impl ControlHandler for ProductionRuntime {
                         .map(|result| result.actions_applied)
                 })
                 .await
-                .map_err(|_| "router worker terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| {
+                    worker_control_error("network", "router worker terminated unexpectedly")
+                })?
+                .map_err(|error| platform_control_error("network", error))?;
                 actions_applied += router_actions;
                 if let Err(error) = self.reconcile_persisted_tailscale().await {
                     eprintln!(
@@ -1044,11 +1137,11 @@ impl ControlHandler for ProductionRuntime {
                     let desired = self
                         .proxy_desired()
                         .await
-                        .map_err(|error| error.to_string())?;
+                        .map_err(|error| platform_control_error("proxy", error))?;
                     actions_applied += self
                         .reconcile_proxy_features(desired)
                         .await
-                        .map_err(|error| error.to_string())?;
+                        .map_err(|error| platform_control_error("proxy", error))?;
                 }
                 Ok(completed(format!(
                     "router reconciled; actions={actions_applied}"
@@ -1059,7 +1152,7 @@ impl ControlHandler for ProductionRuntime {
                 let mut desired = self
                     .proxy_desired()
                     .await
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|error| platform_control_error("proxy", error))?;
                 match mode {
                     ControlProxyMode::Explicit => desired.local_system_proxy_enabled = true,
                     ControlProxyMode::Tun => desired.lan_tun_enabled = true,
@@ -1071,7 +1164,7 @@ impl ControlHandler for ProductionRuntime {
                 let actions = self
                     .reconcile_proxy_features(desired)
                     .await
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|error| platform_control_error("proxy", error))?;
                 Ok(completed(format!(
                     "proxy features reconciled; actions={actions}"
                 )))
@@ -1081,12 +1174,12 @@ impl ControlHandler for ProductionRuntime {
                 let mut desired = self
                     .proxy_desired()
                     .await
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|error| platform_control_error("proxy", error))?;
                 desired.lan_tun_enabled = enabled;
                 let actions = self
                     .reconcile_proxy_features(desired)
                     .await
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|error| platform_control_error("proxy", error))?;
                 Ok(completed(format!("LAN TUN reconciled; actions={actions}")))
             }
             ControlOperation::ProxyLocalSystem { enabled } => {
@@ -1094,12 +1187,12 @@ impl ControlHandler for ProductionRuntime {
                 let mut desired = self
                     .proxy_desired()
                     .await
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|error| platform_control_error("proxy", error))?;
                 desired.local_system_proxy_enabled = enabled;
                 let actions = self
                     .reconcile_proxy_features(desired)
                     .await
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|error| platform_control_error("proxy", error))?;
                 Ok(completed(format!(
                     "local system proxy reconciled; actions={actions}"
                 )))
@@ -1111,8 +1204,10 @@ impl ControlHandler for ProductionRuntime {
                     WifiApplication::new(platform.as_ref()).committed()
                 })
                 .await
-                .map_err(|_| "Wi-Fi status worker terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| {
+                    worker_control_error("network", "Wi-Fi status worker terminated unexpectedly")
+                })?
+                .map_err(|error| platform_control_error("network", error))?;
                 Ok(ControlResult::WifiConfig { config })
             }
             ControlOperation::WifiPending { .. } => {
@@ -1122,8 +1217,10 @@ impl ControlHandler for ProductionRuntime {
                     WifiApplication::new(platform.as_ref()).pending_status()
                 })
                 .await
-                .map_err(|_| "Wi-Fi pending worker terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| {
+                    worker_control_error("network", "Wi-Fi pending worker terminated unexpectedly")
+                })?
+                .map_err(|error| platform_control_error("network", error))?;
                 let remaining_seconds = if applied {
                     pending.as_ref().map(|pending| {
                         let deadline = pending
@@ -1150,8 +1247,10 @@ impl ControlHandler for ProductionRuntime {
                     WifiApplication::new(platform.as_ref()).scan()
                 })
                 .await
-                .map_err(|_| "Wi-Fi scan worker terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| {
+                    worker_control_error("network", "Wi-Fi scan worker terminated unexpectedly")
+                })?
+                .map_err(|error| platform_control_error("network", error))?;
                 Ok(ControlResult::WifiScan { entries })
             }
             ControlOperation::WifiStaApply { request } => {
@@ -1161,8 +1260,10 @@ impl ControlHandler for ProductionRuntime {
                     WifiApplication::new(platform.as_ref()).apply_sta(request)
                 })
                 .await
-                .map_err(|_| "Wi-Fi STA worker terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| {
+                    worker_control_error("network", "Wi-Fi STA worker terminated unexpectedly")
+                })?
+                .map_err(|error| platform_control_error("network", error))?;
                 Ok(ControlResult::WifiConfig { config })
             }
             ControlOperation::WifiApPrepare { request } => {
@@ -1173,8 +1274,13 @@ impl ControlHandler for ProductionRuntime {
                     WifiApplication::new(platform.as_ref()).prepare_ap(request, staged_at)
                 })
                 .await
-                .map_err(|_| "Wi-Fi AP prepare worker terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| {
+                    worker_control_error(
+                        "network",
+                        "Wi-Fi AP prepare worker terminated unexpectedly",
+                    )
+                })?
+                .map_err(|error| platform_control_error("network", error))?;
                 Ok(ControlResult::WifiPending { pending })
             }
             ControlOperation::WifiApApply { .. } => {
@@ -1185,8 +1291,10 @@ impl ControlHandler for ProductionRuntime {
                     WifiApplication::new(platform.as_ref()).apply_ap(applied_at)
                 })
                 .await
-                .map_err(|_| "Wi-Fi AP apply worker terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| {
+                    worker_control_error("network", "Wi-Fi AP apply worker terminated unexpectedly")
+                })?
+                .map_err(|error| platform_control_error("network", error))?;
                 Ok(ControlResult::WifiPending { pending })
             }
             ControlOperation::WifiApConfirm { .. } => {
@@ -1196,8 +1304,13 @@ impl ControlHandler for ProductionRuntime {
                     WifiApplication::new(platform.as_ref()).confirm_ap()
                 })
                 .await
-                .map_err(|_| "Wi-Fi AP confirm worker terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| {
+                    worker_control_error(
+                        "network",
+                        "Wi-Fi AP confirm worker terminated unexpectedly",
+                    )
+                })?
+                .map_err(|error| platform_control_error("network", error))?;
                 Ok(ControlResult::WifiConfig { config })
             }
             ControlOperation::WifiApCancel { .. } => {
@@ -1207,8 +1320,13 @@ impl ControlHandler for ProductionRuntime {
                     WifiApplication::new(platform.as_ref()).cancel_ap()
                 })
                 .await
-                .map_err(|_| "Wi-Fi AP cancel worker terminated unexpectedly".to_owned())?
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| {
+                    worker_control_error(
+                        "network",
+                        "Wi-Fi AP cancel worker terminated unexpectedly",
+                    )
+                })?
+                .map_err(|error| platform_control_error("network", error))?;
                 Ok(ControlResult::WifiConfig { config })
             }
             ControlOperation::Ota { command } => {
@@ -1216,7 +1334,8 @@ impl ControlHandler for ProductionRuntime {
                 let firmware = self.firmware.clone();
                 tokio::task::spawn_blocking(move || run_ota_command(firmware, command))
                     .await
-                    .map_err(|_| "OTA worker terminated unexpectedly".to_owned())?
+                    .map_err(|_| worker_control_error("ota", "OTA worker terminated unexpectedly"))?
+                    .map_err(|message| control_error("ota_operation_failed", message))
             }
         }
     }
@@ -1871,6 +1990,35 @@ fn usage_error(message: &'static str) -> Box<dyn Error> {
 
 #[cfg(test)]
 mod source_boundaries {
+    use super::{platform_control_error, PlatformError};
+
+    #[test]
+    fn control_error_codes_keep_subsystem_and_failure_kind() {
+        let probe = platform_control_error(
+            "network",
+            PlatformError::ProbeFailed("internal probe detail".to_owned()),
+        );
+        assert_eq!(probe.code, "network_probe_failed");
+
+        let command = platform_control_error(
+            "proxy",
+            PlatformError::CommandFailed("internal command detail".to_owned()),
+        );
+        assert_eq!(command.code, "proxy_command_failed");
+
+        let generation = platform_control_error(
+            "device_policy",
+            PlatformError::Conflict("generation changed".to_owned()),
+        );
+        assert_eq!(generation.code, "device_policy_generation_conflict");
+
+        let production = include_str!("main.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(!production.contains("platform_control_error(\"router_control\""));
+    }
+
     #[test]
     fn daemon_serves_control_before_initialization_and_ready_marker_afterward() {
         let production = include_str!("main.rs")

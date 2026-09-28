@@ -24,7 +24,7 @@ impl PortalStatus {
         match self.control.handle(ControlOperation::Status {}).await {
             Ok(ControlResult::Status { snapshot }) => *snapshot,
             Ok(_) => degraded_snapshot("status contract mismatch"),
-            Err(error) => degraded_snapshot(&format!("router status unavailable: {error}")),
+            Err(_error) => degraded_snapshot("router status is unavailable"),
         }
     }
 }

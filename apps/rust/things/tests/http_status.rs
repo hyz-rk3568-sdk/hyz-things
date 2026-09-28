@@ -14,7 +14,10 @@ use async_trait::async_trait;
 use hyz_contract::router::{ControlOperation, ControlResult};
 use hyz_things::{
     adapters::inbound::http::{app, app_with_control},
-    application::{ports::PortalControlHandler, status::PortalStatus},
+    application::{
+        ports::{PortalControlError, PortalControlHandler},
+        status::PortalStatus,
+    },
     domain::{
         panel::{DisplayStatus, PanelSnapshot},
         status::{
@@ -28,11 +31,15 @@ use hyz_things::{
 #[derive(Default)]
 struct FakeControl {
     display_mutations: AtomicUsize,
+    fail_display: bool,
 }
 
 #[async_trait]
 impl PortalControlHandler for FakeControl {
-    async fn handle(&self, operation: ControlOperation) -> Result<ControlResult, String> {
+    async fn handle(
+        &self,
+        operation: ControlOperation,
+    ) -> Result<ControlResult, PortalControlError> {
         match operation {
             ControlOperation::Status {} => Ok(ControlResult::Status {
                 snapshot: Box::new(StatusSnapshot {
@@ -66,14 +73,24 @@ impl PortalControlHandler for FakeControl {
             }),
             ControlOperation::Display { .. } => {
                 self.display_mutations.fetch_add(1, Ordering::SeqCst);
-                Ok(ControlResult::Completed {
-                    message: "display applied".to_owned(),
-                })
+                if self.fail_display {
+                    Err(PortalControlError::remote(
+                        "display_conflict",
+                        "internal sensitive detail: /userdata/credentials",
+                    ))
+                } else {
+                    Ok(ControlResult::Completed {
+                        message: "display applied".to_owned(),
+                    })
+                }
             }
             ControlOperation::ProxyDelayRefresh { .. } => {
                 Ok(ControlResult::ProxyDelays { groups: Vec::new() })
             }
-            _ => Err("unsupported fake operation".to_owned()),
+            _ => Err(PortalControlError::remote(
+                "test_unsupported_operation",
+                "unsupported fake operation",
+            )),
         }
     }
 }
@@ -174,6 +191,7 @@ async fn serves_partial_degraded_status_with_strict_http_policy() {
     assert!(!status_lower.contains("'unsafe-inline'"));
     assert!(!status_lower.contains("script-src 'self' 'unsafe-eval'"));
     assert!(status_lower.contains("x-frame-options: deny"));
+    assert!(status_lower.contains("x-hyz-request-id:"));
     assert!(status_lower.contains(
         "permissions-policy: camera=(), microphone=(self), geolocation=(), payment=(), usb=()"
     ));
@@ -229,6 +247,8 @@ async fn serves_partial_degraded_status_with_strict_http_policy() {
     .await
     .expect("join approved authentication path client");
     assert!(auth.starts_with("HTTP/1.1 503 Service Unavailable\r\n"));
+    assert!(auth.contains("\"code\":\"auth_unavailable\""));
+    assert!(auth.to_ascii_lowercase().contains("x-hyz-request-id:"));
 
     let root_address = server_address(&server, address);
     let root = tokio::task::spawn_blocking(move || http_request(root_address, "GET", "/"))
@@ -324,6 +344,56 @@ async fn serves_partial_degraded_status_with_strict_http_policy() {
             .expect("join SPA route client");
     assert!(route.starts_with("HTTP/1.1 200 OK\r\n"));
     assert!(route.contains("<!doctype html>"));
+
+    server.abort();
+}
+
+#[tokio::test]
+async fn remote_control_code_survives_http_mapping_without_leaking_remote_detail() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind remote error test listener");
+    let address = listener
+        .local_addr()
+        .expect("read remote error test address");
+    let control = Arc::new(FakeControl {
+        fail_display: true,
+        ..FakeControl::default()
+    });
+    let server_control: Arc<dyn PortalControlHandler> = control;
+    let server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app_with_control(
+                read_status(server_control.clone()),
+                server_control,
+                "csrf-test".to_owned(),
+                address.port(),
+            ),
+        )
+        .await
+        .expect("serve remote error test app");
+    });
+
+    let origin = format!("http://192.168.8.1:{}", address.port());
+    let response = tokio::task::spawn_blocking(move || {
+        http_json_request(
+            address,
+            "/api/v1/control/display",
+            &origin,
+            Some("csrf-test"),
+            r#"{"enabled":true,"brightness":128}"#,
+        )
+    })
+    .await
+    .expect("join remote error client");
+
+    assert!(response.starts_with("HTTP/1.1 409 Conflict\r\n"));
+    assert!(response.contains(r#""code":"display_conflict""#));
+    assert!(response.contains("Router control request conflicts with current state"));
+    assert!(!response.contains("/userdata/credentials"));
+    assert!(!response.contains("internal sensitive detail"));
+    assert!(response.to_ascii_lowercase().contains("x-hyz-request-id:"));
 
     server.abort();
 }
@@ -513,7 +583,9 @@ async fn control_posts_require_exact_origin_token_and_typed_json() {
     })
     .await
     .expect("join unknown-field client");
-    assert!(unknown.starts_with("HTTP/1.1 422 Unprocessable Entity\r\n"));
+    assert!(unknown.starts_with("HTTP/1.1 400 Bad Request\r\n"));
+    assert!(unknown.contains(r#""code":"invalid_request""#));
+    assert!(unknown.to_ascii_lowercase().contains("x-hyz-request-id:"));
     assert_eq!(control.display_mutations.load(Ordering::SeqCst), 1);
 
     server.abort();
@@ -547,4 +619,32 @@ fn typed_proxy_dto_keeps_layered_wire_values_stable() {
     assert_eq!(value["mihomo"]["process"], "ready");
     assert_eq!(value["lan_tun"]["effective"], "ready");
     assert_eq!(value["local_system_proxy"]["effective"], "disabled");
+}
+
+#[test]
+fn error_contract_keeps_machine_readable_failure_semantics() {
+    let http = include_str!("../src/adapters/inbound/http/mod.rs");
+    let router_client = include_str!("../src/adapters/outbound/router.rs");
+    let ports = include_str!("../src/application/ports.rs");
+
+    assert!(
+        http.contains("\"auth_invalid_credentials\""),
+        "authentication errors need stable machine-readable codes"
+    );
+    assert!(
+        http.contains("\"auth_invalid_session\""),
+        "session expiry must be distinguishable from bad credentials"
+    );
+    assert!(
+        !http.contains("\"authentication_failed\""),
+        "known authentication failures must not collapse into one generic code"
+    );
+    assert!(
+        !router_client.contains("map_err(|error| error.to_string())"),
+        "router remote errors must keep their typed code instead of becoming strings"
+    );
+    assert!(
+        !ports.contains("Result<ControlResult, String>"),
+        "PortalControlHandler must preserve typed transport/remote failures"
+    );
 }

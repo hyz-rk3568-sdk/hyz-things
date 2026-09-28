@@ -1,7 +1,11 @@
 use super::*;
 
-pub(crate) fn expire_protected_auth(state: &UseReducerHandle<AppState>, epoch: u64, error: &str) {
-    if error.contains("HTTP 401") {
+pub(crate) fn expire_protected_auth(
+    state: &UseReducerHandle<AppState>,
+    epoch: u64,
+    error: &ApiError,
+) {
+    if error.is_auth_expired() {
         state.dispatch(Action::AuthenticationExpired(
             epoch,
             "登录已失效，请重新登录后继续当前页面".to_owned(),
@@ -22,12 +26,13 @@ pub(crate) fn dispatch_protected_control<T>(
     state.dispatch(Action::ControlStarted(area));
     let epoch = state.auth_epoch;
     spawn_local(async move {
-        let result = post_json(endpoint, &csrf_token, &body, "控制")
-            .await
-            .map(|_| success);
-        if let Err(error) = &result {
+        let typed_result = post_json_typed(endpoint, &csrf_token, &body, "控制").await;
+        if let Err(error) = &typed_result {
             expire_protected_auth(&state, epoch, error);
         }
+        let result = typed_result
+            .map(|_| success)
+            .map_err(|error| error.to_string());
         let ok = result.is_ok();
         state.dispatch(Action::ControlFinished(area, result));
         if ok {
@@ -50,7 +55,7 @@ pub(crate) fn dispatch_protected_delay_refresh(
     state.dispatch(Action::ControlStarted(ControlArea::Nodes));
     let epoch = state.auth_epoch;
     spawn_local(async move {
-        let result = post_json_response::<_, DelayRefreshControlResponse>(
+        let typed_result = post_json_response_typed::<_, DelayRefreshControlResponse>(
             PROXY_DELAYS_ENDPOINT,
             &csrf_token,
             &ProxyDelayRefreshRequest {},
@@ -60,9 +65,11 @@ pub(crate) fn dispatch_protected_delay_refresh(
         .and_then(|response| match response {
             DelayRefreshControlResponse::ProxyDelays { groups } => Ok(groups),
         });
-        if let Err(error) = &result {
+        if let Err(error) = &typed_result {
             expire_protected_auth(&state, epoch, error);
         }
-        state.dispatch(Action::ProxyDelaysFinished(result));
+        state.dispatch(Action::ProxyDelaysFinished(
+            typed_result.map_err(|error| error.to_string()),
+        ));
     });
 }

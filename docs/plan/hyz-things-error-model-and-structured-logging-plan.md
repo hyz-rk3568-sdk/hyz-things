@@ -2,15 +2,35 @@
 
 ## 状态
 
-**计划中，尚未实施。**
+**代码已实施，目标板验收待完成。**
 
 创建日期：2026-09-28。
+实施完成日期：2026-09-28。
+实现分支：`refactor/hyz-things-error-model-logging`。
+实现 PR：#12。
 
 本文用于统一 hyz-things 管理门户后端的错误语义、跨进程错误传播、HTTP 错误 contract 与服务日志。当前代码已经存在若干类型化错误，但错误在跨层传播时会被压缩为通用字符串或通用错误码，导致 Web、日志和自动化无法稳定区分真实失败原因。
 
 本计划优先解决“错误语义在 application / Unix control / HTTP / 日志之间丢失”的问题；结构化日志是统一错误模型的输出层，而不是独立目标。实施时必须保持现有 process boundary、安全边界、router/camera ownership/readiness 语义与 Web 管理权限模型。
 
 实现阶段属于跨模块重构，必须在独立分支完成并通过 Pull Request 合入 main；本文作为纯文档计划可独立提交。
+
+## 实施结果摘要
+
+本轮代码已经完成以下收敛：
+
+- `hyz-contract` client 使用 `ControlClientError` 区分 transport、protocol 与 remote `ControlError`，不再把 remote code 格式化进普通 `io::Error` 字符串；
+- `hyz-router` control handler 返回 typed `ControlError`，并按 subsystem + failure kind 生成稳定 code，例如 `network_probe_failed`、`proxy_command_failed`、`device_policy_generation_conflict`；
+- `hyz-things` 的 `PortalControlHandler` 使用 `PortalControlError` 保留 remote/transport/protocol 语义，HTTP 边界不再依赖 message 字符串判断；
+- authentication 已拆分为 `auth_invalid_credentials`、`auth_invalid_session`、`auth_rate_limited`、`auth_invalid_new_password`、`auth_password_change_required`、`auth_unavailable` 等稳定 code；
+- Camera 既有 `camera_*` code 保持，并统一到 `{ "error": { "code", "message" } }` envelope；
+- HTTP error response 使用统一 helper，并为每个 request 生成 server-side `x-hyz-request-id`；失败日志使用同一 request ID；
+- Web API 增加 typed `ApiError`，受保护资源、401 session expiry 和 409 generation conflict 使用 status/code 判断，不解析 message 文案；
+- native portal 的关键 HTTP、TLS、Tailscale listener 与 service-ready 事件使用结构化 stderr 字段，核心字段包括 `service`、`component`、`operation`、`event`、`error_code`、`request_id`、`status` 和 `duration_ms`；
+- 最终未引入 `tracing` / `tracing-subscriber`，而是使用小型集中 logging facade 继续写 stderr。原因是当前 init 已稳定捕获 stderr，且集中 API 可以更严格地限制任意 error detail、request body、credential 和 URL 进入日志；该实现选择不改变本文定义的结构化字段与脱敏 contract；
+- HTTP/status 边界不会把 router remote message 直接返回浏览器；测试包含 remote detail 不泄漏、稳定 code 保留、request ID 存在和关键 native 路径不重新使用裸 `eprintln!` 的约束。
+
+真实 RK3568 目标板尚未执行本计划的最终日志与故障注入验收，因此当前状态不能标记为全部完成。
 
 ## 1. 当前问题
 
