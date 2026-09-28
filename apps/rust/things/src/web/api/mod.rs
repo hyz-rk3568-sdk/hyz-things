@@ -86,10 +86,7 @@ struct ApiErrorBody {
     message: String,
 }
 
-async fn response_error(
-    response: gloo_net::http::Response,
-    label: &str,
-) -> ApiError {
+async fn response_error(response: gloo_net::http::Response, label: &str) -> ApiError {
     let status = response.status();
     match response.json::<ApiErrorEnvelope>().await {
         Ok(envelope) => ApiError::http(

@@ -1060,14 +1060,12 @@ fn camera_error_json(error: CameraError) -> Response {
         CameraError::InvalidRequest => (StatusCode::BAD_REQUEST, "camera_invalid_request"),
         CameraError::NotReady => (StatusCode::CONFLICT, "camera_not_ready"),
         CameraError::Busy => (StatusCode::CONFLICT, "camera_busy"),
-        CameraError::UnsupportedOffer => (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "camera_offer_unsupported",
-        ),
-        CameraError::ResourceExhausted => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "camera_resource_exhausted",
-        ),
+        CameraError::UnsupportedOffer => {
+            (StatusCode::UNPROCESSABLE_ENTITY, "camera_offer_unsupported")
+        }
+        CameraError::ResourceExhausted => {
+            (StatusCode::SERVICE_UNAVAILABLE, "camera_resource_exhausted")
+        }
         CameraError::UnknownSession => (StatusCode::NOT_FOUND, "camera_session_not_found"),
         CameraError::Forbidden => (StatusCode::FORBIDDEN, "camera_session_forbidden"),
         CameraError::Unavailable => (StatusCode::SERVICE_UNAVAILABLE, "camera_unavailable"),

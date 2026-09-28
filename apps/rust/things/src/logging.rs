@@ -106,7 +106,13 @@ mod tests {
     fn logging_contract_has_no_secret_detail_channel() {
         let source = include_str!("logging.rs");
         let production = source.split("#[cfg(test)]").next().unwrap();
-        for forbidden in ["password", "cookie", "csrf_token", "login_url", "request_body"] {
+        for forbidden in [
+            "password",
+            "cookie",
+            "csrf_token",
+            "login_url",
+            "request_body",
+        ] {
             assert!(!production.contains(forbidden));
         }
     }
