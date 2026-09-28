@@ -1100,16 +1100,16 @@ impl ControlHandler for ProductionRuntime {
                     // still confirmed. Persisted Tailscale access mode and proxy intent survive.
                     self.degrade_tailscale_to_router_only()
                         .await
-                        .map_err(|error| platform_control_error("router_control", error))?;
+                        .map_err(|error| platform_control_error("tailscale", error))?;
                     let mut desired = self
                         .proxy_desired()
                         .await
-                        .map_err(|error| platform_control_error("router_control", error))?;
+                        .map_err(|error| platform_control_error("tailscale", error))?;
                     desired.lan_tun_enabled = false;
                     actions_applied += self
                         .reconcile_proxy_runtime_preserving_features(desired)
                         .await
-                        .map_err(|error| platform_control_error("router_control", error))?;
+                        .map_err(|error| platform_control_error("proxy", error))?;
                 }
                 let platform = self.router.clone();
                 let router_actions = tokio::task::spawn_blocking(move || {
@@ -1126,7 +1126,7 @@ impl ControlHandler for ProductionRuntime {
                 .map_err(|_| {
                     worker_control_error("network", "router worker terminated unexpectedly")
                 })?
-                .map_err(|error| platform_control_error("router_control", error))?;
+                .map_err(|error| platform_control_error("network", error))?;
                 actions_applied += router_actions;
                 if let Err(error) = self.reconcile_persisted_tailscale().await {
                     eprintln!(
@@ -1137,11 +1137,11 @@ impl ControlHandler for ProductionRuntime {
                     let desired = self
                         .proxy_desired()
                         .await
-                        .map_err(|error| platform_control_error("router_control", error))?;
+                        .map_err(|error| platform_control_error("proxy", error))?;
                     actions_applied += self
                         .reconcile_proxy_features(desired)
                         .await
-                        .map_err(|error| platform_control_error("router_control", error))?;
+                        .map_err(|error| platform_control_error("proxy", error))?;
                 }
                 Ok(completed(format!(
                     "router reconciled; actions={actions_applied}"
@@ -1152,7 +1152,7 @@ impl ControlHandler for ProductionRuntime {
                 let mut desired = self
                     .proxy_desired()
                     .await
-                    .map_err(|error| platform_control_error("router_control", error))?;
+                    .map_err(|error| platform_control_error("proxy", error))?;
                 match mode {
                     ControlProxyMode::Explicit => desired.local_system_proxy_enabled = true,
                     ControlProxyMode::Tun => desired.lan_tun_enabled = true,
@@ -1174,7 +1174,7 @@ impl ControlHandler for ProductionRuntime {
                 let mut desired = self
                     .proxy_desired()
                     .await
-                    .map_err(|error| platform_control_error("router_control", error))?;
+                    .map_err(|error| platform_control_error("proxy", error))?;
                 desired.lan_tun_enabled = enabled;
                 let actions = self
                     .reconcile_proxy_features(desired)
@@ -1187,7 +1187,7 @@ impl ControlHandler for ProductionRuntime {
                 let mut desired = self
                     .proxy_desired()
                     .await
-                    .map_err(|error| platform_control_error("router_control", error))?;
+                    .map_err(|error| platform_control_error("proxy", error))?;
                 desired.local_system_proxy_enabled = enabled;
                 let actions = self
                     .reconcile_proxy_features(desired)
@@ -1220,7 +1220,7 @@ impl ControlHandler for ProductionRuntime {
                 .map_err(|_| {
                     worker_control_error("network", "Wi-Fi pending worker terminated unexpectedly")
                 })?
-                .map_err(|error| platform_control_error("router_control", error))?;
+                .map_err(|error| platform_control_error("network", error))?;
                 let remaining_seconds = if applied {
                     pending.as_ref().map(|pending| {
                         let deadline = pending
