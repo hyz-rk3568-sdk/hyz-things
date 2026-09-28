@@ -334,10 +334,10 @@ impl CameraApplication {
         }) {
             Ok(created) => created,
             Err(error) => {
-                rollback_created_viewer(&mut state, &frames);
                 if let Some(queue) = &audio_frames_for_session {
                     rollback_created_audio_viewer(&mut state, queue, id.as_str());
                 }
+                rollback_created_viewer(&mut state, &frames);
                 state.last_error = Some(webrtc_category(error));
                 return Err(CameraApplicationError::WebRtc(error));
             }
