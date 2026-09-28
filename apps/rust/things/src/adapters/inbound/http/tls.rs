@@ -28,6 +28,7 @@ use tokio_rustls::{
 };
 
 use super::LAN_ADDRESS;
+use crate::logging::{self, Level};
 
 const CERT_DIRECTORY: &str = "/userdata/hyz-things/tls";
 const CERTIFICATE_FILE: &str = "server.crt";
@@ -49,9 +50,16 @@ impl PortalTls {
         if certificate_path.exists() && private_key_path.exists() {
             match load_certificate(&certificate_path, &private_key_path) {
                 Ok(acceptor) => return Ok(Self { acceptor }),
-                Err(error) => {
-                    eprintln!(
-                        "hyz-things: persisted TLS identity is unreadable ({error}); regenerating"
+                Err(_error) => {
+                    logging::event(
+                        Level::Warn,
+                        "tls",
+                        "load_identity",
+                        "dependency_unavailable",
+                        Some("tls_identity_unreadable"),
+                        None,
+                        None,
+                        None,
                     );
                 }
             }
@@ -184,8 +192,18 @@ where
             let (stream, peer) = self.inner.accept().await;
             match self.acceptor.accept(stream).await {
                 Ok(tls_stream) => return (tls_stream, peer),
-                Err(error) => {
-                    eprintln!("hyz-things: TLS handshake rejected from {peer}: {error}");
+                Err(_error) => {
+                    let _ = peer;
+                    logging::event(
+                        Level::Warn,
+                        "tls",
+                        "handshake",
+                        "request_rejected",
+                        Some("tls_handshake_failed"),
+                        None,
+                        None,
+                        None,
+                    );
                 }
             }
         }
