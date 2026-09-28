@@ -1629,12 +1629,29 @@ async fn invoke_sensitive_control_authorized(
     }
 }
 
+fn decode_control_json<T>(payload: Result<Json<T>, JsonRejection>) -> Result<T, Response> {
+    match payload {
+        Ok(Json(request)) => Ok(request),
+        Err(rejection) if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE => {
+            Err(payload_too_large_json())
+        }
+        Err(_) => Err(invalid_request_json()),
+    }
+}
+
 async fn control_display(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<DisplayRequest>,
+    payload: Result<Json<DisplayRequest>, JsonRejection>,
 ) -> Response {
-    invoke_control(&state, &headers, ControlOperation::Display { request }).await
+    if !authorize_control(&state, &headers) {
+        return forbidden_json();
+    }
+    let request = match decode_control_json(payload) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    invoke_control_authorized(&state, ControlOperation::Display { request }).await
 }
 
 async fn control_proxy_lan_tun(
@@ -1684,33 +1701,46 @@ async fn control_proxy_feature(
 async fn control_proxy_selection(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<ProxySelectionRequest>,
+    payload: Result<Json<ProxySelectionRequest>, JsonRejection>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_control(&state, &headers).await {
         return response;
     }
+    let request = match decode_control_json(payload) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
     invoke_control_authorized(&state, ControlOperation::ProxySelection { request }).await
 }
 
 async fn control_proxy_delay(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<ProxyDelayRequest>,
+    payload: Result<Json<ProxyDelayRequest>, JsonRejection>,
 ) -> Response {
-    invoke_control(&state, &headers, ControlOperation::ProxyDelay { request }).await
+    if !authorize_control(&state, &headers) {
+        return forbidden_json();
+    }
+    let request = match decode_control_json(payload) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    invoke_control_authorized(&state, ControlOperation::ProxyDelay { request }).await
 }
 
 async fn control_proxy_delay_refresh(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<ProxyDelayRefreshRequest>,
+    payload: Result<Json<ProxyDelayRefreshRequest>, JsonRejection>,
 ) -> Response {
-    invoke_control(
-        &state,
-        &headers,
-        ControlOperation::ProxyDelayRefresh { request },
-    )
-    .await
+    if !authorize_control(&state, &headers) {
+        return forbidden_json();
+    }
+    let request = match decode_control_json(payload) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    invoke_control_authorized(&state, ControlOperation::ProxyDelayRefresh { request }).await
 }
 
 async fn invoke_control(
