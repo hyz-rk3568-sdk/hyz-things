@@ -45,6 +45,7 @@ extern "C" {
 pub(crate) enum Tool {
     Ip,
     Iptables,
+    Ip6tables,
     WpaCli,
     HostapdCli,
     Mihomo,
@@ -57,6 +58,7 @@ impl Tool {
         match self {
             Self::Ip => "/usr/sbin/ip",
             Self::Iptables => "/usr/sbin/iptables",
+            Self::Ip6tables => "/usr/sbin/ip6tables",
             Self::WpaCli => "/usr/sbin/wpa_cli",
             Self::HostapdCli => "/usr/bin/hostapd_cli",
             Self::Mihomo => MIHOMO_EXECUTABLE,

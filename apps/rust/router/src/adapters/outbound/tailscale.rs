@@ -32,8 +32,8 @@ use crate::{
             TailscalePeerConnection, TailscalePeerSnapshot, TailscalePreferences,
             TailscaleProcessState, MAX_TAILSCALE_PEERS, TAILSCALE_ADB_PORT, TAILSCALE_CGNAT_SUBNET,
             TAILSCALE_FORWARD_CHAIN, TAILSCALE_INPUT_CHAIN, TAILSCALE_INTERFACE,
-            TAILSCALE_LAN_ROUTE, TAILSCALE_MANAGEMENT_HTTP_PORT, TAILSCALE_NAT_CHAIN,
-            TAILSCALE_UDP_PORT,
+            TAILSCALE_IPV6_INPUT_CHAIN, TAILSCALE_LAN_ROUTE, TAILSCALE_MANAGEMENT_HTTP_PORT,
+            TAILSCALE_NAT_CHAIN, TAILSCALE_UDP_PORT,
         },
     },
 };
@@ -157,6 +157,12 @@ impl LinuxTailscalePlatform {
     fn iptables(&self, args: &[&str]) -> Result<(), PlatformError> {
         self.platform
             .run(Tool::Iptables, &strings(args))
+            .map(|_| ())
+    }
+
+    fn ip6tables(&self, args: &[&str]) -> Result<(), PlatformError> {
+        self.platform
+            .run(Tool::Ip6tables, &strings(args))
             .map(|_| ())
     }
 
@@ -628,14 +634,45 @@ impl LinuxTailscalePlatform {
                 "existing FORWARD hooks are not in Mihomo, router order".to_owned(),
             ));
         }
+        let ipv6_input = self
+            .platform
+            .run(
+                Tool::Ip6tables,
+                &strings(&["-w", "-t", "filter", "-S", "INPUT"]),
+            )?
+            .stdout;
+        if !exact_chain_references(&ipv6_input, TAILSCALE_IPV6_INPUT_CHAIN)
+            .is_some_and(|references| references.is_empty())
+        {
+            return Err(PlatformError::Conflict(
+                "Tailscale IPv6 INPUT references already exist or are unparseable".to_owned(),
+            ));
+        }
 
-        self.iptables(&["-w", "-t", "filter", "-N", TAILSCALE_INPUT_CHAIN])?;
+        let mut input_chain_created = false;
+        let mut forward_chain_created = false;
+        let mut ipv6_input_chain_created = false;
         let mut input_hook_created = false;
         let mut forward_hook_created = false;
+        let mut ipv6_input_hook_created = false;
         let result = (|| {
+            self.iptables(&["-w", "-t", "filter", "-N", TAILSCALE_INPUT_CHAIN])?;
+            input_chain_created = true;
             self.iptables(&["-w", "-t", "filter", "-N", TAILSCALE_FORWARD_CHAIN])?;
+            forward_chain_created = true;
+            self.ip6tables(&["-w", "-t", "filter", "-N", TAILSCALE_IPV6_INPUT_CHAIN])?;
+            ipv6_input_chain_created = true;
             for rule in tailscale_input_rules(token) {
                 append_rule(&self.platform, "filter", TAILSCALE_INPUT_CHAIN, &rule)?;
+            }
+            for rule in tailscale_ipv6_input_rules(token) {
+                append_rule_with_tool(
+                    &self.platform,
+                    Tool::Ip6tables,
+                    "filter",
+                    TAILSCALE_IPV6_INPUT_CHAIN,
+                    &rule,
+                )?;
             }
             for rule in tailscale_forward_rules(token, None) {
                 append_rule(&self.platform, "filter", TAILSCALE_FORWARD_CHAIN, &rule)?;
@@ -655,6 +692,21 @@ impl LinuxTailscalePlatform {
                 TAILSCALE_INPUT_CHAIN,
             ])?;
             input_hook_created = true;
+            self.ip6tables(&[
+                "-w",
+                "-t",
+                "filter",
+                "-I",
+                "INPUT",
+                "1",
+                "-m",
+                "comment",
+                "--comment",
+                token,
+                "-j",
+                TAILSCALE_IPV6_INPUT_CHAIN,
+            ])?;
+            ipv6_input_hook_created = true;
             let position = 1 + usize::from(mihomo);
             self.iptables(&[
                 "-w",
@@ -683,6 +735,16 @@ impl LinuxTailscalePlatform {
                     TAILSCALE_FORWARD_CHAIN,
                 );
             }
+            if ipv6_input_hook_created {
+                let _ = delete_hook_with_tool(
+                    &self.platform,
+                    Tool::Ip6tables,
+                    "filter",
+                    "INPUT",
+                    token,
+                    TAILSCALE_IPV6_INPUT_CHAIN,
+                );
+            }
             if input_hook_created {
                 let _ = delete_hook(
                     &self.platform,
@@ -692,18 +754,31 @@ impl LinuxTailscalePlatform {
                     TAILSCALE_INPUT_CHAIN,
                 );
             }
-            rollback_chain(
-                &self.platform,
-                "filter",
-                TAILSCALE_FORWARD_CHAIN,
-                &tailscale_forward_rules(token, None),
-            );
-            rollback_chain(
-                &self.platform,
-                "filter",
-                TAILSCALE_INPUT_CHAIN,
-                &tailscale_input_rules(token),
-            );
+            if forward_chain_created {
+                rollback_chain(
+                    &self.platform,
+                    "filter",
+                    TAILSCALE_FORWARD_CHAIN,
+                    &tailscale_forward_rules(token, None),
+                );
+            }
+            if ipv6_input_chain_created {
+                rollback_chain_with_tool(
+                    &self.platform,
+                    Tool::Ip6tables,
+                    "filter",
+                    TAILSCALE_IPV6_INPUT_CHAIN,
+                    &tailscale_ipv6_input_rules(token),
+                );
+            }
+            if input_chain_created {
+                rollback_chain(
+                    &self.platform,
+                    "filter",
+                    TAILSCALE_INPUT_CHAIN,
+                    &tailscale_input_rules(token),
+                );
+            }
         }
         result
     }
@@ -717,6 +792,14 @@ impl LinuxTailscalePlatform {
             ));
         }
         self.verify_router_firewall(token, None)?;
+        delete_hook_with_tool(
+            &self.platform,
+            Tool::Ip6tables,
+            "filter",
+            "INPUT",
+            token,
+            TAILSCALE_IPV6_INPUT_CHAIN,
+        )?;
         delete_hook(
             &self.platform,
             "filter",
@@ -730,6 +813,13 @@ impl LinuxTailscalePlatform {
             "FORWARD",
             token,
             TAILSCALE_FORWARD_CHAIN,
+        )?;
+        remove_exact_chain_with_tool(
+            &self.platform,
+            Tool::Ip6tables,
+            "filter",
+            TAILSCALE_IPV6_INPUT_CHAIN,
+            &tailscale_ipv6_input_rules(token),
         )?;
         remove_exact_chain(
             &self.platform,
@@ -912,12 +1002,28 @@ impl LinuxTailscalePlatform {
             TAILSCALE_FORWARD_CHAIN,
             &tailscale_forward_rules(token, subnet_token),
         )?;
+        verify_chain_with_tool(
+            &self.platform,
+            Tool::Ip6tables,
+            "filter",
+            TAILSCALE_IPV6_INPUT_CHAIN,
+            &tailscale_ipv6_input_rules(token),
+        )?;
         verify_exact_hook(
             &self.platform,
             "filter",
             "INPUT",
             token,
             TAILSCALE_INPUT_CHAIN,
+            Some(0),
+        )?;
+        verify_exact_hook_with_tool(
+            &self.platform,
+            Tool::Ip6tables,
+            "filter",
+            "INPUT",
+            token,
+            TAILSCALE_IPV6_INPUT_CHAIN,
             Some(0),
         )?;
         verify_exact_hook(
@@ -2199,6 +2305,15 @@ fn tailscale_input_rules(token: &str) -> Vec<Vec<String>> {
     rules
 }
 
+fn tailscale_ipv6_input_rules(token: &str) -> Vec<Vec<String>> {
+    let mut rules = vec![words(&["-m", "comment", "--comment", token])];
+    for interface in TAILSCALE_DIRECT_WAN_INTERFACES {
+        rules.push(tailscale_direct_udp_rule(interface));
+    }
+    rules.push(words(&["-j", "RETURN"]));
+    rules
+}
+
 fn tailscale_forward_rules(router_token: &str, subnet_token: Option<&str>) -> Vec<Vec<String>> {
     let mut rules = vec![
         words(&["-m", "comment", "--comment", router_token]),
@@ -2323,8 +2438,18 @@ fn verify_chain(
     chain: &str,
     expected: &[Vec<String>],
 ) -> Result<(), PlatformError> {
+    verify_chain_with_tool(platform, Tool::Iptables, table, chain, expected)
+}
+
+fn verify_chain_with_tool(
+    platform: &LinuxRouterPlatform,
+    tool: Tool,
+    table: &str,
+    chain: &str,
+    expected: &[Vec<String>],
+) -> Result<(), PlatformError> {
     let output = platform
-        .run(Tool::Iptables, &strings(&["-w", "-t", table, "-S", chain]))?
+        .run(tool, &strings(&["-w", "-t", table, "-S", chain]))?
         .stdout;
     let qualified = expected
         .iter()
@@ -2350,8 +2475,28 @@ fn verify_exact_hook(
     chain: &str,
     expected_position: Option<usize>,
 ) -> Result<(), PlatformError> {
+    verify_exact_hook_with_tool(
+        platform,
+        Tool::Iptables,
+        table,
+        parent,
+        token,
+        chain,
+        expected_position,
+    )
+}
+
+fn verify_exact_hook_with_tool(
+    platform: &LinuxRouterPlatform,
+    tool: Tool,
+    table: &str,
+    parent: &str,
+    token: &str,
+    chain: &str,
+    expected_position: Option<usize>,
+) -> Result<(), PlatformError> {
     let output = platform
-        .run(Tool::Iptables, &strings(&["-w", "-t", table, "-S"]))?
+        .run(tool, &strings(&["-w", "-t", table, "-S"]))?
         .stdout;
     let expected = words(&[
         "-A",
@@ -2386,9 +2531,19 @@ fn append_rule(
     chain: &str,
     rule: &[String],
 ) -> Result<(), PlatformError> {
+    append_rule_with_tool(platform, Tool::Iptables, table, chain, rule)
+}
+
+fn append_rule_with_tool(
+    platform: &LinuxRouterPlatform,
+    tool: Tool,
+    table: &str,
+    chain: &str,
+    rule: &[String],
+) -> Result<(), PlatformError> {
     let mut args = strings(&["-w", "-t", table, "-A", chain]);
     args.extend(rule.iter().cloned());
-    platform.run(Tool::Iptables, &args).map(|_| ())
+    platform.run(tool, &args).map(|_| ())
 }
 
 fn delete_rule(
@@ -2397,9 +2552,19 @@ fn delete_rule(
     chain: &str,
     rule: &[String],
 ) -> Result<(), PlatformError> {
+    delete_rule_with_tool(platform, Tool::Iptables, table, chain, rule)
+}
+
+fn delete_rule_with_tool(
+    platform: &LinuxRouterPlatform,
+    tool: Tool,
+    table: &str,
+    chain: &str,
+    rule: &[String],
+) -> Result<(), PlatformError> {
     let mut args = strings(&["-w", "-t", table, "-D", chain]);
     args.extend(rule.iter().cloned());
-    platform.run(Tool::Iptables, &args).map(|_| ())
+    platform.run(tool, &args).map(|_| ())
 }
 
 fn delete_hook(
@@ -2409,9 +2574,20 @@ fn delete_hook(
     token: &str,
     chain: &str,
 ) -> Result<(), PlatformError> {
+    delete_hook_with_tool(platform, Tool::Iptables, table, parent, token, chain)
+}
+
+fn delete_hook_with_tool(
+    platform: &LinuxRouterPlatform,
+    tool: Tool,
+    table: &str,
+    parent: &str,
+    token: &str,
+    chain: &str,
+) -> Result<(), PlatformError> {
     platform
         .run(
-            Tool::Iptables,
+            tool,
             &strings(&[
                 "-w",
                 "-t",
@@ -2435,18 +2611,28 @@ fn remove_exact_chain(
     chain: &str,
     rules: &[Vec<String>],
 ) -> Result<(), PlatformError> {
-    verify_chain(platform, table, chain, rules)?;
+    remove_exact_chain_with_tool(platform, Tool::Iptables, table, chain, rules)
+}
+
+fn remove_exact_chain_with_tool(
+    platform: &LinuxRouterPlatform,
+    tool: Tool,
+    table: &str,
+    chain: &str,
+    rules: &[Vec<String>],
+) -> Result<(), PlatformError> {
+    verify_chain_with_tool(platform, tool, table, chain, rules)?;
     let all = platform
-        .run(Tool::Iptables, &strings(&["-w", "-t", table, "-S"]))?
+        .run(tool, &strings(&["-w", "-t", table, "-S"]))?
         .stdout;
     if !exact_chain_references(&all, chain).is_some_and(|references| references.is_empty()) {
         return Err(PlatformError::Conflict(format!(
             "{table}/{chain} retained a foreign reference"
         )));
     }
-    platform.run(Tool::Iptables, &strings(&["-w", "-t", table, "-F", chain]))?;
+    platform.run(tool, &strings(&["-w", "-t", table, "-F", chain]))?;
     platform
-        .run(Tool::Iptables, &strings(&["-w", "-t", table, "-X", chain]))
+        .run(tool, &strings(&["-w", "-t", table, "-X", chain]))
         .map(|_| ())
 }
 
@@ -2478,22 +2664,46 @@ fn replace_chain_body(
 }
 
 fn rollback_chain(platform: &LinuxRouterPlatform, table: &str, chain: &str, rules: &[Vec<String>]) {
+    rollback_chain_with_tool(platform, Tool::Iptables, table, chain, rules);
+}
+
+fn rollback_chain_with_tool(
+    platform: &LinuxRouterPlatform,
+    tool: Tool,
+    table: &str,
+    chain: &str,
+    rules: &[Vec<String>],
+) {
     for rule in rules.iter().rev() {
-        let _ = delete_rule(platform, table, chain, rule);
+        let _ = delete_rule_with_tool(platform, tool, table, chain, rule);
     }
-    let _ = platform.run(Tool::Iptables, &strings(&["-w", "-t", table, "-X", chain]));
+    let _ = platform.run(tool, &strings(&["-w", "-t", table, "-X", chain]));
 }
 
 fn chains_absent(platform: &LinuxRouterPlatform) -> bool {
-    [
-        ("filter", TAILSCALE_INPUT_CHAIN),
-        ("filter", TAILSCALE_FORWARD_CHAIN),
-        ("nat", TAILSCALE_NAT_CHAIN),
-    ]
-    .into_iter()
-    .all(|(table, chain)| {
+    chains_absent_with_tool(
+        platform,
+        Tool::Iptables,
+        &[
+            ("filter", TAILSCALE_INPUT_CHAIN),
+            ("filter", TAILSCALE_FORWARD_CHAIN),
+            ("nat", TAILSCALE_NAT_CHAIN),
+        ],
+    ) && chains_absent_with_tool(
+        platform,
+        Tool::Ip6tables,
+        &[("filter", TAILSCALE_IPV6_INPUT_CHAIN)],
+    )
+}
+
+fn chains_absent_with_tool(
+    platform: &LinuxRouterPlatform,
+    tool: Tool,
+    chains: &[(&str, &str)],
+) -> bool {
+    chains.iter().all(|(table, chain)| {
         platform
-            .run_probe(Tool::Iptables, &strings(&["-w", "-t", table, "-S", chain]))
+            .run_probe(tool, &strings(&["-w", "-t", table, "-S", chain]))
             .is_ok_and(|output| !output.success)
     })
 }
@@ -3058,6 +3268,41 @@ mod tests {
             .map(tailscale_direct_udp_rule)
             .collect::<Vec<_>>();
         assert_eq!(direct, expected);
+    }
+
+    #[test]
+    fn ipv6_direct_udp_accept_is_scoped_to_both_fixed_wan_interfaces() {
+        let port = TAILSCALE_UDP_PORT.to_string();
+        let direct = tailscale_ipv6_input_rules("router")
+            .into_iter()
+            .filter(|rule| rule.iter().any(|word| word == &port))
+            .collect::<Vec<_>>();
+        let expected = TAILSCALE_DIRECT_WAN_INTERFACES
+            .into_iter()
+            .map(tailscale_direct_udp_rule)
+            .collect::<Vec<_>>();
+        assert_eq!(direct, expected);
+    }
+
+    #[test]
+    fn ipv6_firewall_rules_match_target_ip6tables_canonical_output() {
+        let input = tailscale_ipv6_input_rules("router");
+        let output = format!(
+            "-N {TAILSCALE_IPV6_INPUT_CHAIN}\n-A {TAILSCALE_IPV6_INPUT_CHAIN} -m comment --comment router\n-A {TAILSCALE_IPV6_INPUT_CHAIN} -i {ETHERNET_WAN_INTERFACE} -p udp -m udp --dport {TAILSCALE_UDP_PORT} -j ACCEPT\n-A {TAILSCALE_IPV6_INPUT_CHAIN} -i {WIFI_WAN_INTERFACE} -p udp -m udp --dport {TAILSCALE_UDP_PORT} -j ACCEPT\n-A {TAILSCALE_IPV6_INPUT_CHAIN} -j RETURN\n"
+        );
+        let qualified = input
+            .iter()
+            .map(|rule| {
+                let mut qualified = words(&["-A", TAILSCALE_IPV6_INPUT_CHAIN]);
+                qualified.extend(rule.iter().cloned());
+                qualified
+            })
+            .collect::<Vec<_>>();
+        assert!(chain_output_is_exact(
+            &output,
+            TAILSCALE_IPV6_INPUT_CHAIN,
+            &qualified
+        ));
     }
 
     #[test]

@@ -468,8 +468,9 @@ ifneq ($(wildcard sdk/buildroot/board/rockchip/hyz_things/post-build.sh),)
 	grep -F -q '$$(TARGET_DIR)/usr/bin/tailscaled' sdk/buildroot/package/tailscale/tailscale.mk
 	! grep -qE 'etc/init\.d|userdata|auth.?key|tailscale.*(web|config)' sdk/buildroot/package/tailscale/tailscale.mk
 	test ! -e sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82tailscaled
-	@for symbol in BRIDGE TUN IP_ADVANCED_ROUTER IP_MULTIPLE_TABLES NF_CONNTRACK \
+	@for symbol in IPV6 BRIDGE TUN IP_ADVANCED_ROUTER IP_MULTIPLE_TABLES NF_CONNTRACK \
 	  IP_NF_FILTER IP_NF_NAT IP_NF_TARGET_MASQUERADE \
+	  IP6_NF_IPTABLES IP6_NF_FILTER \
 	  NETFILTER_XT_TARGET_MARK NETFILTER_XT_MATCH_MARK NETFILTER_XT_MATCH_MAC \
 	  NETFILTER_XT_MATCH_SOCKET NETFILTER_XT_MATCH_COMMENT NETFILTER_XT_TARGET_TPROXY \
 	  NETFILTER_XT_TARGET_REDIRECT IP_NF_MANGLE; do \

@@ -100,19 +100,45 @@ fn read_status(control: Arc<dyn PortalControlHandler>) -> PortalStatus {
 }
 
 fn http_request(address: SocketAddr, method: &str, path: &str) -> String {
+    http_request_with_headers(address, method, path, &[])
+}
+
+fn http_request_with_headers(
+    address: SocketAddr,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+) -> String {
     let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(2))
         .expect("connect to test server");
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
         .expect("set read timeout");
+    let extra_headers = headers
+        .iter()
+        .map(|(name, value)| format!("{name}: {value}\r\n"))
+        .collect::<String>();
     write!(
         stream,
-        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\nAccept: application/json\r\n\r\n"
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\nAccept: application/json\r\n{extra_headers}\r\n"
     )
     .expect("write request");
     let mut response = String::new();
     stream.read_to_string(&mut response).expect("read response");
     response
+}
+
+fn response_header(response: &str, name: &str) -> Option<String> {
+    response
+        .split("\r\n\r\n")
+        .next()
+        .into_iter()
+        .flat_map(str::lines)
+        .find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            key.eq_ignore_ascii_case(name)
+                .then(|| value.trim().to_owned())
+        })
 }
 
 fn http_json_request(
@@ -229,7 +255,23 @@ async fn serves_partial_degraded_status_with_strict_http_policy() {
         .await
         .expect("join frontend root client");
     assert!(root.starts_with("HTTP/1.1 200 OK\r\n"));
-    assert!(root.contains("cache-control: no-store"));
+    assert!(root.contains("cache-control: no-cache, must-revalidate"));
+    let root_etag = response_header(&root, "etag").expect("frontend root etag");
+    let root_not_modified_address = server_address(&server, address);
+    let root_not_modified_etag = root_etag.clone();
+    let root_not_modified = tokio::task::spawn_blocking(move || {
+        http_request_with_headers(
+            root_not_modified_address,
+            "GET",
+            "/",
+            &[("If-None-Match", root_not_modified_etag.as_str())],
+        )
+    })
+    .await
+    .expect("join frontend root conditional client");
+    assert!(root_not_modified.starts_with("HTTP/1.1 304 Not Modified\r\n"));
+    assert!(root_not_modified.contains("cache-control: no-cache, must-revalidate"));
+    assert!(root_not_modified.contains(&format!("etag: {root_etag}")));
     let bootstrap_path = root
         .split("src=\"")
         .nth(1)
@@ -247,8 +289,44 @@ async fn serves_partial_degraded_status_with_strict_http_policy() {
     .expect("join bootstrap client");
     assert!(bootstrap.starts_with("HTTP/1.1 200 OK\r\n"));
     assert!(bootstrap.contains("content-type: text/javascript"));
-    assert!(bootstrap.contains("cache-control: no-store"));
+    assert!(bootstrap.contains("cache-control: public, max-age=31536000, immutable"));
+    assert!(response_header(&bootstrap, "etag").is_some());
     assert!(bootstrap.contains("import init"));
+
+    let stylesheet_path = root
+        .split("rel=\"stylesheet\" href=\"")
+        .nth(1)
+        .and_then(|value| value.split('"').next())
+        .expect("fingerprinted stylesheet path");
+    let stylesheet_address = server_address(&server, address);
+    let stylesheet_path = stylesheet_path.to_owned();
+    let stylesheet = tokio::task::spawn_blocking(move || {
+        http_request(stylesheet_address, "GET", &stylesheet_path)
+    })
+    .await
+    .expect("join stylesheet client");
+    assert!(stylesheet.starts_with("HTTP/1.1 200 OK\r\n"));
+    assert!(stylesheet.contains("cache-control: public, max-age=31536000, immutable"));
+    assert!(response_header(&stylesheet, "etag").is_some());
+
+    let manifest_address = server_address(&server, address);
+    let manifest = tokio::task::spawn_blocking(move || {
+        http_request(manifest_address, "GET", "/manifest.webmanifest")
+    })
+    .await
+    .expect("join manifest client");
+    assert!(manifest.starts_with("HTTP/1.1 200 OK\r\n"));
+    assert!(manifest.contains("cache-control: public, max-age=3600"));
+    assert!(response_header(&manifest, "etag").is_some());
+
+    let unversioned_bootstrap_address = server_address(&server, address);
+    let unversioned_bootstrap = tokio::task::spawn_blocking(move || {
+        http_request(unversioned_bootstrap_address, "GET", "/router-bootstrap.js")
+    })
+    .await
+    .expect("join unversioned bootstrap client");
+    assert!(unversioned_bootstrap.starts_with("HTTP/1.1 200 OK\r\n"));
+    assert!(unversioned_bootstrap.contains("cache-control: no-store"));
 
     let stale_address = server_address(&server, address);
     let stale = tokio::task::spawn_blocking(move || {

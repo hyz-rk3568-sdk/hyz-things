@@ -23,7 +23,7 @@ use std::{
         mpsc, Arc, Mutex,
     },
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 const PIPELINE_START_DEADLINE: Duration = Duration::from_secs(10);
@@ -292,8 +292,9 @@ impl CameraMediaPort for GStreamerMediaAdapter {
         if pipeline.set_state(gst::State::Playing).is_err() {
             eprintln!("video pipeline failed to enter PLAYING state");
             stopping.store(true, Ordering::Release);
+            frames.close();
             let _ = bus_thread.join();
-            let _ = pipeline.set_state(gst::State::Null);
+            let _ = stop_pipeline_bounded(&pipeline, "video");
             return Err(MediaError::PipelineFailed);
         }
         state.store(
@@ -306,8 +307,8 @@ impl CameraMediaPort for GStreamerMediaAdapter {
                 eprintln!("video pipeline produced no first frame within the start deadline");
                 stopping.store(true, Ordering::Release);
                 frames.close();
-                let _ = pipeline.set_state(gst::State::Null);
                 let _ = bus_thread.join();
+                let _ = stop_pipeline_bounded(&pipeline, "video");
                 state.store(state_code(CameraPipelineState::Failed), Ordering::Release);
                 return Err(MediaError::PipelineFailed);
             }
@@ -476,14 +477,30 @@ fn decode_state(value: u8) -> CameraPipelineState {
     }
 }
 
-/// 有界停止管线：见 `PIPELINE_STOP_DEADLINE`。超时返回 Failed 并 dump 元素状态。
+/// 有界停止管线：先请求 `NULL`，再等待状态机确认当前状态和 pending 状态都已经是
+/// `NULL`。`set_state` 返回 `Async` 只表示请求已接受，不能作为资源已释放的依据。
 fn stop_pipeline_bounded(pipeline: &gst::Pipeline, tag: &str) -> CameraPipelineState {
     let owned = pipeline.clone();
     let (tx, rx) = mpsc::channel();
     let _ = thread::Builder::new()
         .name(format!("{tag}-pipeline-stop"))
         .spawn(move || {
-            let _ = tx.send(owned.set_state(gst::State::Null).is_ok());
+            // Flush first so ALSA/GStreamer streaming tasks leave a blocking read/write
+            // before the state transition releases the hardware handles.
+            let deadline = Instant::now() + PIPELINE_STOP_DEADLINE;
+            let _ = owned.send_event(gst::event::FlushStart::new());
+            let stopped = match owned.set_state(gst::State::Null) {
+                Ok(_) => {
+                    let remaining = deadline.saturating_duration_since(Instant::now());
+                    let (result, current, pending) =
+                        owned.state(Some(gst::ClockTime::from_nseconds(
+                            u64::try_from(remaining.as_nanos()).unwrap_or(u64::MAX),
+                        )));
+                    pipeline_stop_succeeded(result, current, pending)
+                }
+                Err(_) => false,
+            };
+            let _ = tx.send(stopped);
         });
     match rx.recv_timeout(PIPELINE_STOP_DEADLINE) {
         Ok(true) => {
@@ -504,6 +521,14 @@ fn stop_pipeline_bounded(pipeline: &gst::Pipeline, tag: &str) -> CameraPipelineS
             CameraPipelineState::Failed
         }
     }
+}
+
+fn pipeline_stop_succeeded(
+    result: Result<gst::StateChangeSuccess, gst::StateChangeError>,
+    current: gst::State,
+    pending: gst::State,
+) -> bool {
+    result.is_ok() && current == gst::State::Null && pending == gst::State::Null
 }
 
 // ==================== 全双工语音对讲音频管线 ====================
@@ -953,8 +978,10 @@ impl CameraAudioPort for GStreamerAudioAdapter {
         if pipeline.set_state(gst::State::Playing).is_err() {
             eprintln!("audio pipeline failed to enter PLAYING state");
             stopping.store(true, Ordering::Release);
+            frames.close();
             let _ = bus_thread.join();
-            let _ = pipeline.set_state(gst::State::Null);
+            let _ = stop_pipeline_bounded(&pipeline, "audio");
+            state.store(state_code(CameraPipelineState::Failed), Ordering::Release);
             return Err(MediaError::AudioPipelineFailed);
         }
         state.store(
@@ -988,8 +1015,8 @@ impl CameraAudioPort for GStreamerAudioAdapter {
                 }
                 stopping.store(true, Ordering::Release);
                 frames.close();
-                let _ = pipeline.set_state(gst::State::Null);
                 let _ = bus_thread.join();
+                let _ = stop_pipeline_bounded(&pipeline, "audio");
                 state.store(state_code(CameraPipelineState::Failed), Ordering::Release);
                 return Err(MediaError::AudioPipelineFailed);
             }
@@ -1022,6 +1049,80 @@ struct SessionPlaybackChain {
     appsrc: gst_app::AppSrc,
     elements: Vec<gst::Element>,
     mixer_pad: gst::Pad,
+}
+
+struct PendingPlaybackChain<'a> {
+    pipeline: &'a gst::Pipeline,
+    mixer: &'a gst::Element,
+    elements: Vec<gst::Element>,
+    mixer_pad: Option<gst::Pad>,
+    committed: bool,
+}
+
+impl<'a> PendingPlaybackChain<'a> {
+    fn new(
+        pipeline: &'a gst::Pipeline,
+        mixer: &'a gst::Element,
+        elements: Vec<gst::Element>,
+    ) -> Self {
+        Self {
+            pipeline,
+            mixer,
+            elements,
+            mixer_pad: None,
+            committed: false,
+        }
+    }
+}
+
+impl Drop for PendingPlaybackChain<'_> {
+    fn drop(&mut self) {
+        if !self.committed {
+            cleanup_playback_chain(
+                self.pipeline,
+                self.mixer,
+                &self.elements,
+                self.mixer_pad.as_ref(),
+            );
+        }
+    }
+}
+
+fn cleanup_playback_chain(
+    pipeline: &gst::Pipeline,
+    mixer: &gst::Element,
+    elements: &[gst::Element],
+    mixer_pad: Option<&gst::Pad>,
+) {
+    for element in elements {
+        let _ = element.set_state(gst::State::Null);
+    }
+    if let Some(mixer_pad) = mixer_pad {
+        mixer.release_request_pad(mixer_pad);
+    }
+    for element in elements {
+        let _ = pipeline.remove(element);
+    }
+}
+
+impl GStreamerAudioPlaybackSink {
+    fn unregister_all(&self) {
+        let chains = {
+            let mut chains = self
+                .chains
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            std::mem::take(&mut *chains)
+        };
+        for chain in chains.into_values() {
+            cleanup_playback_chain(
+                &self.pipeline,
+                &self.mixer,
+                &chain.elements,
+                Some(&chain.mixer_pad),
+            );
+        }
+    }
 }
 
 impl AudioSink for GStreamerAudioPlaybackSink {
@@ -1060,8 +1161,10 @@ impl AudioSink for GStreamerAudioPlaybackSink {
             resample.clone().upcast(),
             queue.clone().upcast(),
         ];
-        self.pipeline
-            .add_many(&elements)
+        let mut pending = PendingPlaybackChain::new(&self.pipeline, &self.mixer, elements);
+        pending
+            .pipeline
+            .add_many(&pending.elements)
             .inspect_err(|_| eprintln!("audio pipeline add_many failed for session {session_id}"))
             .map_err(|_| MediaError::AudioPipelineFailed)?;
         let chain: Vec<&gst::Element> = vec![&appsrc, &decoder, &convert, &resample, &queue];
@@ -1075,6 +1178,7 @@ impl AudioSink for GStreamerAudioPlaybackSink {
             .request_pad_simple("sink_%u")
             .ok_or(MediaError::AudioPipelineFailed)
             .inspect_err(|_| eprintln!("audiomixer request pad failed for session {session_id}"))?;
+        pending.mixer_pad = Some(mixer_pad.clone());
         let queue_src = match queue.static_pad("src") {
             Some(pad) => pad,
             None => {
@@ -1094,14 +1198,16 @@ impl AudioSink for GStreamerAudioPlaybackSink {
                     eprintln!("playback chain sync_state failed for session {session_id}")
                 })?;
         }
-        chains.insert(
-            session_id.to_owned(),
-            SessionPlaybackChain {
-                appsrc: app_src,
-                elements,
-                mixer_pad,
-            },
-        );
+        let chain = SessionPlaybackChain {
+            appsrc: app_src,
+            elements: std::mem::take(&mut pending.elements),
+            mixer_pad: pending
+                .mixer_pad
+                .take()
+                .expect("playback chain has a mixer pad"),
+        };
+        chains.insert(session_id.to_owned(), chain);
+        pending.committed = true;
         eprintln!("playback chain registered for session {session_id}");
         Ok(())
     }
@@ -1117,23 +1223,12 @@ impl AudioSink for GStreamerAudioPlaybackSink {
         let Some(chain) = chain else {
             return;
         };
-        // 元素 stop/remove 与 mixer pad 释放放到有界后台线程：管线卡住时
-        // element.set_state(Null) 会永久阻塞（见 PIPELINE_STOP_DEADLINE），若在
-        // close_session/reap 主线程路径上执行会连带卡死整个 control socket。
-        // 后台线程超时由进程生命周期兜底；残留元素随管线销毁。
-        let pipeline = self.pipeline.clone();
-        let mixer = self.mixer.clone();
-        let _ = thread::Builder::new()
-            .name("audio-chain-unreg".to_owned())
-            .spawn(move || {
-                for element in &chain.elements {
-                    let _ = element.set_state(gst::State::Null);
-                }
-                mixer.release_request_pad(&chain.mixer_pad);
-                for element in &chain.elements {
-                    let _ = pipeline.remove(element);
-                }
-            });
+        cleanup_playback_chain(
+            &self.pipeline,
+            &self.mixer,
+            &chain.elements,
+            Some(&chain.mixer_pad),
+        );
     }
 
     fn push_opus(&self, session_id: &str, frame: AudioFrame) {
@@ -1166,6 +1261,7 @@ struct GStreamerRunningAudioMedia {
 struct GStreamerAudioTerminator {
     pipeline: gst::Pipeline,
     frames: Arc<AudioHub>,
+    sink: Arc<GStreamerAudioPlaybackSink>,
     state: Arc<AtomicU8>,
     stopping: Arc<AtomicBool>,
 }
@@ -1175,6 +1271,7 @@ impl MediaTerminator for GStreamerAudioTerminator {
         if self.stopping.swap(true, Ordering::AcqRel) {
             return;
         }
+        self.sink.unregister_all();
         self.state
             .store(state_code(CameraPipelineState::Stopping), Ordering::Release);
         self.frames.close();
@@ -1196,6 +1293,7 @@ impl RunningAudioMedia for GStreamerRunningAudioMedia {
         Arc::new(GStreamerAudioTerminator {
             pipeline: self.pipeline.clone(),
             frames: Arc::clone(&self.frames),
+            sink: Arc::clone(&self.sink),
             state: Arc::clone(&self.state),
             stopping: Arc::clone(&self.stopping),
         })
@@ -1211,9 +1309,11 @@ impl RunningAudioMedia for GStreamerRunningAudioMedia {
     }
 
     fn stop(mut self: Box<Self>) -> Result<(), MediaError> {
+        self.sink.unregister_all();
         let terminator = GStreamerAudioTerminator {
             pipeline: self.pipeline.clone(),
             frames: Arc::clone(&self.frames),
+            sink: Arc::clone(&self.sink),
             state: Arc::clone(&self.state),
             stopping: Arc::clone(&self.stopping),
         };
@@ -1231,7 +1331,73 @@ impl RunningAudioMedia for GStreamerRunningAudioMedia {
 
 #[cfg(test)]
 mod tests {
-    use super::{audio_element_suffix, in_process_registry_fork};
+    use super::{
+        audio_element_suffix, in_process_registry_fork, pipeline_stop_succeeded,
+        GStreamerAudioPlaybackSink,
+    };
+    use crate::application::ports::AudioSink;
+    use gstreamer as gst;
+    use gstreamer::prelude::*;
+    use std::{collections::HashMap, sync::Mutex};
+
+    #[test]
+    fn pipeline_stop_requires_the_state_transition_to_reach_null() {
+        assert!(!pipeline_stop_succeeded(
+            Ok(gst::StateChangeSuccess::Async),
+            gst::State::Playing,
+            gst::State::Null,
+        ));
+        assert!(!pipeline_stop_succeeded(
+            Ok(gst::StateChangeSuccess::Success),
+            gst::State::Ready,
+            gst::State::Null,
+        ));
+        assert!(pipeline_stop_succeeded(
+            Ok(gst::StateChangeSuccess::Success),
+            gst::State::Null,
+            gst::State::Null,
+        ));
+    }
+
+    fn init_gstreamer_for_test() {
+        gst::init().expect("GStreamer initializes for cleanup tests");
+        if let Some(paths) =
+            std::env::var_os("GST_PLUGIN_PATH_1_0").or_else(|| std::env::var_os("GST_PLUGIN_PATH"))
+        {
+            for path in std::env::split_paths(&paths) {
+                gst::Registry::get().scan_path(path);
+            }
+        }
+    }
+
+    #[test]
+    fn unregister_all_removes_playback_elements_before_return() {
+        init_gstreamer_for_test();
+        let pipeline = gst::Pipeline::with_name("audio-cleanup-test");
+        let mixer = gst::ElementFactory::make("audiomixer")
+            .name("test-mixer")
+            .build()
+            .expect("audiomixer factory is available");
+        pipeline
+            .add(&mixer)
+            .expect("mixer can be added to the test pipeline");
+        let sink = GStreamerAudioPlaybackSink {
+            pipeline: pipeline.clone(),
+            mixer,
+            chains: Mutex::new(HashMap::new()),
+        };
+
+        sink.register("test.abcdefghijklmnop")
+            .expect("playback chain registers");
+        assert_eq!(pipeline.children().len(), 6);
+        sink.unregister_all();
+        assert_eq!(pipeline.children().len(), 1);
+        assert!(sink
+            .chains
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .is_empty());
+    }
 
     #[test]
     fn audio_element_suffix_is_unique_across_sessions_of_the_same_generation() {
