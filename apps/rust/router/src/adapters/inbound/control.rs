@@ -360,5 +360,13 @@ mod tests {
         assert!(production.contains("stale or malformed locks require explicit operator removal"));
         assert!(production.contains("while connections.join_next().await.is_some()"));
         assert!(production.contains("current_daemon_identity()? != self.identity"));
+        assert!(
+            !production.contains("\"operation_failed\""),
+            "known application failures must retain a stable control error code"
+        );
+        assert!(
+            !production.contains("Result<ControlResult, String>"),
+            "control handlers must return typed failures"
+        );
     }
 }
