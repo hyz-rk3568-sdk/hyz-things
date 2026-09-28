@@ -275,7 +275,9 @@ async fn remote_control_code_survives_http_mapping_without_leaking_remote_detail
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind remote error test listener");
-    let address = listener.local_addr().expect("read remote error test address");
+    let address = listener
+        .local_addr()
+        .expect("read remote error test address");
     let control = Arc::new(FakeControl {
         fail_display: true,
         ..FakeControl::default()
@@ -313,9 +315,7 @@ async fn remote_control_code_survives_http_mapping_without_leaking_remote_detail
     assert!(response.contains("Router control request conflicts with current state"));
     assert!(!response.contains("/userdata/credentials"));
     assert!(!response.contains("internal sensitive detail"));
-    assert!(response
-        .to_ascii_lowercase()
-        .contains("x-hyz-request-id:"));
+    assert!(response.to_ascii_lowercase().contains("x-hyz-request-id:"));
 
     server.abort();
 }
@@ -507,9 +507,7 @@ async fn control_posts_require_exact_origin_token_and_typed_json() {
     .expect("join unknown-field client");
     assert!(unknown.starts_with("HTTP/1.1 400 Bad Request\r\n"));
     assert!(unknown.contains(r#""code":"invalid_request""#));
-    assert!(unknown
-        .to_ascii_lowercase()
-        .contains("x-hyz-request-id:"));
+    assert!(unknown.to_ascii_lowercase().contains("x-hyz-request-id:"));
     assert_eq!(control.display_mutations.load(Ordering::SeqCst), 1);
 
     server.abort();
