@@ -456,6 +456,11 @@ fn app_with_assets(
                 .layer(DefaultBodyLimit::max(MAX_CAMERA_HTTP_JSON_BODY_BYTES)),
         )
         .route(
+            "/api/v1/control/camera/volume",
+            on(MethodFilter::POST, camera_volume_update)
+                .layer(DefaultBodyLimit::max(MAX_HTTP_JSON_BODY_BYTES)),
+        )
+        .route(
             "/api/v1/network/config",
             on(MethodFilter::GET, network_config),
         )
@@ -857,6 +862,12 @@ struct CameraRotationUpdateRequest {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct CameraVolumeUpdateRequest {
+    volume_percent: u8,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CameraSessionCreateRequest {
     offer_sdp: String,
 }
@@ -1028,6 +1039,27 @@ async fn camera_rotation_update(
         return service_unavailable_json();
     };
     match camera.set_rotation(request.rotation).await {
+        Ok(()) => Json(serde_json::json!({ "applied": true })).into_response(),
+        Err(error) => camera_error_json(error),
+    }
+}
+
+async fn camera_volume_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    payload: Result<Json<CameraVolumeUpdateRequest>, JsonRejection>,
+) -> Response {
+    if !authorize_control(&state, &headers) {
+        return forbidden_json();
+    }
+    let request = match decode_control_json(payload) {
+        Ok(request) => request,
+        Err(error) => return error.response(),
+    };
+    let Some(camera) = state.camera.clone() else {
+        return service_unavailable_json();
+    };
+    match camera.set_volume(request.volume_percent).await {
         Ok(()) => Json(serde_json::json!({ "applied": true })).into_response(),
         Err(error) => camera_error_json(error),
     }
@@ -2197,6 +2229,7 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/control/camera/session/close"
             | "/api/v1/control/camera/profile"
             | "/api/v1/control/camera/rotation"
+            | "/api/v1/control/camera/volume"
             | "/api/v1/control/network/sta/scan"
             | "/api/v1/control/network/sta/apply"
             | "/api/v1/control/network/ap/prepare"
@@ -2300,6 +2333,7 @@ mod tests {
         assert!(handlers.contains("close_owned_session(owner, &request.session_id)"));
         assert!(handlers.contains("camera.set_profile(request.preset).await"));
         assert!(handlers.contains("camera.set_rotation(request.rotation).await"));
+        assert!(handlers.contains("camera.set_volume(request.volume_percent).await"));
         assert!(!handlers.contains("token.expose().to_owned()"));
     }
 
@@ -2309,6 +2343,7 @@ mod tests {
         assert!(is_post_path("/api/v1/control/camera/session/close"));
         assert!(is_post_path("/api/v1/control/camera/profile"));
         assert!(is_post_path("/api/v1/control/camera/rotation"));
+        assert!(is_post_path("/api/v1/control/camera/volume"));
         assert!(!is_post_path("/api/v1/control/camera/session/create/extra"));
         assert!(!is_post_path("/api/v1/control/camera/rotation/extra"));
     }

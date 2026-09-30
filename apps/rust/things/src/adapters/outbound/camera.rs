@@ -17,6 +17,7 @@ use crate::{
     domain::camera::{
         CameraAccessKind, CameraAccessScope, CameraAudioStatus, CameraErrorCategory,
         CameraPipelineState, CameraRotation, CameraStatus, CameraStreamPreset, CameraStreamProfile,
+        DEFAULT_SPEAKER_VOLUME_PERCENT,
     },
 };
 
@@ -121,6 +122,7 @@ impl CameraControlPort for CameraUnixAdapter {
             error_category: status.error,
             audio: status.audio.map(|audio| CameraAudioStatus {
                 supported: audio.supported,
+                volume_percent: audio.volume_percent,
             }),
         })
     }
@@ -194,6 +196,20 @@ impl CameraControlPort for CameraUnixAdapter {
             _ => Err(CameraError::Unavailable),
         }
     }
+
+    async fn set_volume(&self, volume_percent: u8) -> Result<(), CameraError> {
+        let adapter = self.clone();
+        let request = SetVolumeRequest { volume_percent };
+        let result = tokio::task::spawn_blocking(move || {
+            adapter.request(RequestOperation::SetVolume(request))
+        })
+        .await
+        .map_err(|_| CameraError::Unavailable)??;
+        match result {
+            ResponseResult::VolumeSet => Ok(()),
+            _ => Err(CameraError::Unavailable),
+        }
+    }
 }
 
 fn validate_socket(path: &Path) -> Result<(), CameraError> {
@@ -243,6 +259,7 @@ enum RequestOperation {
     CloseSession(CloseSessionRequest),
     SetProfile(SetProfileRequest),
     SetRotation(SetRotationRequest),
+    SetVolume(SetVolumeRequest),
 }
 
 #[derive(Serialize)]
@@ -267,6 +284,11 @@ struct SetRotationRequest {
     rotation: CameraRotation,
 }
 
+#[derive(Serialize)]
+struct SetVolumeRequest {
+    volume_percent: u8,
+}
+
 #[derive(Deserialize)]
 struct ControlResponse {
     version: u16,
@@ -289,6 +311,7 @@ enum ResponseResult {
     SessionClosed,
     ProfileSet,
     RotationSet,
+    VolumeSet,
     ShutdownAccepted,
 }
 
@@ -307,6 +330,12 @@ struct CameraStatusWire {
 #[derive(Deserialize)]
 struct CameraAudioStatusWire {
     supported: bool,
+    #[serde(default = "default_speaker_volume_percent")]
+    volume_percent: u8,
+}
+
+fn default_speaker_volume_percent() -> u8 {
+    DEFAULT_SPEAKER_VOLUME_PERCENT
 }
 
 #[derive(Deserialize)]
@@ -448,6 +477,49 @@ mod tests {
         .unwrap();
         assert_eq!(body["version"], 2);
         assert_eq!(body["operation"]["set_rotation"]["rotation"], "deg_270");
+    }
+
+    #[test]
+    fn set_volume_request_is_typed_and_percent_scoped() {
+        let body = serde_json::to_value(ControlRequest {
+            version: CAMERA_CONTROL_PROTOCOL_VERSION,
+            operation: RequestOperation::SetVolume(SetVolumeRequest { volume_percent: 42 }),
+        })
+        .unwrap();
+        assert_eq!(body["version"], 2);
+        assert_eq!(body["operation"]["set_volume"]["volume_percent"], 42);
+        assert!(body["operation"]["set_volume"].get("command").is_none());
+    }
+
+    #[test]
+    fn camera_status_wire_defaults_missing_volume_to_full_volume() {
+        let response: ControlResponse = serde_json::from_value(serde_json::json!({
+            "version": 2,
+            "ok": {
+                "status": {
+                    "available": true,
+                    "pipeline": "stopped",
+                    "active_sessions": 0,
+                    "profile": {
+                        "width": 1280,
+                        "height": 720,
+                        "fps": 30,
+                        "bitrate_bps": 2500000,
+                        "codec": "h264_baseline",
+                        "rotation": "deg_0"
+                    },
+                    "audio": {"supported": true}
+                }
+            }
+        }))
+        .unwrap();
+        let ResponseOutcome::Ok(ResponseResult::Status(status)) = response.outcome else {
+            panic!("expected camera status response");
+        };
+        assert_eq!(
+            status.audio.map(|audio| audio.volume_percent),
+            Some(DEFAULT_SPEAKER_VOLUME_PERCENT)
+        );
     }
 
     #[test]

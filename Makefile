@@ -127,13 +127,15 @@ camera-app: toolchain
 	$(MAKE) -C sdk/buildroot O="$(BR_OUT)" $(BR_BOARD)_defconfig
 	@if [[ ! -f "$(BR_OUT)/target/usr/lib/gstreamer-1.0/libgstapp.so" || \
 	       ! -f "$(BR_OUT)/target/usr/lib/gstreamer-1.0/libgstvideo4linux2.so" || \
-	       ! -f "$(BR_OUT)/target/usr/lib/gstreamer-1.0/libgstvideoparsersbad.so" ]]; then \
+	       ! -f "$(BR_OUT)/target/usr/lib/gstreamer-1.0/libgstvideoparsersbad.so" || \
+	       ! -f "$(BR_OUT)/target/usr/lib/gstreamer-1.0/libgstvolume.so" ]]; then \
 		cd sdk && ./build.sh buildroot-make:gst1-plugins-base-dirclean:gst1-plugins-good-dirclean:gst1-plugins-bad-dirclean; \
 	fi
 	cd sdk && ./build.sh buildroot-make:gstreamer1:gst1-plugins-base:gst1-plugins-good:gst1-plugins-bad:rockchip-mpp:gstreamer1-rockchip:dejavu
 	test -f "$(BR_OUT)/target/usr/lib/gstreamer-1.0/libgstapp.so"
 	test -f "$(BR_OUT)/target/usr/lib/gstreamer-1.0/libgstvideo4linux2.so"
 	test -f "$(BR_OUT)/target/usr/lib/gstreamer-1.0/libgstvideoparsersbad.so"
+	test -f "$(BR_OUT)/target/usr/lib/gstreamer-1.0/libgstvolume.so"
 	test -x "$(BR_OUT)/target/usr/libexec/gstreamer-1.0/gst-plugin-scanner"
 	test -x "$(BR_PKG_CONFIG)"
 	rustup target add $(RUST_TARGET)
@@ -433,7 +435,6 @@ ifneq ($(wildcard sdk/buildroot/board/rockchip/hyz_things/post-build.sh),)
 	grep -q '^BR2_PACKAGE_GSTREAMER1_ROCKCHIP=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
 	@for symbol in GSTREAMER1_INSTALL_TOOLS GST1_PLUGINS_BASE_INSTALL_TOOLS \
 	  GST1_PLUGINS_BASE_PLUGIN_PLAYBACK GST1_PLUGINS_BASE_PLUGIN_TYPEFIND \
-	  GST1_PLUGINS_BASE_PLUGIN_VOLUME \
 	  GST1_PLUGINS_GOOD_PLUGIN_AVI GST1_PLUGINS_GOOD_PLUGIN_ISOMP4 \
 	  GST1_PLUGINS_GOOD_PLUGIN_RTP GST1_PLUGINS_GOOD_PLUGIN_RTPMANAGER \
 	  GST1_PLUGINS_GOOD_PLUGIN_UDP GST1_PLUGINS_GOOD_PLUGIN_V4L2_PROBE \
@@ -445,7 +446,8 @@ ifneq ($(wildcard sdk/buildroot/board/rockchip/hyz_things/post-build.sh),)
 	done
 	@for symbol in GST1_PLUGINS_BASE_PLUGIN_ALSA GST1_PLUGINS_BASE_PLUGIN_AUDIOCONVERT \
 	  GST1_PLUGINS_BASE_PLUGIN_AUDIORESAMPLE GST1_PLUGINS_BASE_PLUGIN_AUDIOMIXER \
-	  GST1_PLUGINS_BASE_PLUGIN_OPUS GST1_PLUGINS_BAD_PLUGIN_WEBRTCDSP \
+	  GST1_PLUGINS_BASE_PLUGIN_OPUS GST1_PLUGINS_BASE_PLUGIN_VOLUME \
+	  GST1_PLUGINS_BAD_PLUGIN_WEBRTCDSP \
 	  ALSA_UTILS ALSA_UTILS_APLAY ALSA_UTILS_AMIXER ROCKCHIP_ALSA_CONFIG; do \
 		grep -q "^BR2_PACKAGE_$$symbol=y$$" sdk/buildroot/configs/rockchip/hyz_things.config || exit 1; \
 	done

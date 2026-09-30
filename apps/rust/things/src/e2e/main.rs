@@ -135,7 +135,10 @@ impl Default for HarnessCameraState {
                 },
                 access: hyz_things::domain::camera::CameraAccessKind::Lan,
                 error_category: None,
-                audio: Some(hyz_things::domain::camera::CameraAudioStatus { supported: true }),
+                audio: Some(hyz_things::domain::camera::CameraAudioStatus {
+                    supported: true,
+                    volume_percent: hyz_things::domain::camera::DEFAULT_SPEAKER_VOLUME_PERCENT,
+                }),
             },
             create_count: 0,
             close_count: 0,
@@ -555,6 +558,18 @@ impl CameraControlPort for HarnessCamera {
             return Err(CameraError::Busy);
         }
         state.camera.status.profile.rotation = rotation;
+        Ok(())
+    }
+
+    async fn set_volume(&self, volume_percent: u8) -> Result<(), CameraError> {
+        let mut state = self.backend.state().map_err(|_| CameraError::Unavailable)?;
+        let Some(audio) = state.camera.status.audio.as_mut() else {
+            return Err(CameraError::Unavailable);
+        };
+        if !audio.supported || volume_percent > 100 {
+            return Err(CameraError::InvalidRequest);
+        }
+        audio.volume_percent = volume_percent;
         Ok(())
     }
 }

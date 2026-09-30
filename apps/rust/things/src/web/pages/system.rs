@@ -211,15 +211,15 @@ pub(crate) fn render_display_control(
     };
 
     html! {
-        if display.is_some() {
-            <SectionCard title_id="display-controls-title" busy={Some(busy)}>
-                <PageHeader title_id="display-controls-title" eyebrow="QUICK CONTROL" title="设备快捷控制">
-                    <span class={SECTION_META}>{"仅限管理 LAN · 同源令牌保护"}</span>
-                </PageHeader>
-                <FeedbackState
-                    message={AttrValue::from(state.display_notice.clone().unwrap_or_else(|| "等待操作".to_owned()))}
-                    hidden={state.display_notice.is_none()}
-                />
+        <SectionCard title_id="display-controls-title" busy={Some(busy)}>
+            <PageHeader title_id="display-controls-title" eyebrow="QUICK CONTROL" title="设备快捷控制">
+                <span class={SECTION_META}>{"仅限管理 LAN · 同源令牌保护"}</span>
+            </PageHeader>
+            <FeedbackState
+                message={AttrValue::from(state.display_notice.clone().unwrap_or_else(|| "等待操作".to_owned()))}
+                hidden={state.display_notice.is_none()}
+            />
+            if display.is_some() {
                 <article class={INNER_CARD} aria-labelledby="display-control-title">
                     <div class={CONTROL_TITLE}><h3 id="display-control-title" class={CONTROL_HEADING}>{"LCD 背光"}</h3><span class={CONTROL_META}>{display_label}</span></div>
                     <label class={RANGE_LABEL} for="brightness"><span>{"点亮亮度"}</span><strong>{*brightness}</strong></label>
@@ -227,8 +227,193 @@ pub(crate) fn render_display_control(
                     <div class={BUTTON_ROW}><button class={BUTTON_PRIMARY} type="button" onclick={display_on} disabled={busy}>{"点亮"}</button><button class={BUTTON} type="button" onclick={display_off} disabled={busy}>{"黑屏"}</button></div>
                     <small class={HELP_TEXT}>{"黑屏会将 PWM 亮度设为 0；面板 5V 是共享电源，无法单独物理断开。"}</small>
                 </article>
-            </SectionCard>
+            }
+            <SpeakerVolumeControl csrf={csrf} />
+        </SectionCard>
+    }
+}
+
+#[derive(Properties, PartialEq)]
+struct SpeakerVolumeControlProps {
+    csrf: AttrValue,
+}
+
+fn camera_speaker_volume(status: Option<&CameraStatus>) -> u8 {
+    status
+        .and_then(|camera| camera.audio.as_ref())
+        .map(|audio| {
+            audio
+                .volume_percent
+                .min(hyz_things::domain::camera::MAX_SPEAKER_VOLUME_PERCENT)
+        })
+        .unwrap_or(hyz_things::domain::camera::DEFAULT_SPEAKER_VOLUME_PERCENT)
+}
+
+#[function_component(SpeakerVolumeControl)]
+fn speaker_volume_control(props: &SpeakerVolumeControlProps) -> Html {
+    let status = use_state(|| None::<CameraStatus>);
+    let status_error = use_state(|| None::<String>);
+    let draft = use_state(|| hyz_things::domain::camera::DEFAULT_SPEAKER_VOLUME_PERCENT);
+    let draft_dirty = use_mut_ref(|| false);
+    let busy = use_state(|| false);
+    let notice = use_state(|| None::<String>);
+
+    {
+        let status = status.clone();
+        let status_error = status_error.clone();
+        let draft = draft.clone();
+        let draft_dirty = draft_dirty.clone();
+        use_effect_with((), move |_| {
+            let cancelled = Rc::new(Cell::new(false));
+            let task_cancelled = cancelled.clone();
+            spawn_local(async move {
+                while !task_cancelled.get() {
+                    match fetch_json::<CameraStatusResponseDto>(
+                        CAMERA_STATUS_ENDPOINT,
+                        "摄像头状态",
+                    )
+                    .await
+                    {
+                        Ok(response) => {
+                            let volume = camera_speaker_volume(Some(&response.camera));
+                            status.set(Some(response.camera));
+                            status_error.set(None);
+                            if !*draft_dirty.borrow() {
+                                draft.set(volume);
+                            }
+                        }
+                        Err(error) => status_error.set(Some(error)),
+                    }
+                    TimeoutFuture::new(POLL_DELAY_MS).await;
+                }
+            });
+            move || cancelled.set(true)
+        });
+    }
+
+    let audio_supported = status
+        .as_ref()
+        .and_then(|camera| camera.audio.as_ref())
+        .is_none_or(|audio| audio.supported);
+    let status_label = match (status.as_ref(), status_error.as_ref()) {
+        (Some(camera), _) if !camera.available => "摄像头服务不可用".to_owned(),
+        (Some(camera), _) if camera.audio.as_ref().is_some_and(|audio| !audio.supported) => {
+            "喇叭设备不可用".to_owned()
         }
+        (Some(camera), _) => format!(
+            "当前 {}% · {}",
+            camera_speaker_volume(Some(camera)),
+            if camera.pipeline == CameraPipelineState::Streaming {
+                "直播中"
+            } else {
+                "待机"
+            }
+        ),
+        (None, Some(error)) => format!("读取失败：{error}"),
+        (None, None) => "正在读取喇叭状态".to_owned(),
+    };
+
+    let submit_volume = {
+        let csrf = props.csrf.to_string();
+        let status = status.clone();
+        let status_error = status_error.clone();
+        let draft = draft.clone();
+        let draft_dirty = draft_dirty.clone();
+        let busy = busy.clone();
+        let notice = notice.clone();
+        Callback::from(move |volume_percent: u8| {
+            if *busy {
+                return;
+            }
+            busy.set(true);
+            notice.set(None);
+            let csrf = csrf.clone();
+            let status = status.clone();
+            let status_error = status_error.clone();
+            let draft = draft.clone();
+            let draft_dirty = draft_dirty.clone();
+            let busy = busy.clone();
+            let notice = notice.clone();
+            spawn_local(async move {
+                let result = post_json_response_typed::<_, CameraVolumeUpdateResponseDto>(
+                    CAMERA_VOLUME_UPDATE_ENDPOINT,
+                    &csrf,
+                    &CameraVolumeUpdateRequestDto { volume_percent },
+                    "喇叭音量",
+                )
+                .await;
+                match result {
+                    Ok(response) if response.applied => {
+                        draft.set(volume_percent);
+                        *draft_dirty.borrow_mut() = false;
+                        match fetch_json::<CameraStatusResponseDto>(
+                            CAMERA_STATUS_ENDPOINT,
+                            "摄像头状态",
+                        )
+                        .await
+                        {
+                            Ok(response) => {
+                                status_error.set(None);
+                                draft.set(camera_speaker_volume(Some(&response.camera)));
+                                status.set(Some(response.camera));
+                                notice.set(Some(if volume_percent == 0 {
+                                    "喇叭已静音".to_owned()
+                                } else {
+                                    format!("喇叭音量已应用：{volume_percent}%")
+                                }));
+                            }
+                            Err(error) => {
+                                status_error.set(Some(error));
+                                notice.set(Some("喇叭音量已应用；状态刷新失败".to_owned()));
+                            }
+                        }
+                    }
+                    Ok(_) => notice.set(Some("喇叭音量未应用".to_owned())),
+                    Err(error) => notice.set(Some(format!("操作失败：{error}"))),
+                }
+                busy.set(false);
+            });
+        })
+    };
+
+    let on_volume = {
+        let draft = draft.clone();
+        let draft_dirty = draft_dirty.clone();
+        Callback::from(move |event: InputEvent| {
+            let input: HtmlInputElement = event.target_unchecked_into();
+            if let Ok(value) = input.value().parse::<u8>() {
+                draft.set(value.min(100));
+                *draft_dirty.borrow_mut() = true;
+            }
+        })
+    };
+    let on_apply = {
+        let submit_volume = submit_volume.clone();
+        let draft = draft.clone();
+        Callback::from(move |_| submit_volume.emit(*draft))
+    };
+    let on_mute = {
+        let submit_volume = submit_volume.clone();
+        Callback::from(move |_| submit_volume.emit(0))
+    };
+
+    html! {
+        <article class={INNER_CARD} aria-labelledby="speaker-volume-title">
+            <div class={CONTROL_TITLE}>
+                <h3 id="speaker-volume-title" class={CONTROL_HEADING}>{"喇叭音量"}</h3>
+                <span class={CONTROL_META}>{status_label}</span>
+            </div>
+            <label class={RANGE_LABEL} for="speaker-volume"><span>{"播放音量"}</span><strong>{format!("{}%", *draft)}</strong></label>
+            <input class={RANGE} id="speaker-volume" type="range" min="0" max="100" step="1" value={draft.to_string()} oninput={on_volume} disabled={*busy || !audio_supported} aria-label="喇叭音量" />
+            <div class={BUTTON_ROW}>
+                <button id="speaker-volume-apply" class={BUTTON_PRIMARY} type="button" onclick={on_apply} disabled={*busy || !audio_supported || props.csrf.is_empty()}>{if *busy { "应用中…" } else { "应用音量" }}</button>
+                <button id="speaker-volume-mute" class={BUTTON} type="button" onclick={on_mute} disabled={*busy || !audio_supported || props.csrf.is_empty()}>{"静音"}</button>
+            </div>
+            if let Some(message) = notice.as_ref() {
+                <p class={HELP_TEXT} role="status">{message}</p>
+            }
+            <small class={HELP_TEXT}>{"范围 0–100%，0 为静音；默认值为 100%。拖动滑块后点击“应用音量”生效。"}</small>
+        </article>
     }
 }
 

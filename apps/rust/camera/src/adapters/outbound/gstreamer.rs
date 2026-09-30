@@ -732,6 +732,7 @@ impl CameraAudioPort for GStreamerAudioAdapter {
             "opusdec",
             "audiomixer",
             "webrtcechoprobe",
+            "volume",
             "alsasink",
             "capsfilter",
             "queue",
@@ -744,7 +745,7 @@ impl CameraAudioPort for GStreamerAudioAdapter {
         Ok(())
     }
 
-    fn start(&self) -> Result<Box<dyn RunningAudioMedia>, MediaError> {
+    fn start(&self, volume_percent: u8) -> Result<Box<dyn RunningAudioMedia>, MediaError> {
         self.probe().inspect_err(|&error| {
             eprintln!("audio probe failed before start: {error:?}");
         })?;
@@ -807,12 +808,14 @@ impl CameraAudioPort for GStreamerAudioAdapter {
         // hw:0 回放仅支持 2+ 声道：AEC 参考保持 mono 48k，到喇叭前再转回设备原生格式
         let mixer = make_audio("audiomixer", "talker-mixer")?;
         let tail_caps = make_audio("capsfilter", "speaker-caps")?;
+        let volume = make_audio("volume", "speaker-volume")?;
         // webrtcdsp 按固定名 "webrtcechoprobe0" 查找回放参考，probe 不能改名。
         let echo_probe = make_audio("webrtcechoprobe", "webrtcechoprobe0")?;
         let tail_convert = make_audio("audioconvert", "speaker-convert")?;
         let tail_resample = make_audio("audioresample", "speaker-resample")?;
         let speaker = make_audio("alsasink", "speaker-sink")?;
         tail_caps.set_property("caps", fixed_pcm_caps()?);
+        volume.set_property("volume", f64::from(volume_percent) / 100.0);
         speaker.set_property("device", FIXED_ALSA_DEVICE);
         // 会话建立初期回放尾链无数据（浏览器音频稍后才到）：async=false 让
         // alsasink 不等首帧就完成状态切换，否则整条管线卡在 PAUSED 阻塞采集。
@@ -922,6 +925,7 @@ impl CameraAudioPort for GStreamerAudioAdapter {
         let playback_tail: Vec<&gst::Element> = vec![
             &mixer,
             &tail_caps,
+            &volume,
             &echo_probe,
             &tail_convert,
             &tail_resample,
@@ -1002,6 +1006,7 @@ impl CameraAudioPort for GStreamerAudioAdapter {
                     &sink_element,
                     &mixer,
                     &tail_caps,
+                    &volume,
                     &echo_probe,
                     &tail_convert,
                     &tail_resample,
@@ -1032,6 +1037,7 @@ impl CameraAudioPort for GStreamerAudioAdapter {
             pipeline,
             frames,
             sink,
+            volume,
             state,
             stopping,
             bus_thread: Some(bus_thread),
@@ -1253,6 +1259,7 @@ struct GStreamerRunningAudioMedia {
     pipeline: gst::Pipeline,
     frames: Arc<AudioHub>,
     sink: Arc<GStreamerAudioPlaybackSink>,
+    volume: gst::Element,
     state: Arc<AtomicU8>,
     stopping: Arc<AtomicBool>,
     bus_thread: Option<JoinHandle<()>>,
@@ -1287,6 +1294,12 @@ impl RunningAudioMedia for GStreamerRunningAudioMedia {
 
     fn unsubscribe_capture(&self, queue: &Arc<BoundedAudioQueue>) {
         self.frames.unsubscribe(queue);
+    }
+
+    fn set_volume(&self, volume_percent: u8) -> Result<(), MediaError> {
+        self.volume
+            .set_property("volume", f64::from(volume_percent) / 100.0);
+        Ok(())
     }
 
     fn terminator(&self) -> Arc<dyn MediaTerminator> {

@@ -33,13 +33,15 @@ pub trait CameraMediaPort: Send + Sync {
 /// `webrtcdsp`/`webrtcechoprobe` 的回声参考信号耦合。
 pub trait CameraAudioPort: Send + Sync {
     fn probe(&self) -> Result<(), MediaError>;
-    fn start(&self) -> Result<Box<dyn RunningAudioMedia>, MediaError>;
+    fn start(&self, volume_percent: u8) -> Result<Box<dyn RunningAudioMedia>, MediaError>;
 }
 
 pub trait RunningAudioMedia: Send {
     /// 为一个音频会话注册独立采集队列（扇出）；media 已停止时返回已关闭队列。
     fn subscribe_capture(&self) -> Arc<BoundedAudioQueue>;
     fn unsubscribe_capture(&self, queue: &Arc<BoundedAudioQueue>);
+    /// 更新共享回放链路的喇叭音量，范围由 application 层限制为 0..=100。
+    fn set_volume(&self, volume_percent: u8) -> Result<(), MediaError>;
     /// 引用计数 terminator：最后一个音频会话线程退出时停止音频管线。
     fn terminator(&self) -> Arc<dyn MediaTerminator>;
     /// 共享回放 sink：会话注册/注销自己的混音输入并推送 Opus。

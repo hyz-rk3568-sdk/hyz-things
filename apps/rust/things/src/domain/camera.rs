@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::{net::Ipv4Addr, str::FromStr};
 
+pub const DEFAULT_SPEAKER_VOLUME_PERCENT: u8 = hyz_contract::camera::DEFAULT_SPEAKER_VOLUME_PERCENT;
+pub const MAX_SPEAKER_VOLUME_PERCENT: u8 = hyz_contract::camera::MAX_SPEAKER_VOLUME_PERCENT;
+
 pub const CAMERA_LAN_ADDRESS: Ipv4Addr = Ipv4Addr::new(192, 168, 8, 1);
 pub const CAMERA_UDP_PORT_START: u16 = 40_000;
 pub const CAMERA_UDP_PORT_END: u16 = 40_015;
@@ -210,6 +213,12 @@ pub struct CameraStatus {
 #[serde(deny_unknown_fields)]
 pub struct CameraAudioStatus {
     pub supported: bool,
+    #[serde(default = "default_speaker_volume_percent")]
+    pub volume_percent: u8,
+}
+
+fn default_speaker_volume_percent() -> u8 {
+    DEFAULT_SPEAKER_VOLUME_PERCENT
 }
 
 #[cfg(test)]
