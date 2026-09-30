@@ -22,6 +22,44 @@ test.beforeEach(async ({ request }) => {
   await resetHarness(request);
 });
 
+test("keeps the camera session after the page stays hidden for more than one minute", async ({
+  page,
+  request,
+}) => {
+  await installCameraWebRtcMock(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "摄像头", exact: true }).click();
+  const camera = page.getByRole("article", { name: "摄像头直播" });
+  await camera.getByRole("button", { name: "播放直播" }).click();
+  await expect(camera.getByText("直播中", { exact: true })).toBeVisible();
+
+  await page.clock.install();
+  await page.evaluate(() => {
+    let hidden = false;
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      get: () => hidden,
+    });
+    (window as any).__hyzSetDocumentHidden = (value: boolean) => {
+      hidden = value;
+      document.dispatchEvent(new Event("visibilitychange"));
+    };
+  });
+  await page.evaluate(() => (window as any).__hyzSetDocumentHidden(true));
+  await page.clock.fastForward("01:01");
+
+  await expect
+    .poll(async () => (await readHarnessState(request)).camera.sessions)
+    .toEqual(expect.arrayContaining([expect.any(String)]));
+  await expect(camera.getByText("直播中", { exact: true })).toBeVisible();
+
+  await page.evaluate(() => (window as any).__hyzSetDocumentHidden(false));
+  await camera.getByRole("button", { name: "停止直播" }).click();
+  await expect
+    .poll(async () => (await readHarnessState(request)).camera.sessions)
+    .toEqual([]);
+});
+
 test("plays the camera anonymously and controls it as an administrator", async ({
   page,
   request,
@@ -37,6 +75,9 @@ test("plays the camera anonymously and controls it as an administrator", async (
   await page.getByRole("button", { name: "摄像头", exact: true }).click();
   const camera = page.getByRole("article", { name: "摄像头直播" });
   await expect(camera).toBeVisible();
+  await expect(
+    camera.getByText("切到后台后会话持续保留，回来可继续播放", { exact: false }),
+  ).toBeVisible();
   await expect(camera.getByText("可用", { exact: true })).toBeVisible();
   await expect(camera.getByText("已停止", { exact: true })).toBeVisible();
   await expect(

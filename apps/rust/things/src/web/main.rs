@@ -65,9 +65,6 @@ use ui::*;
 
 const CAMERA_ICE_GATHER_TIMEOUT_MS: u32 = 10_000;
 const CAMERA_ICE_POLL_MS: u32 = 50;
-// 页面隐藏后不立即关闭直播会话：宽限期内回来就继续，超时才真正关闭
-// （多 viewer 场景下避免切走标签页即断流）。
-const CAMERA_HIDDEN_CLOSE_GRACE_MS: u32 = 60_000;
 const POLL_DELAY_MS: u32 = 2_000;
 const NETWORK_APPLY_PAINT_DELAY_MS: u32 = 150;
 // 画面设置（预设/旋转）提交遇到 camera busy（残留会话或 close 尚未完成）时
