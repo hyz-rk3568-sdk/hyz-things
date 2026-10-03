@@ -1355,8 +1355,7 @@ mod tests {
         let media = Arc::new(FakeMediaPort::default());
         let audio = Arc::new(FakeAudioPort::default());
         let webrtc = Arc::new(FakeWebRtcPort::default());
-        let app =
-            CameraApplication::new(media, Arc::clone(&audio), webrtc, "test".to_owned()).unwrap();
+        let app = CameraApplication::new(media, audio.clone(), webrtc, "test".to_owned()).unwrap();
 
         assert_eq!(
             app.status().audio.map(|audio| audio.volume_percent),
