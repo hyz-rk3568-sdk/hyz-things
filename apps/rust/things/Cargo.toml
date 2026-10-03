@@ -15,6 +15,7 @@ native = [
   "dep:argon2",
   "dep:async-trait",
   "dep:axum",
+  "dep:hyz-logging",
   "dep:getrandom",
   "dep:libc",
   "dep:mime_guess",
@@ -25,6 +26,7 @@ native = [
   "dep:tar",
   "dep:tokio",
   "dep:tokio-rustls",
+  "dep:tracing",
 ]
 web = [
   "dep:hyz-contract",
@@ -39,6 +41,7 @@ web = [
 
 [dependencies]
 hyz-contract = { path = "../contract", default-features = false, optional = true }
+hyz-logging = { path = "../logging", optional = true }
 serde = { version = "1", features = ["derive"] }
 url = "2.5.8"
 zeroize = "1.9.0"
@@ -105,6 +108,7 @@ web-sys = { version = "0.3", features = [
 ], optional = true }
 yew = { version = "0.21", features = ["csr"], optional = true }
 tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "tls12", "ring"], optional = true }
+tracing = { version = "0.1", optional = true }
 rcgen = { version = "0.13", optional = true }
 
 [build-dependencies]

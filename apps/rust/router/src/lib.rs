@@ -1,5 +1,8 @@
 pub mod domain;
 
+#[cfg(feature = "native")]
+pub mod logging;
+
 #[cfg(all(feature = "native", not(target_os = "linux")))]
 compile_error!("the native router implementation requires Linux");
 

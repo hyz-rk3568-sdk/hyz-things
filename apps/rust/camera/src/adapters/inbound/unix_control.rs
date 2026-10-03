@@ -1,6 +1,7 @@
 use crate::{
     application::{CameraApplication, CameraApplicationError, CreateSessionResult},
     domain::CameraSessionId,
+    logging::{self, Level},
 };
 use std::{
     fs::{self, OpenOptions},
@@ -127,7 +128,14 @@ fn handle_request(
             let created = application
                 .create_session(request.scope, request.address, &request.offer_sdp)
                 .map_err(|error| {
-                    eprintln!("camera: session create rejected: {error:?}");
+                    logging::message(
+                        Level::Warn,
+                        "control",
+                        "create_session",
+                        "rejected",
+                        "camera_session_create_rejected",
+                        format_args!("session create rejected: {error:?}"),
+                    );
                     map_application_error(error)
                 })?;
             ControlResult::SessionCreated(created.into())

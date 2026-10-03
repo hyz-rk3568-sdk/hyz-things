@@ -26,8 +26,9 @@
 - Camera 既有 `camera_*` code 保持，并统一到 `{ "error": { "code", "message" } }` envelope；
 - HTTP error response 使用统一 helper，并为每个 request 生成 server-side `x-hyz-request-id`；失败日志使用同一 request ID；
 - Web API 增加 typed `ApiError`，受保护资源、401 session expiry 和 409 generation conflict 使用 status/code 判断，不解析 message 文案；
-- native portal 的关键 HTTP、TLS、Tailscale listener 与 service-ready 事件使用结构化 stderr 字段，核心字段包括 `service`、`component`、`operation`、`event`、`error_code`、`request_id`、`status` 和 `duration_ms`；
-- 最终未引入 `tracing` / `tracing-subscriber`，而是使用小型集中 logging facade 继续写 stderr。原因是当前 init 已稳定捕获 stderr，且集中 API 可以更严格地限制任意 error detail、request body、credential 和 URL 进入日志；该实现选择不改变本文定义的结构化字段与脱敏 contract；
+- `hyz-things`、`hyz-router` 和 `hyz-camera` 的关键生命周期、TLS、媒体与控制事件使用结构化 syslog 字段，核心字段包括 `service`、`component`、`operation`、`event`、`error_code`、`request_id`、`status` 和 `duration_ms`；
+- 三个 daemon 的 composition root 都初始化 `tracing` subscriber；共享日志 crate 使用 JSON formatter 和 `/dev/log`，通过 libc syslog 发送单条有界消息；
+- `hyz-things` 的 TLS listener 使用有界并发握手和单连接超时，避免未完成握手阻塞后续客户端；
 - HTTP/status 边界不会把 router remote message 直接返回浏览器；测试包含 remote detail 不泄漏、稳定 code 保留、request ID 存在和关键 native 路径不重新使用裸 `eprintln!` 的约束。
 
 真实 RK3568 目标板尚未执行本计划的最终日志与故障注入验收，因此当前状态不能标记为全部完成。
@@ -121,17 +122,11 @@ Camera 当前已经使用较稳定的业务错误码：
 
 本计划应保留这些既有 code，并把其他管理能力逐步收敛到相同原则，而不是重新发明 Camera 错误 contract。
 
-### 1.5 服务日志仍主要依赖自然语言
+### 1.5 服务日志需要稳定字段
 
-hyz-things composition root 当前仍直接使用 eprintln! 输出运行事件，例如：
+三个 daemon 的关键生命周期、失败和控制事件现在通过统一 service facade 写入结构化 syslog。每条事件包含服务名、组件、操作、事件和稳定错误码；需要关联时附带 request ID、session ID、peer 或 listener 字段。
 
-~~~
-hyz-things: Tailscale management listener reconcile failed: ...
-hyz-things: Tailscale status unavailable: ...
-hyz-things: management portal ready at ...
-~~~
-
-这些日志适合人工阅读，但缺少稳定字段，无法可靠按 component、operation、error_code 或 request 关联查询，也容易因为 message 文案变化破坏自动诊断。
+这使设备上的 `/var/log/messages` 可以按服务和错误码检索，业务日志不再依赖自然语言文案作为唯一诊断依据。
 
 ## 2. 目标
 
@@ -474,9 +469,9 @@ Camera HTTP 现有 code 作为参考基线，原则上不改名。
 
 ### 10.1 日志基础设施
 
-hyz-things native side 引入统一 structured logging facade。
+三个 daemon 引入统一 structured logging facade。
 
-首选实现为 tracing + tracing-subscriber，并继续写 stderr，以保持现有 init/部署对进程输出的捕获方式。不得因为本计划引入外部日志服务。
+首选实现为 `tracing` + `tracing-subscriber`，由共享日志 crate 通过 libc `syslog()` 将 JSON 事件发送到设备 `/dev/log`。每条消息有固定大小上限；服务 facade 只暴露经过约束的结构化字段，不记录 request body、credential、cookie、URL 或原始协议 detail。不得因为本计划引入外部日志服务。
 
 生产日志至少能稳定表达 key/value 字段；具体 formatter 可根据目标板日志可读性选择 compact text 或 JSON，但字段 contract 必须由测试/集中 helper 固定，不允许每处自由拼接自然语言。
 
@@ -662,7 +657,7 @@ Red：
 
 Green：
 
-- composition root 初始化 tracing subscriber；
+- 三个 daemon 的 composition root 初始化 tracing subscriber；
 - 替换 main.rs 中现有 eprintln!；
 - HTTP failure boundary 增加统一 structured event；
 - Tailscale listener lifecycle/reconcile 使用稳定 event/code。
@@ -697,7 +692,7 @@ Refactor：
 
 - 搜索并审计 control_failed；
 - 搜索并审计 authentication_failed；
-- 搜索 production eprintln!/println!；
+- 搜索并审计 production direct output（daemon 业务日志不得直接使用 `eprintln!`，CLI 的标准输出按协议保留）；
 - 搜索对 error message 的 contains/starts_with/字符串匹配；
 - 搜索把 ControlError 直接格式化成普通 io::Error 的路径。
 
@@ -854,7 +849,7 @@ PR 内按有意义 checkpoint 批量提交和触发 CI，不为每个机械替�
 - AdminError 不再全部变成 authentication_failed；
 - Camera 现有稳定 code 未回退；
 - Web 的关键错误流程根据 code/status 判断，不解析 message；
-- production hyz-things 关键生命周期/失败日志使用结构化字段，不再依赖裸 eprintln! 作为主要业务日志；
+- 三个 daemon 的关键生命周期/失败日志使用结构化 syslog 字段，不再依赖裸 `eprintln!` 作为业务日志；
 - HTTP request failure 可通过 server-generated request ID 与日志关联；
 - 结构化日志至少稳定提供 service/component/operation/error_code 等核心字段；
 - secret negative tests 通过；

@@ -12,6 +12,7 @@ use crate::{
         FIXED_CAPTURE_HEIGHT, FIXED_CAPTURE_WIDTH, MAX_AUDIO_FRAME_BYTES, MAX_ENCODED_FRAME_BYTES,
         WATERMARK_FONT_FAMILY,
     },
+    logging::{self, Level},
 };
 use gstreamer as gst;
 use gstreamer::prelude::*;
@@ -111,7 +112,14 @@ impl CameraMediaPort for GStreamerMediaAdapter {
 
     fn start(&self, profile: CameraStreamProfile) -> Result<Box<dyn RunningMedia>, MediaError> {
         self.probe().inspect_err(|&error| {
-            eprintln!("video probe failed before start: {error:?}");
+            logging::message(
+                Level::Warn,
+                "video",
+                "probe",
+                "failed",
+                "video_probe_failed",
+                format_args!("video probe failed before start: {error:?}"),
+            );
         })?;
         let pipeline = gst::Pipeline::with_name("hyz-camera-pipeline");
         let source = make("v4l2src", "camera-source")?;
@@ -267,10 +275,13 @@ impl CameraMediaPort for GStreamerMediaAdapter {
                     };
                     match message.view() {
                         gst::MessageView::Error(error) => {
-                            eprintln!(
-                                "video pipeline error: {} (debug: {:?})",
-                                error.error(),
-                                error.debug()
+                            logging::message(
+                                Level::Error,
+                                "video",
+                                "pipeline",
+                                "error",
+                                "video_pipeline_error",
+                                format_args!("{} (debug: {:?})", error.error(), error.debug()),
                             );
                             bus_state
                                 .store(state_code(CameraPipelineState::Failed), Ordering::Release);
@@ -290,7 +301,16 @@ impl CameraMediaPort for GStreamerMediaAdapter {
             .map_err(|_| MediaError::PipelineFailed)?;
 
         if pipeline.set_state(gst::State::Playing).is_err() {
-            eprintln!("video pipeline failed to enter PLAYING state");
+            logging::event(
+                Level::Error,
+                "video",
+                "pipeline",
+                "playing_failed",
+                Some("video_pipeline_start_failed"),
+                None,
+                None,
+                None,
+            );
             stopping.store(true, Ordering::Release);
             frames.close();
             let _ = bus_thread.join();
@@ -304,7 +324,16 @@ impl CameraMediaPort for GStreamerMediaAdapter {
         match frames.wait_first_frame(PIPELINE_START_DEADLINE) {
             Ok(()) => {}
             Err(_) => {
-                eprintln!("video pipeline produced no first frame within the start deadline");
+                logging::event(
+                    Level::Error,
+                    "video",
+                    "pipeline",
+                    "first_frame_timeout",
+                    Some("video_first_frame_timeout"),
+                    None,
+                    None,
+                    None,
+                );
                 stopping.store(true, Ordering::Release);
                 frames.close();
                 let _ = bus_thread.join();
@@ -504,19 +533,45 @@ fn stop_pipeline_bounded(pipeline: &gst::Pipeline, tag: &str) -> CameraPipelineS
         });
     match rx.recv_timeout(PIPELINE_STOP_DEADLINE) {
         Ok(true) => {
-            eprintln!("{tag} pipeline stopped");
+            logging::message(
+                Level::Info,
+                "pipeline",
+                "stop",
+                "stopped",
+                "pipeline_stopped",
+                tag,
+            );
             CameraPipelineState::Stopped
         }
         Ok(false) => {
-            eprintln!("{tag} pipeline stop returned failure");
+            logging::message(
+                Level::Warn,
+                "pipeline",
+                "stop",
+                "failed",
+                "pipeline_stop_failed",
+                tag,
+            );
             CameraPipelineState::Failed
         }
         Err(_) => {
-            eprintln!(
-                "{tag} pipeline stop timed out after {PIPELINE_STOP_DEADLINE:?}; element states:"
+            logging::message(
+                Level::Error,
+                "pipeline",
+                "stop",
+                "timeout",
+                "pipeline_stop_timeout",
+                format_args!("{tag} pipeline stop timed out after {PIPELINE_STOP_DEADLINE:?}"),
             );
             for child in pipeline.children() {
-                eprintln!("  {} state {:?}", child.name(), child.current_state());
+                logging::message(
+                    Level::Error,
+                    "pipeline",
+                    "stop",
+                    "element_state",
+                    "pipeline_element_state",
+                    format_args!("{} state {:?}", child.name(), child.current_state()),
+                );
             }
             CameraPipelineState::Failed
         }
@@ -552,7 +607,16 @@ fn make_audio(factory: &str, name: &str) -> Result<gst::Element, MediaError> {
     gst::ElementFactory::make(factory)
         .name(name)
         .build()
-        .inspect_err(|_| eprintln!("audio element {name} ({factory}) could not be created"))
+        .inspect_err(|_| {
+            logging::message(
+                Level::Warn,
+                "audio",
+                "element_create",
+                "failed",
+                "audio_element_create_failed",
+                format_args!("audio element {name} ({factory}) could not be created"),
+            )
+        })
         .map_err(|_| MediaError::AudioPipelineFailed)
 }
 
@@ -625,7 +689,14 @@ fn attach_rnnoise_probe(dsp: &gst::Element) -> Result<(), MediaError> {
         let samples = bytes.len() / 2;
         if samples == 0 || samples % frame_size != 0 {
             if !warned.swap(true, Ordering::Relaxed) {
-                eprintln!("rnnoise: unexpected buffer size {samples} samples; passthrough");
+                logging::message(
+                    Level::Warn,
+                    "audio",
+                    "rnnoise",
+                    "buffer_size_unexpected",
+                    "rnnoise_buffer_size_unexpected",
+                    format_args!("unexpected buffer size {samples} samples; passthrough"),
+                );
             }
             return gst::PadProbeReturn::Ok;
         }
@@ -747,7 +818,14 @@ impl CameraAudioPort for GStreamerAudioAdapter {
 
     fn start(&self, volume_percent: u8) -> Result<Box<dyn RunningAudioMedia>, MediaError> {
         self.probe().inspect_err(|&error| {
-            eprintln!("audio probe failed before start: {error:?}");
+            logging::message(
+                Level::Warn,
+                "audio",
+                "probe",
+                "failed",
+                "audio_probe_failed",
+                format_args!("audio probe failed before start: {error:?}"),
+            );
         })?;
         let pipeline = gst::Pipeline::with_name("hyz-camera-audio-pipeline");
 
@@ -778,7 +856,16 @@ impl CameraAudioPort for GStreamerAudioAdapter {
             let filter_out = make_audio("audioconvert", "mic-filter-out")?;
             capture_filters.extend([filter_in, hpf, lpf, filter_out]);
         } else {
-            eprintln!("audiocheblimit unavailable: capture band filtering disabled");
+            logging::event(
+                Level::Warn,
+                "audio",
+                "capture_filter",
+                "unavailable",
+                Some("audio_band_filter_unavailable"),
+                None,
+                None,
+                None,
+            );
         }
         source.set_property("device", FIXED_ALSA_DEVICE);
         capture_caps.set_property("caps", mic_pcm_caps()?);
@@ -861,9 +948,16 @@ impl CameraAudioPort for GStreamerAudioAdapter {
                         } else {
                             -120.0
                         };
-                        eprintln!(
-                            "speaker sink rms peak={peak:.0} ({db:.0} dBFS) after {} buffers",
-                            state.0
+                        logging::message(
+                            Level::Info,
+                            "audio",
+                            "speaker_rms",
+                            "sample",
+                            "speaker_rms_sample",
+                            format_args!(
+                                "speaker sink rms peak={peak:.0} ({db:.0} dBFS) after {} buffers",
+                                state.0
+                            ),
                         );
                         state.1 = 0.0;
                     }
@@ -957,10 +1051,13 @@ impl CameraAudioPort for GStreamerAudioAdapter {
                     };
                     match message.view() {
                         gst::MessageView::Error(error) => {
-                            eprintln!(
-                                "audio pipeline error: {} (debug: {:?})",
-                                error.error(),
-                                error.debug()
+                            logging::message(
+                                Level::Error,
+                                "audio",
+                                "pipeline",
+                                "error",
+                                "audio_pipeline_error",
+                                format_args!("{} (debug: {:?})", error.error(), error.debug()),
                             );
                             bus_state
                                 .store(state_code(CameraPipelineState::Failed), Ordering::Release);
@@ -980,7 +1077,16 @@ impl CameraAudioPort for GStreamerAudioAdapter {
             .map_err(|_| MediaError::AudioPipelineFailed)?;
 
         if pipeline.set_state(gst::State::Playing).is_err() {
-            eprintln!("audio pipeline failed to enter PLAYING state");
+            logging::event(
+                Level::Error,
+                "audio",
+                "pipeline",
+                "playing_failed",
+                Some("audio_pipeline_start_failed"),
+                None,
+                None,
+                None,
+            );
             stopping.store(true, Ordering::Release);
             frames.close();
             let _ = bus_thread.join();
@@ -995,7 +1101,16 @@ impl CameraAudioPort for GStreamerAudioAdapter {
         match frames.wait_first_frame(PIPELINE_START_DEADLINE) {
             Ok(()) => {}
             Err(_) => {
-                eprintln!("audio pipeline produced no first frame within the start deadline");
+                logging::event(
+                    Level::Error,
+                    "audio",
+                    "pipeline",
+                    "first_frame_timeout",
+                    Some("audio_first_frame_timeout"),
+                    None,
+                    None,
+                    None,
+                );
                 for element in [
                     &source,
                     &capture_convert,
@@ -1012,10 +1127,17 @@ impl CameraAudioPort for GStreamerAudioAdapter {
                     &tail_resample,
                     &speaker,
                 ] {
-                    eprintln!(
-                        "  audio element {} state: {:?}",
-                        element.name(),
-                        element.current_state()
+                    logging::message(
+                        Level::Error,
+                        "audio",
+                        "pipeline",
+                        "element_state",
+                        "audio_pipeline_element_state",
+                        format_args!(
+                            "audio element {} state: {:?}",
+                            element.name(),
+                            element.current_state()
+                        ),
                     );
                 }
                 stopping.store(true, Ordering::Release);
@@ -1032,7 +1154,16 @@ impl CameraAudioPort for GStreamerAudioAdapter {
             mixer,
             chains: Mutex::new(HashMap::new()),
         });
-        eprintln!("audio pipeline started (capture producing frames)");
+        logging::event(
+            Level::Info,
+            "audio",
+            "pipeline",
+            "started",
+            None,
+            None,
+            None,
+            None,
+        );
         Ok(Box::new(GStreamerRunningAudioMedia {
             pipeline,
             frames,
@@ -1171,37 +1302,85 @@ impl AudioSink for GStreamerAudioPlaybackSink {
         pending
             .pipeline
             .add_many(&pending.elements)
-            .inspect_err(|_| eprintln!("audio pipeline add_many failed for session {session_id}"))
+            .inspect_err(|_| {
+                logging::session_event(
+                    Level::Warn,
+                    "audio",
+                    "playback_chain",
+                    "add_failed",
+                    Some("audio_pipeline_add_failed"),
+                    session_id,
+                )
+            })
             .map_err(|_| MediaError::AudioPipelineFailed)?;
         let chain: Vec<&gst::Element> = vec![&appsrc, &decoder, &convert, &resample, &queue];
         gst::Element::link_many(&chain)
             .map_err(|_| MediaError::AudioPipelineFailed)
             .inspect_err(|_| {
-                eprintln!("audio playback chain link failed for session {session_id}")
+                logging::session_event(
+                    Level::Warn,
+                    "audio",
+                    "playback_chain",
+                    "link_failed",
+                    Some("audio_playback_link_failed"),
+                    session_id,
+                )
             })?;
         let mixer_pad = self
             .mixer
             .request_pad_simple("sink_%u")
             .ok_or(MediaError::AudioPipelineFailed)
-            .inspect_err(|_| eprintln!("audiomixer request pad failed for session {session_id}"))?;
+            .inspect_err(|_| {
+                logging::session_event(
+                    Level::Warn,
+                    "audio",
+                    "playback_chain",
+                    "request_pad_failed",
+                    Some("audio_mixer_request_pad_failed"),
+                    session_id,
+                )
+            })?;
         pending.mixer_pad = Some(mixer_pad.clone());
         let queue_src = match queue.static_pad("src") {
             Some(pad) => pad,
             None => {
-                eprintln!("audio queue src pad missing for session {session_id}");
+                logging::session_event(
+                    Level::Warn,
+                    "audio",
+                    "playback_chain",
+                    "source_pad_missing",
+                    Some("audio_queue_source_pad_missing"),
+                    session_id,
+                );
                 return Err(MediaError::AudioPipelineFailed);
             }
         };
         queue_src
             .link(&mixer_pad)
             .map_err(|_| MediaError::AudioPipelineFailed)
-            .inspect_err(|_| eprintln!("queue->mixer link failed for session {session_id}"))?;
+            .inspect_err(|_| {
+                logging::session_event(
+                    Level::Warn,
+                    "audio",
+                    "playback_chain",
+                    "mixer_link_failed",
+                    Some("audio_queue_mixer_link_failed"),
+                    session_id,
+                )
+            })?;
         for element in &chain {
             element
                 .sync_state_with_parent()
                 .map_err(|_| MediaError::AudioPipelineFailed)
                 .inspect_err(|_| {
-                    eprintln!("playback chain sync_state failed for session {session_id}")
+                    logging::session_event(
+                        Level::Warn,
+                        "audio",
+                        "playback_chain",
+                        "sync_state_failed",
+                        Some("audio_playback_sync_state_failed"),
+                        session_id,
+                    )
                 })?;
         }
         let chain = SessionPlaybackChain {
@@ -1214,7 +1393,14 @@ impl AudioSink for GStreamerAudioPlaybackSink {
         };
         chains.insert(session_id.to_owned(), chain);
         pending.committed = true;
-        eprintln!("playback chain registered for session {session_id}");
+        logging::session_event(
+            Level::Info,
+            "audio",
+            "playback_chain",
+            "registered",
+            None,
+            session_id,
+        );
         Ok(())
     }
 

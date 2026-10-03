@@ -30,6 +30,7 @@ const ROUTER_READY_POLL: Duration = Duration::from_secs(1);
 const TAILSCALE_RECONCILE_INTERVAL: Duration = Duration::from_secs(2);
 
 fn main() -> Result<(), Box<dyn Error>> {
+    logging::init()?;
     let mut arguments = std::env::args();
     let _program = arguments.next();
     if arguments.next().as_deref() != Some("daemon") || arguments.next().is_some() {

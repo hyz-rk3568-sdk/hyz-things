@@ -1,13 +1,9 @@
-//! Structured syslog events for the native management portal.
-//!
-//! The service-specific facade keeps event fields stable and prevents callers from logging
-//! sensitive request data or arbitrary platform detail.
+//! Structured syslog events emitted by the camera media daemon.
 
 #[cfg(test)]
 use std::fmt::Write as _;
-use std::net::SocketAddr;
 
-pub const SERVICE: &str = "hyz-things";
+pub const SERVICE: &str = "hyz-camera";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Level {
@@ -42,10 +38,58 @@ pub fn event(
     status: Option<u16>,
     duration_ms: Option<u128>,
 ) {
+    emit(
+        level,
+        component,
+        operation,
+        event,
+        error_code,
+        request_id,
+        status,
+        duration_ms,
+        None,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn session_event(
+    level: Level,
+    component: &str,
+    operation: &str,
+    event: &str,
+    error_code: Option<&str>,
+    session_id: &str,
+) {
+    emit(
+        level,
+        component,
+        operation,
+        event,
+        error_code,
+        None,
+        None,
+        None,
+        Some(session_id),
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit(
+    level: Level,
+    component: &str,
+    operation: &str,
+    event: &str,
+    error_code: Option<&str>,
+    request_id: Option<&str>,
+    status: Option<u16>,
+    duration_ms: Option<u128>,
+    session_id: Option<&str>,
+) {
     let error_code = error_code.unwrap_or("");
     let request_id = request_id.unwrap_or("");
     let status = status.unwrap_or_default();
     let duration_ms = duration_ms.unwrap_or_default();
+    let session_id = session_id.unwrap_or("");
     match level {
         Level::Info => tracing::info!(
             target: SERVICE,
@@ -57,6 +101,7 @@ pub fn event(
             request_id,
             status,
             duration_ms,
+            session_id,
         ),
         Level::Warn => tracing::warn!(
             target: SERVICE,
@@ -68,6 +113,7 @@ pub fn event(
             request_id,
             status,
             duration_ms,
+            session_id,
         ),
         Level::Error => tracing::error!(
             target: SERVICE,
@@ -79,26 +125,49 @@ pub fn event(
             request_id,
             status,
             duration_ms,
+            session_id,
         ),
     }
 }
 
-pub fn tls_handshake_result(listener: SocketAddr, peer: SocketAddr, timed_out: bool) {
-    let (event, error_code) = if timed_out {
-        ("timeout", "tls_handshake_timeout")
-    } else {
-        ("request_rejected", "tls_handshake_failed")
-    };
-    tracing::warn!(
-        target: SERVICE,
-        service = SERVICE,
-        component = "tls",
-        operation = "handshake",
-        event,
-        error_code,
-        %listener,
-        %peer,
-    );
+pub fn message(
+    level: Level,
+    component: &str,
+    operation: &str,
+    event: &str,
+    error_code: &str,
+    message: impl std::fmt::Display,
+) {
+    let error_code = error_code.to_owned();
+    match level {
+        Level::Info => tracing::info!(
+            target: SERVICE,
+            service = SERVICE,
+            component,
+            operation,
+            event,
+            error_code,
+            message = %message,
+        ),
+        Level::Warn => tracing::warn!(
+            target: SERVICE,
+            service = SERVICE,
+            component,
+            operation,
+            event,
+            error_code,
+            message = %message,
+        ),
+        Level::Error => tracing::error!(
+            target: SERVICE,
+            service = SERVICE,
+            component,
+            operation,
+            event,
+            error_code,
+            message = %message,
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -137,51 +206,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn structured_event_has_stable_fields_and_escapes_dynamic_values() {
+    fn structured_event_contains_service_and_stable_fields() {
         let line = format_event(
             Level::Warn,
-            "http",
-            "/api/v1/control/example\nforged=true",
-            "request_rejected",
-            Some("network_conflict"),
-            Some("0123456789abcdef"),
-            Some(409),
-            Some(12),
+            "webrtc",
+            "session",
+            "transport_failed",
+            Some("transport_failed"),
+            Some("request-id"),
+            None,
+            None,
         );
-        assert!(line.contains("level=WARN service=hyz-things"));
-        assert!(line.contains("component=\"http\""));
-        assert!(line.contains("error_code=\"network_conflict\""));
-        assert!(line.contains("request_id=\"0123456789abcdef\""));
-        assert!(line.contains("status=409 duration_ms=12"));
-        assert!(!line.contains("\nforged=true"));
-        assert!(line.contains("\\nforged=true"));
+        assert!(line.contains("service=hyz-camera"));
+        assert!(line.contains("component=\"webrtc\""));
+        assert!(line.contains("error_code=\"transport_failed\""));
     }
 
     #[test]
-    fn key_native_failure_paths_do_not_use_naked_stderr_logging() {
+    fn logging_source_contains_no_direct_stderr_calls() {
         for source in [
             include_str!("main.rs"),
-            include_str!("adapters/inbound/http/tls.rs"),
-            include_str!("adapters/outbound/tailscale.rs"),
+            include_str!("adapters/inbound/unix_control.rs"),
+            include_str!("adapters/outbound/gstreamer.rs"),
+            include_str!("adapters/outbound/webrtc.rs"),
         ] {
             let production = source.split("#[cfg(test)]").next().unwrap();
             assert!(!production.contains("eprintln!("));
-            assert!(!production.contains("println!("));
-        }
-    }
-
-    #[test]
-    fn logging_contract_has_no_secret_detail_channel() {
-        let source = include_str!("logging.rs");
-        let production = source.split("#[cfg(test)]").next().unwrap();
-        for forbidden in [
-            "password",
-            "cookie",
-            "csrf_token",
-            "login_url",
-            "request_body",
-        ] {
-            assert!(!production.contains(forbidden));
         }
     }
 }

@@ -8,6 +8,7 @@ use crate::{
         FramePopOutcome, SdpValidationError, CAMERA_UDP_PORT_END, CAMERA_UDP_PORT_START,
         MAX_SDP_BYTES,
     },
+    logging::{self, Level},
 };
 use std::{
     io::ErrorKind,
@@ -92,7 +93,14 @@ impl WebRtcSessionPort for Str0mWebRtcAdapter {
             )
         };
         if setsockopt != 0 {
-            eprintln!("camera: SO_SNDBUF failed for session {session_id}");
+            logging::session_event(
+                Level::Warn,
+                "webrtc",
+                "socket",
+                "send_buffer_failed",
+                Some("udp_send_buffer_failed"),
+                session_id.as_str(),
+            );
             return Err(WebRtcError::TransportFailed);
         }
         let candidate_addr = SocketAddr::new(scope.address().into(), port);
@@ -102,7 +110,14 @@ impl WebRtcSessionPort for Str0mWebRtcAdapter {
             Candidate::host(candidate_addr, "udp").map_err(|_| WebRtcError::NegotiationFailed)?;
         rtc.add_local_candidate(candidate);
         let answer = rtc.sdp_api().accept_offer(offer).map_err(|_| {
-            eprintln!("camera: accept_offer failed for session {session_id}");
+            logging::session_event(
+                Level::Warn,
+                "webrtc",
+                "negotiation",
+                "offer_rejected",
+                Some("webrtc_offer_rejected"),
+                session_id.as_str(),
+            );
             WebRtcError::NegotiationFailed
         })?;
         let answer_sdp = answer.to_sdp_string();
@@ -124,7 +139,14 @@ impl WebRtcSessionPort for Str0mWebRtcAdapter {
             .spawn(move || {
                 let result = drive_session(rtc, socket, candidate_addr, driver, shutdown_rx);
                 if let Err(error) = &result {
-                    eprintln!("session thread {session_id}: exited with error: {error:?}");
+                    logging::message(
+                        Level::Error,
+                        "webrtc",
+                        "session",
+                        "thread_failed",
+                        "webrtc_session_thread_failed",
+                        format_args!("session thread {session_id} exited with error: {error:?}"),
+                    );
                 }
                 result
             })
@@ -146,7 +168,14 @@ fn bind_fixed_udp_port(address: Ipv4Addr) -> Result<(UdpSocket, u16), WebRtcErro
             Ok(socket) => return Ok((socket, port)),
             Err(error) if error.kind() == ErrorKind::AddrInUse => continue,
             Err(error) => {
-                eprintln!("camera: UDP bind {address}:{port} failed: {error}");
+                logging::message(
+                    Level::Error,
+                    "webrtc",
+                    "bind_udp",
+                    "failed",
+                    "udp_bind_failed",
+                    format_args!("UDP bind {address}:{port} failed: {error}"),
+                );
                 return Err(WebRtcError::TransportFailed);
             }
         }
@@ -246,7 +275,16 @@ fn drive_session(
                                 thread::sleep(DRIVER_POLL_SLICE);
                             }
                             Err(error) => {
-                                eprintln!("session {session_id}: udp send_to failed: {error}");
+                                logging::message(
+                                    Level::Error,
+                                    "webrtc",
+                                    "send_udp",
+                                    "failed",
+                                    "udp_send_failed",
+                                    format_args!(
+                                        "session {session_id} udp send_to failed: {error}"
+                                    ),
+                                );
                                 return Err(WebRtcError::TransportFailed);
                             }
                         }
@@ -259,7 +297,14 @@ fn drive_session(
                         let _ = keyframe_requester.request_keyframe();
                     }
                     Event::IceConnectionStateChange(state) => {
-                        eprintln!("session {session_id}: ice state change to {state:?}");
+                        logging::message(
+                            Level::Info,
+                            "webrtc",
+                            "ice",
+                            "state_changed",
+                            "ice_state_changed",
+                            format_args!("session {session_id} ice state changed to {state:?}"),
+                        );
                         if state == IceConnectionState::Disconnected {
                             return Ok(());
                         }
@@ -312,16 +357,37 @@ fn drive_session(
         };
 
         if shutdown_rx.try_recv().is_ok() {
-            eprintln!("session {session_id}: shutdown requested");
+            logging::session_event(
+                Level::Info,
+                "webrtc",
+                "session",
+                "shutdown_requested",
+                None,
+                &session_id,
+            );
             return Ok(());
         }
         let now = Instant::now();
         if !connected && now.duration_since(started) >= NEGOTIATION_DEADLINE {
-            eprintln!("session {session_id}: negotiation deadline exceeded");
+            logging::session_event(
+                Level::Warn,
+                "webrtc",
+                "negotiation",
+                "deadline_exceeded",
+                Some("webrtc_negotiation_timeout"),
+                &session_id,
+            );
             return Err(WebRtcError::TransportFailed);
         }
         if connected && now.duration_since(last_transport_activity) >= TRANSPORT_IDLE_DEADLINE {
-            eprintln!("session {session_id}: transport idle deadline exceeded");
+            logging::session_event(
+                Level::Info,
+                "webrtc",
+                "transport",
+                "idle_timeout",
+                Some("webrtc_transport_idle_timeout"),
+                &session_id,
+            );
             return Ok(());
         }
 
@@ -341,8 +407,15 @@ fn drive_session(
                                 frame.data.to_vec(),
                             )
                             .map_err(|error| {
-                                eprintln!(
-                                    "session {session_id}: video writer.write failed: {error:?}"
+                                logging::message(
+                                    Level::Error,
+                                    "webrtc",
+                                    "video_write",
+                                    "failed",
+                                    "webrtc_video_write_failed",
+                                    format_args!(
+                                        "session {session_id} video writer.write failed: {error:?}"
+                                    ),
                                 );
                                 WebRtcError::TransportFailed
                             })?;
@@ -353,7 +426,14 @@ fn drive_session(
                     let _ = keyframe_requester.request_keyframe();
                 }
                 FramePopOutcome::Closed => {
-                    eprintln!("session {session_id}: video frame queue closed");
+                    logging::session_event(
+                        Level::Info,
+                        "webrtc",
+                        "video",
+                        "frame_queue_closed",
+                        Some("webrtc_video_frame_queue_closed"),
+                        &session_id,
+                    );
                     return Ok(());
                 }
                 FramePopOutcome::Timeout => {}

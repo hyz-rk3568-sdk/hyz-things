@@ -47,6 +47,7 @@ use hyz_router::{
             TailscaleAction, TailscaleDesired, TailscaleLoginUrl, TailscaleMode, TailscaleObserved,
         },
     },
+    logging::{self, Level},
 };
 use std::{
     error::Error,
@@ -71,8 +72,13 @@ const AP_VHT80_UPGRADE_GRACE: Duration = Duration::from_secs(30);
 fn arm_shutdown_deadline(deadline: TokioInstant) {
     std::thread::spawn(move || {
         std::thread::sleep(deadline.saturating_duration_since(TokioInstant::now()));
-        eprintln!(
-            "hyz-router: daemon shutdown deadline expired; forcing process exit with ownership evidence retained"
+        logging::message(
+            Level::Error,
+            "process",
+            "shutdown",
+            "deadline_expired",
+            "shutdown_deadline_expired",
+            "daemon shutdown deadline expired; forcing process exit with ownership evidence retained",
         );
         std::process::exit(1);
     });
@@ -280,11 +286,32 @@ impl DhcpDispatcher {
                         .await;
                         match follow_up {
                             Ok(Ok(())) => {}
-                            Ok(Err(error)) => eprintln!("hyz-router: post-DHCP router/proxy/Tailscale reconciliation failed; management LAN retained: {error}"),
-                            Err(error) => eprintln!("hyz-router: post-DHCP router/proxy/Tailscale reconciliation worker terminated; management LAN retained: {error}"),
+                            Ok(Err(error)) => logging::message(
+                                Level::Warn,
+                                "dhcp",
+                                "reconcile",
+                                "failed",
+                                "dhcp_reconcile_failed",
+                                format_args!("post-DHCP router/proxy/Tailscale reconciliation failed; management LAN retained: {error}"),
+                            ),
+                            Err(error) => logging::message(
+                                Level::Error,
+                                "dhcp",
+                                "reconcile",
+                                "worker_failed",
+                                "dhcp_reconcile_worker_failed",
+                                format_args!("post-DHCP router/proxy/Tailscale reconciliation worker terminated; management LAN retained: {error}"),
+                            ),
                         }
                     }
-                    Err(error) => eprintln!("hyz-router: queued DHCP event failed: {error}"),
+                    Err(error) => logging::message(
+                        Level::Warn,
+                        "dhcp",
+                        "dispatch",
+                        "failed",
+                        "dhcp_event_failed",
+                        format_args!("queued DHCP event failed: {error}"),
+                    ),
                 }
             }
         });
@@ -669,12 +696,24 @@ impl ProductionRuntime {
         // the last-good channel cache for a faster cold start. This is a runtime-derived cache:
         // a failure only shortens the next boot fast-start window and must not fail restoration.
         if let Err(error) = self.router.refresh_last_good_sta_channel() {
-            eprintln!("hyz-router: refresh last-good STA channel cache: {error}");
+            logging::message(
+                Level::Warn,
+                "wifi",
+                "refresh_last_good_channel",
+                "failed",
+                "sta_last_good_channel_refresh_failed",
+                format_args!("refresh last-good STA channel cache: {error}"),
+            );
         }
         if let Err(error) = self.reconcile_persisted_tailscale().await {
             match self.shutdown_tailscale().await {
-                Ok(()) => eprintln!(
-                    "hyz-router: deferred Tailscale restoration is unavailable ({error}); exact Tailscale runtime was cleaned"
+                Ok(()) => logging::message(
+                    Level::Warn,
+                    "tailscale",
+                    "restore",
+                    "unavailable",
+                    "tailscale_restore_unavailable",
+                    format_args!("deferred Tailscale restoration is unavailable ({error}); exact Tailscale runtime was cleaned"),
                 ),
                 Err(cleanup_error) => {
                     return Err(PlatformError::InvalidState(format!(
@@ -1129,8 +1168,13 @@ impl ControlHandler for ProductionRuntime {
                 .map_err(|error| platform_control_error("network", error))?;
                 actions_applied += router_actions;
                 if let Err(error) = self.reconcile_persisted_tailscale().await {
-                    eprintln!(
-                        "hyz-router: router reconciliation succeeded but Tailscale remains degraded: {error}"
+                    logging::message(
+                        Level::Warn,
+                        "tailscale",
+                        "reconcile",
+                        "degraded",
+                        "tailscale_reconcile_degraded",
+                        format_args!("router reconciliation succeeded but Tailscale remains degraded: {error}"),
                     );
                 }
                 if enabled {
@@ -1343,8 +1387,20 @@ impl ControlHandler for ProductionRuntime {
 
 #[tokio::main]
 async fn main() {
-    if let Err(error) = run(std::env::args().skip(1).collect()).await {
-        eprintln!("hyz-router: {error}");
+    if hyz_router::logging::init().is_err() {
+        std::process::exit(1);
+    }
+    if let Err(_error) = run(std::env::args().skip(1).collect()).await {
+        hyz_router::logging::event(
+            hyz_router::logging::Level::Error,
+            "process",
+            "main",
+            "failed",
+            Some("daemon_failed"),
+            None,
+            None,
+            None,
+        );
         std::process::exit(1);
     }
 }
@@ -1583,11 +1639,25 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                         Ok(Ok(Some(false))) => complete = true,
                         Ok(Ok(None)) => {}
                         Ok(Err(error)) => {
-                            eprintln!("hyz-router: deferred VHT80 AP upgrade stopped; HT20 management AP retained: {error}");
+                            logging::message(
+                                Level::Warn,
+                                "wifi",
+                                "vht80_upgrade",
+                                "stopped",
+                                "vht80_upgrade_stopped",
+                                format_args!("deferred VHT80 AP upgrade stopped; HT20 management AP retained: {error}"),
+                            );
                             complete = true;
                         }
                         Err(error) => {
-                            eprintln!("hyz-router: deferred VHT80 AP upgrade worker terminated; HT20 management AP retained: {error}");
+                            logging::message(
+                                Level::Error,
+                                "wifi",
+                                "vht80_upgrade",
+                                "worker_failed",
+                                "vht80_upgrade_worker_failed",
+                                format_args!("deferred VHT80 AP upgrade worker terminated; HT20 management AP retained: {error}"),
+                            );
                             complete = true;
                         }
                     }
@@ -1611,7 +1681,14 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
             tokio::select! {
                 _ = interval.tick() => {
                     if let Err(error) = ethernet_dhcp_runtime.reconcile_ethernet_dhcp().await {
-                        eprintln!("hyz-router: Ethernet DHCP lifecycle reconciliation failed: {error}");
+                        logging::message(
+                            Level::Warn,
+                            "ethernet_dhcp",
+                            "reconcile",
+                            "failed",
+                            "ethernet_dhcp_reconcile_failed",
+                            format_args!("Ethernet DHCP lifecycle reconciliation failed: {error}"),
+                        );
                     }
                 }
                 changed = ethernet_dhcp_shutdown.changed() => {
@@ -1643,7 +1720,16 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                                 Ok(true) => {
                                     runtime_restored = true;
                                     last_restore_error = None;
-                                    eprintln!("hyz-router: deferred WAN, Tailscale, and proxy runtime restoration completed");
+                                    logging::event(
+                                        Level::Info,
+                                        "runtime",
+                                        "restore",
+                                        "completed",
+                                        None,
+                                        None,
+                                        None,
+                                        None,
+                                    );
                                 }
                                 Ok(false) => {
                                     runtime_restored = false;
@@ -1652,7 +1738,14 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                                 Err(error) => {
                                     let detail = error.to_string();
                                     if last_restore_error.as_deref() != Some(detail.as_str()) {
-                                        eprintln!("hyz-router: deferred runtime restoration remains pending: {detail}");
+                                        logging::message(
+                                            Level::Warn,
+                                            "runtime",
+                                            "restore",
+                                            "pending",
+                                            "runtime_restore_pending",
+                                            format_args!("deferred runtime restoration remains pending: {detail}"),
+                                        );
                                         last_restore_error = Some(detail);
                                     }
                                 }
@@ -1663,7 +1756,14 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                             runtime_restored = false;
                             let detail = error.to_string();
                             if last_restore_error.as_deref() != Some(detail.as_str()) {
-                                eprintln!("hyz-router: deferred WAN readiness remains unknown: {detail}");
+                                logging::message(
+                                    Level::Warn,
+                                    "wan",
+                                    "readiness",
+                                    "unknown",
+                                    "wan_readiness_unknown",
+                                    format_args!("deferred WAN readiness remains unknown: {detail}"),
+                                );
                                 last_restore_error = Some(detail);
                             }
                         }
@@ -1685,7 +1785,14 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
             tokio::select! {
                 _ = interval.tick() => {
                     if let Err(error) = timeout_runtime.expire_pending_ap().await {
-                        eprintln!("hyz-router: AP transaction timeout rollback failed: {error}");
+                        logging::message(
+                            Level::Error,
+                            "wifi",
+                            "ap_timeout",
+                            "rollback_failed",
+                            "ap_timeout_rollback_failed",
+                            format_args!("AP transaction timeout rollback failed: {error}"),
+                        );
                     }
                 }
                 changed = timeout_shutdown.changed() => {
