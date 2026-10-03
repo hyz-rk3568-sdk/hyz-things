@@ -1,6 +1,6 @@
 use hyz_camera::{
     adapters::inbound::unix_control::{
-        decode_control_request, ControlOperation, SetRotationRequest,
+        decode_control_request, ControlOperation, SetRotationRequest, SetVolumeRequest,
     },
     domain::{
         pts_ns_to_48khz, pts_ns_to_90khz, validate_offer_sdp, AudioFrame, AudioHub,
@@ -315,6 +315,19 @@ fn set_rotation_operation_is_typed_and_enum_scoped() {
     .is_err());
     assert!(decode_control_request(
         br#"{"version":2,"operation":{"set_rotation":{"rotation":"deg_90","extra":1}}}"#
+    )
+    .is_err());
+}
+
+#[test]
+fn set_volume_operation_is_typed_and_denies_unknown_fields() {
+    let request = br#"{"version":2,"operation":{"set_volume":{"volume_percent":42}}}"#;
+    assert!(matches!(
+        decode_control_request(request).unwrap().operation,
+        ControlOperation::SetVolume(SetVolumeRequest { volume_percent: 42 })
+    ));
+    assert!(decode_control_request(
+        br#"{"version":2,"operation":{"set_volume":{"volume_percent":42,"extra":1}}}"#
     )
     .is_err());
 }

@@ -20,6 +20,7 @@ use std::{
 const USAGE: &str = "Usage: hyz-camera daemon";
 
 fn main() -> Result<(), Box<dyn Error>> {
+    hyz_camera::logging::init()?;
     // 水印按设备本地时区（上海 UTC+8）渲染：clockoverlay 的 strftime 走 glibc
     // localtime，进程未设 TZ 时默认按 UTC 显示。必须在任何时间渲染之前设置。
     std::env::set_var("TZ", hyz_camera::domain::WATERMARK_TIMEZONE);

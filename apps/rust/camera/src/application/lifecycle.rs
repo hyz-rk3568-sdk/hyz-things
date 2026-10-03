@@ -8,6 +8,7 @@ use crate::domain::{
     CameraAccessScope, CameraAudioStatus, CameraErrorCategory, CameraPipelineState, CameraRotation,
     CameraSessionId, CameraStatus, CameraStreamPreset, CameraStreamProfile,
 };
+use hyz_contract::camera::{DEFAULT_SPEAKER_VOLUME_PERCENT, MAX_SPEAKER_VOLUME_PERCENT};
 use std::{
     net::Ipv4Addr,
     sync::{
@@ -35,6 +36,7 @@ struct ApplicationState {
     media: Option<SharedMedia>,
     audio: Option<SharedAudioMedia>,
     audio_supported: bool,
+    speaker_volume_percent: u8,
     sessions: Vec<ActiveSession>,
     last_error: Option<CameraErrorCategory>,
     preset: CameraStreamPreset,
@@ -115,6 +117,7 @@ impl CameraApplication {
                 media: None,
                 audio: None,
                 audio_supported,
+                speaker_volume_percent: DEFAULT_SPEAKER_VOLUME_PERCENT,
                 sessions: Vec::new(),
                 last_error,
                 preset: CameraStreamPreset::default(),
@@ -150,8 +153,30 @@ impl CameraApplication {
             error: state.last_error,
             audio: Some(CameraAudioStatus {
                 supported: state.audio_supported,
+                volume_percent: state.speaker_volume_percent,
             }),
         }
+    }
+
+    pub fn set_volume(&self, volume_percent: u8) -> Result<(), CameraApplicationError> {
+        if volume_percent > MAX_SPEAKER_VOLUME_PERCENT {
+            return Err(CameraApplicationError::InvalidVolume);
+        }
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !state.accepting {
+            return Err(CameraApplicationError::ShuttingDown);
+        }
+        if let Some(audio) = state.audio.as_ref() {
+            audio
+                .running
+                .set_volume(volume_percent)
+                .map_err(CameraApplicationError::Media)?;
+        }
+        state.speaker_volume_percent = volume_percent;
+        Ok(())
     }
 
     pub fn set_profile(&self, preset: CameraStreamPreset) -> Result<(), CameraApplicationError> {
@@ -281,11 +306,14 @@ impl CameraApplication {
                 ));
             }
             if state.audio.is_none() {
-                let running = self.audio.start().map_err(|error| {
-                    state.audio_supported = false;
-                    rollback_created_viewer(&mut state, &frames);
-                    CameraApplicationError::Media(error)
-                })?;
+                let running = self
+                    .audio
+                    .start(state.speaker_volume_percent)
+                    .map_err(|error| {
+                        state.audio_supported = false;
+                        rollback_created_viewer(&mut state, &frames);
+                        CameraApplicationError::Media(error)
+                    })?;
                 state.audio = Some(SharedAudioMedia {
                     running,
                     sessions: Arc::new(AtomicUsize::new(0)),
@@ -567,6 +595,8 @@ pub enum CameraApplicationError {
     InvalidAccessScope,
     #[error("camera stream preset is invalid")]
     InvalidProfile,
+    #[error("speaker volume must be between 0 and 100")]
+    InvalidVolume,
     #[error("camera daemon generation is invalid")]
     InvalidGeneration,
     #[error("camera daemon is shutting down")]
@@ -706,6 +736,7 @@ mod tests {
         state: Arc<AtomicU8>,
         hub: Arc<AudioHub>,
         sink: Arc<FakeAudioSink>,
+        volume: Arc<AtomicU8>,
         /// probe 失败时模拟音频设备缺失（audio.supported=false 降级）。
         probe_fails: bool,
     }
@@ -728,17 +759,19 @@ mod tests {
             }
         }
 
-        fn start(&self) -> Result<Box<dyn RunningAudioMedia>, MediaError> {
+        fn start(&self, volume_percent: u8) -> Result<Box<dyn RunningAudioMedia>, MediaError> {
             if self.probe_fails {
                 return Err(MediaError::AudioPipelineFailed);
             }
             self.starts.fetch_add(1, Ordering::SeqCst);
+            self.volume.store(volume_percent, Ordering::Release);
             self.state.store(1, Ordering::Release);
             Ok(Box::new(FakeRunningAudioMedia {
                 hub: Arc::clone(&self.hub),
                 stop_count: Arc::clone(&self.stop_count),
                 state: Arc::clone(&self.state),
                 sink: Arc::clone(&self.sink),
+                volume: Arc::clone(&self.volume),
             }))
         }
     }
@@ -748,6 +781,7 @@ mod tests {
         stop_count: Arc<AtomicUsize>,
         state: Arc<AtomicU8>,
         sink: Arc<FakeAudioSink>,
+        volume: Arc<AtomicU8>,
     }
 
     impl RunningAudioMedia for FakeRunningAudioMedia {
@@ -757,6 +791,11 @@ mod tests {
 
         fn unsubscribe_capture(&self, queue: &Arc<BoundedAudioQueue>) {
             self.hub.unsubscribe(queue);
+        }
+
+        fn set_volume(&self, volume_percent: u8) -> Result<(), MediaError> {
+            self.volume.store(volume_percent, Ordering::Release);
+            Ok(())
         }
 
         fn terminator(&self) -> Arc<dyn MediaTerminator> {
@@ -1236,7 +1275,10 @@ mod tests {
         assert_eq!(audio.sink.registered_ids().len(), 2);
         assert_eq!(
             app.status().audio,
-            Some(CameraAudioStatus { supported: true })
+            Some(CameraAudioStatus {
+                supported: true,
+                volume_percent: DEFAULT_SPEAKER_VOLUME_PERCENT,
+            })
         );
         app.close_session(&first.session_id).unwrap();
         assert_eq!(audio.stop_count.load(Ordering::SeqCst), 0);
@@ -1282,7 +1324,10 @@ mod tests {
         // probe 失败：camera 仍可用，audio.supported=false。
         assert_eq!(
             app.status().audio,
-            Some(CameraAudioStatus { supported: false })
+            Some(CameraAudioStatus {
+                supported: false,
+                volume_percent: DEFAULT_SPEAKER_VOLUME_PERCENT,
+            })
         );
         assert!(app.status().available);
         // 视频会话照常。
@@ -1306,7 +1351,40 @@ mod tests {
     }
 
     #[test]
-    fn webrtc_create_failure_rolls_back_audio_registration() {
+    fn speaker_volume_defaults_to_full_and_rejects_values_above_100() {
+        let media = Arc::new(FakeMediaPort::default());
+        let audio = Arc::new(FakeAudioPort::default());
+        let webrtc = Arc::new(FakeWebRtcPort::default());
+        let app = CameraApplication::new(media, audio.clone(), webrtc, "test".to_owned()).unwrap();
+
+        assert_eq!(
+            app.status().audio.map(|audio| audio.volume_percent),
+            Some(DEFAULT_SPEAKER_VOLUME_PERCENT)
+        );
+        app.set_volume(42).unwrap();
+        assert_eq!(
+            app.status().audio.map(|audio| audio.volume_percent),
+            Some(42)
+        );
+        let session = app
+            .create_session(CameraAccessKind::Lan, FIXED_LAN_ADDRESS, &audio_offer())
+            .unwrap();
+        assert_eq!(audio.volume.load(Ordering::Acquire), 42);
+        app.set_volume(7).unwrap();
+        assert_eq!(audio.volume.load(Ordering::Acquire), 7);
+        assert_eq!(
+            app.status().audio.map(|audio| audio.volume_percent),
+            Some(7)
+        );
+        app.close_session(&session.session_id).unwrap();
+        assert_eq!(
+            app.set_volume(MAX_SPEAKER_VOLUME_PERCENT.saturating_add(1)),
+            Err(CameraApplicationError::InvalidVolume)
+        );
+    }
+
+    #[test]
+    fn audio_session_creation_failure_rolls_back_resources() {
         let media = Arc::new(FakeMediaPort::default());
         let audio = Arc::new(FakeAudioPort::default());
         let webrtc = Arc::new(FakeWebRtcPort::failing());

@@ -70,6 +70,45 @@ test("serves the generated bundle through the strict production-shaped HTTP boun
   expect(anonymousTailscalePeers.status()).toBe(401);
   const anonymousCameraStatus = await request.get("/api/v1/camera/status");
   expect(anonymousCameraStatus.status()).toBe(200);
+
+  const anonymousCameraVolume = await request.post("/api/v1/control/camera/volume", {
+    headers: { Origin: webOrigin, "X-HYZ-CSRF": csrf },
+    data: { volume_percent: 42 },
+  });
+  expect(anonymousCameraVolume.status()).toBe(200);
+  expect(await anonymousCameraVolume.json()).toEqual({ applied: true });
+  await expect
+    .poll(async () => (await readHarnessState(request)).camera.status.audio.volume_percent)
+    .toBe(42);
+
+  const invalidCameraVolume = await request.post("/api/v1/control/camera/volume", {
+    headers: { Origin: webOrigin, "X-HYZ-CSRF": csrf },
+    data: { volume_percent: 101 },
+  });
+  expect(invalidCameraVolume.status()).toBe(400);
+  expect((await invalidCameraVolume.json()).error.code).toBe("camera_invalid_request");
+
+  const unknownCameraVolumeField = await request.post("/api/v1/control/camera/volume", {
+    headers: { Origin: webOrigin, "X-HYZ-CSRF": csrf },
+    data: { volume_percent: 42, extra: true },
+  });
+  expect(unknownCameraVolumeField.status()).toBe(400);
+
+  const missingCameraVolumeCsrf = await request.post("/api/v1/control/camera/volume", {
+    headers: { Origin: webOrigin },
+    data: { volume_percent: 42 },
+  });
+  expect(missingCameraVolumeCsrf.status()).toBe(403);
+
+  const foreignCameraVolumeOrigin = await request.post("/api/v1/control/camera/volume", {
+    headers: { Origin: "http://evil.example", "X-HYZ-CSRF": csrf },
+    data: { volume_percent: 42 },
+  });
+  expect(foreignCameraVolumeOrigin.status()).toBe(403);
+
+  const cameraVolumeGet = await request.get("/api/v1/control/camera/volume");
+  expect(cameraVolumeGet.status()).toBe(405);
+
   const anonymousCameraCreate = await request.post(
     "/api/v1/control/camera/session/create",
     {

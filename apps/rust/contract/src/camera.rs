@@ -11,6 +11,8 @@ pub const CONTROL_PROTOCOL_VERSION: u16 = 2;
 pub const CONTROL_SOCKET_PATH: &str = "/run/hyz-camera/control.sock";
 pub const MAX_CONTROL_FRAME_BYTES: usize = 64 * 1024;
 pub const CONTROL_REQUEST_DEADLINE: std::time::Duration = std::time::Duration::from_secs(2);
+pub const DEFAULT_SPEAKER_VOLUME_PERCENT: u8 = 100;
+pub const MAX_SPEAKER_VOLUME_PERCENT: u8 = 100;
 
 pub const FIXED_CAPTURE_WIDTH: u16 = 3840;
 pub const FIXED_CAPTURE_HEIGHT: u16 = 2160;
@@ -304,6 +306,12 @@ pub struct CameraStatus {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CameraAudioStatus {
     pub supported: bool,
+    #[serde(default = "default_speaker_volume_percent")]
+    pub volume_percent: u8,
+}
+
+fn default_speaker_volume_percent() -> u8 {
+    DEFAULT_SPEAKER_VOLUME_PERCENT
 }
 
 #[derive(Deserialize, Serialize)]
@@ -321,6 +329,7 @@ pub enum ControlOperation {
     CloseSession(CloseSessionRequest),
     SetProfile(SetProfileRequest),
     SetRotation(SetRotationRequest),
+    SetVolume(SetVolumeRequest),
     Shutdown,
 }
 
@@ -350,6 +359,12 @@ pub struct SetRotationRequest {
     pub rotation: CameraRotation,
 }
 
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SetVolumeRequest {
+    pub volume_percent: u8,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct ControlResponse {
     pub version: u16,
@@ -372,6 +387,7 @@ pub enum ControlResult {
     SessionClosed,
     ProfileSet,
     RotationSet,
+    VolumeSet,
     ShutdownAccepted,
 }
 
@@ -414,6 +430,50 @@ mod tests {
     use super::*;
 
     #[test]
+    fn speaker_volume_request_is_typed_and_defaults_to_full_volume() {
+        let body = serde_json::to_value(ControlRequest {
+            version: CONTROL_PROTOCOL_VERSION,
+            operation: ControlOperation::SetVolume(SetVolumeRequest {
+                volume_percent: DEFAULT_SPEAKER_VOLUME_PERCENT,
+            }),
+        })
+        .unwrap();
+        assert_eq!(body["operation"]["set_volume"]["volume_percent"], 100);
+        assert_eq!(DEFAULT_SPEAKER_VOLUME_PERCENT, 100);
+    }
+
+    #[test]
+    fn status_without_volume_field_defaults_to_full_volume() {
+        let response: ControlResponse = serde_json::from_value(serde_json::json!({
+            "version": CONTROL_PROTOCOL_VERSION,
+            "ok": {
+                "status": {
+                    "available": true,
+                    "pipeline": "stopped",
+                    "active_sessions": 0,
+                    "profile": {
+                        "width": 1280,
+                        "height": 720,
+                        "fps": 30,
+                        "bitrate_bps": 2500000,
+                        "codec": "h264_baseline",
+                        "rotation": "deg_0"
+                    },
+                    "audio": {"supported": true}
+                }
+            }
+        }))
+        .unwrap();
+        let ControlOutcome::Ok(ControlResult::Status(status)) = response.outcome else {
+            panic!("expected camera status response");
+        };
+        assert_eq!(
+            status.audio.map(|audio| audio.volume_percent),
+            Some(DEFAULT_SPEAKER_VOLUME_PERCENT)
+        );
+    }
+
+    #[test]
     fn request_shape_is_versioned_and_typed() {
         let body = serde_json::to_value(ControlRequest {
             version: CONTROL_PROTOCOL_VERSION,
@@ -446,13 +506,16 @@ mod tests {
                     rotation: CameraRotation::Deg90,
                 },
                 error: None,
-                audio: Some(CameraAudioStatus { supported: true }),
+                audio: Some(CameraAudioStatus {
+                    supported: true,
+                    volume_percent: DEFAULT_SPEAKER_VOLUME_PERCENT,
+                }),
             })),
         };
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("h264_baseline"));
         assert!(json.contains("deg_90"));
-        assert!(json.contains("\"audio\":{\"supported\":true}"));
+        assert!(json.contains("\"audio\":{\"supported\":true,\"volume_percent\":100}"));
         let decoded: ControlResponse = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded.version, CONTROL_PROTOCOL_VERSION);
         let ControlOutcome::Ok(ControlResult::Status(status)) = decoded.outcome else {
@@ -460,7 +523,13 @@ mod tests {
         };
         assert_eq!(status.profile.codec, CameraVideoCodec::H264Baseline);
         assert_eq!(status.profile.rotation, CameraRotation::Deg90);
-        assert_eq!(status.audio, Some(CameraAudioStatus { supported: true }));
+        assert_eq!(
+            status.audio,
+            Some(CameraAudioStatus {
+                supported: true,
+                volume_percent: DEFAULT_SPEAKER_VOLUME_PERCENT,
+            })
+        );
     }
 
     #[test]

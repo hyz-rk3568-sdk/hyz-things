@@ -34,6 +34,54 @@ test("renders the dashboard shell and public overview", async ({ page }) => {
   await expectNoHorizontalOverflow(page);
 });
 
+test("controls speaker volume from the System quick controls", async ({ page, request }) => {
+  await page.goto("/");
+  await goToAppPage(page, "系统");
+  const control = page.getByRole("article", { name: "喇叭音量" });
+  const slider = control.getByRole("slider", { name: "喇叭音量" });
+  await expect(slider).toHaveValue("100");
+  await expect(control.getByText(/默认值为 100/)).toBeVisible();
+
+  await slider.fill("42");
+  await expect(slider).toHaveValue("42");
+  await control.getByRole("button", { name: "应用音量", exact: true }).click();
+  await expect(control.getByRole("status")).toHaveText("喇叭音量已应用：42%");
+  await expect
+    .poll(async () => (await readHarnessState(request)).camera.status.audio.volume_percent)
+    .toBe(42);
+  await expect(slider).toHaveValue("42");
+
+  await control.getByRole("button", { name: "静音", exact: true }).click();
+  await expect(control.getByRole("status")).toHaveText("喇叭已静音");
+  await expect
+    .poll(async () => (await readHarnessState(request)).camera.status.audio.volume_percent)
+    .toBe(0);
+  await expect(slider).toHaveValue("0");
+  await expectNoHorizontalOverflow(page);
+});
+
+test("keeps a dirty speaker volume draft while status polling runs", async ({ page, request }) => {
+  await page.goto("/");
+  await goToAppPage(page, "系统");
+  const slider = page.getByRole("slider", { name: "喇叭音量" });
+  await expect(slider).toHaveValue("100");
+
+  await slider.fill("37");
+  await page.waitForTimeout(2_500);
+  await expect(slider).toHaveValue("37");
+  expect((await readHarnessState(request)).camera.status.audio.volume_percent).toBe(100);
+});
+
+test("keeps speaker volume controls usable on a narrow System page", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await goToAppPage(page, "系统");
+  await expect(page.getByRole("article", { name: "喇叭音量" })).toBeVisible();
+  await expect(page.getByRole("slider", { name: "喇叭音量" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "应用音量", exact: true })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
+
 test("renders countdowns on the public Study page without unrelated subscriptions", async ({ page }) => {
   const unrelated: string[] = [];
   page.on("request", request => {

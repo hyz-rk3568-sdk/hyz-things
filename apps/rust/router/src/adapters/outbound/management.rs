@@ -33,6 +33,7 @@ use crate::{
             LAST_GOOD_MAX_AGE_MS,
         },
     },
+    logging::{self, Level},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -645,8 +646,15 @@ impl super::process::LinuxRouterPlatform {
                 if profile != ApRadioProfile::Vht80 {
                     return Err(error);
                 }
-                eprintln!(
-                    "hyz-router: VHT80 AP startup failed; falling back to HT20 management AP: {error}"
+                logging::message(
+                    Level::Warn,
+                    "wifi",
+                    "vht80_startup",
+                    "fallback",
+                    "vht80_startup_failed",
+                    format_args!(
+                        "VHT80 AP startup failed; falling back to HT20 management AP: {error}"
+                    ),
                 );
                 self.start_hostapd_on_channel(&config.ap, channel, ApRadioProfile::Ht20)?;
             }
@@ -673,12 +681,26 @@ impl super::process::LinuxRouterPlatform {
                             recorded_unix_ms: self.unix_time_millis(),
                         };
                         if let Err(error) = write_last_good_channel(&record) {
-                            eprintln!("hyz-router: persist last-good STA channel: {error}");
+                            logging::message(
+                                Level::Warn,
+                                "wifi",
+                                "persist_last_good_channel",
+                                "failed",
+                                "sta_last_good_channel_persist_failed",
+                                format_args!("persist last-good STA channel: {error}"),
+                            );
                         }
                     }
                     Ok(None) => {}
                     Err(error) => {
-                        eprintln!("hyz-router: skip last-good STA channel recording: {error}");
+                        logging::message(
+                            Level::Warn,
+                            "wifi",
+                            "persist_last_good_channel",
+                            "skipped",
+                            "sta_last_good_channel_record_skipped",
+                            format_args!("skip last-good STA channel recording: {error}"),
+                        );
                     }
                 }
             }
@@ -1112,7 +1134,14 @@ impl super::process::LinuxRouterPlatform {
             .collect::<String>();
         if let Err(error) = storage::atomic_write_private(VHT80_UPGRADE_LOG_PATH, record.as_bytes())
         {
-            eprintln!("hyz-router: failed to record VHT80 upgrade diagnostic: {error}");
+            logging::message(
+                Level::Warn,
+                "wifi",
+                "vht80_upgrade",
+                "diagnostic_write_failed",
+                "vht80_diagnostic_write_failed",
+                format_args!("failed to record VHT80 upgrade diagnostic: {error}"),
+            );
         }
     }
 
@@ -1288,17 +1317,29 @@ impl super::process::LinuxRouterPlatform {
                     "result=vht80_enabled channel={} hostapd_status={status}\n",
                     channel.number()
                 ));
-                eprintln!(
-                    "hyz-router: upgraded management AP to VHT80 on channel {}",
-                    channel.number()
+                logging::message(
+                    Level::Info,
+                    "wifi",
+                    "vht80_upgrade",
+                    "enabled",
+                    "vht80_upgrade_enabled",
+                    format_args!(
+                        "upgraded management AP to VHT80 on channel {}",
+                        channel.number()
+                    ),
                 );
                 Ok(Some(true))
             }
             Err(error) => {
                 let vht80_error = sanitize_diagnostic_value(&error.to_string());
                 let vht80_status = self.hostapd_status_diagnostic();
-                eprintln!(
-                    "hyz-router: VHT80 AP upgrade failed; restoring HT20 management AP: {error}"
+                logging::message(
+                    Level::Warn,
+                    "wifi",
+                    "vht80_upgrade",
+                    "restore_ht20",
+                    "vht80_upgrade_failed",
+                    format_args!("VHT80 AP upgrade failed; restoring HT20 management AP: {error}"),
                 );
                 let mut ht20_restore = "reload_ok";
                 if let Err(reload_error) =
@@ -1325,9 +1366,16 @@ impl super::process::LinuxRouterPlatform {
                     "result=ht20_retained channel={} vht80_error={vht80_error} vht80_status={vht80_status} ht20_restore={ht20_restore}\n",
                     channel.number()
                 ));
-                eprintln!(
-                    "hyz-router: retained HT20 management AP on shared channel {}",
-                    channel.number()
+                logging::message(
+                    Level::Info,
+                    "wifi",
+                    "vht80_upgrade",
+                    "ht20_retained",
+                    "vht80_upgrade_not_applied",
+                    format_args!(
+                        "retained HT20 management AP on shared channel {}",
+                        channel.number()
+                    ),
                 );
                 Ok(Some(false))
             }
@@ -1773,8 +1821,15 @@ impl WifiPlatformPort for super::process::LinuxRouterPlatform {
         // a failure: the reconciliation loop converges management, and the status endpoint reports
         // the real observed state (STA/AP/link) which the portal shows for any retry.
         if let Err(error) = self.restart_management_services(&config, false) {
-            eprintln!(
-                "hyz-router: STA commit persisted; management restart deferred to reconcile: {error}"
+            logging::message(
+                Level::Warn,
+                "wifi",
+                "sta_commit",
+                "restart_deferred",
+                "sta_management_restart_deferred",
+                format_args!(
+                    "STA commit persisted; management restart deferred to reconcile: {error}"
+                ),
             );
         }
         Ok(config.summary())
@@ -2055,18 +2110,41 @@ fn read_last_good_channel_at(path: &str) -> Result<Option<LastGoodStaChannel>, P
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => {
-            eprintln!("hyz-router: read last-good STA channel record: {error}");
+            logging::message(
+                Level::Warn,
+                "wifi",
+                "read_last_good_channel",
+                "failed",
+                "sta_last_good_channel_read_failed",
+                format_args!("read last-good STA channel record: {error}"),
+            );
             return Ok(None);
         }
     };
     if bytes.len() > MAX_LAST_GOOD_BYTES {
-        eprintln!("hyz-router: last-good STA channel record exceeds size limit");
+        logging::event(
+            Level::Warn,
+            "wifi",
+            "read_last_good_channel",
+            "too_large",
+            Some("sta_last_good_channel_too_large"),
+            None,
+            None,
+            None,
+        );
         return Ok(None);
     }
     match serde_json::from_slice::<LastGoodStaChannel>(&bytes) {
         Ok(record) => Ok(Some(record)),
         Err(error) => {
-            eprintln!("hyz-router: ignore malformed last-good STA channel record: {error}");
+            logging::message(
+                Level::Warn,
+                "wifi",
+                "read_last_good_channel",
+                "malformed",
+                "sta_last_good_channel_malformed",
+                format_args!("ignore malformed last-good STA channel record: {error}"),
+            );
             Ok(None)
         }
     }

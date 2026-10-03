@@ -1,6 +1,7 @@
 use crate::{
     application::{CameraApplication, CameraApplicationError, CreateSessionResult},
     domain::CameraSessionId,
+    logging::{self, Level},
 };
 use std::{
     fs::{self, OpenOptions},
@@ -25,8 +26,8 @@ use std::{
 pub use hyz_contract::camera::{
     CloseSessionRequest, ControlErrorCode, ControlErrorResponse, ControlOperation, ControlOutcome,
     ControlRequest, ControlResponse, ControlResult, CreateSessionRequest, SessionCreatedResponse,
-    SetProfileRequest, SetRotationRequest, CONTROL_PROTOCOL_VERSION, CONTROL_REQUEST_DEADLINE,
-    CONTROL_SOCKET_PATH, MAX_CONTROL_FRAME_BYTES,
+    SetProfileRequest, SetRotationRequest, SetVolumeRequest, CONTROL_PROTOCOL_VERSION,
+    CONTROL_REQUEST_DEADLINE, CONTROL_SOCKET_PATH, MAX_CONTROL_FRAME_BYTES,
 };
 pub const CONTROL_OWNER_PATH: &str = "/run/hyz-camera/daemon.owner";
 pub const CONTROL_RUNTIME_DIRECTORY: &str = "/run/hyz-camera";
@@ -127,7 +128,14 @@ fn handle_request(
             let created = application
                 .create_session(request.scope, request.address, &request.offer_sdp)
                 .map_err(|error| {
-                    eprintln!("camera: session create rejected: {error:?}");
+                    logging::message(
+                        Level::Warn,
+                        "control",
+                        "create_session",
+                        "rejected",
+                        "camera_session_create_rejected",
+                        format_args!("session create rejected: {error:?}"),
+                    );
                     map_application_error(error)
                 })?;
             ControlResult::SessionCreated(created.into())
@@ -151,6 +159,12 @@ fn handle_request(
                 .set_rotation(request.rotation)
                 .map_err(map_application_error)?;
             ControlResult::RotationSet
+        }
+        ControlOperation::SetVolume(request) => {
+            application
+                .set_volume(request.volume_percent)
+                .map_err(map_application_error)?;
+            ControlResult::VolumeSet
         }
         ControlOperation::Shutdown => {
             application.shutdown().map_err(map_application_error)?;
@@ -201,7 +215,9 @@ fn map_application_error(error: CameraApplicationError) -> ControlErrorCode {
     use crate::application::ports::{MediaError, WebRtcError};
     match error {
         CameraApplicationError::InvalidAccessScope => ControlErrorCode::InvalidAccessScope,
-        CameraApplicationError::InvalidProfile => ControlErrorCode::InvalidRequest,
+        CameraApplicationError::InvalidProfile | CameraApplicationError::InvalidVolume => {
+            ControlErrorCode::InvalidRequest
+        }
         CameraApplicationError::ShuttingDown => ControlErrorCode::ShuttingDown,
         CameraApplicationError::TooManyViewers => ControlErrorCode::ResourceExhausted,
         CameraApplicationError::SessionBusy => ControlErrorCode::SessionBusy,

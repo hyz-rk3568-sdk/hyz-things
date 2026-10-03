@@ -12,6 +12,8 @@ pub(crate) const CAMERA_PROFILE_UPDATE_ENDPOINT: &str = "/api/v1/control/camera/
 
 pub(crate) const CAMERA_ROTATION_UPDATE_ENDPOINT: &str = "/api/v1/control/camera/rotation";
 
+pub(crate) const CAMERA_VOLUME_UPDATE_ENDPOINT: &str = "/api/v1/control/camera/volume";
+
 #[derive(Clone, PartialEq, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CameraViewerTokenDto {
@@ -47,6 +49,18 @@ pub(crate) struct CameraRotationUpdateRequestDto {
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CameraRotationUpdateResponseDto {
+    pub(crate) applied: bool,
+}
+
+#[derive(serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CameraVolumeUpdateRequestDto {
+    pub(crate) volume_percent: u8,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CameraVolumeUpdateResponseDto {
     pub(crate) applied: bool,
 }
 

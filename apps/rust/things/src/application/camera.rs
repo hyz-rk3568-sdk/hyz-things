@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 
 use crate::domain::camera::{
     CameraAccessScope, CameraRotation, CameraStatus, CameraStreamPreset, CAMERA_MAX_SDP_BYTES,
-    CAMERA_MAX_SESSION_ID_BYTES,
+    CAMERA_MAX_SESSION_ID_BYTES, MAX_SPEAKER_VOLUME_PERCENT,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,6 +41,8 @@ pub trait CameraControlPort: Send + Sync {
     async fn set_profile(&self, preset: CameraStreamPreset) -> Result<(), CameraError>;
 
     async fn set_rotation(&self, rotation: CameraRotation) -> Result<(), CameraError>;
+
+    async fn set_volume(&self, volume_percent: u8) -> Result<(), CameraError>;
 }
 
 pub struct CameraApplication {
@@ -159,6 +161,13 @@ impl CameraApplication {
         }
         self.control.set_rotation(rotation).await
     }
+
+    pub async fn set_volume(&self, volume_percent: u8) -> Result<(), CameraError> {
+        if volume_percent > MAX_SPEAKER_VOLUME_PERCENT {
+            return Err(CameraError::InvalidRequest);
+        }
+        self.control.set_volume(volume_percent).await
+    }
 }
 
 #[cfg(test)]
@@ -166,6 +175,7 @@ mod tests {
     use super::*;
     use crate::domain::camera::{
         CameraAccessKind, CameraAudioStatus, CameraPipelineState, CameraStreamProfile,
+        DEFAULT_SPEAKER_VOLUME_PERCENT,
     };
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -198,7 +208,10 @@ mod tests {
                 },
                 access: scope.kind(),
                 error_category: None,
-                audio: Some(CameraAudioStatus { supported: true }),
+                audio: Some(CameraAudioStatus {
+                    supported: true,
+                    volume_percent: DEFAULT_SPEAKER_VOLUME_PERCENT,
+                }),
             })
         }
 
@@ -224,6 +237,10 @@ mod tests {
         }
 
         async fn set_rotation(&self, _rotation: CameraRotation) -> Result<(), CameraError> {
+            Ok(())
+        }
+
+        async fn set_volume(&self, _volume_percent: u8) -> Result<(), CameraError> {
             Ok(())
         }
     }

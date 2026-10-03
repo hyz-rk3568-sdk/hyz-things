@@ -14,8 +14,10 @@ use std::{
     os::unix::fs::OpenOptionsExt,
     path::Path,
     sync::Arc,
+    time::Duration,
 };
 
+use tokio::task::JoinSet;
 use tokio_rustls::{
     rustls::{
         pki_types::{
@@ -163,12 +165,47 @@ fn server_acceptor(
     Ok(TlsAcceptor::from(Arc::new(config)))
 }
 
+const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_PENDING_TLS_HANDSHAKES: usize = 32;
+
+enum HandshakeOutcome {
+    Accepted(
+        Box<tokio_rustls::server::TlsStream<tokio::net::TcpStream>>,
+        SocketAddr,
+    ),
+    Rejected {
+        peer: SocketAddr,
+        timed_out: bool,
+    },
+}
+
+async fn complete_handshake(
+    acceptor: TlsAcceptor,
+    stream: tokio::net::TcpStream,
+    peer: SocketAddr,
+) -> HandshakeOutcome {
+    match tokio::time::timeout(TLS_HANDSHAKE_TIMEOUT, acceptor.accept(stream)).await {
+        Ok(Ok(tls_stream)) => HandshakeOutcome::Accepted(Box::new(tls_stream), peer),
+        Ok(Err(_error)) => HandshakeOutcome::Rejected {
+            peer,
+            timed_out: false,
+        },
+        Err(_elapsed) => HandshakeOutcome::Rejected {
+            peer,
+            timed_out: true,
+        },
+    }
+}
+
 /// Terminates TLS on top of any plain TCP `axum::serve::Listener`, so the LAN
-/// and Tailscale management listeners share one TLS identity. Handshake
-/// failures drop the connection and keep the accept loop serving.
+/// and Tailscale management listeners share one TLS identity. Handshakes run
+/// concurrently with a fixed limit and timeout so an incomplete client cannot
+/// block later connections.
 pub struct TlsListener<L> {
     inner: L,
     acceptor: TlsAcceptor,
+    handshakes: JoinSet<HandshakeOutcome>,
+    pending_handshakes: usize,
 }
 
 impl<L> TlsListener<L>
@@ -176,7 +213,12 @@ where
     L: axum::serve::Listener<Io = tokio::net::TcpStream, Addr = SocketAddr>,
 {
     pub fn new(inner: L, acceptor: TlsAcceptor) -> Self {
-        Self { inner, acceptor }
+        Self {
+            inner,
+            acceptor,
+            handshakes: JoinSet::new(),
+            pending_handshakes: 0,
+        }
     }
 }
 
@@ -189,21 +231,38 @@ where
 
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
         loop {
-            let (stream, peer) = self.inner.accept().await;
-            match self.acceptor.accept(stream).await {
-                Ok(tls_stream) => return (tls_stream, peer),
-                Err(_error) => {
-                    let _ = peer;
-                    logging::event(
-                        Level::Warn,
-                        "tls",
-                        "handshake",
-                        "request_rejected",
-                        Some("tls_handshake_failed"),
-                        None,
-                        None,
-                        None,
-                    );
+            if self.pending_handshakes >= MAX_PENDING_TLS_HANDSHAKES {
+                match self.handshakes.join_next().await {
+                    Some(result) => {
+                        self.pending_handshakes -= 1;
+                        if let Some(accepted) = self.handle_handshake_result(result) {
+                            return accepted;
+                        }
+                    }
+                    None => self.pending_handshakes = 0,
+                }
+                continue;
+            }
+
+            tokio::select! {
+                biased;
+                result = self.handshakes.join_next(), if self.pending_handshakes > 0 => {
+                    match result {
+                        Some(result) => {
+                            self.pending_handshakes -= 1;
+                            if let Some(accepted) = self.handle_handshake_result(result) {
+                                return accepted;
+                            }
+                        }
+                        None => self.pending_handshakes = 0,
+                    }
+                }
+                (stream, peer) = self.inner.accept() => {
+                    let acceptor = self.acceptor.clone();
+                    self.handshakes.spawn(async move {
+                        complete_handshake(acceptor, stream, peer).await
+                    });
+                    self.pending_handshakes += 1;
                 }
             }
         }
@@ -214,10 +273,46 @@ where
     }
 }
 
+impl<L> TlsListener<L>
+where
+    L: axum::serve::Listener<Io = tokio::net::TcpStream, Addr = SocketAddr>,
+{
+    fn handle_handshake_result(
+        &self,
+        result: Result<HandshakeOutcome, tokio::task::JoinError>,
+    ) -> Option<(
+        tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
+        SocketAddr,
+    )> {
+        match result {
+            Ok(HandshakeOutcome::Accepted(stream, peer)) => Some((*stream, peer)),
+            Ok(HandshakeOutcome::Rejected { peer, timed_out }) => {
+                let listener = self.inner.local_addr().unwrap_or(peer);
+                logging::tls_handshake_result(listener, peer, timed_out);
+                None
+            }
+            Err(_error) => {
+                logging::event(
+                    Level::Error,
+                    "tls",
+                    "handshake",
+                    "worker_failed",
+                    Some("tls_handshake_worker_failed"),
+                    None,
+                    None,
+                    None,
+                );
+                None
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
+    use axum::serve::Listener;
+    use std::{os::unix::fs::PermissionsExt, time::Duration};
 
     #[test]
     fn generated_self_signed_identity_round_trips() {
@@ -270,5 +365,129 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&directory).ok();
+    }
+
+    #[derive(Debug)]
+    struct SkipServerVerification(Arc<tokio_rustls::rustls::crypto::CryptoProvider>);
+
+    impl SkipServerVerification {
+        fn new() -> Arc<Self> {
+            Arc::new(Self(Arc::new(
+                tokio_rustls::rustls::crypto::ring::default_provider(),
+            )))
+        }
+    }
+
+    impl tokio_rustls::rustls::client::danger::ServerCertVerifier for SkipServerVerification {
+        fn verify_server_cert(
+            &self,
+            _end_entity: &CertificateDer<'_>,
+            _intermediates: &[CertificateDer<'_>],
+            _server_name: &tokio_rustls::rustls::pki_types::ServerName<'_>,
+            _ocsp: &[u8],
+            _now: tokio_rustls::rustls::pki_types::UnixTime,
+        ) -> Result<
+            tokio_rustls::rustls::client::danger::ServerCertVerified,
+            tokio_rustls::rustls::Error,
+        > {
+            Ok(tokio_rustls::rustls::client::danger::ServerCertVerified::assertion())
+        }
+
+        fn verify_tls12_signature(
+            &self,
+            message: &[u8],
+            cert: &CertificateDer<'_>,
+            dss: &tokio_rustls::rustls::DigitallySignedStruct,
+        ) -> Result<
+            tokio_rustls::rustls::client::danger::HandshakeSignatureValid,
+            tokio_rustls::rustls::Error,
+        > {
+            tokio_rustls::rustls::crypto::verify_tls12_signature(
+                message,
+                cert,
+                dss,
+                &self.0.signature_verification_algorithms,
+            )
+        }
+
+        fn verify_tls13_signature(
+            &self,
+            message: &[u8],
+            cert: &CertificateDer<'_>,
+            dss: &tokio_rustls::rustls::DigitallySignedStruct,
+        ) -> Result<
+            tokio_rustls::rustls::client::danger::HandshakeSignatureValid,
+            tokio_rustls::rustls::Error,
+        > {
+            tokio_rustls::rustls::crypto::verify_tls13_signature(
+                message,
+                cert,
+                dss,
+                &self.0.signature_verification_algorithms,
+            )
+        }
+
+        fn supported_verify_schemes(&self) -> Vec<tokio_rustls::rustls::SignatureScheme> {
+            self.0.signature_verification_algorithms.supported_schemes()
+        }
+    }
+
+    fn test_acceptor() -> TlsAcceptor {
+        let key_pair = rcgen::KeyPair::generate().expect("generate test key");
+        let params = rcgen::CertificateParams::new(vec!["localhost".to_owned()])
+            .expect("create test certificate parameters");
+        let certificate = params
+            .self_signed(&key_pair)
+            .expect("create test certificate");
+        let private_key =
+            PrivateKeyDer::try_from(key_pair.serialize_der()).expect("serialize test private key");
+        server_acceptor(vec![certificate.der().clone()], private_key)
+            .expect("create test TLS acceptor")
+    }
+
+    #[tokio::test]
+    async fn incomplete_tls_handshake_does_not_block_later_client() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind test listener");
+        let address = listener.local_addr().expect("read test listener address");
+        let accept_task = tokio::spawn(async move {
+            let mut listener = TlsListener::new(listener, test_acceptor());
+            listener.accept().await
+        });
+
+        let stalled = tokio::net::TcpStream::connect(address)
+            .await
+            .expect("connect stalled client");
+        tokio::time::sleep(Duration::from_millis(25)).await;
+
+        let client_config = tokio_rustls::rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(SkipServerVerification::new())
+            .with_no_client_auth();
+        let connector = tokio_rustls::TlsConnector::from(Arc::new(client_config));
+        let client_stream = tokio::net::TcpStream::connect(address)
+            .await
+            .expect("connect valid client");
+        let client_peer = client_stream
+            .local_addr()
+            .expect("read valid client address");
+        let server_name =
+            tokio_rustls::rustls::pki_types::ServerName::try_from("localhost".to_owned())
+                .expect("create server name");
+        let _client_tls = tokio::time::timeout(
+            Duration::from_secs(1),
+            connector.connect(server_name, client_stream),
+        )
+        .await
+        .expect("valid client handshake must not wait for stalled client")
+        .expect("valid client handshake");
+
+        let (_server_tls, peer) = tokio::time::timeout(Duration::from_secs(1), accept_task)
+            .await
+            .expect("server must accept valid client")
+            .expect("server accept task");
+        assert_eq!(peer, client_peer);
+        drop(stalled);
     }
 }
