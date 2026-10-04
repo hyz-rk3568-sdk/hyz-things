@@ -19,7 +19,7 @@ use hyz_router::{
     },
     application::{
         device_policy::DevicePolicyApplication,
-        dhcp::{DhcpApplication, DhcpEvent, DhcpPlatformPort},
+        dhcp::{DhcpApplication, DhcpEvent, DhcpPlatformPort, DhcpTransition},
         ethernet_dhcp::EthernetDhcpLifecycleApplication,
         fail_open::{MihomoFailOpenApplication, WatcherInvocation},
         ota::{InstallMode, OtaService},
@@ -217,6 +217,10 @@ struct DhcpDispatch {
     event: DhcpEvent,
 }
 
+fn dhcp_transition_requires_runtime_reconcile(transition: &DhcpTransition) -> bool {
+    matches!(transition, DhcpTransition::Lease { .. })
+}
+
 enum DhcpWorkerCommand {
     Dispatch(DhcpDispatch),
     Stop,
@@ -284,24 +288,33 @@ impl DhcpDispatcher {
                     break;
                 };
                 let DhcpDispatch { event } = dispatch;
+                let requires_runtime_reconcile =
+                    dhcp_transition_requires_runtime_reconcile(&event.transition);
                 let platform = router.clone();
-                let result = tokio::task::spawn_blocking(move || {
-                    if platform.active_dhcp_generation(event.uplink)?.as_ref()
-                        != Some(&event.generation)
-                    {
-                        return Err(PlatformError::Conflict(
-                            "DHCP callback generation is stale".to_owned(),
-                        ));
-                    }
-                    DhcpApplication::new(platform.as_ref(), platform.as_ref()).execute(&event)
-                })
-                .await
-                .map_err(|_| {
-                    PlatformError::CommandFailed("DHCP worker terminated unexpectedly".to_owned())
-                })
-                .and_then(|result| result);
+                let result = runtime_serial
+                    .run(|| async move {
+                        tokio::task::spawn_blocking(move || {
+                            if platform.active_dhcp_generation(event.uplink)?.as_ref()
+                                != Some(&event.generation)
+                            {
+                                return Err(PlatformError::Conflict(
+                                    "DHCP callback generation is stale".to_owned(),
+                                ));
+                            }
+                            DhcpApplication::new(platform.as_ref(), platform.as_ref())
+                                .execute(&event)
+                        })
+                        .await
+                        .map_err(|_| {
+                            PlatformError::CommandFailed(
+                                "DHCP worker terminated unexpectedly".to_owned(),
+                            )
+                        })
+                        .and_then(|result| result)
+                    })
+                    .await;
                 match result {
-                    Ok(()) => {
+                    Ok(()) if requires_runtime_reconcile => {
                         // The lifecycle lease is released before this follow-up. The shared runtime
                         // serial prevents it from interleaving with Ethernet, deferred, or control
                         // reconciliation.
@@ -338,6 +351,7 @@ impl DhcpDispatcher {
                             ),
                         }
                     }
+                    Ok(()) => {}
                     Err(error) => logging::message(
                         Level::Warn,
                         "dhcp",
@@ -2132,7 +2146,10 @@ fn usage_error(message: &'static str) -> Box<dyn Error> {
 
 #[cfg(test)]
 mod source_boundaries {
-    use super::{platform_control_error, PlatformError};
+    use super::{
+        dhcp_transition_requires_runtime_reconcile, platform_control_error, DhcpTransition,
+        PlatformError,
+    };
 
     #[test]
     fn control_error_codes_keep_subsystem_and_failure_kind() {
@@ -2335,5 +2352,37 @@ mod source_boundaries {
             "DhcpDispatcher::new(router.clone(), tailscale.clone(), runtime_serial.clone())"
         ));
         assert!(production.contains("router_proxy: runtime_serial"));
+    }
+
+    #[test]
+    fn dhcp_callback_lifecycle_uses_the_shared_runtime_serial() {
+        let production = include_str!("main.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let serial = production.find("let result = runtime_serial").unwrap();
+        let active_generation = production
+            .find("platform.active_dhcp_generation(event.uplink)")
+            .unwrap();
+        assert!(serial < active_generation);
+    }
+
+    #[test]
+    fn dhcp_deconfig_does_not_trigger_runtime_follow_up() {
+        assert!(!dhcp_transition_requires_runtime_reconcile(
+            &DhcpTransition::Deconfig
+        ));
+    }
+
+    #[test]
+    fn dhcp_no_change_does_not_trigger_runtime_follow_up() {
+        let production = include_str!("main.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(production.contains("Ok(()) if requires_runtime_reconcile"));
+        assert!(!dhcp_transition_requires_runtime_reconcile(
+            &DhcpTransition::NoChange
+        ));
     }
 }
