@@ -23,6 +23,16 @@ struct CardsLibraryProps {
 }
 
 #[derive(Properties, PartialEq)]
+struct StudyScopePickerProps {
+    decks: Vec<DeckSummary>,
+    tags: Vec<TagSummary>,
+    route: PortalRoute,
+    route_state: UseStateHandle<PortalRoute>,
+    view: StudyView,
+    test_prefix: String,
+}
+
+#[derive(Properties, PartialEq)]
 struct StudyReviewProps {
     state: UseReducerHandle<AppState>,
     route: PortalRoute,
@@ -290,17 +300,18 @@ fn study_metric(props: &StudyMetricProps) -> Html {
     }
 }
 
-#[function_component(CardsLibrary)]
-fn cards_library(props: &CardsLibraryProps) -> Html {
+#[function_component(StudyScopePicker)]
+fn study_scope_picker(props: &StudyScopePickerProps) -> Html {
     let on_deck = {
         let route_state = props.route_state.clone();
         let tags = props.route.study_tags.clone();
+        let view = props.view;
         Callback::from(move |event: web_sys::Event| {
             let value = event.target_unchecked_into::<HtmlSelectElement>().value();
             let deck = (!value.is_empty()).then_some(value);
             navigate_route(
                 &route_state,
-                PortalRoute::study(StudyView::Cards, deck, tags.clone()),
+                PortalRoute::study(view, deck, tags.clone()),
                 false,
             );
         })
@@ -312,6 +323,7 @@ fn cards_library(props: &CardsLibraryProps) -> Html {
         let route_state = props.route_state.clone();
         let current_deck = deck.clone();
         let current_tags = props.route.study_tags.clone();
+        let view = props.view;
         let tag_value = tag.tag.clone();
         let onclick = Callback::from(move |_| {
             let mut next_tags = current_tags.clone();
@@ -322,7 +334,7 @@ fn cards_library(props: &CardsLibraryProps) -> Html {
             }
             navigate_route(
                 &route_state,
-                PortalRoute::study(StudyView::Cards, current_deck.clone(), next_tags),
+                PortalRoute::study(view, current_deck.clone(), next_tags),
                 false,
             );
         });
@@ -337,7 +349,32 @@ fn cards_library(props: &CardsLibraryProps) -> Html {
             </button>
         }
     });
+    let prefix = props.test_prefix.as_str();
 
+    html! {
+        <div class="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]" data-testid={format!("{prefix}-scope")}>
+            <label class={FIELD}>
+                <span class={FIELD_LABEL}>{"Deck"}</span>
+                <select class={SELECT} data-testid={format!("{prefix}-deck-filter")} onchange={on_deck}>
+                    <option value="" selected={props.route.study_deck.is_none()}>{"全部 Deck"}</option>
+                    {for props.decks.iter().map(|item| html! {
+                        <option value={item.path.clone()} selected={props.route.study_deck.as_deref() == Some(item.path.as_str())}>{format!("{} ({})", item.path, item.card_count)}</option>
+                    })}
+                </select>
+            </label>
+            <div class="grid gap-2">
+                <span class={FIELD_LABEL}>{"Tag"}</span>
+                <div class="flex flex-wrap gap-2" data-testid={format!("{prefix}-tag-filter")}>
+                    {for tag_buttons}
+                    if props.tags.is_empty() { <span class={HELP_TEXT}>{"暂无 Tag"}</span> }
+                </div>
+            </div>
+        </div>
+    }
+}
+
+#[function_component(CardsLibrary)]
+fn cards_library(props: &CardsLibraryProps) -> Html {
     html! {
         <SectionCard title_id="study-card-library-title">
             <div class={SECTION_HEAD}>
@@ -347,24 +384,14 @@ fn cards_library(props: &CardsLibraryProps) -> Html {
                 </div>
                 <span class={SECTION_META}>{props.cards.as_ref().map_or("读取中…".to_owned(), |cards| format!("{} 张卡片", cards.len()))}</span>
             </div>
-            <div class="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-                <label class={FIELD}>
-                    <span class={FIELD_LABEL}>{"Deck"}</span>
-                    <select class={SELECT} data-testid="study-deck-filter" onchange={on_deck}>
-                        <option value="" selected={props.route.study_deck.is_none()}>{"全部 Deck"}</option>
-                        {for props.decks.iter().map(|item| html! {
-                            <option value={item.path.clone()} selected={props.route.study_deck.as_deref() == Some(item.path.as_str())}>{format!("{} ({})", item.path, item.card_count)}</option>
-                        })}
-                    </select>
-                </label>
-                <div class="grid gap-2">
-                    <span class={FIELD_LABEL}>{"Tag"}</span>
-                    <div class="flex flex-wrap gap-2" data-testid="study-tag-filter">
-                        {for tag_buttons}
-                        if props.tags.is_empty() { <span class={HELP_TEXT}>{"暂无 Tag"}</span> }
-                    </div>
-                </div>
-            </div>
+            <StudyScopePicker
+                decks={props.decks.clone()}
+                tags={props.tags.clone()}
+                route={props.route.clone()}
+                route_state={props.route_state.clone()}
+                view={StudyView::Cards}
+                test_prefix={"study".to_owned()}
+            />
             if let Some(error) = &props.error {
                 <ErrorState message={format!("卡片库读取失败：{error}")} />
             } else if let Some(cards) = &props.cards {
@@ -416,6 +443,35 @@ fn study_review(props: &StudyReviewProps) -> Html {
     let current_index = use_state(|| 0_usize);
     let answer_shown = use_state(|| false);
     let review_busy = use_state(|| false);
+    let decks = use_state(Vec::<DeckSummary>::new);
+    let tags = use_state(Vec::<TagSummary>::new);
+    let scope_error = use_state(|| None::<String>);
+
+    {
+        let decks = decks.clone();
+        let tags = tags.clone();
+        let scope_error = scope_error.clone();
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                let mut errors = Vec::new();
+                match fetch_json_typed::<StudyDecksResponse>(STUDY_DECKS_ENDPOINT, "Deck 列表")
+                    .await
+                {
+                    Ok(response) => decks.set(response.decks),
+                    Err(error) => errors.push(error.to_string()),
+                }
+                match fetch_json_typed::<StudyTagsResponse>(STUDY_TAGS_ENDPOINT, "Tag 列表").await
+                {
+                    Ok(response) => tags.set(response.tags),
+                    Err(error) => errors.push(error.to_string()),
+                }
+                if !errors.is_empty() {
+                    scope_error.set(Some(format!("复习范围读取失败：{}", errors.join("；"))));
+                }
+            });
+            || ()
+        });
+    }
 
     let filter_dependencies = (
         props.route.study_deck.clone(),
@@ -606,6 +662,23 @@ fn study_review(props: &StudyReviewProps) -> Html {
                 </div>
             </header>
             <main class="mx-auto grid w-full max-w-5xl gap-5 py-8">
+                <section class="grid gap-4 rounded-box border border-base-content/10 bg-base-100/60 p-4 shadow-sm sm:p-5">
+                    <div>
+                        <h2 class={SECTION_TITLE}>{"复习范围"}</h2>
+                        <p class={SECTION_META}>{"选择 Deck 和 Tag 后，复习队列会立即更新；多个 Tag 同时满足。"}</p>
+                    </div>
+                    <StudyScopePicker
+                        decks={(*decks).clone()}
+                        tags={(*tags).clone()}
+                        route={props.route.clone()}
+                        route_state={props.route_state.clone()}
+                        view={StudyView::Review}
+                        test_prefix={"study-review".to_owned()}
+                    />
+                    if let Some(error) = (*scope_error).clone() {
+                        <p class={HELP_TEXT} role="alert">{error}</p>
+                    }
+                </section>
                 <div class="flex items-center justify-between gap-3 text-sm text-base-content/65">
                     <span>{if position == 0 { "复习队列".to_owned() } else { format!("{position} / {}", *total_count) }}</span>
                     <span>{"Space 显示答案 · 1 / 2 / 3 评分"}</span>

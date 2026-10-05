@@ -42,6 +42,22 @@ test("opens an immersive review route, reveals the answer, and records Good", as
   await expect(page.getByTestId("study-review-complete")).toBeVisible();
 });
 
+test("lets review choose its own Deck and Tag scope", async ({ page }) => {
+  await page.goto("/#/study/review");
+  await expect(page.getByTestId("study-review-scope")).toBeVisible();
+  await expect(page.getByTestId("study-review-deck-filter")).toBeVisible();
+
+  await page.getByTestId("study-review-deck-filter").selectOption("资料分析");
+  await expect(page).toHaveURL(/#\/study\/review\?deck=/);
+  await expect(page.getByTestId("study-review-card")).toContainText("资料分析");
+
+  await page
+    .getByTestId("study-review-tag-filter")
+    .getByRole("button", { name: /高频 \(2\)/ })
+    .click();
+  await expect(page).toHaveURL(/#\/study\/review\?deck=.*tag=/);
+  await expect(page.getByTestId("study-review-card")).toContainText("基期量公式？");
+});
 test("protects sync while keeping card reads and invalid anonymous review public", async ({
   request,
 }) => {
