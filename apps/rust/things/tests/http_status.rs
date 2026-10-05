@@ -274,10 +274,10 @@ async fn serves_partial_degraded_status_with_strict_http_policy() {
     assert!(root_not_modified.contains(&format!("etag: {root_etag}")));
     let bootstrap_path = root
         .split("src=\"")
-        .nth(1)
-        .and_then(|value| value.split('"').next())
+        .skip(1)
+        .filter_map(|value| value.split('"').next())
+        .find(|path| path.starts_with("/router-bootstrap.js?v="))
         .expect("versioned bootstrap src");
-    assert!(bootstrap_path.starts_with("/router-bootstrap.js?v="));
     assert_eq!(bootstrap_path.len(), "/router-bootstrap.js?v=".len() + 16);
 
     let bootstrap_address = server_address(&server, address);

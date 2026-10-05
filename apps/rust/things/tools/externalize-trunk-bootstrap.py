@@ -29,13 +29,9 @@ def main() -> None:
 
     html = index.read_text(encoding="utf-8")
     scripts = list(SCRIPT.finditer(html))
-    inline_modules = [
-        script
-        for script in scripts
-        if MODULE_TYPE.search(script.group("attrs"))
-        and not SRC_ATTRIBUTE.search(script.group("attrs"))
-    ]
-    if len(scripts) != 1 or len(inline_modules) != 1:
+    inline_scripts = [script for script in scripts if not SRC_ATTRIBUTE.search(script.group("attrs"))]
+    inline_modules = [script for script in inline_scripts if MODULE_TYPE.search(script.group("attrs"))]
+    if len(inline_scripts) != 1 or len(inline_modules) != 1:
         fail("expected exactly one inline Trunk module bootstrap")
 
     script = inline_modules[0]
@@ -51,7 +47,7 @@ def main() -> None:
     )
     rewritten = html[: script.start()] + external_tag + html[script.end() :]
     remaining = list(SCRIPT.finditer(rewritten))
-    if len(remaining) != 1 or not SRC_ATTRIBUTE.search(remaining[0].group("attrs")):
+    if any(not SRC_ATTRIBUTE.search(script.group("attrs")) for script in remaining):
         fail("rewritten HTML still contains an inline script")
 
     bootstrap.write_text(body + "\n", encoding="utf-8", newline="\n")

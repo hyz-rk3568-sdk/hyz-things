@@ -16,10 +16,13 @@ use hyz_contract::router::{ControlOperation, ControlResult};
 use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::{
-    adapters::inbound::http::{app_with_admin_camera_control_at_address, TlsListener},
+    adapters::inbound::http::{
+        app_with_admin_camera_control_at_address_and_flashcards, TlsListener,
+    },
     application::{
         admin::AdminApplication,
         camera::CameraApplication,
+        flashcards::FlashcardApplication,
         ports::{ClockPort, PlatformError, PortalControlHandler},
         status::PortalStatus,
     },
@@ -128,7 +131,7 @@ impl TailscaleListenerManager {
             listener,
             accept_stopped: Some(accept_stopped),
         };
-        let http_app = app_with_admin_camera_control_at_address(
+        let http_app = app_with_admin_camera_control_at_address_and_flashcards(
             app.status,
             app.control,
             app.admin,
@@ -137,6 +140,8 @@ impl TailscaleListenerManager {
             ipv4,
             TAILSCALE_MANAGEMENT_HTTP_PORT,
             true,
+            app.flashcards,
+            app.flashcard_source,
         );
         let tls_listener = TlsListener::new(listener, app.tls.clone());
         let runtime = app.runtime.clone();
@@ -256,6 +261,9 @@ pub struct PortalListenerApp {
     pub control: Arc<dyn PortalControlHandler>,
     pub admin: Arc<AdminApplication>,
     pub camera: Arc<CameraApplication>,
+    pub flashcards: Option<Arc<FlashcardApplication>>,
+    pub flashcard_source:
+        Option<Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>>,
     pub csrf_token: String,
     pub runtime: tokio::runtime::Handle,
     pub clock: Arc<dyn ClockPort>,
