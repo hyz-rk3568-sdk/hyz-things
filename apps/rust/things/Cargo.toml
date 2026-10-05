@@ -15,7 +15,11 @@ native = [
   "dep:argon2",
   "dep:async-trait",
   "dep:axum",
+  "dep:chrono",
   "dep:hyz-logging",
+  "dep:rs-fsrs",
+  "dep:sqlx",
+  "dep:uuid",
   "dep:getrandom",
   "dep:libc",
   "dep:mime_guess",
@@ -32,6 +36,7 @@ web = [
   "dep:hyz-contract",
   "dep:gloo-net",
   "dep:gloo-timers",
+  "dep:pulldown-cmark",
   "dep:js-sys",
   "dep:wasm-bindgen",
   "dep:wasm-bindgen-futures",
@@ -49,14 +54,19 @@ zeroize = "1.9.0"
 argon2 = { version = "0.5", optional = true }
 async-trait = { version = "0.1", optional = true }
 axum = { version = "0.8", optional = true }
+chrono = { version = "0.4", features = ["clock"], optional = true }
 getrandom = { version = "0.3", optional = true }
 libc = { version = "0.2", optional = true }
 mime_guess = { version = "2", optional = true }
+pulldown-cmark = { version = "0.13.1", default-features = false, features = ["html"], optional = true }
+rs-fsrs = { version = "1.2.1", optional = true }
 serde_json = { version = "1", optional = true }
 sha2 = { version = "0.11.0", optional = true }
+sqlx = { version = "0.8.6", default-features = false, features = ["sqlite", "runtime-tokio", "macros", "migrate"], optional = true }
 socket2 = { version = "0.6", optional = true }
 tar = { version = "0.4", optional = true }
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"], optional = true }
+uuid = { version = "1.16", default-features = false, features = ["std", "v7"], optional = true }
 
 gloo-net = { version = "0.6", features = ["json"], optional = true }
 gloo-timers = { version = "0.3", features = ["futures"], optional = true }

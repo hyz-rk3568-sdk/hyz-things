@@ -172,7 +172,7 @@ fn dispatch_page_resources(state: UseReducerHandle<AppState>, page: AppPage, is_
     if page.protected()
         || matches!(
             page,
-            AppPage::Overview | AppPage::Proxy | AppPage::Camera | AppPage::System
+            AppPage::Overview | AppPage::Study | AppPage::Proxy | AppPage::Camera | AppPage::System
         )
     {
         dispatch_panel_refresh(state.clone());
@@ -427,6 +427,10 @@ pub(crate) fn app() -> Html {
         );
     }
 
+    if page == AppPage::Study && route.study_view == StudyView::Review {
+        return render_study_review(state.clone(), (*route).clone(), route.clone());
+    }
+
     let admin_csrf = state
         .panel
         .as_ref()
@@ -500,7 +504,7 @@ pub(crate) fn app() -> Html {
             on_pointer_cancel={on_portal_pointer_cancel}
         >
             <section id={AppPage::Overview.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={AppPage::Overview.tab_id()} hidden={page != AppPage::Overview}>{render_overview(&state)}</section>
-            <section id={AppPage::Study.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={AppPage::Study.tab_id()} hidden={page != AppPage::Study}>{render_study()}</section>
+            <section id={AppPage::Study.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={AppPage::Study.tab_id()} hidden={page != AppPage::Study}>{render_study(state.clone(), (*route).clone(), route.clone(), is_admin)}</section>
             <section id={AppPage::Network.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={AppPage::Network.tab_id()} hidden={page != AppPage::Network}>
                 if is_admin { <Settings state={state.clone()} camera_stop_generation={camera_stop_generation.clone()} /> } else if page == AppPage::Network { <AdminAuthGate state={state.clone()} /> }
             </section>

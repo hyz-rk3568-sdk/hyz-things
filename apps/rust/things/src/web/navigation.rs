@@ -2,6 +2,23 @@ use super::*;
 use hyz_things::domain::device_policy::LanDeviceMac;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum StudyView {
+    Dashboard,
+    Cards,
+    Review,
+}
+
+impl StudyView {
+    pub(crate) const fn slug(self) -> &'static str {
+        match self {
+            Self::Dashboard => "study",
+            Self::Cards => "study/cards",
+            Self::Review => "study/review",
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum AppPage {
     Overview,
     Study,
@@ -124,6 +141,9 @@ pub(crate) struct PortalRoute {
     pub(crate) page: AppPage,
     pub(crate) device_id: Option<String>,
     pub(crate) device_filter: Option<String>,
+    pub(crate) study_view: StudyView,
+    pub(crate) study_deck: Option<String>,
+    pub(crate) study_tags: Vec<String>,
 }
 
 impl PortalRoute {
@@ -132,6 +152,22 @@ impl PortalRoute {
             page,
             device_id: None,
             device_filter: None,
+            study_view: StudyView::Dashboard,
+            study_deck: None,
+            study_tags: Vec::new(),
+        }
+    }
+
+    pub(crate) fn study(view: StudyView, deck: Option<String>, mut tags: Vec<String>) -> Self {
+        tags.sort();
+        tags.dedup();
+        Self {
+            page: AppPage::Study,
+            device_id: None,
+            device_filter: None,
+            study_view: view,
+            study_deck: deck,
+            study_tags: tags,
         }
     }
 
@@ -140,12 +176,32 @@ impl PortalRoute {
             page: AppPage::Devices,
             device_id,
             device_filter,
+            study_view: StudyView::Dashboard,
+            study_deck: None,
+            study_tags: Vec::new(),
         }
     }
 
     pub(crate) fn hash(&self) -> String {
-        let mut hash = format!("#/{}", self.page.slug());
-        if self.page == AppPage::Devices {
+        let mut hash = if self.page == AppPage::Study {
+            format!("#/{}", self.study_view.slug())
+        } else {
+            format!("#/{}", self.page.slug())
+        };
+        if self.page == AppPage::Study {
+            let mut query = url::form_urlencoded::Serializer::new(String::new());
+            if let Some(deck) = self.study_deck.as_deref().filter(|value| !value.is_empty()) {
+                query.append_pair("deck", deck);
+            }
+            for tag in &self.study_tags {
+                query.append_pair("tag", tag);
+            }
+            let query = query.finish();
+            if !query.is_empty() {
+                hash.push('?');
+                hash.push_str(&query);
+            }
+        } else if self.page == AppPage::Devices {
             if let Some(device_id) = &self.device_id {
                 hash.push('/');
                 hash.push_str(device_id);
@@ -177,7 +233,9 @@ impl PortalRoute {
 
         let mut route = match parts.as_slice() {
             [] | ["overview"] => Self::for_page(AppPage::Overview),
-            ["study"] => Self::for_page(AppPage::Study),
+            ["study"] => Self::study(StudyView::Dashboard, None, Vec::new()),
+            ["study", "cards"] => Self::study(StudyView::Cards, None, Vec::new()),
+            ["study", "review"] => Self::study(StudyView::Review, None, Vec::new()),
             ["network"] => Self::for_page(AppPage::Network),
             ["proxy"] => Self::for_page(AppPage::Proxy),
             ["devices"] | ["activity"] => Self::for_page(AppPage::Devices),
@@ -199,6 +257,22 @@ impl PortalRoute {
                 .filter(|value| {
                     !value.is_empty() && value.len() <= 64 && !value.chars().any(char::is_control)
                 });
+        } else if route.page == AppPage::Study {
+            let mut tags = Vec::new();
+            for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {
+                let value = value.into_owned();
+                if value.is_empty() || value.len() > 128 || value.chars().any(char::is_control) {
+                    continue;
+                }
+                match key.as_ref() {
+                    "deck" => route.study_deck = Some(value),
+                    "tag" => tags.push(value),
+                    _ => {}
+                }
+            }
+            tags.sort();
+            tags.dedup();
+            route.study_tags = tags;
         }
 
         let canonical = route.hash();
@@ -335,6 +409,18 @@ mod tests {
         let (invalid, canonical) = PortalRoute::parse("#/not-a-page");
         assert_eq!(invalid.page, AppPage::Overview);
         assert!(!canonical);
+    }
+
+    #[test]
+    fn study_routes_preserve_review_scope_in_query() {
+        let (route, canonical) = PortalRoute::parse(
+            "#/study/review?deck=%E5%88%A4%E6%96%AD%E6%8E%A8%E7%90%86&tag=%E9%AB%98%E9%A2%91&tag=%E9%94%99%E9%A2%98",
+        );
+        assert!(!canonical);
+        assert_eq!(route.study_view, StudyView::Review);
+        assert_eq!(route.study_deck.as_deref(), Some("判断推理"));
+        assert_eq!(route.study_tags, vec!["错题", "高频"]);
+        assert!(route.hash().starts_with("#/study/review?deck="));
     }
 
     #[test]

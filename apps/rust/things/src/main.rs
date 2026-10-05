@@ -1,12 +1,14 @@
 use hyz_things::{
     adapters::{
         inbound::http::{
-            app_with_admin_camera_control, bind_fixed_lan_with_retry, PortalTls, TlsListener,
-            DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
+            app_with_admin_camera_control_and_flashcards, bind_fixed_lan_with_retry, PortalTls,
+            TlsListener, DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
         },
         outbound::{
             admin::AdminFileAdapter,
             camera::CameraUnixAdapter,
+            flashcard_source::FilesystemFlashcardSource,
+            flashcard_sqlite::SqliteFlashcardRepository,
             registry::RegistryAdapter,
             router::RouterControlClient,
             tailscale::{fetch_tailscale_status, PortalListenerApp, TailscaleListenerManager},
@@ -15,6 +17,7 @@ use hyz_things::{
     application::{
         admin::AdminApplication,
         camera::CameraApplication,
+        flashcards::FlashcardApplication,
         ports::{ClockPort, PlatformError, PortalControlHandler},
         status::PortalStatus,
     },
@@ -27,6 +30,7 @@ const PORTAL_READY_DIRECTORY: &str = "/run/hyz-things";
 const PORTAL_READY_MARKER: &str = "/run/hyz-things/ready";
 const ROUTER_READY_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const ROUTER_READY_POLL: Duration = Duration::from_secs(1);
+const FLASHCARD_DB_PATH: &str = "/userdata/hyz-things/flashcards.db";
 const TAILSCALE_RECONCILE_INTERVAL: Duration = Duration::from_secs(2);
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -92,14 +96,40 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     // The portal owns the administrator credential store (same root-only path
     // as before the headless split so OTA preserves the credential).
     let admin_adapter = Arc::new(AdminFileAdapter::default());
+    let clock = Arc::new(SystemClock);
     let admin = Arc::new(AdminApplication::initialize(
         admin_adapter.clone(),
         admin_adapter,
-        Arc::new(SystemClock),
+        clock.clone(),
     )?);
     let camera = Arc::new(CameraApplication::new(Arc::new(
         CameraUnixAdapter::default(),
     )));
+    let (flashcards, flashcard_source) =
+        match SqliteFlashcardRepository::connect(FLASHCARD_DB_PATH).await {
+            Ok(repository) => {
+                let source = Arc::new(FilesystemFlashcardSource::default());
+                let application = Arc::new(FlashcardApplication::new(
+                    source.clone(),
+                    Arc::new(repository),
+                    clock.clone(),
+                ));
+                (Some(application), Some(source))
+            }
+            Err(_error) => {
+                logging::event(
+                    Level::Error,
+                    "flashcards",
+                    "storage",
+                    "initialization_failed",
+                    Some("study_storage_unavailable"),
+                    None,
+                    None,
+                    None,
+                );
+                (None, None)
+            }
+        };
     let control: Arc<dyn PortalControlHandler> = Arc::new(RouterControlClient);
     let status = PortalStatus::new(control.clone());
     let csrf_token = csrf_token()?;
@@ -132,8 +162,10 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         camera: camera.clone(),
         csrf_token: csrf_token.clone(),
         runtime: tokio::runtime::Handle::current(),
-        clock: Arc::new(SystemClock),
+        clock: clock.clone(),
         tls: tls_acceptor.clone(),
+        flashcards: flashcards.clone(),
+        flashcard_source: flashcard_source.clone(),
     };
     let tailscale_manager = tailscale.clone();
     let tailscale_control = control.clone();
@@ -191,7 +223,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         _ = signals.recv() => return Ok(()),
         _ = interrupt.recv() => return Ok(()),
     };
-    let app = app_with_admin_camera_control(
+    let app = app_with_admin_camera_control_and_flashcards(
         status,
         control,
         admin,
@@ -200,6 +232,8 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         port,
         Some(Arc::new(RegistryAdapter::default())),
         true,
+        flashcards,
+        flashcard_source,
     );
     std::fs::write(PORTAL_READY_MARKER, format!("{port}\n"))?;
     logging::event(

@@ -14,6 +14,7 @@ PLAYWRIGHT_CONFIG = ROOT / "apps/rust/things/playwright.config.ts"
 REQUIRED_SPECS = (
     "shell.spec.ts",
     "countdown.spec.ts",
+    "flashcards.spec.ts",
     "security.spec.ts",
     "camera.spec.ts",
     "proxy.spec.ts",

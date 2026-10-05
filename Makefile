@@ -230,6 +230,13 @@ check-static:
 	bash -n "$(THINGS_APP)/tools/deploy-app.sh"
 	bash -n "$(THINGS_APP)/tools/test-deploy-app.sh"
 	bash -n "$(CURDIR)/tools/stage-mihomo-geodata.sh"
+	bash -n "$(CURDIR)/scripts/share-flashcards.sh"
+	bash "$(CURDIR)/scripts/test-share-flashcards.sh"
+	grep -q '^SHARE_DIR=.*flashcards' "$(CURDIR)/scripts/share-flashcards.sh"
+	grep -q 'valid_share_ipv4' "$(CURDIR)/scripts/share-flashcards.sh"
+	grep -F -q '192.168.8.202' "$(CURDIR)/scripts/share-flashcards.sh"
+	grep -F -q '192.168.8.1' "$(CURDIR)/scripts/share-flashcards.sh"
+	grep -q 'hosts deny = ALL' "$(CURDIR)/scripts/share-flashcards.sh"
 ifneq ($(wildcard sdk/buildroot/package/busybox/busybox.config),)
 	grep -q '^CONFIG_FEATURE_SYSLOGD_READ_BUFFER_SIZE=4096$$' "$(CURDIR)/sdk/buildroot/package/busybox/busybox.config"
 else
@@ -257,7 +264,7 @@ endif
 	! grep -q 'hmac\|pbkdf2\|url = ' "$(ROUTER_APP)/Cargo.toml"
 	grep -q '"name": "hyz-things-web"' "$(THINGS_APP)/package.json" "$(THINGS_APP)/package-lock.json"
 	grep -q 'apps/rust/things/frontend/router.css' .gitignore
-	! grep -q 'HYZ Router\|HYZ 路由器' "$(THINGS_APP)/src/web" "$(THINGS_APP)/frontend/index.html" "$(THINGS_APP)/e2e"
+	! grep -R -q 'HYZ Router\|HYZ 路由器' "$(THINGS_APP)/src/web" "$(THINGS_APP)/frontend/index.html" "$(THINGS_APP)/e2e"
 	sh -n "$(THINGS_APP)/tools/start-e2e-server.sh"
 	python3 -m json.tool "$(THINGS_APP)/package.json" >/dev/null
 	python3 -m json.tool "$(THINGS_APP)/package-lock.json" >/dev/null
@@ -367,6 +374,7 @@ ifneq ($(wildcard sdk/buildroot/board/rockchip/hyz_things/post-build.sh),)
 	grep -q 'TARGET_DIR/usr/sbin/hyz-router' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	grep -q 'TARGET_DIR/usr/sbin/hyz-camera' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	grep -q 'chmod 0755.*S82hyz-camera' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
+	grep -q 'chmod 0755.*S83hyz-cards' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	grep -q 'TARGET_DIR/etc/init.d/S82tailscaled' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	grep -q 'TARGET_DIR/usr/share/metacubexd' sdk/buildroot/board/rockchip/hyz_things/post-build.sh
 	sh -n sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82hyz-camera
@@ -462,6 +470,21 @@ ifneq ($(wildcard sdk/buildroot/board/rockchip/hyz_things/post-build.sh),)
 	! grep -qiE '^BR2_PACKAGE_.*WEBRTCSINK=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
 	grep -q '^BR2_PACKAGE_MIHOMO=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
 	grep -q '^BR2_PACKAGE_TAILSCALE=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	grep -q '^BR2_PACKAGE_CIFS_UTILS=y$$' sdk/buildroot/configs/rockchip/hyz_things.config
+	sh -n sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-cards
+	grep -q '^MOUNTPOINT=/mnt/hyz-cards$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-cards
+	grep -q '^CONFIG_FILE=/userdata/hyz-things/flashcards/mount.conf$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-cards
+	grep -q '^CREDENTIALS_FILE=/userdata/hyz-things/flashcards/credentials$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-cards
+	grep -q 'vers=3.1.1' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-cards
+	grep -q '^DEFAULT_PORT=445$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-cards
+	grep -q 'port=\$$PORT' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-cards
+	grep -q '^port=1445$$' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/hyz-things/flashcards-mount.conf.example
+	grep -F -q 'SMB_PORT=$${HYZ_CARDS_SMB_PORT:-1445}' scripts/share-flashcards.sh
+	grep -q 'smb ports = \$$SMB_PORT' scripts/share-flashcards.sh
+	grep -q 'foreign or unexpected' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-cards
+	grep -q 'valid_server_ipv4' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-cards
+	grep -F -q '192.168.8)' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-cards
+	grep -F -q 'server=192.168.8.202' sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/hyz-things/flashcards-mount.conf.example
 	sdk/buildroot/utils/check-package \
 	  sdk/buildroot/package/mihomo/Config.in \
 	  sdk/buildroot/package/mihomo/mihomo.mk \
@@ -475,7 +498,7 @@ ifneq ($(wildcard sdk/buildroot/board/rockchip/hyz_things/post-build.sh),)
 	grep -F -q '$$(TARGET_DIR)/usr/bin/tailscaled' sdk/buildroot/package/tailscale/tailscale.mk
 	! grep -qE 'etc/init\.d|userdata|auth.?key|tailscale.*(web|config)' sdk/buildroot/package/tailscale/tailscale.mk
 	test ! -e sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S82tailscaled
-	@for symbol in IPV6 BRIDGE TUN IP_ADVANCED_ROUTER IP_MULTIPLE_TABLES NF_CONNTRACK \
+	@for symbol in CIFS IPV6 BRIDGE TUN IP_ADVANCED_ROUTER IP_MULTIPLE_TABLES NF_CONNTRACK \
 	  IP_NF_FILTER IP_NF_NAT IP_NF_TARGET_MASQUERADE \
 	  IP6_NF_IPTABLES IP6_NF_FILTER \
 	  NETFILTER_XT_TARGET_MARK NETFILTER_XT_MATCH_MARK NETFILTER_XT_MATCH_MAC \

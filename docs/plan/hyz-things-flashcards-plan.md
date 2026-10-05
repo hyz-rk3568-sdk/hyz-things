@@ -21,7 +21,7 @@
 核心原则：
 
 1. 卡片内容由用户直接编辑 Markdown 文件，不做 Web 制卡器。
-2. Markdown 和图片位于用户电脑硬盘，通过 **SMB over Tailscale** 挂载到 RK3568。
+2. Markdown 和图片位于用户电脑硬盘，通过 **SMB over LAN or Tailscale** 挂载到 RK3568。
 3. RK3568 固定从挂载目录读取卡片，例如 `/mnt/hyz-cards`。
 4. Markdown 是卡片内容的 source of truth。
 5. SQLite 保存卡片解析后的索引、Deck / Tag、FSRS 复习状态与 Review history。
@@ -57,7 +57,7 @@
 用户电脑
 D:\hyz-cards
        │
-       │ SMB over Tailscale
+       │ SMB over LAN or Tailscale
        ▼
 RK3568
 /mnt/hyz-cards
@@ -89,7 +89,7 @@ hyz-things 不负责 SMB 协议，也不负责连接用户电脑。
 操作系统负责：
 
 ~~~text
-电脑 Tailscale IP + SMB share
+电脑 LAN/Tailscale IP + SMB share
             ↓
        /mnt/hyz-cards
 ~~~
@@ -1271,7 +1271,7 @@ Portal CI
 
 目标板实际验证：
 
-- [ ] 电脑 SMB share 能经 Tailscale IP 挂载到 `/mnt/hyz-cards`。
+- [ ] 电脑 SMB share 能经 LAN 或 Tailscale IP 挂载到 `/mnt/hyz-cards`。
 - [ ] hyz-things 可以读取 `.md`。
 - [ ] Sync 可以向 SMB share 原文件写回 UUID。
 - [ ] 新增 Card 正确进入 SQLite。
@@ -1294,7 +1294,7 @@ Portal CI
 ~~~text
 电脑 Markdown
       ↓
-Tailscale + SMB mount
+LAN/Tailscale + SMB mount
       ↓
 /mnt/hyz-cards
       ↓

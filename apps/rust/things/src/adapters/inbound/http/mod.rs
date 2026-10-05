@@ -27,6 +27,7 @@ use crate::{
     application::{
         admin::{AdminApplication, AdminError, SESSION_RETENTION_SECONDS},
         camera::{CameraApplication, CameraError},
+        flashcards::FlashcardApplication,
         ports::{InstalledAppsPort, PortalControlError, PortalControlHandler},
         status::PortalStatus,
     },
@@ -50,6 +51,7 @@ use crate::{
     logging::{self, Level},
 };
 
+mod flashcards;
 mod tls;
 
 pub use tls::{PortalTls, TlsListener};
@@ -82,6 +84,9 @@ struct AppState {
     control: Option<Arc<dyn PortalControlHandler>>,
     admin: Option<Arc<AdminApplication>>,
     camera: Option<Arc<CameraApplication>>,
+    flashcards: Option<Arc<FlashcardApplication>>,
+    flashcard_source:
+        Option<Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>>,
     camera_scope: Option<CameraAccessScope>,
     csrf_token: Arc<str>,
     allowed_origin: Arc<str>,
@@ -174,6 +179,8 @@ pub fn app(read_status: PortalStatus) -> Router {
             control: None,
             admin: None,
             camera: None,
+            flashcards: None,
+            flashcard_source: None,
             camera_scope: None,
             csrf_token: String::new(),
             allowed_origin: format!("http://{LAN_ADDRESS}:{DEFAULT_HTTP_PORT}"),
@@ -198,6 +205,8 @@ pub fn app_with_control(
             control: Some(control),
             admin: None,
             camera: None,
+            flashcards: None,
+            flashcard_source: None,
             camera_scope: None,
             csrf_token,
             allowed_origin: format!("http://{LAN_ADDRESS}:{port}"),
@@ -223,6 +232,8 @@ pub fn app_with_admin_control(
             control: Some(control),
             admin: Some(admin),
             camera: None,
+            flashcards: None,
+            flashcard_source: None,
             camera_scope: None,
             csrf_token,
             allowed_origin: format!("http://{LAN_ADDRESS}:{port}"),
@@ -248,6 +259,38 @@ pub fn app_with_admin_camera_control(
     installed_apps: Option<Arc<dyn InstalledAppsPort>>,
     tls: bool,
 ) -> Router {
+    app_with_admin_camera_control_and_flashcards(
+        read_status,
+        control,
+        admin,
+        camera,
+        csrf_token,
+        port,
+        installed_apps,
+        tls,
+        None,
+        None,
+    )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "fixed production composition-root wiring"
+)]
+pub fn app_with_admin_camera_control_and_flashcards(
+    read_status: PortalStatus,
+    control: Arc<dyn PortalControlHandler>,
+    admin: Arc<AdminApplication>,
+    camera: Arc<CameraApplication>,
+    csrf_token: String,
+    port: u16,
+    installed_apps: Option<Arc<dyn InstalledAppsPort>>,
+    tls: bool,
+    flashcards: Option<Arc<FlashcardApplication>>,
+    flashcard_source: Option<
+        Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>,
+    >,
+) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
     app_with_assets(
         read_status,
@@ -255,6 +298,8 @@ pub fn app_with_admin_camera_control(
             control: Some(control),
             admin: Some(admin),
             camera: Some(camera),
+            flashcards,
+            flashcard_source,
             camera_scope: Some(CameraAccessScope::Lan),
             csrf_token,
             allowed_origin: format!(
@@ -284,6 +329,8 @@ pub fn app_with_admin_control_at_address(
             control: Some(control),
             admin: Some(admin),
             camera: None,
+            flashcards: None,
+            flashcard_source: None,
             camera_scope: None,
             csrf_token,
             allowed_origin: format!("http://{address}:{port}"),
@@ -297,7 +344,7 @@ pub fn app_with_admin_control_at_address(
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "fixed Tailscale management composition-root wiring"
+    reason = "fixed production composition-root wiring"
 )]
 pub fn app_with_admin_camera_control_at_address(
     read_status: PortalStatus,
@@ -309,6 +356,38 @@ pub fn app_with_admin_camera_control_at_address(
     port: u16,
     tls: bool,
 ) -> Router {
+    app_with_admin_camera_control_at_address_and_flashcards(
+        read_status,
+        control,
+        admin,
+        camera,
+        csrf_token,
+        address,
+        port,
+        tls,
+        None,
+        None,
+    )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "fixed Tailscale management composition-root wiring"
+)]
+pub fn app_with_admin_camera_control_at_address_and_flashcards(
+    read_status: PortalStatus,
+    control: Arc<dyn PortalControlHandler>,
+    admin: Arc<AdminApplication>,
+    camera: Arc<CameraApplication>,
+    csrf_token: String,
+    address: Ipv4Addr,
+    port: u16,
+    tls: bool,
+    flashcards: Option<Arc<FlashcardApplication>>,
+    flashcard_source: Option<
+        Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>,
+    >,
+) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
     app_with_assets(
         read_status,
@@ -316,6 +395,8 @@ pub fn app_with_admin_camera_control_at_address(
             control: Some(control),
             admin: Some(admin),
             camera: Some(camera),
+            flashcards,
+            flashcard_source,
             camera_scope: Some(CameraAccessScope::Tailscale { address }),
             csrf_token,
             allowed_origin: format!("{}://{address}:{port}", if tls { "https" } else { "http" }),
@@ -342,6 +423,39 @@ pub fn app_with_loopback_runtime_frontend(
     frontend_tar: &[u8],
     installed_apps: Option<Arc<dyn InstalledAppsPort>>,
 ) -> io::Result<Router> {
+    app_with_loopback_runtime_frontend_and_flashcards(
+        read_status,
+        control,
+        admin,
+        camera,
+        csrf_token,
+        exact_loopback_origin,
+        frontend_tar,
+        installed_apps,
+        None,
+        None,
+    )
+}
+
+#[cfg(feature = "e2e")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one-shot e2e composition root wiring the fixed adapter set"
+)]
+pub fn app_with_loopback_runtime_frontend_and_flashcards(
+    read_status: PortalStatus,
+    control: Arc<dyn PortalControlHandler>,
+    admin: Arc<AdminApplication>,
+    camera: Arc<CameraApplication>,
+    csrf_token: String,
+    exact_loopback_origin: String,
+    frontend_tar: &[u8],
+    installed_apps: Option<Arc<dyn InstalledAppsPort>>,
+    flashcards: Option<Arc<FlashcardApplication>>,
+    flashcard_source: Option<
+        Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>,
+    >,
+) -> io::Result<Router> {
     validate_exact_loopback_origin(&exact_loopback_origin)?;
     let assets = AssetStore::from_tar(frontend_tar)?;
     Ok(app_with_assets(
@@ -350,6 +464,8 @@ pub fn app_with_loopback_runtime_frontend(
             control: Some(control),
             admin: Some(admin),
             camera: Some(camera),
+            flashcards,
+            flashcard_source,
             camera_scope: Some(CameraAccessScope::Lan),
             csrf_token,
             allowed_origin: exact_loopback_origin,
@@ -392,6 +508,9 @@ struct AppConfiguration {
     control: Option<Arc<dyn PortalControlHandler>>,
     admin: Option<Arc<AdminApplication>>,
     camera: Option<Arc<CameraApplication>>,
+    flashcards: Option<Arc<FlashcardApplication>>,
+    flashcard_source:
+        Option<Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>>,
     camera_scope: Option<CameraAccessScope>,
     csrf_token: String,
     allowed_origin: String,
@@ -409,6 +528,8 @@ fn app_with_assets(
         control,
         admin,
         camera,
+        flashcards,
+        flashcard_source,
         camera_scope,
         csrf_token,
         allowed_origin,
@@ -553,6 +674,38 @@ fn app_with_assets(
             "/api/v1/control/proxy/delays",
             on(MethodFilter::POST, control_proxy_delay_refresh),
         )
+        .route(
+            "/api/v1/study/cards",
+            on(MethodFilter::GET, flashcards::cards),
+        )
+        .route(
+            "/api/v1/study/decks",
+            on(MethodFilter::GET, flashcards::decks),
+        )
+        .route(
+            "/api/v1/study/tags",
+            on(MethodFilter::GET, flashcards::tags),
+        )
+        .route(
+            "/api/v1/study/review",
+            on(MethodFilter::GET, flashcards::review_queue),
+        )
+        .route(
+            "/api/v1/study/summary",
+            on(MethodFilter::GET, flashcards::summary),
+        )
+        .route(
+            "/api/v1/study/review",
+            on(MethodFilter::POST, flashcards::review),
+        )
+        .route(
+            "/api/v1/control/study/sync",
+            on(MethodFilter::POST, flashcards::sync),
+        )
+        .route(
+            "/api/v1/study/assets/{*path}",
+            on(MethodFilter::GET, flashcards::asset),
+        )
         .route("/", get(frontend_root))
         .route("/{*path}", get(frontend_asset))
         .fallback(api_or_method_not_found)
@@ -565,6 +718,8 @@ fn app_with_assets(
             admin,
             camera,
             camera_scope,
+            flashcards,
+            flashcard_source,
             csrf_token: Arc::from(csrf_token),
             allowed_origin: Arc::from(allowed_origin),
             tls,
@@ -2248,6 +2403,8 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/control/proxy/selection"
             | "/api/v1/control/proxy/delay"
             | "/api/v1/control/proxy/delays"
+            | "/api/v1/study/review"
+            | "/api/v1/control/study/sync"
     )
 }
 

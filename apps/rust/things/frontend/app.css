@@ -42,8 +42,65 @@ nav.tabs > button.tab:not(.tab-active) {
   color: var(--color-base-content);
 }
 
-.card.shadow-xl,
-.card.shadow-lg,
-.tabs-box.shadow-lg {
-  box-shadow: var(--shadow-sm);
+@layer components {
+  .study-markdown {
+    @apply min-w-0 break-words;
+  }
+
+  .study-markdown :where(p, ul, ol, blockquote, pre, table) {
+    @apply my-3 first:mt-0 last:mb-0;
+  }
+
+  .study-markdown :where(ul, ol) {
+    @apply pl-6;
+  }
+
+  .study-markdown :where(ul) {
+    @apply list-disc;
+  }
+
+  .study-markdown :where(ol) {
+    @apply list-decimal;
+  }
+
+  .study-markdown :where(blockquote) {
+    @apply border-l-4 border-primary/30 pl-4 text-base-content/75;
+  }
+
+  .study-markdown :where(pre) {
+    @apply overflow-x-auto rounded-box bg-base-300 p-3 text-sm;
+  }
+
+  .study-markdown :where(code) {
+    @apply rounded bg-base-300 px-1 py-0.5 font-mono text-[0.9em];
+  }
+
+  .study-markdown :where(pre code) {
+    @apply bg-transparent p-0;
+  }
+
+  .study-markdown :where(a) {
+    @apply text-primary underline underline-offset-2;
+  }
+
+  .study-markdown :where(img) {
+    @apply mx-auto max-h-[28rem] max-w-full rounded-box object-contain;
+  }
+
+  .study-markdown :where(th, td) {
+    @apply border border-base-content/15 px-2 py-1 text-left;
+  }
+
+  .study-markdown :where(table) {
+    @apply block max-w-full overflow-x-auto;
+  }
+
+  .study-markdown .math-inline,
+  .study-markdown .math-display {
+    @apply font-serif text-secondary;
+  }
+
+  .study-markdown .math-display {
+    @apply block overflow-x-auto whitespace-pre-wrap py-2 text-center;
+  }
 }

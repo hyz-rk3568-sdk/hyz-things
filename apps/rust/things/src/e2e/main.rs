@@ -8,10 +8,14 @@ use axum::{
 };
 use hyz_contract::router::{ControlOperation, ControlProxyMode, ControlResult};
 use hyz_things::{
-    adapters::inbound::http::app_with_loopback_runtime_frontend,
+    adapters::inbound::http::app_with_loopback_runtime_frontend_and_flashcards,
+    adapters::outbound::{
+        flashcard_source::FilesystemFlashcardSource, flashcard_sqlite::SqliteFlashcardRepository,
+    },
     application::{
         admin::AdminApplication,
         camera::{CameraApplication, CameraControlPort, CameraError, CameraSession},
+        flashcards::FlashcardApplication,
         ports::{
             AdminCredentialStorePort, AdminRandomPort, ClockPort, InstalledAppsPort, PlatformError,
             PortalControlError, PortalControlHandler,
@@ -1068,7 +1072,35 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let camera = Arc::new(CameraApplication::new(Arc::new(HarnessCamera {
         backend: backend.clone(),
     })));
-    let web_app = app_with_loopback_runtime_frontend(
+    let fixture_root =
+        env::temp_dir().join(format!("hyz-things-e2e-flashcards-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&fixture_root);
+    let cards_root = fixture_root.join("cards");
+    fs::create_dir_all(cards_root.join("判断推理/逻辑判断"))?;
+    fs::create_dir_all(cards_root.join("资料分析"))?;
+    fs::write(
+        cards_root.join("判断推理/逻辑判断/cards.md"),
+        "---\ntags:\n  - 基础\n---\n\n## Card\n<!-- hyz-card-id: 019a31b7-8c42-7c16-a6d1-0c1f0f34c821 -->\n<!-- tags: 错题, 高频 -->\n\n### Front\n\n因果倒置是什么？\n\n### Back\n\n把原因和结果的方向混淆。\n\n---\n\n## Card\n<!-- hyz-card-id: 019a31b7-8c42-7c16-a6d1-0c1f0f34c822 -->\n<!-- tags: 错题 -->\n\n### Front\n\n另有他因如何削弱？\n\n### Back\n\n结果可能由第三因素产生。\n",
+    )?;
+    fs::write(
+        cards_root.join("资料分析/cards.md"),
+        "## Card\n<!-- hyz-card-id: 019a31b7-8c42-7c16-a6d1-0c1f0f34c823 -->\n<!-- tags: 高频 -->\n\n### Front\n\n基期量公式？\n\n### Back\n\n现期量除以一加增长率。\n",
+    )?;
+    let flashcard_source = Arc::new(FilesystemFlashcardSource::new(&cards_root));
+    let flashcard_repository =
+        SqliteFlashcardRepository::connect(fixture_root.join("flashcards.db"))
+            .await
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+    let flashcards = Arc::new(FlashcardApplication::new(
+        flashcard_source.clone(),
+        Arc::new(flashcard_repository),
+        backend.clone(),
+    ));
+    flashcards
+        .sync()
+        .await
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
+    let web_app = app_with_loopback_runtime_frontend_and_flashcards(
         read_status,
         web_control,
         admin.clone(),
@@ -1077,6 +1109,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         web_origin.clone(),
         &frontend_tar,
         Some(backend.clone()),
+        Some(flashcards),
+        Some(flashcard_source),
     )?;
     let harness_app = harness_control_app(backend, admin, camera);
 
@@ -1095,6 +1129,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         result = axum::serve(control_listener, harness_app) => result?,
         result = tokio::signal::ctrl_c() => result?,
     }
+    let _ = fs::remove_dir_all(&fixture_root);
     Ok(())
 }
 
