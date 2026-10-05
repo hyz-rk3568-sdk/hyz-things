@@ -59,7 +59,7 @@ impl LinuxRouterPlatform {
             NetworkAction::DetachEthernetLan => self.detach_lan_member(ETHERNET_LAN_INTERFACE),
             NetworkAction::EnsureManagementServices => self.ensure_management_services(),
             NetworkAction::StopManagementServices => self.stop_owned_management_services(),
-            NetworkAction::WaitForWanRoute => self.wait_for_sta_route(Duration::from_secs(30)),
+            NetworkAction::WaitForWanRoute => self.wait_for_wan_route(Duration::from_secs(30)),
             NetworkAction::CaptureIpv4Forwarding => self.capture_forwarding(),
             NetworkAction::EnableIpv4Forwarding => self.enable_forwarding(),
             NetworkAction::DisableIpv4Forwarding => self.disable_forwarding(),

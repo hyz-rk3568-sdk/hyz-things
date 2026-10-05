@@ -33,6 +33,7 @@ const SHUTDOWN_LOG: &str = "/run/hyz-router/shutdown.log";
 const MAX_SHUTDOWN_LOG: usize = 8 * 1024;
 const MAX_COMMAND_OUTPUT: usize = 64 * 1024;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(3);
+const MIHOMO_CONFIG_TEST_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_RECORD_SIZE: usize = 4096;
 const IDENTITY_EXIT_ATTEMPTS: usize = 60;
 const IDENTITY_EXIT_POLL: Duration = Duration::from_millis(50);
@@ -258,7 +259,7 @@ impl LinuxRouterPlatform {
             .stderr(Stdio::from(stderr))
             .spawn()
             .map_err(|error| PlatformError::Io(format!("start Mihomo config test: {error}")))?;
-        wait_command(&mut child, COMMAND_TIMEOUT, "Mihomo config test")
+        wait_command(&mut child, MIHOMO_CONFIG_TEST_TIMEOUT, "Mihomo config test")
     }
 
     pub(crate) fn start_mihomo(&self) -> Result<(), PlatformError> {
@@ -1412,6 +1413,12 @@ mod tests {
             Ok(false)
         );
         assert_eq!(probes, 3);
+    }
+
+    #[test]
+    fn mihomo_config_test_has_a_startup_timeout_budget() {
+        assert_eq!(MIHOMO_CONFIG_TEST_TIMEOUT, Duration::from_secs(10));
+        assert!(MIHOMO_CONFIG_TEST_TIMEOUT > COMMAND_TIMEOUT);
     }
 
     #[test]

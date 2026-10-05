@@ -230,6 +230,11 @@ check-static:
 	bash -n "$(THINGS_APP)/tools/deploy-app.sh"
 	bash -n "$(THINGS_APP)/tools/test-deploy-app.sh"
 	bash -n "$(CURDIR)/tools/stage-mihomo-geodata.sh"
+ifneq ($(wildcard sdk/buildroot/package/busybox/busybox.config),)
+	grep -q '^CONFIG_FEATURE_SYSLOGD_READ_BUFFER_SIZE=4096$$' "$(CURDIR)/sdk/buildroot/package/busybox/busybox.config"
+else
+	@printf '%s\n' 'SKIP: BusyBox syslog static check (SDK tree is not present)'
+endif
 	grep -q '^commit=00d18d8f9eec132181f3968d10d1f608ff382ff5$$' "$(CURDIR)/tools/stage-mihomo-geodata.sh"
 	grep -q '^stage_asset geosite.dat 4244097 83e5023cfc134700fd373d800880c62c9cb1e8b97aef59052d7779d817c27be0$$' "$(CURDIR)/tools/stage-mihomo-geodata.sh"
 	grep -q '^stage_asset country.mmdb 7824943 4790a1479e63c8d3b67af7b47f6cb0b96a8d05a6d01ed568af8385c1d1176c8e$$' "$(CURDIR)/tools/stage-mihomo-geodata.sh"

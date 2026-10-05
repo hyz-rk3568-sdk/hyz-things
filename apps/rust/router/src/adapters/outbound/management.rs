@@ -1382,12 +1382,8 @@ impl super::process::LinuxRouterPlatform {
         }
     }
 
-    pub(crate) fn wait_for_sta_route(&self, timeout: Duration) -> Result<(), PlatformError> {
-        wait_until(
-            timeout,
-            || self.owned_sta_address_and_route_ready(),
-            "recorded DHCP STA address and exact owned default route with metric 600",
-        )
+    pub(crate) fn wait_for_wan_route(&self, timeout: Duration) -> Result<(), PlatformError> {
+        wait_for_wan_route(timeout, |uplink| self.owned_dhcp_uplink_ready(uplink))
     }
 
     fn hostapd_enabled(&self) -> Result<bool, PlatformError> {
@@ -1557,10 +1553,6 @@ impl super::process::LinuxRouterPlatform {
             Ok(Some((record.uplink, nameservers)))
         })
     }
-    pub(crate) fn owned_sta_address_and_route_ready(&self) -> Result<bool, PlatformError> {
-        self.owned_dhcp_uplink_ready(DhcpUplink::Wifi)
-    }
-
     fn owned_dhcp_uplink_ready(&self, uplink: DhcpUplink) -> Result<bool, PlatformError> {
         let Some(ownership) = read_dhcp_ownership(uplink)? else {
             return Ok(false);
@@ -2428,6 +2420,10 @@ fn service_executable_process_count(service: ManagementService) -> Result<usize,
     Ok(count)
 }
 
+fn process_probe_disappeared(error: &std::io::Error) -> bool {
+    error.kind() == std::io::ErrorKind::NotFound || error.raw_os_error() == Some(libc::ESRCH)
+}
+
 fn process_name_can_match_service(
     service: ManagementService,
     pid: u32,
@@ -2437,7 +2433,7 @@ fn process_name_can_match_service(
     }
     match fs::read_to_string(format!("/proc/{pid}/comm")) {
         Ok(comm) => Ok(multicall_process_name_matches(service, comm.trim())),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) if process_probe_disappeared(&error) => Ok(false),
         Err(error) => Err(PlatformError::ProbeFailed(format!(
             "read multicall process name: {error}"
         ))),
@@ -2607,6 +2603,17 @@ fn is_management_probe_timeout(error: &PlatformError) -> bool {
         error,
         PlatformError::ProbeFailed(detail)
             if detail == "management probe exceeded its deadline"
+    )
+}
+
+fn wait_for_wan_route(
+    timeout: Duration,
+    mut probe: impl FnMut(DhcpUplink) -> Result<bool, PlatformError>,
+) -> Result<(), PlatformError> {
+    wait_until(
+        timeout,
+        || Ok(probe(DhcpUplink::Ethernet)? || probe(DhcpUplink::Wifi)?),
+        "recorded DHCP address and exact owned default route on at least one uplink",
     )
 }
 
@@ -4728,6 +4735,19 @@ mod tests {
     }
 
     #[test]
+    fn process_probe_disappearance_accepts_not_found_and_esrch() {
+        assert!(process_probe_disappeared(&std::io::Error::from(
+            std::io::ErrorKind::NotFound,
+        )));
+        assert!(process_probe_disappeared(
+            &std::io::Error::from_raw_os_error(libc::ESRCH,)
+        ));
+        assert!(!process_probe_disappeared(
+            &std::io::Error::from_raw_os_error(libc::EACCES)
+        ));
+    }
+
+    #[test]
     fn ap_mutations_refuse_an_outstanding_sta_rollback_journal() {
         let source = include_str!("management.rs")
             .split("#[cfg(test)]")
@@ -5565,6 +5585,17 @@ mod tests {
             true,
             false
         ));
+    }
+
+    #[test]
+    fn wan_route_wait_accepts_either_uplink() {
+        let mut probed = Vec::new();
+        wait_for_wan_route(Duration::ZERO, |uplink| {
+            probed.push(uplink);
+            Ok(uplink == DhcpUplink::Wifi)
+        })
+        .expect("a confirmed route on either uplink must satisfy the WAN wait");
+        assert_eq!(probed, vec![DhcpUplink::Ethernet, DhcpUplink::Wifi]);
     }
 
     #[test]
