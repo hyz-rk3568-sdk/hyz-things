@@ -6,7 +6,7 @@ tags:
 ---
 
 ## Card
-<!-- hyz-card-id: 01a1114d-308a-70cc-aa56-74ec99f6c934 -->
+<!-- hyz-card-id: 01a111cd-c9d0-70b3-ac93-a35d345baaba -->
 
 ### Front
 
@@ -19,47 +19,29 @@ tags:
 设部分增量为 $\Delta A$，整体增量为 $\Delta B$，整体基期为 $B_0$：
 
 $$
-\boxed{
-\text{贡献率}
-=
-\frac{\Delta A}{\Delta B}
-}
+\boxed{\text{贡献率}=\frac{\Delta A}{\Delta B}}
 $$
 
 $$
-\boxed{
-\text{拉动增长率}
-=
-\frac{\Delta A}{B_0}
-}
+\boxed{\text{拉动增长率}=\frac{\Delta A}{B_0}}
 $$
 
 因为：
 
 $$
-\frac{\Delta B}{B_0}
-=
-r_B
+\frac{\Delta B}{B_0}=r_B
 $$
 
 所以：
 
 $$
-\boxed{
-\text{拉动增长率}
-=
-r_B\times\text{贡献率}
-}
+\boxed{\text{拉动增长率}=r_B\times\text{贡献率}}
 $$
 
 另有：
 
 $$
-\boxed{
-\text{拉动增长率}
-=
-r_A\times\text{基期比重}
-}
+\boxed{\text{拉动增长率}=r_A\times\text{基期比重}}
 $$
 
 记忆：
@@ -70,7 +52,7 @@ $$
 ---
 
 ## Card
-<!-- hyz-card-id: 22c6efde-a5db-4c8f-9609-ae70c350d902 -->
+<!-- hyz-card-id: 01a111cd-c9d0-70b3-ac93-a35e8116ab0b -->
 
 ### Front
 
@@ -81,39 +63,19 @@ $$
 准确式：
 
 $$
-\boxed{
-\text{贡献率}
-=
-\text{基期比重}
-\times
-\frac{r_A}{r_B}
-}
+\boxed{\text{贡献率}=\text{基期比重}\times\frac{r_A}{r_B}}
 $$
 
 把基期比重换成现期比重：
 
 $$
-\boxed{
-\text{贡献率}
-=
-\text{现期比重}
-\times
-\frac{r_A}{r_B}
-\times
-\frac{1+r_B}{1+r_A}
-}
+\boxed{\text{贡献率}=\text{现期比重}\times\frac{r_A}{r_B}\times\frac{1+r_B}{1+r_A}}
 $$
 
 当部分增速与整体增速差距不大时：
 
 $$
-\boxed{
-\text{贡献率}
-\approx
-\text{现期比重}
-\times
-\text{增速比}
-}
+\boxed{\text{贡献率}\approx\text{现期比重}\times\text{增速比}}
 $$
 
 误差方向：
@@ -124,7 +86,7 @@ $$
 ---
 
 ## Card
-<!-- hyz-card-id: 82b6e6c2-813c-47d4-b13a-a01064602dd2 -->
+<!-- hyz-card-id: 01a111cd-c9d1-70e6-a42a-2cde349b0059 -->
 
 ### Front
 
@@ -135,63 +97,31 @@ $$
 核心关系：
 
 $$
-\boxed{
-1+r_{\text{名义}}
-=
-(1+r_{\text{实际}})
-(1+r_{\text{价格}})
-}
+\boxed{1+r_{\text{名义}}=(1+r_{\text{实际}})(1+r_{\text{价格}})}
 $$
 
 所以：
 
 $$
-\boxed{
-r_{\text{价格}}
-=
-\frac{r_{\text{名义}}-r_{\text{实际}}}
-{1+r_{\text{实际}}}
-}
+\boxed{r_{\text{价格}}=\frac{r_{\text{名义}}-r_{\text{实际}}}{1+r_{\text{实际}}}}
 $$
 
 实际现期量：
 
 $$
-\boxed{
-A_{\text{实际}}
-=
-\frac{A_{\text{名义}}}
-{1+r_{\text{价格}}}
-=
-A_{\text{名义}}
-\times
-\frac{1+r_{\text{实际}}}
-{1+r_{\text{名义}}}
-}
+\boxed{A_{\text{实际}}=\frac{A_{\text{名义}}}{1+r_{\text{价格}}}=A_{\text{名义}}\times\frac{1+r_{\text{实际}}}{1+r_{\text{名义}}}}
 $$
 
 价格因素较小时：
 
 $$
-\boxed{
-A_{\text{实际}}
-\approx
-A_{\text{名义}}
-(1-r_{\text{价格}})
-}
+\boxed{A_{\text{实际}}\approx A_{\text{名义}}(1-r_{\text{价格}})}
 $$
 
 实际增量：
 
 $$
-\boxed{
-\Delta A_{\text{实际}}
-=
-\frac{A_{\text{名义}}}
-{1+r_{\text{名义}}}
-\times
-r_{\text{实际}}
-}
+\boxed{\Delta A_{\text{实际}}=\frac{A_{\text{名义}}}{1+r_{\text{名义}}}\times r_{\text{实际}}}
 $$
 
 记忆：

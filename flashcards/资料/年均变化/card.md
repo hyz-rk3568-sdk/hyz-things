@@ -7,7 +7,7 @@ tags:
 ---
 
 ## Card
-<!-- hyz-card-id: 01a1114d-308a-70cc-aa56-74ec99f6c934 -->
+<!-- hyz-card-id: 01a111cc-7f48-7587-a30b-1cbe87508f23 -->
 
 ### Front
 
@@ -22,7 +22,7 @@ tags:
 ---
 
 ## Card
-<!-- hyz-card-id: 029e2a11-6547-46f6-82b9-e3a3b84ee603 -->
+<!-- hyz-card-id: 01a111cc-7f48-7587-a30b-1cbf2e4fa84a -->
 
 ### Front
 
@@ -33,17 +33,13 @@ tags:
 追赶公式仍是：
 
 $$
-\boxed{
-T=\frac{\Delta L}{\Delta V}
-}
+\boxed{T=\frac{\Delta L}{\Delta V}}
 $$
 
 若追者为 $A+at$，目标为另一值 $B+bt$ 的 $\frac1n$，则：
 
 $$
-\boxed{
-n(A+at)=B+bt
-}
+\boxed{n(A+at)=B+bt}
 $$
 
 即：**把追者的现期量、增量同时乘 $n$，再按普通追赶题算。**
@@ -51,7 +47,7 @@ $$
 ---
 
 ## Card
-<!-- hyz-card-id: e194edab-286d-45ab-b541-838b96cd415c -->
+<!-- hyz-card-id: 01a111cc-7f48-7587-a30b-1cc04a40c9da -->
 
 ### Front
 
@@ -62,23 +58,13 @@ $$
 设年均增速为 $r$，总增长率为 $r_{\text{总}}$：
 
 $$
-\boxed{
-(1+r)^n
-=
-\frac{\text{现期}}{\text{基期}}
-=
-1+r_{\text{总}}
-}
+\boxed{(1+r)^n=\frac{\text{现期}}{\text{基期}}=1+r_{\text{总}}}
 $$
 
 二项式展开：
 
 $$
-\boxed{
-r_{\text{总}}
-=
-nr+C_n^2r^2+C_n^3r^3+\cdots+r^n
-}
+\boxed{r_{\text{总}}=nr+\binom{n}{2}r^2+\binom{n}{3}r^3+\cdots+r^n}
 $$
 
 常用降次：
@@ -96,7 +82,7 @@ $$
 ---
 
 ## Card
-<!-- hyz-card-id: 19d5f389-ae19-4e7a-9a6d-1786bb7763e1 -->
+<!-- hyz-card-id: 01a111cc-7f49-7734-9d23-68d2c9e2ff1e -->
 
 ### Front
 
@@ -107,25 +93,13 @@ $$
 算术平均增长率：
 
 $$
-\boxed{
-r_{\text{算术}}
-=
-\frac{r_1+r_2+\cdots+r_n}{n}
-}
+\boxed{r_{\text{算术}}=\frac{r_1+r_2+\cdots+r_n}{n}}
 $$
 
 各年增速不完全相同时：
 
 $$
-\boxed{
-r_{\min}
-<
-r_{\text{年均}}
-<
-r_{\text{算术}}
-<
-r_{\max}
-}
+\boxed{r_{\min}<r_{\text{年均}}<r_{\text{算术}}<r_{\max}}
 $$
 
 原理：**和定积最**。各数和固定时，越接近，乘积越大。
@@ -133,17 +107,13 @@ $$
 因此各年增速越接近：
 
 $$
-\boxed{
-r_{\text{年均}}
-\text{ 越接近 }
-r_{\text{算术}}
-}
+\boxed{r_{\text{年均}}\text{ 越接近 }r_{\text{算术}}}
 $$
 
 ---
 
 ## Card
-<!-- hyz-card-id: cd2ed41f-d647-4979-85cb-96d30c3543e4 -->
+<!-- hyz-card-id: 01a111cc-7f49-7734-9d23-68d3937447ed -->
 
 ### Front
 
@@ -154,9 +124,7 @@ $$
 先保留二次项：
 
 $$
-\boxed{
-nr+C_n^2r^2\approx r_{\text{总}}
-}
+\boxed{nr+\binom{n}{2}r^2\approx r_{\text{总}}}
 $$
 
 不要直接解二次方程。
@@ -164,19 +132,13 @@ $$
 先取一个假设值：
 
 $$
-\boxed{
-r_0\approx\frac{r_{\text{总}}}{n}
-}
+\boxed{r_0\approx\frac{r_{\text{总}}}{n}}
 $$
 
 或直接取靠近的选项，只把 $r^2$ 用 $r_0^2$ 代入：
 
 $$
-\boxed{
-r
-\approx
-\frac{r_{\text{总}}-C_n^2r_0^2}{n}
-}
+\boxed{r\approx\frac{r_{\text{总}}-\binom{n}{2}r_0^2}{n}}
 $$
 
 核心：**假设平方项，降成一次计算。**
@@ -184,7 +146,7 @@ $$
 ---
 
 ## Card
-<!-- hyz-card-id: fd0ed248-9960-48bb-a328-a95bac43dc63 -->
+<!-- hyz-card-id: 01a111cc-7f49-7734-9d23-68d4c8d7dba4 -->
 
 ### Front
 
@@ -195,15 +157,7 @@ $$
 当年均增速绝对值较小（讲义取 $<20\%$）：
 
 $$
-\boxed{
-r_{\text{年均}}
-\approx
-\frac{r_{\text{总}}}{n}
--
-\left(
-\frac{r_{\text{总}}}{n}
-\right)^2
-}
+\boxed{r_{\text{年均}}\approx\frac{r_{\text{总}}}{n}-\left(\frac{r_{\text{总}}}{n}\right)^2}
 $$
 
 - $n=3$：**向上取**
@@ -212,9 +166,7 @@ $$
 当：
 
 $$
-\boxed{
-|r_{\text{年均}}|\ge20\%
-}
+\boxed{|r_{\text{年均}}|\ge20\%}
 $$
 
 取选项中间的整值代入验证。
@@ -224,7 +176,7 @@ $$
 ---
 
 ## Card
-<!-- hyz-card-id: 0bc47667-24b6-4283-b9e1-52e61c0d2759 -->
+<!-- hyz-card-id: 01a111cc-7f49-7734-9d23-68d52b72d550 -->
 
 ### Front
 
@@ -235,18 +187,14 @@ $$
 抓住：
 
 $$
-\boxed{
-(1+r_{\text{年均}})^n=1+r_{\text{总}}
-}
+\boxed{(1+r_{\text{年均}})^n=1+r_{\text{总}}}
 $$
 
 - **年数 $n$ 相同**：直接比较 $r_{\text{总}}$，总增长率越大，年均增速越大。
 - 也可直接比较：
 
 $$
-\boxed{
-\frac{\text{现期}}{\text{基期}}
-}
+\boxed{\frac{\text{现期}}{\text{基期}}}
 $$
 
 - **年数不同**：不能直接比总增长率，要结合 $n$，用 $(1+r)^n$ 代入判断。
