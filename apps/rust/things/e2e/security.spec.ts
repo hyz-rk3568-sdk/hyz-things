@@ -21,6 +21,30 @@ test.beforeEach(async ({ request }) => {
   await resetHarness(request);
 });
 
+test("serves every KaTeX font referenced by the generated stylesheet", async ({ request }) => {
+  const root = await request.get("/");
+  const html = await root.text();
+  const cssPath = html.match(/href="(\/katex\.min-[^"]+\.css)"/)?.[1];
+  expect(cssPath).toBeTruthy();
+
+  const stylesheet = await request.get(cssPath!);
+  expect(stylesheet.ok()).toBeTruthy();
+  const fontPaths = [
+    ...new Set(
+      [...(await stylesheet.text()).matchAll(/url\((?:["']?)(fonts\/KaTeX_[^)"']+)/g)].map(
+        (match) => `/${match[1]}`,
+      ),
+    ),
+  ];
+  expect(fontPaths.length).toBeGreaterThan(0);
+
+  for (const fontPath of fontPaths) {
+    const font = await request.get(fontPath);
+    expect(font.ok(), fontPath).toBeTruthy();
+    expect(await font.body(), fontPath).not.toHaveLength(0);
+  }
+});
+
 test("serves the generated bundle through the strict production-shaped HTTP boundary", async ({
   request,
 }) => {
