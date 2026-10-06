@@ -31,6 +31,6 @@ $$
 
 因此顶点是 $$(2,-1)$$，二次项系数为 $1>0$，所以图像开口向上。
 
-![二次函数示意图](images/quadratic-grid.png)
+![二次函数示意图](../images/quadratic-grid.png)
 
 ---
