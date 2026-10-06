@@ -43,8 +43,28 @@ nav.tabs > button.tab:not(.tab-active) {
 }
 
 @layer components {
-  .study-markdown {
-    @apply min-w-0 break-words;
+  .study-tag-panel {
+    @apply absolute inset-x-0 top-full z-30 mt-2 overflow-y-auto rounded-box border border-base-content/10 bg-base-100/95 p-3 shadow-2xl backdrop-blur;
+    max-height: min(18rem, calc(100dvh - 12rem));
+  }
+
+  .study-review-card.study-review-card-answer-shown {
+    max-height: min(38rem, calc(100dvh - 13rem));
+    overflow-y: auto;
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  .study-review-card.study-review-card-answer-shown .study-review-front-compact {
+    @apply text-base leading-snug sm:text-lg;
+  }
+
+  .study-review-card.study-review-card-answer-shown .study-review-front-compact :where(p, ul, ol, blockquote, pre, table) {
+    @apply my-1 first:mt-0 last:mb-0;
+  }
+
+  .study-review-card.study-review-card-answer-shown .study-review-answer {
+    @apply mt-1 pt-3;
   }
 
   .study-markdown :where(p, ul, ol, blockquote, pre, table) {
