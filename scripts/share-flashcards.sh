@@ -161,7 +161,7 @@ $GLOBAL_MARKER_END
 $MARKER_BEGIN
 [$SHARE_NAME]
    path = $SHARE_DIR
-   browseable = no
+   browseable = yes
    read only = yes
    guest ok = no
    valid users = $SMB_USER

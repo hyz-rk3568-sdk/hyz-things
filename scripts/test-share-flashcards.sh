@@ -34,6 +34,10 @@ if grep -Eq '^[[:space:]]*hosts (allow|deny)[[:space:]]*=' "$SCRIPT_DIR/share-fl
     printf '%s\n' 'expected flashcard share to allow authenticated clients without an IP ACL' >&2
     exit 1
 fi
+if ! grep -Eq '^[[:space:]]*browseable[[:space:]]*=[[:space:]]*yes$' "$SCRIPT_DIR/share-flashcards.sh"; then
+    printf '%s\n' 'expected flashcard share to be browseable for SMB clients' >&2
+    exit 1
+fi
 
 printf '%s\n' 'share-flashcards access policy validation passed'
 printf '%s\n' 'share-flashcards IPv4 validation passed'
