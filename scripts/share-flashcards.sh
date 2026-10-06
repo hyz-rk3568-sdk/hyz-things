@@ -8,7 +8,6 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd -P)
 SHARE_DIR=${HYZ_CARDS_SHARE_DIR:-$REPO_ROOT/flashcards}
 HOST_IP=${HYZ_CARDS_HOST_IP:-192.168.8.202}
-DEVICE_IP=${HYZ_CARDS_DEVICE_IP:-192.168.8.1}
 SMB_PORT=${HYZ_CARDS_SMB_PORT:-1445}
 SHARE_NAME=${HYZ_CARDS_SHARE_NAME:-hyz-cards}
 SMB_USER=${HYZ_CARDS_SMB_USER:-${SUDO_USER:-hyz}}
@@ -77,7 +76,6 @@ require_valid_inputs() {
     [ -d "$SHARE_DIR" ] || fail "flashcard directory does not exist: $SHARE_DIR"
     [ ! -L "$SHARE_DIR" ] || fail "flashcard directory must not be a symlink: $SHARE_DIR"
     valid_share_ipv4 "$HOST_IP" || fail "host IP must be a Tailscale 100.0.0.0/8 or LAN 192.168.8.0/24 IPv4 address: $HOST_IP"
-    valid_share_ipv4 "$DEVICE_IP" || fail "device IP must be a Tailscale 100.0.0.0/8 or LAN 192.168.8.0/24 IPv4 address: $DEVICE_IP"
     case "$SMB_PORT" in
         ''|*[!0-9]*) fail "SMB port must be numeric: $SMB_PORT" ;;
     esac
@@ -168,8 +166,6 @@ $MARKER_BEGIN
    guest ok = no
    valid users = $SMB_USER
    force user = $SMB_USER
-   hosts allow = $DEVICE_IP
-   hosts deny = ALL
 $MARKER_END
 CONF
 }
@@ -240,7 +236,7 @@ show_status() {
     fi
     printf 'Share path: %s\n' "$SHARE_DIR"
     printf 'Share endpoint: //%s:%s/%s\n' "$HOST_IP" "$SMB_PORT" "$SHARE_NAME"
-    printf 'Allowed device: %s\n' "$DEVICE_IP"
+    printf 'Access control: Samba username and password\n'
 }
 
 main() {
@@ -289,7 +285,7 @@ main() {
             testparm -s "$CONFIG_FILE" >/dev/null
             printf 'Samba share configured: //%s:%s/%s\n' "$HOST_IP" "$SMB_PORT" "$SHARE_NAME"
             printf 'Shared directory: %s\n' "$SHARE_DIR"
-            printf 'Allowed device: %s\n' "$DEVICE_IP"
+            printf 'Access control: Samba username and password\n'
             printf 'Test with: smbclient -p %s //%s/%s -U %s -c '\''ls'\''\n' "$SMB_PORT" "$HOST_IP" "$SHARE_NAME" "$SMB_USER"
             ;;
     esac
