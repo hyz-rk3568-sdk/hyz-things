@@ -236,6 +236,7 @@ check-static:
 	grep -q 'valid_share_ipv4' "$(CURDIR)/scripts/share-flashcards.sh"
 	grep -F -q '192.168.8.202' "$(CURDIR)/scripts/share-flashcards.sh"
 	grep -qE '^[[:space:]]*browseable[[:space:]]*=[[:space:]]*yes$$' "$(CURDIR)/scripts/share-flashcards.sh"
+	grep -qE '^[[:space:]]*read only[[:space:]]*=[[:space:]]*no$$' "$(CURDIR)/scripts/share-flashcards.sh"
 	! grep -qE '^[[:space:]]*hosts (allow|deny)[[:space:]]*=' "$(CURDIR)/scripts/share-flashcards.sh"
 ifneq ($(wildcard sdk/buildroot/package/busybox/busybox.config),)
 	grep -q '^CONFIG_FEATURE_SYSLOGD_READ_BUFFER_SIZE=4096$$' "$(CURDIR)/sdk/buildroot/package/busybox/busybox.config"
