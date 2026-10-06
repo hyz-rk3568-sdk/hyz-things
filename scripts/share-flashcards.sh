@@ -162,7 +162,7 @@ $MARKER_BEGIN
 [$SHARE_NAME]
    path = $SHARE_DIR
    browseable = yes
-   read only = yes
+   read only = no
    guest ok = no
    valid users = $SMB_USER
    force user = $SMB_USER
@@ -237,6 +237,7 @@ show_status() {
     printf 'Share path: %s\n' "$SHARE_DIR"
     printf 'Share endpoint: //%s:%s/%s\n' "$HOST_IP" "$SMB_PORT" "$SHARE_NAME"
     printf 'Access control: Samba username and password\n'
+    printf 'Share mode: read/write\n'
 }
 
 main() {

@@ -38,6 +38,10 @@ if ! grep -Eq '^[[:space:]]*browseable[[:space:]]*=[[:space:]]*yes$' "$SCRIPT_DI
     printf '%s\n' 'expected flashcard share to be browseable for SMB clients' >&2
     exit 1
 fi
+if ! grep -Eq '^[[:space:]]*read only[[:space:]]*=[[:space:]]*no$' "$SCRIPT_DIR/share-flashcards.sh"; then
+    printf '%s\n' 'expected flashcard share to be writable for authenticated SMB clients' >&2
+    exit 1
+fi
 
 printf '%s\n' 'share-flashcards access policy validation passed'
 printf '%s\n' 'share-flashcards IPv4 validation passed'
