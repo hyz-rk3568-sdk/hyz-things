@@ -24,7 +24,9 @@ test("filters the card library by Deck, Tag, and their combination", async ({ pa
   await page.getByTestId("study-deck-filter").selectOption("判断推理/逻辑判断");
   await expect(cards).toHaveCount(2);
 
-  await page.getByRole("button", { name: /高频 \(2\)/ }).click();
+  await page.getByTestId("study-tag-toggle").click();
+  await expect(page.getByTestId("study-tag-panel")).toBeVisible();
+  await page.getByTestId("study-tag-filter").getByRole("button", { name: /高频 \(2\)/ }).click();
   await expect(cards).toHaveCount(1);
   await expect(cards).toContainText("因果倒置是什么？");
   await expect(page).toHaveURL(/#\/study\/cards\?deck=.*tag=/);
@@ -34,9 +36,12 @@ test("opens an immersive review route, reveals the answer, and records Good", as
   await page.goto("/#/study/review?deck=%E5%88%A4%E6%96%AD%E6%8E%A8%E7%90%86%2F%E9%80%BB%E8%BE%91%E5%88%A4%E6%96%AD&tag=%E9%AB%98%E9%A2%91");
   await expect(page.getByTestId("study-review-layout")).toBeVisible();
   await expect(page.locator("nav[aria-label='主导航']")).toHaveCount(0);
-  await expect(page.getByTestId("study-review-card")).toBeVisible();
+  await expect(page.getByTestId("study-review-card")).toHaveAttribute("data-answer-shown", "false");
+  await expect(page.getByTestId("study-review-front")).toBeVisible();
 
   await page.getByTestId("study-show-answer").click();
+  await expect(page.getByTestId("study-review-card")).toHaveAttribute("data-answer-shown", "true");
+  await expect(page.getByTestId("study-review-front")).toBeVisible();
   await expect(page.getByTestId("study-review-answer")).toBeVisible();
   await page.getByTestId("study-rate-good").click();
   await expect(page.getByTestId("study-review-complete")).toBeVisible();
@@ -49,7 +54,17 @@ test("lets review choose its own Deck and Tag scope", async ({ page }) => {
 
   await page.getByTestId("study-review-deck-filter").selectOption("资料分析");
   await expect(page).toHaveURL(/#\/study\/review\?deck=/);
-  await expect(page.getByTestId("study-review-card")).toContainText("资料分析");
+  const reviewCard = page.getByTestId("study-review-card");
+  await expect(reviewCard).toContainText("资料分析");
+
+  const cardBeforeTagPanel = await reviewCard.boundingBox();
+  await page.getByTestId("study-review-tag-toggle").click();
+  await expect(page.getByTestId("study-review-tag-toggle")).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByTestId("study-review-tag-panel")).toBeVisible();
+  const cardAfterTagPanel = await reviewCard.boundingBox();
+  expect(cardBeforeTagPanel).not.toBeNull();
+  expect(cardAfterTagPanel).not.toBeNull();
+  expect(Math.abs(cardAfterTagPanel!.y - cardBeforeTagPanel!.y)).toBeLessThan(1);
 
   await page
     .getByTestId("study-review-tag-filter")
