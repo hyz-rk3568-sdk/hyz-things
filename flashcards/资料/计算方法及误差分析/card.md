@@ -14,6 +14,16 @@ tags:
 
 ### Back
 
+## 乘法放缩 
+
+$$
+\begin{aligned}
+378 \times 738
+&= (378 + 22) \times (738 - 38) \\
+&= 280000
+\end{aligned}
+$$
+
 # $\frac{118}{966}$ 计算
 
 ### 1. 补 $0$，缩小分子分母倍数差距
@@ -188,6 +198,7 @@ $$
 \boxed{
 \begin{aligned}
 \Delta_{\text{修}}
+&= \frac{A(\frac{1}{n} - \frac{1}{n} + r)}{1 + \frac{1}{n} - \frac{1}{n} + r} \\
 &= \Delta_0 \times nr \\
 &= \frac{A}{n+1}\times nr \\
 &= \frac{Anr}{n+1} \\
