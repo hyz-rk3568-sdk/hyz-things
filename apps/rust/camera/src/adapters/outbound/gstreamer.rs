@@ -506,8 +506,13 @@ fn decode_state(value: u8) -> CameraPipelineState {
     }
 }
 
-/// 有界停止管线：先请求 `NULL`，再等待状态机确认当前状态和 pending 状态都已经是
-/// `NULL`。`set_state` 返回 `Async` 只表示请求已接受，不能作为资源已释放的依据。
+/// 有界停止管线：先请求 `NULL`，再等待状态机确认当前状态为 `NULL` 且没有待处理状态
+///（`VoidPending`）。`set_state` 返回 `Async` 只表示请求已接受，不能作为资源已释放的依据。
+struct PipelineStopObservation {
+    succeeded: bool,
+    details: String,
+}
+
 fn stop_pipeline_bounded(pipeline: &gst::Pipeline, tag: &str) -> CameraPipelineState {
     let owned = pipeline.clone();
     let (tx, rx) = mpsc::channel();
@@ -518,21 +523,30 @@ fn stop_pipeline_bounded(pipeline: &gst::Pipeline, tag: &str) -> CameraPipelineS
             // before the state transition releases the hardware handles.
             let deadline = Instant::now() + PIPELINE_STOP_DEADLINE;
             let _ = owned.send_event(gst::event::FlushStart::new());
-            let stopped = match owned.set_state(gst::State::Null) {
-                Ok(_) => {
+            let observation = match owned.set_state(gst::State::Null) {
+                Ok(set_state_result) => {
                     let remaining = deadline.saturating_duration_since(Instant::now());
                     let (result, current, pending) =
                         owned.state(Some(gst::ClockTime::from_nseconds(
                             u64::try_from(remaining.as_nanos()).unwrap_or(u64::MAX),
                         )));
-                    pipeline_stop_succeeded(result, current, pending)
+                    PipelineStopObservation {
+                        succeeded: pipeline_stop_succeeded(result, current, pending),
+                        details: format!(
+                            "set_state={set_state_result:?} get_state={result:?} \
+                             current={current:?} pending={pending:?}"
+                        ),
+                    }
                 }
-                Err(_) => false,
+                Err(error) => PipelineStopObservation {
+                    succeeded: false,
+                    details: format!("set_state={error:?}"),
+                },
             };
-            let _ = tx.send(stopped);
+            let _ = tx.send(observation);
         });
     match rx.recv_timeout(PIPELINE_STOP_DEADLINE) {
-        Ok(true) => {
+        Ok(observation) if observation.succeeded => {
             logging::message(
                 Level::Info,
                 "pipeline",
@@ -543,14 +557,14 @@ fn stop_pipeline_bounded(pipeline: &gst::Pipeline, tag: &str) -> CameraPipelineS
             );
             CameraPipelineState::Stopped
         }
-        Ok(false) => {
+        Ok(observation) => {
             logging::message(
                 Level::Warn,
                 "pipeline",
                 "stop",
                 "failed",
                 "pipeline_stop_failed",
-                tag,
+                format_args!("{tag}: {}", observation.details),
             );
             CameraPipelineState::Failed
         }
@@ -583,7 +597,7 @@ fn pipeline_stop_succeeded(
     current: gst::State,
     pending: gst::State,
 ) -> bool {
-    result.is_ok() && current == gst::State::Null && pending == gst::State::Null
+    result.is_ok() && current == gst::State::Null && pending == gst::State::VoidPending
 }
 
 // ==================== 全双工语音对讲音频管线 ====================
@@ -1540,21 +1554,36 @@ mod tests {
     use std::{collections::HashMap, sync::Mutex};
 
     #[test]
-    fn pipeline_stop_requires_the_state_transition_to_reach_null() {
+    fn pipeline_stop_succeeded_accepts_only_completed_null_state() {
         assert!(!pipeline_stop_succeeded(
             Ok(gst::StateChangeSuccess::Async),
             gst::State::Playing,
             gst::State::Null,
         ));
         assert!(!pipeline_stop_succeeded(
+            Ok(gst::StateChangeSuccess::Async),
+            gst::State::Null,
+            gst::State::VoidPending,
+        ));
+        assert!(!pipeline_stop_succeeded(
+            Err(gst::StateChangeError),
+            gst::State::Null,
+            gst::State::VoidPending,
+        ));
+        assert!(!pipeline_stop_succeeded(
             Ok(gst::StateChangeSuccess::Success),
             gst::State::Ready,
+            gst::State::VoidPending,
+        ));
+        assert!(!pipeline_stop_succeeded(
+            Ok(gst::StateChangeSuccess::Success),
+            gst::State::Null,
             gst::State::Null,
         ));
         assert!(pipeline_stop_succeeded(
             Ok(gst::StateChangeSuccess::Success),
             gst::State::Null,
-            gst::State::Null,
+            gst::State::VoidPending,
         ));
     }
 
