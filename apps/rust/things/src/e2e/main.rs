@@ -333,6 +333,9 @@ impl Default for HarnessState {
             system: Component::available(SystemStats {
                 uptime_seconds: Some(3_600),
                 cpu_temperature_millidegrees: Some(46_000),
+                cpu_usage_percent: Some(18),
+                memory_total_bytes: Some(4 * 1024 * 1024 * 1024),
+                memory_available_bytes: Some(2 * 1024 * 1024 * 1024),
                 interfaces: vec![
                     InterfaceStats {
                         name: "eth0".to_owned(),

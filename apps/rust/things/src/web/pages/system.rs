@@ -103,6 +103,23 @@ pub(crate) fn render_dashboard(snapshot: &StatusSnapshot) -> Html {
                 .unwrap_or_else(missing),
         ),
         (
+            "CPU 使用率",
+            system
+                .data
+                .as_ref()
+                .and_then(|v| v.cpu_usage_percent)
+                .map(|v| format!("{v}%"))
+                .unwrap_or_else(missing),
+        ),
+        (
+            "内存占用",
+            system
+                .data
+                .as_ref()
+                .and_then(memory_usage)
+                .unwrap_or_else(missing),
+        ),
+        (
             "网络接口",
             system
                 .data
@@ -591,6 +608,18 @@ pub(crate) fn wan_traffic(
         );
         found.then_some((rx_bytes, tx_bytes))
     })
+}
+
+fn memory_usage(stats: &hyz_things::domain::status::SystemStats) -> Option<String> {
+    let total = stats.memory_total_bytes?;
+    let available = stats.memory_available_bytes?;
+    let used = total.saturating_sub(available.min(total));
+    let percent = (used as f64 / total.max(1) as f64 * 100.0).round() as u8;
+    Some(format!(
+        "{} / {} · {percent}%",
+        format_bytes(used),
+        format_bytes(total)
+    ))
 }
 
 pub(crate) fn format_uptime(seconds: u64) -> String {

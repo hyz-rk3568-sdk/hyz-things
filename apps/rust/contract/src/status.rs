@@ -290,6 +290,12 @@ pub struct SystemStats {
     pub uptime_seconds: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cpu_temperature_millidegrees: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_usage_percent: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_total_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_available_bytes: Option<u64>,
     pub interfaces: Vec<InterfaceStats>,
 }
 
@@ -372,6 +378,9 @@ mod tests {
             system: Component::available(SystemStats {
                 uptime_seconds: Some(120),
                 cpu_temperature_millidegrees: Some(45_000),
+                cpu_usage_percent: Some(12),
+                memory_total_bytes: Some(2 * 1024 * 1024 * 1024),
+                memory_available_bytes: Some(1024 * 1024 * 1024),
                 interfaces: vec![InterfaceStats {
                     name: "wlan0".to_owned(),
                     rx_bytes: 10,

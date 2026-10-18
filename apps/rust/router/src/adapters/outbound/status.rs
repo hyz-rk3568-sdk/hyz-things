@@ -1,5 +1,9 @@
 use async_trait::async_trait;
-use std::{fs, net::Ipv4Addr};
+use std::{
+    fs,
+    net::Ipv4Addr,
+    sync::{Mutex, OnceLock},
+};
 
 use super::{
     paths::MIHOMO_SOURCE_CONFIG,
@@ -26,6 +30,14 @@ use crate::{
 };
 
 const MAX_SAFE_SSID_BYTES: usize = 128;
+
+#[derive(Clone, Copy)]
+struct CpuCounters {
+    total: u64,
+    idle: u64,
+}
+
+static LAST_CPU_COUNTERS: OnceLock<Mutex<Option<CpuCounters>>> = OnceLock::new();
 
 #[async_trait]
 impl StatusRouterPlatformPort for LinuxRouterPlatform {
@@ -362,6 +374,8 @@ fn read_system_stats() -> Component<SystemStats> {
     let cpu_temperature_millidegrees = fs::read_to_string("/sys/class/thermal/thermal_zone0/temp")
         .ok()
         .and_then(|value| value.trim().parse::<i64>().ok());
+    let (memory_total_bytes, memory_available_bytes) = read_memory_stats();
+    let cpu_usage_percent = read_cpu_usage_percent();
     let interfaces = [
         LAN_BRIDGE,
         ETHERNET_WAN_INTERFACE,
@@ -371,17 +385,25 @@ fn read_system_stats() -> Component<SystemStats> {
     .into_iter()
     .filter_map(interface_stats)
     .collect::<Vec<_>>();
-    let complete =
-        uptime_seconds.is_some() && cpu_temperature_millidegrees.is_some() && interfaces.len() == 4;
+    let complete = uptime_seconds.is_some()
+        && cpu_temperature_millidegrees.is_some()
+        && memory_total_bytes.is_some()
+        && memory_available_bytes.is_some()
+        && interfaces.len() == 4;
     let stats = SystemStats {
         uptime_seconds,
         cpu_temperature_millidegrees,
+        cpu_usage_percent,
+        memory_total_bytes,
+        memory_available_bytes,
         interfaces,
     };
     if complete {
         Component::available(stats)
     } else if stats.uptime_seconds.is_none()
         && stats.cpu_temperature_millidegrees.is_none()
+        && stats.memory_total_bytes.is_none()
+        && stats.memory_available_bytes.is_none()
         && stats.interfaces.is_empty()
     {
         unavailable("system_probe_failed", "System statistics are unavailable")
@@ -394,6 +416,59 @@ fn read_system_stats() -> Component<SystemStats> {
             ),
         )
     }
+}
+
+fn read_memory_stats() -> (Option<u64>, Option<u64>) {
+    let Ok(meminfo) = fs::read_to_string("/proc/meminfo") else {
+        return (None, None);
+    };
+    let value_kib = |name: &str| {
+        meminfo.lines().find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            (key == name)
+                .then(|| value.split_whitespace().next()?.parse::<u64>().ok())
+                .flatten()
+        })
+    };
+    (
+        value_kib("MemTotal").map(|value| value.saturating_mul(1024)),
+        value_kib("MemAvailable").map(|value| value.saturating_mul(1024)),
+    )
+}
+
+fn read_cpu_usage_percent() -> Option<u8> {
+    let counters = fs::read_to_string("/proc/stat")
+        .ok()
+        .and_then(|stat| parse_cpu_counters(&stat))?;
+    let previous = LAST_CPU_COUNTERS
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .ok()
+        .and_then(|mut previous| previous.replace(counters));
+    let previous = previous?;
+    let total_delta = counters.total.saturating_sub(previous.total);
+    let idle_delta = counters.idle.saturating_sub(previous.idle);
+    (total_delta > 0).then(|| {
+        ((total_delta.saturating_sub(idle_delta).saturating_mul(100) / total_delta).min(100)) as u8
+    })
+}
+
+fn parse_cpu_counters(stat: &str) -> Option<CpuCounters> {
+    let line = stat.lines().find(|line| line.starts_with("cpu "))?;
+    let values = line
+        .split_whitespace()
+        .skip(1)
+        .map(str::parse::<u64>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    if values.len() < 4 {
+        return None;
+    }
+    let total = values.iter().copied().fold(0_u64, u64::saturating_add);
+    Some(CpuCounters {
+        total,
+        idle: values[3].saturating_add(values.get(4).copied().unwrap_or_default()),
+    })
 }
 
 fn probe_output(platform: &LinuxRouterPlatform, tool: Tool, args: &[&str]) -> Option<String> {
