@@ -1,8 +1,8 @@
 use hyz_things::{
     adapters::{
         inbound::http::{
-            app_with_admin_camera_control_and_flashcards, bind_fixed_lan_with_retry, PortalTls,
-            TlsListener, DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
+            app_with_admin_camera_control_and_flashcards, bind_fixed_lan_with_retry,
+            bind_ipv6_listener, PortalTls, TlsListener, DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
         },
         outbound::{
             admin::AdminFileAdapter,
@@ -147,7 +147,14 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     // camera talk only exists on secure contexts). The init script waits on
     // PORTAL_READY_MARKER instead of probing HTTP, because the device has no
     // TLS-capable wget/curl for self-signed health checks.
-    let tls = PortalTls::load_or_generate()?;
+    let public_ipv6 = status
+        .execute()
+        .await
+        .router
+        .data
+        .as_ref()
+        .and_then(|router| router.public_ipv6_address);
+    let tls = PortalTls::load_or_generate(public_ipv6)?;
     let tls_acceptor = tls.acceptor();
     // 全新开机时 /run/hyz-things 不存在（热部署工具会创建它，掩盖了裸机启动
     // 路径）；守护进程自己建立运行时目录再写就绪标记。
@@ -223,6 +230,22 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         _ = signals.recv() => return Ok(()),
         _ = interrupt.recv() => return Ok(()),
     };
+    let ipv6_listener = match bind_ipv6_listener(port) {
+        Ok(listener) => Some(listener),
+        Err(_error) => {
+            logging::event(
+                Level::Warn,
+                "http",
+                "listen_https_ipv6",
+                "dependency_unavailable",
+                Some("ipv6_listener_unavailable"),
+                None,
+                None,
+                None,
+            );
+            None
+        }
+    };
     let app = app_with_admin_camera_control_and_flashcards(
         status,
         control,
@@ -235,6 +258,29 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         flashcards,
         flashcard_source,
     );
+    let ipv6_task = ipv6_listener.map(|listener| {
+        let app = app.clone();
+        let tls_acceptor = tls_acceptor.clone();
+        let mut ipv6_shutdown_rx = shutdown_rx.clone();
+        tokio::spawn(async move {
+            let serve = axum::serve(TlsListener::new(listener, tls_acceptor), app)
+                .with_graceful_shutdown(async move {
+                    while !*ipv6_shutdown_rx.borrow() && ipv6_shutdown_rx.changed().await.is_ok() {}
+                });
+            if serve.await.is_err() {
+                logging::event(
+                    Level::Error,
+                    "http",
+                    "listen_https_ipv6",
+                    "listener_failed",
+                    Some("ipv6_listener_failed"),
+                    None,
+                    None,
+                    None,
+                );
+            }
+        })
+    });
     std::fs::write(PORTAL_READY_MARKER, format!("{port}\n"))?;
     logging::event(
         Level::Info,
@@ -262,6 +308,9 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     let _ = std::fs::remove_file(PORTAL_READY_MARKER);
     let _ = shutdown_tx.send(true);
     let _ = tailscale_task.await;
+    if let Some(task) = ipv6_task {
+        let _ = task.await;
+    }
     match tailscale.stop_all() {
         Ok(()) => Ok(()),
         Err(error) => {

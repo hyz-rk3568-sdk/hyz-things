@@ -502,6 +502,7 @@ impl CameraControlPort for HarnessCamera {
     async fn create_session(
         &self,
         _scope: CameraAccessScope,
+        _ipv6_candidate: Option<std::net::Ipv6Addr>,
         offer_sdp: String,
     ) -> Result<CameraSession, CameraError> {
         let mut state = self.backend.state().map_err(|_| CameraError::Unavailable)?;

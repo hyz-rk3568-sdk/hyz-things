@@ -1,3 +1,4 @@
+use super::webrtc_udp::{receive_one_from_each_socket, socket_for_destination, CandidateSocket};
 use crate::{
     application::ports::{
         CreatedWebRtcSession, KeyframeRequester, MediaTerminator, RunningWebRtcSession,
@@ -12,7 +13,7 @@ use crate::{
 };
 use std::{
     io::ErrorKind,
-    net::{Ipv4Addr, SocketAddr, UdpSocket},
+    net::{IpAddr, SocketAddr, UdpSocket},
     os::fd::AsRawFd,
     sync::{
         mpsc::{self, Sender},
@@ -78,37 +79,29 @@ impl WebRtcSessionPort for Str0mWebRtcAdapter {
         validate_offer_sdp(&offer_sdp).map_err(map_sdp_validation_error)?;
         let offer =
             SdpOffer::from_sdp_string(&offer_sdp).map_err(|_| WebRtcError::UnsupportedSdp)?;
-        let (socket, port) = bind_fixed_udp_port(scope.address())?;
-        socket
-            .set_nonblocking(true)
-            .map_err(|_| WebRtcError::TransportFailed)?;
-        let buffer_size: libc::c_int = SEND_BUFFER_BYTES as libc::c_int;
-        let setsockopt = unsafe {
-            libc::setsockopt(
-                socket.as_raw_fd(),
-                libc::SOL_SOCKET,
-                libc::SO_SNDBUF,
-                &buffer_size as *const libc::c_int as *const libc::c_void,
-                std::mem::size_of::<libc::c_int>() as libc::socklen_t,
-            )
-        };
-        if setsockopt != 0 {
-            logging::session_event(
-                Level::Warn,
-                "webrtc",
-                "socket",
-                "send_buffer_failed",
-                Some("udp_send_buffer_failed"),
-                session_id.as_str(),
-            );
-            return Err(WebRtcError::TransportFailed);
+        let ipv4_socket = bind_fixed_udp_port(scope.address().into())?;
+        configure_udp_socket(&ipv4_socket.socket, session_id.as_str())?;
+        let mut sockets = vec![ipv4_socket];
+        if let Some(address) = scope.ipv6_address() {
+            match bind_fixed_udp_port(address.into()) {
+                Ok(socket) => match configure_udp_socket(&socket.socket, session_id.as_str()) {
+                    Ok(()) => sockets.push(socket),
+                    Err(error) => log_ipv6_candidate_unavailable(session_id.as_str(), error),
+                },
+                Err(error) => log_ipv6_candidate_unavailable(session_id.as_str(), error),
+            }
         }
-        let candidate_addr = SocketAddr::new(scope.address().into(), port);
 
+        let candidates = host_candidates(
+            &sockets
+                .iter()
+                .map(|socket| socket.address)
+                .collect::<Vec<_>>(),
+        )?;
         let mut rtc = Rtc::new(Instant::now());
-        let candidate =
-            Candidate::host(candidate_addr, "udp").map_err(|_| WebRtcError::NegotiationFailed)?;
-        rtc.add_local_candidate(candidate);
+        for candidate in candidates {
+            rtc.add_local_candidate(candidate);
+        }
         let answer = rtc.sdp_api().accept_offer(offer).map_err(|_| {
             logging::session_event(
                 Level::Warn,
@@ -137,7 +130,7 @@ impl WebRtcSessionPort for Str0mWebRtcAdapter {
         let join = thread::Builder::new()
             .name(thread_name)
             .spawn(move || {
-                let result = drive_session(rtc, socket, candidate_addr, driver, shutdown_rx);
+                let result = drive_session(rtc, sockets, driver, shutdown_rx);
                 if let Err(error) = &result {
                     logging::message(
                         Level::Error,
@@ -162,10 +155,15 @@ impl WebRtcSessionPort for Str0mWebRtcAdapter {
     }
 }
 
-fn bind_fixed_udp_port(address: Ipv4Addr) -> Result<(UdpSocket, u16), WebRtcError> {
+fn bind_fixed_udp_port(address: IpAddr) -> Result<CandidateSocket, WebRtcError> {
     for port in CAMERA_UDP_PORT_START..=CAMERA_UDP_PORT_END {
-        match UdpSocket::bind(SocketAddr::from((address, port))) {
-            Ok(socket) => return Ok((socket, port)),
+        match UdpSocket::bind(SocketAddr::new(address, port)) {
+            Ok(socket) => {
+                let address = socket
+                    .local_addr()
+                    .map_err(|_| WebRtcError::TransportFailed)?;
+                return Ok(CandidateSocket { socket, address });
+            }
             Err(error) if error.kind() == ErrorKind::AddrInUse => continue,
             Err(error) => {
                 logging::message(
@@ -181,6 +179,53 @@ fn bind_fixed_udp_port(address: Ipv4Addr) -> Result<(UdpSocket, u16), WebRtcErro
         }
     }
     Err(WebRtcError::ResourceExhausted)
+}
+
+fn configure_udp_socket(socket: &UdpSocket, session_id: &str) -> Result<(), WebRtcError> {
+    socket
+        .set_nonblocking(true)
+        .map_err(|_| WebRtcError::TransportFailed)?;
+    let buffer_size: libc::c_int = SEND_BUFFER_BYTES as libc::c_int;
+    let setsockopt = unsafe {
+        libc::setsockopt(
+            socket.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_SNDBUF,
+            &buffer_size as *const libc::c_int as *const libc::c_void,
+            std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+        )
+    };
+    if setsockopt != 0 {
+        logging::session_event(
+            Level::Warn,
+            "webrtc",
+            "socket",
+            "send_buffer_failed",
+            Some("udp_send_buffer_failed"),
+            session_id,
+        );
+        return Err(WebRtcError::TransportFailed);
+    }
+    Ok(())
+}
+
+fn log_ipv6_candidate_unavailable(session_id: &str, error: WebRtcError) {
+    logging::message(
+        Level::Warn,
+        "webrtc",
+        "ipv6_candidate",
+        "unavailable",
+        "ipv6_udp_candidate_unavailable",
+        format_args!("session {session_id} IPv6 UDP candidate unavailable: {error:?}"),
+    );
+}
+
+fn host_candidates(addresses: &[SocketAddr]) -> Result<Vec<Candidate>, WebRtcError> {
+    addresses
+        .iter()
+        .copied()
+        .map(|address| Candidate::host(address, "udp").map_err(|_| WebRtcError::NegotiationFailed))
+        .collect()
 }
 
 struct Str0mRunningSession {
@@ -221,8 +266,7 @@ struct SessionDriver {
 
 fn drive_session(
     mut rtc: Rtc,
-    socket: UdpSocket,
-    candidate_addr: SocketAddr,
+    sockets: Vec<CandidateSocket>,
     driver: SessionDriver,
     shutdown_rx: mpsc::Receiver<()>,
 ) -> Result<(), WebRtcError> {
@@ -263,6 +307,8 @@ fn drive_session(
             {
                 Output::Transmit(transmit) => {
                     let destination = transmit.destination;
+                    let socket = socket_for_destination(&sockets, destination)
+                        .ok_or(WebRtcError::TransportFailed)?;
                     let mut attempts = 0;
                     loop {
                         match socket.send_to(&transmit.contents, destination) {
@@ -441,26 +487,55 @@ fn drive_session(
             drain_audio(&mut rtc, audio_mid, audio_pt, &audio_frames)?;
         }
 
-        match socket.recv_from(&mut recv_buf) {
-            Ok((length, source)) => {
-                let receive =
-                    Receive::new(Protocol::Udp, source, candidate_addr, &recv_buf[..length])
-                        .map_err(|_| WebRtcError::TransportFailed)?;
+        let received =
+            receive_one_from_each_socket(&sockets, &mut recv_buf, |source, local, bytes| {
+                let receive = Receive::new(Protocol::Udp, source, local, bytes)
+                    .map_err(|_| WebRtcError::TransportFailed)?;
                 rtc.handle_input(Input::Receive(Instant::now(), receive))
                     .map_err(|_| WebRtcError::TransportFailed)?;
                 last_transport_activity = Instant::now();
+                Ok(())
+            })
+            .map_err(|error| match error {
+                super::webrtc_udp::ReceiveError::Socket => WebRtcError::TransportFailed,
+                super::webrtc_udp::ReceiveError::Handler(error) => error,
+            })?;
+        if !received {
+            let now = Instant::now();
+            if timeout <= now {
+                rtc.handle_input(Input::Timeout(now))
+                    .map_err(|_| WebRtcError::TransportFailed)?;
+            } else {
+                thread::sleep((timeout - now).min(DRIVER_POLL_SLICE));
             }
-            Err(error) if error.kind() == ErrorKind::WouldBlock => {
-                let now = Instant::now();
-                if timeout <= now {
-                    rtc.handle_input(Input::Timeout(now))
-                        .map_err(|_| WebRtcError::TransportFailed)?;
-                } else {
-                    thread::sleep((timeout - now).min(DRIVER_POLL_SLICE));
-                }
-            }
-            Err(_) => return Err(WebRtcError::TransportFailed),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn creates_udp_host_candidates_for_ipv4_and_ipv6() {
+        let addresses = [
+            "192.168.8.1:40000".parse().unwrap(),
+            "[240e:380:4308:da10:6605:3dff:fe02:430d]:40001"
+                .parse()
+                .unwrap(),
+        ];
+        let candidates = host_candidates(&addresses).unwrap();
+        assert_eq!(candidates.len(), 2);
+        let candidate_sdp = candidates
+            .iter()
+            .map(Candidate::to_sdp_string)
+            .collect::<Vec<_>>();
+        assert!(candidate_sdp
+            .iter()
+            .any(|candidate| candidate.contains("192.168.8.1 40000 typ host")));
+        assert!(candidate_sdp.iter().any(|candidate| {
+            candidate.contains("240e:380:4308:da10:6605:3dff:fe02:430d 40001 typ host")
+        }));
     }
 }
 

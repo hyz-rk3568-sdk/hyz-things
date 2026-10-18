@@ -28,10 +28,10 @@ write_constants() {
 pub const PROTOCOL_VERSION: u16 = 10;
 EOF
     cat >"$WORK/contract/src/camera.rs" <<'EOF'
-pub const CONTROL_PROTOCOL_VERSION: u16 = 2;
+pub const CONTROL_PROTOCOL_VERSION: u16 = 3;
 EOF
     cat >"$WORK/things/src/adapters/outbound/camera.rs" <<'EOF'
-const CAMERA_CONTROL_PROTOCOL_VERSION: u16 = 2;
+const CAMERA_CONTROL_PROTOCOL_VERSION: u16 = 3;
 EOF
 }
 
@@ -181,18 +181,25 @@ run_deploy fail
 run_deploy fail check bogus
 run_deploy fail deploy bogus /bin/true
 
-# Compatible non-router applications: every check passes.
-run_deploy ok check things
+# Things v3 requires a matching camera v3. Camera v3 can be upgraded first
+# because it still accepts the previous v2 client request.
+run_deploy fail check things
 run_deploy ok check camera
+
+# An absent camera peer is skipped on the Things edge.
+cp "$FAKE_REGISTRY" "$WORK/registry.saved"
+cat >"$FAKE_REGISTRY" <<EOF
+{"apps": {"things": {"current": {"binary": "/usr/bin/hyz-things", "init_script": "/etc/init.d/S83hyz-things", "sha256": "$SHA", "protocol_versions": {"camera": 2, "router": 10}}}, "router": {"current": {"binary": "/usr/bin/hyz-router", "init_script": "/etc/init.d/S81hyz-router", "sha256": "$SHA", "protocol_versions": {"router": 10}}}}}
+EOF
+run_deploy fail check things
+run_deploy ok check camera
+FAKE_NO_CAMERA=1 run_deploy ok check things
+cp "$WORK/registry.saved" "$FAKE_REGISTRY"
 
 # Router changes are OTA-only and cannot use this hot-push tool.
 run_deploy fail check router
 run_deploy fail deploy router /bin/true
 run_deploy fail revert router
-
-# A missing camera peer is skipped on the things edge and not required by camera.
-FAKE_NO_CAMERA=1 run_deploy ok check things
-FAKE_NO_CAMERA=1 run_deploy ok check camera
 
 # A camera push stops only the camera service and never the router.
 reset_log
@@ -212,6 +219,12 @@ assert isinstance(deployed["deployed_at_unix_ms"], int)
 assert deployed["deployed_at_unix_ms"] > 0
 PY
 
+# The new camera server remains compatible with the installed Things v2 client.
+cat >"$FAKE_REGISTRY" <<EOF
+{"apps": {"things": {"current": {"binary": "/usr/bin/hyz-things", "init_script": "/etc/init.d/S83hyz-things", "sha256": "$SHA", "protocol_versions": {"camera": 2, "router": 10}}}, "router": {"current": {"binary": "/usr/bin/hyz-router", "init_script": "/etc/init.d/S81hyz-router", "sha256": "$SHA", "protocol_versions": {"router": 10}}}, "camera": {"current": {"binary": "/usr/bin/hyz-camera", "init_script": "/etc/init.d/S82hyz-camera", "sha256": "$SHA", "protocol_versions": {"camera": 3}}}}}
+EOF
+run_deploy ok check things
+
 # A things push stops only the things service and never the router.
 reset_log
 run_deploy ok deploy things "$DEPLOY"
@@ -219,31 +232,36 @@ expect_log_contains "'/etc/init.d/S83hyz-things' stop"
 expect_log_contains "'/etc/init.d/S83hyz-things' start"
 expect_log_absent 'S81hyz-router'
 expect_log_absent 'S82hyz-camera'
+cat >"$FAKE_REGISTRY" <<EOF
+{"apps": {"things": {"current": {"binary": "/usr/bin/hyz-things", "init_script": "/etc/init.d/S83hyz-things", "sha256": "$SHA", "protocol_versions": {"camera": 3, "router": 10}}}, "router": {"current": {"binary": "/usr/bin/hyz-router", "init_script": "/etc/init.d/S81hyz-router", "sha256": "$SHA", "protocol_versions": {"router": 10}}}, "camera": {"current": {"binary": "/usr/bin/hyz-camera", "init_script": "/etc/init.d/S82hyz-camera", "sha256": "$SHA", "protocol_versions": {"camera": 3}}}}}
+EOF
 
 # A protocol mismatch is refused before any service is stopped.
-sed -i 's/u16 = 2/u16 = 3/' "$WORK/contract/src/camera.rs"
+sed -i 's/u16 = 3/u16 = 5/' "$WORK/contract/src/camera.rs"
 reset_log
 run_deploy fail deploy camera "$DEPLOY"
 expect_log_absent 'stop'
 expect_log_absent 'start'
-sed -i 's/u16 = 3/u16 = 2/' "$WORK/contract/src/camera.rs"
+sed -i 's/u16 = 5/u16 = 3/' "$WORK/contract/src/camera.rs"
 
-# A contract bump breaks the things router edge but not the camera-only edge.
+# A contract bump breaks the Things router edge but leaves the camera edge intact.
 sed -i 's/u16 = 10/u16 = 11/' "$WORK/contract/src/router.rs"
 run_deploy fail check things
 run_deploy ok check camera
-sed -i 's/u16 = 2/u16 = 3/' "$WORK/contract/src/camera.rs"
-run_deploy fail check things
-run_deploy fail check camera
 sed -i 's/u16 = 11/u16 = 10/' "$WORK/contract/src/router.rs"
+
+# The Things client and camera server version checks remain directional.
+sed -i 's/u16 = 3/u16 = 2/' "$WORK/contract/src/camera.rs"
 run_deploy ok check things
 run_deploy fail check camera
+sed -i 's/u16 = 2/u16 = 3/' "$WORK/contract/src/camera.rs"
+run_deploy ok check things
+run_deploy ok check camera
 
-# A drift of things' own camera expectation is caught on both edges.
-sed -i 's/u16 = 2/u16 = 3/' "$WORK/things/src/adapters/outbound/camera.rs"
+# A Things client protocol drift is rejected against the installed camera.
+sed -i 's/u16 = 3/u16 = 4/' "$WORK/things/src/adapters/outbound/camera.rs"
 run_deploy fail check things
-run_deploy fail check camera
-sed -i 's/u16 = 3/u16 = 2/' "$WORK/things/src/adapters/outbound/camera.rs"
+sed -i 's/u16 = 4/u16 = 3/' "$WORK/things/src/adapters/outbound/camera.rs"
 
 # A revert is gated on the previous binary's recorded protocol versions, not
 # the current source tree: source camera is 3 here, but the recorded previous
@@ -258,6 +276,7 @@ expect_log_absent 'start'
 
 # A camera revert restores the recorded previous binary without the router.
 sed -i 's/u16 = 3/u16 = 2/' "$WORK/contract/src/camera.rs"
+sed -i 's/u16 = 3/u16 = 2/' "$WORK/things/src/adapters/outbound/camera.rs"
 cat >"$FAKE_REGISTRY" <<EOF
 {"apps": {"camera": {"current": {"binary": "/usr/bin/hyz-camera", "init_script": "/etc/init.d/S82hyz-camera", "sha256": "$(printf 'b%.0s' {1..64})", "protocol_versions": {"camera": 2}}, "previous": {"binary": "/usr/bin/hyz-camera", "init_script": "/etc/init.d/S82hyz-camera", "sha256": "$SHA", "protocol_versions": {"camera": 2}}}}}
 EOF

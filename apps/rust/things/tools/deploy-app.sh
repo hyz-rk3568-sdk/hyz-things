@@ -225,6 +225,15 @@ installed_peer_version() { # peer protocol
     if device_shell_rc "test -x '${PEER_BINARY[$peer]}'"; then
         if [[ "$peer:$protocol" == "router:router" ]]; then
             version=$(protocol_version_of things router)
+        elif [[ "$peer:$protocol" == "camera:camera" ]]; then
+            version=$(protocol_version_of camera camera)
+            if ((version > 1)); then
+                version=$((version - 1))
+            fi
+            printf 'registry has no camera protocol entry; assuming installed firmware camera speaks previous supported version %s\n' \
+                "$version" >&2
+            printf '%s\n' "$version"
+            return 0
         else
             version=$(protocol_version_of "$peer" "$protocol")
         fi
@@ -253,6 +262,12 @@ check_compatibility() { # versions_file
             continue
         fi
         if [[ "$pushed_version" != "$installed_version" ]]; then
+            # Camera v3 accepts the previous v2 request shape and echoes the
+            # request version, so it can be installed before the v3 Things client.
+            if [[ "$APP_NAME" == camera && "$protocol" == camera ]] \
+                && ((pushed_version == installed_version + 1)); then
+                continue
+            fi
             printf 'protocol %s mismatch: pushed %s speaks %s, installed %s speaks %s\n' \
                 "$protocol" "$APP_NAME" "$pushed_version" "$peer" "$installed_version" >&2
             printf 'the wire contract requires equal versions; deploy a matching %s first (servers accept their own and the previous version)\n' \

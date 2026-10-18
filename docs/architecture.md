@@ -12,8 +12,8 @@ apps/rust/camera    -> /usr/bin/hyz-camera（媒体进程，S82）
 ```
 
 - `hyz-router` 是**稳定的长运行服务**：拥有管理 LAN、WAN DHCP、IPv4 转发/NAT、Mihomo 代理、Tailscale 生命周期、OTA 与 shutdown；**没有** HTTP、Web、管理员认证或摄像头信令。它只服务 root-only `/run/hyz-router/control.sock`，并在严格 management-only reconcile 后才写入 `/run/hyz-router/ready` 标记。
-- `hyz-things` 以「hyz things」个人网站形式承载管理面：LAN `192.168.8.1:8080`（HTTPS，自签证书）与精确 Tailscale IPv4 监听、管理员认证（Argon2id 凭据仍在 `/userdata/hyz-router/admin/credential.json`）、会话/CSRF、嵌入式 Yew SPA、camera 客户端与 Tailscale listener 管理。它等待 router ready 标记后才绑定 HTTPS，通过 `hyz-contract` client 驱动 router，通过 `/run/hyz-camera/control.sock` 驱动 camera。
-- `hyz-camera` 是独立媒体进程，接受受限状态、会话、旋转请求，媒体在浏览器与固定 `40000-40015/udp` 池之间直连；它不执行网络或防火墙命令。
+- `hyz-things` 以「hyz things」个人网站形式承载管理面：LAN `192.168.8.1:8080`（HTTPS，自签证书），必需的 IPv4 监听之外还尝试在 `[::]:8080` 建立 IPv6-only HTTPS 监听；IPv6 绑定失败会记录告警并继续提供 IPv4 服务。另有精确 Tailscale IPv4 监听、管理员认证（Argon2id 凭据仍在 `/userdata/hyz-router/admin/credential.json`）、会话/CSRF、嵌入式 Yew SPA、camera 客户端与 Tailscale listener 管理。IPv6 地址来自管理 WAN 默认 IPv6 路由上的公网全局地址，并在总览「路由 / LAN」卡片显示，可直接复制。门户启动时将当时观测到的 IPv6 加入 TLS 证书 SAN；证书自签，IPv6 地址变化后需重启门户以更新 SAN。进程等待 router ready 标记后才绑定 HTTPS，通过 `hyz-contract` client 驱动 router，通过 `/run/hyz-camera/control.sock` 驱动 camera。
+- `hyz-camera` 是独立媒体进程，接受受限状态、会话、旋转请求；每个 WebRTC 会话在可用时发布 LAN IPv4 与受信任公网 IPv6 UDP host candidate，媒体使用固定 `40000-40015/udp` 端口池；它不执行网络或防火墙命令。
 
 推送演进：`apps/rust/things/tools/deploy-app.sh` 只支持对 `hyz-things` 和 `hyz-camera` 热推送新 ELF。推送 camera/things 只停止并重启对应 init 服务，**router 永不因此重启**；router 允许在授权设备上做开发热替换：USB ADB 使用 `stop → 原子替换 → start`，网络 ADB 使用 `原子替换 → reboot`；router 正式发布仍通过 OTA。停止任何服务之前，工具按注册表记录的协议版本做兼容性检查（见「热推送与协议兼容窗口」）。
 
@@ -100,7 +100,7 @@ flowchart LR
 
     subgraph Things["/usr/bin/hyz-things · S83 门户"]
         Web["嵌入式 Yew / WASM"]
-        HTTP["Axum + rustls<br/>https://192.168.8.1:8080 + 精确 Tailscale IPv4"]
+        HTTP["Axum + rustls<br/>HTTPS LAN IPv4 + 可选 IPv6-only + 精确 Tailscale IPv4"]
         Portal["hyz-things main.rs<br/>composition root"]
         Admin["AdminApplication"]
         CamClient["CameraUnixAdapter"]
@@ -121,7 +121,7 @@ flowchart LR
     RootCLI -->|"版本化 JSON frame"| Socket
     UdHCPC -->|"类型化 DHCP event"| Socket
     Portal -->|"hyz-contract client<br/>版本化 JSON frame"| Socket
-    Portal -->|"camera 协议 v2<br/>版本化 JSON frame"| CamSocket
+    Portal -->|"camera 协议 v3（兼容 v2 请求）<br/>版本化 JSON frame"| CamSocket
 
     Linux --> Net["Linux 网络与服务<br/>br-lan · wlan0 · iptables<br/>WPA · hostapd · dnsmasq · Mihomo"]
     Firmware --> OTA["OTA 平台<br/>staging · BCB · updateEngine · reboot"]
@@ -131,7 +131,7 @@ flowchart LR
 
 浏览器控制在 `hyz-things` 进程内经过同一个 `PortalControlHandler`，不连接 root-only router socket；CLI 和 udhcpc hook 只作为该 socket 的客户端存在。`hyz-things` 是 router/camera 的普通客户端，**不是**它们的 composition root——每个进程的完整生产 adapter 只由各自的 `main.rs` 构造。
 
-摄像头直播使用受限边界：观看对匿名开放——浏览器从 things 领取 15 分钟短时 viewer 令牌（内存驻留、最多 128 个），令牌只允许创建/关闭自己名下的会话；画面分辨率与旋转设置仍要求管理员 session。things 通过固定 `/run/hyz-camera/control.sock` 调用独立 `hyz-camera`，并从当前 LAN 或 exact Tailscale listener 派生 candidate 地址。协商完成后，H.264 媒体直接在浏览器与 `hyz-camera` 的固定 `40000-40015/udp` 池之间流动，不经过 Axum 或 router。router 仍是唯一 firewall authority，camera 不执行网络命令。
+摄像头直播使用受限边界：观看对匿名开放——浏览器从 things 领取 15 分钟短时 viewer 令牌（内存驻留、最多 128 个），令牌只允许创建/关闭自己名下的会话；画面分辨率与旋转设置仍要求管理员 session。things 通过固定 `/run/hyz-camera/control.sock` 调用独立 `hyz-camera`，LAN 会话的 IPv4 candidate 固定为 `192.168.8.1`，可选 IPv6 candidate 来自 router status 中已观测的公网全局地址，不采信浏览器请求头。camera 在可用时绑定两种地址并发布 UDP host candidate；IPv6 绑定失败时保留 IPv4 candidate。camera 控制协议 v3 保留 v2 IPv4 地址字段，服务端接受 v3 与 v2 请求并按请求版本回响应，部署时先更新 camera，再更新 Things。协商完成后，H.264 媒体直接在浏览器与 `hyz-camera` 的固定 `40000-40015/udp` 池之间流动，不经过 Axum 或 router。router 仍是唯一 firewall authority，camera 不执行网络命令。
 
 ### 每包六边形架构
 
@@ -146,7 +146,7 @@ hyz-router    src/domain/           纯状态、值对象与不变量
               src/main.rs           唯一 production composition root
 hyz-things    src/domain/           纯状态（re-export 自 hyz-contract）
               src/application/      admin、camera client、status 聚合、PortalControlHandler
-              src/adapters/inbound/ Axum HTTP（LAN + Tailscale exact listeners）
+              src/adapters/inbound/ Axum HTTP（必需 LAN IPv4、可选 IPv6-only、Tailscale exact listeners）
               src/adapters/outbound/ router UDS client、camera UDS client、admin storage、tailscale listener
               src/web/              Yew/WASM 前端（web feature，只依赖 domain）
               src/main.rs           唯一 production composition root
@@ -240,7 +240,7 @@ sequenceDiagram
         InitT->>Marker: 轮询 ready 标记（有界 300s）
         Marker-->>InitT: 存在
         InitT->>Portal: 启动 hyz-things
-        Portal->>Portal: 绑定固定 LAN 地址与精确 Tailscale listener
+        Portal->>Portal: 绑定固定 LAN IPv4 HTTPS；可选绑定同端口 IPv6-only HTTPS，并启动精确 Tailscale listener 管理
         Portal-->>InitT: HTTP health 通过
     end
 ```
@@ -254,7 +254,7 @@ WAN DHCP 租约按地址、metric `600` 路由、resolver 条目和 ownership re
 每个进程的 `src/main.rs` 是各自唯一的装配点：
 
 - `hyz-router` 构造：`LinuxRouterPlatform`（typed `ip`/legacy `iptables`、管理网络进程身份、网络和 Mihomo 状态）、`LinuxTailscalePlatform`（固定 `/usr/bin/tailscaled` 与 `/usr/bin/tailscale`、PID/start/exe/argv/socket/interface 身份、持久 mode/state 以及 Tailscale owned firewall）、`LinuxMihomoFailOpenPlatform`（同一 ELF 的隐藏 watcher 角色，仅负责 PID/start 绑定的 TUN fail-open）、`FirmwareAdapter`（OTA 下载、RKFW/SHA-256、BCB、`updateEngine`、reboot）、`ReadStatus`（router/proxy/tailscale/system 的部分成功聚合）与 root-only local control；就绪后写入 `/run/hyz-router/ready`。
-- `hyz-things` 构造：`AdminFileAdapter`/`AdminApplication`（Argon2id 凭据，`/userdata/hyz-router/admin/credential.json`）、`CameraApplication(CameraUnixAdapter)`、`RouterControlClient`（`hyz-contract` client）、`PortalStatus`（router 不可用时返回明确 degraded 快照）、CSRF token、`PortalTls`（首次启动自签证书，`/userdata/hyz-things/tls/`）、LAN 固定 `192.168.8.1:8080` HTTPS 监听与 Tailscale exact listener 管理循环。
+- `hyz-things` 构造：`AdminFileAdapter`/`AdminApplication`（Argon2id 凭据，`/userdata/hyz-router/admin/credential.json`）、`CameraApplication(CameraUnixAdapter)`、`RouterControlClient`（`hyz-contract` client）、`PortalStatus`（router 不可用时返回明确 degraded 快照）、CSRF token、`PortalTls`（自签证书及启动时观测到的公网 IPv6 SAN，持久化在 `/userdata/hyz-things/tls/`）、必需的 LAN `192.168.8.1:8080` HTTPS IPv4 监听、可选的 `[::]:8080` IPv6-only HTTPS 监听与 Tailscale exact listener 管理循环。IPv6 监听失败不会阻止 IPv4 readiness；IPv6 地址变化后，门户重启时重新生成匹配的证书 SAN。
 - `hyz-camera` 构造：pipeline/session 生命周期、`FrameHub` 扇出、str0m 会话线程与固定 UDP 端口池，root-only control socket。
 
 `hyz-router` 的命令行：

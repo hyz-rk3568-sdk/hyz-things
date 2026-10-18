@@ -12,7 +12,11 @@ use hyz_camera::{
         MAX_SDP_BYTES, WATERMARK_FONT_FAMILY, WATERMARK_TIME_FORMAT,
     },
 };
-use std::{net::Ipv4Addr, sync::Arc, time::Duration};
+use std::{
+    net::{Ipv4Addr, Ipv6Addr},
+    sync::Arc,
+    time::Duration,
+};
 
 const VIDEO_OFFER: &str = "v=0\r\n\
 o=- 1 2 IN IP4 0.0.0.0\r\n\
@@ -48,7 +52,8 @@ fn validates_fixed_lan_and_tailscale_scopes() {
     assert_eq!(
         CameraAccessScope::validate(CameraAccessKind::Lan, FIXED_LAN_ADDRESS).unwrap(),
         CameraAccessScope::Lan {
-            address: FIXED_LAN_ADDRESS
+            address: FIXED_LAN_ADDRESS,
+            ipv6_address: None,
         }
     );
     assert!(
@@ -62,6 +67,40 @@ fn validates_fixed_lan_and_tailscale_scopes() {
     assert!(CameraAccessScope::validate(
         CameraAccessKind::Tailscale,
         Ipv4Addr::new(100, 128, 0, 1)
+    )
+    .is_err());
+}
+
+#[test]
+fn validates_public_ipv6_candidates_only_for_lan_scope() {
+    let address: Ipv6Addr = "240e:380:4308:da10:6605:3dff:fe02:430d".parse().unwrap();
+    let scope = CameraAccessScope::validate_with_ipv6(
+        CameraAccessKind::Lan,
+        FIXED_LAN_ADDRESS,
+        Some(address),
+    )
+    .unwrap();
+    assert_eq!(scope.ipv6_address(), Some(address));
+
+    for unsafe_address in [
+        Ipv6Addr::UNSPECIFIED,
+        Ipv6Addr::LOCALHOST,
+        "fe80::1".parse().unwrap(),
+        "fd00::1".parse().unwrap(),
+        "ff02::1".parse().unwrap(),
+        "2001:db8::1".parse().unwrap(),
+    ] {
+        assert!(CameraAccessScope::validate_with_ipv6(
+            CameraAccessKind::Lan,
+            FIXED_LAN_ADDRESS,
+            Some(unsafe_address),
+        )
+        .is_err());
+    }
+    assert!(CameraAccessScope::validate_with_ipv6(
+        CameraAccessKind::Tailscale,
+        Ipv4Addr::new(100, 64, 1, 2),
+        Some(address),
     )
     .is_err());
 }
@@ -287,17 +326,34 @@ fn pts_conversion_rejects_regression_and_large_jump() {
 }
 
 #[test]
-fn control_protocol_is_versioned_and_denies_unknown_fields() {
-    let status = br#"{"version":2,"operation":"status"}"#;
+fn control_protocol_accepts_current_and_previous_versions_and_denies_unknown_fields() {
+    let current = br#"{"version":3,"operation":"status"}"#;
+    let previous = br#"{"version":2,"operation":"status"}"#;
     assert!(matches!(
-        decode_control_request(status).unwrap().operation,
+        decode_control_request(current).unwrap().operation,
         ControlOperation::Status
     ));
-    assert!(decode_control_request(br#"{"version":3,"operation":"status"}"#).is_err());
+    assert!(matches!(
+        decode_control_request(previous).unwrap().operation,
+        ControlOperation::Status
+    ));
+    assert!(decode_control_request(br#"{"version":1,"operation":"status"}"#).is_err());
+    assert!(decode_control_request(br#"{"version":4,"operation":"status"}"#).is_err());
     assert!(decode_control_request(
         br#"{"version":2,"operation":"status","pipeline":"caller-value"}"#
     )
     .is_err());
+}
+
+#[test]
+fn previous_camera_client_can_create_an_ipv4_only_session() {
+    let request = br#"{"version":2,"operation":{"create_session":{"scope":"lan","address":"192.168.8.1","offer_sdp":"v=0\\r\\n"}}}"#;
+    let decoded = decode_control_request(request).unwrap();
+    let ControlOperation::CreateSession(request) = decoded.operation else {
+        panic!("expected create session request");
+    };
+    assert_eq!(request.address, FIXED_LAN_ADDRESS);
+    assert_eq!(request.ipv6_address, None);
 }
 
 #[test]

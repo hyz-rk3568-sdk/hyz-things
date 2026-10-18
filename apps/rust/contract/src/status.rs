@@ -1,7 +1,7 @@
 //! Status snapshot DTOs served over the router control protocol.
 
 use serde::{Deserialize, Serialize};
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 use super::tailscale::{TailscaleBackendState, TailscaleMode};
 
@@ -193,6 +193,8 @@ pub struct RouterStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lan_address: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub public_ipv6_address: Option<Ipv6Addr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ap_attached_to_lan: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ipv4_forwarding: Option<bool>,
@@ -350,6 +352,7 @@ mod tests {
                     gateway: Some("198.51.100.1".parse().unwrap()),
                     resolver_present: Some(true),
                 }),
+                public_ipv6_address: Some("240e:380:4308:da10:7c0d:6ff:fec7:143".parse().unwrap()),
                 active_uplink: Some(UplinkId::Ethernet),
                 active_resolver: Some(ActiveResolverStatus {
                     uplink: UplinkId::Ethernet,
@@ -423,7 +426,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_router_status_deserializes_without_uplink_fields() {
+    fn legacy_router_status_defaults_new_optional_fields() {
         let json = r#"{
             "state":"degraded",
             "observed_at_unix_ms":7,
@@ -454,6 +457,7 @@ mod tests {
             serde_json::from_str(json).expect("legacy status must decode");
         let router = snapshot.router.data.expect("router data");
         assert_eq!(router.active_uplink, None);
+        assert_eq!(router.public_ipv6_address, None);
         assert_eq!(router.active_resolver, None);
         assert_eq!(router.ethernet, None);
         assert_eq!(router.wifi, None);

@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, net::Ipv6Addr, sync::Arc};
 use tokio::sync::Mutex;
 
 use crate::domain::camera::{
@@ -33,6 +33,7 @@ pub trait CameraControlPort: Send + Sync {
     async fn create_session(
         &self,
         scope: CameraAccessScope,
+        ipv6_candidate: Option<Ipv6Addr>,
         offer_sdp: String,
     ) -> Result<CameraSession, CameraError>;
 
@@ -67,10 +68,21 @@ impl CameraApplication {
         scope: CameraAccessScope,
         offer_sdp: String,
     ) -> Result<CameraSession, CameraError> {
+        self.create_session_with_ipv6(scope, None, offer_sdp).await
+    }
+
+    pub async fn create_session_with_ipv6(
+        &self,
+        scope: CameraAccessScope,
+        ipv6_candidate: Option<Ipv6Addr>,
+        offer_sdp: String,
+    ) -> Result<CameraSession, CameraError> {
         if offer_sdp.is_empty() || offer_sdp.len() > CAMERA_MAX_SDP_BYTES {
             return Err(CameraError::InvalidRequest);
         }
-        self.control.create_session(scope, offer_sdp).await
+        self.control
+            .create_session(scope, ipv6_candidate, offer_sdp)
+            .await
     }
 
     /// 一个管理员账号可以同时持有多个观看会话（多窗口/多设备同账号并发）。
@@ -80,8 +92,21 @@ impl CameraApplication {
         scope: CameraAccessScope,
         offer_sdp: String,
     ) -> Result<CameraSession, CameraError> {
+        self.create_owned_session_with_ipv6(owner, scope, None, offer_sdp)
+            .await
+    }
+
+    pub async fn create_owned_session_with_ipv6(
+        &self,
+        owner: [u8; 32],
+        scope: CameraAccessScope,
+        ipv6_candidate: Option<Ipv6Addr>,
+        offer_sdp: String,
+    ) -> Result<CameraSession, CameraError> {
         let mut sessions = self.sessions.lock().await;
-        let session = self.create_session(scope, offer_sdp).await?;
+        let session = self
+            .create_session_with_ipv6(scope, ipv6_candidate, offer_sdp)
+            .await?;
         sessions
             .entry(owner)
             .or_default()
@@ -177,16 +202,21 @@ mod tests {
         CameraAccessKind, CameraAudioStatus, CameraPipelineState, CameraStreamProfile,
         DEFAULT_SPEAKER_VOLUME_PERCENT,
     };
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::{
+        net::Ipv6Addr,
+        sync::atomic::{AtomicU64, Ordering},
+    };
 
     struct Fake {
         next_session: AtomicU64,
+        last_ipv6_candidate: Mutex<Option<Ipv6Addr>>,
     }
 
     impl Default for Fake {
         fn default() -> Self {
             Self {
                 next_session: AtomicU64::new(1),
+                last_ipv6_candidate: Mutex::new(None),
             }
         }
     }
@@ -218,8 +248,10 @@ mod tests {
         async fn create_session(
             &self,
             _scope: CameraAccessScope,
+            ipv6_candidate: Option<Ipv6Addr>,
             _offer_sdp: String,
         ) -> Result<CameraSession, CameraError> {
+            *self.last_ipv6_candidate.lock().await = ipv6_candidate;
             let index = self.next_session.fetch_add(1, Ordering::SeqCst);
             Ok(CameraSession {
                 session_id: format!("{index:064x}"),
@@ -243,6 +275,22 @@ mod tests {
         async fn set_volume(&self, _volume_percent: u8) -> Result<(), CameraError> {
             Ok(())
         }
+    }
+
+    #[tokio::test]
+    async fn forwards_ipv6_candidate_to_the_camera_control_port() {
+        let ipv6: Ipv6Addr = "240e:380:4308:da10:6605:3dff:fe02:430d".parse().unwrap();
+        let fake = Arc::new(Fake::default());
+        let app = CameraApplication::new(fake.clone());
+        app.create_owned_session_with_ipv6(
+            [3u8; 32],
+            CameraAccessScope::Lan,
+            Some(ipv6),
+            "v=0\\r\\n".to_owned(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(*fake.last_ipv6_candidate.lock().await, Some(ipv6));
     }
 
     #[tokio::test]

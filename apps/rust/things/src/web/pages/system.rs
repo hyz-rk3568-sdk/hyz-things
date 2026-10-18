@@ -145,13 +145,27 @@ pub(crate) fn render_dashboard(snapshot: &StatusSnapshot) -> Html {
         <section class={DASHBOARD} aria-labelledby="dashboard-title">
             <h2 id="dashboard-title" class="sr-only">{"路由器状态"}</h2>
             if router.data.is_some() {
-                {status_card("路由 / LAN", "NET", component_card_status(router), router_rows, "wan")}
+                {
+                    status_card(
+                        "路由 / LAN",
+                        "NET",
+                        component_card_status(router),
+                        router_rows,
+                        "wan",
+                        Some((
+                            "公网 IPv6",
+                            router_data
+                                .and_then(|value| value.public_ipv6_address)
+                                .map(|address| address.to_string()),
+                        )),
+                    )
+                }
             }
             if proxy.data.is_some() {
-                {status_card("代理状态", "PX", component_card_status(proxy), proxy_rows, "proxy")}
+                {status_card("代理状态", "PX", component_card_status(proxy), proxy_rows, "proxy", None)}
             }
             if system.data.is_some() {
-                {status_card("系统 / 流量", "SYS", component_card_status(system), system_rows, "system")}
+                {status_card("系统 / 流量", "SYS", component_card_status(system), system_rows, "system", None)}
             }
         </section>
     }
@@ -465,6 +479,7 @@ pub(crate) fn status_card(
     status: (&'static str, Tone),
     rows: Vec<(&'static str, String)>,
     accent: &'static str,
+    copyable_row: Option<(&'static str, Option<String>)>,
 ) -> Html {
     let (card_accent, icon_accent) = match accent {
         "wan" => (ACCENT_WAN, ICON_WAN),
@@ -479,9 +494,65 @@ pub(crate) fn status_card(
                     <h2 class={STATUS_TITLE}>{title}</h2>
                     <StatusBadge label={status.0} tone={classes!(status.1.class())} />
                 </div>
-                <dl class={METRIC_LIST}>{for rows.into_iter().map(|(label, value)| html! { <div class={METRIC}><dt class={METRIC_LABEL}>{label}</dt><dd class={METRIC_VALUE} title={value.clone()}>{value}</dd></div> })}</dl>
+                <dl class={METRIC_LIST}>
+                    {for rows.into_iter().map(|(label, value)| html! {
+                        <div class={METRIC}>
+                            <dt class={METRIC_LABEL}>{label}</dt>
+                            <dd class={METRIC_VALUE} title={value.clone()}>{value}</dd>
+                        </div>
+                    })}
+                    if let Some((label, value)) = copyable_row {
+                        <div class={METRIC}>
+                            <dt class={METRIC_LABEL}>{label}</dt>
+                            if let Some(address) = value {
+                                <dd class="min-w-0 text-right"><Ipv6CopyValue address={address} /></dd>
+                            } else {
+                                <dd class={METRIC_VALUE}>{missing()}</dd>
+                            }
+                        </div>
+                    }
+                </dl>
             </div>
         </article>
+    }
+}
+
+#[derive(Properties, PartialEq)]
+struct Ipv6CopyValueProps {
+    address: String,
+}
+
+#[function_component(Ipv6CopyValue)]
+fn ipv6_copy_value(props: &Ipv6CopyValueProps) -> Html {
+    let notice = use_state(|| None::<String>);
+    let address = props.address.clone();
+    let onclick = {
+        let notice = notice.clone();
+        Callback::from(move |_| {
+            let Some(window) = web_sys::window() else {
+                notice.set(Some("复制失败：浏览器不可用".to_owned()));
+                return;
+            };
+            let promise = window.navigator().clipboard().write_text(&address);
+            let notice = notice.clone();
+            spawn_local(async move {
+                let message = if JsFuture::from(promise).await.is_ok() {
+                    "IPv6 地址已复制"
+                } else {
+                    "复制失败，请检查浏览器剪贴板权限"
+                };
+                notice.set(Some(message.to_owned()));
+            });
+        })
+    };
+    html! {
+        <span class="flex min-w-0 flex-wrap items-center justify-end gap-2 font-mono text-xs font-medium text-base-content">
+            <span class="min-w-0 break-all" title={props.address.clone()}>{props.address.clone()}</span>
+            <button class="btn btn-ghost btn-xs shrink-0" type="button" aria-label="复制 IPv6 地址" title="复制 IPv6 地址" onclick={onclick}>{"复制"}</button>
+            if let Some(message) = (*notice).as_ref() {
+                <span class="sr-only" role="status">{message}</span>
+            }
+        </span>
     }
 }
 
