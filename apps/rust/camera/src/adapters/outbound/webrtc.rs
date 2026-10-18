@@ -512,33 +512,6 @@ fn drive_session(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn creates_udp_host_candidates_for_ipv4_and_ipv6() {
-        let addresses = [
-            "192.168.8.1:40000".parse().unwrap(),
-            "[240e:380:4308:da10:6605:3dff:fe02:430d]:40001"
-                .parse()
-                .unwrap(),
-        ];
-        let candidates = host_candidates(&addresses).unwrap();
-        assert_eq!(candidates.len(), 2);
-        let candidate_sdp = candidates
-            .iter()
-            .map(Candidate::to_sdp_string)
-            .collect::<Vec<_>>();
-        assert!(candidate_sdp
-            .iter()
-            .any(|candidate| candidate.contains("192.168.8.1 40000 typ host")));
-        assert!(candidate_sdp.iter().any(|candidate| {
-            candidate.contains("240e:380:4308:da10:6605:3dff:fe02:430d 40001 typ host")
-        }));
-    }
-}
-
 /// 从采集队列取 Opus AU 写入音频 writer（48 kHz RTP 时钟）。音频管线关闭
 /// （`Closed`）时停止发送但会话继续（video-only 降级）。
 fn drain_audio(
@@ -565,5 +538,32 @@ fn drain_audio(
             }
             AudioPopOutcome::Timeout | AudioPopOutcome::Closed => return Ok(()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn creates_udp_host_candidates_for_ipv4_and_ipv6() {
+        let addresses = [
+            "192.168.8.1:40000".parse().unwrap(),
+            "[240e:380:4308:da10:6605:3dff:fe02:430d]:40001"
+                .parse()
+                .unwrap(),
+        ];
+        let candidates = host_candidates(&addresses).unwrap();
+        assert_eq!(candidates.len(), 2);
+        let candidate_sdp = candidates
+            .iter()
+            .map(Candidate::to_sdp_string)
+            .collect::<Vec<_>>();
+        assert!(candidate_sdp
+            .iter()
+            .any(|candidate| candidate.contains("192.168.8.1 40000 typ host")));
+        assert!(candidate_sdp.iter().any(|candidate| {
+            candidate.contains("240e:380:4308:da10:6605:3dff:fe02:430d 40001 typ host")
+        }));
     }
 }
