@@ -10,7 +10,7 @@ use crate::domain::{
 };
 use hyz_contract::camera::{DEFAULT_SPEAKER_VOLUME_PERCENT, MAX_SPEAKER_VOLUME_PERCENT};
 use std::{
-    net::Ipv4Addr,
+    net::{Ipv4Addr, Ipv6Addr},
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
@@ -228,7 +228,17 @@ impl CameraApplication {
         address: Ipv4Addr,
         offer_sdp: &str,
     ) -> Result<CreateSessionResult, CameraApplicationError> {
-        let scope = CameraAccessScope::validate(kind, address)
+        self.create_session_with_ipv6(kind, address, None, offer_sdp)
+    }
+
+    pub fn create_session_with_ipv6(
+        &self,
+        kind: CameraAccessKind,
+        address: Ipv4Addr,
+        ipv6_address: Option<Ipv6Addr>,
+        offer_sdp: &str,
+    ) -> Result<CreateSessionResult, CameraApplicationError> {
+        let scope = CameraAccessScope::validate_with_ipv6(kind, address, ipv6_address)
             .map_err(|_| CameraApplicationError::InvalidAccessScope)?;
         self.webrtc
             .validate_offer(offer_sdp)
@@ -878,6 +888,7 @@ mod tests {
     struct FakeWebRtcPort {
         created: AtomicUsize,
         sessions: Mutex<Vec<Arc<FakeRunningSession>>>,
+        last_scope: Mutex<Option<CameraAccessScope>>,
         /// 为 true 时 create 返回协商失败，用于回滚路径测试。
         fail_create: AtomicBool,
     }
@@ -896,10 +907,14 @@ mod tests {
             Ok(())
         }
 
-        fn create(&self, _session: SessionCreate) -> Result<CreatedWebRtcSession, WebRtcError> {
+        fn create(&self, session: SessionCreate) -> Result<CreatedWebRtcSession, WebRtcError> {
             if self.fail_create.load(Ordering::Acquire) {
                 return Err(WebRtcError::NegotiationFailed);
             }
+            *self
+                .last_scope
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(session.scope);
             self.created.fetch_add(1, Ordering::SeqCst);
             let session = Arc::new(FakeRunningSession::default());
             self.sessions
@@ -954,6 +969,28 @@ mod tests {
         assert_eq!(status.pipeline, CameraPipelineState::Streaming);
         assert_eq!(media.starts.load(Ordering::SeqCst), 1);
         assert_eq!(media.stop_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn ipv6_candidate_is_forwarded_into_the_webrtc_scope() {
+        let media = Arc::new(FakeMediaPort::default());
+        let webrtc = Arc::new(FakeWebRtcPort::default());
+        let audio = Arc::new(FakeAudioPort::default());
+        let app = CameraApplication::new(media, audio, webrtc.clone(), "test".to_owned()).unwrap();
+        let address = "240e:380:4308:da10:6605:3dff:fe02:430d".parse().unwrap();
+        app.create_session_with_ipv6(
+            CameraAccessKind::Lan,
+            FIXED_LAN_ADDRESS,
+            Some(address),
+            &offer(),
+        )
+        .unwrap();
+        let scope = webrtc
+            .last_scope
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap();
+        assert_eq!(scope.ipv6_address(), Some(address));
     }
 
     #[test]

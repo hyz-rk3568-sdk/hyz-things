@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs,
     io::{Read, Write},
-    net::Ipv4Addr,
+    net::{Ipv4Addr, Ipv6Addr},
     os::{
         fd::AsRawFd,
         unix::{fs::FileTypeExt, fs::MetadataExt, net::UnixStream},
@@ -22,7 +22,7 @@ use crate::{
 };
 
 pub const CAMERA_CONTROL_SOCKET: &str = "/run/hyz-camera/control.sock";
-const CAMERA_CONTROL_PROTOCOL_VERSION: u16 = 2;
+const CAMERA_CONTROL_PROTOCOL_VERSION: u16 = 3;
 const CAMERA_CONTROL_MAX_FRAME_BYTES: usize = 64 * 1024;
 const CAMERA_CONTROL_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -130,12 +130,18 @@ impl CameraControlPort for CameraUnixAdapter {
     async fn create_session(
         &self,
         scope: CameraAccessScope,
+        ipv6_candidate: Option<Ipv6Addr>,
         offer_sdp: String,
     ) -> Result<CameraSession, CameraError> {
         let adapter = self.clone();
         let request = CreateSessionRequest {
             scope: scope.kind(),
             address: scope.address(),
+            ipv6_address: if scope.kind() == CameraAccessKind::Lan {
+                ipv6_candidate
+            } else {
+                None
+            },
             offer_sdp,
         };
         let result = tokio::task::spawn_blocking(move || {
@@ -266,6 +272,8 @@ enum RequestOperation {
 struct CreateSessionRequest {
     scope: CameraAccessKind,
     address: Ipv4Addr,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ipv6_address: Option<Ipv6Addr>,
     offer_sdp: String,
 }
 
@@ -444,12 +452,21 @@ mod tests {
             operation: RequestOperation::CreateSession(CreateSessionRequest {
                 scope: CameraAccessKind::Lan,
                 address: Ipv4Addr::new(192, 168, 8, 1),
+                ipv6_address: Some("240e:380:4308:da10:6605:3dff:fe02:430d".parse().unwrap()),
                 offer_sdp: "v=0\r\n".to_owned(),
             }),
         })
         .unwrap();
-        assert_eq!(body["version"], 2);
+        assert_eq!(body["version"], 3);
         assert_eq!(body["operation"]["create_session"]["scope"], "lan");
+        assert_eq!(
+            body["operation"]["create_session"]["address"],
+            "192.168.8.1"
+        );
+        assert_eq!(
+            body["operation"]["create_session"]["ipv6_address"],
+            "240e:380:4308:da10:6605:3dff:fe02:430d"
+        );
         assert!(body["operation"]["create_session"].get("port").is_none());
     }
 
@@ -462,7 +479,7 @@ mod tests {
             }),
         })
         .unwrap();
-        assert_eq!(body["version"], 2);
+        assert_eq!(body["version"], 3);
         assert_eq!(body["operation"]["set_profile"]["preset"], "fhd1080p5m");
     }
 
@@ -475,7 +492,7 @@ mod tests {
             }),
         })
         .unwrap();
-        assert_eq!(body["version"], 2);
+        assert_eq!(body["version"], 3);
         assert_eq!(body["operation"]["set_rotation"]["rotation"], "deg_270");
     }
 
@@ -486,7 +503,7 @@ mod tests {
             operation: RequestOperation::SetVolume(SetVolumeRequest { volume_percent: 42 }),
         })
         .unwrap();
-        assert_eq!(body["version"], 2);
+        assert_eq!(body["version"], 3);
         assert_eq!(body["operation"]["set_volume"]["volume_percent"], 42);
         assert!(body["operation"]["set_volume"].get("command").is_none());
     }

@@ -1,13 +1,17 @@
-//! The `hyz-camera` root-only Unix control protocol (v2).
+//! The `hyz-camera` root-only Unix control protocol (v3).
 //!
 //! This is the single wire definition shared by the camera daemon's server,
 //! the router relay (until the portal takes over signaling) and the hyz-things
 //! portal's camera client.
 
 use serde::{Deserialize, Serialize};
-use std::{fmt, net::Ipv4Addr, str::FromStr};
+use std::{
+    fmt,
+    net::{Ipv4Addr, Ipv6Addr},
+    str::FromStr,
+};
 
-pub const CONTROL_PROTOCOL_VERSION: u16 = 2;
+pub const CONTROL_PROTOCOL_VERSION: u16 = 3;
 pub const CONTROL_SOCKET_PATH: &str = "/run/hyz-camera/control.sock";
 pub const MAX_CONTROL_FRAME_BYTES: usize = 64 * 1024;
 pub const CONTROL_REQUEST_DEADLINE: std::time::Duration = std::time::Duration::from_secs(2);
@@ -338,6 +342,8 @@ pub enum ControlOperation {
 pub struct CreateSessionRequest {
     pub scope: CameraAccessKind,
     pub address: Ipv4Addr,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ipv6_address: Option<Ipv6Addr>,
     pub offer_sdp: String,
 }
 
@@ -474,19 +480,52 @@ mod tests {
     }
 
     #[test]
-    fn request_shape_is_versioned_and_typed() {
+    fn request_shape_is_versioned_and_carries_dual_stack_addresses() {
         let body = serde_json::to_value(ControlRequest {
             version: CONTROL_PROTOCOL_VERSION,
             operation: ControlOperation::CreateSession(CreateSessionRequest {
                 scope: CameraAccessKind::Lan,
                 address: Ipv4Addr::new(192, 168, 8, 1),
+                ipv6_address: Some("240e:380:4308:da10:6605:3dff:fe02:430d".parse().unwrap()),
                 offer_sdp: "v=0\r\n".to_owned(),
             }),
         })
         .unwrap();
-        assert_eq!(body["version"], 2);
+        assert_eq!(body["version"], 3);
         assert_eq!(body["operation"]["create_session"]["scope"], "lan");
+        assert_eq!(
+            body["operation"]["create_session"]["address"],
+            "192.168.8.1"
+        );
+        assert_eq!(
+            body["operation"]["create_session"]["ipv6_address"],
+            "240e:380:4308:da10:6605:3dff:fe02:430d"
+        );
+        assert!(body["operation"]["create_session"]
+            .get("ipv4_address")
+            .is_none());
         assert!(body["operation"]["create_session"].get("port").is_none());
+    }
+
+    #[test]
+    fn ipv4_only_camera_requests_keep_the_v2_address_shape() {
+        let body = serde_json::json!({
+            "version": 2,
+            "operation": {
+                "create_session": {
+                    "scope": "lan",
+                    "address": "192.168.8.1",
+                    "offer_sdp": "v=0\\r\\n"
+                }
+            }
+        });
+        let request: ControlRequest = serde_json::from_value(body).unwrap();
+        assert_eq!(request.version, 2);
+        let ControlOperation::CreateSession(request) = request.operation else {
+            panic!("expected create session request");
+        };
+        assert_eq!(request.address, Ipv4Addr::new(192, 168, 8, 1));
+        assert_eq!(request.ipv6_address, None);
     }
 
     #[test]

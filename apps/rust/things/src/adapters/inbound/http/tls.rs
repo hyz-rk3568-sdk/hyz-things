@@ -10,7 +10,7 @@
 use std::{
     fs,
     io::{self, ErrorKind},
-    net::SocketAddr,
+    net::{Ipv6Addr, SocketAddr},
     os::unix::fs::OpenOptionsExt,
     path::Path,
     sync::Arc,
@@ -35,43 +35,85 @@ use crate::logging::{self, Level};
 const CERT_DIRECTORY: &str = "/userdata/hyz-things/tls";
 const CERTIFICATE_FILE: &str = "server.crt";
 const PRIVATE_KEY_FILE: &str = "server.key";
+const IPV6_SAN_FILE: &str = "server.ipv6-san";
 const CERTIFICATE_VALIDITY_YEARS: u16 = 10;
 
-/// Loads or provisions the device TLS identity and terminates connections.
+/// Loads or provisions the persisted TLS identity with the observed public IPv6 SAN.
 pub struct PortalTls {
     acceptor: TlsAcceptor,
 }
 
 impl PortalTls {
-    /// Loads the persisted identity, or provisions a fresh self-signed pair
-    /// on first boot (or after the persisted pair became unreadable).
-    pub fn load_or_generate() -> Result<Self, String> {
-        let directory = Path::new(CERT_DIRECTORY);
-        let certificate_path = directory.join(CERTIFICATE_FILE);
-        let private_key_path = directory.join(PRIVATE_KEY_FILE);
-        if certificate_path.exists() && private_key_path.exists() {
-            match load_certificate(&certificate_path, &private_key_path) {
-                Ok(acceptor) => return Ok(Self { acceptor }),
-                Err(_error) => {
-                    logging::event(
-                        Level::Warn,
-                        "tls",
-                        "load_identity",
-                        "dependency_unavailable",
-                        Some("tls_identity_unreadable"),
-                        None,
-                        None,
-                        None,
-                    );
-                }
-            }
-        }
-        let acceptor = generate_certificate(&certificate_path, &private_key_path)?;
+    /// Reuses the persisted certificate unless its public IPv6 SAN needs refreshing.
+    pub fn load_or_generate(public_ipv6: Option<Ipv6Addr>) -> Result<Self, String> {
+        let acceptor = load_or_generate_in(Path::new(CERT_DIRECTORY), public_ipv6)?;
         Ok(Self { acceptor })
     }
 
     pub fn acceptor(&self) -> TlsAcceptor {
         self.acceptor.clone()
+    }
+}
+
+fn load_or_generate_in(
+    directory: &Path,
+    public_ipv6: Option<Ipv6Addr>,
+) -> Result<TlsAcceptor, String> {
+    if let Some(acceptor) = load_persisted_certificate(directory, public_ipv6) {
+        return Ok(acceptor);
+    }
+
+    let certificate_path = directory.join(CERTIFICATE_FILE);
+    let private_key_path = directory.join(PRIVATE_KEY_FILE);
+    let ipv6_san_path = directory.join(IPV6_SAN_FILE);
+    let acceptor = generate_certificate(&certificate_path, &private_key_path, public_ipv6)?;
+    match public_ipv6 {
+        Some(public_ipv6) => write_private(&ipv6_san_path, format!("{public_ipv6}\n").as_bytes())?,
+        None => remove_if_present(&ipv6_san_path)?,
+    }
+    Ok(acceptor)
+}
+
+fn load_persisted_certificate(
+    directory: &Path,
+    public_ipv6: Option<Ipv6Addr>,
+) -> Option<TlsAcceptor> {
+    let certificate_path = directory.join(CERTIFICATE_FILE);
+    let private_key_path = directory.join(PRIVATE_KEY_FILE);
+    if !certificate_path.exists() || !private_key_path.exists() {
+        return None;
+    }
+
+    let persisted_ipv6_san = fs::read_to_string(directory.join(IPV6_SAN_FILE))
+        .ok()
+        .and_then(|value| value.trim().parse::<Ipv6Addr>().ok());
+    if public_ipv6.is_some_and(|address| persisted_ipv6_san != Some(address)) {
+        return None;
+    }
+
+    match load_certificate(&certificate_path, &private_key_path) {
+        Ok(acceptor) => Some(acceptor),
+        Err(_error) => {
+            logging::event(
+                Level::Warn,
+                "tls",
+                "load_identity",
+                "dependency_unavailable",
+                Some("tls_identity_unreadable"),
+                None,
+                None,
+                None,
+            );
+            None
+        }
+    }
+}
+
+fn remove_if_present(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("cannot remove {}: {error}", path.display())),
     }
 }
 
@@ -98,6 +140,7 @@ fn load_certificate(certificate_path: &Path, private_key_path: &Path) -> io::Res
 fn generate_certificate(
     certificate_path: &Path,
     private_key_path: &Path,
+    public_ipv6: Option<Ipv6Addr>,
 ) -> Result<TlsAcceptor, String> {
     use rcgen::{date_time_ymd, CertificateParams, DnType, KeyPair};
 
@@ -106,9 +149,12 @@ fn generate_certificate(
     // rcgen parses each string: IP literals become IP SANs, everything else a
     // DNS name. The LAN address must be present so browsers accept the
     // self-signed certificate for the exact origin users type.
-    let mut params =
-        CertificateParams::new(vec![LAN_ADDRESS.to_string(), "hyz-things.local".to_owned()])
-            .map_err(|error| format!("TLS certificate parameters are invalid: {error}"))?;
+    let mut subject_alt_names = vec![LAN_ADDRESS.to_string(), "hyz-things.local".to_owned()];
+    if let Some(public_ipv6) = public_ipv6 {
+        subject_alt_names.push(public_ipv6.to_string());
+    }
+    let mut params = CertificateParams::new(subject_alt_names)
+        .map_err(|error| format!("TLS certificate parameters are invalid: {error}"))?;
     params
         .distinguished_name
         .push(DnType::CommonName, "hyz-things");
@@ -321,7 +367,7 @@ mod tests {
         let certificate_path = directory.join(CERTIFICATE_FILE);
         let private_key_path = directory.join(PRIVATE_KEY_FILE);
 
-        let generated = generate_certificate(&certificate_path, &private_key_path)
+        let generated = generate_certificate(&certificate_path, &private_key_path, None)
             .expect("certificate generation must succeed");
         assert!(certificate_path.exists());
         assert!(private_key_path.exists());
@@ -346,7 +392,7 @@ mod tests {
             std::env::temp_dir().join(format!("hyz-things-tls-san-test-{}", std::process::id()));
         let certificate_path = directory.join(CERTIFICATE_FILE);
         let private_key_path = directory.join(PRIVATE_KEY_FILE);
-        generate_certificate(&certificate_path, &private_key_path)
+        generate_certificate(&certificate_path, &private_key_path, None)
             .expect("certificate generation must succeed");
 
         let pem = std::fs::read_to_string(&certificate_path).expect("certificate PEM");
@@ -365,6 +411,77 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&directory).ok();
+    }
+
+    #[test]
+    fn generated_certificate_covers_the_public_ipv6_address() {
+        let directory = std::env::temp_dir().join(format!(
+            "hyz-things-tls-ipv6-san-test-{}",
+            std::process::id()
+        ));
+        let certificate_path = directory.join(CERTIFICATE_FILE);
+        let private_key_path = directory.join(PRIVATE_KEY_FILE);
+        let public_ipv6 = "240e:380:4308:da10:7c0d:6ff:fec7:143"
+            .parse::<Ipv6Addr>()
+            .unwrap();
+        generate_certificate(&certificate_path, &private_key_path, Some(public_ipv6))
+            .expect("certificate generation must succeed");
+
+        let pem = std::fs::read_to_string(&certificate_path).expect("certificate PEM");
+        let certificate = CertificateDer::from_pem_slice(pem.as_bytes())
+            .expect("generated certificate must parse");
+        assert!(
+            certificate
+                .as_ref()
+                .windows(16)
+                .any(|window| window == public_ipv6.octets()),
+            "certificate SANs must cover the public IPv6 address"
+        );
+
+        std::fs::remove_dir_all(&directory).ok();
+    }
+
+    #[test]
+    fn persisted_certificate_tracks_public_ipv6_changes_without_rotating_on_same_address() {
+        let directory = std::env::temp_dir().join(format!(
+            "hyz-things-tls-ipv6-refresh-test-{}",
+            std::process::id()
+        ));
+        let first_address = "240e:380:4308:da10:7c0d:6ff:fec7:143"
+            .parse::<Ipv6Addr>()
+            .unwrap();
+        let next_address = "240e:380:4308:da10:7c0d:6ff:fec7:144"
+            .parse::<Ipv6Addr>()
+            .unwrap();
+
+        let first = load_or_generate_in(&directory, Some(first_address))
+            .expect("generate certificate for the first address");
+        drop(first);
+        let certificate_path = directory.join(CERTIFICATE_FILE);
+        let first_certificate = fs::read(&certificate_path).expect("first certificate");
+        let same = load_or_generate_in(&directory, Some(first_address))
+            .expect("reuse certificate for the same address");
+        drop(same);
+        assert_eq!(
+            fs::read(&certificate_path).expect("reused certificate"),
+            first_certificate
+        );
+
+        let refreshed = load_or_generate_in(&directory, Some(next_address))
+            .expect("refresh certificate for the new address");
+        drop(refreshed);
+        assert_ne!(
+            fs::read(&certificate_path).expect("refreshed certificate"),
+            first_certificate
+        );
+        assert_eq!(
+            fs::read_to_string(directory.join(IPV6_SAN_FILE))
+                .expect("IPv6 SAN marker")
+                .trim(),
+            next_address.to_string()
+        );
+
+        fs::remove_dir_all(&directory).ok();
     }
 
     #[derive(Debug)]

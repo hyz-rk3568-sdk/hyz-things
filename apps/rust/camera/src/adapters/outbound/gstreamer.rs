@@ -597,7 +597,11 @@ fn pipeline_stop_succeeded(
     current: gst::State,
     pending: gst::State,
 ) -> bool {
-    result.is_ok() && current == gst::State::Null && pending == gst::State::VoidPending
+    matches!(
+        result,
+        Ok(gst::StateChangeSuccess::Success | gst::StateChangeSuccess::NoPreroll)
+    ) && current == gst::State::Null
+        && pending == gst::State::VoidPending
 }
 
 // ==================== 全双工语音对讲音频管线 ====================
@@ -1562,6 +1566,11 @@ mod tests {
         ));
         assert!(!pipeline_stop_succeeded(
             Ok(gst::StateChangeSuccess::Async),
+            gst::State::Null,
+            gst::State::VoidPending,
+        ));
+        assert!(pipeline_stop_succeeded(
+            Ok(gst::StateChangeSuccess::NoPreroll),
             gst::State::Null,
             gst::State::VoidPending,
         ));

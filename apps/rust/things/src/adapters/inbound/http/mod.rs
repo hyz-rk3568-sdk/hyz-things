@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     io::{self, Cursor, Read},
-    net::{Ipv4Addr, SocketAddr},
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
@@ -20,8 +20,12 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use socket2::{Domain, Protocol, Socket, Type};
 
-use hyz_contract::router::{ControlOperation, ControlResult};
+use hyz_contract::{
+    router::{ControlOperation, ControlResult},
+    status::{Component, RouterStatus},
+};
 
 use crate::{
     application::{
@@ -94,6 +98,8 @@ struct AppState {
     /// allowed origin uses the `https` scheme. The host e2e harness and unit
     /// tests keep plain HTTP on loopback and set this to `false`.
     tls: bool,
+    accept_public_ipv6_origin: bool,
+    allowed_ipv6_address: Arc<Mutex<Option<Ipv6Addr>>>,
     allow_tailscale_self_stop: bool,
     assets: AssetStore,
     installed_apps: Option<Arc<dyn InstalledAppsPort>>,
@@ -185,6 +191,7 @@ pub fn app(read_status: PortalStatus) -> Router {
             csrf_token: String::new(),
             allowed_origin: format!("http://{LAN_ADDRESS}:{DEFAULT_HTTP_PORT}"),
             tls: false,
+            accept_public_ipv6_origin: false,
             allow_tailscale_self_stop: true,
             installed_apps: None,
         },
@@ -211,6 +218,7 @@ pub fn app_with_control(
             csrf_token,
             allowed_origin: format!("http://{LAN_ADDRESS}:{port}"),
             tls: false,
+            accept_public_ipv6_origin: false,
             allow_tailscale_self_stop: true,
             installed_apps: None,
         },
@@ -238,6 +246,7 @@ pub fn app_with_admin_control(
             csrf_token,
             allowed_origin: format!("http://{LAN_ADDRESS}:{port}"),
             tls: false,
+            accept_public_ipv6_origin: false,
             allow_tailscale_self_stop: true,
             installed_apps: None,
         },
@@ -307,6 +316,7 @@ pub fn app_with_admin_camera_control_and_flashcards(
                 if tls { "https" } else { "http" }
             ),
             tls,
+            accept_public_ipv6_origin: tls,
             allow_tailscale_self_stop: true,
             installed_apps,
         },
@@ -335,6 +345,7 @@ pub fn app_with_admin_control_at_address(
             csrf_token,
             allowed_origin: format!("http://{address}:{port}"),
             tls: false,
+            accept_public_ipv6_origin: false,
             allow_tailscale_self_stop: false,
             installed_apps: None,
         },
@@ -401,6 +412,7 @@ pub fn app_with_admin_camera_control_at_address_and_flashcards(
             csrf_token,
             allowed_origin: format!("{}://{address}:{port}", if tls { "https" } else { "http" }),
             tls,
+            accept_public_ipv6_origin: false,
             allow_tailscale_self_stop: false,
             installed_apps: None,
         },
@@ -470,6 +482,7 @@ pub fn app_with_loopback_runtime_frontend_and_flashcards(
             csrf_token,
             allowed_origin: exact_loopback_origin,
             tls: false,
+            accept_public_ipv6_origin: false,
             allow_tailscale_self_stop: true,
             installed_apps,
         },
@@ -515,6 +528,7 @@ struct AppConfiguration {
     csrf_token: String,
     allowed_origin: String,
     tls: bool,
+    accept_public_ipv6_origin: bool,
     allow_tailscale_self_stop: bool,
     installed_apps: Option<Arc<dyn InstalledAppsPort>>,
 }
@@ -534,6 +548,7 @@ fn app_with_assets(
         csrf_token,
         allowed_origin,
         tls,
+        accept_public_ipv6_origin,
         allow_tailscale_self_stop,
         installed_apps,
     } = configuration;
@@ -723,6 +738,8 @@ fn app_with_assets(
             csrf_token: Arc::from(csrf_token),
             allowed_origin: Arc::from(allowed_origin),
             tls,
+            accept_public_ipv6_origin,
+            allowed_ipv6_address: Arc::new(Mutex::new(None)),
             allow_tailscale_self_stop,
             assets,
             installed_apps,
@@ -738,6 +755,20 @@ pub fn fixed_lan_address(port: u16) -> io::Result<SocketAddr> {
         ));
     }
     Ok(SocketAddr::from((LAN_ADDRESS, port)))
+}
+
+pub fn bind_ipv6_listener(port: u16) -> io::Result<tokio::net::TcpListener> {
+    bind_ipv6_only(Ipv6Addr::UNSPECIFIED, port)
+}
+
+fn bind_ipv6_only(address: Ipv6Addr, port: u16) -> io::Result<tokio::net::TcpListener> {
+    let socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP))?;
+    socket.set_only_v6(true)?;
+    socket.set_reuse_address(true)?;
+    socket.set_nonblocking(true)?;
+    socket.bind(&SocketAddr::V6(SocketAddrV6::new(address, port, 0, 0)).into())?;
+    socket.listen(128)?;
+    tokio::net::TcpListener::from_std(socket.into())
 }
 
 pub async fn bind_fixed_lan_with_retry(
@@ -839,7 +870,18 @@ async fn health() -> Json<Health<'static>> {
 }
 
 async fn status(State(state): State<AppState>) -> impl IntoResponse {
-    Json(state.read_status.execute().await)
+    let snapshot = state.read_status.execute().await;
+    if state.accept_public_ipv6_origin {
+        let address = snapshot
+            .router
+            .data
+            .as_ref()
+            .and_then(|router| router.public_ipv6_address);
+        if let Ok(mut current) = state.allowed_ipv6_address.lock() {
+            *current = address;
+        }
+    }
+    Json(snapshot)
 }
 
 async fn panel(State(state): State<AppState>) -> Response {
@@ -1105,6 +1147,23 @@ async fn camera_viewer_token(State(state): State<AppState>, headers: HeaderMap) 
     .into_response()
 }
 
+fn camera_ipv6_candidate(
+    scope: CameraAccessScope,
+    accept_public_ipv6_origin: bool,
+    router: &Component<RouterStatus>,
+) -> Option<Ipv6Addr> {
+    if !accept_public_ipv6_origin
+        || !matches!(scope, CameraAccessScope::Lan)
+        || !router.is_available()
+    {
+        return None;
+    }
+    router
+        .data
+        .as_ref()
+        .and_then(|status| status.public_ipv6_address)
+}
+
 async fn camera_session_create(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1121,8 +1180,15 @@ async fn camera_session_create(
         return service_unavailable_json();
     };
     let owner = camera_session_owner(&token);
+    let ipv6_candidate =
+        if state.accept_public_ipv6_origin && matches!(scope, CameraAccessScope::Lan) {
+            let snapshot = state.read_status.execute().await;
+            camera_ipv6_candidate(scope, state.accept_public_ipv6_origin, &snapshot.router)
+        } else {
+            None
+        };
     match camera
-        .create_owned_session(owner, scope, request.offer_sdp)
+        .create_owned_session_with_ipv6(owner, scope, ipv6_candidate, request.offer_sdp)
         .await
     {
         Ok(session) => Json(CameraSessionCreateResponse {
@@ -2004,6 +2070,19 @@ fn authorize_same_origin_csrf(state: &AppState, headers: &HeaderMap) -> bool {
         && constant_time_equal(token.as_bytes(), state.csrf_token.as_bytes())
 }
 
+fn ipv6_origin(address: Ipv6Addr, base_origin: &str) -> Option<String> {
+    let base_origin = url::Url::parse(base_origin).ok()?;
+    if base_origin.scheme() != "https" {
+        return None;
+    }
+    let port = base_origin.port()?;
+    Some(format!("https://[{address}]:{port}"))
+}
+
+fn origin_is_allowed(origin: &str, primary_origin: &str, ipv6_origin: Option<&str>) -> bool {
+    origin == primary_origin || ipv6_origin == Some(origin)
+}
+
 fn authorize_json_origin(state: &AppState, headers: &HeaderMap) -> bool {
     let content_type = headers
         .get(header::CONTENT_TYPE)
@@ -2016,11 +2095,25 @@ fn authorize_json_origin(state: &AppState, headers: &HeaderMap) -> bool {
     let fetch_site = headers
         .get("sec-fetch-site")
         .and_then(|value| value.to_str().ok());
+    let ipv6_origin = if state.accept_public_ipv6_origin {
+        state
+            .allowed_ipv6_address
+            .lock()
+            .ok()
+            .and_then(|address| *address)
+            .and_then(|address| ipv6_origin(address, &state.allowed_origin))
+    } else {
+        None
+    };
     content_type
         .split(';')
         .next()
         .is_some_and(|value| value.trim() == "application/json")
-        && origin == state.allowed_origin.as_ref()
+        && origin_is_allowed(
+            origin,
+            state.allowed_origin.as_ref(),
+            ipv6_origin.as_deref(),
+        )
         && fetch_site.is_none_or(|value| value == "same-origin")
 }
 
@@ -2461,6 +2554,39 @@ async fn security_headers(request: Request, next: Next) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hyz_contract::status::Issue;
+
+    #[test]
+    fn ipv6_ice_candidate_comes_only_from_available_router_status_for_lan() {
+        let address: Ipv6Addr = "240e:380:4308:da10:6605:3dff:fe02:430d".parse().unwrap();
+        let router = Component::available(RouterStatus {
+            public_ipv6_address: Some(address),
+            ..RouterStatus::default()
+        });
+        assert_eq!(
+            camera_ipv6_candidate(CameraAccessScope::Lan, true, &router),
+            Some(address)
+        );
+        assert_eq!(
+            camera_ipv6_candidate(CameraAccessScope::Lan, false, &router),
+            None
+        );
+        assert_eq!(
+            camera_ipv6_candidate(
+                CameraAccessScope::Tailscale {
+                    address: Ipv4Addr::new(100, 64, 1, 2),
+                },
+                true,
+                &router,
+            ),
+            None
+        );
+        let unavailable = Component::unavailable(Issue::new("router_unavailable", "offline"));
+        assert_eq!(
+            camera_ipv6_candidate(CameraAccessScope::Lan, true, &unavailable),
+            None
+        );
+    }
 
     #[test]
     fn camera_http_handlers_preserve_sensitive_read_and_control_boundaries() {
@@ -2486,7 +2612,12 @@ mod tests {
                 .count(),
             2
         );
-        assert!(handlers.contains("create_owned_session(owner, scope, request.offer_sdp)"));
+        assert!(handlers.contains(
+            "camera_ipv6_candidate(scope, state.accept_public_ipv6_origin, &snapshot.router)"
+        ));
+        assert!(handlers.contains(
+            "create_owned_session_with_ipv6(owner, scope, ipv6_candidate, request.offer_sdp)"
+        ));
         assert!(handlers.contains("close_owned_session(owner, &request.session_id)"));
         assert!(handlers.contains("camera.set_profile(request.preset).await"));
         assert!(handlers.contains("camera.set_rotation(request.rotation).await"));
@@ -2523,6 +2654,57 @@ mod tests {
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(code, "device_policy_generation_conflict");
         assert!(!message.contains("private platform detail"));
+    }
+
+    #[test]
+    fn ipv6_origin_is_exact_and_keeps_the_configured_scheme_and_port() {
+        let address = "240e:380:4308:da10:7c0d:6ff:fec7:143"
+            .parse::<Ipv6Addr>()
+            .unwrap();
+        let ipv6_origin = ipv6_origin(address, "https://192.168.8.1:8080")
+            .expect("configured HTTPS origin has a port");
+        assert_eq!(
+            ipv6_origin,
+            "https://[240e:380:4308:da10:7c0d:6ff:fec7:143]:8080"
+        );
+        assert!(origin_is_allowed(
+            &ipv6_origin,
+            "https://192.168.8.1:8080",
+            Some(&ipv6_origin)
+        ));
+        assert!(origin_is_allowed(
+            "https://192.168.8.1:8080",
+            "https://192.168.8.1:8080",
+            None
+        ));
+        assert!(!origin_is_allowed(
+            "https://[240e:380:4308:da10:7c0d:6ff:fec7:144]:8080",
+            "https://192.168.8.1:8080",
+            Some(&ipv6_origin)
+        ));
+        assert!(!origin_is_allowed(
+            "http://[240e:380:4308:da10:7c0d:6ff:fec7:143]:8080",
+            "https://192.168.8.1:8080",
+            Some(&ipv6_origin)
+        ));
+        assert!(!origin_is_allowed(
+            "https://[240e:380:4308:da10:7c0d:6ff:fec7:143]:8443",
+            "https://192.168.8.1:8080",
+            Some(&ipv6_origin)
+        ));
+    }
+
+    #[tokio::test]
+    async fn ipv6_listener_is_v6_only_and_preserves_ipv4_binding() {
+        let listener = bind_ipv6_only(Ipv6Addr::UNSPECIFIED, 0)
+            .expect("bind IPv6 listener on an available host");
+        let port = listener.local_addr().expect("listener address").port();
+        let socket = socket2::Socket::from(listener.into_std().expect("standard listener"));
+        assert!(socket.only_v6().expect("read IPv6-only socket option"));
+        let ipv4_listener = std::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port)))
+            .expect("IPv6 listener must not claim the IPv4 port");
+
+        drop(ipv4_listener);
     }
 
     #[test]

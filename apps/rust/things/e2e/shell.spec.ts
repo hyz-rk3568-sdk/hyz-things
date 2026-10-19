@@ -34,6 +34,29 @@ test("renders the dashboard shell and public overview", async ({ page }) => {
   await expectNoHorizontalOverflow(page);
 });
 
+test("shows the public IPv6 address and copies it from the route card", async ({ page }) => {
+  const publicIpv6 = "240e:380:4308:da10:7c0d:6ff:fec7:143";
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.route("**/api/v1/status", async route => {
+    const response = await route.fetch();
+    const snapshot = await response.json();
+    snapshot.router.data.public_ipv6_address = publicIpv6;
+    await route.fulfill({ response, json: snapshot });
+  });
+
+  await page.goto("/");
+  const routeCard = page.locator("article").filter({
+    has: page.getByRole("heading", { name: "路由 / LAN", exact: true }),
+  });
+  await expect(routeCard.getByText(publicIpv6, { exact: true })).toBeVisible();
+  await routeCard.getByRole("button", { name: "复制 IPv6 地址" }).click();
+  await expect
+    .poll(async () => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(publicIpv6);
+  await page.setViewportSize({ width: 360, height: 800 });
+  await expectNoHorizontalOverflow(page);
+});
+
 test("controls speaker volume from the System quick controls", async ({ page, request }) => {
   await page.goto("/");
   await goToAppPage(page, "系统");

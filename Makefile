@@ -330,7 +330,7 @@ endif
 	test -f "$(CAMERA_APP)/Cargo.lock"
 	! grep -R -q 'std::process::Command\|Command::new\|sh -c\|gst_parse_launch' "$(CAMERA_APP)/src"
 	grep -q 'CONTROL_OWNER_PATH: &str = "/run/hyz-camera/daemon.owner"' "$(CAMERA_APP)/src/adapters/inbound/unix_control.rs"
-	grep -q 'UdpSocket::bind(SocketAddr::from((address, port)))' "$(CAMERA_APP)/src/adapters/outbound/webrtc.rs"
+	grep -q 'UdpSocket::bind(SocketAddr::new(address, port))' "$(CAMERA_APP)/src/adapters/outbound/webrtc.rs"
 	! grep -q 'Ipv4Addr::UNSPECIFIED' "$(CAMERA_APP)/src/adapters/outbound/webrtc.rs"
 	grep -q 'CAMERA_UDP_PORT_START: u16 = 40_000' "$(CAMERA_APP)/src/domain/session.rs"
 	grep -q 'CAMERA_UDP_PORT_END: u16 = 40_015' "$(CAMERA_APP)/src/domain/session.rs"

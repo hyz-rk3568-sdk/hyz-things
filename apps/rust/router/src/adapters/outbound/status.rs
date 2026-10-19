@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use std::{
     fs,
-    net::Ipv4Addr,
+    net::{Ipv4Addr, Ipv6Addr},
     sync::{Mutex, OnceLock},
 };
 
@@ -174,6 +174,7 @@ fn read_router_status(platform: &LinuxRouterPlatform) -> Component<RouterStatus>
             .as_ref()
             .and_then(|value| known_bool(&value.lan_address_present))
             .and_then(|present| present.then(|| "192.168.8.1/24".to_owned())),
+        public_ipv6_address: public_ipv6_address(platform),
         ap_attached_to_lan: observed
             .as_ref()
             .and_then(|value| known_bool(&value.ap_attached)),
@@ -243,6 +244,80 @@ fn read_router_status(platform: &LinuxRouterPlatform) -> Component<RouterStatus>
     } else {
         Component::available(status)
     }
+}
+
+fn public_ipv6_address(platform: &LinuxRouterPlatform) -> Option<Ipv6Addr> {
+    let routes = probe_output(platform, Tool::Ip, &["-6", "route", "show", "default"])?;
+    let interface = default_ipv6_route_interface(&routes)?;
+    let addresses = probe_output(
+        platform,
+        Tool::Ip,
+        &[
+            "-o", "-6", "address", "show", "dev", interface, "scope", "global",
+        ],
+    )?;
+    first_public_ipv6(&addresses)
+}
+
+fn default_ipv6_route_interface(output: &str) -> Option<&'static str> {
+    let route = output
+        .lines()
+        .find(|line| line.split_whitespace().next() == Some("default"))?;
+    let fields = route.split_whitespace().collect::<Vec<_>>();
+    let interface = fields
+        .windows(2)
+        .find(|pair| pair[0] == "dev")
+        .map(|pair| pair[1])?;
+    match interface {
+        ETHERNET_WAN_INTERFACE => Some(ETHERNET_WAN_INTERFACE),
+        WAN_INTERFACE => Some(WAN_INTERFACE),
+        _ => None,
+    }
+}
+
+fn first_public_ipv6(output: &str) -> Option<Ipv6Addr> {
+    let mut temporary_address = None;
+    for line in output.lines() {
+        let Some((address, temporary)) = parse_global_ipv6_address_line(line) else {
+            continue;
+        };
+        if !is_public_global_ipv6(address) {
+            continue;
+        }
+        if temporary {
+            temporary_address.get_or_insert(address);
+        } else {
+            return Some(address);
+        }
+    }
+    temporary_address
+}
+
+fn parse_global_ipv6_address_line(line: &str) -> Option<(Ipv6Addr, bool)> {
+    let fields = line.split_whitespace().collect::<Vec<_>>();
+    let inet6_index = fields.iter().position(|field| *field == "inet6")?;
+    if !fields
+        .windows(2)
+        .any(|pair| pair[0] == "scope" && pair[1] == "global")
+        || fields.contains(&"deprecated")
+    {
+        return None;
+    }
+    let (address, prefix) = fields.get(inet6_index + 1)?.split_once('/')?;
+    if !prefix.parse::<u8>().is_ok_and(|prefix| prefix <= 128) {
+        return None;
+    }
+    Some((address.parse().ok()?, fields.contains(&"temporary")))
+}
+
+fn is_public_global_ipv6(address: Ipv6Addr) -> bool {
+    let segments = address.segments();
+    let in_global_unicast_range = segments[0] & 0xe000 == 0x2000;
+    let documentation = (segments[0] == 0x2001 && segments[1] == 0x0db8)
+        || (segments[0] == 0x3fff && segments[1] & 0xf000 == 0);
+    let benchmarking = segments[0] == 0x2001 && segments[1] == 0x0002 && segments[2] == 0;
+    let orchid = segments[0] == 0x2001 && matches!(segments[1] & 0xfff0, 0x0010 | 0x0020);
+    in_global_unicast_range && !documentation && !benchmarking && !orchid && segments[0] != 0x2002
 }
 
 fn router_status_is_degraded(observed: &NetworkObserved) -> bool {
@@ -611,6 +686,30 @@ mod tests {
         );
         assert_eq!(count_mac_lines("00:11:22:33:44:55\nFAIL\n"), 1);
         assert!(safe_text("ssid\nwith-control").is_none());
+    }
+
+    #[test]
+    fn selects_only_public_ipv6_on_a_managed_default_route() {
+        assert_eq!(
+            default_ipv6_route_interface(
+                "default via fe80::1 dev eth0 proto ra metric 100\ndefault dev wlan0 metric 600"
+            ),
+            Some(ETHERNET_WAN_INTERFACE)
+        );
+        assert_eq!(
+            default_ipv6_route_interface("default dev tailscale0 metric 10"),
+            None
+        );
+        assert_eq!(
+            first_public_ipv6(
+                "5: eth0 inet6 fd12::1/64 scope global dynamic\n5: eth0 inet6 2001:db8::1/64 scope global\n5: eth0 inet6 240e:380:4308:da10:7c0d:6ff:fec7:143/64 scope global dynamic"
+            ),
+            Some("240e:380:4308:da10:7c0d:6ff:fec7:143".parse().unwrap())
+        );
+        assert_eq!(
+            first_public_ipv6("5: eth0 inet6 fe80::1/64 scope link"),
+            None
+        );
     }
 
     fn proxy_observed(features: ProxyFeaturesV1) -> ProxyObserved {

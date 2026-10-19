@@ -49,7 +49,9 @@ pub fn decode_control_request(bytes: &[u8]) -> Result<ControlRequest, ControlErr
     }
     let request: ControlRequest =
         serde_json::from_slice(bytes).map_err(|_| ControlErrorCode::InvalidRequest)?;
-    if request.version != CONTROL_PROTOCOL_VERSION {
+    if request.version < CONTROL_PROTOCOL_VERSION.saturating_sub(1)
+        || request.version > CONTROL_PROTOCOL_VERSION
+    {
         return Err(ControlErrorCode::InvalidVersion);
     }
     Ok(request)
@@ -73,17 +75,20 @@ pub fn serve_root_control(
             Err(error) => return Err(error),
         };
         if peer_uid(&stream)? != 0 {
-            let response = error_response(ControlErrorCode::PermissionDenied);
+            let response =
+                error_response(CONTROL_PROTOCOL_VERSION, ControlErrorCode::PermissionDenied);
             let _ = write_response(&mut stream, &response);
             continue;
         }
         stream.set_read_timeout(Some(CONTROL_REQUEST_DEADLINE))?;
         stream.set_write_timeout(Some(CONTROL_REQUEST_DEADLINE))?;
-        let response = match read_request(&mut stream)
-            .and_then(|request| handle_request(&application, &shutdown, request))
-        {
-            Ok(response) => response,
-            Err(code) => error_response(code),
+        let response = match read_request(&mut stream) {
+            Ok(request) => {
+                let version = request.version;
+                handle_request(&application, &shutdown, request)
+                    .unwrap_or_else(|code| error_response(version, code))
+            }
+            Err(code) => error_response(CONTROL_PROTOCOL_VERSION, code),
         };
         write_response(&mut stream, &response)?;
     }
@@ -122,11 +127,17 @@ fn handle_request(
     shutdown: &AtomicBool,
     request: ControlRequest,
 ) -> Result<ControlResponse, ControlErrorCode> {
+    let request_version = request.version;
     let result = match request.operation {
         ControlOperation::Status => ControlResult::Status(application.status()),
         ControlOperation::CreateSession(request) => {
             let created = application
-                .create_session(request.scope, request.address, &request.offer_sdp)
+                .create_session_with_ipv6(
+                    request.scope,
+                    request.address,
+                    request.ipv6_address,
+                    &request.offer_sdp,
+                )
                 .map_err(|error| {
                     logging::message(
                         Level::Warn,
@@ -173,7 +184,7 @@ fn handle_request(
         }
     };
     Ok(ControlResponse {
-        version: CONTROL_PROTOCOL_VERSION,
+        version: request_version,
         outcome: ControlOutcome::Ok(result),
     })
 }
@@ -204,9 +215,9 @@ fn write_response(stream: &mut UnixStream, response: &ControlResponse) -> io::Re
     stream.write_all(&body)
 }
 
-fn error_response(code: ControlErrorCode) -> ControlResponse {
+fn error_response(version: u16, code: ControlErrorCode) -> ControlResponse {
     ControlResponse {
-        version: CONTROL_PROTOCOL_VERSION,
+        version,
         outcome: ControlOutcome::Error(ControlErrorResponse { code }),
     }
 }
