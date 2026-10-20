@@ -2,6 +2,7 @@ use super::*;
 
 mod apps;
 mod camera;
+mod calculation;
 mod devices;
 mod network;
 mod overview;
@@ -12,6 +13,7 @@ mod tailscale;
 
 pub(crate) use apps::*;
 pub(crate) use camera::*;
+pub(crate) use calculation::*;
 pub(crate) use devices::*;
 pub(crate) use network::*;
 pub(crate) use overview::*;
