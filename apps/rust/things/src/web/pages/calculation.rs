@@ -37,39 +37,15 @@ impl CalculationKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum GapMode {
-    Wide,
-    Narrow,
-    Mixed,
-}
-
-impl GapMode {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Wide => "大间距",
-            Self::Narrow => "小间距",
-            Self::Mixed => "随机间距",
-        }
-    }
-
-    fn test_id(self) -> &'static str {
-        match self {
-            Self::Wide => "calc-gap-wide",
-            Self::Narrow => "calc-gap-small",
-            Self::Mixed => "calc-gap-mixed",
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 struct CalculationQuestion {
     expression: String,
     options: [String; 4],
     correct_index: usize,
-    rounded_result: String,
+    exact_result: String,
+    numerator: u64,
+    denominator: u64,
     kind: CalculationKind,
-    gap: GapMode,
     tip: &'static str,
 }
 
@@ -107,113 +83,173 @@ fn power_ten(exp: u32) -> u64 {
     10_u64.pow(exp)
 }
 
-// 有理数 num/den 的最高有效数字数量级（10^order），纯整数运算。
-fn order_of_magnitude(num: u64, den: u64) -> i32 {
-    assert!(num > 0 && den > 0);
-    let mut order = 0;
-    if num >= den {
-        let mut divisor = den;
-        while divisor <= num / 10 {
-            divisor *= 10;
-            order += 1;
-        }
-    } else {
-        let mut numerator = num;
-        while numerator < den {
-            numerator *= 10;
-            order -= 1;
-        }
+// 精确有理数：对循环小数不冒充有精确的有限小数选项。
+// 出题阶段拒绝无法有限表示的除式，正确选项绝不人为四舍五入。
+fn gcd(mut a: u64, mut b: u64) -> u64 {
+    while b != 0 {
+        (a, b) = (b, a % b);
     }
-    order
+    a
 }
 
-// 用精确整数分数进行四舍五入；不把浮点近似值用于正确项判定。
-fn rounded_units(num: u64, den: u64, exponent: i32) -> i64 {
-    if exponent >= 0 {
-        let divisor = den * power_ten(exponent as u32);
-        ((num + divisor / 2) / divisor) as i64
-    } else {
-        let scaled = num * power_ten((-exponent) as u32);
-        ((scaled + den / 2) / den) as i64
+fn exact_decimal_parts(num: u64, den: u64) -> Option<(u64, u32)> {
+    if den == 0 {
+        return None;
     }
+    let common = gcd(num, den);
+    let mut denominator = den / common;
+    let mut twos = 0_u32;
+    let mut fives = 0_u32;
+    while denominator % 2 == 0 {
+        denominator /= 2;
+        twos += 1;
+    }
+    while denominator % 5 == 0 {
+        denominator /= 5;
+        fives += 1;
+    }
+    if denominator != 1 {
+        return None;
+    }
+    let places = twos.max(fives);
+    let scale = power_ten(places);
+    Some((num.checked_mul(scale)? / den, places))
 }
 
-fn format_units(units: i64, exponent: i32) -> String {
-    if exponent >= 0 {
-        (units * power_ten(exponent as u32) as i64).to_string()
+fn format_decimal(value: u64, places: u32) -> String {
+    if places == 0 {
+        value.to_string()
     } else {
-        let places = (-exponent) as usize;
-        let scale = power_ten(places as u32) as i64;
+        let scale = power_ten(places);
         format!(
             "{}.{:0width$}",
-            units / scale,
-            units % scale,
-            width = places
+            value / scale,
+            value % scale,
+            width = places as usize,
         )
     }
 }
 
-fn make_question(
+fn exact_decimal(num: u64, den: u64) -> String {
+    let (value, places) =
+        exact_decimal_parts(num, den).expect("只能将有限小数表示成精确数值");
+    format_decimal(value, places)
+}
+
+// 用于出题器校验：只比较前两位或前三位，绝不截断正确选项的显示值。
+fn significant_prefix(value: &str, count: usize) -> String {
+    value
+        .chars()
+        .filter(|digit| digit.is_ascii_digit())
+        .skip_while(|digit| *digit == '0')
+        .take(count)
+        .collect()
+}
+
+fn order_of_magnitude(mut number: u64) -> u32 {
+    let mut order = 0;
+    while number >= 10 {
+        number /= 10;
+        order += 1;
+    }
+    order
+}
+
+// 干扰项保留真实答案的量级和小数位数，低位随机生成；
+// 不使用等差选项。选项前 2/3 位已经足以区分，不需要真的算到末位。
+fn candidate_options(
     seed: &mut u64,
-    kind: CalculationKind,
-    requested_gap: GapMode,
-) -> CalculationQuestion {
-    let a = random_range(seed, 205, 985);
-    let b = random_range(seed, 12, 87);
-    let p = random_range(seed, 5, 42);
-    let (expression, numerator, denominator) = match kind {
-        CalculationKind::Division => (format!("{a} ÷ {b}"), a, b),
-        CalculationKind::Multiplication => (format!("{a} × {b}"), a * b, 1),
-        CalculationKind::Percent => match random_range(seed, 0, 2) {
-            0 => (format!("{a} × {p}%"), a * p, 100),
-            1 => (format!("{a} ÷ (1 + {p}%)"), a * 100, 100 + p),
-            _ => (format!("{a} × {p}% ÷ (1 + {p}%)"), a * p, 100 + p),
-        },
-    };
-    let gap = if requested_gap == GapMode::Mixed {
-        if random_range(seed, 0, 1) == 0 {
-            GapMode::Wide
-        } else {
-            GapMode::Narrow
+    correct: u64,
+    places: u32,
+) -> Option<([String; 4], usize)> {
+    let prefix_digits = if random_range(seed, 0, 1) == 0 { 2 } else { 3 };
+    let order = order_of_magnitude(correct);
+    let actual_digits = order + 1;
+    let needed_digits = prefix_digits.min(actual_digits);
+    let factor = power_ten(actual_digits - needed_digits);
+    let target_prefix = correct / factor;
+    let magnitude_lower_bound = power_ten(needed_digits - 1);
+    let magnitude_upper_bound = power_ten(needed_digits) - 1;
+
+    // 干扰项的最高两/三位来自周边不同数字，余下位数独立随机；
+    // 例如 123.12 可以遇到 121.22、125.45、127.08。
+    let mut prefixes = Vec::new();
+    for offset in -9_i64..=9_i64 {
+        if offset == 0 {
+            continue;
         }
-    } else {
-        requested_gap
-    };
-    // 所有选项同单位、同小数位。小间距约为第三位有效数间隔，
-    // 大间距扩大十倍，不向考生提示“算几位”。
-    let exponent = order_of_magnitude(numerator, denominator) - 2;
-    let correct_units = rounded_units(numerator, denominator, exponent);
-    let separation = if gap == GapMode::Wide { 10 } else { 1 };
-    let left = random_range(seed, 0, 3) as i64;
-    let mut candidates: [(i64, String); 4] = std::array::from_fn(|i| {
-        let units = correct_units + (i as i64 - left) * separation;
-        (units, format_units(units, exponent))
-    });
-    // 均匀洗牌，不能把正确答案固定在中间或固定选项。
-    for i in (1..4).rev() {
+        let candidate = target_prefix as i64 + offset;
+        if (magnitude_lower_bound as i64..=magnitude_upper_bound as i64).contains(&candidate) {
+            prefixes.push(candidate as u64);
+        }
+    }
+    if prefixes.len() < 3 {
+        return None;
+    }
+    for i in (1..prefixes.len()).rev() {
+        let j = random_range(seed, 0, i as u64) as usize;
+        prefixes.swap(i, j);
+    }
+    let mut candidates = [correct; 4];
+    for (index, prefix) in prefixes.into_iter().take(3).enumerate() {
+        let lower_digits = if factor > 1 {
+            random_range(seed, 0, factor - 1)
+        } else {
+            0
+        };
+        candidates[index] = prefix * factor + lower_digits;
+    }
+    candidates[3] = correct;
+    for i in (1..candidates.len()).rev() {
         let j = random_range(seed, 0, i as u64) as usize;
         candidates.swap(i, j);
     }
-    let correct_index = candidates
+    let correct_index = candidates.iter().position(|value| *value == correct)?;
+    let options = candidates.map(|value| format_decimal(value, places));
+    let distinct_prefixes = options
         .iter()
-        .position(|(units, _)| *units == correct_units)
-        .expect("正确答案必须在四个选项中");
-    let options = candidates.map(|(_, label)| label);
-    CalculationQuestion {
-        expression,
-        options,
-        correct_index,
-        rounded_result: format_units(correct_units, exponent),
-        kind,
-        gap,
-        tip: kind.tip(),
+        .map(|value| significant_prefix(value, 3))
+        .collect::<std::collections::HashSet<_>>();
+    (distinct_prefixes.len() == 4).then_some((options, correct_index))
+}
+
+fn make_question(seed: &mut u64, kind: CalculationKind) -> CalculationQuestion {
+    for _ in 0..4096 {
+        let a = random_range(seed, 205, 985);
+        let b = random_range(seed, 12, 87);
+        let p = random_range(seed, 5, 42);
+        let (expression, numerator, denominator) = match kind {
+            CalculationKind::Division => (format!("{a} ÷ {b}"), a, b),
+            CalculationKind::Multiplication => (format!("{a} × {b}"), a * b, 1),
+            CalculationKind::Percent => match random_range(seed, 0, 2) {
+                0 => (format!("{a} × {p}%"), a * p, 100),
+                1 => (format!("{a} ÷ (1 + {p}%)"), a * 100, 100 + p),
+                _ => (format!("{a} × {p}% ÷ (1 + {p}%)"), a * p, 100 + p),
+            },
+        };
+        let Some((correct, places)) = exact_decimal_parts(numerator, denominator) else {
+            continue;
+        };
+        let Some((options, correct_index)) = candidate_options(seed, correct, places) else {
+            continue;
+        };
+        return CalculationQuestion {
+            expression,
+            options,
+            correct_index,
+            exact_result: exact_decimal(numerator, denominator),
+            numerator,
+            denominator,
+            kind,
+            tip: kind.tip(),
+        };
     }
+    panic!("所选计算类型未能生成满足精确答案与选项可辨识规则的题目")
 }
 
 fn question_set(
     seed: &mut u64,
     kinds: &[CalculationKind],
-    gap: GapMode,
     count: usize,
 ) -> Vec<CalculationQuestion> {
     let mut questions: Vec<_> = (0..count)
@@ -223,7 +259,7 @@ fn question_set(
             } else {
                 kinds[random_range(seed, 0, (kinds.len() - 1) as u64) as usize]
             };
-            make_question(seed, kind, gap)
+            make_question(seed, kind)
         })
         .collect();
     // 启用的每种计算类型每轮至少出现一次，打散出现顺序。
