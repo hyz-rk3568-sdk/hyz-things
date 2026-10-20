@@ -245,3 +245,38 @@ test("calculation scratchpad draws, clears and resets when changing questions", 
   expect(pencilStrokes.second).not.toBe(pencilStrokes.first);
   expect(pencilStrokes.third).not.toBe(pencilStrokes.second);
 });
+
+
+test("scratchpad cancels Safari single-touch gestures before the second Pencil stroke", async ({ page }) => {
+  await page.goto("/#/study/calculation");
+  await page.getByTestId("calculation-start").click();
+  const prevention = await page.getByTestId("calculation-scratchpad-canvas").evaluate((element) => {
+    const canvas = element as HTMLCanvasElement;
+    const makeTouch = (id: number) => new Touch({
+      identifier: id, target: canvas, clientX: 42 + id, clientY: 42,
+    });
+    const emit = (type: "touchstart" | "touchend", fingers: number, cancelable = true) => {
+      const touches = Array.from({ length: fingers }, (_, index) => makeTouch(index));
+      const event = new TouchEvent(type, {
+        bubbles: true, cancelable, touches, targetTouches: touches,
+        changedTouches: [makeTouch(10)],
+      });
+      canvas.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    return {
+      start: emit("touchstart", 1),
+      rapidStart: emit("touchstart", 1),
+      end: emit("touchend", 0),
+      twoFinger: emit("touchstart", 2),
+      noncancelable: emit("touchstart", 1, false),
+    };
+  });
+  expect(prevention).toEqual({
+    start: true,
+    rapidStart: true,
+    end: true,
+    twoFinger: false,
+    noncancelable: false,
+  });
+});
