@@ -30,34 +30,9 @@ impl CalculationKind {
 
     fn tip(self) -> &'static str {
         match self {
-            Self::Division => "分子取前三位、分母取前两位试商；依据选项间距决定是否补下一位。",
-            Self::Multiplication => "从高位拆乘，先确定量级，再根据选项间距补位。",
+            Self::Division => "分子前三位、分母两位试商；用选项差异决定心算止步。",
+            Self::Multiplication => "高位拆乘、先确定量级，再根据选项差异决定是否补位。",
             Self::Percent => "以 10% 和 1% 为锚点拆算；能从选项定界就及时停止。",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum GapMode {
-    Wide,
-    Narrow,
-    Mixed,
-}
-
-impl GapMode {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Wide => "大间距",
-            Self::Narrow => "小间距",
-            Self::Mixed => "随机间距",
-        }
-    }
-
-    fn test_id(self) -> &'static str {
-        match self {
-            Self::Wide => "calc-gap-wide",
-            Self::Narrow => "calc-gap-small",
-            Self::Mixed => "calc-gap-mixed",
         }
     }
 }
@@ -67,9 +42,10 @@ struct CalculationQuestion {
     expression: String,
     options: [String; 4],
     correct_index: usize,
-    rounded_result: String,
+    exact_result: String,
+    numerator: u64,
+    denominator: u64,
     kind: CalculationKind,
-    gap: GapMode,
     tip: &'static str,
 }
 
@@ -107,113 +83,169 @@ fn power_ten(exp: u32) -> u64 {
     10_u64.pow(exp)
 }
 
-// 有理数 num/den 的最高有效数字数量级（10^order），纯整数运算。
-fn order_of_magnitude(num: u64, den: u64) -> i32 {
-    assert!(num > 0 && den > 0);
-    let mut order = 0;
-    if num >= den {
-        let mut divisor = den;
-        while divisor <= num / 10 {
-            divisor *= 10;
-            order += 1;
-        }
-    } else {
-        let mut numerator = num;
-        while numerator < den {
-            numerator *= 10;
-            order -= 1;
-        }
+// 精确有理数：对循环小数不冒充有精确的有限小数选项。
+// 出题阶段拒绝无法有限表示的除式，正确选项绝不人为四舍五入。
+fn gcd(mut a: u64, mut b: u64) -> u64 {
+    while b != 0 {
+        (a, b) = (b, a % b);
     }
-    order
+    a
 }
 
-// 用精确整数分数进行四舍五入；不把浮点近似值用于正确项判定。
-fn rounded_units(num: u64, den: u64, exponent: i32) -> i64 {
-    if exponent >= 0 {
-        let divisor = den * power_ten(exponent as u32);
-        ((num + divisor / 2) / divisor) as i64
-    } else {
-        let scaled = num * power_ten((-exponent) as u32);
-        ((scaled + den / 2) / den) as i64
+fn exact_decimal_parts(num: u64, den: u64) -> Option<(u64, u32)> {
+    if den == 0 {
+        return None;
     }
+    let common = gcd(num, den);
+    let mut denominator = den / common;
+    let mut twos = 0_u32;
+    let mut fives = 0_u32;
+    while denominator % 2 == 0 {
+        denominator /= 2;
+        twos += 1;
+    }
+    while denominator % 5 == 0 {
+        denominator /= 5;
+        fives += 1;
+    }
+    if denominator != 1 {
+        return None;
+    }
+    let places = twos.max(fives);
+    let scale = power_ten(places);
+    Some((num.checked_mul(scale)? / den, places))
 }
 
-fn format_units(units: i64, exponent: i32) -> String {
-    if exponent >= 0 {
-        (units * power_ten(exponent as u32) as i64).to_string()
+fn format_decimal(value: u64, places: u32) -> String {
+    if places == 0 {
+        value.to_string()
     } else {
-        let places = (-exponent) as usize;
-        let scale = power_ten(places as u32) as i64;
+        let scale = power_ten(places);
         format!(
             "{}.{:0width$}",
-            units / scale,
-            units % scale,
-            width = places
+            value / scale,
+            value % scale,
+            width = places as usize,
         )
     }
 }
 
-fn make_question(
-    seed: &mut u64,
-    kind: CalculationKind,
-    requested_gap: GapMode,
-) -> CalculationQuestion {
-    let a = random_range(seed, 205, 985);
-    let b = random_range(seed, 12, 87);
-    let p = random_range(seed, 5, 42);
-    let (expression, numerator, denominator) = match kind {
-        CalculationKind::Division => (format!("{a} ÷ {b}"), a, b),
-        CalculationKind::Multiplication => (format!("{a} × {b}"), a * b, 1),
-        CalculationKind::Percent => match random_range(seed, 0, 2) {
-            0 => (format!("{a} × {p}%"), a * p, 100),
-            1 => (format!("{a} ÷ (1 + {p}%)"), a * 100, 100 + p),
-            _ => (format!("{a} × {p}% ÷ (1 + {p}%)"), a * p, 100 + p),
-        },
-    };
-    let gap = if requested_gap == GapMode::Mixed {
-        if random_range(seed, 0, 1) == 0 {
-            GapMode::Wide
-        } else {
-            GapMode::Narrow
+fn exact_decimal(num: u64, den: u64) -> String {
+    let (value, places) = exact_decimal_parts(num, den).expect("只能将有限小数表示成精确数值");
+    format_decimal(value, places)
+}
+
+// 用于出题器校验：只比较前两位或前三位，绝不截断正确选项的显示值。
+fn significant_prefix(value: &str, count: usize) -> String {
+    value
+        .chars()
+        .filter(|digit| digit.is_ascii_digit())
+        .skip_while(|digit| *digit == '0')
+        .take(count)
+        .collect()
+}
+
+fn order_of_magnitude(mut number: u64) -> u32 {
+    let mut order = 0;
+    while number >= 10 {
+        number /= 10;
+        order += 1;
+    }
+    order
+}
+
+// 干扰项保留真实答案的量级和小数位数，低位随机生成；
+// 不使用等差选项。选项前 2/3 位已经足以区分，不需要真的算到末位。
+fn candidate_options(seed: &mut u64, correct: u64, places: u32) -> Option<([String; 4], usize)> {
+    let prefix_digits = if random_range(seed, 0, 1) == 0 { 2 } else { 3 };
+    let order = order_of_magnitude(correct);
+    let actual_digits = order + 1;
+    let needed_digits = prefix_digits.min(actual_digits);
+    let factor = power_ten(actual_digits - needed_digits);
+    let target_prefix = correct / factor;
+    let magnitude_lower_bound = power_ten(needed_digits - 1);
+    let magnitude_upper_bound = power_ten(needed_digits) - 1;
+
+    // 干扰项的最高两/三位来自周边不同数字，余下位数独立随机；
+    // 例如 123.12 可以遇到 121.22、125.45、127.08。
+    let mut prefixes = Vec::new();
+    let max_offset = if needed_digits < 3 { 4 } else { 6 };
+    for offset in -max_offset..=max_offset {
+        if offset == 0 {
+            continue;
         }
-    } else {
-        requested_gap
-    };
-    // 所有选项同单位、同小数位。小间距约为第三位有效数间隔，
-    // 大间距扩大十倍，不向考生提示“算几位”。
-    let exponent = order_of_magnitude(numerator, denominator) - 2;
-    let correct_units = rounded_units(numerator, denominator, exponent);
-    let separation = if gap == GapMode::Wide { 10 } else { 1 };
-    let left = random_range(seed, 0, 3) as i64;
-    let mut candidates: [(i64, String); 4] = std::array::from_fn(|i| {
-        let units = correct_units + (i as i64 - left) * separation;
-        (units, format_units(units, exponent))
-    });
-    // 均匀洗牌，不能把正确答案固定在中间或固定选项。
-    for i in (1..4).rev() {
+        let candidate = target_prefix as i64 + offset;
+        if (magnitude_lower_bound as i64..=magnitude_upper_bound as i64).contains(&candidate) {
+            prefixes.push(candidate as u64);
+        }
+    }
+    if prefixes.len() < 3 {
+        return None;
+    }
+    for i in (1..prefixes.len()).rev() {
+        let j = random_range(seed, 0, i as u64) as usize;
+        prefixes.swap(i, j);
+    }
+    let mut candidates = [correct; 4];
+    for (index, prefix) in prefixes.into_iter().take(3).enumerate() {
+        let lower_digits = if factor > 1 {
+            random_range(seed, 0, factor - 1)
+        } else {
+            0
+        };
+        candidates[index] = prefix * factor + lower_digits;
+    }
+    candidates[3] = correct;
+    for i in (1..candidates.len()).rev() {
         let j = random_range(seed, 0, i as u64) as usize;
         candidates.swap(i, j);
     }
-    let correct_index = candidates
+    let correct_index = candidates.iter().position(|value| *value == correct)?;
+    let options = candidates.map(|value| format_decimal(value, places));
+    let distinct_prefixes = options
         .iter()
-        .position(|(units, _)| *units == correct_units)
-        .expect("正确答案必须在四个选项中");
-    let options = candidates.map(|(_, label)| label);
-    CalculationQuestion {
-        expression,
-        options,
-        correct_index,
-        rounded_result: format_units(correct_units, exponent),
-        kind,
-        gap,
-        tip: kind.tip(),
+        .map(|value| significant_prefix(value, 3))
+        .collect::<std::collections::HashSet<_>>();
+    (distinct_prefixes.len() == 4).then_some((options, correct_index))
+}
+
+fn make_question(seed: &mut u64, kind: CalculationKind) -> CalculationQuestion {
+    for _ in 0..4096 {
+        let a = random_range(seed, 205, 985);
+        let b = random_range(seed, 12, 87);
+        let p = random_range(seed, 5, 42);
+        let (expression, numerator, denominator) = match kind {
+            CalculationKind::Division => (format!("{a} ÷ {b}"), a, b),
+            CalculationKind::Multiplication => (format!("{a} × {b}"), a * b, 1),
+            CalculationKind::Percent => match random_range(seed, 0, 2) {
+                0 => (format!("{a} × {p}%"), a * p, 100),
+                1 => (format!("{a} ÷ (1 + {p}%)"), a * 100, 100 + p),
+                _ => (format!("{a} × {p}% ÷ (1 + {p}%)"), a * p, 100 + p),
+            },
+        };
+        let Some((correct, places)) = exact_decimal_parts(numerator, denominator) else {
+            continue;
+        };
+        let Some((options, correct_index)) = candidate_options(seed, correct, places) else {
+            continue;
+        };
+        return CalculationQuestion {
+            expression,
+            options,
+            correct_index,
+            exact_result: exact_decimal(numerator, denominator),
+            numerator,
+            denominator,
+            kind,
+            tip: kind.tip(),
+        };
     }
+    panic!("所选计算类型未能生成满足精确答案与选项可辨识规则的题目")
 }
 
 fn question_set(
     seed: &mut u64,
     kinds: &[CalculationKind],
-    gap: GapMode,
     count: usize,
 ) -> Vec<CalculationQuestion> {
     let mut questions: Vec<_> = (0..count)
@@ -223,7 +255,7 @@ fn question_set(
             } else {
                 kinds[random_range(seed, 0, (kinds.len() - 1) as u64) as usize]
             };
-            make_question(seed, kind, gap)
+            make_question(seed, kind)
         })
         .collect();
     // 启用的每种计算类型每轮至少出现一次，打散出现顺序。
@@ -262,7 +294,6 @@ pub(crate) fn render_calculation_training(route_state: UseStateHandle<PortalRout
 #[function_component(CalculationTraining)]
 fn calculation_training(props: &CalculationTrainingProps) -> Html {
     let enabled = use_state(|| [true, true, true]);
-    let gap_mode = use_state(|| GapMode::Mixed);
     let count = use_state(|| 20_usize);
     let session = use_state(|| None::<CalculationSession>);
 
@@ -282,7 +313,6 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
     };
     let start = {
         let enabled = *enabled;
-        let gap = *gap_mode;
         let count = *count;
         let session = session.clone();
         Callback::from(move |_| {
@@ -295,7 +325,7 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                 return;
             }
             let mut seed = (Date::now() as u64) ^ 0x9e37_79b9_7f4a_7c15;
-            let questions = question_set(&mut seed, &kinds, gap, count);
+            let questions = question_set(&mut seed, &kinds, count);
             session.set(Some(CalculationSession {
                 answers: vec![None; questions.len()],
                 questions,
@@ -324,29 +354,6 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                 .iter()
                 .map(|(_, answer)| answer.elapsed_ms as u64)
                 .sum();
-            let render_gap = |gap: GapMode| {
-                let subset: Vec<_> = answered
-                    .iter()
-                    .filter(|(index, _)| live.questions[*index].gap == gap)
-                    .collect();
-                let right = subset
-                    .iter()
-                    .filter(|(index, answer)| answer.choice == live.questions[*index].correct_index)
-                    .count();
-                let ms: u64 = subset
-                    .iter()
-                    .map(|(_, answer)| answer.elapsed_ms as u64)
-                    .sum();
-                html! {
-                    <div class="rounded-box border border-base-content/10 bg-base-200/40 p-3">
-                        <p class="text-sm text-base-content/65">{gap.label()}</p>
-                        <p class="font-semibold">{format!("{} / {} 正确", right, subset.len())}</p>
-                        <p class="text-xs text-base-content/60">
-                            {if subset.is_empty() { "暂无数据".to_owned() } else { format!("平均 {:.1} 秒", ms as f64 / subset.len() as f64 / 1000.0) }}
-                        </p>
-                    </div>
-                }
-            };
             html! {
                 <section class="mx-auto grid w-full max-w-3xl gap-5" data-testid="calculation-summary">
                     <div class="rounded-box border border-base-content/10 bg-base-100 p-6">
@@ -357,7 +364,6 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                             <CalculationMetric label="已做题目" value={format!("{total} / {}", live.questions.len())} />
                             <CalculationMetric label="平均用时" value={if total == 0 { "—".to_owned() } else { format!("{:.1} 秒", elapsed as f64 / total as f64 / 1000.0) }} />
                         </div>
-                        <div class="mt-4 grid grid-cols-2 gap-3">{render_gap(GapMode::Wide)}{render_gap(GapMode::Narrow)}</div>
                     </div>
                     <div class="grid gap-3">
                         <h2 class="text-lg font-bold">{"错题回看"}</h2>
@@ -366,7 +372,7 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                             html! {
                                 <article class="rounded-box border border-base-content/10 bg-base-100 p-4">
                                     <p class="font-semibold">{format!("第 {} 题 · {}", index + 1, question.expression)}</p>
-                                    <p class="mt-2 text-sm">{format!("你的选择：{}　正确选项：{}", question.options[answer.choice], question.rounded_result)}</p>
+                                    <p class="mt-2 text-sm">{format!("你的选择：{}　正确选项：{}", question.options[answer.choice], question.exact_result)}</p>
                                     <p class="mt-1 text-xs text-base-content/65">{question.tip}</p>
                                 </article>
                             }
@@ -451,7 +457,7 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                     </div>
                     <div class="grid min-h-36 place-items-center rounded-box border border-base-content/10 bg-base-100 p-5 text-center">
                         <h1 class="break-words text-3xl font-black leading-snug sm:text-5xl" data-testid="calculation-expression">
-                            {format!("{} ≈ ?", question.expression)}
+                            {format!("{} = ?", question.expression)}
                         </h1>
                     </div>
                     <div class="grid grid-cols-2 gap-3">{for buttons}</div>
@@ -460,7 +466,7 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                             <strong class={if record.choice == question.correct_index { "text-success" } else { "text-error" }}>
                                 {if record.choice == question.correct_index { "回答正确" } else { "回答错误" }}
                             </strong>
-                            <p class="mt-1">{format!("正确答案：{}；用时 {:.1} 秒", question.rounded_result, record.elapsed_ms as f64 / 1000.0)}</p>
+                            <p class="mt-1">{format!("正确答案：{}；用时 {:.1} 秒", question.exact_result, record.elapsed_ms as f64 / 1000.0)}</p>
                             <p class="mt-1 text-sm text-base-content/65">{question.tip}</p>
                         </div>
                         <button type="button" class="btn btn-primary w-full" data-testid="calculation-next" onclick={next}>
@@ -473,12 +479,11 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
         }
     } else {
         let flags = *enabled;
-        let gap = *gap_mode;
         html! {
             <section class="mx-auto grid w-full max-w-3xl gap-5" data-testid="calculation-setup">
                 <div class="rounded-box border border-base-content/10 bg-base-100 p-5 sm:p-7">
                     <h1 class="text-2xl font-black">{"资料分析 · 速算训练"}</h1>
-                    <p class="mt-2 text-sm text-base-content/65">{"看题、心算、四选一。精度由选项区分度决定，不要求输入精确结果。"}</p>
+                    <p class="mt-2 text-sm text-base-content/65">{"正确选项保留真实结果，凭选项前两三位判断，无需心算到最后一位。"}</p>
                     <fieldset class="mt-5">
                         <legend class="mb-3 font-bold">{"计算类型"}</legend>
                         <div class="grid gap-3 sm:grid-cols-3">
@@ -496,24 +501,6 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                                 }
                             })}
                         </div>
-                    </fieldset>
-                    <fieldset class="mt-5">
-                        <legend class="mb-3 font-bold">{"选项间距"}</legend>
-                        <div class="grid grid-cols-3 gap-2">
-                            {for [GapMode::Wide, GapMode::Narrow, GapMode::Mixed].into_iter().map(|mode| {
-                                let gap_mode = gap_mode.clone();
-                                html! {
-                                    <button
-                                        type="button"
-                                        class={if gap == mode { "btn btn-primary" } else { "btn btn-outline" }}
-                                        data-testid={mode.test_id()}
-                                        aria-pressed={(gap == mode).to_string()}
-                                        onclick={Callback::from(move |_| gap_mode.set(mode))}
-                                    >{mode.label()}</button>
-                                }
-                            })}
-                        </div>
-                        <p class="mt-2 text-xs text-base-content/60">{"大间距如 1.23 / 1.33；小间距如 123 / 124；随机只变选项间距。"}</p>
                     </fieldset>
                     <label class="mt-5 grid max-w-48 gap-2">
                         <span class="font-bold">{"本轮题数"}</span>
@@ -556,61 +543,80 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_kind_and_gap_has_exactly_one_rounded_answer() {
+    fn every_kind_has_one_exact_answer_and_options_differ_by_three_digits() {
+        let mut has_two_digit_question = false;
+        let mut has_three_digit_question = false;
         for kind in CalculationKind::ALL {
-            for gap in [GapMode::Wide, GapMode::Narrow, GapMode::Mixed] {
-                let mut seed = 7;
-                for _ in 0..1000 {
-                    let question = make_question(&mut seed, kind, gap);
-                    let unique: std::collections::HashSet<_> = question.options.iter().collect();
-                    assert_eq!(unique.len(), 4);
-                    assert_eq!(
-                        question
-                            .options
-                            .iter()
-                            .filter(|v| **v == question.rounded_result)
-                            .count(),
-                        1
-                    );
-                    assert_eq!(
-                        question.options[question.correct_index],
-                        question.rounded_result
-                    );
-                    assert!(question.options.iter().all(|v| !v.starts_with('-')));
-                    if kind == CalculationKind::Percent {
-                        assert!(question.expression.contains('%'));
-                    }
+            let mut seed = 1428;
+            for _ in 0..800 {
+                let question = make_question(&mut seed, kind);
+                assert_eq!(
+                    question.options[question.correct_index],
+                    question.exact_result
+                );
+                assert_eq!(
+                    question.exact_result,
+                    exact_decimal(question.numerator, question.denominator)
+                );
+                let unique: std::collections::HashSet<_> = question.options.iter().collect();
+                assert_eq!(unique.len(), 4);
+                let three: std::collections::HashSet<_> = question
+                    .options
+                    .iter()
+                    .map(|value| significant_prefix(value, 3))
+                    .collect();
+                assert_eq!(three.len(), 4, "{}", question.expression);
+                let two: std::collections::HashSet<_> = question
+                    .options
+                    .iter()
+                    .map(|value| significant_prefix(value, 2))
+                    .collect();
+                has_two_digit_question |= two.len() == 4;
+                has_three_digit_question |= two.len() != 4;
+                assert!(question.options.iter().all(|value| !value.starts_with('-')));
+                if kind == CalculationKind::Percent {
+                    assert!(question.expression.contains('%'));
                 }
             }
         }
+        assert!(has_two_digit_question);
+        assert!(has_three_digit_question);
     }
 
     #[test]
-    fn exact_rounding_does_not_depend_on_float_or_option_position() {
-        assert_eq!(rounded_units(387, 31, -1), 125);
-        assert_eq!(format_units(125, -1), "12.5");
-        assert_eq!(rounded_units(438 * 27, 1, 2), 118);
-        assert_eq!(format_units(118, 2), "11800");
-        assert_eq!(rounded_units(438 * 13, 100, 0), 57);
+    fn exact_results_are_not_truncated_or_rounded() {
+        assert_eq!(exact_decimal(438 * 27, 1), "11826");
+        assert_eq!(exact_decimal(438 * 13, 100), "56.94");
+        assert_eq!(exact_decimal(438 * 100, 120), "365");
+        assert_eq!(exact_decimal(5, 4), "1.25");
+        assert_eq!(exact_decimal_parts(736, 24), None);
+        assert_eq!(exact_decimal_parts(12312, 100), Some((12312, 2)));
+        assert_eq!(significant_prefix("123.12", 3), "123");
+        assert_eq!(significant_prefix("125.45", 3), "125");
+        assert_eq!(significant_prefix("121.22", 3), "121");
+    }
+
+    #[test]
+    fn correct_choice_is_not_pinned_to_a_position() {
         let mut seed = 19;
         let mut positions = [0; 4];
         for _ in 0..256 {
-            let question = make_question(&mut seed, CalculationKind::Division, GapMode::Narrow);
+            let question = make_question(&mut seed, CalculationKind::Division);
             positions[question.correct_index] += 1;
         }
-        assert!(positions.into_iter().all(|n| n >= 30));
+        assert!(positions.into_iter().all(|count| count >= 30));
     }
 
     #[test]
-    fn percent_only_questions_and_mixed_gaps_are_supported() {
+    fn every_enabled_kind_is_included_and_percent_only_is_possible() {
         let mut seed = 123;
-        let questions = question_set(&mut seed, &[CalculationKind::Percent], GapMode::Mixed, 100);
-        assert!(questions.iter().all(|q| q.kind == CalculationKind::Percent));
-        assert!(questions.iter().any(|q| q.gap == GapMode::Wide));
-        assert!(questions.iter().any(|q| q.gap == GapMode::Narrow));
-        let all = question_set(&mut seed, &CalculationKind::ALL, GapMode::Mixed, 20);
+        let questions = question_set(&mut seed, &[CalculationKind::Percent], 100);
+        assert!(questions
+            .iter()
+            .all(|question| question.kind == CalculationKind::Percent));
+        let all = question_set(&mut seed, &CalculationKind::ALL, 20);
         for kind in CalculationKind::ALL {
-            assert!(all.iter().any(|q| q.kind == kind));
+            assert!(all.iter().any(|question| question.kind == kind));
         }
     }
 }

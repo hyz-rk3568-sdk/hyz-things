@@ -148,7 +148,10 @@ test("calculation drill supports percent-only and returns to Study", async ({ pa
   await page.goto("/#/study/calculation");
   await page.getByTestId("calc-kind-div").uncheck();
   await page.getByTestId("calc-kind-mul").uncheck();
-  await page.getByTestId("calc-gap-small").click();
+  await expect(page.getByTestId("calc-gap-wide")).toHaveCount(0);
+  await expect(page.getByTestId("calc-gap-small")).toHaveCount(0);
+  await expect(page.getByTestId("calc-gap-mixed")).toHaveCount(0);
+  await expect(page.getByText("选项间距")).toHaveCount(0);
   await page.getByTestId("calculation-start").click();
   await expect(page.getByTestId("calculation-expression")).toContainText(/%/);
   await page.getByTestId("calculation-back").click();
