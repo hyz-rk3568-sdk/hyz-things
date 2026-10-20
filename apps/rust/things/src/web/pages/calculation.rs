@@ -450,7 +450,7 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                 })
             };
             html! {
-                <section class="calculation-workspace mx-auto grid w-full max-w-3xl gap-4" data-testid="calculation-question">
+                <section class="calculation-workspace mx-auto grid w-full gap-4" data-testid="calculation-question">
                     <div class="calculation-problem grid min-w-0 content-start gap-4" data-testid="calculation-problem">
                     <div class="flex items-center justify-between gap-3 text-sm text-base-content/60">
                         <span>{format!("第 {progress} / {} 题", live.questions.len())}</span>
@@ -532,7 +532,7 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
 
     html! {
         <div class="calculation-layout min-h-dvh bg-base-200 px-4 py-5 sm:px-8" data-testid="calculation-layout" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
-            <div class="calculation-header mx-auto mb-5 flex w-full max-w-3xl items-center justify-between">
+            <div class="calculation-header mx-auto mb-5 flex w-full items-center justify-between">
                 <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-back" onclick={back}>{"← 返回学习"}</button>
                 <span class="text-xs font-semibold uppercase tracking-widest text-base-content/60">{"STUDY / CALCULATION"}</span>
             </div>
