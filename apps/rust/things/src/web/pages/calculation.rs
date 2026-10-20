@@ -216,6 +216,22 @@ fn question_set(seed: &mut u64, kinds: &[CalculationKind], gap: GapMode, count: 
 }
 
 #[derive(Properties, PartialEq)]
+struct CalculationMetricProps {
+    label: AttrValue,
+    value: String,
+}
+
+#[function_component(CalculationMetric)]
+fn calculation_metric(props: &CalculationMetricProps) -> Html {
+    html! {
+        <article class="rounded-box border border-base-content/10 bg-base-100/60 p-4">
+            <span class="text-xs text-base-content/65">{props.label.clone()}</span>
+            <strong class="mt-1 block font-mono text-2xl font-black">{props.value.clone()}</strong>
+        </article>
+    }
+}
+
+#[derive(Properties, PartialEq)]
 struct CalculationTrainingProps {
     route_state: UseStateHandle<PortalRoute>,
 }
@@ -300,9 +316,9 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                         <p class="text-xs font-bold tracking-widest text-primary">{"训练结果"}</p>
                         <h1 class="mt-2 text-3xl font-black">{"本轮完成"}</h1>
                         <div class="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                            <StudyMetric label="正确率" value={if total == 0 { "0%".to_owned() } else { format!("{:.0}%", correct as f64 * 100.0 / total as f64) }} />
-                            <StudyMetric label="已做题目" value={format!("{total} / {}", live.questions.len())} />
-                            <StudyMetric label="平均用时" value={if total == 0 { "—".to_owned() } else { format!("{:.1} 秒", elapsed as f64 / total as f64 / 1000.0) }} />
+                            <CalculationMetric label="正确率" value={if total == 0 { "0%".to_owned() } else { format!("{:.0}%", correct as f64 * 100.0 / total as f64) }} />
+                            <CalculationMetric label="已做题目" value={format!("{total} / {}", live.questions.len())} />
+                            <CalculationMetric label="平均用时" value={if total == 0 { "—".to_owned() } else { format!("{:.1} 秒", elapsed as f64 / total as f64 / 1000.0) }} />
                         </div>
                         <div class="mt-4 grid grid-cols-2 gap-3">{render_gap(GapMode::Wide)}{render_gap(GapMode::Narrow)}</div>
                     </div>
@@ -390,7 +406,7 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                 <section class="mx-auto grid w-full max-w-3xl gap-4" data-testid="calculation-question">
                     <div class="flex items-center justify-between gap-3 text-sm text-base-content/60">
                         <span>{format!("第 {progress} / {} 题", live.questions.len())}</span>
-                        <span>{format!("{} · {}", question.kind.label(), question.gap.label())}</span>
+                        <span>{question.kind.label()}</span>
                     </div>
                     <div class="grid min-h-36 place-items-center rounded-box border border-base-content/10 bg-base-100 p-5 text-center">
                         <h1 class="break-words text-3xl font-black leading-snug sm:text-5xl" data-testid="calculation-expression">
