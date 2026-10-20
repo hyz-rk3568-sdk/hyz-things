@@ -207,12 +207,22 @@ fn make_question(seed: &mut u64, kind: CalculationKind, requested_gap: GapMode) 
 }
 
 fn question_set(seed: &mut u64, kinds: &[CalculationKind], gap: GapMode, count: usize) -> Vec<CalculationQuestion> {
-    (0..count)
-        .map(|_| {
-            let kind = kinds[random_range(seed, 0, (kinds.len() - 1) as u64) as usize];
+    let mut questions: Vec<_> = (0..count)
+        .map(|index| {
+            let kind = if index < kinds.len() {
+                kinds[index]
+            } else {
+                kinds[random_range(seed, 0, (kinds.len() - 1) as u64) as usize]
+            };
             make_question(seed, kind, gap)
         })
-        .collect()
+        .collect();
+    // 启用的每种计算类型每轮至少出现一次，打散出现顺序。
+    for index in (1..questions.len()).rev() {
+        let other = random_range(seed, 0, index as u64) as usize;
+        questions.swap(index, other);
+    }
+    questions
 }
 
 #[derive(Properties, PartialEq)]
@@ -557,5 +567,9 @@ mod tests {
         assert!(questions.iter().all(|q| q.kind == CalculationKind::Percent));
         assert!(questions.iter().any(|q| q.gap == GapMode::Wide));
         assert!(questions.iter().any(|q| q.gap == GapMode::Narrow));
+        let all = question_set(&mut seed, &CalculationKind::ALL, GapMode::Mixed, 20);
+        for kind in CalculationKind::ALL {
+            assert!(all.iter().any(|q| q.kind == kind));
+        }
     }
 }
