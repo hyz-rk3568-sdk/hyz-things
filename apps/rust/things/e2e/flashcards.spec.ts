@@ -210,4 +210,38 @@ test("calculation scratchpad draws, clears and resets when changing questions", 
   await page.getByTestId("calculation-scratchpad-toggle").click();
   await expect(canvas).toBeVisible();
   expect(await snapshot()).toBe(blank);
+
+  // 触控笔连续写：Safari 若遗漏上一笔 pointerup，新的 pen pointerdown
+  // 仍必须能接管绘图，不应被遗留的活动指针锁阻断。
+  const pencilStrokes = await canvas.evaluate((element) => {
+    const surface = element as HTMLCanvasElement;
+    const rect = surface.getBoundingClientRect();
+    const emit = (type: string, pointerId: number, x: number, y: number) =>
+      surface.dispatchEvent(new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        pointerType: "pen",
+        pointerId,
+        isPrimary: true,
+        button: 0,
+        buttons: type === "pointerup" ? 0 : 1,
+        clientX: rect.x + x,
+        clientY: rect.y + y,
+      }));
+    emit("pointerdown", 101, 20, 40);
+    emit("pointermove", 101, 70, 80);
+    const first = surface.toDataURL();
+    // 模拟上一笔 pointerup/lostpointercapture 丢失。
+    emit("pointerdown", 102, 120, 40);
+    emit("pointermove", 102, 175, 80);
+    emit("pointerup", 102, 175, 80);
+    const second = surface.toDataURL();
+    // 下一笔也应正常起笔。
+    emit("pointerdown", 103, 200, 40);
+    emit("pointermove", 103, 250, 80);
+    emit("pointerup", 103, 250, 80);
+    return { first, second, third: surface.toDataURL() };
+  });
+  expect(pencilStrokes.second).not.toBe(pencilStrokes.first);
+  expect(pencilStrokes.third).not.toBe(pencilStrokes.second);
 });
