@@ -2,7 +2,7 @@
 use super::*;
 
 const SCRATCH_WIDTH: u32 = 900;
-const SCRATCH_HEIGHT: u32 = 260;
+const SCRATCH_HEIGHT: u32 = 450;
 
 fn scratch_context(canvas: &HtmlCanvasElement) -> Option<CanvasRenderingContext2d> {
     canvas
@@ -161,7 +161,7 @@ pub(crate) fn calculation_scratchpad(props: &CalculationScratchpadProps) -> Html
                     ref={canvas_ref}
                     width={SCRATCH_WIDTH.to_string()}
                     height={SCRATCH_HEIGHT.to_string()}
-                    class="block h-36 w-full touch-none rounded-lg bg-slate-950 sm:h-44"
+                    class="block h-64 w-full touch-none rounded-lg bg-slate-950 sm:h-80 lg:h-96"
                     data-testid="calculation-scratchpad-canvas"
                     aria-label="草稿区，可用手指或触控笔书写"
                     onpointerdown={on_down}
