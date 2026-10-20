@@ -153,7 +153,11 @@ fn format_units(units: i64, exponent: i32) -> String {
     }
 }
 
-fn make_question(seed: &mut u64, kind: CalculationKind, requested_gap: GapMode) -> CalculationQuestion {
+fn make_question(
+    seed: &mut u64,
+    kind: CalculationKind,
+    requested_gap: GapMode,
+) -> CalculationQuestion {
     let a = random_range(seed, 205, 985);
     let b = random_range(seed, 12, 87);
     let p = random_range(seed, 5, 42);
@@ -206,7 +210,12 @@ fn make_question(seed: &mut u64, kind: CalculationKind, requested_gap: GapMode) 
     }
 }
 
-fn question_set(seed: &mut u64, kinds: &[CalculationKind], gap: GapMode, count: usize) -> Vec<CalculationQuestion> {
+fn question_set(
+    seed: &mut u64,
+    kinds: &[CalculationKind],
+    gap: GapMode,
+    count: usize,
+) -> Vec<CalculationQuestion> {
     let mut questions: Vec<_> = (0..count)
         .map(|index| {
             let kind = if index < kinds.len() {
@@ -259,11 +268,13 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
 
     let back = {
         let route_state = props.route_state.clone();
-        Callback::from(move |_| navigate_route(
-            &route_state,
-            PortalRoute::study(StudyView::Dashboard, None, Vec::new()),
-            false,
-        ))
+        Callback::from(move |_| {
+            navigate_route(
+                &route_state,
+                PortalRoute::study(StudyView::Dashboard, None, Vec::new()),
+                false,
+            )
+        })
     };
     let restart = {
         let session = session.clone();
@@ -298,18 +309,34 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
     let current = (*session).clone();
     let content = if let Some(live) = current {
         if live.finished {
-            let answered: Vec<_> = live.answers.iter().enumerate()
+            let answered: Vec<_> = live
+                .answers
+                .iter()
+                .enumerate()
                 .filter_map(|(index, answer)| answer.as_ref().map(|answer| (index, answer)))
                 .collect();
             let total = answered.len();
-            let correct = answered.iter().filter(|(index, answer)| {
-                answer.choice == live.questions[*index].correct_index
-            }).count();
-            let elapsed: u64 = answered.iter().map(|(_, answer)| answer.elapsed_ms as u64).sum();
+            let correct = answered
+                .iter()
+                .filter(|(index, answer)| answer.choice == live.questions[*index].correct_index)
+                .count();
+            let elapsed: u64 = answered
+                .iter()
+                .map(|(_, answer)| answer.elapsed_ms as u64)
+                .sum();
             let render_gap = |gap: GapMode| {
-                let subset: Vec<_> = answered.iter().filter(|(index, _)| live.questions[*index].gap == gap).collect();
-                let right = subset.iter().filter(|(index, answer)| answer.choice == live.questions[*index].correct_index).count();
-                let ms: u64 = subset.iter().map(|(_, answer)| answer.elapsed_ms as u64).sum();
+                let subset: Vec<_> = answered
+                    .iter()
+                    .filter(|(index, _)| live.questions[*index].gap == gap)
+                    .collect();
+                let right = subset
+                    .iter()
+                    .filter(|(index, answer)| answer.choice == live.questions[*index].correct_index)
+                    .count();
+                let ms: u64 = subset
+                    .iter()
+                    .map(|(_, answer)| answer.elapsed_ms as u64)
+                    .sum();
                 html! {
                     <div class="rounded-box border border-base-content/10 bg-base-200/40 p-3">
                         <p class="text-sm text-base-content/65">{gap.label()}</p>
@@ -392,8 +419,12 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
             let next = {
                 let session = session.clone();
                 Callback::from(move |_| {
-                    let Some(mut live) = (*session).clone() else { return };
-                    if live.answers[live.index].is_none() { return; }
+                    let Some(mut live) = (*session).clone() else {
+                        return;
+                    };
+                    if live.answers[live.index].is_none() {
+                        return;
+                    }
                     if live.index + 1 == live.questions.len() {
                         live.finished = true;
                     } else {
@@ -533,8 +564,18 @@ mod tests {
                     let question = make_question(&mut seed, kind, gap);
                     let unique: std::collections::HashSet<_> = question.options.iter().collect();
                     assert_eq!(unique.len(), 4);
-                    assert_eq!(question.options.iter().filter(|v| **v == question.rounded_result).count(), 1);
-                    assert_eq!(question.options[question.correct_index], question.rounded_result);
+                    assert_eq!(
+                        question
+                            .options
+                            .iter()
+                            .filter(|v| **v == question.rounded_result)
+                            .count(),
+                        1
+                    );
+                    assert_eq!(
+                        question.options[question.correct_index],
+                        question.rounded_result
+                    );
                     assert!(question.options.iter().all(|v| !v.starts_with('-')));
                     if kind == CalculationKind::Percent {
                         assert!(question.expression.contains('%'));
