@@ -461,6 +461,7 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                         </h1>
                     </div>
                     <div class="grid grid-cols-2 gap-3">{for buttons}</div>
+                    <CalculationScratchpad question_index={live.index} />
                     if let Some(record) = answered {
                         <div class="rounded-box border border-base-content/10 bg-base-100 p-4" role="status" data-testid="calculation-feedback">
                             <strong class={if record.choice == question.correct_index { "text-success" } else { "text-error" }}>

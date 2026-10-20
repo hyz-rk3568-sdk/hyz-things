@@ -157,3 +157,36 @@ test("calculation drill supports percent-only and returns to Study", async ({ pa
   await page.getByTestId("calculation-back").click();
   await expect(page).toHaveURL(/#\/study$/);
 });
+
+
+test("calculation scratchpad draws, clears and resets when changing questions", async ({ page }) => {
+  await page.goto("/#/study/calculation");
+  await page.getByTestId("calculation-start").click();
+  const canvas = page.getByTestId("calculation-scratchpad-canvas");
+  await expect(canvas).toBeVisible();
+  await expect(canvas).toHaveCSS("touch-action", "none");
+  const snapshot = () => canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
+  const blank = await snapshot();
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + 20, box!.y + 25);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + 120, box!.y + 70, { steps: 5 });
+  await page.mouse.up();
+  expect(await snapshot()).not.toBe(blank);
+  await page.getByTestId("calculation-scratchpad-clear").click();
+  expect(await snapshot()).toBe(blank);
+  await page.mouse.move(box!.x + 25, box!.y + 40);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + 95, box!.y + 55, { steps: 5 });
+  await page.mouse.up();
+  await page.getByTestId("calculation-answer").first().click();
+  expect(await snapshot()).not.toBe(blank);
+  await page.getByTestId("calculation-next").click();
+  expect(await snapshot()).toBe(blank);
+  await page.getByTestId("calculation-scratchpad-toggle").click();
+  await expect(canvas).not.toBeVisible();
+  await page.getByTestId("calculation-scratchpad-toggle").click();
+  await expect(canvas).toBeVisible();
+  expect(await snapshot()).toBe(blank);
+});
