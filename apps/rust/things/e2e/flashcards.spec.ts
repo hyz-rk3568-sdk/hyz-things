@@ -179,6 +179,7 @@ test("calculation scratchpad draws, clears and resets when changing questions", 
   const blank = await snapshot();
   const box = await canvas.boundingBox();
   expect(box).not.toBeNull();
+  expect(box!.height).toBeGreaterThanOrEqual(360);
   await page.mouse.move(box!.x + 20, box!.y + 25);
   await page.mouse.down();
   await page.mouse.move(box!.x + 120, box!.y + 70, { steps: 5 });
