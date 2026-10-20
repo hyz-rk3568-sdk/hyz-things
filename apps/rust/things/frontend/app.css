@@ -151,4 +151,3 @@ nav.tabs > button.tab:not(.tab-active) {
     @apply block overflow-x-auto whitespace-pre-wrap py-2 text-center;
   }
 }
-
