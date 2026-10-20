@@ -179,6 +179,12 @@ test("calculation scratchpad draws, clears and resets when changing questions", 
     element.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
   );
   expect(contextMenuAllowed).toBe(false);
+  const problemBox = await page.getByTestId("calculation-problem").boundingBox();
+  const scratchBox = await page.getByTestId("calculation-scratchpad").boundingBox();
+  expect(problemBox).not.toBeNull();
+  expect(scratchBox).not.toBeNull();
+  expect(scratchBox!.x).toBeGreaterThanOrEqual(problemBox!.x + problemBox!.width);
+  expect(Math.abs(scratchBox!.y - problemBox!.y)).toBeLessThan(10);
   const snapshot = () => canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
   const blank = await snapshot();
   const box = await canvas.boundingBox();
