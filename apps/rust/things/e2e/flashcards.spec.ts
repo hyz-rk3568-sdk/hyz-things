@@ -185,5 +185,8 @@ test("calculation scratchpad draws, clears and resets when changing questions", 
   await page.getByTestId("calculation-next").click();
   expect(await snapshot()).toBe(blank);
   await page.getByTestId("calculation-scratchpad-toggle").click();
-  await expect(canvas).toHaveCount(0);
+  await expect(canvas).not.toBeVisible();
+  await page.getByTestId("calculation-scratchpad-toggle").click();
+  await expect(canvas).toBeVisible();
+  expect(await snapshot()).toBe(blank);
 });
