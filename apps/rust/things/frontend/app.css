@@ -43,6 +43,20 @@ nav.tabs > button.tab:not(.tab-active) {
 }
 
 @layer components {
+  /* iPad Safari 长按手写 Canvas 时不允许文本选区和系统长按菜单。
+     仅限制草稿板；按钮仍按正常点按处理，页面其它区域保留文本选择。 */
+  .calculation-scratchpad,
+  .calculation-scratchpad :where(*) {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  .calculation-scratchpad canvas {
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
   .study-tag-panel {
     @apply absolute inset-x-0 top-full z-30 mt-2 overflow-y-auto rounded-box border border-base-content/10 bg-base-100/95 p-3 shadow-2xl backdrop-blur;
     max-height: min(18rem, calc(100dvh - 12rem));
