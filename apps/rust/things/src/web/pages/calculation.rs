@@ -16,7 +16,7 @@ impl CalculationKind {
         match self {
             Self::Division => "三位 ÷ 两位",
             Self::Multiplication => "三位 × 两位",
-            Self::Percent => "百分式",
+            Self::Percent => "增长量 · 份数法",
         }
     }
 
@@ -32,7 +32,7 @@ impl CalculationKind {
         match self {
             Self::Division => "分子前三位、分母两位试商；用选项差异决定心算止步。",
             Self::Multiplication => "高位拆乘、先确定量级，再根据选项差异决定是否补位。",
-            Self::Percent => "以 10% 和 1% 为锚点拆算；能从选项定界就及时停止。",
+            Self::Percent => "份数法：增长率约为 1/n 时，现期约有 n+1 份，其中增长量为 1 份；按选项补位。",
         }
     }
 }
@@ -186,16 +186,30 @@ fn candidate_options(seed: &mut u64, correct: u64, places: u32) -> Option<([Stri
         let j = random_range(seed, 0, i as u64) as usize;
         prefixes.swap(i, j);
     }
-    let mut candidates = [correct; 4];
-    for (index, prefix) in prefixes.into_iter().take(3).enumerate() {
+    let mut distractors = Vec::new();
+    for prefix in prefixes {
         let lower_digits = if factor > 1 {
             random_range(seed, 0, factor - 1)
         } else {
             0
         };
-        candidates[index] = prefix * factor + lower_digits;
+        let candidate = prefix * factor + lower_digits;
+        // 题目所有干扰项与真实答案的相对差距严格小于 10%。
+        if candidate * 10 <= correct * 9 || candidate * 10 >= correct * 11 {
+            continue;
+        }
+        distractors.push(candidate);
+        if distractors.len() == 3 {
+            break;
+        }
     }
-    candidates[3] = correct;
+    if distractors.len() != 3 {
+        return None;
+    }
+    let mut candidates = [correct; 4];
+    for (index, value) in distractors.into_iter().enumerate() {
+        candidates[index] = value;
+    }
     for i in (1..candidates.len()).rev() {
         let j = random_range(seed, 0, i as u64) as usize;
         candidates.swap(i, j);
@@ -209,19 +223,41 @@ fn candidate_options(seed: &mut u64, correct: u64, places: u32) -> Option<([Stri
     (distinct_prefixes.len() == 4).then_some((options, correct_index))
 }
 
+// 略过容易直接背倒数的规整增速。单位为 0.1%，如 137 表示 13.7%。
+fn is_share_anchor(per_mille: u64) -> bool {
+    per_mille % 10 == 0
+        || matches!(
+            per_mille,
+            111 | 125 | 143 | 147 | 167 | 250 | 286 | 333 | 375 | 429 | 625 | 667 | 750
+        )
+}
+
 fn make_question(seed: &mut u64, kind: CalculationKind) -> CalculationQuestion {
     for _ in 0..4096 {
         let a = random_range(seed, 205, 985);
         let b = random_range(seed, 12, 87);
-        let p = random_range(seed, 5, 42);
         let (expression, numerator, denominator) = match kind {
             CalculationKind::Division => (format!("{a} ÷ {b}"), a, b),
             CalculationKind::Multiplication => (format!("{a} × {b}"), a * b, 1),
-            CalculationKind::Percent => match random_range(seed, 0, 2) {
-                0 => (format!("{a} × {p}%"), a * p, 100),
-                1 => (format!("{a} ÷ (1 + {p}%)"), a * 100, 100 + p),
-                _ => (format!("{a} × {p}% ÷ (1 + {p}%)"), a * p, 100 + p),
-            },
+            CalculationKind::Percent => {
+                // 先构造精确的基期量，再以不规则增长率构造现期量，
+                // 避免用循环小数伪装成精确答案，也不需要对真实增长量舍入。
+                let p = random_range(seed, 101, 899); // 10.1%~89.9%，单位 0.1%
+                if is_share_anchor(p) {
+                    continue;
+                }
+                let base = random_range(seed, 225, 525);
+                let current_scaled = base * (1000 + p);
+                (
+                    format!(
+                        "现期量 {}，增长率 {}%，求增长量",
+                        format_decimal(current_scaled, 3),
+                        format_decimal(p, 1),
+                    ),
+                    current_scaled * p,
+                    1000 * (1000 + p),
+                )
+            }
         };
         let Some((correct, places)) = exact_decimal_parts(numerator, denominator) else {
             continue;
@@ -458,7 +494,11 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                     </div>
                     <div class="grid min-h-36 place-items-center rounded-box border border-base-content/10 bg-base-100 p-5 text-center">
                         <h1 class="break-words text-3xl font-black leading-snug sm:text-5xl" data-testid="calculation-expression">
-                            {format!("{} = ?", question.expression)}
+                            {if question.kind == CalculationKind::Percent {
+                                format!("{}？", question.expression)
+                            } else {
+                                format!("{} = ?", question.expression)
+                            }}
                         </h1>
                     </div>
                     <div class="grid grid-cols-2 gap-3">{for buttons}</div>
