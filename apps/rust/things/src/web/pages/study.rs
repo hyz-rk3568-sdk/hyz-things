@@ -201,6 +201,16 @@ fn study_workspace(props: &StudyWorkspaceProps) -> Html {
             )
         })
     };
+    let open_calculation = {
+        let route_state = props.route_state.clone();
+        Callback::from(move |_| {
+            navigate_route(
+                &route_state,
+                PortalRoute::study(StudyView::Calculation, None, Vec::new()),
+                false,
+            )
+        })
+    };
     let open_review = {
         let route_state = props.route_state.clone();
         let deck = props.route.study_deck.clone();
@@ -255,6 +265,15 @@ fn study_workspace(props: &StudyWorkspaceProps) -> Html {
                         </div>
                     }
                 </SectionCard>
+                <SectionCard title_id="study-calculation-title">
+                    <div class={SECTION_HEAD}>
+                        <div>
+                            <h3 id="study-calculation-title" class={SECTION_TITLE}>{"资料分析 · 速算训练"}</h3>
+                            <p class={SECTION_META}>{"三位乘除、百分式；看选项决定心算精度。"}</p>
+                        </div>
+                        <button class={BUTTON_PRIMARY} type="button" data-testid="study-open-calculation" onclick={open_calculation}>{"开始速算"}</button>
+                    </div>
+                </SectionCard>
                 <CustomCountdownPanel />
                 <ExamCountdownPanel />
             </>
@@ -280,7 +299,7 @@ fn study_workspace(props: &StudyWorkspaceProps) -> Html {
                 <ExamCountdownPanel />
             </>
         },
-        StudyView::Review => Html::default(),
+        StudyView::Review | StudyView::Calculation => Html::default(),
     }
 }
 

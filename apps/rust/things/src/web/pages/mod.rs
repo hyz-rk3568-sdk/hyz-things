@@ -1,6 +1,7 @@
 use super::*;
 
 mod apps;
+mod calculation;
 mod camera;
 mod devices;
 mod network;
@@ -11,6 +12,7 @@ mod system;
 mod tailscale;
 
 pub(crate) use apps::*;
+pub(crate) use calculation::*;
 pub(crate) use camera::*;
 pub(crate) use devices::*;
 pub(crate) use network::*;
