@@ -17,7 +17,6 @@ pub(crate) fn hydrate_math() {
     let _ = renderer.call1(&window, &document.into());
 }
 
-
 pub(crate) fn render_markdown(markdown: &str, source_file: &str) -> Html {
     Html::from_html_unchecked(AttrValue::from(markdown_html(markdown, source_file)))
 }

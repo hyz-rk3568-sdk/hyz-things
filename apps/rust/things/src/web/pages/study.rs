@@ -823,7 +823,6 @@ fn rating_label(rating: ReviewRating) -> &'static str {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

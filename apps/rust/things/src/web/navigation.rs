@@ -238,7 +238,9 @@ impl PortalRoute {
             ["study"] => Self::study(StudyView::Dashboard, None, Vec::new()),
             ["study", "cards"] => Self::study(StudyView::Cards, None, Vec::new()),
             ["study", "review"] => Self::study(StudyView::Review, None, Vec::new()),
-            ["study", "training"] | ["study", "calculation"] => Self::study(StudyView::Training, None, Vec::new()),
+            ["study", "training"] | ["study", "calculation"] => {
+                Self::study(StudyView::Training, None, Vec::new())
+            }
             ["network"] => Self::for_page(AppPage::Network),
             ["proxy"] => Self::for_page(AppPage::Proxy),
             ["devices"] | ["activity"] => Self::for_page(AppPage::Devices),

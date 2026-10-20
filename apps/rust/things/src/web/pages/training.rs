@@ -94,7 +94,10 @@ fn shuffle_practice_cards(cards: &mut [FlashcardSummary], mut seed: u64) {
     }
 }
 
-async fn fetch_practice_cards(deck: &str, tags: &[String]) -> Result<Vec<FlashcardSummary>, String> {
+async fn fetch_practice_cards(
+    deck: &str,
+    tags: &[String],
+) -> Result<Vec<FlashcardSummary>, String> {
     let mut cards = Vec::new();
     let mut ids = HashSet::new();
     loop {
@@ -148,11 +151,14 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
         use_effect_with((), move |_| {
             spawn_local(async move {
                 let mut problems = Vec::new();
-                match fetch_json_typed::<StudyDecksResponse>(STUDY_DECKS_ENDPOINT, "Deck 列表").await {
+                match fetch_json_typed::<StudyDecksResponse>(STUDY_DECKS_ENDPOINT, "Deck 列表")
+                    .await
+                {
                     Ok(response) => decks.set(response.decks),
                     Err(error) => problems.push(error.to_string()),
                 }
-                match fetch_json_typed::<StudyTagsResponse>(STUDY_TAGS_ENDPOINT, "Tag 列表").await {
+                match fetch_json_typed::<StudyTagsResponse>(STUDY_TAGS_ENDPOINT, "Tag 列表").await
+                {
                     Ok(response) => available_tags.set(response.tags),
                     Err(error) => problems.push(error.to_string()),
                 }
@@ -190,7 +196,13 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
 
     let current = (*session).clone();
     {
-        let math_state = current.as_ref().map(|value| (value.index, value.revealed_elapsed_ms.is_some(), value.finished));
+        let math_state = current.as_ref().map(|value| {
+            (
+                value.index,
+                value.revealed_elapsed_ms.is_some(),
+                value.finished,
+            )
+        });
         use_effect_with(math_state, move |_| {
             hydrate_math();
             || ()
@@ -199,23 +211,41 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
 
     let go_back = {
         let route_state = props.route_state.clone();
-        Callback::from(move |_| navigate_route(
-            &route_state,
-            PortalRoute::study(StudyView::Dashboard, None, Vec::new()),
-            false,
-        ))
+        Callback::from(move |_| {
+            navigate_route(
+                &route_state,
+                PortalRoute::study(StudyView::Dashboard, None, Vec::new()),
+                false,
+            )
+        })
     };
     let content = if let Some(live) = current {
         if live.finished {
             let answered = live.answers.iter().flatten().collect::<Vec<_>>();
-            let correct = answered.iter().filter(|value| value.grade == PracticeGrade::Correct).count();
-            let wrong = answered.iter().filter(|value| value.grade == PracticeGrade::Wrong).count();
-            let skipped = answered.iter().filter(|value| value.grade == PracticeGrade::Skipped).count();
-            let scored = answered.iter().filter(|value| value.grade != PracticeGrade::Skipped).collect::<Vec<_>>();
+            let correct = answered
+                .iter()
+                .filter(|value| value.grade == PracticeGrade::Correct)
+                .count();
+            let wrong = answered
+                .iter()
+                .filter(|value| value.grade == PracticeGrade::Wrong)
+                .count();
+            let skipped = answered
+                .iter()
+                .filter(|value| value.grade == PracticeGrade::Skipped)
+                .count();
+            let scored = answered
+                .iter()
+                .filter(|value| value.grade != PracticeGrade::Skipped)
+                .collect::<Vec<_>>();
             let average_ms = if scored.is_empty() {
                 0
             } else {
-                scored.iter().map(|value| value.elapsed_ms as u64).sum::<u64>() / scored.len() as u64
+                scored
+                    .iter()
+                    .map(|value| value.elapsed_ms as u64)
+                    .sum::<u64>()
+                    / scored.len() as u64
             };
             let restart = {
                 let session = session.clone();
@@ -259,19 +289,30 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
             let reveal = {
                 let session = session.clone();
                 Callback::from(move |_| {
-                    let Some(mut state) = (*session).clone() else { return };
-                    if state.finished || state.revealed_elapsed_ms.is_some() { return; }
-                    state.revealed_elapsed_ms = Some((Date::now() - state.started_at).max(0.0) as u32);
+                    let Some(mut state) = (*session).clone() else {
+                        return;
+                    };
+                    if state.finished || state.revealed_elapsed_ms.is_some() {
+                        return;
+                    }
+                    state.revealed_elapsed_ms =
+                        Some((Date::now() - state.started_at).max(0.0) as u32);
                     session.set(Some(state));
                 })
             };
             let rate = |grade: PracticeGrade| {
                 let session = session.clone();
                 Callback::from(move |_| {
-                    let Some(mut state) = (*session).clone() else { return };
-                    if state.finished || state.revealed_elapsed_ms.is_none() { return; }
+                    let Some(mut state) = (*session).clone() else {
+                        return;
+                    };
+                    if state.finished || state.revealed_elapsed_ms.is_none() {
+                        return;
+                    }
                     let index = state.index;
-                    if state.answers[index].is_some() { return; }
+                    if state.answers[index].is_some() {
+                        return;
+                    }
                     state.answers[index] = Some(PracticeAnswer {
                         grade,
                         elapsed_ms: state.revealed_elapsed_ms.unwrap_or_default(),
@@ -289,7 +330,9 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
             let skip_to_summary = {
                 let session = session.clone();
                 Callback::from(move |_| {
-                    let Some(mut state) = (*session).clone() else { return };
+                    let Some(mut state) = (*session).clone() else {
+                        return;
+                    };
                     state.finished = true;
                     session.set(Some(state));
                 })
@@ -340,8 +383,12 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
             let requested_count = requested_count.clone();
             let session = session.clone();
             Callback::from(move |_| {
-                let Some(cards) = (*candidates).clone() else { return };
-                if cards.is_empty() { return; }
+                let Some(cards) = (*candidates).clone() else {
+                    return;
+                };
+                if cards.is_empty() {
+                    return;
+                }
                 let mut questions = cards;
                 shuffle_practice_cards(&mut questions, Date::now() as u64);
                 questions.truncate((*requested_count).min(questions.len()));
