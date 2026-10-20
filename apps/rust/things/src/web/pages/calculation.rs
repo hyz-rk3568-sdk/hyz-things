@@ -489,6 +489,7 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
             };
             html! {
                 <section class="calculation-workspace mx-auto grid w-full gap-4" data-testid="calculation-question">
+                    <InkOverlay question_index={live.index}>
                     <div class="calculation-problem grid min-w-0 content-start gap-4" data-testid="calculation-problem">
                     <div class="flex items-center justify-between gap-3 text-sm text-base-content/60">
                         <span>{format!("第 {progress} / {} 题", live.questions.len())}</span>
@@ -518,7 +519,7 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                     }
                     <button type="button" class="btn btn-ghost justify-self-center" data-testid="calculation-finish" onclick={finish}>{"提前结束并查看成绩"}</button>
                     </div>
-                    <CalculationScratchpad question_index={live.index} />
+                    </InkOverlay>
                 </section>
             }
         }

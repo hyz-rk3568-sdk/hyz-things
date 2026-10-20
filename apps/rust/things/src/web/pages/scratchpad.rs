@@ -1,8 +1,72 @@
-//! 速算练习的本地临时手写草稿区。只写 Canvas，不提交服务端或题目状态。
+//! 专项训练共用的透明手写覆盖层。保留原生 pointermove 直线绘制和 Safari Pencil 防吞笔处理。
+//! 笔画历史、撤销、重做及清屏都只在浏览器内存中，不上传或影响 FSRS。
 use super::*;
 
 const SCRATCH_WIDTH: u32 = 900;
 const SCRATCH_HEIGHT: u32 = 450;
+const INK_COLOR: &str = "#e11d48";
+const INK_LINE_WIDTH: f64 = 3.8;
+
+type InkPoint = (f64, f64);
+
+#[derive(Clone, Debug, PartialEq)]
+enum InkAction {
+    Stroke(Vec<InkPoint>),
+    Clear,
+}
+
+#[derive(Default)]
+struct InkState {
+    history: Vec<InkAction>,
+    redo: Vec<InkAction>,
+    active: Option<(i32, Vec<InkPoint>)>,
+}
+
+impl InkState {
+    fn commit_active(&mut self) -> bool {
+        if let Some((_, points)) = self.active.take() {
+            if !points.is_empty() {
+                self.history.push(InkAction::Stroke(points));
+                self.redo.clear();
+                return true;
+            }
+        }
+        false
+    }
+
+    fn undo(&mut self) -> bool {
+        if let Some(action) = self.history.pop() {
+            self.redo.push(action);
+            return true;
+        }
+        false
+    }
+
+    fn redo(&mut self) -> bool {
+        if let Some(action) = self.redo.pop() {
+            self.history.push(action);
+            return true;
+        }
+        false
+    }
+
+    fn has_visible_ink(&self) -> bool {
+        self.history
+            .iter()
+            .rev()
+            .take_while(|action| !matches!(action, InkAction::Clear))
+            .any(|action| matches!(action, InkAction::Stroke(_)))
+    }
+
+    fn clear(&mut self) -> bool {
+        if !self.has_visible_ink() {
+            return false;
+        }
+        self.history.push(InkAction::Clear);
+        self.redo.clear();
+        true
+    }
+}
 
 fn scratch_context(canvas: &HtmlCanvasElement) -> Option<CanvasRenderingContext2d> {
     canvas
@@ -13,14 +77,56 @@ fn scratch_context(canvas: &HtmlCanvasElement) -> Option<CanvasRenderingContext2
         .ok()
 }
 
-fn clear_scratch(canvas: &HtmlCanvasElement) {
+fn scratch_clear(canvas: &HtmlCanvasElement) {
     if let Some(context) = scratch_context(canvas) {
         context.clear_rect(0.0, 0.0, SCRATCH_WIDTH as f64, SCRATCH_HEIGHT as f64);
     }
 }
 
-// CSS 缩放后的指针位置映射回固定 Canvas 像素坐标，手机和 iPad 同样适用。
-fn scratch_point(event: &PointerEvent, canvas: &HtmlCanvasElement) -> Option<(f64, f64)> {
+fn setup_pen(context: &CanvasRenderingContext2d) {
+    // 不增加曲线平滑或压感，保持现有笔尖控制感。
+    context.set_line_cap("round");
+    context.set_line_join("round");
+    context.set_line_width(INK_LINE_WIDTH);
+    context.set_stroke_style(&JsValue::from_str(INK_COLOR));
+}
+
+fn paint_stroke(context: &CanvasRenderingContext2d, points: &[InkPoint]) {
+    let Some(&(start_x, start_y)) = points.first() else {
+        return;
+    };
+    setup_pen(context);
+    context.begin_path();
+    context.move_to(start_x, start_y);
+    context.line_to(start_x + 0.1, start_y + 0.1);
+    context.stroke();
+    for pair in points.windows(2) {
+        let (x0, y0) = pair[0];
+        let (x1, y1) = pair[1];
+        context.begin_path();
+        context.move_to(x0, y0);
+        context.line_to(x1, y1);
+        context.stroke();
+    }
+}
+
+fn redraw_scratch(canvas: &HtmlCanvasElement, actions: &[InkAction]) {
+    let Some(context) = scratch_context(canvas) else {
+        return;
+    };
+    context.clear_rect(0.0, 0.0, SCRATCH_WIDTH as f64, SCRATCH_HEIGHT as f64);
+    for action in actions {
+        match action {
+            InkAction::Stroke(points) => paint_stroke(&context, points),
+            InkAction::Clear => {
+                context.clear_rect(0.0, 0.0, SCRATCH_WIDTH as f64, SCRATCH_HEIGHT as f64);
+            }
+        }
+    }
+}
+
+// CSS 覆盖层尺寸可随题目变化；映射到既有 900×450 坐标系。
+fn scratch_point(event: &PointerEvent, canvas: &HtmlCanvasElement) -> Option<InkPoint> {
     let width = canvas.client_width();
     let height = canvas.client_height();
     if width <= 0 || height <= 0 {
@@ -33,26 +139,26 @@ fn scratch_point(event: &PointerEvent, canvas: &HtmlCanvasElement) -> Option<(f6
 }
 
 #[derive(Properties, PartialEq)]
-pub(crate) struct CalculationScratchpadProps {
+pub(crate) struct InkOverlayProps {
     pub(crate) question_index: usize,
+    pub(crate) children: Children,
 }
 
-#[function_component(CalculationScratchpad)]
-pub(crate) fn calculation_scratchpad(props: &CalculationScratchpadProps) -> Html {
-    let expanded = use_state(|| true);
+#[function_component(InkOverlay)]
+pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
+    let enabled = use_state(|| false);
+    let revision = use_state(|| 0_u32);
     let canvas_ref = use_node_ref();
-    let active_pointer = use_mut_ref(|| None::<i32>);
+    let strokes = use_mut_ref(InkState::default);
 
-    // Apple Pencil 快速连续落笔会被 iPadOS WebKit 的双击/手写手势识别吞掉，
-    // 第二笔甚至没有 pointerdown 事件。必须在原生触摸事件层阻止单指手势。
-    // Yew 的委托触摸监听可能是 passive，故直接注册 { passive: false }。
+    // Apple Pencil 快速连续落笔会被 iPadOS WebKit 的双击/手写手势识别吞掉。
+    // 保留 passive:false 及单指触摸取消，不能改成 Yew 默认 passive 监听。
     {
         let canvas_ref = canvas_ref.clone();
         use_effect_with((), move |_| {
             let canvas = canvas_ref.cast::<HtmlCanvasElement>();
             let handler =
                 Closure::<dyn FnMut(web_sys::TouchEvent)>::new(|event: web_sys::TouchEvent| {
-                    // 两指手势仍交由浏览器处理；不可取消的事件不强行处理。
                     if event.cancelable() && event.touches().length() < 2 {
                         event.prevent_default();
                     }
@@ -90,40 +196,110 @@ pub(crate) fn calculation_scratchpad(props: &CalculationScratchpadProps) -> Html
                         let _ = canvas.remove_event_listener_with_callback("touchend", callback);
                     }
                 }
-                // handler 随 effect cleanup 释放，避免切题/离开页面后遗留监听。
             }
         });
     }
 
     {
         let canvas_ref = canvas_ref.clone();
-        let active_pointer = active_pointer.clone();
+        let strokes = strokes.clone();
+        let enabled = enabled.clone();
+        let revision = revision.clone();
         use_effect_with(props.question_index, move |_| {
-            *active_pointer.borrow_mut() = None;
+            *strokes.borrow_mut() = InkState::default();
             if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                clear_scratch(&canvas);
+                scratch_clear(&canvas);
+            }
+            enabled.set(false);
+            revision.set(0);
+            || ()
+        });
+    }
+
+    {
+        let canvas_ref = canvas_ref.clone();
+        let strokes = strokes.clone();
+        use_effect_with(*enabled, move |opened| {
+            if *opened {
+                if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
+                    redraw_scratch(&canvas, &strokes.borrow().history);
+                }
             }
             || ()
         });
     }
 
     let toggle = {
-        let expanded = expanded.clone();
-        Callback::from(move |_| expanded.set(!*expanded))
+        let enabled = enabled.clone();
+        let strokes = strokes.clone();
+        let revision = revision.clone();
+        Callback::from(move |_| {
+            if *enabled && strokes.borrow_mut().commit_active() {
+                revision.set((*revision).wrapping_add(1));
+            }
+            enabled.set(!*enabled);
+        })
+    };
+    let close = {
+        let enabled = enabled.clone();
+        let strokes = strokes.clone();
+        let revision = revision.clone();
+        Callback::from(move |_| {
+            if strokes.borrow_mut().commit_active() {
+                revision.set((*revision).wrapping_add(1));
+            }
+            enabled.set(false);
+        })
+    };
+    let undo = {
+        let strokes = strokes.clone();
+        let canvas_ref = canvas_ref.clone();
+        let revision = revision.clone();
+        Callback::from(move |_| {
+            let mut state = strokes.borrow_mut();
+            state.commit_active();
+            if state.undo() {
+                if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
+                    redraw_scratch(&canvas, &state.history);
+                }
+                revision.set((*revision).wrapping_add(1));
+            }
+        })
+    };
+    let redo = {
+        let strokes = strokes.clone();
+        let canvas_ref = canvas_ref.clone();
+        let revision = revision.clone();
+        Callback::from(move |_| {
+            let mut state = strokes.borrow_mut();
+            state.commit_active();
+            if state.redo() {
+                if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
+                    redraw_scratch(&canvas, &state.history);
+                }
+                revision.set((*revision).wrapping_add(1));
+            }
+        })
     };
     let clear = {
+        let strokes = strokes.clone();
         let canvas_ref = canvas_ref.clone();
-        let active_pointer = active_pointer.clone();
+        let revision = revision.clone();
         Callback::from(move |_| {
-            *active_pointer.borrow_mut() = None;
-            if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                clear_scratch(&canvas);
+            let mut state = strokes.borrow_mut();
+            state.commit_active();
+            if state.clear() {
+                if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
+                    scratch_clear(&canvas);
+                }
+                revision.set((*revision).wrapping_add(1));
             }
         })
     };
     let on_down = {
         let canvas_ref = canvas_ref.clone();
-        let active_pointer = active_pointer.clone();
+        let strokes = strokes.clone();
+        let revision = revision.clone();
         Callback::from(move |event: PointerEvent| {
             if event.pointer_type() == "mouse" && event.button() != 0 {
                 return;
@@ -131,14 +307,17 @@ pub(crate) fn calculation_scratchpad(props: &CalculationScratchpadProps) -> Html
             let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() else {
                 return;
             };
-            // Safari 在 Apple Pencil 连续起笔时可能跳过上一笔的终止事件。
-            // 新的 pen pointerdown 必须能接管遗留指针，否则第二个字会写不出来。
-            if let Some(previous) = *active_pointer.borrow() {
+            let mut state = strokes.borrow_mut();
+            if let Some((previous, _)) = state.active.as_ref() {
                 if event.pointer_type() != "pen" {
                     return;
                 }
-                if canvas.has_pointer_capture(previous) {
-                    let _ = canvas.release_pointer_capture(previous);
+                if canvas.has_pointer_capture(*previous) {
+                    let _ = canvas.release_pointer_capture(*previous);
+                }
+                // 上一个 pointerup 丢失时先入历史，后续撤销仍能恢复完整笔画。
+                if state.commit_active() {
+                    revision.set((*revision).wrapping_add(1));
                 }
             }
             let Some((x, y)) = scratch_point(&event, &canvas) else {
@@ -148,16 +327,11 @@ pub(crate) fn calculation_scratchpad(props: &CalculationScratchpadProps) -> Html
                 return;
             };
             event.prevent_default();
-            *active_pointer.borrow_mut() = Some(event.pointer_id());
-            // iPad Safari 对 Pencil 的 pointer capture/释放顺序不够稳定；
-            // pen 在画布内正常收事件，无需主动 capture。手指/鼠标仍保留 capture。
+            state.active = Some((event.pointer_id(), vec![(x, y)]));
             if event.pointer_type() != "pen" {
                 let _ = canvas.set_pointer_capture(event.pointer_id());
             }
-            context.set_line_cap("round");
-            context.set_line_join("round");
-            context.set_line_width(3.8);
-            context.set_stroke_style(&JsValue::from_str("#f8fafc"));
+            setup_pen(&context);
             context.begin_path();
             context.move_to(x, y);
             context.line_to(x + 0.1, y + 0.1);
@@ -166,9 +340,13 @@ pub(crate) fn calculation_scratchpad(props: &CalculationScratchpadProps) -> Html
     };
     let on_move = {
         let canvas_ref = canvas_ref.clone();
-        let active_pointer = active_pointer.clone();
+        let strokes = strokes.clone();
         Callback::from(move |event: PointerEvent| {
-            if *active_pointer.borrow() != Some(event.pointer_id()) {
+            let mut state = strokes.borrow_mut();
+            let Some((id, points)) = state.active.as_mut() else {
+                return;
+            };
+            if *id != event.pointer_id() {
                 return;
             }
             let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() else {
@@ -181,6 +359,7 @@ pub(crate) fn calculation_scratchpad(props: &CalculationScratchpadProps) -> Html
                 return;
             };
             event.prevent_default();
+            points.push((x, y));
             context.line_to(x, y);
             context.stroke();
             context.begin_path();
@@ -189,12 +368,16 @@ pub(crate) fn calculation_scratchpad(props: &CalculationScratchpadProps) -> Html
     };
     let on_end = {
         let canvas_ref = canvas_ref.clone();
-        let active_pointer = active_pointer.clone();
+        let strokes = strokes.clone();
+        let revision = revision.clone();
         Callback::from(move |event: PointerEvent| {
-            if *active_pointer.borrow() != Some(event.pointer_id()) {
+            let mut state = strokes.borrow_mut();
+            if state.active.as_ref().map(|(id, _)| *id) != Some(event.pointer_id()) {
                 return;
             }
-            *active_pointer.borrow_mut() = None;
+            if state.commit_active() {
+                revision.set((*revision).wrapping_add(1));
+            }
             if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
                 if canvas.has_pointer_capture(event.pointer_id()) {
                     let _ = canvas.release_pointer_capture(event.pointer_id());
@@ -203,45 +386,94 @@ pub(crate) fn calculation_scratchpad(props: &CalculationScratchpadProps) -> Html
         })
     };
 
+    // Revision causes a rerender only after a complete stroke / history command.
+    // Pointermove stays direct-to-Canvas and never schedules Yew render work.
+    let _ = *revision;
+    let has_undo = !strokes.borrow().history.is_empty();
+    let has_redo = !strokes.borrow().redo.is_empty();
+    let has_visible_ink = strokes.borrow().has_visible_ink();
+
     html! {
-        <section class="calculation-scratchpad rounded-box border border-base-content/10 bg-base-100/60 p-3" data-testid="calculation-scratchpad" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
-            <div class="flex items-center justify-between gap-3">
-                <button
-                    type="button"
-                    class="btn btn-ghost btn-sm"
-                    data-testid="calculation-scratchpad-toggle"
-                    aria-expanded={(*expanded).to_string()}
-                    onclick={toggle}
-                >
-                    {if *expanded { "✎ 收起草稿" } else { "✎ 展开草稿" }}
-                </button>
-                if *expanded {
-                    <button
-                        type="button"
-                        class="btn btn-ghost btn-sm"
-                        data-testid="calculation-scratchpad-clear"
-                        onclick={clear}
-                    >
-                        {"清空"}
-                    </button>
-                }
-            </div>
-            <div class={if *expanded { "mt-2" } else { "hidden" }}>
-                <canvas
-                    ref={canvas_ref}
-                    width={SCRATCH_WIDTH.to_string()}
-                    height={SCRATCH_HEIGHT.to_string()}
-                    class="block h-64 w-full touch-none rounded-lg bg-slate-950 sm:h-80 lg:h-96"
-                    data-testid="calculation-scratchpad-canvas"
-                    aria-label="草稿区，可用手指或触控笔书写"
-                    onpointerdown={on_down}
-                    onpointermove={on_move}
-                    onpointerup={on_end.clone()}
-                    onpointercancel={on_end.clone()}
-                    onlostpointercapture={on_end}
-                />
-                <p class="mt-2 text-xs text-base-content/60">{"手指或触控笔直接写，草稿只留在本题；切题自动清空。"}</p>
-            </div>
+        <section class="calculation-scratchpad relative min-h-80 min-w-0 rounded-box bg-base-100/60" data-testid="calculation-scratchpad" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
+            <div class="min-h-80 pt-12">{for props.children.iter()}</div>
+            <button
+                type="button"
+                class={if *enabled { "btn btn-primary btn-sm absolute right-2 top-2 z-30" } else { "btn btn-outline btn-sm absolute right-2 top-2 z-30 bg-base-100 shadow-sm" }}
+                data-testid="calculation-scratchpad-toggle"
+                aria-label={if *enabled { "关闭草稿" } else { "开启草稿" }}
+                aria-expanded={(*enabled).to_string()}
+                onclick={toggle}
+            >
+                {"✎"}
+            </button>
+            <canvas
+                ref={canvas_ref}
+                width={SCRATCH_WIDTH.to_string()}
+                height={SCRATCH_HEIGHT.to_string()}
+                class={if *enabled { "absolute inset-0 z-20 block h-full w-full touch-none rounded-box bg-transparent" } else { "hidden" }}
+                data-testid="calculation-scratchpad-canvas"
+                aria-label="透明草稿层，可用 Apple Pencil 或手指书写"
+                onpointerdown={on_down}
+                onpointermove={on_move}
+                onpointerup={on_end.clone()}
+                onpointercancel={on_end.clone()}
+                onlostpointercapture={on_end}
+            />
+            if *enabled {
+                <div class="absolute bottom-2 left-2 right-2 z-30 flex flex-wrap items-center justify-center gap-1 rounded-box bg-base-100/95 p-2 shadow-lg" data-testid="calculation-scratchpad-toolbar">
+                    <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-scratchpad-undo" aria-label="撤销" disabled={!has_undo} onclick={undo}>{"↶"}</button>
+                    <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-scratchpad-redo" aria-label="重做" disabled={!has_redo} onclick={redo}>{"↷"}</button>
+                    <span class="btn btn-primary btn-sm pointer-events-none" aria-label="铅笔已选中">{"✎ 铅笔"}</span>
+                    <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-scratchpad-clear" aria-label="清屏" disabled={!has_visible_ink} onclick={clear}>{"清屏"}</button>
+                    <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-scratchpad-close" aria-label="关闭手写" onclick={close}>{"✕"}</button>
+                </div>
+                <p class="pointer-events-none absolute left-2 top-2 z-30 rounded bg-base-100/85 px-2 py-1 text-xs text-base-content/65">{"手写中 · 关闭后可点选答案"}</p>
+            }
         </section>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stroke(id: i32) -> InkAction {
+        InkAction::Stroke(vec![(id as f64, 1.0), (id as f64 + 1.0, 2.0)])
+    }
+
+    #[test]
+    fn undo_and_redo_replay_strokes_in_order() {
+        let mut state = InkState::default();
+        state.history.push(stroke(1));
+        state.history.push(stroke(2));
+        assert!(state.undo());
+        assert_eq!(state.history, vec![stroke(1)]);
+        assert!(state.redo());
+        assert_eq!(state.history, vec![stroke(1), stroke(2)]);
+    }
+
+    #[test]
+    fn clear_is_undoable_and_a_new_stroke_invalidates_redo() {
+        let mut state = InkState::default();
+        state.history.push(stroke(1));
+        assert!(state.clear());
+        assert_eq!(state.history, vec![stroke(1), InkAction::Clear]);
+        assert!(state.undo());
+        assert_eq!(state.history, vec![stroke(1)]);
+        assert!(state.redo());
+        assert!(state.undo());
+        state.active = Some((5, vec![(4.0, 5.0)]));
+        assert!(state.commit_active());
+        assert!(state.redo.is_empty());
+        assert!(!state.redo());
+    }
+
+    #[test]
+    fn repeated_empty_clear_is_not_added_to_history() {
+        let mut state = InkState::default();
+        assert!(!state.clear());
+        state.history.push(stroke(1));
+        assert!(state.clear());
+        assert!(!state.clear());
     }
 }
