@@ -124,7 +124,7 @@ test("shows a successful administrator sync message", async ({ page }) => {
 test("study opens an immersive four-choice calculation drill with all three types", async ({ page }) => {
   await page.goto("/#/study");
   await page.getByTestId("study-open-calculation").click();
-  await expect(page).toHaveURL(/#\/study\/calculation/);
+  await expect(page).toHaveURL(/#\/study\/training/);
   await expect(page.locator("nav[aria-label='主导航']")).toHaveCount(0);
   await expect(page.getByTestId("calculation-setup")).toBeVisible();
   await expect(page.getByTestId("calc-kind-div")).toBeChecked();
@@ -279,4 +279,60 @@ test("scratchpad cancels Safari single-touch gestures before the second Pencil s
     twoFinger: false,
     noncancelable: false,
   });
+});
+
+
+test("legacy calculation URL redirects to specialized training without losing the speed drill", async ({ page }) => {
+  await page.goto("/#/study/calculation");
+  await expect(page).toHaveURL(/#\/study\/training$/);
+  await expect(page.getByTestId("training-mode-calculation")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("calculation-setup")).toBeVisible();
+});
+
+test("wrong-card practice filters, reveals, self-grades and never writes FSRS", async ({ page }) => {
+  const reviewWrites: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/api/v1/study/review")) {
+      reviewWrites.push(request.url());
+    }
+  });
+  await page.goto("/#/study/training");
+  await page.getByTestId("training-mode-flashcards").click();
+  await expect(page.getByTestId("practice-setup")).toBeVisible();
+  await expect(page.getByTestId("practice-candidates")).toContainText("共 2 张");
+  await page.getByTestId("practice-deck-filter").selectOption("资料分析");
+  await expect(page.getByTestId("practice-empty")).toBeVisible();
+  await page.getByTestId("practice-deck-filter").selectOption("判断推理/逻辑判断");
+  await expect(page.getByTestId("practice-candidates")).toContainText("共 2 张");
+  await expect(page.getByTestId("practice-candidates")).toContainText("候选数量不足");
+
+  await page.getByTestId("practice-start").click();
+  await expect(page.getByTestId("practice-question")).toBeVisible();
+  await expect(page.getByTestId("practice-front")).toBeVisible();
+  await expect(page.getByTestId("practice-back")).toHaveCount(0);
+  const canvas = page.getByTestId("calculation-scratchpad-canvas");
+  await expect(canvas).toHaveAttribute("width", "900");
+  await expect(canvas).toHaveCSS("touch-action", "none");
+  const blank = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
+  const bounds = await canvas.boundingBox();
+  if (!bounds) throw new Error("missing canvas bounds");
+  await page.mouse.move(bounds.x + 25, bounds.y + 30);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + 90, bounds.y + 80, { steps: 6 });
+  await page.mouse.up();
+  const drawn = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
+  expect(drawn).not.toEqual(blank);
+
+  await page.getByTestId("practice-reveal").click();
+  await expect(page.getByTestId("practice-back")).toBeVisible();
+  await page.getByTestId("practice-wrong").click();
+  await expect(page.getByTestId("practice-question")).toBeVisible();
+  const reset = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
+  expect(reset).toEqual(blank);
+  await page.getByTestId("practice-reveal").click();
+  await page.getByTestId("practice-skip").click();
+  await expect(page.getByTestId("practice-summary")).toBeVisible();
+  await expect(page.getByTestId("practice-summary")).toContainText("做错");
+  await expect(page.getByTestId("practice-summary")).toContainText("跳过");
+  expect(reviewWrites).toEqual([]);
 });
