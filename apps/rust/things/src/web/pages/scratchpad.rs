@@ -43,6 +43,58 @@ pub(crate) fn calculation_scratchpad(props: &CalculationScratchpadProps) -> Html
     let canvas_ref = use_node_ref();
     let active_pointer = use_mut_ref(|| None::<i32>);
 
+    // Apple Pencil 快速连续落笔会被 iPadOS WebKit 的双击/手写手势识别吞掉，
+    // 第二笔甚至没有 pointerdown 事件。必须在原生触摸事件层阻止单指手势。
+    // Yew 的委托触摸监听可能是 passive，故直接注册 { passive: false }。
+    {
+        let canvas_ref = canvas_ref.clone();
+        use_effect_with((), move |_| {
+            let canvas = canvas_ref.cast::<HtmlCanvasElement>();
+            let handler =
+                Closure::<dyn FnMut(web_sys::TouchEvent)>::new(|event: web_sys::TouchEvent| {
+                    // 两指手势仍交由浏览器处理；不可取消的事件不强行处理。
+                    if event.cancelable() && event.touches().length() < 2 {
+                        event.prevent_default();
+                    }
+                });
+            let mut attached = false;
+            if let Some(canvas) = canvas.as_ref() {
+                let options = web_sys::AddEventListenerOptions::new();
+                options.set_passive(false);
+                let callback = handler.as_ref().unchecked_ref();
+                if canvas
+                    .add_event_listener_with_callback_and_add_event_listener_options(
+                        "touchstart",
+                        callback,
+                        &options,
+                    )
+                    .is_ok()
+                {
+                    if canvas
+                        .add_event_listener_with_callback_and_add_event_listener_options(
+                            "touchend", callback, &options,
+                        )
+                        .is_ok()
+                    {
+                        attached = true;
+                    } else {
+                        let _ = canvas.remove_event_listener_with_callback("touchstart", callback);
+                    }
+                }
+            }
+            move || {
+                if attached {
+                    if let Some(canvas) = canvas {
+                        let callback = handler.as_ref().unchecked_ref();
+                        let _ = canvas.remove_event_listener_with_callback("touchstart", callback);
+                        let _ = canvas.remove_event_listener_with_callback("touchend", callback);
+                    }
+                }
+                // handler 随 effect cleanup 释放，避免切题/离开页面后遗留监听。
+            }
+        });
+    }
+
     {
         let canvas_ref = canvas_ref.clone();
         let active_pointer = active_pointer.clone();

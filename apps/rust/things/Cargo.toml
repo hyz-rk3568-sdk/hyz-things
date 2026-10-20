@@ -74,6 +74,7 @@ js-sys = { version = "0.3", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 web-sys = { version = "0.3", features = [
+  "AddEventListenerOptions",
   "AudioContext",
   "CanvasRenderingContext2d",
   "Clipboard",
@@ -114,6 +115,8 @@ web-sys = { version = "0.3", features = [
   "RtcSessionDescriptionInit",
   "RtcTrackEvent",
   "TextMetrics",
+  "TouchEvent",
+  "TouchList",
   "VideoFrame",
   "VideoFrameInit",
   "Window",
