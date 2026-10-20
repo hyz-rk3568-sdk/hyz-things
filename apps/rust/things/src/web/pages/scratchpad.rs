@@ -100,13 +100,11 @@ fn paint_stroke(context: &CanvasRenderingContext2d, points: &[InkPoint]) {
     context.move_to(start_x, start_y);
     context.line_to(start_x + 0.1, start_y + 0.1);
     context.stroke();
-    for pair in points.windows(2) {
-        let (x0, y0) = pair[0];
-        let (x1, y1) = pair[1];
-        context.begin_path();
-        context.move_to(x0, y0);
-        context.line_to(x1, y1);
+    for &(x, y) in points.iter().skip(1) {
+        context.line_to(x, y);
         context.stroke();
+        context.begin_path();
+        context.move_to(x, y);
     }
 }
 
