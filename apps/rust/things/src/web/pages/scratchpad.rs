@@ -50,12 +50,13 @@ pub(crate) fn calculation_scratchpad(props: &CalculationScratchpadProps) -> Html
         let canvas_ref = canvas_ref.clone();
         use_effect_with((), move |_| {
             let canvas = canvas_ref.cast::<HtmlCanvasElement>();
-            let handler = Closure::<dyn FnMut(web_sys::TouchEvent)>::new(|event: web_sys::TouchEvent| {
-                // 两指手势仍交由浏览器处理；不可取消的事件不强行处理。
-                if event.cancelable() && event.touches().length() < 2 {
-                    event.prevent_default();
-                }
-            });
+            let handler =
+                Closure::<dyn FnMut(web_sys::TouchEvent)>::new(|event: web_sys::TouchEvent| {
+                    // 两指手势仍交由浏览器处理；不可取消的事件不强行处理。
+                    if event.cancelable() && event.touches().length() < 2 {
+                        event.prevent_default();
+                    }
+                });
             let mut attached = false;
             if let Some(canvas) = canvas.as_ref() {
                 let options = web_sys::AddEventListenerOptions::new();
@@ -71,9 +72,7 @@ pub(crate) fn calculation_scratchpad(props: &CalculationScratchpadProps) -> Html
                 {
                     if canvas
                         .add_event_listener_with_callback_and_add_event_listener_options(
-                            "touchend",
-                            callback,
-                            &options,
+                            "touchend", callback, &options,
                         )
                         .is_ok()
                     {
