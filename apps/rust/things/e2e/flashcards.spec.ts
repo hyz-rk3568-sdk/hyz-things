@@ -160,12 +160,16 @@ test("calculation drill supports percent-only and returns to Study", async ({ pa
 
 
 test("calculation scratchpad draws, clears and resets when changing questions", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
   await page.goto("/#/study/calculation");
   await page.getByTestId("calculation-start").click();
   const canvas = page.getByTestId("calculation-scratchpad-canvas");
   await expect(canvas).toBeVisible();
   await expect(canvas).toHaveCSS("touch-action", "none");
   await expect(canvas).toHaveAttribute("height", "450");
+  await expect(page.getByTestId("calculation-layout")).toHaveCSS("user-select", "none");
+  await expect(page.getByTestId("calculation-expression")).toHaveCSS("user-select", "none");
+  await expect(page.getByTestId("calculation-answer").first()).toHaveCSS("user-select", "none");
   // iPad Safari 长按不应选中文字/触发原生菜单，绘图 Canvas 仍接收 pointer。
   const scratchpad = page.getByTestId("calculation-scratchpad");
   await expect(scratchpad).toHaveCSS("user-select", "none");
@@ -175,6 +179,12 @@ test("calculation scratchpad draws, clears and resets when changing questions", 
     element.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
   );
   expect(contextMenuAllowed).toBe(false);
+  const problemBox = await page.getByTestId("calculation-problem").boundingBox();
+  const scratchBox = await page.getByTestId("calculation-scratchpad").boundingBox();
+  expect(problemBox).not.toBeNull();
+  expect(scratchBox).not.toBeNull();
+  expect(scratchBox!.x).toBeGreaterThanOrEqual(problemBox!.x + problemBox!.width);
+  expect(Math.abs(scratchBox!.y - problemBox!.y)).toBeLessThan(10);
   const snapshot = () => canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
   const blank = await snapshot();
   const box = await canvas.boundingBox();
