@@ -174,7 +174,8 @@ fn candidate_options(
     // 干扰项的最高两/三位来自周边不同数字，余下位数独立随机；
     // 例如 123.12 可以遇到 121.22、125.45、127.08。
     let mut prefixes = Vec::new();
-    for offset in -9_i64..=9_i64 {
+    let max_offset = if needed_digits < 3 { 4 } else { 6 };
+    for offset in -max_offset..=max_offset {
         if offset == 0 {
             continue;
         }
