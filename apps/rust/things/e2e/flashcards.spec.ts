@@ -160,6 +160,7 @@ test("calculation drill supports percent-only and returns to Study", async ({ pa
 
 
 test("calculation scratchpad draws, clears and resets when changing questions", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
   await page.goto("/#/study/calculation");
   await page.getByTestId("calculation-start").click();
   const canvas = page.getByTestId("calculation-scratchpad-canvas");
