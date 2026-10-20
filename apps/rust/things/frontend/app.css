@@ -43,7 +43,7 @@ nav.tabs > button.tab:not(.tab-active) {
 }
 
 @layer components {
-  /* 速算是点选与书写工作区：屏蔽 iPad Safari 长按选字与菜单，
+  /* 专项训练是点选与透明手写工作区：屏蔽 iPad Safari 长按选字与菜单，
      但只作用于此路由，不修改站内 Flashcard 等正文的可选中行为。 */
   .calculation-layout,
   .calculation-layout :where(*) {
@@ -68,14 +68,6 @@ nav.tabs > button.tab:not(.tab-active) {
       max-width: 75rem;
     }
 
-    .calculation-layout .calculation-workspace {
-      grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
-      align-items: start;
-    }
-
-    .calculation-layout .calculation-workspace .calculation-scratchpad {
-      min-width: 0;
-    }
   }
 
   .study-tag-panel {
@@ -157,13 +149,5 @@ nav.tabs > button.tab:not(.tab-active) {
 
   .study-markdown .math-display {
     @apply block overflow-x-auto whitespace-pre-wrap py-2 text-center;
-  }
-}
-
-@layer utilities {
-  @media (min-width: 900px) and (orientation: landscape) {
-    .calculation-layout .calculation-scratchpad canvas {
-      height: clamp(24rem, 62dvh, 36rem);
-    }
   }
 }

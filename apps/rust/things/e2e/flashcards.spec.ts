@@ -159,60 +159,74 @@ test("calculation drill supports percent-only and returns to Study", async ({ pa
 });
 
 
-test("calculation scratchpad draws, clears and resets when changing questions", async ({ page }) => {
+test("transparent calculation ink overlays the question, supports history and resets on next question", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 });
   await page.goto("/#/study/calculation");
   await page.getByTestId("calculation-start").click();
+  const scratchpad = page.getByTestId("calculation-scratchpad");
   const canvas = page.getByTestId("calculation-scratchpad-canvas");
+  const toggle = page.getByTestId("calculation-scratchpad-toggle");
+  await expect(canvas).toBeHidden();
+  await expect(toggle).toHaveAttribute("aria-label", "开启草稿");
+  await toggle.click();
   await expect(canvas).toBeVisible();
   await expect(canvas).toHaveCSS("touch-action", "none");
+  await expect(canvas).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(canvas).toHaveAttribute("width", "900");
   await expect(canvas).toHaveAttribute("height", "450");
   await expect(page.getByTestId("calculation-layout")).toHaveCSS("user-select", "none");
   await expect(page.getByTestId("calculation-expression")).toHaveCSS("user-select", "none");
   await expect(page.getByTestId("calculation-answer").first()).toHaveCSS("user-select", "none");
-  // iPad Safari 长按不应选中文字/触发原生菜单，绘图 Canvas 仍接收 pointer。
-  const scratchpad = page.getByTestId("calculation-scratchpad");
   await expect(scratchpad).toHaveCSS("user-select", "none");
-  await expect(canvas).toHaveCSS("user-select", "none");
-  await expect(scratchpad.locator("p")).toHaveCSS("user-select", "none");
   const contextMenuAllowed = await canvas.evaluate((element) =>
     element.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
   );
   expect(contextMenuAllowed).toBe(false);
+
   const problemBox = await page.getByTestId("calculation-problem").boundingBox();
-  const scratchBox = await page.getByTestId("calculation-scratchpad").boundingBox();
+  const scratchBox = await scratchpad.boundingBox();
+  const box = await canvas.boundingBox();
   expect(problemBox).not.toBeNull();
   expect(scratchBox).not.toBeNull();
-  expect(scratchBox!.x).toBeGreaterThanOrEqual(problemBox!.x + problemBox!.width);
-  expect(Math.abs(scratchBox!.y - problemBox!.y)).toBeLessThan(10);
+  expect(box).not.toBeNull();
+  expect(scratchBox!.x).toBeLessThanOrEqual(problemBox!.x);
+  expect(scratchBox!.x + scratchBox!.width).toBeGreaterThanOrEqual(problemBox!.x + problemBox!.width);
+  expect(box!.x).toBeCloseTo(scratchBox!.x, 0);
+  expect(box!.y).toBeCloseTo(scratchBox!.y, 0);
+
   const snapshot = () => canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
   const blank = await snapshot();
-  const box = await canvas.boundingBox();
-  expect(box).not.toBeNull();
-  expect(box!.height).toBeGreaterThanOrEqual(360);
-  await page.mouse.move(box!.x + 20, box!.y + 25);
-  await page.mouse.down();
-  await page.mouse.move(box!.x + 120, box!.y + 70, { steps: 5 });
-  await page.mouse.up();
-  expect(await snapshot()).not.toBe(blank);
+  const draw = async (x1: number, y1: number, x2: number, y2: number) => {
+    await page.mouse.move(box!.x + x1, box!.y + y1);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + x2, box!.y + y2, { steps: 5 });
+    await page.mouse.up();
+  };
+  await draw(30, 75, 140, 115);
+  const first = await snapshot();
+  expect(first).not.toEqual(blank);
+  await page.getByTestId("calculation-scratchpad-undo").click();
+  expect(await snapshot()).toEqual(blank);
+  await page.getByTestId("calculation-scratchpad-redo").click();
+  expect(await snapshot()).toEqual(first);
   await page.getByTestId("calculation-scratchpad-clear").click();
-  expect(await snapshot()).toBe(blank);
-  await page.mouse.move(box!.x + 25, box!.y + 40);
-  await page.mouse.down();
-  await page.mouse.move(box!.x + 95, box!.y + 55, { steps: 5 });
-  await page.mouse.up();
-  await page.getByTestId("calculation-answer").first().click();
-  expect(await snapshot()).not.toBe(blank);
-  await page.getByTestId("calculation-next").click();
-  expect(await snapshot()).toBe(blank);
-  await page.getByTestId("calculation-scratchpad-toggle").click();
-  await expect(canvas).not.toBeVisible();
-  await page.getByTestId("calculation-scratchpad-toggle").click();
-  await expect(canvas).toBeVisible();
-  expect(await snapshot()).toBe(blank);
+  expect(await snapshot()).toEqual(blank);
+  await page.getByTestId("calculation-scratchpad-undo").click();
+  expect(await snapshot()).toEqual(first);
+  await page.getByTestId("calculation-scratchpad-redo").click();
+  expect(await snapshot()).toEqual(blank);
 
-  // 触控笔连续写：Safari 若遗漏上一笔 pointerup，新的 pen pointerdown
-  // 仍必须能接管绘图，不应被遗留的活动指针锁阻断。
+  await page.getByTestId("calculation-scratchpad-close").click();
+  await expect(canvas).toBeHidden();
+  await page.getByTestId("calculation-answer").first().click();
+  await expect(page.getByTestId("calculation-feedback")).toBeVisible();
+  await page.getByTestId("calculation-next").click();
+  await toggle.click();
+  await expect(canvas).toBeVisible();
+  expect(await snapshot()).toEqual(blank);
+  await draw(25, 95, 95, 125);
+
+  // iPadOS 遗漏前一笔 pointerup 时，下一个 pen pointerdown 仍可接管。
   const pencilStrokes = await canvas.evaluate((element) => {
     const surface = element as HTMLCanvasElement;
     const rect = surface.getBoundingClientRect();
@@ -231,25 +245,24 @@ test("calculation scratchpad draws, clears and resets when changing questions", 
     emit("pointerdown", 101, 20, 40);
     emit("pointermove", 101, 70, 80);
     const first = surface.toDataURL();
-    // 模拟上一笔 pointerup/lostpointercapture 丢失。
     emit("pointerdown", 102, 120, 40);
     emit("pointermove", 102, 175, 80);
     emit("pointerup", 102, 175, 80);
     const second = surface.toDataURL();
-    // 下一笔也应正常起笔。
     emit("pointerdown", 103, 200, 40);
     emit("pointermove", 103, 250, 80);
     emit("pointerup", 103, 250, 80);
     return { first, second, third: surface.toDataURL() };
   });
-  expect(pencilStrokes.second).not.toBe(pencilStrokes.first);
-  expect(pencilStrokes.third).not.toBe(pencilStrokes.second);
+  expect(pencilStrokes.second).not.toEqual(pencilStrokes.first);
+  expect(pencilStrokes.third).not.toEqual(pencilStrokes.second);
 });
 
 
 test("scratchpad cancels Safari single-touch gestures before the second Pencil stroke", async ({ page }) => {
   await page.goto("/#/study/calculation");
   await page.getByTestId("calculation-start").click();
+  await page.getByTestId("calculation-scratchpad-toggle").click();
   const prevention = await page.getByTestId("calculation-scratchpad-canvas").evaluate((element) => {
     const canvas = element as HTMLCanvasElement;
     const makeTouch = (id: number) => new Touch({
@@ -311,6 +324,9 @@ test("wrong-card practice filters, reveals, self-grades and never writes FSRS", 
   await expect(page.getByTestId("practice-front")).toBeVisible();
   await expect(page.getByTestId("practice-back")).toHaveCount(0);
   const canvas = page.getByTestId("calculation-scratchpad-canvas");
+  await expect(canvas).toBeHidden();
+  await page.getByTestId("calculation-scratchpad-toggle").click();
+  await expect(canvas).toBeVisible();
   await expect(canvas).toHaveAttribute("width", "900");
   await expect(canvas).toHaveCSS("touch-action", "none");
   const blank = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
@@ -327,6 +343,8 @@ test("wrong-card practice filters, reveals, self-grades and never writes FSRS", 
   await expect(page.getByTestId("practice-back")).toBeVisible();
   await page.getByTestId("practice-wrong").click();
   await expect(page.getByTestId("practice-question")).toBeVisible();
+  await expect(canvas).toBeHidden();
+  await page.getByTestId("calculation-scratchpad-toggle").click();
   const reset = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
   expect(reset).toEqual(blank);
   await page.getByTestId("practice-reveal").click();

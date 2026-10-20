@@ -343,7 +343,8 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
                         <span>{format!("第 {progress} / {} 题", live.questions.len())}</span>
                         <span>{question.deck_path.clone()}</span>
                     </div>
-                    <div class="grid gap-4 lg:grid-cols-2">
+                    <div class="grid gap-4">
+                        <InkOverlay question_index={live.index}>
                         <div class="min-w-0 rounded-box border border-base-content/10 bg-base-100 p-4">
                             <div class="max-h-[65vh] overflow-auto">
                                 <div class="study-markdown" data-testid="practice-front">{render_markdown(&question.front_markdown, &question.source_file)}</div>
@@ -355,7 +356,7 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
                                 }
                             </div>
                         </div>
-                        <CalculationScratchpad question_index={live.index} />
+                        </InkOverlay>
                     </div>
                     if live.revealed_elapsed_ms.is_none() {
                         <button type="button" class="btn btn-primary" data-testid="practice-reveal" onclick={reveal}>{"显示解析"}</button>
