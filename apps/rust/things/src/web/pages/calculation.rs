@@ -450,7 +450,8 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                 })
             };
             html! {
-                <section class="mx-auto grid w-full max-w-3xl gap-4" data-testid="calculation-question">
+                <section class="calculation-workspace mx-auto grid w-full max-w-3xl gap-4" data-testid="calculation-question">
+                    <div class="calculation-problem grid min-w-0 content-start gap-4" data-testid="calculation-problem">
                     <div class="flex items-center justify-between gap-3 text-sm text-base-content/60">
                         <span>{format!("第 {progress} / {} 题", live.questions.len())}</span>
                         <span>{question.kind.label()}</span>
@@ -461,7 +462,6 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                         </h1>
                     </div>
                     <div class="grid grid-cols-2 gap-3">{for buttons}</div>
-                    <CalculationScratchpad question_index={live.index} />
                     if let Some(record) = answered {
                         <div class="rounded-box border border-base-content/10 bg-base-100 p-4" role="status" data-testid="calculation-feedback">
                             <strong class={if record.choice == question.correct_index { "text-success" } else { "text-error" }}>
@@ -475,6 +475,8 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                         </button>
                     }
                     <button type="button" class="btn btn-ghost justify-self-center" data-testid="calculation-finish" onclick={finish}>{"提前结束并查看成绩"}</button>
+                    </div>
+                    <CalculationScratchpad question_index={live.index} />
                 </section>
             }
         }
@@ -529,8 +531,8 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
     };
 
     html! {
-        <div class="min-h-dvh bg-base-200 px-4 py-5 sm:px-8" data-testid="calculation-layout">
-            <div class="mx-auto mb-5 flex w-full max-w-3xl items-center justify-between">
+        <div class="calculation-layout min-h-dvh bg-base-200 px-4 py-5 sm:px-8" data-testid="calculation-layout" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
+            <div class="calculation-header mx-auto mb-5 flex w-full max-w-3xl items-center justify-between">
                 <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-back" onclick={back}>{"← 返回学习"}</button>
                 <span class="text-xs font-semibold uppercase tracking-widest text-base-content/60">{"STUDY / CALCULATION"}</span>
             </div>
