@@ -131,8 +131,7 @@ fn format_decimal(value: u64, places: u32) -> String {
 }
 
 fn exact_decimal(num: u64, den: u64) -> String {
-    let (value, places) =
-        exact_decimal_parts(num, den).expect("只能将有限小数表示成精确数值");
+    let (value, places) = exact_decimal_parts(num, den).expect("只能将有限小数表示成精确数值");
     format_decimal(value, places)
 }
 
@@ -157,11 +156,7 @@ fn order_of_magnitude(mut number: u64) -> u32 {
 
 // 干扰项保留真实答案的量级和小数位数，低位随机生成；
 // 不使用等差选项。选项前 2/3 位已经足以区分，不需要真的算到末位。
-fn candidate_options(
-    seed: &mut u64,
-    correct: u64,
-    places: u32,
-) -> Option<([String; 4], usize)> {
+fn candidate_options(seed: &mut u64, correct: u64, places: u32) -> Option<([String; 4], usize)> {
     let prefix_digits = if random_range(seed, 0, 1) == 0 { 2 } else { 3 };
     let order = order_of_magnitude(correct);
     let actual_digits = order + 1;
@@ -555,7 +550,10 @@ mod tests {
             let mut seed = 1428;
             for _ in 0..800 {
                 let question = make_question(&mut seed, kind);
-                assert_eq!(question.options[question.correct_index], question.exact_result);
+                assert_eq!(
+                    question.options[question.correct_index],
+                    question.exact_result
+                );
                 assert_eq!(
                     question.exact_result,
                     exact_decimal(question.numerator, question.denominator)
@@ -613,7 +611,9 @@ mod tests {
     fn every_enabled_kind_is_included_and_percent_only_is_possible() {
         let mut seed = 123;
         let questions = question_set(&mut seed, &[CalculationKind::Percent], 100);
-        assert!(questions.iter().all(|question| question.kind == CalculationKind::Percent));
+        assert!(questions
+            .iter()
+            .all(|question| question.kind == CalculationKind::Percent));
         let all = question_set(&mut seed, &CalculationKind::ALL, 20);
         for kind in CalculationKind::ALL {
             assert!(all.iter().any(|question| question.kind == kind));
