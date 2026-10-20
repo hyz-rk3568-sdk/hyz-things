@@ -6,7 +6,7 @@ pub(crate) enum StudyView {
     Dashboard,
     Cards,
     Review,
-    Calculation,
+    Training,
 }
 
 impl StudyView {
@@ -15,7 +15,7 @@ impl StudyView {
             Self::Dashboard => "study",
             Self::Cards => "study/cards",
             Self::Review => "study/review",
-            Self::Calculation => "study/calculation",
+            Self::Training => "study/training",
         }
     }
 }
@@ -238,7 +238,9 @@ impl PortalRoute {
             ["study"] => Self::study(StudyView::Dashboard, None, Vec::new()),
             ["study", "cards"] => Self::study(StudyView::Cards, None, Vec::new()),
             ["study", "review"] => Self::study(StudyView::Review, None, Vec::new()),
-            ["study", "calculation"] => Self::study(StudyView::Calculation, None, Vec::new()),
+            ["study", "training"] | ["study", "calculation"] => {
+                Self::study(StudyView::Training, None, Vec::new())
+            }
             ["network"] => Self::for_page(AppPage::Network),
             ["proxy"] => Self::for_page(AppPage::Proxy),
             ["devices"] | ["activity"] => Self::for_page(AppPage::Devices),
@@ -429,10 +431,17 @@ mod tests {
     #[test]
     fn calculation_study_route_is_stable() {
         let (route, canonical) = PortalRoute::parse("#/study/calculation");
-        assert!(canonical);
+        assert!(!canonical);
         assert_eq!(route.page, AppPage::Study);
-        assert_eq!(route.study_view, StudyView::Calculation);
-        assert_eq!(route.hash(), "#/study/calculation");
+        assert_eq!(route.study_view, StudyView::Training);
+        assert_eq!(route.hash(), "#/study/training");
+    }
+
+    #[test]
+    fn new_training_route_is_canonical() {
+        let (route, canonical) = PortalRoute::parse("#/study/training");
+        assert!(canonical);
+        assert_eq!(route.study_view, StudyView::Training);
     }
 
     #[test]
