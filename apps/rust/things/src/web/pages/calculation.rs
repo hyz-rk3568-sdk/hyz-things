@@ -613,4 +613,45 @@ mod tests {
             assert!(all.iter().any(|q| q.kind == kind));
         }
     }
+    #[test]
+    fn exact_answers_keep_every_naturally_required_digit() {
+        assert_eq!(exact_decimal(438 * 27, 1), "11826");
+        assert_eq!(exact_decimal(438 * 13, 100), "56.94");
+        assert_eq!(exact_decimal(438 * 100, 120), "365");
+        assert_eq!(exact_decimal(5, 4), "1.25");
+    }
+
+    #[test]
+    fn all_distractors_are_distinguishable_within_three_leading_digits() {
+        let mut has_two_digit_question = false;
+        let mut has_three_digit_question = false;
+        for kind in CalculationKind::ALL {
+            let mut seed = 1428;
+            for _ in 0..800 {
+                let question = make_question(&mut seed, kind);
+                assert_eq!(question.options[question.correct_index], question.exact_result);
+                assert_eq!(
+                    question.exact_result,
+                    exact_decimal(question.numerator, question.denominator)
+                );
+                let prefixes: std::collections::HashSet<_> = question
+                    .options
+                    .iter()
+                    .map(|value| significant_prefix(value, 3))
+                    .collect();
+                assert_eq!(prefixes.len(), 4, "{}", question.expression);
+                let two: std::collections::HashSet<_> = question
+                    .options
+                    .iter()
+                    .map(|value| significant_prefix(value, 2))
+                    .collect();
+                has_two_digit_question |= two.len() == 4;
+                has_three_digit_question |= two.len() != 4;
+                assert!(!question.expression.contains("≈"));
+            }
+        }
+        assert!(has_two_digit_question);
+        assert!(has_three_digit_question);
+    }
+
 }
