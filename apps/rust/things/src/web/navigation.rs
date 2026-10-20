@@ -429,7 +429,7 @@ mod tests {
     #[test]
     fn calculation_study_route_is_stable() {
         let (route, canonical) = PortalRoute::parse("#/study/calculation");
-        assert!(!canonical);
+        assert!(canonical);
         assert_eq!(route.page, AppPage::Study);
         assert_eq!(route.study_view, StudyView::Calculation);
         assert_eq!(route.hash(), "#/study/calculation");
