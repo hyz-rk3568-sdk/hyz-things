@@ -165,6 +165,15 @@ test("calculation scratchpad draws, clears and resets when changing questions", 
   const canvas = page.getByTestId("calculation-scratchpad-canvas");
   await expect(canvas).toBeVisible();
   await expect(canvas).toHaveCSS("touch-action", "none");
+  // iPad Safari 长按不应选中文字/触发原生菜单，绘图 Canvas 仍接收 pointer。
+  const scratchpad = page.getByTestId("calculation-scratchpad");
+  await expect(scratchpad).toHaveCSS("user-select", "none");
+  await expect(canvas).toHaveCSS("user-select", "none");
+  await expect(scratchpad.locator("p")).toHaveCSS("user-select", "none");
+  const contextMenuAllowed = await canvas.evaluate((element) =>
+    element.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+  );
+  expect(contextMenuAllowed).toBe(false);
   const snapshot = () => canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
   const blank = await snapshot();
   const box = await canvas.boundingBox();
