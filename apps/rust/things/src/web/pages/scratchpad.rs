@@ -2,7 +2,7 @@
 use super::*;
 
 const SCRATCH_WIDTH: u32 = 900;
-const SCRATCH_HEIGHT: u32 = 260;
+const SCRATCH_HEIGHT: u32 = 450;
 
 fn scratch_context(canvas: &HtmlCanvasElement) -> Option<CanvasRenderingContext2d> {
     canvas
@@ -134,7 +134,7 @@ pub(crate) fn calculation_scratchpad(props: &CalculationScratchpadProps) -> Html
     };
 
     html! {
-        <section class="rounded-box border border-base-content/10 bg-base-100/60 p-3" data-testid="calculation-scratchpad">
+        <section class="calculation-scratchpad rounded-box border border-base-content/10 bg-base-100/60 p-3" data-testid="calculation-scratchpad" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
             <div class="flex items-center justify-between gap-3">
                 <button
                     type="button"
@@ -161,13 +161,14 @@ pub(crate) fn calculation_scratchpad(props: &CalculationScratchpadProps) -> Html
                     ref={canvas_ref}
                     width={SCRATCH_WIDTH.to_string()}
                     height={SCRATCH_HEIGHT.to_string()}
-                    class="block h-36 w-full touch-none rounded-lg bg-slate-950 sm:h-44"
+                    class="block h-64 w-full touch-none rounded-lg bg-slate-950 sm:h-80 lg:h-96"
                     data-testid="calculation-scratchpad-canvas"
                     aria-label="草稿区，可用手指或触控笔书写"
                     onpointerdown={on_down}
                     onpointermove={on_move}
                     onpointerup={on_end.clone()}
-                    onpointercancel={on_end}
+                    onpointercancel={on_end.clone()}
+                    onlostpointercapture={on_end}
                 />
                 <p class="mt-2 text-xs text-base-content/60">{"手指或触控笔直接写，草稿只留在本题；切题自动清空。"}</p>
             </div>
