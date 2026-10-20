@@ -6,6 +6,7 @@ pub(crate) enum StudyView {
     Dashboard,
     Cards,
     Review,
+    Calculation,
 }
 
 impl StudyView {
@@ -14,6 +15,7 @@ impl StudyView {
             Self::Dashboard => "study",
             Self::Cards => "study/cards",
             Self::Review => "study/review",
+            Self::Calculation => "study/calculation",
         }
     }
 }
@@ -236,6 +238,7 @@ impl PortalRoute {
             ["study"] => Self::study(StudyView::Dashboard, None, Vec::new()),
             ["study", "cards"] => Self::study(StudyView::Cards, None, Vec::new()),
             ["study", "review"] => Self::study(StudyView::Review, None, Vec::new()),
+            ["study", "calculation"] => Self::study(StudyView::Calculation, None, Vec::new()),
             ["network"] => Self::for_page(AppPage::Network),
             ["proxy"] => Self::for_page(AppPage::Proxy),
             ["devices"] | ["activity"] => Self::for_page(AppPage::Devices),
@@ -421,6 +424,15 @@ mod tests {
         assert_eq!(route.study_deck.as_deref(), Some("判断推理"));
         assert_eq!(route.study_tags, vec!["错题", "高频"]);
         assert!(route.hash().starts_with("#/study/review?deck="));
+    }
+
+    #[test]
+    fn calculation_study_route_is_stable() {
+        let (route, canonical) = PortalRoute::parse("#/study/calculation");
+        assert!(!canonical);
+        assert_eq!(route.page, AppPage::Study);
+        assert_eq!(route.study_view, StudyView::Calculation);
+        assert_eq!(route.hash(), "#/study/calculation");
     }
 
     #[test]
