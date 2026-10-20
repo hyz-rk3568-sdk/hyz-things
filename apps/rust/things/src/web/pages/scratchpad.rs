@@ -15,12 +15,7 @@ fn scratch_context(canvas: &HtmlCanvasElement) -> Option<CanvasRenderingContext2
 
 fn clear_scratch(canvas: &HtmlCanvasElement) {
     if let Some(context) = scratch_context(canvas) {
-        context.clear_rect(
-            0.0,
-            0.0,
-            SCRATCH_WIDTH as f64,
-            SCRATCH_HEIGHT as f64,
-        );
+        context.clear_rect(0.0, 0.0, SCRATCH_WIDTH as f64, SCRATCH_HEIGHT as f64);
     }
 }
 
