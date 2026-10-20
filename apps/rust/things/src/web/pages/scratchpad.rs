@@ -145,7 +145,7 @@ pub(crate) fn calculation_scratchpad(props: &CalculationScratchpadProps) -> Html
                     type="button"
                     class="btn btn-ghost btn-sm"
                     data-testid="calculation-scratchpad-toggle"
-                    aria-expanded={expanded.to_string()}
+                    aria-expanded={(*expanded).to_string()}
                     onclick={toggle}
                 >
                     {if *expanded { "✎ 收起草稿" } else { "✎ 展开草稿" }}
