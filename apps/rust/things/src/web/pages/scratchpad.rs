@@ -76,12 +76,19 @@ pub(crate) fn calculation_scratchpad(props: &CalculationScratchpadProps) -> Html
             if event.pointer_type() == "mouse" && event.button() != 0 {
                 return;
             }
-            if active_pointer.borrow().is_some() {
-                return;
-            }
             let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() else {
                 return;
             };
+            // Safari 在 Apple Pencil 连续起笔时可能跳过上一笔的终止事件。
+            // 新的 pen pointerdown 必须能接管遗留指针，否则第二个字会写不出来。
+            if let Some(previous) = *active_pointer.borrow() {
+                if event.pointer_type() != "pen" {
+                    return;
+                }
+                if canvas.has_pointer_capture(previous) {
+                    let _ = canvas.release_pointer_capture(previous);
+                }
+            }
             let Some((x, y)) = scratch_point(&event, &canvas) else {
                 return;
             };
@@ -90,7 +97,11 @@ pub(crate) fn calculation_scratchpad(props: &CalculationScratchpadProps) -> Html
             };
             event.prevent_default();
             *active_pointer.borrow_mut() = Some(event.pointer_id());
-            let _ = canvas.set_pointer_capture(event.pointer_id());
+            // iPad Safari 对 Pencil 的 pointer capture/释放顺序不够稳定；
+            // pen 在画布内正常收事件，无需主动 capture。手指/鼠标仍保留 capture。
+            if event.pointer_type() != "pen" {
+                let _ = canvas.set_pointer_capture(event.pointer_id());
+            }
             context.set_line_cap("round");
             context.set_line_join("round");
             context.set_line_width(3.8);
@@ -125,10 +136,17 @@ pub(crate) fn calculation_scratchpad(props: &CalculationScratchpadProps) -> Html
         })
     };
     let on_end = {
+        let canvas_ref = canvas_ref.clone();
         let active_pointer = active_pointer.clone();
         Callback::from(move |event: PointerEvent| {
-            if *active_pointer.borrow() == Some(event.pointer_id()) {
-                *active_pointer.borrow_mut() = None;
+            if *active_pointer.borrow() != Some(event.pointer_id()) {
+                return;
+            }
+            *active_pointer.borrow_mut() = None;
+            if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
+                if canvas.has_pointer_capture(event.pointer_id()) {
+                    let _ = canvas.release_pointer_capture(event.pointer_id());
+                }
             }
         })
     };
