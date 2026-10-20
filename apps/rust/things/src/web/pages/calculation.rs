@@ -32,7 +32,9 @@ impl CalculationKind {
         match self {
             Self::Division => "分子前三位、分母两位试商；用选项差异决定心算止步。",
             Self::Multiplication => "高位拆乘、先确定量级，再根据选项差异决定是否补位。",
-            Self::Percent => "份数法：增长率约为 1/n 时，现期约有 n+1 份，其中增长量为 1 份；按选项补位。",
+            Self::Percent => {
+                "份数法：增长率约为 1/n 时，现期约有 n+1 份，其中增长量为 1 份；按选项补位。"
+            }
         }
     }
 }
@@ -594,7 +596,8 @@ mod tests {
             assert!(question.expression.contains("增长率"));
             assert!(question.expression.contains("增长量"));
             assert!(!question.expression.contains(" ÷ "));
-            let rate = question.expression
+            let rate = question
+                .expression
                 .split("增长率 ")
                 .nth(1)
                 .expect("must contain growth rate")
@@ -618,7 +621,12 @@ mod tests {
                 let correct = question.exact_result.parse::<f64>().unwrap();
                 for option in &question.options {
                     let value = option.parse::<f64>().unwrap();
-                    assert!((value - correct).abs() < correct * 0.1, "{} vs {}", value, correct);
+                    assert!(
+                        (value - correct).abs() < correct * 0.1,
+                        "{} vs {}",
+                        value,
+                        correct
+                    );
                 }
             }
         }
