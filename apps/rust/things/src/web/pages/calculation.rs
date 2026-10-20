@@ -546,6 +546,45 @@ mod tests {
     use super::*;
 
     #[test]
+    fn growth_training_uses_non_anchor_rates_above_ten_percent() {
+        let mut seed = 20261020;
+        for _ in 0..500 {
+            let question = make_question(&mut seed, CalculationKind::Percent);
+            assert!(question.expression.contains("现期量"));
+            assert!(question.expression.contains("增长率"));
+            assert!(question.expression.contains("增长量"));
+            assert!(!question.expression.contains(" ÷ "));
+            let rate = question.expression
+                .split("增长率 ")
+                .nth(1)
+                .expect("must contain growth rate")
+                .split('%')
+                .next()
+                .unwrap()
+                .parse::<f64>()
+                .unwrap();
+            assert!(rate > 10.0);
+            let per_mille = (rate * 10.0).round() as u64;
+            assert!(!is_share_anchor(per_mille), "{}", question.expression);
+        }
+    }
+
+    #[test]
+    fn all_answer_choices_stay_within_ten_percent() {
+        let mut seed = 2026;
+        for kind in CalculationKind::ALL {
+            for _ in 0..1000 {
+                let question = make_question(&mut seed, kind);
+                let correct = question.exact_result.parse::<f64>().unwrap();
+                for option in &question.options {
+                    let value = option.parse::<f64>().unwrap();
+                    assert!((value - correct).abs() < correct * 0.1, "{} vs {}", value, correct);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn every_kind_has_one_exact_answer_and_options_differ_by_three_digits() {
         let mut has_two_digit_question = false;
         let mut has_three_digit_question = false;
