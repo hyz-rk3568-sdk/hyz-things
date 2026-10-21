@@ -277,7 +277,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     <div class="text-sm font-bold">{"资料分析综合训练"} <span class="text-base-content/60">{format!("第 {}/20 题 · 材料 {}/4",index+1,group_index+1)}</span></div>
                     <div class="flex items-center gap-2">
                         <strong class={if remaining<=60 {"font-mono text-xl text-error"}else{"font-mono text-xl"}} data-testid="analysis-clock">{clock}</strong>
-                        <button type="button" class="btn btn-sm btn-error btn-outline" disabled={*busy} onclick={submit}>{"交卷"}</button>
+                        <button type="button" class="btn btn-sm btn-error btn-outline" disabled={*busy} onclick={{let submit=submit.clone();Callback::from(move |_|submit.emit(()))}}>{"交卷"}</button>
                     </div>
                 </header>
                 <div class="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[44%_minmax(0,1fr)]">

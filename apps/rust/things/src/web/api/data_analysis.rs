@@ -1,5 +1,5 @@
 //! User-facing DTOs. Secrets and correct indices never enter an active run.
-use crate::domain::data_analysis::Material;
+use hyz_things::domain::data_analysis::Material;
 use serde::{Deserialize, Serialize};
 pub(crate) const ANALYSIS_ROOT: &str = "/api/v1/study/data-analysis";
 #[derive(Clone, Debug, Deserialize)]
