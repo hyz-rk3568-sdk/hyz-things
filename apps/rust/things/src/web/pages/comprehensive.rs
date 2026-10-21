@@ -10,6 +10,7 @@ pub(crate) struct ComprehensiveProps {
 
 
 const COMPREHENSIVE_JOB_KEY: &str = "hyz_comprehensive_prepare_job";
+const COMPREHENSIVE_READY_KEY: &str = "hyz_comprehensive_ready_run";
 
 fn remember_preparation(id: Option<&str>) {
     if let Some(storage)=web_sys::window().and_then(|w|w.local_storage().ok().flatten()) {
@@ -36,6 +37,11 @@ async fn resume_preparation(
                 progress.set(Some(state.clone()));
                 if state.state=="ready" {
                     if let Some(run_id)=state.run_id {
+                        if let Some(storage)=web_sys::window()
+                            .and_then(|w|w.local_storage().ok().flatten()) {
+                            let _=storage.set_item(COMPREHENSIVE_READY_KEY,&run_id);
+                        }
+                        remember_preparation(None);
                         ready_id.set(Some(run_id));
                         preparing.set(false);
                         return;
@@ -111,12 +117,14 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 {
                     history.set(items);
                 }
-                let saved_job=web_sys::window()
-                    .and_then(|w|w.local_storage().ok().flatten())
-                    .and_then(|s|s.get_item(COMPREHENSIVE_JOB_KEY).ok().flatten());
-                // Resume the *same* background task rather than enabling a second
-                // generation request on returning to the training page.
-                if let Some(job)=saved_job.or(server_job) {
+                let storage=web_sys::window().and_then(|w|w.local_storage().ok().flatten());
+                let saved_ready=storage.as_ref().and_then(|s|s.get_item(COMPREHENSIVE_READY_KEY).ok().flatten());
+                let saved_job=storage.as_ref().and_then(|s|s.get_item(COMPREHENSIVE_JOB_KEY).ok().flatten());
+                // A ready run is persisted in SQLite: even a backend restart
+                // cannot accidentally start the timer or lose this prepared set.
+                if let Some(id)=saved_ready {
+                    ready_id.set(Some(id));
+                } else if let Some(job)=saved_job.or(server_job) {
                     remember_preparation(Some(&job));
                     spawn_local(resume_preparation(
                         job,progress,ready_id,preparing,error.clone()
@@ -272,6 +280,10 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                             let _=storage.set_item("hyz_comprehensive_active_run",&active.id);
                         }
                         remember_preparation(None);
+                        if let Some(storage)=web_sys::window()
+                            .and_then(|w|w.local_storage().ok().flatten()) {
+                            let _=storage.remove_item(COMPREHENSIVE_READY_KEY);
+                        }
                         ready_id.set(None);
                         run.set(Some(active));
                     }
