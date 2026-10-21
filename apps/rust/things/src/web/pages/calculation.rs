@@ -45,8 +45,11 @@ struct CalculationQuestion {
     options: [String; 4],
     correct_index: usize,
     exact_result: String,
+    #[cfg(test)]
     numerator: u64,
+    #[cfg(test)]
     denominator: u64,
+    #[cfg(test)]
     is_negative: bool,
     kind: CalculationKind,
     tip: &'static str,
@@ -289,8 +292,11 @@ fn make_question(seed: &mut u64, kind: CalculationKind) -> CalculationQuestion {
             } else {
                 exact_result
             },
+            #[cfg(test)]
             numerator,
+            #[cfg(test)]
             denominator,
+            #[cfg(test)]
             is_negative,
             kind,
             tip: kind.tip(),

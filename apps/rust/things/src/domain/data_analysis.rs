@@ -275,6 +275,52 @@ pub fn verify_recipe(
     })
 }
 
+/// Pick at most \`limit\` distinct material groups for a parallel generation wave.
+///
+/// The first pass requires independent official years and topics; the fallback
+/// pass relaxes diversity, never the unique source/section identity. Rejected
+/// candidates are not retried indefinitely.
+pub fn select_material_batch(
+    ordered: &[Material],
+    completed: &[Material],
+    attempted: &std::collections::HashSet<(String, String)>,
+    strict_diversity: bool,
+    limit: usize,
+) -> Vec<Material> {
+    let mut identities = completed
+        .iter()
+        .map(|m| (m.source_url.clone(), m.section.clone()))
+        .collect::<std::collections::HashSet<_>>();
+    let mut years = completed
+        .iter()
+        .map(|m| m.source_url.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let mut topics = completed
+        .iter()
+        .map(|m| m.topic.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let mut selected = Vec::new();
+    for material in ordered {
+        if selected.len() == limit {
+            break;
+        }
+        let identity = (material.source_url.clone(), material.section.clone());
+        if identities.contains(&identity) || attempted.contains(&identity) {
+            continue;
+        }
+        if strict_diversity
+            && (years.contains(&material.source_url) || topics.contains(&material.topic))
+        {
+            continue;
+        }
+        identities.insert(identity);
+        years.insert(material.source_url.clone());
+        topics.insert(material.topic.clone());
+        selected.push(material.clone());
+    }
+    selected
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,6 +344,103 @@ mod tests {
             explanation: "现期除以增长因子".into(),
         }
     }
+    #[test]
+    fn parallel_material_wave_is_diverse_bounded_and_deterministic() {
+        let candidates = (0..7)
+            .map(|n| Material {
+                source_url: format!("year-{}", n / 2),
+                section: format!("section-{n}"),
+                topic: format!("topic-{}", n / 2),
+                ..material()
+            })
+            .collect::<Vec<_>>();
+        let batch = select_material_batch(
+            &candidates,
+            &[],
+            &std::collections::HashSet::new(),
+            true,
+            QUIZ_GROUPS,
+        );
+        assert_eq!(batch.len(), QUIZ_GROUPS);
+        assert_eq!(
+            batch
+                .iter()
+                .map(|m| &m.source_url)
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            QUIZ_GROUPS
+        );
+        assert_eq!(
+            batch
+                .iter()
+                .map(|m| &m.topic)
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            QUIZ_GROUPS
+        );
+        assert_eq!(
+            batch,
+            select_material_batch(
+                &candidates,
+                &[],
+                &std::collections::HashSet::new(),
+                true,
+                QUIZ_GROUPS
+            )
+        );
+    }
+
+    #[test]
+    fn failed_wave_replenishes_without_reusing_identity() {
+        let source = material();
+        let candidates = vec![
+            Material {
+                source_url: "year-a".into(),
+                section: "one".into(),
+                topic: "agriculture".into(),
+                ..source.clone()
+            },
+            Material {
+                source_url: "year-a".into(),
+                section: "two".into(),
+                topic: "industry".into(),
+                ..source.clone()
+            },
+            Material {
+                source_url: "year-b".into(),
+                section: "three".into(),
+                topic: "trade".into(),
+                ..source.clone()
+            },
+            Material {
+                source_url: "year-c".into(),
+                section: "four".into(),
+                topic: "investment".into(),
+                ..source.clone()
+            },
+            Material {
+                source_url: "year-b".into(),
+                section: "five".into(),
+                topic: "health".into(),
+                ..source.clone()
+            },
+        ];
+        let attempted = std::collections::HashSet::from([("year-a".to_owned(), "one".to_owned())]);
+        let completed = vec![candidates[2].clone()];
+        let strict = select_material_batch(&candidates, &completed, &attempted, true, 3);
+        assert_eq!(strict, vec![candidates[1].clone(), candidates[3].clone()]);
+        let fallback = select_material_batch(&candidates, &completed, &attempted, false, 3);
+        assert_eq!(
+            fallback,
+            vec![
+                candidates[1].clone(),
+                candidates[3].clone(),
+                candidates[4].clone()
+            ]
+        );
+        assert!(select_material_batch(&candidates, &completed, &attempted, false, 0).is_empty());
+    }
+
     #[test]
     fn section_taxonomy_is_stable() {
         assert_eq!(SECTIONS.len(), 12);

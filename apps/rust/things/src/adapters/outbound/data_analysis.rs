@@ -2,8 +2,8 @@
 //! Only verified numerical recipes are admitted into the training database.
 use super::codex_app_server::{validate_token, CodexSession, TURN_TIMEOUT};
 use crate::domain::data_analysis::{
-    verify_recipe, Material, QuestionRecipe, VerifiedQuestion, OFFICIAL_SOURCES, QUIZ_GROUPS,
-    QUIZ_PER_GROUP, QUIZ_SECONDS, SECTIONS, SOURCE_URL,
+    select_material_batch, verify_recipe, Material, QuestionRecipe, VerifiedQuestion,
+    OFFICIAL_SOURCES, QUIZ_GROUPS, QUIZ_PER_GROUP, QUIZ_SECONDS, SECTIONS, SOURCE_URL,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -11,11 +11,12 @@ use sqlx::{Row, SqlitePool};
 use std::{
     collections::{HashMap, HashSet},
     fs,
+    future::Future,
     os::unix::fs::MetadataExt,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, task::JoinSet};
 use uuid::Uuid;
 
 const ENV_PATH: &str = "/userdata/hyz-things/.env";
@@ -137,6 +138,33 @@ pub struct DataAnalysisService {
     client: reqwest::Client,
     jobs: Arc<Mutex<HashMap<String, PrepareProgress>>>,
     gate: Arc<tokio::sync::Semaphore>,
+}
+
+/// Run one bounded wave. Each task establishes its own Codex WS session and
+/// ephemeral Thread, avoiding response-ID multiplexing and mixed conversations.
+/// Results retain their source slot even if the network finishes out of order.
+async fn run_generation_wave<F, Fut>(
+    candidates: Vec<(usize, Material)>,
+    producer: F,
+) -> Vec<(usize, Result<QuestionGroup, String>)>
+where
+    F: Fn(Material) -> Fut + Clone + Send + 'static,
+    Fut: Future<Output = Result<QuestionGroup, String>> + Send + 'static,
+{
+    debug_assert!(candidates.len() <= QUIZ_GROUPS);
+    let mut running = JoinSet::new();
+    for (index, material) in candidates {
+        let produce = producer.clone();
+        running.spawn(async move { (index, produce(material).await) });
+    }
+    let mut results = Vec::new();
+    while let Some(outcome) = running.join_next().await {
+        match outcome {
+            Ok(result) => results.push(result),
+            Err(_) => results.push((usize::MAX, Err("Codex 并行出题任务意外中断".to_owned()))),
+        }
+    }
+    results
 }
 
 fn now_ms() -> i64 {
@@ -375,70 +403,103 @@ impl DataAnalysisService {
             }
         }
         let mut ready: Vec<QuestionGroup> = Vec::new();
-        let mut used_years = HashSet::new();
-        let mut used_topics = HashSet::new();
+        let mut attempted = HashSet::<(String, String)>::new();
         let mut last_error = String::new();
         let mut attempts = 0;
-        // First pass forces diversity in BOTH statistical year and subject.
-        // Second pass permits repeated years when official pages are unavailable.
-        for pass in 0..2 {
-            for material in &ordered {
+        // The strict pass avoids repeated official years and topics. A fallback
+        // pass only relaxes those two diversity constraints; it never repeats a
+        // source/section identity or requeues a failed generation indefinitely.
+        for strict_diversity in [true, false] {
+            loop {
                 if ready.len() == QUIZ_GROUPS {
                     break;
                 }
-                if ready.iter().any(|g| {
-                    g.material.source_url == material.source_url
-                        && g.material.section == material.section
-                }) {
-                    continue;
+                let completed: Vec<Material> =
+                    ready.iter().map(|group| group.material.clone()).collect();
+                let wave = select_material_batch(
+                    &ordered,
+                    &completed,
+                    &attempted,
+                    strict_diversity,
+                    QUIZ_GROUPS - ready.len(),
+                );
+                if wave.is_empty() {
+                    break;
                 }
-                if pass == 0
-                    && (used_years.contains(&material.source_url)
-                        || used_topics.contains(&material.topic))
-                {
-                    continue;
-                }
-                let key = format!("{}|{}", material.source_url, material.section);
-                let group = if let Some(group) = cache.get(&key) {
-                    group.clone()
-                } else {
-                    if attempts >= 12 {
-                        break;
+
+                let mut ordered_results: Vec<Option<QuestionGroup>> = vec![None; wave.len()];
+                let mut needs_store = vec![false; wave.len()];
+                let mut requests = Vec::new();
+                for (slot, material) in wave.iter().enumerate() {
+                    attempted.insert((material.source_url.clone(), material.section.clone()));
+                    let key = format!("{}|{}", material.source_url, material.section);
+                    if let Some(group) = cache.get(&key) {
+                        ordered_results[slot] = Some(group.clone());
+                    } else if attempts < 12 {
+                        attempts += 1;
+                        needs_store[slot] = true;
+                        requests.push((slot, material.clone()));
                     }
-                    attempts += 1;
+                }
+                if requests.is_empty() && ordered_results.iter().all(Option::is_none) {
+                    break;
+                }
+                if !requests.is_empty() {
                     self.set_progress(
                         job,
                         "generating",
-                        ready.len() * 5,
-                        "正在生成不同年份与主题的仿真资料分析题",
+                        ready.len() * QUIZ_PER_GROUP,
+                        "最多4份不同材料正在并行生成，每份使用独立的 Codex Thread",
                         None,
                     )
                     .await;
-                    let group = match self.generate_group(material, &weaknesses).await {
-                        Ok(group) => group,
-                        Err(err) => {
-                            last_error = err;
-                            continue;
+                    let worker = self.clone();
+                    let weak = Arc::new(weaknesses.clone());
+                    for (slot, outcome) in run_generation_wave(requests, move |material| {
+                        let worker = worker.clone();
+                        let weak = Arc::clone(&weak);
+                        async move { worker.generate_group(&material, &weak).await }
+                    })
+                    .await
+                    {
+                        match outcome {
+                            Ok(group) if slot < ordered_results.len() => {
+                                ordered_results[slot] = Some(group);
+                            }
+                            Ok(_) => last_error = "Codex 并行任务返回异常序号".into(),
+                            Err(error) => last_error = error,
                         }
+                    }
+                }
+
+                // Only the coordinator persists groups and updates the run,
+                // preserving the deterministic order selected before spawning.
+                for (slot, group) in ordered_results.into_iter().enumerate() {
+                    let Some(group) = group else {
+                        continue;
                     };
-                    sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES (?,?,?,?,?,?)")
-                        .bind(Uuid::now_v7().to_string()).bind(&group.material.source_url)
-                        .bind(&group.material.section).bind(&group.material.topic)
-                        .bind(serde_json::to_string(&group).map_err(as_error)?).bind(now_ms())
-                        .execute(&self.pool).await.map_err(as_error)?;
-                    group
-                };
-                used_years.insert(group.material.source_url.clone());
-                used_topics.insert(group.material.topic.clone());
-                ready.push(group);
-                self.set_progress(
-                    job,
-                    "validating",
-                    ready.len() * 5,
-                    "已核对来源数字、题目答案与主题分布",
-                    None,
-                )
-                .await;
+                    if needs_store[slot] {
+                        sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES (?,?,?,?,?,?)")
+                            .bind(Uuid::now_v7().to_string())
+                            .bind(&group.material.source_url)
+                            .bind(&group.material.section)
+                            .bind(&group.material.topic)
+                            .bind(serde_json::to_string(&group).map_err(as_error)?)
+                            .bind(now_ms())
+                            .execute(&self.pool)
+                            .await
+                            .map_err(as_error)?;
+                    }
+                    ready.push(group);
+                    self.set_progress(
+                        job,
+                        "validating",
+                        ready.len() * QUIZ_PER_GROUP,
+                        "已核对来源数字、题目答案与主题分布",
+                        None,
+                    )
+                    .await;
+                }
             }
             if ready.len() == QUIZ_GROUPS {
                 break;
@@ -976,6 +1037,73 @@ mod tests {
         ))
         .is_err());
     }
+    #[tokio::test]
+    async fn parallel_wave_runs_four_sessions_and_keeps_source_slots() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tokio::sync::Barrier;
+
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let barrier = Arc::new(Barrier::new(QUIZ_GROUPS + 1));
+        let candidates = (0..QUIZ_GROUPS)
+            .map(|slot| {
+                (
+                    slot,
+                    Material {
+                        section: format!("section-{slot}"),
+                        topic: format!("topic-{slot}"),
+                        subtopic: "test".into(),
+                        text: "test".into(),
+                        source_url: format!("year-{slot}"),
+                    },
+                )
+            })
+            .collect();
+        let task = tokio::spawn(run_generation_wave(candidates, {
+            let active = Arc::clone(&active);
+            let peak = Arc::clone(&peak);
+            let barrier = Arc::clone(&barrier);
+            move |material| {
+                let active = Arc::clone(&active);
+                let peak = Arc::clone(&peak);
+                let barrier = Arc::clone(&barrier);
+                async move {
+                    let running = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    peak.fetch_max(running, Ordering::SeqCst);
+                    barrier.wait().await;
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    if material.section == "section-2" {
+                        Err("simulate invalid Codex response".into())
+                    } else {
+                        Ok(QuestionGroup {
+                            version: 2,
+                            material,
+                            questions: Vec::new(),
+                        })
+                    }
+                }
+            }
+        }));
+        tokio::time::timeout(Duration::from_secs(4), barrier.wait())
+            .await
+            .expect("all four independent workers should reach the same barrier");
+        let mut outcomes = tokio::time::timeout(Duration::from_secs(4), task)
+            .await
+            .unwrap()
+            .unwrap();
+        outcomes.sort_by_key(|(slot, _)| *slot);
+        assert_eq!(peak.load(Ordering::SeqCst), QUIZ_GROUPS);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+        assert_eq!(outcomes.len(), QUIZ_GROUPS);
+        for (slot, item) in outcomes {
+            if slot == 2 {
+                assert!(item.is_err());
+            } else {
+                assert_eq!(item.unwrap().material.section, format!("section-{slot}"));
+            }
+        }
+    }
+
     #[tokio::test]
     async fn cached_official_groups_support_full_twenty_question_lifecycle() {
         // Exercise native SQLite/service paths without a paid AI API or external network.

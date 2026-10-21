@@ -122,7 +122,7 @@ fn setup_pen(context: &CanvasRenderingContext2d) {
     context.set_line_cap("round");
     context.set_line_join("round");
     context.set_line_width(INK_LINE_WIDTH);
-    context.set_stroke_style(&JsValue::from_str(INK_COLOR));
+    context.set_stroke_style_str(INK_COLOR);
 }
 
 fn canvas_point(point: InkPoint, canvas: &HtmlCanvasElement, responsive: bool) -> InkPoint {
