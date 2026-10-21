@@ -141,3 +141,66 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await page.getByRole("button",{name:"查看原题与解析"}).first().click();
   await expect(page.getByTestId("analysis-result")).toContainText("1 / 20");
 });
+
+
+test("AI job survives leaving training; ready paper is untimed until explicit entry",async({page})=>{
+  let jobCreated=false;
+  let generated=false;
+  let starts=0;
+  const begun=Date.now();
+  const groups=Array.from({length:4},(_,index)=>({
+    material:{
+      section:["一、综合","二、农业","三、工业和建筑业","四、服务业"][index],
+      topic:"资料分析",subtopic:"统计资料",
+      text:"2025年统计数据1200亿元，同比增长15.2%。",
+      source_url:"https://www.stats.gov.cn/"
+    },
+    questions:Array.from({length:5},()=>({
+      question:"2025年统计数据是多少？",options:["1200","1300","1400","1500"],skill:"增长量"
+    }))
+  }));
+  await page.route("**/api/v1/study/data-analysis/**",async(route)=>{
+    const path=new URL(route.request().url()).pathname;
+    let data:unknown={};
+    if(path.endsWith("/status")){
+      data={configured:true,model:"codex",cached_sources:3,verified_groups:4,
+        weak_skills:[],preparing_job_id:jobCreated&&!generated?"same-task":null};
+    }else if(path.endsWith("/history")){
+      data=[];
+    }else if(path.endsWith("/prepare")&&route.request().method()==="POST"){
+      starts++;jobCreated=true;
+      data={job_id:"same-task"};
+    }else if(path.endsWith("/prepare/same-task")){
+      data=generated
+        ?{state:"ready",verified:20,message:"出题完成",run_id:"ready-run"}
+        :{state:"generating",verified:12,message:"仍在生成",run_id:null};
+    }else if(path.endsWith("/runs/ready-run")){
+      data={id:"ready-run",status:"active",started_at_ms:begun,
+        deadline_at_ms:Date.now()+1200000,paused_remaining_ms:null,
+        duration_seconds:1200,groups,answers:Array(20).fill(null)};
+    }
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(data)});
+  });
+  await page.goto("/#/study/training");
+  await page.getByTestId("training-mode-comprehensive").click();
+  await expect(page.getByTestId("analysis-start")).toBeEnabled();
+  await page.getByTestId("analysis-start").click();
+  await expect(page.getByTestId("analysis-start")).toBeDisabled();
+  await expect(page.getByTestId("analysis-progress")).toContainText("仍在生成");
+  await page.getByTestId("training-mode-calculation").click();
+  await page.getByTestId("training-mode-comprehensive").click();
+  await expect(page.getByTestId("analysis-start")).toBeDisabled();
+  await expect(page.getByTestId("analysis-progress")).toContainText("仍在生成");
+  expect(starts).toBe(1);
+  generated=true;
+  await expect(page.getByTestId("analysis-ready")).toBeVisible({timeout:10000});
+  await expect(page.getByTestId("analysis-clock")).toHaveCount(0);
+  await page.reload();
+  await page.getByTestId("training-mode-comprehensive").click();
+  await expect(page.getByTestId("analysis-ready")).toBeVisible();
+  await expect(page.getByTestId("analysis-clock")).toHaveCount(0);
+  await page.getByTestId("analysis-enter").click();
+  await expect(page.getByTestId("analysis-run")).toBeVisible();
+  await expect(page.getByTestId("analysis-clock")).toBeVisible();
+  expect(starts).toBe(1);
+});
