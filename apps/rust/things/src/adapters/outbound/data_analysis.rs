@@ -19,8 +19,6 @@ use std::{
 use tokio::{sync::Mutex, task::JoinSet};
 use uuid::Uuid;
 
-mod locating;
-pub use locating::{LocateClick, LocatingRequest, LocatingTopic, LocatingView};
 
 const ENV_PATH: &str = "/userdata/hyz-things/.env";
 const MAX_DOCUMENT_BYTES: usize = 3 * 1024 * 1024;
@@ -538,7 +536,7 @@ impl DataAnalysisService {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         // Deliberately never reuse a prior generated group. Saved groups are
-        // historical evidence for review/locating, not a source of fresh papers.
+        // Saved groups support history and review, never a new-paper cache.
         let mut ready: Vec<QuestionGroup> = Vec::new();
         let mut attempted = HashSet::<(String, String)>::new();
         let mut last_error = String::new();
@@ -797,10 +795,6 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
         sqlx::query("UPDATE data_analysis_runs SET status='active',started_at_ms=? WHERE id=? AND status='ready'")
             .bind(now_ms()).bind(id).execute(&self.pool).await.map_err(as_error)?;
         let (groups, answers, status, started_at_ms) = self.fetch_row(id).await?;
-        for group in &groups {
-            self.mark_material_seen(&group.material, "comprehensive")
-                .await?;
-        }
         let timing =
             sqlx::query("SELECT paused_at_ms,paused_total_ms FROM data_analysis_runs WHERE id=?")
                 .bind(id)
