@@ -211,3 +211,35 @@ pub(super) async fn locating_answer(
         Err(_) => bad_request("定位提交无效或重复提交，请刷新"),
     }
 }
+
+
+pub(super) async fn comprehensive_history(State(state):State<AppState>,headers:HeaderMap)->Response {
+    if let Err(response)=authorize_sensitive_read(&state,&headers).await {return response;}
+    let Some(service)=get(&state) else{return unavailable()};
+    match service.history().await {
+        Ok(history)=>Json(history).into_response(),
+        Err(_)=>error("综合训练历史读取失败"),
+    }
+}
+
+pub(super) async fn comprehensive_result(
+    State(state):State<AppState>,headers:HeaderMap,Path(id):Path<String>
+)->Response {
+    if let Err(response)=authorize_sensitive_read(&state,&headers).await {return response;}
+    let Some(service)=get(&state) else{return unavailable()};
+    match service.result(&id).await {
+        Ok(result)=>Json(result).into_response(),
+        Err(_)=>bad_request("训练尚未交卷或记录不存在"),
+    }
+}
+
+pub(super) async fn pause_toggle(
+    State(state):State<AppState>,headers:HeaderMap,Path(id):Path<String>
+)->Response {
+    if let Err(response)=authorize_sensitive_control(&state,&headers).await {return response;}
+    let Some(service)=get(&state) else{return unavailable()};
+    match service.pause_toggle(&id).await {
+        Ok(run)=>Json(run).into_response(),
+        Err(_)=>bad_request("暂停/继续失败：训练已截止或状态变化"),
+    }
+}
