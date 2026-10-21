@@ -71,8 +71,11 @@ pub(super) async fn prepare(State(state): State<AppState>, headers: HeaderMap) -
     };
     match service.prepare().await {
         Ok(job_id) => Json(PrepareBody { job_id }).into_response(),
-        Err(reason) if reason.contains("正在执行") =>
-            error_json(StatusCode::CONFLICT,"study_prepare_busy","已有出题任务正在执行，请等待当前任务完成"),
+        Err(reason) if reason.contains("正在执行") => error_json(
+            StatusCode::CONFLICT,
+            "study_prepare_busy",
+            "已有出题任务正在执行，请等待当前任务完成",
+        ),
         Err(_) => error("Codex 配置不可用，请在设置中检查 Codex Token"),
     }
 }
