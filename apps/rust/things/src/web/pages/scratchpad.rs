@@ -127,15 +127,24 @@ fn setup_pen(context: &CanvasRenderingContext2d) {
 
 fn canvas_point(point: InkPoint, canvas: &HtmlCanvasElement, responsive: bool) -> InkPoint {
     if responsive {
-        (point.0 * canvas.client_width() as f64, point.1 * canvas.client_height() as f64)
+        (
+            point.0 * canvas.client_width() as f64,
+            point.1 * canvas.client_height() as f64,
+        )
     } else {
         point
     }
 }
 
-fn prepare_canvas(canvas: &HtmlCanvasElement, responsive: bool) -> Option<CanvasRenderingContext2d> {
+fn prepare_canvas(
+    canvas: &HtmlCanvasElement,
+    responsive: bool,
+) -> Option<CanvasRenderingContext2d> {
     if responsive {
-        let scale = web_sys::window().map(|w| w.device_pixel_ratio()).unwrap_or(1.0).clamp(1.0, 3.0);
+        let scale = web_sys::window()
+            .map(|w| w.device_pixel_ratio())
+            .unwrap_or(1.0)
+            .clamp(1.0, 3.0);
         let width = (canvas.client_width().max(1) as f64 * scale).round() as u32;
         let height = (canvas.client_height().max(1) as f64 * scale).round() as u32;
         if canvas.width() != width || canvas.height() != height {
@@ -151,7 +160,12 @@ fn prepare_canvas(canvas: &HtmlCanvasElement, responsive: bool) -> Option<Canvas
     Some(context)
 }
 
-fn paint_stroke(context: &CanvasRenderingContext2d, canvas: &HtmlCanvasElement, points: &[InkPoint], responsive: bool) {
+fn paint_stroke(
+    context: &CanvasRenderingContext2d,
+    canvas: &HtmlCanvasElement,
+    points: &[InkPoint],
+    responsive: bool,
+) {
     let Some(&first) = points.first() else { return };
     let (x, y) = canvas_point(first, canvas, responsive);
     setup_pen(context);
@@ -173,29 +187,42 @@ fn redraw_scratch(canvas: &HtmlCanvasElement, actions: &[InkAction], responsive:
         let _ = prepare_canvas(canvas, true);
     }
     scratch_clear(canvas);
-    let Some(context) = prepare_canvas(canvas, responsive) else { return };
+    let Some(context) = prepare_canvas(canvas, responsive) else {
+        return;
+    };
     for action in actions {
         match action {
             InkAction::Stroke(points) => paint_stroke(&context, canvas, points, responsive),
             InkAction::Clear => {
                 scratch_clear(canvas);
                 let _ = prepare_canvas(canvas, responsive);
-            },
+            }
         }
     }
 }
 
 // The iPad workspace stores normalized points, but paints in CSS px; the
 // existing calculation workspace retains its legacy 900x450 coordinates.
-fn scratch_point(event: &PointerEvent, canvas: &HtmlCanvasElement, responsive: bool) -> Option<InkPoint> {
+fn scratch_point(
+    event: &PointerEvent,
+    canvas: &HtmlCanvasElement,
+    responsive: bool,
+) -> Option<InkPoint> {
     let width = canvas.client_width();
     let height = canvas.client_height();
-    if width <= 0 || height <= 0 { return None; }
+    if width <= 0 || height <= 0 {
+        return None;
+    }
     Some(if responsive {
-        (event.offset_x() as f64 / width as f64, event.offset_y() as f64 / height as f64)
+        (
+            event.offset_x() as f64 / width as f64,
+            event.offset_y() as f64 / height as f64,
+        )
     } else {
-        (event.offset_x() as f64 * SCRATCH_WIDTH as f64 / width as f64,
-         event.offset_y() as f64 * SCRATCH_HEIGHT as f64 / height as f64)
+        (
+            event.offset_x() as f64 * SCRATCH_WIDTH as f64 / width as f64,
+            event.offset_y() as f64 * SCRATCH_HEIGHT as f64 / height as f64,
+        )
     })
 }
 
@@ -322,13 +349,19 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
             });
             if responsive {
                 if let Some(w) = window.as_ref() {
-                    let _ = w.add_event_listener_with_callback("resize", handler.as_ref().unchecked_ref());
+                    let _ = w.add_event_listener_with_callback(
+                        "resize",
+                        handler.as_ref().unchecked_ref(),
+                    );
                 }
             }
             move || {
                 if responsive {
                     if let Some(w) = window {
-                        let _ = w.remove_event_listener_with_callback("resize", handler.as_ref().unchecked_ref());
+                        let _ = w.remove_event_listener_with_callback(
+                            "resize",
+                            handler.as_ref().unchecked_ref(),
+                        );
                     }
                 }
             }

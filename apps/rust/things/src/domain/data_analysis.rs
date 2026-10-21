@@ -5,9 +5,18 @@ pub const SOURCE_URL: &str = "https://www.stats.gov.cn/sj/zxfb/202602/t20260228_
 /// Verifiable National Bureau of Statistics annual bulletins; year labels are
 /// metadata for examination-style text, not fabricated values.
 pub const OFFICIAL_SOURCES: [(u16, &str); 4] = [
-    (2022, "https://www.stats.gov.cn/sj/zxfb/202302/t20230228_1919011.html"),
-    (2023, "https://www.stats.gov.cn/sj/zxfb/202402/t20240228_1947915.html"),
-    (2024, "https://www.stats.gov.cn/sj/zxfb/202502/t20250228_1958817.html"),
+    (
+        2022,
+        "https://www.stats.gov.cn/sj/zxfb/202302/t20230228_1919011.html",
+    ),
+    (
+        2023,
+        "https://www.stats.gov.cn/sj/zxfb/202402/t20240228_1947915.html",
+    ),
+    (
+        2024,
+        "https://www.stats.gov.cn/sj/zxfb/202502/t20250228_1958817.html",
+    ),
     (2025, SOURCE_URL),
 ];
 pub const QUIZ_QUESTIONS: usize = 20;
@@ -204,18 +213,31 @@ pub fn verify_recipe(
         (answer * 1.08 / scale).round() * scale,
         (answer * 1.16 / scale).round() * scale,
     ];
-    let decimals = if scale >= 1.0 { 0 } else if scale >= 0.1 { 1 } else { 2 };
+    let decimals = if scale >= 1.0 {
+        0
+    } else if scale >= 0.1 {
+        1
+    } else {
+        2
+    };
     let mut candidates = [String::new(), String::new(), String::new(), String::new()];
     let mut wrong = 1;
     for (i, option) in candidates.iter_mut().enumerate() {
-        let value = if i == correct_index { values[0] } else {
+        let value = if i == correct_index {
+            values[0]
+        } else {
             let value = values[wrong];
             wrong += 1;
             value
         };
         *option = format!("{value:.decimals$}");
     }
-    if candidates.iter().collect::<std::collections::HashSet<_>>().len() != 4 {
+    if candidates
+        .iter()
+        .collect::<std::collections::HashSet<_>>()
+        .len()
+        != 4
+    {
         return Err(ValidationError::Duplicate);
     }
     let answer_text = candidates[correct_index].clone();
@@ -266,7 +288,7 @@ mod tests {
     fn exam_choices_use_reasonable_precision_not_spurious_decimals() {
         let answer = verify_recipe(&material(), &recipe(), 0).unwrap();
         assert!(answer.options.iter().all(|v| !v.contains(".32")));
-        assert_eq!(answer.options.len(),4);
+        assert_eq!(answer.options.len(), 4);
     }
     #[test]
     fn requires_real_evidence_and_two_source_numbers() {
