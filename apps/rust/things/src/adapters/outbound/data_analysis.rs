@@ -690,7 +690,10 @@ fn generation_excerpt(material: &Material, sequence: usize) -> Material {
             continue;
         }
         let candidate = if chars > MAX_GENERATION_CHARS {
-            paragraph.chars().take(MAX_GENERATION_CHARS).collect::<String>()
+            paragraph
+                .chars()
+                .take(MAX_GENERATION_CHARS)
+                .collect::<String>()
         } else {
             paragraph.to_owned()
         };
@@ -745,10 +748,14 @@ fn generation_excerpt(material: &Material, sequence: usize) -> Material {
         ("文旅卫生体育", "旅游", &["旅游", "游客"]),
         ("文旅卫生体育", "卫生医疗", &["卫生", "医疗"]),
         ("资源环境安全", "能源消费", &["能源消费"]),
-        ("资源环境安全", "生态环境", &["空气质量", "水质", "森林覆盖率"]),
+        (
+            "资源环境安全",
+            "生态环境",
+            &["空气质量", "水质", "森林覆盖率"],
+        ),
         ("资源环境安全", "安全生产", &["安全生产", "事故"]),
     ];
-    if let Some((_,subtopic,_)) = rules.iter().find(|(topic,_,words)| {
+    if let Some((_, subtopic, _)) = rules.iter().find(|(topic, _, words)| {
         *topic == excerpt.topic && words.iter().any(|word| text.contains(word))
     }) {
         excerpt.subtopic = (*subtopic).to_owned();
@@ -853,13 +860,17 @@ mod tests {
             .await
             .expect("migrations");
 
-        let materials = SECTIONS.iter().take(4).map(|(section,topic)| Material {
-            section: (*section).into(),
-            topic: (*topic).into(),
-            subtopic: "测试子主题".into(),
-            text: "本年度业务量1200亿元，比上年增长15.2%。".repeat(8),
-            source_url: SOURCE_URL.into(),
-        }).collect::<Vec<_>>();
+        let materials = SECTIONS
+            .iter()
+            .take(4)
+            .map(|(section, topic)| Material {
+                section: (*section).into(),
+                topic: (*topic).into(),
+                subtopic: "测试子主题".into(),
+                text: "本年度业务量1200亿元，比上年增长15.2%。".repeat(8),
+                source_url: SOURCE_URL.into(),
+            })
+            .collect::<Vec<_>>();
 
         sqlx::query("INSERT INTO data_analysis_sources(url,title,content_hash,fetched_at_ms,sections_json) VALUES (?,?,?,?,?)")
             .bind(SOURCE_URL).bind("fixture official cache").bind("offline hash")
@@ -868,16 +879,26 @@ mod tests {
             .execute(&pool).await.unwrap();
 
         for material in &materials {
-            let questions = (0..5).map(|idx| VerifiedQuestion {
-                question: format!("第{}题：上一年业务量约为多少？",idx+1),
-                options: ["1000亿元".into(),"1042亿元".into(),"1200亿元".into(),"1400亿元".into()],
-                correct_index: 1,
-                answer: "1042亿元".into(),
-                explanation: "用现期除以1.152".into(),
-                skill: "基期量".into(),
-                evidence: "本年度业务量1200亿元，比上年增长15.2%。".into(),
-            }).collect::<Vec<_>>();
-            let group=QuestionGroup { material:material.clone(), questions };
+            let questions = (0..5)
+                .map(|idx| VerifiedQuestion {
+                    question: format!("第{}题：上一年业务量约为多少？", idx + 1),
+                    options: [
+                        "1000亿元".into(),
+                        "1042亿元".into(),
+                        "1200亿元".into(),
+                        "1400亿元".into(),
+                    ],
+                    correct_index: 1,
+                    answer: "1042亿元".into(),
+                    explanation: "用现期除以1.152".into(),
+                    skill: "基期量".into(),
+                    evidence: "本年度业务量1200亿元，比上年增长15.2%。".into(),
+                })
+                .collect::<Vec<_>>();
+            let group = QuestionGroup {
+                material: material.clone(),
+                questions,
+            };
             sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES(?,?,?,?,?,?)")
                 .bind(Uuid::now_v7().to_string())
                 .bind(SOURCE_URL)
@@ -890,36 +911,42 @@ mod tests {
 
         let config = parse_env("HYZ_THINGS_AI_BASE_URL=https://api.deepseek.com\nHYZ_THINGS_AI_API_KEY=offline-test-only\nHYZ_THINGS_AI_MODEL=offline-test-model")
             .unwrap().unwrap();
-        let service=DataAnalysisService::new(pool,Some(config)).unwrap();
-        let id=service.prepare().await.expect("start generation");
-        let mut run_id=None;
+        let service = DataAnalysisService::new(pool, Some(config)).unwrap();
+        let id = service.prepare().await.expect("start generation");
+        let mut run_id = None;
         for _ in 0..100 {
-            if let Some(progress)=service.job(&id).await {
-                if progress.state=="ready" {run_id=progress.run_id;break;}
-                assert_ne!(progress.state,"failed","{}",progress.message);
+            if let Some(progress) = service.job(&id).await {
+                if progress.state == "ready" {
+                    run_id = progress.run_id;
+                    break;
+                }
+                assert_ne!(progress.state, "failed", "{}", progress.message);
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        let run_id=run_id.expect("cached groups should be ready without network");
-        let active=service.run(&run_id).await.expect("start 20-minute timer");
-        assert_eq!(active.groups.len(),4);
-        assert!(active.groups.iter().all(|group|group.questions.len()==5));
-        assert_eq!(active.duration_seconds,1200);
-        assert!(active.deadline_at_ms.unwrap()>active.started_at_ms.unwrap());
-        assert_eq!(active.answers.len(),20);
-        service.answer(&run_id,1,1).await.expect("save an answer");
-        let refreshed=service.run(&run_id).await.expect("restore an active run");
-        assert_eq!(refreshed.answers[0],Some(1));
-        assert_eq!(refreshed.started_at_ms,active.started_at_ms);
-        let result=service.submit(&run_id).await.expect("submit");
-        assert_eq!(result.correct,1);
-        assert_eq!(result.total,20);
-        assert_eq!(result.questions.len(),20);
-        assert!(service.answer(&run_id,2,1).await.is_err(),"submitted run must reject answers");
-        let replay=service.submit(&run_id).await.expect("idempotent result");
-        assert_eq!(replay.correct,1);
-        let (source_count,group_count)=service.counts().await.unwrap();
-        assert_eq!((source_count,group_count),(1,4));
+        let run_id = run_id.expect("cached groups should be ready without network");
+        let active = service.run(&run_id).await.expect("start 20-minute timer");
+        assert_eq!(active.groups.len(), 4);
+        assert!(active.groups.iter().all(|group| group.questions.len() == 5));
+        assert_eq!(active.duration_seconds, 1200);
+        assert!(active.deadline_at_ms.unwrap() > active.started_at_ms.unwrap());
+        assert_eq!(active.answers.len(), 20);
+        service.answer(&run_id, 1, 1).await.expect("save an answer");
+        let refreshed = service.run(&run_id).await.expect("restore an active run");
+        assert_eq!(refreshed.answers[0], Some(1));
+        assert_eq!(refreshed.started_at_ms, active.started_at_ms);
+        let result = service.submit(&run_id).await.expect("submit");
+        assert_eq!(result.correct, 1);
+        assert_eq!(result.total, 20);
+        assert_eq!(result.questions.len(), 20);
+        assert!(
+            service.answer(&run_id, 2, 1).await.is_err(),
+            "submitted run must reject answers"
+        );
+        let replay = service.submit(&run_id).await.expect("idempotent result");
+        assert_eq!(replay.correct, 1);
+        let (source_count, group_count) = service.counts().await.unwrap();
+        assert_eq!((source_count, group_count), (1, 4));
     }
 
     #[test]
