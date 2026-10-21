@@ -55,7 +55,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     {
         let tick = tick.clone();
         use_effect_with((), move |_| {
-            let handle = Interval::new(1000, move || tick.set((*tick).wrapping_add(1)));
+            let handle = Interval::new(1000, move || tick.set(Date::now() as u64));
             move || drop(handle)
         });
     }
