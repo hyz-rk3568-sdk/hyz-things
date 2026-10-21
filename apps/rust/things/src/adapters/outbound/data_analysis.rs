@@ -622,22 +622,30 @@ impl DataAnalysisService {
     }
     pub async fn submit(&self, id: &str) -> Result<RunResult, String> {
         let (groups, answers, status, _started) = self.fetch_row(id).await?;
-        if groups.len()!=QUIZ_GROUPS || groups.iter().any(|g|g.questions.len()!=QUIZ_PER_GROUP) || answers.len()!=QUIZ_GROUPS*QUIZ_PER_GROUP {
+        if groups.len() != QUIZ_GROUPS
+            || groups.iter().any(|g| g.questions.len() != QUIZ_PER_GROUP)
+            || answers.len() != QUIZ_GROUPS * QUIZ_PER_GROUP
+        {
             return Err("训练题量错误，不能交卷".into());
         }
-        let mut questions = Vec::with_capacity(QUIZ_GROUPS*QUIZ_PER_GROUP);
+        let mut questions = Vec::with_capacity(QUIZ_GROUPS * QUIZ_PER_GROUP);
         for (group_index, group) in groups.iter().enumerate() {
             for (local_index, q) in group.questions.iter().enumerate() {
-                let index=group_index*QUIZ_PER_GROUP+local_index;
+                let index = group_index * QUIZ_PER_GROUP + local_index;
                 questions.push(GradedQuestion {
-                    number:index+1, chosen:answers[index], correct_index:q.correct_index,
-                    answer:q.answer.clone(), explanation:q.explanation.clone(),
-                    topic:group.material.topic.clone(),skill:q.skill.clone(),evidence:q.evidence.clone()
+                    number: index + 1,
+                    chosen: answers[index],
+                    correct_index: q.correct_index,
+                    answer: q.answer.clone(),
+                    explanation: q.explanation.clone(),
+                    topic: group.material.topic.clone(),
+                    skill: q.skill.clone(),
+                    evidence: q.evidence.clone(),
                 });
             }
         }
-        if status!="submitted" {
-            let mut txn=self.pool.begin().await.map_err(as_error)?;
+        if status != "submitted" {
+            let mut txn = self.pool.begin().await.map_err(as_error)?;
             sqlx::query("UPDATE data_analysis_runs SET status='submitted',ended_at_ms=? WHERE id=? AND status!='submitted'")
                 .bind(now_ms()).bind(id).execute(&mut *txn).await.map_err(as_error)?;
             for q in &questions {
@@ -648,8 +656,16 @@ impl DataAnalysisService {
             }
             txn.commit().await.map_err(as_error)?;
         }
-        let correct=questions.iter().filter(|q|q.chosen==Some(q.correct_index)).count();
-        Ok(RunResult { id:id.into(),correct,total:QUIZ_GROUPS*QUIZ_PER_GROUP,questions })
+        let correct = questions
+            .iter()
+            .filter(|q| q.chosen == Some(q.correct_index))
+            .count();
+        Ok(RunResult {
+            id: id.into(),
+            correct,
+            total: QUIZ_GROUPS * QUIZ_PER_GROUP,
+            questions,
+        })
     }
 }
 
