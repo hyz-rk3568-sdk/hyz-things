@@ -23,6 +23,8 @@ mod locating;
 pub use locating::{LocateClick, LocatingRequest, LocatingTopic, LocatingView};
 
 const ENV_PATH: &str = "/userdata/hyz-things/.env";
+const NO_COMPREHENSIVE_JUDGMENT_PROMPT: &str = "硬性命题边界：本轮不出资料分析综合分析/综合判断题，即不出“下列说法正确的是”“下列说法错误的是”“根据资料可以推出的是”“以下表述符合材料的是”等需要逐项核查多个独立陈述的题。每题只围绕一个明确的数量关系、指标或比较目标，设计四个数值或同一量纲的结果选项。即使手选或自动推荐包含“综合分析与审题”错题目录，也只能借鉴该目录中的审题、年份口径辨析和速算思路，转化为具体计算/比较题；不得将该错题目录名称理解为允许出综合判断题。此禁出规则优先于错题分类覆盖和多样性要求。";
+
 const MAX_DOCUMENT_BYTES: usize = 3 * 1024 * 1024;
 const MAX_CACHED_SECTION_CHARS: usize = 30000;
 const MAX_GENERATION_CHARS: usize = 3000;
@@ -700,6 +702,7 @@ impl DataAnalysisService {
 各篇尽量覆盖不同题型与命题变式，优先兼顾个人薄弱考点：{weaknesses}。
 用户额外手选考点：{manual_all}。本篇必须至少有一道题命中每个分配到本篇的手选考点：{manual_focus}。
 手动考点优先于系统推荐考点，但不因此忽略题型多样性；不要把标签当材料标题。
+{question_boundary}
 先选择本篇5题的题型、命题变式与考查的 hyz 速算/审题动作，再构造共享且自洽的模拟统计数据，
 最后写成约350–650汉字、2～4个自然段的国考风格材料，并拟制5道有唯一正确答案的四选一题。
 整篇只围绕同一统计大主题；按总体概况、细分主体、相关指标或年份口径等小主题组织不同段落，每段有清晰的主体、指标及时间口径。
@@ -729,6 +732,7 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
 输出 JSON 必须具有 material_text 和 questions 两字段，questions 恰好5项。"#,
             group_no = ordinal % QUIZ_GROUPS + 1,
             weaknesses = weaknesses.join("、"),
+            question_boundary = NO_COMPREHENSIVE_JUDGMENT_PROMPT,
             manual_all = manual_skills.join("、"),
             manual_focus = manual_skills
                 .iter()
@@ -1239,6 +1243,15 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(config.token, value);
+    }
+
+    #[test]
+    fn comprehensive_generation_prompt_excludes_multi_statement_judgment() {
+        let instructions = NO_COMPREHENSIVE_JUDGMENT_PROMPT;
+        assert!(instructions.contains("不出资料分析综合分析/综合判断题"));
+        assert!(instructions.contains("下列说法正确的是"));
+        assert!(instructions.contains("综合分析与审题"));
+        assert!(instructions.contains("此禁出规则优先于"));
     }
 
     #[test]
