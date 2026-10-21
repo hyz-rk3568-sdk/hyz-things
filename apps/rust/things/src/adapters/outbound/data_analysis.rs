@@ -276,14 +276,20 @@ impl DataAnalysisService {
     /// List current flashcard topics, without freezing the user's subject taxonomy in Rust.
     pub async fn available_skills(&self) -> Result<Vec<String>, String> {
         let rows = sqlx::query(
-            "SELECT DISTINCT deck_path FROM flashcards WHERE active=1 AND deck_path LIKE '资料/%'"
-        ).fetch_all(&self.pool).await.map_err(as_error)?;
+            "SELECT DISTINCT deck_path FROM flashcards WHERE active=1 AND deck_path LIKE '资料/%'",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(as_error)?;
         let mut result = std::collections::BTreeSet::new();
         for row in rows {
             let deck: String = row.try_get("deck_path").map_err(as_error)?;
-            let parts = deck.split('/').filter(|p|!p.is_empty() && *p!="资料" && *p!="错题").collect::<Vec<_>>();
-            if let Some(name)=parts.last() {
-                if name.chars().count()<=60 && *name!="cards.md" && *name!="card.md" {
+            let parts = deck
+                .split('/')
+                .filter(|p| !p.is_empty() && *p != "资料" && *p != "错题")
+                .collect::<Vec<_>>();
+            if let Some(name) = parts.last() {
+                if name.chars().count() <= 60 && *name != "cards.md" && *name != "card.md" {
                     result.insert((*name).to_owned());
                 }
             }
@@ -292,9 +298,11 @@ impl DataAnalysisService {
     }
 
     pub async fn chosen_manual_skills(&self, requested: &[String]) -> Result<Vec<String>, String> {
-        if requested.len()>12 {return Err("每次最多勾选12个考点".into());}
+        if requested.len() > 12 {
+            return Err("每次最多勾选12个考点".into());
+        }
         let available = self.available_skills().await?;
-        let mut chosen=Vec::new();
+        let mut chosen = Vec::new();
         for skill in requested {
             if !available.contains(skill) || chosen.contains(skill) {
                 return Err("所选考点不在当前资料分析卡片目录中".into());
@@ -539,13 +547,22 @@ impl DataAnalysisService {
                     let worker = self.clone();
                     let weak = Arc::new(weaknesses.clone());
                     let manual = Arc::new(manual_skills.to_vec());
-                    let group_offset=ready.len();
+                    let group_offset = ready.len();
                     for (slot, outcome) in
                         run_generation_wave(requests, move |material, ordinal| {
-                            let worker=worker.clone();
-                            let weak=Arc::clone(&weak);
-                            let manual=Arc::clone(&manual);
-                            async move {worker.generate_group(&material,&weak,&manual,group_offset+ordinal).await}
+                            let worker = worker.clone();
+                            let weak = Arc::clone(&weak);
+                            let manual = Arc::clone(&manual);
+                            async move {
+                                worker
+                                    .generate_group(
+                                        &material,
+                                        &weak,
+                                        &manual,
+                                        group_offset + ordinal,
+                                    )
+                                    .await
+                            }
                         })
                         .await
                     {
@@ -668,9 +685,13 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
             group_no = ordinal % QUIZ_GROUPS + 1,
             weaknesses = weaknesses.join("、"),
             manual_all = manual_skills.join("、"),
-            manual_focus = manual_skills.iter().enumerate()
-                .filter(|(index,_)|index % QUIZ_GROUPS == ordinal % QUIZ_GROUPS)
-                .map(|(_,name)|name.as_str()).collect::<Vec<_>>().join("、"),
+            manual_focus = manual_skills
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| index % QUIZ_GROUPS == ordinal % QUIZ_GROUPS)
+                .map(|(_, name)| name.as_str())
+                .collect::<Vec<_>>()
+                .join("、"),
             year = source_year,
             section = context.section,
             topic = context.topic,
@@ -1286,18 +1307,26 @@ mod tests {
         .unwrap();
         // Previously saved groups are still readable in history, but a new
         // generation must no longer short-circuit to cached group JSON.
-        let historical_rows=sqlx::query("SELECT group_json FROM data_analysis_groups")
-            .fetch_all(&pool).await.unwrap();
-        let archived_groups=historical_rows.into_iter().map(|row|{
-            serde_json::from_str::<QuestionGroup>(&row.try_get::<String,_>("group_json").unwrap()).unwrap()
-        }).collect::<Vec<_>>();
-        let run_id=Uuid::now_v7().to_string();
+        let historical_rows = sqlx::query("SELECT group_json FROM data_analysis_groups")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        let archived_groups = historical_rows
+            .into_iter()
+            .map(|row| {
+                serde_json::from_str::<QuestionGroup>(
+                    &row.try_get::<String, _>("group_json").unwrap(),
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let run_id = Uuid::now_v7().to_string();
         sqlx::query("INSERT INTO data_analysis_runs(id,groups_json,answers_json,status,created_at_ms) VALUES(?,?,?,'ready',?)")
             .bind(&run_id)
             .bind(serde_json::to_string(&archived_groups).unwrap())
             .bind(serde_json::to_string(&vec![None::<usize>;20]).unwrap())
             .bind(now_ms()).execute(&pool).await.unwrap();
-        let service=DataAnalysisService::new(pool,Some(config)).unwrap();
+        let service = DataAnalysisService::new(pool, Some(config)).unwrap();
         let active = service.run(&run_id).await.expect("start 20-minute timer");
         assert_eq!(active.groups.len(), 4);
         assert!(active.groups.iter().all(|group| group.questions.len() == 5));
