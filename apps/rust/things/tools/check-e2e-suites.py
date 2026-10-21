@@ -15,6 +15,7 @@ REQUIRED_SPECS = (
     "shell.spec.ts",
     "countdown.spec.ts",
     "flashcards.spec.ts",
+    "comprehensive.spec.ts",
     "security.spec.ts",
     "camera.spec.ts",
     "proxy.spec.ts",

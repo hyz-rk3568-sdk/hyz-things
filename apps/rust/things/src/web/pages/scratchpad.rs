@@ -1,6 +1,7 @@
 //! 专项训练共用的透明手写覆盖层。保留原生 pointermove 直线绘制和 Safari Pencil 防吞笔处理。
 //! 笔画历史、撤销、重做及清屏都只在浏览器内存中，不上传或影响 FSRS。
 use super::*;
+use serde::{Deserialize, Serialize};
 
 const SCRATCH_WIDTH: u32 = 900;
 const SCRATCH_HEIGHT: u32 = 450;
@@ -9,7 +10,39 @@ const INK_LINE_WIDTH: f64 = 2.6;
 
 type InkPoint = (f64, f64);
 
-#[derive(Clone, Debug, PartialEq)]
+fn saved_ink_key(scope: &str) -> String {
+    format!("hyz-analysis-ink-{scope}")
+}
+fn load_persistent_ink(scope: &str) -> Vec<InkAction> {
+    if scope.is_empty() || scope.len() > 120 {
+        return Vec::new();
+    }
+    let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) else {
+        return Vec::new();
+    };
+    let Some(data) = storage.get_item(&saved_ink_key(scope)).ok().flatten() else {
+        return Vec::new();
+    };
+    if data.len() > 524288 {
+        return Vec::new();
+    }
+    serde_json::from_str(&data).unwrap_or_default()
+}
+fn save_persistent_ink(scope: &str, actions: &[InkAction]) {
+    if scope.is_empty() || scope.len() > 120 {
+        return;
+    }
+    if let (Some(storage), Ok(data)) = (
+        web_sys::window().and_then(|w| w.local_storage().ok().flatten()),
+        serde_json::to_string(actions),
+    ) {
+        if data.len() <= 524288 {
+            let _ = storage.set_item(&saved_ink_key(scope), &data);
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 enum InkAction {
     Stroke(Vec<InkPoint>),
     Clear,
@@ -139,6 +172,8 @@ fn scratch_point(event: &PointerEvent, canvas: &HtmlCanvasElement) -> Option<Ink
 #[derive(Properties, PartialEq)]
 pub(crate) struct InkOverlayProps {
     pub(crate) question_index: usize,
+    #[prop_or_default]
+    pub(crate) persist_key: String,
     pub(crate) children: Children,
 }
 
@@ -203,13 +238,26 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
         let strokes = strokes.clone();
         let enabled = enabled.clone();
         let revision = revision.clone();
-        use_effect_with(props.question_index, move |_| {
-            *strokes.borrow_mut() = InkState::default();
+        let scope = props.persist_key.clone();
+        use_effect_with((props.question_index, scope.clone()), move |_| {
+            *strokes.borrow_mut() = InkState {
+                history: load_persistent_ink(&scope),
+                ..InkState::default()
+            };
             if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                scratch_clear(&canvas);
+                redraw_scratch(&canvas, &strokes.borrow().history);
             }
             enabled.set(false);
             revision.set(0);
+            || ()
+        });
+    }
+
+    {
+        let strokes = strokes.clone();
+        let key = props.persist_key.clone();
+        use_effect_with((*revision, key.clone()), move |_| {
+            save_persistent_ink(&key, &strokes.borrow().history);
             || ()
         });
     }

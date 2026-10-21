@@ -6,3 +6,5 @@ pub mod registry;
 pub mod router;
 pub mod storage;
 pub mod tailscale;
+
+pub mod data_analysis;

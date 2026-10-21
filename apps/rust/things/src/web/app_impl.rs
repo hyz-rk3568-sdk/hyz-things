@@ -431,7 +431,7 @@ pub(crate) fn app() -> Html {
         return render_study_review(state.clone(), (*route).clone(), route.clone());
     }
     if page == AppPage::Study && route.study_view == StudyView::Training {
-        return render_training(route.clone());
+        return render_training(route.clone(), state.panel.as_ref().map(|p|p.csrf_token.clone()).unwrap_or_default());
     }
 
     let admin_csrf = state

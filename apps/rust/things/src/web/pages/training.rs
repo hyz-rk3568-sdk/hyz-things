@@ -11,15 +11,17 @@ const PRACTICE_MAX_CANDIDATES: usize = 1000;
 enum TrainingMode {
     Calculation,
     Flashcards,
+    Comprehensive,
 }
 
 #[derive(Properties, PartialEq)]
 struct TrainingWorkspaceProps {
     route_state: UseStateHandle<PortalRoute>,
+    csrf: String,
 }
 
-pub(crate) fn render_training(route_state: UseStateHandle<PortalRoute>) -> Html {
-    html! { <TrainingWorkspace route_state={route_state} /> }
+pub(crate) fn render_training(route_state: UseStateHandle<PortalRoute>, csrf: String) -> Html {
+    html! { <TrainingWorkspace route_state={route_state} csrf={csrf} /> }
 }
 
 #[function_component(TrainingWorkspace)]
@@ -28,6 +30,10 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
     let choose_calculation = {
         let mode = mode.clone();
         Callback::from(move |_| mode.set(TrainingMode::Calculation))
+    };
+    let choose_comprehensive = {
+        let mode = mode.clone();
+        Callback::from(move |_| mode.set(TrainingMode::Comprehensive))
     };
     let choose_flashcards = {
         let mode = mode.clone();
@@ -43,12 +49,15 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                 <div class="flex flex-wrap gap-2" role="group" aria-label="训练模式">
                     <button type="button" class={if *mode == TrainingMode::Calculation { "btn btn-primary btn-sm" } else { "btn btn-outline btn-sm" }} data-testid="training-mode-calculation" aria-pressed={(*mode == TrainingMode::Calculation).to_string()} onclick={choose_calculation}>{"速算训练"}</button>
                     <button type="button" class={if *mode == TrainingMode::Flashcards { "btn btn-primary btn-sm" } else { "btn btn-outline btn-sm" }} data-testid="training-mode-flashcards" aria-pressed={(*mode == TrainingMode::Flashcards).to_string()} onclick={choose_flashcards}>{"错题复练"}</button>
+                    <button type="button" class={if *mode == TrainingMode::Comprehensive { "btn btn-primary btn-sm" } else { "btn btn-outline btn-sm" }} data-testid="training-mode-comprehensive" aria-pressed={(*mode == TrainingMode::Comprehensive).to_string()} onclick={choose_comprehensive}>{"综合训练"}</button>
                 </div>
             </div>
             if *mode == TrainingMode::Calculation {
                 {render_calculation_training(props.route_state.clone())}
-            } else {
+            } else if *mode == TrainingMode::Flashcards {
                 <FlashcardPractice route_state={props.route_state.clone()} />
+            } else {
+                <ComprehensiveTraining csrf={props.csrf.clone()} />
             }
         </div>
     }

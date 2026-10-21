@@ -30,6 +30,8 @@ native = [
   "dep:tar",
   "dep:tokio",
   "dep:tokio-rustls",
+  "dep:reqwest",
+  "dep:scraper",
   "dep:tracing",
 ]
 web = [
@@ -37,6 +39,7 @@ web = [
   "dep:gloo-net",
   "dep:gloo-timers",
   "dep:pulldown-cmark",
+  "dep:serde_json",
   "dep:js-sys",
   "dep:wasm-bindgen",
   "dep:wasm-bindgen-futures",
@@ -60,6 +63,8 @@ libc = { version = "0.2", optional = true }
 mime_guess = { version = "2", optional = true }
 pulldown-cmark = { version = "0.13.1", default-features = false, features = ["html"], optional = true }
 rs-fsrs = { version = "1.2.1", optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["json","rustls-tls"], optional = true }
+scraper = { version = "0.23", optional = true }
 serde_json = { version = "1", optional = true }
 sha2 = { version = "0.11.0", optional = true }
 sqlx = { version = "0.8.6", default-features = false, features = ["sqlite", "runtime-tokio", "macros", "migrate"], optional = true }
