@@ -8,38 +8,45 @@ pub(crate) struct ComprehensiveProps {
     pub csrf: String,
 }
 
-
 const COMPREHENSIVE_JOB_KEY: &str = "hyz_comprehensive_prepare_job";
 const COMPREHENSIVE_READY_KEY: &str = "hyz_comprehensive_ready_run";
 
 fn remember_preparation(id: Option<&str>) {
-    if let Some(storage)=web_sys::window().and_then(|w|w.local_storage().ok().flatten()) {
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
         match id {
-            Some(id)=>{let _=storage.set_item(COMPREHENSIVE_JOB_KEY,id);}
-            None=>{let _=storage.remove_item(COMPREHENSIVE_JOB_KEY);}
+            Some(id) => {
+                let _ = storage.set_item(COMPREHENSIVE_JOB_KEY, id);
+            }
+            None => {
+                let _ = storage.remove_item(COMPREHENSIVE_JOB_KEY);
+            }
         }
     }
 }
 
 async fn resume_preparation(
-    id:String,
-    progress:UseStateHandle<Option<PrepareProgress>>,
-    ready_id:UseStateHandle<Option<String>>,
-    preparing:UseStateHandle<bool>,
-    error:UseStateHandle<Option<String>>,
+    id: String,
+    progress: UseStateHandle<Option<PrepareProgress>>,
+    ready_id: UseStateHandle<Option<String>>,
+    preparing: UseStateHandle<bool>,
+    error: UseStateHandle<Option<String>>,
 ) {
     preparing.set(true);
     for _ in 0..800 {
         match fetch_json_typed::<PrepareProgress>(
-            &format!("{ANALYSIS_ROOT}/prepare/{id}"),"恢复综合训练出题进度"
-        ).await {
-            Ok(state)=>{
+            &format!("{ANALYSIS_ROOT}/prepare/{id}"),
+            "恢复综合训练出题进度",
+        )
+        .await
+        {
+            Ok(state) => {
                 progress.set(Some(state.clone()));
-                if state.state=="ready" {
-                    if let Some(run_id)=state.run_id {
-                        if let Some(storage)=web_sys::window()
-                            .and_then(|w|w.local_storage().ok().flatten()) {
-                            let _=storage.set_item(COMPREHENSIVE_READY_KEY,&run_id);
+                if state.state == "ready" {
+                    if let Some(run_id) = state.run_id {
+                        if let Some(storage) =
+                            web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+                        {
+                            let _ = storage.set_item(COMPREHENSIVE_READY_KEY, &run_id);
                         }
                         remember_preparation(None);
                         ready_id.set(Some(run_id));
@@ -51,14 +58,14 @@ async fn resume_preparation(
                     preparing.set(false);
                     return;
                 }
-                if state.state=="failed" {
+                if state.state == "failed" {
                     remember_preparation(None);
                     error.set(Some(state.message));
                     preparing.set(false);
                     return;
                 }
             }
-            Err(e)=>{
+            Err(e) => {
                 remember_preparation(None);
                 preparing.set(false);
                 error.set(Some(format!("恢复出题任务失败：{e}")));
@@ -99,11 +106,15 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         use_effect_with((), move |_| {
             let history = history.clone();
             spawn_local(async move {
-                let status_result=fetch_json_typed::<AnalysisStatus>(
+                let status_result = fetch_json_typed::<AnalysisStatus>(
                     &format!("{ANALYSIS_ROOT}/status"),
                     "综合训练状态",
-                ).await;
-                let server_job=status_result.as_ref().ok().and_then(|s|s.preparing_job_id.clone());
+                )
+                .await;
+                let server_job = status_result
+                    .as_ref()
+                    .ok()
+                    .and_then(|s| s.preparing_job_id.clone());
                 match status_result {
                     Ok(v) => status.set(Some(v)),
                     Err(e) => error.set(Some(format!("{e}；综合出题需要管理员登录"))),
@@ -117,17 +128,25 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 {
                     history.set(items);
                 }
-                let storage=web_sys::window().and_then(|w|w.local_storage().ok().flatten());
-                let saved_ready=storage.as_ref().and_then(|s|s.get_item(COMPREHENSIVE_READY_KEY).ok().flatten());
-                let saved_job=storage.as_ref().and_then(|s|s.get_item(COMPREHENSIVE_JOB_KEY).ok().flatten());
+                let storage = web_sys::window().and_then(|w| w.local_storage().ok().flatten());
+                let saved_ready = storage
+                    .as_ref()
+                    .and_then(|s| s.get_item(COMPREHENSIVE_READY_KEY).ok().flatten());
+                let saved_job = storage
+                    .as_ref()
+                    .and_then(|s| s.get_item(COMPREHENSIVE_JOB_KEY).ok().flatten());
                 // A ready run is persisted in SQLite: even a backend restart
                 // cannot accidentally start the timer or lose this prepared set.
-                if let Some(id)=saved_ready {
+                if let Some(id) = saved_ready {
                     ready_id.set(Some(id));
-                } else if let Some(job)=saved_job.or(server_job) {
+                } else if let Some(job) = saved_job.or(server_job) {
                     remember_preparation(Some(&job));
                     spawn_local(resume_preparation(
-                        job,progress,ready_id,preparing,error.clone()
+                        job,
+                        progress,
+                        ready_id,
+                        preparing,
+                        error.clone(),
                     ));
                 }
                 // Restore a started run after iPad Safari reload.
@@ -217,34 +236,40 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         });
     }
     let start = {
-        let progress=progress.clone();
-        let error=error.clone();
-        let busy=busy.clone();
-        let preparing=preparing.clone();
-        let ready_id=ready_id.clone();
-        let csrf=props.csrf.clone();
-        Callback::from(move |_|{
-            if *busy || *preparing || ready_id.is_some() {return;}
+        let progress = progress.clone();
+        let error = error.clone();
+        let busy = busy.clone();
+        let preparing = preparing.clone();
+        let ready_id = ready_id.clone();
+        let csrf = props.csrf.clone();
+        Callback::from(move |_| {
+            if *busy || *preparing || ready_id.is_some() {
+                return;
+            }
             busy.set(true);
             error.set(None);
             progress.set(None);
-            let progress=progress.clone();
-            let error=error.clone();
-            let busy=busy.clone();
-            let preparing=preparing.clone();
-            let ready_id=ready_id.clone();
-            let csrf=csrf.clone();
+            let progress = progress.clone();
+            let error = error.clone();
+            let busy = busy.clone();
+            let preparing = preparing.clone();
+            let ready_id = ready_id.clone();
+            let csrf = csrf.clone();
             spawn_local(async move {
-                match post_json_response_typed::<_,PrepareTask>(
+                match post_json_response_typed::<_, PrepareTask>(
                     &format!("{ANALYSIS_ROOT}/prepare"),
-                    &csrf,&EmptyRequest{},"准备综合训练"
-                ).await {
-                    Ok(task)=>{
+                    &csrf,
+                    &EmptyRequest {},
+                    "准备综合训练",
+                )
+                .await
+                {
+                    Ok(task) => {
                         remember_preparation(Some(&task.job_id));
                         busy.set(false);
-                        resume_preparation(task.job_id,progress,ready_id,preparing,error).await;
+                        resume_preparation(task.job_id, progress, ready_id, preparing, error).await;
                     }
-                    Err(e)=>{
+                    Err(e) => {
                         busy.set(false);
                         error.set(Some(e.to_string()));
                     }
@@ -254,40 +279,49 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     };
     // Opening the prepared paper is the *only* action which starts 20 minutes.
     // A background generation result can remain ready for hours without timing.
-    let enter_ready={
-        let run=run.clone();
-        let current=current.clone();
-        let ready_id=ready_id.clone();
-        let busy=busy.clone();
-        let error=error.clone();
-        Callback::from(move |_|{
-            if *busy {return;}
-            let Some(id)=(*ready_id).clone() else{return};
+    let enter_ready = {
+        let run = run.clone();
+        let current = current.clone();
+        let ready_id = ready_id.clone();
+        let busy = busy.clone();
+        let error = error.clone();
+        Callback::from(move |_| {
+            if *busy {
+                return;
+            }
+            let Some(id) = (*ready_id).clone() else {
+                return;
+            };
             busy.set(true);
-            let run=run.clone();
-            let current=current.clone();
-            let ready_id=ready_id.clone();
-            let busy=busy.clone();
-            let error=error.clone();
-            spawn_local(async move{
+            let run = run.clone();
+            let current = current.clone();
+            let ready_id = ready_id.clone();
+            let busy = busy.clone();
+            let error = error.clone();
+            spawn_local(async move {
                 match fetch_json_typed::<AnalysisRun>(
-                    &format!("{ANALYSIS_ROOT}/runs/{id}"),"进入综合训练"
-                ).await{
-                    Ok(active)=>{
+                    &format!("{ANALYSIS_ROOT}/runs/{id}"),
+                    "进入综合训练",
+                )
+                .await
+                {
+                    Ok(active) => {
                         current.set(0);
-                        if let Some(storage)=web_sys::window()
-                            .and_then(|w|w.local_storage().ok().flatten()) {
-                            let _=storage.set_item("hyz_comprehensive_active_run",&active.id);
+                        if let Some(storage) =
+                            web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+                        {
+                            let _ = storage.set_item("hyz_comprehensive_active_run", &active.id);
                         }
                         remember_preparation(None);
-                        if let Some(storage)=web_sys::window()
-                            .and_then(|w|w.local_storage().ok().flatten()) {
-                            let _=storage.remove_item(COMPREHENSIVE_READY_KEY);
+                        if let Some(storage) =
+                            web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+                        {
+                            let _ = storage.remove_item(COMPREHENSIVE_READY_KEY);
                         }
                         ready_id.set(None);
                         run.set(Some(active));
                     }
-                    Err(e)=>error.set(Some(format!("进入训练失败：{e}"))),
+                    Err(e) => error.set(Some(format!("进入训练失败：{e}"))),
                 }
                 busy.set(false);
             });
