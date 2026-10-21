@@ -223,5 +223,4 @@ mod tests {
         assert_eq!(QUIZ_GROUPS * QUIZ_PER_GROUP, QUIZ_QUESTIONS);
         assert_eq!(QUIZ_SECONDS, 1200);
     }
-
 }
