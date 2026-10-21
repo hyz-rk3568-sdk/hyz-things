@@ -7,9 +7,9 @@ use hyz_things::{
         outbound::{
             admin::AdminFileAdapter,
             camera::CameraUnixAdapter,
+            data_analysis::{load_ai_env, DataAnalysisService},
             flashcard_source::FilesystemFlashcardSource,
             flashcard_sqlite::SqliteFlashcardRepository,
-            data_analysis::{DataAnalysisService, load_ai_env},
             registry::RegistryAdapter,
             router::RouterControlClient,
             tailscale::{fetch_tailscale_status, PortalListenerApp, TailscaleListenerManager},
@@ -112,7 +112,8 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                 let source = Arc::new(FilesystemFlashcardSource::default());
                 let ai_config = load_ai_env().unwrap_or(None);
                 let data_analysis = DataAnalysisService::new(repository.pool().clone(), ai_config)
-                    .ok().map(Arc::new);
+                    .ok()
+                    .map(Arc::new);
                 let application = Arc::new(FlashcardApplication::new(
                     source.clone(),
                     Arc::new(repository),

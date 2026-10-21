@@ -2,8 +2,8 @@ use super::*;
 
 mod apps;
 mod calculation;
-mod comprehensive;
 mod camera;
+mod comprehensive;
 mod devices;
 mod network;
 mod overview;
@@ -17,8 +17,8 @@ mod training;
 
 pub(crate) use apps::*;
 pub(crate) use calculation::*;
-pub(crate) use comprehensive::*;
 pub(crate) use camera::*;
+pub(crate) use comprehensive::*;
 pub(crate) use devices::*;
 pub(crate) use network::*;
 pub(crate) use overview::*;

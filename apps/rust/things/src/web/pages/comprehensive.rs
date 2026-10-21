@@ -1,36 +1,50 @@
 //! 20 questions / 20 minutes. iPad-first 44:56 reading and answer panes.
 use super::*;
-use js_sys::Date;
 use gloo_timers::{callback::Interval, future::TimeoutFuture};
+use js_sys::Date;
 
 #[derive(Properties, PartialEq)]
-pub(crate) struct ComprehensiveProps {pub csrf:String}
+pub(crate) struct ComprehensiveProps {
+    pub csrf: String,
+}
 
 #[function_component(ComprehensiveTraining)]
-pub(crate) fn comprehensive_training(props:&ComprehensiveProps)->Html {
-    let status=use_state(||None::<AnalysisStatus>);
-    let progress=use_state(||None::<PrepareProgress>);
-    let run=use_state(||None::<AnalysisRun>);
-    let result=use_state(||None::<AnalysisResult>);
-    let current=use_state(||0usize);
-    let busy=use_state(||false);
-    let error=use_state(||None::<String>);
-    let tick=use_state(||0_u64);
+pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
+    let status = use_state(|| None::<AnalysisStatus>);
+    let progress = use_state(|| None::<PrepareProgress>);
+    let run = use_state(|| None::<AnalysisRun>);
+    let result = use_state(|| None::<AnalysisResult>);
+    let current = use_state(|| 0usize);
+    let busy = use_state(|| false);
+    let error = use_state(|| None::<String>);
+    let tick = use_state(|| 0_u64);
 
     {
-        let status=status.clone();
-        let error=error.clone();
-        let run=run.clone();
-        use_effect_with((),move |_| {
+        let status = status.clone();
+        let error = error.clone();
+        let run = run.clone();
+        use_effect_with((), move |_| {
             spawn_local(async move {
-                match fetch_json_typed::<AnalysisStatus>(&format!("{ANALYSIS_ROOT}/status"),"综合训练状态").await{
-                    Ok(v)=>status.set(Some(v)),
-                    Err(e)=>error.set(Some(format!("{e}；综合出题需要管理员登录"))),
+                match fetch_json_typed::<AnalysisStatus>(
+                    &format!("{ANALYSIS_ROOT}/status"),
+                    "综合训练状态",
+                )
+                .await
+                {
+                    Ok(v) => status.set(Some(v)),
+                    Err(e) => error.set(Some(format!("{e}；综合出题需要管理员登录"))),
                 }
                 // Restore a started run after iPad Safari reload.
-                if let Some(id)=web_sys::window().and_then(|w|w.local_storage().ok().flatten())
-                    .and_then(|s|s.get_item("hyz_comprehensive_active_run").ok().flatten()) {
-                    if let Ok(v)=fetch_json_typed::<AnalysisRun>(&format!("{ANALYSIS_ROOT}/runs/{id}"),"恢复综合训练").await{
+                if let Some(id) = web_sys::window()
+                    .and_then(|w| w.local_storage().ok().flatten())
+                    .and_then(|s| s.get_item("hyz_comprehensive_active_run").ok().flatten())
+                {
+                    if let Ok(v) = fetch_json_typed::<AnalysisRun>(
+                        &format!("{ANALYSIS_ROOT}/runs/{id}"),
+                        "恢复综合训练",
+                    )
+                    .await
+                    {
                         run.set(Some(v));
                     }
                 }
@@ -39,101 +53,158 @@ pub(crate) fn comprehensive_training(props:&ComprehensiveProps)->Html {
         });
     }
     {
-        let tick=tick.clone();
+        let tick = tick.clone();
         use_effect_with((), move |_| {
-            let handle=Interval::new(1000,move ||tick.set((*tick).wrapping_add(1)));
-            move ||drop(handle)
+            let handle = Interval::new(1000, move || tick.set((*tick).wrapping_add(1)));
+            move || drop(handle)
         });
     }
-    let submit={
-        let run=run.clone();let result=result.clone();let error=error.clone();
-        let csrf=props.csrf.clone();let busy=busy.clone();
-        Callback::from(move |_|{
-            if *busy{return;}
-            let Some(active)=(*run).clone() else{return};
+    let submit = {
+        let run = run.clone();
+        let result = result.clone();
+        let error = error.clone();
+        let csrf = props.csrf.clone();
+        let busy = busy.clone();
+        Callback::from(move |_| {
+            if *busy {
+                return;
+            }
+            let Some(active) = (*run).clone() else { return };
             busy.set(true);
-            let result=result.clone();let error=error.clone();let busy=busy.clone();
-            let csrf=csrf.clone();
+            let result = result.clone();
+            let error = error.clone();
+            let busy = busy.clone();
+            let csrf = csrf.clone();
             spawn_local(async move {
-                let endpoint=format!("{ANALYSIS_ROOT}/runs/{}/submit",active.id);
-                match post_json_response_typed::<_,AnalysisResult>(&endpoint,&csrf,&EmptyRequest{},"提交综合训练").await{
-                    Ok(out)=>{
+                let endpoint = format!("{ANALYSIS_ROOT}/runs/{}/submit", active.id);
+                match post_json_response_typed::<_, AnalysisResult>(
+                    &endpoint,
+                    &csrf,
+                    &EmptyRequest {},
+                    "提交综合训练",
+                )
+                .await
+                {
+                    Ok(out) => {
                         result.set(Some(out));
-                        if let Some(storage)=web_sys::window().and_then(|w|w.local_storage().ok().flatten()){
-                            let _=storage.remove_item("hyz_comprehensive_active_run");
+                        if let Some(storage) =
+                            web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+                        {
+                            let _ = storage.remove_item("hyz_comprehensive_active_run");
                         }
                     }
-                    Err(e)=>error.set(Some(e.to_string())),
+                    Err(e) => error.set(Some(e.to_string())),
                 }
                 busy.set(false);
             });
         })
     };
     {
-        let submit=submit.clone();
-        let deadline=run.as_ref().as_ref().and_then(|r|r.deadline_at_ms);
-        let ended=result.is_some();
-        use_effect_with((deadline,ended,*tick),move |(deadline,ended,_)| {
-            if !ended && deadline.is_some_and(|v|Date::now()>=v as f64){
+        let submit = submit.clone();
+        let deadline = run.as_ref().as_ref().and_then(|r| r.deadline_at_ms);
+        let ended = result.is_some();
+        use_effect_with((deadline, ended, *tick), move |(deadline, ended, _)| {
+            if !ended && deadline.is_some_and(|v| Date::now() >= v as f64) {
                 submit.emit(());
             }
             || ()
         });
     }
-    let start={
-        let progress=progress.clone();let error=error.clone();let busy=busy.clone();
-        let run=run.clone();let current=current.clone();let csrf=props.csrf.clone();
-        Callback::from(move |_|{
-            if *busy{return;}
-            busy.set(true);error.set(None);progress.set(None);
-            let (progress,error,busy,run,current,csrf)=(progress.clone(),error.clone(),busy.clone(),run.clone(),current.clone(),csrf.clone());
+    let start = {
+        let progress = progress.clone();
+        let error = error.clone();
+        let busy = busy.clone();
+        let run = run.clone();
+        let current = current.clone();
+        let csrf = props.csrf.clone();
+        Callback::from(move |_| {
+            if *busy {
+                return;
+            }
+            busy.set(true);
+            error.set(None);
+            progress.set(None);
+            let (progress, error, busy, run, current, csrf) = (
+                progress.clone(),
+                error.clone(),
+                busy.clone(),
+                run.clone(),
+                current.clone(),
+                csrf.clone(),
+            );
             spawn_local(async move {
-                let task=post_json_response_typed::<_,PrepareTask>(
-                    &format!("{ANALYSIS_ROOT}/prepare"),&csrf,&EmptyRequest{},"AI出题").await;
-                let result=match task{
-                    Err(err)=>Err(err.to_string()),
-                    Ok(task)=>{
-                        let mut outcome=Err("出题等待超时，可稍后重试".to_owned());
+                let task = post_json_response_typed::<_, PrepareTask>(
+                    &format!("{ANALYSIS_ROOT}/prepare"),
+                    &csrf,
+                    &EmptyRequest {},
+                    "AI出题",
+                )
+                .await;
+                let result = match task {
+                    Err(err) => Err(err.to_string()),
+                    Ok(task) => {
+                        let mut outcome = Err("出题等待超时，可稍后重试".to_owned());
                         for _ in 0..240 {
                             TimeoutFuture::new(1500).await;
-                            let state=fetch_json_typed::<PrepareProgress>(
-                                &format!("{ANALYSIS_ROOT}/prepare/{}",task.job_id),"出题进度").await;
+                            let state = fetch_json_typed::<PrepareProgress>(
+                                &format!("{ANALYSIS_ROOT}/prepare/{}", task.job_id),
+                                "出题进度",
+                            )
+                            .await;
                             match state {
-                                Ok(p)=>{
+                                Ok(p) => {
                                     progress.set(Some(p.clone()));
-                                    if p.state=="failed"{outcome=Err(p.message);break;}
-                                    if p.state=="ready"{
-                                        if let Some(id)=p.run_id {
+                                    if p.state == "failed" {
+                                        outcome = Err(p.message);
+                                        break;
+                                    }
+                                    if p.state == "ready" {
+                                        if let Some(id) = p.run_id {
                                             match fetch_json_typed::<AnalysisRun>(
-                                                &format!("{ANALYSIS_ROOT}/runs/{id}"),"开始综合训练").await{
-                                                Ok(r)=>{outcome=Ok(r);break;}
-                                                Err(e)=>{outcome=Err(e.to_string());break;}
+                                                &format!("{ANALYSIS_ROOT}/runs/{id}"),
+                                                "开始综合训练",
+                                            )
+                                            .await
+                                            {
+                                                Ok(r) => {
+                                                    outcome = Ok(r);
+                                                    break;
+                                                }
+                                                Err(e) => {
+                                                    outcome = Err(e.to_string());
+                                                    break;
+                                                }
                                             }
                                         }
                                     }
                                 }
-                                Err(e)=>{outcome=Err(e.to_string());break;}
+                                Err(e) => {
+                                    outcome = Err(e.to_string());
+                                    break;
+                                }
                             }
                         }
                         outcome
                     }
                 };
-                match result{
-                    Ok(r)=>{
+                match result {
+                    Ok(r) => {
                         current.set(0);
-                        if let Some(storage)=web_sys::window().and_then(|w|w.local_storage().ok().flatten()){
-                            let _=storage.set_item("hyz_comprehensive_active_run",&r.id);
+                        if let Some(storage) =
+                            web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+                        {
+                            let _ = storage.set_item("hyz_comprehensive_active_run", &r.id);
                         }
                         run.set(Some(r));
                     }
-                    Err(message)=>error.set(Some(message)),
+                    Err(message) => error.set(Some(message)),
                 }
                 busy.set(false);
             });
         })
     };
-    if let Some(score)=(*result).clone(){
-        return html!{
+    if let Some(score) = (*result).clone() {
+        return html! {
             <section class="mx-auto max-w-5xl space-y-5 px-4 py-5" data-testid="analysis-result">
                 <div class="rounded-box bg-base-100 p-5">
                     <h2 class="text-xl font-bold">{"综合训练成绩"}</h2>
@@ -155,19 +226,28 @@ pub(crate) fn comprehensive_training(props:&ComprehensiveProps)->Html {
             </section>
         };
     }
-    if let Some(active)=(*run).clone(){
-        if active.groups.len()!=4 || active.answers.len()!=20 {
-            return html!{<p class="p-5 text-error">{"服务端返回的综合训练题量无效，请重新出题。"}</p>};
+    if let Some(active) = (*run).clone() {
+        if active.groups.len() != 4 || active.answers.len() != 20 {
+            return html! {<p class="p-5 text-error">{"服务端返回的综合训练题量无效，请重新出题。"}</p>};
         }
-        let index=(*current).min(19);
-        let group_index=index/5;
-        let local_index=index%5;
-        let group=&active.groups[group_index];
-        let q=&group.questions[local_index];
-        let remaining=active.deadline_at_ms.map(|ms|((ms as f64-Date::now())/1000.0).ceil().max(0.0) as u64).unwrap_or(1200);
-        let clock=format!("{:02}:{:02}",remaining/60,remaining%60);
-        let next={let current=current.clone();Callback::from(move |_|current.set((*current+1).min(19)))};
-        let previous={let current=current.clone();Callback::from(move |_|current.set(current.saturating_sub(1)))};
+        let index = (*current).min(19);
+        let group_index = index / 5;
+        let local_index = index % 5;
+        let group = &active.groups[group_index];
+        let q = &group.questions[local_index];
+        let remaining = active
+            .deadline_at_ms
+            .map(|ms| ((ms as f64 - Date::now()) / 1000.0).ceil().max(0.0) as u64)
+            .unwrap_or(1200);
+        let clock = format!("{:02}:{:02}", remaining / 60, remaining % 60);
+        let next = {
+            let current = current.clone();
+            Callback::from(move |_| current.set((*current + 1).min(19)))
+        };
+        let previous = {
+            let current = current.clone();
+            Callback::from(move |_| current.set(current.saturating_sub(1)))
+        };
         let answers=(0..4).map(|i|{
             let id=active.id.clone();let run=run.clone();let csrf=props.csrf.clone();
             let error=error.clone();let selected=active.answers[index]==Some(i);
@@ -191,7 +271,7 @@ pub(crate) fn comprehensive_training(props:&ComprehensiveProps)->Html {
                 </button>
             }
         });
-        return html!{
+        return html! {
             <section class="mx-auto flex h-[calc(100dvh-2rem)] max-w-[1500px] flex-col px-3 py-2 sm:px-5" data-testid="analysis-run">
                 <header class="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-3">
                     <div class="text-sm font-bold">{"资料分析综合训练"} <span class="text-base-content/60">{format!("第 {}/20 题 · 材料 {}/4",index+1,group_index+1)}</span></div>
@@ -235,7 +315,7 @@ pub(crate) fn comprehensive_training(props:&ComprehensiveProps)->Html {
             </section>
         };
     }
-    html!{
+    html! {
         <section class="mx-auto max-w-3xl p-4 sm:p-6" data-testid="analysis-setup">
             <div class="rounded-box bg-base-100 p-5 sm:p-7">
                 <h2 class="text-xl font-bold">{"资料分析综合训练"}</h2>

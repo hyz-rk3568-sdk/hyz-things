@@ -1,8 +1,7 @@
 //! Typed data-analysis question recipes; AI text is untrusted until verified.
 use serde::{Deserialize, Serialize};
 
-pub const SOURCE_URL: &str =
-    "https://www.stats.gov.cn/sj/zxfb/202602/t20260228_1962662.html";
+pub const SOURCE_URL: &str = "https://www.stats.gov.cn/sj/zxfb/202602/t20260228_1962662.html";
 pub const QUIZ_QUESTIONS: usize = 20;
 pub const QUIZ_GROUPS: usize = 4;
 pub const QUIZ_PER_GROUP: usize = 5;
@@ -106,9 +105,14 @@ pub enum ValidationError {
 }
 
 fn source_contains_numeric_token(text: &str, number: f64) -> bool {
-    if !number.is_finite() { return false; }
+    if !number.is_finite() {
+        return false;
+    }
     // The provider must copy a displayed number rather than fabricate digits.
-    let magnitude = if number < 0.0 && text.contains("下降") || number < 0.0 && text.contains("减少") || number < 0.0 && text.contains("减产") {
+    let magnitude = if number < 0.0 && text.contains("下降")
+        || number < 0.0 && text.contains("减少")
+        || number < 0.0 && text.contains("减产")
+    {
         number.abs()
     } else {
         number
@@ -153,12 +157,16 @@ pub fn verify_recipe(
     if recipe.b == 0.0 || !recipe.a.is_finite() || !recipe.b.is_finite() {
         return Err(ValidationError::InvalidNumber);
     }
-    if matches!(recipe.operation, Operation::BasePeriod | Operation::GrowthAmount)
-        && !(-95.0..=300.0).contains(&recipe.b)
+    if matches!(
+        recipe.operation,
+        Operation::BasePeriod | Operation::GrowthAmount
+    ) && !(-95.0..=300.0).contains(&recipe.b)
     {
         return Err(ValidationError::InvalidNumber);
     }
-    let answer = recipe.operation.result(recipe.a, recipe.b)
+    let answer = recipe
+        .operation
+        .result(recipe.a, recipe.b)
         .ok_or(ValidationError::InvalidNumber)?;
     if answer.abs() < 0.01 {
         return Err(ValidationError::InvalidNumber);
@@ -169,12 +177,19 @@ pub fn verify_recipe(
     candidates[correct_index] = format!("{answer:.2}");
     let mut offset_idx = 0;
     for (i, out) in candidates.iter_mut().enumerate() {
-        if i == correct_index { continue; }
+        if i == correct_index {
+            continue;
+        }
         let candidate = answer * (1.0 + relative_offsets[offset_idx]);
         offset_idx += 1;
         *out = format!("{candidate:.2}");
     }
-    if candidates.iter().collect::<std::collections::HashSet<_>>().len() != 4 {
+    if candidates
+        .iter()
+        .collect::<std::collections::HashSet<_>>()
+        .len()
+        != 4
+    {
         return Err(ValidationError::Duplicate);
     }
     let answer_text = candidates[correct_index].clone();
@@ -194,36 +209,70 @@ pub fn verify_recipe(
 mod tests {
     use super::*;
     fn material() -> Material {
-        Material { section: "二、农业".into(), topic: "农业".into(),
-            subtopic:"粮食生产".into(), text:"全年粮食产量71488万吨，比上年增加838万吨，增产1.2%。".into(),
-            source_url:SOURCE_URL.into() }
+        Material {
+            section: "二、农业".into(),
+            topic: "农业".into(),
+            subtopic: "粮食生产".into(),
+            text: "全年粮食产量71488万吨，比上年增加838万吨，增产1.2%。".into(),
+            source_url: SOURCE_URL.into(),
+        }
     }
     fn recipe() -> QuestionRecipe {
-        QuestionRecipe { question:"已知粮食产量增长1.2%，求上年粮食产量约为多少万吨？".into(),
-            evidence:material().text, operation:Operation::BasePeriod,
-            a:71488.0,b:1.2,unit:"万吨".into(),explanation:"现期除以增长因子".into() }
+        QuestionRecipe {
+            question: "已知粮食产量增长1.2%，求上年粮食产量约为多少万吨？".into(),
+            evidence: material().text,
+            operation: Operation::BasePeriod,
+            a: 71488.0,
+            b: 1.2,
+            unit: "万吨".into(),
+            explanation: "现期除以增长因子".into(),
+        }
     }
-    #[test] fn section_taxonomy_is_stable() {
-        assert_eq!(SECTIONS.len(),12);
-        assert_eq!(QUIZ_GROUPS*QUIZ_PER_GROUP,QUIZ_QUESTIONS);
-        assert_eq!(QUIZ_SECONDS,1200);
+    #[test]
+    fn section_taxonomy_is_stable() {
+        assert_eq!(SECTIONS.len(), 12);
+        assert_eq!(QUIZ_GROUPS * QUIZ_PER_GROUP, QUIZ_QUESTIONS);
+        assert_eq!(QUIZ_SECONDS, 1200);
     }
-    #[test] fn requires_real_evidence_and_two_source_numbers() {
+    #[test]
+    fn requires_real_evidence_and_two_source_numbers() {
         assert!(verify_recipe(&material(), &recipe(), 0).is_ok());
-        let mut wrong=recipe(); wrong.b=33.3;
-        assert_eq!(verify_recipe(&material(),&wrong,0).unwrap_err(), ValidationError::MissingOperand);
-        wrong=recipe(); wrong.evidence="2025年粮食产量71488万吨，比上年增长1.2%".into();
-        assert_eq!(verify_recipe(&material(),&wrong,0).unwrap_err(),ValidationError::MissingEvidence);
+        let mut wrong = recipe();
+        wrong.b = 33.3;
+        assert_eq!(
+            verify_recipe(&material(), &wrong, 0).unwrap_err(),
+            ValidationError::MissingOperand
+        );
+        wrong = recipe();
+        wrong.evidence = "2025年粮食产量71488万吨，比上年增长1.2%".into();
+        assert_eq!(
+            verify_recipe(&material(), &wrong, 0).unwrap_err(),
+            ValidationError::MissingEvidence
+        );
     }
-    #[test] fn negative_growth_has_negative_amount_and_four_unique_options() {
-        let m=Material{text:"2025年羊肉产量496万吨，下降4.2%。".into(), ..material()};
-        let q=QuestionRecipe{ question:"2025年羊肉产量同比增长量约为多少万吨？".into(),
-          evidence:m.text.clone(),operation:Operation::GrowthAmount,
-          a:496.0,b:-4.2,unit:"万吨".into(),explanation:"现期乘增长率除增长因子".into() };
+    #[test]
+    fn negative_growth_has_negative_amount_and_four_unique_options() {
+        let m = Material {
+            text: "2025年羊肉产量496万吨，下降4.2%。".into(),
+            ..material()
+        };
+        let q = QuestionRecipe {
+            question: "2025年羊肉产量同比增长量约为多少万吨？".into(),
+            evidence: m.text.clone(),
+            operation: Operation::GrowthAmount,
+            a: 496.0,
+            b: -4.2,
+            unit: "万吨".into(),
+            explanation: "现期乘增长率除增长因子".into(),
+        };
         // "-" sign is not present in source because the public text says "下降".
-        let mut q=q; q.b=4.2;
-        assert!(verify_recipe(&m,&q,0).is_ok());
-        q.b=-4.2;
-        assert_eq!(verify_recipe(&m,&q,0).unwrap_err(),ValidationError::MissingOperand);
+        let mut q = q;
+        q.b = 4.2;
+        assert!(verify_recipe(&m, &q, 0).is_ok());
+        q.b = -4.2;
+        assert_eq!(
+            verify_recipe(&m, &q, 0).unwrap_err(),
+            ValidationError::MissingOperand
+        );
     }
 }

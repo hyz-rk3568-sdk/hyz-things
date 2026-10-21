@@ -1,9 +1,9 @@
 use super::*;
 
 mod apps;
-mod data_analysis;
 mod auth;
 mod camera;
+mod data_analysis;
 mod flashcards;
 mod network;
 mod proxy;
@@ -11,9 +11,9 @@ mod status;
 mod tailscale;
 
 pub(crate) use apps::*;
-pub(crate) use data_analysis::*;
 pub(crate) use auth::*;
 pub(crate) use camera::*;
+pub(crate) use data_analysis::*;
 pub(crate) use flashcards::*;
 pub(crate) use network::*;
 pub(crate) use proxy::*;

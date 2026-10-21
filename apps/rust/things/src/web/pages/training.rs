@@ -20,7 +20,7 @@ struct TrainingWorkspaceProps {
     csrf: String,
 }
 
-pub(crate) fn render_training(route_state: UseStateHandle<PortalRoute>, csrf:String) -> Html {
+pub(crate) fn render_training(route_state: UseStateHandle<PortalRoute>, csrf: String) -> Html {
     html! { <TrainingWorkspace route_state={route_state} csrf={csrf} /> }
 }
 

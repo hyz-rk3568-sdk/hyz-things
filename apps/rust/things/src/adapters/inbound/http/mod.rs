@@ -55,8 +55,8 @@ use crate::{
     logging::{self, Level},
 };
 
-mod flashcards;
 mod data_analysis;
+mod flashcards;
 mod tls;
 
 pub use tls::{PortalTls, TlsListener};
@@ -305,10 +305,22 @@ pub fn app_with_admin_camera_control_and_flashcards(
         Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>,
     >,
 ) -> Router {
-    app_with_admin_camera_control_and_flashcards_and_analysis(read_status, control, admin, camera, csrf_token, port, installed_apps, tls, flashcards, flashcard_source, None)
+    app_with_admin_camera_control_and_flashcards_and_analysis(
+        read_status,
+        control,
+        admin,
+        camera,
+        csrf_token,
+        port,
+        installed_apps,
+        tls,
+        flashcards,
+        flashcard_source,
+        None,
+    )
 }
 
-#[expect(clippy::too_many_arguments, reason="production wiring")]
+#[expect(clippy::too_many_arguments, reason = "production wiring")]
 pub fn app_with_admin_camera_control_and_flashcards_and_analysis(
     read_status: PortalStatus,
     control: Arc<dyn PortalControlHandler>,
@@ -425,10 +437,22 @@ pub fn app_with_admin_camera_control_at_address_and_flashcards(
         Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>,
     >,
 ) -> Router {
-    app_with_admin_camera_control_at_address_and_flashcards_and_analysis(read_status, control, admin, camera, csrf_token, address, port, tls, flashcards, flashcard_source, None)
+    app_with_admin_camera_control_at_address_and_flashcards_and_analysis(
+        read_status,
+        control,
+        admin,
+        camera,
+        csrf_token,
+        address,
+        port,
+        tls,
+        flashcards,
+        flashcard_source,
+        None,
+    )
 }
 
-#[expect(clippy::too_many_arguments, reason="production wiring")]
+#[expect(clippy::too_many_arguments, reason = "production wiring")]
 pub fn app_with_admin_camera_control_at_address_and_flashcards_and_analysis(
     read_status: PortalStatus,
     control: Arc<dyn PortalControlHandler>,
@@ -766,12 +790,30 @@ fn app_with_assets(
             "/api/v1/control/study/sync",
             on(MethodFilter::POST, flashcards::sync),
         )
-        .route("/api/v1/study/data-analysis/status", on(MethodFilter::GET, data_analysis::status))
-        .route("/api/v1/study/data-analysis/prepare", on(MethodFilter::POST, data_analysis::prepare))
-        .route("/api/v1/study/data-analysis/prepare/{id}", on(MethodFilter::GET, data_analysis::progress))
-        .route("/api/v1/study/data-analysis/runs/{id}", on(MethodFilter::GET, data_analysis::run))
-        .route("/api/v1/study/data-analysis/runs/{id}/answers/{number}", on(MethodFilter::POST, data_analysis::answer))
-        .route("/api/v1/study/data-analysis/runs/{id}/submit", on(MethodFilter::POST, data_analysis::submit))
+        .route(
+            "/api/v1/study/data-analysis/status",
+            on(MethodFilter::GET, data_analysis::status),
+        )
+        .route(
+            "/api/v1/study/data-analysis/prepare",
+            on(MethodFilter::POST, data_analysis::prepare),
+        )
+        .route(
+            "/api/v1/study/data-analysis/prepare/{id}",
+            on(MethodFilter::GET, data_analysis::progress),
+        )
+        .route(
+            "/api/v1/study/data-analysis/runs/{id}",
+            on(MethodFilter::GET, data_analysis::run),
+        )
+        .route(
+            "/api/v1/study/data-analysis/runs/{id}/answers/{number}",
+            on(MethodFilter::POST, data_analysis::answer),
+        )
+        .route(
+            "/api/v1/study/data-analysis/runs/{id}/submit",
+            on(MethodFilter::POST, data_analysis::submit),
+        )
         .route(
             "/api/v1/study/assets/{*path}",
             on(MethodFilter::GET, flashcards::asset),
