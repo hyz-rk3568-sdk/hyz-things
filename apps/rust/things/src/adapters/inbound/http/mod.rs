@@ -814,10 +814,22 @@ fn app_with_assets(
             "/api/v1/study/data-analysis/runs/{id}/submit",
             on(MethodFilter::POST, data_analysis::submit),
         )
-        .route("/api/v1/study/data-analysis/locating/topics",on(MethodFilter::GET,data_analysis::locating_topics))
-        .route("/api/v1/study/data-analysis/locating/prepare",on(MethodFilter::POST,data_analysis::locating_prepare))
-        .route("/api/v1/study/data-analysis/locating/runs/{id}",on(MethodFilter::GET,data_analysis::locating_run))
-        .route("/api/v1/study/data-analysis/locating/runs/{id}/answers/{number}",on(MethodFilter::POST,data_analysis::locating_answer))
+        .route(
+            "/api/v1/study/data-analysis/locating/topics",
+            on(MethodFilter::GET, data_analysis::locating_topics),
+        )
+        .route(
+            "/api/v1/study/data-analysis/locating/prepare",
+            on(MethodFilter::POST, data_analysis::locating_prepare),
+        )
+        .route(
+            "/api/v1/study/data-analysis/locating/runs/{id}",
+            on(MethodFilter::GET, data_analysis::locating_run),
+        )
+        .route(
+            "/api/v1/study/data-analysis/locating/runs/{id}/answers/{number}",
+            on(MethodFilter::POST, data_analysis::locating_answer),
+        )
         .route(
             "/api/v1/study/assets/{*path}",
             on(MethodFilter::GET, flashcards::asset),
@@ -2602,14 +2614,19 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/control/study/sync"
             | "/api/v1/study/data-analysis/prepare"
             | "/api/v1/study/data-analysis/locating/prepare"
-    ) || is_data_analysis_run_post_path(path) || is_locating_answer_post_path(path)
+    ) || is_data_analysis_run_post_path(path)
+        || is_locating_answer_post_path(path)
 }
 
 fn is_locating_answer_post_path(path: &str) -> bool {
-    let Some(rest) = path.strip_prefix("/api/v1/study/data-analysis/locating/runs/") else {return false};
-    let mut parts=rest.split('/');
-    parts.next().is_some_and(|id|uuid::Uuid::parse_str(id).is_ok())
-        && parts.next()==Some("answers")
+    let Some(rest) = path.strip_prefix("/api/v1/study/data-analysis/locating/runs/") else {
+        return false;
+    };
+    let mut parts = rest.split('/');
+    parts
+        .next()
+        .is_some_and(|id| uuid::Uuid::parse_str(id).is_ok())
+        && parts.next() == Some("answers")
         && parts.next().is_some_and(|n| n.parse::<usize>().is_ok())
         && parts.next().is_none()
 }
