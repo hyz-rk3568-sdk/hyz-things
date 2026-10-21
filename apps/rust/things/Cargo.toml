@@ -39,6 +39,7 @@ web = [
   "dep:gloo-net",
   "dep:gloo-timers",
   "dep:pulldown-cmark",
+  "dep:serde_json",
   "dep:js-sys",
   "dep:wasm-bindgen",
   "dep:wasm-bindgen-futures",

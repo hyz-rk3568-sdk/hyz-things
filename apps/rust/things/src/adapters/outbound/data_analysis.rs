@@ -351,7 +351,7 @@ impl DataAnalysisService {
                 sections.len()
             ));
         }
-        let hash = format!("{:x}", Sha256::digest(html.as_bytes()));
+        let hash = Sha256::digest(html.as_bytes()).iter().map(|byte| format!("{byte:02x}")).collect::<String>();
         let serialized = serde_json::to_string(&sections).map_err(as_error)?;
         sqlx::query("INSERT INTO data_analysis_sources(url,title,content_hash,fetched_at_ms,sections_json) VALUES(?,?,?,?,?) ON CONFLICT(url) DO UPDATE SET content_hash=excluded.content_hash,fetched_at_ms=excluded.fetched_at_ms,sections_json=excluded.sections_json")
             .bind(SOURCE_URL).bind("中华人民共和国2025年国民经济和社会发展统计公报")

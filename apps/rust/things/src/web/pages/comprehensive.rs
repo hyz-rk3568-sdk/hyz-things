@@ -284,14 +284,14 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     <div class="flex min-h-0 min-w-0 flex-col overflow-auto rounded-box bg-base-100" data-testid="analysis-material">
                         <div class="p-3 text-sm font-semibold">{format!("{} · {}",group.material.section,group.material.subtopic)}</div>
                         <div class="min-h-0 flex-1 overflow-auto">
-                            <InkOverlay question_index={group_index}>
+                            <InkOverlay question_index={group_index} persist_key={format!("{}-material-{}", active.id, group_index)}>
                                 <div class="whitespace-pre-wrap p-4 text-base leading-8">{group.material.text.clone()}</div>
                             </InkOverlay>
                         </div>
                         <a class="p-3 text-xs underline" href={group.material.source_url.clone()} target="_blank" rel="noopener noreferrer">{"国家统计局 · 查看原文"}</a>
                     </div>
                     <div class="min-h-0 min-w-0 overflow-auto rounded-box bg-base-100" data-testid="analysis-question">
-                        <InkOverlay question_index={index}>
+                        <InkOverlay question_index={index} persist_key={format!("{}-question-{}", active.id, index)}>
                             <div class="space-y-4 p-4">
                                 <div class="flex items-center justify-between text-xs text-base-content/60"><span>{format!("本材料第 {}/5 题",local_index+1)}</span><span>{q.skill.clone()}</span></div>
                                 <h2 class="text-lg font-semibold leading-relaxed">{q.question.clone()}</h2>
