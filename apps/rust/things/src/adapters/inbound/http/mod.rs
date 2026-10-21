@@ -2596,7 +2596,26 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/control/proxy/delays"
             | "/api/v1/study/review"
             | "/api/v1/control/study/sync"
-    )
+            | "/api/v1/study/data-analysis/prepare"
+    ) || is_data_analysis_run_post_path(path)
+}
+
+fn is_data_analysis_run_post_path(path: &str) -> bool {
+    let Some(rest) = path.strip_prefix("/api/v1/study/data-analysis/runs/") else {
+        return false;
+    };
+    let mut segments = rest.split('/');
+    let Some(run_id) = segments.next() else {
+        return false;
+    };
+    if uuid::Uuid::parse_str(run_id).is_err() {
+        return false;
+    }
+    match (segments.next(), segments.next(), segments.next()) {
+        (Some("answers"), Some(number), None) => number.parse::<usize>().is_ok(),
+        (Some("submit"), None, None) => true,
+        _ => false,
+    }
 }
 
 async fn security_headers(request: Request, next: Next) -> Response {
@@ -3045,5 +3064,22 @@ mod tests {
         assert!(!is_post_path("/api/v1/control/tailscale"));
         assert!(!is_post_path("/api/v1/control/network/sta"));
         assert!(!is_post_path("/api/v1/control"));
+        assert!(is_post_path("/api/v1/study/data-analysis/prepare"));
+        assert!(is_post_path(
+            "/api/v1/study/data-analysis/runs/550e8400-e29b-41d4-a716-446655440000/answers/20"
+        ));
+        assert!(is_post_path(
+            "/api/v1/study/data-analysis/runs/550e8400-e29b-41d4-a716-446655440000/submit"
+        ));
+        assert!(!is_post_path("/api/v1/study/data-analysis/prepare/extra"));
+        assert!(!is_post_path(
+            "/api/v1/study/data-analysis/runs/not-a-uuid/submit"
+        ));
+        assert!(!is_post_path(
+            "/api/v1/study/data-analysis/runs/550e8400-e29b-41d4-a716-446655440000/answers/nope"
+        ));
+        assert!(!is_post_path(
+            "/api/v1/study/data-analysis/runs/550e8400-e29b-41d4-a716-446655440000/submit/extra"
+        ));
     }
 }

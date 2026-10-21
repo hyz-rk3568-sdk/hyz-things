@@ -8,8 +8,8 @@
 - 电脑执行 \`codex login --device-auth\` 一次，凭据由 Codex 在电脑持久化，开机自动启动服务，不每次重新登录、不主动 logout。
 - 官方 Codex App Server 监听 \`ws://0.0.0.0:1457\`，开启 \`--ws-auth capability-token --ws-token-file $HOME/.codex/app-server-token\`。
 - RK3568 固定连接 \`192.168.8.202:1457\`；不安装 Codex、不运行 Grok OAuth 插件、不走 SSH 隧道/代理。
-- 电脑用 \`umask 077; openssl rand -hex 32 > "$HOME/.codex/app-server-token"\` 生成 64 位十六进制 Token 一次；RK3568 把相同内容写到 root-owned 0600 的 \`/userdata/hyz-things/.env\`：
-  \`HYZ_THINGS_CODEX_WS_TOKEN=<64 HEX>\`。
+- 电脑建议用 \`umask 077; openssl rand -hex 32 > "$HOME/.codex/app-server-token"\` 生成高熵 Token；应用不限制 Token 长度，但只接受安全的 Bearer Token 字符。RK3568 把与 \`--ws-token-file\` 完全相同的内容写到 root-owned 0600 的 \`/userdata/hyz-things/.env\`：
+  \`HYZ_THINGS_CODEX_WS_TOKEN=<same bearer token>\`。
 - WebSocket Token 只证明局域网客户端身份，**不是** ChatGPT OAuth Token，无需每次自动同步；主动轮换时两端同步修改。
 - 删除 \`HYZ_THINGS_AI_BASE_URL\`、\`HYZ_THINGS_AI_API_KEY\`、\`HYZ_THINGS_AI_MODEL\`、旧 \`AiConfig\` 与 \`/chat/completions\` 请求路径。连接地址常量固定，浏览器不得配置任意 URL。
 - \`ws://\` 不提供加密，按用户对可信局域网的安全边界要求使用。建议防火墙仅允许板子访问端口；官方 WebSocket 传输仍属实验能力。

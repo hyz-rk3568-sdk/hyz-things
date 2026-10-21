@@ -28,9 +28,21 @@ fn accept_key(key: &str) -> String {
     STANDARD.encode(sha.finalize())
 }
 
-fn validate_token(token: &str) -> Result<(), String> {
-    if token.len() != 64 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err("Codex Token 必须是 32 字节随机值的 64 位十六进制文本".into());
+pub(super) fn validate_token(token: &str) -> Result<(), String> {
+    let bytes = token.as_bytes();
+    let padding_start = bytes
+        .iter()
+        .position(|byte| *byte == b'=')
+        .unwrap_or(bytes.len());
+    let valid =
+        padding_start > 0 && bytes[..padding_start].iter().all(|byte| {
+            matches!(
+                *byte,
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'+' | b'/'
+            )
+        }) && bytes[padding_start..].iter().all(|byte| *byte == b'=');
+    if !valid {
+        return Err("Codex Token must be a non-empty bearer token".into());
     }
     Ok(())
 }
@@ -375,6 +387,18 @@ mod tests {
                 .len(),
             7
         );
+    }
+
+    #[test]
+    fn bearer_validation_accepts_non_hex_token_without_a_fixed_length() {
+        assert!(validate_token("short-token-12").is_ok());
+    }
+
+    #[test]
+    fn bearer_validation_rejects_empty_or_header_unsafe_values() {
+        assert!(validate_token("").is_err());
+        assert!(validate_token("safe token").is_err());
+        assert!(validate_token("safe\r\nX-Injected: true").is_err());
     }
 
     #[test]

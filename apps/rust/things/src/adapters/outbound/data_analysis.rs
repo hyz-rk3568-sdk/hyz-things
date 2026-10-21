@@ -1,6 +1,6 @@
 //! Native-only official-text caching and Codex App Server question preparation.
 //! Only verified numerical recipes are admitted into the training database.
-use super::codex_app_server::{CodexSession, TURN_TIMEOUT};
+use super::codex_app_server::{validate_token, CodexSession, TURN_TIMEOUT};
 use crate::domain::data_analysis::{
     verify_recipe, Material, QuestionRecipe, VerifiedQuestion, OFFICIAL_SOURCES, QUIZ_GROUPS,
     QUIZ_PER_GROUP, QUIZ_SECONDS, SECTIONS, SOURCE_URL,
@@ -67,9 +67,8 @@ fn parse_env(input: &str) -> Result<Option<CodexConfig>, &'static str> {
         if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
             value = &value[1..value.len() - 1];
         }
-        if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            return Err("Codex WS Token must contain 64 hex characters");
-        }
+        validate_token(value)
+            .map_err(|_| "Codex WS Token contains invalid bearer-token characters")?;
         token = Some(value.to_owned());
     }
     Ok(token.map(|token| CodexConfig { token }))
@@ -951,6 +950,15 @@ fn parse_official_sections_from(html: &str, source_url: &str) -> Vec<Material> {
 mod tests {
     use super::*;
     #[test]
+    fn env_accepts_non_hex_token_without_a_fixed_length() {
+        let value = "short-token-12";
+        let config = parse_env(&format!("HYZ_THINGS_CODEX_WS_TOKEN={value}"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(config.token, value);
+    }
+
+    #[test]
     fn token_is_the_only_supported_model_credential() {
         let sample = format!(
             "HYZ_THINGS_AI_BASE_URL=https://api.deepseek.com\nHYZ_THINGS_AI_API_KEY=legacy\nHYZ_THINGS_AI_MODEL=legacy\nHYZ_THINGS_CODEX_WS_TOKEN={}\n",
@@ -961,7 +969,7 @@ mod tests {
         assert!(parse_env("HYZ_THINGS_AI_BASE_URL=https://api.deepseek.com")
             .unwrap()
             .is_none());
-        assert!(parse_env("HYZ_THINGS_CODEX_WS_TOKEN=invalid").is_err());
+        assert!(parse_env("HYZ_THINGS_CODEX_WS_TOKEN=bad token").is_err());
         assert!(parse_env(&format!(
             "HYZ_THINGS_CODEX_WS_TOKEN={0}\nHYZ_THINGS_CODEX_WS_TOKEN={0}",
             "a".repeat(64)
