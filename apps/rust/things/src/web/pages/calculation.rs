@@ -33,7 +33,7 @@ impl CalculationKind {
             Self::Division => "分子前三位、分母两位试商；用选项差异决定心算止步。",
             Self::Multiplication => "高位拆乘、先确定量级，再根据选项差异决定是否补位。",
             Self::Percent => {
-                "份数法：增长率约为 1/n 时，现期约有 n+1 份，其中增长量为 1 份；按选项补位。"
+                "份数法：增速约为 +1/n 时，现期约 n+1 份，增量为 +1 份；增速约为 -1/n 时，现期约 n-1 份，增量为 -1 份。按选项补位。"
             }
         }
     }
@@ -47,6 +47,7 @@ struct CalculationQuestion {
     exact_result: String,
     numerator: u64,
     denominator: u64,
+    is_negative: bool,
     kind: CalculationKind,
     tip: &'static str,
 }
@@ -238,26 +239,31 @@ fn make_question(seed: &mut u64, kind: CalculationKind) -> CalculationQuestion {
     for _ in 0..4096 {
         let a = random_range(seed, 205, 985);
         let b = random_range(seed, 12, 87);
-        let (expression, numerator, denominator) = match kind {
-            CalculationKind::Division => (format!("{a} ÷ {b}"), a, b),
-            CalculationKind::Multiplication => (format!("{a} × {b}"), a * b, 1),
+        let (expression, numerator, denominator, is_negative) = match kind {
+            CalculationKind::Division => (format!("{a} ÷ {b}"), a, b, false),
+            CalculationKind::Multiplication => (format!("{a} × {b}"), a * b, 1, false),
             CalculationKind::Percent => {
-                // 先构造精确的基期量，再以不规则增长率构造现期量，
-                // 避免用循环小数伪装成精确答案，也不需要对真实增长量舍入。
-                let p = random_range(seed, 101, 899); // 10.1%~89.9%，单位 0.1%
+                // 从整数基期量构造正/负增速下的现期量，精确解保留符号。
+                // 负增长始终大于 -100%，因此分母 1+r 始终为正。
+                let is_negative = random_range(seed, 0, 1) == 0;
+                let limit = if is_negative { 499 } else { 899 };
+                let p = random_range(seed, 101, limit); // 单位 0.1%
                 if is_share_anchor(p) {
                     continue;
                 }
                 let base = random_range(seed, 225, 525);
-                let current_scaled = base * (1000 + p);
+                let growth_factor = if is_negative { 1000 - p } else { 1000 + p };
+                let current_scaled = base * growth_factor;
                 (
                     format!(
-                        "现期量 {}，增长率 {}%，求增长量",
+                        "现期量 {}，增长率 {}{}%，求增长量",
                         format_decimal(current_scaled, 3),
+                        if is_negative { "-" } else { "" },
                         format_decimal(p, 1),
                     ),
                     current_scaled * p,
-                    1000 * (1000 + p),
+                    1000 * growth_factor,
+                    is_negative,
                 )
             }
         };
@@ -267,13 +273,25 @@ fn make_question(seed: &mut u64, kind: CalculationKind) -> CalculationQuestion {
         let Some((options, correct_index)) = candidate_options(seed, correct, places) else {
             continue;
         };
+        let exact_result = exact_decimal(numerator, denominator);
         return CalculationQuestion {
             expression,
-            options,
+            options: options.map(|value| {
+                if is_negative {
+                    format!("-{value}")
+                } else {
+                    value
+                }
+            }),
             correct_index,
-            exact_result: exact_decimal(numerator, denominator),
+            exact_result: if is_negative {
+                format!("-{exact_result}")
+            } else {
+                exact_result
+            },
             numerator,
             denominator,
+            is_negative,
             kind,
             tip: kind.tip(),
         };
@@ -589,8 +607,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn growth_training_uses_non_anchor_rates_above_ten_percent() {
+    fn growth_training_uses_non_anchor_positive_and_negative_rates() {
         let mut seed = 20261020;
+        let mut positive = 0;
+        let mut negative = 0;
         for _ in 0..500 {
             let question = make_question(&mut seed, CalculationKind::Percent);
             assert!(question.expression.contains("现期量"));
@@ -607,10 +627,44 @@ mod tests {
                 .unwrap()
                 .parse::<f64>()
                 .unwrap();
-            assert!(rate > 10.0);
-            let per_mille = (rate * 10.0).round() as u64;
+            assert!(rate.abs() > 10.0);
+            assert!(rate > -100.0);
+            let per_mille = (rate.abs() * 10.0).round() as u64;
             assert!(!is_share_anchor(per_mille), "{}", question.expression);
+            assert_eq!(question.is_negative, rate < 0.0);
+            assert_eq!(question.exact_result.starts_with('-'), rate < 0.0);
+            assert!(question
+                .options
+                .iter()
+                .all(|option| option.starts_with('-') == (rate < 0.0)));
+            // 正/负增速统一使用现期 × r/(1+r)，精确答案必须带正确符号。
+            let current = question
+                .expression
+                .split("现期量 ")
+                .nth(1)
+                .unwrap()
+                .split('，')
+                .next()
+                .unwrap()
+                .parse::<f64>()
+                .unwrap();
+            let expected = current * (rate / 100.0) / (1.0 + rate / 100.0);
+            let actual = question.exact_result.parse::<f64>().unwrap();
+            assert!(
+                (expected - actual).abs() < 1e-7,
+                "{}: expected {expected}, got {actual}",
+                question.expression
+            );
+            if rate < 0.0 {
+                negative += 1;
+            } else {
+                positive += 1;
+            }
         }
+        assert!(
+            positive >= 100 && negative >= 100,
+            "{positive} positive, {negative} negative"
+        );
     }
 
     #[test]
@@ -623,7 +677,7 @@ mod tests {
                 for option in &question.options {
                     let value = option.parse::<f64>().unwrap();
                     assert!(
-                        (value - correct).abs() < correct * 0.1,
+                        (value - correct).abs() < correct.abs() * 0.1,
                         "{} vs {}",
                         value,
                         correct
@@ -645,10 +699,13 @@ mod tests {
                     question.options[question.correct_index],
                     question.exact_result
                 );
-                assert_eq!(
-                    question.exact_result,
-                    exact_decimal(question.numerator, question.denominator)
-                );
+                let magnitude = exact_decimal(question.numerator, question.denominator);
+                let expected = if question.is_negative {
+                    format!("-{magnitude}")
+                } else {
+                    magnitude
+                };
+                assert_eq!(question.exact_result, expected);
                 let unique: std::collections::HashSet<_> = question.options.iter().collect();
                 assert_eq!(unique.len(), 4);
                 let three: std::collections::HashSet<_> = question
@@ -664,9 +721,14 @@ mod tests {
                     .collect();
                 has_two_digit_question |= two.len() == 4;
                 has_three_digit_question |= two.len() != 4;
-                assert!(question.options.iter().all(|value| !value.starts_with('-')));
+                assert!(question
+                    .options
+                    .iter()
+                    .all(|value| value.starts_with('-') == question.is_negative));
                 if kind == CalculationKind::Percent {
                     assert!(question.expression.contains('%'));
+                } else {
+                    assert!(!question.is_negative);
                 }
             }
         }

@@ -5,7 +5,7 @@ use super::*;
 const SCRATCH_WIDTH: u32 = 900;
 const SCRATCH_HEIGHT: u32 = 450;
 const INK_COLOR: &str = "#e11d48";
-const INK_LINE_WIDTH: f64 = 3.8;
+const INK_LINE_WIDTH: f64 = 2.6;
 
 type InkPoint = (f64, f64);
 

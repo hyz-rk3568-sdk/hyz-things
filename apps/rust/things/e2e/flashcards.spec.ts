@@ -203,6 +203,11 @@ test("transparent calculation ink overlays the question, supports history and re
     await page.mouse.up();
   };
   await draw(30, 75, 140, 115);
+  // 下笔后 Canvas 笔画宽度应比旧的 3.8 更细，且撤销重绘不改变笔迹。
+  const actualStrokeWidth = await canvas.evaluate((el) =>
+    (el as HTMLCanvasElement).getContext("2d")?.lineWidth,
+  );
+  expect(actualStrokeWidth).toBe(2.6);
   const first = await snapshot();
   expect(first).not.toEqual(blank);
   await page.getByTestId("calculation-scratchpad-undo").click();
