@@ -64,9 +64,21 @@ pub struct LocateClick {
     pub elapsed_ms: u32,
 }
 
-fn material_key(material: &Material) -> String {
-    // A conservative identity: rewriting the same official chapter cannot turn
-    // a previously read article into a supposedly unfamiliar exercise.
+pub(super) fn material_key(material: &Material) -> String {
+    // Old official-derived papers preserve their historical exposure identity.
+    // Simulated scenarios are independent even when based on the same official
+    // chapter. Repeat exposures of identical scenarios still share a key.
+    if material
+        .text
+        .starts_with("【模拟训练数据，非官方发布数值】")
+    {
+        let digest = sha2::Sha256::digest(material.text.as_bytes());
+        let hash = digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        return format!("simulated\u{1f}{hash}");
+    }
     format!("{}\u{1f}{}", material.source_url, material.section)
 }
 
@@ -291,14 +303,13 @@ impl DataAnalysisService {
             let weaknesses = self.weaknesses().await;
             let mut last_error = String::new();
             for material in &sources {
-                if seen.contains(&material_key(material)) {
-                    continue;
-                }
+                // A previously seen official chapter may inspire a new
+                // simulated scenario; dedup is by new scenario's content.
                 let excerpt = generation_excerpt(material, 0);
                 if !matches_filter(&excerpt, request) {
                     continue;
                 }
-                match self.generate_group(material, &weaknesses).await {
+                match self.generate_group(material, &weaknesses, 0).await {
                     Ok(group) => {
                         let id = Uuid::now_v7().to_string();
                         sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES(?,?,?,?,?,?)")
@@ -356,7 +367,7 @@ impl DataAnalysisService {
         let config = self.config.as_ref().ok_or("Codex Token 未配置")?;
         let mut session = tokio::time::timeout(
             Duration::from_secs(12),
-            CodexSession::connect(&config.token),
+            CodexSession::connect(&config.token, &config.cwd),
         )
         .await
         .map_err(|_| "连接 Codex App Server 超时".to_owned())??;
@@ -552,5 +563,15 @@ mod tests {
         let key = material_key(&m);
         m.text = "换一篇同样的统计章节".into();
         assert_eq!(material_key(&m), key);
+    }
+    #[test]
+    fn simulated_papers_with_same_official_reference_are_distinct() {
+        let mut m = material();
+        m.text = "【模拟训练数据，非官方发布数值】\n2024年企业收入100万元。".into();
+        let first = material_key(&m);
+        m.text = "【模拟训练数据，非官方发布数值】\n2024年企业收入200万元。".into();
+        assert_ne!(material_key(&m), first);
+        let repeated = material_key(&m);
+        assert_eq!(repeated, material_key(&m));
     }
 }

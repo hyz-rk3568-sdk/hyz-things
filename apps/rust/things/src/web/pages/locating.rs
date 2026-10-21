@@ -365,7 +365,7 @@ pub(crate) fn locating_training(props: &LocatingProps) -> Html {
                         </div>
                         {material_with_numbers(&live.material.text,submit,*loading)}
                         <a class="mt-5 block text-xs underline" href={live.material.source_url.clone()}
-                            target="_blank" rel="noopener noreferrer">{"国家统计局 · 查看官方来源"}</a>
+                            target="_blank" rel="noopener noreferrer">{"查看统计口径参考资料（非模拟数据来源）"}</a>
                     </article>
                     <aside class="min-h-0 overflow-auto rounded-box bg-base-100 p-5">
                         <div class="text-xs text-base-content/60">{format!("本材料第 {} 题",index+1)}</div>
@@ -411,7 +411,7 @@ pub(crate) fn locating_training(props: &LocatingProps) -> Html {
         <section class="mx-auto max-w-3xl p-4 sm:p-6" data-testid="locating-setup">
             <div class="rounded-box bg-base-100 p-5 sm:p-7">
                 <h2 class="text-xl font-bold">{"资料分析 · 找数专项"}</h2>
-                <p class="mt-1 text-sm text-base-content/65">{"官方数据经 AI 改写校验 · 每篇5题 · 建立并复用数据地图"}</p>
+                <p class="mt-1 text-sm text-base-content/65">{"Codex 构造的模拟训练材料 · 每篇5题 · 建立并复用数据地图"}</p>
                 <div class="mt-5 grid gap-4">
                     <label class="grid gap-2 text-sm">
                         <span>{"大主题"}</span>

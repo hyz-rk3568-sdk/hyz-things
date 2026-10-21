@@ -2,8 +2,8 @@
 //! Only verified numerical recipes are admitted into the training database.
 use super::codex_app_server::{validate_token, CodexSession, TURN_TIMEOUT};
 use crate::domain::data_analysis::{
-    select_material_batch, verify_recipe, Material, QuestionRecipe, VerifiedQuestion,
-    OFFICIAL_SOURCES, QUIZ_GROUPS, QUIZ_PER_GROUP, QUIZ_SECONDS, SECTIONS, SOURCE_URL,
+    select_material_batch, Material, VerifiedQuestion, OFFICIAL_SOURCES, QUIZ_GROUPS,
+    QUIZ_PER_GROUP, QUIZ_SECONDS, SECTIONS, SOURCE_URL,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -31,6 +31,7 @@ const MAX_GENERATION_CHARS: usize = 3000;
 pub struct CodexConfig {
     // Fixed-address LAN authentication only; this is NOT the ChatGPT OAuth token.
     token: String,
+    cwd: String,
 }
 
 /// Root-only .env file. Ignore unrelated configuration rather than accepting
@@ -53,29 +54,60 @@ pub fn load_codex_env() -> Result<Option<CodexConfig>, &'static str> {
     parse_env(&input)
 }
 
+fn valid_remote_repo_path(value: &str) -> bool {
+    // The path is sent to the PC, and must NOT be resolved on RK3568.
+    // Never accept shell expansions, parent traversal or browser-selected paths.
+    let path = std::path::Path::new(value);
+    !value.is_empty()
+        && value.len() <= 512
+        && path.is_absolute()
+        && path.components().all(|part| {
+            matches!(
+                part,
+                std::path::Component::RootDir | std::path::Component::Normal(_)
+            )
+        })
+        && !value.chars().any(|c| c.is_control())
+}
+
 fn parse_env(input: &str) -> Result<Option<CodexConfig>, &'static str> {
     let mut token = None;
+    let mut cwd = None;
     for line in input.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
         let (key, value) = line.split_once('=').ok_or("Invalid .env entry")?;
-        if key.trim() != "HYZ_THINGS_CODEX_WS_TOKEN" {
-            continue;
-        }
-        if token.is_some() {
-            return Err("Duplicate Codex Token");
-        }
         let mut value = value.trim();
         if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
             value = &value[1..value.len() - 1];
         }
-        validate_token(value)
-            .map_err(|_| "Codex WS Token contains invalid bearer-token characters")?;
-        token = Some(value.to_owned());
+        match key.trim() {
+            "HYZ_THINGS_CODEX_WS_TOKEN" => {
+                if token.is_some() {
+                    return Err("Duplicate Codex Token");
+                }
+                validate_token(value).map_err(|_| "Codex WS Token has invalid characters")?;
+                token = Some(value.to_owned());
+            }
+            "HYZ_THINGS_CODEX_CWD" => {
+                if cwd.is_some() {
+                    return Err("Duplicate Codex CWD");
+                }
+                if !valid_remote_repo_path(value) {
+                    return Err("Codex CWD must be a safe absolute path on the PC");
+                }
+                cwd = Some(value.to_owned());
+            }
+            _ => {}
+        }
     }
-    Ok(token.map(|token| CodexConfig { token }))
+    match (token, cwd) {
+        (Some(token), Some(cwd)) => Ok(Some(CodexConfig { token, cwd })),
+        (None, None) => Ok(None),
+        _ => Err("Codex needs both HYZ_THINGS_CODEX_WS_TOKEN and HYZ_THINGS_CODEX_CWD"),
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -166,14 +198,14 @@ async fn run_generation_wave<F, Fut>(
     producer: F,
 ) -> Vec<(usize, Result<QuestionGroup, String>)>
 where
-    F: Fn(Material) -> Fut + Clone + Send + 'static,
+    F: Fn(Material, usize) -> Fut + Clone + Send + 'static,
     Fut: Future<Output = Result<QuestionGroup, String>> + Send + 'static,
 {
     debug_assert!(candidates.len() <= QUIZ_GROUPS);
     let mut running = JoinSet::new();
     for (index, material) in candidates {
         let produce = producer.clone();
-        running.spawn(async move { (index, produce(material).await) });
+        running.spawn(async move { (index, produce(material, index).await) });
     }
     let mut results = Vec::new();
     while let Some(outcome) = running.join_next().await {
@@ -285,7 +317,13 @@ impl DataAnalysisService {
             match result {
                 Ok(run_id) => {
                     worker
-                        .set_progress(&job, "ready", 20, "已完成校验，可以开始训练", Some(run_id))
+                        .set_progress(
+                            &job,
+                            "ready",
+                            20,
+                            "Codex 已交付20道题，可以开始训练",
+                            Some(run_id),
+                        )
                         .await
                 }
                 Err(msg) => worker.set_progress(&job, "failed", 0, &msg, None).await,
@@ -409,7 +447,7 @@ impl DataAnalysisService {
         // Explore never-seen topics before repeating familiar source sections.
         // Once covered, prioritize topics with high error ratios.
         let mut ordered = materials;
-        ordered.retain(|m| !seen.contains(&format!("{}\u{1f}{}", m.source_url, m.section)));
+        // A simulated paper is new even when its theme uses a previously read official chapter.
         ordered.sort_by(|a, b| {
             let (na, ma) = scores.get(&a.topic).copied().unwrap_or((0, 0));
             let (nb, mb) = scores.get(&b.topic).copied().unwrap_or((0, 0));
@@ -429,7 +467,10 @@ impl DataAnalysisService {
         for row in existing {
             let data: String = row.try_get("group_json").map_err(as_error)?;
             if let Ok(group) = serde_json::from_str::<QuestionGroup>(&data) {
-                if group.version >= 3 && group.questions.len() == QUIZ_PER_GROUP {
+                if group.version >= 4 && group.questions.len() == QUIZ_PER_GROUP {
+                    if seen.contains(&locating::material_key(&group.material)) {
+                        continue;
+                    }
                     let key = format!("{}|{}", group.material.source_url, group.material.section);
                     cache.entry(key).or_insert(group);
                 }
@@ -482,18 +523,19 @@ impl DataAnalysisService {
                         job,
                         "generating",
                         ready.len() * QUIZ_PER_GROUP,
-                        "最多4份不同材料正在并行生成，每份使用独立的 Codex Thread",
+                        "最多4个 Codex Thread 正在按题型规划生成模拟题",
                         None,
                     )
                     .await;
                     let worker = self.clone();
                     let weak = Arc::new(weaknesses.clone());
-                    for (slot, outcome) in run_generation_wave(requests, move |material| {
-                        let worker = worker.clone();
-                        let weak = Arc::clone(&weak);
-                        async move { worker.generate_group(&material, &weak).await }
-                    })
-                    .await
+                    for (slot, outcome) in
+                        run_generation_wave(requests, move |material, ordinal| {
+                            let worker = worker.clone();
+                            let weak = Arc::clone(&weak);
+                            async move { worker.generate_group(&material, &weak, ordinal).await }
+                        })
+                        .await
                     {
                         match outcome {
                             Ok(group) if slot < ordered_results.len() => {
@@ -528,7 +570,7 @@ impl DataAnalysisService {
                         job,
                         "validating",
                         ready.len() * QUIZ_PER_GROUP,
-                        "已核对来源数字、题目答案与主题分布",
+                        "已接收 Codex 完成的模拟试题并保存",
                         None,
                     )
                     .await;
@@ -540,7 +582,7 @@ impl DataAnalysisService {
         }
         if ready.len() != QUIZ_GROUPS {
             return Err(format!(
-                "只验证通过{}/20题，暂不开始：{}",
+                "已获得{}/20题，无法组成整卷：{}",
                 ready.len() * 5,
                 last_error
             ));
@@ -556,191 +598,92 @@ impl DataAnalysisService {
     /// Read a small set of hyz's actual wrong questions as question-form
     /// patterns (up to twenty). Historical numbers are masked before reaching the AI provider.
     /// These are never treated as official statistical evidence.
-    async fn wrong_question_patterns(&self, skills: &[String]) -> Vec<String> {
-        let rows=sqlx::query(
-            "SELECT f.deck_path, f.front_markdown, f.back_markdown FROM flashcards f \
-             WHERE f.active=1 AND f.deck_path LIKE '资料/错题/%' \
-             AND EXISTS (SELECT 1 FROM flashcard_card_tags t WHERE t.card_id=f.id AND t.tag='错题') \
-             ORDER BY f.updated_at_ms DESC LIMIT 160"
-        ).fetch_all(&self.pool).await;
-        let Ok(rows) = rows else { return Vec::new() };
-        let mut examples = rows
-            .into_iter()
-            .filter_map(|row| {
-                let deck: String = row.try_get("deck_path").ok()?;
-                let front: String = row.try_get("front_markdown").ok()?;
-                let back: String = row.try_get("back_markdown").ok()?;
-                let skill = deck.rsplit('/').next()?.to_owned();
-                if front.chars().count() < 20 || front.starts_with("- 放弃") {
-                    return None;
-                }
-                Some((
-                    skill,
-                    mask_wrong_question(&front, 180),
-                    mask_wrong_question(&back, 120),
-                ))
-            })
-            .collect::<Vec<_>>();
-        examples.sort_by_key(|(skill, _, _)| {
-            skills
-                .iter()
-                .position(|target| {
-                    skill.contains(target.as_str()) || target.contains(skill.as_str())
-                })
-                .unwrap_or(usize::MAX)
-        });
-        // Round-robin across wrong-question skills: twenty identical base-period
-        // questions would give the model less useful coverage than five skills.
-        let mut by_skill = std::collections::BTreeMap::<String, Vec<(String, String)>>::new();
-        for (skill, front, back) in examples {
-            let bucket = by_skill.entry(skill).or_default();
-            if !bucket.iter().any(|(existing, _)| existing == &front) {
-                bucket.push((front, back));
-            }
-        }
-        let mut priorities = by_skill.keys().cloned().collect::<Vec<_>>();
-        priorities.sort_by_key(|skill| {
-            skills
-                .iter()
-                .position(|target| {
-                    skill.contains(target.as_str()) || target.contains(skill.as_str())
-                })
-                .unwrap_or(usize::MAX)
-        });
-        let mut output = Vec::new();
-        for depth in 0..5 {
-            for skill in &priorities {
-                if let Some((front, back)) = by_skill.get(skill).and_then(|items| items.get(depth))
-                {
-                    output.push(format!(
-                        "题型/{skill}；旧题问法（遮蔽数值）：{front}；原复盘提示（仅参考）：{back}"
-                    ));
-                    if output.len() == 20 {
-                        return output;
-                    }
-                }
-            }
-        }
-        output
-    }
+    /// Codex reads the current hyz Skill/Flashcards from the PC repository.
+    /// Its final answers/options are accepted as delivered; the server only
+    /// decodes the contract the UI needs and never recomputes the solution.
     async fn generate_group(
         &self,
-        material: &Material,
+        source: &Material,
         weaknesses: &[String],
+        ordinal: usize,
     ) -> Result<QuestionGroup, String> {
         let config = self.config.as_ref().ok_or("Codex Token 未配置")?;
         let earlier = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM data_analysis_groups WHERE section=?",
         )
-        .bind(&material.section)
+        .bind(&source.section)
         .fetch_one(&self.pool)
         .await
         .map_err(as_error)?;
-        let material = generation_excerpt(material, earlier.max(0) as usize);
-        let wrong_patterns = self.wrong_question_patterns(weaknesses).await;
+        let context = generation_excerpt(source, earlier.max(0) as usize);
         let source_year = OFFICIAL_SOURCES
             .iter()
-            .find(|(_, url)| *url == material.source_url)
+            .find(|(_, url)| *url == context.source_url)
             .map(|(year, _)| *year)
             .unwrap_or(2025);
-        let system = r#"你是一名公务员行测资料分析命题编辑。请基于提供的政府统计原文，改写成一份紧凑、可做5道题的“国考风格文字资料”，然后恰好生成5道数值计算题，每道题都应有独立的计算依据。必须返回单个严格JSON对象：
-{"material_text":"改写后的正式材料全文","questions":[{"question":"包含明确统计年份与比较年份的国考资料分析题干","evidence":"原文中连续复制且包含a、b两个数字的原始证据，至少15字","operation":"base_period|growth_amount|growth_rate|average_growth_rate|average_growth_amount|share_change|mixed_growth_rate|share|average|difference|ratio","a":1234,"b":5.6,"c":null,"d":null,"unit":"万吨","explanation":"简短、可复核的速算提示"}]}
-材料：请按统计口径提炼、适度调整顺序和句式、适当分段，保留必要数值、单位、年份；不要逐字照抄，也不能编造、推测或转换新增任何统计数值。材料建议350至650汉字（以资料充足为准，不为凑字数虚构事实），按考试常见材料自然分成2至4个相关段落，兼有真实多主体、近似指标、现期与同比等合理定位干扰；同一事实仍应集中表达，不可为了难度强行打散。不要用新闻宣传口吻。最多只出现给定年份和原文已有的数字。每道题使用的a、b必须在“改写材料”中可见，evidence必须是从官方原文逐字摘取的连续片段。
-命题：优先采用下方20个真实错题的考点、复合问法和易混口径；尽量使5题中至少3题针对不同薄弱点，不允许退化成5道换主体的基期量/现期量入门题。新增 average_growth_rate 表示平均数增长率，a=总量同比增长率（百分数）、b=份数/人数同比增长率（百分数），结果=(a-b)/(1+b/100)，选项单位为%。复合题支持4操作数（c、d必填且来自同一份官方证据）：average_growth_amount 的 a=现期总量，b=现期人数或份数，c=总量增长率百分数，d=人数增长率百分数，结果=a/b*(c-d)/(100+c)；share_change 的 a=现期部分，b=现期整体，c=部分增长率百分数，d=整体增长率百分数，结果=a/b*(c-d)/(1+c/100)，选项单位固定为百分点；mixed_growth_rate 的 a=部分一基期量，b=部分一增长率百分数，c=部分二基期量，d=部分二增长率百分数，结果=(a*b+c*d)/(a+c)，单位为%。普通两操作数题c、d为null。所有4个数必须在证据片段和改写材料里出现，否则拒绝。禁止输出尚未支持运算规则的题型；实在缺乏可验证的来源操作数时宁可拒绝该材料，不能捏造高级题。每道题干必须明确使用官方统计年度（例如2022年末），涉及同比/上一年的比较时必须明确写出上一具体年度（例如2021年末），不得只写“年末”“比上年”“比去年”。语义务必和 operation 对齐：问“增加多少”必须为增长量而非基期量，问上年末存量才是基期量。只允许有唯一数值答案的四选一计算题；绝对不要生成综合判断、正误辨析、四个说法选正确或错误、能够推出的是等题型。每份正式材料至少覆盖3种不同的数值计算考点，如基期、增量、增长率、比重、倍数、平均数增长率、平均数、差额，围绕不同指标提问。题干优先“根据上述资料，……约为多少”“与上年相比……”“……占……的比重约为……”等公考式表述；不得使用“求”“按同比增长率估算”等课堂口吻；不要泄漏公式和答案。growth_amount、base_period的a=现期量、b=增长率百分数（下降是负数）；growth_rate的a=现期、b=基期；share的a=部分、b=总体；average/ratio a/b；difference a-b。不要混用统计口径、年份或量纲；不提供选项，选项由程序独立计算。不得引用没有出现在改写材料中的数字。"#;
-        let user = format!(
-            "官方{}年统计公报资料（唯一可用统计事实）：\n{}\n资料主题：{} → {}\n优先考点：{}\n【用户错题仅供参考命题问法、干扰项和复盘方法，不可作为数值来源】\n{}\n以用户错题的考点、易错口径和速算方法为出题主线，优先多步骤和综合审题，但操作必须在允许枚举中且所有数字来自官方来源。生成国考风格新材料及恰好5道数值计算变式题；忽略综合判断题型，不能照抄旧题。",
-            source_year, material.text, material.topic, material.subtopic, weaknesses.join("、"), wrong_patterns.join("\n")
+        let prompt = format!(
+            r#"你是 hyz 的公务员行测资料分析综合训练命题 Agent。当前任务是**题型驱动**，不是材料驱动。
+工作目录是 hyz-things 仓库。请先使用 hyz-xingce Skill（.agents/skills/行测做题/SKILL.md），
+按其中资料分析导航主动读取 references/资料分析.md 和 flashcards/资料/ 的相关做题方法与真实错题。
+每次都是新建 Thread，必须基于这次工作树中的最新内容工作；不需要用户在提示词里复制卡片。
+本次是整套4篇×5题的第 {group_no} 篇；全卷软目标为12道薄弱点、6道其他核心考点、2道基础题，
+各篇尽量覆盖不同题型与命题变式，优先兼顾个人薄弱考点：{weaknesses}。
+先选择本篇5题的题型、命题变式与考查的 hyz 速算/审题动作，再构造共享且自洽的模拟统计数据，
+最后写成约350–650汉字的国考风格材料，并拟制5道有唯一正确答案的四选一题。
+应覆盖真实错题中的乘积增长率（乘/除/倒推/间隔）、混合增长、平均数增长率/增量、两期比重差、
+年均变化、增长贡献/拉动、分数比较、基期量与增长量错配等，可按适合本篇的5种变式灵活选择；
+不要机械地大量重复简单基期量、增长量或现期量。
+此篇背景：{year}年，官方参考章节「{section}」，主题「{topic}／{subtopic}」。
+官方公报摘录仅供了解主体、指标、统计口径和写作语气，不是数值限制，也不是模拟数字的官方证明：
+{excerpt}
+允许合理构造所有训练数值；模拟材料必须清楚标注为“模拟训练数据”，
+不得声称模拟数字是国家统计局真实公布的数值。年份、主体、指标和单位要明确，
+基期、现期、增长量与增速、部分/总体、混合权重之间必须自洽。
+题干涉及同比时明确写具体比较年份（如“2024年比2023年”），不能只说“年末”“去年”。
+根据考生能在最终材料中实际看到的数字判断正确项；四项的区分度应适合 hyz 速算方法。
+对每道题返回：question题干；options恰好4个不带ABCD标记的选项字符串；
+correct_index为0至3的正确项下标；answer为该正确选项的完整内容；
+explanation为依照 hyz 方法的简短速算解释；skill为具体考点；evidence为模拟材料中支持题目的连续文字片段。
+先自行核对数学及选项，再仅输出符合结构化 Schema 的JSON，不输出计划、过程或代码块。
+输出 JSON 必须具有 material_text 和 questions 两字段，questions 恰好5项。"#,
+            group_no = ordinal % QUIZ_GROUPS + 1,
+            weaknesses = weaknesses.join("、"),
+            year = source_year,
+            section = context.section,
+            topic = context.topic,
+            subtopic = context.subtopic,
+            excerpt = context.text
         );
-        // One ephemeral remote thread per material. Retry the rejected batch as a
-        // second turn in the SAME thread, supplying only validation reasons.
         let mut session = tokio::time::timeout(
             Duration::from_secs(12),
-            CodexSession::connect(&config.token),
+            CodexSession::connect(&config.token, &config.cwd),
         )
         .await
         .map_err(|_| "连接 Codex App Server 超时".to_owned())??;
-        let mut last_reason = String::new();
-        for round in 0..2 {
-            let prompt = if round == 0 {
-                format!("{system}\n\n{user}\n\n只输出符合 JSON Schema 的完整对象，不调用工具或修改文件。")
-            } else {
-                format!(
-                    "上次出题未通过 RK3568 的确定性验证：{last_reason}。请根据本轮对话给出的官方资料重新生成完整的一组5道数值计算题，修正全部验证错误，只返回 JSON；不得新增统计数据。"
-                )
-            };
-            let content = tokio::time::timeout(TURN_TIMEOUT, session.turn(&prompt))
-                .await
-                .map_err(|_| "Codex 出题超时，请检查电脑服务与账号额度".to_owned())??;
-            #[derive(Deserialize)]
-            struct Batch {
-                material_text: String,
-                questions: Vec<QuestionRecipe>,
-            }
-            let batch: Batch = match serde_json::from_str(&content) {
-                Ok(batch) => batch,
-                Err(_) => {
-                    last_reason = "Codex JSON 结构不符合题目格式".into();
-                    continue;
-                }
-            };
-            if batch.questions.len() != QUIZ_PER_GROUP {
-                last_reason = format!(
-                    "「{}」AI 返回 {} 题，要求每组恰好 {} 题",
-                    material.section,
-                    batch.questions.len(),
-                    QUIZ_PER_GROUP
-                );
-                continue;
-            }
-            if !grounded_exam_material(&material.text, &batch.material_text, source_year) {
-                last_reason = format!(
-                    "「{}」改写材料有无来源的数值或不符合篇幅要求",
-                    material.section
-                );
-                continue;
-            }
-            let mut shown_material = material.clone();
-            shown_material.text = batch.material_text;
-            let mut result = Vec::new();
-            let mut seen = HashSet::new();
-            let mut skill_types = HashSet::new();
-            for candidate in &batch.questions {
-                if !operand_visible(&shown_material.text, candidate.a)
-                    || !operand_visible(&shown_material.text, candidate.b)
-                    || candidate
-                        .c
-                        .is_some_and(|c| !operand_visible(&shown_material.text, c))
-                    || candidate
-                        .d
-                        .is_some_and(|d| !operand_visible(&shown_material.text, d))
-                    || !question_has_explicit_years(&candidate.question, source_year)
-                {
-                    continue;
-                }
-                if let Ok(q) = verify_recipe(&material, candidate, result.len()) {
-                    let fingerprint = format!(
-                        "{:?}|{}|{}|{:?}|{:?}",
-                        candidate.operation, candidate.a, candidate.b, candidate.c, candidate.d
-                    );
-                    if seen.insert(fingerprint) {
-                        skill_types.insert(q.skill.clone());
-                        result.push(q);
-                    }
-                }
-                if result.len() == QUIZ_PER_GROUP {
-                    break;
-                }
-            }
-            if result.len() == QUIZ_PER_GROUP && skill_types.len() >= 3 {
-                return Ok(QuestionGroup {
-                    version: 3,
-                    material: shown_material,
-                    questions: result,
-                });
-            }
-            last_reason = format!("「{}」只通过 {}/5 题校验", material.section, result.len());
+        let output = tokio::time::timeout(TURN_TIMEOUT, session.turn(&prompt))
+            .await
+            .map_err(|_| "Codex 出题超时，请检查电脑服务与账号额度".to_owned())??;
+        #[derive(Deserialize)]
+        struct Batch {
+            material_text: String,
+            questions: Vec<VerifiedQuestion>,
         }
-        Err(format!("{last_reason}；Codex 修复后仍未通过校验"))
+        let batch: Batch =
+            serde_json::from_str(&output).map_err(|_| "Codex 返回的试卷 JSON 与展示格式不匹配")?;
+        // Structural safety only: protect fixed UI indexing. No math/content
+        // verification and no answer rewriting by hyz-things.
+        if batch.questions.len() != QUIZ_PER_GROUP
+            || batch.questions.iter().any(|q| q.correct_index >= 4)
+        {
+            return Err("Codex 返回的试卷结构不完整（需要5题，每题4个选项）".into());
+        }
+        let mut material = context;
+        material.text = format!("【模拟训练数据，非官方发布数值】\n{}", batch.material_text);
+        Ok(QuestionGroup {
+            version: 4,
+            material,
+            questions: batch.questions,
+        })
     }
     async fn fetch_row(
         &self,
@@ -963,78 +906,6 @@ impl DataAnalysisService {
     }
 }
 
-/// A rewritten material must never introduce a fresh quantitative datum.
-/// The only new year label permitted is the known source publication year.
-fn mask_wrong_question(value: &str, limit: usize) -> String {
-    let mut out = String::new();
-    let mut number = false;
-    for c in value.chars().take(limit) {
-        if c.is_ascii_digit() || number && (c == '.' || c == '%' || c == ',') {
-            if !number {
-                out.push('□');
-            }
-            number = true;
-        } else {
-            number = false;
-            if c == '\n' {
-                out.push(' ')
-            } else {
-                out.push(c)
-            }
-        }
-    }
-    out
-}
-fn numeric_tokens(text: &str) -> Vec<f64> {
-    let mut out = Vec::new();
-    let mut word = String::new();
-    for c in text.chars().chain(std::iter::once(' ')) {
-        if c.is_ascii_digit() || c == '.' && !word.is_empty() {
-            word.push(c);
-        } else if !word.is_empty() {
-            if let Ok(v) = word.parse::<f64>() {
-                if v.is_finite() {
-                    out.push(v);
-                }
-            }
-            word.clear();
-        }
-    }
-    out
-}
-fn operand_visible(text: &str, value: f64) -> bool {
-    let value = value.abs();
-    numeric_tokens(text)
-        .iter()
-        .any(|v| (v - value).abs() < 0.0001)
-}
-fn question_has_explicit_years(question: &str, year: u16) -> bool {
-    if !question.contains(&format!("{year}年")) {
-        return false;
-    }
-    let compares_previous = [
-        "上年", "去年", "同比", "增加", "减少", "增长", "增速", "增幅",
-    ]
-    .iter()
-    .any(|term| question.contains(term));
-    !compares_previous || question.contains(&format!("{}年", year.saturating_sub(1)))
-}
-
-fn grounded_exam_material(source: &str, rewritten: &str, year: u16) -> bool {
-    let n = rewritten.chars().count();
-    if !(100..=1800).contains(&n) || source.trim() == rewritten.trim() {
-        return false;
-    }
-    let original = numeric_tokens(source);
-    let rewritten_values = numeric_tokens(rewritten);
-    if rewritten_values.len() < 4 {
-        return false;
-    }
-    rewritten_values.iter().all(|v| {
-        (*v - year as f64).abs() < 0.001 || original.iter().any(|known| (known - v).abs() < 0.0001)
-    })
-}
-
 /// Keep complete per-chapter official text in SQLite, but pass one bounded
 /// paragraph-coherent fragment to the AI and the iPad. Repeated generation can
 /// rotate over different paragraphs without re-fetching the official source.
@@ -1199,26 +1070,57 @@ mod tests {
     #[test]
     fn env_accepts_non_hex_token_without_a_fixed_length() {
         let value = "short-token-12";
-        let config = parse_env(&format!("HYZ_THINGS_CODEX_WS_TOKEN={value}"))
-            .unwrap()
-            .unwrap();
+        let config = parse_env(&format!(
+            "HYZ_THINGS_CODEX_WS_TOKEN={value}\nHYZ_THINGS_CODEX_CWD=/home/hyz/hyz_things"
+        ))
+        .unwrap()
+        .unwrap();
         assert_eq!(config.token, value);
+    }
+
+    #[test]
+    fn final_codex_answers_deserialize_without_backend_recalculation() {
+        // Deliberately mathematically arbitrary. The app consumes the model's
+        // selected option rather than a Rust formula/answer builder.
+        let item = serde_json::json!({
+            "question":"2024年比2023年增长约多少？",
+            "options":["17%","19%","21%","23%"],
+            "correct_index":2,
+            "answer":"21%",
+            "explanation":"按照本题对应 hyz 卡片的速算策略判断。",
+            "skill":"间隔增长率",
+            "evidence":"2023年增长10%，2024年增长10%"
+        });
+        let q: VerifiedQuestion = serde_json::from_value(item).unwrap();
+        assert_eq!(q.correct_index, 2);
+        assert_eq!(q.answer, "21%");
+        assert_eq!(q.skill, "间隔增长率");
     }
 
     #[test]
     fn token_is_the_only_supported_model_credential() {
         let sample = format!(
-            "HYZ_THINGS_AI_BASE_URL=https://api.deepseek.com\nHYZ_THINGS_AI_API_KEY=legacy\nHYZ_THINGS_AI_MODEL=legacy\nHYZ_THINGS_CODEX_WS_TOKEN={}\n",
+            "HYZ_THINGS_AI_BASE_URL=https://api.deepseek.com\nHYZ_THINGS_AI_API_KEY=legacy\nHYZ_THINGS_AI_MODEL=legacy\nHYZ_THINGS_CODEX_WS_TOKEN={}\nHYZ_THINGS_CODEX_CWD=/home/hyz/hyz_things\n",
             "a".repeat(64)
         );
         let config = parse_env(&sample).unwrap().unwrap();
         assert_eq!(config.token.len(), 64);
+        assert_eq!(config.cwd, "/home/hyz/hyz_things");
         assert!(parse_env("HYZ_THINGS_AI_BASE_URL=https://api.deepseek.com")
             .unwrap()
             .is_none());
-        assert!(parse_env("HYZ_THINGS_CODEX_WS_TOKEN=bad token").is_err());
+        assert!(parse_env(
+            "HYZ_THINGS_CODEX_WS_TOKEN=bad token\nHYZ_THINGS_CODEX_CWD=/home/user/repo"
+        )
+        .is_err());
+        assert!(parse_env("HYZ_THINGS_CODEX_WS_TOKEN=short-token-12").is_err());
+        assert!(parse_env("HYZ_THINGS_CODEX_CWD=/home/hyz/hyz_things").is_err());
+        assert!(!valid_remote_repo_path("hyz-things"));
+        assert!(!valid_remote_repo_path("/home/../etc"));
+        assert!(!valid_remote_repo_path("/home/hyz\nhead"));
+        assert!(valid_remote_repo_path("/home/hyz/hyz_things"));
         assert!(parse_env(&format!(
-            "HYZ_THINGS_CODEX_WS_TOKEN={0}\nHYZ_THINGS_CODEX_WS_TOKEN={0}",
+            "HYZ_THINGS_CODEX_WS_TOKEN={0}\nHYZ_THINGS_CODEX_WS_TOKEN={0}\nHYZ_THINGS_CODEX_CWD=/home/hyz/hyz_things",
             "a".repeat(64)
         ))
         .is_err());
@@ -1249,7 +1151,7 @@ mod tests {
             let active = Arc::clone(&active);
             let peak = Arc::clone(&peak);
             let barrier = Arc::clone(&barrier);
-            move |material| {
+            move |material, _ordinal| {
                 let active = Arc::clone(&active);
                 let peak = Arc::clone(&peak);
                 let barrier = Arc::clone(&barrier);
@@ -1339,7 +1241,7 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             let group = QuestionGroup {
-                version: 3,
+                version: 4,
                 material: material.clone(),
                 questions,
             };
@@ -1353,9 +1255,12 @@ mod tests {
                 .execute(&pool).await.unwrap();
         }
 
-        let config = parse_env(&format!("HYZ_THINGS_CODEX_WS_TOKEN={}", "a".repeat(64)))
-            .unwrap()
-            .unwrap();
+        let config = parse_env(&format!(
+            "HYZ_THINGS_CODEX_WS_TOKEN={}\nHYZ_THINGS_CODEX_CWD=/home/hyz/hyz_things",
+            "a".repeat(64)
+        ))
+        .unwrap()
+        .unwrap();
         let service = DataAnalysisService::new(pool, Some(config)).unwrap();
         let id = service.prepare().await.expect("start generation");
         let mut run_id = None;
@@ -1414,16 +1319,6 @@ mod tests {
     }
 
     #[test]
-    fn wrong_question_templates_mask_original_numbers() {
-        let masked = mask_wrong_question(
-            "2023年末，粮食产量71488万吨，同比增长1.2%。能够从资料中推出的是",
-            200,
-        );
-        assert!(!masked.contains("71488"));
-        assert!(!masked.contains("2023"));
-        assert!(masked.contains("能够从资料中推出的是"));
-    }
-    #[test]
     fn complete_official_text_is_cached_while_generation_is_bounded() {
         let first = "全年粮食产量71488万吨，比上年增加838万吨。";
         let second = "年末水产品总产量7657万吨，同比增长4.1%。";
@@ -1451,20 +1346,5 @@ mod tests {
         assert_eq!(sections.len(), 2);
         assert_eq!(sections[0].topic, "宏观经济");
         assert!(sections[1].text.contains("71488"));
-    }
-    #[test]
-    fn year_specific_question_rejects_generic_year_end() {
-        assert!(!question_has_explicit_years(
-            "年末规模比上年末增加多少？",
-            2022
-        ));
-        assert!(!question_has_explicit_years(
-            "2022年末规模比上年末增加多少？",
-            2022
-        ));
-        assert!(question_has_explicit_years(
-            "2022年末规模比2021年末增加多少？",
-            2022
-        ));
     }
 }
