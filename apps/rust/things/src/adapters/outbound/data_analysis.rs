@@ -557,8 +557,13 @@ impl DataAnalysisService {
                 material_text: String,
                 questions: Vec<QuestionRecipe>,
             }
-            let batch: Batch = serde_json::from_str(&content)
-                .map_err(|_| "AI 返回缺少改写材料或题目字段".to_owned())?;
+            let batch: Batch = match serde_json::from_str(&content) {
+                Ok(batch) => batch,
+                Err(_) => {
+                    last_reason = "Codex JSON 结构不符合题目格式".into();
+                    continue;
+                }
+            };
             if batch.questions.len() != QUIZ_PER_GROUP {
                 last_reason = format!(
                     "「{}」AI 返回 {} 题，要求每组恰好 {} 题",

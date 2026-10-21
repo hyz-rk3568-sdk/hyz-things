@@ -144,7 +144,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     Err(err) => Err(err.to_string()),
                     Ok(task) => {
                         let mut outcome = Err("出题等待超时，可稍后重试".to_owned());
-                        for _ in 0..240 {
+                        // Four material groups can require two 85-second Codex turns each.
+                        // Keep the UI polling until the bounded backend job finishes.
+                        for _ in 0..800 {
                             TimeoutFuture::new(1500).await;
                             let state = fetch_json_typed::<PrepareProgress>(
                                 &format!("{ANALYSIS_ROOT}/prepare/{}", task.job_id),
