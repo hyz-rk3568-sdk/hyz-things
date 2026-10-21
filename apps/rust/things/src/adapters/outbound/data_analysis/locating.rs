@@ -233,29 +233,54 @@ impl DataAnalysisService {
         Ok(id)
     }
 
-    async fn build_locating_run(&self,job:&str,request:&LocatingRequest)->Result<String,String>{
+    async fn build_locating_run(
+        &self,
+        job: &str,
+        request: &LocatingRequest,
+    ) -> Result<String, String> {
         // Do not use old question-group or locating-set caches for a new attempt.
-        self.set_progress(job,"fetching",0,"正在准备新的统计背景",None).await;
-        let sources=self.load_sections().await?;
-        let candidates=sources.into_iter().filter(|m|matches_filter(m,request)).collect::<Vec<_>>();
-        if candidates.is_empty(){return Err("当前主题没有可用统计参考背景".into());}
-        let mut chosen=None;
-        let mut last_error=String::new();
-        for source in candidates.iter().take(4){
-            self.set_progress(job,"generating",0,"Codex 正在生成新材料和5道找数题",None).await;
-            match self.generate_locators(source).await{
-                Ok(batch)=>{chosen=Some(batch);break;}
-                Err(e)=>last_error=e,
+        self.set_progress(job, "fetching", 0, "正在准备新的统计背景", None)
+            .await;
+        let sources = self.load_sections().await?;
+        let candidates = sources
+            .into_iter()
+            .filter(|m| matches_filter(m, request))
+            .collect::<Vec<_>>();
+        if candidates.is_empty() {
+            return Err("当前主题没有可用统计参考背景".into());
+        }
+        let mut chosen = None;
+        let mut last_error = String::new();
+        for source in candidates.iter().take(4) {
+            self.set_progress(
+                job,
+                "generating",
+                0,
+                "Codex 正在生成新材料和5道找数题",
+                None,
+            )
+            .await;
+            match self.generate_locators(source).await {
+                Ok(batch) => {
+                    chosen = Some(batch);
+                    break;
+                }
+                Err(e) => last_error = e,
             }
         }
-        let (material,questions)=chosen.ok_or_else(||format!("找数训练生成失败：{last_error}"))?;
-        let group_id=Uuid::now_v7().to_string();
-        let group=QuestionGroup{version:5,material:material.clone(),questions:Vec::new()};
+        let (material, questions) =
+            chosen.ok_or_else(|| format!("找数训练生成失败：{last_error}"))?;
+        let group_id = Uuid::now_v7().to_string();
+        let group = QuestionGroup {
+            version: 5,
+            material: material.clone(),
+            questions: Vec::new(),
+        };
         sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES(?,?,?,?,?,?)")
             .bind(&group_id).bind(&material.source_url).bind(&material.section)
             .bind(&material.topic).bind(serde_json::to_string(&group).map_err(as_error)?)
             .bind(now_ms()).execute(&self.pool).await.map_err(as_error)?;
-        let id=Uuid::now_v7().to_string();
+        let id = Uuid::now_v7().to_string();
         sqlx::query("INSERT INTO data_analysis_locating_runs(id,group_id,material_key,questions_json,answers_json,status,created_at_ms) VALUES(?,?,?,?,?,'ready',?)")
             .bind(&id).bind(&group_id).bind(material_key(&material))
             .bind(serde_json::to_string(&questions).map_err(as_error)?)
@@ -264,14 +289,24 @@ impl DataAnalysisService {
         Ok(id)
     }
 
-    async fn generate_locators(&self,source:&Material)->Result<(Material,Vec<LocatingTarget>),String>{
-        let config=self.config.as_ref().ok_or("Codex Token 未配置")?;
-        let mut session=tokio::time::timeout(
-            Duration::from_secs(12),CodexSession::connect(&config.token,&config.cwd)
-        ).await.map_err(|_|"连接 Codex App Server 超时".to_owned())??;
-        let year=OFFICIAL_SOURCES.iter().find(|(_,url)|*url==source.source_url)
-            .map(|(year,_)|*year).unwrap_or(2025);
-        let system=format!(r#"你是 hyz 的公务员行测资料分析找数专项命题 Agent。
+    async fn generate_locators(
+        &self,
+        source: &Material,
+    ) -> Result<(Material, Vec<LocatingTarget>), String> {
+        let config = self.config.as_ref().ok_or("Codex Token 未配置")?;
+        let mut session = tokio::time::timeout(
+            Duration::from_secs(12),
+            CodexSession::connect(&config.token, &config.cwd),
+        )
+        .await
+        .map_err(|_| "连接 Codex App Server 超时".to_owned())??;
+        let year = OFFICIAL_SOURCES
+            .iter()
+            .find(|(_, url)| *url == source.source_url)
+            .map(|(year, _)| *year)
+            .unwrap_or(2025);
+        let system = format!(
+            r#"你是 hyz 的公务员行测资料分析找数专项命题 Agent。
 使用 hyz-xingce Skill 和本仓库最新 flashcards/资料/ 中的定位、建立数据地图方法。
 本次只训练寻找原文数字，不计算、不设计选择题。
 先规划5个定位任务（年份、主体、指标、现期/同比口径），再构造统计模拟数据，
@@ -286,25 +321,37 @@ impl DataAnalysisService {
 anchor必须是生成的材料中唯一的连续原文片段，内含subject、indicator和目标数字；
 target为anchor中完整、唯一的数字文本（不带单位），五题目标位置不可重复。
 自行核对材料、定位题与答案，标明它们属于模拟训练数据；不要输出解释或过程。"#,
-            year=year,topic=source.topic,subtopic=source.subtopic,
-            excerpt=generation_excerpt(source,0).text);
-        let mut reason=String::new();
+            year = year,
+            topic = source.topic,
+            subtopic = source.subtopic,
+            excerpt = generation_excerpt(source, 0).text
+        );
+        let mut reason = String::new();
         for _ in 0..2 {
-            let prompt=if reason.is_empty(){system.clone()}
-                else{format!("上次无法匹配5个数字位置：{reason}。重新返回完整材料和五题，确保anchor和target逐字一致，仅JSON。")};
-            let output=tokio::time::timeout(TURN_TIMEOUT,session.turn_locating(&prompt)).await
-                .map_err(|_|"Codex 找数生成超时".to_owned())??;
-            #[derive(Deserialize)] struct Batch{material_text:String,questions:Vec<LocatingRecipe>}
-            match serde_json::from_str::<Batch>(&output){
-                Ok(batch)=>{
-                    let mut material=source.clone();
-                    material.text=format!("【模拟训练数据，非官方发布数值】\n{}",batch.material_text);
-                    match verify_locators(&material,&batch.questions){
-                        Ok(targets)=>return Ok((material,targets)),
-                        Err(e)=>reason=e
+            let prompt = if reason.is_empty() {
+                system.clone()
+            } else {
+                format!("上次无法匹配5个数字位置：{reason}。重新返回完整材料和五题，确保anchor和target逐字一致，仅JSON。")
+            };
+            let output = tokio::time::timeout(TURN_TIMEOUT, session.turn_locating(&prompt))
+                .await
+                .map_err(|_| "Codex 找数生成超时".to_owned())??;
+            #[derive(Deserialize)]
+            struct Batch {
+                material_text: String,
+                questions: Vec<LocatingRecipe>,
+            }
+            match serde_json::from_str::<Batch>(&output) {
+                Ok(batch) => {
+                    let mut material = source.clone();
+                    material.text =
+                        format!("【模拟训练数据，非官方发布数值】\n{}", batch.material_text);
+                    match verify_locators(&material, &batch.questions) {
+                        Ok(targets) => return Ok((material, targets)),
+                        Err(e) => reason = e,
                     }
                 }
-                Err(_)=>reason="找数题JSON格式无效".into()
+                Err(_) => reason = "找数题JSON格式无效".into(),
             }
         }
         Err(format!("找数答案位置无法匹配：{reason}"))
