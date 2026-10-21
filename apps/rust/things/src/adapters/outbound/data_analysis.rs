@@ -288,6 +288,12 @@ impl DataAnalysisService {
                 }
             }
         }
+        // Newly added folders are selectable before the SQLite card sync.
+        if let Ok(available)=self.available_skills().await {
+            let set=available.iter().cloned().collect::<HashSet<_>>();
+            weights.retain(|category,_|set.contains(category));
+            for category in available {weights.entry(category).or_insert(1);}
+        }
         let mut ranked=weights.into_iter().collect::<Vec<_>>();
         ranked.sort_by(|a,b|b.1.cmp(&a.1).then_with(||a.0.cmp(&b.0)));
         ranked.into_iter().take(4).map(|(category,_)|category).collect()
@@ -296,6 +302,10 @@ impl DataAnalysisService {
     /// Derive categories from "错题/<分类>" whether RK3568 mounted
     /// flashcards/, flashcards/资料/, or the enclosing repository.
     pub async fn available_skills(&self) -> Result<Vec<String>, String> {
+        // Prefer the live mounted folder tree to the previously imported cards.
+        if let Some(live)=mounted_wrong_question_categories().await {
+            return Ok(live);
+        }
         let rows = sqlx::query(
             "SELECT DISTINCT deck_path FROM flashcards WHERE active=1",
         ).fetch_all(&self.pool).await.map_err(as_error)?;
@@ -1124,6 +1134,32 @@ fn parse_official_sections_from(html: &str, source_url: &str) -> Vec<Material> {
     }
     result
 }
+/// Look at the directory currently mounted into RK3568 rather than
+/// requiring a card sync just to show a newly created folder name.
+async fn mounted_wrong_question_categories() -> Option<Vec<String>> {
+    let root=super::flashcard_source::FLASHCARD_SOURCE_ROOT;
+    for relative in ["资料/错题","错题","flashcards/资料/错题"] {
+        let path=std::path::Path::new(root).join(relative);
+        let Ok(mut reader)=tokio::fs::read_dir(path).await else {continue};
+        let mut result=std::collections::BTreeSet::<String>::new();
+        while let Ok(Some(entry))=reader.next_entry().await {
+            let name=entry.file_name().to_string_lossy().into_owned();
+            if valid_wrong_category(&name)
+                && entry.file_type().await.is_ok_and(|kind|kind.is_dir()) {
+                result.insert(name);
+            }
+        }
+        return Some(result.into_iter().collect());
+    }
+    None
+}
+
+fn valid_wrong_category(category:&str)->bool {
+    let count=category.chars().count();
+    count>0 && count<=60 && category!="." && category!=".."
+        && !category.chars().any(char::is_control)
+}
+
 /// The directory immediately beneath flashcards/资料/错题/ is the skill.
 /// The flashcard import root can point at flashcards/, 资料/ or 错题's parent.
 fn wrong_question_category(deck: &str) -> Option<&str> {
@@ -1134,7 +1170,7 @@ fn wrong_question_category(deck: &str) -> Option<&str> {
         return None;
     }
     let category=*parts.get(index+1)?;
-    if category.chars().count()>60 || category=="." || category==".." {
+    if !valid_wrong_category(category) {
         return None;
     }
     Some(category)
