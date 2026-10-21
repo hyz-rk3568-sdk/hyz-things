@@ -1,5 +1,5 @@
-//! Reuse verified examination materials for five-question numeric locating drills.
-//! Materials already shown in either mode are not silently offered as fresh.
+//! Fresh simulated passages with five numeric-location tasks.
+//! Existing runs remain durable, never reused as new exercises.
 use super::*;
 use std::collections::{BTreeMap, HashSet};
 
@@ -252,7 +252,7 @@ impl DataAnalysisService {
             match result {
                 Ok(id) => {
                     worker
-                        .set_progress(&job, "ready", 5, "5道定位题已通过校验", Some(id))
+                        .set_progress(&job, "ready", 5, "已生成5道找数题", Some(id))
                         .await
                 }
                 Err(e) => worker.set_progress(&job, "failed", 0, &e, None).await,
@@ -261,142 +261,80 @@ impl DataAnalysisService {
         Ok(id)
     }
 
-    async fn build_locating_run(
-        &self,
-        job: &str,
-        request: &LocatingRequest,
-    ) -> Result<String, String> {
-        let seen = self.sync_seen_materials().await?;
-        self.set_progress(job, "selecting", 0, "寻找未做过的已校验材料", None)
-            .await;
-        let rows = sqlx::query(
-            "SELECT id,group_json FROM data_analysis_groups ORDER BY created_at_ms DESC LIMIT 300",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(as_error)?;
-        let mut chosen = None::<(String, QuestionGroup)>;
-        for row in rows {
-            let id: String = row.try_get("id").map_err(as_error)?;
-            let data: String = row.try_get("group_json").map_err(as_error)?;
-            let Ok(group) = serde_json::from_str::<QuestionGroup>(&data) else {
-                continue;
-            };
-            if group.version < 2 || group.questions.len() != QUIZ_PER_GROUP {
-                continue;
-            }
-            if seen.contains(&material_key(&group.material)) != request.allow_review
-                || !matches_filter(&group.material, request)
-            {
-                continue;
-            }
-            chosen = Some((id, group));
-            break;
-        }
-        if chosen.is_none() && request.allow_review {
-            return Err("当前主题没有可复练的已见材料，请关闭复练或调整主题".into());
-        }
-        if chosen.is_none() {
-            self.set_progress(job, "fetching", 0, "从官方统计资料生成新的仿真材料", None)
-                .await;
-            let sources = self.load_sections().await?;
-            let weaknesses = self.weaknesses().await;
-            let mut last_error = String::new();
-            for material in &sources {
-                // A previously seen official chapter may inspire a new
-                // simulated scenario; dedup is by new scenario's content.
-                let excerpt = generation_excerpt(material, 0);
-                if !matches_filter(&excerpt, request) {
-                    continue;
-                }
-                match self.generate_group(material, &weaknesses, 0).await {
-                    Ok(group) => {
-                        let id = Uuid::now_v7().to_string();
-                        sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES(?,?,?,?,?,?)")
-                            .bind(&id).bind(&group.material.source_url).bind(&group.material.section)
-                            .bind(&group.material.topic)
-                            .bind(serde_json::to_string(&group).map_err(as_error)?)
-                            .bind(now_ms()).execute(&self.pool).await.map_err(as_error)?;
-                        chosen = Some((id, group));
-                        break;
-                    }
-                    Err(e) => last_error = e,
-                }
-            }
-            if chosen.is_none() {
-                return Err(if last_error.is_empty() {
-                    "当前主题没有未见过的材料，可切换主题；已见过的材料不会作为新题重复出现".into()
-                } else {
-                    format!("新材料生成或校验失败：{last_error}")
-                });
+    async fn build_locating_run(&self,job:&str,request:&LocatingRequest)->Result<String,String>{
+        // Do not use old question-group or locating-set caches for a new attempt.
+        self.set_progress(job,"fetching",0,"正在准备新的统计背景",None).await;
+        let sources=self.load_sections().await?;
+        let candidates=sources.into_iter().filter(|m|matches_filter(m,request)).collect::<Vec<_>>();
+        if candidates.is_empty(){return Err("当前主题没有可用统计参考背景".into());}
+        let mut chosen=None;
+        let mut last_error=String::new();
+        for source in candidates.iter().take(4){
+            self.set_progress(job,"generating",0,"Codex 正在生成新材料和5道找数题",None).await;
+            match self.generate_locators(source).await{
+                Ok(batch)=>{chosen=Some(batch);break;}
+                Err(e)=>last_error=e,
             }
         }
-        let (group_id, group) = chosen.ok_or("没有找到可训练的材料")?;
-        self.set_progress(job, "generating", 0, "正在为材料生成5道数字定位题", None)
-            .await;
-        let cached = sqlx::query_scalar::<_, String>(
-            "SELECT questions_json FROM data_analysis_locating_sets WHERE group_id=?",
-        )
-        .bind(&group_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(as_error)?;
-        let questions = if let Some(json) = cached {
-            let stored: Vec<LocatingTarget> = serde_json::from_str(&json).map_err(as_error)?;
-            stored
-        } else {
-            let targets = self.generate_locators(&group.material).await?;
-            sqlx::query("INSERT INTO data_analysis_locating_sets(group_id,questions_json,created_at_ms) VALUES(?,?,?)")
-                .bind(&group_id).bind(serde_json::to_string(&targets).map_err(as_error)?)
-                .bind(now_ms()).execute(&self.pool).await.map_err(as_error)?;
-            targets
-        };
-        if questions.len() != LOCATING_COUNT {
-            return Err("找数题数量错误".into());
-        }
-        let id = Uuid::now_v7().to_string();
+        let (material,questions)=chosen.ok_or_else(||format!("找数训练生成失败：{last_error}"))?;
+        let group_id=Uuid::now_v7().to_string();
+        let group=QuestionGroup{version:5,material:material.clone(),questions:Vec::new()};
+        sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES(?,?,?,?,?,?)")
+            .bind(&group_id).bind(&material.source_url).bind(&material.section)
+            .bind(&material.topic).bind(serde_json::to_string(&group).map_err(as_error)?)
+            .bind(now_ms()).execute(&self.pool).await.map_err(as_error)?;
+        let id=Uuid::now_v7().to_string();
         sqlx::query("INSERT INTO data_analysis_locating_runs(id,group_id,material_key,questions_json,answers_json,status,created_at_ms) VALUES(?,?,?,?,?,'ready',?)")
-            .bind(&id).bind(group_id).bind(material_key(&group.material))
+            .bind(&id).bind(&group_id).bind(material_key(&material))
             .bind(serde_json::to_string(&questions).map_err(as_error)?)
             .bind(serde_json::to_string(&vec![None::<LocatingAnswer>;LOCATING_COUNT]).map_err(as_error)?)
             .bind(now_ms()).execute(&self.pool).await.map_err(as_error)?;
         Ok(id)
     }
 
-    async fn generate_locators(&self, material: &Material) -> Result<Vec<LocatingTarget>, String> {
-        let config = self.config.as_ref().ok_or("Codex Token 未配置")?;
-        let mut session = tokio::time::timeout(
-            Duration::from_secs(12),
-            CodexSession::connect(&config.token, &config.cwd),
-        )
-        .await
-        .map_err(|_| "连接 Codex App Server 超时".to_owned())??;
-        let system = r#"你是行测资料分析找数专项命题编辑。仅根据下方已经校验的改写材料生成恰好5道互不重复的找数题，不能要求计算，不能给四选一选项。只能返回JSON对象：
-{"questions":[{"question":"2024年某主体某指标对应的数字是多少？","subject":"材料中连续出现的主体原词","indicator":"材料中连续出现的指标原词","anchor":"从给定材料逐字复制的连续短片段，必须同时含主体、指标和目标数字","target":"该片段中的原始数字文本，不带单位"}]}
-要求：问句明确时间、主体、指标和同比/现期等口径；subject和indicator逐字出现在question和anchor中；anchor在整篇材料中只能出现一次；target为完整数字（含原有小数点），必须在anchor中唯一出现且不得是其他较长数字的一部分。5个目标数字必须位于5个不同位置；第1～2题先覆盖两个有代表性的数据区域，第3～5题优先在已经出现的区域寻找其他指标或数字，锻炼材料位置地图复用，不能直接给出定位区域，不要按材料顺序简单排列全部答案；不得编造数值。不得把答案写进question。"#;
-        let mut reason = String::new();
+    async fn generate_locators(&self,source:&Material)->Result<(Material,Vec<LocatingTarget>),String>{
+        let config=self.config.as_ref().ok_or("Codex Token 未配置")?;
+        let mut session=tokio::time::timeout(
+            Duration::from_secs(12),CodexSession::connect(&config.token,&config.cwd)
+        ).await.map_err(|_|"连接 Codex App Server 超时".to_owned())??;
+        let year=OFFICIAL_SOURCES.iter().find(|(_,url)|*url==source.source_url)
+            .map(|(year,_)|*year).unwrap_or(2025);
+        let system=format!(r#"你是 hyz 的公务员行测资料分析找数专项命题 Agent。
+使用 hyz-xingce Skill 和本仓库最新 flashcards/资料/ 中的定位、建立数据地图方法。
+本次只训练寻找原文数字，不计算、不设计选择题。
+先规划5个定位任务（年份、主体、指标、现期/同比口径），再构造统计模拟数据，
+组织成350–650汉字、段落真实自然的行测仿真材料。
+第1–2题帮助探索不同数据区域，第3–5题复用数据地图，不要机械地按材料顺序给答案。
+统计背景年份{year}，主题「{topic}／{subtopic}」；官方摘录只提供主体、指标和统计口径参考，不代表模拟数字属于官方公布：
+{excerpt}
+只输出JSON对象，含material_text与questions两字段，questions恰好5项。
+每题包含question、subject、indicator、anchor、target五个字符串字段。
+题干明确具体年份、主体与指标，不出现答案；subject、indicator在题干和anchor内都逐字出现；
+anchor必须是生成的材料中唯一的连续原文片段，内含subject、indicator和目标数字；
+target为anchor中完整、唯一的数字文本（不带单位），五题目标位置不可重复。
+自行核对材料、定位题与答案，标明它们属于模拟训练数据；不要输出解释或过程。"#,
+            year=year,topic=source.topic,subtopic=source.subtopic,
+            excerpt=generation_excerpt(source,0).text);
+        let mut reason=String::new();
         for _ in 0..2 {
-            let prompt = if reason.is_empty() {
-                format!("{system}\n\n材料：\n{}\n\n仅输出JSON。", material.text)
-            } else {
-                format!("上次5道找数题校验失败：{reason}。请基于之前的原文重新返回完整严格JSON，修复锚点和主体指标，不能编造数字。")
-            };
-            let result = tokio::time::timeout(TURN_TIMEOUT, session.turn(&prompt))
-                .await
-                .map_err(|_| "Codex 找数命题超时".to_owned())??;
-            #[derive(Deserialize)]
-            struct Batch {
-                questions: Vec<LocatingRecipe>,
-            }
-            match serde_json::from_str::<Batch>(&result) {
-                Ok(batch) => match verify_locators(material, &batch.questions) {
-                    Ok(verified) => return Ok(verified),
-                    Err(e) => reason = e,
-                },
-                Err(_) => reason = "AI返回格式不是严格JSON".into(),
+            let prompt=if reason.is_empty(){system.clone()}
+                else{format!("上次无法匹配5个数字位置：{reason}。重新返回完整材料和五题，确保anchor和target逐字一致，仅JSON。")};
+            let output=tokio::time::timeout(TURN_TIMEOUT,session.turn_locating(&prompt)).await
+                .map_err(|_|"Codex 找数生成超时".to_owned())??;
+            #[derive(Deserialize)] struct Batch{material_text:String,questions:Vec<LocatingRecipe>}
+            match serde_json::from_str::<Batch>(&output){
+                Ok(batch)=>{
+                    let mut material=source.clone();
+                    material.text=format!("【模拟训练数据，非官方发布数值】\n{}",batch.material_text);
+                    match verify_locators(&material,&batch.questions){
+                        Ok(targets)=>return Ok((material,targets)),
+                        Err(e)=>reason=e
+                    }
+                }
+                Err(_)=>reason="找数题JSON格式无效".into()
             }
         }
-        Err(format!("找数锚点校验失败：{reason}"))
+        Err(format!("找数答案位置无法匹配：{reason}"))
     }
 
     async fn locating_row(
