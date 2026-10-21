@@ -8,7 +8,7 @@
 
 - 将流程由「先改写官方材料 → 从原文数字凑题 → Rust 验算」改为「Codex 读取 hyz Skill/Flashcard → 先规划5题型 → 构造自洽模拟数据 → 组织材料和四选一 → Codex 自检 → 应用展示」。
 - 当前保留每次4组×5题、20分钟、暂停/恢复、历史回看、同材料找数5题和跨模式去重。
-- 每组以独立 ephemeral Codex Thread 生成，最多4组并发；软目标全卷12道个人易错、6道其他核心、2道基础，按不同官方统计主题分组。Codex 可在 read-only 沙盒中自主使用获准的读取、计算等工具；保持非交互审批，不开放仓库写权限。
+- 每组以独立 ephemeral Codex Thread 生成，最多4组并发；20题全部依据 flashcards/资料/错题/ 中实际存在的卡片与分类，不设置固定题型配额，按不同官方统计主题分组。Codex 可在 read-only 沙盒中自主使用获准的读取、计算等工具；保持非交互审批，不开放仓库写权限。
 - 使用电脑仓库 `.agents/skills/行测做题/SKILL.md` (name: `hyz-xingce`) 和 `flashcards/资料/` 的**当前文件**。不把卡片正文预先复制到 RK3568 的 Prompt；Codex 自主读取。
 - 允许构造模拟值；官方公报提供年份、主题、主体、指标、统计口径和写作风格，不声称模拟数值为国家统计局真实数据。网页与材料明确标识模拟训练。
 - Codex 直接返回 `question/options[4]/correct_index/answer/skill/evidence/explanation`；不再由 hyz-things 通过 `Operation` / `verify_recipe` 生成正确项、干扰项或验算。
@@ -47,5 +47,5 @@ HYZ_THINGS_CODEX_CWD=/home/<PC用户>/hyz_things
 
 ## 实施限制与后续
 
-- 使用每篇独立 Codex Thread 规划5题，整套20题由后端选4个主题并提供整卷题型配比软目标；不是再引入第二套 Rust 题型规划器。
+- 使用每篇独立 Codex Thread 规划5题，整套20题由后端选4个主题并由 Codex 按错题卡片命题；不是再引入第二套 Rust 题型规划器。
 - 出题任务不规定计算工具调用方式；题目正确性依赖 Codex 自检与用户人工复盘，而非 Rust 验题器。
