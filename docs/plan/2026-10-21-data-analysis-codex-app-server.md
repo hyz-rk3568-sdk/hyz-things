@@ -53,3 +53,5 @@ Agent 不获得网页任意命令和路径，禁止命令审批、写文件和�
 - **暂不复用单个 WebSocket**：多个 Thread 复用一条 socket 需要独立消息分发器、JSON-RPC request ID 与 event stream 路由，容易串线；局域网内 4 次握手开销远小于模型生成时间。后续如出现瓶颈，再独立规划复用连接。
 - 验收必须包含：选择规则单测、真实并发屏障单测、原有 mock App Server 协议测试、GitHub Actions Rust fmt/test/clippy、前端单测/构建以及 **Playwright E2E 全量执行**。不允许以“构建通过”代替端到端验收。
 - 同一 PR 顺带清理旧构建日志中 Canvas 过时 API、仅测试用字段 dead_code 和 training 测试 unused import 警告；不更改实际绘画和速算行为。
+
+- 并行度是**最多**四组，不是始终四路：优先使用已验证的 SQLite 缓存，只有尚未缓存的材料才需要新 Codex 会话；失败的候选不会占据最终四组名额。实际速度由电脑端模型限流和出题/校验时间决定。
