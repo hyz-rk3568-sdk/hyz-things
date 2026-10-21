@@ -25,8 +25,8 @@ fn error(msg: &str) -> Response {
         msg,
     )
 }
-fn get(state: &AppState) -> Result<Arc<DataAnalysisService>, Response> {
-    state.data_analysis.clone().ok_or_else(unavailable)
+fn get(state: &AppState) -> Option<Arc<DataAnalysisService>> {
+    state.data_analysis.clone()
 }
 #[derive(Serialize)]
 struct StatusBody {
@@ -40,7 +40,7 @@ pub(super) async fn status(State(state): State<AppState>, headers: HeaderMap) ->
     if let Err(response) = authorize_sensitive_read(&state, &headers).await {
         return response;
     }
-    let Ok(service) = get(&state) else {
+    let Some(service) = get(&state) else {
         return unavailable();
     };
     let (cached_sources, verified_groups) = match service.counts().await {
@@ -64,7 +64,7 @@ pub(super) async fn prepare(State(state): State<AppState>, headers: HeaderMap) -
     if let Err(response) = authorize_sensitive_control(&state, &headers).await {
         return response;
     }
-    let Ok(service) = get(&state) else {
+    let Some(service) = get(&state) else {
         return unavailable();
     };
     match service.prepare().await {
@@ -80,7 +80,7 @@ pub(super) async fn progress(
     if let Err(response) = authorize_sensitive_read(&state, &headers).await {
         return response;
     }
-    let Ok(service) = get(&state) else {
+    let Some(service) = get(&state) else {
         return unavailable();
     };
     match service.job(&id).await {
@@ -100,7 +100,7 @@ pub(super) async fn run(
     if let Err(response) = authorize_sensitive_read(&state, &headers).await {
         return response;
     }
-    let Ok(service) = get(&state) else {
+    let Some(service) = get(&state) else {
         return unavailable();
     };
     match service.run(&id).await {
@@ -122,7 +122,7 @@ pub(super) async fn answer(
     if let Err(response) = authorize_sensitive_control(&state, &headers).await {
         return response;
     }
-    let Ok(service) = get(&state) else {
+    let Some(service) = get(&state) else {
         return unavailable();
     };
     match service.answer(&id, number, body.choice).await {
@@ -138,7 +138,7 @@ pub(super) async fn submit(
     if let Err(response) = authorize_sensitive_control(&state, &headers).await {
         return response;
     }
-    let Ok(service) = get(&state) else {
+    let Some(service) = get(&state) else {
         return unavailable();
     };
     match service.submit(&id).await {
