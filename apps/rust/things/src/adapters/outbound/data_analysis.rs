@@ -1,5 +1,5 @@
 //! Native-only official-text caching and Codex App Server question preparation.
-//! Only verified numerical recipes are admitted into the training database.
+//! Codex owns the answer; the application stores each freshly prepared practice attempt.
 use super::codex_app_server::{validate_token, CodexSession, TURN_TIMEOUT};
 use crate::domain::data_analysis::{
     select_material_batch, Material, VerifiedQuestion, OFFICIAL_SOURCES, QUIZ_GROUPS,
@@ -273,6 +273,37 @@ impl DataAnalysisService {
         }
         skills
     }
+    /// List current flashcard topics, without freezing the user's subject taxonomy in Rust.
+    pub async fn available_skills(&self) -> Result<Vec<String>, String> {
+        let rows = sqlx::query(
+            "SELECT DISTINCT deck_path FROM flashcards WHERE active=1 AND deck_path LIKE '资料/%'"
+        ).fetch_all(&self.pool).await.map_err(as_error)?;
+        let mut result = std::collections::BTreeSet::new();
+        for row in rows {
+            let deck: String = row.try_get("deck_path").map_err(as_error)?;
+            let parts = deck.split('/').filter(|p|!p.is_empty() && *p!="资料" && *p!="错题").collect::<Vec<_>>();
+            if let Some(name)=parts.last() {
+                if name.chars().count()<=60 && *name!="cards.md" && *name!="card.md" {
+                    result.insert((*name).to_owned());
+                }
+            }
+        }
+        Ok(result.into_iter().collect())
+    }
+
+    pub async fn chosen_manual_skills(&self, requested: &[String]) -> Result<Vec<String>, String> {
+        if requested.len()>12 {return Err("每次最多勾选12个考点".into());}
+        let available = self.available_skills().await?;
+        let mut chosen=Vec::new();
+        for skill in requested {
+            if !available.contains(skill) || chosen.contains(skill) {
+                return Err("所选考点不在当前资料分析卡片目录中".into());
+            }
+            chosen.push(skill.clone());
+        }
+        Ok(chosen)
+    }
+
     /// Current running comprehensive preparation, including progress across page changes.
     pub async fn preparing_job(&self) -> Option<String> {
         self.jobs
@@ -283,12 +314,13 @@ impl DataAnalysisService {
             .map(|(id, _)| id.clone())
     }
 
-    pub async fn prepare(&self) -> Result<String, String> {
+    pub async fn prepare(&self, manual_skills: Vec<String>) -> Result<String, String> {
         if self.config.is_none() {
             return Err(
                 "请在 RK3568 的 /userdata/hyz-things/.env 配置 Codex WebSocket Token".into(),
             );
         }
+        let manual_skills = self.chosen_manual_skills(&manual_skills).await?;
         if let Some(id) = self.preparing_job().await {
             return Ok(id);
         }
@@ -312,7 +344,7 @@ impl DataAnalysisService {
         let worker = self.clone();
         let job = id.clone();
         tokio::spawn(async move {
-            let result = worker.generate(&job).await;
+            let result = worker.generate(&job, &manual_skills).await;
             drop(guard);
             match result {
                 Ok(run_id) => {
@@ -423,11 +455,10 @@ impl DataAnalysisService {
         }
         Ok(sections)
     }
-    async fn generate(&self, job: &str) -> Result<String, String> {
+    async fn generate(&self, job: &str, manual_skills: &[String]) -> Result<String, String> {
         self.set_progress(job, "fetching", 0, "正在读取官方统计资料", None)
             .await;
         let materials = self.load_sections().await?;
-        let seen = self.sync_seen_materials().await?;
         self.set_progress(job, "selecting", 0, "正在选择薄弱和未练主题", None)
             .await;
         let weaknesses = self.weaknesses().await;
@@ -457,25 +488,8 @@ impl DataAnalysisService {
                 .partial_cmp(&score_a)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        let existing = sqlx::query(
-            "SELECT group_json FROM data_analysis_groups ORDER BY created_at_ms DESC LIMIT 200",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(as_error)?;
-        let mut cache = HashMap::<String, QuestionGroup>::new();
-        for row in existing {
-            let data: String = row.try_get("group_json").map_err(as_error)?;
-            if let Ok(group) = serde_json::from_str::<QuestionGroup>(&data) {
-                if group.version >= 4 && group.questions.len() == QUIZ_PER_GROUP {
-                    if seen.contains(&locating::material_key(&group.material)) {
-                        continue;
-                    }
-                    let key = format!("{}|{}", group.material.source_url, group.material.section);
-                    cache.entry(key).or_insert(group);
-                }
-            }
-        }
+        // Deliberately never reuse a prior generated group. Saved groups are
+        // historical evidence for review/locating, not a source of fresh papers.
         let mut ready: Vec<QuestionGroup> = Vec::new();
         let mut attempted = HashSet::<(String, String)>::new();
         let mut last_error = String::new();
@@ -502,16 +516,11 @@ impl DataAnalysisService {
                 }
 
                 let mut ordered_results: Vec<Option<QuestionGroup>> = vec![None; wave.len()];
-                let mut needs_store = vec![false; wave.len()];
                 let mut requests = Vec::new();
                 for (slot, material) in wave.iter().enumerate() {
                     attempted.insert((material.source_url.clone(), material.section.clone()));
-                    let key = format!("{}|{}", material.source_url, material.section);
-                    if let Some(group) = cache.get(&key) {
-                        ordered_results[slot] = Some(group.clone());
-                    } else if attempts < 12 {
+                    if attempts < 12 {
                         attempts += 1;
-                        needs_store[slot] = true;
                         requests.push((slot, material.clone()));
                     }
                 }
@@ -529,11 +538,14 @@ impl DataAnalysisService {
                     .await;
                     let worker = self.clone();
                     let weak = Arc::new(weaknesses.clone());
+                    let manual = Arc::new(manual_skills.to_vec());
+                    let group_offset=ready.len();
                     for (slot, outcome) in
                         run_generation_wave(requests, move |material, ordinal| {
-                            let worker = worker.clone();
-                            let weak = Arc::clone(&weak);
-                            async move { worker.generate_group(&material, &weak, ordinal).await }
+                            let worker=worker.clone();
+                            let weak=Arc::clone(&weak);
+                            let manual=Arc::clone(&manual);
+                            async move {worker.generate_group(&material,&weak,&manual,group_offset+ordinal).await}
                         })
                         .await
                     {
@@ -553,7 +565,7 @@ impl DataAnalysisService {
                     let Some(group) = group else {
                         continue;
                     };
-                    if needs_store[slot] {
+                    {
                         sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES (?,?,?,?,?,?)")
                             .bind(Uuid::now_v7().to_string())
                             .bind(&group.material.source_url)
@@ -568,7 +580,7 @@ impl DataAnalysisService {
                     ready.push(group);
                     self.set_progress(
                         job,
-                        "validating",
+                        "generating",
                         ready.len() * QUIZ_PER_GROUP,
                         "已接收 Codex 完成的模拟试题并保存",
                         None,
@@ -605,6 +617,7 @@ impl DataAnalysisService {
         &self,
         source: &Material,
         weaknesses: &[String],
+        manual_skills: &[String],
         ordinal: usize,
     ) -> Result<QuestionGroup, String> {
         let config = self.config.as_ref().ok_or("Codex Token 未配置")?;
@@ -628,6 +641,8 @@ impl DataAnalysisService {
 每次都是新建 Thread，必须基于这次工作树中的最新内容工作；不需要用户在提示词里复制卡片。
 本次是整套4篇×5题的第 {group_no} 篇；全卷软目标为12道薄弱点、6道其他核心考点、2道基础题，
 各篇尽量覆盖不同题型与命题变式，优先兼顾个人薄弱考点：{weaknesses}。
+用户额外手选考点：{manual_all}。本篇必须至少有一道题命中每个分配到本篇的手选考点：{manual_focus}。
+手动考点优先于系统推荐考点，但不因此忽略题型多样性；不要把标签当材料标题。
 先选择本篇5题的题型、命题变式与考查的 hyz 速算/审题动作，再构造共享且自洽的模拟统计数据，
 最后写成约350–650汉字的国考风格材料，并拟制5道有唯一正确答案的四选一题。
 应覆盖真实错题中的乘积增长率（乘/除/倒推/间隔）、混合增长、平均数增长率/增量、两期比重差、
@@ -648,6 +663,10 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
 输出 JSON 必须具有 material_text 和 questions 两字段，questions 恰好5项。"#,
             group_no = ordinal % QUIZ_GROUPS + 1,
             weaknesses = weaknesses.join("、"),
+            manual_all = manual_skills.join("、"),
+            manual_focus = manual_skills.iter().enumerate()
+                .filter(|(index,_)|index % QUIZ_GROUPS == ordinal % QUIZ_GROUPS)
+                .map(|(_,name)|name.as_str()).collect::<Vec<_>>().join("、"),
             year = source_year,
             section = context.section,
             topic = context.topic,
@@ -1262,7 +1281,7 @@ mod tests {
         .unwrap()
         .unwrap();
         let service = DataAnalysisService::new(pool, Some(config)).unwrap();
-        let id = service.prepare().await.expect("start generation");
+        let id = service.prepare(Vec::new()).await.expect("start generation");
         let mut run_id = None;
         for _ in 0..100 {
             if let Some(progress) = service.job(&id).await {
