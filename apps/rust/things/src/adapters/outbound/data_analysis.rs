@@ -423,8 +423,9 @@ impl DataAnalysisService {
         for row in existing {
             let data: String = row.try_get("group_json").map_err(as_error)?;
             if let Ok(group) = serde_json::from_str::<QuestionGroup>(&data) {
-                if group.questions.len() == 5 {
-                    cache.entry(group.material.section.clone()).or_insert(group);
+                if group.version >= 2 && group.questions.len() == QUIZ_PER_GROUP {
+                    let key = format!("{}|{}", group.material.source_url, group.material.section);
+                    cache.entry(key).or_insert(group);
                 }
             }
         }
