@@ -184,7 +184,6 @@ fn is_comprehensive_judgment(question: &str) -> bool {
     EXCLUDED.iter().any(|term| question.contains(term))
 }
 
-
 /// Reject mismatched question intent even when the numbers are authentic.
 /// In particular, asking "增加多少" must not be graded as a prior-year base.
 fn question_matches_operation(question: &str, operation: &Operation) -> bool {
@@ -600,12 +599,15 @@ mod tests {
     }
     #[test]
     fn increase_question_cannot_be_graded_as_prior_year_stock() {
-        let mut item=recipe();
-        item.question="2025年末存量比2024年末增加约多少万吨？".into();
-        item.operation=Operation::BasePeriod;
-        assert_eq!(verify_recipe(&material(),&item,0).unwrap_err(),ValidationError::InvalidQuestion);
-        item.operation=Operation::GrowthAmount;
-        assert!(verify_recipe(&material(),&item,0).is_ok());
+        let mut item = recipe();
+        item.question = "2025年末存量比2024年末增加约多少万吨？".into();
+        item.operation = Operation::BasePeriod;
+        assert_eq!(
+            verify_recipe(&material(), &item, 0).unwrap_err(),
+            ValidationError::InvalidQuestion
+        );
+        item.operation = Operation::GrowthAmount;
+        assert!(verify_recipe(&material(), &item, 0).is_ok());
     }
 
     #[test]
