@@ -366,9 +366,10 @@ mod tests {
     use tokio::net::TcpListener;
 
     #[test]
-    fn rejects_missing_or_malformed_shared_token() {
+    fn bearer_token_accepts_opaque_values_but_rejects_unsafe_headers() {
         assert!(validate_token("").is_err());
-        assert!(validate_token(&"x".repeat(64)).is_err());
+        assert!(validate_token("bad token").is_err());
+        assert!(validate_token(&"x".repeat(64)).is_ok());
         assert!(validate_token(&"a".repeat(64)).is_ok());
     }
 
