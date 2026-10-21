@@ -1216,7 +1216,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cached_official_groups_support_full_twenty_question_lifecycle() {
+    async fn saved_official_groups_support_history_without_new_codex_generation() {
         // Exercise native SQLite/service paths without a paid AI API or external network.
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(1)
@@ -1284,20 +1284,20 @@ mod tests {
         ))
         .unwrap()
         .unwrap();
-        let service = DataAnalysisService::new(pool, Some(config)).unwrap();
-        let id = service.prepare(Vec::new()).await.expect("start generation");
-        let mut run_id = None;
-        for _ in 0..100 {
-            if let Some(progress) = service.job(&id).await {
-                if progress.state == "ready" {
-                    run_id = progress.run_id;
-                    break;
-                }
-                assert_ne!(progress.state, "failed", "{}", progress.message);
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        let run_id = run_id.expect("cached groups should be ready without network");
+        // Previously saved groups are still readable in history, but a new
+        // generation must no longer short-circuit to cached group JSON.
+        let historical_rows=sqlx::query("SELECT group_json FROM data_analysis_groups")
+            .fetch_all(&pool).await.unwrap();
+        let archived_groups=historical_rows.into_iter().map(|row|{
+            serde_json::from_str::<QuestionGroup>(&row.try_get::<String,_>("group_json").unwrap()).unwrap()
+        }).collect::<Vec<_>>();
+        let run_id=Uuid::now_v7().to_string();
+        sqlx::query("INSERT INTO data_analysis_runs(id,groups_json,answers_json,status,created_at_ms) VALUES(?,?,?,'ready',?)")
+            .bind(&run_id)
+            .bind(serde_json::to_string(&archived_groups).unwrap())
+            .bind(serde_json::to_string(&vec![None::<usize>;20]).unwrap())
+            .bind(now_ms()).execute(&pool).await.unwrap();
+        let service=DataAnalysisService::new(pool,Some(config)).unwrap();
         let active = service.run(&run_id).await.expect("start 20-minute timer");
         assert_eq!(active.groups.len(), 4);
         assert!(active.groups.iter().all(|group| group.questions.len() == 5));
