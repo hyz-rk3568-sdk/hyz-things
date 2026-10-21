@@ -280,26 +280,24 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         <button type="button" class="btn btn-sm btn-error btn-outline" disabled={*busy} onclick={{let submit=submit.clone();Callback::from(move |_|submit.emit(()))}}>{"交卷"}</button>
                     </div>
                 </header>
-                <div class="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[44%_minmax(0,1fr)]">
-                    <div class="flex min-h-0 min-w-0 flex-col overflow-auto rounded-box bg-base-100" data-testid="analysis-material">
-                        <div class="p-3 text-sm font-semibold">{format!("{} · {}",group.material.section,group.material.subtopic)}</div>
-                        <div class="min-h-0 flex-1 overflow-auto">
-                            <InkOverlay question_index={group_index} persist_key={format!("{}-material-{}", active.id, group_index)}>
+                <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}", active.id, index)} responsive={true}>
+                    <div class="grid h-full min-h-0 grid-cols-1 gap-3 lg:grid-cols-[44%_minmax(0,1fr)]" data-testid="analysis-shared-workspace">
+                        <div class="flex min-h-0 min-w-0 flex-col overflow-auto rounded-box bg-base-100" data-testid="analysis-material">
+                            <div class="p-3 text-sm font-semibold">{format!("{} · {}",group.material.section,group.material.subtopic)}</div>
+                            <div class="min-h-0 flex-1 overflow-auto">
                                 <div class="whitespace-pre-wrap p-4 text-base leading-8">{group.material.text.clone()}</div>
-                            </InkOverlay>
+                            </div>
+                            <a class="p-3 text-xs underline" href={group.material.source_url.clone()} target="_blank" rel="noopener noreferrer">{"国家统计局 · 查看原文"}</a>
                         </div>
-                        <a class="p-3 text-xs underline" href={group.material.source_url.clone()} target="_blank" rel="noopener noreferrer">{"国家统计局 · 查看原文"}</a>
-                    </div>
-                    <div class="min-h-0 min-w-0 overflow-auto rounded-box bg-base-100" data-testid="analysis-question">
-                        <InkOverlay question_index={index} persist_key={format!("{}-question-{}", active.id, index)}>
+                        <div class="min-h-0 min-w-0 overflow-auto rounded-box bg-base-100" data-testid="analysis-question">
                             <div class="space-y-4 p-4">
                                 <div class="flex items-center justify-between text-xs text-base-content/60"><span>{format!("本材料第 {}/5 题",local_index+1)}</span><span>{q.skill.clone()}</span></div>
                                 <h2 class="text-lg font-semibold leading-relaxed">{q.question.clone()}</h2>
                                 <div class="grid gap-3">{for answers}</div>
                             </div>
-                        </InkOverlay>
+                        </div>
                     </div>
-                </div>
+                </InkOverlay>
                 {if let Some(msg)=(*error).clone(){html!{<div class="text-error text-xs">{msg}</div>}}else{Html::default()}}
                 <footer class="flex items-center justify-between gap-3 py-3" data-testid="analysis-navigation">
                     <button type="button" class="btn btn-outline btn-sm" disabled={index==0} onclick={previous}>{"上一题"}</button>
@@ -323,7 +321,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         <section class="mx-auto max-w-3xl p-4 sm:p-6" data-testid="analysis-setup">
             <div class="rounded-box bg-base-100 p-5 sm:p-7">
                 <h2 class="text-xl font-bold">{"资料分析综合训练"}</h2>
-                <p class="mt-1 text-sm text-base-content/60">{"官方统计文字材料 · 4份材料 × 每份5题 · 20分钟"}</p>
+                <p class="mt-1 text-sm text-base-content/60">{"官方统计数据改编 · 4份仿真材料 × 每份5题 · 20分钟"}</p>
                 <div class="mt-5 grid gap-3">
                     <div class="rounded-box border border-base-content/15 p-4">
                         <p class="font-semibold">{"智能薄弱点强化"}</p>

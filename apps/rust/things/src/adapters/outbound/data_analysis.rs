@@ -410,56 +410,54 @@ impl DataAnalysisService {
                 }
             }
         }
-        let mut ready = Vec::new();
-        let mut last_error = String::new();
-        let mut attempts = 0;
-        for material in &ordered {
-            if ready.len() == QUIZ_GROUPS {
-                break;
+        let mut ready:Vec<QuestionGroup> = Vec::new();
+        let mut used_years=HashSet::new();
+        let mut used_topics=HashSet::new();
+        let mut last_error=String::new();
+        let mut attempts=0;
+        // First pass forces diversity in BOTH statistical year and subject.
+        // Second pass permits repeated years when official pages are unavailable.
+        for pass in 0..2 {
+            for material in &ordered {
+                if ready.len()==QUIZ_GROUPS {break;}
+                if ready.iter().any(|g| g.material.source_url==material.source_url
+                    && g.material.section==material.section) {continue;}
+                if pass==0 && (used_years.contains(&material.source_url)
+                    || used_topics.contains(&material.topic)) {continue;}
+                let key=format!("{}|{}",material.source_url,material.section);
+                let group=if let Some(group)=cache.get(&key) {
+                    group.clone()
+                } else {
+                    if attempts>=12 {break;}
+                    attempts+=1;
+                    self.set_progress(job,"generating",ready.len()*5,
+                        "正在生成不同年份与主题的仿真资料分析题",None).await;
+                    let group=match self.generate_group(material,&weaknesses).await {
+                        Ok(group)=>group,
+                        Err(err)=>{
+                            last_error=err;
+                            if last_error.contains("HTTP 401")
+                                || last_error.contains("HTTP 403")
+                                || last_error.contains("HTTP 429") {
+                                break;
+                            }
+                            continue;
+                        }
+                    };
+                    sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES (?,?,?,?,?,?)")
+                        .bind(Uuid::now_v7().to_string()).bind(&group.material.source_url)
+                        .bind(&group.material.section).bind(&group.material.topic)
+                        .bind(serde_json::to_string(&group).map_err(as_error)?).bind(now_ms())
+                        .execute(&self.pool).await.map_err(as_error)?;
+                    group
+                };
+                used_years.insert(group.material.source_url.clone());
+                used_topics.insert(group.material.topic.clone());
+                ready.push(group);
+                self.set_progress(job,"validating",ready.len()*5,
+                    "已核对来源数字、题目答案与主题分布",None).await;
             }
-            if let Some(group) = cache.get(&material.section) {
-                ready.push(group.clone());
-                continue;
-            }
-            if attempts >= 8 {
-                break;
-            }
-            attempts += 1;
-            self.set_progress(
-                job,
-                "generating",
-                ready.len() * 5,
-                "正在调用AI生成新的官方资料题",
-                None,
-            )
-            .await;
-            let group = match self.generate_group(material, &weaknesses).await {
-                Ok(group) => group,
-                Err(err) => {
-                    last_error = err;
-                    if last_error.contains("HTTP 401")
-                        || last_error.contains("HTTP 403")
-                        || last_error.contains("HTTP 429")
-                    {
-                        break;
-                    }
-                    continue;
-                }
-            };
-            let group_id = Uuid::now_v7().to_string();
-            sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES (?,?,?,?,?,?)")
-                .bind(group_id).bind(&material.source_url).bind(&material.section).bind(&material.topic)
-                .bind(serde_json::to_string(&group).map_err(as_error)?).bind(now_ms())
-                .execute(&self.pool).await.map_err(as_error)?;
-            ready.push(group);
-            self.set_progress(
-                job,
-                "validating",
-                ready.len() * 5,
-                "已通过严格校验，正在组卷",
-                None,
-            )
-            .await;
+            if ready.len()==QUIZ_GROUPS {break;}
         }
         if ready.len() != QUIZ_GROUPS {
             return Err(format!(

@@ -2,6 +2,14 @@
 use serde::{Deserialize, Serialize};
 
 pub const SOURCE_URL: &str = "https://www.stats.gov.cn/sj/zxfb/202602/t20260228_1962662.html";
+/// Verifiable National Bureau of Statistics annual bulletins; year labels are
+/// metadata for examination-style text, not fabricated values.
+pub const OFFICIAL_SOURCES: [(u16, &str); 4] = [
+    (2022, "https://www.stats.gov.cn/sj/zxfb/202302/t20230228_1919011.html"),
+    (2023, "https://www.stats.gov.cn/sj/zxfb/202402/t20240228_1947915.html"),
+    (2024, "https://www.stats.gov.cn/sj/zxfb/202502/t20250228_1958817.html"),
+    (2025, SOURCE_URL),
+];
 pub const QUIZ_QUESTIONS: usize = 20;
 pub const QUIZ_GROUPS: usize = 4;
 pub const QUIZ_PER_GROUP: usize = 5;
@@ -187,24 +195,27 @@ pub fn verify_recipe(
         return Err(ValidationError::InvalidNumber);
     }
     let correct_index = position % 4;
-    let relative_offsets = [-0.12, -0.06, 0.06, 0.12];
+    // 国考约数选项：按量级取约三位有效数字，避免“70640.32万吨”这类
+    // 机械保留两位小数的假精度；错误项拉开可判断的区间。
+    let scale = 10_f64.powf(answer.abs().log10().floor() - 2.0).max(0.01);
+    let values = [
+        (answer / scale).round() * scale,
+        (answer * 0.92 / scale).round() * scale,
+        (answer * 1.08 / scale).round() * scale,
+        (answer * 1.16 / scale).round() * scale,
+    ];
+    let decimals = if scale >= 1.0 { 0 } else if scale >= 0.1 { 1 } else { 2 };
     let mut candidates = [String::new(), String::new(), String::new(), String::new()];
-    candidates[correct_index] = format!("{answer:.2}");
-    let mut offset_idx = 0;
-    for (i, out) in candidates.iter_mut().enumerate() {
-        if i == correct_index {
-            continue;
-        }
-        let candidate = answer * (1.0 + relative_offsets[offset_idx]);
-        offset_idx += 1;
-        *out = format!("{candidate:.2}");
+    let mut wrong = 1;
+    for (i, option) in candidates.iter_mut().enumerate() {
+        let value = if i == correct_index { values[0] } else {
+            let value = values[wrong];
+            wrong += 1;
+            value
+        };
+        *option = format!("{value:.decimals$}");
     }
-    if candidates
-        .iter()
-        .collect::<std::collections::HashSet<_>>()
-        .len()
-        != 4
-    {
+    if candidates.iter().collect::<std::collections::HashSet<_>>().len() != 4 {
         return Err(ValidationError::Duplicate);
     }
     let answer_text = candidates[correct_index].clone();
@@ -246,8 +257,16 @@ mod tests {
     #[test]
     fn section_taxonomy_is_stable() {
         assert_eq!(SECTIONS.len(), 12);
+        assert_eq!(OFFICIAL_SOURCES.len(), 4);
+        assert!(OFFICIAL_SOURCES.windows(2).all(|w| w[0].0 < w[1].0));
         assert_eq!(QUIZ_GROUPS * QUIZ_PER_GROUP, QUIZ_QUESTIONS);
         assert_eq!(QUIZ_SECONDS, 1200);
+    }
+    #[test]
+    fn exam_choices_use_reasonable_precision_not_spurious_decimals() {
+        let answer = verify_recipe(&material(), &recipe(), 0).unwrap();
+        assert!(answer.options.iter().all(|v| !v.contains(".32")));
+        assert_eq!(answer.options.len(),4);
     }
     #[test]
     fn requires_real_evidence_and_two_source_numbers() {

@@ -112,28 +112,55 @@ fn scratch_context(canvas: &HtmlCanvasElement) -> Option<CanvasRenderingContext2
 
 fn scratch_clear(canvas: &HtmlCanvasElement) {
     if let Some(context) = scratch_context(canvas) {
-        context.clear_rect(0.0, 0.0, SCRATCH_WIDTH as f64, SCRATCH_HEIGHT as f64);
+        let _ = context.set_transform(1.0, 0.0, 0.0, 1.0, 0.0, 0.0);
+        context.clear_rect(0.0, 0.0, canvas.width() as f64, canvas.height() as f64);
     }
 }
 
 fn setup_pen(context: &CanvasRenderingContext2d) {
-    // 不增加曲线平滑或压感，保持现有笔尖控制感。
+    // Direct pointermove -> lineTo, unchanged pen feel.
     context.set_line_cap("round");
     context.set_line_join("round");
     context.set_line_width(INK_LINE_WIDTH);
     context.set_stroke_style(&JsValue::from_str(INK_COLOR));
 }
 
-fn paint_stroke(context: &CanvasRenderingContext2d, points: &[InkPoint]) {
-    let Some(&(start_x, start_y)) = points.first() else {
-        return;
-    };
+fn canvas_point(point: InkPoint, canvas: &HtmlCanvasElement, responsive: bool) -> InkPoint {
+    if responsive {
+        (point.0 * canvas.client_width() as f64, point.1 * canvas.client_height() as f64)
+    } else {
+        point
+    }
+}
+
+fn prepare_canvas(canvas: &HtmlCanvasElement, responsive: bool) -> Option<CanvasRenderingContext2d> {
+    if responsive {
+        let scale = web_sys::window().map(|w| w.device_pixel_ratio()).unwrap_or(1.0).clamp(1.0, 3.0);
+        let width = (canvas.client_width().max(1) as f64 * scale).round() as u32;
+        let height = (canvas.client_height().max(1) as f64 * scale).round() as u32;
+        if canvas.width() != width || canvas.height() != height {
+            canvas.set_width(width);
+            canvas.set_height(height);
+        }
+    }
+    let context = scratch_context(canvas)?;
+    if responsive {
+        let scale = canvas.width() as f64 / canvas.client_width().max(1) as f64;
+        let _ = context.set_transform(scale, 0.0, 0.0, scale, 0.0, 0.0);
+    }
+    Some(context)
+}
+
+fn paint_stroke(context: &CanvasRenderingContext2d, canvas: &HtmlCanvasElement, points: &[InkPoint], responsive: bool) {
+    let Some(&first) = points.first() else { return };
+    let (x, y) = canvas_point(first, canvas, responsive);
     setup_pen(context);
     context.begin_path();
-    context.move_to(start_x, start_y);
-    context.line_to(start_x + 0.1, start_y + 0.1);
+    context.move_to(x, y);
+    context.line_to(x + 0.1, y + 0.1);
     context.stroke();
-    for &(x, y) in points.iter().skip(1) {
+    for &point in points.iter().skip(1) {
+        let (x, y) = canvas_point(point, canvas, responsive);
         context.line_to(x, y);
         context.stroke();
         context.begin_path();
@@ -141,32 +168,35 @@ fn paint_stroke(context: &CanvasRenderingContext2d, points: &[InkPoint]) {
     }
 }
 
-fn redraw_scratch(canvas: &HtmlCanvasElement, actions: &[InkAction]) {
-    let Some(context) = scratch_context(canvas) else {
-        return;
-    };
-    context.clear_rect(0.0, 0.0, SCRATCH_WIDTH as f64, SCRATCH_HEIGHT as f64);
+fn redraw_scratch(canvas: &HtmlCanvasElement, actions: &[InkAction], responsive: bool) {
+    if responsive {
+        let _ = prepare_canvas(canvas, true);
+    }
+    scratch_clear(canvas);
+    let Some(context) = prepare_canvas(canvas, responsive) else { return };
     for action in actions {
         match action {
-            InkAction::Stroke(points) => paint_stroke(&context, points),
+            InkAction::Stroke(points) => paint_stroke(&context, canvas, points, responsive),
             InkAction::Clear => {
-                context.clear_rect(0.0, 0.0, SCRATCH_WIDTH as f64, SCRATCH_HEIGHT as f64);
-            }
+                scratch_clear(canvas);
+                let _ = prepare_canvas(canvas, responsive);
+            },
         }
     }
 }
 
-// CSS 覆盖层尺寸可随题目变化；映射到既有 900×450 坐标系。
-fn scratch_point(event: &PointerEvent, canvas: &HtmlCanvasElement) -> Option<InkPoint> {
+// The iPad workspace stores normalized points, but paints in CSS px; the
+// existing calculation workspace retains its legacy 900x450 coordinates.
+fn scratch_point(event: &PointerEvent, canvas: &HtmlCanvasElement, responsive: bool) -> Option<InkPoint> {
     let width = canvas.client_width();
     let height = canvas.client_height();
-    if width <= 0 || height <= 0 {
-        return None;
-    }
-    Some((
-        event.offset_x() as f64 * SCRATCH_WIDTH as f64 / width as f64,
-        event.offset_y() as f64 * SCRATCH_HEIGHT as f64 / height as f64,
-    ))
+    if width <= 0 || height <= 0 { return None; }
+    Some(if responsive {
+        (event.offset_x() as f64 / width as f64, event.offset_y() as f64 / height as f64)
+    } else {
+        (event.offset_x() as f64 * SCRATCH_WIDTH as f64 / width as f64,
+         event.offset_y() as f64 * SCRATCH_HEIGHT as f64 / height as f64)
+    })
 }
 
 #[derive(Properties, PartialEq)]
@@ -174,6 +204,8 @@ pub(crate) struct InkOverlayProps {
     pub(crate) question_index: usize,
     #[prop_or_default]
     pub(crate) persist_key: String,
+    #[prop_or_default]
+    pub(crate) responsive: bool,
     pub(crate) children: Children,
 }
 
@@ -239,13 +271,14 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
         let enabled = enabled.clone();
         let revision = revision.clone();
         let scope = props.persist_key.clone();
+        let responsive = props.responsive;
         use_effect_with((props.question_index, scope.clone()), move |_| {
             *strokes.borrow_mut() = InkState {
                 history: load_persistent_ink(&scope),
                 ..InkState::default()
             };
             if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                redraw_scratch(&canvas, &strokes.borrow().history);
+                redraw_scratch(&canvas, &strokes.borrow().history, responsive);
             }
             enabled.set(false);
             revision.set(0);
@@ -265,13 +298,40 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
     {
         let canvas_ref = canvas_ref.clone();
         let strokes = strokes.clone();
+        let responsive = props.responsive;
         use_effect_with(*enabled, move |opened| {
             if *opened {
                 if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                    redraw_scratch(&canvas, &strokes.borrow().history);
+                    redraw_scratch(&canvas, &strokes.borrow().history, responsive);
                 }
             }
             || ()
+        });
+    }
+
+    {
+        let responsive = props.responsive;
+        let canvas_ref = canvas_ref.clone();
+        let strokes = strokes.clone();
+        use_effect_with(responsive, move |_| {
+            let window = web_sys::window();
+            let handler = Closure::<dyn FnMut(web_sys::Event)>::new(move |_| {
+                if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
+                    redraw_scratch(&canvas, &strokes.borrow().history, responsive);
+                }
+            });
+            if responsive {
+                if let Some(w) = window.as_ref() {
+                    let _ = w.add_event_listener_with_callback("resize", handler.as_ref().unchecked_ref());
+                }
+            }
+            move || {
+                if responsive {
+                    if let Some(w) = window {
+                        let _ = w.remove_event_listener_with_callback("resize", handler.as_ref().unchecked_ref());
+                    }
+                }
+            }
         });
     }
 
@@ -301,12 +361,13 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
         let strokes = strokes.clone();
         let canvas_ref = canvas_ref.clone();
         let revision = revision.clone();
+        let responsive = props.responsive;
         Callback::from(move |_| {
             let mut state = strokes.borrow_mut();
             state.commit_active();
             if state.undo() {
                 if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                    redraw_scratch(&canvas, &state.history);
+                    redraw_scratch(&canvas, &state.history, responsive);
                 }
                 revision.set((*revision).wrapping_add(1));
             }
@@ -316,12 +377,13 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
         let strokes = strokes.clone();
         let canvas_ref = canvas_ref.clone();
         let revision = revision.clone();
+        let responsive = props.responsive;
         Callback::from(move |_| {
             let mut state = strokes.borrow_mut();
             state.commit_active();
             if state.redo() {
                 if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                    redraw_scratch(&canvas, &state.history);
+                    redraw_scratch(&canvas, &state.history, responsive);
                 }
                 revision.set((*revision).wrapping_add(1));
             }
@@ -345,6 +407,7 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
     let on_down = {
         let canvas_ref = canvas_ref.clone();
         let strokes = strokes.clone();
+        let responsive = props.responsive;
         let revision = revision.clone();
         Callback::from(move |event: PointerEvent| {
             if event.pointer_type() == "mouse" && event.button() != 0 {
@@ -366,14 +429,15 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
                     revision.set((*revision).wrapping_add(1));
                 }
             }
-            let Some((x, y)) = scratch_point(&event, &canvas) else {
+            let Some((x, y)) = scratch_point(&event, &canvas, responsive) else {
                 return;
             };
-            let Some(context) = scratch_context(&canvas) else {
+            let Some(context) = prepare_canvas(&canvas, responsive) else {
                 return;
             };
             event.prevent_default();
             state.active = Some((event.pointer_id(), vec![(x, y)]));
+            let (x, y) = canvas_point((x, y), &canvas, responsive);
             if event.pointer_type() != "pen" {
                 let _ = canvas.set_pointer_capture(event.pointer_id());
             }
@@ -387,6 +451,7 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
     let on_move = {
         let canvas_ref = canvas_ref.clone();
         let strokes = strokes.clone();
+        let responsive = props.responsive;
         Callback::from(move |event: PointerEvent| {
             let mut state = strokes.borrow_mut();
             let Some((id, points)) = state.active.as_mut() else {
@@ -398,14 +463,15 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
             let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() else {
                 return;
             };
-            let Some((x, y)) = scratch_point(&event, &canvas) else {
+            let Some((x, y)) = scratch_point(&event, &canvas, responsive) else {
                 return;
             };
-            let Some(context) = scratch_context(&canvas) else {
+            let Some(context) = prepare_canvas(&canvas, responsive) else {
                 return;
             };
             event.prevent_default();
             points.push((x, y));
+            let (x, y) = canvas_point((x, y), &canvas, responsive);
             context.line_to(x, y);
             context.stroke();
             context.begin_path();
@@ -440,8 +506,8 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
     let has_visible_ink = strokes.borrow().has_visible_ink();
 
     html! {
-        <section class="calculation-scratchpad relative min-h-80 min-w-0 rounded-box bg-base-100/60" data-testid="calculation-scratchpad" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
-            <div class="min-h-80 pt-12">{for props.children.iter()}</div>
+        <section class={if props.responsive { "calculation-scratchpad relative flex-1 min-h-0 min-w-0 h-full rounded-box" } else { "calculation-scratchpad relative min-h-80 min-w-0 rounded-box bg-base-100/60" }} data-testid="calculation-scratchpad" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
+            <div class={if props.responsive { "h-full min-h-0 min-w-0" } else { "min-h-80 pt-12" }}>{for props.children.iter()}</div>
             <button
                 type="button"
                 class={if *enabled { "btn btn-primary btn-sm absolute right-2 top-2 z-30" } else { "btn btn-outline btn-sm absolute right-2 top-2 z-30 bg-base-100 shadow-sm" }}
