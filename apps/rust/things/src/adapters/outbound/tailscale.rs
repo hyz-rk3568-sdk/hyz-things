@@ -17,7 +17,7 @@ use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::{
     adapters::inbound::http::{
-        app_with_admin_camera_control_at_address_and_flashcards, TlsListener,
+        app_with_admin_camera_control_at_address_and_flashcards_and_analysis, TlsListener,
     },
     application::{
         admin::AdminApplication,
@@ -131,7 +131,7 @@ impl TailscaleListenerManager {
             listener,
             accept_stopped: Some(accept_stopped),
         };
-        let http_app = app_with_admin_camera_control_at_address_and_flashcards(
+        let http_app = app_with_admin_camera_control_at_address_and_flashcards_and_analysis(
             app.status,
             app.control,
             app.admin,
@@ -142,6 +142,7 @@ impl TailscaleListenerManager {
             true,
             app.flashcards,
             app.flashcard_source,
+            app.data_analysis,
         );
         let tls_listener = TlsListener::new(listener, app.tls.clone());
         let runtime = app.runtime.clone();
@@ -262,6 +263,7 @@ pub struct PortalListenerApp {
     pub admin: Arc<AdminApplication>,
     pub camera: Arc<CameraApplication>,
     pub flashcards: Option<Arc<FlashcardApplication>>,
+    pub data_analysis: Option<Arc<crate::adapters::outbound::data_analysis::DataAnalysisService>>,
     pub flashcard_source:
         Option<Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>>,
     pub csrf_token: String,

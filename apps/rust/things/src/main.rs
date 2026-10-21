@@ -1,7 +1,7 @@
 use hyz_things::{
     adapters::{
         inbound::http::{
-            app_with_admin_camera_control_and_flashcards, bind_fixed_lan_with_retry,
+            app_with_admin_camera_control_and_flashcards_and_analysis, bind_fixed_lan_with_retry,
             bind_ipv6_listener, PortalTls, TlsListener, DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
         },
         outbound::{
@@ -9,6 +9,7 @@ use hyz_things::{
             camera::CameraUnixAdapter,
             flashcard_source::FilesystemFlashcardSource,
             flashcard_sqlite::SqliteFlashcardRepository,
+            data_analysis::{DataAnalysisService, load_ai_env},
             registry::RegistryAdapter,
             router::RouterControlClient,
             tailscale::{fetch_tailscale_status, PortalListenerApp, TailscaleListenerManager},
@@ -105,16 +106,19 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     let camera = Arc::new(CameraApplication::new(Arc::new(
         CameraUnixAdapter::default(),
     )));
-    let (flashcards, flashcard_source) =
+    let (flashcards, flashcard_source, data_analysis) =
         match SqliteFlashcardRepository::connect(FLASHCARD_DB_PATH).await {
             Ok(repository) => {
                 let source = Arc::new(FilesystemFlashcardSource::default());
+                let ai_config = load_ai_env().unwrap_or(None);
+                let data_analysis = DataAnalysisService::new(repository.pool().clone(), ai_config)
+                    .ok().map(Arc::new);
                 let application = Arc::new(FlashcardApplication::new(
                     source.clone(),
                     Arc::new(repository),
                     clock.clone(),
                 ));
-                (Some(application), Some(source))
+                (Some(application), Some(source), data_analysis)
             }
             Err(_error) => {
                 logging::event(
@@ -127,7 +131,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                     None,
                     None,
                 );
-                (None, None)
+                (None, None, None)
             }
         };
     let control: Arc<dyn PortalControlHandler> = Arc::new(RouterControlClient);
@@ -173,6 +177,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         tls: tls_acceptor.clone(),
         flashcards: flashcards.clone(),
         flashcard_source: flashcard_source.clone(),
+        data_analysis: data_analysis.clone(),
     };
     let tailscale_manager = tailscale.clone();
     let tailscale_control = control.clone();
@@ -246,7 +251,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
             None
         }
     };
-    let app = app_with_admin_camera_control_and_flashcards(
+    let app = app_with_admin_camera_control_and_flashcards_and_analysis(
         status,
         control,
         admin,
@@ -257,6 +262,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         true,
         flashcards,
         flashcard_source,
+        data_analysis,
     );
     let ipv6_task = ipv6_listener.map(|listener| {
         let app = app.clone();

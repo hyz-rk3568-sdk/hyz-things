@@ -10,3 +10,5 @@ pub mod status;
 pub mod subscription;
 pub mod tailscale;
 pub mod wifi;
+
+pub mod data_analysis;

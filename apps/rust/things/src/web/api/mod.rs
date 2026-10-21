@@ -1,6 +1,7 @@
 use super::*;
 
 mod apps;
+mod data_analysis;
 mod auth;
 mod camera;
 mod flashcards;
@@ -10,6 +11,7 @@ mod status;
 mod tailscale;
 
 pub(crate) use apps::*;
+pub(crate) use data_analysis::*;
 pub(crate) use auth::*;
 pub(crate) use camera::*;
 pub(crate) use flashcards::*;
