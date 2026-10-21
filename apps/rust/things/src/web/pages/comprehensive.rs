@@ -38,8 +38,14 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     Ok(v) => status.set(Some(v)),
                     Err(e) => error.set(Some(format!("{e}；综合出题需要管理员登录"))),
                 }
-                if let Ok(items)=fetch_json_typed::<Vec<ComprehensiveHistoryEntry>>(
-                    &format!("{ANALYSIS_ROOT}/history"),"综合训练历史").await {history.set(items);}
+                if let Ok(items) = fetch_json_typed::<Vec<ComprehensiveHistoryEntry>>(
+                    &format!("{ANALYSIS_ROOT}/history"),
+                    "综合训练历史",
+                )
+                .await
+                {
+                    history.set(items);
+                }
                 // Restore a started run after iPad Safari reload.
                 if let Some(id) = web_sys::window()
                     .and_then(|w| w.local_storage().ok().flatten())
@@ -95,8 +101,14 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 {
                     Ok(out) => {
                         result.set(Some(out));
-                        if let Ok(items)=fetch_json_typed::<Vec<ComprehensiveHistoryEntry>>(
-                            &format!("{ANALYSIS_ROOT}/history"),"刷新练习历史").await {history.set(items);}
+                        if let Ok(items) = fetch_json_typed::<Vec<ComprehensiveHistoryEntry>>(
+                            &format!("{ANALYSIS_ROOT}/history"),
+                            "刷新练习历史",
+                        )
+                        .await
+                        {
+                            history.set(items);
+                        }
                         if let Some(storage) =
                             web_sys::window().and_then(|w| w.local_storage().ok().flatten())
                         {
@@ -215,24 +227,33 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             });
         })
     };
-    let toggle_pause={
-        let run=run.clone();
-        let busy=busy.clone();
-        let error=error.clone();
-        let csrf=props.csrf.clone();
-        Callback::from(move |_|{
-            if *busy {return;}
-            let Some(active)=(*run).clone() else{return};
+    let toggle_pause = {
+        let run = run.clone();
+        let busy = busy.clone();
+        let error = error.clone();
+        let csrf = props.csrf.clone();
+        Callback::from(move |_| {
+            if *busy {
+                return;
+            }
+            let Some(active) = (*run).clone() else { return };
             busy.set(true);
-            let run=run.clone();
-            let busy=busy.clone();
-            let error=error.clone();
-            let csrf=csrf.clone();
+            let run = run.clone();
+            let busy = busy.clone();
+            let error = error.clone();
+            let csrf = csrf.clone();
             spawn_local(async move {
-                let endpoint=format!("{ANALYSIS_ROOT}/runs/{}/pause",active.id);
-                match post_json_response_typed::<_,AnalysisRun>(&endpoint,&csrf,&EmptyRequest{},"暂停或继续综合训练").await {
-                    Ok(next)=>run.set(Some(next)),
-                    Err(e)=>error.set(Some(e.to_string()))
+                let endpoint = format!("{ANALYSIS_ROOT}/runs/{}/pause", active.id);
+                match post_json_response_typed::<_, AnalysisRun>(
+                    &endpoint,
+                    &csrf,
+                    &EmptyRequest {},
+                    "暂停或继续综合训练",
+                )
+                .await
+                {
+                    Ok(next) => run.set(Some(next)),
+                    Err(e) => error.set(Some(e.to_string())),
                 }
                 busy.set(false);
             });
@@ -276,29 +297,38 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         };
     }
     if *history_open {
-        let back={
-            let history_open=history_open.clone();
-            Callback::from(move |_|history_open.set(false))
+        let back = {
+            let history_open = history_open.clone();
+            Callback::from(move |_| history_open.set(false))
         };
-        let open_result={
-            let result=result.clone();
-            let error=error.clone();
-            let history_open=history_open.clone();
-            let run=run.clone();
-            Callback::from(move |id:String|{
-                let result=result.clone();let error=error.clone();
-                let history_open=history_open.clone();let run=run.clone();
-                spawn_local(async move{
+        let open_result = {
+            let result = result.clone();
+            let error = error.clone();
+            let history_open = history_open.clone();
+            let run = run.clone();
+            Callback::from(move |id: String| {
+                let result = result.clone();
+                let error = error.clone();
+                let history_open = history_open.clone();
+                let run = run.clone();
+                spawn_local(async move {
                     match fetch_json_typed::<AnalysisResult>(
-                        &format!("{ANALYSIS_ROOT}/runs/{id}/result"),"历史成绩详情"
-                    ).await {
-                        Ok(value)=>{run.set(None);history_open.set(false);result.set(Some(value));}
-                        Err(e)=>error.set(Some(e.to_string()))
+                        &format!("{ANALYSIS_ROOT}/runs/{id}/result"),
+                        "历史成绩详情",
+                    )
+                    .await
+                    {
+                        Ok(value) => {
+                            run.set(None);
+                            history_open.set(false);
+                            result.set(Some(value));
+                        }
+                        Err(e) => error.set(Some(e.to_string())),
                     }
                 });
             })
         };
-        return html!{
+        return html! {
             <section class="mx-auto max-w-4xl space-y-4 p-5" data-testid="analysis-history">
                 <div class="flex items-center justify-between">
                     <h2 class="text-xl font-bold">{"综合训练历史"}</h2>
@@ -329,7 +359,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             return html! {<p class="p-5 text-error">{"服务端返回的综合训练题量无效，请重新出题。"}</p>};
         }
         if active.paused_remaining_ms.is_some() {
-            return html!{
+            return html! {
                 <section class="mx-auto max-w-2xl p-6" data-testid="analysis-paused">
                     <div class="rounded-box bg-base-100 p-8 text-center">
                         <h2 class="text-2xl font-bold">{"训练已暂停"}</h2>
