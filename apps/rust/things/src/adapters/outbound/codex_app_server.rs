@@ -12,7 +12,7 @@ use tokio::{
 pub const SERVER: &str = "192.168.8.202:1457";
 const MAX_PACKET: usize = 256 * 1024;
 const MAX_EVENTS: usize = 2048;
-pub const TURN_TIMEOUT: Duration = Duration::from_secs(85);
+pub const TURN_TIMEOUT: Duration = Duration::from_secs(240);
 
 /// A fixed endpoint: never allow browser input or AI-generated content to select a host.
 pub struct CodexSession {
@@ -48,27 +48,28 @@ pub(super) fn validate_token(token: &str) -> Result<(), String> {
 }
 
 fn output_schema() -> Value {
-    let properties = json!({
-        "question":{"type":"string"},
-        "evidence":{"type":"string"},
-        "operation":{"type":"string","enum":[
-            "base_period","growth_amount","growth_rate","share","average","difference","ratio"
-        ]},
-        "a":{"type":"number"},
-        "b":{"type":"number"},
-        "unit":{"type":"string"},
-        "explanation":{"type":"string"}
+    // Codex is responsible for creating, checking and selecting the answers.
+    // The App Server schema checks only the shape needed by the UI.
+    let question = json!({
+        "type":"object",
+        "properties":{
+            "question":{"type":"string"},
+            "options":{"type":"array","items":{"type":"string"}},
+            "correct_index":{"type":"integer"},
+            "answer":{"type":"string"},
+            "explanation":{"type":"string"},
+            "skill":{"type":"string"},
+            "evidence":{"type":"string"}
+        },
+        "required":["question","options","correct_index","answer",
+                    "explanation","skill","evidence"],
+        "additionalProperties":false
     });
     json!({
         "type":"object",
         "properties":{
             "material_text":{"type":"string"},
-            "questions":{"type":"array","items":{
-                "type":"object",
-                "properties":properties,
-                "required":["question","evidence","operation","a","b","unit","explanation"],
-                "additionalProperties":false
-            }}
+            "questions":{"type":"array","items":question}
         },
         "required":["material_text","questions"],
         "additionalProperties":false
@@ -225,11 +226,11 @@ async fn read_text(socket: &mut TcpStream) -> Result<String, String> {
 }
 
 impl CodexSession {
-    pub async fn connect(token: &str) -> Result<Self, String> {
-        Self::connect_at(SERVER, token).await
+    pub async fn connect(token: &str, cwd: &str) -> Result<Self, String> {
+        Self::connect_at(SERVER, token, cwd).await
     }
 
-    async fn connect_at(address: &str, token: &str) -> Result<Self, String> {
+    async fn connect_at(address: &str, token: &str, cwd: &str) -> Result<Self, String> {
         validate_token(token)?;
         let mut socket = TcpStream::connect(address)
             .await
@@ -254,7 +255,7 @@ impl CodexSession {
                 "thread/start",
                 json!({
                     "ephemeral":true,
-                    "cwd":"/tmp",
+                    "cwd":cwd,
                     "approvalPolicy":"never",
                     "sandbox":"read-only"
                 }),
@@ -374,20 +375,19 @@ mod tests {
     }
 
     #[test]
-    fn output_schema_has_required_recipe_fields() {
+    fn output_schema_accepts_complete_codex_questions() {
         let schema = output_schema();
         assert_eq!(schema["additionalProperties"], false);
         assert_eq!(
             schema["properties"]["questions"]["items"]["additionalProperties"],
             false
         );
-        assert_eq!(
-            schema["properties"]["questions"]["items"]["required"]
-                .as_array()
-                .unwrap()
-                .len(),
-            7
-        );
+        let fields = schema["properties"]["questions"]["items"]["required"]
+            .as_array().unwrap();
+        assert_eq!(fields.len(),7);
+        assert!(fields.contains(&json!("options")));
+        assert!(fields.contains(&json!("correct_index")));
+        assert!(schema["properties"]["questions"]["items"]["properties"]["operation"].is_null());
     }
 
     #[test]
@@ -476,6 +476,9 @@ mod tests {
             let thread = client_message(&mut socket).await;
             assert_eq!(thread["method"], "thread/start");
             assert_eq!(thread["params"]["ephemeral"], true);
+            assert_eq!(thread["params"]["cwd"], "/home/hyz/hyz_things");
+            assert_eq!(thread["params"]["sandbox"], "read-only");
+            assert_eq!(thread["params"]["approvalPolicy"], "never");
             server_message(
                 &mut socket,
                 json!({"id":2,"result":{"thread":{"id":"test-thread"}}}),
@@ -489,6 +492,11 @@ mod tests {
                 json!({"id":3,"result":{"turn":{"id":"turn-1"}}}),
             )
             .await;
+            // A read-only tool result is an event, not an approval request.
+            server_message(&mut socket,json!({"method":"item/completed","params":{
+                "threadId":"test-thread","turnId":"turn-1",
+                "item":{"type":"commandExecution","command":"pwd","exitCode":0}
+            }})).await;
             server_message(&mut socket,json!({"method":"item/completed","params":{
                 "threadId":"test-thread","turnId":"turn-1",
                 "item":{"type":"agentMessage","text":"{\"material_text\":\"测试\",\"questions\":[]}"}
@@ -501,7 +509,7 @@ mod tests {
             )
             .await;
         });
-        let mut session = CodexSession::connect_at(&addr.to_string(), &"a".repeat(64))
+        let mut session = CodexSession::connect_at(&addr.to_string(), &"a".repeat(64), "/home/hyz/hyz_things")
             .await
             .unwrap();
         let answer = session.turn("generate").await.unwrap();
