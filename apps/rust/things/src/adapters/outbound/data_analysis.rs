@@ -263,56 +263,75 @@ impl DataAnalysisService {
             "SELECT f.deck_path, COUNT(*) AS cards, COALESCE(SUM(rs.lapse_count),0) AS lapses
              FROM flashcards f LEFT JOIN flashcard_review_state rs ON rs.card_id=f.id
              WHERE f.active=1 GROUP BY f.deck_path",
-        ).fetch_all(&self.pool).await {
+        )
+        .fetch_all(&self.pool)
+        .await
+        {
             Ok(rows) => rows,
             Err(_) => return Vec::new(),
         };
         let mut weights = std::collections::BTreeMap::<String, i64>::new();
         for row in rows {
-            let Ok(deck) = row.try_get::<String,_>("deck_path") else {continue};
-            let Some(category)=wrong_question_category(&deck) else {continue};
-            let cards = row.try_get::<i64,_>("cards").unwrap_or(0);
-            let lapses = row.try_get::<i64,_>("lapses").unwrap_or(0);
+            let Ok(deck) = row.try_get::<String, _>("deck_path") else {
+                continue;
+            };
+            let Some(category) = wrong_question_category(&deck) else {
+                continue;
+            };
+            let cards = row.try_get::<i64, _>("cards").unwrap_or(0);
+            let lapses = row.try_get::<i64, _>("lapses").unwrap_or(0);
             *weights.entry(category.to_owned()).or_default() += cards + lapses * 3;
         }
         // Recent exercises supplement the wrong-card counts only when the
         // model returned the exact directory category, not a guessed synonym.
-        if let Ok(rows)=sqlx::query(
+        if let Ok(rows) = sqlx::query(
             "SELECT skill, SUM(CASE WHEN is_correct=0 THEN 1 ELSE 0 END) AS misses
-             FROM data_analysis_results GROUP BY skill"
-        ).fetch_all(&self.pool).await {
+             FROM data_analysis_results GROUP BY skill",
+        )
+        .fetch_all(&self.pool)
+        .await
+        {
             for row in rows {
-                let Ok(skill)=row.try_get::<String,_>("skill") else {continue};
-                if let Some(weight)=weights.get_mut(&skill) {
-                    *weight += row.try_get::<i64,_>("misses").unwrap_or(0) * 8;
+                let Ok(skill) = row.try_get::<String, _>("skill") else {
+                    continue;
+                };
+                if let Some(weight) = weights.get_mut(&skill) {
+                    *weight += row.try_get::<i64, _>("misses").unwrap_or(0) * 8;
                 }
             }
         }
         // Newly added folders are selectable before the SQLite card sync.
-        if let Ok(available)=self.available_skills().await {
-            let set=available.iter().cloned().collect::<HashSet<_>>();
-            weights.retain(|category,_|set.contains(category));
-            for category in available {weights.entry(category).or_insert(1);}
+        if let Ok(available) = self.available_skills().await {
+            let set = available.iter().cloned().collect::<HashSet<_>>();
+            weights.retain(|category, _| set.contains(category));
+            for category in available {
+                weights.entry(category).or_insert(1);
+            }
         }
-        let mut ranked=weights.into_iter().collect::<Vec<_>>();
-        ranked.sort_by(|a,b|b.1.cmp(&a.1).then_with(||a.0.cmp(&b.0)));
-        ranked.into_iter().take(4).map(|(category,_)|category).collect()
+        let mut ranked = weights.into_iter().collect::<Vec<_>>();
+        ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        ranked
+            .into_iter()
+            .take(4)
+            .map(|(category, _)| category)
+            .collect()
     }
 
     /// Derive categories from "错题/<分类>" whether RK3568 mounted
     /// flashcards/, flashcards/资料/, or the enclosing repository.
     pub async fn available_skills(&self) -> Result<Vec<String>, String> {
         // Prefer the live mounted folder tree to the previously imported cards.
-        if let Some(live)=mounted_wrong_question_categories().await {
+        if let Some(live) = mounted_wrong_question_categories().await {
             return Ok(live);
         }
-        let rows = sqlx::query(
-            "SELECT DISTINCT deck_path FROM flashcards WHERE active=1",
-        ).fetch_all(&self.pool).await.map_err(as_error)?;
-        let mut categories=std::collections::BTreeSet::new();
+        let rows = sqlx::query("SELECT DISTINCT deck_path FROM flashcards WHERE active=1")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(as_error)?;
+        let mut categories = std::collections::BTreeSet::new();
         for row in rows {
-            let deck:String=row.try_get("deck_path").map_err(as_error)?;
-            if let Some(name)=wrong_question_category(&deck) {
+            let deck: String = row.try_get("deck_path").map_err(as_error)?;
+            if let Some(name) = wrong_question_category(&deck) {
                 categories.insert(name.to_owned());
             }
         }
@@ -1137,15 +1156,18 @@ fn parse_official_sections_from(html: &str, source_url: &str) -> Vec<Material> {
 /// Look at the directory currently mounted into RK3568 rather than
 /// requiring a card sync just to show a newly created folder name.
 async fn mounted_wrong_question_categories() -> Option<Vec<String>> {
-    let root=super::flashcard_source::FLASHCARD_SOURCE_ROOT;
-    for relative in ["资料/错题","错题","flashcards/资料/错题"] {
-        let path=std::path::Path::new(root).join(relative);
-        let Ok(mut reader)=tokio::fs::read_dir(path).await else {continue};
-        let mut result=std::collections::BTreeSet::<String>::new();
-        while let Ok(Some(entry))=reader.next_entry().await {
-            let name=entry.file_name().to_string_lossy().into_owned();
+    let root = super::flashcard_source::FLASHCARD_SOURCE_ROOT;
+    for relative in ["资料/错题", "错题", "flashcards/资料/错题"] {
+        let path = std::path::Path::new(root).join(relative);
+        let Ok(mut reader) = tokio::fs::read_dir(path).await else {
+            continue;
+        };
+        let mut result = std::collections::BTreeSet::<String>::new();
+        while let Ok(Some(entry)) = reader.next_entry().await {
+            let name = entry.file_name().to_string_lossy().into_owned();
             if valid_wrong_category(&name)
-                && entry.file_type().await.is_ok_and(|kind|kind.is_dir()) {
+                && entry.file_type().await.is_ok_and(|kind| kind.is_dir())
+            {
                 result.insert(name);
             }
         }
@@ -1154,22 +1176,28 @@ async fn mounted_wrong_question_categories() -> Option<Vec<String>> {
     None
 }
 
-fn valid_wrong_category(category:&str)->bool {
-    let count=category.chars().count();
-    count>0 && count<=60 && category!="." && category!=".."
+fn valid_wrong_category(category: &str) -> bool {
+    let count = category.chars().count();
+    count > 0
+        && count <= 60
+        && category != "."
+        && category != ".."
         && !category.chars().any(char::is_control)
 }
 
 /// The directory immediately beneath flashcards/资料/错题/ is the skill.
 /// The flashcard import root can point at flashcards/, 资料/ or 错题's parent.
 fn wrong_question_category(deck: &str) -> Option<&str> {
-    let parts=deck.split('/').filter(|part|!part.is_empty()).collect::<Vec<_>>();
-    let index=parts.iter().position(|part|*part=="错题")?;
-    let prefix=&parts[..index];
-    if prefix!=[] && prefix!=["资料"] && prefix!=["flashcards","资料"] {
+    let parts = deck
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    let index = parts.iter().position(|part| *part == "错题")?;
+    let prefix = &parts[..index];
+    if prefix != [] && prefix != ["资料"] && prefix != ["flashcards", "资料"] {
         return None;
     }
-    let category=*parts.get(index+1)?;
+    let category = *parts.get(index + 1)?;
     if !valid_wrong_category(category) {
         return None;
     }
@@ -1180,14 +1208,26 @@ fn wrong_question_category(deck: &str) -> Option<&str> {
 mod tests {
     use super::*;
     #[test]
-    fn uses_exact_wrong_question_subdirectories_as_skills(){
-        assert_eq!(wrong_question_category("资料/错题/乘积增长率"),Some("乘积增长率"));
-        assert_eq!(wrong_question_category("错题/混合增长率"),Some("混合增长率"));
-        assert_eq!(wrong_question_category("flashcards/资料/错题/综合分析与审题/小结"),Some("综合分析与审题"));
-        assert_eq!(wrong_question_category("资料/错题/平均数增量"),Some("平均数增量"));
-        assert_eq!(wrong_question_category("资料/错题"),None);
-        assert_eq!(wrong_question_category("资料/线段混合"),None);
-        assert_eq!(wrong_question_category("其他/错题/乘积增长率"),None);
+    fn uses_exact_wrong_question_subdirectories_as_skills() {
+        assert_eq!(
+            wrong_question_category("资料/错题/乘积增长率"),
+            Some("乘积增长率")
+        );
+        assert_eq!(
+            wrong_question_category("错题/混合增长率"),
+            Some("混合增长率")
+        );
+        assert_eq!(
+            wrong_question_category("flashcards/资料/错题/综合分析与审题/小结"),
+            Some("综合分析与审题")
+        );
+        assert_eq!(
+            wrong_question_category("资料/错题/平均数增量"),
+            Some("平均数增量")
+        );
+        assert_eq!(wrong_question_category("资料/错题"), None);
+        assert_eq!(wrong_question_category("资料/线段混合"), None);
+        assert_eq!(wrong_question_category("其他/错题/乘积增长率"), None);
     }
 
     #[test]
