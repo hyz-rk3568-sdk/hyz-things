@@ -1,0 +1,28 @@
+name: Format study exam-style draft
+on:
+  push:
+    branches:
+      - feat/study-exam-style-shared-ink
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt
+      - name: Format native and Web Rust sources
+        run: |
+          cargo fmt --manifest-path apps/rust/things/Cargo.toml --all
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/rust/things/src
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(study): rustfmt exam-style and shared ink"
+            git push origin HEAD:feat/study-exam-style-shared-ink
+          fi
