@@ -2,8 +2,8 @@
 //! Only verified numerical recipes are admitted into the training database.
 use super::codex_app_server::{validate_token, CodexSession, TURN_TIMEOUT};
 use crate::domain::data_analysis::{
-    select_material_batch, verify_recipe, Material, QuestionRecipe, VerifiedQuestion, OFFICIAL_SOURCES, QUIZ_GROUPS,
-    QUIZ_PER_GROUP, QUIZ_SECONDS, SECTIONS, SOURCE_URL,
+    select_material_batch, verify_recipe, Material, QuestionRecipe, VerifiedQuestion,
+    OFFICIAL_SOURCES, QUIZ_GROUPS, QUIZ_PER_GROUP, QUIZ_SECONDS, SECTIONS, SOURCE_URL,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -161,10 +161,7 @@ where
     while let Some(outcome) = running.join_next().await {
         match outcome {
             Ok(result) => results.push(result),
-            Err(_) => results.push((
-                usize::MAX,
-                Err("Codex 并行出题任务意外中断".to_owned()),
-            )),
+            Err(_) => results.push((usize::MAX, Err("Codex 并行出题任务意外中断".to_owned()))),
         }
     }
     results

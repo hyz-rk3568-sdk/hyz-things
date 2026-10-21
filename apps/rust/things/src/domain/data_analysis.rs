@@ -275,7 +275,6 @@ pub fn verify_recipe(
     })
 }
 
-
 /// Pick at most \`limit\` distinct material groups for a parallel generation wave.
 ///
 /// The first pass requires independent official years and topics; the fallback
@@ -363,29 +362,82 @@ mod tests {
             QUIZ_GROUPS,
         );
         assert_eq!(batch.len(), QUIZ_GROUPS);
-        assert_eq!(batch.iter().map(|m| &m.source_url).collect::<std::collections::HashSet<_>>().len(), QUIZ_GROUPS);
-        assert_eq!(batch.iter().map(|m| &m.topic).collect::<std::collections::HashSet<_>>().len(), QUIZ_GROUPS);
-        assert_eq!(batch, select_material_batch(&candidates, &[], &std::collections::HashSet::new(), true, QUIZ_GROUPS));
+        assert_eq!(
+            batch
+                .iter()
+                .map(|m| &m.source_url)
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            QUIZ_GROUPS
+        );
+        assert_eq!(
+            batch
+                .iter()
+                .map(|m| &m.topic)
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            QUIZ_GROUPS
+        );
+        assert_eq!(
+            batch,
+            select_material_batch(
+                &candidates,
+                &[],
+                &std::collections::HashSet::new(),
+                true,
+                QUIZ_GROUPS
+            )
+        );
     }
 
     #[test]
     fn failed_wave_replenishes_without_reusing_identity() {
         let source = material();
         let candidates = vec![
-            Material { source_url: "year-a".into(), section: "one".into(), topic: "agriculture".into(), ..source.clone() },
-            Material { source_url: "year-a".into(), section: "two".into(), topic: "industry".into(), ..source.clone() },
-            Material { source_url: "year-b".into(), section: "three".into(), topic: "trade".into(), ..source.clone() },
-            Material { source_url: "year-c".into(), section: "four".into(), topic: "investment".into(), ..source.clone() },
-            Material { source_url: "year-b".into(), section: "five".into(), topic: "health".into(), ..source.clone() },
+            Material {
+                source_url: "year-a".into(),
+                section: "one".into(),
+                topic: "agriculture".into(),
+                ..source.clone()
+            },
+            Material {
+                source_url: "year-a".into(),
+                section: "two".into(),
+                topic: "industry".into(),
+                ..source.clone()
+            },
+            Material {
+                source_url: "year-b".into(),
+                section: "three".into(),
+                topic: "trade".into(),
+                ..source.clone()
+            },
+            Material {
+                source_url: "year-c".into(),
+                section: "four".into(),
+                topic: "investment".into(),
+                ..source.clone()
+            },
+            Material {
+                source_url: "year-b".into(),
+                section: "five".into(),
+                topic: "health".into(),
+                ..source.clone()
+            },
         ];
-        let attempted = std::collections::HashSet::from([
-            ("year-a".to_owned(), "one".to_owned()),
-        ]);
+        let attempted = std::collections::HashSet::from([("year-a".to_owned(), "one".to_owned())]);
         let completed = vec![candidates[2].clone()];
         let strict = select_material_batch(&candidates, &completed, &attempted, true, 3);
         assert_eq!(strict, vec![candidates[1].clone(), candidates[3].clone()]);
         let fallback = select_material_batch(&candidates, &completed, &attempted, false, 3);
-        assert_eq!(fallback, vec![candidates[1].clone(), candidates[3].clone(), candidates[4].clone()]);
+        assert_eq!(
+            fallback,
+            vec![
+                candidates[1].clone(),
+                candidates[3].clone(),
+                candidates[4].clone()
+            ]
+        );
         assert!(select_material_batch(&candidates, &completed, &attempted, false, 0).is_empty());
     }
 
