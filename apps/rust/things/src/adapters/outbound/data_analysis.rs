@@ -1247,7 +1247,7 @@ mod tests {
 
     #[test]
     fn comprehensive_generation_prompt_excludes_multi_statement_judgment() {
-        let instructions=NO_COMPREHENSIVE_JUDGMENT_PROMPT;
+        let instructions = NO_COMPREHENSIVE_JUDGMENT_PROMPT;
         assert!(instructions.contains("不出资料分析综合分析/综合判断题"));
         assert!(instructions.contains("下列说法正确的是"));
         assert!(instructions.contains("综合分析与审题"));
