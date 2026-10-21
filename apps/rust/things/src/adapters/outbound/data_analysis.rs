@@ -1319,6 +1319,15 @@ mod tests {
         assert_eq!(active.duration_seconds, 1200);
         assert!(active.deadline_at_ms.unwrap() > active.started_at_ms.unwrap());
         assert_eq!(active.answers.len(), 20);
+        let paused=service.pause_toggle(&run_id).await.expect("pause timer");
+        assert!(paused.paused_remaining_ms.is_some());
+        assert!(paused.deadline_at_ms.is_none());
+        assert!(service.answer(&run_id, 1, 1).await.is_err(),"pausing blocks answers");
+        let reloaded=service.run(&run_id).await.expect("paused reload");
+        assert!(reloaded.paused_remaining_ms.is_some());
+        let resumed=service.pause_toggle(&run_id).await.expect("resume timer");
+        assert!(resumed.paused_remaining_ms.is_none());
+        assert!(resumed.deadline_at_ms.is_some());
         service.answer(&run_id, 1, 1).await.expect("save an answer");
         let refreshed = service.run(&run_id).await.expect("restore an active run");
         assert_eq!(refreshed.answers[0], Some(1));
@@ -1333,6 +1342,13 @@ mod tests {
         );
         let replay = service.submit(&run_id).await.expect("idempotent result");
         assert_eq!(replay.correct, 1);
+        let entries=service.history().await.expect("history listing");
+        assert_eq!(entries.len(),1);
+        assert_eq!(entries[0].correct,1);
+        assert_eq!(entries[0].total,20);
+        let historical=service.result(&run_id).await.expect("historical review");
+        assert_eq!(historical.materials.len(),4);
+        assert_eq!(historical.questions.len(),20);
         let (source_count, group_count) = service.counts().await.unwrap();
         assert_eq!((source_count, group_count), (1, 4));
     }
