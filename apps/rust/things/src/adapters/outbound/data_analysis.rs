@@ -103,6 +103,7 @@ pub struct RunView {
     pub status: String,
     pub started_at_ms: Option<i64>,
     pub deadline_at_ms: Option<i64>,
+    pub paused_remaining_ms: Option<i64>,
     pub duration_seconds: u64,
     pub groups: Vec<PublicGroup>,
     pub answers: Vec<Option<usize>>,
@@ -110,6 +111,8 @@ pub struct RunView {
 #[derive(Clone, Serialize)]
 pub struct GradedQuestion {
     pub number: usize,
+    pub question: String,
+    pub options: [String; 4],
     pub chosen: Option<usize>,
     pub correct_index: usize,
     pub answer: String,
@@ -124,6 +127,18 @@ pub struct RunResult {
     pub correct: usize,
     pub total: usize,
     pub questions: Vec<GradedQuestion>,
+    pub materials: Vec<Material>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct ComprehensiveHistoryEntry {
+    pub id: String,
+    pub started_at_ms: i64,
+    pub ended_at_ms: i64,
+    pub elapsed_ms: i64,
+    pub correct: usize,
+    pub total: usize,
+    pub topics: Vec<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -725,11 +740,18 @@ impl DataAnalysisService {
             self.mark_material_seen(&group.material, "comprehensive")
                 .await?;
         }
+        let timing=sqlx::query("SELECT paused_at_ms,paused_total_ms FROM data_analysis_runs WHERE id=?")
+            .bind(id).fetch_one(&self.pool).await.map_err(as_error)?;
+        let paused_at:Option<i64>=timing.try_get("paused_at_ms").map_err(as_error)?;
+        let paused_total:i64=timing.try_get("paused_total_ms").map_err(as_error)?;
+        let deadline=started_at_ms.map(|ms|ms+QUIZ_SECONDS as i64*1000+paused_total);
+        let paused_remaining_ms=paused_at.zip(deadline).map(|(since,until)|(until-since).max(0));
         Ok(RunView {
             id: id.into(),
             status,
             started_at_ms,
-            deadline_at_ms: started_at_ms.map(|ms| ms + QUIZ_SECONDS as i64 * 1000),
+            deadline_at_ms: if paused_at.is_some(){None}else{deadline},
+            paused_remaining_ms,
             duration_seconds: QUIZ_SECONDS,
             groups: groups
                 .into_iter()
@@ -754,8 +776,12 @@ impl DataAnalysisService {
             return Err("题号或选项无效".into());
         }
         let (_groups, mut answers, status, started) = self.fetch_row(id).await?;
-        if status != "active"
-            || started.is_none_or(|ms| now_ms() >= ms + QUIZ_SECONDS as i64 * 1000)
+        let timing=sqlx::query("SELECT paused_at_ms,paused_total_ms FROM data_analysis_runs WHERE id=?")
+            .bind(id).fetch_one(&self.pool).await.map_err(as_error)?;
+        let paused_at:Option<i64>=timing.try_get("paused_at_ms").map_err(as_error)?;
+        let paused_total:i64=timing.try_get("paused_total_ms").map_err(as_error)?;
+        if status != "active" || paused_at.is_some()
+            || started.is_none_or(|ms| now_ms() >= ms + QUIZ_SECONDS as i64 * 1000 + paused_total)
         {
             return Err("训练已交卷或超时".into());
         }
@@ -782,6 +808,8 @@ impl DataAnalysisService {
                 let index = group_index * QUIZ_PER_GROUP + local_index;
                 questions.push(GradedQuestion {
                     number: index + 1,
+                    question: q.question.clone(),
+                    options: q.options.clone(),
                     chosen: answers[index],
                     correct_index: q.correct_index,
                     answer: q.answer.clone(),
@@ -813,7 +841,69 @@ impl DataAnalysisService {
             correct,
             total: QUIZ_GROUPS * QUIZ_PER_GROUP,
             questions,
+            materials: groups.into_iter().map(|g|g.material).collect(),
         })
+    }
+
+    pub async fn pause_toggle(&self,id:&str)->Result<RunView,String>{
+        let row=sqlx::query("SELECT status,started_at_ms,paused_at_ms,paused_total_ms FROM data_analysis_runs WHERE id=?")
+            .bind(id).fetch_optional(&self.pool).await.map_err(as_error)?.ok_or("训练不存在")?;
+        let status:String=row.try_get("status").map_err(as_error)?;
+        let started:Option<i64>=row.try_get("started_at_ms").map_err(as_error)?;
+        let paused_at:Option<i64>=row.try_get("paused_at_ms").map_err(as_error)?;
+        let paused_total:i64=row.try_get("paused_total_ms").map_err(as_error)?;
+        if status!="active" {return Err("只有进行中的训练可以暂停".into());}
+        let now=now_ms();
+        let result=if let Some(paused_at)=paused_at {
+            sqlx::query("UPDATE data_analysis_runs SET paused_at_ms=NULL,paused_total_ms=paused_total_ms+? WHERE id=? AND status='active' AND paused_at_ms=?")
+                .bind((now-paused_at).max(0)).bind(id).bind(paused_at)
+                .execute(&self.pool).await.map_err(as_error)?
+        }else{
+            if started.is_none_or(|ms| now>=ms+QUIZ_SECONDS as i64*1000+paused_total){
+                return Err("训练计时已结束，不能暂停".into());
+            }
+            sqlx::query("UPDATE data_analysis_runs SET paused_at_ms=? WHERE id=? AND status='active' AND paused_at_ms IS NULL")
+                .bind(now).bind(id).execute(&self.pool).await.map_err(as_error)?
+        };
+        if result.rows_affected()!=1 {return Err("计时状态已变化，请刷新".into());}
+        self.run(id).await
+    }
+
+    pub async fn result(&self,id:&str)->Result<RunResult,String>{
+        let (_groups,_answers,status,_started)=self.fetch_row(id).await?;
+        if status!="submitted" {return Err("训练尚未交卷".into());}
+        self.submit(id).await
+    }
+
+    pub async fn history(&self)->Result<Vec<ComprehensiveHistoryEntry>,String>{
+        let rows=sqlx::query(
+            "SELECT id,groups_json,answers_json,started_at_ms,ended_at_ms,paused_total_ms FROM data_analysis_runs WHERE status='submitted' AND ended_at_ms IS NOT NULL ORDER BY ended_at_ms DESC LIMIT 100"
+        ).fetch_all(&self.pool).await.map_err(as_error)?;
+        let mut result=Vec::new();
+        for row in rows {
+            let groups:Vec<QuestionGroup>=serde_json::from_str(
+                &row.try_get::<String,_>("groups_json").map_err(as_error)?
+            ).map_err(as_error)?;
+            let answers:Vec<Option<usize>>=serde_json::from_str(
+                &row.try_get::<String,_>("answers_json").map_err(as_error)?
+            ).map_err(as_error)?;
+            let total:usize=groups.iter().map(|g|g.questions.len()).sum();
+            if answers.len()!=total{continue;}
+            let correct=groups.iter().flat_map(|g|g.questions.iter()).zip(answers.iter())
+                .filter(|(q,a)|**a==Some(q.correct_index)).count();
+            let started:i64=row.try_get::<Option<i64>,_>("started_at_ms").map_err(as_error)?.unwrap_or(0);
+            let ended:i64=row.try_get("ended_at_ms").map_err(as_error)?;
+            let paused_total:i64=row.try_get("paused_total_ms").map_err(as_error)?;
+            result.push(ComprehensiveHistoryEntry{
+                id:row.try_get("id").map_err(as_error)?,
+                started_at_ms:started,
+                ended_at_ms:ended,
+                elapsed_ms:(ended-started-paused_total).max(0),
+                correct,total,
+                topics:groups.iter().map(|g|g.material.subtopic.clone()).collect(),
+            });
+        }
+        Ok(result)
     }
 }
 
