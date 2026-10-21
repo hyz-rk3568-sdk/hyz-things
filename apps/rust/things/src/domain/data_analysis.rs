@@ -154,6 +154,13 @@ pub fn verify_recipe(
     {
         return Err(ValidationError::MissingOperand);
     }
+    if matches!(recipe.operation, Operation::BasePeriod | Operation::GrowthAmount) {
+        let negative = ["下降","减少","减产","降低"].iter().any(|word|recipe.evidence.contains(word));
+        let positive = ["增长","增产","上升","提高"].iter().any(|word|recipe.evidence.contains(word));
+        if negative && !positive && recipe.b > 0.0 || positive && !negative && recipe.b < 0.0 {
+            return Err(ValidationError::InvalidNumber);
+        }
+    }
     if recipe.b == 0.0 || !recipe.a.is_finite() || !recipe.b.is_finite() {
         return Err(ValidationError::InvalidNumber);
     }
@@ -265,14 +272,12 @@ mod tests {
             unit: "万吨".into(),
             explanation: "现期乘增长率除增长因子".into(),
         };
-        // "-" sign is not present in source because the public text says "下降".
         let mut q = q;
         q.b = 4.2;
-        assert!(verify_recipe(&m, &q, 0).is_ok());
+        assert_eq!(verify_recipe(&m, &q, 0).unwrap_err(), ValidationError::InvalidNumber);
         q.b = -4.2;
-        assert_eq!(
-            verify_recipe(&m, &q, 0).unwrap_err(),
-            ValidationError::MissingOperand
-        );
+        let verified = verify_recipe(&m, &q, 0).expect("negative rates are valid");
+        assert!(verified.answer.starts_with('-'));
+        assert_eq!(verified.options.iter().filter(|o|o.starts_with('-')).count(),4);
     }
 }

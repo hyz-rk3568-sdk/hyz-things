@@ -9,7 +9,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::{Row, SqlitePool};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fs,
     os::unix::fs::MetadataExt,
     sync::Arc,
@@ -362,81 +362,73 @@ impl DataAnalysisService {
             .execute(&self.pool).await.map_err(as_error)?;
         Ok(sections)
     }
-    async fn generate(&self, job: &str) -> Result<String, String> {
-        self.set_progress(job, "fetching", 0, "正在读取官方统计资料", None)
-            .await;
-        let materials = self.load_sections().await?;
-        self.set_progress(job, "selecting", 0, "正在选择主题和考点", None)
-            .await;
-        let weaknesses = self.weaknesses().await;
-        let mut ready: Vec<QuestionGroup> = Vec::new();
-        let mut known = HashSet::new();
-        let existing = sqlx::query(
-            "SELECT group_json FROM data_analysis_groups ORDER BY created_at_ms DESC LIMIT 100",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(as_error)?;
+    async fn generate(&self, job: &str) -> Result<String,String> {
+        self.set_progress(job,"fetching",0,"正在读取官方统计资料",None).await;
+        let materials=self.load_sections().await?;
+        self.set_progress(job,"selecting",0,"正在选择薄弱和未练主题",None).await;
+        let weaknesses=self.weaknesses().await;
+        let mut scores=HashMap::<String,(i64,i64)>::new();
+        let rows=sqlx::query("SELECT topic, count(*) n, sum(CASE WHEN is_correct=0 THEN 1 ELSE 0 END) missed FROM data_analysis_results GROUP BY topic")
+            .fetch_all(&self.pool).await.map_err(as_error)?;
+        for row in rows {
+            let topic:String=row.try_get("topic").map_err(as_error)?;
+            scores.insert(topic,(row.try_get("n").unwrap_or(0),row.try_get("missed").unwrap_or(0)));
+        }
+        // Explore never-seen topics before repeating familiar source sections.
+        // Once covered, prioritize topics with high error ratios.
+        let mut ordered=materials;
+        ordered.sort_by(|a,b|{
+            let (na,ma)=scores.get(&a.topic).copied().unwrap_or((0,0));
+            let (nb,mb)=scores.get(&b.topic).copied().unwrap_or((0,0));
+            let score_a=if na==0 {2.0}else{ma as f64/na as f64};
+            let score_b=if nb==0 {2.0}else{mb as f64/nb as f64};
+            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let existing=sqlx::query("SELECT group_json FROM data_analysis_groups ORDER BY created_at_ms DESC LIMIT 200")
+            .fetch_all(&self.pool).await.map_err(as_error)?;
+        let mut cache=HashMap::<String,QuestionGroup>::new();
         for row in existing {
-            let data: String = row.try_get("group_json").map_err(as_error)?;
-            if let Ok(group) = serde_json::from_str::<QuestionGroup>(&data) {
-                if group.questions.len() == 5 && known.insert(group.material.section.clone()) {
-                    ready.push(group);
-                }
-                if ready.len() == QUIZ_GROUPS {
-                    break;
-                }
+            let data:String=row.try_get("group_json").map_err(as_error)?;
+            if let Ok(group)=serde_json::from_str::<QuestionGroup>(&data) {
+                if group.questions.len()==5 {cache.entry(group.material.section.clone()).or_insert(group);}
             }
         }
-        if ready.len() < QUIZ_GROUPS {
-            self.set_progress(
-                job,
-                "generating",
-                ready.len() * 5,
-                "正在请求模型生成候选题",
-                None,
-            )
-            .await;
-            for material in &materials {
-                if known.contains(&material.section) {
+        let mut ready=Vec::new();
+        let mut last_error=String::new();
+        let mut attempts=0;
+        for material in &ordered {
+            if ready.len()==QUIZ_GROUPS {break;}
+            if let Some(group)=cache.get(&material.section) {
+                ready.push(group.clone());continue;
+            }
+            if attempts>=8 {break;}
+            attempts+=1;
+            self.set_progress(job,"generating",ready.len()*5,"正在调用AI生成新的官方资料题",None).await;
+            let group=match self.generate_group(material,&weaknesses).await {
+                Ok(group)=>group,
+                Err(err)=>{
+                    last_error=err;
+                    if last_error.contains("HTTP 401") || last_error.contains("HTTP 403") || last_error.contains("HTTP 429") {break;}
                     continue;
                 }
-                if ready.len() == QUIZ_GROUPS {
-                    break;
-                }
-                let group = match self.generate_group(material, &weaknesses).await {
-                    Ok(group) => group,
-                    Err(_) => continue,
-                };
-                let group_id = Uuid::now_v7().to_string();
-                sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES (?,?,?,?,?,?)")
-                    .bind(group_id).bind(&material.source_url).bind(&material.section)
-                    .bind(&material.topic).bind(serde_json::to_string(&group).map_err(as_error)?)
-                    .bind(now_ms()).execute(&self.pool).await.map_err(as_error)?;
-                known.insert(material.section.clone());
-                ready.push(group);
-                self.set_progress(
-                    job,
-                    "validating",
-                    ready.len() * 5,
-                    "正在校验候选题的证据与答案",
-                    None,
-                )
-                .await;
-            }
+            };
+            let group_id=Uuid::now_v7().to_string();
+            sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES (?,?,?,?,?,?)")
+                .bind(group_id).bind(&material.source_url).bind(&material.section).bind(&material.topic)
+                .bind(serde_json::to_string(&group).map_err(as_error)?).bind(now_ms())
+                .execute(&self.pool).await.map_err(as_error)?;
+            ready.push(group);
+            self.set_progress(job,"validating",ready.len()*5,"已通过严格校验，正在组卷",None).await;
         }
-        if ready.len() != QUIZ_GROUPS {
-            return Err(format!(
-                "只获得{}组验证题，未达到4组，不会开始计时",
-                ready.len()
-            ));
+        if ready.len()!=QUIZ_GROUPS {
+            return Err(format!("只验证通过{}/20题，暂不开始：{}",ready.len()*5,last_error));
         }
-        let id = Uuid::now_v7().to_string();
-        let groups_json = serde_json::to_string(&ready).map_err(as_error)?;
-        let answers_json = serde_json::to_string(&vec![None::<usize>; 20]).map_err(as_error)?;
+        let id=Uuid::now_v7().to_string();
         sqlx::query("INSERT INTO data_analysis_runs(id,groups_json,answers_json,status,created_at_ms) VALUES(?,?,?,'ready',?)")
-            .bind(&id).bind(groups_json).bind(answers_json).bind(now_ms())
-            .execute(&self.pool).await.map_err(as_error)?;
+            .bind(&id)
+            .bind(serde_json::to_string(&ready).map_err(as_error)?)
+            .bind(serde_json::to_string(&vec![None::<usize>;20]).map_err(as_error)?)
+            .bind(now_ms()).execute(&self.pool).await.map_err(as_error)?;
         Ok(id)
     }
     async fn generate_group(

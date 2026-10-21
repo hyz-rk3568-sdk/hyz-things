@@ -304,6 +304,10 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 <footer class="flex items-center justify-between gap-3 py-3" data-testid="analysis-navigation">
                     <button type="button" class="btn btn-outline btn-sm" disabled={index==0} onclick={previous}>{"上一题"}</button>
                     <div class="flex flex-wrap justify-center gap-1">
+                        {for (0..4).map(|g|{
+                            let current=current.clone();
+                            html!{<button type="button" class={if g==group_index{"btn btn-primary btn-xs"}else{"btn btn-ghost btn-xs"}} onclick={Callback::from(move |_|current.set(g*5))}>{format!("材料{}",g+1)}</button>}
+                        })}
                         {for (group_index*5..group_index*5+5).map(|i|{
                             let current=current.clone();
                             let chosen=active.answers[i].is_some();
