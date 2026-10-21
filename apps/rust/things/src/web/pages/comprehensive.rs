@@ -8,6 +8,76 @@ pub(crate) struct ComprehensiveProps {
     pub csrf: String,
 }
 
+const COMPREHENSIVE_JOB_KEY: &str = "hyz_comprehensive_prepare_job";
+const COMPREHENSIVE_READY_KEY: &str = "hyz_comprehensive_ready_run";
+
+fn remember_preparation(id: Option<&str>) {
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        match id {
+            Some(id) => {
+                let _ = storage.set_item(COMPREHENSIVE_JOB_KEY, id);
+            }
+            None => {
+                let _ = storage.remove_item(COMPREHENSIVE_JOB_KEY);
+            }
+        }
+    }
+}
+
+async fn resume_preparation(
+    id: String,
+    progress: UseStateHandle<Option<PrepareProgress>>,
+    ready_id: UseStateHandle<Option<String>>,
+    preparing: UseStateHandle<bool>,
+    error: UseStateHandle<Option<String>>,
+) {
+    preparing.set(true);
+    for _ in 0..800 {
+        match fetch_json_typed::<PrepareProgress>(
+            &format!("{ANALYSIS_ROOT}/prepare/{id}"),
+            "恢复综合训练出题进度",
+        )
+        .await
+        {
+            Ok(state) => {
+                progress.set(Some(state.clone()));
+                if state.state == "ready" {
+                    if let Some(run_id) = state.run_id {
+                        if let Some(storage) =
+                            web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+                        {
+                            let _ = storage.set_item(COMPREHENSIVE_READY_KEY, &run_id);
+                        }
+                        remember_preparation(None);
+                        ready_id.set(Some(run_id));
+                        preparing.set(false);
+                        return;
+                    }
+                    remember_preparation(None);
+                    error.set(Some("出题完成但没有找到可进入的训练，请重新出题".into()));
+                    preparing.set(false);
+                    return;
+                }
+                if state.state == "failed" {
+                    remember_preparation(None);
+                    error.set(Some(state.message));
+                    preparing.set(false);
+                    return;
+                }
+            }
+            Err(e) => {
+                remember_preparation(None);
+                preparing.set(false);
+                error.set(Some(format!("恢复出题任务失败：{e}")));
+                return;
+            }
+        }
+        TimeoutFuture::new(1500).await;
+    }
+    preparing.set(false);
+    error.set(Some("出题等待超时，可重新打开页面检查任务进度".into()));
+}
+
 #[function_component(ComprehensiveTraining)]
 pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     let status = use_state(|| None::<AnalysisStatus>);
@@ -16,23 +86,68 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     let result = use_state(|| None::<AnalysisResult>);
     let current = use_state(|| 0usize);
     let busy = use_state(|| false);
+    let preparing = use_state(|| false);
+    let ready_id = use_state(|| None::<String>);
+    let loading_status = use_state(|| true);
     let error = use_state(|| None::<String>);
     let tick = use_state(|| 0_u64);
+    let history = use_state(Vec::<ComprehensiveHistoryEntry>::new);
+    let history_open = use_state(|| false);
 
     {
         let status = status.clone();
         let error = error.clone();
         let run = run.clone();
+        let history = history.clone();
+        let progress = progress.clone();
+        let ready_id = ready_id.clone();
+        let preparing = preparing.clone();
+        let loading_status = loading_status.clone();
         use_effect_with((), move |_| {
+            let history = history.clone();
             spawn_local(async move {
-                match fetch_json_typed::<AnalysisStatus>(
+                let status_result = fetch_json_typed::<AnalysisStatus>(
                     &format!("{ANALYSIS_ROOT}/status"),
                     "综合训练状态",
                 )
-                .await
-                {
+                .await;
+                let server_job = status_result
+                    .as_ref()
+                    .ok()
+                    .and_then(|s| s.preparing_job_id.clone());
+                match status_result {
                     Ok(v) => status.set(Some(v)),
                     Err(e) => error.set(Some(format!("{e}；综合出题需要管理员登录"))),
+                }
+                let storage = web_sys::window().and_then(|w| w.local_storage().ok().flatten());
+                let saved_ready = storage
+                    .as_ref()
+                    .and_then(|s| s.get_item(COMPREHENSIVE_READY_KEY).ok().flatten());
+                let saved_job = storage
+                    .as_ref()
+                    .and_then(|s| s.get_item(COMPREHENSIVE_JOB_KEY).ok().flatten());
+                // A ready run is persisted in SQLite: even a backend restart
+                // cannot accidentally start the timer or lose this prepared set.
+                if let Some(id) = saved_ready {
+                    ready_id.set(Some(id));
+                } else if let Some(job) = saved_job.or(server_job) {
+                    remember_preparation(Some(&job));
+                    spawn_local(resume_preparation(
+                        job,
+                        progress,
+                        ready_id,
+                        preparing,
+                        error.clone(),
+                    ));
+                }
+                loading_status.set(false);
+                if let Ok(items) = fetch_json_typed::<Vec<ComprehensiveHistoryEntry>>(
+                    &format!("{ANALYSIS_ROOT}/history"),
+                    "综合训练历史",
+                )
+                .await
+                {
+                    history.set(items);
                 }
                 // Restore a started run after iPad Safari reload.
                 if let Some(id) = web_sys::window()
@@ -65,6 +180,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let error = error.clone();
         let csrf = props.csrf.clone();
         let busy = busy.clone();
+        let history = history.clone();
         Callback::from(move |_| {
             if *busy {
                 return;
@@ -75,6 +191,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let error = error.clone();
             let busy = busy.clone();
             let csrf = csrf.clone();
+            let history = history.clone();
             spawn_local(async move {
                 let endpoint = format!("{ANALYSIS_ROOT}/runs/{}/submit", active.id);
                 match post_json_response_typed::<_, AnalysisResult>(
@@ -87,6 +204,14 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 {
                     Ok(out) => {
                         result.set(Some(out));
+                        if let Ok(items) = fetch_json_typed::<Vec<ComprehensiveHistoryEntry>>(
+                            &format!("{ANALYSIS_ROOT}/history"),
+                            "刷新练习历史",
+                        )
+                        .await
+                        {
+                            history.set(items);
+                        }
                         if let Some(storage) =
                             web_sys::window().and_then(|w| w.local_storage().ok().flatten())
                         {
@@ -114,92 +239,121 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let progress = progress.clone();
         let error = error.clone();
         let busy = busy.clone();
-        let run = run.clone();
-        let current = current.clone();
+        let preparing = preparing.clone();
+        let ready_id = ready_id.clone();
         let csrf = props.csrf.clone();
         Callback::from(move |_| {
-            if *busy {
+            if *busy || *preparing || ready_id.is_some() {
                 return;
             }
             busy.set(true);
             error.set(None);
             progress.set(None);
-            let (progress, error, busy, run, current, csrf) = (
-                progress.clone(),
-                error.clone(),
-                busy.clone(),
-                run.clone(),
-                current.clone(),
-                csrf.clone(),
-            );
+            let progress = progress.clone();
+            let error = error.clone();
+            let busy = busy.clone();
+            let preparing = preparing.clone();
+            let ready_id = ready_id.clone();
+            let csrf = csrf.clone();
             spawn_local(async move {
-                let task = post_json_response_typed::<_, PrepareTask>(
+                match post_json_response_typed::<_, PrepareTask>(
                     &format!("{ANALYSIS_ROOT}/prepare"),
                     &csrf,
                     &EmptyRequest {},
-                    "AI出题",
+                    "准备综合训练",
                 )
-                .await;
-                let result = match task {
-                    Err(err) => Err(err.to_string()),
+                .await
+                {
                     Ok(task) => {
-                        let mut outcome = Err("出题等待超时，可稍后重试".to_owned());
-                        // Four material groups can require two 85-second Codex turns each.
-                        // Keep the UI polling until the bounded backend job finishes.
-                        for _ in 0..800 {
-                            TimeoutFuture::new(1500).await;
-                            let state = fetch_json_typed::<PrepareProgress>(
-                                &format!("{ANALYSIS_ROOT}/prepare/{}", task.job_id),
-                                "出题进度",
-                            )
-                            .await;
-                            match state {
-                                Ok(p) => {
-                                    progress.set(Some(p.clone()));
-                                    if p.state == "failed" {
-                                        outcome = Err(p.message);
-                                        break;
-                                    }
-                                    if p.state == "ready" {
-                                        if let Some(id) = p.run_id {
-                                            match fetch_json_typed::<AnalysisRun>(
-                                                &format!("{ANALYSIS_ROOT}/runs/{id}"),
-                                                "开始综合训练",
-                                            )
-                                            .await
-                                            {
-                                                Ok(r) => {
-                                                    outcome = Ok(r);
-                                                    break;
-                                                }
-                                                Err(e) => {
-                                                    outcome = Err(e.to_string());
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    outcome = Err(e.to_string());
-                                    break;
-                                }
-                            }
-                        }
-                        outcome
+                        remember_preparation(Some(&task.job_id));
+                        busy.set(false);
+                        resume_preparation(task.job_id, progress, ready_id, preparing, error).await;
                     }
-                };
-                match result {
-                    Ok(r) => {
+                    Err(e) => {
+                        busy.set(false);
+                        error.set(Some(e.to_string()));
+                    }
+                }
+            });
+        })
+    };
+    // Opening the prepared paper is the *only* action which starts 20 minutes.
+    // A background generation result can remain ready for hours without timing.
+    let enter_ready = {
+        let run = run.clone();
+        let current = current.clone();
+        let ready_id = ready_id.clone();
+        let busy = busy.clone();
+        let error = error.clone();
+        Callback::from(move |_| {
+            if *busy {
+                return;
+            }
+            let Some(id) = (*ready_id).clone() else {
+                return;
+            };
+            busy.set(true);
+            let run = run.clone();
+            let current = current.clone();
+            let ready_id = ready_id.clone();
+            let busy = busy.clone();
+            let error = error.clone();
+            spawn_local(async move {
+                match fetch_json_typed::<AnalysisRun>(
+                    &format!("{ANALYSIS_ROOT}/runs/{id}"),
+                    "进入综合训练",
+                )
+                .await
+                {
+                    Ok(active) => {
                         current.set(0);
                         if let Some(storage) =
                             web_sys::window().and_then(|w| w.local_storage().ok().flatten())
                         {
-                            let _ = storage.set_item("hyz_comprehensive_active_run", &r.id);
+                            let _ = storage.set_item("hyz_comprehensive_active_run", &active.id);
                         }
-                        run.set(Some(r));
+                        remember_preparation(None);
+                        if let Some(storage) =
+                            web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+                        {
+                            let _ = storage.remove_item(COMPREHENSIVE_READY_KEY);
+                        }
+                        ready_id.set(None);
+                        run.set(Some(active));
                     }
-                    Err(message) => error.set(Some(message)),
+                    Err(e) => error.set(Some(format!("进入训练失败：{e}"))),
+                }
+                busy.set(false);
+            });
+        })
+    };
+    let toggle_pause = {
+        let run = run.clone();
+        let busy = busy.clone();
+        let error = error.clone();
+        let csrf = props.csrf.clone();
+        Callback::from(move |_| {
+            if *busy {
+                return;
+            }
+            let Some(active) = (*run).clone() else { return };
+            busy.set(true);
+            let run = run.clone();
+            let busy = busy.clone();
+            let error = error.clone();
+            let csrf = csrf.clone();
+            spawn_local(async move {
+                let endpoint = format!("{ANALYSIS_ROOT}/runs/{}/pause", active.id);
+                match post_json_response_typed::<_, AnalysisRun>(
+                    &endpoint,
+                    &csrf,
+                    &EmptyRequest {},
+                    "暂停或继续综合训练",
+                )
+                .await
+                {
+                    Ok(next) => run.set(Some(next)),
+                    Err(e) => error.set(Some(e.to_string())),
                 }
                 busy.set(false);
             });
@@ -213,14 +367,28 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     <p class="mt-3 text-3xl font-black">{format!("{} / {} 题正确",score.correct,score.total)}</p>
                     <p class="text-sm text-base-content/60">{"已交卷 · 题目依据官方统计文字资料生成，解析含 AI 建议，请以数据计算结果为准。"}</p>
                 </div>
+                <details class="rounded-box bg-base-100 p-4">
+                    <summary class="cursor-pointer font-semibold">{"查看本套4份训练材料"}</summary>
+                    {for score.materials.iter().enumerate().map(|(i,m)|html!{
+                        <article class="mt-4 border-t border-base-content/10 pt-3"><h3 class="font-semibold">{format!("材料{} · {}",i+1,m.subtopic)}</h3>
+                        <p class="mt-2 whitespace-pre-wrap text-sm leading-7">{m.text.clone()}</p></article>
+                    })}
+                </details>
                 {for score.questions.iter().map(|q|html!{
                     <article class="rounded-box bg-base-100 p-4" key={q.number}>
                         <div class="flex justify-between"><strong>{format!("第{}题 · {} / {}",q.number,q.topic,q.skill)}</strong><span>{if q.chosen==Some(q.correct_index){"正确"}else{"错误/未答"}}</span></div>
                         <p class="mt-2">{format!("正确答案：{} · {}",["A","B","C","D"][q.correct_index],q.answer)}</p>
-                        <p class="text-sm mt-2">{q.explanation.clone()}</p>
+                        <p class="mt-2 text-sm font-semibold">{q.question.clone()}</p>
+                    <p class="text-sm mt-2">{format!("你的选择：{}；正确答案：{}",q.chosen.map(|i|["A","B","C","D"][i]).unwrap_or("未答"),["A","B","C","D"][q.correct_index])}</p>
+                    <div class="mt-2 text-sm">{for q.options.iter().enumerate().map(|(i,v)|html!{<p>{format!("{}. {}",["A","B","C","D"][i],v)}</p>})}</div>
+                    <p class="text-sm mt-2">{q.explanation.clone()}</p>
                         <details class="mt-2 text-xs"><summary>{"查看原始数据证据"}</summary><p>{q.evidence.clone()}</p></details>
                     </article>
                 })}
+                <button class="btn btn-outline" onclick={{
+                    let result=result.clone();let run=run.clone();let history_open=history_open.clone();
+                    Callback::from(move |_|{result.set(None);run.set(None);history_open.set(true);})
+                }}>{"查看练习历史"}</button>
                 <button class="btn btn-primary" onclick={{
                     let run=run.clone();let result=result.clone();let progress=progress.clone();
                     Callback::from(move |_|{run.set(None);result.set(None);progress.set(None);})
@@ -228,9 +396,80 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             </section>
         };
     }
+    if *history_open {
+        let back = {
+            let history_open = history_open.clone();
+            Callback::from(move |_| history_open.set(false))
+        };
+        let open_result = {
+            let result = result.clone();
+            let error = error.clone();
+            let history_open = history_open.clone();
+            let run = run.clone();
+            Callback::from(move |id: String| {
+                let result = result.clone();
+                let error = error.clone();
+                let history_open = history_open.clone();
+                let run = run.clone();
+                spawn_local(async move {
+                    match fetch_json_typed::<AnalysisResult>(
+                        &format!("{ANALYSIS_ROOT}/runs/{id}/result"),
+                        "历史成绩详情",
+                    )
+                    .await
+                    {
+                        Ok(value) => {
+                            run.set(None);
+                            history_open.set(false);
+                            result.set(Some(value));
+                        }
+                        Err(e) => error.set(Some(e.to_string())),
+                    }
+                });
+            })
+        };
+        return html! {
+            <section class="mx-auto max-w-4xl space-y-4 p-5" data-testid="analysis-history">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-xl font-bold">{"综合训练历史"}</h2>
+                    <button class="btn btn-outline btn-sm" onclick={back}>{"返回训练"}</button>
+                </div>
+                {if history.is_empty(){html!{<p class="text-sm text-base-content/60">{"还没有已交卷的综合训练。"}</p>}}else{Html::default()}}
+                {for history.iter().map(|entry|{
+                    let id=entry.id.clone();let open_result=open_result.clone();
+                    let stamp=Date::new(&JsValue::from_f64(entry.started_at_ms as f64));
+                    let date=format!("{}-{:02}-{:02} {:02}:{:02}",
+                        stamp.get_full_year(),stamp.get_month()+1,stamp.get_date(),stamp.get_hours(),stamp.get_minutes());
+                    html!{
+                        <article class="rounded-box bg-base-100 p-4" key={entry.id.clone()}>
+                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                <div><strong>{format!("{} · {}/{}题",date,entry.correct,entry.total)}</strong>
+                                <p class="text-xs text-base-content/60">{format!("作答用时 {}分{}秒 · {}",entry.elapsed_ms/60000,(entry.elapsed_ms/1000)%60,entry.topics.join("、"))}</p></div>
+                                <button class="btn btn-primary btn-sm" onclick={Callback::from(move |_|open_result.emit(id.clone()))}>{"查看原题与解析"}</button>
+                            </div>
+                        </article>
+                    }
+                })}
+                {if let Some(msg)=(*error).clone(){html!{<p class="text-error text-sm">{msg}</p>}}else{Html::default()}}
+            </section>
+        };
+    }
     if let Some(active) = (*run).clone() {
         if active.groups.len() != 4 || active.answers.len() != 20 {
             return html! {<p class="p-5 text-error">{"服务端返回的综合训练题量无效，请重新出题。"}</p>};
+        }
+        if active.paused_remaining_ms.is_some() {
+            return html! {
+                <section class="mx-auto max-w-2xl p-6" data-testid="analysis-paused">
+                    <div class="rounded-box bg-base-100 p-8 text-center">
+                        <h2 class="text-2xl font-bold">{"训练已暂停"}</h2>
+                        <p class="mt-3 text-base-content/60">{"已隐藏材料和题目，暂停期间不能答题。刷新页面仍保持暂停。"}</p>
+                        <p class="my-5 font-mono text-3xl">{format!("{:02}:{:02}",active.paused_remaining_ms.unwrap_or(0)/60000,(active.paused_remaining_ms.unwrap_or(0)/1000)%60)}</p>
+                        <button class="btn btn-primary" disabled={*busy} onclick={toggle_pause}>{"继续计时"}</button>
+                        {if let Some(msg)=(*error).clone(){html!{<p class="mt-4 text-error text-sm">{msg}</p>}}else{Html::default()}}
+                    </div>
+                </section>
+            };
         }
         let index = (*current).min(19);
         let group_index = index / 5;
@@ -278,7 +517,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 <header class="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-3">
                     <div class="text-sm font-bold">{"资料分析综合训练"} <span class="text-base-content/60">{format!("第 {}/20 题 · 材料 {}/4",index+1,group_index+1)}</span></div>
                     <div class="flex items-center gap-2">
-                        <strong class={if remaining<=60 {"font-mono text-xl text-error"}else{"font-mono text-xl"}} data-testid="analysis-clock">{clock}</strong>
+                        <button type="button" class={if remaining<=60 {"btn btn-ghost font-mono text-xl text-error"}else{"btn btn-ghost font-mono text-xl"}} data-testid="analysis-clock" title="点击暂停计时" disabled={*busy || remaining==0} onclick={toggle_pause}>{format!("⏸ {clock}")}</button>
                         <button type="button" class="btn btn-sm btn-error btn-outline" disabled={*busy} onclick={{let submit=submit.clone();Callback::from(move |_|submit.emit(()))}}>{"交卷"}</button>
                     </div>
                 </header>
@@ -325,6 +564,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 <h2 class="text-xl font-bold">{"资料分析综合训练"}</h2>
                 <p class="mt-1 text-sm text-base-content/60">{"官方统计数据改编 · 4份仿真材料 × 每份5题 · 20分钟"}</p>
                 <div class="mt-5 grid gap-3">
+                    <button class="btn btn-outline w-full" type="button" onclick={{let history_open=history_open.clone();Callback::from(move |_|history_open.set(true))}}>{"查看练习历史"}</button>
                     <div class="rounded-box border border-base-content/15 p-4">
                         <p class="font-semibold">{"智能薄弱点强化"}</p>
                         <p class="mt-1 text-sm text-base-content/60">{"根据 Flashcard 错题考点及历史成绩，优先安排需要加强的领域。"}</p>
@@ -346,11 +586,21 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         </div>
                     }
                     if let Some(err)=(*error).clone(){<p class="text-error text-sm" role="alert">{err}</p>}
-                    <button type="button" class="btn btn-primary w-full" data-testid="analysis-start"
-                        disabled={*busy || status.as_ref().as_ref().is_none_or(|s|!s.configured) || props.csrf.is_empty()}
-                        onclick={start}>
-                        {if *busy {"出题中，请稍候…"} else {"✨ 智能出题并开始"}}
-                    </button>
+                    if ready_id.is_some() {
+                        <div class="rounded-box border border-success/40 bg-success/5 p-4" data-testid="analysis-ready">
+                            <p class="font-semibold">{"20题已经准备好"}</p>
+                            <p class="mt-1 text-sm text-base-content/70">{"倒计时尚未开始。点击进入训练时才启动20分钟计时。"}</p>
+                        </div>
+                        <button type="button" class="btn btn-primary w-full" data-testid="analysis-enter" disabled={*busy} onclick={enter_ready}>
+                            {if *busy {"进入中…"}else{"进入训练 · 开始20分钟计时"}}
+                        </button>
+                    } else {
+                        <button type="button" class="btn btn-primary w-full" data-testid="analysis-start"
+                            disabled={*loading_status || *busy || *preparing || status.as_ref().as_ref().is_none_or(|s|!s.configured) || props.csrf.is_empty()}
+                            onclick={start}>
+                            {if *busy || *preparing {"正在出题中…（可以切换页面）"} else {"✨ 智能出题"}}
+                        </button>
+                    }
                     <p class="text-xs text-base-content/60">
                         {"在 RK3568 的 /userdata/hyz-things/.env 配置 Codex WebSocket Token。电脑 192.168.8.202 需要运行已登录的 Codex App Server，未通过校验的题不会进入正式训练。"}
                     </p>

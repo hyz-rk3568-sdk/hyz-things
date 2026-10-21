@@ -9,6 +9,7 @@ pub(crate) struct AnalysisStatus {
     pub cached_sources: i64,
     pub verified_groups: i64,
     pub weak_skills: Vec<String>,
+    pub preparing_job_id: Option<String>,
 }
 #[derive(Debug, Deserialize)]
 pub(crate) struct PrepareTask {
@@ -38,6 +39,7 @@ pub(crate) struct AnalysisRun {
     pub status: String,
     pub started_at_ms: Option<i64>,
     pub deadline_at_ms: Option<i64>,
+    pub paused_remaining_ms: Option<i64>,
     pub duration_seconds: u64,
     pub groups: Vec<ViewGroup>,
     pub answers: Vec<Option<usize>>,
@@ -45,6 +47,8 @@ pub(crate) struct AnalysisRun {
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct GradedQuestion {
     pub number: usize,
+    pub question: String,
+    pub options: [String; 4],
     pub chosen: Option<usize>,
     pub correct_index: usize,
     pub answer: String,
@@ -58,6 +62,17 @@ pub(crate) struct AnalysisResult {
     pub correct: usize,
     pub total: usize,
     pub questions: Vec<GradedQuestion>,
+    pub materials: Vec<Material>,
+}
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct ComprehensiveHistoryEntry {
+    pub id: String,
+    pub started_at_ms: i64,
+    pub ended_at_ms: i64,
+    pub elapsed_ms: i64,
+    pub correct: usize,
+    pub total: usize,
+    pub topics: Vec<String>,
 }
 #[derive(Serialize)]
 pub(crate) struct SaveAnswer {
