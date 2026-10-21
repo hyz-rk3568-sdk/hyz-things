@@ -331,7 +331,7 @@ pub(crate) fn locating_training(props: &LocatingProps) -> Html {
                     <div class="rounded-box bg-base-100 p-5">
                         <h2 class="text-xl font-bold">{"找数训练成绩"}</h2>
                         <p class="mt-2 text-3xl font-black">{format!("{correct}/5 题定位正确")}</p>
-                        <p class="text-sm text-base-content/60">{"这份材料已计入曝光记录；下次新材料训练不会重复抽取同一统计章节。"}</p>
+                        <p class="text-sm text-base-content/60">{"本次模拟材料和作答已保存；下一次开始将重新生成新的材料和5道找数题。"}</p>
                     </div>
                     <div class="rounded-box bg-base-100 p-4">
                         {for live.answers.iter().enumerate().filter_map(|(i,answer)|answer.as_ref().map(|a|{
