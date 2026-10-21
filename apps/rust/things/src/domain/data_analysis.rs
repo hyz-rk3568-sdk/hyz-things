@@ -606,6 +606,8 @@ mod tests {
             operation: Operation::GrowthAmount,
             a: 496.0,
             b: -4.2,
+            c: None,
+            d: None,
             unit: "万吨".into(),
             explanation: "现期乘增长率除增长因子".into(),
         };
