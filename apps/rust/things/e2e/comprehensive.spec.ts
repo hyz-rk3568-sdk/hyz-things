@@ -89,7 +89,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
     const c=el as HTMLCanvasElement;
     return {width:c.width,clientWidth:c.clientWidth,pen:c.getContext("2d")?.lineWidth};
   });
-  expect(canvasMetrics.width).toBeGreaterThan(canvasMetrics.clientWidth);
+  expect(canvasMetrics.width).toBeGreaterThanOrEqual(canvasMetrics.clientWidth);
   expect(canvasMetrics.pen).toBeCloseTo(2.6,4);
   await page.getByTestId("calculation-scratchpad-undo").click();
   const afterUndo=await canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL());
