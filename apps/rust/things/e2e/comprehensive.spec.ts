@@ -9,13 +9,14 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   const answers: (number | null)[] = Array(20).fill(null);
   let paused=false;
   let submittedResult:unknown={};
+  let manualSkillsSubmitted:string[]=[];
   const topics = ["宏观经济","农业","工业能源","交通物流与服务"];
   const groups = Array.from({length:4},(_,g)=>({
     material: {
       section: ["一、综合","二、农业","三、工业和建筑业","四、服务业"][g],
       topic: topics[g],
       subtopic: "文字统计材料",
-      text: "2025年某项业务量为1200亿元，同比增长15.2%。其中地区一为480亿元。".repeat(4),
+      text: "2025年某项业务量为1200亿元，同比增长15.2%。\n\n其中地区一为480亿元，地区二为720亿元。",
       source_url: "https://www.stats.gov.cn/sj/zxfb/202602/t20260228_1962662.html",
     },
     questions: Array.from({length:5},(_,j)=>({
@@ -32,8 +33,9 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
         {id:"fixture-run",started_at_ms:started,ended_at_ms:started+30000,elapsed_ms:30000,correct:1,total:20,topics:["经济","农业","工业","服务业"]}
       ] : [];
     } else if (path.endsWith("/status")) {
-      result={configured:true,model:"mock-compatible-model",cached_sources:1,verified_groups:4,weak_skills:["基期量"],preparing_job_id:null};
+      result={configured:true,model:"mock-compatible-model",cached_sources:1,verified_groups:4,weak_skills:["基期量"],available_skills:["乘积增长率","混合增长率"],preparing_job_id:null};
     } else if (path.endsWith("/prepare") && route.request().method()==="POST") {
+      manualSkillsSubmitted=(route.request().postDataJSON() as {manual_skills:string[]}).manual_skills;
       result={job_id:"fixture-task"};
     } else if (path.endsWith("/prepare/fixture-task")) {
       result={state:"ready",verified:20,message:"已完成20题校验",run_id:"fixture-run"};
@@ -67,7 +69,10 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(page.getByTestId("analysis-setup")).toBeVisible();
   await expect(page.getByTestId("analysis-setup")).toContainText("20分钟");
   await expect(page.getByTestId("analysis-setup")).toContainText("mock-compatible-model");
+  await page.getByTestId("analysis-skill-expand").click();
+  await page.getByTestId("analysis-skill-options").getByRole("button",{name:"乘积增长率"}).click();
   await page.getByTestId("analysis-start").click();
+  expect(manualSkillsSubmitted).toEqual(["乘积增长率"]);
   await expect(page.getByTestId("analysis-ready")).toBeVisible();
   await expect(page.getByTestId("analysis-clock")).toHaveCount(0);
   await page.getByTestId("analysis-enter").click();
@@ -83,6 +88,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   expect(material).not.toBeNull();
   expect(question).not.toBeNull();
   expect(material!.x).toBeLessThan(question!.x);
+  await expect(page.getByTestId("analysis-material")).toContainText("地区二为720亿元");
   // Exactly ONE transparent canvas and ONE toolbar cover the whole two-column
   // workspace, so the same CSS-pixel pen width applies to both sides.
   const surface=page.getByTestId("analysis-run").getByTestId("calculation-scratchpad");
@@ -164,7 +170,7 @@ test("AI job survives leaving training; ready paper is untimed until explicit en
     let data:unknown={};
     if(path.endsWith("/status")){
       data={configured:true,model:"codex",cached_sources:3,verified_groups:4,
-        weak_skills:[],preparing_job_id:jobCreated&&!generated?"same-task":null};
+        weak_skills:[],available_skills:[],preparing_job_id:jobCreated&&!generated?"same-task":null};
     }else if(path.endsWith("/history")){
       data=[];
     }else if(path.endsWith("/prepare")&&route.request().method()==="POST"){

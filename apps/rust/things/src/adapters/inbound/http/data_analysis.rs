@@ -35,6 +35,7 @@ struct StatusBody {
     cached_sources: i64,
     verified_groups: i64,
     weak_skills: Vec<String>,
+    available_skills: Vec<String>,
     preparing_job_id: Option<String>,
 }
 pub(super) async fn status(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -54,6 +55,7 @@ pub(super) async fn status(State(state): State<AppState>, headers: HeaderMap) ->
         cached_sources,
         verified_groups,
         weak_skills: service.weaknesses().await,
+        available_skills: service.available_skills().await.unwrap_or_default(),
         preparing_job_id: service.preparing_job().await,
     })
     .into_response()
@@ -62,21 +64,31 @@ pub(super) async fn status(State(state): State<AppState>, headers: HeaderMap) ->
 struct PrepareBody {
     job_id: String,
 }
-pub(super) async fn prepare(State(state): State<AppState>, headers: HeaderMap) -> Response {
+#[derive(Deserialize)]
+pub(super) struct ComprehensivePrepareRequest {
+    #[serde(default)]
+    manual_skills: Vec<String>,
+}
+pub(super) async fn prepare(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<ComprehensivePrepareRequest>,
+) -> Response {
     if let Err(response) = authorize_sensitive_control(&state, &headers).await {
         return response;
     }
     let Some(service) = get(&state) else {
         return unavailable();
     };
-    match service.prepare().await {
+    match service.prepare(body.manual_skills).await {
         Ok(job_id) => Json(PrepareBody { job_id }).into_response(),
         Err(reason) if reason.contains("正在执行") => error_json(
             StatusCode::CONFLICT,
             "study_prepare_busy",
             "已有出题任务正在执行，请等待当前任务完成",
         ),
-        Err(_) => error("Codex 配置不可用，请在设置中检查 Codex Token"),
+        Err(reason) if reason.contains("考点") => bad_request(&reason),
+        Err(_) => error("Codex 配置不可用，请检查 Codex 连接配置"),
     }
 }
 pub(super) async fn progress(

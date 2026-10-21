@@ -1,4 +1,4 @@
-//! Five-question data lookup drills using the same validated materials as comprehensive training.
+//! Fresh five-question numeric locating drills; preserve completed exercises in history.
 use super::*;
 use gloo_timers::future::TimeoutFuture;
 use hyz_things::domain::data_analysis::Material;
@@ -23,7 +23,6 @@ struct LocatingTopicDto {
 struct LocatingStartDto {
     topic: Option<String>,
     subtopic: Option<String>,
-    allow_review: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -132,7 +131,6 @@ pub(crate) fn locating_training(props: &LocatingProps) -> Html {
     let topics = use_state(Vec::<LocatingTopicDto>::new);
     let topic = use_state(String::new);
     let subtopic = use_state(String::new);
-    let review = use_state(|| false);
     let run = use_state(|| None::<LocatingRunDto>);
     let progress = use_state(|| None::<PrepareProgress>);
     let loading = use_state(|| false);
@@ -181,7 +179,6 @@ pub(crate) fn locating_training(props: &LocatingProps) -> Html {
         let csrf = props.csrf.clone();
         let topic = topic.clone();
         let subtopic = subtopic.clone();
-        let review = review.clone();
         Callback::from(move |_| {
             if *loading {
                 return;
@@ -192,7 +189,6 @@ pub(crate) fn locating_training(props: &LocatingProps) -> Html {
             let query = LocatingStartDto {
                 topic: (!topic.is_empty()).then(|| (*topic).clone()),
                 subtopic: (!subtopic.is_empty()).then(|| (*subtopic).clone()),
-                allow_review: *review,
             };
             let run = run.clone();
             let progress = progress.clone();
@@ -335,7 +331,7 @@ pub(crate) fn locating_training(props: &LocatingProps) -> Html {
                     <div class="rounded-box bg-base-100 p-5">
                         <h2 class="text-xl font-bold">{"找数训练成绩"}</h2>
                         <p class="mt-2 text-3xl font-black">{format!("{correct}/5 题定位正确")}</p>
-                        <p class="text-sm text-base-content/60">{"这份材料已计入曝光记录；下次新材料训练不会重复抽取同一统计章节。"}</p>
+                        <p class="text-sm text-base-content/60">{"本次模拟材料和作答已保存；下一次开始将重新生成新的材料和5道找数题。"}</p>
                     </div>
                     <div class="rounded-box bg-base-100 p-4">
                         {for live.answers.iter().enumerate().filter_map(|(i,answer)|answer.as_ref().map(|a|{
@@ -401,12 +397,6 @@ pub(crate) fn locating_training(props: &LocatingProps) -> Html {
             subtopic.set(event.target_unchecked_into::<HtmlSelectElement>().value())
         })
     };
-    let change_review = {
-        let review = review.clone();
-        Callback::from(move |event: Event| {
-            review.set(event.target_unchecked_into::<HtmlInputElement>().checked())
-        })
-    };
     html! {
         <section class="mx-auto max-w-3xl p-4 sm:p-6" data-testid="locating-setup">
             <div class="rounded-box bg-base-100 p-5 sm:p-7">
@@ -429,13 +419,7 @@ pub(crate) fn locating_training(props: &LocatingProps) -> Html {
                             {for matching_subtopics.iter().map(|value|html!{<option value={value.clone()}>{value.clone()}</option>})}
                         </select>
                     </label>
-                    <label class="flex items-center gap-3 text-sm">
-                        <input type="checkbox" class="checkbox checkbox-primary" checked={*review} onchange={change_review} />
-                        <span>{"复练已见过的材料（默认关闭）"}</span>
-                    </label>
-                    <p class="text-xs text-base-content/60">
-                        {"新材料模式跨综合训练与找数训练去重；如已用完会明确提示，不会悄悄重复。" }
-                    </p>
+                    <p class="text-xs text-base-content/60">{"每次开始都由 Codex 生成新的模拟统计材料与5道找数题。历史练习保留，不作为新题复用。"}</p>
                     {if let Some(state)=(*progress).clone(){
                         html!{<p class="rounded-box bg-base-200 p-3 text-sm">{format!("{} · {}",state.state,state.message)}</p>}
                     }else{Html::default()}}
