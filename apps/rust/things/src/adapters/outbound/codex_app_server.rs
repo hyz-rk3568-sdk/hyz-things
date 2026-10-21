@@ -257,7 +257,7 @@ impl CodexSession {
                     "ephemeral":true,
                     "cwd":cwd,
                     "approvalPolicy":"never",
-                    "sandbox":"danger-full-access"
+                    "sandbox":"read-only"
                 }),
             )
             .await?;
@@ -479,7 +479,7 @@ mod tests {
             assert_eq!(thread["method"], "thread/start");
             assert_eq!(thread["params"]["ephemeral"], true);
             assert_eq!(thread["params"]["cwd"], "/home/hyz/hyz_things");
-            assert_eq!(thread["params"]["sandbox"], "danger-full-access");
+            assert_eq!(thread["params"]["sandbox"], "read-only");
             assert_eq!(thread["params"]["approvalPolicy"], "never");
             server_message(
                 &mut socket,
