@@ -187,14 +187,14 @@ async fn run_generation_wave<F, Fut>(
     producer: F,
 ) -> Vec<(usize, Result<QuestionGroup, String>)>
 where
-    F: Fn(Material) -> Fut + Clone + Send + 'static,
+    F: Fn(Material, usize) -> Fut + Clone + Send + 'static,
     Fut: Future<Output = Result<QuestionGroup, String>> + Send + 'static,
 {
     debug_assert!(candidates.len() <= QUIZ_GROUPS);
     let mut running = JoinSet::new();
     for (index, material) in candidates {
         let produce = producer.clone();
-        running.spawn(async move { (index, produce(material).await) });
+        running.spawn(async move { (index, produce(material, index).await) });
     }
     let mut results = Vec::new();
     while let Some(outcome) = running.join_next().await {
@@ -510,10 +510,10 @@ impl DataAnalysisService {
                     .await;
                     let worker = self.clone();
                     let weak = Arc::new(weaknesses.clone());
-                    for (slot, outcome) in run_generation_wave(requests, move |material| {
+                    for (slot, outcome) in run_generation_wave(requests, move |material, ordinal| {
                         let worker = worker.clone();
                         let weak = Arc::clone(&weak);
-                        async move { worker.generate_group(&material, &weak, slot).await }
+                        async move { worker.generate_group(&material, &weak, ordinal).await }
                     })
                     .await
                     {
@@ -1098,7 +1098,7 @@ mod tests {
             let active = Arc::clone(&active);
             let peak = Arc::clone(&peak);
             let barrier = Arc::clone(&barrier);
-            move |material| {
+            move |material, _ordinal| {
                 let active = Arc::clone(&active);
                 let peak = Arc::clone(&peak);
                 let barrier = Arc::clone(&barrier);
