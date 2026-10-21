@@ -241,15 +241,26 @@ impl DataAnalysisService {
         }
         skills
     }
+    /// Current running comprehensive preparation, including progress across page changes.
+    pub async fn preparing_job(&self) -> Option<String> {
+        self.jobs.lock().await.iter()
+            .find(|(_,progress)| !matches!(progress.state.as_str(),"ready"|"failed"))
+            .map(|(id,_)| id.clone())
+    }
+
     pub async fn prepare(&self) -> Result<String, String> {
         if self.config.is_none() {
             return Err(
                 "请在 RK3568 的 /userdata/hyz-things/.env 配置 Codex WebSocket Token".into(),
             );
         }
-        if self.gate.available_permits() == 0 {
-            return Err("已有综合出题任务正在执行，请稍后重试".into());
+        if let Some(id) = self.preparing_job().await {
+            return Ok(id);
         }
+        // Reserve the exclusive AI slot *before* publishing a job ID. A second
+        // click or another tab must not queue an unintended second paper.
+        let guard=self.gate.clone().try_acquire_owned()
+            .map_err(|_|"已有其他出题任务正在执行，请等当前任务完成".to_owned())?;
         let id = Uuid::now_v7().to_string();
         self.jobs.lock().await.insert(
             id.clone(),
@@ -263,10 +274,6 @@ impl DataAnalysisService {
         let worker = self.clone();
         let job = id.clone();
         tokio::spawn(async move {
-            let guard = match worker.gate.clone().acquire_owned().await {
-                Ok(g) => g,
-                Err(_) => return,
-            };
             let result = worker.generate(&job).await;
             drop(guard);
             match result {
