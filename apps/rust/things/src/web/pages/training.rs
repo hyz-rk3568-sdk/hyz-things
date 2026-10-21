@@ -505,7 +505,6 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn shuffling_preserves_distinct_card_ids() {
