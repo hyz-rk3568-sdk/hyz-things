@@ -76,6 +76,30 @@ fn output_schema() -> Value {
     })
 }
 
+fn locating_output_schema() -> Value {
+    let locator=json!({
+        "type":"object",
+        "properties":{
+            "question":{"type":"string"},
+            "subject":{"type":"string"},
+            "indicator":{"type":"string"},
+            "anchor":{"type":"string"},
+            "target":{"type":"string"}
+        },
+        "required":["question","subject","indicator","anchor","target"],
+        "additionalProperties":false
+    });
+    json!({
+        "type":"object",
+        "properties":{
+            "material_text":{"type":"string"},
+            "questions":{"type":"array","items":locator}
+        },
+        "required":["material_text","questions"],
+        "additionalProperties":false
+    })
+}
+
 async fn handshake(socket: &mut TcpStream, host: &str, token: &str) -> Result<(), String> {
     validate_token(token)?;
     let mut bytes = [0u8; 16];
@@ -302,6 +326,12 @@ impl CodexSession {
 
     /// Run one generation or repair turn in the same ephemeral thread.
     pub async fn turn(&mut self, prompt: &str) -> Result<String, String> {
+        self.turn_with_schema(prompt,output_schema()).await
+    }
+    pub async fn turn_locating(&mut self, prompt: &str) -> Result<String, String> {
+        self.turn_with_schema(prompt,locating_output_schema()).await
+    }
+    async fn turn_with_schema(&mut self,prompt:&str,schema:Value)->Result<String,String>{
         let thread = self.thread_id.clone();
         let result = self
             .request(
@@ -309,7 +339,7 @@ impl CodexSession {
                 json!({
                     "threadId":thread,
                     "input":[{"type":"text","text":prompt}],
-                    "outputSchema":output_schema()
+                    "outputSchema":schema
                 }),
             )
             .await?;
@@ -390,6 +420,16 @@ mod tests {
         assert!(fields.contains(&json!("options")));
         assert!(fields.contains(&json!("correct_index")));
         assert!(schema["properties"]["questions"]["items"]["properties"]["operation"].is_null());
+    }
+
+    #[test]
+    fn locating_schema_is_separate_from_comprehensive_output() {
+        let schema=locating_output_schema();
+        let props=&schema["properties"]["questions"]["items"]["properties"];
+        assert!(props["anchor"].is_object());
+        assert!(props["subject"].is_object());
+        assert!(props["options"].is_null());
+        assert!(output_schema()["properties"]["questions"]["items"]["properties"]["options"].is_object());
     }
 
     #[test]
