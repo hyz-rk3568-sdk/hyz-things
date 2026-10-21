@@ -587,7 +587,7 @@ impl DataAnalysisService {
         }
         let mut priorities = by_skill.keys().cloned().collect::<Vec<_>>();
         priorities.sort_by_key(|skill| skills.iter().position(|target| {
-            skill.contains(target) || target.contains(skill)
+            skill.contains(target.as_str()) || target.contains(skill.as_str())
         }).unwrap_or(usize::MAX));
         let mut output = Vec::new();
         for depth in 0..5 {
@@ -1280,7 +1280,7 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             let group = QuestionGroup {
-                version: 2,
+                version: 3,
                 material: material.clone(),
                 questions,
             };
