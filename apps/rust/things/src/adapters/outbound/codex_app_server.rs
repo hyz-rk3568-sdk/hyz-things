@@ -71,7 +71,10 @@ async fn handshake(socket: &mut TcpStream, host: &str, token: &str) -> Result<()
     let request = format!(
         "GET / HTTP/1.1\r\nHost: {host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: {key}\r\nAuthorization: Bearer {token}\r\n\r\n"
     );
-    socket.write_all(request.as_bytes()).await.map_err(|_| "无法发送 Codex 握手")?;
+    socket
+        .write_all(request.as_bytes())
+        .await
+        .map_err(|_| "无法发送 Codex 握手")?;
     // Read exactly through CRLFCRLF so we don't consume the first WebSocket frame.
     let mut header = Vec::new();
     while !header.ends_with(b"\r\n\r\n") {
@@ -79,7 +82,10 @@ async fn handshake(socket: &mut TcpStream, host: &str, token: &str) -> Result<()
             return Err("Codex 握手响应过大".into());
         }
         let mut b = [0u8];
-        socket.read_exact(&mut b).await.map_err(|_| "无法读取 Codex 握手")?;
+        socket
+            .read_exact(&mut b)
+            .await
+            .map_err(|_| "无法读取 Codex 握手")?;
         header.push(b[0]);
     }
     let response = std::str::from_utf8(&header).map_err(|_| "Codex 握手头格式无效")?;
@@ -100,7 +106,9 @@ async fn handshake(socket: &mut TcpStream, host: &str, token: &str) -> Result<()
             } else if name.eq_ignore_ascii_case("upgrade") {
                 valid_upgrade = value.eq_ignore_ascii_case("websocket");
             } else if name.eq_ignore_ascii_case("connection") {
-                valid_connection = value.split(',').any(|v| v.trim().eq_ignore_ascii_case("upgrade"));
+                valid_connection = value
+                    .split(',')
+                    .any(|v| v.trim().eq_ignore_ascii_case("upgrade"));
             }
         }
     }
@@ -128,8 +136,16 @@ async fn write_frame(socket: &mut TcpStream, opcode: u8, payload: &[u8]) -> Resu
         frame.extend_from_slice(&(payload.len() as u64).to_be_bytes());
     }
     frame.extend_from_slice(&mask);
-    frame.extend(payload.iter().enumerate().map(|(i, byte)| byte ^ mask[i % 4]));
-    socket.write_all(&frame).await.map_err(|_| "Codex WebSocket 写入失败".into())
+    frame.extend(
+        payload
+            .iter()
+            .enumerate()
+            .map(|(i, byte)| byte ^ mask[i % 4]),
+    );
+    socket
+        .write_all(&frame)
+        .await
+        .map_err(|_| "Codex WebSocket 写入失败".into())
 }
 
 async fn read_text(socket: &mut TcpStream) -> Result<String, String> {
@@ -137,7 +153,10 @@ async fn read_text(socket: &mut TcpStream) -> Result<String, String> {
     let mut fragmented = false;
     loop {
         let mut head = [0u8; 2];
-        socket.read_exact(&mut head).await.map_err(|_| "Codex WebSocket 连接已中断")?;
+        socket
+            .read_exact(&mut head)
+            .await
+            .map_err(|_| "Codex WebSocket 连接已中断")?;
         let final_frame = head[0] & 0x80 != 0;
         let opcode = head[0] & 0x0f;
         if head[0] & 0x70 != 0 || head[1] & 0x80 != 0 {
@@ -146,25 +165,35 @@ async fn read_text(socket: &mut TcpStream) -> Result<String, String> {
         let mut length = (head[1] & 0x7f) as u64;
         if length == 126 {
             let mut bytes = [0u8; 2];
-            socket.read_exact(&mut bytes).await.map_err(|_| "Codex 帧长度截断")?;
+            socket
+                .read_exact(&mut bytes)
+                .await
+                .map_err(|_| "Codex 帧长度截断")?;
             length = u16::from_be_bytes(bytes) as u64;
         } else if length == 127 {
             let mut bytes = [0u8; 8];
-            socket.read_exact(&mut bytes).await.map_err(|_| "Codex 帧长度截断")?;
+            socket
+                .read_exact(&mut bytes)
+                .await
+                .map_err(|_| "Codex 帧长度截断")?;
             length = u64::from_be_bytes(bytes);
         }
-        if length > MAX_PACKET as u64 || message.len().saturating_add(length as usize) > MAX_PACKET {
+        if length > MAX_PACKET as u64 || message.len().saturating_add(length as usize) > MAX_PACKET
+        {
             return Err("Codex 响应超过大小限制".into());
         }
         if opcode >= 8 && (!final_frame || length > 125) {
             return Err("Codex WebSocket 控制帧无效".into());
         }
         let mut payload = vec![0u8; length as usize];
-        socket.read_exact(&mut payload).await.map_err(|_| "Codex 帧读取失败")?;
+        socket
+            .read_exact(&mut payload)
+            .await
+            .map_err(|_| "Codex 帧读取失败")?;
         match opcode {
             0x8 => return Err("Codex App Server 已关闭连接".into()),
             0x9 => write_frame(socket, 0xA, &payload).await?,
-            0xA => {},
+            0xA => {}
             0x1 if !fragmented => {
                 message.extend_from_slice(&payload);
                 fragmented = !final_frame;
@@ -194,19 +223,36 @@ impl CodexSession {
             .await
             .map_err(|_| "无法连接 192.168.8.202:1457；请检查电脑 Codex App Server")?;
         handshake(&mut socket, address, token).await?;
-        let mut client = Self { socket, thread_id: String::new(), request_id: 0 };
-        client.request("initialize", json!({
-            "clientInfo":{"name":"hyz_things","title":"hyz-things Study","version":"0.1.0"}
-        })).await?;
+        let mut client = Self {
+            socket,
+            thread_id: String::new(),
+            request_id: 0,
+        };
+        client
+            .request(
+                "initialize",
+                json!({
+                    "clientInfo":{"name":"hyz_things","title":"hyz-things Study","version":"0.1.0"}
+                }),
+            )
+            .await?;
         client.notify("initialized", json!({})).await?;
-        let thread = client.request("thread/start", json!({
-            "ephemeral":true,
-            "cwd":"/tmp",
-            "approvalPolicy":"never",
-            "sandbox":"readOnly"
-        })).await?;
-        client.thread_id = thread.pointer("/thread/id").and_then(Value::as_str)
-            .ok_or("Codex 未返回有效 Thread ID")?.to_owned();
+        let thread = client
+            .request(
+                "thread/start",
+                json!({
+                    "ephemeral":true,
+                    "cwd":"/tmp",
+                    "approvalPolicy":"never",
+                    "sandbox":"readOnly"
+                }),
+            )
+            .await?;
+        client.thread_id = thread
+            .pointer("/thread/id")
+            .and_then(Value::as_str)
+            .ok_or("Codex 未返回有效 Thread ID")?
+            .to_owned();
         Ok(client)
     }
 
@@ -222,18 +268,21 @@ impl CodexSession {
     async fn request(&mut self, method: &str, params: Value) -> Result<Value, String> {
         self.request_id += 1;
         let id = self.request_id;
-        self.send(&json!({"id":id,"method":method,"params":params})).await?;
+        self.send(&json!({"id":id,"method":method,"params":params}))
+            .await?;
         for _ in 0..MAX_EVENTS {
             let text = read_text(&mut self.socket).await?;
-            let msg: Value = serde_json::from_str(&text)
-                .map_err(|_| "Codex 返回非法 JSON-RPC")?;
+            let msg: Value = serde_json::from_str(&text).map_err(|_| "Codex 返回非法 JSON-RPC")?;
             if msg.get("id").and_then(Value::as_i64) != Some(id) {
                 continue;
             }
             if msg.get("error").is_some() {
                 return Err("Codex 拒绝 JSON-RPC 请求；请检查版本和登录状态".into());
             }
-            return msg.get("result").cloned().ok_or("Codex 响应缺少 result".into());
+            return msg
+                .get("result")
+                .cloned()
+                .ok_or("Codex 响应缺少 result".into());
         }
         Err("Codex JSON-RPC 初始化事件过多".into())
     }
@@ -241,18 +290,26 @@ impl CodexSession {
     /// Run one generation or repair turn in the same ephemeral thread.
     pub async fn turn(&mut self, prompt: &str) -> Result<String, String> {
         let thread = self.thread_id.clone();
-        let result = self.request("turn/start", json!({
-            "threadId":thread,
-            "input":[{"type":"text","text":prompt}],
-            "outputSchema":output_schema()
-        })).await?;
-        let turn_id = result.pointer("/turn/id").and_then(Value::as_str)
-            .ok_or("Codex 未返回有效 Turn ID")?.to_owned();
+        let result = self
+            .request(
+                "turn/start",
+                json!({
+                    "threadId":thread,
+                    "input":[{"type":"text","text":prompt}],
+                    "outputSchema":output_schema()
+                }),
+            )
+            .await?;
+        let turn_id = result
+            .pointer("/turn/id")
+            .and_then(Value::as_str)
+            .ok_or("Codex 未返回有效 Turn ID")?
+            .to_owned();
         let mut final_answer = String::new();
         for _ in 0..MAX_EVENTS {
             let raw = read_text(&mut self.socket).await?;
-            let packet: Value = serde_json::from_str(&raw)
-                .map_err(|_| "Codex 返回非法 JSON-RPC 通知")?;
+            let packet: Value =
+                serde_json::from_str(&raw).map_err(|_| "Codex 返回非法 JSON-RPC 通知")?;
             // Never authorize commands, file edits or interactive prompts.
             if let Some(id) = packet.get("id") {
                 self.send(&json!({"id":id,"error":{"code":-32601,"message":"Interactive tools unavailable"}})).await?;
@@ -264,7 +321,8 @@ impl CodexSession {
             let method = packet.get("method").and_then(Value::as_str);
             if packet.pointer("/params/turnId").and_then(Value::as_str) == Some(turn_id.as_str())
                 && method == Some("item/completed")
-                && packet.pointer("/params/item/type").and_then(Value::as_str) == Some("agentMessage")
+                && packet.pointer("/params/item/type").and_then(Value::as_str)
+                    == Some("agentMessage")
             {
                 if let Some(content) = packet.pointer("/params/item/text").and_then(Value::as_str) {
                     final_answer = content.to_owned();
@@ -273,7 +331,11 @@ impl CodexSession {
             if method == Some("turn/completed")
                 && packet.pointer("/params/turn/id").and_then(Value::as_str) == Some(&turn_id)
             {
-                if packet.pointer("/params/turn/status").and_then(Value::as_str) != Some("completed") {
+                if packet
+                    .pointer("/params/turn/status")
+                    .and_then(Value::as_str)
+                    != Some("completed")
+                {
                     return Err("Codex 生成失败或中断（可能登录失效或额度不足）".into());
                 }
                 if final_answer.is_empty() || final_answer.len() > MAX_PACKET {
@@ -302,14 +364,25 @@ mod tests {
     fn output_schema_has_required_recipe_fields() {
         let schema = output_schema();
         assert_eq!(schema["additionalProperties"], false);
-        assert_eq!(schema["properties"]["questions"]["items"]["additionalProperties"], false);
-        assert_eq!(schema["properties"]["questions"]["items"]["required"].as_array().unwrap().len(), 7);
+        assert_eq!(
+            schema["properties"]["questions"]["items"]["additionalProperties"],
+            false
+        );
+        assert_eq!(
+            schema["properties"]["questions"]["items"]["required"]
+                .as_array()
+                .unwrap()
+                .len(),
+            7
+        );
     }
 
     #[test]
     fn handshake_accept_matches_known_websocket_vector() {
-        assert_eq!(accept_key("dGhlIHNhbXBsZSBub25jZQ=="),
-            "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
+        assert_eq!(
+            accept_key("dGhlIHNhbXBsZSBub25jZQ=="),
+            "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+        );
     }
 
     async fn server_message(socket: &mut TcpStream, msg: Value) {
@@ -318,7 +391,10 @@ mod tests {
             socket.write_all(&[0x81, bytes.len() as u8]).await.unwrap();
         } else {
             socket.write_all(&[0x81, 126]).await.unwrap();
-            socket.write_all(&(bytes.len() as u16).to_be_bytes()).await.unwrap();
+            socket
+                .write_all(&(bytes.len() as u16).to_be_bytes())
+                .await
+                .unwrap();
         }
         socket.write_all(&bytes).await.unwrap();
     }
@@ -360,8 +436,11 @@ mod tests {
             }
             let head = String::from_utf8(handshake).unwrap();
             assert!(head.contains(&format!("Authorization: Bearer {}", "a".repeat(64))));
-            let key = head.lines().find_map(|line| line.strip_prefix("Sec-WebSocket-Key: "))
-                .unwrap().trim();
+            let key = head
+                .lines()
+                .find_map(|line| line.strip_prefix("Sec-WebSocket-Key: "))
+                .unwrap()
+                .trim();
             let reply = format!("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {}\r\n\r\n",accept_key(key));
             socket.write_all(reply.as_bytes()).await.unwrap();
             let init = client_message(&mut socket).await;
@@ -372,21 +451,34 @@ mod tests {
             let thread = client_message(&mut socket).await;
             assert_eq!(thread["method"], "thread/start");
             assert_eq!(thread["params"]["ephemeral"], true);
-            server_message(&mut socket,json!({"id":2,"result":{"thread":{"id":"test-thread"}}})).await;
+            server_message(
+                &mut socket,
+                json!({"id":2,"result":{"thread":{"id":"test-thread"}}}),
+            )
+            .await;
             let turn = client_message(&mut socket).await;
-            assert_eq!(turn["method"],"turn/start");
-            assert_eq!(turn["params"]["outputSchema"]["type"],"object");
-            server_message(&mut socket,json!({"id":3,"result":{"turn":{"id":"turn-1"}}})).await;
+            assert_eq!(turn["method"], "turn/start");
+            assert_eq!(turn["params"]["outputSchema"]["type"], "object");
+            server_message(
+                &mut socket,
+                json!({"id":3,"result":{"turn":{"id":"turn-1"}}}),
+            )
+            .await;
             server_message(&mut socket,json!({"method":"item/completed","params":{
                 "threadId":"test-thread","turnId":"turn-1",
                 "item":{"type":"agentMessage","text":"{\"material_text\":\"测试\",\"questions\":[]}"}
             }})).await;
-            server_message(&mut socket,json!({"method":"turn/completed","params":{
-                "threadId":"test-thread","turn":{"id":"turn-1","status":"completed"}
-            }})).await;
+            server_message(
+                &mut socket,
+                json!({"method":"turn/completed","params":{
+                    "threadId":"test-thread","turn":{"id":"turn-1","status":"completed"}
+                }}),
+            )
+            .await;
         });
         let mut session = CodexSession::connect_at(&addr.to_string(), &"a".repeat(64))
-            .await.unwrap();
+            .await
+            .unwrap();
         let answer = session.turn("generate").await.unwrap();
         assert!(answer.contains("\"material_text\""));
         mock.await.unwrap();

@@ -1,11 +1,11 @@
 //! Native-only official-text caching and Codex App Server question preparation.
 //! Only verified numerical recipes are admitted into the training database.
+use super::codex_app_server::{CodexSession, TURN_TIMEOUT};
 use crate::domain::data_analysis::{
     verify_recipe, Material, QuestionRecipe, VerifiedQuestion, OFFICIAL_SOURCES, QUIZ_GROUPS,
     QUIZ_PER_GROUP, QUIZ_SECONDS, SECTIONS, SOURCE_URL,
 };
 use serde::{Deserialize, Serialize};
-use super::codex_app_server::{CodexSession, TURN_TIMEOUT};
 use sha2::{Digest, Sha256};
 use sqlx::{Row, SqlitePool};
 use std::{
@@ -198,7 +198,9 @@ impl DataAnalysisService {
     }
     pub async fn prepare(&self) -> Result<String, String> {
         if self.config.is_none() {
-            return Err("请在 RK3568 的 /userdata/hyz-things/.env 配置 Codex WebSocket Token".into());
+            return Err(
+                "请在 RK3568 的 /userdata/hyz-things/.env 配置 Codex WebSocket Token".into(),
+            );
         }
         if self.gate.available_permits() == 0 {
             return Err("已有综合出题任务正在执行，请稍后重试".into());
@@ -532,9 +534,12 @@ impl DataAnalysisService {
         );
         // One ephemeral remote thread per material. Retry the rejected batch as a
         // second turn in the SAME thread, supplying only validation reasons.
-        let mut session = tokio::time::timeout(Duration::from_secs(12), CodexSession::connect(&config.token))
-            .await
-            .map_err(|_| "连接 Codex App Server 超时".to_owned())??;
+        let mut session = tokio::time::timeout(
+            Duration::from_secs(12),
+            CodexSession::connect(&config.token),
+        )
+        .await
+        .map_err(|_| "连接 Codex App Server 超时".to_owned())??;
         let mut last_reason = String::new();
         for round in 0..2 {
             let prompt = if round == 0 {
@@ -948,12 +953,15 @@ mod tests {
         );
         let config = parse_env(&sample).unwrap().unwrap();
         assert_eq!(config.token.len(), 64);
-        assert!(parse_env("HYZ_THINGS_AI_BASE_URL=https://api.deepseek.com").unwrap().is_none());
+        assert!(parse_env("HYZ_THINGS_AI_BASE_URL=https://api.deepseek.com")
+            .unwrap()
+            .is_none());
         assert!(parse_env("HYZ_THINGS_CODEX_WS_TOKEN=invalid").is_err());
         assert!(parse_env(&format!(
             "HYZ_THINGS_CODEX_WS_TOKEN={0}\nHYZ_THINGS_CODEX_WS_TOKEN={0}",
             "a".repeat(64)
-        )).is_err());
+        ))
+        .is_err());
     }
     #[tokio::test]
     async fn cached_official_groups_support_full_twenty_question_lifecycle() {
@@ -1019,7 +1027,8 @@ mod tests {
         }
 
         let config = parse_env(&format!("HYZ_THINGS_CODEX_WS_TOKEN={}", "a".repeat(64)))
-            .unwrap().unwrap();
+            .unwrap()
+            .unwrap();
         let service = DataAnalysisService::new(pool, Some(config)).unwrap();
         let id = service.prepare().await.expect("start generation");
         let mut run_id = None;
