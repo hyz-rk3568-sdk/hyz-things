@@ -151,6 +151,25 @@ fn source_contains_numeric_token(text: &str, number: f64) -> bool {
     })
 }
 
+/// A comprehensive true/false judgment needs independently verified claims,
+/// which this numeric-only question engine does not support.
+fn is_comprehensive_judgment(question: &str) -> bool {
+    const EXCLUDED: [&str; 11] = [
+        "能够推出的是",
+        "可以推出的是",
+        "可推出的是",
+        "能够从上述资料中推出",
+        "下列说法",
+        "以下说法",
+        "下列表述",
+        "以下表述",
+        "下列判断",
+        "正确的是",
+        "错误的是",
+    ];
+    EXCLUDED.iter().any(|term| question.contains(term))
+}
+
 /// Precision is deliberately two decimals: the official public statistical
 /// values can be rounded, so these are approximate multiple-choice exercises.
 pub fn verify_recipe(
@@ -158,6 +177,9 @@ pub fn verify_recipe(
     recipe: &QuestionRecipe,
     position: usize,
 ) -> Result<VerifiedQuestion, ValidationError> {
+    if is_comprehensive_judgment(&recipe.question) {
+        return Err(ValidationError::InvalidQuestion);
+    }
     if recipe.question.chars().count() < 10
         || recipe.question.chars().count() > 240
         || recipe.explanation.chars().count() > 800
@@ -284,6 +306,24 @@ mod tests {
         assert_eq!(QUIZ_GROUPS * QUIZ_PER_GROUP, QUIZ_QUESTIONS);
         assert_eq!(QUIZ_SECONDS, 1200);
     }
+    #[test]
+    fn rejects_comprehensive_judgment_but_keeps_numeric_questions() {
+        let source = material();
+        assert!(verify_recipe(&source, &recipe(), 0).is_ok());
+        for stem in [
+            "根据上述资料，下列说法正确的是",
+            "根据上述资料，能够推出的是",
+            "关于粮食产量，以下表述错误的是",
+        ] {
+            let mut candidate = recipe();
+            candidate.question = stem.to_owned();
+            assert_eq!(
+                verify_recipe(&source, &candidate, 0).unwrap_err(),
+                ValidationError::InvalidQuestion
+            );
+        }
+    }
+
     #[test]
     fn exam_choices_use_reasonable_precision_not_spurious_decimals() {
         let answer = verify_recipe(&material(), &recipe(), 0).unwrap();
