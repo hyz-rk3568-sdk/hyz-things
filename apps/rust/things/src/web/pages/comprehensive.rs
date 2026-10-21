@@ -365,7 +365,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 <div class="rounded-box bg-base-100 p-5">
                     <h2 class="text-xl font-bold">{"综合训练成绩"}</h2>
                     <p class="mt-3 text-3xl font-black">{format!("{} / {} 题正确",score.correct,score.total)}</p>
-                    <p class="text-sm text-base-content/60">{"已交卷 · 题目依据官方统计文字资料生成，解析含 AI 建议，请以数据计算结果为准。"}</p>
+                    <p class="text-sm text-base-content/60">{"已交卷 · 题目为 Codex 根据 hyz 做题套路生成的模拟训练数据与解析。"}</p>
                 </div>
                 <details class="rounded-box bg-base-100 p-4">
                     <summary class="cursor-pointer font-semibold">{"查看本套4份训练材料"}</summary>
@@ -528,7 +528,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                             <div class="min-h-0 flex-1 overflow-auto">
                                 <div class="whitespace-pre-wrap p-4 text-base leading-8">{group.material.text.clone()}</div>
                             </div>
-                            <a class="p-3 text-xs underline" href={group.material.source_url.clone()} target="_blank" rel="noopener noreferrer">{"国家统计局 · 查看原文"}</a>
+                            <a class="p-3 text-xs underline" href={group.material.source_url.clone()} target="_blank" rel="noopener noreferrer">{"查看统计口径参考资料（非模拟数据来源）"}</a>
                         </div>
                         <div class="min-h-0 min-w-0 overflow-auto rounded-box bg-base-100" data-testid="analysis-question">
                             <div class="space-y-4 p-4">
@@ -562,7 +562,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         <section class="mx-auto max-w-3xl p-4 sm:p-6" data-testid="analysis-setup">
             <div class="rounded-box bg-base-100 p-5 sm:p-7">
                 <h2 class="text-xl font-bold">{"资料分析综合训练"}</h2>
-                <p class="mt-1 text-sm text-base-content/60">{"官方统计数据改编 · 4份仿真材料 × 每份5题 · 20分钟"}</p>
+                <p class="mt-1 text-sm text-base-content/60">{"参考官方统计口径构造模拟数据 · 4份材料 × 每份5题 · 20分钟"}</p>
                 <div class="mt-5 grid gap-3">
                     <button class="btn btn-outline w-full" type="button" onclick={{let history_open=history_open.clone();Callback::from(move |_|history_open.set(true))}}>{"查看练习历史"}</button>
                     <div class="rounded-box border border-base-content/15 p-4">
@@ -574,7 +574,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     </div>
                     if let Some(info)=(*status).clone(){
                         <div class="text-sm text-base-content/65">
-                            {format!("官方资料缓存 {} 篇 · 合格材料组 {} 组 · 出题引擎：{}",
+                            {format!("官方参考资料 {} 篇 · 缓存题组 {} 组 · 出题引擎：{}",
                                 info.cached_sources,info.verified_groups,
                                 info.model.as_deref().unwrap_or("未配置"))}
                         </div>
