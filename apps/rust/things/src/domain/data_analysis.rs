@@ -300,7 +300,7 @@ pub fn verify_recipe(
             {
                 return Err(ValidationError::MissingOperand);
             }
-            let result = match recipe.operation {
+            match recipe.operation {
                 // current total, current population, total growth %, population growth %
                 Operation::AverageGrowthAmount if recipe.b > 0.0 && c > -100.0 => {
                     recipe.a / recipe.b * (c - d) / (100.0 + c)
@@ -314,8 +314,7 @@ pub fn verify_recipe(
                     (recipe.a * recipe.b + c * d) / (recipe.a + c)
                 }
                 _ => return Err(ValidationError::InvalidNumber),
-            };
-            result
+            }
         }
         _ => recipe
             .operation
