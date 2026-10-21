@@ -21,7 +21,8 @@ use uuid::Uuid;
 const ENV_PATH: &str = "/userdata/hyz-things/.env";
 const PROVIDER_LIMIT: usize = 128 * 1024;
 const MAX_DOCUMENT_BYTES: usize = 3 * 1024 * 1024;
-const MAX_SECTION_CHARS: usize = 1600;
+const MAX_CACHED_SECTION_CHARS: usize = 30000;
+const MAX_GENERATION_CHARS: usize = 1600;
 
 #[derive(Clone)]
 pub struct AiConfig {
@@ -481,6 +482,14 @@ impl DataAnalysisService {
         weaknesses: &[String],
     ) -> Result<QuestionGroup, String> {
         let config = self.config.as_ref().ok_or("AI 未配置")?;
+        let earlier = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM data_analysis_groups WHERE section=?",
+        )
+        .bind(&material.section)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(as_error)?;
+        let material = generation_excerpt(material, earlier.max(0) as usize);
         let system="你是公务员资料分析命题助手。只使用用户提供的真实官方统计段落。输出严格JSON对象：{\"questions\":[{\"question\":\"...\",\"evidence\":\"从原文完整原样复制至少15字且包含a和b两个数字的连续片段\",\"operation\":\"base_period|growth_amount|growth_rate|share|average|difference|ratio\",\"a\":数值,\"b\":数值,\"unit\":\"亿元|万吨|%等\",\"explanation\":\"简短速算解析\"}]}。请生成10道不同候选题；base_period和growth_amount里 a 是现期量，b 是同比增长率（百分数，下降时为负）。growth_rate里a现期量b基期量；share a部分量b总体量；average/ratio是a除以b；difference是a减去b。题干必须有唯一答案，标注'约'，不得自行补充原文没有的数字，不得把不同口径指标相除。不要生成题外文字，不返回标准选项。";
         let user = format!(
             "材料原文：{}\n章节：{}\n重点训练考点：{}\n请从这一段材料生成10道不同的候选题。",
@@ -531,7 +540,7 @@ impl DataAnalysisService {
             let mut result = Vec::new();
             let mut seen = HashSet::new();
             for candidate in &batch.questions {
-                if let Ok(q) = verify_recipe(material, candidate, result.len()) {
+                if let Ok(q) = verify_recipe(&material, candidate, result.len()) {
                     let fingerprint = format!(
                         "{}:{:?}:{}:{}",
                         q.evidence, candidate.operation, candidate.a, candidate.b
@@ -669,6 +678,84 @@ impl DataAnalysisService {
     }
 }
 
+/// Keep complete per-chapter official text in SQLite, but pass one bounded
+/// paragraph-coherent fragment to the AI and the iPad. Repeated generation can
+/// rotate over different paragraphs without re-fetching the official source.
+fn generation_excerpt(material: &Material, sequence: usize) -> Material {
+    let mut chunks = Vec::<String>::new();
+    let mut chunk = String::new();
+    for paragraph in material.text.split("\n\n") {
+        let chars = paragraph.chars().count();
+        if chars == 0 {
+            continue;
+        }
+        let candidate = if chars > MAX_GENERATION_CHARS {
+            paragraph.chars().take(MAX_GENERATION_CHARS).collect::<String>()
+        } else {
+            paragraph.to_owned()
+        };
+        if !chunk.is_empty()
+            && chunk.chars().count() + candidate.chars().count() + 2 > MAX_GENERATION_CHARS
+        {
+            chunks.push(std::mem::take(&mut chunk));
+        }
+        if !chunk.is_empty() {
+            chunk.push_str("\n\n");
+        }
+        chunk.push_str(&candidate);
+    }
+    if !chunk.is_empty() {
+        chunks.push(chunk);
+    }
+    let mut excerpt = material.clone();
+    if !chunks.is_empty() {
+        excerpt.text = chunks[sequence % chunks.len()].clone();
+    }
+    // Official section is the parent topic; fragment-specific topic is
+    // independent of the arithmetic skill required to solve the questions.
+    let text = excerpt.text.as_str();
+    let rules: &[(&str, &str, &[&str])] = &[
+        ("宏观经济", "人口与就业", &["人口", "就业", "失业率"]),
+        ("宏观经济", "居民价格", &["居民消费价格", "生产者价格"]),
+        ("宏观经济", "区域经济", &["东部地区", "中部地区", "长三角"]),
+        ("宏观经济", "绿色低碳", &["二氧化碳排放", "清洁能源"]),
+        ("宏观经济", "产业结构与GDP", &["国内生产总值", "第一产业"]),
+        ("农业", "粮食生产", &["粮食产量", "粮食播种"]),
+        ("农业", "畜牧业", &["猪肉产量", "羊肉产量", "牛奶产量"]),
+        ("农业", "渔业", &["水产品", "养殖产量"]),
+        ("农业", "经济作物", &["棉花", "茶叶", "油料"]),
+        ("工业能源", "工业增加值", &["工业增加值", "制造业"]),
+        ("工业能源", "能源电力", &["发电", "煤炭", "原油"]),
+        ("工业能源", "建筑业", &["建筑业"]),
+        ("交通物流与服务", "交通运输", &["旅客运输", "货物运输"]),
+        ("交通物流与服务", "邮政快递", &["邮政", "快递"]),
+        ("交通物流与服务", "信息通信", &["电信", "互联网", "通信"]),
+        ("国内消费", "社会消费品零售", &["社会消费品零售"]),
+        ("国内消费", "网上零售", &["网上零售"]),
+        ("投资房地产", "房地产开发", &["房地产开发", "商品房"]),
+        ("投资房地产", "固定资产投资", &["固定资产投资"]),
+        ("对外经济", "货物进出口", &["进口", "出口"]),
+        ("对外经济", "外商投资", &["外商投资", "实际使用外资"]),
+        ("财政金融", "财政收支", &["财政收入", "财政支出"]),
+        ("财政金融", "货币信贷", &["货币供应", "贷款"]),
+        ("居民民生", "居民收入", &["居民人均可支配收入", "居民收入"]),
+        ("居民民生", "社会保障", &["社会保险", "参保"]),
+        ("科技教育", "科研创新", &["专利", "研究与试验发展"]),
+        ("科技教育", "教育", &["在校生", "招生"]),
+        ("文旅卫生体育", "旅游", &["旅游", "游客"]),
+        ("文旅卫生体育", "卫生医疗", &["卫生", "医疗"]),
+        ("资源环境安全", "能源消费", &["能源消费"]),
+        ("资源环境安全", "生态环境", &["空气质量", "水质", "森林覆盖率"]),
+        ("资源环境安全", "安全生产", &["安全生产", "事故"]),
+    ];
+    if let Some((_,subtopic,_)) = rules.iter().find(|(topic,_,words)| {
+        *topic == excerpt.topic && words.iter().any(|word| text.contains(word))
+    }) {
+        excerpt.subtopic = (*subtopic).to_owned();
+    }
+    excerpt
+}
+
 fn normalize(raw: &str) -> String {
     raw.chars()
         .filter(|c| !c.is_control())
@@ -706,7 +793,7 @@ pub fn parse_official_sections(html: &str) -> Vec<Material> {
             {
                 continue;
             }
-            if raw[i].iter().map(|x| x.chars().count()).sum::<usize>() < MAX_SECTION_CHARS {
+            if raw[i].iter().map(|x| x.chars().count()).sum::<usize>() < MAX_CACHED_SECTION_CHARS {
                 raw[i].push(text);
             }
         }
@@ -835,6 +922,23 @@ mod tests {
         assert_eq!((source_count,group_count),(1,4));
     }
 
+    #[test]
+    fn complete_official_text_is_cached_while_generation_is_bounded() {
+        let first = "全年粮食产量71488万吨，比上年增加838万吨。";
+        let second = "年末水产品总产量7657万吨，同比增长4.1%。";
+        let html = format!(
+            "<article><p>二、农业</p><p>{}</p><p>{}</p></article>",
+            first.repeat(120),
+            second.repeat(120)
+        );
+        let sections = parse_official_sections(&html);
+        assert_eq!(sections.len(), 1);
+        assert!(sections[0].text.chars().count() > 1600);
+        let excerpt = generation_excerpt(&sections[0], 1);
+        assert!(excerpt.text.chars().count() <= MAX_GENERATION_CHARS);
+        assert_eq!(excerpt.section, sections[0].section);
+        assert_eq!(excerpt.topic, sections[0].topic);
+    }
     #[test]
     fn parser_keeps_sections_separate() {
         let html = format!(
