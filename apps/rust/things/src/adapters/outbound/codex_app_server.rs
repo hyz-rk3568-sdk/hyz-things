@@ -257,7 +257,7 @@ impl CodexSession {
                     "ephemeral":true,
                     "cwd":cwd,
                     "approvalPolicy":"never",
-                    "sandbox":"read-only"
+                    "sandbox":"danger-full-access"
                 }),
             )
             .await?;
@@ -323,7 +323,8 @@ impl CodexSession {
             let raw = read_text(&mut self.socket).await?;
             let packet: Value =
                 serde_json::from_str(&raw).map_err(|_| "Codex 返回非法 JSON-RPC 通知")?;
-            // Never authorize commands, file edits or interactive prompts.
+            // With never approval, tools execute under the configured sandbox.
+            // Reject unexpected interactive JSON-RPC prompts; do not auto-approve.
             if let Some(id) = packet.get("id") {
                 self.send(&json!({"id":id,"error":{"code":-32601,"message":"Interactive tools unavailable"}})).await?;
                 continue;
@@ -478,7 +479,7 @@ mod tests {
             assert_eq!(thread["method"], "thread/start");
             assert_eq!(thread["params"]["ephemeral"], true);
             assert_eq!(thread["params"]["cwd"], "/home/hyz/hyz_things");
-            assert_eq!(thread["params"]["sandbox"], "read-only");
+            assert_eq!(thread["params"]["sandbox"], "danger-full-access");
             assert_eq!(thread["params"]["approvalPolicy"], "never");
             server_message(
                 &mut socket,
@@ -493,7 +494,7 @@ mod tests {
                 json!({"id":3,"result":{"turn":{"id":"turn-1"}}}),
             )
             .await;
-            // A read-only tool result is an event, not an approval request.
+            // Tool execution reports as events, without interactive approval.
             server_message(
                 &mut socket,
                 json!({"method":"item/completed","params":{
