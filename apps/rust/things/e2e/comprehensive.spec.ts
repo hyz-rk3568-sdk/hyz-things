@@ -65,6 +65,9 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(result)});
   });
   await page.goto("/#/study/training");
+  // The retired number-locating mode must not reappear in the workspace.
+  await expect(page.getByTestId("training-mode-locating")).toHaveCount(0);
+  await expect(page.getByRole("group",{name:"训练模式"}).getByRole("button")).toHaveCount(3);
   await page.getByTestId("training-mode-comprehensive").click();
   await expect(page.getByTestId("analysis-setup")).toBeVisible();
   await expect(page.getByTestId("analysis-setup")).toContainText("20分钟");
