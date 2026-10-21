@@ -60,24 +60,49 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   expect(material).not.toBeNull();
   expect(question).not.toBeNull();
   expect(material!.x).toBeLessThan(question!.x);
-  const materialCanvas=page.getByTestId("analysis-material").getByTestId("calculation-scratchpad-canvas");
-  const materialToggle=page.getByTestId("analysis-material").getByTestId("calculation-scratchpad-toggle");
-  const inkSnapshot=()=>materialCanvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL());
-  await materialToggle.click();
-  const initialInk=await inkSnapshot();
-  const inkBox=await materialCanvas.boundingBox();
-  if(!inkBox)throw new Error("missing material canvas");
-  await page.mouse.move(inkBox.x+25,inkBox.y+70);
-  await page.mouse.down();
-  await page.mouse.move(inkBox.x+120,inkBox.y+110,{steps:7});
-  await page.mouse.up();
-  const marked=await inkSnapshot();
-  expect(marked).not.toEqual(initialInk);
+  // Exactly ONE transparent canvas and ONE toolbar cover the whole two-column
+  // workspace, so the same CSS-pixel pen width applies to both sides.
+  const surface=page.getByTestId("analysis-run").getByTestId("calculation-scratchpad");
+  const canvas=surface.getByTestId("calculation-scratchpad-canvas");
+  const toggle=surface.getByTestId("calculation-scratchpad-toggle");
+  await expect(canvas).toHaveCount(1);
+  await expect(toggle).toHaveCount(1);
+  await toggle.click();
+  const workspace=await page.getByTestId("analysis-shared-workspace").boundingBox();
+  const inkBox=await canvas.boundingBox();
+  expect(inkBox).not.toBeNull();
+  expect(workspace).not.toBeNull();
+  expect(inkBox!.x).toBeCloseTo(workspace!.x,0);
+  expect(inkBox!.width).toBeCloseTo(workspace!.width,0);
+  const initial=await canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL());
+  const draw=async (fromX:number,toX:number) => {
+    await page.mouse.move(inkBox!.x+fromX, inkBox!.y+110);
+    await page.mouse.down();
+    await page.mouse.move(inkBox!.x+toX, inkBox!.y+150,{steps:6});
+    await page.mouse.up();
+  };
+  await draw(60,160); // left material
+  await draw(workspace!.width*.62,workspace!.width*.68); // right options
+  const marked=await canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL());
+  expect(marked).not.toEqual(initial);
+  const canvasMetrics=await canvas.evaluate(el=>{
+    const c=el as HTMLCanvasElement;
+    return {width:c.width,clientWidth:c.clientWidth,pen:c.getContext("2d")?.lineWidth};
+  });
+  expect(canvasMetrics.width).toBeGreaterThanOrEqual(canvasMetrics.clientWidth);
+  expect(canvasMetrics.pen).toBeCloseTo(2.6,4);
+  await page.getByTestId("calculation-scratchpad-undo").click();
+  const afterUndo=await canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL());
+  expect(afterUndo).not.toEqual(marked);
+  await page.getByTestId("calculation-scratchpad-redo").click();
+  expect(await canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL())).toEqual(marked);
+  await page.getByTestId("calculation-scratchpad-close").click();
   await page.getByRole("button",{name:"下一题"}).click();
-  expect(await inkSnapshot()).toEqual(marked);
+  await expect(canvas).toBeHidden();
   await page.getByRole("button",{name:"上一题"}).click();
-  expect(await inkSnapshot()).toEqual(marked);
-  await page.getByTestId("analysis-material").getByTestId("calculation-scratchpad-close").click();
+  await toggle.click();
+  expect(await canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL())).toEqual(marked);
+  await page.getByTestId("calculation-scratchpad-close").click();
   await page.getByTestId("analysis-choice").first().click();
   await expect(page.getByTestId("analysis-choice").first()).toHaveClass(/btn-primary/);
   await page.getByRole("button",{name:"下一题"}).click();
