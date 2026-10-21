@@ -306,7 +306,7 @@ impl DataAnalysisService {
             match result {
                 Ok(run_id) => {
                     worker
-                        .set_progress(&job, "ready", 20, "已完成校验，可以开始训练", Some(run_id))
+                        .set_progress(&job, "ready", 20, "Codex 已交付20道题，可以开始训练", Some(run_id))
                         .await
                 }
                 Err(msg) => worker.set_progress(&job, "failed", 0, &msg, None).await,
@@ -504,7 +504,7 @@ impl DataAnalysisService {
                         job,
                         "generating",
                         ready.len() * QUIZ_PER_GROUP,
-                        "最多4份不同材料正在并行生成，每份使用独立的 Codex Thread",
+                        "最多4个 Codex Thread 正在按题型规划生成模拟题",
                         None,
                     )
                     .await;
@@ -550,7 +550,7 @@ impl DataAnalysisService {
                         job,
                         "validating",
                         ready.len() * QUIZ_PER_GROUP,
-                        "已核对来源数字、题目答案与主题分布",
+                        "已接收 Codex 完成的模拟试题并保存",
                         None,
                     )
                     .await;
@@ -562,7 +562,7 @@ impl DataAnalysisService {
         }
         if ready.len() != QUIZ_GROUPS {
             return Err(format!(
-                "只验证通过{}/20题，暂不开始：{}",
+                "已获得{}/20题，无法组成整卷：{}",
                 ready.len() * 5,
                 last_error
             ));
@@ -1045,6 +1045,25 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(config.token, value);
+    }
+
+    #[test]
+    fn final_codex_answers_deserialize_without_backend_recalculation() {
+        // Deliberately mathematically arbitrary. The app consumes the model's
+        // selected option rather than a Rust formula/answer builder.
+        let item = serde_json::json!({
+            "question":"2024年比2023年增长约多少？",
+            "options":["17%","19%","21%","23%"],
+            "correct_index":2,
+            "answer":"21%",
+            "explanation":"按照本题对应 hyz 卡片的速算策略判断。",
+            "skill":"间隔增长率",
+            "evidence":"2023年增长10%，2024年增长10%"
+        });
+        let q: VerifiedQuestion = serde_json::from_value(item).unwrap();
+        assert_eq!(q.correct_index,2);
+        assert_eq!(q.answer,"21%");
+        assert_eq!(q.skill,"间隔增长率");
     }
 
     #[test]
