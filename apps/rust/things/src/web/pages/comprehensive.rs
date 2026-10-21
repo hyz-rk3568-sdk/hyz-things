@@ -14,8 +14,9 @@ const COMPREHENSIVE_READY_KEY: &str = "hyz_comprehensive_ready_run";
 const MANUAL_SKILLS_KEY: &str = "hyz_comprehensive_manual_skills";
 
 #[derive(Serialize)]
-struct ComprehensivePrepareRequest {manual_skills:Vec<String>}
-
+struct ComprehensivePrepareRequest {
+    manual_skills: Vec<String>,
+}
 
 fn remember_preparation(id: Option<&str>) {
     if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
@@ -99,8 +100,8 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     let tick = use_state(|| 0_u64);
     let history = use_state(Vec::<ComprehensiveHistoryEntry>::new);
     let history_open = use_state(|| false);
-    let manual_skills=use_state(Vec::<String>::new);
-    let skills_expanded=use_state(||false);
+    let manual_skills = use_state(Vec::<String>::new);
+    let skills_expanded = use_state(|| false);
 
     {
         let status = status.clone();
@@ -111,11 +112,15 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let ready_id = ready_id.clone();
         let preparing = preparing.clone();
         let loading_status = loading_status.clone();
-        let manual_skills=manual_skills.clone();
+        let manual_skills = manual_skills.clone();
         use_effect_with((), move |_| {
-            if let Some(raw)=web_sys::window().and_then(|w|w.local_storage().ok().flatten())
-                .and_then(|storage|storage.get_item(MANUAL_SKILLS_KEY).ok().flatten()) {
-                if let Ok(saved)=serde_json::from_str::<Vec<String>>(&raw){manual_skills.set(saved);}
+            if let Some(raw) = web_sys::window()
+                .and_then(|w| w.local_storage().ok().flatten())
+                .and_then(|storage| storage.get_item(MANUAL_SKILLS_KEY).ok().flatten())
+            {
+                if let Ok(saved) = serde_json::from_str::<Vec<String>>(&raw) {
+                    manual_skills.set(saved);
+                }
             }
             let history = history.clone();
             spawn_local(async move {
@@ -255,7 +260,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let preparing = preparing.clone();
         let ready_id = ready_id.clone();
         let csrf = props.csrf.clone();
-        let manual_skills=manual_skills.clone();
+        let manual_skills = manual_skills.clone();
         Callback::from(move |_| {
             if *busy || *preparing || ready_id.is_some() {
                 return;
@@ -269,12 +274,14 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let preparing = preparing.clone();
             let ready_id = ready_id.clone();
             let csrf = csrf.clone();
-            let selected=(*manual_skills).clone();
+            let selected = (*manual_skills).clone();
             spawn_local(async move {
                 match post_json_response_typed::<_, PrepareTask>(
                     &format!("{ANALYSIS_ROOT}/prepare"),
                     &csrf,
-                    &ComprehensivePrepareRequest{manual_skills:selected},
+                    &ComprehensivePrepareRequest {
+                        manual_skills: selected,
+                    },
                     "准备综合训练",
                 )
                 .await
@@ -573,21 +580,27 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             </section>
         };
     }
-    let toggle_manual={
-        let manual_skills=manual_skills.clone();
-        Callback::from(move |skill:String|{
-            let mut chosen=(*manual_skills).clone();
-            if let Some(index)=chosen.iter().position(|v|v==&skill){chosen.remove(index);}
-            else if chosen.len()<12 {chosen.push(skill);}
-            if let Some(storage)=web_sys::window().and_then(|w|w.local_storage().ok().flatten()){
-                if let Ok(raw)=serde_json::to_string(&chosen){let _=storage.set_item(MANUAL_SKILLS_KEY,&raw);}
+    let toggle_manual = {
+        let manual_skills = manual_skills.clone();
+        Callback::from(move |skill: String| {
+            let mut chosen = (*manual_skills).clone();
+            if let Some(index) = chosen.iter().position(|v| v == &skill) {
+                chosen.remove(index);
+            } else if chosen.len() < 12 {
+                chosen.push(skill);
+            }
+            if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+            {
+                if let Ok(raw) = serde_json::to_string(&chosen) {
+                    let _ = storage.set_item(MANUAL_SKILLS_KEY, &raw);
+                }
             }
             manual_skills.set(chosen);
         })
     };
-    let toggle_selector={
-        let skills_expanded=skills_expanded.clone();
-        Callback::from(move |_|skills_expanded.set(!*skills_expanded))
+    let toggle_selector = {
+        let skills_expanded = skills_expanded.clone();
+        Callback::from(move |_| skills_expanded.set(!*skills_expanded))
     };
     html! {
         <section class="mx-auto max-w-3xl p-4 sm:p-6" data-testid="analysis-setup">
