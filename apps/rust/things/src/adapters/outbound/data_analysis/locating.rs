@@ -9,8 +9,6 @@ const LOCATING_COUNT: usize = 5;
 pub struct LocatingRequest {
     pub topic: Option<String>,
     pub subtopic: Option<String>,
-    #[serde(default)]
-    pub allow_review: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -154,32 +152,6 @@ fn verify_locators(
 }
 
 impl DataAnalysisService {
-    /// Existing comprehensive sessions predate shared material exposure tracking.
-    /// Backfill only sessions actually started, not generated but unseen papers.
-    pub(super) async fn sync_seen_materials(&self) -> Result<HashSet<String>, String> {
-        let rows =
-            sqlx::query("SELECT groups_json FROM data_analysis_runs WHERE status <> 'ready'")
-                .fetch_all(&self.pool)
-                .await
-                .map_err(as_error)?;
-        for row in rows {
-            let data: String = row.try_get("groups_json").map_err(as_error)?;
-            if let Ok(groups) = serde_json::from_str::<Vec<QuestionGroup>>(&data) {
-                for group in groups {
-                    self.mark_material_seen(&group.material, "comprehensive")
-                        .await?;
-                }
-            }
-        }
-        let rows = sqlx::query("SELECT material_key FROM data_analysis_material_seen")
-            .fetch_all(&self.pool)
-            .await
-            .map_err(as_error)?;
-        rows.into_iter()
-            .map(|r| r.try_get("material_key").map_err(as_error))
-            .collect()
-    }
-
     pub(super) async fn mark_material_seen(
         &self,
         material: &Material,
