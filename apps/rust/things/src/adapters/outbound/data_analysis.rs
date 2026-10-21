@@ -2,8 +2,8 @@
 //! Only verified numerical recipes are admitted into the training database.
 use super::codex_app_server::{validate_token, CodexSession, TURN_TIMEOUT};
 use crate::domain::data_analysis::{
-    select_material_batch, Material, VerifiedQuestion,
-    OFFICIAL_SOURCES, QUIZ_GROUPS, QUIZ_PER_GROUP, QUIZ_SECONDS, SECTIONS, SOURCE_URL,
+    select_material_batch, Material, VerifiedQuestion, OFFICIAL_SOURCES, QUIZ_GROUPS,
+    QUIZ_PER_GROUP, QUIZ_SECONDS, SECTIONS, SOURCE_URL,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -61,9 +61,12 @@ fn valid_remote_repo_path(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 512
         && path.is_absolute()
-        && path.components().all(|part| matches!(
-            part, std::path::Component::RootDir | std::path::Component::Normal(_)
-        ))
+        && path.components().all(|part| {
+            matches!(
+                part,
+                std::path::Component::RootDir | std::path::Component::Normal(_)
+            )
+        })
         && !value.chars().any(|c| c.is_control())
 }
 
@@ -72,7 +75,9 @@ fn parse_env(input: &str) -> Result<Option<CodexConfig>, &'static str> {
     let mut cwd = None;
     for line in input.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') { continue; }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
         let (key, value) = line.split_once('=').ok_or("Invalid .env entry")?;
         let mut value = value.trim();
         if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
@@ -80,21 +85,27 @@ fn parse_env(input: &str) -> Result<Option<CodexConfig>, &'static str> {
         }
         match key.trim() {
             "HYZ_THINGS_CODEX_WS_TOKEN" => {
-                if token.is_some() {return Err("Duplicate Codex Token");}
+                if token.is_some() {
+                    return Err("Duplicate Codex Token");
+                }
                 validate_token(value).map_err(|_| "Codex WS Token has invalid characters")?;
                 token = Some(value.to_owned());
             }
             "HYZ_THINGS_CODEX_CWD" => {
-                if cwd.is_some() {return Err("Duplicate Codex CWD");}
-                if !valid_remote_repo_path(value) {return Err("Codex CWD must be a safe absolute path on the PC");}
+                if cwd.is_some() {
+                    return Err("Duplicate Codex CWD");
+                }
+                if !valid_remote_repo_path(value) {
+                    return Err("Codex CWD must be a safe absolute path on the PC");
+                }
                 cwd = Some(value.to_owned());
             }
             _ => {}
         }
     }
-    match (token,cwd) {
-        (Some(token),Some(cwd)) => Ok(Some(CodexConfig{token,cwd})),
-        (None,None) => Ok(None),
+    match (token, cwd) {
+        (Some(token), Some(cwd)) => Ok(Some(CodexConfig { token, cwd })),
+        (None, None) => Ok(None),
         _ => Err("Codex needs both HYZ_THINGS_CODEX_WS_TOKEN and HYZ_THINGS_CODEX_CWD"),
     }
 }
@@ -306,7 +317,13 @@ impl DataAnalysisService {
             match result {
                 Ok(run_id) => {
                     worker
-                        .set_progress(&job, "ready", 20, "Codex 已交付20道题，可以开始训练", Some(run_id))
+                        .set_progress(
+                            &job,
+                            "ready",
+                            20,
+                            "Codex 已交付20道题，可以开始训练",
+                            Some(run_id),
+                        )
                         .await
                 }
                 Err(msg) => worker.set_progress(&job, "failed", 0, &msg, None).await,
@@ -451,7 +468,9 @@ impl DataAnalysisService {
             let data: String = row.try_get("group_json").map_err(as_error)?;
             if let Ok(group) = serde_json::from_str::<QuestionGroup>(&data) {
                 if group.version >= 4 && group.questions.len() == QUIZ_PER_GROUP {
-                    if seen.contains(&locating::material_key(&group.material)) {continue;}
+                    if seen.contains(&locating::material_key(&group.material)) {
+                        continue;
+                    }
                     let key = format!("{}|{}", group.material.source_url, group.material.section);
                     cache.entry(key).or_insert(group);
                 }
@@ -510,12 +529,13 @@ impl DataAnalysisService {
                     .await;
                     let worker = self.clone();
                     let weak = Arc::new(weaknesses.clone());
-                    for (slot, outcome) in run_generation_wave(requests, move |material, ordinal| {
-                        let worker = worker.clone();
-                        let weak = Arc::clone(&weak);
-                        async move { worker.generate_group(&material, &weak, ordinal).await }
-                    })
-                    .await
+                    for (slot, outcome) in
+                        run_generation_wave(requests, move |material, ordinal| {
+                            let worker = worker.clone();
+                            let weak = Arc::clone(&weak);
+                            async move { worker.generate_group(&material, &weak, ordinal).await }
+                        })
+                        .await
                     {
                         match outcome {
                             Ok(group) if slot < ordered_results.len() => {
@@ -589,12 +609,18 @@ impl DataAnalysisService {
     ) -> Result<QuestionGroup, String> {
         let config = self.config.as_ref().ok_or("Codex Token 未配置")?;
         let earlier = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM data_analysis_groups WHERE section=?"
-        ).bind(&source.section).fetch_one(&self.pool).await.map_err(as_error)?;
+            "SELECT COUNT(*) FROM data_analysis_groups WHERE section=?",
+        )
+        .bind(&source.section)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(as_error)?;
         let context = generation_excerpt(source, earlier.max(0) as usize);
-        let source_year = OFFICIAL_SOURCES.iter()
-            .find(|(_,url)| *url == context.source_url)
-            .map(|(year,_)| *year).unwrap_or(2025);
+        let source_year = OFFICIAL_SOURCES
+            .iter()
+            .find(|(_, url)| *url == context.source_url)
+            .map(|(year, _)| *year)
+            .unwrap_or(2025);
         let prompt = format!(
             r#"你是 hyz 的公务员行测资料分析综合训练命题 Agent。当前任务是**题型驱动**，不是材料驱动。
 工作目录是 hyz-things 仓库。请先使用 hyz-xingce Skill（.agents/skills/行测做题/SKILL.md），
@@ -621,39 +647,43 @@ correct_index为0至3的正确项下标；answer为该正确选项的完整内�
 explanation为依照 hyz 方法的简短速算解释；skill为具体考点；evidence为模拟材料中支持题目的连续文字片段。
 先自行核对数学及选项，再仅输出符合结构化 Schema 的JSON，不输出计划、过程或代码块。
 输出 JSON 必须具有 material_text 和 questions 两字段，questions 恰好5项。"#,
-            group_no=ordinal % QUIZ_GROUPS + 1,
-            weaknesses=weaknesses.join("、"),
-            year=source_year,
-            section=context.section,
-            topic=context.topic,
-            subtopic=context.subtopic,
-            excerpt=context.text
+            group_no = ordinal % QUIZ_GROUPS + 1,
+            weaknesses = weaknesses.join("、"),
+            year = source_year,
+            section = context.section,
+            topic = context.topic,
+            subtopic = context.subtopic,
+            excerpt = context.text
         );
         let mut session = tokio::time::timeout(
             Duration::from_secs(12),
-            CodexSession::connect(&config.token, &config.cwd)
-        ).await.map_err(|_| "连接 Codex App Server 超时".to_owned())??;
+            CodexSession::connect(&config.token, &config.cwd),
+        )
+        .await
+        .map_err(|_| "连接 Codex App Server 超时".to_owned())??;
         let output = tokio::time::timeout(TURN_TIMEOUT, session.turn(&prompt))
-            .await.map_err(|_| "Codex 出题超时，请检查电脑服务与账号额度".to_owned())??;
+            .await
+            .map_err(|_| "Codex 出题超时，请检查电脑服务与账号额度".to_owned())??;
         #[derive(Deserialize)]
         struct Batch {
             material_text: String,
             questions: Vec<VerifiedQuestion>,
         }
-        let batch: Batch = serde_json::from_str(&output)
-            .map_err(|_| "Codex 返回的试卷 JSON 与展示格式不匹配")?;
+        let batch: Batch =
+            serde_json::from_str(&output).map_err(|_| "Codex 返回的试卷 JSON 与展示格式不匹配")?;
         // Structural safety only: protect fixed UI indexing. No math/content
         // verification and no answer rewriting by hyz-things.
         if batch.questions.len() != QUIZ_PER_GROUP
-            || batch.questions.iter().any(|q|q.correct_index >= 4) {
+            || batch.questions.iter().any(|q| q.correct_index >= 4)
+        {
             return Err("Codex 返回的试卷结构不完整（需要5题，每题4个选项）".into());
         }
         let mut material = context;
         material.text = format!("【模拟训练数据，非官方发布数值】\n{}", batch.material_text);
-        Ok(QuestionGroup{
-            version:4,
+        Ok(QuestionGroup {
+            version: 4,
             material,
-            questions:batch.questions,
+            questions: batch.questions,
         })
     }
     async fn fetch_row(
@@ -1041,9 +1071,11 @@ mod tests {
     #[test]
     fn env_accepts_non_hex_token_without_a_fixed_length() {
         let value = "short-token-12";
-        let config = parse_env(&format!("HYZ_THINGS_CODEX_WS_TOKEN={value}\nHYZ_THINGS_CODEX_CWD=/home/hyz/hyz_things"))
-            .unwrap()
-            .unwrap();
+        let config = parse_env(&format!(
+            "HYZ_THINGS_CODEX_WS_TOKEN={value}\nHYZ_THINGS_CODEX_CWD=/home/hyz/hyz_things"
+        ))
+        .unwrap()
+        .unwrap();
         assert_eq!(config.token, value);
     }
 
@@ -1061,9 +1093,9 @@ mod tests {
             "evidence":"2023年增长10%，2024年增长10%"
         });
         let q: VerifiedQuestion = serde_json::from_value(item).unwrap();
-        assert_eq!(q.correct_index,2);
-        assert_eq!(q.answer,"21%");
-        assert_eq!(q.skill,"间隔增长率");
+        assert_eq!(q.correct_index, 2);
+        assert_eq!(q.answer, "21%");
+        assert_eq!(q.skill, "间隔增长率");
     }
 
     #[test]
@@ -1078,7 +1110,10 @@ mod tests {
         assert!(parse_env("HYZ_THINGS_AI_BASE_URL=https://api.deepseek.com")
             .unwrap()
             .is_none());
-        assert!(parse_env("HYZ_THINGS_CODEX_WS_TOKEN=bad token\nHYZ_THINGS_CODEX_CWD=/home/user/repo").is_err());
+        assert!(parse_env(
+            "HYZ_THINGS_CODEX_WS_TOKEN=bad token\nHYZ_THINGS_CODEX_CWD=/home/user/repo"
+        )
+        .is_err());
         assert!(parse_env("HYZ_THINGS_CODEX_WS_TOKEN=short-token-12").is_err());
         assert!(parse_env("HYZ_THINGS_CODEX_CWD=/home/hyz/hyz_things").is_err());
         assert!(!valid_remote_repo_path("hyz-things"));
@@ -1221,9 +1256,12 @@ mod tests {
                 .execute(&pool).await.unwrap();
         }
 
-        let config = parse_env(&format!("HYZ_THINGS_CODEX_WS_TOKEN={}\nHYZ_THINGS_CODEX_CWD=/home/hyz/hyz_things", "a".repeat(64)))
-            .unwrap()
-            .unwrap();
+        let config = parse_env(&format!(
+            "HYZ_THINGS_CODEX_WS_TOKEN={}\nHYZ_THINGS_CODEX_CWD=/home/hyz/hyz_things",
+            "a".repeat(64)
+        ))
+        .unwrap()
+        .unwrap();
         let service = DataAnalysisService::new(pool, Some(config)).unwrap();
         let id = service.prepare().await.expect("start generation");
         let mut run_id = None;
@@ -1310,5 +1348,4 @@ mod tests {
         assert_eq!(sections[0].topic, "宏观经济");
         assert!(sections[1].text.contains("71488"));
     }
-
 }
