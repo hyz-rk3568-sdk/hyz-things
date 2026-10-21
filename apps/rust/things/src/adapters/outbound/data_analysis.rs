@@ -1194,7 +1194,7 @@ fn wrong_question_category(deck: &str) -> Option<&str> {
         .collect::<Vec<_>>();
     let index = parts.iter().position(|part| *part == "错题")?;
     let prefix = &parts[..index];
-    if prefix != [] && prefix != ["资料"] && prefix != ["flashcards", "资料"] {
+    if !prefix.is_empty() && prefix != ["资料"] && prefix != ["flashcards", "资料"] {
         return None;
     }
     let category = *parts.get(index + 1)?;
