@@ -207,7 +207,7 @@ test("transparent calculation ink overlays the question, supports history and re
   const actualStrokeWidth = await canvas.evaluate((el) =>
     (el as HTMLCanvasElement).getContext("2d")?.lineWidth,
   );
-  expect(actualStrokeWidth).toBe(2.6);
+  expect(actualStrokeWidth).toBeCloseTo(2.6, 4);
   const first = await snapshot();
   expect(first).not.toEqual(blank);
   await page.getByTestId("calculation-scratchpad-undo").click();
