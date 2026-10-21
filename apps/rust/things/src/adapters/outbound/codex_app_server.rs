@@ -256,7 +256,7 @@ impl CodexSession {
                     "ephemeral":true,
                     "cwd":"/tmp",
                     "approvalPolicy":"never",
-                    "sandbox":"readOnly"
+                    "sandbox":"read-only"
                 }),
             )
             .await?;
