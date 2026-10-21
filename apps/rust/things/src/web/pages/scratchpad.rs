@@ -13,20 +13,34 @@ type InkPoint = (f64, f64);
 fn saved_ink_key(scope: &str) -> String {
     format!("hyz-analysis-ink-{scope}")
 }
-fn load_persistent_ink(scope:&str)->Vec<InkAction>{
-    if scope.is_empty() || scope.len()>120 {return Vec::new();}
-    let Some(storage)=web_sys::window().and_then(|w|w.local_storage().ok().flatten()) else {return Vec::new();};
-    let Some(data)=storage.get_item(&saved_ink_key(scope)).ok().flatten() else {return Vec::new();};
-    if data.len()>524288 {return Vec::new();}
+fn load_persistent_ink(scope: &str) -> Vec<InkAction> {
+    if scope.is_empty() || scope.len() > 120 {
+        return Vec::new();
+    }
+    let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) else {
+        return Vec::new();
+    };
+    let Some(data) = storage.get_item(&saved_ink_key(scope)).ok().flatten() else {
+        return Vec::new();
+    };
+    if data.len() > 524288 {
+        return Vec::new();
+    }
     serde_json::from_str(&data).unwrap_or_default()
 }
-fn save_persistent_ink(scope:&str,actions:&[InkAction]){
-    if scope.is_empty() || scope.len()>120 {return;}
-    if let (Some(storage),Ok(data))=(web_sys::window().and_then(|w|w.local_storage().ok().flatten()),serde_json::to_string(actions)){
-        if data.len()<=524288 {let _=storage.set_item(&saved_ink_key(scope),&data);}
+fn save_persistent_ink(scope: &str, actions: &[InkAction]) {
+    if scope.is_empty() || scope.len() > 120 {
+        return;
+    }
+    if let (Some(storage), Ok(data)) = (
+        web_sys::window().and_then(|w| w.local_storage().ok().flatten()),
+        serde_json::to_string(actions),
+    ) {
+        if data.len() <= 524288 {
+            let _ = storage.set_item(&saved_ink_key(scope), &data);
+        }
     }
 }
-
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 enum InkAction {
@@ -227,7 +241,8 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
         let scope = props.persist_key.clone();
         use_effect_with((props.question_index, scope.clone()), move |_| {
             *strokes.borrow_mut() = InkState {
-                history: load_persistent_ink(&scope), ..InkState::default()
+                history: load_persistent_ink(&scope),
+                ..InkState::default()
             };
             if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
                 redraw_scratch(&canvas, &strokes.borrow().history);
