@@ -753,6 +753,88 @@ mod tests {
         assert!(!format!("{:?}", env.model).contains("secret-key"));
         assert!(parse_env("HYZ_THINGS_AI_BASE_URL=http://localhost:9999\nHYZ_THINGS_AI_API_KEY=x\nHYZ_THINGS_AI_MODEL=m").is_err());
     }
+    #[tokio::test]
+    async fn cached_official_groups_support_full_twenty_question_lifecycle() {
+        // Exercise native SQLite/service paths without a paid AI API or external network.
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("temporary in-memory sqlite");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("migrations");
+
+        let materials = SECTIONS.iter().take(4).map(|(section,topic)| Material {
+            section: (*section).into(),
+            topic: (*topic).into(),
+            subtopic: "测试子主题".into(),
+            text: "本年度业务量1200亿元，比上年增长15.2%。".repeat(8),
+            source_url: SOURCE_URL.into(),
+        }).collect::<Vec<_>>();
+
+        sqlx::query("INSERT INTO data_analysis_sources(url,title,content_hash,fetched_at_ms,sections_json) VALUES (?,?,?,?,?)")
+            .bind(SOURCE_URL).bind("fixture official cache").bind("offline hash")
+            .bind(now_ms())
+            .bind(serde_json::to_string(&materials).unwrap())
+            .execute(&pool).await.unwrap();
+
+        for material in &materials {
+            let questions = (0..5).map(|idx| VerifiedQuestion {
+                question: format!("第{}题：上一年业务量约为多少？",idx+1),
+                options: ["1000亿元".into(),"1042亿元".into(),"1200亿元".into(),"1400亿元".into()],
+                correct_index: 1,
+                answer: "1042亿元".into(),
+                explanation: "用现期除以1.152".into(),
+                skill: "基期量".into(),
+                evidence: "本年度业务量1200亿元，比上年增长15.2%。".into(),
+            }).collect::<Vec<_>>();
+            let group=QuestionGroup { material:material.clone(), questions };
+            sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES(?,?,?,?,?,?)")
+                .bind(Uuid::now_v7().to_string())
+                .bind(SOURCE_URL)
+                .bind(&material.section)
+                .bind(&material.topic)
+                .bind(serde_json::to_string(&group).unwrap())
+                .bind(now_ms())
+                .execute(&pool).await.unwrap();
+        }
+
+        let config = parse_env("HYZ_THINGS_AI_BASE_URL=https://api.deepseek.com\nHYZ_THINGS_AI_API_KEY=offline-test-only\nHYZ_THINGS_AI_MODEL=offline-test-model")
+            .unwrap().unwrap();
+        let service=DataAnalysisService::new(pool,Some(config)).unwrap();
+        let id=service.prepare().await.expect("start generation");
+        let mut run_id=None;
+        for _ in 0..100 {
+            if let Some(progress)=service.job(&id).await {
+                if progress.state=="ready" {run_id=progress.run_id;break;}
+                assert_ne!(progress.state,"failed","{}",progress.message);
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let run_id=run_id.expect("cached groups should be ready without network");
+        let active=service.run(&run_id).await.expect("start 20-minute timer");
+        assert_eq!(active.groups.len(),4);
+        assert!(active.groups.iter().all(|group|group.questions.len()==5));
+        assert_eq!(active.duration_seconds,1200);
+        assert!(active.deadline_at_ms.unwrap()>active.started_at_ms.unwrap());
+        assert_eq!(active.answers.len(),20);
+        service.answer(&run_id,1,1).await.expect("save an answer");
+        let refreshed=service.run(&run_id).await.expect("restore an active run");
+        assert_eq!(refreshed.answers[0],Some(1));
+        assert_eq!(refreshed.started_at_ms,active.started_at_ms);
+        let result=service.submit(&run_id).await.expect("submit");
+        assert_eq!(result.correct,1);
+        assert_eq!(result.total,20);
+        assert_eq!(result.questions.len(),20);
+        assert!(service.answer(&run_id,2,1).await.is_err(),"submitted run must reject answers");
+        let replay=service.submit(&run_id).await.expect("idempotent result");
+        assert_eq!(replay.correct,1);
+        let (source_count,group_count)=service.counts().await.unwrap();
+        assert_eq!((source_count,group_count),(1,4));
+    }
+
     #[test]
     fn parser_keeps_sections_separate() {
         let html = format!(
