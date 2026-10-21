@@ -9,7 +9,6 @@ tags:
 ---
 
 ## Card
-<!-- hyz-card-id: 01a15cf2-399b-7263-ad55-b52d0d79119f -->
 
 ### Front
 
