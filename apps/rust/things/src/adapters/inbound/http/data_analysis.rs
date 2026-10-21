@@ -65,7 +65,7 @@ struct PrepareBody {
     job_id: String,
 }
 #[derive(Deserialize)]
-struct ComprehensivePrepareRequest {
+pub(super) struct ComprehensivePrepareRequest {
     #[serde(default)]
     manual_skills: Vec<String>,
 }
