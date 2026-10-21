@@ -383,8 +383,9 @@ mod tests {
             false
         );
         let fields = schema["properties"]["questions"]["items"]["required"]
-            .as_array().unwrap();
-        assert_eq!(fields.len(),7);
+            .as_array()
+            .unwrap();
+        assert_eq!(fields.len(), 7);
         assert!(fields.contains(&json!("options")));
         assert!(fields.contains(&json!("correct_index")));
         assert!(schema["properties"]["questions"]["items"]["properties"]["operation"].is_null());
@@ -493,10 +494,14 @@ mod tests {
             )
             .await;
             // A read-only tool result is an event, not an approval request.
-            server_message(&mut socket,json!({"method":"item/completed","params":{
-                "threadId":"test-thread","turnId":"turn-1",
-                "item":{"type":"commandExecution","command":"pwd","exitCode":0}
-            }})).await;
+            server_message(
+                &mut socket,
+                json!({"method":"item/completed","params":{
+                    "threadId":"test-thread","turnId":"turn-1",
+                    "item":{"type":"commandExecution","command":"pwd","exitCode":0}
+                }}),
+            )
+            .await;
             server_message(&mut socket,json!({"method":"item/completed","params":{
                 "threadId":"test-thread","turnId":"turn-1",
                 "item":{"type":"agentMessage","text":"{\"material_text\":\"测试\",\"questions\":[]}"}
@@ -509,9 +514,10 @@ mod tests {
             )
             .await;
         });
-        let mut session = CodexSession::connect_at(&addr.to_string(), &"a".repeat(64), "/home/hyz/hyz_things")
-            .await
-            .unwrap();
+        let mut session =
+            CodexSession::connect_at(&addr.to_string(), &"a".repeat(64), "/home/hyz/hyz_things")
+                .await
+                .unwrap();
         let answer = session.turn("generate").await.unwrap();
         assert!(answer.contains("\"material_text\""));
         mock.await.unwrap();
