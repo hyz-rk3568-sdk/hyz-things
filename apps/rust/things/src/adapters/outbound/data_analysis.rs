@@ -243,9 +243,12 @@ impl DataAnalysisService {
     }
     /// Current running comprehensive preparation, including progress across page changes.
     pub async fn preparing_job(&self) -> Option<String> {
-        self.jobs.lock().await.iter()
-            .find(|(_,progress)| !matches!(progress.state.as_str(),"ready"|"failed"))
-            .map(|(id,_)| id.clone())
+        self.jobs
+            .lock()
+            .await
+            .iter()
+            .find(|(_, progress)| !matches!(progress.state.as_str(), "ready" | "failed"))
+            .map(|(id, _)| id.clone())
     }
 
     pub async fn prepare(&self) -> Result<String, String> {
@@ -259,8 +262,11 @@ impl DataAnalysisService {
         }
         // Reserve the exclusive AI slot *before* publishing a job ID. A second
         // click or another tab must not queue an unintended second paper.
-        let guard=self.gate.clone().try_acquire_owned()
-            .map_err(|_|"已有其他出题任务正在执行，请等当前任务完成".to_owned())?;
+        let guard = self
+            .gate
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| "已有其他出题任务正在执行，请等当前任务完成".to_owned())?;
         let id = Uuid::now_v7().to_string();
         self.jobs.lock().await.insert(
             id.clone(),
