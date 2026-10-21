@@ -521,7 +521,7 @@ impl DataAnalysisService {
         Ok(id)
     }
     /// Read a small set of hyz's actual wrong questions as question-form
-    /// patterns. Historical numbers are masked before reaching the AI provider.
+    /// patterns (up to ten). Historical numbers are masked before reaching the AI provider.
     /// These are never treated as official statistical evidence.
     async fn wrong_question_patterns(&self, skills: &[String]) -> Vec<String> {
         let rows=sqlx::query(
@@ -558,7 +558,7 @@ impl DataAnalysisService {
         });
         examples
             .into_iter()
-            .take(6)
+            .take(10)
             .map(|(skill, front, back)| {
                 format!("题型/{skill}；旧题问法（遮蔽数值）：{front}；原复盘提示（仅参考）：{back}")
             })
@@ -584,12 +584,12 @@ impl DataAnalysisService {
             .find(|(_, url)| *url == material.source_url)
             .map(|(year, _)| *year)
             .unwrap_or(2025);
-        let system = r#"你是一名公务员行测资料分析命题编辑。请基于提供的政府统计原文，改写成一份紧凑、可做5道题的“国考风格文字资料”，然后出10道候选题（最终只择优保留5道）。必须返回单个严格JSON对象：
+        let system = r#"你是一名公务员行测资料分析命题编辑。请基于提供的政府统计原文，改写成一份紧凑、可做5道题的“国考风格文字资料”，然后出10道候选数值计算题（最终只择优保留5道）。必须返回单个严格JSON对象：
 {"material_text":"改写后的正式材料全文","questions":[{"question":"符合国考资料分析习惯的题干","evidence":"原文中连续复制且包含a、b两个数字的原始证据，至少15字","operation":"base_period|growth_amount|growth_rate|share|average|difference|ratio","a":1234,"b":5.6,"unit":"万吨","explanation":"简短、可复核的速算提示"}]}
 材料：请按统计口径提炼、适度调整顺序和句式、适当分段，保留必要数值、单位、年份；不要逐字照抄，也不能编造、推测或转换新增任何统计数值。全文约200至1000汉字，按考试常见材料组织，不要用新闻宣传口吻。最多只出现给定年份和原文已有的数字。每道题使用的a、b必须在“改写材料”中可见，evidence必须是从官方原文逐字摘取的连续片段。
-命题：每份正式材料至少能覆盖3种不同的计算考点，尽量包括基期、增量、比重、倍数、平均数及比较判断，围绕不同指标提问。题干优先“根据上述资料，……约为多少”“与上年相比……”“……占……的比重约为……”等公考式表述；不得使用“求”“按同比增长率估算”等课堂口吻；不要泄漏公式和答案。growth_amount、base_period的a=现期量、b=增长率百分数（下降是负数）；growth_rate的a=现期、b=基期；share的a=部分、b=总体；average/ratio a/b；difference a-b。不要混用统计口径、年份或量纲；不提供选项，选项由程序独立计算。不得引用没有出现在改写材料中的数字。"#;
+命题：只允许有唯一数值答案的四选一计算题；绝对不要生成综合判断、正误辨析、四个说法选正确或错误、能够推出的是等题型。每份正式材料至少覆盖3种不同的数值计算考点，如基期、增量、增长率、比重、倍数、平均数、差额，围绕不同指标提问。题干优先“根据上述资料，……约为多少”“与上年相比……”“……占……的比重约为……”等公考式表述；不得使用“求”“按同比增长率估算”等课堂口吻；不要泄漏公式和答案。growth_amount、base_period的a=现期量、b=增长率百分数（下降是负数）；growth_rate的a=现期、b=基期；share的a=部分、b=总体；average/ratio a/b；difference a-b。不要混用统计口径、年份或量纲；不提供选项，选项由程序独立计算。不得引用没有出现在改写材料中的数字。"#;
         let user = format!(
-            "官方{}年统计公报资料（唯一可用统计事实）：\n{}\n资料主题：{} → {}\n优先考点：{}\n【用户错题仅供参考命题问法、干扰项和复盘方法，不可作为数值来源】\n{}\n请按用户错题中出现过的题型生成国考风格的新材料及10道变式候选题，不能照抄旧题。",
+            "官方{}年统计公报资料（唯一可用统计事实）：\n{}\n资料主题：{} → {}\n优先考点：{}\n【用户错题仅供参考命题问法、干扰项和复盘方法，不可作为数值来源】\n{}\n仅参考用户错题中的数值计算题型、易错口径和速算方法，生成国考风格的新材料及10道数值计算变式候选题；忽略综合判断题型，不能照抄旧题。",
             source_year, material.text, material.topic, material.subtopic, weaknesses.join("、"), wrong_patterns.join("\n")
         );
         let payload = json!({"model":config.model,"temperature":0.4,"response_format":{"type":"json_object"},
