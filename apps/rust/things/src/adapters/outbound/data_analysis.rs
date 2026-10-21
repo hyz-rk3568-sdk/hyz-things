@@ -19,6 +19,9 @@ use std::{
 use tokio::{sync::Mutex, task::JoinSet};
 use uuid::Uuid;
 
+mod locating;
+pub use locating::{LocateClick, LocatingRequest, LocatingTopic, LocatingView};
+
 const ENV_PATH: &str = "/userdata/hyz-things/.env";
 const MAX_DOCUMENT_BYTES: usize = 3 * 1024 * 1024;
 const MAX_CACHED_SECTION_CHARS: usize = 30000;
@@ -358,6 +361,7 @@ impl DataAnalysisService {
         self.set_progress(job, "fetching", 0, "正在读取官方统计资料", None)
             .await;
         let materials = self.load_sections().await?;
+        let seen = self.sync_seen_materials().await?;
         self.set_progress(job, "selecting", 0, "正在选择薄弱和未练主题", None)
             .await;
         let weaknesses = self.weaknesses().await;
@@ -377,6 +381,7 @@ impl DataAnalysisService {
         // Explore never-seen topics before repeating familiar source sections.
         // Once covered, prioritize topics with high error ratios.
         let mut ordered = materials;
+        ordered.retain(|m| !seen.contains(&format!("{}\u{1f}{}",m.source_url,m.section)));
         ordered.sort_by(|a, b| {
             let (na, ma) = scores.get(&a.topic).copied().unwrap_or((0, 0));
             let (nb, mb) = scores.get(&b.topic).copied().unwrap_or((0, 0));
@@ -697,6 +702,9 @@ impl DataAnalysisService {
         sqlx::query("UPDATE data_analysis_runs SET status='active',started_at_ms=? WHERE id=? AND status='ready'")
             .bind(now_ms()).bind(id).execute(&self.pool).await.map_err(as_error)?;
         let (groups, answers, status, started_at_ms) = self.fetch_row(id).await?;
+        for group in &groups {
+            self.mark_material_seen(&group.material, "comprehensive").await?;
+        }
         Ok(RunView {
             id: id.into(),
             status,
