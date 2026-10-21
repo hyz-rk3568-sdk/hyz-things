@@ -119,15 +119,6 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     Ok(v) => status.set(Some(v)),
                     Err(e) => error.set(Some(format!("{e}；综合出题需要管理员登录"))),
                 }
-                loading_status.set(false);
-                if let Ok(items) = fetch_json_typed::<Vec<ComprehensiveHistoryEntry>>(
-                    &format!("{ANALYSIS_ROOT}/history"),
-                    "综合训练历史",
-                )
-                .await
-                {
-                    history.set(items);
-                }
                 let storage = web_sys::window().and_then(|w| w.local_storage().ok().flatten());
                 let saved_ready = storage
                     .as_ref()
@@ -148,6 +139,15 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         preparing,
                         error.clone(),
                     ));
+                }
+                loading_status.set(false);
+                if let Ok(items) = fetch_json_typed::<Vec<ComprehensiveHistoryEntry>>(
+                    &format!("{ANALYSIS_ROOT}/history"),
+                    "综合训练历史",
+                )
+                .await
+                {
+                    history.set(items);
                 }
                 // Restore a started run after iPad Safari reload.
                 if let Some(id) = web_sys::window()
