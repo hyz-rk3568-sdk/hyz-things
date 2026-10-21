@@ -110,7 +110,9 @@ fn source_contains_numeric_token(text: &str, number: f64) -> bool {
     }
     // The provider must copy a displayed number rather than fabricate digits.
     let magnitude = if number < 0.0
-        && ["下降", "减少", "减产"].iter().any(|word| text.contains(word))
+        && ["下降", "减少", "减产"]
+            .iter()
+            .any(|word| text.contains(word))
     {
         number.abs()
     } else {
