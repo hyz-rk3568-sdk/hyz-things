@@ -77,7 +77,7 @@ fn output_schema() -> Value {
 }
 
 fn locating_output_schema() -> Value {
-    let locator=json!({
+    let locator = json!({
         "type":"object",
         "properties":{
             "question":{"type":"string"},
@@ -326,12 +326,13 @@ impl CodexSession {
 
     /// Run one generation or repair turn in the same ephemeral thread.
     pub async fn turn(&mut self, prompt: &str) -> Result<String, String> {
-        self.turn_with_schema(prompt,output_schema()).await
+        self.turn_with_schema(prompt, output_schema()).await
     }
     pub async fn turn_locating(&mut self, prompt: &str) -> Result<String, String> {
-        self.turn_with_schema(prompt,locating_output_schema()).await
+        self.turn_with_schema(prompt, locating_output_schema())
+            .await
     }
-    async fn turn_with_schema(&mut self,prompt:&str,schema:Value)->Result<String,String>{
+    async fn turn_with_schema(&mut self, prompt: &str, schema: Value) -> Result<String, String> {
         let thread = self.thread_id.clone();
         let result = self
             .request(
@@ -424,12 +425,15 @@ mod tests {
 
     #[test]
     fn locating_schema_is_separate_from_comprehensive_output() {
-        let schema=locating_output_schema();
-        let props=&schema["properties"]["questions"]["items"]["properties"];
+        let schema = locating_output_schema();
+        let props = &schema["properties"]["questions"]["items"]["properties"];
         assert!(props["anchor"].is_object());
         assert!(props["subject"].is_object());
         assert!(props["options"].is_null());
-        assert!(output_schema()["properties"]["questions"]["items"]["properties"]["options"].is_object());
+        assert!(
+            output_schema()["properties"]["questions"]["items"]["properties"]["options"]
+                .is_object()
+        );
     }
 
     #[test]
