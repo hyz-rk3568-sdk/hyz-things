@@ -9,6 +9,7 @@ pub(crate) struct AnalysisStatus {
     pub cached_sources: i64,
     pub verified_groups: i64,
     pub weak_skills: Vec<String>,
+    pub preparing_job_id: Option<String>,
 }
 #[derive(Debug, Deserialize)]
 pub(crate) struct PrepareTask {
