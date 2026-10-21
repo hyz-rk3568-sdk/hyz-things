@@ -32,7 +32,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
         {id:"fixture-run",started_at_ms:started,ended_at_ms:started+30000,elapsed_ms:30000,correct:1,total:20,topics:["经济","农业","工业","服务业"]}
       ] : [];
     } else if (path.endsWith("/status")) {
-      result={configured:true,model:"mock-compatible-model",cached_sources:1,verified_groups:4,weak_skills:["基期量"]};
+      result={configured:true,model:"mock-compatible-model",cached_sources:1,verified_groups:4,weak_skills:["基期量"],preparing_job_id:null};
     } else if (path.endsWith("/prepare") && route.request().method()==="POST") {
       result={job_id:"fixture-task"};
     } else if (path.endsWith("/prepare/fixture-task")) {
@@ -68,6 +68,9 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(page.getByTestId("analysis-setup")).toContainText("20分钟");
   await expect(page.getByTestId("analysis-setup")).toContainText("mock-compatible-model");
   await page.getByTestId("analysis-start").click();
+  await expect(page.getByTestId("analysis-ready")).toBeVisible();
+  await expect(page.getByTestId("analysis-clock")).toHaveCount(0);
+  await page.getByTestId("analysis-enter").click();
   await expect(page.getByTestId("analysis-run")).toBeVisible();
   await expect(page.getByTestId("analysis-clock")).toContainText("19:");
   await page.getByTestId("analysis-clock").click();
