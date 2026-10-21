@@ -72,10 +72,9 @@ pub(super) fn material_key(material: &Material) -> String {
         .text
         .starts_with("【模拟训练数据，非官方发布数值】")
     {
-        return format!(
-            "simulated\u{1f}{:x}",
-            sha2::Sha256::digest(material.text.as_bytes())
-        );
+        let digest = sha2::Sha256::digest(material.text.as_bytes());
+        let hash = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        return format!("simulated\u{1f}{hash}");
     }
     format!("{}\u{1f}{}", material.source_url, material.section)
 }
