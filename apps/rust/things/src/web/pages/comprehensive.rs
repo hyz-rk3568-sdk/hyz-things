@@ -610,8 +610,8 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 <div class="mt-5 grid gap-3">
                     <button class="btn btn-outline w-full" type="button" onclick={{let history_open=history_open.clone();Callback::from(move |_|history_open.set(true))}}>{"查看练习历史"}</button>
                     <div class="rounded-box border border-base-content/15 p-4 space-y-3">
-                        <p class="font-semibold">{"智能薄弱点强化"}</p>
-                        <p class="text-sm text-base-content/60">{"根据错题和历史成绩自动推荐；手动勾选额外考点优先覆盖。"}</p>
+                        <p class="font-semibold">{"错题分类 · 智能薄弱点强化"}</p>
+                        <p class="text-sm text-base-content/60">{"直接使用 flashcards/资料/错题/ 下的分类；自动推荐结合错题数量、复习记录和训练表现。"}</p>
                         if let Some(info)=(*status).clone(){
                             <div class="flex flex-wrap gap-2">{for info.weak_skills.iter().map(|x|html!{<span class="badge badge-outline">{x.clone()}</span>})}</div>
                         }
@@ -628,6 +628,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         if *skills_expanded {
                             if let Some(info)=(*status).clone(){
                                 <div class="flex max-h-60 flex-wrap gap-2 overflow-auto rounded-box bg-base-200 p-3" data-testid="analysis-skill-options">
+                                    if info.available_skills.is_empty() {
+                                        <p class="text-xs text-base-content/60">{"尚未发现资料/错题分类，请先同步 Flashcard。"}</p>
+                                    }
                                     {for info.available_skills.iter().map(|name|{
                                         let chosen=manual_skills.contains(name);
                                         let title=name.clone();let select=toggle_manual.clone();
@@ -640,7 +643,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                                 </div>
                             }
                         }
-                        <p class="text-xs text-base-content/60">{"考点来自已同步的资料分析 Flashcard 目录，选择会保存在本设备浏览器中。"}</p>
+                        <p class="text-xs text-base-content/60">{"勾选的名称就是错题文件夹名称。Codex 会读取相应目录的 Flashcard；选择保存在本设备浏览器中。"}</p>
                     </div>
                     if let Some(info)=(*status).clone(){
                         <p class="text-sm text-base-content/65">{format!("出题引擎：{} · 每次主动出题均生成新材料和20道新题",
