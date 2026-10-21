@@ -19,12 +19,9 @@ use std::{
 use tokio::{sync::Mutex, task::JoinSet};
 use uuid::Uuid;
 
-mod locating;
-pub use locating::{LocateClick, LocatingRequest, LocatingTopic, LocatingView};
 
 const ENV_PATH: &str = "/userdata/hyz-things/.env";
 const NO_COMPREHENSIVE_JUDGMENT_PROMPT: &str = "硬性命题边界：本轮不出资料分析综合分析/综合判断题，即不出“下列说法正确的是”“下列说法错误的是”“根据资料可以推出的是”“以下表述符合材料的是”等需要逐项核查多个独立陈述的题。每题只围绕一个明确的数量关系、指标或比较目标，设计四个数值或同一量纲的结果选项。即使手选或自动推荐包含“综合分析与审题”错题目录，也只能借鉴该目录中的审题、年份口径辨析和速算思路，转化为具体计算/比较题；不得将该错题目录名称理解为允许出综合判断题。此禁出规则优先于错题分类覆盖和多样性要求。";
-
 const MAX_DOCUMENT_BYTES: usize = 3 * 1024 * 1024;
 const MAX_CACHED_SECTION_CHARS: usize = 30000;
 const MAX_GENERATION_CHARS: usize = 3000;
@@ -540,7 +537,7 @@ impl DataAnalysisService {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         // Deliberately never reuse a prior generated group. Saved groups are
-        // historical evidence for review/locating, not a source of fresh papers.
+        // Saved groups support history and review, never a new-paper cache.
         let mut ready: Vec<QuestionGroup> = Vec::new();
         let mut attempted = HashSet::<(String, String)>::new();
         let mut last_error = String::new();
@@ -698,20 +695,20 @@ impl DataAnalysisService {
 对于本次自动推荐和手动选中的每个分类，进入 flashcards/资料/错题/<分类目录>/ 读取原始 cards.md 或 card.md 的命题变式、hyz 速算动作与易错点。
 每题 skill 使用对应的错题目录分类名；细分命题变式写进解析，不自行发明另一套基础公式标签。
 每次都是新建 Thread，必须基于这次工作树中的最新内容工作；不需要用户在提示词里复制卡片。
-本次是整套4篇×5题的第 {group_no} 篇；全卷软目标为12道薄弱点、6道其他核心考点、2道基础题，
-各篇尽量覆盖不同题型与命题变式，优先兼顾个人薄弱考点：{weaknesses}。
+本次是整套4篇×5题的第 {group_no} 篇。20道题均须基于 flashcards/资料/错题/ 中真实存在的错题分类及卡片命题，
+不设薄弱点/其他核心/基础题的固定数量配额，也不额外引入卡片未涉及的命题题型。
+每篇选择来自错题卡的5个命题目标，尽量覆盖不同错题分类及变式；自动推荐优先关注：{weaknesses}。
 用户额外手选考点：{manual_all}。本篇必须至少有一道题命中每个分配到本篇的手选考点：{manual_focus}。
 手动考点优先于系统推荐考点，但不因此忽略题型多样性；不要把标签当材料标题。
 {question_boundary}
 先选择本篇5题的题型、命题变式与考查的 hyz 速算/审题动作，再构造共享且自洽的模拟统计数据，
-最后写成约350–650汉字、2～4个自然段的国考风格材料，并拟制5道有唯一正确答案的四选一题。
+最后写成约400–1000汉字、2～4个自然段的国考风格材料，并拟制5道有唯一正确答案的四选一题。
 整篇只围绕同一统计大主题；按总体概况、细分主体、相关指标或年份口径等小主题组织不同段落，每段有清晰的主体、指标及时间口径。
 不同段落可设置合理相似指标、同比与现期的检索干扰，但不可把同一事实人为拆得不合常理。
 material_text 必须使用两个换行符分隔自然段（\n\n，JSON中正确转义），不要写成无分段的数字清单。
-四篇材料尽量使用不同大主题，5道题可跨段落定位，不必按材料段落顺序排列。
-应覆盖真实错题中的乘积增长率（乘/除/倒推/间隔）、混合增长、平均数增长率/增量、两期比重差、
-年均变化、增长贡献/拉动、分数比较、基期量与增长量错配等，可按适合本篇的5种变式灵活选择；
-不要机械地大量重复简单基期量、增长量或现期量。
+四篇材料尽量使用不同大主题，5道题的命题顺序不必对应材料段落顺序。
+各题的考点、命题变式和难度必须来自实际读取的错题 Flashcard，重点考查相应的 hyz 审题及速算动作。
+不得为填充所谓“基础题”或“核心考点”数量而降低难度，不机械重复简单基期量、增长量或现期量。
 此篇背景：{year}年，官方参考章节「{section}」，主题「{topic}／{subtopic}」。
 官方公报摘录仅供了解主体、指标、统计口径和写作语气，不是数值限制，也不是模拟数字的官方证明：
 {excerpt}
@@ -801,10 +798,6 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
         sqlx::query("UPDATE data_analysis_runs SET status='active',started_at_ms=? WHERE id=? AND status='ready'")
             .bind(now_ms()).bind(id).execute(&self.pool).await.map_err(as_error)?;
         let (groups, answers, status, started_at_ms) = self.fetch_row(id).await?;
-        for group in &groups {
-            self.mark_material_seen(&group.material, "comprehensive")
-                .await?;
-        }
         let timing =
             sqlx::query("SELECT paused_at_ms,paused_total_ms FROM data_analysis_runs WHERE id=?")
                 .bind(id)
