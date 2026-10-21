@@ -31,6 +31,7 @@ const MAX_GENERATION_CHARS: usize = 3000;
 pub struct CodexConfig {
     // Fixed-address LAN authentication only; this is NOT the ChatGPT OAuth token.
     token: String,
+    cwd: String,
 }
 
 /// Root-only .env file. Ignore unrelated configuration rather than accepting
@@ -53,29 +54,49 @@ pub fn load_codex_env() -> Result<Option<CodexConfig>, &'static str> {
     parse_env(&input)
 }
 
+fn valid_remote_repo_path(value: &str) -> bool {
+    // The path is sent to the PC, and must NOT be resolved on RK3568.
+    // Never accept shell expansions, parent traversal or browser-selected paths.
+    let path = std::path::Path::new(value);
+    !value.is_empty()
+        && value.len() <= 512
+        && path.is_absolute()
+        && path.components().all(|part| matches!(
+            part, std::path::Component::RootDir | std::path::Component::Normal(_)
+        ))
+        && !value.chars().any(|c| c.is_control())
+}
+
 fn parse_env(input: &str) -> Result<Option<CodexConfig>, &'static str> {
     let mut token = None;
+    let mut cwd = None;
     for line in input.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
+        if line.is_empty() || line.starts_with('#') { continue; }
         let (key, value) = line.split_once('=').ok_or("Invalid .env entry")?;
-        if key.trim() != "HYZ_THINGS_CODEX_WS_TOKEN" {
-            continue;
-        }
-        if token.is_some() {
-            return Err("Duplicate Codex Token");
-        }
         let mut value = value.trim();
         if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
             value = &value[1..value.len() - 1];
         }
-        validate_token(value)
-            .map_err(|_| "Codex WS Token contains invalid bearer-token characters")?;
-        token = Some(value.to_owned());
+        match key.trim() {
+            "HYZ_THINGS_CODEX_WS_TOKEN" => {
+                if token.is_some() {return Err("Duplicate Codex Token");}
+                validate_token(value).map_err(|_| "Codex WS Token has invalid characters")?;
+                token = Some(value.to_owned());
+            }
+            "HYZ_THINGS_CODEX_CWD" => {
+                if cwd.is_some() {return Err("Duplicate Codex CWD");}
+                if !valid_remote_repo_path(value) {return Err("Codex CWD must be a safe absolute path on the PC");}
+                cwd = Some(value.to_owned());
+            }
+            _ => {}
+        }
     }
-    Ok(token.map(|token| CodexConfig { token }))
+    match (token,cwd) {
+        (Some(token),Some(cwd)) => Ok(Some(CodexConfig{token,cwd})),
+        (None,None) => Ok(None),
+        _ => Err("Codex needs both HYZ_THINGS_CODEX_WS_TOKEN and HYZ_THINGS_CODEX_CWD"),
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -1199,7 +1220,7 @@ mod tests {
     #[test]
     fn env_accepts_non_hex_token_without_a_fixed_length() {
         let value = "short-token-12";
-        let config = parse_env(&format!("HYZ_THINGS_CODEX_WS_TOKEN={value}"))
+        let config = parse_env(&format!("HYZ_THINGS_CODEX_WS_TOKEN={value}\nHYZ_THINGS_CODEX_CWD=/home/hyz/hyz_things"))
             .unwrap()
             .unwrap();
         assert_eq!(config.token, value);
@@ -1208,17 +1229,24 @@ mod tests {
     #[test]
     fn token_is_the_only_supported_model_credential() {
         let sample = format!(
-            "HYZ_THINGS_AI_BASE_URL=https://api.deepseek.com\nHYZ_THINGS_AI_API_KEY=legacy\nHYZ_THINGS_AI_MODEL=legacy\nHYZ_THINGS_CODEX_WS_TOKEN={}\n",
+            "HYZ_THINGS_AI_BASE_URL=https://api.deepseek.com\nHYZ_THINGS_AI_API_KEY=legacy\nHYZ_THINGS_AI_MODEL=legacy\nHYZ_THINGS_CODEX_WS_TOKEN={}\nHYZ_THINGS_CODEX_CWD=/home/hyz/hyz_things\n",
             "a".repeat(64)
         );
         let config = parse_env(&sample).unwrap().unwrap();
         assert_eq!(config.token.len(), 64);
+        assert_eq!(config.cwd, "/home/hyz/hyz_things");
         assert!(parse_env("HYZ_THINGS_AI_BASE_URL=https://api.deepseek.com")
             .unwrap()
             .is_none());
-        assert!(parse_env("HYZ_THINGS_CODEX_WS_TOKEN=bad token").is_err());
+        assert!(parse_env("HYZ_THINGS_CODEX_WS_TOKEN=bad token\nHYZ_THINGS_CODEX_CWD=/home/user/repo").is_err());
+        assert!(parse_env("HYZ_THINGS_CODEX_WS_TOKEN=short-token-12").is_err());
+        assert!(parse_env("HYZ_THINGS_CODEX_CWD=/home/hyz/hyz_things").is_err());
+        assert!(!valid_remote_repo_path("hyz-things"));
+        assert!(!valid_remote_repo_path("/home/../etc"));
+        assert!(!valid_remote_repo_path("/home/hyz\nhead"));
+        assert!(valid_remote_repo_path("/home/hyz/hyz_things"));
         assert!(parse_env(&format!(
-            "HYZ_THINGS_CODEX_WS_TOKEN={0}\nHYZ_THINGS_CODEX_WS_TOKEN={0}",
+            "HYZ_THINGS_CODEX_WS_TOKEN={0}\nHYZ_THINGS_CODEX_WS_TOKEN={0}\nHYZ_THINGS_CODEX_CWD=/home/hyz/hyz_things",
             "a".repeat(64)
         ))
         .is_err());
@@ -1353,7 +1381,7 @@ mod tests {
                 .execute(&pool).await.unwrap();
         }
 
-        let config = parse_env(&format!("HYZ_THINGS_CODEX_WS_TOKEN={}", "a".repeat(64)))
+        let config = parse_env(&format!("HYZ_THINGS_CODEX_WS_TOKEN={}\nHYZ_THINGS_CODEX_CWD=/home/hyz/hyz_things", "a".repeat(64)))
             .unwrap()
             .unwrap();
         let service = DataAnalysisService::new(pool, Some(config)).unwrap();
