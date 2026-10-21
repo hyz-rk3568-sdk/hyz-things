@@ -55,6 +55,7 @@ pub enum Operation {
     BasePeriod,
     GrowthAmount,
     GrowthRate,
+    AverageGrowthRate,
     Share,
     Average,
     Difference,
@@ -67,6 +68,7 @@ impl Operation {
             Self::BasePeriod => "基期量",
             Self::GrowthAmount => "增长量",
             Self::GrowthRate => "增长率",
+            Self::AverageGrowthRate => "平均数增长率",
             Self::Share => "比重",
             Self::Average => "平均数",
             Self::Difference => "差额",
@@ -79,6 +81,7 @@ impl Operation {
             Self::BasePeriod => a / (1.0 + b / 100.0),
             Self::GrowthAmount => a * (b / 100.0) / (1.0 + b / 100.0),
             Self::GrowthRate => (a / b - 1.0) * 100.0,
+            Self::AverageGrowthRate => (a - b) / (1.0 + b / 100.0),
             Self::Share => a / b * 100.0,
             Self::Average | Self::Ratio => a / b,
             Self::Difference => a - b,
@@ -170,6 +173,25 @@ fn is_comprehensive_judgment(question: &str) -> bool {
     EXCLUDED.iter().any(|term| question.contains(term))
 }
 
+
+/// Reject mismatched question intent even when the numbers are authentic.
+/// In particular, asking "增加多少" must not be graded as a prior-year base.
+fn question_matches_operation(question: &str, operation: &Operation) -> bool {
+    let asks_change = ["增加多少", "增加约多少", "增长量", "增加了多少", "增长了多少",
+        "减少多少", "减少约多少", "减少了多少", "增量", "比上年多多少",
+        "比上年少多少", "比去年多多少", "比去年少多少"]
+        .iter().any(|cue| question.contains(cue));
+    match operation {
+        Operation::BasePeriod => !asks_change,
+        Operation::GrowthAmount => asks_change,
+        Operation::AverageGrowthRate => {
+            (question.contains("平均") || question.contains("人均") || question.contains("单位"))
+                && (question.contains("增速") || question.contains("增长率") || question.contains("增幅"))
+        }
+        _ => true,
+    }
+}
+
 /// Precision is deliberately two decimals: the official public statistical
 /// values can be rounded, so these are approximate multiple-choice exercises.
 pub fn verify_recipe(
@@ -177,7 +199,9 @@ pub fn verify_recipe(
     recipe: &QuestionRecipe,
     position: usize,
 ) -> Result<VerifiedQuestion, ValidationError> {
-    if is_comprehensive_judgment(&recipe.question) {
+    if is_comprehensive_judgment(&recipe.question)
+        || !question_matches_operation(&recipe.question, &recipe.operation)
+    {
         return Err(ValidationError::InvalidQuestion);
     }
     if recipe.question.chars().count() < 10
@@ -216,6 +240,9 @@ pub fn verify_recipe(
         Operation::BasePeriod | Operation::GrowthAmount
     ) && !(-95.0..=300.0).contains(&recipe.b)
     {
+        return Err(ValidationError::InvalidNumber);
+    }
+    if matches!(recipe.operation, Operation::AverageGrowthRate) && recipe.b <= -100.0 {
         return Err(ValidationError::InvalidNumber);
     }
     let answer = recipe
@@ -522,4 +549,24 @@ mod tests {
             4
         );
     }
+    #[test]
+    fn increase_question_cannot_be_graded_as_prior_year_stock() {
+        let mut item=recipe();
+        item.question="2025年末存量比2024年末增加约多少万吨？".into();
+        item.operation=Operation::BasePeriod;
+        assert_eq!(verify_recipe(&material(),&item,0).unwrap_err(),ValidationError::InvalidQuestion);
+        item.operation=Operation::GrowthAmount;
+        assert!(verify_recipe(&material(),&item,0).is_ok());
+    }
+
+    #[test]
+    fn average_growth_rate_uses_total_and_count_growth() {
+        let mut item=recipe();
+        item.question="2025年的人均产量同比增长率约为多少？".into();
+        item.operation=Operation::AverageGrowthRate;
+        item.a=1.2;
+        item.b=1.2;
+        assert_eq!(item.operation.result(15.0,5.0),Some((15.0-5.0)/1.05));
+    }
+
 }
