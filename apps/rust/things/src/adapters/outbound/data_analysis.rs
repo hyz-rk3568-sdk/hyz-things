@@ -256,45 +256,57 @@ impl DataAnalysisService {
             .map_err(as_error)?;
         Ok((sources, groups))
     }
+    /// Use the user's exact wrong-question directory names as the canonical
+    /// training taxonomy, not the model's arbitrary formula labels or tags.
     pub async fn weaknesses(&self) -> Vec<String> {
-        let mut skills = Vec::new();
-        if let Ok(rows)=sqlx::query("SELECT skill, count(*) AS n, sum(CASE WHEN is_correct=0 THEN 1 ELSE 0 END) AS misses FROM data_analysis_results GROUP BY skill ORDER BY (sum(CASE WHEN is_correct=0 THEN 1 ELSE 0 END)*1.0 / count(*)) DESC LIMIT 4")
-            .fetch_all(&self.pool).await {
-            for row in rows { if let Ok(name)=row.try_get::<String,_>("skill"){skills.push(name);} }
-        }
-        if skills.is_empty() {
-            if let Ok(rows)=sqlx::query("SELECT tag FROM flashcard_card_tags WHERE tag IN ('平均数增量','增量','基期','混合增长率','比重','综合分析与审题') GROUP BY tag ORDER BY count(*) DESC LIMIT 4")
-                .fetch_all(&self.pool).await {
-                for row in rows { if let Ok(name)=row.try_get::<String,_>("tag"){skills.push(name);} }
-            }
-        }
-        if skills.is_empty() {
-            skills = vec!["基期量".into(), "增长量".into(), "比重".into()];
-        }
-        skills
-    }
-    /// List current flashcard topics, without freezing the user's subject taxonomy in Rust.
-    pub async fn available_skills(&self) -> Result<Vec<String>, String> {
-        let rows = sqlx::query(
-            "SELECT DISTINCT deck_path FROM flashcards WHERE active=1 AND deck_path LIKE '资料/%'",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(as_error)?;
-        let mut result = std::collections::BTreeSet::new();
+        let rows = match sqlx::query(
+            "SELECT f.deck_path, COUNT(*) AS cards, COALESCE(SUM(rs.lapse_count),0) AS lapses
+             FROM flashcards f LEFT JOIN flashcard_review_state rs ON rs.card_id=f.id
+             WHERE f.active=1 GROUP BY f.deck_path",
+        ).fetch_all(&self.pool).await {
+            Ok(rows) => rows,
+            Err(_) => return Vec::new(),
+        };
+        let mut weights = std::collections::BTreeMap::<String, i64>::new();
         for row in rows {
-            let deck: String = row.try_get("deck_path").map_err(as_error)?;
-            let parts = deck
-                .split('/')
-                .filter(|p| !p.is_empty() && *p != "资料" && *p != "错题")
-                .collect::<Vec<_>>();
-            if let Some(name) = parts.last() {
-                if name.chars().count() <= 60 && *name != "cards.md" && *name != "card.md" {
-                    result.insert((*name).to_owned());
+            let Ok(deck) = row.try_get::<String,_>("deck_path") else {continue};
+            let Some(category)=wrong_question_category(&deck) else {continue};
+            let cards = row.try_get::<i64,_>("cards").unwrap_or(0);
+            let lapses = row.try_get::<i64,_>("lapses").unwrap_or(0);
+            *weights.entry(category.to_owned()).or_default() += cards + lapses * 3;
+        }
+        // Recent exercises supplement the wrong-card counts only when the
+        // model returned the exact directory category, not a guessed synonym.
+        if let Ok(rows)=sqlx::query(
+            "SELECT skill, SUM(CASE WHEN is_correct=0 THEN 1 ELSE 0 END) AS misses
+             FROM data_analysis_results GROUP BY skill"
+        ).fetch_all(&self.pool).await {
+            for row in rows {
+                let Ok(skill)=row.try_get::<String,_>("skill") else {continue};
+                if let Some(weight)=weights.get_mut(&skill) {
+                    *weight += row.try_get::<i64,_>("misses").unwrap_or(0) * 8;
                 }
             }
         }
-        Ok(result.into_iter().collect())
+        let mut ranked=weights.into_iter().collect::<Vec<_>>();
+        ranked.sort_by(|a,b|b.1.cmp(&a.1).then_with(||a.0.cmp(&b.0)));
+        ranked.into_iter().take(4).map(|(category,_)|category).collect()
+    }
+
+    /// Derive categories from "错题/<分类>" whether RK3568 mounted
+    /// flashcards/, flashcards/资料/, or the enclosing repository.
+    pub async fn available_skills(&self) -> Result<Vec<String>, String> {
+        let rows = sqlx::query(
+            "SELECT DISTINCT deck_path FROM flashcards WHERE active=1",
+        ).fetch_all(&self.pool).await.map_err(as_error)?;
+        let mut categories=std::collections::BTreeSet::new();
+        for row in rows {
+            let deck:String=row.try_get("deck_path").map_err(as_error)?;
+            if let Some(name)=wrong_question_category(&deck) {
+                categories.insert(name.to_owned());
+            }
+        }
+        Ok(categories.into_iter().collect())
     }
 
     pub async fn chosen_manual_skills(&self, requested: &[String]) -> Result<Vec<String>, String> {
@@ -651,7 +663,9 @@ impl DataAnalysisService {
         let prompt = format!(
             r#"你是 hyz 的公务员行测资料分析综合训练命题 Agent。当前任务是**题型驱动**，不是材料驱动。
 工作目录是 hyz-things 仓库。请先使用 hyz-xingce Skill（.agents/skills/行测做题/SKILL.md），
-按其中资料分析导航主动读取 references/资料分析.md 和 flashcards/资料/ 的相关做题方法与真实错题。
+按其中资料分析导航读取 references/资料分析.md，题型分类以 flashcards/资料/错题/ 的直接子目录名为准。
+对于本次自动推荐和手动选中的每个分类，进入 flashcards/资料/错题/<分类目录>/ 读取原始 cards.md 或 card.md 的命题变式、hyz 速算动作与易错点。
+每题 skill 使用对应的错题目录分类名；细分命题变式写进解析，不自行发明另一套基础公式标签。
 每次都是新建 Thread，必须基于这次工作树中的最新内容工作；不需要用户在提示词里复制卡片。
 本次是整套4篇×5题的第 {group_no} 篇；全卷软目标为12道薄弱点、6道其他核心考点、2道基础题，
 各篇尽量覆盖不同题型与命题变式，优先兼顾个人薄弱考点：{weaknesses}。
@@ -1110,9 +1124,36 @@ fn parse_official_sections_from(html: &str, source_url: &str) -> Vec<Material> {
     }
     result
 }
+/// The directory immediately beneath flashcards/资料/错题/ is the skill.
+/// The flashcard import root can point at flashcards/, 资料/ or 错题's parent.
+fn wrong_question_category(deck: &str) -> Option<&str> {
+    let parts=deck.split('/').filter(|part|!part.is_empty()).collect::<Vec<_>>();
+    let index=parts.iter().position(|part|*part=="错题")?;
+    let prefix=&parts[..index];
+    if prefix!=[] && prefix!=["资料"] && prefix!=["flashcards","资料"] {
+        return None;
+    }
+    let category=*parts.get(index+1)?;
+    if category.chars().count()>60 || category=="." || category==".." {
+        return None;
+    }
+    Some(category)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn uses_exact_wrong_question_subdirectories_as_skills(){
+        assert_eq!(wrong_question_category("资料/错题/乘积增长率"),Some("乘积增长率"));
+        assert_eq!(wrong_question_category("错题/混合增长率"),Some("混合增长率"));
+        assert_eq!(wrong_question_category("flashcards/资料/错题/综合分析与审题/小结"),Some("综合分析与审题"));
+        assert_eq!(wrong_question_category("资料/错题/平均数增量"),Some("平均数增量"));
+        assert_eq!(wrong_question_category("资料/错题"),None);
+        assert_eq!(wrong_question_category("资料/线段混合"),None);
+        assert_eq!(wrong_question_category("其他/错题/乘积增长率"),None);
+    }
+
     #[test]
     fn env_accepts_non_hex_token_without_a_fixed_length() {
         let value = "short-token-12";
