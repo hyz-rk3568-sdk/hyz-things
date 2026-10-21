@@ -6,7 +6,7 @@
 
 - 将流程由「先改写官方材料 → 从原文数字凑题 → Rust 验算」改为「Codex 读取 hyz Skill/Flashcard → 先规划5题型 → 构造自洽模拟数据 → 组织材料和四选一 → Codex 自检 → 应用展示」。
 - 当前保留每次4组×5题、20分钟、暂停/恢复、历史回看、同材料找数5题和跨模式去重。
-- 每组以独立 ephemeral Codex Thread 生成，最多4组并发；软目标全卷12道个人易错、6道其他核心、2道基础，按不同官方统计主题分组。Codex 可自主使用命令与其他可用工具，不强制 Python；采用完整权限、不提示审批模式，注意其对 PC 文件、网络和凭据的访问范围。
+- 每组以独立 ephemeral Codex Thread 生成，最多4组并发；软目标全卷12道个人易错、6道其他核心、2道基础，按不同官方统计主题分组。Codex 可在 read-only 沙盒中自主使用获准的读取、计算等工具，不强制 Python；保持非交互审批，不开放仓库写权限。
 - 使用电脑仓库 `.agents/skills/行测做题/SKILL.md` (name: `hyz-xingce`) 和 `flashcards/资料/` 的**当前文件**。不把卡片正文预先复制到 RK3568 的 Prompt；Codex 自主读取。
 - 允许构造模拟值；官方公报提供年份、主题、主体、指标、统计口径和写作风格，不声称模拟数值为国家统计局真实数据。网页与材料明确标识模拟训练。
 - Codex 直接返回 `question/options[4]/correct_index/answer/skill/evidence/explanation`；不再由 hyz-things 通过 `Operation` / `verify_recipe` 生成正确项、干扰项或验算。
@@ -24,7 +24,7 @@ HYZ_THINGS_CODEX_CWD=/home/<PC用户>/hyz_things
 - CWD 是**电脑上 Codex App Server 进程能够读取的真实绝对路径**，由 RK3568 后端原样作为 `thread/start.cwd` 发给 App Server；不在板端展开 `~` 或判断电脑目录是否存在。不能从浏览器传入 CWD。
 - 配置校验只允许绝对路径、禁止 `..` 及控制字符；必须同时配置 Token 与 CWD，避免隐式回退至 `/tmp`。
 - PC 上执行 `cd /home/<PC用户>/hyz_things && pwd -P` 确认真实目录，并确认 `AGENTS.md`、`.agents/skills/行测做题/SKILL.md`、`flashcards/资料/` 可读。PC 端按已有 `scripts/run-codex-app-server.sh` 启动。
-- 保持 `sandbox: "danger-full-access"`、`approvalPolicy: "never"`、`ephemeral: true`。Codex 在电脑端拥有完整文件读写、命令执行与网络权限，不经审批；客户端拒绝未知交互式 RPC 请求，但不限制正常工具执行。此模式无沙盒隔离，应确保只有受信任的操作者、仓库文件和 App Server 客户端可触发出题，保护工作电脑上的凭据与资料。
+- 保持 `sandbox: "read-only"`、`approvalPolicy: "never"`、`ephemeral: true`。Codex 可自主选择沙盒允许的读取与计算工具，客户端拒绝交互式写入/审批请求，不授予完整文件读写与网络权限。
 - 更新电脑工作树中的 Skill/Flashcard 后，**下一次新 Thread** 可读取新版；正在执行中的 Thread 不保证热更新，RK3568 单独更新卡片数据库不等于 PC 文件已同步。
 - 新出题结果使用 `QuestionGroup.version = 4`，旧版结果和练习历史保持兼容；旧版缓存不会被新生成器当成新题使用。
 
