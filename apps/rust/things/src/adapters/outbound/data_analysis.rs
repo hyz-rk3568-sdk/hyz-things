@@ -694,15 +694,21 @@ impl DataAnalysisService {
             for candidate in &batch.questions {
                 if !operand_visible(&shown_material.text, candidate.a)
                     || !operand_visible(&shown_material.text, candidate.b)
-                    || candidate.c.is_some_and(|c|!operand_visible(&shown_material.text,c))
-                    || candidate.d.is_some_and(|d|!operand_visible(&shown_material.text,d))
+                    || candidate
+                        .c
+                        .is_some_and(|c| !operand_visible(&shown_material.text, c))
+                    || candidate
+                        .d
+                        .is_some_and(|d| !operand_visible(&shown_material.text, d))
                     || !question_has_explicit_years(&candidate.question, source_year)
                 {
                     continue;
                 }
                 if let Ok(q) = verify_recipe(&material, candidate, result.len()) {
-                    let fingerprint =
-                        format!("{:?}|{}|{}|{:?}|{:?}", candidate.operation, candidate.a, candidate.b, candidate.c, candidate.d);
+                    let fingerprint = format!(
+                        "{:?}|{}|{}|{:?}|{:?}",
+                        candidate.operation, candidate.a, candidate.b, candidate.c, candidate.d
+                    );
                     if seen.insert(fingerprint) {
                         skill_types.insert(q.skill.clone());
                         result.push(q);
@@ -1357,13 +1363,16 @@ mod tests {
         assert_eq!(active.duration_seconds, 1200);
         assert!(active.deadline_at_ms.unwrap() > active.started_at_ms.unwrap());
         assert_eq!(active.answers.len(), 20);
-        let paused=service.pause_toggle(&run_id).await.expect("pause timer");
+        let paused = service.pause_toggle(&run_id).await.expect("pause timer");
         assert!(paused.paused_remaining_ms.is_some());
         assert!(paused.deadline_at_ms.is_none());
-        assert!(service.answer(&run_id, 1, 1).await.is_err(),"pausing blocks answers");
-        let reloaded=service.run(&run_id).await.expect("paused reload");
+        assert!(
+            service.answer(&run_id, 1, 1).await.is_err(),
+            "pausing blocks answers"
+        );
+        let reloaded = service.run(&run_id).await.expect("paused reload");
         assert!(reloaded.paused_remaining_ms.is_some());
-        let resumed=service.pause_toggle(&run_id).await.expect("resume timer");
+        let resumed = service.pause_toggle(&run_id).await.expect("resume timer");
         assert!(resumed.paused_remaining_ms.is_none());
         assert!(resumed.deadline_at_ms.is_some());
         service.answer(&run_id, 1, 1).await.expect("save an answer");
@@ -1380,13 +1389,13 @@ mod tests {
         );
         let replay = service.submit(&run_id).await.expect("idempotent result");
         assert_eq!(replay.correct, 1);
-        let entries=service.history().await.expect("history listing");
-        assert_eq!(entries.len(),1);
-        assert_eq!(entries[0].correct,1);
-        assert_eq!(entries[0].total,20);
-        let historical=service.result(&run_id).await.expect("historical review");
-        assert_eq!(historical.materials.len(),4);
-        assert_eq!(historical.questions.len(),20);
+        let entries = service.history().await.expect("history listing");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].correct, 1);
+        assert_eq!(entries[0].total, 20);
+        let historical = service.result(&run_id).await.expect("historical review");
+        assert_eq!(historical.materials.len(), 4);
+        assert_eq!(historical.questions.len(), 20);
         let (source_count, group_count) = service.counts().await.unwrap();
         assert_eq!((source_count, group_count), (1, 4));
     }
