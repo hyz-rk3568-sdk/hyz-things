@@ -35,6 +35,7 @@ struct StatusBody {
     cached_sources: i64,
     verified_groups: i64,
     weak_skills: Vec<String>,
+    preparing_job_id: Option<String>,
 }
 pub(super) async fn status(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if let Err(response) = authorize_sensitive_read(&state, &headers).await {
@@ -53,6 +54,7 @@ pub(super) async fn status(State(state): State<AppState>, headers: HeaderMap) ->
         cached_sources,
         verified_groups,
         weak_skills: service.weaknesses().await,
+        preparing_job_id: service.preparing_job().await,
     })
     .into_response()
 }
@@ -69,7 +71,9 @@ pub(super) async fn prepare(State(state): State<AppState>, headers: HeaderMap) -
     };
     match service.prepare().await {
         Ok(job_id) => Json(PrepareBody { job_id }).into_response(),
-        Err(_) => error("Codex Token 未配置或已有出题任务；请检查连接后重试"),
+        Err(reason) if reason.contains("正在执行") =>
+            error_json(StatusCode::CONFLICT,"study_prepare_busy","已有出题任务正在执行，请等待当前任务完成"),
+        Err(_) => error("Codex 配置不可用，请在设置中检查 Codex Token"),
     }
 }
 pub(super) async fn progress(
