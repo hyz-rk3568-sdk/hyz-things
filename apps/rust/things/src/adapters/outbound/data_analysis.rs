@@ -578,10 +578,7 @@ impl DataAnalysisService {
 
                 // Only the coordinator persists groups and updates the run,
                 // preserving the deterministic order selected before spawning.
-                for (slot, group) in ordered_results.into_iter().enumerate() {
-                    let Some(group) = group else {
-                        continue;
-                    };
+                for group in ordered_results.into_iter().flatten() {
                     {
                         sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES (?,?,?,?,?,?)")
                             .bind(Uuid::now_v7().to_string())
