@@ -9,7 +9,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::{Row, SqlitePool};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     os::unix::fs::MetadataExt,
     sync::Arc,
@@ -622,49 +622,34 @@ impl DataAnalysisService {
     }
     pub async fn submit(&self, id: &str) -> Result<RunResult, String> {
         let (groups, answers, status, _started) = self.fetch_row(id).await?;
-        if status != "submitted" {
-            let mut txn = self.pool.begin().await.map_err(as_error)?;
+        if groups.len()!=QUIZ_GROUPS || groups.iter().any(|g|g.questions.len()!=QUIZ_PER_GROUP) || answers.len()!=QUIZ_GROUPS*QUIZ_PER_GROUP {
+            return Err("训练题量错误，不能交卷".into());
+        }
+        let mut questions = Vec::with_capacity(QUIZ_GROUPS*QUIZ_PER_GROUP);
+        for (group_index, group) in groups.iter().enumerate() {
+            for (local_index, q) in group.questions.iter().enumerate() {
+                let index=group_index*QUIZ_PER_GROUP+local_index;
+                questions.push(GradedQuestion {
+                    number:index+1, chosen:answers[index], correct_index:q.correct_index,
+                    answer:q.answer.clone(), explanation:q.explanation.clone(),
+                    topic:group.material.topic.clone(),skill:q.skill.clone(),evidence:q.evidence.clone()
+                });
+            }
+        }
+        if status!="submitted" {
+            let mut txn=self.pool.begin().await.map_err(as_error)?;
             sqlx::query("UPDATE data_analysis_runs SET status='submitted',ended_at_ms=? WHERE id=? AND status!='submitted'")
                 .bind(now_ms()).bind(id).execute(&mut *txn).await.map_err(as_error)?;
-            for (idx, q) in groups
-                .iter()
-                .flat_map(|g| g.questions.iter().map(move |q| (g, q)))
-                .enumerate()
-            {
-                let (g, q) = q;
-                let is_correct = (answers[idx] == Some(q.correct_index)) as i64;
+            for q in &questions {
                 sqlx::query("INSERT OR IGNORE INTO data_analysis_results(run_id,question_no,topic,skill,is_correct,elapsed_ms) VALUES(?,?,?,?,?,?)")
-                    .bind(id).bind((idx+1) as i64).bind(&g.material.topic)
-                    .bind(&q.skill).bind(is_correct).bind(0i64)
+                    .bind(id).bind(q.number as i64).bind(&q.topic).bind(&q.skill)
+                    .bind((q.chosen==Some(q.correct_index)) as i64).bind(0i64)
                     .execute(&mut *txn).await.map_err(as_error)?;
             }
             txn.commit().await.map_err(as_error)?;
         }
-        let questions = groups
-            .iter()
-            .flat_map(|g| g.questions.iter().map(move |q| (g, q)))
-            .enumerate()
-            .map(|(index, (g, q))| GradedQuestion {
-                number: index + 1,
-                chosen: answers[index],
-                correct_index: q.correct_index,
-                answer: q.answer.clone(),
-                explanation: q.explanation.clone(),
-                topic: g.material.topic.clone(),
-                skill: q.skill.clone(),
-                evidence: q.evidence.clone(),
-            })
-            .collect::<Vec<_>>();
-        let correct = questions
-            .iter()
-            .filter(|q| q.chosen == Some(q.correct_index))
-            .count();
-        Ok(RunResult {
-            id: id.into(),
-            correct,
-            total: 20,
-            questions,
-        })
+        let correct=questions.iter().filter(|q|q.chosen==Some(q.correct_index)).count();
+        Ok(RunResult { id:id.into(),correct,total:QUIZ_GROUPS*QUIZ_PER_GROUP,questions })
     }
 }
 
