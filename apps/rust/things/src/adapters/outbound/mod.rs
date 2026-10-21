@@ -8,3 +8,5 @@ pub mod storage;
 pub mod tailscale;
 
 pub mod data_analysis;
+
+pub mod codex_app_server;

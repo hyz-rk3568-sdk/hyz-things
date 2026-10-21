@@ -332,7 +332,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     </div>
                     if let Some(info)=(*status).clone(){
                         <div class="text-sm text-base-content/65">
-                            {format!("官方资料缓存 {} 篇 · 合格材料组 {} 组 · 模型：{}",
+                            {format!("官方资料缓存 {} 篇 · 合格材料组 {} 组 · 出题引擎：{}",
                                 info.cached_sources,info.verified_groups,
                                 info.model.as_deref().unwrap_or("未配置"))}
                         </div>
@@ -350,7 +350,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         {if *busy {"出题中，请稍候…"} else {"✨ 智能出题并开始"}}
                     </button>
                     <p class="text-xs text-base-content/60">
-                        {"只在 RK3568 服务端配置 /userdata/hyz-things/.env 中的 URL、Key、Model；不会向 iPad 返回密钥。未通过校验的题不会进入正式训练。"}
+                        {"在 RK3568 的 /userdata/hyz-things/.env 配置 Codex WebSocket Token。电脑 192.168.8.202 需要运行已登录的 Codex App Server，未通过校验的题不会进入正式训练。"}
                     </p>
                 </div>
             </div>

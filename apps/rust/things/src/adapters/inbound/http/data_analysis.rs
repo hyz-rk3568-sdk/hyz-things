@@ -17,7 +17,7 @@ fn bad_request(msg: &str) -> Response {
     )
 }
 fn error(msg: &str) -> Response {
-    // Provider URLs, keys, prompts and raw responses must never be reflected.
+    // Codex tokens, prompts and raw responses must never be reflected.
     // Only the application-generated, bounded Chinese error category is returned.
     error_json(
         StatusCode::SERVICE_UNAVAILABLE,
@@ -69,7 +69,7 @@ pub(super) async fn prepare(State(state): State<AppState>, headers: HeaderMap) -
     };
     match service.prepare().await {
         Ok(job_id) => Json(PrepareBody { job_id }).into_response(),
-        Err(_) => error("AI 未配置或已有出题任务；请检查配置后重试"),
+        Err(_) => error("Codex Token 未配置或已有出题任务；请检查连接后重试"),
     }
 }
 pub(super) async fn progress(
