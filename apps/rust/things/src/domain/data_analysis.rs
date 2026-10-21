@@ -192,6 +192,9 @@ fn question_matches_operation(question: &str, operation: &Operation) -> bool {
         "减少多少", "减少约多少", "减少了多少", "增量", "比上年多多少",
         "比上年少多少", "比去年多多少", "比去年少多少"]
         .iter().any(|cue| question.contains(cue));
+    if asks_change && !matches!(operation,Operation::GrowthAmount | Operation::AverageGrowthAmount | Operation::Difference) {
+        return false;
+    }
     match operation {
         Operation::BasePeriod => !asks_change,
         Operation::GrowthAmount => asks_change,
