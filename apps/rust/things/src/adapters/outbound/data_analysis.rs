@@ -2,7 +2,7 @@
 //! All provider credentials are server-only; AI candidates must pass domain verification.
 use crate::domain::data_analysis::{
     verify_recipe, Material, QuestionRecipe, VerifiedQuestion, QUIZ_GROUPS, QUIZ_PER_GROUP,
-    QUIZ_SECONDS, SECTIONS, SOURCE_URL,
+    QUIZ_SECONDS, SECTIONS, SOURCE_URL, OFFICIAL_SOURCES,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -22,7 +22,7 @@ const ENV_PATH: &str = "/userdata/hyz-things/.env";
 const PROVIDER_LIMIT: usize = 128 * 1024;
 const MAX_DOCUMENT_BYTES: usize = 3 * 1024 * 1024;
 const MAX_CACHED_SECTION_CHARS: usize = 30000;
-const MAX_GENERATION_CHARS: usize = 1600;
+const MAX_GENERATION_CHARS: usize = 3000;
 
 #[derive(Clone)]
 pub struct AiConfig {
@@ -133,6 +133,8 @@ fn parse_env(input: &str) -> Result<Option<AiConfig>, &'static str> {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct QuestionGroup {
+    #[serde(default)]
+    pub version: u32,
     pub material: Material,
     pub questions: Vec<VerifiedQuestion>,
 }
@@ -307,60 +309,52 @@ impl DataAnalysisService {
         self.jobs.lock().await.get(id).cloned()
     }
     async fn load_sections(&self) -> Result<Vec<Material>, String> {
-        if let Some(cached) = sqlx::query_scalar::<_, String>(
-            "SELECT sections_json FROM data_analysis_sources WHERE url=?",
-        )
-        .bind(SOURCE_URL)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(as_error)?
-        {
-            if let Ok(values) = serde_json::from_str::<Vec<Material>>(&cached) {
-                if values.len() >= 4 {
-                    return Ok(values);
+        let mut sections = Vec::new();
+        let mut cached_urls = HashSet::new();
+        for (year,url) in OFFICIAL_SOURCES {
+            let row = sqlx::query_scalar::<_, String>(
+                "SELECT sections_json FROM data_analysis_sources WHERE url=?",
+            ).bind(url).fetch_optional(&self.pool).await.map_err(as_error)?;
+            if let Some(cached) = row {
+                if let Ok(values) = serde_json::from_str::<Vec<Material>>(&cached) {
+                    if values.len() >= 4 {
+                        cached_urls.insert(url);
+                        sections.extend(values);
+                    }
                 }
             }
+            let _ = year;
         }
-        let response = self
-            .client
-            .get(SOURCE_URL)
-            .send()
-            .await
-            .map_err(|_| "官方资料抓取失败；请检查 RK3568 出站 HTTPS 连接".to_owned())?;
-        if !response.status().is_success() {
-            return Err(format!(
-                "国家统计局网站返回 HTTP {}",
-                response.status().as_u16()
-            ));
+        // No outbound request is needed when all years have been cached.
+        // Native offline tests can use prepared groups without a public site.
+        if cached_urls.len() == OFFICIAL_SOURCES.len() || (cfg!(test) && sections.len() >= 4) {
+            return Ok(sections);
         }
-        if response.content_length().unwrap_or(0) > MAX_DOCUMENT_BYTES as u64 {
-            return Err("官方文章超过大小限制".into());
+        for (year,url) in OFFICIAL_SOURCES {
+            if cached_urls.contains(url) { continue; }
+            let Ok(response) = self.client.get(url).timeout(Duration::from_secs(15)).send().await else {
+                continue; // retain usable offline cached years
+            };
+            if !response.status().is_success() || response.content_length().unwrap_or(0) > MAX_DOCUMENT_BYTES as u64 {
+                continue;
+            }
+            let Ok(bytes) = response.bytes().await else {continue};
+            if bytes.len() > MAX_DOCUMENT_BYTES {continue;}
+            let Ok(html) = String::from_utf8(bytes.to_vec()) else {continue};
+            let values = parse_official_sections_from(&html,url);
+            if values.len() < 4 {continue;}
+            let hash = Sha256::digest(html.as_bytes()).iter()
+                .map(|byte|format!("{byte:02x}")).collect::<String>();
+            let encoded=serde_json::to_string(&values).map_err(as_error)?;
+            sqlx::query("INSERT INTO data_analysis_sources(url,title,content_hash,fetched_at_ms,sections_json) VALUES(?,?,?,?,?) ON CONFLICT(url) DO UPDATE SET content_hash=excluded.content_hash,fetched_at_ms=excluded.fetched_at_ms,sections_json=excluded.sections_json")
+                .bind(url).bind(format!("中华人民共和国{year}年国民经济和社会发展统计公报"))
+                .bind(hash).bind(now_ms()).bind(encoded)
+                .execute(&self.pool).await.map_err(as_error)?;
+            sections.extend(values);
         }
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|_| "官方文章读取失败".to_owned())?;
-        if bytes.len() > MAX_DOCUMENT_BYTES {
-            return Err("官方文章超过大小限制".into());
-        }
-        let html =
-            String::from_utf8(bytes.to_vec()).map_err(|_| "官方文章不是 UTF-8".to_owned())?;
-        let sections = parse_official_sections(&html);
         if sections.len() < 4 {
-            return Err(format!(
-                "官方文章仅解析出{}个可用文字章节，需要至少4个",
-                sections.len()
-            ));
+            return Err("年度官方资料不足，无法选出4组材料；请检查国家统计局网络连接".into());
         }
-        let hash = Sha256::digest(html.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
-        let serialized = serde_json::to_string(&sections).map_err(as_error)?;
-        sqlx::query("INSERT INTO data_analysis_sources(url,title,content_hash,fetched_at_ms,sections_json) VALUES(?,?,?,?,?) ON CONFLICT(url) DO UPDATE SET content_hash=excluded.content_hash,fetched_at_ms=excluded.fetched_at_ms,sections_json=excluded.sections_json")
-            .bind(SOURCE_URL).bind("中华人民共和国2025年国民经济和社会发展统计公报")
-            .bind(hash).bind(now_ms()).bind(serialized)
-            .execute(&self.pool).await.map_err(as_error)?;
         Ok(sections)
     }
     async fn generate(&self, job: &str) -> Result<String, String> {
@@ -474,6 +468,33 @@ impl DataAnalysisService {
             .bind(now_ms()).execute(&self.pool).await.map_err(as_error)?;
         Ok(id)
     }
+    /// Read a small set of hyz's actual wrong questions as question-form
+    /// patterns. Historical numbers are masked before reaching the AI provider.
+    /// These are never treated as official statistical evidence.
+    async fn wrong_question_patterns(&self, skills:&[String]) -> Vec<String> {
+        let rows=sqlx::query(
+            "SELECT f.deck_path, f.front_markdown, f.back_markdown FROM flashcards f \
+             WHERE f.active=1 AND f.deck_path LIKE '资料/错题/%' \
+             AND EXISTS (SELECT 1 FROM flashcard_card_tags t WHERE t.card_id=f.id AND t.tag='错题') \
+             ORDER BY f.updated_at_ms DESC LIMIT 80"
+        ).fetch_all(&self.pool).await;
+        let Ok(rows)=rows else {return Vec::new()};
+        let mut examples=rows.into_iter().filter_map(|row|{
+            let deck:String=row.try_get("deck_path").ok()?;
+            let front:String=row.try_get("front_markdown").ok()?;
+            let back:String=row.try_get("back_markdown").ok()?;
+            let skill=deck.rsplit('/').next()?.to_owned();
+            if front.chars().count()<20 || front.starts_with("- 放弃") {return None;}
+            Some((skill,mask_wrong_question(&front,280),mask_wrong_question(&back,220)))
+        }).collect::<Vec<_>>();
+        examples.sort_by_key(|(skill,_,_)| {
+            skills.iter().position(|target|skill.contains(target.as_str()) || target.contains(skill.as_str()))
+                .unwrap_or(usize::MAX)
+        });
+        examples.into_iter().take(6).map(|(skill,front,back)|{
+            format!("题型/{skill}；旧题问法（遮蔽数值）：{front}；原复盘提示（仅参考）：{back}")
+        }).collect()
+    }
     async fn generate_group(
         &self,
         material: &Material,
@@ -488,12 +509,18 @@ impl DataAnalysisService {
         .await
         .map_err(as_error)?;
         let material = generation_excerpt(material, earlier.max(0) as usize);
-        let system="你是公务员资料分析命题助手。只使用用户提供的真实官方统计段落。输出严格JSON对象：{\"questions\":[{\"question\":\"...\",\"evidence\":\"从原文完整原样复制至少15字且包含a和b两个数字的连续片段\",\"operation\":\"base_period|growth_amount|growth_rate|share|average|difference|ratio\",\"a\":数值,\"b\":数值,\"unit\":\"亿元|万吨|%等\",\"explanation\":\"简短速算解析\"}]}。请生成10道不同候选题；base_period和growth_amount里 a 是现期量，b 是同比增长率（百分数，下降时为负）。growth_rate里a现期量b基期量；share a部分量b总体量；average/ratio是a除以b；difference是a减去b。题干必须有唯一答案，标注'约'，不得自行补充原文没有的数字，不得把不同口径指标相除。不要生成题外文字，不返回标准选项。";
+        let wrong_patterns=self.wrong_question_patterns(weaknesses).await;
+        let source_year = OFFICIAL_SOURCES.iter()
+            .find(|(_,url)| *url == material.source_url)
+            .map(|(year,_)|*year).unwrap_or(2025);
+        let system = r#"你是一名公务员行测资料分析命题编辑。请基于提供的政府统计原文，改写成一份紧凑、可做5道题的“国考风格文字资料”，然后出10道候选题（最终只择优保留5道）。必须返回单个严格JSON对象：
+{"material_text":"改写后的正式材料全文","questions":[{"question":"符合国考资料分析习惯的题干","evidence":"原文中连续复制且包含a、b两个数字的原始证据，至少15字","operation":"base_period|growth_amount|growth_rate|share|average|difference|ratio","a":1234,"b":5.6,"unit":"万吨","explanation":"简短、可复核的速算提示"}]}
+材料：请按统计口径提炼、适度调整顺序和句式、适当分段，保留必要数值、单位、年份；不要逐字照抄，也不能编造、推测或转换新增任何统计数值。全文约200至1000汉字，按考试常见材料组织，不要用新闻宣传口吻。最多只出现给定年份和原文已有的数字。每道题使用的a、b必须在“改写材料”中可见，evidence必须是从官方原文逐字摘取的连续片段。
+命题：每份正式材料至少能覆盖3种不同的计算考点，尽量包括基期、增量、比重、倍数、平均数及比较判断，围绕不同指标提问。题干优先“根据上述资料，……约为多少”“与上年相比……”“……占……的比重约为……”等公考式表述；不得使用“求”“按同比增长率估算”等课堂口吻；不要泄漏公式和答案。growth_amount、base_period的a=现期量、b=增长率百分数（下降是负数）；growth_rate的a=现期、b=基期；share的a=部分、b=总体；average/ratio a/b；difference a-b。不要混用统计口径、年份或量纲；不提供选项，选项由程序独立计算。不得引用没有出现在改写材料中的数字。"#
+            ;
         let user = format!(
-            "材料原文：{}\n章节：{}\n重点训练考点：{}\n请从这一段材料生成10道不同的候选题。",
-            material.text,
-            material.section,
-            weaknesses.join("、")
+            "官方{}年统计公报资料（唯一可用统计事实）：\n{}\n资料主题：{} → {}\n优先考点：{}\n【用户错题仅供参考命题问法、干扰项和复盘方法，不可作为数值来源】\n{}\n请按用户错题中出现过的题型生成国考风格的新材料及10道变式候选题，不能照抄旧题。",
+            source_year, material.text, material.topic, material.subtopic, weaknesses.join("、"), wrong_patterns.join("\n")
         );
         let payload = json!({"model":config.model,"temperature":0.4,"response_format":{"type":"json_object"},
             "messages":[{"role":"system","content":system},{"role":"user","content":user}]});
@@ -531,31 +558,36 @@ impl DataAnalysisService {
                 .ok_or("AI 响应缺少 message.content")?;
             #[derive(Deserialize)]
             struct Batch {
+                material_text: String,
                 questions: Vec<QuestionRecipe>,
             }
-            let batch: Batch =
-                serde_json::from_str(content).map_err(|_| "AI 题目 JSON 结构无效".to_owned())?;
-            let mut result = Vec::new();
-            let mut seen = HashSet::new();
+            let batch: Batch = serde_json::from_str(content)
+                .map_err(|_| "AI 返回缺少改写材料或题目字段".to_owned())?;
+            if !grounded_exam_material(&material.text, &batch.material_text, source_year) {
+                last_reason = format!("「{}」改写材料有无来源的数值或不符合篇幅要求",material.section);
+                continue;
+            }
+            let mut shown_material=material.clone();
+            shown_material.text=batch.material_text;
+            let mut result=Vec::new();
+            let mut seen=HashSet::new();
+            let mut skill_types=HashSet::new();
             for candidate in &batch.questions {
-                if let Ok(q) = verify_recipe(&material, candidate, result.len()) {
-                    let fingerprint = format!(
-                        "{}:{:?}:{}:{}",
-                        q.evidence, candidate.operation, candidate.a, candidate.b
-                    );
+                if !operand_visible(&shown_material.text,candidate.a)
+                    || !operand_visible(&shown_material.text,candidate.b) {
+                    continue;
+                }
+                if let Ok(q)=verify_recipe(&material,candidate,result.len()) {
+                    let fingerprint = format!("{:?}|{}|{}",candidate.operation,candidate.a,candidate.b);
                     if seen.insert(fingerprint) {
+                        skill_types.insert(q.skill.clone());
                         result.push(q);
                     }
                 }
-                if result.len() == QUIZ_PER_GROUP {
-                    break;
-                }
+                if result.len()==QUIZ_PER_GROUP {break;}
             }
-            if result.len() == QUIZ_PER_GROUP {
-                return Ok(QuestionGroup {
-                    material: material.clone(),
-                    questions: result,
-                });
+            if result.len()==QUIZ_PER_GROUP && skill_types.len() >= 3 {
+                return Ok(QuestionGroup {version:2,material:shown_material,questions:result});
             }
             last_reason = format!("「{}」只通过 {}/5 题校验", material.section, result.len());
         }
@@ -676,6 +708,53 @@ impl DataAnalysisService {
     }
 }
 
+/// A rewritten material must never introduce a fresh quantitative datum.
+/// The only new year label permitted is the known source publication year.
+fn mask_wrong_question(value:&str,limit:usize)->String {
+    let mut out=String::new();
+    let mut number=false;
+    for c in value.chars().take(limit) {
+        if c.is_ascii_digit() || number && (c=='.' || c=='%' || c==',') {
+            if !number {out.push('□');}
+            number=true;
+        } else {
+            number=false;
+            if c=='\n' {out.push(' ')}else{out.push(c)}
+        }
+    }
+    out
+}
+fn numeric_tokens(text: &str) -> Vec<f64> {
+    let mut out=Vec::new();
+    let mut word=String::new();
+    for c in text.chars().chain(std::iter::once(' ')) {
+        if c.is_ascii_digit() || c=='.' && !word.is_empty() {
+            word.push(c);
+        } else if !word.is_empty() {
+            if let Ok(v)=word.parse::<f64>() {
+                if v.is_finite() {out.push(v);}
+            }
+            word.clear();
+        }
+    }
+    out
+}
+fn operand_visible(text:&str,value:f64)->bool {
+    let value=value.abs();
+    numeric_tokens(text).iter().any(|v| (v-value).abs()<0.0001)
+}
+fn grounded_exam_material(source:&str,rewritten:&str,year:u16)->bool {
+    let n=rewritten.chars().count();
+    if !(100..=1800).contains(&n) || source.trim()==rewritten.trim() {return false;}
+    let original=numeric_tokens(source);
+    let rewritten_values=numeric_tokens(rewritten);
+    if rewritten_values.len()<4 {return false;}
+    rewritten_values.iter().all(|v| {
+        (*v-year as f64).abs()<0.001 ||
+        original.iter().any(|known|(known-v).abs()<0.0001)
+    })
+}
+
 /// Keep complete per-chapter official text in SQLite, but pass one bounded
 /// paragraph-coherent fragment to the AI and the iPad. Repeated generation can
 /// rotate over different paragraphs without re-fetching the official source.
@@ -775,6 +854,9 @@ fn compact_heading(raw: &str) -> String {
 /// Do not accept tables or images as the first-generation source. Retain the
 /// official section and a fixed topic, with a material snapshot per section.
 pub fn parse_official_sections(html: &str) -> Vec<Material> {
+    parse_official_sections_from(html, SOURCE_URL)
+}
+fn parse_official_sections_from(html: &str, source_url: &str) -> Vec<Material> {
     let dom = scraper::Html::parse_document(html);
     let selector = match scraper::Selector::parse("p") {
         Ok(s) => s,
@@ -825,7 +907,7 @@ pub fn parse_official_sections(html: &str) -> Vec<Material> {
                 topic: (*topic).into(),
                 subtopic: subtopic.into(),
                 text,
-                source_url: SOURCE_URL.into(),
+                source_url: source_url.into(),
             });
         }
     }
@@ -894,6 +976,7 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             let group = QuestionGroup {
+                version: 2,
                 material: material.clone(),
                 questions,
             };
@@ -947,6 +1030,16 @@ mod tests {
         assert_eq!((source_count, group_count), (1, 4));
     }
 
+    #[test]
+    fn wrong_question_templates_mask_original_numbers() {
+        let masked=mask_wrong_question(
+            "2023年末，粮食产量71488万吨，同比增长1.2%。能够从资料中推出的是",
+            200,
+        );
+        assert!(!masked.contains("71488"));
+        assert!(!masked.contains("2023"));
+        assert!(masked.contains("能够从资料中推出的是"));
+    }
     #[test]
     fn complete_official_text_is_cached_while_generation_is_bounded() {
         let first = "全年粮食产量71488万吨，比上年增加838万吨。";
