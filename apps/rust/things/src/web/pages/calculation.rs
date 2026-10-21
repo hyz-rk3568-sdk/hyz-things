@@ -266,8 +266,7 @@ fn make_question(seed: &mut u64, kind: CalculationKind) -> CalculationQuestion {
                     ),
                     current_scaled * p,
                     1000 * growth_factor,
-                    #[cfg(test)]
-            is_negative,
+                    is_negative,
                 )
             }
         };
@@ -297,6 +296,7 @@ fn make_question(seed: &mut u64, kind: CalculationKind) -> CalculationQuestion {
             numerator,
             #[cfg(test)]
             denominator,
+            #[cfg(test)]
             is_negative,
             kind,
             tip: kind.tip(),
