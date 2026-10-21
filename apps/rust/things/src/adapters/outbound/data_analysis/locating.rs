@@ -68,8 +68,14 @@ pub(super) fn material_key(material: &Material) -> String {
     // Old official-derived papers preserve their historical exposure identity.
     // Simulated scenarios are independent even when based on the same official
     // chapter. Repeat exposures of identical scenarios still share a key.
-    if material.text.starts_with("【模拟训练数据，非官方发布数值】") {
-        return format!("simulated\u{1f}{:x}", sha2::Sha256::digest(material.text.as_bytes()));
+    if material
+        .text
+        .starts_with("【模拟训练数据，非官方发布数值】")
+    {
+        return format!(
+            "simulated\u{1f}{:x}",
+            sha2::Sha256::digest(material.text.as_bytes())
+        );
     }
     format!("{}\u{1f}{}", material.source_url, material.section)
 }
@@ -557,14 +563,13 @@ mod tests {
         assert_eq!(material_key(&m), key);
     }
     #[test]
-    fn simulated_papers_with_same_official_reference_are_distinct(){
-        let mut m=material();
-        m.text="【模拟训练数据，非官方发布数值】\n2024年企业收入100万元。".into();
-        let first=material_key(&m);
-        m.text="【模拟训练数据，非官方发布数值】\n2024年企业收入200万元。".into();
-        assert_ne!(material_key(&m),first);
-        let repeated=material_key(&m);
-        assert_eq!(repeated,material_key(&m));
+    fn simulated_papers_with_same_official_reference_are_distinct() {
+        let mut m = material();
+        m.text = "【模拟训练数据，非官方发布数值】\n2024年企业收入100万元。".into();
+        let first = material_key(&m);
+        m.text = "【模拟训练数据，非官方发布数值】\n2024年企业收入200万元。".into();
+        assert_ne!(material_key(&m), first);
+        let repeated = material_key(&m);
+        assert_eq!(repeated, material_key(&m));
     }
-
 }
