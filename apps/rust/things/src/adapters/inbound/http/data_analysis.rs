@@ -70,10 +70,10 @@ struct ComprehensivePrepareRequest {
     manual_skills: Vec<String>,
 }
 pub(super) async fn prepare(
-    State(state):State<AppState>,
-    headers:HeaderMap,
-    Json(body):Json<ComprehensivePrepareRequest>,
-)->Response {
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<ComprehensivePrepareRequest>,
+) -> Response {
     if let Err(response) = authorize_sensitive_control(&state, &headers).await {
         return response;
     }
