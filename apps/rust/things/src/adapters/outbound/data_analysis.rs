@@ -1,11 +1,11 @@
-//! Native-only official-text caching and OpenAI-compatible question preparation.
-//! All provider credentials are server-only; AI candidates must pass domain verification.
+//! Native-only official-text caching and Codex App Server question preparation.
+//! Only verified numerical recipes are admitted into the training database.
+use super::codex_app_server::{CodexSession, TURN_TIMEOUT};
 use crate::domain::data_analysis::{
     verify_recipe, Material, QuestionRecipe, VerifiedQuestion, OFFICIAL_SOURCES, QUIZ_GROUPS,
     QUIZ_PER_GROUP, QUIZ_SECONDS, SECTIONS, SOURCE_URL,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::{Row, SqlitePool};
 use std::{
@@ -19,79 +19,23 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 const ENV_PATH: &str = "/userdata/hyz-things/.env";
-const PROVIDER_LIMIT: usize = 128 * 1024;
 const MAX_DOCUMENT_BYTES: usize = 3 * 1024 * 1024;
 const MAX_CACHED_SECTION_CHARS: usize = 30000;
 const MAX_GENERATION_CHARS: usize = 3000;
 
 #[derive(Clone)]
-pub struct AiConfig {
-    pub base_url: String,
-    pub model: String,
-    api_key: String,
+pub struct CodexConfig {
+    // Fixed-address LAN authentication only; this is NOT the ChatGPT OAuth token.
+    token: String,
 }
 
-impl AiConfig {
-    fn parse_pairs(pairs: &HashMap<String, String>) -> Result<Option<Self>, &'static str> {
-        let base = pairs
-            .get("HYZ_THINGS_AI_BASE_URL")
-            .map(String::as_str)
-            .unwrap_or("");
-        let key = pairs
-            .get("HYZ_THINGS_AI_API_KEY")
-            .map(String::as_str)
-            .unwrap_or("");
-        let model = pairs
-            .get("HYZ_THINGS_AI_MODEL")
-            .map(String::as_str)
-            .unwrap_or("");
-        if base.is_empty() && key.is_empty() && model.is_empty() {
-            return Ok(None);
-        }
-        if base.is_empty()
-            || key.is_empty()
-            || model.is_empty()
-            || base.len() > 500
-            || key.len() > 1024
-            || model.len() > 120
-        {
-            return Err("AI configuration is missing a valid URL, Key, or Model");
-        }
-        let parsed = url::Url::parse(base).map_err(|_| "AI URL is invalid")?;
-        if parsed.scheme() != "https"
-            || parsed.host_str().is_none()
-            || !parsed.username().is_empty()
-            || parsed.password().is_some()
-            || parsed.query().is_some()
-            || parsed.fragment().is_some()
-        {
-            return Err("AI URL must be HTTPS without credentials, query or fragment");
-        }
-        if key.chars().any(char::is_whitespace) || model.chars().any(char::is_whitespace) {
-            return Err("AI Key or Model contains whitespace");
-        }
-        Ok(Some(Self {
-            base_url: base.trim_end_matches('/').to_owned(),
-            api_key: key.to_owned(),
-            model: model.to_owned(),
-        }))
-    }
-    fn completion_url(&self) -> String {
-        let root = self.base_url.trim_end_matches('/');
-        if root.ends_with("/chat/completions") {
-            root.to_owned()
-        } else {
-            format!("{root}/chat/completions")
-        }
-    }
-}
-
-/// Fixed root-owned configuration path: no cwd-dependent dotenv behavior.
-pub fn load_ai_env() -> Result<Option<AiConfig>, &'static str> {
+/// Root-only .env file. Ignore unrelated configuration rather than accepting
+/// user-supplied URLs, model IDs, or legacy OpenAI-compatible credentials.
+pub fn load_codex_env() -> Result<Option<CodexConfig>, &'static str> {
     let meta = match fs::symlink_metadata(ENV_PATH) {
         Ok(meta) => meta,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(_) => return Err("AI configuration cannot be read"),
+        Err(_) => return Err("Codex .env cannot be read"),
     };
     if !meta.is_file()
         || meta.file_type().is_symlink()
@@ -99,36 +43,36 @@ pub fn load_ai_env() -> Result<Option<AiConfig>, &'static str> {
         || meta.mode() & 0o077 != 0
         || meta.len() > 16 * 1024
     {
-        return Err("AI .env must be a root-owned 0600 regular file");
+        return Err("Codex .env must be a root-owned 0600 regular file");
     }
-    let input = fs::read_to_string(ENV_PATH).map_err(|_| "AI configuration cannot be read")?;
+    let input = fs::read_to_string(ENV_PATH).map_err(|_| "Codex .env cannot be read")?;
     parse_env(&input)
 }
-fn parse_env(input: &str) -> Result<Option<AiConfig>, &'static str> {
-    let mut pairs = HashMap::new();
+
+fn parse_env(input: &str) -> Result<Option<CodexConfig>, &'static str> {
+    let mut token = None;
     for line in input.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
         let (key, value) = line.split_once('=').ok_or("Invalid .env entry")?;
-        let key = key.trim();
-        if !matches!(
-            key,
-            "HYZ_THINGS_AI_BASE_URL" | "HYZ_THINGS_AI_API_KEY" | "HYZ_THINGS_AI_MODEL"
-        ) {
+        if key.trim() != "HYZ_THINGS_CODEX_WS_TOKEN" {
             continue;
+        }
+        if token.is_some() {
+            return Err("Duplicate Codex Token");
         }
         let mut value = value.trim();
         if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
             value = &value[1..value.len() - 1];
         }
-        if value.contains('\n') || value.contains('\r') {
-            return Err("Invalid AI env value");
+        if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err("Codex WS Token must contain 64 hex characters");
         }
-        pairs.insert(key.to_owned(), value.to_owned());
+        token = Some(value.to_owned());
     }
-    AiConfig::parse_pairs(&pairs)
+    Ok(token.map(|token| CodexConfig { token }))
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -190,7 +134,7 @@ pub struct PrepareProgress {
 #[derive(Clone)]
 pub struct DataAnalysisService {
     pool: SqlitePool,
-    config: Option<AiConfig>,
+    config: Option<CodexConfig>,
     client: reqwest::Client,
     jobs: Arc<Mutex<HashMap<String, PrepareProgress>>>,
     gate: Arc<tokio::sync::Semaphore>,
@@ -207,7 +151,7 @@ fn as_error(error: impl std::fmt::Display) -> String {
 }
 
 impl DataAnalysisService {
-    pub fn new(pool: SqlitePool, config: Option<AiConfig>) -> Result<Self, String> {
+    pub fn new(pool: SqlitePool, config: Option<CodexConfig>) -> Result<Self, String> {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(48))
             .redirect(reqwest::redirect::Policy::limited(2))
@@ -222,7 +166,7 @@ impl DataAnalysisService {
         })
     }
     pub fn configured_model(&self) -> Option<String> {
-        self.config.as_ref().map(|x| x.model.clone())
+        self.config.as_ref().map(|_| "Codex App Server".to_owned())
     }
     pub async fn counts(&self) -> Result<(i64, i64), String> {
         let sources = sqlx::query_scalar::<_, i64>("SELECT count(*) FROM data_analysis_sources")
@@ -254,7 +198,9 @@ impl DataAnalysisService {
     }
     pub async fn prepare(&self) -> Result<String, String> {
         if self.config.is_none() {
-            return Err("请在 RK3568 .env 配置 AI URL、Key、Model 并重启服务".into());
+            return Err(
+                "请在 RK3568 的 /userdata/hyz-things/.env 配置 Codex WebSocket Token".into(),
+            );
         }
         if self.gate.available_permits() == 0 {
             return Err("已有综合出题任务正在执行，请稍后重试".into());
@@ -473,12 +419,6 @@ impl DataAnalysisService {
                         Ok(group) => group,
                         Err(err) => {
                             last_error = err;
-                            if last_error.contains("HTTP 401")
-                                || last_error.contains("HTTP 403")
-                                || last_error.contains("HTTP 429")
-                            {
-                                break;
-                            }
                             continue;
                         }
                     };
@@ -569,7 +509,7 @@ impl DataAnalysisService {
         material: &Material,
         weaknesses: &[String],
     ) -> Result<QuestionGroup, String> {
-        let config = self.config.as_ref().ok_or("AI 未配置")?;
+        let config = self.config.as_ref().ok_or("Codex Token 未配置")?;
         let earlier = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM data_analysis_groups WHERE section=?",
         )
@@ -592,47 +532,38 @@ impl DataAnalysisService {
             "官方{}年统计公报资料（唯一可用统计事实）：\n{}\n资料主题：{} → {}\n优先考点：{}\n【用户错题仅供参考命题问法、干扰项和复盘方法，不可作为数值来源】\n{}\n仅参考用户错题中的数值计算题型、易错口径和速算方法，生成国考风格的新材料及恰好5道数值计算变式题；忽略综合判断题型，不能照抄旧题。",
             source_year, material.text, material.topic, material.subtopic, weaknesses.join("、"), wrong_patterns.join("\n")
         );
-        let payload = json!({"model":config.model,"temperature":0.4,"response_format":{"type":"json_object"},
-            "messages":[{"role":"system","content":system},{"role":"user","content":user}]});
+        // One ephemeral remote thread per material. Retry the rejected batch as a
+        // second turn in the SAME thread, supplying only validation reasons.
+        let mut session = tokio::time::timeout(
+            Duration::from_secs(12),
+            CodexSession::connect(&config.token),
+        )
+        .await
+        .map_err(|_| "连接 Codex App Server 超时".to_owned())??;
         let mut last_reason = String::new();
-        for _ in 0..2 {
-            let response = self
-                .client
-                .post(config.completion_url())
-                .bearer_auth(&config.api_key)
-                .json(&payload)
-                .send()
+        for round in 0..2 {
+            let prompt = if round == 0 {
+                format!("{system}\n\n{user}\n\n只输出符合 JSON Schema 的完整对象，不调用工具或修改文件。")
+            } else {
+                format!(
+                    "上次出题未通过 RK3568 的确定性验证：{last_reason}。请根据本轮对话给出的官方资料重新生成完整的一组5道数值计算题，修正全部验证错误，只返回 JSON；不得新增统计数据。"
+                )
+            };
+            let content = tokio::time::timeout(TURN_TIMEOUT, session.turn(&prompt))
                 .await
-                .map_err(|_| "AI 服务网络请求失败或超时".to_owned())?;
-            if !response.status().is_success() {
-                return Err(format!(
-                    "AI 服务返回 HTTP {}；请检查模型、额度和密钥",
-                    response.status().as_u16()
-                ));
-            }
-            if response.content_length().unwrap_or(0) > PROVIDER_LIMIT as u64 {
-                return Err("AI 响应超过大小限制".into());
-            }
-            let bytes = response
-                .bytes()
-                .await
-                .map_err(|_| "AI 响应读取失败".to_owned())?;
-            if bytes.len() > PROVIDER_LIMIT {
-                return Err("AI 响应超过大小限制".into());
-            }
-            let doc: serde_json::Value =
-                serde_json::from_slice(&bytes).map_err(|_| "AI 响应不是 JSON".to_owned())?;
-            let content = doc
-                .pointer("/choices/0/message/content")
-                .and_then(|x| x.as_str())
-                .ok_or("AI 响应缺少 message.content")?;
+                .map_err(|_| "Codex 出题超时，请检查电脑服务与账号额度".to_owned())??;
             #[derive(Deserialize)]
             struct Batch {
                 material_text: String,
                 questions: Vec<QuestionRecipe>,
             }
-            let batch: Batch = serde_json::from_str(content)
-                .map_err(|_| "AI 返回缺少改写材料或题目字段".to_owned())?;
+            let batch: Batch = match serde_json::from_str(&content) {
+                Ok(batch) => batch,
+                Err(_) => {
+                    last_reason = "Codex JSON 结构不符合题目格式".into();
+                    continue;
+                }
+            };
             if batch.questions.len() != QUIZ_PER_GROUP {
                 last_reason = format!(
                     "「{}」AI 返回 {} 题，要求每组恰好 {} 题",
@@ -681,7 +612,7 @@ impl DataAnalysisService {
             }
             last_reason = format!("「{}」只通过 {}/5 题校验", material.section, result.len());
         }
-        Err(format!("{last_reason}；请重试生成或更换兼容模型"))
+        Err(format!("{last_reason}；Codex 修复后仍未通过校验"))
     }
     async fn fetch_row(
         &self,
@@ -1020,15 +951,22 @@ fn parse_official_sections_from(html: &str, source_url: &str) -> Vec<Material> {
 mod tests {
     use super::*;
     #[test]
-    fn credentials_are_not_reflected_and_endpoint_uses_base_path() {
-        let env=parse_env("HYZ_THINGS_AI_BASE_URL=https://api.deepseek.com/v1\nHYZ_THINGS_AI_API_KEY=secret-key\nHYZ_THINGS_AI_MODEL=my-model\n").unwrap().unwrap();
-        assert_eq!(
-            env.completion_url(),
-            "https://api.deepseek.com/v1/chat/completions"
+    fn token_is_the_only_supported_model_credential() {
+        let sample = format!(
+            "HYZ_THINGS_AI_BASE_URL=https://api.deepseek.com\nHYZ_THINGS_AI_API_KEY=legacy\nHYZ_THINGS_AI_MODEL=legacy\nHYZ_THINGS_CODEX_WS_TOKEN={}\n",
+            "a".repeat(64)
         );
-        assert_eq!(env.model, "my-model");
-        assert!(!format!("{:?}", env.model).contains("secret-key"));
-        assert!(parse_env("HYZ_THINGS_AI_BASE_URL=http://localhost:9999\nHYZ_THINGS_AI_API_KEY=x\nHYZ_THINGS_AI_MODEL=m").is_err());
+        let config = parse_env(&sample).unwrap().unwrap();
+        assert_eq!(config.token.len(), 64);
+        assert!(parse_env("HYZ_THINGS_AI_BASE_URL=https://api.deepseek.com")
+            .unwrap()
+            .is_none());
+        assert!(parse_env("HYZ_THINGS_CODEX_WS_TOKEN=invalid").is_err());
+        assert!(parse_env(&format!(
+            "HYZ_THINGS_CODEX_WS_TOKEN={0}\nHYZ_THINGS_CODEX_WS_TOKEN={0}",
+            "a".repeat(64)
+        ))
+        .is_err());
     }
     #[tokio::test]
     async fn cached_official_groups_support_full_twenty_question_lifecycle() {
@@ -1093,8 +1031,9 @@ mod tests {
                 .execute(&pool).await.unwrap();
         }
 
-        let config = parse_env("HYZ_THINGS_AI_BASE_URL=https://api.deepseek.com\nHYZ_THINGS_AI_API_KEY=offline-test-only\nHYZ_THINGS_AI_MODEL=offline-test-model")
-            .unwrap().unwrap();
+        let config = parse_env(&format!("HYZ_THINGS_CODEX_WS_TOKEN={}", "a".repeat(64)))
+            .unwrap()
+            .unwrap();
         let service = DataAnalysisService::new(pool, Some(config)).unwrap();
         let id = service.prepare().await.expect("start generation");
         let mut run_id = None;

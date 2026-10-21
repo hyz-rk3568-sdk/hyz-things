@@ -1328,6 +1328,7 @@ name = "hyz-things"
 version = "0.1.0"
 dependencies = [
  "argon2",
+ "base64",
  "async-trait",
  "axum",
  "chrono",
@@ -1346,6 +1347,7 @@ dependencies = [
  "scraper",
  "serde",
  "serde_json",
+ "sha1",
  "sha2 0.11.0",
  "socket2",
  "sqlx",

@@ -7,7 +7,7 @@ use hyz_things::{
         outbound::{
             admin::AdminFileAdapter,
             camera::CameraUnixAdapter,
-            data_analysis::{load_ai_env, DataAnalysisService},
+            data_analysis::{load_codex_env, DataAnalysisService},
             flashcard_source::FilesystemFlashcardSource,
             flashcard_sqlite::SqliteFlashcardRepository,
             registry::RegistryAdapter,
@@ -110,7 +110,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         match SqliteFlashcardRepository::connect(FLASHCARD_DB_PATH).await {
             Ok(repository) => {
                 let source = Arc::new(FilesystemFlashcardSource::default());
-                let ai_config = load_ai_env().unwrap_or(None);
+                let ai_config = load_codex_env().unwrap_or(None);
                 let data_analysis = DataAnalysisService::new(repository.pool().clone(), ai_config)
                     .ok()
                     .map(Arc::new);
