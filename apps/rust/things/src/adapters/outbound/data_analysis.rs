@@ -623,9 +623,9 @@ impl DataAnalysisService {
             .map(|(year, _)| *year)
             .unwrap_or(2025);
         let system = r#"你是一名公务员行测资料分析命题编辑。请基于提供的政府统计原文，改写成一份紧凑、可做5道题的“国考风格文字资料”，然后恰好生成5道数值计算题，每道题都应有独立的计算依据。必须返回单个严格JSON对象：
-{"material_text":"改写后的正式材料全文","questions":[{"question":"包含明确统计年份与比较年份的国考资料分析题干","evidence":"原文中连续复制且包含a、b两个数字的原始证据，至少15字","operation":"base_period|growth_amount|growth_rate|average_growth_rate|share|average|difference|ratio","a":1234,"b":5.6,"unit":"万吨","explanation":"简短、可复核的速算提示"}]}
+{"material_text":"改写后的正式材料全文","questions":[{"question":"包含明确统计年份与比较年份的国考资料分析题干","evidence":"原文中连续复制且包含a、b两个数字的原始证据，至少15字","operation":"base_period|growth_amount|growth_rate|average_growth_rate|average_growth_amount|share_change|mixed_growth_rate|share|average|difference|ratio","a":1234,"b":5.6,"c":null,"d":null,"unit":"万吨","explanation":"简短、可复核的速算提示"}]}
 材料：请按统计口径提炼、适度调整顺序和句式、适当分段，保留必要数值、单位、年份；不要逐字照抄，也不能编造、推测或转换新增任何统计数值。材料建议350至650汉字（以资料充足为准，不为凑字数虚构事实），按考试常见材料自然分成2至4个相关段落，兼有真实多主体、近似指标、现期与同比等合理定位干扰；同一事实仍应集中表达，不可为了难度强行打散。不要用新闻宣传口吻。最多只出现给定年份和原文已有的数字。每道题使用的a、b必须在“改写材料”中可见，evidence必须是从官方原文逐字摘取的连续片段。
-命题：优先采用下方20个真实错题的考点、复合问法和易混口径；尽量使5题中至少3题针对不同薄弱点，不允许退化成5道换主体的基期量/现期量入门题。新增 average_growth_rate 表示平均数增长率，a=总量同比增长率（百分数）、b=份数/人数同比增长率（百分数），结果=(a-b)/(1+b/100)，选项单位为%。禁止输出尚未支持运算规则的题型；实在缺乏可验证的来源操作数时宁可拒绝该材料，不能捏造高级题。每道题干必须明确使用官方统计年度（例如2022年末），涉及同比/上一年的比较时必须明确写出上一具体年度（例如2021年末），不得只写“年末”“比上年”“比去年”。语义务必和 operation 对齐：问“增加多少”必须为增长量而非基期量，问上年末存量才是基期量。只允许有唯一数值答案的四选一计算题；绝对不要生成综合判断、正误辨析、四个说法选正确或错误、能够推出的是等题型。每份正式材料至少覆盖3种不同的数值计算考点，如基期、增量、增长率、比重、倍数、平均数增长率、平均数、差额，围绕不同指标提问。题干优先“根据上述资料，……约为多少”“与上年相比……”“……占……的比重约为……”等公考式表述；不得使用“求”“按同比增长率估算”等课堂口吻；不要泄漏公式和答案。growth_amount、base_period的a=现期量、b=增长率百分数（下降是负数）；growth_rate的a=现期、b=基期；share的a=部分、b=总体；average/ratio a/b；difference a-b。不要混用统计口径、年份或量纲；不提供选项，选项由程序独立计算。不得引用没有出现在改写材料中的数字。"#;
+命题：优先采用下方20个真实错题的考点、复合问法和易混口径；尽量使5题中至少3题针对不同薄弱点，不允许退化成5道换主体的基期量/现期量入门题。新增 average_growth_rate 表示平均数增长率，a=总量同比增长率（百分数）、b=份数/人数同比增长率（百分数），结果=(a-b)/(1+b/100)，选项单位为%。复合题支持4操作数（c、d必填且来自同一份官方证据）：average_growth_amount 的 a=现期总量，b=现期人数或份数，c=总量增长率百分数，d=人数增长率百分数，结果=a/b*(c-d)/(100+c)；share_change 的 a=现期部分，b=现期整体，c=部分增长率百分数，d=整体增长率百分数，结果=a/b*(c-d)/(1+c/100)，选项单位固定为百分点；mixed_growth_rate 的 a=部分一基期量，b=部分一增长率百分数，c=部分二基期量，d=部分二增长率百分数，结果=(a*b+c*d)/(a+c)，单位为%。普通两操作数题c、d为null。所有4个数必须在证据片段和改写材料里出现，否则拒绝。禁止输出尚未支持运算规则的题型；实在缺乏可验证的来源操作数时宁可拒绝该材料，不能捏造高级题。每道题干必须明确使用官方统计年度（例如2022年末），涉及同比/上一年的比较时必须明确写出上一具体年度（例如2021年末），不得只写“年末”“比上年”“比去年”。语义务必和 operation 对齐：问“增加多少”必须为增长量而非基期量，问上年末存量才是基期量。只允许有唯一数值答案的四选一计算题；绝对不要生成综合判断、正误辨析、四个说法选正确或错误、能够推出的是等题型。每份正式材料至少覆盖3种不同的数值计算考点，如基期、增量、增长率、比重、倍数、平均数增长率、平均数、差额，围绕不同指标提问。题干优先“根据上述资料，……约为多少”“与上年相比……”“……占……的比重约为……”等公考式表述；不得使用“求”“按同比增长率估算”等课堂口吻；不要泄漏公式和答案。growth_amount、base_period的a=现期量、b=增长率百分数（下降是负数）；growth_rate的a=现期、b=基期；share的a=部分、b=总体；average/ratio a/b；difference a-b。不要混用统计口径、年份或量纲；不提供选项，选项由程序独立计算。不得引用没有出现在改写材料中的数字。"#;
         let user = format!(
             "官方{}年统计公报资料（唯一可用统计事实）：\n{}\n资料主题：{} → {}\n优先考点：{}\n【用户错题仅供参考命题问法、干扰项和复盘方法，不可作为数值来源】\n{}\n以用户错题的考点、易错口径和速算方法为出题主线，优先多步骤和综合审题，但操作必须在允许枚举中且所有数字来自官方来源。生成国考风格新材料及恰好5道数值计算变式题；忽略综合判断题型，不能照抄旧题。",
             source_year, material.text, material.topic, material.subtopic, weaknesses.join("、"), wrong_patterns.join("\n")
@@ -686,13 +686,15 @@ impl DataAnalysisService {
             for candidate in &batch.questions {
                 if !operand_visible(&shown_material.text, candidate.a)
                     || !operand_visible(&shown_material.text, candidate.b)
+                    || candidate.c.is_some_and(|c|!operand_visible(&shown_material.text,c))
+                    || candidate.d.is_some_and(|d|!operand_visible(&shown_material.text,d))
                     || !question_has_explicit_years(&candidate.question, source_year)
                 {
                     continue;
                 }
                 if let Ok(q) = verify_recipe(&material, candidate, result.len()) {
                     let fingerprint =
-                        format!("{:?}|{}|{}", candidate.operation, candidate.a, candidate.b);
+                        format!("{:?}|{}|{}|{:?}|{:?}", candidate.operation, candidate.a, candidate.b, candidate.c, candidate.d);
                     if seen.insert(fingerprint) {
                         skill_types.insert(q.skill.clone());
                         result.push(q);
