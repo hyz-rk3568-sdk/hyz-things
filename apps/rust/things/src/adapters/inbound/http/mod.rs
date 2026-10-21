@@ -806,9 +806,18 @@ fn app_with_assets(
             "/api/v1/study/data-analysis/runs/{id}",
             on(MethodFilter::GET, data_analysis::run),
         )
-        .route("/api/v1/study/data-analysis/history",on(MethodFilter::GET,data_analysis::comprehensive_history))
-        .route("/api/v1/study/data-analysis/runs/{id}/result",on(MethodFilter::GET,data_analysis::comprehensive_result))
-        .route("/api/v1/study/data-analysis/runs/{id}/pause",on(MethodFilter::POST,data_analysis::pause_toggle))
+        .route(
+            "/api/v1/study/data-analysis/history",
+            on(MethodFilter::GET, data_analysis::comprehensive_history),
+        )
+        .route(
+            "/api/v1/study/data-analysis/runs/{id}/result",
+            on(MethodFilter::GET, data_analysis::comprehensive_result),
+        )
+        .route(
+            "/api/v1/study/data-analysis/runs/{id}/pause",
+            on(MethodFilter::POST, data_analysis::pause_toggle),
+        )
         .route(
             "/api/v1/study/data-analysis/runs/{id}/answers/{number}",
             on(MethodFilter::POST, data_analysis::answer),
