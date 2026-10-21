@@ -187,11 +187,29 @@ fn is_comprehensive_judgment(question: &str) -> bool {
 /// Reject mismatched question intent even when the numbers are authentic.
 /// In particular, asking "增加多少" must not be graded as a prior-year base.
 fn question_matches_operation(question: &str, operation: &Operation) -> bool {
-    let asks_change = ["增加多少", "增加约多少", "增长量", "增加了多少", "增长了多少",
-        "减少多少", "减少约多少", "减少了多少", "增量", "比上年多多少",
-        "比上年少多少", "比去年多多少", "比去年少多少"]
-        .iter().any(|cue| question.contains(cue));
-    if asks_change && !matches!(operation,Operation::GrowthAmount | Operation::AverageGrowthAmount | Operation::Difference) {
+    let asks_change = [
+        "增加多少",
+        "增加约多少",
+        "增长量",
+        "增加了多少",
+        "增长了多少",
+        "减少多少",
+        "减少约多少",
+        "减少了多少",
+        "增量",
+        "比上年多多少",
+        "比上年少多少",
+        "比去年多多少",
+        "比去年少多少",
+    ]
+    .iter()
+    .any(|cue| question.contains(cue));
+    if asks_change
+        && !matches!(
+            operation,
+            Operation::GrowthAmount | Operation::AverageGrowthAmount | Operation::Difference
+        )
+    {
         return false;
     }
     match operation {
@@ -199,16 +217,21 @@ fn question_matches_operation(question: &str, operation: &Operation) -> bool {
         Operation::GrowthAmount => asks_change,
         Operation::AverageGrowthRate => {
             (question.contains("平均") || question.contains("人均") || question.contains("单位"))
-                && (question.contains("增速") || question.contains("增长率") || question.contains("增幅"))
+                && (question.contains("增速")
+                    || question.contains("增长率")
+                    || question.contains("增幅"))
         }
-        Operation::AverageGrowthAmount =>
+        Operation::AverageGrowthAmount => {
             (question.contains("平均") || question.contains("人均") || question.contains("单位"))
-                && asks_change,
-        Operation::ShareChange =>
-            question.contains("比重") && question.contains("百分点"),
-        Operation::MixedGrowthRate =>
+                && asks_change
+        }
+        Operation::ShareChange => question.contains("比重") && question.contains("百分点"),
+        Operation::MixedGrowthRate => {
             (question.contains("整体") || question.contains("合计") || question.contains("总"))
-                && (question.contains("增长率") || question.contains("增速") || question.contains("增幅")),
+                && (question.contains("增长率")
+                    || question.contains("增速")
+                    || question.contains("增幅"))
+        }
         _ => true,
     }
 }
@@ -268,28 +291,35 @@ pub fn verify_recipe(
     }
     let answer = match recipe.operation {
         Operation::AverageGrowthAmount | Operation::ShareChange | Operation::MixedGrowthRate => {
-            let c=recipe.c.ok_or(ValidationError::MissingOperand)?;
-            let d=recipe.d.ok_or(ValidationError::MissingOperand)?;
-            if !c.is_finite() || !d.is_finite()
-                || !source_contains_numeric_token(&recipe.evidence,c)
-                || !source_contains_numeric_token(&recipe.evidence,d) {
+            let c = recipe.c.ok_or(ValidationError::MissingOperand)?;
+            let d = recipe.d.ok_or(ValidationError::MissingOperand)?;
+            if !c.is_finite()
+                || !d.is_finite()
+                || !source_contains_numeric_token(&recipe.evidence, c)
+                || !source_contains_numeric_token(&recipe.evidence, d)
+            {
                 return Err(ValidationError::MissingOperand);
             }
-            let result=match recipe.operation {
+            let result = match recipe.operation {
                 // current total, current population, total growth %, population growth %
-                Operation::AverageGrowthAmount if recipe.b > 0.0 && c > -100.0 =>
-                    recipe.a/recipe.b*(c-d)/(100.0+c),
+                Operation::AverageGrowthAmount if recipe.b > 0.0 && c > -100.0 => {
+                    recipe.a / recipe.b * (c - d) / (100.0 + c)
+                }
                 // current part, current whole, part growth %, whole growth %
-                Operation::ShareChange if recipe.b > 0.0 && c > -100.0 && d > -100.0 =>
-                    recipe.a/recipe.b*(c-d)/(1.0+c/100.0),
+                Operation::ShareChange if recipe.b > 0.0 && c > -100.0 && d > -100.0 => {
+                    recipe.a / recipe.b * (c - d) / (1.0 + c / 100.0)
+                }
                 // base part 1, part1 growth %, base part 2, part2 growth %
-                Operation::MixedGrowthRate if recipe.a >= 0.0 && c >= 0.0 && recipe.a+c>0.0 =>
-                    (recipe.a*recipe.b+c*d)/(recipe.a+c),
+                Operation::MixedGrowthRate if recipe.a >= 0.0 && c >= 0.0 && recipe.a + c > 0.0 => {
+                    (recipe.a * recipe.b + c * d) / (recipe.a + c)
+                }
                 _ => return Err(ValidationError::InvalidNumber),
             };
             result
         }
-        _=>recipe.operation.result(recipe.a,recipe.b)
+        _ => recipe
+            .operation
+            .result(recipe.a, recipe.b)
             .ok_or(ValidationError::InvalidNumber)?,
     };
     if !answer.is_finite() || answer.abs() > 1.0e15 {
@@ -612,12 +642,12 @@ mod tests {
 
     #[test]
     fn average_growth_rate_uses_total_and_count_growth() {
-        let mut item=recipe();
-        item.question="2025年的人均产量同比增长率约为多少？".into();
-        item.operation=Operation::AverageGrowthRate;
-        item.a=1.2;
-        item.b=1.2;
-        assert_eq!(item.operation.result(15.0,5.0),Some((15.0-5.0)/1.05));
+        let mut item = recipe();
+        item.question = "2025年的人均产量同比增长率约为多少？".into();
+        item.operation = Operation::AverageGrowthRate;
+        item.a = 1.2;
+        item.b = 1.2;
+        assert_eq!(item.operation.result(15.0, 5.0), Some((15.0 - 5.0) / 1.05));
     }
 
     #[test]
@@ -626,25 +656,38 @@ mod tests {
             text:"2022年，行业销售额1200亿元，同比增长10%；从业人数120万人，同比增长5%；甲行业增加值200亿元，同比增长20%，乙行业增加值800亿元，同比增长10%。".into(),
             ..material()
         };
-        let mut q=QuestionRecipe{
-            question:"2022年行业人均销售额比2021年增加约多少亿元？".into(),
-            evidence:m.text.clone(),
-            operation:Operation::AverageGrowthAmount,
-            a:1200.0,b:120.0,c:Some(10.0),d:Some(5.0),
-            unit:"亿元".into(),explanation:"平均数增量".into(),
+        let mut q = QuestionRecipe {
+            question: "2022年行业人均销售额比2021年增加约多少亿元？".into(),
+            evidence: m.text.clone(),
+            operation: Operation::AverageGrowthAmount,
+            a: 1200.0,
+            b: 120.0,
+            c: Some(10.0),
+            d: Some(5.0),
+            unit: "亿元".into(),
+            explanation: "平均数增量".into(),
         };
-        assert!(verify_recipe(&m,&q,0).is_ok());
-        q.c=None;
-        assert_eq!(verify_recipe(&m,&q,0).unwrap_err(),ValidationError::MissingOperand);
-        q.c=Some(20.0);
-        q.operation=Operation::ShareChange;
-        q.question="2022年甲行业比重比2021年提高约多少个百分点？".into();
-        q.a=200.0;q.b=1200.0;q.d=Some(10.0);q.unit="个百分点".into();
-        assert!(verify_recipe(&m,&q,0).is_ok());
-        q.operation=Operation::MixedGrowthRate;
-        q.question="2022年甲乙行业合计同比增长率约为多少？".into();
-        q.a=200.0;q.b=20.0;q.c=Some(800.0);q.d=Some(10.0);q.unit="%".into();
-        assert!(verify_recipe(&m,&q,0).is_ok());
+        assert!(verify_recipe(&m, &q, 0).is_ok());
+        q.c = None;
+        assert_eq!(
+            verify_recipe(&m, &q, 0).unwrap_err(),
+            ValidationError::MissingOperand
+        );
+        q.c = Some(20.0);
+        q.operation = Operation::ShareChange;
+        q.question = "2022年甲行业比重比2021年提高约多少个百分点？".into();
+        q.a = 200.0;
+        q.b = 1200.0;
+        q.d = Some(10.0);
+        q.unit = "个百分点".into();
+        assert!(verify_recipe(&m, &q, 0).is_ok());
+        q.operation = Operation::MixedGrowthRate;
+        q.question = "2022年甲乙行业合计同比增长率约为多少？".into();
+        q.a = 200.0;
+        q.b = 20.0;
+        q.c = Some(800.0);
+        q.d = Some(10.0);
+        q.unit = "%".into();
+        assert!(verify_recipe(&m, &q, 0).is_ok());
     }
-
 }
