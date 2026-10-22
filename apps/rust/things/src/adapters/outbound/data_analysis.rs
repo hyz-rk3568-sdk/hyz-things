@@ -2035,7 +2035,8 @@ mod tests {
         assert_eq!(historical.materials.len(), 4);
         assert_eq!(historical.questions.len(), 20);
         let (source_count, group_count) = service.counts().await.unwrap();
-        assert_eq!((source_count, group_count), (1, 4));
+        // Newly generated material is self-contained: no official-source cache.
+        assert_eq!((source_count, group_count), (0, 4));
     }
 
     #[test]
