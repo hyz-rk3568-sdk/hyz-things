@@ -229,19 +229,62 @@ where
     results
 }
 
-// Reject a paper that silently mixes non-selected skills, or omits any
-// category assigned to this material. Correct answers still belong to Codex.
-fn selected_category_coverage(labels: &[&str], selected: &[String], ordinal: usize) -> bool {
-    !selected.is_empty()
-        && labels.len() == QUIZ_PER_GROUP
-        && labels
-            .iter()
-            .all(|skill| selected.iter().any(|chosen| chosen.as_str() == *skill))
-        && selected
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| index % QUIZ_GROUPS == ordinal % QUIZ_GROUPS)
-            .all(|(_, category)| labels.contains(&category.as_str()))
+// Each selected wrong-category consumes exactly one guaranteed question,
+// balanced randomly across the 4 passages. A plan is created once per job,
+// so failed passage retries retain exactly the same requirements.
+#[derive(Clone, Debug)]
+struct QuestionPlan {
+    required: [Vec<String>; QUIZ_GROUPS],
+    knowledge: Vec<String>,
+}
+
+fn distribute_wrong_categories(selected: &[String], random_seed: u64) -> [Vec<String>; QUIZ_GROUPS] {
+    let mut required: [Vec<String>; QUIZ_GROUPS] = std::array::from_fn(|_| Vec::new());
+    let mut state = random_seed | 1;
+    let mut next_random = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    for batch in selected.chunks(QUIZ_GROUPS) {
+        let mut slots: Vec<_> = (0..QUIZ_GROUPS).collect();
+        for i in (1..QUIZ_GROUPS).rev() {
+            let j = next_random() as usize % (i + 1);
+            slots.swap(i, j);
+        }
+        for (category, slot) in batch.iter().zip(slots.into_iter()) {
+            required[slot].push(category.clone());
+        }
+    }
+    required
+}
+
+// Exactly one marked wrong question per assigned category. All other slots
+// come from a verified general-knowledge directory. The displayed skill may
+// coincide with a wrong category; source_kind disambiguates those questions.
+fn mixed_category_coverage(
+    labels: &[&str],
+    source_kinds: &[&str],
+    required: &[String],
+    knowledge: &[String],
+) -> bool {
+    if labels.len() != QUIZ_PER_GROUP || source_kinds.len() != QUIZ_PER_GROUP {
+        return false;
+    }
+    let mut wrong_seen = std::collections::HashSet::new();
+    for (&skill, &source) in labels.iter().zip(source_kinds) {
+        match source {
+            "wrong" if required.iter().any(|name| name == skill) => {
+                if !wrong_seen.insert(skill) {
+                    return false;
+                }
+            }
+            "knowledge" if knowledge.iter().any(|name| name == skill) => {}
+            _ => return false,
+        }
+    }
+    wrong_seen.len() == required.len()
 }
 
 fn now_ms() -> i64 {
