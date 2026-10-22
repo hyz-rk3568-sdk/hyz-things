@@ -1274,24 +1274,76 @@ mod tests {
     }
 
     #[test]
-    fn only_user_selected_wrong_question_categories_are_valid_generation_targets() {
-        let selected = vec!["乘除变化".to_owned(), "年均变化".to_owned()];
-        assert!(selected_category_coverage(
-            &["乘除变化", "年均变化", "乘除变化", "年均变化", "乘除变化"],
-            &selected,
-            0
+    fn wrong_category_quotas_randomize_balanced_and_survive_retries() {
+        for count in 1..=12 {
+            let selected = (0..count).map(|i| format!("错题分类{i}")).collect::<Vec<_>>();
+            let quotas = distribute_wrong_categories(&selected, 123456789);
+            let all = quotas.iter().flatten().cloned().collect::<Vec<_>>();
+            assert_eq!(all.len(), count);
+            assert!(selected.iter().all(|name| all.iter().filter(|n| *n == name).count() == 1));
+            assert!(quotas.iter().all(|group| group.len() <= 3));
+            let smallest = quotas.iter().map(Vec::len).min().unwrap();
+            let largest = quotas.iter().map(Vec::len).max().unwrap();
+            assert!(largest - smallest <= 1);
+            assert_eq!(quotas, distribute_wrong_categories(&selected, 123456789));
+        }
+        let list = (0..12).map(|i| format!("topic{i}")).collect::<Vec<_>>();
+        assert_ne!(
+            distribute_wrong_categories(&list, 123456789),
+            distribute_wrong_categories(&list, 7850213)
+        );
+    }
+
+    #[test]
+    fn mixed_paper_accepts_one_per_selected_wrong_and_general_knowledge_filler() {
+        let required = vec!["线段混合".into(), "年均变化".into()];
+        let knowledge = vec!["线段混合".into(), "年均变化".into(), "乘除变化".into()];
+        assert!(mixed_category_coverage(
+            &["线段混合","乘除变化","年均变化","线段混合","乘除变化"],
+            &["wrong","knowledge","wrong","knowledge","knowledge"],
+            &required,
+            &knowledge,
         ));
-        assert!(!selected_category_coverage(
-            &["乘除变化", "年均变化", "基期", "年均变化", "乘除变化"],
-            &selected,
-            0
+        assert!(!mixed_category_coverage(
+            &["线段混合","乘除变化","年均变化","线段混合","乘除变化"],
+            &["wrong","wrong","wrong","knowledge","knowledge"],
+            &required,
+            &knowledge,
         ));
-        assert!(!selected_category_coverage(
-            &["乘除变化", "乘除变化", "乘除变化", "乘除变化", "乘除变化"],
-            &selected,
-            1
+        assert!(!mixed_category_coverage(
+            &["线段混合","乘除变化","年均变化","线段混合","乘除变化"],
+            &["wrong","knowledge","knowledge","knowledge","knowledge"],
+            &required,
+            &knowledge,
         ));
-        assert!(!selected_category_coverage(&["乘除变化"], &[], 0));
+        assert!(!mixed_category_coverage(
+            &["线段混合","乘除变化","年均变化","线段混合","其他分类"],
+            &["wrong","knowledge","wrong","knowledge","knowledge"],
+            &required,
+            &knowledge,
+        ));
+        assert!(!mixed_category_coverage(
+            &["乘除变化","乘除变化","乘除变化","乘除变化","乘除变化"],
+            &["knowledge","knowledge","knowledge","knowledge","knowledge"],
+            &required,
+            &knowledge,
+        ));
+        assert!(mixed_category_coverage(
+            &["线段混合","年均变化","乘除变化","年均变化","乘除变化"],
+            &["knowledge","knowledge","knowledge","knowledge","knowledge"],
+            &[],
+            &knowledge,
+        ));
+    }
+
+    #[test]
+    fn knowledge_decks_exclude_wrong_questions_and_unrelated_modules() {
+        assert_eq!(knowledge_card_category("资料/年均变化"), Some("年均变化"));
+        assert_eq!(knowledge_card_category("flashcards/资料/线段混合"), Some("线段混合"));
+        assert_eq!(knowledge_card_category("乘除变化"), Some("乘除变化"));
+        assert_eq!(knowledge_card_category("资料/错题/年均变化"), None);
+        assert_eq!(knowledge_card_category("判断/论证推理"), None);
+        assert_eq!(knowledge_card_category("资料/images"), Some("images"));
     }
 
     #[test]
