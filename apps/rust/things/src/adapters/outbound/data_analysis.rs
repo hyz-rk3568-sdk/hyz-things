@@ -765,14 +765,13 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
     }
 
     async fn check_control(&self, id: &str, token: Option<&str>) -> Result<(), String> {
-        let stored: Option<String> = sqlx::query_scalar(
-            "SELECT controller_token FROM data_analysis_runs WHERE id=?",
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(as_error)?
-        .ok_or("训练不存在")?;
+        let stored: Option<String> =
+            sqlx::query_scalar("SELECT controller_token FROM data_analysis_runs WHERE id=?")
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(as_error)?
+                .ok_or("训练不存在")?;
         if stored.as_deref() != token {
             return Err("本次训练已在其他设备接管，请重新进入".into());
         }
@@ -1476,38 +1475,74 @@ mod tests {
         assert_ne!(phone.control_token, ipad.control_token);
         assert_eq!(phone.run.current_question, 7);
         assert_eq!(phone.run.answers[0], Some(1));
-        assert!(service
-            .save_position(&third_id, 8, &ipad.control_token)
-            .await.is_err(), "stale iPad position rejected");
-        assert!(service
-            .answer_controlled(&third_id, 2, 1, Some(&ipad.control_token))
-            .await.is_err(), "stale iPad answer rejected");
-        assert!(service.pause_toggle_controlled(&third_id, Some(&ipad.control_token))
-            .await.is_err(), "stale iPad pause rejected");
-        assert!(service.submit_controlled(&third_id, Some(&ipad.control_token))
-            .await.is_err(), "stale iPad submit rejected");
-        let paused_phone = service.pause_toggle_controlled(
-            &third_id, Some(&phone.control_token)
-        ).await.expect("phone pause");
+        assert!(
+            service
+                .save_position(&third_id, 8, &ipad.control_token)
+                .await
+                .is_err(),
+            "stale iPad position rejected"
+        );
+        assert!(
+            service
+                .answer_controlled(&third_id, 2, 1, Some(&ipad.control_token))
+                .await
+                .is_err(),
+            "stale iPad answer rejected"
+        );
+        assert!(
+            service
+                .pause_toggle_controlled(&third_id, Some(&ipad.control_token))
+                .await
+                .is_err(),
+            "stale iPad pause rejected"
+        );
+        assert!(
+            service
+                .submit_controlled(&third_id, Some(&ipad.control_token))
+                .await
+                .is_err(),
+            "stale iPad submit rejected"
+        );
+        let paused_phone = service
+            .pause_toggle_controlled(&third_id, Some(&phone.control_token))
+            .await
+            .expect("phone pause");
         assert!(paused_phone.paused_remaining_ms.is_some());
         let on_other_device = service.unfinished().await.unwrap();
-        let pending = on_other_device.iter().find(|item| item.id == third_id).unwrap();
+        let pending = on_other_device
+            .iter()
+            .find(|item| item.id == third_id)
+            .unwrap();
         assert_eq!(pending.current_question, 7);
         assert_eq!(pending.answered, 1);
         assert!(pending.paused_remaining_ms.is_some());
-        assert!(service.answer_controlled(&third_id, 2, 1, Some(&phone.control_token))
-            .await.is_err(), "paused paper cannot accept answers");
-        let after_reload = service.claim(&third_id).await.expect("same paper after reload");
+        assert!(
+            service
+                .answer_controlled(&third_id, 2, 1, Some(&phone.control_token))
+                .await
+                .is_err(),
+            "paused paper cannot accept answers"
+        );
+        let after_reload = service
+            .claim(&third_id)
+            .await
+            .expect("same paper after reload");
         assert!(after_reload.run.paused_remaining_ms.is_some());
         assert_eq!(after_reload.run.current_question, 7);
         assert_eq!(after_reload.run.answers[0], Some(1));
-        let resumed = service.pause_toggle_controlled(
-            &third_id, Some(&after_reload.control_token)
-        ).await.expect("continue on phone");
+        let resumed = service
+            .pause_toggle_controlled(&third_id, Some(&after_reload.control_token))
+            .await
+            .expect("continue on phone");
         assert!(resumed.paused_remaining_ms.is_none());
-        service.answer_controlled(&third_id, 2, 1, Some(&after_reload.control_token))
-            .await.expect("new lease can answer");
-        assert!(service.claim(&run_id).await.is_err(), "submitted paper cannot be reclaimed");
+        service
+            .answer_controlled(&third_id, 2, 1, Some(&after_reload.control_token))
+            .await
+            .expect("new lease can answer");
+        assert!(
+            service.claim(&run_id).await.is_err(),
+            "submitted paper cannot be reclaimed"
+        );
         assert!(service.result(&third_id).await.is_err());
         let attempt_entries = service.history().await.unwrap();
         assert_eq!(
