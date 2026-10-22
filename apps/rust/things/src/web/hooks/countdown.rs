@@ -2065,7 +2065,7 @@ pub(crate) fn exam_countdown_panel(props: &ExamCountdownPanelProps) -> Html {
                     <p class="text-xs font-bold uppercase tracking-widest text-primary">{"最近考试 · 预计日期"}</p>
                     <h2 id="exam-countdown-title" class="text-2xl font-black sm:text-3xl">{nearest.title}</h2>
                     <p class="text-sm text-base-content/70">{format!("{} · {}",nearest.target_label,nearest.target_note)}</p>
-                    <p class="text-xs text-base-content/55">{"预计日期请以官方公告为准"}</p>
+                    <p class="text-xs text-base-content/75">{"预计日期请以官方公告为准"}</p>
                     if let Some(on_training) = props.on_training.clone() {
                         <button type="button" class="btn btn-primary mt-1" data-testid="study-exam-start" onclick={on_training}>{"开始专项训练 →"}</button>
                     }
