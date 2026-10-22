@@ -16,7 +16,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
       section: ["一、综合","二、农业","三、工业和建筑业","四、服务业"][g],
       topic: topics[g],
       subtopic: "文字统计材料",
-      text: "2025年某项业务量为1200亿元，同比增长15.2%。\n\n其中地区一为480亿元，地区二为720亿元。",
+      text: Array.from({length:30},()=> "2025年某项业务量为1200亿元，同比增长15.2%。\n\n其中地区一为480亿元，地区二为720亿元。").join("\n\n"),
       source_url: `practice-theme-${g}`,
     },
     questions: Array.from({length:5},(_,j)=>({
@@ -80,6 +80,14 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(page.getByTestId("analysis-clock")).toHaveCount(0);
   await page.getByTestId("analysis-enter").click();
   await expect(page.getByTestId("analysis-run")).toBeVisible();
+  // Starting a comprehensive paper removes the parent mode navigation,
+  // fixes the paper to the visible viewport and keeps document scroll locked.
+  await expect(page.getByRole("group",{name:"训练模式"})).toHaveCount(0);
+  await expect(page.getByTestId("analysis-exit")).toBeVisible();
+  expect(await page.getByTestId("analysis-run").evaluate(el=>{
+    const rect=el.getBoundingClientRect();
+    return Math.max(Math.abs(rect.top),Math.abs(rect.left),Math.abs(rect.right-window.innerWidth),Math.abs(rect.bottom-window.innerHeight));
+  })).toBeLessThanOrEqual(1);
   await expect(page.getByTestId("analysis-clock")).toContainText("19:");
   await page.getByTestId("analysis-clock").click();
   await expect(page.getByTestId("analysis-paused")).toBeVisible();
@@ -97,6 +105,17 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   const passageText=await page.getByTestId("analysis-material").locator(".whitespace-pre-wrap").innerText();
   expect(passageText).toContain("\n\n");
   expect(passageText).not.toContain("模拟训练材料");
+
+  // Long passages scroll only inside the material pane. The full-page card,
+  // toolbar and question stay pinned in position.
+  const passage=page.getByTestId("analysis-material-scroll");
+  const scrollInfo=await passage.evaluate(el=>({height:el.clientHeight,total:el.scrollHeight}));
+  expect(scrollInfo.total).toBeGreaterThan(scrollInfo.height);
+  const beforeFrame=await page.getByTestId("analysis-shared-workspace").boundingBox();
+  await passage.evaluate(el=>{el.scrollTop=140;});
+  expect(await passage.evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
+  expect(await page.getByTestId("analysis-shared-workspace").boundingBox()).toEqual(beforeFrame);
+  expect(await page.evaluate(()=>window.scrollY)).toBe(0);
 
   // Exactly ONE transparent canvas and ONE toolbar cover the whole two-column
   // workspace, so the same CSS-pixel pen width applies to both sides.
@@ -141,6 +160,19 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await toggle.click();
   expect(await canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL())).toEqual(marked);
   await page.getByTestId("calculation-scratchpad-close").click();
+  // Portrait stacks two internally scrollable panes without document scroll.
+  await page.setViewportSize({width:820,height:430});
+  const portraitMaterial=await page.getByTestId("analysis-material").boundingBox();
+  const portraitQuestion=await page.getByTestId("analysis-question").boundingBox();
+  expect(portraitMaterial).not.toBeNull();
+  expect(portraitQuestion).not.toBeNull();
+  expect(portraitMaterial!.y).toBeLessThan(portraitQuestion!.y);
+  expect(portraitQuestion!.y+portraitQuestion!.height).toBeLessThanOrEqual(430);
+  expect(await page.getByTestId("analysis-question").evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);
+  await page.getByTestId("analysis-question").evaluate(el=>{el.scrollTop=80;});
+  expect(await page.getByTestId("analysis-question").evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
+  expect(await page.evaluate(()=>window.scrollY)).toBe(0);
+  await page.setViewportSize({width:1180,height:820});
   await page.getByTestId("analysis-choice").first().click();
   await expect(page.getByTestId("analysis-choice").first()).toHaveClass(/btn-primary/);
   await page.getByRole("button",{name:"下一题"}).click();
@@ -155,6 +187,8 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(page.getByTestId("analysis-history")).toBeVisible();
   await page.getByRole("button",{name:"查看原题与解析"}).first().click();
   await expect(page.getByTestId("analysis-result")).toContainText("1 / 20");
+  await page.getByTestId("analysis-exit").click();
+  await expect(page.getByRole("group",{name:"训练模式"})).toBeVisible();
 });
 
 
