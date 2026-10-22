@@ -900,7 +900,9 @@ impl DataAnalysisService {
              VALUES (?,?,?,'ready',?,?,?)",
         )
         .bind(&id)
-        .bind(&groups_json)
+        // Keep old questions verbatim, but do not carry legacy Material fields
+        // into a new attempt's persisted JSON.
+        .bind(serde_json::to_string(&groups).map_err(as_error)?)
         .bind(
             serde_json::to_string(&vec![None::<usize>; QUIZ_GROUPS * QUIZ_PER_GROUP])
                 .map_err(as_error)?,
@@ -1692,12 +1694,19 @@ mod tests {
                 .collect(),
         };
         let id = Uuid::now_v7().to_string();
+        // Simulate JSON created before section/subtopic/source_url removal.
+        let mut archived = serde_json::to_value(vec![group; QUIZ_GROUPS]).unwrap();
+        for group in archived.as_array_mut().unwrap() {
+            group["material"]["section"] = serde_json::json!("测试章节");
+            group["material"]["subtopic"] = serde_json::json!("测试子主题");
+            group["material"]["source_url"] = serde_json::json!("practice-test");
+        }
         sqlx::query(
             "INSERT INTO data_analysis_runs (id,groups_json,answers_json,status,created_at_ms)
              VALUES (?,?,?,'ready',?)",
         )
         .bind(&id)
-        .bind(serde_json::to_string(&vec![group; QUIZ_GROUPS]).unwrap())
+        .bind(archived.to_string())
         .bind(serde_json::to_string(&vec![None::<usize>; QUIZ_GROUPS * QUIZ_PER_GROUP]).unwrap())
         .bind(now_ms())
         .execute(&pool)
@@ -1706,6 +1715,16 @@ mod tests {
 
         let service = DataAnalysisService::new(pool.clone(), None).unwrap();
         let claimed = service.claim(&id).await.unwrap();
+        assert_eq!(claimed.run.groups[0].material.topic, "测试主题");
+        assert_eq!(claimed.run.groups[0].material.text, "测试统计材料");
+        assert_eq!(
+            serde_json::to_value(&claimed.run.groups[0].material)
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .len(),
+            2
+        );
         assert!(
             service.result(&id).await.is_err(),
             "active answers stay hidden"
@@ -1740,6 +1759,20 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(before, after, "history read must not update submitted run");
+
+        let redo_id = service.retry(&id).await.unwrap();
+        let copied_json: String =
+            sqlx::query_scalar("SELECT groups_json FROM data_analysis_runs WHERE id=?")
+                .bind(&redo_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(!copied_json.contains("source_url"));
+        assert!(!copied_json.contains("subtopic"));
+        assert!(!copied_json.contains("section"));
+        let redo = service.run(&redo_id).await.unwrap();
+        assert_eq!(redo.groups[0].material.topic, "测试主题");
+        assert_eq!(redo.groups[0].questions.len(), QUIZ_PER_GROUP);
     }
 
     #[tokio::test]
