@@ -461,11 +461,18 @@ impl DataAnalysisService {
     async fn generate(&self, job: &str, manual_skills: &[String]) -> Result<String, String> {
         self.set_progress(job, "selecting", 0, "正在规划参考真题的统计主题", None)
             .await;
-        // Statistics subjects stay varied independently of earlier mistakes;
-        // all exercise skills must come from the explicit user selection.
+        // Keep a single randomized, balanced quota plan for the entire job,
+        // including retries after a Codex passage fails validation.
+        let plan = Arc::new(QuestionPlan {
+            required: distribute_wrong_categories(
+                manual_skills,
+                Uuid::parse_str(job).map_err(as_error)?.as_u128() as u64,
+            ),
+            knowledge: self.general_knowledge_skills().await?,
+        });
         let ordered = exam_theme_materials();
         // Keep the original four slots even if only some parallel tasks succeed.
-        // Retried slots must retain their own assigned selected categories.
+        // Retried slots must retain their assigned wrong/knowledge quotas.
         let mut ready = vec![None::<QuestionGroup>; QUIZ_GROUPS];
         let mut attempted = HashSet::<(String, String)>::new();
         let mut last_error = String::new();
@@ -513,16 +520,16 @@ impl DataAnalysisService {
                     job,
                     "generating",
                     ready.iter().filter(|group| group.is_some()).count() * QUIZ_PER_GROUP,
-                    "最多4个 Codex Thread 正在按所选分类生成模拟题",
+                    "最多4个 Codex Thread 正在生成错题强化与资料知识点混合试卷",
                     None,
                 )
                 .await;
                 let worker = self.clone();
-                let manual = Arc::new(manual_skills.to_vec());
+                let plan = Arc::clone(&plan);
                 for (slot, outcome) in run_generation_wave(requests, move |material, slot| {
                     let worker = worker.clone();
-                    let manual = Arc::clone(&manual);
-                    async move { worker.generate_group(&material, &manual, slot).await }
+                    let plan = Arc::clone(&plan);
+                    async move { worker.generate_group(&material, &plan, slot).await }
                 })
                 .await
                 {
@@ -587,7 +594,7 @@ impl DataAnalysisService {
     async fn generate_group(
         &self,
         source: &Material,
-        manual_skills: &[String],
+        plan: &QuestionPlan,
         ordinal: usize,
     ) -> Result<QuestionGroup, String> {
         let config = self.config.as_ref().ok_or("Codex Token 未配置")?;
@@ -596,13 +603,16 @@ impl DataAnalysisService {
             r#"你是 hyz 的公务员行测资料分析综合训练命题 Agent。当前任务是**题型驱动**，不是材料驱动。
 工作目录是 hyz-things 仓库。请先使用 hyz-xingce Skill（.agents/skills/行测做题/SKILL.md），
 按其中资料分析导航读取 references/资料分析.md，题型分类以 flashcards/资料/错题/ 的直接子目录名为准。
-仅允许使用用户明确勾选的错题分类：{selected_categories}。进入对应的 flashcards/资料/错题/<分类目录>/，读取原始 cards.md 或 card.md 的命题变式、hyz 速算动作与易错点。
-每题 skill 使用对应的错题目录分类名；细分命题变式写进解析，不自行发明另一套基础公式标签。
-每次都是新建 Thread，必须基于这次工作树中的最新内容工作；不需要用户在提示词里复制卡片。
-本次是整套4篇×5题的第 {group_no} 篇。20道题均须基于 flashcards/资料/错题/ 中真实存在的错题分类及卡片命题，
-只从用户已选错题分类中命题，绝不引入任何未勾选的目录分类；所有 question.skill 必须是选中分类名之一，不允许换成公式名或同义词。
-本次用户选中考点：{selected_categories}。本篇必须至少有一道题命中每个分配到本篇的考点：{manual_focus}。
-每篇从已选分类里选择5个命题目标，尽量覆盖不同卡片及变式；不要把分类标签当材料标题。
+出题来源严格分成两类，请真实读取对应卡片：
+① 错题强化：用户所选错题分类 {selected_categories}，从 flashcards/资料/错题/<类别>/cards.md 读取错点和 hyz 速算变式。
+② 知识点综合：从 flashcards/资料/<知识点>/card.md（不含 错题/ 子树）读取知识点、速算方法及变式；允许知识点为 {knowledge_categories}。
+每次都是新建 Thread，读取当前工作树最新文件，不要求用户复制卡片。
+本次是4篇×5题的第 {group_no} 篇。本篇错题强化 **恰好 {wrong_count} 道**，分别对应：{manual_focus}；每个指定类别恰好1题且仅用上述错题卡。
+本篇其余 **{knowledge_count} 道** 必须从上述普通知识点卡片出题，跨题尽可能覆盖不同知识点及变式。
+每个 questions 元素额外返回 source_kind 字段（取值仅为 "wrong" 或 "knowledge"）。
+source_kind="wrong" 时 skill 必须是本篇指定的错题目录名，且每个恰好出现一次。
+source_kind="knowledge" 时 skill 必须是上述普通卡片目录名，不能用错题卡片充数。知识点名与错题类别同名也允许，但来源必须是普通卡片。
+每篇先据本篇五个命题目标安排统一数据材料，五题允许随机穿插，不要按照 wrong/knowledge 分块排序。
 {question_boundary}
 先选择本篇5题的题型、命题变式与考查的 hyz 速算/审题动作，再构造共享且自洽的模拟统计数据，
 最后写成400～1000汉字、2～4个自然段的国考风格纯数据材料，并拟制5道有唯一正确答案的四选一题。
@@ -612,7 +622,7 @@ material_text 不要写材料标题、试卷说明、来源说明、“模拟训
 不同段落可设置合理相似指标、同比与现期的检索干扰，但不可把同一事实人为拆得不合常理。
 material_text 必须使用两个换行符分隔自然段（\n\n，JSON中正确转义），不要写成无分段的数字清单。
 四篇材料尽量使用不同大主题，5道题的命题顺序不必对应材料段落顺序。
-各题的考点、命题变式和难度必须来自实际读取的错题 Flashcard，重点考查相应的 hyz 审题及速算动作。
+各题的考点、命题变式和难度必须来自各自 source_kind 对应的 Flashcard；对错题强化考查原错点，对普通题考查资料分析知识点。
 不得为填充所谓“基础题”或“核心考点”数量而降低难度，不机械重复简单基期量、增长量或现期量。
 本篇统计大主题：「{topic}」，参考命题场景：「{subtopic}」。
 先主动联网搜索这一主题的公务员行测资料分析历年真题材料（国考或省考）；至少阅读一份能确认考试年份、题目来源的真题材料。
@@ -632,19 +642,16 @@ material_text 必须使用两个换行符分隔自然段（\n\n，JSON中正确�
 根据考生能在最终材料中实际看到的数字判断正确项；四项的区分度应适合 hyz 速算方法。
 对每道题返回：question题干；options恰好4个不带ABCD标记的选项字符串；
 correct_index为0至3的正确项下标；answer为该正确选项的完整内容；
-explanation为依照 hyz 方法的简短速算解释；skill为具体考点；evidence为模拟材料中支持题目的连续文字片段。
+explanation为依照 hyz 方法的简短速算解释；skill为对应目录的准确名称；source_kind标明来自错题卡还是知识点卡；evidence为模拟材料中支持题目的连续文字片段。
 先自行核对数学及选项，再仅输出符合结构化 Schema 的JSON，不输出计划、过程或代码块。
-输出 JSON 必须具有 material_text 和 questions 两字段，questions 恰好5项。"#,
+输出 JSON 必须具有 material_text 和 questions 两字段，questions 恰好5项，每题必须有 source_kind。"#,
             group_no = ordinal % QUIZ_GROUPS + 1,
             question_boundary = NO_COMPREHENSIVE_JUDGMENT_PROMPT,
-            selected_categories = manual_skills.join("、"),
-            manual_focus = manual_skills
-                .iter()
-                .enumerate()
-                .filter(|(index, _)| index % QUIZ_GROUPS == ordinal % QUIZ_GROUPS)
-                .map(|(_, name)| name.as_str())
-                .collect::<Vec<_>>()
-                .join("、"),
+            selected_categories = plan.required.iter().flatten().cloned().collect::<Vec<_>>().join("、"),
+            knowledge_categories = plan.knowledge.join("、"),
+            manual_focus = plan.required[ordinal].join("、"),
+            wrong_count = plan.required[ordinal].len(),
+            knowledge_count = QUIZ_PER_GROUP - plan.required[ordinal].len(),
             topic = context.topic,
             subtopic = context.subtopic
         );
@@ -658,29 +665,41 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
             .await
             .map_err(|_| "Codex 出题超时，请检查电脑服务与账号额度".to_owned())??;
         #[derive(Deserialize)]
+        struct GeneratedQuestion {
+            #[serde(flatten)]
+            question: VerifiedQuestion,
+            source_kind: String,
+        }
+        #[derive(Deserialize)]
         struct Batch {
             material_text: String,
-            questions: Vec<VerifiedQuestion>,
+            questions: Vec<GeneratedQuestion>,
         }
         let batch: Batch =
             serde_json::from_str(&output).map_err(|_| "Codex 返回的试卷 JSON 与展示格式不匹配")?;
         // Structural safety only: protect fixed UI indexing. No math/content
         // verification and no answer rewriting by hyz-things.
         if batch.questions.len() != QUIZ_PER_GROUP
-            || batch.questions.iter().any(|q| q.correct_index >= 4)
+            || batch.questions.iter().any(|q| q.question.correct_index >= 4)
         {
             return Err("Codex 返回的试卷结构不完整（需要5题，每题4个选项）".into());
         }
-        let labels: Vec<_> = batch.questions.iter().map(|q| q.skill.as_str()).collect();
-        if !selected_category_coverage(&labels, manual_skills, ordinal) {
-            return Err("Codex 生成题目未完全符合所选错题分类，请重试".into());
+        let labels: Vec<_> = batch.questions.iter().map(|q| q.question.skill.as_str()).collect();
+        let kinds: Vec<_> = batch.questions.iter().map(|q| q.source_kind.as_str()).collect();
+        if !mixed_category_coverage(
+            &labels,
+            &kinds,
+            &plan.required[ordinal],
+            &plan.knowledge,
+        ) {
+            return Err("Codex 生成题目未满足错题保底及普通知识点配额，请重试".into());
         }
         let mut material = context;
         material.text = batch.material_text;
         Ok(QuestionGroup {
             version: 4,
             material,
-            questions: batch.questions,
+            questions: batch.questions.into_iter().map(|q| q.question).collect(),
         })
     }
     async fn fetch_row(
