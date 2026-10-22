@@ -45,6 +45,7 @@ fn analysis_navigation(
     current: UseStateHandle<usize>,
     index: usize,
     markers: &[Option<bool>],
+    is_review: bool,
 ) -> Html {
     let group_index = index / 5;
     let previous = {
@@ -68,7 +69,18 @@ fn analysis_navigation(
                     let current = current.clone();
                     let marker = markers.get(i).copied().flatten();
                     let style = if i==index {
-                        "btn btn-primary btn-xs shrink-0"
+                        if is_review {
+                            match marker {
+                                Some(true) => "btn btn-success btn-xs shrink-0",
+                                Some(false) => "btn btn-error btn-xs shrink-0",
+                                None => "btn btn-primary btn-xs shrink-0",
+                            }
+                        } else {
+                            "btn btn-primary btn-xs shrink-0"
+                        }
+                    } else if !is_review && marker.is_some() {
+                        // Before submission a selected answer is NOT graded.
+                        "btn btn-primary btn-outline btn-xs shrink-0"
                     } else {
                         match marker {
                             Some(true) => "btn btn-success btn-outline btn-xs shrink-0",
@@ -623,7 +635,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         {analysis_panes(&score.materials[group_index],review_question)}
                     </InkOverlay>
                 </div>
-                {analysis_navigation(current.clone(),index,&marks)}
+                {analysis_navigation(current.clone(),index,&marks,true)}
             </section>
         };
     }
@@ -783,7 +795,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     </InkOverlay>
                 </div>
                 if let Some(msg)=(*error).clone(){<div class="shrink-0 text-error text-xs" role="alert">{msg}</div>}
-                {analysis_navigation(current.clone(),index,&markers)}
+                {analysis_navigation(current.clone(),index,&markers,false)}
             </section>
         };
     }
