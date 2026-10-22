@@ -58,6 +58,7 @@ pub(crate) struct GradedQuestion {
 }
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct AnalysisResult {
+    pub id: String,
     pub correct: usize,
     pub total: usize,
     pub questions: Vec<GradedQuestion>,
