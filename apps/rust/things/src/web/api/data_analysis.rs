@@ -11,6 +11,15 @@ pub(crate) struct AnalysisStatus {
     pub available_skills: Vec<String>,
     pub preparing_job_id: Option<String>,
 }
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct UserPromptSettings {
+    pub user_prompt: String,
+    pub customized: bool,
+}
+#[derive(Serialize)]
+pub(crate) struct UserPromptUpdate {
+    pub user_prompt: Option<String>,
+}
 #[derive(Debug, Deserialize)]
 pub(crate) struct PrepareTask {
     pub job_id: String,
