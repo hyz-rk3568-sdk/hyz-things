@@ -1,12 +1,11 @@
-//! Native-only official-text caching and Codex App Server question preparation.
+//! Native Codex App Server question preparation from exam-inspired simulated topics.
 //! Codex owns the answer; the application stores each freshly prepared practice attempt.
 use super::codex_app_server::{validate_token, CodexSession, TURN_TIMEOUT};
 use crate::domain::data_analysis::{
-    select_material_batch, Material, VerifiedQuestion, OFFICIAL_SOURCES, QUIZ_GROUPS,
-    QUIZ_PER_GROUP, QUIZ_SECONDS, SECTIONS, SOURCE_URL,
+    select_material_batch, Material, VerifiedQuestion, QUIZ_GROUPS, QUIZ_PER_GROUP,
+    QUIZ_SECONDS, SECTIONS, SOURCE_URL,
 };
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use sqlx::{Row, SqlitePool};
 use std::{
     collections::{HashMap, HashSet},
@@ -22,9 +21,6 @@ use uuid::Uuid;
 const ENV_PATH: &str = "/userdata/hyz-things/.env";
 const NO_COMPREHENSIVE_JUDGMENT_PROMPT: &str = "硬性命题边界：本轮不出资料分析综合分析/综合判断题，即不出“下列说法正确的是”“下列说法错误的是”“根据资料可以推出的是”“以下表述符合材料的是”等需要逐项核查多个独立陈述的题。每题只围绕一个明确的数量关系、指标或比较目标，设计四个数值或同一量纲的结果选项。即使手选或自动推荐包含“综合分析与审题”错题目录，也只能借鉴该目录中的审题、年份口径辨析和速算思路，转化为具体计算/比较题；不得将该错题目录名称理解为允许出综合判断题。此禁出规则优先于错题分类覆盖和多样性要求。";
 
-const MAX_DOCUMENT_BYTES: usize = 3 * 1024 * 1024;
-const MAX_CACHED_SECTION_CHARS: usize = 30000;
-const MAX_GENERATION_CHARS: usize = 3000;
 
 #[derive(Clone)]
 pub struct CodexConfig {
@@ -184,7 +180,6 @@ pub struct PrepareProgress {
 pub struct DataAnalysisService {
     pool: SqlitePool,
     config: Option<CodexConfig>,
-    client: reqwest::Client,
     jobs: Arc<Mutex<HashMap<String, PrepareProgress>>>,
     gate: Arc<tokio::sync::Semaphore>,
 }
@@ -228,15 +223,9 @@ fn as_error(error: impl std::fmt::Display) -> String {
 
 impl DataAnalysisService {
     pub fn new(pool: SqlitePool, config: Option<CodexConfig>) -> Result<Self, String> {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(48))
-            .redirect(reqwest::redirect::Policy::limited(2))
-            .build()
-            .map_err(as_error)?;
         Ok(Self {
             pool,
             config,
-            client,
             jobs: Arc::new(Mutex::new(HashMap::new())),
             gate: Arc::new(tokio::sync::Semaphore::new(1)),
         })
@@ -430,85 +419,10 @@ impl DataAnalysisService {
     pub async fn job(&self, id: &str) -> Option<PrepareProgress> {
         self.jobs.lock().await.get(id).cloned()
     }
-    async fn load_sections(&self) -> Result<Vec<Material>, String> {
-        let mut sections = Vec::new();
-        let mut cached_urls = HashSet::new();
-        for (year, url) in OFFICIAL_SOURCES {
-            let row = sqlx::query_scalar::<_, String>(
-                "SELECT sections_json FROM data_analysis_sources WHERE url=?",
-            )
-            .bind(url)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(as_error)?;
-            if let Some(cached) = row {
-                if let Ok(values) = serde_json::from_str::<Vec<Material>>(&cached) {
-                    if values.len() >= 4 {
-                        cached_urls.insert(url);
-                        sections.extend(values);
-                    }
-                }
-            }
-            let _ = year;
-        }
-        // No outbound request is needed when all years have been cached.
-        // Native offline tests can use prepared groups without a public site.
-        if cached_urls.len() == OFFICIAL_SOURCES.len() || (cfg!(test) && sections.len() >= 4) {
-            return Ok(sections);
-        }
-        for (year, url) in OFFICIAL_SOURCES {
-            if cached_urls.contains(url) {
-                continue;
-            }
-            let Ok(response) = self
-                .client
-                .get(url)
-                .timeout(Duration::from_secs(15))
-                .send()
-                .await
-            else {
-                continue; // retain usable offline cached years
-            };
-            if !response.status().is_success()
-                || response.content_length().unwrap_or(0) > MAX_DOCUMENT_BYTES as u64
-            {
-                continue;
-            }
-            let Ok(bytes) = response.bytes().await else {
-                continue;
-            };
-            if bytes.len() > MAX_DOCUMENT_BYTES {
-                continue;
-            }
-            let Ok(html) = String::from_utf8(bytes.to_vec()) else {
-                continue;
-            };
-            let values = parse_official_sections_from(&html, url);
-            if values.len() < 4 {
-                continue;
-            }
-            let hash = Sha256::digest(html.as_bytes())
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>();
-            let encoded = serde_json::to_string(&values).map_err(as_error)?;
-            sqlx::query("INSERT INTO data_analysis_sources(url,title,content_hash,fetched_at_ms,sections_json) VALUES(?,?,?,?,?) ON CONFLICT(url) DO UPDATE SET content_hash=excluded.content_hash,fetched_at_ms=excluded.fetched_at_ms,sections_json=excluded.sections_json")
-                .bind(url).bind(format!("中华人民共和国{year}年国民经济和社会发展统计公报"))
-                .bind(hash).bind(now_ms()).bind(encoded)
-                .execute(&self.pool).await.map_err(as_error)?;
-            sections.extend(values);
-        }
-        if sections.len() < 4 {
-            return Err("年度官方资料不足，无法选出4组材料；请检查国家统计局网络连接".into());
-        }
-        Ok(sections)
-    }
     async fn generate(&self, job: &str, manual_skills: &[String]) -> Result<String, String> {
-        self.set_progress(job, "fetching", 0, "正在读取官方统计资料", None)
+        self.set_progress(job, "selecting", 0, "正在规划参考真题的统计主题", None)
             .await;
-        let materials = self.load_sections().await?;
-        self.set_progress(job, "selecting", 0, "正在选择薄弱和未练主题", None)
-            .await;
+        let materials = exam_theme_materials();
         let weaknesses = self.weaknesses().await;
         let mut scores = HashMap::<String, (i64, i64)>::new();
         let rows=sqlx::query("SELECT topic, count(*) n, sum(CASE WHEN is_correct=0 THEN 1 ELSE 0 END) missed FROM data_analysis_results GROUP BY topic")
@@ -526,7 +440,7 @@ impl DataAnalysisService {
         // Explore never-seen topics before repeating familiar source sections.
         // Once covered, prioritize topics with high error ratios.
         let mut ordered = materials;
-        // A simulated paper is new even when its theme uses a previously read official chapter.
+        // Explore a varied mix of statistical themes rather than official bulletin sections.
         ordered.sort_by(|a, b| {
             let (na, ma) = scores.get(&a.topic).copied().unwrap_or((0, 0));
             let (nb, mb) = scores.get(&b.topic).copied().unwrap_or((0, 0));
@@ -536,15 +450,12 @@ impl DataAnalysisService {
                 .partial_cmp(&score_a)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        // Deliberately never reuse a prior generated group. Saved groups are
-        // Saved groups support history and review, never a new-paper cache.
+        // Existing groups remain available to review, but never become new-paper caches.
         let mut ready: Vec<QuestionGroup> = Vec::new();
         let mut attempted = HashSet::<(String, String)>::new();
         let mut last_error = String::new();
         let mut attempts = 0;
-        // The strict pass avoids repeated official years and topics. A fallback
-        // pass only relaxes those two diversity constraints; it never repeats a
-        // source/section identity or requeues a failed generation indefinitely.
+        // Prefer four distinct themes; bounded retries use independent Codex threads.
         for strict_diversity in [true, false] {
             loop {
                 if ready.len() == QUIZ_GROUPS {
@@ -675,19 +586,7 @@ impl DataAnalysisService {
         ordinal: usize,
     ) -> Result<QuestionGroup, String> {
         let config = self.config.as_ref().ok_or("Codex Token 未配置")?;
-        let earlier = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM data_analysis_groups WHERE section=?",
-        )
-        .bind(&source.section)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(as_error)?;
-        let context = generation_excerpt(source, earlier.max(0) as usize);
-        let source_year = OFFICIAL_SOURCES
-            .iter()
-            .find(|(_, url)| *url == context.source_url)
-            .map(|(year, _)| *year)
-            .unwrap_or(2025);
+        let context=source.clone();
         let prompt = format!(
             r#"你是 hyz 的公务员行测资料分析综合训练命题 Agent。当前任务是**题型驱动**，不是材料驱动。
 工作目录是 hyz-things 仓库。请先使用 hyz-xingce Skill（.agents/skills/行测做题/SKILL.md），
@@ -702,23 +601,26 @@ impl DataAnalysisService {
 手动考点优先于系统推荐考点，但不因此忽略题型多样性；不要把标签当材料标题。
 {question_boundary}
 先选择本篇5题的题型、命题变式与考查的 hyz 速算/审题动作，再构造共享且自洽的模拟统计数据，
-最后写成约400–1000汉字、2～4个自然段的国考风格材料，并拟制5道有唯一正确答案的四选一题。
-整篇只围绕同一统计大主题；按总体概况、细分主体、相关指标或年份口径等小主题组织不同段落，每段有清晰的主体、指标及时间口径。
+最后写成400～1000汉字、2～4个自然段的国考风格纯数据材料，并拟制5道有唯一正确答案的四选一题。
+material_text **仅包含统计事实与数据**（年份、主体、指标、数值、单位、同比及分项等），按总体、细分主体、相关指标自然分段；不要出现教学解释、公式提示、数据构造思路、统计口径教程或引导答题的总结句。
+严格禁止类似“按销售量乘以均价计算销售额”“人均数按收入除以人数计算”“两期增长率需连乘”“限额以上占比要先算”等解题提示，也不要加“以上为模拟数据”“请按同比计算”“除特别说明外”等生成器说明。
+material_text 不要写材料标题、试卷说明、来源说明、“模拟训练数据”声明；这类元信息由页面单独显示。材料中的简短指标名称和正常单位可以保留，但不能解释怎么解题。
 不同段落可设置合理相似指标、同比与现期的检索干扰，但不可把同一事实人为拆得不合常理。
 material_text 必须使用两个换行符分隔自然段（\n\n，JSON中正确转义），不要写成无分段的数字清单。
 四篇材料尽量使用不同大主题，5道题的命题顺序不必对应材料段落顺序。
 各题的考点、命题变式和难度必须来自实际读取的错题 Flashcard，重点考查相应的 hyz 审题及速算动作。
 不得为填充所谓“基础题”或“核心考点”数量而降低难度，不机械重复简单基期量、增长量或现期量。
-此篇背景：{year}年，官方参考章节「{section}」，主题「{topic}／{subtopic}」。
-官方公报摘录仅供了解主体、指标、统计口径和写作语气，不是数值限制，也不是模拟数字的官方证明：
-{excerpt}
+本篇统计大主题：「{topic}」，参考命题场景：「{subtopic}」。
+先主动联网检索这一主题的公务员行测资料分析历年真题材料（可搜索国考或省考真题）。
+参考真实考试材料的段落组织、主体与指标口径、数字精度和题目问法；识别可靠真题来源与年份，勿把培训机构模拟题误认为真题。
+只借鉴结构和命题风格，严禁复制检索到的整篇真题材料、题干或原始数字。使用全新构造且内部一致的模拟统计数据。
+不再抓取或依赖国家统计局年度统计公报作为材料输入。
 模拟数据必须有真实统计公报的数值精度与自然分布：不要为方便心算而大量使用整百、整千、整万和连续零结尾的“漂亮数字”（如50000元、20000元、70000万吨、4200万公顷）。
 例如，年度总量可写382738亿元，居民收入可写38273元，人口可写936.8万人，增速可写3.7%或-1.2%；这些只是精度示例，不要照抄或把各指标一律放大。
 根据指标与单位采用自然精度：亿元、万吨、元等统计量通常可以是多位非整百的整数；万亿元、万人及比率按公报口径合理保留小数；不要滥用无意义的多位小数。
 同一篇材料大多数总量与分项应有非整百尾数，仍允许少量自然整值。增长量、分项合计、同比和基期由同一套数值关系推导，并按展示精度协调四舍五入；不能为制造整数答案篡改数字。
 题目要符合 hyz 选项驱动的近似速算：数据自然但量级合理，选项可区分，不故意制造繁琐的纯精算。
-允许合理构造所有训练数值；模拟材料必须清楚标注为“模拟训练数据”，
-不得声称模拟数字是国家统计局真实公布的数值。年份、主体、指标和单位要明确，
+允许合理构造所有训练数值；这些数字是模拟数据而非搜索到的真题原值。年份、主体、指标和单位要明确，
 基期、现期、增长量与增速、部分/总体、混合权重之间必须自洽。
 题干涉及同比时明确写具体比较年份（如“2024年比2023年”），不能只说“年末”“去年”。
 根据考生能在最终材料中实际看到的数字判断正确项；四项的区分度应适合 hyz 速算方法。
@@ -738,11 +640,8 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
                 .map(|(_, name)| name.as_str())
                 .collect::<Vec<_>>()
                 .join("、"),
-            year = source_year,
-            section = context.section,
             topic = context.topic,
-            subtopic = context.subtopic,
-            excerpt = context.text
+            subtopic = context.subtopic
         );
         let mut session = tokio::time::timeout(
             Duration::from_secs(12),
@@ -768,7 +667,7 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
             return Err("Codex 返回的试卷结构不完整（需要5题，每题4个选项）".into());
         }
         let mut material = context;
-        material.text = format!("【模拟训练数据，非官方发布数值】\n{}", batch.material_text);
+        material.text = batch.material_text;
         Ok(QuestionGroup {
             version: 4,
             material,
@@ -992,164 +891,20 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
     }
 }
 
-/// Keep complete per-chapter official text in SQLite, but pass one bounded
-/// paragraph-coherent fragment to the AI and the iPad. Repeated generation can
-/// rotate over different paragraphs without re-fetching the official source.
-fn generation_excerpt(material: &Material, sequence: usize) -> Material {
-    let mut chunks = Vec::<String>::new();
-    let mut chunk = String::new();
-    for paragraph in material.text.split("\n\n") {
-        let chars = paragraph.chars().count();
-        if chars == 0 {
-            continue;
-        }
-        let candidate = if chars > MAX_GENERATION_CHARS {
-            paragraph
-                .chars()
-                .take(MAX_GENERATION_CHARS)
-                .collect::<String>()
-        } else {
-            paragraph.to_owned()
-        };
-        if !chunk.is_empty()
-            && chunk.chars().count() + candidate.chars().count() + 2 > MAX_GENERATION_CHARS
-        {
-            chunks.push(std::mem::take(&mut chunk));
-        }
-        if !chunk.is_empty() {
-            chunk.push_str("\n\n");
-        }
-        chunk.push_str(&candidate);
-    }
-    if !chunk.is_empty() {
-        chunks.push(chunk);
-    }
-    let mut excerpt = material.clone();
-    if !chunks.is_empty() {
-        excerpt.text = chunks[sequence % chunks.len()].clone();
-    }
-    // Official section is the parent topic; fragment-specific topic is
-    // independent of the arithmetic skill required to solve the questions.
-    let text = excerpt.text.as_str();
-    let rules: &[(&str, &str, &[&str])] = &[
-        ("宏观经济", "人口与就业", &["人口", "就业", "失业率"]),
-        ("宏观经济", "居民价格", &["居民消费价格", "生产者价格"]),
-        ("宏观经济", "区域经济", &["东部地区", "中部地区", "长三角"]),
-        ("宏观经济", "绿色低碳", &["二氧化碳排放", "清洁能源"]),
-        ("宏观经济", "产业结构与GDP", &["国内生产总值", "第一产业"]),
-        ("农业", "粮食生产", &["粮食产量", "粮食播种"]),
-        ("农业", "畜牧业", &["猪肉产量", "羊肉产量", "牛奶产量"]),
-        ("农业", "渔业", &["水产品", "养殖产量"]),
-        ("农业", "经济作物", &["棉花", "茶叶", "油料"]),
-        ("工业能源", "工业增加值", &["工业增加值", "制造业"]),
-        ("工业能源", "能源电力", &["发电", "煤炭", "原油"]),
-        ("工业能源", "建筑业", &["建筑业"]),
-        ("交通物流与服务", "交通运输", &["旅客运输", "货物运输"]),
-        ("交通物流与服务", "邮政快递", &["邮政", "快递"]),
-        ("交通物流与服务", "信息通信", &["电信", "互联网", "通信"]),
-        ("国内消费", "社会消费品零售", &["社会消费品零售"]),
-        ("国内消费", "网上零售", &["网上零售"]),
-        ("投资房地产", "房地产开发", &["房地产开发", "商品房"]),
-        ("投资房地产", "固定资产投资", &["固定资产投资"]),
-        ("对外经济", "货物进出口", &["进口", "出口"]),
-        ("对外经济", "外商投资", &["外商投资", "实际使用外资"]),
-        ("财政金融", "财政收支", &["财政收入", "财政支出"]),
-        ("财政金融", "货币信贷", &["货币供应", "贷款"]),
-        ("居民民生", "居民收入", &["居民人均可支配收入", "居民收入"]),
-        ("居民民生", "社会保障", &["社会保险", "参保"]),
-        ("科技教育", "科研创新", &["专利", "研究与试验发展"]),
-        ("科技教育", "教育", &["在校生", "招生"]),
-        ("文旅卫生体育", "旅游", &["旅游", "游客"]),
-        ("文旅卫生体育", "卫生医疗", &["卫生", "医疗"]),
-        ("资源环境安全", "能源消费", &["能源消费"]),
-        (
-            "资源环境安全",
-            "生态环境",
-            &["空气质量", "水质", "森林覆盖率"],
-        ),
-        ("资源环境安全", "安全生产", &["安全生产", "事故"]),
-    ];
-    if let Some((_, subtopic, _)) = rules.iter().find(|(topic, _, words)| {
-        *topic == excerpt.topic && words.iter().any(|word| text.contains(word))
-    }) {
-        excerpt.subtopic = (*subtopic).to_owned();
-    }
-    excerpt
+/// Lightweight theme seeds only. No National Bureau of Statistics fetch is
+/// needed: Codex researches actual exam-style passages before inventing a new
+/// self-contained statistical dataset for each theme.
+fn exam_theme_materials() -> Vec<Material> {
+    SECTIONS.iter().enumerate().map(|(index,(_,topic))| Material {
+        section: (*topic).to_owned(),
+        topic: (*topic).to_owned(),
+        subtopic: (*topic).to_owned(),
+        text: String::new(),
+        // Historical field is a stable selection identity, not a URL to open.
+        source_url: format!("practice-theme-{index}"),
+    }).collect()
 }
 
-fn normalize(raw: &str) -> String {
-    raw.chars()
-        .filter(|c| !c.is_control())
-        .collect::<String>()
-        .replace('\u{00a0}', " ")
-        .trim()
-        .to_owned()
-}
-fn compact_heading(raw: &str) -> String {
-    raw.chars().filter(|c| !c.is_whitespace()).collect()
-}
-/// Do not accept tables or images as the first-generation source. Retain the
-/// official section and a fixed topic, with a material snapshot per section.
-pub fn parse_official_sections(html: &str) -> Vec<Material> {
-    parse_official_sections_from(html, SOURCE_URL)
-}
-fn parse_official_sections_from(html: &str, source_url: &str) -> Vec<Material> {
-    let dom = scraper::Html::parse_document(html);
-    let selector = match scraper::Selector::parse("p") {
-        Ok(s) => s,
-        Err(_) => return Vec::new(),
-    };
-    let mut result = Vec::new();
-    let mut current: Option<usize> = None;
-    let mut raw: Vec<Vec<String>> = vec![Vec::new(); SECTIONS.len()];
-    for p in dom.select(&selector) {
-        let text = normalize(&p.text().collect::<String>());
-        let heading = compact_heading(&text);
-        if let Some(i) = SECTIONS.iter().position(|(title, _)| heading == *title) {
-            current = Some(i);
-            continue;
-        }
-        if let Some(i) = current {
-            if heading.starts_with("注：")
-                || heading.starts_with("注[")
-                || text.chars().count() < 28
-                || !text.chars().any(|c| c.is_ascii_digit())
-            {
-                continue;
-            }
-            if raw[i].iter().map(|x| x.chars().count()).sum::<usize>() < MAX_CACHED_SECTION_CHARS {
-                raw[i].push(text);
-            }
-        }
-    }
-    for (i, (heading, topic)) in SECTIONS.iter().enumerate() {
-        let text = raw[i].join("\n\n");
-        if text.chars().count() >= 180 {
-            let subtopic = match i {
-                0 => "GDP与区域",
-                1 => "农业生产",
-                2 => "工业与建筑业",
-                3 => "交通邮政服务",
-                4 => "零售消费",
-                5 => "投资与房地产",
-                6 => "进出口贸易",
-                7 => "金融财政",
-                8 => "收入社会保障",
-                9 => "科研教育",
-                10 => "文化卫生旅游",
-                _ => "资源环境",
-            };
-            result.push(Material {
-                section: (*heading).into(),
-                topic: (*topic).into(),
-                subtopic: subtopic.into(),
-                text,
-                source_url: source_url.into(),
-            });
-        }
-    }
-    result
-}
 /// Look at the directory currently mounted into RK3568 rather than
 /// requiring a card sync just to show a newly created folder name.
 async fn mounted_wrong_question_categories() -> Option<Vec<String>> {
@@ -1496,32 +1251,14 @@ mod tests {
     }
 
     #[test]
-    fn complete_official_text_is_cached_while_generation_is_bounded() {
-        let first = "全年粮食产量71488万吨，比上年增加838万吨。";
-        let second = "年末水产品总产量7657万吨，同比增长4.1%。";
-        let html = format!(
-            "<article><p>二、农业</p><p>{}</p><p>{}</p></article>",
-            first.repeat(120),
-            second.repeat(120)
-        );
-        let sections = parse_official_sections(&html);
-        assert_eq!(sections.len(), 1);
-        assert!(sections[0].text.chars().count() > 1600);
-        let excerpt = generation_excerpt(&sections[0], 1);
-        assert!(excerpt.text.chars().count() <= MAX_GENERATION_CHARS);
-        assert_eq!(excerpt.section, sections[0].section);
-        assert_eq!(excerpt.topic, sections[0].topic);
+    fn topic_seeds_do_not_depend_on_official_articles() {
+        let topics = exam_theme_materials();
+        assert_eq!(topics.len(), SECTIONS.len());
+        assert!(topics.iter().all(|m|m.text.is_empty()));
+        assert!(topics.iter().all(|m|!m.source_url.starts_with("http")));
+        let chosen = select_material_batch(&topics, &[], &HashSet::new(), true, QUIZ_GROUPS);
+        assert_eq!(chosen.len(), QUIZ_GROUPS);
+        assert_eq!(chosen.iter().map(|m|m.topic.as_str()).collect::<HashSet<_>>().len(), QUIZ_GROUPS);
     }
-    #[test]
-    fn parser_keeps_sections_separate() {
-        let html = format!(
-            "<article><p>一、综合</p><p>{}</p><p>二、农业</p><p>{}</p></article>",
-            "国内生产总值1401879亿元，比上年增长5.0%。".repeat(9),
-            "全年粮食产量71488万吨，比上年增加838万吨。".repeat(9)
-        );
-        let sections = parse_official_sections(&html);
-        assert_eq!(sections.len(), 2);
-        assert_eq!(sections[0].topic, "宏观经济");
-        assert!(sections[1].text.contains("71488"));
-    }
+
 }
