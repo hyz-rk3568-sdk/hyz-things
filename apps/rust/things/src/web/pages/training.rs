@@ -322,12 +322,17 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
 
     let go_back = {
         let route_state = props.route_state.clone();
+        let session = session.clone();
         Callback::from(move |_| {
-            navigate_route(
-                &route_state,
-                PortalRoute::study(StudyView::Dashboard, None, Vec::new()),
-                false,
-            )
+            if session.is_some() {
+                session.set(None);
+            } else {
+                navigate_route(
+                    &route_state,
+                    PortalRoute::study(StudyView::Dashboard, None, Vec::new()),
+                    false,
+                );
+            }
         })
     };
     let content = if let Some(live) = current {
@@ -392,7 +397,7 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
                     <p class="text-xs text-base-content/60">{"本轮统计仅在页面会话中保留，不写入 FSRS 或训练历史。"}</p>
                     <div class="flex gap-3">
                         <button type="button" class="btn btn-primary" data-testid="practice-restart" onclick={restart}>{"再练一轮"}</button>
-                        <button type="button" class="btn btn-ghost" onclick={go_back.clone()}>{"返回学习"}</button>
+                        <button type="button" class="btn btn-ghost" onclick={go_back.clone()}>{"返回专项训练"}</button>
                     </div>
                 </section>
             }
@@ -646,7 +651,7 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
     html! {
         <div class={if is_training_immersive { format!("calculation-layout {}",FIXED_TRAINING_LAYOUT) } else { "calculation-layout min-h-dvh".to_owned() }} data-testid="practice-layout" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
             <div class={if is_training_immersive { "mx-auto flex w-full shrink-0 justify-end pb-2" } else { "mx-auto flex max-w-5xl justify-end px-4 pt-2" }}>
-                <button type="button" class="btn btn-ghost btn-sm" data-testid="practice-back-to-study" onclick={go_back}>{"← 返回学习"}</button>
+                <button type="button" class="btn btn-ghost btn-sm" data-testid="practice-back-to-study" onclick={go_back}>{if is_training_immersive { "← 返回专项训练" } else { "← 返回学习中心" }}</button>
             </div>
             if is_training_immersive {
                 <div class="min-h-0 flex-1 overflow-hidden">{content}</div>
