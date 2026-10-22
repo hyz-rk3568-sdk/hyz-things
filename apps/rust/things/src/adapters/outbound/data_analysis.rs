@@ -3,7 +3,7 @@
 use super::codex_app_server::{validate_token, CodexSession, TURN_TIMEOUT};
 use crate::domain::data_analysis::{
     select_material_batch, Material, VerifiedQuestion, QUIZ_GROUPS, QUIZ_PER_GROUP, QUIZ_SECONDS,
-    SECTIONS,
+    TOPICS,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
@@ -630,104 +630,91 @@ impl DataAnalysisService {
         // Keep the original four slots even if only some parallel tasks succeed.
         // Retried slots must retain their assigned wrong/knowledge quotas.
         let mut ready = vec![None::<QuestionGroup>; QUIZ_GROUPS];
-        let mut attempted = HashSet::<(String, String)>::new();
+        let mut attempted = HashSet::<String>::new();
         let mut last_error = String::new();
         let mut attempts = 0;
-        for strict_diversity in [true, false] {
-            loop {
-                let missing = ready
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(slot, group)| group.is_none().then_some(slot))
-                    .collect::<Vec<_>>();
-                if missing.is_empty() {
-                    break;
-                }
-                let completed: Vec<Material> = ready
-                    .iter()
-                    .flatten()
-                    .map(|group| group.material.clone())
-                    .collect();
-                let wave = select_material_batch(
-                    &ordered,
-                    &completed,
-                    &attempted,
-                    strict_diversity,
-                    missing.len(),
-                );
-                if wave.is_empty() {
-                    break;
-                }
+        loop {
+            let missing = ready
+                .iter()
+                .enumerate()
+                .filter_map(|(slot, group)| group.is_none().then_some(slot))
+                .collect::<Vec<_>>();
+            if missing.is_empty() {
+                break;
+            }
+            let completed: Vec<Material> = ready
+                .iter()
+                .flatten()
+                .map(|group| group.material.clone())
+                .collect();
+            let wave = select_material_batch(&ordered, &completed, &attempted, missing.len());
+            if wave.is_empty() {
+                break;
+            }
 
-                let mut ordered_results = vec![None::<QuestionGroup>; QUIZ_GROUPS];
-                let mut requests = Vec::new();
-                for (slot, material) in missing.into_iter().zip(wave.iter()) {
-                    attempted.insert((material.source_url.clone(), material.section.clone()));
-                    if attempts < 12 {
-                        attempts += 1;
-                        requests.push((slot, material.clone()));
+            let mut ordered_results = vec![None::<QuestionGroup>; QUIZ_GROUPS];
+            let mut requests = Vec::new();
+            for (slot, material) in missing.into_iter().zip(wave.iter()) {
+                attempted.insert(material.topic.clone());
+                if attempts < 12 {
+                    attempts += 1;
+                    requests.push((slot, material.clone()));
+                }
+            }
+            if requests.is_empty() {
+                break;
+            }
+
+            self.set_progress(
+                job,
+                "generating",
+                ready.iter().filter(|group| group.is_some()).count() * QUIZ_PER_GROUP,
+                "最多4个 Codex Thread 正在生成错题强化与资料知识点混合试卷",
+                None,
+            )
+            .await;
+            let worker = self.clone();
+            let plan = Arc::clone(&plan);
+            let user_prompt = Arc::new(user_prompt.to_owned());
+            for (slot, outcome) in run_generation_wave(requests, move |material, slot| {
+                let worker = worker.clone();
+                let plan = Arc::clone(&plan);
+                let user_prompt = Arc::clone(&user_prompt);
+                async move {
+                    worker
+                        .generate_group(&material, &plan, &user_prompt, slot)
+                        .await
+                }
+            })
+            .await
+            {
+                match outcome {
+                    Ok(group) if slot < QUIZ_GROUPS => {
+                        ordered_results[slot] = Some(group);
                     }
+                    Ok(_) => last_error = "Codex 并行任务返回异常序号".into(),
+                    Err(error) => last_error = error,
                 }
-                if requests.is_empty() {
-                    break;
-                }
+            }
 
+            // Only the coordinator persists groups in the assigned slot.
+            for (slot, group) in ordered_results.into_iter().enumerate() {
+                let Some(group) = group else { continue };
+                sqlx::query("INSERT INTO data_analysis_groups(id,topic,group_json,created_at_ms) VALUES (?,?,?,?)")
+                    .bind(Uuid::now_v7().to_string())
+                    .bind(&group.material.topic)
+                    .bind(serde_json::to_string(&group).map_err(as_error)?)
+                    .bind(now_ms())
+                    .execute(&self.pool).await.map_err(as_error)?;
+                ready[slot] = Some(group);
                 self.set_progress(
                     job,
                     "generating",
                     ready.iter().filter(|group| group.is_some()).count() * QUIZ_PER_GROUP,
-                    "最多4个 Codex Thread 正在生成错题强化与资料知识点混合试卷",
+                    "已接收 Codex 完成的模拟试题并保存",
                     None,
                 )
                 .await;
-                let worker = self.clone();
-                let plan = Arc::clone(&plan);
-                let user_prompt = Arc::new(user_prompt.to_owned());
-                for (slot, outcome) in run_generation_wave(requests, move |material, slot| {
-                    let worker = worker.clone();
-                    let plan = Arc::clone(&plan);
-                    let user_prompt = Arc::clone(&user_prompt);
-                    async move {
-                        worker
-                            .generate_group(&material, &plan, &user_prompt, slot)
-                            .await
-                    }
-                })
-                .await
-                {
-                    match outcome {
-                        Ok(group) if slot < QUIZ_GROUPS => {
-                            ordered_results[slot] = Some(group);
-                        }
-                        Ok(_) => last_error = "Codex 并行任务返回异常序号".into(),
-                        Err(error) => last_error = error,
-                    }
-                }
-
-                // Only the coordinator persists groups in the assigned slot.
-                for (slot, group) in ordered_results.into_iter().enumerate() {
-                    let Some(group) = group else { continue };
-                    sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES (?,?,?,?,?,?)")
-                        .bind(Uuid::now_v7().to_string())
-                        .bind(&group.material.source_url)
-                        .bind(&group.material.section)
-                        .bind(&group.material.topic)
-                        .bind(serde_json::to_string(&group).map_err(as_error)?)
-                        .bind(now_ms())
-                        .execute(&self.pool).await.map_err(as_error)?;
-                    ready[slot] = Some(group);
-                    self.set_progress(
-                        job,
-                        "generating",
-                        ready.iter().filter(|group| group.is_some()).count() * QUIZ_PER_GROUP,
-                        "已接收 Codex 完成的模拟试题并保存",
-                        None,
-                    )
-                    .await;
-                }
-            }
-            if ready.iter().all(Option::is_some) {
-                break;
             }
         }
         let count = ready.iter().filter(|group| group.is_some()).count();
@@ -774,7 +761,7 @@ impl DataAnalysisService {
 联网参考可验证来源的国考、省考真题材料风格，不照搬原题与数字。
 
 【本轮动态上下文】
-本次是4篇×5题的第 {group_no} 篇；主题「{topic}」，场景「{subtopic}」。
+本次是4篇×5题的第 {group_no} 篇；统计主题「{topic}」。
 错题强化：本篇恰好 {wrong_count} 道，各类别各1题：{manual_focus}。只读取 flashcards/资料/错题/<类别>/ 的原始卡片。
 普通资料知识点：恰好 {knowledge_count} 道，从 flashcards/资料/<知识点>/ 的 card.md 或 cards.md 出，目录候选：{knowledge_categories}；不得用 错题/ 内卡片补位。同名知识点允许，但 source_kind 必须与真实来源相符。
 题目可以交错排布。先根据这5个目标构造共享材料，再拟制题目；先自行检查正确性。
@@ -785,7 +772,6 @@ impl DataAnalysisService {
 只输出 Schema 对应的 JSON，不输出解释性前言。"#,
             group_no = ordinal % QUIZ_GROUPS + 1,
             topic = context.topic,
-            subtopic = context.subtopic,
             wrong_count = plan.required[ordinal].len(),
             knowledge_count = QUIZ_PER_GROUP - plan.required[ordinal].len(),
             manual_focus = plan.required[ordinal].join("、"),
@@ -909,7 +895,9 @@ impl DataAnalysisService {
              VALUES (?,?,?,'ready',?,?,?)",
         )
         .bind(&id)
-        .bind(&groups_json)
+        // Keep old questions verbatim, but do not carry legacy Material fields
+        // into a new attempt's persisted JSON.
+        .bind(serde_json::to_string(&groups).map_err(as_error)?)
         .bind(
             serde_json::to_string(&vec![None::<usize>; QUIZ_GROUPS * QUIZ_PER_GROUP])
                 .map_err(as_error)?,
@@ -1240,7 +1228,7 @@ impl DataAnalysisService {
                 elapsed_ms: (ended - started - paused_total).max(0),
                 correct,
                 total,
-                topics: groups.iter().map(|g| g.material.subtopic.clone()).collect(),
+                topics: groups.iter().map(|g| g.material.topic.clone()).collect(),
             });
         }
         Ok(result)
@@ -1281,16 +1269,11 @@ fn order_exam_themes(
 /// needed: Codex researches actual exam-style passages before inventing a new
 /// self-contained statistical dataset for each theme.
 fn exam_theme_materials() -> Vec<Material> {
-    SECTIONS
+    TOPICS
         .iter()
-        .enumerate()
-        .map(|(index, (_, topic))| Material {
-            section: (*topic).to_owned(),
+        .map(|topic| Material {
             topic: (*topic).to_owned(),
-            subtopic: (*topic).to_owned(),
             text: String::new(),
-            // Historical field is a stable selection identity, not a URL to open.
-            source_url: format!("practice-theme-{index}"),
         })
         .collect()
 }
@@ -1393,7 +1376,6 @@ fn wrong_question_category(deck: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::data_analysis::SOURCE_URL;
     #[test]
     fn uses_exact_wrong_question_subdirectories_as_skills() {
         assert_eq!(
@@ -1589,11 +1571,8 @@ mod tests {
                 (
                     slot,
                     Material {
-                        section: format!("section-{slot}"),
                         topic: format!("topic-{slot}"),
-                        subtopic: "test".into(),
                         text: "test".into(),
-                        source_url: format!("year-{slot}"),
                     },
                 )
             })
@@ -1611,7 +1590,7 @@ mod tests {
                     peak.fetch_max(running, Ordering::SeqCst);
                     barrier.wait().await;
                     active.fetch_sub(1, Ordering::SeqCst);
-                    if material.section == "section-2" {
+                    if material.topic == "topic-2" {
                         Err("simulate invalid Codex response".into())
                     } else {
                         Ok(QuestionGroup {
@@ -1638,7 +1617,7 @@ mod tests {
             if slot == 2 {
                 assert!(item.is_err());
             } else {
-                assert_eq!(item.unwrap().material.section, format!("section-{slot}"));
+                assert_eq!(item.unwrap().material.topic, format!("topic-{slot}"));
             }
         }
     }
@@ -1694,11 +1673,8 @@ mod tests {
         let group = QuestionGroup {
             version: 4,
             material: Material {
-                section: "测试章节".into(),
                 topic: "测试主题".into(),
-                subtopic: "测试子主题".into(),
                 text: "测试统计材料".into(),
-                source_url: "practice-test".into(),
             },
             questions: (0..QUIZ_PER_GROUP)
                 .map(|index| VerifiedQuestion {
@@ -1713,12 +1689,19 @@ mod tests {
                 .collect(),
         };
         let id = Uuid::now_v7().to_string();
+        // Simulate JSON created before section/subtopic/source_url removal.
+        let mut archived = serde_json::to_value(vec![group; QUIZ_GROUPS]).unwrap();
+        for group in archived.as_array_mut().unwrap() {
+            group["material"]["section"] = serde_json::json!("测试章节");
+            group["material"]["subtopic"] = serde_json::json!("测试子主题");
+            group["material"]["source_url"] = serde_json::json!("practice-test");
+        }
         sqlx::query(
             "INSERT INTO data_analysis_runs (id,groups_json,answers_json,status,created_at_ms)
              VALUES (?,?,?,'ready',?)",
         )
         .bind(&id)
-        .bind(serde_json::to_string(&vec![group; QUIZ_GROUPS]).unwrap())
+        .bind(archived.to_string())
         .bind(serde_json::to_string(&vec![None::<usize>; QUIZ_GROUPS * QUIZ_PER_GROUP]).unwrap())
         .bind(now_ms())
         .execute(&pool)
@@ -1727,6 +1710,16 @@ mod tests {
 
         let service = DataAnalysisService::new(pool.clone(), None).unwrap();
         let claimed = service.claim(&id).await.unwrap();
+        assert_eq!(claimed.run.groups[0].material.topic, "测试主题");
+        assert_eq!(claimed.run.groups[0].material.text, "测试统计材料");
+        assert_eq!(
+            serde_json::to_value(&claimed.run.groups[0].material)
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .len(),
+            2
+        );
         assert!(
             service.result(&id).await.is_err(),
             "active answers stay hidden"
@@ -1761,10 +1754,24 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(before, after, "history read must not update submitted run");
+
+        let redo_id = service.retry(&id).await.unwrap();
+        let copied_json: String =
+            sqlx::query_scalar("SELECT groups_json FROM data_analysis_runs WHERE id=?")
+                .bind(&redo_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(!copied_json.contains("source_url"));
+        assert!(!copied_json.contains("subtopic"));
+        assert!(!copied_json.contains("section"));
+        let redo = service.run(&redo_id).await.unwrap();
+        assert_eq!(redo.groups[0].material.topic, "测试主题");
+        assert_eq!(redo.groups[0].questions.len(), QUIZ_PER_GROUP);
     }
 
     #[tokio::test]
-    async fn saved_official_groups_support_history_without_new_codex_generation() {
+    async fn saved_groups_support_history_without_new_codex_generation() {
         // Exercise native SQLite/service paths without a paid AI API or external network.
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(1)
@@ -1776,23 +1783,27 @@ mod tests {
             .await
             .expect("migrations");
 
-        let materials = SECTIONS
+        let columns = sqlx::query("PRAGMA table_info(data_analysis_groups)")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        let columns = columns
+            .iter()
+            .map(|row| row.try_get::<String, _>("name").unwrap())
+            .collect::<HashSet<_>>();
+        assert!(columns.contains("topic"));
+        assert!(columns.contains("group_json"));
+        assert!(!columns.contains("source_url"));
+        assert!(!columns.contains("section"));
+
+        let materials = TOPICS
             .iter()
             .take(4)
-            .map(|(section, topic)| Material {
-                section: (*section).into(),
+            .map(|topic| Material {
                 topic: (*topic).into(),
-                subtopic: "测试子主题".into(),
                 text: "本年度业务量1200亿元，比上年增长15.2%。".repeat(8),
-                source_url: SOURCE_URL.into(),
             })
             .collect::<Vec<_>>();
-
-        sqlx::query("INSERT INTO data_analysis_sources(url,title,content_hash,fetched_at_ms,sections_json) VALUES (?,?,?,?,?)")
-            .bind(SOURCE_URL).bind("fixture official cache").bind("offline hash")
-            .bind(now_ms())
-            .bind(serde_json::to_string(&materials).unwrap())
-            .execute(&pool).await.unwrap();
 
         for material in &materials {
             let questions = (0..5)
@@ -1816,10 +1827,8 @@ mod tests {
                 material: material.clone(),
                 questions,
             };
-            sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES(?,?,?,?,?,?)")
+            sqlx::query("INSERT INTO data_analysis_groups(id,topic,group_json,created_at_ms) VALUES(?,?,?,?)")
                 .bind(Uuid::now_v7().to_string())
-                .bind(SOURCE_URL)
-                .bind(&material.section)
                 .bind(&material.topic)
                 .bind(serde_json::to_string(&group).unwrap())
                 .bind(now_ms())
@@ -2026,7 +2035,8 @@ mod tests {
         assert_eq!(historical.materials.len(), 4);
         assert_eq!(historical.questions.len(), 20);
         let (source_count, group_count) = service.counts().await.unwrap();
-        assert_eq!((source_count, group_count), (1, 4));
+        // Newly generated material is self-contained: no official-source cache.
+        assert_eq!((source_count, group_count), (0, 4));
     }
 
     #[test]
@@ -2106,11 +2116,8 @@ mod tests {
             let group = QuestionGroup {
                 version: 4,
                 material: Material {
-                    section: (*topic).to_owned(),
                     topic: (*topic).to_owned(),
-                    subtopic: (*topic).to_owned(),
                     text: "模拟材料".into(),
-                    source_url: format!("practice-theme-{index}"),
                 },
                 questions: Vec::new(),
             };
@@ -2130,11 +2137,8 @@ mod tests {
         let replay = QuestionGroup {
             version: 4,
             material: Material {
-                section: "虚假的最近主题".into(),
                 topic: "虚假的最近主题".into(),
-                subtopic: "虚假的最近主题".into(),
                 text: "模拟材料".into(),
-                source_url: "practice-theme-retry".into(),
             },
             questions: Vec::new(),
         };
@@ -2167,10 +2171,9 @@ mod tests {
     #[test]
     fn topic_seeds_do_not_depend_on_official_articles() {
         let topics = exam_theme_materials();
-        assert_eq!(topics.len(), SECTIONS.len());
+        assert_eq!(topics.len(), TOPICS.len());
         assert!(topics.iter().all(|m| m.text.is_empty()));
-        assert!(topics.iter().all(|m| !m.source_url.starts_with("http")));
-        let chosen = select_material_batch(&topics, &[], &HashSet::new(), true, QUIZ_GROUPS);
+        let chosen = select_material_batch(&topics, &[], &HashSet::new(), QUIZ_GROUPS);
         assert_eq!(chosen.len(), QUIZ_GROUPS);
         assert_eq!(
             chosen

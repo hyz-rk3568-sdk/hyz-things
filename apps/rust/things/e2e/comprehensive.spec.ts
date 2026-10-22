@@ -15,11 +15,11 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   const topics = ["宏观经济","农业","工业能源","交通物流与服务"];
   const groups = Array.from({length:4},(_,g)=>({
     material: {
-      section: ["一、综合","二、农业","三、工业和建筑业","四、服务业"][g],
+
       topic: topics[g],
-      subtopic: "文字统计材料",
+
       text: Array.from({length:30},()=> "2025年某项业务量为1200亿元，同比增长15.2%。\n\n其中地区一为480亿元，地区二为720亿元。").join("\n\n"),
-      source_url: `practice-theme-${g}`,
+
     },
     questions: Array.from({length:5},(_,j)=>({
       question:"第"+String(g*5+j+1)+"题：上一年的业务量约为多少？",
@@ -265,10 +265,10 @@ test("AI job survives leaving training; ready paper is untimed until explicit en
   const begun=Date.now();
   const groups=Array.from({length:4},(_,index)=>({
     material:{
-      section:["一、综合","二、农业","三、工业和建筑业","四、服务业"][index],
-      topic:"资料分析",subtopic:"统计资料",
+
+      topic:"资料分析",
       text:"2025年统计数据1200亿元，同比增长15.2%。",
-      source_url:"https://www.stats.gov.cn/"
+
     },
     questions:Array.from({length:5},()=>({
       question:"2025年统计数据是多少？",options:["1200","1300","1400","1500"],skill:"增长量"
@@ -333,7 +333,7 @@ test("iPad pauses and phone resumes server-held answers, position and single-edi
   const ipad=await browser.newContext({baseURL:baseURL!,viewport:{width:1180,height:820}});
   const phone=await browser.newContext({baseURL:baseURL!,viewport:{width:390,height:844}});
   const groups=Array.from({length:4},(_,g)=>({
-    material:{section:"资料分析",subtopic:"跨端训练材料",topic:"工业能源",text:"2025年数据1200亿元，同比上升10%。",source_url:"theme"},
+    material:{topic:"工业能源",text:"2025年数据1200亿元，同比上升10%。"},
     questions:Array.from({length:5},(_,j)=>({question:`第${g*5+j+1}题？`,options:["A","B","C","D"]})),
   }));
   const answers:(number|null)[]=Array(20).fill(null);
@@ -421,8 +421,8 @@ test("iPad pause at 02:07 resumes at 02:07 even when Safari clock is four minute
   });
   const serverNow=Date.now();
   const baseMaterial={
-    section:"一、模拟统计",subtopic:"工业生产",topic:"工业能源",
-    text:"2025年能源消费1200万吨，比上年增长10%。",source_url:"skew-fixture",
+    topic:"工业能源",
+    text:"2025年能源消费1200万吨，比上年增长10%。",
   };
   const groups=Array.from({length:4},()=>({
     material:baseMaterial,
