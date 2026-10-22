@@ -132,6 +132,22 @@ pub struct RunView {
     pub duration_seconds: u64,
     pub groups: Vec<PublicGroup>,
     pub answers: Vec<Option<usize>>,
+    pub current_question: usize,
+}
+#[derive(Clone, Serialize)]
+pub struct ClaimedRun {
+    pub run: RunView,
+    pub control_token: String,
+}
+#[derive(Clone, Serialize)]
+pub struct UnfinishedRun {
+    pub id: String,
+    pub status: String,
+    pub answered: usize,
+    pub current_question: usize,
+    pub deadline_at_ms: Option<i64>,
+    pub paused_remaining_ms: Option<i64>,
+    pub created_at_ms: i64,
 }
 #[derive(Clone, Serialize)]
 pub struct GradedQuestion {
@@ -680,6 +696,115 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
         Ok(id)
     }
 
+    /// One server-owned live position and a single random editing lease.
+    /// Claim is an explicit takeover: all older tokens stop authorizing writes.
+    pub async fn claim(&self, id: &str) -> Result<ClaimedRun, String> {
+        let token = Uuid::now_v7().to_string();
+        let updated = sqlx::query(
+            "UPDATE data_analysis_runs
+             SET controller_token=?, status='active',
+                 started_at_ms=COALESCE(started_at_ms, ?)
+             WHERE id=? AND status IN ('ready','active')",
+        )
+        .bind(&token)
+        .bind(now_ms())
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(as_error)?;
+        if updated.rows_affected() != 1 {
+            return Err("训练已交卷或不存在，无法接管".into());
+        }
+        Ok(ClaimedRun {
+            run: self.run(id).await?,
+            control_token: token,
+        })
+    }
+
+    /// Server discovery works across browsers/devices; never expose answer keys
+    /// or control tokens. Ready runs stay untimed until explicitly claimed.
+    pub async fn unfinished(&self) -> Result<Vec<UnfinishedRun>, String> {
+        let rows = sqlx::query(
+            "SELECT id,status,answers_json,current_question,started_at_ms,
+                    paused_at_ms,paused_total_ms,created_at_ms
+             FROM data_analysis_runs WHERE status IN ('ready','active')
+             ORDER BY created_at_ms DESC LIMIT 30",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(as_error)?;
+        let mut items = Vec::with_capacity(rows.len());
+        for row in rows {
+            let answers: Vec<Option<usize>> =
+                serde_json::from_str(&row.try_get::<String, _>("answers_json").map_err(as_error)?)
+                    .map_err(as_error)?;
+            if answers.len() != QUIZ_GROUPS * QUIZ_PER_GROUP {
+                continue;
+            }
+            let status: String = row.try_get("status").map_err(as_error)?;
+            let start: Option<i64> = row.try_get("started_at_ms").map_err(as_error)?;
+            let paused_at: Option<i64> = row.try_get("paused_at_ms").map_err(as_error)?;
+            let paused_total: i64 = row.try_get("paused_total_ms").map_err(as_error)?;
+            let deadline = start.map(|at| at + QUIZ_SECONDS as i64 * 1000 + paused_total);
+            items.push(UnfinishedRun {
+                id: row.try_get("id").map_err(as_error)?,
+                status,
+                answered: answers.iter().filter(|a| a.is_some()).count(),
+                current_question: row
+                    .try_get::<i64, _>("current_question")
+                    .map_err(as_error)?
+                    .clamp(0, 19) as usize,
+                deadline_at_ms: if paused_at.is_none() { deadline } else { None },
+                paused_remaining_ms: paused_at
+                    .zip(deadline)
+                    .map(|(since, end)| (end - since).max(0)),
+                created_at_ms: row.try_get("created_at_ms").map_err(as_error)?,
+            });
+        }
+        Ok(items)
+    }
+
+    async fn check_control(&self, id: &str, token: Option<&str>) -> Result<(), String> {
+        let stored: Option<String> = sqlx::query_scalar(
+            "SELECT controller_token FROM data_analysis_runs WHERE id=?",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(as_error)?
+        .ok_or("训练不存在")?;
+        if stored.as_deref() != token {
+            return Err("本次训练已在其他设备接管，请重新进入".into());
+        }
+        Ok(())
+    }
+
+    /// A position change cannot alter answers or active timer.
+    pub async fn save_position(
+        &self,
+        id: &str,
+        question: usize,
+        token: &str,
+    ) -> Result<(), String> {
+        if question >= QUIZ_GROUPS * QUIZ_PER_GROUP {
+            return Err("题号无效".into());
+        }
+        let updated = sqlx::query(
+            "UPDATE data_analysis_runs SET current_question=?
+             WHERE id=? AND status='active' AND controller_token=?",
+        )
+        .bind(question as i64)
+        .bind(id)
+        .bind(token)
+        .execute(&self.pool)
+        .await
+        .map_err(as_error)?;
+        if updated.rows_affected() == 0 {
+            return Err("本次训练已在其他设备接管，请重新进入".into());
+        }
+        Ok(())
+    }
+
     pub async fn run(&self, id: &str) -> Result<RunView, String> {
         sqlx::query("UPDATE data_analysis_runs SET status='active',started_at_ms=? WHERE id=? AND status='ready'")
             .bind(now_ms()).bind(id).execute(&self.pool).await.map_err(as_error)?;
@@ -718,37 +843,65 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
                 })
                 .collect(),
             answers,
+            current_question: sqlx::query_scalar::<_, i64>(
+                "SELECT current_question FROM data_analysis_runs WHERE id=?",
+            )
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(as_error)?
+            .clamp(0, 19) as usize,
         })
     }
     pub async fn answer(&self, id: &str, number: usize, choice: usize) -> Result<(), String> {
-        if !(1..=20).contains(&number) || choice > 3 {
+        self.answer_controlled(id, number, choice, None).await
+    }
+
+    pub async fn answer_controlled(
+        &self,
+        id: &str,
+        number: usize,
+        choice: usize,
+        token: Option<&str>,
+    ) -> Result<(), String> {
+        if !(1..=QUIZ_GROUPS * QUIZ_PER_GROUP).contains(&number) || choice > 3 {
             return Err("题号或选项无效".into());
         }
-        let (_groups, mut answers, status, started) = self.fetch_row(id).await?;
-        let timing =
-            sqlx::query("SELECT paused_at_ms,paused_total_ms FROM data_analysis_runs WHERE id=?")
-                .bind(id)
-                .fetch_one(&self.pool)
-                .await
-                .map_err(as_error)?;
-        let paused_at: Option<i64> = timing.try_get("paused_at_ms").map_err(as_error)?;
-        let paused_total: i64 = timing.try_get("paused_total_ms").map_err(as_error)?;
-        if status != "active"
-            || paused_at.is_some()
-            || started.is_none_or(|ms| now_ms() >= ms + QUIZ_SECONDS as i64 * 1000 + paused_total)
-        {
-            return Err("训练已交卷或超时".into());
+        // A single SQL JSON update avoids lost answers from concurrent requests.
+        // The token predicate also rejects a write racing with a new claim.
+        let updated = sqlx::query(
+            "UPDATE data_analysis_runs
+             SET answers_json=json_set(answers_json, ?, ?)
+             WHERE id=? AND status='active' AND paused_at_ms IS NULL
+               AND started_at_ms IS NOT NULL
+               AND (? < started_at_ms + ? + paused_total_ms)
+               AND ((controller_token IS NULL AND ? IS NULL) OR controller_token=?)",
+        )
+        .bind(format!("$[{}]", number - 1))
+        .bind(choice as i64)
+        .bind(id)
+        .bind(now_ms())
+        .bind(QUIZ_SECONDS as i64 * 1000)
+        .bind(token)
+        .bind(token)
+        .execute(&self.pool)
+        .await
+        .map_err(as_error)?;
+        if updated.rows_affected() == 0 {
+            return Err("训练已暂停、超时或控制权已移交".into());
         }
-        answers[number - 1] = Some(choice);
-        sqlx::query("UPDATE data_analysis_runs SET answers_json=? WHERE id=? AND status='active'")
-            .bind(serde_json::to_string(&answers).map_err(as_error)?)
-            .bind(id)
-            .execute(&self.pool)
-            .await
-            .map_err(as_error)?;
         Ok(())
     }
+
     pub async fn submit(&self, id: &str) -> Result<RunResult, String> {
+        self.submit_controlled(id, None).await
+    }
+    pub async fn submit_controlled(
+        &self,
+        id: &str,
+        token: Option<&str>,
+    ) -> Result<RunResult, String> {
+        self.check_control(id, token).await?;
         let (groups, answers, status, _started) = self.fetch_row(id).await?;
         if groups.len() != QUIZ_GROUPS
             || groups.iter().any(|g| g.questions.len() != QUIZ_PER_GROUP)
@@ -776,8 +929,21 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
         }
         if status != "submitted" {
             let mut txn = self.pool.begin().await.map_err(as_error)?;
-            sqlx::query("UPDATE data_analysis_runs SET status='submitted',ended_at_ms=? WHERE id=? AND status!='submitted'")
-                .bind(now_ms()).bind(id).execute(&mut *txn).await.map_err(as_error)?;
+            let updated = sqlx::query(
+                "UPDATE data_analysis_runs SET status='submitted',ended_at_ms=?
+                 WHERE id=? AND status='active'
+                 AND ((controller_token IS NULL AND ? IS NULL) OR controller_token=?)",
+            )
+            .bind(now_ms())
+            .bind(id)
+            .bind(token)
+            .bind(token)
+            .execute(&mut *txn)
+            .await
+            .map_err(as_error)?;
+            if updated.rows_affected() != 1 {
+                return Err("训练已由其他设备接管或已交卷".into());
+            }
             for q in &questions {
                 sqlx::query("INSERT OR IGNORE INTO data_analysis_results(run_id,question_no,topic,skill,is_correct,elapsed_ms) VALUES(?,?,?,?,?,?)")
                     .bind(id).bind(q.number as i64).bind(&q.topic).bind(&q.skill)
@@ -800,6 +966,14 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
     }
 
     pub async fn pause_toggle(&self, id: &str) -> Result<RunView, String> {
+        self.pause_toggle_controlled(id, None).await
+    }
+    pub async fn pause_toggle_controlled(
+        &self,
+        id: &str,
+        token: Option<&str>,
+    ) -> Result<RunView, String> {
+        self.check_control(id, token).await?;
         let row=sqlx::query("SELECT status,started_at_ms,paused_at_ms,paused_total_ms FROM data_analysis_runs WHERE id=?")
             .bind(id).fetch_optional(&self.pool).await.map_err(as_error)?.ok_or("训练不存在")?;
         let status: String = row.try_get("status").map_err(as_error)?;
@@ -811,15 +985,15 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
         }
         let now = now_ms();
         let result = if let Some(paused_at) = paused_at {
-            sqlx::query("UPDATE data_analysis_runs SET paused_at_ms=NULL,paused_total_ms=paused_total_ms+? WHERE id=? AND status='active' AND paused_at_ms=?")
-                .bind((now-paused_at).max(0)).bind(id).bind(paused_at)
+            sqlx::query("UPDATE data_analysis_runs SET paused_at_ms=NULL,paused_total_ms=paused_total_ms+? WHERE id=? AND status='active' AND paused_at_ms=? AND ((controller_token IS NULL AND ? IS NULL) OR controller_token=?)")
+                .bind((now-paused_at).max(0)).bind(id).bind(paused_at).bind(token).bind(token)
                 .execute(&self.pool).await.map_err(as_error)?
         } else {
             if started.is_none_or(|ms| now >= ms + QUIZ_SECONDS as i64 * 1000 + paused_total) {
                 return Err("训练计时已结束，不能暂停".into());
             }
-            sqlx::query("UPDATE data_analysis_runs SET paused_at_ms=? WHERE id=? AND status='active' AND paused_at_ms IS NULL")
-                .bind(now).bind(id).execute(&self.pool).await.map_err(as_error)?
+            sqlx::query("UPDATE data_analysis_runs SET paused_at_ms=? WHERE id=? AND status='active' AND paused_at_ms IS NULL AND ((controller_token IS NULL AND ? IS NULL) OR controller_token=?)")
+                .bind(now).bind(id).bind(token).bind(token).execute(&self.pool).await.map_err(as_error)?
         };
         if result.rows_affected() != 1 {
             return Err("计时状态已变化，请刷新".into());
