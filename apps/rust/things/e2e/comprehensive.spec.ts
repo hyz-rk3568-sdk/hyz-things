@@ -329,9 +329,9 @@ test("AI job survives leaving training; ready paper is untimed until explicit en
   expect(starts).toBe(1);
 });
 
-test("iPad pauses and phone resumes server-held answers, position and single-editor lease", async ({ browser }) => {
-  const ipad=await browser.newContext({viewport:{width:1180,height:820}});
-  const phone=await browser.newContext({viewport:{width:390,height:844}});
+test("iPad pauses and phone resumes server-held answers, position and single-editor lease", async ({ browser, baseURL }) => {
+  const ipad=await browser.newContext({baseURL:baseURL!,viewport:{width:1180,height:820}});
+  const phone=await browser.newContext({baseURL:baseURL!,viewport:{width:390,height:844}});
   const groups=Array.from({length:4},(_,g)=>({
     material:{section:"资料分析",subtopic:"跨端训练材料",topic:"工业能源",text:"2025年数据1200亿元，同比上升10%。",source_url:"theme"},
     questions:Array.from({length:5},(_,j)=>({question:`第${g*5+j+1}题？`,options:["A","B","C","D"]})),
