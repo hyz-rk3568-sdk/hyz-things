@@ -495,7 +495,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let grade = match q.chosen {
             Some(chosen) if chosen == q.correct_index => "正确",
             Some(_) => "错误",
-            None => "未作答",
+            None => "未答",
         };
         let review_options = q.options.iter().enumerate().map(|(i, option)| {
             let grade = if i == q.correct_index {
@@ -516,7 +516,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 _ => "",
             };
             html! {
-                <div class={style} data-testid="analysis-review-choice" data-grade={grade}>
+                <div class={style} data-testid="analysis-review-choice" data-state={grade}>
                     <span>{format!("{}. {}",["A", "B", "C", "D"][i],option)}</span>
                     <span class="shrink-0 text-xs">{hint}</span>
                 </div>
@@ -526,7 +526,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             <div class="space-y-4 p-4" data-testid="analysis-review-content">
                 <div class="flex items-center justify-between gap-2 text-xs text-base-content/60">
                     <span>{format!("本材料第 {}/5 题 · {}",local_index+1,q.skill)}</span>
-                    <span data-testid="analysis-grade">{grade}</span>
+                    <span data-testid="analysis-review-status">{grade}</span>
                 </div>
                 <h2 class="text-lg font-semibold leading-relaxed">{q.question.clone()}</h2>
                 <div class="grid gap-2">{for review_options}</div>
@@ -677,12 +677,15 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         }
         if active.paused_remaining_ms.is_some() {
             return html! {
-                <section class="mx-auto max-w-2xl p-6" data-testid="analysis-paused">
+                <section class="fixed inset-0 z-[70] flex h-dvh w-screen items-center justify-center overflow-hidden bg-base-200 p-6" data-testid="analysis-paused">
                     <div class="rounded-box bg-base-100 p-8 text-center">
                         <h2 class="text-2xl font-bold">{"训练已暂停"}</h2>
                         <p class="mt-3 text-base-content/60">{"已隐藏材料和题目，暂停期间不能答题。刷新页面仍保持暂停。"}</p>
                         <p class="my-5 font-mono text-3xl">{format!("{:02}:{:02}",active.paused_remaining_ms.unwrap_or(0)/60000,(active.paused_remaining_ms.unwrap_or(0)/1000)%60)}</p>
-                        <button class="btn btn-primary" disabled={*busy} onclick={toggle_pause}>{"继续计时"}</button>
+                        <div class="flex justify-center gap-3">
+                            <button type="button" class="btn btn-outline" data-testid="analysis-exit" onclick={exit.clone()}>{"← 返回专项"}</button>
+                            <button class="btn btn-primary" disabled={*busy} onclick={toggle_pause}>{"继续计时"}</button>
+                        </div>
                         {if let Some(msg)=(*error).clone(){html!{<p class="mt-4 text-error text-sm">{msg}</p>}}else{Html::default()}}
                     </div>
                 </section>
