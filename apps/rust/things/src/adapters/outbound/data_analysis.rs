@@ -3,7 +3,7 @@
 use super::codex_app_server::{validate_token, CodexSession, TURN_TIMEOUT};
 use crate::domain::data_analysis::{
     select_material_batch, Material, VerifiedQuestion, QUIZ_GROUPS, QUIZ_PER_GROUP,
-    QUIZ_SECONDS, SECTIONS, SOURCE_URL,
+    QUIZ_SECONDS, SECTIONS,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
@@ -962,6 +962,7 @@ fn wrong_question_category(deck: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::data_analysis::SOURCE_URL;
     #[test]
     fn uses_exact_wrong_question_subdirectories_as_skills() {
         assert_eq!(
