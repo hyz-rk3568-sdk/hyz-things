@@ -652,6 +652,7 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use hyz_things::domain::flashcards::{FlashcardId, ReviewStateKind};
 
     fn example_card(number: usize) -> FlashcardSummary {
