@@ -1,4 +1,4 @@
-//! 20 questions / 20 minutes. iPad-first 44:56 reading and answer panes.
+//! 20 questions / 20 minutes. Immersive iPad workspace with 60:40 material/question panes.
 use super::*;
 use gloo_timers::{callback::Interval, future::TimeoutFuture};
 use js_sys::Date;
@@ -7,11 +7,83 @@ use serde::Serialize;
 #[derive(Properties, PartialEq)]
 pub(crate) struct ComprehensiveProps {
     pub csrf: String,
+    pub on_immersive_change: Callback<bool>,
+    pub on_exit: Callback<()>,
 }
 
 const COMPREHENSIVE_JOB_KEY: &str = "hyz_comprehensive_prepare_job";
 const COMPREHENSIVE_READY_KEY: &str = "hyz_comprehensive_ready_run";
 const MANUAL_SKILLS_KEY: &str = "hyz_comprehensive_manual_skills";
+
+// One fixed-height workspace serves both exam and answer review. Only the
+// material and question panes scroll, never the outer page.
+fn analysis_panes(
+    material: &hyz_things::domain::data_analysis::Material,
+    question: Html,
+) -> Html {
+    html! {
+        <div class="grid h-full min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-2 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:grid-rows-1"
+            data-testid="analysis-shared-workspace">
+            <article class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="analysis-material">
+                <div class="shrink-0 p-3 pb-1 text-sm font-semibold">{format!("{} · {}",material.section,material.subtopic)}</div>
+                <div class="shrink-0 px-3 pb-2 text-xs text-base-content/60">{"模拟训练材料 · 根据历年行测真题风格新编，非真题原文"}</div>
+                <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y" data-testid="analysis-material-scroll">
+                    <div class="whitespace-pre-wrap px-4 pb-4 pt-2 text-base leading-8">{material.text.clone()}</div>
+                </div>
+                if material.source_url.starts_with("https://") {
+                    <a class="shrink-0 px-3 py-2 text-xs underline" href={material.source_url.clone()} target="_blank" rel="noopener noreferrer">{"查看旧版材料参考链接"}</a>
+                }
+            </article>
+            <article class="min-h-0 min-w-0 overflow-y-auto overscroll-contain touch-pan-y rounded-box bg-base-100"
+                data-testid="analysis-question">{question}</article>
+        </div>
+    }
+}
+
+// None: unanswered; Some(true): answered/correct; Some(false): wrong.
+fn analysis_navigation(
+    current: UseStateHandle<usize>,
+    index: usize,
+    markers: &[Option<bool>],
+) -> Html {
+    let group_index = index / 5;
+    let previous = {
+        let current = current.clone();
+        Callback::from(move |_| current.set(index.saturating_sub(1)))
+    };
+    let next = {
+        let current = current.clone();
+        Callback::from(move |_| current.set((index + 1).min(19)))
+    };
+    html! {
+        <footer class="flex shrink-0 items-center justify-between gap-2 py-2" data-testid="analysis-navigation">
+            <button type="button" class="btn btn-outline btn-sm" disabled={index==0} onclick={previous}>{"上一题"}</button>
+            <nav class="flex min-w-0 flex-1 items-center justify-center gap-1 overflow-x-auto" aria-label="题目导航">
+                {for (0..4).map(|g|{
+                    let current = current.clone();
+                    html!{<button type="button" class={if g==group_index{"btn btn-primary btn-xs shrink-0"}else{"btn btn-ghost btn-xs shrink-0"}}
+                        onclick={Callback::from(move |_|current.set(g*5))}>{format!("材料{}",g+1)}</button>}
+                })}
+                {for (group_index*5..group_index*5+5).map(|i|{
+                    let current = current.clone();
+                    let marker = markers.get(i).copied().flatten();
+                    let style = if i==index {
+                        "btn btn-primary btn-xs shrink-0"
+                    } else {
+                        match marker {
+                            Some(true) => "btn btn-success btn-outline btn-xs shrink-0",
+                            Some(false) => "btn btn-error btn-outline btn-xs shrink-0",
+                            None => "btn btn-ghost btn-xs shrink-0",
+                        }
+                    };
+                    html!{<button type="button" class={style} data-testid="analysis-question-tab"
+                        onclick={Callback::from(move |_|current.set(i))}>{i+1}</button>}
+                })}
+            </nav>
+            <button type="button" class="btn btn-primary btn-sm" disabled={index==19} onclick={next}>{"下一题"}</button>
+        </footer>
+    }
+}
 
 #[derive(Serialize)]
 struct ComprehensivePrepareRequest {
@@ -102,6 +174,8 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     let history_open = use_state(|| false);
     let manual_skills = use_state(Vec::<String>::new);
     let skills_expanded = use_state(|| false);
+    let reviewing_history = use_state(|| false);
+    let review_run_id = use_state(String::new);
 
     {
         let status = status.clone();
