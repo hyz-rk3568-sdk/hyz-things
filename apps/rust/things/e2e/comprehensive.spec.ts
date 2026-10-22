@@ -328,3 +328,87 @@ test("AI job survives leaving training; ready paper is untimed until explicit en
   await expect(page.getByTestId("analysis-clock")).toBeVisible();
   expect(starts).toBe(1);
 });
+
+test("iPad pauses and phone resumes server-held answers, position and single-editor lease", async ({ browser }) => {
+  const ipad=await browser.newContext({viewport:{width:1180,height:820}});
+  const phone=await browser.newContext({viewport:{width:390,height:844}});
+  const groups=Array.from({length:4},(_,g)=>({
+    material:{section:"资料分析",subtopic:"跨端训练材料",topic:"工业能源",text:"2025年数据1200亿元，同比上升10%。",source_url:"theme"},
+    questions:Array.from({length:5},(_,j)=>({question:`第${g*5+j+1}题？`,options:["A","B","C","D"]})),
+  }));
+  const answers:(number|null)[]=Array(20).fill(null);
+  let currentQuestion=7,paused=false,controlToken="",serial=0,oldToken="";
+  const respond=async (route:import("@playwright/test").Route) => {
+    const url=new URL(route.request().url());
+    const path=url.pathname,body=(route.request().method()==="POST" ? route.request().postDataJSON() : {}) as Record<string,unknown>;
+    let data:unknown={};
+    let status=200;
+    const run=()=>({id:"server-run",status:"active",started_at_ms:Date.now()-120000,
+      deadline_at_ms:paused?null:Date.now()+1000000,paused_remaining_ms:paused?980000:null,
+      duration_seconds:1200,current_question:currentQuestion,groups,answers});
+    if(path.endsWith("/status")) {
+      data={configured:true,model:"codex",cached_sources:1,verified_groups:4,available_skills:["年均变化"],preparing_job_id:null};
+    } else if(path.endsWith("/unfinished")) {
+      data=[{id:"server-run",status:"active",answered:answers.filter(x=>x!==null).length,
+        current_question:currentQuestion,paused_remaining_ms:paused?980000:null,
+        deadline_at_ms:paused?null:Date.now()+1000000,created_at_ms:Date.now()-120000}];
+    } else if(path.endsWith("/history")) {
+      data=[];
+    } else if(path.endsWith("/runs/server-run/claim")) {
+      oldToken=controlToken;
+      controlToken=`new-lease-${++serial}`;
+      data={run:run(),control_token:controlToken};
+    } else if(path.endsWith("/position")) {
+      if(body.control_token!==controlToken){status=409;data={message:"other device has claimed"};}
+      else {currentQuestion=body.question as number;data={saved:true};}
+    } else if(path.includes("/answers/")) {
+      if(body.control_token!==controlToken){status=409;data={message:"other device has claimed"};}
+      else {answers[Number(path.split("/").pop())-1]=body.choice as number;data={saved:true};}
+    } else if(path.endsWith("/pause")) {
+      if(body.control_token!==controlToken){status=409;data={message:"other device has claimed"};}
+      else {paused=!paused;data=run();}
+    } else if(path.endsWith("/runs/server-run")) {
+      data=run();
+    }
+    await route.fulfill({status,contentType:"application/json",body:JSON.stringify(data)});
+  };
+  await ipad.route("**/api/v1/study/data-analysis/**",respond);
+  await phone.route("**/api/v1/study/data-analysis/**",respond);
+  const ipadPage=await ipad.newPage();
+  await ipadPage.goto("/#/study/training");
+  await ipadPage.getByTestId("training-mode-comprehensive").click();
+  await expect(ipadPage.getByTestId("analysis-unfinished")).toContainText("第8题");
+  await ipadPage.getByTestId("analysis-resume").click();
+  await expect(ipadPage.getByTestId("analysis-run")).toBeVisible();
+  await expect(ipadPage.getByTestId("analysis-question")).toContainText("第8题");
+  await ipadPage.getByTestId("analysis-choice").nth(2).click();
+  await expect.poll(()=>answers[7]).toBe(2);
+  await ipadPage.getByRole("button",{name:"下一题"}).click();
+  await expect.poll(()=>currentQuestion).toBe(8);
+  await ipadPage.getByTestId("analysis-exit").click();
+  await expect(ipadPage.getByRole("group",{name:"训练模式"})).toBeVisible();
+  expect(paused).toBe(true);
+
+  const phonePage=await phone.newPage();
+  await phonePage.goto("/#/study/training");
+  await phonePage.getByTestId("training-mode-comprehensive").click();
+  await expect(phonePage.getByTestId("analysis-unfinished")).toContainText("已作答 1/20");
+  await phonePage.getByTestId("analysis-resume").click();
+  await expect(phonePage.getByTestId("analysis-paused")).toBeVisible();
+  await phonePage.getByRole("button",{name:"继续计时"}).click();
+  await expect(phonePage.getByTestId("analysis-question")).toContainText("第9题");
+  await phonePage.getByRole("button",{name:"上一题"}).click();
+  await expect(phonePage.getByTestId("analysis-choice").nth(2)).toHaveClass(/btn-primary/);
+  // The expired iPad lease can no longer alter the same SQLite record.
+  const before=answers[7];
+  const stale=await ipadPage.evaluate(async ({oldToken})=>{
+    return fetch("/api/v1/study/data-analysis/runs/server-run/answers/8",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({choice:1,control_token:oldToken}),
+    }).then(r=>r.status);
+  },{oldToken});
+  expect(stale).toBe(409);
+  expect(answers[7]).toBe(before);
+  await ipad.close();
+  await phone.close();
+});
