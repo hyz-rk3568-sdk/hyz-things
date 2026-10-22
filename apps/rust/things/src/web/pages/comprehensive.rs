@@ -266,6 +266,25 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             move || drop(handle)
         });
     }
+    // Keep the setup page outside fullscreen; active runs and review records
+    // make the training workspace cover the entire visual viewport.
+    {
+        let notify = props.on_immersive_change.clone();
+        use_effect_with((run.is_some(), result.is_some()), move |(running, reviewing)| {
+            let fullscreen = *running || *reviewing;
+            notify.emit(fullscreen);
+            if fullscreen {
+                if let Some(window) = web_sys::window() {
+                    window.scroll_to_with_x_and_y(0.0, 0.0);
+                }
+            }
+            || ()
+        });
+    }
+    let exit = {
+        let on_exit = props.on_exit.clone();
+        Callback::from(move |_| on_exit.emit(()))
+    };
     let submit = {
         let run = run.clone();
         let result = result.clone();
@@ -273,6 +292,8 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let csrf = props.csrf.clone();
         let busy = busy.clone();
         let history = history.clone();
+        let reviewing_history = reviewing_history.clone();
+        let review_run_id = review_run_id.clone();
         Callback::from(move |_| {
             if *busy {
                 return;
@@ -284,6 +305,8 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let busy = busy.clone();
             let csrf = csrf.clone();
             let history = history.clone();
+            let reviewing_history = reviewing_history.clone();
+            let review_run_id = review_run_id.clone();
             spawn_local(async move {
                 let endpoint = format!("{ANALYSIS_ROOT}/runs/{}/submit", active.id);
                 match post_json_response_typed::<_, AnalysisResult>(
@@ -295,6 +318,8 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 .await
                 {
                     Ok(out) => {
+                        reviewing_history.set(false);
+                        review_run_id.set(active.id.clone());
                         result.set(Some(out));
                         if let Ok(items) = fetch_json_typed::<Vec<ComprehensiveHistoryEntry>>(
                             &format!("{ANALYSIS_ROOT}/history"),
