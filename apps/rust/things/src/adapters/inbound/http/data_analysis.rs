@@ -65,14 +65,13 @@ pub(super) struct UserPromptUpdate {
     user_prompt: Option<String>,
 }
 
-pub(super) async fn user_prompt(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Response {
+pub(super) async fn user_prompt(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if let Err(response) = authorize_sensitive_read(&state, &headers).await {
         return response;
     }
-    let Some(service) = get(&state) else { return unavailable() };
+    let Some(service) = get(&state) else {
+        return unavailable();
+    };
     match service.user_prompt_settings().await {
         Ok(settings) => Json(settings).into_response(),
         Err(_) => error("无法读取出题要求"),
@@ -86,7 +85,9 @@ pub(super) async fn update_user_prompt(
     if let Err(response) = authorize_sensitive_control(&state, &headers).await {
         return response;
     }
-    let Some(service) = get(&state) else { return unavailable() };
+    let Some(service) = get(&state) else {
+        return unavailable();
+    };
     match service.save_user_prompt(body.user_prompt.as_deref()).await {
         Ok(settings) => Json(settings).into_response(),
         Err(e) if e.contains("8000") || e.contains("不能为空") => bad_request(&e),
