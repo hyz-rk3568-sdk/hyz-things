@@ -1959,7 +1959,7 @@ pub(crate) fn custom_countdown_panel() -> Html {
         .collect::<Vec<_>>();
 
     html! {
-        <section id="custom-countdown" class={EXAM_SECTION} role="region" aria-labelledby="custom-countdown-title">
+        <section id="custom-countdown" class={EXAM_SECTION} role="region" aria-label="自定义倒计时">
             <span class={EXAM_DECORATION} aria-hidden="true"></span>
             <h2 id="custom-countdown-title" class={SECTION_TITLE}>{"学习计时器 · 上午 / 下午 / 晚上"}</h2>
             if let Some(message) = *pip_notice {
@@ -2059,7 +2059,7 @@ pub(crate) fn exam_countdown_panel(props: &ExamCountdownPanelProps) -> Html {
         exam_timestamp(nearest.target_iso),
     );
     html! {
-        <section id="exam-countdown" class="grid gap-4" role="region" aria-labelledby="exam-countdown-title" data-testid="study-exam-dashboard">
+        <section id="exam-countdown" class="grid gap-4" role="region" aria-label="考试冲刺倒计时" data-testid="study-exam-dashboard">
             <div class="relative grid gap-5 overflow-hidden rounded-2xl border border-primary/30 bg-base-100 p-5 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:p-7" data-testid="study-exam-hero">
                 <div class="min-w-0 space-y-3">
                     <p class="text-xs font-bold uppercase tracking-widest text-primary">{"最近考试 · 预计日期"}</p>
