@@ -238,7 +238,10 @@ struct QuestionPlan {
     knowledge: Vec<String>,
 }
 
-fn distribute_wrong_categories(selected: &[String], random_seed: u64) -> [Vec<String>; QUIZ_GROUPS] {
+fn distribute_wrong_categories(
+    selected: &[String],
+    random_seed: u64,
+) -> [Vec<String>; QUIZ_GROUPS] {
     let mut required: [Vec<String>; QUIZ_GROUPS] = std::array::from_fn(|_| Vec::new());
     let mut state = random_seed | 1;
     let mut next_random = || {
@@ -357,7 +360,9 @@ impl DataAnalysisService {
             }
         }
         if skills.is_empty() {
-            return Err("没有找到 flashcards/资料/ 中的普通知识点卡片，请检查卡片目录挂载或同步".into());
+            return Err(
+                "没有找到 flashcards/资料/ 中的普通知识点卡片，请检查卡片目录挂载或同步".into(),
+            );
         }
         Ok(skills.into_iter().collect())
     }
@@ -647,7 +652,13 @@ explanation为依照 hyz 方法的简短速算解释；skill为对应目录的�
 输出 JSON 必须具有 material_text 和 questions 两字段，questions 恰好5项，每题必须有 source_kind。"#,
             group_no = ordinal % QUIZ_GROUPS + 1,
             question_boundary = NO_COMPREHENSIVE_JUDGMENT_PROMPT,
-            selected_categories = plan.required.iter().flatten().cloned().collect::<Vec<_>>().join("、"),
+            selected_categories = plan
+                .required
+                .iter()
+                .flatten()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("、"),
             knowledge_categories = plan.knowledge.join("、"),
             manual_focus = plan.required[ordinal].join("、"),
             wrong_count = plan.required[ordinal].len(),
@@ -680,18 +691,24 @@ explanation为依照 hyz 方法的简短速算解释；skill为对应目录的�
         // Structural safety only: protect fixed UI indexing. No math/content
         // verification and no answer rewriting by hyz-things.
         if batch.questions.len() != QUIZ_PER_GROUP
-            || batch.questions.iter().any(|q| q.question.correct_index >= 4)
+            || batch
+                .questions
+                .iter()
+                .any(|q| q.question.correct_index >= 4)
         {
             return Err("Codex 返回的试卷结构不完整（需要5题，每题4个选项）".into());
         }
-        let labels: Vec<_> = batch.questions.iter().map(|q| q.question.skill.as_str()).collect();
-        let kinds: Vec<_> = batch.questions.iter().map(|q| q.source_kind.as_str()).collect();
-        if !mixed_category_coverage(
-            &labels,
-            &kinds,
-            &plan.required[ordinal],
-            &plan.knowledge,
-        ) {
+        let labels: Vec<_> = batch
+            .questions
+            .iter()
+            .map(|q| q.question.skill.as_str())
+            .collect();
+        let kinds: Vec<_> = batch
+            .questions
+            .iter()
+            .map(|q| q.source_kind.as_str())
+            .collect();
+        if !mixed_category_coverage(&labels, &kinds, &plan.required[ordinal], &plan.knowledge) {
             return Err("Codex 生成题目未满足错题保底及普通知识点配额，请重试".into());
         }
         let mut material = context;
@@ -1191,13 +1208,18 @@ async fn mounted_knowledge_categories() -> Option<Vec<String>> {
         let mut names = std::collections::BTreeSet::new();
         while let Ok(Some(entry)) = reader.next_entry().await {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if name == "错题" || !valid_wrong_category(&name)
+            if name == "错题"
+                || !valid_wrong_category(&name)
                 || !entry.file_type().await.is_ok_and(|file| file.is_dir())
             {
                 continue;
             }
-            if tokio::fs::metadata(entry.path().join("card.md")).await.is_ok()
-                || tokio::fs::metadata(entry.path().join("cards.md")).await.is_ok()
+            if tokio::fs::metadata(entry.path().join("card.md"))
+                .await
+                .is_ok()
+                || tokio::fs::metadata(entry.path().join("cards.md"))
+                    .await
+                    .is_ok()
             {
                 names.insert(name);
             }
@@ -1276,11 +1298,15 @@ mod tests {
     #[test]
     fn wrong_category_quotas_randomize_balanced_and_survive_retries() {
         for count in 1..=12 {
-            let selected = (0..count).map(|i| format!("错题分类{i}")).collect::<Vec<_>>();
+            let selected = (0..count)
+                .map(|i| format!("错题分类{i}"))
+                .collect::<Vec<_>>();
             let quotas = distribute_wrong_categories(&selected, 123456789);
             let all = quotas.iter().flatten().cloned().collect::<Vec<_>>();
             assert_eq!(all.len(), count);
-            assert!(selected.iter().all(|name| all.iter().filter(|n| *n == name).count() == 1));
+            assert!(selected
+                .iter()
+                .all(|name| all.iter().filter(|n| *n == name).count() == 1));
             assert!(quotas.iter().all(|group| group.len() <= 3));
             let smallest = quotas.iter().map(Vec::len).min().unwrap();
             let largest = quotas.iter().map(Vec::len).max().unwrap();
@@ -1299,38 +1325,50 @@ mod tests {
         let required = vec!["线段混合".into(), "年均变化".into()];
         let knowledge = vec!["线段混合".into(), "年均变化".into(), "乘除变化".into()];
         assert!(mixed_category_coverage(
-            &["线段混合","乘除变化","年均变化","线段混合","乘除变化"],
-            &["wrong","knowledge","wrong","knowledge","knowledge"],
+            &["线段混合", "乘除变化", "年均变化", "线段混合", "乘除变化"],
+            &["wrong", "knowledge", "wrong", "knowledge", "knowledge"],
             &required,
             &knowledge,
         ));
         assert!(!mixed_category_coverage(
-            &["线段混合","乘除变化","年均变化","线段混合","乘除变化"],
-            &["wrong","wrong","wrong","knowledge","knowledge"],
+            &["线段混合", "乘除变化", "年均变化", "线段混合", "乘除变化"],
+            &["wrong", "wrong", "wrong", "knowledge", "knowledge"],
             &required,
             &knowledge,
         ));
         assert!(!mixed_category_coverage(
-            &["线段混合","乘除变化","年均变化","线段混合","乘除变化"],
-            &["wrong","knowledge","knowledge","knowledge","knowledge"],
+            &["线段混合", "乘除变化", "年均变化", "线段混合", "乘除变化"],
+            &["wrong", "knowledge", "knowledge", "knowledge", "knowledge"],
             &required,
             &knowledge,
         ));
         assert!(!mixed_category_coverage(
-            &["线段混合","乘除变化","年均变化","线段混合","其他分类"],
-            &["wrong","knowledge","wrong","knowledge","knowledge"],
+            &["线段混合", "乘除变化", "年均变化", "线段混合", "其他分类"],
+            &["wrong", "knowledge", "wrong", "knowledge", "knowledge"],
             &required,
             &knowledge,
         ));
         assert!(!mixed_category_coverage(
-            &["乘除变化","乘除变化","乘除变化","乘除变化","乘除变化"],
-            &["knowledge","knowledge","knowledge","knowledge","knowledge"],
+            &["乘除变化", "乘除变化", "乘除变化", "乘除变化", "乘除变化"],
+            &[
+                "knowledge",
+                "knowledge",
+                "knowledge",
+                "knowledge",
+                "knowledge"
+            ],
             &required,
             &knowledge,
         ));
         assert!(mixed_category_coverage(
-            &["线段混合","年均变化","乘除变化","年均变化","乘除变化"],
-            &["knowledge","knowledge","knowledge","knowledge","knowledge"],
+            &["线段混合", "年均变化", "乘除变化", "年均变化", "乘除变化"],
+            &[
+                "knowledge",
+                "knowledge",
+                "knowledge",
+                "knowledge",
+                "knowledge"
+            ],
             &[],
             &knowledge,
         ));
@@ -1339,7 +1377,10 @@ mod tests {
     #[test]
     fn knowledge_decks_exclude_wrong_questions_and_unrelated_modules() {
         assert_eq!(knowledge_card_category("资料/年均变化"), Some("年均变化"));
-        assert_eq!(knowledge_card_category("flashcards/资料/线段混合"), Some("线段混合"));
+        assert_eq!(
+            knowledge_card_category("flashcards/资料/线段混合"),
+            Some("线段混合")
+        );
         assert_eq!(knowledge_card_category("乘除变化"), Some("乘除变化"));
         assert_eq!(knowledge_card_category("资料/错题/年均变化"), None);
         assert_eq!(knowledge_card_category("判断/论证推理"), None);
