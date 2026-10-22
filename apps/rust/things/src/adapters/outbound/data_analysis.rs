@@ -1379,7 +1379,6 @@ fn wrong_question_category(deck: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::data_analysis::SOURCE_URL;
     #[test]
     fn uses_exact_wrong_question_subdirectories_as_skills() {
         assert_eq!(
@@ -1575,11 +1574,8 @@ mod tests {
                 (
                     slot,
                     Material {
-                        section: format!("section-{slot}"),
                         topic: format!("topic-{slot}"),
-                        subtopic: "test".into(),
                         text: "test".into(),
-                        source_url: format!("year-{slot}"),
                     },
                 )
             })
@@ -1597,7 +1593,7 @@ mod tests {
                     peak.fetch_max(running, Ordering::SeqCst);
                     barrier.wait().await;
                     active.fetch_sub(1, Ordering::SeqCst);
-                    if material.section == "section-2" {
+                    if material.topic == "topic-2" {
                         Err("simulate invalid Codex response".into())
                     } else {
                         Ok(QuestionGroup {
@@ -1624,7 +1620,7 @@ mod tests {
             if slot == 2 {
                 assert!(item.is_err());
             } else {
-                assert_eq!(item.unwrap().material.section, format!("section-{slot}"));
+                assert_eq!(item.unwrap().material.topic, format!("topic-{slot}"));
             }
         }
     }
@@ -1680,11 +1676,8 @@ mod tests {
         let group = QuestionGroup {
             version: 4,
             material: Material {
-                section: "测试章节".into(),
                 topic: "测试主题".into(),
-                subtopic: "测试子主题".into(),
                 text: "测试统计材料".into(),
-                source_url: "practice-test".into(),
             },
             questions: (0..QUIZ_PER_GROUP)
                 .map(|index| VerifiedQuestion {
@@ -1750,7 +1743,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn saved_official_groups_support_history_without_new_codex_generation() {
+    async fn saved_groups_support_history_without_new_codex_generation() {
         // Exercise native SQLite/service paths without a paid AI API or external network.
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(1)
@@ -1762,23 +1755,14 @@ mod tests {
             .await
             .expect("migrations");
 
-        let materials = SECTIONS
+        let materials = TOPICS
             .iter()
             .take(4)
-            .map(|(section, topic)| Material {
-                section: (*section).into(),
+            .map(|topic| Material {
                 topic: (*topic).into(),
-                subtopic: "测试子主题".into(),
                 text: "本年度业务量1200亿元，比上年增长15.2%。".repeat(8),
-                source_url: SOURCE_URL.into(),
             })
             .collect::<Vec<_>>();
-
-        sqlx::query("INSERT INTO data_analysis_sources(url,title,content_hash,fetched_at_ms,sections_json) VALUES (?,?,?,?,?)")
-            .bind(SOURCE_URL).bind("fixture official cache").bind("offline hash")
-            .bind(now_ms())
-            .bind(serde_json::to_string(&materials).unwrap())
-            .execute(&pool).await.unwrap();
 
         for material in &materials {
             let questions = (0..5)
@@ -1802,10 +1786,8 @@ mod tests {
                 material: material.clone(),
                 questions,
             };
-            sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES(?,?,?,?,?,?)")
+            sqlx::query("INSERT INTO data_analysis_groups(id,topic,group_json,created_at_ms) VALUES(?,?,?,?)")
                 .bind(Uuid::now_v7().to_string())
-                .bind(SOURCE_URL)
-                .bind(&material.section)
                 .bind(&material.topic)
                 .bind(serde_json::to_string(&group).unwrap())
                 .bind(now_ms())
@@ -2092,11 +2074,8 @@ mod tests {
             let group = QuestionGroup {
                 version: 4,
                 material: Material {
-                    section: (*topic).to_owned(),
                     topic: (*topic).to_owned(),
-                    subtopic: (*topic).to_owned(),
                     text: "模拟材料".into(),
-                    source_url: format!("practice-theme-{index}"),
                 },
                 questions: Vec::new(),
             };
@@ -2116,11 +2095,8 @@ mod tests {
         let replay = QuestionGroup {
             version: 4,
             material: Material {
-                section: "虚假的最近主题".into(),
                 topic: "虚假的最近主题".into(),
-                subtopic: "虚假的最近主题".into(),
                 text: "模拟材料".into(),
-                source_url: "practice-theme-retry".into(),
             },
             questions: Vec::new(),
         };
@@ -2153,10 +2129,9 @@ mod tests {
     #[test]
     fn topic_seeds_do_not_depend_on_official_articles() {
         let topics = exam_theme_materials();
-        assert_eq!(topics.len(), SECTIONS.len());
+        assert_eq!(topics.len(), TOPICS.len());
         assert!(topics.iter().all(|m| m.text.is_empty()));
-        assert!(topics.iter().all(|m| !m.source_url.starts_with("http")));
-        let chosen = select_material_batch(&topics, &[], &HashSet::new(), true, QUIZ_GROUPS);
+        let chosen = select_material_batch(&topics, &[], &HashSet::new(), QUIZ_GROUPS);
         assert_eq!(chosen.len(), QUIZ_GROUPS);
         assert_eq!(
             chosen
