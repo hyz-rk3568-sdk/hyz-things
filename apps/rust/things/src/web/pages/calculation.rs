@@ -362,6 +362,7 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
     let enabled = use_state(|| [true, true, true]);
     let count = use_state(|| 20_usize);
     let session = use_state(|| None::<CalculationSession>);
+    let clock_tick = use_state(|| 0_u64);
     let is_training_immersive = session.as_ref().is_some_and(|state| !state.finished);
     {
         let notify = props.on_immersive_change.clone();
@@ -371,14 +372,29 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
         });
     }
 
+    {
+        let clock_tick = clock_tick.clone();
+        use_effect_with(is_training_immersive, move |active| {
+            let ticker = (*active).then(|| {
+                let clock_tick = clock_tick.clone();
+                Interval::new(1_000, move || clock_tick.set(Date::now() as u64))
+            });
+            move || drop(ticker)
+        });
+    }
     let back = {
         let route_state = props.route_state.clone();
+        let session = session.clone();
         Callback::from(move |_| {
-            navigate_route(
-                &route_state,
-                PortalRoute::study(StudyView::Dashboard, None, Vec::new()),
-                false,
-            )
+            if session.is_some() {
+                session.set(None);
+            } else {
+                navigate_route(
+                    &route_state,
+                    PortalRoute::study(StudyView::Dashboard, None, Vec::new()),
+                    false,
+                );
+            }
         })
     };
     let restart = {
@@ -457,7 +473,7 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                     </div>
                     <div class="flex flex-wrap justify-center gap-3">
                         <button type="button" class="btn btn-primary" data-testid="calculation-restart" onclick={restart}>{"再练一轮"}</button>
-                        <button type="button" class="btn btn-ghost" onclick={back.clone()}>{"返回学习"}</button>
+                        <button type="button" class="btn btn-ghost" onclick={back.clone()}>{"返回专项训练"}</button>
                     </div>
                 </section>
             }
@@ -617,11 +633,40 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
         }
     };
 
+    let _ = *clock_tick;
+    let active_info = session.as_ref().filter(|s| !s.finished).map(|s| (
+        s.questions[s.index].kind.label(),
+        s.index + 1,
+        s.questions.len(),
+        ((Date::now() - s.started_question_at).max(0.0) / 1_000.0) as u64,
+    ));
     html! {
         <div class={if is_training_immersive { format!("calculation-layout {}",super::training::FIXED_TRAINING_LAYOUT) } else { "calculation-layout min-h-dvh bg-base-200 px-4 py-5 sm:px-8".to_owned() }} data-testid="calculation-layout" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
-            <div class={if is_training_immersive { "calculation-header mx-auto flex w-full shrink-0 items-center justify-between pb-2" } else { "calculation-header mx-auto mb-5 flex w-full items-center justify-between" }}>
-                <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-back" onclick={back}>{"← 返回学习"}</button>
-                <span class="text-xs font-semibold uppercase tracking-widest text-base-content/60">{"STUDY / CALCULATION"}</span>
+            <div class={if is_training_immersive { "calculation-header mx-auto flex w-full shrink-0 flex-wrap items-center justify-between gap-3 border-b border-base-content/10 pb-2" } else { "calculation-header mx-auto mb-5 flex w-full items-center justify-between" }}>
+                <div class="flex min-w-0 items-center gap-3">
+                    <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-back" onclick={back}>
+                        {if is_training_immersive { "← 返回专项训练" } else { "← 返回学习中心" }}
+                    </button>
+                    if let Some((kind,_,_,_)) = active_info {
+                        <div class="hidden min-w-0 sm:block">
+                            <strong class="block text-sm">{"速算训练"}</strong>
+                            <span class="text-xs text-base-content/60">{kind}</span>
+                        </div>
+                    }
+                </div>
+                if let Some((_,number,total,elapsed)) = active_info {
+                    <div class="flex items-center gap-3" data-testid="calculation-progress-header">
+                        <span class="text-xs text-base-content/65">{format!("第 {number}/{total} 题")}</span>
+                        <div class="rounded-lg border border-primary/25 bg-base-100 px-3 py-1 text-right">
+                            <span class="block text-[0.6rem] text-base-content/60">{"本题已用时"}</span>
+                            <strong class="font-mono text-lg font-bold tabular-nums" data-testid="calculation-elapsed">
+                                {format!("{:02}:{:02}", elapsed / 60, elapsed % 60)}
+                            </strong>
+                        </div>
+                    </div>
+                } else {
+                    <span class="text-xs font-semibold uppercase tracking-widest text-base-content/60">{"STUDY / CALCULATION"}</span>
+                }
             </div>
             if is_training_immersive {
                 <div class="min-h-0 flex-1 overflow-hidden">{content}</div>
