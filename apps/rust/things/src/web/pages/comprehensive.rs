@@ -173,7 +173,9 @@ fn remaining_with_clock_offset(deadline_ms: i64, browser_now_ms: f64, offset_ms:
         .max(0.0) as u64
 }
 fn clock_offset_for_server(server_now_ms: Option<i64>) -> f64 {
-    server_now_ms.map(|server| server as f64 - Date::now()).unwrap_or(0.0)
+    server_now_ms
+        .map(|server| server as f64 - Date::now())
+        .unwrap_or(0.0)
 }
 #[function_component(ComprehensiveTraining)]
 pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
@@ -613,7 +615,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     Ok(next) => {
                         clock_offset_ms.set(clock_offset_for_server(next.server_now_ms));
                         run.set(Some(next));
-                    },
+                    }
                     Err(e) => error.set(Some(e.to_string())),
                 }
                 busy.set(false);
@@ -1264,14 +1266,20 @@ mod clock_skew_tests {
         let ipad_now = server_now - 240_000.0;
         let server_deadline = server_now as i64 + 127_000;
         let clock_offset = server_now - ipad_now;
-        assert_eq!(remaining_with_clock_offset(server_deadline, ipad_now, clock_offset), 127);
+        assert_eq!(
+            remaining_with_clock_offset(server_deadline, ipad_now, clock_offset),
+            127
+        );
         // One second of elapsed time must cost one second on this device.
         assert_eq!(
             remaining_with_clock_offset(server_deadline, ipad_now + 1_000.0, clock_offset),
             126
         );
         // Without compensation the same clock would incorrectly add four minutes.
-        assert_eq!(remaining_with_clock_offset(server_deadline, ipad_now, 0.0), 367);
+        assert_eq!(
+            remaining_with_clock_offset(server_deadline, ipad_now, 0.0),
+            367
+        );
     }
 
     #[test]
