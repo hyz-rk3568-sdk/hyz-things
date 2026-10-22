@@ -1252,3 +1252,36 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         </section>
     }
 }
+
+#[cfg(test)]
+mod clock_skew_tests {
+    use super::remaining_with_clock_offset;
+
+    #[test]
+    fn resuming_after_pause_does_not_add_minutes_from_device_clock_skew() {
+        // Server paused with 2:07 left. iPad runs 4 minutes slow.
+        let server_now = 1_000_000_f64;
+        let ipad_now = server_now - 240_000.0;
+        let server_deadline = server_now as i64 + 127_000;
+        let clock_offset = server_now - ipad_now;
+        assert_eq!(remaining_with_clock_offset(server_deadline, ipad_now, clock_offset), 127);
+        // One second of elapsed time must cost one second on this device.
+        assert_eq!(
+            remaining_with_clock_offset(server_deadline, ipad_now + 1_000.0, clock_offset),
+            126
+        );
+        // Without compensation the same clock would incorrectly add four minutes.
+        assert_eq!(remaining_with_clock_offset(server_deadline, ipad_now, 0.0), 367);
+    }
+
+    #[test]
+    fn fast_phone_clock_also_uses_server_remaining_time() {
+        let server_now = 10_000_000_f64;
+        let phone_now = server_now + 180_000.0;
+        let deadline = server_now as i64 + 127_000;
+        assert_eq!(
+            remaining_with_clock_offset(deadline, phone_now, server_now - phone_now),
+            127
+        );
+    }
+}
