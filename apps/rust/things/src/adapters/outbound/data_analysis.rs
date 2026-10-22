@@ -1460,6 +1460,54 @@ mod tests {
         let third_id = service.retry(&repeat_id).await.expect("repeat from repeat");
         let third = service.run(&third_id).await.unwrap();
         assert_eq!(third.answers, vec![None; 20]);
+        let before = service.unfinished().await.expect("server discovery");
+        assert!(before.iter().any(|item| item.id == third_id));
+        let ipad = service.claim(&third_id).await.expect("iPad claim");
+        assert_eq!(ipad.run.current_question, 0);
+        service
+            .save_position(&third_id, 7, &ipad.control_token)
+            .await
+            .expect("save server position");
+        service
+            .answer_controlled(&third_id, 1, 1, Some(&ipad.control_token))
+            .await
+            .expect("iPad answer");
+        let phone = service.claim(&third_id).await.expect("phone takeover");
+        assert_ne!(phone.control_token, ipad.control_token);
+        assert_eq!(phone.run.current_question, 7);
+        assert_eq!(phone.run.answers[0], Some(1));
+        assert!(service
+            .save_position(&third_id, 8, &ipad.control_token)
+            .await.is_err(), "stale iPad position rejected");
+        assert!(service
+            .answer_controlled(&third_id, 2, 1, Some(&ipad.control_token))
+            .await.is_err(), "stale iPad answer rejected");
+        assert!(service.pause_toggle_controlled(&third_id, Some(&ipad.control_token))
+            .await.is_err(), "stale iPad pause rejected");
+        assert!(service.submit_controlled(&third_id, Some(&ipad.control_token))
+            .await.is_err(), "stale iPad submit rejected");
+        let paused_phone = service.pause_toggle_controlled(
+            &third_id, Some(&phone.control_token)
+        ).await.expect("phone pause");
+        assert!(paused_phone.paused_remaining_ms.is_some());
+        let on_other_device = service.unfinished().await.unwrap();
+        let pending = on_other_device.iter().find(|item| item.id == third_id).unwrap();
+        assert_eq!(pending.current_question, 7);
+        assert_eq!(pending.answered, 1);
+        assert!(pending.paused_remaining_ms.is_some());
+        assert!(service.answer_controlled(&third_id, 2, 1, Some(&phone.control_token))
+            .await.is_err(), "paused paper cannot accept answers");
+        let after_reload = service.claim(&third_id).await.expect("same paper after reload");
+        assert!(after_reload.run.paused_remaining_ms.is_some());
+        assert_eq!(after_reload.run.current_question, 7);
+        assert_eq!(after_reload.run.answers[0], Some(1));
+        let resumed = service.pause_toggle_controlled(
+            &third_id, Some(&after_reload.control_token)
+        ).await.expect("continue on phone");
+        assert!(resumed.paused_remaining_ms.is_none());
+        service.answer_controlled(&third_id, 2, 1, Some(&after_reload.control_token))
+            .await.expect("new lease can answer");
+        assert!(service.claim(&run_id).await.is_err(), "submitted paper cannot be reclaimed");
         assert!(service.result(&third_id).await.is_err());
         let attempt_entries = service.history().await.unwrap();
         assert_eq!(
