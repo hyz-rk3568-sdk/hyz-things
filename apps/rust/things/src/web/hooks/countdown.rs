@@ -2151,4 +2151,3 @@ pub(crate) fn exam_countdown_panel(props: &ExamCountdownPanelProps) -> Html {
         </section>
     }
 }
-}
