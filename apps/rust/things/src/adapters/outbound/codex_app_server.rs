@@ -59,10 +59,11 @@ fn output_schema() -> Value {
             "answer":{"type":"string"},
             "explanation":{"type":"string"},
             "skill":{"type":"string"},
+            "source_kind":{"type":"string","enum":["wrong","knowledge"]},
             "evidence":{"type":"string"}
         },
         "required":["question","options","correct_index","answer",
-                    "explanation","skill","evidence"],
+                    "explanation","skill","source_kind","evidence"],
         "additionalProperties":false
     });
     json!({
@@ -383,13 +384,22 @@ mod tests {
         let schema = output_schema();
         assert_eq!(schema["additionalProperties"], false);
         assert_eq!(
+            schema["properties"]["questions"]["items"]["properties"]["source_kind"]["enum"],
+            json!(["wrong", "knowledge"])
+        );
+        assert!(schema["properties"]["questions"]["items"]["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|name| name == "source_kind"));
+        assert_eq!(
             schema["properties"]["questions"]["items"]["additionalProperties"],
             false
         );
         let fields = schema["properties"]["questions"]["items"]["required"]
             .as_array()
             .unwrap();
-        assert_eq!(fields.len(), 7);
+        assert_eq!(fields.len(), 8);
         assert!(fields.contains(&json!("options")));
         assert!(fields.contains(&json!("correct_index")));
         assert!(schema["properties"]["questions"]["items"]["properties"]["operation"].is_null());
