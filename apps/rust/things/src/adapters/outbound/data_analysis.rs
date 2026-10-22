@@ -222,7 +222,7 @@ fn selected_category_coverage(labels: &[&str], selected: &[String], ordinal: usi
             .iter()
             .enumerate()
             .filter(|(index, _)| index % QUIZ_GROUPS == ordinal % QUIZ_GROUPS)
-            .all(|(_, category)| labels.iter().any(|skill| *skill == category.as_str()))
+            .all(|(_, category)| labels.contains(&category.as_str()))
 }
 
 fn now_ms() -> i64 {
