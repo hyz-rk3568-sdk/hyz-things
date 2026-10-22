@@ -39,6 +39,9 @@ pub(crate) struct AnalysisRun {
     pub started_at_ms: Option<i64>,
     pub deadline_at_ms: Option<i64>,
     pub paused_remaining_ms: Option<i64>,
+    /// Server timestamp for clock-skew compensation on iPad/iPhone.
+    #[serde(default)]
+    pub server_now_ms: Option<i64>,
     pub duration_seconds: u64,
     pub groups: Vec<ViewGroup>,
     pub answers: Vec<Option<usize>>,
