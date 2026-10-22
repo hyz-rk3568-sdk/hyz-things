@@ -19,7 +19,6 @@ use tokio::{sync::Mutex, task::JoinSet};
 use uuid::Uuid;
 
 const ENV_PATH: &str = "/userdata/hyz-things/.env";
-const NO_COMPREHENSIVE_JUDGMENT_PROMPT: &str = "硬性命题边界：本轮不出资料分析综合分析/综合判断题，即不出“下列说法正确的是”“下列说法错误的是”“根据资料可以推出的是”“以下表述符合材料的是”等需要逐项核查多个独立陈述的题。每题只围绕一个明确的数量关系、指标或比较目标，设计四个数值或同一量纲的结果选项。即使所选分类包含“综合分析与审题”错题目录，也只能借鉴该目录中的审题、年份口径辨析和速算思路，转化为具体计算/比较题；不得将该错题目录名称理解为允许出综合判断题。此禁出规则优先于错题分类覆盖和多样性要求。";
 
 // User-owned style and difficulty policy. Hard limits, selected categories,
 // JSON shape and sources remain server-controlled even if this text changes.
@@ -27,7 +26,7 @@ pub const DEFAULT_USER_PROMPT: &str = r#"请生成符合国考、省考资料分
 
 材料：400～1000汉字，分2～4段，统计指标、单位、年份和同比关系自然且自洽；数字接近公报精度，避免刻意凑整。只陈述统计事实，不给公式、找数路径、方法提示或教学说明。
 
-命题：优先考查对应 Flashcard 的审题、速算、易错点及变式，避免机械换数字或重复基础题。题干仅提出所求年份、主体和指标，不提示计算步骤。不出需要逐项核对多个陈述的综合判断题。
+命题：优先考查对应 Flashcard 的审题、速算、易错点及变式，避免机械换数字或重复基础题。题干仅提出所求年份、主体和指标，不提示计算步骤。不出“下列说法正确的是”“下列说法错误的是”“根据资料可以推出的是”等需要逐项核查多个独立陈述的综合判断题。每题围绕一个明确的数量关系、指标或比较目标命题；即使选中了“综合分析与审题”类别，也优先将其转化为具体计算或比较题。
 
 选项：每题四个合理干扰项，适合行测近似速算；答案唯一，材料、选项与解析相符。解析简洁，优先使用 hyz Flashcard 方法。
 
@@ -693,7 +692,7 @@ impl DataAnalysisService {
         let prompt = format!(
             r#"【固定规则 / 应用端约束】
 你是 hyz 的公务员行测资料分析命题 Agent。先读取仓库 .agents/skills/行测做题/SKILL.md 及其资料分析参考，再读取下方指定的 Flashcard 原文。
-生成一篇自洽的统计材料和恰好5道四选一题。题目须唯一正确、答案与解析一致；不得提前泄露解题方法、公式和要使用的数据；{question_boundary}
+生成一篇自洽的统计材料和恰好5道四选一题。题目须唯一正确、答案与解析一致；不得在题目中提前泄露答案或解题方法。
 正确答案和题型仅放在交卷后可见的结构化字段，材料只包含统计事实。
 必须使用 Codex 输出 Schema；每题 source_kind 只可为 "wrong" / "knowledge"，skill 与实际卡片目录一致。用户命题要求不能覆盖目录来源、题位配额、JSON 结构及上述固定限制。
 联网参考可验证来源的国考、省考真题材料风格，不照搬原题与数字。
@@ -709,7 +708,6 @@ impl DataAnalysisService {
 
 只输出 Schema 对应的 JSON，不输出解释性前言。"#,
             group_no = ordinal % QUIZ_GROUPS + 1,
-            question_boundary = NO_COMPREHENSIVE_JUDGMENT_PROMPT,
             topic = context.topic,
             subtopic = context.subtopic,
             wrong_count = plan.required[ordinal].len(),
@@ -1450,12 +1448,12 @@ mod tests {
     }
 
     #[test]
-    fn comprehensive_generation_prompt_excludes_multi_statement_judgment() {
-        let instructions = NO_COMPREHENSIVE_JUDGMENT_PROMPT;
-        assert!(instructions.contains("不出资料分析综合分析/综合判断题"));
-        assert!(instructions.contains("下列说法正确的是"));
-        assert!(instructions.contains("综合分析与审题"));
-        assert!(instructions.contains("此禁出规则优先于"));
+    fn default_user_prompt_contains_optional_judgment_question_preference() {
+        // An opinionated default, not an immutable source, quota, or schema rule.
+        assert!(DEFAULT_USER_PROMPT.contains("下列说法正确的是"));
+        assert!(DEFAULT_USER_PROMPT.contains("根据资料可以推出的是"));
+        assert!(DEFAULT_USER_PROMPT.contains("综合分析与审题"));
+        assert!(DEFAULT_USER_PROMPT.contains("不出"));
     }
 
     #[test]
