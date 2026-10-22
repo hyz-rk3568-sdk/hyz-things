@@ -215,10 +215,10 @@ where
 fn selected_category_coverage(labels: &[&str], selected: &[String], ordinal: usize) -> bool {
     !selected.is_empty()
         && labels.len() == QUIZ_PER_GROUP
-        && labels.iter().all(|skill| selected.iter().any(|chosen| chosen == skill))
+        && labels.iter().all(|skill| selected.iter().any(|chosen| chosen.as_str() == *skill))
         && selected.iter().enumerate()
             .filter(|(index, _)| index % QUIZ_GROUPS == ordinal % QUIZ_GROUPS)
-            .all(|(_, category)| labels.iter().any(|skill| skill == category))
+            .all(|(_, category)| labels.iter().any(|skill| *skill == category.as_str()))
 }
 
 fn now_ms() -> i64 {
