@@ -113,7 +113,7 @@ test("renders countdowns on the public Study page without unrelated subscription
     }
   });
   await page.goto("/#/study");
-  await expect(page.getByRole("heading", { name: "学习", level: 2, exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "学习中心", level: 2, exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "自定义倒计时" })).toBeVisible();
   await expect(page.getByRole("region", { name: "考试冲刺倒计时" })).toBeVisible();
   await page.waitForTimeout(2_500);
@@ -162,6 +162,7 @@ test("opens countdown video picture-in-picture", async ({ page }) => {
   await installCountdownVideoPipMock(page);
   await page.goto("/");
   await goToAppPage(page, "学习");
+  await page.getByTestId("study-exam-expanded").click();
   await page.getByRole("region", { name: "考试冲刺倒计时" }).locator('[data-exam-id="guangdong-exam"]').dblclick();
   await expect.poll(async () => page.evaluate(() => (window as any).__hyzCountdownVideoPipCalls.length)).toBe(1);
   const pixel = await page.evaluate(() => {
@@ -274,7 +275,7 @@ test("restores, canonicalizes, and traverses typed portal routes", async ({ page
   await goToAppPage(page, "代理");
   await expect(page).toHaveURL(/#\/proxy$/);
   await page.goBack();
-  await expect(page.getByRole("heading", { name: "学习", level: 2, exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "学习中心", level: 2, exact: true })).toBeVisible();
   await expect(page).toHaveURL(/#\/study$/);
   await page.goForward();
   await expect(page.getByRole("heading", { name: "管理员登录" })).toBeVisible();
