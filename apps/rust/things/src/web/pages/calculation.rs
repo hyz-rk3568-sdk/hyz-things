@@ -1,7 +1,7 @@
 //! 资料分析四选一速算。题目、判题均在浏览器内完成，不修改 Flashcard/设备数据。
 use super::*;
-use js_sys::Date;
 use gloo_timers::callback::Interval;
+use js_sys::Date;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CalculationKind {
@@ -635,12 +635,14 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
     };
 
     let _ = *clock_tick;
-    let active_info = session.as_ref().filter(|s| !s.finished).map(|s| (
-        s.questions[s.index].kind.label(),
-        s.index + 1,
-        s.questions.len(),
-        ((Date::now() - s.started_question_at).max(0.0) / 1_000.0) as u64,
-    ));
+    let active_info = session.as_ref().filter(|s| !s.finished).map(|s| {
+        (
+            s.questions[s.index].kind.label(),
+            s.index + 1,
+            s.questions.len(),
+            ((Date::now() - s.started_question_at).max(0.0) / 1_000.0) as u64,
+        )
+    });
     html! {
         <div class={if is_training_immersive { format!("calculation-layout {}",super::training::FIXED_TRAINING_LAYOUT) } else { "calculation-layout min-h-dvh bg-base-200 px-4 py-5 sm:px-8".to_owned() }} data-testid="calculation-layout" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
             <div class={if is_training_immersive { "calculation-header mx-auto flex w-full shrink-0 flex-wrap items-center justify-between gap-3 border-b border-base-content/10 pb-2" } else { "calculation-header mx-auto mb-5 flex w-full items-center justify-between" }}>
