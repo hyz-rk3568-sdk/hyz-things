@@ -95,7 +95,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PracticeGrade {
     Correct,
     Wrong,
@@ -112,10 +112,71 @@ struct PracticeAnswer {
 struct PracticeSession {
     questions: Vec<FlashcardSummary>,
     answers: Vec<Option<PracticeAnswer>>,
+    // Each card owns its reveal state and cumulative thinking time.
+    revealed_elapsed_ms: Vec<Option<u32>>,
+    thinking_elapsed_ms: Vec<u32>,
     index: usize,
     started_at: f64,
-    revealed_elapsed_ms: Option<u32>,
     finished: bool,
+}
+
+// Look ahead in a circular order, but never treat navigating away as skipping.
+fn next_ungraded_card(answers: &[Option<PracticeAnswer>], index: usize) -> Option<usize> {
+    if answers.is_empty() {
+        return None;
+    }
+    (1..=answers.len())
+        .map(|offset| (index + offset) % answers.len())
+        .find(|candidate| answers[*candidate].is_none())
+}
+
+impl PracticeSession {
+    // Only unrevealed cards count thinking time; switching away pauses that
+    // card's timer without discarding already elapsed time.
+    fn record_thinking_time(&mut self, now: f64) {
+        if self.revealed_elapsed_ms[self.index].is_none() && self.answers[self.index].is_none() {
+            let elapsed = (now - self.started_at).max(0.0) as u32;
+            self.thinking_elapsed_ms[self.index] =
+                self.thinking_elapsed_ms[self.index].saturating_add(elapsed);
+        }
+        self.started_at = now;
+    }
+
+    fn go_to(&mut self, target: usize, now: f64) {
+        if self.finished || target >= self.questions.len() || target == self.index {
+            return;
+        }
+        self.record_thinking_time(now);
+        self.index = target;
+        self.started_at = now;
+    }
+
+    fn reveal_current(&mut self, now: f64) {
+        if self.finished || self.revealed_elapsed_ms[self.index].is_some() {
+            return;
+        }
+        self.record_thinking_time(now);
+        self.revealed_elapsed_ms[self.index] = Some(self.thinking_elapsed_ms[self.index]);
+    }
+
+    fn rate_current(&mut self, grade: PracticeGrade, now: f64) {
+        if self.finished
+            || self.revealed_elapsed_ms[self.index].is_none()
+            || self.answers[self.index].is_some()
+        {
+            return;
+        }
+        let index = self.index;
+        self.answers[index] = Some(PracticeAnswer {
+            grade,
+            elapsed_ms: self.revealed_elapsed_ms[index].unwrap_or_default(),
+        });
+        if let Some(next) = next_ungraded_card(&self.answers, index) {
+            self.go_to(next, now);
+        } else {
+            self.finished = true;
+        }
+    }
 }
 
 #[derive(Properties, PartialEq)]
@@ -249,7 +310,7 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
         let math_state = current.as_ref().map(|value| {
             (
                 value.index,
-                value.revealed_elapsed_ms.is_some(),
+                value.revealed_elapsed_ms[value.index].is_some(),
                 value.finished,
             )
         });
@@ -284,6 +345,7 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
                 .iter()
                 .filter(|value| value.grade == PracticeGrade::Skipped)
                 .count();
+            let unanswered = live.answers.len() - answered.len();
             let scored = answered
                 .iter()
                 .filter(|value| value.grade != PracticeGrade::Skipped)
@@ -304,11 +366,12 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
             html! {
                 <section class="mx-auto grid max-w-4xl gap-4 px-4 pb-8 pt-5" data-testid="practice-summary">
                     <h2 class="text-xl font-bold">{"错题复练 · 本轮结果"}</h2>
-                    <div class="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                    <div class="grid grid-cols-2 gap-3 sm:grid-cols-6">
                         <div class="stat rounded-box bg-base-100"><div class="stat-title">{"已答"}</div><div class="stat-value text-2xl">{scored.len()}</div></div>
                         <div class="stat rounded-box bg-base-100"><div class="stat-title">{"做对"}</div><div class="stat-value text-2xl">{correct}</div></div>
                         <div class="stat rounded-box bg-base-100"><div class="stat-title">{"做错"}</div><div class="stat-value text-2xl">{wrong}</div></div>
                         <div class="stat rounded-box bg-base-100"><div class="stat-title">{"跳过"}</div><div class="stat-value text-2xl">{skipped}</div></div>
+                        <div class="stat rounded-box bg-base-100" data-testid="practice-unanswered"><div class="stat-title">{"未答"}</div><div class="stat-value text-2xl">{unanswered}</div></div>
                         <div class="stat rounded-box bg-base-100"><div class="stat-title">{"平均用时"}</div><div class="stat-value text-2xl">{format!("{:.1}s", average_ms as f64 / 1000.0)}</div></div>
                     </div>
                     <h3 class="font-semibold">{"本轮做错的卡片"}</h3>
@@ -342,11 +405,7 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
                     let Some(mut state) = (*session).clone() else {
                         return;
                     };
-                    if state.finished || state.revealed_elapsed_ms.is_some() {
-                        return;
-                    }
-                    state.revealed_elapsed_ms =
-                        Some((Date::now() - state.started_at).max(0.0) as u32);
+                    state.reveal_current(Date::now());
                     session.set(Some(state));
                 })
             };
@@ -356,27 +415,57 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
                     let Some(mut state) = (*session).clone() else {
                         return;
                     };
-                    if state.finished || state.revealed_elapsed_ms.is_none() {
-                        return;
-                    }
-                    let index = state.index;
-                    if state.answers[index].is_some() {
-                        return;
-                    }
-                    state.answers[index] = Some(PracticeAnswer {
-                        grade,
-                        elapsed_ms: state.revealed_elapsed_ms.unwrap_or_default(),
-                    });
-                    if index + 1 == state.questions.len() {
-                        state.finished = true;
-                    } else {
-                        state.index += 1;
-                        state.started_at = Date::now();
-                        state.revealed_elapsed_ms = None;
-                    }
+                    state.rate_current(grade, Date::now());
                     session.set(Some(state));
                 })
             };
+            let go_to = {
+                let session = session.clone();
+                Callback::from(move |target: usize| {
+                    let Some(mut state) = (*session).clone() else {
+                        return;
+                    };
+                    if target >= state.questions.len() || target == state.index {
+                        return;
+                    }
+                    state.go_to(target, Date::now());
+                    session.set(Some(state));
+                })
+            };
+            let previous = {
+                let go_to = go_to.clone();
+                let index = live.index;
+                Callback::from(move |_| go_to.emit(index.saturating_sub(1)))
+            };
+            let next = {
+                let go_to = go_to.clone();
+                let index = live.index;
+                Callback::from(move |_| go_to.emit(index + 1))
+            };
+            let current_revealed = live.revealed_elapsed_ms[live.index].is_some();
+            let current_grade = live.answers[live.index].as_ref().map(|v| v.grade);
+            let tabs = live.answers.iter().enumerate().map(|(i, answer)| {
+                let (grade, color) = match answer.as_ref().map(|answer| answer.grade) {
+                    Some(PracticeGrade::Correct) => ("correct", "btn-success"),
+                    Some(PracticeGrade::Wrong) => ("wrong", "btn-error"),
+                    Some(PracticeGrade::Skipped) => ("skipped", "btn-warning"),
+                    None => ("unanswered", "btn-ghost"),
+                };
+                let style = if i == live.index {
+                    format!("btn btn-xs shrink-0 ring-2 ring-primary ring-offset-1 {color}")
+                } else if answer.is_some() {
+                    format!("btn btn-xs btn-outline shrink-0 {color}")
+                } else {
+                    "btn btn-xs btn-ghost shrink-0".to_owned()
+                };
+                let go_to = go_to.clone();
+                html! {
+                    <button type="button" class={style} data-testid="practice-question-tab"
+                        data-grade={grade} aria-current={if i == live.index { "step" } else { "false" }}
+                        aria-label={format!("第{}题",i+1)}
+                        onclick={Callback::from(move |_| go_to.emit(i))}>{i+1}</button>
+                }
+            });
             let skip_to_summary = {
                 let session = session.clone();
                 Callback::from(move |_| {
@@ -398,7 +487,7 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
                             <article class="flex h-full min-h-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100">
                                 <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4" data-testid="practice-card-scroll">
                                     <div class="study-markdown" data-testid="practice-front">{render_markdown(&question.front_markdown, &question.source_file)}</div>
-                                    if live.revealed_elapsed_ms.is_some() {
+                                    if current_revealed {
                                         <div class="mt-4 border-t border-base-content/10 pt-3" data-testid="practice-back">
                                             <h3 class="mb-3 font-bold">{"原卡片解析"}</h3>
                                             <div class="study-markdown">{render_markdown(&question.back_markdown, &question.source_file)}</div>
@@ -409,7 +498,15 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
                         </InkOverlay>
                     </div>
                     <footer class="flex shrink-0 flex-col gap-2 py-1" data-testid="practice-controls">
-                        if live.revealed_elapsed_ms.is_none() {
+                        if let Some(grade) = current_grade {
+                            <div class="rounded-box bg-base-100 px-3 py-2 text-center text-sm" data-testid="practice-graded">
+                                {format!("已评价：{}",match grade {
+                                    PracticeGrade::Correct => "做对",
+                                    PracticeGrade::Wrong => "做错",
+                                    PracticeGrade::Skipped => "跳过",
+                                })}
+                            </div>
+                        } else if !current_revealed {
                             <button type="button" class="btn btn-primary" data-testid="practice-reveal" onclick={reveal}>{"显示解析"}</button>
                         } else {
                             <div class="grid grid-cols-3 gap-2" data-testid="practice-grading">
@@ -418,6 +515,15 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
                                 <button type="button" class="btn btn-outline" data-testid="practice-skip" onclick={rate(PracticeGrade::Skipped)}>{"跳过"}</button>
                             </div>
                         }
+                        <nav class="flex shrink-0 items-center gap-2" aria-label="错题复练题号导航" data-testid="practice-navigation">
+                            <button type="button" class="btn btn-sm btn-outline shrink-0" data-testid="practice-previous"
+                                disabled={live.index == 0} onclick={previous}>{"上一题"}</button>
+                            <div class="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto px-1 py-1" data-testid="practice-tab-strip">
+                                {for tabs}
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline shrink-0" data-testid="practice-next"
+                                disabled={live.index + 1 == live.questions.len()} onclick={next}>{"下一题"}</button>
+                        </nav>
                         <button type="button" class="btn btn-ghost btn-sm self-center" data-testid="practice-finish" onclick={skip_to_summary}>{"提前结束并查看成绩"}</button>
                     </footer>
                 </section>
@@ -447,10 +553,11 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
                 questions.truncate((*requested_count).min(questions.len()));
                 session.set(Some(PracticeSession {
                     answers: vec![None; questions.len()],
+                    revealed_elapsed_ms: vec![None; questions.len()],
+                    thinking_elapsed_ms: vec![0; questions.len()],
                     questions,
                     index: 0,
                     started_at: Date::now(),
-                    revealed_elapsed_ms: None,
                     finished: false,
                 }));
             })
@@ -552,6 +659,77 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use hyz_things::domain::flashcards::{FlashcardId, ReviewStateKind};
+
+    fn example_card(number: usize) -> FlashcardSummary {
+        FlashcardSummary {
+            id: FlashcardId::from_trusted(format!("card-{number}")),
+            source_file: "cards.md".into(),
+            source_order: number as u32,
+            deck_path: "资料分析".into(),
+            front_markdown: format!("题目{number}"),
+            back_markdown: "解析".into(),
+            tags: vec!["错题".into()],
+            active: true,
+            due_at_ms: None,
+            last_reviewed_at_ms: None,
+            state: ReviewStateKind::New,
+            review_count: 0,
+            lapse_count: 0,
+            is_new: true,
+        }
+    }
+
+    #[test]
+    fn navigation_preserves_unrevealed_time_without_grading_or_skipping() {
+        let mut live = PracticeSession {
+            questions: (0..3).map(example_card).collect(),
+            answers: vec![None; 3],
+            revealed_elapsed_ms: vec![None; 3],
+            thinking_elapsed_ms: vec![0; 3],
+            index: 0,
+            started_at: 1000.0,
+            finished: false,
+        };
+        live.go_to(2, 1600.0);
+        assert_eq!(live.thinking_elapsed_ms, vec![600, 0, 0]);
+        assert!(live.answers.iter().all(Option::is_none));
+        live.go_to(0, 2000.0);
+        live.reveal_current(2400.0);
+        assert_eq!(live.revealed_elapsed_ms, vec![Some(1000), None, None]);
+        live.go_to(1, 2600.0);
+        live.reveal_current(2900.0);
+        live.rate_current(PracticeGrade::Wrong, 3000.0);
+        assert_eq!(live.index, 2);
+        assert_eq!(live.answers[1].as_ref().unwrap().elapsed_ms, 300);
+        assert!(live.answers[0].is_none());
+        assert!(live.answers[2].is_none());
+        live.go_to(0, 3100.0);
+        assert_eq!(live.revealed_elapsed_ms[0], Some(1000));
+        live.rate_current(PracticeGrade::Correct, 3200.0);
+        assert_eq!(live.index, 2);
+        live.reveal_current(3500.0);
+        live.rate_current(PracticeGrade::Skipped, 3600.0);
+        assert!(live.finished);
+        assert_eq!(
+            live.answers[2].as_ref().unwrap().grade,
+            PracticeGrade::Skipped
+        );
+    }
+
+    #[test]
+    fn find_next_ungraded_card_wraps_and_does_not_mark_unanswered() {
+        let graded = Some(PracticeAnswer {
+            grade: PracticeGrade::Correct,
+            elapsed_ms: 1250,
+        });
+        let answers = vec![None, graded.clone(), None, graded];
+        assert_eq!(next_ungraded_card(&answers, 2), Some(0));
+        assert_eq!(next_ungraded_card(&answers, 0), Some(2));
+        assert!(answers[0].is_none());
+        assert!(next_ungraded_card(&[answers[1].clone()], 0).is_none());
+    }
 
     #[test]
     fn shuffling_preserves_distinct_card_ids() {
