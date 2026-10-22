@@ -24,27 +24,25 @@ pub const QUIZ_GROUPS: usize = 4;
 pub const QUIZ_PER_GROUP: usize = 5;
 pub const QUIZ_SECONDS: u64 = 1200;
 
-/// Original section title is preserved separately from training topic.
-pub const SECTIONS: [(&str, &str); 12] = [
-    ("一、综合", "宏观经济"),
-    ("二、农业", "农业"),
-    ("三、工业和建筑业", "工业能源"),
-    ("四、服务业", "交通物流与服务"),
-    ("五、国内贸易", "国内消费"),
-    ("六、固定资产投资", "投资房地产"),
-    ("七、对外经济", "对外经济"),
-    ("八、财政金融", "财政金融"),
-    ("九、居民收入消费和社会保障", "居民民生"),
-    ("十、科学技术和教育", "科技教育"),
-    ("十一、文化旅游、卫生健康和体育", "文旅卫生体育"),
-    ("十二、资源、环境和应急管理", "资源环境安全"),
+/// Single-level subject taxonomy for exam-style simulated passages.
+pub const TOPICS: [&str; 12] = [
+    "宏观经济",
+    "农业",
+    "工业能源",
+    "交通物流与服务",
+    "国内消费",
+    "投资房地产",
+    "对外经济",
+    "财政金融",
+    "居民民生",
+    "科技教育",
+    "文旅卫生体育",
+    "资源环境安全",
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Material {
-    pub section: String,
     pub topic: String,
-    pub subtopic: String,
     pub text: String,
     pub source_url: String,
 }
@@ -60,47 +58,37 @@ pub struct VerifiedQuestion {
     pub evidence: String,
 }
 
-/// Pick at most \`limit\` distinct material groups for a parallel generation wave.
-///
-/// The first pass requires independent official years and topics; the fallback
-/// pass relaxes diversity, never the unique source/section identity. Rejected
-/// candidates are not retried indefinitely.
+/// Choose distinct subjects for a generation wave.
+/// The strict pass also prefers independent source identities; the fallback
+/// may repeat a source, but *never* a subject within the same paper.
 pub fn select_material_batch(
     ordered: &[Material],
     completed: &[Material],
-    attempted: &std::collections::HashSet<(String, String)>,
+    attempted: &std::collections::HashSet<String>,
     strict_diversity: bool,
     limit: usize,
 ) -> Vec<Material> {
-    let mut identities = completed
-        .iter()
-        .map(|m| (m.source_url.clone(), m.section.clone()))
-        .collect::<std::collections::HashSet<_>>();
-    let mut years = completed
-        .iter()
-        .map(|m| m.source_url.clone())
-        .collect::<std::collections::HashSet<_>>();
     let mut topics = completed
         .iter()
-        .map(|m| m.topic.clone())
+        .map(|material| material.topic.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let mut sources = completed
+        .iter()
+        .map(|material| material.source_url.clone())
         .collect::<std::collections::HashSet<_>>();
     let mut selected = Vec::new();
     for material in ordered {
         if selected.len() == limit {
             break;
         }
-        let identity = (material.source_url.clone(), material.section.clone());
-        if identities.contains(&identity) || attempted.contains(&identity) {
-            continue;
-        }
-        if strict_diversity
-            && (years.contains(&material.source_url) || topics.contains(&material.topic))
+        if topics.contains(&material.topic)
+            || attempted.contains(&material.topic)
+            || (strict_diversity && sources.contains(&material.source_url))
         {
             continue;
         }
-        identities.insert(identity);
-        years.insert(material.source_url.clone());
         topics.insert(material.topic.clone());
+        sources.insert(material.source_url.clone());
         selected.push(material.clone());
     }
     selected
@@ -111,9 +99,7 @@ mod tests {
     use super::*;
     fn material() -> Material {
         Material {
-            section: "二、农业".into(),
             topic: "农业".into(),
-            subtopic: "粮食生产".into(),
             text: "全年粮食产量71488万吨，比上年增加838万吨，增产1.2%。".into(),
             source_url: SOURCE_URL.into(),
         }
@@ -123,7 +109,6 @@ mod tests {
         let candidates = (0..7)
             .map(|n| Material {
                 source_url: format!("year-{}", n / 2),
-                section: format!("section-{n}"),
                 topic: format!("topic-{}", n / 2),
                 ..material()
             })
@@ -170,36 +155,31 @@ mod tests {
         let candidates = vec![
             Material {
                 source_url: "year-a".into(),
-                section: "one".into(),
                 topic: "agriculture".into(),
                 ..source.clone()
             },
             Material {
                 source_url: "year-a".into(),
-                section: "two".into(),
                 topic: "industry".into(),
                 ..source.clone()
             },
             Material {
                 source_url: "year-b".into(),
-                section: "three".into(),
                 topic: "trade".into(),
                 ..source.clone()
             },
             Material {
                 source_url: "year-c".into(),
-                section: "four".into(),
                 topic: "investment".into(),
                 ..source.clone()
             },
             Material {
                 source_url: "year-b".into(),
-                section: "five".into(),
                 topic: "health".into(),
                 ..source.clone()
             },
         ];
-        let attempted = std::collections::HashSet::from([("year-a".to_owned(), "one".to_owned())]);
+        let attempted = std::collections::HashSet::from(["agriculture".to_owned()]);
         let completed = vec![candidates[2].clone()];
         let strict = select_material_batch(&candidates, &completed, &attempted, true, 3);
         assert_eq!(strict, vec![candidates[1].clone(), candidates[3].clone()]);
@@ -216,11 +196,43 @@ mod tests {
     }
 
     #[test]
-    fn section_taxonomy_is_stable() {
-        assert_eq!(SECTIONS.len(), 12);
+    fn single_topic_taxonomy_is_stable() {
+        assert_eq!(TOPICS.len(), 12);
         assert_eq!(OFFICIAL_SOURCES.len(), 4);
         assert!(OFFICIAL_SOURCES.windows(2).all(|w| w[0].0 < w[1].0));
         assert_eq!(QUIZ_GROUPS * QUIZ_PER_GROUP, QUIZ_QUESTIONS);
         assert_eq!(QUIZ_SECONDS, 1200);
     }
+    #[test]
+    fn a_material_uses_only_topic_and_reads_historic_json() {
+        let historic = r#"{"section":"二、农业","topic":"农业","subtopic":"粮食生产","text":"测试材料","source_url":"practice-theme-1"}"#;
+        let parsed: Material = serde_json::from_str(historic).unwrap();
+        assert_eq!(parsed.topic, "农业");
+        let json = serde_json::to_value(&parsed).unwrap();
+        assert_eq!(json["topic"], "农业");
+        assert!(json.get("section").is_none());
+        assert!(json.get("subtopic").is_none());
+        assert_eq!(json.as_object().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn fallback_cannot_choose_the_same_topic_twice() {
+        let mut candidates = vec![material()];
+        candidates.push(Material {
+            topic: "农业".into(),
+            source_url: "new-source".into(),
+            ..material()
+        });
+        candidates.push(Material {
+            topic: "工业能源".into(),
+            ..material()
+        });
+        let result = select_material_batch(
+            &candidates, &[], &std::collections::HashSet::new(), false, 4
+        );
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].topic, "农业");
+        assert_eq!(result[1].topic, "工业能源");
+    }
+
 }
