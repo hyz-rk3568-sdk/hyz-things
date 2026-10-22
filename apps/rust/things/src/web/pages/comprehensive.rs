@@ -734,6 +734,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         {analysis_panes(&score.materials[group_index],review_question)}
                     </InkOverlay>
                 </div>
+                if let Some(msg)=(*error).clone() {
+                    <p class="shrink-0 text-error text-xs" role="alert">{msg}</p>
+                }
                 {analysis_navigation(current.clone(),index,&marks,true)}
             </section>
         };
