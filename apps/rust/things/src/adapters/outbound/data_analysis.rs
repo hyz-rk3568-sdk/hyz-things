@@ -1788,6 +1788,19 @@ mod tests {
             .await
             .expect("migrations");
 
+        let columns = sqlx::query("PRAGMA table_info(data_analysis_groups)")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        let columns = columns
+            .iter()
+            .map(|row| row.try_get::<String, _>("name").unwrap())
+            .collect::<HashSet<_>>();
+        assert!(columns.contains("topic"));
+        assert!(columns.contains("group_json"));
+        assert!(!columns.contains("source_url"));
+        assert!(!columns.contains("section"));
+
         let materials = TOPICS
             .iter()
             .take(4)
