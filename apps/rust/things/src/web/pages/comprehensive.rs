@@ -614,11 +614,17 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let error = error.clone();
             let history_open = history_open.clone();
             let run = run.clone();
+            let current = current.clone();
+            let reviewing_history = reviewing_history.clone();
+            let review_run_id = review_run_id.clone();
             Callback::from(move |id: String| {
                 let result = result.clone();
                 let error = error.clone();
                 let history_open = history_open.clone();
                 let run = run.clone();
+                let current = current.clone();
+                let reviewing_history = reviewing_history.clone();
+                let review_run_id = review_run_id.clone();
                 spawn_local(async move {
                     match fetch_json_typed::<AnalysisResult>(
                         &format!("{ANALYSIS_ROOT}/runs/{id}/result"),
@@ -629,6 +635,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         Ok(value) => {
                             run.set(None);
                             history_open.set(false);
+                            current.set(0);
+                            reviewing_history.set(true);
+                            review_run_id.set(id.clone());
                             result.set(Some(value));
                         }
                         Err(e) => error.set(Some(e.to_string())),
