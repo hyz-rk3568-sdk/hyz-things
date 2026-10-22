@@ -376,6 +376,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         Callback::from(move |_| on_exit.emit(()))
     };
     let submit = {
+        let controller = controller.clone();
         let run = run.clone();
         let result = result.clone();
         let error = error.clone();
@@ -394,15 +395,21 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let error = error.clone();
             let busy = busy.clone();
             let csrf = csrf.clone();
+            let token = (*controller).clone();
             let history = history.clone();
             let reviewing_history = reviewing_history.clone();
             let review_run_id = review_run_id.clone();
             spawn_local(async move {
+                let Some(token) = token else {
+                    error.set(Some("无法确认当前设备的答题权限，请重新进入训练".into()));
+                    busy.set(false);
+                    return;
+                };
                 let endpoint = format!("{ANALYSIS_ROOT}/runs/{}/submit", active.id);
                 match post_json_response_typed::<_, AnalysisResult>(
                     &endpoint,
                     &csrf,
-                    &EmptyRequest {},
+                    &ControlRequest { control_token: token },
                     "提交综合训练",
                 )
                 .await
@@ -491,11 +498,13 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     // Opening the prepared paper is the *only* action which starts 20 minutes.
     // A background generation result can remain ready for hours without timing.
     let enter_ready = {
+        let controller = controller.clone();
         let run = run.clone();
         let current = current.clone();
         let ready_id = ready_id.clone();
         let busy = busy.clone();
         let error = error.clone();
+        let csrf = props.csrf.clone();
         Callback::from(move |_| {
             if *busy {
                 return;
@@ -505,19 +514,25 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             };
             busy.set(true);
             let run = run.clone();
+            let controller = controller.clone();
             let current = current.clone();
             let ready_id = ready_id.clone();
             let busy = busy.clone();
             let error = error.clone();
+            let csrf = csrf.clone();
             spawn_local(async move {
-                match fetch_json_typed::<AnalysisRun>(
-                    &format!("{ANALYSIS_ROOT}/runs/{id}"),
+                match post_json_response_typed::<_, ClaimedRun>(
+                    &format!("{ANALYSIS_ROOT}/runs/{id}/claim"),
+                    &csrf,
+                    &EmptyRequest {},
                     "进入综合训练",
                 )
                 .await
                 {
-                    Ok(active) => {
-                        current.set(0);
+                    Ok(claim) => {
+                        let active = claim.run;
+                        current.set(active.current_question.min(19));
+                        controller.set(Some(claim.control_token));
                         if let Some(storage) =
                             web_sys::window().and_then(|w| w.local_storage().ok().flatten())
                         {
@@ -539,6 +554,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         })
     };
     let toggle_pause = {
+        let controller = controller.clone();
         let run = run.clone();
         let busy = busy.clone();
         let error = error.clone();
@@ -553,12 +569,18 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let busy = busy.clone();
             let error = error.clone();
             let csrf = csrf.clone();
+            let token = (*controller).clone();
             spawn_local(async move {
+                let Some(token) = token else {
+                    error.set(Some("无法确认答题权限，请重新进入训练".into()));
+                    busy.set(false);
+                    return;
+                };
                 let endpoint = format!("{ANALYSIS_ROOT}/runs/{}/pause", active.id);
                 match post_json_response_typed::<_, AnalysisRun>(
                     &endpoint,
                     &csrf,
-                    &EmptyRequest {},
+                    &ControlRequest { control_token: token },
                     "暂停或继续综合训练",
                 )
                 .await
