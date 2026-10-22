@@ -117,7 +117,7 @@ pub const FEEDBACK: &str =
 pub const INNER_CARD: &str =
     "card min-w-0 gap-4 border border-base-content/10 bg-base-100/60 p-4 shadow-sm sm:p-5";
 pub const CUSTOM_TIMER_GRID: &str =
-    "mt-4 grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3";
+    "mt-4 grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3";
 pub const CUSTOM_TIMER_CARD: &str =
     "card min-w-0 gap-3 border border-base-content/10 bg-base-100/60 p-3 shadow-sm sm:p-4";
 pub const CUSTOM_TIMER_HEAD: &str = "flex min-w-0 items-center justify-between gap-2";
