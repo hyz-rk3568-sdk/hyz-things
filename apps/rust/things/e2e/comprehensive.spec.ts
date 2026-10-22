@@ -9,6 +9,8 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   const answers: (number | null)[] = Array(20).fill(null);
   let paused=false;
   let submittedResult:unknown={};
+  const retryAnswers:(number|null)[]=Array(20).fill(null);
+  let repeatCreated=0;
   let manualSkillsSubmitted:string[]=[];
   const topics = ["宏观经济","农业","工业能源","交通物流与服务"];
   const groups = Array.from({length:4},(_,g)=>({
@@ -39,6 +41,24 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
       result={job_id:"fixture-task"};
     } else if (path.endsWith("/prepare/fixture-task")) {
       result={state:"ready",verified:20,message:"已完成20题校验",run_id:"fixture-run"};
+    } else if (path.endsWith("/runs/fixture-run/retry") && route.request().method()==="POST") {
+      repeatCreated++;
+      result={run_id:"fixture-retry"};
+    } else if (path.endsWith("/runs/fixture-retry") && route.request().method()==="GET") {
+      result={id:"fixture-retry",status:"active",started_at_ms:Date.now(),deadline_at_ms:Date.now()+1200000,paused_remaining_ms:null,duration_seconds:1200,groups,answers:retryAnswers};
+    } else if (path.includes("/runs/fixture-retry/answers/")) {
+      const number=Number(path.split("/").pop()!);
+      const data=route.request().postDataJSON() as {choice:number};
+      retryAnswers[number-1]=data.choice;
+      result={saved:true};
+    } else if (path.endsWith("/runs/fixture-retry/submit")) {
+      result={id:"fixture-retry",correct:0,total:20,materials:groups.map(g=>g.material),
+        questions:Array.from({length:20},(_,i)=>({
+          number:i+1,question:groups[Math.floor(i/5)].questions[i%5].question,
+          options:["1000亿元","1042亿元","1100亿元","1200亿元"],chosen:retryAnswers[i],
+          correct_index:0,answer:"1000亿元",explanation:"基期量为现期量除以增长因子",
+          topic:topics[Math.floor(i/5)],skill:"基期量",evidence:"业务量1200亿元",
+        }))};
     } else if (path.endsWith("/runs/fixture-run") && route.request().method()==="GET") {
       result={id:"fixture-run",status:"active",started_at_ms:started,deadline_at_ms:paused?null:started+1200000,paused_remaining_ms:paused?1100000:null,duration_seconds:1200,groups,answers};
     } else if (path.endsWith("/pause") && route.request().method()==="POST") {
@@ -208,6 +228,23 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-state","correct");
   await page.getByTestId("analysis-exit").click();
   await expect(page.getByTestId("analysis-history")).toBeVisible();
+  await expect(page.getByTestId("analysis-history")).toContainText("查看原题与解析");
+  await page.getByTestId("analysis-retry").first().click();
+  await expect(page.getByTestId("analysis-run")).toBeVisible();
+  expect(repeatCreated).toBe(1);
+  expect(retryAnswers.every(x=>x===null)).toBe(true);
+  await expect(page.getByTestId("analysis-question")).toContainText("第1题");
+  await expect(page.getByTestId("analysis-question")).not.toContainText("基期量");
+  await expect(page.getByTestId("analysis-choice").first()).not.toHaveClass(/btn-primary/);
+  await page.getByTestId("analysis-choice").nth(1).click();
+  await expect(page.getByTestId("analysis-choice").nth(1)).toHaveClass(/btn-primary/);
+  await page.getByRole("button",{name:"交卷"}).click();
+  await expect(page.getByTestId("analysis-result")).toContainText("0 / 20");
+  await page.getByRole("button",{name:"查看练习历史"}).click();
+  await expect(page.getByTestId("analysis-history")).toBeVisible();
+  await page.getByRole("button",{name:"查看原题与解析"}).first().click();
+  await expect(page.getByTestId("analysis-result")).toContainText("1 / 20");
+  await page.getByTestId("analysis-exit").click();
   await page.getByRole("button",{name:"返回训练"}).click();
   await expect(page.getByRole("group",{name:"训练模式"})).toBeVisible();
 });

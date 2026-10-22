@@ -164,6 +164,26 @@ pub(super) async fn submit(
     }
 }
 
+#[derive(Serialize)]
+struct RetryBody {
+    run_id: String,
+}
+pub(super) async fn retry(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control(&state, &headers).await {
+        return response;
+    }
+    let Some(service) = get(&state) else {
+        return unavailable();
+    };
+    match service.retry(&id).await {
+        Ok(run_id) => Json(RetryBody { run_id }).into_response(),
+        Err(_) => bad_request("只能重做已交卷且题目完整的历史试卷"),
+    }
+}
 pub(super) async fn comprehensive_history(
     State(state): State<AppState>,
     headers: HeaderMap,

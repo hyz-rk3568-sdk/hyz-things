@@ -26,7 +26,6 @@ pub(crate) struct PrepareProgress {
 pub(crate) struct ViewQuestion {
     pub question: String,
     pub options: [String; 4],
-    pub skill: String,
 }
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub(crate) struct ViewGroup {
@@ -59,6 +58,7 @@ pub(crate) struct GradedQuestion {
 }
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct AnalysisResult {
+    pub id: String,
     pub correct: usize,
     pub total: usize,
     pub questions: Vec<GradedQuestion>,
@@ -67,6 +67,8 @@ pub(crate) struct AnalysisResult {
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct ComprehensiveHistoryEntry {
     pub id: String,
+    #[serde(default = "first_attempt")]
+    pub attempt_no: i64,
     pub started_at_ms: i64,
     pub ended_at_ms: i64,
     pub elapsed_ms: i64,
@@ -74,6 +76,14 @@ pub(crate) struct ComprehensiveHistoryEntry {
     pub total: usize,
     pub topics: Vec<String>,
 }
+fn first_attempt() -> i64 {
+    1
+}
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct RetryRun {
+    pub run_id: String,
+}
+
 #[derive(Serialize)]
 pub(crate) struct SaveAnswer {
     pub choice: usize,

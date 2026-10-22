@@ -116,7 +116,6 @@ pub struct QuestionGroup {
 pub struct PublicQuestion {
     pub question: String,
     pub options: [String; 4],
-    pub skill: String,
 }
 #[derive(Clone, Serialize)]
 pub struct PublicGroup {
@@ -159,6 +158,7 @@ pub struct RunResult {
 #[derive(Clone, Serialize)]
 pub struct ComprehensiveHistoryEntry {
     pub id: String,
+    pub attempt_no: i64,
     pub started_at_ms: i64,
     pub ended_at_ms: i64,
     pub elapsed_ms: i64,
@@ -543,6 +543,9 @@ material_text 必须使用两个换行符分隔自然段（\n\n，JSON中正确�
 允许合理构造所有训练数值；这些数字是模拟数据而非搜索到的真题原值。年份、主体、指标和单位要明确，
 基期、现期、增长量与增速、部分/总体、混合权重之间必须自洽。
 题干涉及同比时明确写具体比较年份（如“2024年比2023年”），不能只说“年末”“去年”。
+命题必须考查真实审题与找数能力：question 只写年份、主体、所求指标或比较目标，不能额外告诉考生需要哪几个现成数据、所需计算路径或公式。
+严禁类似“据2024年两项收入的同比增速及合计增速”“利用整体增速和两个分项增速”“用线段混合法”“根据基期量公式”“先算差值再除以11”这样的提前提示。
+例如只问“2023年C市数字演艺项目收入与体育赛事服务收入之比约为多少？”，不要在前面加“根据2024年两个分项增速及合计增速”。题型分类、速算微动作和具体计算过程只放到 skill/explanation 中，不得出现在 question 或 material_text 中。
 根据考生能在最终材料中实际看到的数字判断正确项；四项的区分度应适合 hyz 速算方法。
 对每道题返回：question题干；options恰好4个不带ABCD标记的选项字符串；
 correct_index为0至3的正确项下标；answer为该正确选项的完整内容；
@@ -616,6 +619,67 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
             row.try_get("started_at_ms").map_err(as_error)?,
         ))
     }
+    /// Create a fresh, untimed replay of a completed paper. Never touch the
+    /// source record or invoke Codex, even when replaying a previous replay.
+    pub async fn retry(&self, source_id: &str) -> Result<String, String> {
+        let mut tx = self.pool.begin().await.map_err(as_error)?;
+        let row = sqlx::query(
+            "SELECT groups_json, answers_json, status, COALESCE(origin_run_id, id) AS root_id
+             FROM data_analysis_runs WHERE id=?",
+        )
+        .bind(source_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(as_error)?
+        .ok_or("历史训练不存在")?;
+        let status: String = row.try_get("status").map_err(as_error)?;
+        if status != "submitted" {
+            return Err("只有已交卷的训练可以重做".into());
+        }
+        let groups_json: String = row.try_get("groups_json").map_err(as_error)?;
+        let groups: Vec<QuestionGroup> = serde_json::from_str(&groups_json).map_err(as_error)?;
+        if groups.len() != QUIZ_GROUPS || groups.iter().any(|g| g.questions.len() != QUIZ_PER_GROUP)
+        {
+            return Err("历史试卷题目不完整，无法重做".into());
+        }
+        let original_answers: Vec<Option<usize>> =
+            serde_json::from_str(&row.try_get::<String, _>("answers_json").map_err(as_error)?)
+                .map_err(as_error)?;
+        if original_answers.len() != QUIZ_GROUPS * QUIZ_PER_GROUP {
+            return Err("历史答题记录不完整，无法重做".into());
+        }
+        let root_id: String = row.try_get("root_id").map_err(as_error)?;
+        let attempt_no: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(attempt_no), 1) + 1
+             FROM data_analysis_runs WHERE id=? OR origin_run_id=?",
+        )
+        .bind(&root_id)
+        .bind(&root_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(as_error)?;
+        let id = Uuid::now_v7().to_string();
+        sqlx::query(
+            "INSERT INTO data_analysis_runs
+             (id,groups_json,answers_json,status,created_at_ms,origin_run_id,attempt_no)
+             VALUES (?,?,?,'ready',?,?,?)",
+        )
+        .bind(&id)
+        .bind(&groups_json)
+        .bind(
+            serde_json::to_string(&vec![None::<usize>; QUIZ_GROUPS * QUIZ_PER_GROUP])
+                .map_err(as_error)?,
+        )
+        .bind(now_ms())
+        .bind(root_id)
+        .bind(attempt_no)
+        .execute(&mut *tx)
+        .await
+        .map_err(as_error)?;
+        tx.commit().await.map_err(as_error)?;
+        Ok(id)
+    }
+
     pub async fn run(&self, id: &str) -> Result<RunView, String> {
         sqlx::query("UPDATE data_analysis_runs SET status='active',started_at_ms=? WHERE id=? AND status='ready'")
             .bind(now_ms()).bind(id).execute(&self.pool).await.map_err(as_error)?;
@@ -649,7 +713,6 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
                         .map(|q| PublicQuestion {
                             question: q.question,
                             options: q.options,
-                            skill: q.skill,
                         })
                         .collect(),
                 })
@@ -774,7 +837,7 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
 
     pub async fn history(&self) -> Result<Vec<ComprehensiveHistoryEntry>, String> {
         let rows=sqlx::query(
-            "SELECT id,groups_json,answers_json,started_at_ms,ended_at_ms,paused_total_ms FROM data_analysis_runs WHERE status='submitted' AND ended_at_ms IS NOT NULL ORDER BY ended_at_ms DESC LIMIT 100"
+            "SELECT id,groups_json,answers_json,started_at_ms,ended_at_ms,paused_total_ms,attempt_no FROM data_analysis_runs WHERE status='submitted' AND ended_at_ms IS NOT NULL ORDER BY ended_at_ms DESC LIMIT 100"
         ).fetch_all(&self.pool).await.map_err(as_error)?;
         let mut result = Vec::new();
         for row in rows {
@@ -802,6 +865,7 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
             let paused_total: i64 = row.try_get("paused_total_ms").map_err(as_error)?;
             result.push(ComprehensiveHistoryEntry {
                 id: row.try_get("id").map_err(as_error)?,
+                attempt_no: row.try_get("attempt_no").map_err(as_error)?,
                 started_at_ms: started,
                 ended_at_ms: ended,
                 elapsed_ms: (ended - started - paused_total).max(0),
@@ -1192,6 +1256,54 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].correct, 1);
         assert_eq!(entries[0].total, 20);
+        // Repeating a completed paper produces a new blank, separately graded
+        // attempt with exactly the same material, questions and options.
+        let repeat_id = service.retry(&run_id).await.expect("retry finished paper");
+        assert_ne!(repeat_id, run_id);
+        let repeated = service.run(&repeat_id).await.expect("start repeated paper");
+        assert_eq!(repeated.answers, vec![None; 20]);
+        assert_eq!(repeated.groups[0].material, active.groups[0].material);
+        assert_eq!(
+            repeated.groups[0].questions[0].question,
+            active.groups[0].questions[0].question
+        );
+        assert_eq!(
+            repeated.groups[0].questions[0].options,
+            active.groups[0].questions[0].options
+        );
+        assert_eq!(repeated.duration_seconds, QUIZ_SECONDS);
+        assert!(
+            service.retry(&repeat_id).await.is_err(),
+            "active repeat cannot be cloned"
+        );
+        service
+            .answer(&repeat_id, 1, 0)
+            .await
+            .expect("repeat answer");
+        let repeat_result = service.submit(&repeat_id).await.expect("submit repeat");
+        assert_eq!(repeat_result.correct, 0);
+        assert_eq!(service.result(&run_id).await.unwrap().correct, 1);
+        let third_id = service.retry(&repeat_id).await.expect("repeat from repeat");
+        let third = service.run(&third_id).await.unwrap();
+        assert_eq!(third.answers, vec![None; 20]);
+        assert!(service.result(&third_id).await.is_err());
+        let attempt_entries = service.history().await.unwrap();
+        assert_eq!(
+            attempt_entries
+                .iter()
+                .find(|entry| entry.id == run_id)
+                .unwrap()
+                .attempt_no,
+            1
+        );
+        assert_eq!(
+            attempt_entries
+                .iter()
+                .find(|entry| entry.id == repeat_id)
+                .unwrap()
+                .attempt_no,
+            2
+        );
         let historical = service.result(&run_id).await.expect("historical review");
         assert_eq!(historical.materials.len(), 4);
         assert_eq!(historical.questions.len(), 20);

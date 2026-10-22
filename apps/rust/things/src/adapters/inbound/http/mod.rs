@@ -815,6 +815,10 @@ fn app_with_assets(
             on(MethodFilter::GET, data_analysis::comprehensive_result),
         )
         .route(
+            "/api/v1/study/data-analysis/runs/{id}/retry",
+            on(MethodFilter::POST, data_analysis::retry),
+        )
+        .route(
             "/api/v1/study/data-analysis/runs/{id}/pause",
             on(MethodFilter::POST, data_analysis::pause_toggle),
         )
@@ -2624,7 +2628,9 @@ fn is_data_analysis_run_post_path(path: &str) -> bool {
     }
     match (segments.next(), segments.next(), segments.next()) {
         (Some("answers"), Some(number), None) => number.parse::<usize>().is_ok(),
-        (Some("submit"), None, None) | (Some("pause"), None, None) => true,
+        (Some("submit"), None, None)
+        | (Some("pause"), None, None)
+        | (Some("retry"), None, None) => true,
         _ => false,
     }
 }
@@ -3081,6 +3087,15 @@ mod tests {
         ));
         assert!(is_post_path(
             "/api/v1/study/data-analysis/runs/550e8400-e29b-41d4-a716-446655440000/submit"
+        ));
+        assert!(is_post_path(
+            "/api/v1/study/data-analysis/runs/550e8400-e29b-41d4-a716-446655440000/retry"
+        ));
+        assert!(!is_post_path(
+            "/api/v1/study/data-analysis/runs/not-a-uuid/retry"
+        ));
+        assert!(!is_post_path(
+            "/api/v1/study/data-analysis/runs/550e8400-e29b-41d4-a716-446655440000/retry/extra"
         ));
         assert!(!is_post_path("/api/v1/study/data-analysis/prepare/extra"));
         assert!(!is_post_path(
