@@ -189,22 +189,24 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   // Review reuses the exact reading/answer card: right is readonly with
   // the correct answer green, wrong selection red, and explanations scrollable.
   await expect(page.getByTestId("analysis-shared-workspace")).toBeVisible();
-  await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-state","correct");
+  await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-grade","correct");
   await expect(page.getByTestId("analysis-explanation")).toContainText("基期量");
   await page.getByRole("button",{name:"下一题"}).click();
-  await expect(page.getByTestId("analysis-review-choice").nth(1)).toHaveAttribute("data-state","wrong");
-  await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-state","correct");
+  await expect(page.getByTestId("analysis-review-choice").nth(1)).toHaveAttribute("data-grade","wrong");
+  await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-grade","correct");
   await page.getByRole("button",{name:"下一题"}).click();
-  await expect(page.getByTestId("analysis-review-status")).toContainText("未答");
-  await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-state","correct");
-  await expect(page.getByTestId("analysis-review-choice").nth(1)).toHaveAttribute("data-state","neutral");
+  await expect(page.getByTestId("analysis-grade")).toContainText("未答");
+  await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-grade","correct");
+  await expect(page.getByTestId("analysis-review-choice").nth(1)).toHaveAttribute("data-grade","neutral");
   await page.getByRole("button",{name:"查看练习历史"}).click();
   await expect(page.getByTestId("analysis-history")).toBeVisible();
   await page.getByRole("button",{name:"查看原题与解析"}).first().click();
   await expect(page.getByTestId("analysis-result")).toContainText("1 / 20");
   await expect(page.getByTestId("analysis-shared-workspace")).toBeVisible();
-  await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-state","correct");
+  await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-grade","correct");
   await page.getByTestId("analysis-exit").click();
+  await expect(page.getByTestId("analysis-history")).toBeVisible();
+  await page.getByRole("button",{name:"返回训练"}).click();
   await expect(page.getByRole("group",{name:"训练模式"})).toBeVisible();
 });
 
