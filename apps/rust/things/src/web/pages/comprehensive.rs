@@ -22,7 +22,7 @@ fn analysis_panes(material: &hyz_things::domain::data_analysis::Material, questi
         <div class="grid h-full min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-2 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:grid-rows-1"
             data-testid="analysis-shared-workspace">
             <article class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="analysis-material">
-                <div class="shrink-0 p-3 pb-1 text-sm font-semibold">{format!("{} · {}",material.section,material.subtopic)}</div>
+                <div class="shrink-0 p-3 pb-1 text-sm font-semibold">{material.topic.clone()}</div>
                 <div class="shrink-0 px-3 pb-2 text-xs text-base-content/60">{"模拟训练材料 · 根据历年行测真题风格新编，非真题原文"}</div>
                 <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y" data-testid="analysis-material-scroll">
                     <div class="whitespace-pre-wrap px-4 pb-4 pt-2 text-base leading-8">{material.text.clone()}</div>
