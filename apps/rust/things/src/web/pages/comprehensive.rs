@@ -562,8 +562,8 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         let new_id = created.run_id;
                         // Keep the ready record recoverable if entering it fails.
                         ready_id.set(Some(new_id.clone()));
-                        if let Some(storage) = web_sys::window()
-                            .and_then(|w| w.local_storage().ok().flatten())
+                        if let Some(storage) =
+                            web_sys::window().and_then(|w| w.local_storage().ok().flatten())
                         {
                             let _ = storage.set_item(COMPREHENSIVE_READY_KEY, &new_id);
                         }
@@ -574,10 +574,11 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         .await
                         {
                             Ok(active) => {
-                                if let Some(storage) = web_sys::window()
-                                    .and_then(|w| w.local_storage().ok().flatten())
+                                if let Some(storage) =
+                                    web_sys::window().and_then(|w| w.local_storage().ok().flatten())
                                 {
-                                    let _ = storage.set_item("hyz_comprehensive_active_run", &new_id);
+                                    let _ =
+                                        storage.set_item("hyz_comprehensive_active_run", &new_id);
                                     let _ = storage.remove_item(COMPREHENSIVE_READY_KEY);
                                 }
                                 remember_preparation(None);
