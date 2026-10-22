@@ -6,8 +6,6 @@ pub(crate) const ANALYSIS_ROOT: &str = "/api/v1/study/data-analysis";
 pub(crate) struct AnalysisStatus {
     pub configured: bool,
     pub model: Option<String>,
-    pub cached_sources: i64,
-    pub verified_groups: i64,
     pub available_skills: Vec<String>,
     pub preparing_job_id: Option<String>,
 }
@@ -70,7 +68,6 @@ pub(crate) struct UnfinishedRun {
     pub current_question: usize,
     pub deadline_at_ms: Option<i64>,
     pub paused_remaining_ms: Option<i64>,
-    pub created_at_ms: i64,
 }
 #[derive(Serialize)]
 pub(crate) struct ControlRequest {
@@ -88,9 +85,7 @@ pub(crate) struct GradedQuestion {
     pub options: [String; 4],
     pub chosen: Option<usize>,
     pub correct_index: usize,
-    pub answer: String,
     pub explanation: String,
-    pub topic: String,
     pub skill: String,
     pub evidence: String,
 }
@@ -108,7 +103,6 @@ pub(crate) struct ComprehensiveHistoryEntry {
     #[serde(default = "first_attempt")]
     pub attempt_no: i64,
     pub started_at_ms: i64,
-    pub ended_at_ms: i64,
     pub elapsed_ms: i64,
     pub correct: usize,
     pub total: usize,

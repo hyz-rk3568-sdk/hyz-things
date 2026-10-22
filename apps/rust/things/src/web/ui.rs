@@ -29,11 +29,6 @@ pub const EXAM_SECTION: &str =
     "card relative isolate overflow-hidden border border-base-content/10 bg-base-300/95 p-4 shadow-xl shadow-black/20 sm:p-6";
 pub const EXAM_DECORATION: &str =
     "pointer-events-none absolute -right-16 -top-16 -z-10 size-48 rounded-full bg-base-content/5 blur-3xl";
-pub const EXAM_HEAD: &str = "flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between";
-pub const EXAM_HEAD_META: &str =
-    "flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-base-content/65";
-pub const EXAM_BADGE: &str =
-    "badge badge-outline gap-1.5 border-base-content/20 bg-base-content/5 text-[0.65rem] font-bold text-base-content/70";
 pub const EXAM_GRID: &str = "mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4";
 pub const EXAM_CARD: &str =
     "card min-w-0 touch-manipulation gap-3 border border-base-content/10 bg-base-300/90 p-4 shadow-lg shadow-black/20 transition-shadow";
