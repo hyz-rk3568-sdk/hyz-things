@@ -2628,7 +2628,9 @@ fn is_data_analysis_run_post_path(path: &str) -> bool {
     }
     match (segments.next(), segments.next(), segments.next()) {
         (Some("answers"), Some(number), None) => number.parse::<usize>().is_ok(),
-        (Some("submit"), None, None) | (Some("pause"), None, None) | (Some("retry"), None, None) => true,
+        (Some("submit"), None, None)
+        | (Some("pause"), None, None)
+        | (Some("retry"), None, None) => true,
         _ => false,
     }
 }
