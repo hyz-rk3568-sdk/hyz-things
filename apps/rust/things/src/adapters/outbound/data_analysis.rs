@@ -374,120 +374,107 @@ impl DataAnalysisService {
     async fn generate(&self, job: &str, manual_skills: &[String]) -> Result<String, String> {
         self.set_progress(job, "selecting", 0, "正在规划参考真题的统计主题", None)
             .await;
-        // Topic variety is independent of exercise history; only the user's
-        // explicit categories determine which question skills may be generated.
+        // Statistics subjects stay varied independently of earlier mistakes;
+        // all exercise skills must come from the explicit user selection.
         let ordered = exam_theme_materials();
-        // Existing groups remain available to review, but never become new-paper caches.
-        let mut ready: Vec<QuestionGroup> = Vec::new();
+        // Keep the original four slots even if only some parallel tasks succeed.
+        // Retried slots must retain their own assigned selected categories.
+        let mut ready = vec![None::<QuestionGroup>; QUIZ_GROUPS];
         let mut attempted = HashSet::<(String, String)>::new();
         let mut last_error = String::new();
         let mut attempts = 0;
-        // Prefer four distinct themes; bounded retries use independent Codex threads.
         for strict_diversity in [true, false] {
             loop {
-                if ready.len() == QUIZ_GROUPS {
+                let missing = ready.iter().enumerate()
+                    .filter_map(|(slot, group)| group.is_none().then_some(slot))
+                    .collect::<Vec<_>>();
+                if missing.is_empty() {
                     break;
                 }
                 let completed: Vec<Material> =
-                    ready.iter().map(|group| group.material.clone()).collect();
+                    ready.iter().flatten().map(|group| group.material.clone()).collect();
                 let wave = select_material_batch(
-                    &ordered,
-                    &completed,
-                    &attempted,
-                    strict_diversity,
-                    QUIZ_GROUPS - ready.len(),
+                    &ordered, &completed, &attempted, strict_diversity, missing.len()
                 );
                 if wave.is_empty() {
                     break;
                 }
 
-                let mut ordered_results: Vec<Option<QuestionGroup>> = vec![None; wave.len()];
+                let mut ordered_results = vec![None::<QuestionGroup>; QUIZ_GROUPS];
                 let mut requests = Vec::new();
-                for (slot, material) in wave.iter().enumerate() {
+                for (slot, material) in missing.into_iter().zip(wave.iter()) {
                     attempted.insert((material.source_url.clone(), material.section.clone()));
                     if attempts < 12 {
                         attempts += 1;
                         requests.push((slot, material.clone()));
                     }
                 }
-                if requests.is_empty() && ordered_results.iter().all(Option::is_none) {
+                if requests.is_empty() {
                     break;
                 }
-                if !requests.is_empty() {
-                    self.set_progress(
-                        job,
-                        "generating",
-                        ready.len() * QUIZ_PER_GROUP,
-                        "最多4个 Codex Thread 正在按题型规划生成模拟题",
-                        None,
-                    )
-                    .await;
-                    let worker = self.clone();
-                    let manual = Arc::new(manual_skills.to_vec());
-                    let group_offset = ready.len();
-                    for (slot, outcome) in
-                        run_generation_wave(requests, move |material, ordinal| {
-                            let worker = worker.clone();
-                            let manual = Arc::clone(&manual);
-                            async move {
-                                worker
-                                    .generate_group(&material, &manual, group_offset + ordinal)
-                                    .await
-                            }
-                        })
-                        .await
-                    {
-                        match outcome {
-                            Ok(group) if slot < ordered_results.len() => {
-                                ordered_results[slot] = Some(group);
-                            }
-                            Ok(_) => last_error = "Codex 并行任务返回异常序号".into(),
-                            Err(error) => last_error = error,
+
+                self.set_progress(
+                    job,
+                    "generating",
+                    ready.iter().filter(|group| group.is_some()).count() * QUIZ_PER_GROUP,
+                    "最多4个 Codex Thread 正在按所选分类生成模拟题",
+                    None,
+                ).await;
+                let worker = self.clone();
+                let manual = Arc::new(manual_skills.to_vec());
+                for (slot, outcome) in run_generation_wave(requests, move |material, slot| {
+                    let worker = worker.clone();
+                    let manual = Arc::clone(&manual);
+                    async move {
+                        worker.generate_group(&material, &manual, slot).await
+                    }
+                }).await {
+                    match outcome {
+                        Ok(group) if slot < QUIZ_GROUPS => {
+                            ordered_results[slot] = Some(group);
                         }
+                        Ok(_) => last_error = "Codex 并行任务返回异常序号".into(),
+                        Err(error) => last_error = error,
                     }
                 }
 
-                // Only the coordinator persists groups and updates the run,
-                // preserving the deterministic order selected before spawning.
-                for group in ordered_results.into_iter().flatten() {
-                    {
-                        sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES (?,?,?,?,?,?)")
-                            .bind(Uuid::now_v7().to_string())
-                            .bind(&group.material.source_url)
-                            .bind(&group.material.section)
-                            .bind(&group.material.topic)
-                            .bind(serde_json::to_string(&group).map_err(as_error)?)
-                            .bind(now_ms())
-                            .execute(&self.pool)
-                            .await
-                            .map_err(as_error)?;
-                    }
-                    ready.push(group);
+                // Only the coordinator persists groups in the assigned slot.
+                for (slot, group) in ordered_results.into_iter().enumerate() {
+                    let Some(group) = group else { continue };
+                    sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES (?,?,?,?,?,?)")
+                        .bind(Uuid::now_v7().to_string())
+                        .bind(&group.material.source_url)
+                        .bind(&group.material.section)
+                        .bind(&group.material.topic)
+                        .bind(serde_json::to_string(&group).map_err(as_error)?)
+                        .bind(now_ms())
+                        .execute(&self.pool).await.map_err(as_error)?;
+                    ready[slot] = Some(group);
                     self.set_progress(
                         job,
                         "generating",
-                        ready.len() * QUIZ_PER_GROUP,
+                        ready.iter().filter(|group| group.is_some()).count() * QUIZ_PER_GROUP,
                         "已接收 Codex 完成的模拟试题并保存",
                         None,
-                    )
-                    .await;
+                    ).await;
                 }
             }
-            if ready.len() == QUIZ_GROUPS {
+            if ready.iter().all(Option::is_some) {
                 break;
             }
         }
-        if ready.len() != QUIZ_GROUPS {
+        let count = ready.iter().filter(|group| group.is_some()).count();
+        if count != QUIZ_GROUPS {
             return Err(format!(
                 "已获得{}/20题，无法组成整卷：{}",
-                ready.len() * 5,
-                last_error
+                count * QUIZ_PER_GROUP, last_error
             ));
         }
+        let groups = ready.into_iter().flatten().collect::<Vec<_>>();
         let id = Uuid::now_v7().to_string();
         sqlx::query("INSERT INTO data_analysis_runs(id,groups_json,answers_json,status,created_at_ms) VALUES(?,?,?,'ready',?)")
             .bind(&id)
-            .bind(serde_json::to_string(&ready).map_err(as_error)?)
+            .bind(serde_json::to_string(&groups).map_err(as_error)?)
             .bind(serde_json::to_string(&vec![None::<usize>;20]).map_err(as_error)?)
             .bind(now_ms()).execute(&self.pool).await.map_err(as_error)?;
         Ok(id)
