@@ -1972,8 +1972,14 @@ pub(crate) fn custom_countdown_panel() -> Html {
     }
 }
 
+#[derive(Properties, PartialEq)]
+pub(crate) struct ExamCountdownPanelProps {
+    #[prop_or_default]
+    pub(crate) on_training: Option<Callback<MouseEvent>>,
+}
+
 #[function_component(ExamCountdownPanel)]
-pub(crate) fn exam_countdown_panel() -> Html {
+pub(crate) fn exam_countdown_panel(props: &ExamCountdownPanelProps) -> Html {
     let now_ms = use_state(|| Date::now() as i64);
     let pip_document = use_mut_ref(|| None::<DocumentPipHandles>);
     let pip_exam = use_state(|| None::<usize>);
@@ -2046,49 +2052,103 @@ pub(crate) fn exam_countdown_panel() -> Html {
         });
     }
 
+    let nearest = &EXAM_COUNTDOWN_TARGETS[0];
+    let nearest_snapshot = countdown_snapshot(
+        *now_ms,
+        exam_timestamp(nearest.start_iso),
+        exam_timestamp(nearest.target_iso),
+    );
     html! {
-        <section id="exam-countdown" class={EXAM_SECTION} role="region" aria-labelledby="exam-countdown-title">
-            <span class={EXAM_DECORATION} aria-hidden="true"></span>
-            <div class={EXAM_HEAD}>
-                <div>
-                    <p class={EYEBROW}>{"EXAM COUNTDOWN"}</p>
-                    <h2 id="exam-countdown-title" class={SECTION_TITLE}>{"考试冲刺倒计时"}</h2>
+        <section id="exam-countdown" class="grid gap-4" role="region" aria-labelledby="exam-countdown-title" data-testid="study-exam-dashboard">
+            <div class="relative grid gap-5 overflow-hidden rounded-2xl border border-primary/30 bg-base-100 p-5 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:p-7" data-testid="study-exam-hero">
+                <div class="min-w-0 space-y-3">
+                    <p class="text-xs font-bold uppercase tracking-widest text-primary">{"最近考试 · 预计日期"}</p>
+                    <h2 id="exam-countdown-title" class="text-2xl font-black sm:text-3xl">{nearest.title}</h2>
+                    <p class="text-sm text-base-content/70">{format!("{} · {}",nearest.target_label,nearest.target_note)}</p>
+                    <p class="text-xs text-base-content/55">{"预计日期请以官方公告为准"}</p>
+                    if let Some(on_training) = props.on_training.clone() {
+                        <button type="button" class="btn btn-primary mt-1" data-testid="study-exam-start" onclick={on_training}>{"开始专项训练 →"}</button>
+                    }
                 </div>
-                <div class={EXAM_HEAD_META}>
-                    <span class={EXAM_BADGE}><span aria-hidden="true">{"!"}</span>{"按时间先后排序"}</span>
-                    <span>{"双击卡片开启画中画 · 预计日期以官方公告为准"}</span>
+                <div class="rounded-xl border border-primary/20 bg-base-200/80 px-7 py-5 text-center sm:min-w-52">
+                    <p class="text-xs text-base-content/60">{"距离预计笔试"}</p>
+                    if nearest_snapshot.finished {
+                        <strong class="mt-2 block text-2xl font-black">{"日期已到"}</strong>
+                    } else {
+                        <div class="mt-1 font-mono text-5xl font-black tabular-nums text-primary" data-testid="study-nearest-exam-days">
+                            {nearest_snapshot.days}
+                            <span class="ml-2 text-xl">{"天"}</span>
+                        </div>
+                        <p class="mt-2 font-mono text-sm tabular-nums">
+                            {format!("{:02} 时 {:02} 分",nearest_snapshot.hours,nearest_snapshot.minutes)}
+                        </p>
+                    }
+                    <progress class="progress progress-primary mt-3 w-full" max="100" value={nearest_snapshot.progress_percent.to_string()}></progress>
                 </div>
             </div>
-            if let Some(message) = *pip_notice {
-                <p class={EXAM_PIP_NOTICE} data-exam-countdown-notice="" role="status">{message}</p>
-            }
-            <div class={EXAM_GRID}>
-                {for EXAM_COUNTDOWN_TARGETS.iter().enumerate().map(|(index, target)| {
-                    let pip_document = pip_document.clone();
-                    let pip_exam = pip_exam.clone();
-                    let pip_notice = pip_notice.clone();
-                    let pip_notice_seq = pip_notice_seq.clone();
-                    let prepared = prepared.clone();
-                    let open_pip = Callback::from(move |event: MouseEvent| {
-                        event.prevent_default();
-                        handle_open_pip(
-                            index,
-                            exam_pip_config(target, Date::now() as i64),
-                            &pip_document,
-                            &pip_exam,
-                            &pip_notice,
-                            &pip_notice_seq,
-                            &prepared,
-                        );
-                    });
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                    <h3 class="text-lg font-bold">{"其他考试"}</h3>
+                    <p class="text-xs text-base-content/60">{"按当前配置的预计日期排序"}</p>
+                </div>
+                <span class="text-xs text-base-content/60">{"共4场 · 日期均为预计"}</span>
+            </div>
+            <div class="grid gap-3 sm:grid-cols-3" data-testid="study-other-exams">
+                {for EXAM_COUNTDOWN_TARGETS.iter().skip(1).map(|target| {
                     let snapshot = countdown_snapshot(
                         *now_ms,
                         exam_timestamp(target.start_iso),
                         exam_timestamp(target.target_iso),
                     );
-                    render_exam_countdown_card(target, snapshot, index, open_pip)
+                    html! {
+                        <article class="flex items-center justify-between gap-4 rounded-xl border border-base-content/10 bg-base-100/70 p-4">
+                            <div class="min-w-0">
+                                <h4 class="truncate font-semibold">{target.title}</h4>
+                                <p class="mt-1 text-xs text-base-content/60">{target.target_label}</p>
+                            </div>
+                            <div class="shrink-0 text-right">
+                                <strong class="font-mono text-2xl font-bold tabular-nums">{snapshot.days}</strong>
+                                <span class="ml-1 text-xs">{"天"}</span>
+                            </div>
+                        </article>
+                    }
                 })}
             </div>
+            <details class="rounded-xl border border-base-content/10 bg-base-100/40 p-3">
+                <summary class="cursor-pointer text-sm font-medium" data-testid="study-exam-expanded">{"完整考试倒计时 · 画中画"}</summary>
+                <p class="my-3 text-xs text-base-content/60">{"原来的四张考试倒计时卡片和双击开启画中画功能保留在这里。"}</p>
+                if let Some(message) = *pip_notice {
+                    <p class={EXAM_PIP_NOTICE} data-exam-countdown-notice="" role="status">{message}</p>
+                }
+                <div class={EXAM_GRID}>
+                    {for EXAM_COUNTDOWN_TARGETS.iter().enumerate().map(|(index, target)| {
+                        let pip_document = pip_document.clone();
+                        let pip_exam = pip_exam.clone();
+                        let pip_notice = pip_notice.clone();
+                        let pip_notice_seq = pip_notice_seq.clone();
+                        let prepared = prepared.clone();
+                        let open_pip = Callback::from(move |event: MouseEvent| {
+                            event.prevent_default();
+                            handle_open_pip(
+                                index,
+                                exam_pip_config(target, Date::now() as i64),
+                                &pip_document,
+                                &pip_exam,
+                                &pip_notice,
+                                &pip_notice_seq,
+                                &prepared,
+                            );
+                        });
+                        let snapshot = countdown_snapshot(
+                            *now_ms,
+                            exam_timestamp(target.start_iso),
+                            exam_timestamp(target.target_iso),
+                        );
+                        render_exam_countdown_card(target, snapshot, index, open_pip)
+                    })}
+                </div>
+            </details>
         </section>
     }
+}
 }
