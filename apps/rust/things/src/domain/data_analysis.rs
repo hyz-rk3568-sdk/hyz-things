@@ -97,8 +97,21 @@ mod tests {
             "source_url": "practice-theme-1"
         });
         let restored: Material = serde_json::from_value(historic).unwrap();
-        assert_eq!(restored, Material {topic: "农业".into(), text: "历史材料".into()});
-        assert_eq!(serde_json::to_value(&restored).unwrap().as_object().unwrap().len(), 2);
+        assert_eq!(
+            restored,
+            Material {
+                topic: "农业".into(),
+                text: "历史材料".into()
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(&restored)
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]
@@ -108,19 +121,29 @@ mod tests {
             .map(|topic| material(topic))
             .collect::<Vec<_>>();
         let first = select_material_batch(&ordered, &[], &Default::default(), 3);
-        assert_eq!(first.iter().map(|m| m.topic.as_str()).collect::<Vec<_>>(),
-            vec!["农业", "工业能源", "国内消费"]);
+        assert_eq!(
+            first.iter().map(|m| m.topic.as_str()).collect::<Vec<_>>(),
+            vec!["农业", "工业能源", "国内消费"]
+        );
         let second = select_material_batch(
             &ordered,
             &[material("工业能源")],
             &std::collections::HashSet::from(["农业".to_owned()]),
             3,
         );
-        assert_eq!(second.iter().map(|m| m.topic.as_str()).collect::<Vec<_>>(),
-            vec!["国内消费", "宏观经济"]);
+        assert_eq!(
+            second.iter().map(|m| m.topic.as_str()).collect::<Vec<_>>(),
+            vec!["国内消费", "宏观经济"]
+        );
         assert!(select_material_batch(&ordered, &[], &Default::default(), 0).is_empty());
         assert!(TOPICS.len() >= QUIZ_GROUPS);
-        assert_eq!(TOPICS.iter().collect::<std::collections::HashSet<_>>().len(), TOPICS.len());
+        assert_eq!(
+            TOPICS
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            TOPICS.len()
+        );
         assert_eq!(QUIZ_GROUPS * QUIZ_PER_GROUP, QUIZ_QUESTIONS);
         assert_eq!(QUIZ_SECONDS, 1200);
     }
