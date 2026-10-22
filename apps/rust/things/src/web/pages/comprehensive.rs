@@ -829,13 +829,10 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 <div class="mt-5 grid gap-3">
                     <button class="btn btn-outline w-full" type="button" onclick={{let history_open=history_open.clone();Callback::from(move |_|history_open.set(true))}}>{"查看练习历史"}</button>
                     <div class="rounded-box border border-base-content/15 p-4 space-y-3">
-                        <p class="font-semibold">{"错题分类 · 智能薄弱点强化"}</p>
-                        <p class="text-sm text-base-content/60">{"直接使用 flashcards/资料/错题/ 下的分类；自动推荐结合错题数量、复习记录和训练表现。"}</p>
-                        if let Some(info)=(*status).clone(){
-                            <div class="flex flex-wrap gap-2">{for info.weak_skills.iter().map(|x|html!{<span class="badge badge-outline">{x.clone()}</span>})}</div>
-                        }
+                        <p class="font-semibold">{"选择本轮错题分类"}</p>
+                        <p class="text-sm text-base-content/60">{"仅依据你勾选的 flashcards/资料/错题/ 分类出题；不会自动添加薄弱点或其他考点。"}</p>
                         <div class="flex items-center justify-between gap-3">
-                            <strong class="text-sm">{format!("手动强化考点（已选{}项，最多12项）",manual_skills.len())}</strong>
+                            <strong class="text-sm">{format!("本轮考点（已选{}项，最多12项）",manual_skills.len())}</strong>
                             <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-skill-expand"
                                 onclick={toggle_selector}>{if *skills_expanded{"收起"}else{"添加考点"}}</button>
                         </div>
@@ -862,7 +859,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                                 </div>
                             }
                         }
-                        <p class="text-xs text-base-content/60">{"勾选的名称就是错题文件夹名称。Codex 会读取相应目录的 Flashcard；选择保存在本设备浏览器中。"}</p>
+                        <p class="text-xs text-base-content/60">{"至少选择一个分类后才能出题；全部20题只从已选分类生成。选择会保存在本设备浏览器中。"}</p>
                     </div>
                     if let Some(info)=(*status).clone(){
                         <p class="text-sm text-base-content/65">{format!("出题引擎：{} · 每次主动出题均生成新材料和20道新题",
@@ -885,7 +882,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         </button>
                     } else {
                         <button type="button" class="btn btn-primary w-full" data-testid="analysis-start"
-                            disabled={*loading_status || *busy || *preparing || status.as_ref().as_ref().is_none_or(|s|!s.configured) || props.csrf.is_empty()}
+                            disabled={manual_skills.is_empty() || *loading_status || *busy || *preparing || status.as_ref().as_ref().is_none_or(|s|!s.configured) || props.csrf.is_empty()}
                             onclick={start}>
                             {if *busy || *preparing {"正在出题中…（可以切换页面）"} else {"✨ 智能出题"}}
                         </button>
