@@ -1665,7 +1665,10 @@ mod tests {
 
         let service = DataAnalysisService::new(pool.clone(), None).unwrap();
         let claimed = service.claim(&id).await.unwrap();
-        assert!(service.result(&id).await.is_err(), "active answers stay hidden");
+        assert!(
+            service.result(&id).await.is_err(),
+            "active answers stay hidden"
+        );
         service
             .answer_controlled(&id, 1, 1, Some(&claimed.control_token))
             .await
