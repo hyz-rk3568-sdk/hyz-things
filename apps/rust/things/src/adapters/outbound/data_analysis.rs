@@ -341,6 +341,27 @@ impl DataAnalysisService {
         Ok(categories.into_iter().collect())
     }
 
+    async fn general_knowledge_skills(&self) -> Result<Vec<String>, String> {
+        if let Some(live) = mounted_knowledge_categories().await {
+            return Ok(live);
+        }
+        let rows = sqlx::query("SELECT DISTINCT deck_path FROM flashcards WHERE active=1")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(as_error)?;
+        let mut skills = std::collections::BTreeSet::new();
+        for row in rows {
+            let deck: String = row.try_get("deck_path").map_err(as_error)?;
+            if let Some(skill) = knowledge_card_category(&deck) {
+                skills.insert(skill.to_owned());
+            }
+        }
+        if skills.is_empty() {
+            return Err("没有找到 flashcards/资料/ 中的普通知识点卡片，请检查卡片目录挂载或同步".into());
+        }
+        Ok(skills.into_iter().collect())
+    }
+
     pub async fn chosen_manual_skills(&self, requested: &[String]) -> Result<Vec<String>, String> {
         if requested.len() > 12 {
             return Err("每次最多勾选12个考点".into());
@@ -1137,6 +1158,45 @@ async fn mounted_wrong_question_categories() -> Option<Vec<String>> {
         return Some(result.into_iter().collect());
     }
     None
+}
+
+// Normal knowledge cards live directly in flashcards/资料/<skill>/card.md,
+// not in 资料/错题/. Support all three source mount layouts already used.
+async fn mounted_knowledge_categories() -> Option<Vec<String>> {
+    let root = super::flashcard_source::FLASHCARD_SOURCE_ROOT;
+    for relative in ["资料", ".", "flashcards/资料"] {
+        let path = std::path::Path::new(root).join(relative);
+        let Ok(mut reader) = tokio::fs::read_dir(path).await else {
+            continue;
+        };
+        let mut names = std::collections::BTreeSet::new();
+        while let Ok(Some(entry)) = reader.next_entry().await {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name == "错题" || !valid_wrong_category(&name)
+                || !entry.file_type().await.is_ok_and(|file| file.is_dir())
+            {
+                continue;
+            }
+            if tokio::fs::metadata(entry.path().join("card.md")).await.is_ok()
+                || tokio::fs::metadata(entry.path().join("cards.md")).await.is_ok()
+            {
+                names.insert(name);
+            }
+        }
+        if !names.is_empty() {
+            return Some(names.into_iter().collect());
+        }
+    }
+    None
+}
+
+fn knowledge_card_category(deck: &str) -> Option<&str> {
+    let parts: Vec<_> = deck.split('/').filter(|s| !s.is_empty()).collect();
+    let category = match parts.as_slice() {
+        [skill] | ["资料", skill] | ["flashcards", "资料", skill] => *skill,
+        _ => return None,
+    };
+    valid_wrong_category(category).then_some(category)
 }
 
 fn valid_wrong_category(category: &str) -> bool {
