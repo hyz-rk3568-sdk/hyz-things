@@ -352,6 +352,16 @@ test("wrong-card practice filters, reveals, self-grades and never writes FSRS", 
   expect(await page.evaluate(()=>window.scrollY)).toBe(0);
   await expect(page.getByTestId("practice-front")).toBeVisible();
   await expect(page.getByTestId("practice-back")).toHaveCount(0);
+  const tabs=page.getByTestId("practice-question-tab");
+  await expect(tabs).toHaveCount(2);
+  await expect(tabs.nth(0)).toHaveAttribute("data-grade","unanswered");
+  await page.getByTestId("practice-next").click();
+  await expect(page.getByTestId("practice-question")).toContainText("第 2 / 2 题");
+  await expect(tabs.nth(0)).toHaveAttribute("data-grade","unanswered");
+  await expect(tabs.nth(1)).toHaveAttribute("data-grade","unanswered");
+  await expect(page.getByTestId("practice-back")).toHaveCount(0);
+  await page.getByTestId("practice-previous").click();
+  await expect(page.getByTestId("practice-question")).toContainText("第 1 / 2 题");
   const canvas = page.getByTestId("calculation-scratchpad-canvas");
   await expect(canvas).toBeHidden();
   await page.getByTestId("calculation-scratchpad-toggle").click();
@@ -380,6 +390,15 @@ test("wrong-card practice filters, reveals, self-grades and never writes FSRS", 
   expect(await page.getByTestId("practice-layout").evaluate(el=>el.getBoundingClientRect().top)).toBe(0);
   await page.getByTestId("practice-wrong").click();
   await expect(page.getByTestId("practice-question")).toBeVisible();
+  await expect(tabs.nth(0)).toHaveAttribute("data-grade","wrong");
+  await expect(tabs.nth(1)).toHaveAttribute("data-grade","unanswered");
+  // Revisit the graded first card; its explanation and grade remain visible.
+  await tabs.nth(0).click();
+  await expect(page.getByTestId("practice-back")).toBeVisible();
+  await expect(page.getByTestId("practice-graded")).toContainText("做错");
+  await expect(tabs.nth(0)).toHaveAttribute("aria-current","step");
+  await tabs.nth(1).click();
+  await expect(page.getByTestId("practice-back")).toHaveCount(0);
   await expect(canvas).toBeHidden();
   await page.getByTestId("calculation-scratchpad-toggle").click();
   const reset = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
@@ -389,5 +408,29 @@ test("wrong-card practice filters, reveals, self-grades and never writes FSRS", 
   await expect(page.getByTestId("practice-summary")).toBeVisible();
   await expect(page.getByTestId("practice-summary")).toContainText("做错");
   await expect(page.getByTestId("practice-summary")).toContainText("跳过");
+  await expect(page.getByTestId("practice-summary")).toContainText("未答");
   expect(reviewWrites).toEqual([]);
+});
+
+test("wrong-card navigation never grades unvisited cards or converts unanswered into skipped", async ({ page }) => {
+  await page.goto("/#/study/training");
+  await page.getByTestId("training-mode-flashcards").click();
+  await expect(page.getByTestId("practice-candidates")).toContainText("共 2 张");
+  await page.getByTestId("practice-start").click();
+  const tabs=page.getByTestId("practice-question-tab");
+  await expect(tabs).toHaveCount(2);
+  await tabs.nth(1).click();
+  await expect(page.getByTestId("practice-question")).toContainText("第 2 / 2 题");
+  await expect(tabs.nth(0)).toHaveAttribute("data-grade","unanswered");
+  await expect(tabs.nth(1)).toHaveAttribute("data-grade","unanswered");
+  await page.getByTestId("practice-reveal").click();
+  await page.getByTestId("practice-correct").click();
+  // One graded, one unanswered: the session stays open on the ungraded card.
+  await expect(page.getByTestId("practice-question")).toContainText("第 1 / 2 题");
+  await expect(tabs.nth(1)).toHaveAttribute("data-grade","correct");
+  await expect(tabs.nth(0)).toHaveAttribute("data-grade","unanswered");
+  await page.getByTestId("practice-finish").click();
+  await expect(page.getByTestId("practice-summary")).toContainText("未答");
+  await expect(page.getByTestId("practice-summary")).toContainText("1");
+  await expect(page.getByTestId("practice-summary")).toContainText("做对");
 });
