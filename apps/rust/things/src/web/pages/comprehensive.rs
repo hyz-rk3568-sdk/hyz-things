@@ -481,39 +481,126 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         })
     };
     if let Some(score) = (*result).clone() {
-        return html! {
-            <section class="mx-auto max-w-5xl space-y-5 px-4 py-5" data-testid="analysis-result">
-                <div class="rounded-box bg-base-100 p-5">
-                    <h2 class="text-xl font-bold">{"综合训练成绩"}</h2>
-                    <p class="mt-3 text-3xl font-black">{format!("{} / {} 题正确",score.correct,score.total)}</p>
-                    <p class="text-sm text-base-content/60">{"已交卷 · 题目为 Codex 根据 hyz 做题套路生成的模拟训练数据与解析。"}</p>
+        if score.materials.len() != 4 || score.questions.len() != 20 {
+            return html! {<p class="p-5 text-error" role="alert">{"历史成绩材料或题目数量不正确，无法展示解析。"}</p>};
+        }
+        let index = (*current).min(19);
+        let group_index = index / 5;
+        let local_index = index % 5;
+        let q = score.questions.iter().find(|q| q.number == index + 1).unwrap_or(&score.questions[index]);
+        let marks = (1..=20).map(|number| {
+            score.questions.iter().find(|q| q.number == number)
+                .and_then(|q| q.chosen.map(|selected| selected == q.correct_index))
+        }).collect::<Vec<_>>();
+        let grade = match q.chosen {
+            Some(chosen) if chosen == q.correct_index => "正确",
+            Some(_) => "错误",
+            None => "未作答",
+        };
+        let review_options = q.options.iter().enumerate().map(|(i, option)| {
+            let grade = if i == q.correct_index {
+                "correct"
+            } else if q.chosen == Some(i) {
+                "wrong"
+            } else {
+                "neutral"
+            };
+            let style = match grade {
+                "correct" => "flex items-center justify-between gap-3 rounded-box border border-success bg-success/10 p-3 font-medium text-success",
+                "wrong" => "flex items-center justify-between gap-3 rounded-box border border-error bg-error/10 p-3 font-medium text-error",
+                _ => "flex items-center justify-between gap-3 rounded-box border border-base-content/20 p-3",
+            };
+            let hint = match grade {
+                "correct" => "✓ 正确答案",
+                "wrong" => "✕ 你的错选",
+                _ => "",
+            };
+            html! {
+                <div class={style} data-testid="analysis-review-choice" data-grade={grade}>
+                    <span>{format!("{}. {}",["A", "B", "C", "D"][i],option)}</span>
+                    <span class="shrink-0 text-xs">{hint}</span>
                 </div>
-                <details class="rounded-box bg-base-100 p-4">
-                    <summary class="cursor-pointer font-semibold">{"查看本套4份训练材料"}</summary>
-                    {for score.materials.iter().enumerate().map(|(i,m)|html!{
-                        <article class="mt-4 border-t border-base-content/10 pt-3"><h3 class="font-semibold">{format!("材料{} · {}",i+1,m.subtopic)}</h3>
-                        <p class="mt-2 whitespace-pre-wrap text-sm leading-7">{m.text.clone()}</p></article>
-                    })}
-                </details>
-                {for score.questions.iter().map(|q|html!{
-                    <article class="rounded-box bg-base-100 p-4" key={q.number}>
-                        <div class="flex justify-between"><strong>{format!("第{}题 · {} / {}",q.number,q.topic,q.skill)}</strong><span>{if q.chosen==Some(q.correct_index){"正确"}else{"错误/未答"}}</span></div>
-                        <p class="mt-2">{format!("正确答案：{} · {}",["A","B","C","D"][q.correct_index],q.answer)}</p>
-                        <p class="mt-2 text-sm font-semibold">{q.question.clone()}</p>
-                    <p class="text-sm mt-2">{format!("你的选择：{}；正确答案：{}",q.chosen.map(|i|["A","B","C","D"][i]).unwrap_or("未答"),["A","B","C","D"][q.correct_index])}</p>
-                    <div class="mt-2 text-sm">{for q.options.iter().enumerate().map(|(i,v)|html!{<p>{format!("{}. {}",["A","B","C","D"][i],v)}</p>})}</div>
-                    <p class="text-sm mt-2">{q.explanation.clone()}</p>
-                        <details class="mt-2 text-xs"><summary>{"查看原始数据证据"}</summary><p>{q.evidence.clone()}</p></details>
-                    </article>
-                })}
-                <button class="btn btn-outline" onclick={{
-                    let result=result.clone();let run=run.clone();let history_open=history_open.clone();
-                    Callback::from(move |_|{result.set(None);run.set(None);history_open.set(true);})
-                }}>{"查看练习历史"}</button>
-                <button class="btn btn-primary" onclick={{
-                    let run=run.clone();let result=result.clone();let progress=progress.clone();
-                    Callback::from(move |_|{run.set(None);result.set(None);progress.set(None);})
-                }}>{"再出一套"}</button>
+            }
+        });
+        let review_question = html! {
+            <div class="space-y-4 p-4" data-testid="analysis-review-content">
+                <div class="flex items-center justify-between gap-2 text-xs text-base-content/60">
+                    <span>{format!("本材料第 {}/5 题 · {}",local_index+1,q.skill)}</span>
+                    <span data-testid="analysis-grade">{grade}</span>
+                </div>
+                <h2 class="text-lg font-semibold leading-relaxed">{q.question.clone()}</h2>
+                <div class="grid gap-2">{for review_options}</div>
+                <div class="border-t border-base-content/10 pt-4">
+                    <p class="text-sm font-semibold">{format!("你的答案：{}",
+                        q.chosen.and_then(|i| ["A","B","C","D"].get(i).copied()).unwrap_or("未答"))}</p>
+                    <h3 class="mt-3 text-sm font-semibold">{"解题解析"}</h3>
+                    <p class="mt-2 whitespace-pre-wrap text-sm leading-7" data-testid="analysis-explanation">{q.explanation.clone()}</p>
+                    <details class="mt-3 text-xs">
+                        <summary class="cursor-pointer">{"查看原始数据证据"}</summary>
+                        <p class="mt-2 whitespace-pre-wrap leading-6">{q.evidence.clone()}</p>
+                    </details>
+                </div>
+            </div>
+        };
+        let review_id = (*review_run_id).clone();
+        let show_history = {
+            let result = result.clone();
+            let run = run.clone();
+            let history_open = history_open.clone();
+            Callback::from(move |_| {
+                result.set(None);
+                run.set(None);
+                history_open.set(true);
+            })
+        };
+        let back_from_review = {
+            let result = result.clone();
+            let run = run.clone();
+            let history_open = history_open.clone();
+            let on_exit = props.on_exit.clone();
+            let reviewing_history = reviewing_history.clone();
+            Callback::from(move |_| {
+                if *reviewing_history {
+                    result.set(None);
+                    run.set(None);
+                    history_open.set(true);
+                } else {
+                    on_exit.emit(());
+                }
+            })
+        };
+        let again = {
+            let result = result.clone();
+            let run = run.clone();
+            let progress = progress.clone();
+            Callback::from(move |_| {
+                result.set(None);
+                run.set(None);
+                progress.set(None);
+            })
+        };
+        return html! {
+            <section class="fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200 p-2 sm:p-3"
+                data-testid="analysis-result" data-view="review">
+                <header class="flex shrink-0 items-center justify-between gap-2 border-b border-base-content/10 pb-2">
+                    <div class="flex min-w-0 items-center gap-2">
+                        <button type="button" class="btn btn-ghost btn-sm" data-testid="analysis-exit"
+                            onclick={back_from_review}>{if *reviewing_history {"← 返回记录"} else {"← 返回专项"}}</button>
+                        <strong class="truncate text-sm">{"综合训练 · 答案解析"}</strong>
+                        <span class="hidden text-xs text-base-content/60 sm:inline">{format!("第 {}/20 题 · 材料 {}/4",index+1,group_index+1)}</span>
+                    </div>
+                    <div class="flex shrink-0 items-center gap-2">
+                        <span class="text-sm font-bold">{format!("{} / {} 正确",score.correct,score.total)}</span>
+                        <button type="button" class="btn btn-outline btn-sm" onclick={show_history}>{"查看练习历史"}</button>
+                        <button type="button" class="btn btn-primary btn-sm" onclick={again}>{"再出一套"}</button>
+                    </div>
+                </header>
+                <div class="min-h-0 flex-1">
+                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",review_id,index)} responsive={true}>
+                        {analysis_panes(&score.materials[group_index],review_question)}
+                    </InkOverlay>
+                </div>
+                {analysis_navigation(current.clone(),index,&marks)}
             </section>
         };
     }
