@@ -2035,27 +2035,56 @@ mod tests {
         let first = order_exam_themes(themes.clone(), &[], 123456789);
         let another = order_exam_themes(themes.clone(), &[], 987654321);
         assert_ne!(
-            first.iter().take(QUIZ_GROUPS).map(|m| &m.topic).collect::<Vec<_>>(),
-            another.iter().take(QUIZ_GROUPS).map(|m| &m.topic).collect::<Vec<_>>(),
+            first
+                .iter()
+                .take(QUIZ_GROUPS)
+                .map(|m| &m.topic)
+                .collect::<Vec<_>>(),
+            another
+                .iter()
+                .take(QUIZ_GROUPS)
+                .map(|m| &m.topic)
+                .collect::<Vec<_>>(),
             "different generation IDs should produce different theme choices"
         );
-        let previous = first.iter().take(QUIZ_GROUPS).map(|m| m.topic.clone()).collect::<Vec<_>>();
+        let previous = first
+            .iter()
+            .take(QUIZ_GROUPS)
+            .map(|m| m.topic.clone())
+            .collect::<Vec<_>>();
         let second = order_exam_themes(themes.clone(), &[previous.clone()], 20261023);
-        assert!(second.iter().take(QUIZ_GROUPS).all(|m| !previous.contains(&m.topic)));
-        let second_topics = second.iter().take(QUIZ_GROUPS).map(|m| m.topic.clone()).collect::<Vec<_>>();
+        assert!(second
+            .iter()
+            .take(QUIZ_GROUPS)
+            .all(|m| !previous.contains(&m.topic)));
+        let second_topics = second
+            .iter()
+            .take(QUIZ_GROUPS)
+            .map(|m| m.topic.clone())
+            .collect::<Vec<_>>();
         let third = order_exam_themes(themes, &[second_topics.clone(), previous.clone()], 20261024);
-        assert!(third.iter().take(QUIZ_GROUPS).all(|m|
-            !second_topics.contains(&m.topic) && !previous.contains(&m.topic)
-        ));
+        assert!(third
+            .iter()
+            .take(QUIZ_GROUPS)
+            .all(|m| !second_topics.contains(&m.topic) && !previous.contains(&m.topic)));
         assert_eq!(
-            third.iter().take(QUIZ_GROUPS).map(|m| m.topic.as_str()).collect::<HashSet<_>>().len(),
+            third
+                .iter()
+                .take(QUIZ_GROUPS)
+                .map(|m| m.topic.as_str())
+                .collect::<HashSet<_>>()
+                .len(),
             QUIZ_GROUPS
         );
         assert_eq!(
             order_exam_themes(exam_theme_materials(), &[previous.clone()], 42)
-                .iter().map(|m| &m.topic).collect::<Vec<_>>(),
+                .iter()
+                .map(|m| &m.topic)
+                .collect::<Vec<_>>(),
             order_exam_themes(exam_theme_materials(), &[previous], 42)
-                .iter().map(|m| &m.topic).collect::<Vec<_>>(),
+                .iter()
+                .map(|m| &m.topic)
+                .collect::<Vec<_>>(),
             "retries within one preparation must keep the chosen order"
         );
     }
@@ -2094,7 +2123,9 @@ mod tests {
             .bind(serde_json::to_string(&vec![group; QUIZ_GROUPS]).unwrap())
             .bind("[]")
             .bind(index as i64 + 1)
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
         }
         let replay = QuestionGroup {
             version: 4,
@@ -2117,7 +2148,9 @@ mod tests {
         .bind("[]")
         .bind(99_i64)
         .bind(root_id)
-        .execute(&pool).await.unwrap();
+        .execute(&pool)
+        .await
+        .unwrap();
 
         let service = DataAnalysisService::new(pool, None).unwrap();
         let recent = service.recent_paper_themes().await.unwrap();
@@ -2125,7 +2158,10 @@ mod tests {
         assert_eq!(recent[0], vec!["国内消费"; QUIZ_GROUPS]);
         assert_eq!(recent[1], vec!["工业能源"; QUIZ_GROUPS]);
         assert_eq!(recent[2], vec!["农业"; QUIZ_GROUPS]);
-        assert!(!recent.iter().flatten().any(|topic| topic == "虚假的最近主题"));
+        assert!(!recent
+            .iter()
+            .flatten()
+            .any(|topic| topic == "虚假的最近主题"));
     }
 
     #[test]
