@@ -19,6 +19,7 @@ use tokio::{sync::Mutex, task::JoinSet};
 use uuid::Uuid;
 
 const ENV_PATH: &str = "/userdata/hyz-things/.env";
+const RECENT_THEME_PAPERS: usize = 4;
 
 // User-owned style and difficulty policy. Hard limits, selected categories,
 // JSON shape and sources remain server-controlled even if this text changes.
@@ -384,6 +385,34 @@ impl DataAnalysisService {
             .map_err(as_error)?;
         Ok((sources, groups))
     }
+    /// Read only newly generated papers, newest first. A replay copies its
+    /// parent topics and must never count as an independent theme selection.
+    /// Both unfinished and submitted originals count as recently used.
+    async fn recent_paper_themes(&self) -> Result<Vec<Vec<String>>, String> {
+        let rows = sqlx::query(
+            "SELECT groups_json FROM data_analysis_runs
+             WHERE origin_run_id IS NULL
+             ORDER BY created_at_ms DESC, id DESC LIMIT ?",
+        )
+        .bind(RECENT_THEME_PAPERS as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(as_error)?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|row| {
+                let json: String = row.try_get("groups_json").ok()?;
+                let groups: Vec<QuestionGroup> = serde_json::from_str(&json).ok()?;
+                (groups.len() == QUIZ_GROUPS).then(|| {
+                    groups
+                        .into_iter()
+                        .map(|group| group.material.topic)
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect())
+    }
+
     /// Derive categories from "错题/<分类>" whether RK3568 mounted
     /// flashcards/, flashcards/资料/, or the enclosing repository.
     pub async fn available_skills(&self) -> Result<Vec<String>, String> {
@@ -594,7 +623,10 @@ impl DataAnalysisService {
             ),
             knowledge: self.general_knowledge_skills().await?,
         });
-        let ordered = exam_theme_materials();
+        let recent_papers = self.recent_paper_themes().await?;
+        let theme_seed =
+            Uuid::parse_str(job).map_err(as_error)?.as_u128() as u64 ^ 0x9e3779b97f4a7c15;
+        let ordered = order_exam_themes(exam_theme_materials(), &recent_papers, theme_seed);
         // Keep the original four slots even if only some parallel tasks succeed.
         // Retried slots must retain their assigned wrong/knowledge quotas.
         let mut ready = vec![None::<QuestionGroup>; QUIZ_GROUPS];
@@ -1213,6 +1245,36 @@ impl DataAnalysisService {
         }
         Ok(result)
     }
+}
+
+/// Shuffle equal-priority themes per newly created paper, while strongly
+/// preferring topics not seen in the previous four original papers. Historical
+/// replays are excluded by the server query. Sorting stays stable after shuffle
+/// so equal reuse penalties retain a randomized order.
+fn order_exam_themes(
+    mut themes: Vec<Material>,
+    recent_papers: &[Vec<String>],
+    seed: u64,
+) -> Vec<Material> {
+    let mut state = seed | 1;
+    for i in (1..themes.len()).rev() {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        themes.swap(i, state as usize % (i + 1));
+    }
+
+    // Newest papers are penalized most. When four unseen themes exist, none
+    // of the recently used topics can enter the initial four assignments.
+    let mut penalties: HashMap<&str, usize> = HashMap::new();
+    for (age, topics) in recent_papers.iter().take(RECENT_THEME_PAPERS).enumerate() {
+        let weight = 1 << (RECENT_THEME_PAPERS - 1 - age);
+        for topic in topics.iter().map(String::as_str).collect::<HashSet<_>>() {
+            *penalties.entry(topic).or_default() += weight;
+        }
+    }
+    themes.sort_by_key(|material| penalties.get(material.topic.as_str()).copied().unwrap_or(0));
+    themes
 }
 
 /// Lightweight theme seeds only. No National Bureau of Statistics fetch is
@@ -1965,6 +2027,105 @@ mod tests {
         assert_eq!(historical.questions.len(), 20);
         let (source_count, group_count) = service.counts().await.unwrap();
         assert_eq!((source_count, group_count), (1, 4));
+    }
+
+    #[test]
+    fn themes_change_by_paper_and_prefer_unused_recent_topics() {
+        let themes = exam_theme_materials();
+        let first = order_exam_themes(themes.clone(), &[], 123456789);
+        let another = order_exam_themes(themes.clone(), &[], 987654321);
+        assert_ne!(
+            first.iter().take(QUIZ_GROUPS).map(|m| &m.topic).collect::<Vec<_>>(),
+            another.iter().take(QUIZ_GROUPS).map(|m| &m.topic).collect::<Vec<_>>(),
+            "different generation IDs should produce different theme choices"
+        );
+        let previous = first.iter().take(QUIZ_GROUPS).map(|m| m.topic.clone()).collect::<Vec<_>>();
+        let second = order_exam_themes(themes.clone(), &[previous.clone()], 20261023);
+        assert!(second.iter().take(QUIZ_GROUPS).all(|m| !previous.contains(&m.topic)));
+        let second_topics = second.iter().take(QUIZ_GROUPS).map(|m| m.topic.clone()).collect::<Vec<_>>();
+        let third = order_exam_themes(themes, &[second_topics.clone(), previous.clone()], 20261024);
+        assert!(third.iter().take(QUIZ_GROUPS).all(|m|
+            !second_topics.contains(&m.topic) && !previous.contains(&m.topic)
+        ));
+        assert_eq!(
+            third.iter().take(QUIZ_GROUPS).map(|m| m.topic.as_str()).collect::<HashSet<_>>().len(),
+            QUIZ_GROUPS
+        );
+        assert_eq!(
+            order_exam_themes(exam_theme_materials(), &[previous.clone()], 42)
+                .iter().map(|m| &m.topic).collect::<Vec<_>>(),
+            order_exam_themes(exam_theme_materials(), &[previous], 42)
+                .iter().map(|m| &m.topic).collect::<Vec<_>>(),
+            "retries within one preparation must keep the chosen order"
+        );
+    }
+
+    #[tokio::test]
+    async fn recent_theme_history_excludes_replays_and_includes_unfinished_papers() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let mut root_id = String::new();
+        for (index, topic) in ["农业", "工业能源", "国内消费"].iter().enumerate() {
+            let id = Uuid::now_v7().to_string();
+            if index == 0 {
+                root_id = id.clone();
+            }
+            let group = QuestionGroup {
+                version: 4,
+                material: Material {
+                    section: (*topic).to_owned(),
+                    topic: (*topic).to_owned(),
+                    subtopic: (*topic).to_owned(),
+                    text: "模拟材料".into(),
+                    source_url: format!("practice-theme-{index}"),
+                },
+                questions: Vec::new(),
+            };
+            sqlx::query(
+                "INSERT INTO data_analysis_runs
+                 (id,groups_json,answers_json,status,created_at_ms)
+                 VALUES(?,?,?,'ready',?)",
+            )
+            .bind(id)
+            .bind(serde_json::to_string(&vec![group; QUIZ_GROUPS]).unwrap())
+            .bind("[]")
+            .bind(index as i64 + 1)
+            .execute(&pool).await.unwrap();
+        }
+        let replay = QuestionGroup {
+            version: 4,
+            material: Material {
+                section: "虚假的最近主题".into(),
+                topic: "虚假的最近主题".into(),
+                subtopic: "虚假的最近主题".into(),
+                text: "模拟材料".into(),
+                source_url: "practice-theme-retry".into(),
+            },
+            questions: Vec::new(),
+        };
+        sqlx::query(
+            "INSERT INTO data_analysis_runs
+             (id,groups_json,answers_json,status,created_at_ms,origin_run_id)
+             VALUES(?,?,?,'ready',?,?)",
+        )
+        .bind(Uuid::now_v7().to_string())
+        .bind(serde_json::to_string(&vec![replay; QUIZ_GROUPS]).unwrap())
+        .bind("[]")
+        .bind(99_i64)
+        .bind(root_id)
+        .execute(&pool).await.unwrap();
+
+        let service = DataAnalysisService::new(pool, None).unwrap();
+        let recent = service.recent_paper_themes().await.unwrap();
+        assert_eq!(recent.len(), 3);
+        assert_eq!(recent[0], vec!["国内消费"; QUIZ_GROUPS]);
+        assert_eq!(recent[1], vec!["工业能源"; QUIZ_GROUPS]);
+        assert_eq!(recent[2], vec!["农业"; QUIZ_GROUPS]);
+        assert!(!recent.iter().flatten().any(|topic| topic == "虚假的最近主题"));
     }
 
     #[test]
