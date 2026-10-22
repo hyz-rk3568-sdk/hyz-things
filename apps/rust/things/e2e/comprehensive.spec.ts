@@ -99,6 +99,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   expect(material).not.toBeNull();
   expect(question).not.toBeNull();
   expect(material!.x).toBeLessThan(question!.x);
+  expect(material!.width/(material!.width+question!.width)).toBeCloseTo(0.6,1);
   await expect(page.getByTestId("analysis-material")).toContainText("地区二为720亿元");
   await expect(page.getByTestId("analysis-material")).toContainText("模拟训练材料");
   await expect(page.getByTestId("analysis-material").getByRole("link")).toHaveCount(0);
@@ -177,16 +178,32 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(page.getByTestId("analysis-choice").first()).toHaveClass(/btn-primary/);
   await page.getByRole("button",{name:"下一题"}).click();
   await expect(page.getByTestId("analysis-question")).toContainText("第2题");
+  await page.getByTestId("analysis-choice").nth(1).click();
+  await expect(page.getByTestId("analysis-choice").nth(1)).toHaveClass(/btn-primary/);
   await page.getByRole("button",{name:"上一题"}).click();
   await expect(page.getByTestId("analysis-choice").first()).toHaveClass(/btn-primary/);
   await page.getByRole("button",{name:"交卷"}).click();
   await expect(page.getByTestId("analysis-result")).toBeVisible();
   await expect(page.getByTestId("analysis-result")).toContainText("1 / 20");
   await expect(page.getByTestId("analysis-result")).toContainText("第1题");
+  // Review reuses the exact reading/answer card: right is readonly with
+  // the correct answer green, wrong selection red, and explanations scrollable.
+  await expect(page.getByTestId("analysis-shared-workspace")).toBeVisible();
+  await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-state","correct");
+  await expect(page.getByTestId("analysis-explanation")).toContainText("基期量");
+  await page.getByRole("button",{name:"下一题"}).click();
+  await expect(page.getByTestId("analysis-review-choice").nth(1)).toHaveAttribute("data-state","wrong");
+  await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-state","correct");
+  await page.getByRole("button",{name:"下一题"}).click();
+  await expect(page.getByTestId("analysis-review-status")).toContainText("未答");
+  await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-state","correct");
+  await expect(page.getByTestId("analysis-review-choice").nth(1)).toHaveAttribute("data-state","neutral");
   await page.getByRole("button",{name:"查看练习历史"}).click();
   await expect(page.getByTestId("analysis-history")).toBeVisible();
   await page.getByRole("button",{name:"查看原题与解析"}).first().click();
   await expect(page.getByTestId("analysis-result")).toContainText("1 / 20");
+  await expect(page.getByTestId("analysis-shared-workspace")).toBeVisible();
+  await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-state","correct");
   await page.getByTestId("analysis-exit").click();
   await expect(page.getByRole("group",{name:"训练模式"})).toBeVisible();
 });
