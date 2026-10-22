@@ -50,10 +50,10 @@ test("renders the upcoming exam countdown in chronological order", async ({
   ]);
   await expect(page.getByTestId("study-exam-hero")).toContainText("下一次国考");
   await expect(page.getByTestId("study-other-exams")).toContainText("广东省考");
-  await expect(countdown.getByText("广东省考", { exact: true })).toBeVisible();
-  await expect(countdown.getByText("湖南省考", { exact: true })).toBeVisible();
+  await expect(countdown.getByText("广东省考", { exact: true }).first()).toBeVisible();
+  await expect(countdown.getByText("湖南省考", { exact: true }).first()).toBeVisible();
   await expect(
-    countdown.getByText("湖南事业编", { exact: true }),
+    countdown.getByText("湖南事业编", { exact: true }).first(),
   ).toBeVisible();
   await expect(countdown.locator("[data-exam-id] progress")).toHaveCount(4);
   await expect(countdown.locator("[data-exam-id] progress").first()).toHaveAttribute(
@@ -587,7 +587,7 @@ test("keeps the exam countdown usable on mobile", async ({ page }) => {
   await expect(countdown).toBeVisible();
   await expect(countdown.locator("[data-exam-id]")).toHaveCount(4);
   await expect(
-    countdown.getByText("湖南事业编", { exact: true }),
+    countdown.getByText("湖南事业编", { exact: true }).first(),
   ).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
