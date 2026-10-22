@@ -392,6 +392,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let Some(active) = (*run).clone() else { return };
             busy.set(true);
             let result = result.clone();
+            let run = run.clone();
             let controller = controller.clone();
             let error = error.clone();
             let busy = busy.clone();
