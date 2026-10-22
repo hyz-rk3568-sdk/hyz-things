@@ -2,8 +2,8 @@
 //! Codex owns the answer; the application stores each freshly prepared practice attempt.
 use super::codex_app_server::{validate_token, CodexSession, TURN_TIMEOUT};
 use crate::domain::data_analysis::{
-    select_material_batch, Material, VerifiedQuestion, QUIZ_GROUPS, QUIZ_PER_GROUP, QUIZ_SECONDS,
-    TOPICS,
+    select_material_batch, topic_scope, Material, VerifiedQuestion, QUIZ_GROUPS, QUIZ_PER_GROUP,
+    QUIZ_SECONDS, TOPICS,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
@@ -761,7 +761,8 @@ impl DataAnalysisService {
 联网参考可验证来源的国考、省考真题材料风格，不照搬原题与数字。
 
 【本轮动态上下文】
-本次是4篇×5题的第 {group_no} 篇；统计主题「{topic}」。
+本次是4篇×5题的第 {group_no} 篇；统计主题「{topic}」，参考指标范围：「{topic_scope}」。
+材料应围绕此主题展开；参考指标只用于限定选材方向，无须全部涵盖，不得拼凑无关指标。
 错题强化：本篇恰好 {wrong_count} 道，各类别各1题：{manual_focus}。只读取 flashcards/资料/错题/<类别>/ 的原始卡片。
 普通资料知识点：恰好 {knowledge_count} 道，从 flashcards/资料/<知识点>/ 的 card.md 或 cards.md 出，目录候选：{knowledge_categories}；不得用 错题/ 内卡片补位。同名知识点允许，但 source_kind 必须与真实来源相符。
 题目可以交错排布。先根据这5个目标构造共享材料，再拟制题目；先自行检查正确性。
@@ -772,6 +773,7 @@ impl DataAnalysisService {
 只输出 Schema 对应的 JSON，不输出解释性前言。"#,
             group_no = ordinal % QUIZ_GROUPS + 1,
             topic = context.topic,
+            topic_scope = topic_scope(&context.topic).unwrap_or("该主题相关统计指标"),
             wrong_count = plan.required[ordinal].len(),
             knowledge_count = QUIZ_PER_GROUP - plan.required[ordinal].len(),
             manual_focus = plan.required[ordinal].join("、"),
@@ -1271,7 +1273,7 @@ fn order_exam_themes(
 fn exam_theme_materials() -> Vec<Material> {
     TOPICS
         .iter()
-        .map(|topic| Material {
+        .map(|(topic, _)| Material {
             topic: (*topic).to_owned(),
             text: String::new(),
         })
@@ -1799,7 +1801,7 @@ mod tests {
         let materials = TOPICS
             .iter()
             .take(4)
-            .map(|topic| Material {
+            .map(|(topic, _)| Material {
                 topic: (*topic).into(),
                 text: "本年度业务量1200亿元，比上年增长15.2%。".repeat(8),
             })
