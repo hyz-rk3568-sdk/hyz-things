@@ -6,21 +6,35 @@ pub const QUIZ_GROUPS: usize = 4;
 pub const QUIZ_PER_GROUP: usize = 5;
 pub const QUIZ_SECONDS: u64 = 1200;
 
-// These are statistical material topics, not question skills or subtopics.
-pub const TOPICS: [&str; 12] = [
-    "宏观经济",
-    "农业",
-    "工业能源",
-    "交通物流与服务",
-    "国内消费",
-    "投资房地产",
-    "对外经济",
-    "财政金融",
-    "居民民生",
-    "科技教育",
-    "文旅卫生体育",
-    "资源环境安全",
+// Statistical material topics and representative indicators, separate from question skills.
+// Keep labels stable: they are stored in historical papers and used for recent-topic balancing.
+pub const TOPICS: [(&str, &str); 19] = [
+    ("宏观经济", "GDP、三次产业、经济增长、物价"),
+    ("人口与就业", "人口结构、出生人口、就业人数、工资"),
+    ("农业农村", "粮食、农作物、畜牧、水产、农业产值"),
+    ("工业制造", "工业增加值、工业企业、制造业产量"),
+    ("建筑业", "建筑企业、建筑业产值、施工面积"),
+    ("能源资源", "煤炭、电力、石油、天然气、能源消费"),
+    ("生态环境", "环境治理、碳排放、水资源、污染防治"),
+    ("投资房地产", "固定资产投资、房地产开发、商品房销售"),
+    ("消费零售", "社会消费品零售、电商、商品销售"),
+    ("交通物流", "铁路、公路、航空、货运、客运、快递"),
+    ("通信互联网", "电信、互联网用户、软件产业、数字经济"),
+    ("对外贸易", "进出口、贸易顺差、外商投资"),
+    ("财政金融", "财政收支、税收、银行、贷款、保险"),
+    ("居民收入与社会保障", "人均收入、居民消费、养老保险、社会救助"),
+    ("科技创新", "研发投入、科研人员、专利、技术成果"),
+    ("教育", "学校数量、招生、在校生、毕业生"),
+    ("文化旅游体育", "旅游人次、旅游收入、文化产业、体育产业"),
+    ("医疗卫生", "医院、医护人员、医疗机构、诊疗人次"),
+    ("企业经营与产业发展", "企业数量、营业收入、利润、产业化率、新兴产业"),
 ];
+
+pub fn topic_scope(topic: &str) -> Option<&'static str> {
+    TOPICS
+        .iter()
+        .find_map(|(name, scope)| (*name == topic).then_some(*scope))
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Material {
@@ -136,14 +150,22 @@ mod tests {
             vec!["国内消费", "宏观经济"]
         );
         assert!(select_material_batch(&ordered, &[], &Default::default(), 0).is_empty());
+        assert_eq!(TOPICS.len(), 19);
         assert!(TOPICS.len() >= QUIZ_GROUPS);
         assert_eq!(
             TOPICS
                 .iter()
+                .map(|(topic, _)| *topic)
                 .collect::<std::collections::HashSet<_>>()
                 .len(),
             TOPICS.len()
         );
+        assert!(TOPICS.iter().all(|(topic, scope)| !topic.is_empty() && !scope.is_empty()));
+        assert_eq!(
+            topic_scope("医疗卫生"),
+            Some("医院、医护人员、医疗机构、诊疗人次")
+        );
+        assert_eq!(topic_scope("不存在的主题"), None);
         assert_eq!(QUIZ_GROUPS * QUIZ_PER_GROUP, QUIZ_QUESTIONS);
         assert_eq!(QUIZ_SECONDS, 1200);
     }
