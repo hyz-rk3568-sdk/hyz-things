@@ -266,6 +266,29 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             move || drop(handle)
         });
     }
+    // Moving between questions resets only the right-hand reading position.
+    // The material keeps its position for questions in the same group, then
+    // resets when the selected group changes. Never scroll the outer page.
+    {
+        use_effect_with(*current, move |_| {
+            if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+                if let Ok(Some(question)) = document.query_selector("[data-testid='analysis-question']") {
+                    question.set_scroll_top(0);
+                }
+            }
+            || ()
+        });
+    }
+    {
+        use_effect_with(*current / 5, move |_| {
+            if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+                if let Ok(Some(material)) = document.query_selector("[data-testid='analysis-material-scroll']") {
+                    material.set_scroll_top(0);
+                }
+            }
+            || ()
+        });
+    }
     // Keep the setup page outside fullscreen; active runs and review records
     // make the training workspace cover the entire visual viewport.
     {
