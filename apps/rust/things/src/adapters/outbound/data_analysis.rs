@@ -647,12 +647,7 @@ impl DataAnalysisService {
                 .flatten()
                 .map(|group| group.material.clone())
                 .collect();
-            let wave = select_material_batch(
-                &ordered,
-                &completed,
-                &attempted,
-                missing.len(),
-            );
+            let wave = select_material_batch(&ordered, &completed, &attempted, missing.len());
             if wave.is_empty() {
                 break;
             }
