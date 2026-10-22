@@ -133,6 +133,15 @@ test("study opens an immersive four-choice calculation drill with all three type
 
   await page.getByTestId("calculation-start").click();
   await expect(page.getByTestId("calculation-question")).toBeVisible();
+  await expect(page.getByRole("group",{name:"训练模式"})).toHaveCount(0);
+  const drillFrame=await page.getByTestId("calculation-layout").boundingBox();
+  expect(drillFrame).not.toBeNull();
+  expect(drillFrame!.x).toBe(0);
+  expect(drillFrame!.y).toBe(0);
+  expect(drillFrame!.height).toBe(page.viewportSize()!.height);
+  await expect(page.getByTestId("calculation-question-scroll")).toHaveCSS("overflow-y","auto");
+  await expect(page.getByTestId("calculation-controls")).toBeVisible();
+  expect(await page.evaluate(()=>window.scrollY)).toBe(0);
   await expect(page.getByTestId("calculation-answer")).toHaveCount(4);
   await expect(page.getByTestId("calculation-question")).not.toContainText("有效数字");
   await page.getByTestId("calculation-answer").first().click();
@@ -172,8 +181,14 @@ test("transparent calculation ink overlays the question, supports history and re
   await expect(canvas).toBeVisible();
   await expect(canvas).toHaveCSS("touch-action", "none");
   await expect(canvas).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-  await expect(canvas).toHaveAttribute("width", "900");
-  await expect(canvas).toHaveAttribute("height", "450");
+  // Responsive full-screen scratchpad scales its backing pixels to the
+  // displayed card size (and devicePixelRatio), rather than fixed 900x450.
+  const bitmap = await canvas.evaluate(el=>{
+    const c=el as HTMLCanvasElement;
+    return {width:c.width,height:c.height,displayWidth:c.clientWidth,displayHeight:c.clientHeight};
+  });
+  expect(bitmap.width).toBeGreaterThanOrEqual(bitmap.displayWidth);
+  expect(bitmap.height).toBeGreaterThanOrEqual(bitmap.displayHeight);
   await expect(page.getByTestId("calculation-layout")).toHaveCSS("user-select", "none");
   await expect(page.getByTestId("calculation-expression")).toHaveCSS("user-select", "none");
   await expect(page.getByTestId("calculation-answer").first()).toHaveCSS("user-select", "none");
@@ -326,13 +341,27 @@ test("wrong-card practice filters, reveals, self-grades and never writes FSRS", 
 
   await page.getByTestId("practice-start").click();
   await expect(page.getByTestId("practice-question")).toBeVisible();
+  await expect(page.getByRole("group",{name:"训练模式"})).toHaveCount(0);
+  const practiceFrame=await page.getByTestId("practice-layout").boundingBox();
+  expect(practiceFrame).not.toBeNull();
+  expect(practiceFrame!.x).toBe(0);
+  expect(practiceFrame!.y).toBe(0);
+  expect(practiceFrame!.height).toBe(page.viewportSize()!.height);
+  await expect(page.getByTestId("practice-card-scroll")).toHaveCSS("overflow-y","auto");
+  await expect(page.getByTestId("practice-controls")).toBeVisible();
+  expect(await page.evaluate(()=>window.scrollY)).toBe(0);
   await expect(page.getByTestId("practice-front")).toBeVisible();
   await expect(page.getByTestId("practice-back")).toHaveCount(0);
   const canvas = page.getByTestId("calculation-scratchpad-canvas");
   await expect(canvas).toBeHidden();
   await page.getByTestId("calculation-scratchpad-toggle").click();
   await expect(canvas).toBeVisible();
-  await expect(canvas).toHaveAttribute("width", "900");
+  const practiceBitmap=await canvas.evaluate(el=>{
+    const c=el as HTMLCanvasElement;
+    return {width:c.width,height:c.height,displayWidth:c.clientWidth,displayHeight:c.clientHeight};
+  });
+  expect(practiceBitmap.width).toBeGreaterThanOrEqual(practiceBitmap.displayWidth);
+  expect(practiceBitmap.height).toBeGreaterThanOrEqual(practiceBitmap.displayHeight);
   await expect(canvas).toHaveCSS("touch-action", "none");
   const blank = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
   const bounds = await canvas.boundingBox();
@@ -346,6 +375,9 @@ test("wrong-card practice filters, reveals, self-grades and never writes FSRS", 
 
   await page.getByTestId("practice-reveal").click();
   await expect(page.getByTestId("practice-back")).toBeVisible();
+  await expect(page.getByTestId("practice-grading")).toBeVisible();
+  await expect(page.getByTestId("practice-controls")).toBeVisible();
+  expect(await page.getByTestId("practice-layout").evaluate(el=>el.getBoundingClientRect().top)).toBe(0);
   await page.getByTestId("practice-wrong").click();
   await expect(page.getByTestId("practice-question")).toBeVisible();
   await expect(canvas).toBeHidden();

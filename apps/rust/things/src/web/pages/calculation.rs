@@ -347,10 +347,14 @@ fn calculation_metric(props: &CalculationMetricProps) -> Html {
 #[derive(Properties, PartialEq)]
 struct CalculationTrainingProps {
     route_state: UseStateHandle<PortalRoute>,
+    on_immersive_change: Callback<bool>,
 }
 
-pub(crate) fn render_calculation_training(route_state: UseStateHandle<PortalRoute>) -> Html {
-    html! { <CalculationTraining route_state={route_state} /> }
+pub(crate) fn render_calculation_training(
+    route_state: UseStateHandle<PortalRoute>,
+    on_immersive_change: Callback<bool>,
+) -> Html {
+    html! { <CalculationTraining route_state={route_state} on_immersive_change={on_immersive_change} /> }
 }
 
 #[function_component(CalculationTraining)]
@@ -358,6 +362,14 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
     let enabled = use_state(|| [true, true, true]);
     let count = use_state(|| 20_usize);
     let session = use_state(|| None::<CalculationSession>);
+    let is_training_immersive = session.as_ref().is_some_and(|state| !state.finished);
+    {
+        let notify = props.on_immersive_change.clone();
+        use_effect_with(is_training_immersive, move |active| {
+            notify.emit(*active);
+            || ()
+        });
+    }
 
     let back = {
         let route_state = props.route_state.clone();
@@ -512,38 +524,46 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                 })
             };
             html! {
-                <section class="calculation-workspace mx-auto grid w-full gap-4" data-testid="calculation-question">
-                    <InkOverlay question_index={live.index}>
-                    <div class="calculation-problem grid min-w-0 content-start gap-4" data-testid="calculation-problem">
-                    <div class="flex items-center justify-between gap-3 text-sm text-base-content/60">
-                        <span>{format!("第 {progress} / {} 题", live.questions.len())}</span>
-                        <span>{question.kind.label()}</span>
+                <section class="calculation-workspace mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col gap-2" data-testid="calculation-question">
+                    <div class="min-h-0 flex-1">
+                        <InkOverlay question_index={live.index} responsive={true}>
+                            <div class="h-full min-h-0 overflow-y-auto overscroll-contain p-1" data-testid="calculation-question-scroll">
+                                <div class="calculation-problem grid min-w-0 content-start gap-4" data-testid="calculation-problem">
+                                    <div class="flex items-center justify-between gap-3 text-sm text-base-content/60">
+                                        <span>{format!("第 {progress} / {} 题", live.questions.len())}</span>
+                                        <span>{question.kind.label()}</span>
+                                    </div>
+                                    <div class="grid min-h-36 place-items-center rounded-box border border-base-content/10 bg-base-100 p-5 text-center">
+                                        <h1 class="break-words text-3xl font-black leading-snug sm:text-5xl" data-testid="calculation-expression">
+                                            {if question.kind == CalculationKind::Percent {
+                                                format!("{}？", question.expression)
+                                            } else {
+                                                format!("{} = ?", question.expression)
+                                            }}
+                                        </h1>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-3">{for buttons}</div>
+                                    if let Some(record) = answered {
+                                        <div class="rounded-box border border-base-content/10 bg-base-100 p-4" role="status" data-testid="calculation-feedback">
+                                            <strong class={if record.choice == question.correct_index { "text-success" } else { "text-error" }}>
+                                                {if record.choice == question.correct_index { "回答正确" } else { "回答错误" }}
+                                            </strong>
+                                            <p class="mt-1">{format!("正确答案：{}；用时 {:.1} 秒", question.exact_result, record.elapsed_ms as f64 / 1000.0)}</p>
+                                            <p class="mt-1 text-sm text-base-content/65">{question.tip}</p>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </InkOverlay>
                     </div>
-                    <div class="grid min-h-36 place-items-center rounded-box border border-base-content/10 bg-base-100 p-5 text-center">
-                        <h1 class="break-words text-3xl font-black leading-snug sm:text-5xl" data-testid="calculation-expression">
-                            {if question.kind == CalculationKind::Percent {
-                                format!("{}？", question.expression)
-                            } else {
-                                format!("{} = ?", question.expression)
-                            }}
-                        </h1>
-                    </div>
-                    <div class="grid grid-cols-2 gap-3">{for buttons}</div>
-                    if let Some(record) = answered {
-                        <div class="rounded-box border border-base-content/10 bg-base-100 p-4" role="status" data-testid="calculation-feedback">
-                            <strong class={if record.choice == question.correct_index { "text-success" } else { "text-error" }}>
-                                {if record.choice == question.correct_index { "回答正确" } else { "回答错误" }}
-                            </strong>
-                            <p class="mt-1">{format!("正确答案：{}；用时 {:.1} 秒", question.exact_result, record.elapsed_ms as f64 / 1000.0)}</p>
-                            <p class="mt-1 text-sm text-base-content/65">{question.tip}</p>
-                        </div>
-                        <button type="button" class="btn btn-primary w-full" data-testid="calculation-next" onclick={next}>
-                            {if progress == live.questions.len() { "查看结果" } else { "下一题" }}
-                        </button>
-                    }
-                    <button type="button" class="btn btn-ghost justify-self-center" data-testid="calculation-finish" onclick={finish}>{"提前结束并查看成绩"}</button>
-                    </div>
-                    </InkOverlay>
+                    <footer class="flex shrink-0 flex-col gap-2 py-1" data-testid="calculation-controls">
+                        if live.answers[live.index].is_some() {
+                            <button type="button" class="btn btn-primary w-full" data-testid="calculation-next" onclick={next}>
+                                {if progress == live.questions.len() { "查看结果" } else { "下一题" }}
+                            </button>
+                        }
+                        <button type="button" class="btn btn-ghost btn-sm self-center" data-testid="calculation-finish" onclick={finish}>{"提前结束并查看成绩"}</button>
+                    </footer>
                 </section>
             }
         }
@@ -598,12 +618,16 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
     };
 
     html! {
-        <div class="calculation-layout min-h-dvh bg-base-200 px-4 py-5 sm:px-8" data-testid="calculation-layout" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
-            <div class="calculation-header mx-auto mb-5 flex w-full items-center justify-between">
+        <div class={if is_training_immersive { format!("calculation-layout {}",super::training::FIXED_TRAINING_LAYOUT) } else { "calculation-layout min-h-dvh bg-base-200 px-4 py-5 sm:px-8".to_owned() }} data-testid="calculation-layout" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
+            <div class={if is_training_immersive { "calculation-header mx-auto flex w-full shrink-0 items-center justify-between pb-2" } else { "calculation-header mx-auto mb-5 flex w-full items-center justify-between" }}>
                 <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-back" onclick={back}>{"← 返回学习"}</button>
                 <span class="text-xs font-semibold uppercase tracking-widest text-base-content/60">{"STUDY / CALCULATION"}</span>
             </div>
-            {content}
+            if is_training_immersive {
+                <div class="min-h-0 flex-1 overflow-hidden">{content}</div>
+            } else {
+                {content}
+            }
         </div>
     }
 }

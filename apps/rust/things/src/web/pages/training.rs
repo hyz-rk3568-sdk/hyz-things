@@ -7,6 +7,11 @@ use std::collections::HashSet;
 const PRACTICE_PAGE_SIZE: u32 = 200;
 const PRACTICE_MAX_CANDIDATES: usize = 1000;
 
+// All active specialized drills share the same fixed viewport contract.
+// The inner reading pane scrolls, not the training card or browser document.
+pub(super) const FIXED_TRAINING_LAYOUT: &str =
+    "fixed inset-0 z-[70] flex h-dvh w-screen flex-col overflow-hidden bg-base-200 px-3 py-2 sm:px-6 sm:py-3";
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum TrainingMode {
     Calculation,
@@ -27,34 +32,46 @@ pub(crate) fn render_training(route_state: UseStateHandle<PortalRoute>, csrf: St
 #[function_component(TrainingWorkspace)]
 fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
     let mode = use_state(|| TrainingMode::Calculation);
-    let comprehensive_immersive = use_state(|| false);
+    let training_immersive = use_state(|| false);
     let on_immersive_change = {
-        let comprehensive_immersive = comprehensive_immersive.clone();
-        Callback::from(move |active: bool| comprehensive_immersive.set(active))
+        let training_immersive = training_immersive.clone();
+        Callback::from(move |active: bool| training_immersive.set(active))
     };
     let exit_comprehensive = {
-        let comprehensive_immersive = comprehensive_immersive.clone();
+        let training_immersive = training_immersive.clone();
         let mode = mode.clone();
         Callback::from(move |_: ()| {
-            comprehensive_immersive.set(false);
+            training_immersive.set(false);
             mode.set(TrainingMode::Calculation);
         })
     };
     let choose_calculation = {
         let mode = mode.clone();
-        Callback::from(move |_| mode.set(TrainingMode::Calculation))
+        let training_immersive = training_immersive.clone();
+        Callback::from(move |_| {
+            training_immersive.set(false);
+            mode.set(TrainingMode::Calculation);
+        })
     };
     let choose_comprehensive = {
         let mode = mode.clone();
-        Callback::from(move |_| mode.set(TrainingMode::Comprehensive))
+        let training_immersive = training_immersive.clone();
+        Callback::from(move |_| {
+            training_immersive.set(false);
+            mode.set(TrainingMode::Comprehensive);
+        })
     };
     let choose_flashcards = {
         let mode = mode.clone();
-        Callback::from(move |_| mode.set(TrainingMode::Flashcards))
+        let training_immersive = training_immersive.clone();
+        Callback::from(move |_| {
+            training_immersive.set(false);
+            mode.set(TrainingMode::Flashcards);
+        })
     };
     html! {
-        <div class={if *comprehensive_immersive { "h-dvh overflow-hidden bg-base-200" } else { "min-h-dvh bg-base-200" }} data-testid="training-layout">
-            if !*comprehensive_immersive {
+        <div class={if *training_immersive { "h-dvh overflow-hidden bg-base-200" } else { "min-h-dvh bg-base-200" }} data-testid="training-layout">
+            if !*training_immersive {
             <div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 pt-4 sm:px-8">
                 <div>
                     <h1 class="text-xl font-bold">{"专项训练"}</h1>
@@ -68,9 +85,9 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
             </div>
             }
             if *mode == TrainingMode::Calculation {
-                {render_calculation_training(props.route_state.clone())}
+                {render_calculation_training(props.route_state.clone(),on_immersive_change.clone())}
             } else if *mode == TrainingMode::Flashcards {
-                <FlashcardPractice route_state={props.route_state.clone()} />
+                <FlashcardPractice route_state={props.route_state.clone()} on_immersive_change={on_immersive_change.clone()} />
             } else {
                 <ComprehensiveTraining csrf={props.csrf.clone()} on_immersive_change={on_immersive_change} on_exit={exit_comprehensive} />
             }
@@ -104,6 +121,7 @@ struct PracticeSession {
 #[derive(Properties, PartialEq)]
 struct FlashcardPracticeProps {
     route_state: UseStateHandle<PortalRoute>,
+    on_immersive_change: Callback<bool>,
 }
 
 fn shuffle_practice_cards(cards: &mut [FlashcardSummary], mut seed: u64) {
@@ -219,6 +237,14 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
     }
 
     let current = (*session).clone();
+    let is_training_immersive = current.as_ref().is_some_and(|state| !state.finished);
+    {
+        let notify = props.on_immersive_change.clone();
+        use_effect_with(is_training_immersive, move |active| {
+            notify.emit(*active);
+            || ()
+        });
+    }
     {
         let math_state = current.as_ref().map(|value| {
             (
@@ -362,36 +388,38 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
                 })
             };
             html! {
-                <section class="mx-auto grid max-w-6xl gap-4 px-4 pb-8 pt-5" data-testid="practice-question">
-                    <div class="flex items-center justify-between gap-3 text-sm text-base-content/60">
+                <section class="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col gap-2" data-testid="practice-question">
+                    <div class="flex shrink-0 items-center justify-between gap-3 py-1 text-sm text-base-content/60">
                         <span>{format!("第 {progress} / {} 题", live.questions.len())}</span>
-                        <span>{question.deck_path.clone()}</span>
+                        <span class="truncate">{question.deck_path.clone()}</span>
                     </div>
-                    <div class="grid gap-4">
-                        <InkOverlay question_index={live.index}>
-                        <div class="min-w-0 rounded-box border border-base-content/10 bg-base-100 p-4">
-                            <div class="max-h-[65vh] overflow-auto">
-                                <div class="study-markdown" data-testid="practice-front">{render_markdown(&question.front_markdown, &question.source_file)}</div>
-                                if live.revealed_elapsed_ms.is_some() {
-                                    <div class="mt-4 border-t border-base-content/10 pt-3" data-testid="practice-back">
-                                        <h3 class="mb-3 font-bold">{"原卡片解析"}</h3>
-                                        <div class="study-markdown">{render_markdown(&question.back_markdown, &question.source_file)}</div>
-                                    </div>
-                                }
-                            </div>
-                        </div>
+                    <div class="min-h-0 flex-1">
+                        <InkOverlay question_index={live.index} responsive={true}>
+                            <article class="flex h-full min-h-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100">
+                                <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4" data-testid="practice-card-scroll">
+                                    <div class="study-markdown" data-testid="practice-front">{render_markdown(&question.front_markdown, &question.source_file)}</div>
+                                    if live.revealed_elapsed_ms.is_some() {
+                                        <div class="mt-4 border-t border-base-content/10 pt-3" data-testid="practice-back">
+                                            <h3 class="mb-3 font-bold">{"原卡片解析"}</h3>
+                                            <div class="study-markdown">{render_markdown(&question.back_markdown, &question.source_file)}</div>
+                                        </div>
+                                    }
+                                </div>
+                            </article>
                         </InkOverlay>
                     </div>
-                    if live.revealed_elapsed_ms.is_none() {
-                        <button type="button" class="btn btn-primary" data-testid="practice-reveal" onclick={reveal}>{"显示解析"}</button>
-                    } else {
-                        <div class="grid grid-cols-3 gap-2" data-testid="practice-grading">
-                            <button type="button" class="btn btn-success" data-testid="practice-correct" onclick={rate(PracticeGrade::Correct)}>{"做对"}</button>
-                            <button type="button" class="btn btn-error" data-testid="practice-wrong" onclick={rate(PracticeGrade::Wrong)}>{"做错"}</button>
-                            <button type="button" class="btn btn-outline" data-testid="practice-skip" onclick={rate(PracticeGrade::Skipped)}>{"跳过"}</button>
-                        </div>
-                    }
-                    <button type="button" class="btn btn-ghost justify-self-center" data-testid="practice-finish" onclick={skip_to_summary}>{"提前结束并查看成绩"}</button>
+                    <footer class="flex shrink-0 flex-col gap-2 py-1" data-testid="practice-controls">
+                        if live.revealed_elapsed_ms.is_none() {
+                            <button type="button" class="btn btn-primary" data-testid="practice-reveal" onclick={reveal}>{"显示解析"}</button>
+                        } else {
+                            <div class="grid grid-cols-3 gap-2" data-testid="practice-grading">
+                                <button type="button" class="btn btn-success" data-testid="practice-correct" onclick={rate(PracticeGrade::Correct)}>{"做对"}</button>
+                                <button type="button" class="btn btn-error" data-testid="practice-wrong" onclick={rate(PracticeGrade::Wrong)}>{"做错"}</button>
+                                <button type="button" class="btn btn-outline" data-testid="practice-skip" onclick={rate(PracticeGrade::Skipped)}>{"跳过"}</button>
+                            </div>
+                        }
+                        <button type="button" class="btn btn-ghost btn-sm self-center" data-testid="practice-finish" onclick={skip_to_summary}>{"提前结束并查看成绩"}</button>
+                    </footer>
                 </section>
             }
         }
@@ -509,11 +537,15 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
     };
 
     html! {
-        <div class="calculation-layout min-h-dvh" data-testid="practice-layout" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
-            <div class="mx-auto flex max-w-5xl justify-end px-4 pt-2">
+        <div class={if is_training_immersive { format!("calculation-layout {}",FIXED_TRAINING_LAYOUT) } else { "calculation-layout min-h-dvh".to_owned() }} data-testid="practice-layout" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
+            <div class={if is_training_immersive { "mx-auto flex w-full shrink-0 justify-end pb-2" } else { "mx-auto flex max-w-5xl justify-end px-4 pt-2" }}>
                 <button type="button" class="btn btn-ghost btn-sm" data-testid="practice-back-to-study" onclick={go_back}>{"← 返回学习"}</button>
             </div>
-            {content}
+            if is_training_immersive {
+                <div class="min-h-0 flex-1 overflow-hidden">{content}</div>
+            } else {
+                {content}
+            }
         </div>
     }
 }
