@@ -652,6 +652,73 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
 
 #[cfg(test)]
 mod tests {
+    use hyz_things::domain::flashcards::{FlashcardId, ReviewStateKind};
+
+    fn example_card(number: usize) -> FlashcardSummary {
+        FlashcardSummary {
+            id: FlashcardId::from_trusted(format!("card-{number}")),
+            source_file: "cards.md".into(),
+            source_order: number as u32,
+            deck_path: "资料分析".into(),
+            front_markdown: format!("题目{number}"),
+            back_markdown: "解析".into(),
+            tags: vec!["错题".into()],
+            active: true,
+            due_at_ms: None,
+            last_reviewed_at_ms: None,
+            state: ReviewStateKind::New,
+            review_count: 0,
+            lapse_count: 0,
+            is_new: true,
+        }
+    }
+
+    #[test]
+    fn navigation_preserves_unrevealed_time_without_grading_or_skipping() {
+        let mut live = PracticeSession {
+            questions: (0..3).map(example_card).collect(),
+            answers: vec![None; 3],
+            revealed_elapsed_ms: vec![None; 3],
+            thinking_elapsed_ms: vec![0; 3],
+            index: 0,
+            started_at: 1000.0,
+            finished: false,
+        };
+        live.go_to(2, 1600.0);
+        assert_eq!(live.thinking_elapsed_ms, vec![600, 0, 0]);
+        assert!(live.answers.iter().all(Option::is_none));
+        live.go_to(0, 2000.0);
+        live.reveal_current(2400.0);
+        assert_eq!(live.revealed_elapsed_ms, vec![Some(1000), None, None]);
+        live.go_to(1, 2600.0);
+        live.reveal_current(2900.0);
+        live.rate_current(PracticeGrade::Wrong, 3000.0);
+        assert_eq!(live.index, 2);
+        assert_eq!(live.answers[1].as_ref().unwrap().elapsed_ms, 300);
+        assert!(live.answers[0].is_none());
+        assert!(live.answers[2].is_none());
+        live.go_to(0, 3100.0);
+        assert_eq!(live.revealed_elapsed_ms[0], Some(1000));
+        live.rate_current(PracticeGrade::Correct, 3200.0);
+        assert_eq!(live.index, 2);
+        live.reveal_current(3500.0);
+        live.rate_current(PracticeGrade::Skipped, 3600.0);
+        assert!(live.finished);
+        assert_eq!(live.answers[2].as_ref().unwrap().grade, PracticeGrade::Skipped);
+    }
+
+    #[test]
+    fn find_next_ungraded_card_wraps_and_does_not_mark_unanswered() {
+        let graded = Some(PracticeAnswer {
+            grade: PracticeGrade::Correct,
+            elapsed_ms: 1250,
+        });
+        let answers = vec![None, graded.clone(), None, graded];
+        assert_eq!(next_ungraded_card(&answers, 2), Some(0));
+        assert_eq!(next_ungraded_card(&answers, 0), Some(2));
+        assert!(answers[0].is_none());
+        assert!(next_ungraded_card(&[answers[1].clone()], 0).is_none());
+    }
 
     #[test]
     fn shuffling_preserves_distinct_card_ids() {
