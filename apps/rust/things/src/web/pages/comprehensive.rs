@@ -519,6 +519,86 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             });
         })
     };
+    // The same 60:40 question workspace is reused for redo. The server
+    // always clones the original groups into a separate ready run.
+    let retry_paper = {
+        let csrf = props.csrf.clone();
+        let busy = busy.clone();
+        let error = error.clone();
+        let run = run.clone();
+        let result = result.clone();
+        let history_open = history_open.clone();
+        let current = current.clone();
+        let ready_id = ready_id.clone();
+        let review_run_id = review_run_id.clone();
+        let reviewing_history = reviewing_history.clone();
+        Callback::from(move |source_id: String| {
+            if *busy {
+                return;
+            }
+            busy.set(true);
+            error.set(None);
+            let csrf = csrf.clone();
+            let busy = busy.clone();
+            let error = error.clone();
+            let run = run.clone();
+            let result = result.clone();
+            let history_open = history_open.clone();
+            let current = current.clone();
+            let ready_id = ready_id.clone();
+            let review_run_id = review_run_id.clone();
+            let reviewing_history = reviewing_history.clone();
+            spawn_local(async move {
+                let endpoint = format!("{ANALYSIS_ROOT}/runs/{source_id}/retry");
+                match post_json_response_typed::<_, RetryRun>(
+                    &endpoint,
+                    &csrf,
+                    &EmptyRequest {},
+                    "重做历史试卷",
+                )
+                .await
+                {
+                    Ok(created) => {
+                        let new_id = created.run_id;
+                        // Keep the ready record recoverable if entering it fails.
+                        ready_id.set(Some(new_id.clone()));
+                        if let Some(storage) = web_sys::window()
+                            .and_then(|w| w.local_storage().ok().flatten())
+                        {
+                            let _ = storage.set_item(COMPREHENSIVE_READY_KEY, &new_id);
+                        }
+                        match fetch_json_typed::<AnalysisRun>(
+                            &format!("{ANALYSIS_ROOT}/runs/{new_id}"),
+                            "开始重做",
+                        )
+                        .await
+                        {
+                            Ok(active) => {
+                                if let Some(storage) = web_sys::window()
+                                    .and_then(|w| w.local_storage().ok().flatten())
+                                {
+                                    let _ = storage.set_item("hyz_comprehensive_active_run", &new_id);
+                                    let _ = storage.remove_item(COMPREHENSIVE_READY_KEY);
+                                }
+                                remember_preparation(None);
+                                ready_id.set(None);
+                                current.set(0);
+                                review_run_id.set(new_id);
+                                reviewing_history.set(false);
+                                history_open.set(false);
+                                result.set(None);
+                                run.set(Some(active));
+                            }
+                            Err(e) => error.set(Some(format!("进入重做训练失败：{e}"))),
+                        }
+                    }
+                    Err(e) => error.set(Some(format!("创建重做训练失败：{e}"))),
+                }
+                busy.set(false);
+            });
+        })
+    };
+
     if let Some(score) = (*result).clone() {
         if score.materials.len() != 4 || score.questions.len() != 20 {
             return html! {<p class="p-5 text-error" role="alert">{"历史成绩材料或题目数量不正确，无法展示解析。"}</p>};
@@ -617,6 +697,11 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 }
             })
         };
+        let redo_from_result = {
+            let retry_paper = retry_paper.clone();
+            let source_id = score.id.clone();
+            Callback::from(move |_| retry_paper.emit(source_id.clone()))
+        };
         let again = {
             let result = result.clone();
             let run = run.clone();
@@ -640,6 +725,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     <div class="flex shrink-0 items-center gap-2">
                         <span class="text-sm font-bold">{format!("{} / {} 正确",score.correct,score.total)}</span>
                         <button type="button" class="btn btn-outline btn-sm" onclick={show_history}>{"查看练习历史"}</button>
+                        <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-retry-result" disabled={*busy} onclick={redo_from_result}>{"重做原题"}</button>
                         <button type="button" class="btn btn-primary btn-sm" onclick={again}>{"再出一套"}</button>
                     </div>
                 </header>
@@ -702,6 +788,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 {if history.is_empty(){html!{<p class="text-sm text-base-content/60">{"还没有已交卷的综合训练。"}</p>}}else{Html::default()}}
                 {for history.iter().map(|entry|{
                     let id=entry.id.clone();let open_result=open_result.clone();
+                    let redo_id=entry.id.clone();let redo=retry_paper.clone();
                     let stamp=Date::new(&JsValue::from_f64(entry.started_at_ms as f64));
                     let date=format!("{}-{:02}-{:02} {:02}:{:02}",
                         stamp.get_full_year(),stamp.get_month()+1,stamp.get_date(),stamp.get_hours(),stamp.get_minutes());
@@ -709,8 +796,14 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         <article class="rounded-box bg-base-100 p-4" key={entry.id.clone()}>
                             <div class="flex flex-wrap items-center justify-between gap-3">
                                 <div><strong>{format!("{} · {}/{}题",date,entry.correct,entry.total)}</strong>
+                                if entry.attempt_no > 1 {
+                                    <span class="ml-2 badge badge-outline">{format!("第{}次作答",entry.attempt_no)}</span>
+                                }
                                 <p class="text-xs text-base-content/60">{format!("作答用时 {}分{}秒 · {}",entry.elapsed_ms/60000,(entry.elapsed_ms/1000)%60,entry.topics.join("、"))}</p></div>
-                                <button class="btn btn-primary btn-sm" onclick={Callback::from(move |_|open_result.emit(id.clone()))}>{"查看原题与解析"}</button>
+                                <div class="flex flex-wrap gap-2">
+                                    <button class="btn btn-outline btn-sm" onclick={Callback::from(move |_|open_result.emit(id.clone()))}>{"查看原题与解析"}</button>
+                                    <button class="btn btn-primary btn-sm" data-testid="analysis-retry" disabled={*busy} onclick={Callback::from(move |_|redo.emit(redo_id.clone()))}>{"重做原题"}</button>
+                                </div>
                             </div>
                         </article>
                     }
@@ -777,7 +870,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             <div class="space-y-4 p-4">
                 <div class="flex items-center justify-between text-xs text-base-content/60">
                     <span>{format!("本材料第 {}/5 题",local_index+1)}</span>
-                    <span>{q.skill.clone()}</span>
+                    <span>{"作答中"}</span>
                 </div>
                 <h2 class="text-lg font-semibold leading-relaxed">{q.question.clone()}</h2>
                 <div class="grid gap-3">{for answers}</div>
