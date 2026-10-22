@@ -412,3 +412,56 @@ test("iPad pauses and phone resumes server-held answers, position and single-edi
   await ipad.close();
   await phone.close();
 });
+
+test("iPad pause at 02:07 resumes at 02:07 even when Safari clock is four minutes slow", async ({ page }) => {
+  // Simulate a real device whose wall clock does not match RK3568.
+  await page.addInitScript(() => {
+    const realNow=Date.now.bind(Date);
+    Date.now=()=>realNow()-240_000;
+  });
+  const serverNow=Date.now();
+  const baseMaterial={
+    section:"一、模拟统计",subtopic:"工业生产",topic:"工业能源",
+    text:"2025年能源消费1200万吨，比上年增长10%。",source_url:"skew-fixture",
+  };
+  const groups=Array.from({length:4},()=>({
+    material:baseMaterial,
+    questions:Array.from({length:5},()=>({question:"2024年消费量约是多少？",options:["1000","1100","1200","1300"]})),
+  }));
+  const answers:(number|null)[]=Array(20).fill(null);
+  let paused=true;
+  await page.route("**/api/v1/study/data-analysis/**",async route=>{
+    const path=new URL(route.request().url()).pathname;
+    let data:unknown={};
+    const live=()=>({
+      id:"skew-run",status:"active",started_at_ms:serverNow-1_073_000,
+      paused_remaining_ms:paused?127_000:null,
+      deadline_at_ms:paused?null:Date.now()+127_000,
+      server_now_ms:Date.now(),
+      duration_seconds:1200,current_question:0,groups,answers,
+    });
+    if(path.endsWith("/status")) {
+      data={configured:true,model:"mock",cached_sources:1,verified_groups:4,available_skills:["年均变化"],preparing_job_id:null};
+    } else if(path.endsWith("/history")) {
+      data=[];
+    } else if(path.endsWith("/unfinished")) {
+      data=[{id:"skew-run",status:"active",answered:0,current_question:0,
+        deadline_at_ms:null,paused_remaining_ms:127_000,created_at_ms:serverNow-1_073_000}];
+    } else if(path.endsWith("/runs/skew-run/claim")) {
+      data={run:live(),control_token:"mock-token"};
+    } else if(path.endsWith("/runs/skew-run/pause")) {
+      paused=false;
+      data=live();
+    } else if(path.endsWith("/runs/skew-run/position")) {
+      data={saved:true};
+    }
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(data)});
+  });
+  await page.goto("/#/study/training");
+  await page.getByTestId("training-mode-comprehensive").click();
+  await page.getByTestId("analysis-resume").click();
+  await expect(page.getByTestId("analysis-paused")).toContainText("02:07");
+  await page.getByRole("button",{name:"继续计时"}).click();
+  await expect(page.getByTestId("analysis-clock")).toContainText(/02:0[5-7]/);
+  await expect(page.getByTestId("analysis-clock")).not.toContainText("06:");
+});

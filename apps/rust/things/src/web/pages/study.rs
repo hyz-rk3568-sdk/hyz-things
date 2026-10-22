@@ -229,52 +229,61 @@ fn study_workspace(props: &StudyWorkspaceProps) -> Html {
                 <div class={VIEW_HEADING}>
                     <div>
                         <p class={EYEBROW}>{"STUDY"}</p>
-                        <h2 id="study-title" class={SECTION_TITLE}>{"学习"}</h2>
+                        <h2 id="study-title" class={SECTION_TITLE}>{"学习中心"}</h2>
+                        <p class="mt-1 text-xs text-base-content/60">{"考试进度 · 卡片复习 · 专项训练"}</p>
                     </div>
-                    <span class={SECTION_META}>{"Markdown 卡片与间隔复习"}</span>
                 </div>
-                <SectionCard title_id="study-flashcards-title" busy={Some(summary.is_none())}>
-                    <div class={SECTION_HEAD}>
-                        <div>
-                            <h3 id="study-flashcards-title" class={SECTION_TITLE}>{"Flashcards"}</h3>
-                            <p class={SECTION_META}>{"内容来自 /mnt/hyz-cards；同步会更新索引与复习队列。"}</p>
+                <ExamCountdownPanel on_training={open_calculation.clone()}/>
+                <div class="mt-5 grid gap-4 lg:grid-cols-2" data-testid="study-quick-start">
+                    <SectionCard title_id="study-flashcards-title" busy={Some(summary.is_none())}>
+                        <div class={SECTION_HEAD}>
+                            <div>
+                                <h3 id="study-flashcards-title" class={SECTION_TITLE}>{"Flashcards"}</h3>
+                                <p class={SECTION_META}>{"间隔复习 · 数据来自 /mnt/hyz-cards"}</p>
+                            </div>
+                            <div class={BUTTON_ROW}>
+                                <button class={BUTTON} type="button" data-testid="study-open-cards" onclick={open_cards.clone()}>{"卡片库"}</button>
+                                <button class={BUTTON_PRIMARY} type="button" data-testid="study-sync" onclick={on_sync.clone()} disabled={*sync_busy}>{if *sync_busy { "同步中…" } else { "同步卡片" }}</button>
+                            </div>
                         </div>
+                        if let Some(notice) = (*notice).clone() {
+                            <div class={FEEDBACK} role="status" data-testid="study-notice">{notice}</div>
+                        }
+                        if let Some(error) = (*summary_error).clone() {
+                            <ErrorState message={format!("学习摘要读取失败：{error}")} />
+                        } else if let Some(summary) = (*summary).clone() {
+                            <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4" data-testid="study-summary">
+                                <StudyMetric label="今日待复习" value={summary.due_cards.to_string()} />
+                                <StudyMetric label="新卡" value={summary.new_cards.to_string()} />
+                                <StudyMetric label="活跃卡片" value={summary.active_cards.to_string()} />
+                                <StudyMetric label="Deck / Tag" value={format!("{} / {}", summary.deck_count, summary.tag_count)} />
+                            </div>
+                            <div class={BUTTON_ROW}>
+                                <button class={BUTTON_PRIMARY} type="button" data-testid="study-start-review" onclick={open_review} disabled={summary.due_cards == 0}>{"开始复习 →"}</button>
+                                if !props.is_admin {
+                                    <span class={HELP_TEXT}>{"阅读与复习开放；同步需要管理员权限。"}</span>
+                                }
+                            </div>
+                        }
+                    </SectionCard>
+                    <SectionCard title_id="study-calculation-title">
+                        <div class={SECTION_HEAD}>
+                            <div>
+                                <h3 id="study-calculation-title" class={SECTION_TITLE}>{"专项训练"}</h3>
+                                <p class={SECTION_META}>{"固定全屏答题 · Apple Pencil 草稿"}</p>
+                            </div>
+                            <span class="badge badge-outline">{"3种模式"}</span>
+                        </div>
+                        <p class="text-sm leading-7 text-base-content/75">{"速算训练 / 错题复练 / 综合训练"}</p>
+                        <p class="text-xs text-base-content/60">{"综合训练支持原题重做、暂停及跨设备续答。"}</p>
                         <div class={BUTTON_ROW}>
-                            <button class={BUTTON} type="button" data-testid="study-open-cards" onclick={open_cards.clone()}>{"卡片库"}</button>
-                            <button class={BUTTON_PRIMARY} type="button" data-testid="study-sync" onclick={on_sync.clone()} disabled={*sync_busy}>{if *sync_busy { "同步中…" } else { "同步卡片" }}</button>
+                            <button class={BUTTON_PRIMARY} type="button" data-testid="study-open-calculation" onclick={open_calculation}>{"选择训练 →"}</button>
                         </div>
-                    </div>
-                    if let Some(notice) = (*notice).clone() {
-                        <div class={FEEDBACK} role="status" data-testid="study-notice">{notice}</div>
-                    }
-                    if let Some(error) = (*summary_error).clone() {
-                        <ErrorState message={format!("学习摘要读取失败：{error}")} />
-                    } else if let Some(summary) = (*summary).clone() {
-                        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="study-summary">
-                            <StudyMetric label="今日待复习" value={summary.due_cards.to_string()} />
-                            <StudyMetric label="新卡" value={summary.new_cards.to_string()} />
-                            <StudyMetric label="活跃卡片" value={summary.active_cards.to_string()} />
-                            <StudyMetric label="Deck / Tag" value={format!("{} / {}", summary.deck_count, summary.tag_count)} />
-                        </div>
-                        <div class={BUTTON_ROW}>
-                            <button class={BUTTON_PRIMARY} type="button" data-testid="study-start-review" onclick={open_review} disabled={summary.due_cards == 0}>{"开始复习"}</button>
-                            if !props.is_admin {
-                                <span class={HELP_TEXT}>{"阅读和复习开放；同步需要管理员会话。"}</span>
-                            }
-                        </div>
-                    }
-                </SectionCard>
-                <SectionCard title_id="study-calculation-title">
-                    <div class={SECTION_HEAD}>
-                        <div>
-                            <h3 id="study-calculation-title" class={SECTION_TITLE}>{"专项训练"}</h3>
-                            <p class={SECTION_META}>{"速算训练 / Flashcard 错题复练；Apple Pencil 手写草稿。"}</p>
-                        </div>
-                        <button class={BUTTON_PRIMARY} type="button" data-testid="study-open-calculation" onclick={open_calculation}>{"开始训练"}</button>
-                    </div>
-                </SectionCard>
-                <CustomCountdownPanel />
-                <ExamCountdownPanel />
+                    </SectionCard>
+                </div>
+                <div class="mt-5" data-testid="study-timers">
+                    <CustomCountdownPanel />
+                </div>
             </>
         },
         StudyView::Cards => html! {

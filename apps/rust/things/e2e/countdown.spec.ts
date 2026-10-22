@@ -25,6 +25,9 @@ test.beforeEach(async ({ request }) => {
 async function openStudyPage(page: Page) {
   await page.goto("/");
   await goToAppPage(page, "学习");
+  // Legacy PiP cases exercise the full countdown cards inside the new
+  // secondary details view. The closest exam stays highlighted above it.
+  await page.getByTestId("study-exam-expanded").click();
 }
 
 test("renders the upcoming exam countdown in chronological order", async ({
@@ -45,16 +48,15 @@ test("renders the upcoming exam countdown in chronological order", async ({
     "hunan-civil-service",
     "hunan-public-institution",
   ]);
+  await expect(page.getByTestId("study-exam-hero")).toContainText("下一次国考");
+  await expect(page.getByTestId("study-other-exams")).toContainText("广东省考");
+  await expect(countdown.getByText("广东省考", { exact: true }).first()).toBeVisible();
+  await expect(countdown.getByText("湖南省考", { exact: true }).first()).toBeVisible();
   await expect(
-    countdown.getByText("下一次国考", { exact: true }),
+    countdown.getByText("湖南事业编", { exact: true }).first(),
   ).toBeVisible();
-  await expect(countdown.getByText("广东省考", { exact: true })).toBeVisible();
-  await expect(countdown.getByText("湖南省考", { exact: true })).toBeVisible();
-  await expect(
-    countdown.getByText("湖南事业编", { exact: true }),
-  ).toBeVisible();
-  await expect(countdown.locator("progress")).toHaveCount(4);
-  await expect(countdown.locator("progress").first()).toHaveAttribute(
+  await expect(countdown.locator("[data-exam-id] progress")).toHaveCount(4);
+  await expect(countdown.locator("[data-exam-id] progress").first()).toHaveAttribute(
     "aria-label",
     /冲刺进度/,
   );
@@ -73,7 +75,7 @@ test("renders three compact configurable countdown timers", async ({
   await expect(timer).toBeVisible();
   await expect(
     timer.getByRole("heading", {
-      name: "自定义倒计时",
+      name: "学习计时器 · 上午 / 下午 / 晚上",
       exact: true,
       level: 2,
     }),
@@ -585,7 +587,7 @@ test("keeps the exam countdown usable on mobile", async ({ page }) => {
   await expect(countdown).toBeVisible();
   await expect(countdown.locator("[data-exam-id]")).toHaveCount(4);
   await expect(
-    countdown.getByText("湖南事业编", { exact: true }),
+    countdown.getByText("湖南事业编", { exact: true }).first(),
   ).toBeVisible();
   await expectNoHorizontalOverflow(page);
 

@@ -153,7 +153,7 @@ test("study opens an immersive four-choice calculation drill with all three type
   await expect(page.getByTestId("calculation-summary")).toContainText("正确率");
 });
 
-test("calculation drill supports percent-only and returns to Study", async ({ page }) => {
+test("calculation drill supports percent-only and returns to training choice", async ({ page }) => {
   await page.goto("/#/study/calculation");
   await page.getByTestId("calc-kind-div").uncheck();
   await page.getByTestId("calc-kind-mul").uncheck();
@@ -164,7 +164,9 @@ test("calculation drill supports percent-only and returns to Study", async ({ pa
   await page.getByTestId("calculation-start").click();
   await expect(page.getByTestId("calculation-expression")).toContainText(/%/);
   await page.getByTestId("calculation-back").click();
-  await expect(page).toHaveURL(/#\/study$/);
+  await expect(page).toHaveURL(/#\/study\/training$/);
+  await expect(page.getByRole("group",{name:"训练模式"})).toBeVisible();
+  await expect(page.getByTestId("calculation-setup")).toBeVisible();
 });
 
 

@@ -129,6 +129,9 @@ pub struct RunView {
     pub started_at_ms: Option<i64>,
     pub deadline_at_ms: Option<i64>,
     pub paused_remaining_ms: Option<i64>,
+    /// Authoritative server clock sampled for this response; clients must
+    /// not compare a device-local clock directly with deadline_at_ms.
+    pub server_now_ms: i64,
     pub duration_seconds: u64,
     pub groups: Vec<PublicGroup>,
     pub answers: Vec<Option<usize>>,
@@ -826,6 +829,7 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
             started_at_ms,
             deadline_at_ms: if paused_at.is_some() { None } else { deadline },
             paused_remaining_ms,
+            server_now_ms: now_ms(),
             duration_seconds: QUIZ_SECONDS,
             groups: groups
                 .into_iter()
