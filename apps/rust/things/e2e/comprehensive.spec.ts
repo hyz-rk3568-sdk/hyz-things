@@ -17,7 +17,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
       topic: topics[g],
       subtopic: "文字统计材料",
       text: "2025年某项业务量为1200亿元，同比增长15.2%。\n\n其中地区一为480亿元，地区二为720亿元。",
-      source_url: "https://www.stats.gov.cn/sj/zxfb/202602/t20260228_1962662.html",
+      source_url: `practice-theme-${g}`,
     },
     questions: Array.from({length:5},(_,j)=>({
       question:"第"+String(g*5+j+1)+"题：上一年的业务量约为多少？",
@@ -92,6 +92,12 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   expect(question).not.toBeNull();
   expect(material!.x).toBeLessThan(question!.x);
   await expect(page.getByTestId("analysis-material")).toContainText("地区二为720亿元");
+  await expect(page.getByTestId("analysis-material")).toContainText("模拟训练材料");
+  await expect(page.getByTestId("analysis-material").getByRole("link")).toHaveCount(0);
+  const passageText=await page.getByTestId("analysis-material").locator(".whitespace-pre-wrap").innerText();
+  expect(passageText).toContain("\n\n");
+  expect(passageText).not.toContain("模拟训练材料");
+
   // Exactly ONE transparent canvas and ONE toolbar cover the whole two-column
   // workspace, so the same CSS-pixel pen width applies to both sides.
   const surface=page.getByTestId("analysis-run").getByTestId("calculation-scratchpad");
