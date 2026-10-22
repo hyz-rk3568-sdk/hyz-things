@@ -1567,6 +1567,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn user_prompt_is_shared_by_sqlite_and_default_is_restorable() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let ipad = DataAnalysisService::new(pool.clone(), None).unwrap();
+        let phone = DataAnalysisService::new(pool, None).unwrap();
+        let initial = ipad.user_prompt_settings().await.unwrap();
+        assert!(!initial.customized);
+        assert_eq!(initial.user_prompt, DEFAULT_USER_PROMPT);
+        let customized = ipad
+            .save_user_prompt(Some("只出带合理干扰项的真实模拟数据题。"))
+            .await
+            .unwrap();
+        assert!(customized.customized);
+        assert_eq!(phone.user_prompt_settings().await.unwrap().user_prompt,
+            "只出带合理干扰项的真实模拟数据题。");
+        assert!(phone.save_user_prompt(Some(" ")).await.is_err());
+        assert!(phone.save_user_prompt(Some(&"x".repeat(8001))).await.is_err());
+        assert!(phone.save_user_prompt(Some("提示\0注入")).await.is_err());
+        assert_eq!(phone.user_prompt_settings().await.unwrap().user_prompt,
+            "只出带合理干扰项的真实模拟数据题。");
+        let restored = phone.save_user_prompt(None).await.unwrap();
+        assert!(!restored.customized);
+        assert_eq!(ipad.user_prompt_settings().await.unwrap().user_prompt,
+            DEFAULT_USER_PROMPT);
+    }
+
+    #[tokio::test]
     async fn saved_official_groups_support_history_without_new_codex_generation() {
         // Exercise native SQLite/service paths without a paid AI API or external network.
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
