@@ -30,7 +30,9 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await page.route("**/api/v1/study/data-analysis/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     let result:unknown = {};
-    if (path.endsWith("/history")) {
+    if (path.endsWith("/unfinished")) {
+      result=[];
+    } else if (path.endsWith("/history")) {
       result=submittedResult && Object.keys(submittedResult as object).length>0 ? [
         {id:"fixture-run",started_at_ms:started,ended_at_ms:started+30000,elapsed_ms:30000,correct:1,total:20,topics:["经济","农业","工业","服务业"]}
       ] : [];
@@ -44,6 +46,8 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
     } else if (path.endsWith("/runs/fixture-run/retry") && route.request().method()==="POST") {
       repeatCreated++;
       result={run_id:"fixture-retry"};
+    } else if (path.endsWith("/runs/fixture-retry/claim") && route.request().method()==="POST") {
+      result={run:{id:"fixture-retry",status:"active",current_question:0,started_at_ms:Date.now(),deadline_at_ms:Date.now()+1200000,paused_remaining_ms:null,duration_seconds:1200,groups,answers:retryAnswers},control_token:"retry-token"};
     } else if (path.endsWith("/runs/fixture-retry") && route.request().method()==="GET") {
       result={id:"fixture-retry",status:"active",started_at_ms:Date.now(),deadline_at_ms:Date.now()+1200000,paused_remaining_ms:null,duration_seconds:1200,groups,answers:retryAnswers};
     } else if (path.includes("/runs/fixture-retry/answers/")) {
@@ -59,8 +63,12 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
           correct_index:0,answer:"1000亿元",explanation:"基期量为现期量除以增长因子",
           topic:topics[Math.floor(i/5)],skill:"基期量",evidence:"业务量1200亿元",
         }))};
+    } else if (path.endsWith("/runs/fixture-run/claim") && route.request().method()==="POST") {
+      result={run:{id:"fixture-run",status:"active",current_question:0,started_at_ms:started,deadline_at_ms:paused?null:started+1200000,paused_remaining_ms:paused?1100000:null,duration_seconds:1200,groups,answers},control_token:"ipad-token"};
     } else if (path.endsWith("/runs/fixture-run") && route.request().method()==="GET") {
       result={id:"fixture-run",status:"active",started_at_ms:started,deadline_at_ms:paused?null:started+1200000,paused_remaining_ms:paused?1100000:null,duration_seconds:1200,groups,answers};
+    } else if (path.endsWith("/position") && route.request().method()==="POST") {
+      result={saved:true};
     } else if (path.endsWith("/pause") && route.request().method()==="POST") {
       paused=!paused;
       result={id:"fixture-run",status:"active",started_at_ms:started,deadline_at_ms:paused?null:started+1200000,paused_remaining_ms:paused?1100000:null,duration_seconds:1200,groups,answers};
@@ -272,6 +280,8 @@ test("AI job survives leaving training; ready paper is untimed until explicit en
     if(path.endsWith("/status")){
       data={configured:true,model:"codex",cached_sources:3,verified_groups:4,
         available_skills:["乘积增长率"],preparing_job_id:jobCreated&&!generated?"same-task":null};
+    }else if(path.endsWith("/unfinished")){
+      data=[];
     }else if(path.endsWith("/history")){
       data=[];
     }else if(path.endsWith("/prepare")&&route.request().method()==="POST"){
@@ -281,6 +291,10 @@ test("AI job survives leaving training; ready paper is untimed until explicit en
       data=generated
         ?{state:"ready",verified:20,message:"出题完成",run_id:"ready-run"}
         :{state:"generating",verified:12,message:"仍在生成",run_id:null};
+    }else if(path.endsWith("/runs/ready-run/claim")){
+      data={run:{id:"ready-run",status:"active",current_question:0,started_at_ms:begun,
+        deadline_at_ms:Date.now()+1200000,paused_remaining_ms:null,
+        duration_seconds:1200,groups,answers:Array(20).fill(null)},control_token:"ready-token"};
     }else if(path.endsWith("/runs/ready-run")){
       data={id:"ready-run",status:"active",started_at_ms:begun,
         deadline_at_ms:Date.now()+1200000,paused_remaining_ms:null,
