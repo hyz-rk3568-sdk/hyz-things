@@ -236,7 +236,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 match fetch_json_typed::<UserPromptSettings>(
                     &format!("{ANALYSIS_ROOT}/user-prompt"),
                     "读取出题要求",
-                ).await {
+                )
+                .await
+                {
                     Ok(saved) => {
                         user_prompt.set(saved.user_prompt.clone());
                         prompt_settings.set(Some(saved));
@@ -500,7 +502,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let prompt_settings = prompt_settings.clone();
         let prompt_error = prompt_error.clone();
         Callback::from(move |_| {
-            if *prompt_busy { return; }
+            if *prompt_busy {
+                return;
+            }
             prompt_busy.set(true);
             prompt_error.set(None);
             let csrf = csrf.clone();
@@ -513,9 +517,13 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 match post_json_response_typed::<_, UserPromptSettings>(
                     &format!("{ANALYSIS_ROOT}/user-prompt"),
                     &csrf,
-                    &UserPromptUpdate { user_prompt: Some(payload) },
+                    &UserPromptUpdate {
+                        user_prompt: Some(payload),
+                    },
                     "保存出题要求",
-                ).await {
+                )
+                .await
+                {
                     Ok(saved) => {
                         user_prompt.set(saved.user_prompt.clone());
                         prompt_settings.set(Some(saved));
@@ -533,7 +541,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let prompt_settings = prompt_settings.clone();
         let prompt_error = prompt_error.clone();
         Callback::from(move |_| {
-            if *prompt_busy { return; }
+            if *prompt_busy {
+                return;
+            }
             prompt_busy.set(true);
             prompt_error.set(None);
             let csrf = csrf.clone();
@@ -547,7 +557,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     &csrf,
                     &UserPromptUpdate { user_prompt: None },
                     "恢复默认出题要求",
-                ).await {
+                )
+                .await
+                {
                     Ok(saved) => {
                         user_prompt.set(saved.user_prompt.clone());
                         prompt_settings.set(Some(saved));
