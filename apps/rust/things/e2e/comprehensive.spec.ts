@@ -465,3 +465,46 @@ test("iPad pause at 02:07 resumes at 02:07 even when Safari clock is four minute
   await expect(page.getByTestId("analysis-clock")).toContainText(/02:0[5-7]/);
   await expect(page.getByTestId("analysis-clock")).not.toContainText("06:");
 });
+
+test("generation user prompt is collapsed by default, saved centrally, restored on reload and reset", async ({ page }) => {
+  const defaultPrompt="默认：数据自洽，选项合理，解析采用 hyz 速算方法。";
+  let savedPrompt:string|null=null;
+  await page.route("**/api/v1/study/data-analysis/**", async route=>{
+    const path=new URL(route.request().url()).pathname;
+    let result:unknown={};
+    if(path.endsWith("/user-prompt")) {
+      if(route.request().method()==="POST") {
+        savedPrompt=(route.request().postDataJSON() as {user_prompt:string|null}).user_prompt;
+      }
+      result={user_prompt:savedPrompt??defaultPrompt,customized:savedPrompt!==null};
+    } else if(path.endsWith("/status")) {
+      result={configured:true,model:"codex",cached_sources:1,verified_groups:4,
+        available_skills:["年均变化"],preparing_job_id:null};
+    } else if(path.endsWith("/history")||path.endsWith("/unfinished")) {
+      result=[];
+    }
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(result)});
+  });
+  await page.goto("/#/study/training");
+  await page.getByTestId("training-mode-comprehensive").click();
+  const settings=page.getByTestId("analysis-user-prompt");
+  await expect(settings).toBeVisible();
+  await expect(settings).not.toHaveAttribute("open","");
+  await settings.getByTestId("analysis-user-prompt-toggle").click();
+  await expect(settings.getByTestId("analysis-user-prompt-editor")).toHaveValue(defaultPrompt);
+  const custom="仅使用资料分析知识点；模拟数据自然，防止题干给出方法提示。";
+  await settings.getByTestId("analysis-user-prompt-editor").fill(custom);
+  await settings.getByTestId("analysis-user-prompt-save").click();
+  await expect.poll(()=>savedPrompt).toBe(custom);
+  await expect(settings).toContainText("自定义版本");
+  await page.reload();
+  await page.getByTestId("training-mode-comprehensive").click();
+  const reloaded=page.getByTestId("analysis-user-prompt");
+  await expect(reloaded).not.toHaveAttribute("open","");
+  await reloaded.getByTestId("analysis-user-prompt-toggle").click();
+  await expect(reloaded.getByTestId("analysis-user-prompt-editor")).toHaveValue(custom);
+  await reloaded.getByTestId("analysis-user-prompt-reset").click();
+  await expect.poll(()=>savedPrompt).toBe(null);
+  await expect(reloaded.getByTestId("analysis-user-prompt-editor")).toHaveValue(defaultPrompt);
+  await expect(reloaded).toContainText("默认版本");
+});
