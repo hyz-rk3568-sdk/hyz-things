@@ -392,6 +392,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let Some(active) = (*run).clone() else { return };
             busy.set(true);
             let result = result.clone();
+            let controller = controller.clone();
             let error = error.clone();
             let busy = busy.clone();
             let csrf = csrf.clone();
@@ -417,6 +418,8 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     Ok(out) => {
                         reviewing_history.set(false);
                         review_run_id.set(active.id.clone());
+                        controller.set(None);
+                        run.set(None);
                         result.set(Some(out));
                         if let Ok(items) = fetch_json_typed::<Vec<ComprehensiveHistoryEntry>>(
                             &format!("{ANALYSIS_ROOT}/history"),
@@ -595,6 +598,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     // The same 60:40 question workspace is reused for redo. The server
     // always clones the original groups into a separate ready run.
     let retry_paper = {
+        let controller = controller.clone();
         let csrf = props.csrf.clone();
         let busy = busy.clone();
         let error = error.clone();
@@ -615,6 +619,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let busy = busy.clone();
             let error = error.clone();
             let run = run.clone();
+            let controller = controller.clone();
             let result = result.clone();
             let history_open = history_open.clone();
             let current = current.clone();
@@ -640,13 +645,17 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         {
                             let _ = storage.set_item(COMPREHENSIVE_READY_KEY, &new_id);
                         }
-                        match fetch_json_typed::<AnalysisRun>(
-                            &format!("{ANALYSIS_ROOT}/runs/{new_id}"),
+                        match post_json_response_typed::<_, ClaimedRun>(
+                            &format!("{ANALYSIS_ROOT}/runs/{new_id}/claim"),
+                            &csrf,
+                            &EmptyRequest {},
                             "开始重做",
                         )
                         .await
                         {
-                            Ok(active) => {
+                            Ok(claim) => {
+                                let active = claim.run;
+                                controller.set(Some(claim.control_token));
                                 if let Some(storage) =
                                     web_sys::window().and_then(|w| w.local_storage().ok().flatten())
                                 {
@@ -921,14 +930,20 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let clock = format!("{:02}:{:02}", remaining / 60, remaining % 60);
         let answers=(0..4).map(|i|{
             let id=active.id.clone();let run=run.clone();let csrf=props.csrf.clone();
+            let controller=controller.clone();
             let error=error.clone();let selected=active.answers[index]==Some(i);
             html!{
                 <button type="button" class={if selected {"btn btn-primary justify-start min-h-14 h-auto text-left"}else{"btn btn-outline justify-start min-h-14 h-auto text-left"}}
                     data-testid="analysis-choice" disabled={remaining==0} onclick={Callback::from(move |_|{
                         let run=run.clone();let csrf=csrf.clone();let id=id.clone();let error=error.clone();
+                        let token=(*controller).clone();
                         spawn_local(async move {
+                            let Some(token)=token else {
+                                error.set(Some("请重新接管训练后再作答".into()));
+                                return;
+                            };
                             let endpoint=format!("{ANALYSIS_ROOT}/runs/{id}/answers/{}",index+1);
-                            match post_json_typed(&endpoint,&csrf,&SaveAnswer{choice:i},"保存答案").await{
+                            match post_json_typed(&endpoint,&csrf,&SaveAnswer{choice:i,control_token:token},"保存答案").await{
                                 Ok(_)=>{
                                     if let Some(mut copy)=(*run).clone(){
                                         if copy.id==id {copy.answers[index]=Some(i);run.set(Some(copy));}
