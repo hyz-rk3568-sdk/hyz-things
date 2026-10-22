@@ -638,8 +638,7 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
         }
         let groups_json: String = row.try_get("groups_json").map_err(as_error)?;
         let groups: Vec<QuestionGroup> = serde_json::from_str(&groups_json).map_err(as_error)?;
-        if groups.len() != QUIZ_GROUPS
-            || groups.iter().any(|g| g.questions.len() != QUIZ_PER_GROUP)
+        if groups.len() != QUIZ_GROUPS || groups.iter().any(|g| g.questions.len() != QUIZ_PER_GROUP)
         {
             return Err("历史试卷题目不完整，无法重做".into());
         }
@@ -667,8 +666,10 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
         )
         .bind(&id)
         .bind(&groups_json)
-        .bind(serde_json::to_string(&vec![None::<usize>; QUIZ_GROUPS * QUIZ_PER_GROUP])
-            .map_err(as_error)?)
+        .bind(
+            serde_json::to_string(&vec![None::<usize>; QUIZ_GROUPS * QUIZ_PER_GROUP])
+                .map_err(as_error)?,
+        )
         .bind(now_ms())
         .bind(root_id)
         .bind(attempt_no)
@@ -1262,11 +1263,23 @@ mod tests {
         let repeated = service.run(&repeat_id).await.expect("start repeated paper");
         assert_eq!(repeated.answers, vec![None; 20]);
         assert_eq!(repeated.groups[0].material, active.groups[0].material);
-        assert_eq!(repeated.groups[0].questions[0].question, active.groups[0].questions[0].question);
-        assert_eq!(repeated.groups[0].questions[0].options, active.groups[0].questions[0].options);
+        assert_eq!(
+            repeated.groups[0].questions[0].question,
+            active.groups[0].questions[0].question
+        );
+        assert_eq!(
+            repeated.groups[0].questions[0].options,
+            active.groups[0].questions[0].options
+        );
         assert_eq!(repeated.duration_seconds, QUIZ_SECONDS);
-        assert!(service.retry(&repeat_id).await.is_err(), "active repeat cannot be cloned");
-        service.answer(&repeat_id, 1, 0).await.expect("repeat answer");
+        assert!(
+            service.retry(&repeat_id).await.is_err(),
+            "active repeat cannot be cloned"
+        );
+        service
+            .answer(&repeat_id, 1, 0)
+            .await
+            .expect("repeat answer");
         let repeat_result = service.submit(&repeat_id).await.expect("submit repeat");
         assert_eq!(repeat_result.correct, 0);
         assert_eq!(service.result(&run_id).await.unwrap().correct, 1);
@@ -1275,8 +1288,22 @@ mod tests {
         assert_eq!(third.answers, vec![None; 20]);
         assert!(service.result(&third_id).await.is_err());
         let attempt_entries = service.history().await.unwrap();
-        assert_eq!(attempt_entries.iter().find(|entry| entry.id == run_id).unwrap().attempt_no, 1);
-        assert_eq!(attempt_entries.iter().find(|entry| entry.id == repeat_id).unwrap().attempt_no, 2);
+        assert_eq!(
+            attempt_entries
+                .iter()
+                .find(|entry| entry.id == run_id)
+                .unwrap()
+                .attempt_no,
+            1
+        );
+        assert_eq!(
+            attempt_entries
+                .iter()
+                .find(|entry| entry.id == repeat_id)
+                .unwrap()
+                .attempt_no,
+            2
+        );
         let historical = service.result(&run_id).await.expect("historical review");
         assert_eq!(historical.materials.len(), 4);
         assert_eq!(historical.questions.len(), 20);
