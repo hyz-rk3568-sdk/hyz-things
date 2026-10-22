@@ -70,6 +70,19 @@ nav.tabs > button.tab:not(.tab-active) {
 
   }
 
+  /* Learning timers remain editable/PiP-capable, but no longer dominate
+     the initial study viewport on an iPad. */
+  [data-testid="study-timers"] [data-custom-countdown-values] strong[data-value] {
+    font-size: clamp(1.2rem, 2vw, 1.65rem);
+  }
+  [data-testid="study-timers"] [data-custom-countdown-values] {
+    flex-wrap: wrap;
+    gap: 0.15rem;
+  }
+  [data-testid="study-timers"] [data-custom-countdown-values] span {
+    margin-right: 0.18rem;
+  }
+
   .study-tag-panel {
     @apply absolute inset-x-0 top-full z-30 mt-2 overflow-y-auto rounded-box border border-base-content/10 bg-base-100/95 p-3 shadow-2xl backdrop-blur;
     max-height: min(18rem, calc(100dvh - 12rem));
