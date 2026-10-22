@@ -698,14 +698,6 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             .map(|ms| ((ms as f64 - Date::now()) / 1000.0).ceil().max(0.0) as u64)
             .unwrap_or(1200);
         let clock = format!("{:02}:{:02}", remaining / 60, remaining % 60);
-        let next = {
-            let current = current.clone();
-            Callback::from(move |_| current.set((*current + 1).min(19)))
-        };
-        let previous = {
-            let current = current.clone();
-            Callback::from(move |_| current.set(current.saturating_sub(1)))
-        };
         let answers=(0..4).map(|i|{
             let id=active.id.clone();let run=run.clone();let csrf=props.csrf.clone();
             let error=error.clone();let selected=active.answers[index]==Some(i);
@@ -729,52 +721,43 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 </button>
             }
         });
+
+        let question_content = html! {
+            <div class="space-y-4 p-4">
+                <div class="flex items-center justify-between text-xs text-base-content/60">
+                    <span>{format!("本材料第 {}/5 题",local_index+1)}</span>
+                    <span>{q.skill.clone()}</span>
+                </div>
+                <h2 class="text-lg font-semibold leading-relaxed">{q.question.clone()}</h2>
+                <div class="grid gap-3">{for answers}</div>
+            </div>
+        };
+        let markers = active.answers.iter().map(|answer| answer.map(|_| true)).collect::<Vec<_>>();
         return html! {
-            <section class="mx-auto flex h-[calc(100dvh-2rem)] max-w-[1500px] flex-col px-3 py-2 sm:px-5" data-testid="analysis-run">
-                <header class="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-3">
-                    <div class="text-sm font-bold">{"资料分析综合训练"} <span class="text-base-content/60">{format!("第 {}/20 题 · 材料 {}/4",index+1,group_index+1)}</span></div>
-                    <div class="flex items-center gap-2">
-                        <button type="button" class={if remaining<=60 {"btn btn-ghost font-mono text-xl text-error"}else{"btn btn-ghost font-mono text-xl"}} data-testid="analysis-clock" title="点击暂停计时" disabled={*busy || remaining==0} onclick={toggle_pause}>{format!("⏸ {clock}")}</button>
-                        <button type="button" class="btn btn-sm btn-error btn-outline" disabled={*busy} onclick={{let submit=submit.clone();Callback::from(move |_|submit.emit(()))}}>{"交卷"}</button>
+            <section class="fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200 p-2 sm:p-3"
+                data-testid="analysis-run" data-view="answer">
+                <header class="flex shrink-0 items-center justify-between gap-2 border-b border-base-content/10 pb-2">
+                    <div class="flex min-w-0 items-center gap-2">
+                        <button type="button" class="btn btn-ghost btn-sm" data-testid="analysis-exit"
+                            onclick={exit.clone()}>{"← 返回专项"}</button>
+                        <strong class="truncate text-sm">{"资料分析综合训练"}</strong>
+                        <span class="hidden text-xs text-base-content/60 sm:inline">{format!("第 {}/20 题 · 材料 {}/4",index+1,group_index+1)}</span>
+                    </div>
+                    <div class="flex shrink-0 items-center gap-2">
+                        <button type="button" class={if remaining<=60 {"btn btn-ghost font-mono text-xl text-error"}else{"btn btn-ghost font-mono text-xl"}}
+                            data-testid="analysis-clock" title="点击暂停计时" disabled={*busy || remaining==0}
+                            onclick={toggle_pause}>{format!("⏸ {clock}")}</button>
+                        <button type="button" class="btn btn-sm btn-error btn-outline" disabled={*busy}
+                            onclick={{let submit=submit.clone();Callback::from(move |_|submit.emit(()))}}>{"交卷"}</button>
                     </div>
                 </header>
-                <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}", active.id, index)} responsive={true}>
-                    <div class="grid h-full min-h-0 grid-cols-1 gap-3 lg:grid-cols-[44%_minmax(0,1fr)]" data-testid="analysis-shared-workspace">
-                        <div class="flex min-h-0 min-w-0 flex-col overflow-auto rounded-box bg-base-100" data-testid="analysis-material">
-                            <div class="p-3 text-sm font-semibold">{format!("{} · {}",group.material.section,group.material.subtopic)}</div>
-                            <div class="px-4 pb-2 text-xs text-base-content/60">{"模拟训练材料 · 根据历年行测真题风格新编，非真题原文"}</div>
-                            <div class="min-h-0 flex-1 overflow-auto">
-                                <div class="whitespace-pre-wrap p-4 text-base leading-8">{group.material.text.clone()}</div>
-                            </div>
-                            if group.material.source_url.starts_with("https://") {
-                                <a class="p-3 text-xs underline" href={group.material.source_url.clone()} target="_blank" rel="noopener noreferrer">{"查看旧版材料参考链接"}</a>
-                            }
-                        </div>
-                        <div class="min-h-0 min-w-0 overflow-auto rounded-box bg-base-100" data-testid="analysis-question">
-                            <div class="space-y-4 p-4">
-                                <div class="flex items-center justify-between text-xs text-base-content/60"><span>{format!("本材料第 {}/5 题",local_index+1)}</span><span>{q.skill.clone()}</span></div>
-                                <h2 class="text-lg font-semibold leading-relaxed">{q.question.clone()}</h2>
-                                <div class="grid gap-3">{for answers}</div>
-                            </div>
-                        </div>
-                    </div>
-                </InkOverlay>
-                {if let Some(msg)=(*error).clone(){html!{<div class="text-error text-xs">{msg}</div>}}else{Html::default()}}
-                <footer class="flex items-center justify-between gap-3 py-3" data-testid="analysis-navigation">
-                    <button type="button" class="btn btn-outline btn-sm" disabled={index==0} onclick={previous}>{"上一题"}</button>
-                    <div class="flex flex-wrap justify-center gap-1">
-                        {for (0..4).map(|g|{
-                            let current=current.clone();
-                            html!{<button type="button" class={if g==group_index{"btn btn-primary btn-xs"}else{"btn btn-ghost btn-xs"}} onclick={Callback::from(move |_|current.set(g*5))}>{format!("材料{}",g+1)}</button>}
-                        })}
-                        {for (group_index*5..group_index*5+5).map(|i|{
-                            let current=current.clone();
-                            let chosen=active.answers[i].is_some();
-                            html!{<button type="button" class={if i==index{"btn btn-primary btn-xs"}else if chosen{"btn btn-success btn-outline btn-xs"}else{"btn btn-ghost btn-xs"}} onclick={Callback::from(move |_|current.set(i))}>{i+1}</button>}
-                        })}
-                    </div>
-                    <button type="button" class="btn btn-primary btn-sm" disabled={index==19} onclick={next}>{"下一题"}</button>
-                </footer>
+                <div class="min-h-0 flex-1">
+                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",active.id,index)} responsive={true}>
+                        {analysis_panes(&group.material,question_content)}
+                    </InkOverlay>
+                </div>
+                if let Some(msg)=(*error).clone(){<div class="shrink-0 text-error text-xs" role="alert">{msg}</div>}
+                {analysis_navigation(current.clone(),index,&markers)}
             </section>
         };
     }
