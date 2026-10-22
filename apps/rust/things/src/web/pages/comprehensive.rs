@@ -166,6 +166,15 @@ async fn resume_preparation(
     error.set(Some("出题等待超时，可重新打开页面检查任务进度".into()));
 }
 
+// RK3568 is authoritative for deadlines: Safari and server clocks can differ.
+fn remaining_with_clock_offset(deadline_ms: i64, browser_now_ms: f64, offset_ms: f64) -> u64 {
+    ((deadline_ms as f64 - browser_now_ms - offset_ms) / 1000.0)
+        .ceil()
+        .max(0.0) as u64
+}
+fn clock_offset_for_server(server_now_ms: Option<i64>) -> f64 {
+    server_now_ms.map(|server| server as f64 - Date::now()).unwrap_or(0.0)
+}
 #[function_component(ComprehensiveTraining)]
 pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     let status = use_state(|| None::<AnalysisStatus>);
@@ -187,6 +196,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     let review_run_id = use_state(String::new);
     let unfinished = use_state(Vec::<UnfinishedRun>::new);
     let controller = use_state(|| None::<String>);
+    let clock_offset_ms = use_state(|| 0f64);
 
     {
         let status = status.clone();
@@ -201,6 +211,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let unfinished = unfinished.clone();
         let controller = controller.clone();
         let current = current.clone();
+        let clock_offset_ms = clock_offset_ms.clone();
         let csrf = props.csrf.clone();
         use_effect_with((), move |_| {
             if let Some(raw) = web_sys::window()
@@ -279,6 +290,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     .await
                     {
                         current.set(claim.run.current_question.min(19));
+                        clock_offset_ms.set(clock_offset_for_server(claim.run.server_now_ms));
                         controller.set(Some(claim.control_token));
                         run.set(Some(claim.run));
                     } else if let Some(storage) =
@@ -503,10 +515,12 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     // Opening the prepared paper is the *only* action which starts 20 minutes.
     // A background generation result can remain ready for hours without timing.
     let enter_ready = {
+        let clock_offset_ms = clock_offset_ms.clone();
         let controller = controller.clone();
         let run = run.clone();
         let current = current.clone();
         let ready_id = ready_id.clone();
+        let clock_offset_ms = clock_offset_ms.clone();
         let busy = busy.clone();
         let error = error.clone();
         let csrf = props.csrf.clone();
@@ -521,6 +535,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let run = run.clone();
             let controller = controller.clone();
             let current = current.clone();
+            let clock_offset_ms = clock_offset_ms.clone();
             let ready_id = ready_id.clone();
             let busy = busy.clone();
             let error = error.clone();
@@ -537,6 +552,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     Ok(claim) => {
                         let active = claim.run;
                         current.set(active.current_question.min(19));
+                        clock_offset_ms.set(clock_offset_for_server(active.server_now_ms));
                         controller.set(Some(claim.control_token));
                         if let Some(storage) =
                             web_sys::window().and_then(|w| w.local_storage().ok().flatten())
@@ -559,6 +575,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         })
     };
     let toggle_pause = {
+        let clock_offset_ms = clock_offset_ms.clone();
         let controller = controller.clone();
         let run = run.clone();
         let busy = busy.clone();
@@ -575,6 +592,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let error = error.clone();
             let csrf = csrf.clone();
             let token = (*controller).clone();
+            let clock_offset_ms = clock_offset_ms.clone();
             spawn_local(async move {
                 let Some(token) = token else {
                     error.set(Some("无法确认答题权限，请重新进入训练".into()));
@@ -592,7 +610,10 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 )
                 .await
                 {
-                    Ok(next) => run.set(Some(next)),
+                    Ok(next) => {
+                        clock_offset_ms.set(clock_offset_for_server(next.server_now_ms));
+                        run.set(Some(next));
+                    },
                     Err(e) => error.set(Some(e.to_string())),
                 }
                 busy.set(false);
@@ -602,6 +623,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     // A different browser sees the same server-held unfinished record and
     // explicitly claims its edit lease. A takeover invalidates the old lease.
     let continue_unfinished = {
+        let clock_offset_ms = clock_offset_ms.clone();
         let csrf = props.csrf.clone();
         let run = run.clone();
         let controller = controller.clone();
@@ -619,6 +641,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let run = run.clone();
             let controller = controller.clone();
             let current = current.clone();
+            let clock_offset_ms = clock_offset_ms.clone();
             let ready_id = ready_id.clone();
             let error = error.clone();
             let busy = busy.clone();
@@ -633,6 +656,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 {
                     Ok(claim) => {
                         current.set(claim.run.current_question.min(19));
+                        clock_offset_ms.set(clock_offset_for_server(claim.run.server_now_ms));
                         controller.set(Some(claim.control_token));
                         if let Some(storage) =
                             web_sys::window().and_then(|w| w.local_storage().ok().flatten())
@@ -699,6 +723,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     // The same 60:40 question workspace is reused for redo. The server
     // always clones the original groups into a separate ready run.
     let retry_paper = {
+        let clock_offset_ms = clock_offset_ms.clone();
         let controller = controller.clone();
         let csrf = props.csrf.clone();
         let busy = busy.clone();
@@ -721,6 +746,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let error = error.clone();
             let run = run.clone();
             let controller = controller.clone();
+            let clock_offset_ms = clock_offset_ms.clone();
             let result = result.clone();
             let history_open = history_open.clone();
             let current = current.clone();
@@ -756,6 +782,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         {
                             Ok(claim) => {
                                 let active = claim.run;
+                                clock_offset_ms.set(clock_offset_for_server(active.server_now_ms));
                                 controller.set(Some(claim.control_token));
                                 if let Some(storage) =
                                     web_sys::window().and_then(|w| w.local_storage().ok().flatten())
@@ -1026,7 +1053,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let q = &group.questions[local_index];
         let remaining = active
             .deadline_at_ms
-            .map(|ms| ((ms as f64 - Date::now()) / 1000.0).ceil().max(0.0) as u64)
+            .map(|ms| remaining_with_clock_offset(ms, Date::now(), *clock_offset_ms))
             .unwrap_or(1200);
         let clock = format!("{:02}:{:02}", remaining / 60, remaining % 60);
         let answers=(0..4).map(|i|{
