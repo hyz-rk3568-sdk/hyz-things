@@ -795,6 +795,14 @@ fn app_with_assets(
             on(MethodFilter::GET, data_analysis::status),
         )
         .route(
+            "/api/v1/study/data-analysis/user-prompt",
+            on(MethodFilter::GET, data_analysis::user_prompt),
+        )
+        .route(
+            "/api/v1/study/data-analysis/user-prompt",
+            on(MethodFilter::POST, data_analysis::update_user_prompt),
+        )
+        .route(
             "/api/v1/study/data-analysis/prepare",
             on(MethodFilter::POST, data_analysis::prepare),
         )
@@ -2625,6 +2633,7 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/study/review"
             | "/api/v1/control/study/sync"
             | "/api/v1/study/data-analysis/prepare"
+            | "/api/v1/study/data-analysis/user-prompt"
     ) || is_data_analysis_run_post_path(path)
 }
 fn is_data_analysis_run_post_path(path: &str) -> bool {
