@@ -595,6 +595,86 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             });
         })
     };
+    // A different browser sees the same server-held unfinished record and
+    // explicitly claims its edit lease. A takeover invalidates the old lease.
+    let continue_unfinished = {
+        let csrf = props.csrf.clone();
+        let run = run.clone();
+        let controller = controller.clone();
+        let current = current.clone();
+        let ready_id = ready_id.clone();
+        let error = error.clone();
+        let busy = busy.clone();
+        Callback::from(move |id: String| {
+            if *busy { return; }
+            busy.set(true);
+            error.set(None);
+            let csrf = csrf.clone();
+            let run = run.clone();
+            let controller = controller.clone();
+            let current = current.clone();
+            let ready_id = ready_id.clone();
+            let error = error.clone();
+            let busy = busy.clone();
+            spawn_local(async move {
+                match post_json_response_typed::<_, ClaimedRun>(
+                    &format!("{ANALYSIS_ROOT}/runs/{id}/claim"),
+                    &csrf,
+                    &EmptyRequest {},
+                    "接管未完成训练",
+                ).await {
+                    Ok(claim) => {
+                        current.set(claim.run.current_question.min(19));
+                        controller.set(Some(claim.control_token));
+                        if let Some(storage) = web_sys::window()
+                            .and_then(|w| w.local_storage().ok().flatten()) {
+                            let _ = storage.set_item("hyz_comprehensive_active_run", &id);
+                            let _ = storage.remove_item(COMPREHENSIVE_READY_KEY);
+                        }
+                        ready_id.set(None);
+                        run.set(Some(claim.run));
+                    }
+                    Err(e) => error.set(Some(format!("恢复训练失败：{e}"))),
+                }
+                busy.set(false);
+            });
+        })
+    };
+    let pause_and_exit = {
+        let run = run.clone();
+        let controller = controller.clone();
+        let busy = busy.clone();
+        let error = error.clone();
+        let on_exit = props.on_exit.clone();
+        let csrf = props.csrf.clone();
+        Callback::from(move |_| {
+            if *busy { return; }
+            let Some(active) = (*run).clone() else { on_exit.emit(()); return };
+            // Already paused: simply leave, without accidentally resuming.
+            if active.paused_remaining_ms.is_some() { on_exit.emit(()); return; }
+            let Some(token) = (*controller).clone() else {
+                error.set(Some("无法确认控制权，暂停失败；请重新进入训练".into()));
+                return;
+            };
+            busy.set(true);
+            let busy = busy.clone();
+            let error = error.clone();
+            let on_exit = on_exit.clone();
+            let csrf = csrf.clone();
+            spawn_local(async move {
+                match post_json_response_typed::<_, AnalysisRun>(
+                    &format!("{ANALYSIS_ROOT}/runs/{}/pause",active.id),
+                    &csrf,
+                    &ControlRequest { control_token: token },
+                    "暂停并退出",
+                ).await {
+                    Ok(_) => on_exit.emit(()),
+                    Err(e) => error.set(Some(format!("暂停失败，答题仍在计时：{e}"))),
+                }
+                busy.set(false);
+            });
+        })
+    };
     // The same 60:40 question workspace is reused for redo. The server
     // always clones the original groups into a separate ready run.
     let retry_paper = {
@@ -910,7 +990,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         <p class="mt-3 text-base-content/60">{"已隐藏材料和题目，暂停期间不能答题。刷新页面仍保持暂停。"}</p>
                         <p class="my-5 font-mono text-3xl">{format!("{:02}:{:02}",active.paused_remaining_ms.unwrap_or(0)/60000,(active.paused_remaining_ms.unwrap_or(0)/1000)%60)}</p>
                         <div class="flex justify-center gap-3">
-                            <button type="button" class="btn btn-outline" data-testid="analysis-exit" onclick={exit.clone()}>{"← 返回专项"}</button>
+                            <button type="button" class="btn btn-outline" data-testid="analysis-exit" onclick={pause_and_exit.clone()}>{"← 退出训练"}</button>
                             <button class="btn btn-primary" disabled={*busy} onclick={toggle_pause}>{"继续计时"}</button>
                         </div>
                         {if let Some(msg)=(*error).clone(){html!{<p class="mt-4 text-error text-sm">{msg}</p>}}else{Html::default()}}
@@ -979,7 +1059,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 <header class="flex shrink-0 items-center justify-between gap-2 border-b border-base-content/10 pb-2">
                     <div class="flex min-w-0 items-center gap-2">
                         <button type="button" class="btn btn-ghost btn-sm" data-testid="analysis-exit"
-                            onclick={exit.clone()}>{"← 返回专项"}</button>
+                            onclick={pause_and_exit.clone()}>{"← 暂停并退出"}</button>
                         <strong class="truncate text-sm">{"资料分析综合训练"}</strong>
                         <span class="hidden text-xs text-base-content/60 sm:inline">{format!("第 {}/20 题 · 材料 {}/4",index+1,group_index+1)}</span>
                     </div>
@@ -1029,6 +1109,33 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 <h2 class="text-xl font-bold">{"资料分析综合训练"}</h2>
                 <p class="mt-1 text-sm text-base-content/60">{"参考历年行测真题组织模拟统计数据 · 4份材料 × 每份5题 · 20分钟"}</p>
                 <div class="mt-5 grid gap-3">
+                    if !unfinished.is_empty() {
+                        <div class="space-y-3 rounded-box border border-primary/30 bg-primary/5 p-4" data-testid="analysis-unfinished">
+                            <h3 class="font-semibold">{"未完成的综合训练 · 多设备共享"}</h3>
+                            <p class="text-xs text-base-content/65">{"以下进度保存在 RK3568。手机或电脑点击继续将接管答题权限，原设备不能再提交答案。"}</p>
+                            {for unfinished.iter().map(|item| {
+                                let id = item.id.clone();
+                                let resume = continue_unfinished.clone();
+                                let state = if item.status == "ready" { "尚未开始" }
+                                    else if item.paused_remaining_ms.is_some() { "已暂停" }
+                                    else if item.deadline_at_ms.is_some_and(|deadline| deadline as f64 <= Date::now()) { "时间已到" }
+                                    else { "进行中" };
+                                html! {
+                                    <div class="flex flex-wrap items-center justify-between gap-2 rounded-box bg-base-100 p-3" key={item.id.clone()}>
+                                        <div>
+                                            <div class="font-semibold text-sm">{format!("{} · 已作答 {}/20 题",state,item.answered)}</div>
+                                            <p class="text-xs text-base-content/60">{format!("上次位于第{}题",item.current_question+1)}</p>
+                                        </div>
+                                        <button type="button" class="btn btn-primary btn-sm" data-testid="analysis-resume"
+                                            disabled={*busy}
+                                            onclick={Callback::from(move |_|resume.emit(id.clone()))}>
+                                            {if item.status == "ready" { "开始训练" } else { "继续 / 接管训练" }}
+                                        </button>
+                                    </div>
+                                }
+                            })}
+                        </div>
+                    }
                     <button class="btn btn-outline w-full" type="button" onclick={{let history_open=history_open.clone();Callback::from(move |_|history_open.set(true))}}>{"查看练习历史"}</button>
                     <div class="rounded-box border border-base-content/15 p-4 space-y-3">
                         <p class="font-semibold">{"选择本轮错题分类"}</p>
