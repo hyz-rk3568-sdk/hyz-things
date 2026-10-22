@@ -3105,6 +3105,18 @@ mod tests {
         assert!(is_post_path(
             "/api/v1/study/data-analysis/runs/550e8400-e29b-41d4-a716-446655440000/retry"
         ));
+        assert!(is_post_path(
+            "/api/v1/study/data-analysis/runs/550e8400-e29b-41d4-a716-446655440000/claim"
+        ));
+        assert!(is_post_path(
+            "/api/v1/study/data-analysis/runs/550e8400-e29b-41d4-a716-446655440000/position"
+        ));
+        assert!(!is_post_path(
+            "/api/v1/study/data-analysis/runs/not-a-uuid/claim"
+        ));
+        assert!(!is_post_path(
+            "/api/v1/study/data-analysis/runs/550e8400-e29b-41d4-a716-446655440000/claim/extra"
+        ));
         assert!(!is_post_path(
             "/api/v1/study/data-analysis/runs/not-a-uuid/retry"
         ));
