@@ -317,6 +317,50 @@ fn as_error(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
 
+/// Build a graded view from saved answers without changing the run or requiring
+/// the editing lease. Callers must check submission status before history reads.
+fn grade_run(
+    id: &str,
+    groups: Vec<QuestionGroup>,
+    answers: Vec<Option<usize>>,
+) -> Result<RunResult, String> {
+    if groups.len() != QUIZ_GROUPS
+        || groups.iter().any(|g| g.questions.len() != QUIZ_PER_GROUP)
+        || answers.len() != QUIZ_GROUPS * QUIZ_PER_GROUP
+    {
+        return Err("训练题量错误，不能交卷".into());
+    }
+    let mut questions = Vec::with_capacity(QUIZ_GROUPS * QUIZ_PER_GROUP);
+    for (group_index, group) in groups.iter().enumerate() {
+        for (local_index, q) in group.questions.iter().enumerate() {
+            let index = group_index * QUIZ_PER_GROUP + local_index;
+            questions.push(GradedQuestion {
+                number: index + 1,
+                question: q.question.clone(),
+                options: q.options.clone(),
+                chosen: answers[index],
+                correct_index: q.correct_index,
+                answer: q.answer.clone(),
+                explanation: q.explanation.clone(),
+                topic: group.material.topic.clone(),
+                skill: q.skill.clone(),
+                evidence: q.evidence.clone(),
+            });
+        }
+    }
+    let correct = questions
+        .iter()
+        .filter(|q| q.chosen == Some(q.correct_index))
+        .count();
+    Ok(RunResult {
+        id: id.into(),
+        correct,
+        total: QUIZ_GROUPS * QUIZ_PER_GROUP,
+        questions,
+        materials: groups.into_iter().map(|g| g.material).collect(),
+    })
+}
+
 impl DataAnalysisService {
     pub fn new(pool: SqlitePool, config: Option<CodexConfig>) -> Result<Self, String> {
         Ok(Self {
@@ -1055,30 +1099,7 @@ impl DataAnalysisService {
     ) -> Result<RunResult, String> {
         self.check_control(id, token).await?;
         let (groups, answers, status, _started) = self.fetch_row(id).await?;
-        if groups.len() != QUIZ_GROUPS
-            || groups.iter().any(|g| g.questions.len() != QUIZ_PER_GROUP)
-            || answers.len() != QUIZ_GROUPS * QUIZ_PER_GROUP
-        {
-            return Err("训练题量错误，不能交卷".into());
-        }
-        let mut questions = Vec::with_capacity(QUIZ_GROUPS * QUIZ_PER_GROUP);
-        for (group_index, group) in groups.iter().enumerate() {
-            for (local_index, q) in group.questions.iter().enumerate() {
-                let index = group_index * QUIZ_PER_GROUP + local_index;
-                questions.push(GradedQuestion {
-                    number: index + 1,
-                    question: q.question.clone(),
-                    options: q.options.clone(),
-                    chosen: answers[index],
-                    correct_index: q.correct_index,
-                    answer: q.answer.clone(),
-                    explanation: q.explanation.clone(),
-                    topic: group.material.topic.clone(),
-                    skill: q.skill.clone(),
-                    evidence: q.evidence.clone(),
-                });
-            }
-        }
+        let result = grade_run(id, groups, answers)?;
         if status != "submitted" {
             let mut txn = self.pool.begin().await.map_err(as_error)?;
             let updated = sqlx::query(
@@ -1096,7 +1117,7 @@ impl DataAnalysisService {
             if updated.rows_affected() != 1 {
                 return Err("训练已由其他设备接管或已交卷".into());
             }
-            for q in &questions {
+            for q in &result.questions {
                 sqlx::query("INSERT OR IGNORE INTO data_analysis_results(run_id,question_no,topic,skill,is_correct,elapsed_ms) VALUES(?,?,?,?,?,?)")
                     .bind(id).bind(q.number as i64).bind(&q.topic).bind(&q.skill)
                     .bind((q.chosen==Some(q.correct_index)) as i64).bind(0i64)
@@ -1104,17 +1125,7 @@ impl DataAnalysisService {
             }
             txn.commit().await.map_err(as_error)?;
         }
-        let correct = questions
-            .iter()
-            .filter(|q| q.chosen == Some(q.correct_index))
-            .count();
-        Ok(RunResult {
-            id: id.into(),
-            correct,
-            total: QUIZ_GROUPS * QUIZ_PER_GROUP,
-            questions,
-            materials: groups.into_iter().map(|g| g.material).collect(),
-        })
+        Ok(result)
     }
 
     pub async fn pause_toggle(&self, id: &str) -> Result<RunView, String> {
@@ -1154,11 +1165,11 @@ impl DataAnalysisService {
     }
 
     pub async fn result(&self, id: &str) -> Result<RunResult, String> {
-        let (_groups, _answers, status, _started) = self.fetch_row(id).await?;
+        let (groups, answers, status, _started) = self.fetch_row(id).await?;
         if status != "submitted" {
             return Err("训练尚未交卷".into());
         }
-        self.submit(id).await
+        grade_run(id, groups, answers)
     }
 
     pub async fn history(&self) -> Result<Vec<ComprehensiveHistoryEntry>, String> {
@@ -1608,6 +1619,86 @@ mod tests {
             ipad.user_prompt_settings().await.unwrap().user_prompt,
             DEFAULT_USER_PROMPT
         );
+    }
+
+    #[tokio::test]
+    async fn submitted_claimed_paper_history_is_read_only_without_controller_token() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let group = QuestionGroup {
+            version: 4,
+            material: Material {
+                section: "测试章节".into(),
+                topic: "测试主题".into(),
+                subtopic: "测试子主题".into(),
+                text: "测试统计材料".into(),
+                source_url: "practice-test".into(),
+            },
+            questions: (0..QUIZ_PER_GROUP)
+                .map(|index| VerifiedQuestion {
+                    question: format!("第{}题", index + 1),
+                    options: ["A".into(), "B".into(), "C".into(), "D".into()],
+                    correct_index: 1,
+                    answer: "B".into(),
+                    explanation: "历史解析".into(),
+                    skill: "基期量".into(),
+                    evidence: "原始统计数据".into(),
+                })
+                .collect(),
+        };
+        let id = Uuid::now_v7().to_string();
+        sqlx::query(
+            "INSERT INTO data_analysis_runs (id,groups_json,answers_json,status,created_at_ms)
+             VALUES (?,?,?,'ready',?)",
+        )
+        .bind(&id)
+        .bind(serde_json::to_string(&vec![group; QUIZ_GROUPS]).unwrap())
+        .bind(serde_json::to_string(&vec![None::<usize>; QUIZ_GROUPS * QUIZ_PER_GROUP]).unwrap())
+        .bind(now_ms())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let service = DataAnalysisService::new(pool.clone(), None).unwrap();
+        let claimed = service.claim(&id).await.unwrap();
+        assert!(
+            service.result(&id).await.is_err(),
+            "active answers stay hidden"
+        );
+        service
+            .answer_controlled(&id, 1, 1, Some(&claimed.control_token))
+            .await
+            .unwrap();
+        let submitted = service
+            .submit_controlled(&id, Some(&claimed.control_token))
+            .await
+            .unwrap();
+        assert_eq!(submitted.correct, 1);
+        let before: (String, String, i64) = sqlx::query_as(
+            "SELECT status,controller_token,ended_at_ms FROM data_analysis_runs WHERE id=?",
+        )
+        .bind(&id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let history = service.history().await.unwrap();
+        assert!(history.iter().any(|entry| entry.id == id));
+        let reviewed = service.result(&id).await.expect("read submitted history");
+        assert_eq!(reviewed.correct, submitted.correct);
+        assert_eq!(reviewed.questions.len(), QUIZ_GROUPS * QUIZ_PER_GROUP);
+        assert_eq!(reviewed.questions[0].explanation, "历史解析");
+        let after: (String, String, i64) = sqlx::query_as(
+            "SELECT status,controller_token,ended_at_ms FROM data_analysis_runs WHERE id=?",
+        )
+        .bind(&id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(before, after, "history read must not update submitted run");
     }
 
     #[tokio::test]
