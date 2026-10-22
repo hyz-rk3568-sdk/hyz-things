@@ -181,8 +181,14 @@ test("transparent calculation ink overlays the question, supports history and re
   await expect(canvas).toBeVisible();
   await expect(canvas).toHaveCSS("touch-action", "none");
   await expect(canvas).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-  await expect(canvas).toHaveAttribute("width", "900");
-  await expect(canvas).toHaveAttribute("height", "450");
+  // Responsive full-screen scratchpad scales its backing pixels to the
+  // displayed card size (and devicePixelRatio), rather than fixed 900x450.
+  const bitmap = await canvas.evaluate(el=>{
+    const c=el as HTMLCanvasElement;
+    return {width:c.width,height:c.height,displayWidth:c.clientWidth,displayHeight:c.clientHeight};
+  });
+  expect(bitmap.width).toBeGreaterThanOrEqual(bitmap.displayWidth);
+  expect(bitmap.height).toBeGreaterThanOrEqual(bitmap.displayHeight);
   await expect(page.getByTestId("calculation-layout")).toHaveCSS("user-select", "none");
   await expect(page.getByTestId("calculation-expression")).toHaveCSS("user-select", "none");
   await expect(page.getByTestId("calculation-answer").first()).toHaveCSS("user-select", "none");
@@ -350,7 +356,12 @@ test("wrong-card practice filters, reveals, self-grades and never writes FSRS", 
   await expect(canvas).toBeHidden();
   await page.getByTestId("calculation-scratchpad-toggle").click();
   await expect(canvas).toBeVisible();
-  await expect(canvas).toHaveAttribute("width", "900");
+  const practiceBitmap=await canvas.evaluate(el=>{
+    const c=el as HTMLCanvasElement;
+    return {width:c.width,height:c.height,displayWidth:c.clientWidth,displayHeight:c.clientHeight};
+  });
+  expect(practiceBitmap.width).toBeGreaterThanOrEqual(practiceBitmap.displayWidth);
+  expect(practiceBitmap.height).toBeGreaterThanOrEqual(practiceBitmap.displayHeight);
   await expect(canvas).toHaveCSS("touch-action", "none");
   const blank = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
   const bounds = await canvas.boundingBox();
