@@ -194,6 +194,10 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     let history_open = use_state(|| false);
     let manual_skills = use_state(Vec::<String>::new);
     let skills_expanded = use_state(|| false);
+    let user_prompt = use_state(String::new);
+    let prompt_settings = use_state(|| None::<UserPromptSettings>);
+    let prompt_busy = use_state(|| false);
+    let prompt_error = use_state(|| None::<String>);
     let reviewing_history = use_state(|| false);
     let review_run_id = use_state(String::new);
     let unfinished = use_state(Vec::<UnfinishedRun>::new);
@@ -210,6 +214,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let preparing = preparing.clone();
         let loading_status = loading_status.clone();
         let manual_skills = manual_skills.clone();
+        let user_prompt = user_prompt.clone();
+        let prompt_settings = prompt_settings.clone();
+        let prompt_error = prompt_error.clone();
         let unfinished = unfinished.clone();
         let controller = controller.clone();
         let current = current.clone();
@@ -226,6 +233,16 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             }
             let history = history.clone();
             spawn_local(async move {
+                match fetch_json_typed::<UserPromptSettings>(
+                    &format!("{ANALYSIS_ROOT}/user-prompt"),
+                    "读取出题要求",
+                ).await {
+                    Ok(saved) => {
+                        user_prompt.set(saved.user_prompt.clone());
+                        prompt_settings.set(Some(saved));
+                    }
+                    Err(e) => prompt_error.set(Some(format!("读取出题要求失败：{e}"))),
+                }
                 let status_result = fetch_json_typed::<AnalysisStatus>(
                     &format!("{ANALYSIS_ROOT}/status"),
                     "综合训练状态",
@@ -468,6 +485,80 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             || ()
         });
     }
+    let edit_user_prompt = {
+        let user_prompt = user_prompt.clone();
+        Callback::from(move |event: web_sys::InputEvent| {
+            use yew::TargetCast;
+            let textarea: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
+            user_prompt.set(textarea.value());
+        })
+    };
+    let save_user_prompt = {
+        let csrf = props.csrf.clone();
+        let user_prompt = user_prompt.clone();
+        let prompt_busy = prompt_busy.clone();
+        let prompt_settings = prompt_settings.clone();
+        let prompt_error = prompt_error.clone();
+        Callback::from(move |_| {
+            if *prompt_busy { return; }
+            prompt_busy.set(true);
+            prompt_error.set(None);
+            let csrf = csrf.clone();
+            let payload = (*user_prompt).clone();
+            let user_prompt = user_prompt.clone();
+            let prompt_busy = prompt_busy.clone();
+            let prompt_settings = prompt_settings.clone();
+            let prompt_error = prompt_error.clone();
+            spawn_local(async move {
+                match post_json_response_typed::<_, UserPromptSettings>(
+                    &format!("{ANALYSIS_ROOT}/user-prompt"),
+                    &csrf,
+                    &UserPromptUpdate { user_prompt: Some(payload) },
+                    "保存出题要求",
+                ).await {
+                    Ok(saved) => {
+                        user_prompt.set(saved.user_prompt.clone());
+                        prompt_settings.set(Some(saved));
+                    }
+                    Err(e) => prompt_error.set(Some(format!("保存失败：{e}"))),
+                }
+                prompt_busy.set(false);
+            });
+        })
+    };
+    let reset_user_prompt = {
+        let csrf = props.csrf.clone();
+        let user_prompt = user_prompt.clone();
+        let prompt_busy = prompt_busy.clone();
+        let prompt_settings = prompt_settings.clone();
+        let prompt_error = prompt_error.clone();
+        Callback::from(move |_| {
+            if *prompt_busy { return; }
+            prompt_busy.set(true);
+            prompt_error.set(None);
+            let csrf = csrf.clone();
+            let user_prompt = user_prompt.clone();
+            let prompt_busy = prompt_busy.clone();
+            let prompt_settings = prompt_settings.clone();
+            let prompt_error = prompt_error.clone();
+            spawn_local(async move {
+                match post_json_response_typed::<_, UserPromptSettings>(
+                    &format!("{ANALYSIS_ROOT}/user-prompt"),
+                    &csrf,
+                    &UserPromptUpdate { user_prompt: None },
+                    "恢复默认出题要求",
+                ).await {
+                    Ok(saved) => {
+                        user_prompt.set(saved.user_prompt.clone());
+                        prompt_settings.set(Some(saved));
+                    }
+                    Err(e) => prompt_error.set(Some(format!("恢复默认失败：{e}"))),
+                }
+                prompt_busy.set(false);
+            });
+        })
+    };
+
     let start = {
         let progress = progress.clone();
         let error = error.clone();
@@ -1220,6 +1311,36 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         }
                         <p class="text-xs text-base-content/60">{"至少选择一个分类（最多12类）；每类保底1题，其余题目来自资料分析知识点卡片。选择会保存在本设备浏览器中。"}</p>
                     </div>
+                    <details class="rounded-box border border-base-content/15 bg-base-100/50 p-3" data-testid="analysis-user-prompt">
+                        <summary class="cursor-pointer select-none font-semibold" data-testid="analysis-user-prompt-toggle">
+                            {"出题要求"}
+                            <span class="ml-2 text-xs font-normal text-base-content/60">
+                                {if prompt_settings.as_ref().as_ref().is_some_and(|v| v.customized) {"自定义版本 · 点击编辑"} else {"默认版本 · 点击编辑"}}
+                            </span>
+                        </summary>
+                        <div class="mt-3 space-y-3">
+                            <p class="text-xs text-base-content/65">
+                                {"决定材料风格、题目难度和出题限制。错题保底、知识点来源及固定结构由系统控制，不会受本栏内容影响。"}
+                            </p>
+                            <textarea class="textarea textarea-bordered w-full min-h-48 font-mono text-sm leading-6"
+                                data-testid="analysis-user-prompt-editor" maxlength="8000"
+                                aria-label="用户出题要求" value={(*user_prompt).clone()}
+                                oninput={edit_user_prompt} disabled={prompt_settings.is_none() || *prompt_busy}>
+                            </textarea>
+                            if let Some(message) = (*prompt_error).clone() {
+                                <p role="alert" class="text-error text-sm">{message}</p>
+                            }
+                            <div class="flex flex-wrap justify-end gap-2">
+                                <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-user-prompt-reset"
+                                    disabled={*prompt_busy || prompt_settings.is_none() || props.csrf.is_empty()}
+                                    onclick={reset_user_prompt}>{"恢复默认"}</button>
+                                <button type="button" class="btn btn-primary btn-sm" data-testid="analysis-user-prompt-save"
+                                    disabled={*prompt_busy || prompt_settings.is_none() || user_prompt.trim().is_empty() || props.csrf.is_empty()}
+                                    onclick={save_user_prompt}>{if *prompt_busy {"保存中…"} else {"保存出题要求"}}</button>
+                            </div>
+                            <p class="text-xs text-base-content/60">{"保存至 RK3568，可跨设备使用；正在生成的试卷继续采用启动时的版本。"}</p>
+                        </div>
+                    </details>
                     if let Some(info)=(*status).clone(){
                         <p class="text-sm text-base-content/65">{format!("出题引擎：{} · 每次主动出题均生成新材料和20道新题",
                             info.model.as_deref().unwrap_or("未配置"))}</p>
