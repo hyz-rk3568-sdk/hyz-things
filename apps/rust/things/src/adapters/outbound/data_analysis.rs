@@ -393,7 +393,10 @@ impl DataAnalysisService {
         .await
         .map_err(as_error)?;
         Ok(match saved {
-            Some(user_prompt) => UserPromptSettings { user_prompt, customized: true },
+            Some(user_prompt) => UserPromptSettings {
+                user_prompt,
+                customized: true,
+            },
             None => UserPromptSettings {
                 user_prompt: DEFAULT_USER_PROMPT.to_owned(),
                 customized: false,
@@ -402,14 +405,13 @@ impl DataAnalysisService {
     }
 
     /// None restores the default. User input can never replace system constraints.
-    pub async fn save_user_prompt(
-        &self,
-        text: Option<&str>,
-    ) -> Result<UserPromptSettings, String> {
+    pub async fn save_user_prompt(&self, text: Option<&str>) -> Result<UserPromptSettings, String> {
         if let Some(prompt) = text {
             if prompt.trim().is_empty()
                 || prompt.len() > 8000
-                || prompt.chars().any(|c| c.is_control() && c != '\n' && c != '\r' && c != '\t')
+                || prompt
+                    .chars()
+                    .any(|c| c.is_control() && c != '\n' && c != '\r' && c != '\t')
             {
                 return Err("出题要求不能为空，且不能超过8000字节".into());
             }
@@ -610,7 +612,11 @@ impl DataAnalysisService {
                     let worker = worker.clone();
                     let plan = Arc::clone(&plan);
                     let user_prompt = Arc::clone(&user_prompt);
-                    async move { worker.generate_group(&material, &plan, &user_prompt, slot).await }
+                    async move {
+                        worker
+                            .generate_group(&material, &plan, &user_prompt, slot)
+                            .await
+                    }
                 })
                 .await
                 {
@@ -1584,17 +1590,26 @@ mod tests {
             .await
             .unwrap();
         assert!(customized.customized);
-        assert_eq!(phone.user_prompt_settings().await.unwrap().user_prompt,
-            "只出带合理干扰项的真实模拟数据题。");
+        assert_eq!(
+            phone.user_prompt_settings().await.unwrap().user_prompt,
+            "只出带合理干扰项的真实模拟数据题。"
+        );
         assert!(phone.save_user_prompt(Some(" ")).await.is_err());
-        assert!(phone.save_user_prompt(Some(&"x".repeat(8001))).await.is_err());
+        assert!(phone
+            .save_user_prompt(Some(&"x".repeat(8001)))
+            .await
+            .is_err());
         assert!(phone.save_user_prompt(Some("提示\0注入")).await.is_err());
-        assert_eq!(phone.user_prompt_settings().await.unwrap().user_prompt,
-            "只出带合理干扰项的真实模拟数据题。");
+        assert_eq!(
+            phone.user_prompt_settings().await.unwrap().user_prompt,
+            "只出带合理干扰项的真实模拟数据题。"
+        );
         let restored = phone.save_user_prompt(None).await.unwrap();
         assert!(!restored.customized);
-        assert_eq!(ipad.user_prompt_settings().await.unwrap().user_prompt,
-            DEFAULT_USER_PROMPT);
+        assert_eq!(
+            ipad.user_prompt_settings().await.unwrap().user_prompt,
+            DEFAULT_USER_PROMPT
+        );
     }
 
     #[tokio::test]
