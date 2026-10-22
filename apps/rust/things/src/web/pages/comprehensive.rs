@@ -371,10 +371,6 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             },
         );
     }
-    let exit = {
-        let on_exit = props.on_exit.clone();
-        Callback::from(move |_| on_exit.emit(()))
-    };
     let submit = {
         let controller = controller.clone();
         let run = run.clone();
