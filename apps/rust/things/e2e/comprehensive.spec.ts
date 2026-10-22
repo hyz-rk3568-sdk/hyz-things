@@ -33,7 +33,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
         {id:"fixture-run",started_at_ms:started,ended_at_ms:started+30000,elapsed_ms:30000,correct:1,total:20,topics:["经济","农业","工业","服务业"]}
       ] : [];
     } else if (path.endsWith("/status")) {
-      result={configured:true,model:"mock-compatible-model",cached_sources:1,verified_groups:4,weak_skills:["基期量"],available_skills:["乘积增长率","混合增长率"],preparing_job_id:null};
+      result={configured:true,model:"mock-compatible-model",cached_sources:1,verified_groups:4,available_skills:["乘积增长率","混合增长率"],preparing_job_id:null};
     } else if (path.endsWith("/prepare") && route.request().method()==="POST") {
       manualSkillsSubmitted=(route.request().postDataJSON() as {manual_skills:string[]}).manual_skills;
       result={job_id:"fixture-task"};
@@ -72,8 +72,10 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(page.getByTestId("analysis-setup")).toBeVisible();
   await expect(page.getByTestId("analysis-setup")).toContainText("20分钟");
   await expect(page.getByTestId("analysis-setup")).toContainText("mock-compatible-model");
+  await expect(page.getByTestId("analysis-start")).toBeDisabled();
   await page.getByTestId("analysis-skill-expand").click();
   await page.getByTestId("analysis-skill-options").getByRole("button",{name:"乘积增长率"}).click();
+  await expect(page.getByTestId("analysis-start")).toBeEnabled();
   await page.getByTestId("analysis-start").click();
   expect(manualSkillsSubmitted).toEqual(["乘积增长率"]);
   await expect(page.getByTestId("analysis-ready")).toBeVisible();
@@ -232,7 +234,7 @@ test("AI job survives leaving training; ready paper is untimed until explicit en
     let data:unknown={};
     if(path.endsWith("/status")){
       data={configured:true,model:"codex",cached_sources:3,verified_groups:4,
-        weak_skills:[],available_skills:[],preparing_job_id:jobCreated&&!generated?"same-task":null};
+        available_skills:["乘积增长率"],preparing_job_id:jobCreated&&!generated?"same-task":null};
     }else if(path.endsWith("/history")){
       data=[];
     }else if(path.endsWith("/prepare")&&route.request().method()==="POST"){
@@ -251,6 +253,9 @@ test("AI job survives leaving training; ready paper is untimed until explicit en
   });
   await page.goto("/#/study/training");
   await page.getByTestId("training-mode-comprehensive").click();
+  await expect(page.getByTestId("analysis-start")).toBeDisabled();
+  await page.getByTestId("analysis-skill-expand").click();
+  await page.getByTestId("analysis-skill-options").getByRole("button",{name:"乘积增长率"}).click();
   await expect(page.getByTestId("analysis-start")).toBeEnabled();
   await page.getByTestId("analysis-start").click();
   await expect(page.getByTestId("analysis-start")).toBeDisabled();
