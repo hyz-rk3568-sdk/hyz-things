@@ -27,9 +27,6 @@ fn analysis_panes(material: &hyz_things::domain::data_analysis::Material, questi
                 <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y" data-testid="analysis-material-scroll">
                     <div class="whitespace-pre-wrap px-4 pb-4 pt-2 text-base leading-8">{material.text.clone()}</div>
                 </div>
-                if material.source_url.starts_with("https://") {
-                    <a class="shrink-0 px-3 py-2 text-xs underline" href={material.source_url.clone()} target="_blank" rel="noopener noreferrer">{"查看旧版材料参考链接"}</a>
-                }
             </article>
             <article class="min-h-0 min-w-0 overflow-y-auto overscroll-contain touch-pan-y rounded-box bg-base-100"
                 data-testid="analysis-question">{question}</article>
