@@ -42,6 +42,32 @@ pub(crate) struct AnalysisRun {
     pub duration_seconds: u64,
     pub groups: Vec<ViewGroup>,
     pub answers: Vec<Option<usize>>,
+    #[serde(default)]
+    pub current_question: usize,
+}
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct ClaimedRun {
+    pub run: AnalysisRun,
+    pub control_token: String,
+}
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct UnfinishedRun {
+    pub id: String,
+    pub status: String,
+    pub answered: usize,
+    pub current_question: usize,
+    pub deadline_at_ms: Option<i64>,
+    pub paused_remaining_ms: Option<i64>,
+    pub created_at_ms: i64,
+}
+#[derive(Serialize)]
+pub(crate) struct ControlRequest {
+    pub control_token: String,
+}
+#[derive(Serialize)]
+pub(crate) struct PositionRequest {
+    pub control_token: String,
+    pub question: usize,
 }
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct GradedQuestion {
@@ -87,4 +113,5 @@ pub(crate) struct RetryRun {
 #[derive(Serialize)]
 pub(crate) struct SaveAnswer {
     pub choice: usize,
+    pub control_token: String,
 }
