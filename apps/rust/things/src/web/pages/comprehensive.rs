@@ -185,6 +185,8 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     let skills_expanded = use_state(|| false);
     let reviewing_history = use_state(|| false);
     let review_run_id = use_state(String::new);
+    let unfinished = use_state(Vec::<UnfinishedRun>::new);
+    let controller = use_state(|| None::<String>);
 
     {
         let status = status.clone();
@@ -196,6 +198,10 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let preparing = preparing.clone();
         let loading_status = loading_status.clone();
         let manual_skills = manual_skills.clone();
+        let unfinished = unfinished.clone();
+        let controller = controller.clone();
+        let current = current.clone();
+        let csrf = props.csrf.clone();
         use_effect_with((), move |_| {
             if let Some(raw) = web_sys::window()
                 .and_then(|w| w.local_storage().ok().flatten())
@@ -242,6 +248,14 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     ));
                 }
                 loading_status.set(false);
+                if let Ok(items) = fetch_json_typed::<Vec<UnfinishedRun>>(
+                    &format!("{ANALYSIS_ROOT}/unfinished"),
+                    "查找未完成训练",
+                )
+                .await
+                {
+                    unfinished.set(items);
+                }
                 if let Ok(items) = fetch_json_typed::<Vec<ComprehensiveHistoryEntry>>(
                     &format!("{ANALYSIS_ROOT}/history"),
                     "综合训练历史",
@@ -250,18 +264,27 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 {
                     history.set(items);
                 }
-                // Restore a started run after iPad Safari reload.
+                // Local Safari reload reclaims the same server record. Other
+                // devices discover it via /unfinished and request takeover.
                 if let Some(id) = web_sys::window()
                     .and_then(|w| w.local_storage().ok().flatten())
                     .and_then(|s| s.get_item("hyz_comprehensive_active_run").ok().flatten())
                 {
-                    if let Ok(v) = fetch_json_typed::<AnalysisRun>(
-                        &format!("{ANALYSIS_ROOT}/runs/{id}"),
+                    if let Ok(claim) = post_json_response_typed::<_, ClaimedRun>(
+                        &format!("{ANALYSIS_ROOT}/runs/{id}/claim"),
+                        &csrf,
+                        &EmptyRequest {},
                         "恢复综合训练",
                     )
                     .await
                     {
-                        run.set(Some(v));
+                        current.set(claim.run.current_question.min(19));
+                        controller.set(Some(claim.control_token));
+                        run.set(Some(claim.run));
+                    } else if let Some(storage) =
+                        web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+                    {
+                        let _ = storage.remove_item("hyz_comprehensive_active_run");
                     }
                 }
             });
@@ -298,6 +321,34 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 {
                     material.set_scroll_top(0);
                 }
+            }
+            || ()
+        });
+    }
+    // Server records the current question, not a browser-local guess.
+    // Only the holder of the most recently issued control token may write it.
+    {
+        let error = error.clone();
+        let csrf = props.csrf.clone();
+        let id = run.as_ref().as_ref().map(|r| r.id.clone());
+        let token = (*controller).clone();
+        use_effect_with((id, token, *current), move |(id, token, position)| {
+            if let (Some(id), Some(token)) = (id.clone(), token.clone()) {
+                let error = error.clone();
+                let csrf = csrf.clone();
+                let position = *position;
+                spawn_local(async move {
+                    if let Err(e) = post_json_typed(
+                        &format!("{ANALYSIS_ROOT}/runs/{id}/position"),
+                        &csrf,
+                        &PositionRequest { control_token: token, question: position },
+                        "保存当前题号",
+                    )
+                    .await
+                    {
+                        error.set(Some(format!("进度同步失败：{e}")));
+                    }
+                });
             }
             || ()
         });
