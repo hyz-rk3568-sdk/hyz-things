@@ -51,14 +51,14 @@ pub fn select_material_batch(
 ) -> Vec<Material> {
     let mut seen = completed
         .iter()
-        .map(|material| material.topic.as_str())
+        .map(|material| material.topic.clone())
         .collect::<std::collections::HashSet<_>>();
     let mut selected = Vec::new();
     for material in ordered {
         if selected.len() == limit {
             break;
         }
-        if attempted.contains(&material.topic) || !seen.insert(&material.topic) {
+        if attempted.contains(&material.topic) || !seen.insert(material.topic.clone()) {
             continue;
         }
         selected.push(material.clone());
