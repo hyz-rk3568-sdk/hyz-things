@@ -1961,7 +1961,7 @@ pub(crate) fn custom_countdown_panel() -> Html {
     html! {
         <section id="custom-countdown" class={EXAM_SECTION} role="region" aria-labelledby="custom-countdown-title">
             <span class={EXAM_DECORATION} aria-hidden="true"></span>
-            <h2 id="custom-countdown-title" class={SECTION_TITLE}>{"自定义倒计时"}</h2>
+            <h2 id="custom-countdown-title" class={SECTION_TITLE}>{"学习计时器 · 上午 / 下午 / 晚上"}</h2>
             if let Some(message) = *pip_notice {
                 <p class={EXAM_PIP_NOTICE} data-custom-countdown-notice="" role="status" aria-live="polite">{message}</p>
             }
