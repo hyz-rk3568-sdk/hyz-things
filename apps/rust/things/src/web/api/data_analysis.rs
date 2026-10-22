@@ -8,7 +8,6 @@ pub(crate) struct AnalysisStatus {
     pub model: Option<String>,
     pub cached_sources: i64,
     pub verified_groups: i64,
-    pub weak_skills: Vec<String>,
     pub available_skills: Vec<String>,
     pub preparing_job_id: Option<String>,
 }

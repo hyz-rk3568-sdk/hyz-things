@@ -34,7 +34,6 @@ struct StatusBody {
     model: Option<String>,
     cached_sources: i64,
     verified_groups: i64,
-    weak_skills: Vec<String>,
     available_skills: Vec<String>,
     preparing_job_id: Option<String>,
 }
@@ -54,7 +53,6 @@ pub(super) async fn status(State(state): State<AppState>, headers: HeaderMap) ->
         model: service.configured_model(),
         cached_sources,
         verified_groups,
-        weak_skills: service.weaknesses().await,
         available_skills: service.available_skills().await.unwrap_or_default(),
         preparing_job_id: service.preparing_job().await,
     })

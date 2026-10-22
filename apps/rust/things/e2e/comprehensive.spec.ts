@@ -16,7 +16,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
       section: ["一、综合","二、农业","三、工业和建筑业","四、服务业"][g],
       topic: topics[g],
       subtopic: "文字统计材料",
-      text: "2025年某项业务量为1200亿元，同比增长15.2%。\n\n其中地区一为480亿元，地区二为720亿元。",
+      text: Array.from({length:30},()=> "2025年某项业务量为1200亿元，同比增长15.2%。\n\n其中地区一为480亿元，地区二为720亿元。").join("\n\n"),
       source_url: `practice-theme-${g}`,
     },
     questions: Array.from({length:5},(_,j)=>({
@@ -33,7 +33,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
         {id:"fixture-run",started_at_ms:started,ended_at_ms:started+30000,elapsed_ms:30000,correct:1,total:20,topics:["经济","农业","工业","服务业"]}
       ] : [];
     } else if (path.endsWith("/status")) {
-      result={configured:true,model:"mock-compatible-model",cached_sources:1,verified_groups:4,weak_skills:["基期量"],available_skills:["乘积增长率","混合增长率"],preparing_job_id:null};
+      result={configured:true,model:"mock-compatible-model",cached_sources:1,verified_groups:4,available_skills:["乘积增长率","混合增长率"],preparing_job_id:null};
     } else if (path.endsWith("/prepare") && route.request().method()==="POST") {
       manualSkillsSubmitted=(route.request().postDataJSON() as {manual_skills:string[]}).manual_skills;
       result={job_id:"fixture-task"};
@@ -72,14 +72,24 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(page.getByTestId("analysis-setup")).toBeVisible();
   await expect(page.getByTestId("analysis-setup")).toContainText("20分钟");
   await expect(page.getByTestId("analysis-setup")).toContainText("mock-compatible-model");
+  await expect(page.getByTestId("analysis-start")).toBeDisabled();
   await page.getByTestId("analysis-skill-expand").click();
   await page.getByTestId("analysis-skill-options").getByRole("button",{name:"乘积增长率"}).click();
+  await expect(page.getByTestId("analysis-start")).toBeEnabled();
   await page.getByTestId("analysis-start").click();
   expect(manualSkillsSubmitted).toEqual(["乘积增长率"]);
   await expect(page.getByTestId("analysis-ready")).toBeVisible();
   await expect(page.getByTestId("analysis-clock")).toHaveCount(0);
   await page.getByTestId("analysis-enter").click();
   await expect(page.getByTestId("analysis-run")).toBeVisible();
+  // Starting a comprehensive paper removes the parent mode navigation,
+  // fixes the paper to the visible viewport and keeps document scroll locked.
+  await expect(page.getByRole("group",{name:"训练模式"})).toHaveCount(0);
+  await expect(page.getByTestId("analysis-exit")).toBeVisible();
+  expect(await page.getByTestId("analysis-run").evaluate(el=>{
+    const rect=el.getBoundingClientRect();
+    return Math.max(Math.abs(rect.top),Math.abs(rect.left),Math.abs(rect.right-window.innerWidth),Math.abs(rect.bottom-window.innerHeight));
+  })).toBeLessThanOrEqual(1);
   await expect(page.getByTestId("analysis-clock")).toContainText("19:");
   await page.getByTestId("analysis-clock").click();
   await expect(page.getByTestId("analysis-paused")).toBeVisible();
@@ -91,12 +101,24 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   expect(material).not.toBeNull();
   expect(question).not.toBeNull();
   expect(material!.x).toBeLessThan(question!.x);
+  expect(material!.width/(material!.width+question!.width)).toBeCloseTo(0.6,1);
   await expect(page.getByTestId("analysis-material")).toContainText("地区二为720亿元");
   await expect(page.getByTestId("analysis-material")).toContainText("模拟训练材料");
   await expect(page.getByTestId("analysis-material").getByRole("link")).toHaveCount(0);
   const passageText=await page.getByTestId("analysis-material").locator(".whitespace-pre-wrap").innerText();
   expect(passageText).toContain("\n\n");
   expect(passageText).not.toContain("模拟训练材料");
+
+  // Long passages scroll only inside the material pane. The full-page card,
+  // toolbar and question stay pinned in position.
+  const passage=page.getByTestId("analysis-material-scroll");
+  const scrollInfo=await passage.evaluate(el=>({height:el.clientHeight,total:el.scrollHeight}));
+  expect(scrollInfo.total).toBeGreaterThan(scrollInfo.height);
+  const beforeFrame=await page.getByTestId("analysis-shared-workspace").boundingBox();
+  await passage.evaluate(el=>{el.scrollTop=140;});
+  expect(await passage.evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
+  expect(await page.getByTestId("analysis-shared-workspace").boundingBox()).toEqual(beforeFrame);
+  expect(await page.evaluate(()=>window.scrollY)).toBe(0);
 
   // Exactly ONE transparent canvas and ONE toolbar cover the whole two-column
   // workspace, so the same CSS-pixel pen width applies to both sides.
@@ -141,20 +163,53 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await toggle.click();
   expect(await canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL())).toEqual(marked);
   await page.getByTestId("calculation-scratchpad-close").click();
+  // Portrait stacks two internally scrollable panes without document scroll.
+  await page.setViewportSize({width:820,height:430});
+  const portraitMaterial=await page.getByTestId("analysis-material").boundingBox();
+  const portraitQuestion=await page.getByTestId("analysis-question").boundingBox();
+  expect(portraitMaterial).not.toBeNull();
+  expect(portraitQuestion).not.toBeNull();
+  expect(portraitMaterial!.y).toBeLessThan(portraitQuestion!.y);
+  expect(portraitQuestion!.y+portraitQuestion!.height).toBeLessThanOrEqual(430);
+  expect(await page.getByTestId("analysis-question").evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);
+  await page.getByTestId("analysis-question").evaluate(el=>{el.scrollTop=80;});
+  expect(await page.getByTestId("analysis-question").evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
+  expect(await page.evaluate(()=>window.scrollY)).toBe(0);
+  await page.setViewportSize({width:1180,height:820});
   await page.getByTestId("analysis-choice").first().click();
   await expect(page.getByTestId("analysis-choice").first()).toHaveClass(/btn-primary/);
   await page.getByRole("button",{name:"下一题"}).click();
   await expect(page.getByTestId("analysis-question")).toContainText("第2题");
+  await page.getByTestId("analysis-choice").nth(1).click();
+  await expect(page.getByTestId("analysis-choice").nth(1)).toHaveClass(/btn-primary/);
   await page.getByRole("button",{name:"上一题"}).click();
   await expect(page.getByTestId("analysis-choice").first()).toHaveClass(/btn-primary/);
   await page.getByRole("button",{name:"交卷"}).click();
   await expect(page.getByTestId("analysis-result")).toBeVisible();
   await expect(page.getByTestId("analysis-result")).toContainText("1 / 20");
   await expect(page.getByTestId("analysis-result")).toContainText("第1题");
+  // Review reuses the exact reading/answer card: right is readonly with
+  // the correct answer green, wrong selection red, and explanations scrollable.
+  await expect(page.getByTestId("analysis-shared-workspace")).toBeVisible();
+  await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-state","correct");
+  await expect(page.getByTestId("analysis-explanation")).toContainText("基期量");
+  await page.getByRole("button",{name:"下一题"}).click();
+  await expect(page.getByTestId("analysis-review-choice").nth(1)).toHaveAttribute("data-state","wrong");
+  await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-state","correct");
+  await page.getByRole("button",{name:"下一题"}).click();
+  await expect(page.getByTestId("analysis-review-status")).toContainText("未答");
+  await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-state","correct");
+  await expect(page.getByTestId("analysis-review-choice").nth(1)).toHaveAttribute("data-state","neutral");
   await page.getByRole("button",{name:"查看练习历史"}).click();
   await expect(page.getByTestId("analysis-history")).toBeVisible();
   await page.getByRole("button",{name:"查看原题与解析"}).first().click();
   await expect(page.getByTestId("analysis-result")).toContainText("1 / 20");
+  await expect(page.getByTestId("analysis-shared-workspace")).toBeVisible();
+  await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-state","correct");
+  await page.getByTestId("analysis-exit").click();
+  await expect(page.getByTestId("analysis-history")).toBeVisible();
+  await page.getByRole("button",{name:"返回训练"}).click();
+  await expect(page.getByRole("group",{name:"训练模式"})).toBeVisible();
 });
 
 
@@ -179,7 +234,7 @@ test("AI job survives leaving training; ready paper is untimed until explicit en
     let data:unknown={};
     if(path.endsWith("/status")){
       data={configured:true,model:"codex",cached_sources:3,verified_groups:4,
-        weak_skills:[],available_skills:[],preparing_job_id:jobCreated&&!generated?"same-task":null};
+        available_skills:["乘积增长率"],preparing_job_id:jobCreated&&!generated?"same-task":null};
     }else if(path.endsWith("/history")){
       data=[];
     }else if(path.endsWith("/prepare")&&route.request().method()==="POST"){
@@ -198,6 +253,9 @@ test("AI job survives leaving training; ready paper is untimed until explicit en
   });
   await page.goto("/#/study/training");
   await page.getByTestId("training-mode-comprehensive").click();
+  await expect(page.getByTestId("analysis-start")).toBeDisabled();
+  await page.getByTestId("analysis-skill-expand").click();
+  await page.getByTestId("analysis-skill-options").getByRole("button",{name:"乘积增长率"}).click();
   await expect(page.getByTestId("analysis-start")).toBeEnabled();
   await page.getByTestId("analysis-start").click();
   await expect(page.getByTestId("analysis-start")).toBeDisabled();

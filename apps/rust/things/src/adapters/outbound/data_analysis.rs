@@ -19,7 +19,7 @@ use tokio::{sync::Mutex, task::JoinSet};
 use uuid::Uuid;
 
 const ENV_PATH: &str = "/userdata/hyz-things/.env";
-const NO_COMPREHENSIVE_JUDGMENT_PROMPT: &str = "硬性命题边界：本轮不出资料分析综合分析/综合判断题，即不出“下列说法正确的是”“下列说法错误的是”“根据资料可以推出的是”“以下表述符合材料的是”等需要逐项核查多个独立陈述的题。每题只围绕一个明确的数量关系、指标或比较目标，设计四个数值或同一量纲的结果选项。即使手选或自动推荐包含“综合分析与审题”错题目录，也只能借鉴该目录中的审题、年份口径辨析和速算思路，转化为具体计算/比较题；不得将该错题目录名称理解为允许出综合判断题。此禁出规则优先于错题分类覆盖和多样性要求。";
+const NO_COMPREHENSIVE_JUDGMENT_PROMPT: &str = "硬性命题边界：本轮不出资料分析综合分析/综合判断题，即不出“下列说法正确的是”“下列说法错误的是”“根据资料可以推出的是”“以下表述符合材料的是”等需要逐项核查多个独立陈述的题。每题只围绕一个明确的数量关系、指标或比较目标，设计四个数值或同一量纲的结果选项。即使所选分类包含“综合分析与审题”错题目录，也只能借鉴该目录中的审题、年份口径辨析和速算思路，转化为具体计算/比较题；不得将该错题目录名称理解为允许出综合判断题。此禁出规则优先于错题分类覆盖和多样性要求。";
 
 #[derive(Clone)]
 pub struct CodexConfig {
@@ -210,6 +210,17 @@ where
     results
 }
 
+// Reject a paper that silently mixes non-selected skills, or omits any
+// category assigned to this material. Correct answers still belong to Codex.
+fn selected_category_coverage(labels: &[&str], selected: &[String], ordinal: usize) -> bool {
+    !selected.is_empty()
+        && labels.len() == QUIZ_PER_GROUP
+        && labels.iter().all(|skill| selected.iter().any(|chosen| chosen.as_str() == *skill))
+        && selected.iter().enumerate()
+            .filter(|(index, _)| index % QUIZ_GROUPS == ordinal % QUIZ_GROUPS)
+            .all(|(_, category)| labels.iter().any(|skill| *skill == category.as_str()))
+}
+
 fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -243,67 +254,6 @@ impl DataAnalysisService {
             .map_err(as_error)?;
         Ok((sources, groups))
     }
-    /// Use the user's exact wrong-question directory names as the canonical
-    /// training taxonomy, not the model's arbitrary formula labels or tags.
-    pub async fn weaknesses(&self) -> Vec<String> {
-        let rows = match sqlx::query(
-            "SELECT f.deck_path, COUNT(*) AS cards, COALESCE(SUM(rs.lapse_count),0) AS lapses
-             FROM flashcards f LEFT JOIN flashcard_review_state rs ON rs.card_id=f.id
-             WHERE f.active=1 GROUP BY f.deck_path",
-        )
-        .fetch_all(&self.pool)
-        .await
-        {
-            Ok(rows) => rows,
-            Err(_) => return Vec::new(),
-        };
-        let mut weights = std::collections::BTreeMap::<String, i64>::new();
-        for row in rows {
-            let Ok(deck) = row.try_get::<String, _>("deck_path") else {
-                continue;
-            };
-            let Some(category) = wrong_question_category(&deck) else {
-                continue;
-            };
-            let cards = row.try_get::<i64, _>("cards").unwrap_or(0);
-            let lapses = row.try_get::<i64, _>("lapses").unwrap_or(0);
-            *weights.entry(category.to_owned()).or_default() += cards + lapses * 3;
-        }
-        // Recent exercises supplement the wrong-card counts only when the
-        // model returned the exact directory category, not a guessed synonym.
-        if let Ok(rows) = sqlx::query(
-            "SELECT skill, SUM(CASE WHEN is_correct=0 THEN 1 ELSE 0 END) AS misses
-             FROM data_analysis_results GROUP BY skill",
-        )
-        .fetch_all(&self.pool)
-        .await
-        {
-            for row in rows {
-                let Ok(skill) = row.try_get::<String, _>("skill") else {
-                    continue;
-                };
-                if let Some(weight) = weights.get_mut(&skill) {
-                    *weight += row.try_get::<i64, _>("misses").unwrap_or(0) * 8;
-                }
-            }
-        }
-        // Newly added folders are selectable before the SQLite card sync.
-        if let Ok(available) = self.available_skills().await {
-            let set = available.iter().cloned().collect::<HashSet<_>>();
-            weights.retain(|category, _| set.contains(category));
-            for category in available {
-                weights.entry(category).or_insert(1);
-            }
-        }
-        let mut ranked = weights.into_iter().collect::<Vec<_>>();
-        ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-        ranked
-            .into_iter()
-            .take(4)
-            .map(|(category, _)| category)
-            .collect()
-    }
-
     /// Derive categories from "错题/<分类>" whether RK3568 mounted
     /// flashcards/, flashcards/资料/, or the enclosing repository.
     pub async fn available_skills(&self) -> Result<Vec<String>, String> {
@@ -328,6 +278,9 @@ impl DataAnalysisService {
     pub async fn chosen_manual_skills(&self, requested: &[String]) -> Result<Vec<String>, String> {
         if requested.len() > 12 {
             return Err("每次最多勾选12个考点".into());
+        }
+        if requested.is_empty() {
+            return Err("请至少选择一个错题考点".into());
         }
         let available = self.available_skills().await?;
         let mut chosen = Vec::new();
@@ -421,152 +374,107 @@ impl DataAnalysisService {
     async fn generate(&self, job: &str, manual_skills: &[String]) -> Result<String, String> {
         self.set_progress(job, "selecting", 0, "正在规划参考真题的统计主题", None)
             .await;
-        let materials = exam_theme_materials();
-        let weaknesses = self.weaknesses().await;
-        let mut scores = HashMap::<String, (i64, i64)>::new();
-        let rows=sqlx::query("SELECT topic, count(*) n, sum(CASE WHEN is_correct=0 THEN 1 ELSE 0 END) missed FROM data_analysis_results GROUP BY topic")
-            .fetch_all(&self.pool).await.map_err(as_error)?;
-        for row in rows {
-            let topic: String = row.try_get("topic").map_err(as_error)?;
-            scores.insert(
-                topic,
-                (
-                    row.try_get("n").unwrap_or(0),
-                    row.try_get("missed").unwrap_or(0),
-                ),
-            );
-        }
-        // Explore never-seen topics before repeating familiar source sections.
-        // Once covered, prioritize topics with high error ratios.
-        let mut ordered = materials;
-        // Explore a varied mix of statistical themes rather than official bulletin sections.
-        ordered.sort_by(|a, b| {
-            let (na, ma) = scores.get(&a.topic).copied().unwrap_or((0, 0));
-            let (nb, mb) = scores.get(&b.topic).copied().unwrap_or((0, 0));
-            let score_a = if na == 0 { 2.0 } else { ma as f64 / na as f64 };
-            let score_b = if nb == 0 { 2.0 } else { mb as f64 / nb as f64 };
-            score_b
-                .partial_cmp(&score_a)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        // Existing groups remain available to review, but never become new-paper caches.
-        let mut ready: Vec<QuestionGroup> = Vec::new();
+        // Statistics subjects stay varied independently of earlier mistakes;
+        // all exercise skills must come from the explicit user selection.
+        let ordered = exam_theme_materials();
+        // Keep the original four slots even if only some parallel tasks succeed.
+        // Retried slots must retain their own assigned selected categories.
+        let mut ready = vec![None::<QuestionGroup>; QUIZ_GROUPS];
         let mut attempted = HashSet::<(String, String)>::new();
         let mut last_error = String::new();
         let mut attempts = 0;
-        // Prefer four distinct themes; bounded retries use independent Codex threads.
         for strict_diversity in [true, false] {
             loop {
-                if ready.len() == QUIZ_GROUPS {
+                let missing = ready.iter().enumerate()
+                    .filter_map(|(slot, group)| group.is_none().then_some(slot))
+                    .collect::<Vec<_>>();
+                if missing.is_empty() {
                     break;
                 }
                 let completed: Vec<Material> =
-                    ready.iter().map(|group| group.material.clone()).collect();
+                    ready.iter().flatten().map(|group| group.material.clone()).collect();
                 let wave = select_material_batch(
-                    &ordered,
-                    &completed,
-                    &attempted,
-                    strict_diversity,
-                    QUIZ_GROUPS - ready.len(),
+                    &ordered, &completed, &attempted, strict_diversity, missing.len()
                 );
                 if wave.is_empty() {
                     break;
                 }
 
-                let mut ordered_results: Vec<Option<QuestionGroup>> = vec![None; wave.len()];
+                let mut ordered_results = vec![None::<QuestionGroup>; QUIZ_GROUPS];
                 let mut requests = Vec::new();
-                for (slot, material) in wave.iter().enumerate() {
+                for (slot, material) in missing.into_iter().zip(wave.iter()) {
                     attempted.insert((material.source_url.clone(), material.section.clone()));
                     if attempts < 12 {
                         attempts += 1;
                         requests.push((slot, material.clone()));
                     }
                 }
-                if requests.is_empty() && ordered_results.iter().all(Option::is_none) {
+                if requests.is_empty() {
                     break;
                 }
-                if !requests.is_empty() {
-                    self.set_progress(
-                        job,
-                        "generating",
-                        ready.len() * QUIZ_PER_GROUP,
-                        "最多4个 Codex Thread 正在按题型规划生成模拟题",
-                        None,
-                    )
-                    .await;
-                    let worker = self.clone();
-                    let weak = Arc::new(weaknesses.clone());
-                    let manual = Arc::new(manual_skills.to_vec());
-                    let group_offset = ready.len();
-                    for (slot, outcome) in
-                        run_generation_wave(requests, move |material, ordinal| {
-                            let worker = worker.clone();
-                            let weak = Arc::clone(&weak);
-                            let manual = Arc::clone(&manual);
-                            async move {
-                                worker
-                                    .generate_group(
-                                        &material,
-                                        &weak,
-                                        &manual,
-                                        group_offset + ordinal,
-                                    )
-                                    .await
-                            }
-                        })
-                        .await
-                    {
-                        match outcome {
-                            Ok(group) if slot < ordered_results.len() => {
-                                ordered_results[slot] = Some(group);
-                            }
-                            Ok(_) => last_error = "Codex 并行任务返回异常序号".into(),
-                            Err(error) => last_error = error,
+
+                self.set_progress(
+                    job,
+                    "generating",
+                    ready.iter().filter(|group| group.is_some()).count() * QUIZ_PER_GROUP,
+                    "最多4个 Codex Thread 正在按所选分类生成模拟题",
+                    None,
+                ).await;
+                let worker = self.clone();
+                let manual = Arc::new(manual_skills.to_vec());
+                for (slot, outcome) in run_generation_wave(requests, move |material, slot| {
+                    let worker = worker.clone();
+                    let manual = Arc::clone(&manual);
+                    async move {
+                        worker.generate_group(&material, &manual, slot).await
+                    }
+                }).await {
+                    match outcome {
+                        Ok(group) if slot < QUIZ_GROUPS => {
+                            ordered_results[slot] = Some(group);
                         }
+                        Ok(_) => last_error = "Codex 并行任务返回异常序号".into(),
+                        Err(error) => last_error = error,
                     }
                 }
 
-                // Only the coordinator persists groups and updates the run,
-                // preserving the deterministic order selected before spawning.
-                for group in ordered_results.into_iter().flatten() {
-                    {
-                        sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES (?,?,?,?,?,?)")
-                            .bind(Uuid::now_v7().to_string())
-                            .bind(&group.material.source_url)
-                            .bind(&group.material.section)
-                            .bind(&group.material.topic)
-                            .bind(serde_json::to_string(&group).map_err(as_error)?)
-                            .bind(now_ms())
-                            .execute(&self.pool)
-                            .await
-                            .map_err(as_error)?;
-                    }
-                    ready.push(group);
+                // Only the coordinator persists groups in the assigned slot.
+                for (slot, group) in ordered_results.into_iter().enumerate() {
+                    let Some(group) = group else { continue };
+                    sqlx::query("INSERT INTO data_analysis_groups(id,source_url,section,topic,group_json,created_at_ms) VALUES (?,?,?,?,?,?)")
+                        .bind(Uuid::now_v7().to_string())
+                        .bind(&group.material.source_url)
+                        .bind(&group.material.section)
+                        .bind(&group.material.topic)
+                        .bind(serde_json::to_string(&group).map_err(as_error)?)
+                        .bind(now_ms())
+                        .execute(&self.pool).await.map_err(as_error)?;
+                    ready[slot] = Some(group);
                     self.set_progress(
                         job,
                         "generating",
-                        ready.len() * QUIZ_PER_GROUP,
+                        ready.iter().filter(|group| group.is_some()).count() * QUIZ_PER_GROUP,
                         "已接收 Codex 完成的模拟试题并保存",
                         None,
-                    )
-                    .await;
+                    ).await;
                 }
             }
-            if ready.len() == QUIZ_GROUPS {
+            if ready.iter().all(Option::is_some) {
                 break;
             }
         }
-        if ready.len() != QUIZ_GROUPS {
+        let count = ready.iter().filter(|group| group.is_some()).count();
+        if count != QUIZ_GROUPS {
             return Err(format!(
                 "已获得{}/20题，无法组成整卷：{}",
-                ready.len() * 5,
-                last_error
+                count * QUIZ_PER_GROUP, last_error
             ));
         }
+        let groups = ready.into_iter().flatten().collect::<Vec<_>>();
         let id = Uuid::now_v7().to_string();
         sqlx::query("INSERT INTO data_analysis_runs(id,groups_json,answers_json,status,created_at_ms) VALUES(?,?,?,'ready',?)")
             .bind(&id)
-            .bind(serde_json::to_string(&ready).map_err(as_error)?)
+            .bind(serde_json::to_string(&groups).map_err(as_error)?)
             .bind(serde_json::to_string(&vec![None::<usize>;20]).map_err(as_error)?)
             .bind(now_ms()).execute(&self.pool).await.map_err(as_error)?;
         Ok(id)
@@ -580,7 +488,6 @@ impl DataAnalysisService {
     async fn generate_group(
         &self,
         source: &Material,
-        weaknesses: &[String],
         manual_skills: &[String],
         ordinal: usize,
     ) -> Result<QuestionGroup, String> {
@@ -590,14 +497,13 @@ impl DataAnalysisService {
             r#"你是 hyz 的公务员行测资料分析综合训练命题 Agent。当前任务是**题型驱动**，不是材料驱动。
 工作目录是 hyz-things 仓库。请先使用 hyz-xingce Skill（.agents/skills/行测做题/SKILL.md），
 按其中资料分析导航读取 references/资料分析.md，题型分类以 flashcards/资料/错题/ 的直接子目录名为准。
-对于本次自动推荐和手动选中的每个分类，进入 flashcards/资料/错题/<分类目录>/ 读取原始 cards.md 或 card.md 的命题变式、hyz 速算动作与易错点。
+仅允许使用用户明确勾选的错题分类：{selected_categories}。进入对应的 flashcards/资料/错题/<分类目录>/，读取原始 cards.md 或 card.md 的命题变式、hyz 速算动作与易错点。
 每题 skill 使用对应的错题目录分类名；细分命题变式写进解析，不自行发明另一套基础公式标签。
 每次都是新建 Thread，必须基于这次工作树中的最新内容工作；不需要用户在提示词里复制卡片。
 本次是整套4篇×5题的第 {group_no} 篇。20道题均须基于 flashcards/资料/错题/ 中真实存在的错题分类及卡片命题，
-不设薄弱点/其他核心/基础题的固定数量配额，也不额外引入卡片未涉及的命题题型。
-每篇选择来自错题卡的5个命题目标，尽量覆盖不同错题分类及变式；自动推荐优先关注：{weaknesses}。
-用户额外手选考点：{manual_all}。本篇必须至少有一道题命中每个分配到本篇的手选考点：{manual_focus}。
-手动考点优先于系统推荐考点，但不因此忽略题型多样性；不要把标签当材料标题。
+只从用户已选错题分类中命题，绝不引入任何未勾选的目录分类；所有 question.skill 必须是选中分类名之一，不允许换成公式名或同义词。
+本次用户选中考点：{selected_categories}。本篇必须至少有一道题命中每个分配到本篇的考点：{manual_focus}。
+每篇从已选分类里选择5个命题目标，尽量覆盖不同卡片及变式；不要把分类标签当材料标题。
 {question_boundary}
 先选择本篇5题的题型、命题变式与考查的 hyz 速算/审题动作，再构造共享且自洽的模拟统计数据，
 最后写成400～1000汉字、2～4个自然段的国考风格纯数据材料，并拟制5道有唯一正确答案的四选一题。
@@ -628,9 +534,8 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
 先自行核对数学及选项，再仅输出符合结构化 Schema 的JSON，不输出计划、过程或代码块。
 输出 JSON 必须具有 material_text 和 questions 两字段，questions 恰好5项。"#,
             group_no = ordinal % QUIZ_GROUPS + 1,
-            weaknesses = weaknesses.join("、"),
             question_boundary = NO_COMPREHENSIVE_JUDGMENT_PROMPT,
-            manual_all = manual_skills.join("、"),
+            selected_categories = manual_skills.join("、"),
             manual_focus = manual_skills
                 .iter()
                 .enumerate()
@@ -663,6 +568,10 @@ explanation为依照 hyz 方法的简短速算解释；skill为具体考点；ev
             || batch.questions.iter().any(|q| q.correct_index >= 4)
         {
             return Err("Codex 返回的试卷结构不完整（需要5题，每题4个选项）".into());
+        }
+        let labels: Vec<_> = batch.questions.iter().map(|q| q.skill.as_str()).collect();
+        if !selected_category_coverage(&labels, manual_skills, ordinal) {
+            return Err("Codex 生成题目未完全符合所选错题分类，请重试".into());
         }
         let mut material = context;
         material.text = batch.material_text;
@@ -983,6 +892,24 @@ mod tests {
         assert_eq!(wrong_question_category("资料/错题"), None);
         assert_eq!(wrong_question_category("资料/线段混合"), None);
         assert_eq!(wrong_question_category("其他/错题/乘积增长率"), None);
+    }
+
+    #[test]
+    fn only_user_selected_wrong_question_categories_are_valid_generation_targets() {
+        let selected = vec!["乘除变化".to_owned(), "年均变化".to_owned()];
+        assert!(selected_category_coverage(
+            &["乘除变化", "年均变化", "乘除变化", "年均变化", "乘除变化"],
+            &selected, 0
+        ));
+        assert!(!selected_category_coverage(
+            &["乘除变化", "年均变化", "基期", "年均变化", "乘除变化"],
+            &selected, 0
+        ));
+        assert!(!selected_category_coverage(
+            &["乘除变化", "乘除变化", "乘除变化", "乘除变化", "乘除变化"],
+            &selected, 1
+        ));
+        assert!(!selected_category_coverage(&["乘除变化"], &[], 0));
     }
 
     #[test]

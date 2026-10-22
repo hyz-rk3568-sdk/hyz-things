@@ -27,6 +27,19 @@ pub(crate) fn render_training(route_state: UseStateHandle<PortalRoute>, csrf: St
 #[function_component(TrainingWorkspace)]
 fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
     let mode = use_state(|| TrainingMode::Calculation);
+    let comprehensive_immersive = use_state(|| false);
+    let on_immersive_change = {
+        let comprehensive_immersive = comprehensive_immersive.clone();
+        Callback::from(move |active: bool| comprehensive_immersive.set(active))
+    };
+    let exit_comprehensive = {
+        let comprehensive_immersive = comprehensive_immersive.clone();
+        let mode = mode.clone();
+        Callback::from(move |_: ()| {
+            comprehensive_immersive.set(false);
+            mode.set(TrainingMode::Calculation);
+        })
+    };
     let choose_calculation = {
         let mode = mode.clone();
         Callback::from(move |_| mode.set(TrainingMode::Calculation))
@@ -40,7 +53,8 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
         Callback::from(move |_| mode.set(TrainingMode::Flashcards))
     };
     html! {
-        <div class="min-h-dvh bg-base-200" data-testid="training-layout">
+        <div class={if *comprehensive_immersive { "h-dvh overflow-hidden bg-base-200" } else { "min-h-dvh bg-base-200" }} data-testid="training-layout">
+            if !*comprehensive_immersive {
             <div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 pt-4 sm:px-8">
                 <div>
                     <h1 class="text-xl font-bold">{"专项训练"}</h1>
@@ -52,12 +66,13 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                     <button type="button" class={if *mode == TrainingMode::Comprehensive { "btn btn-primary btn-sm" } else { "btn btn-outline btn-sm" }} data-testid="training-mode-comprehensive" aria-pressed={(*mode == TrainingMode::Comprehensive).to_string()} onclick={choose_comprehensive}>{"综合训练"}</button>
                 </div>
             </div>
+            }
             if *mode == TrainingMode::Calculation {
                 {render_calculation_training(props.route_state.clone())}
             } else if *mode == TrainingMode::Flashcards {
                 <FlashcardPractice route_state={props.route_state.clone()} />
             } else {
-                <ComprehensiveTraining csrf={props.csrf.clone()} />
+                <ComprehensiveTraining csrf={props.csrf.clone()} on_immersive_change={on_immersive_change} on_exit={exit_comprehensive} />
             }
         </div>
     }

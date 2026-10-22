@@ -1,4 +1,4 @@
-//! 20 questions / 20 minutes. iPad-first 44:56 reading and answer panes.
+//! 20 questions / 20 minutes. Immersive iPad workspace with 60:40 material/question panes.
 use super::*;
 use gloo_timers::{callback::Interval, future::TimeoutFuture};
 use js_sys::Date;
@@ -7,11 +7,95 @@ use serde::Serialize;
 #[derive(Properties, PartialEq)]
 pub(crate) struct ComprehensiveProps {
     pub csrf: String,
+    pub on_immersive_change: Callback<bool>,
+    pub on_exit: Callback<()>,
 }
 
 const COMPREHENSIVE_JOB_KEY: &str = "hyz_comprehensive_prepare_job";
 const COMPREHENSIVE_READY_KEY: &str = "hyz_comprehensive_ready_run";
 const MANUAL_SKILLS_KEY: &str = "hyz_comprehensive_manual_skills";
+
+// One fixed-height workspace serves both exam and answer review. Only the
+// material and question panes scroll, never the outer page.
+fn analysis_panes(
+    material: &hyz_things::domain::data_analysis::Material,
+    question: Html,
+) -> Html {
+    html! {
+        <div class="grid h-full min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-2 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:grid-rows-1"
+            data-testid="analysis-shared-workspace">
+            <article class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="analysis-material">
+                <div class="shrink-0 p-3 pb-1 text-sm font-semibold">{format!("{} · {}",material.section,material.subtopic)}</div>
+                <div class="shrink-0 px-3 pb-2 text-xs text-base-content/60">{"模拟训练材料 · 根据历年行测真题风格新编，非真题原文"}</div>
+                <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y" data-testid="analysis-material-scroll">
+                    <div class="whitespace-pre-wrap px-4 pb-4 pt-2 text-base leading-8">{material.text.clone()}</div>
+                </div>
+                if material.source_url.starts_with("https://") {
+                    <a class="shrink-0 px-3 py-2 text-xs underline" href={material.source_url.clone()} target="_blank" rel="noopener noreferrer">{"查看旧版材料参考链接"}</a>
+                }
+            </article>
+            <article class="min-h-0 min-w-0 overflow-y-auto overscroll-contain touch-pan-y rounded-box bg-base-100"
+                data-testid="analysis-question">{question}</article>
+        </div>
+    }
+}
+
+// None: unanswered; Some(true): answered/correct; Some(false): wrong.
+fn analysis_navigation(
+    current: UseStateHandle<usize>,
+    index: usize,
+    markers: &[Option<bool>],
+    is_review: bool,
+) -> Html {
+    let group_index = index / 5;
+    let previous = {
+        let current = current.clone();
+        Callback::from(move |_| current.set(index.saturating_sub(1)))
+    };
+    let next = {
+        let current = current.clone();
+        Callback::from(move |_| current.set((index + 1).min(19)))
+    };
+    html! {
+        <footer class="flex shrink-0 items-center justify-between gap-2 py-2" data-testid="analysis-navigation">
+            <button type="button" class="btn btn-outline btn-sm" disabled={index==0} onclick={previous}>{"上一题"}</button>
+            <nav class="flex min-w-0 flex-1 items-center justify-center gap-1 overflow-x-auto" aria-label="题目导航">
+                {for (0..4).map(|g|{
+                    let current = current.clone();
+                    html!{<button type="button" class={if g==group_index{"btn btn-primary btn-xs shrink-0"}else{"btn btn-ghost btn-xs shrink-0"}}
+                        onclick={Callback::from(move |_|current.set(g*5))}>{format!("材料{}",g+1)}</button>}
+                })}
+                {for (group_index*5..group_index*5+5).map(|i|{
+                    let current = current.clone();
+                    let marker = markers.get(i).copied().flatten();
+                    let style = if i==index {
+                        if is_review {
+                            match marker {
+                                Some(true) => "btn btn-success btn-xs shrink-0",
+                                Some(false) => "btn btn-error btn-xs shrink-0",
+                                None => "btn btn-primary btn-xs shrink-0",
+                            }
+                        } else {
+                            "btn btn-primary btn-xs shrink-0"
+                        }
+                    } else if !is_review && marker.is_some() {
+                        // Before submission a selected answer is NOT graded.
+                        "btn btn-primary btn-outline btn-xs shrink-0"
+                    } else {
+                        match marker {
+                            Some(true) => "btn btn-success btn-outline btn-xs shrink-0",
+                            Some(false) => "btn btn-error btn-outline btn-xs shrink-0",
+                            None => "btn btn-ghost btn-xs shrink-0",
+                        }
+                    };
+                    html!{<button type="button" class={style} data-testid="analysis-question-tab"
+                        onclick={Callback::from(move |_|current.set(i))}>{i+1}</button>}
+                })}
+            </nav>
+            <button type="button" class="btn btn-primary btn-sm" disabled={index==19} onclick={next}>{"下一题"}</button>
+        </footer>
+    }
+}
 
 #[derive(Serialize)]
 struct ComprehensivePrepareRequest {
@@ -102,6 +186,8 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     let history_open = use_state(|| false);
     let manual_skills = use_state(Vec::<String>::new);
     let skills_expanded = use_state(|| false);
+    let reviewing_history = use_state(|| false);
+    let review_run_id = use_state(String::new);
 
     {
         let status = status.clone();
@@ -192,6 +278,48 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             move || drop(handle)
         });
     }
+    // Moving between questions resets only the right-hand reading position.
+    // The material keeps its position for questions in the same group, then
+    // resets when the selected group changes. Never scroll the outer page.
+    {
+        use_effect_with(*current, move |_| {
+            if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+                if let Ok(Some(question)) = document.query_selector("[data-testid='analysis-question']") {
+                    question.set_scroll_top(0);
+                }
+            }
+            || ()
+        });
+    }
+    {
+        use_effect_with(*current / 5, move |_| {
+            if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+                if let Ok(Some(material)) = document.query_selector("[data-testid='analysis-material-scroll']") {
+                    material.set_scroll_top(0);
+                }
+            }
+            || ()
+        });
+    }
+    // Keep the setup page outside fullscreen; active runs and review records
+    // make the training workspace cover the entire visual viewport.
+    {
+        let notify = props.on_immersive_change.clone();
+        use_effect_with((run.is_some(), result.is_some()), move |(running, reviewing)| {
+            let fullscreen = *running || *reviewing;
+            notify.emit(fullscreen);
+            if fullscreen {
+                if let Some(window) = web_sys::window() {
+                    window.scroll_to_with_x_and_y(0.0, 0.0);
+                }
+            }
+            || ()
+        });
+    }
+    let exit = {
+        let on_exit = props.on_exit.clone();
+        Callback::from(move |_| on_exit.emit(()))
+    };
     let submit = {
         let run = run.clone();
         let result = result.clone();
@@ -199,6 +327,8 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let csrf = props.csrf.clone();
         let busy = busy.clone();
         let history = history.clone();
+        let reviewing_history = reviewing_history.clone();
+        let review_run_id = review_run_id.clone();
         Callback::from(move |_| {
             if *busy {
                 return;
@@ -210,6 +340,8 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let busy = busy.clone();
             let csrf = csrf.clone();
             let history = history.clone();
+            let reviewing_history = reviewing_history.clone();
+            let review_run_id = review_run_id.clone();
             spawn_local(async move {
                 let endpoint = format!("{ANALYSIS_ROOT}/runs/{}/submit", active.id);
                 match post_json_response_typed::<_, AnalysisResult>(
@@ -221,6 +353,8 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 .await
                 {
                     Ok(out) => {
+                        reviewing_history.set(false);
+                        review_run_id.set(active.id.clone());
                         result.set(Some(out));
                         if let Ok(items) = fetch_json_typed::<Vec<ComprehensiveHistoryEntry>>(
                             &format!("{ANALYSIS_ROOT}/history"),
@@ -382,39 +516,126 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         })
     };
     if let Some(score) = (*result).clone() {
-        return html! {
-            <section class="mx-auto max-w-5xl space-y-5 px-4 py-5" data-testid="analysis-result">
-                <div class="rounded-box bg-base-100 p-5">
-                    <h2 class="text-xl font-bold">{"综合训练成绩"}</h2>
-                    <p class="mt-3 text-3xl font-black">{format!("{} / {} 题正确",score.correct,score.total)}</p>
-                    <p class="text-sm text-base-content/60">{"已交卷 · 题目为 Codex 根据 hyz 做题套路生成的模拟训练数据与解析。"}</p>
+        if score.materials.len() != 4 || score.questions.len() != 20 {
+            return html! {<p class="p-5 text-error" role="alert">{"历史成绩材料或题目数量不正确，无法展示解析。"}</p>};
+        }
+        let index = (*current).min(19);
+        let group_index = index / 5;
+        let local_index = index % 5;
+        let q = score.questions.iter().find(|q| q.number == index + 1).unwrap_or(&score.questions[index]);
+        let marks = (1..=20).map(|number| {
+            score.questions.iter().find(|q| q.number == number)
+                .and_then(|q| q.chosen.map(|selected| selected == q.correct_index))
+        }).collect::<Vec<_>>();
+        let grade = match q.chosen {
+            Some(chosen) if chosen == q.correct_index => "正确",
+            Some(_) => "错误",
+            None => "未答",
+        };
+        let review_options = q.options.iter().enumerate().map(|(i, option)| {
+            let grade = if i == q.correct_index {
+                "correct"
+            } else if q.chosen == Some(i) {
+                "wrong"
+            } else {
+                "neutral"
+            };
+            let style = match grade {
+                "correct" => "flex items-center justify-between gap-3 rounded-box border border-success bg-success/10 p-3 font-medium text-success",
+                "wrong" => "flex items-center justify-between gap-3 rounded-box border border-error bg-error/10 p-3 font-medium text-error",
+                _ => "flex items-center justify-between gap-3 rounded-box border border-base-content/20 p-3",
+            };
+            let hint = match grade {
+                "correct" => "✓ 正确答案",
+                "wrong" => "✕ 你的错选",
+                _ => "",
+            };
+            html! {
+                <div class={style} data-testid="analysis-review-choice" data-state={grade}>
+                    <span>{format!("{}. {}",["A", "B", "C", "D"][i],option)}</span>
+                    <span class="shrink-0 text-xs">{hint}</span>
                 </div>
-                <details class="rounded-box bg-base-100 p-4">
-                    <summary class="cursor-pointer font-semibold">{"查看本套4份训练材料"}</summary>
-                    {for score.materials.iter().enumerate().map(|(i,m)|html!{
-                        <article class="mt-4 border-t border-base-content/10 pt-3"><h3 class="font-semibold">{format!("材料{} · {}",i+1,m.subtopic)}</h3>
-                        <p class="mt-2 whitespace-pre-wrap text-sm leading-7">{m.text.clone()}</p></article>
-                    })}
-                </details>
-                {for score.questions.iter().map(|q|html!{
-                    <article class="rounded-box bg-base-100 p-4" key={q.number}>
-                        <div class="flex justify-between"><strong>{format!("第{}题 · {} / {}",q.number,q.topic,q.skill)}</strong><span>{if q.chosen==Some(q.correct_index){"正确"}else{"错误/未答"}}</span></div>
-                        <p class="mt-2">{format!("正确答案：{} · {}",["A","B","C","D"][q.correct_index],q.answer)}</p>
-                        <p class="mt-2 text-sm font-semibold">{q.question.clone()}</p>
-                    <p class="text-sm mt-2">{format!("你的选择：{}；正确答案：{}",q.chosen.map(|i|["A","B","C","D"][i]).unwrap_or("未答"),["A","B","C","D"][q.correct_index])}</p>
-                    <div class="mt-2 text-sm">{for q.options.iter().enumerate().map(|(i,v)|html!{<p>{format!("{}. {}",["A","B","C","D"][i],v)}</p>})}</div>
-                    <p class="text-sm mt-2">{q.explanation.clone()}</p>
-                        <details class="mt-2 text-xs"><summary>{"查看原始数据证据"}</summary><p>{q.evidence.clone()}</p></details>
-                    </article>
-                })}
-                <button class="btn btn-outline" onclick={{
-                    let result=result.clone();let run=run.clone();let history_open=history_open.clone();
-                    Callback::from(move |_|{result.set(None);run.set(None);history_open.set(true);})
-                }}>{"查看练习历史"}</button>
-                <button class="btn btn-primary" onclick={{
-                    let run=run.clone();let result=result.clone();let progress=progress.clone();
-                    Callback::from(move |_|{run.set(None);result.set(None);progress.set(None);})
-                }}>{"再出一套"}</button>
+            }
+        });
+        let review_question = html! {
+            <div class="space-y-4 p-4" data-testid="analysis-review-content">
+                <div class="flex items-center justify-between gap-2 text-xs text-base-content/60">
+                    <span>{format!("本材料第 {}/5 题 · {}",local_index+1,q.skill)}</span>
+                    <span data-testid="analysis-review-status">{grade}</span>
+                </div>
+                <h2 class="text-lg font-semibold leading-relaxed">{q.question.clone()}</h2>
+                <div class="grid gap-2">{for review_options}</div>
+                <div class="border-t border-base-content/10 pt-4">
+                    <p class="text-sm font-semibold">{format!("你的答案：{}",
+                        q.chosen.and_then(|i| ["A","B","C","D"].get(i).copied()).unwrap_or("未答"))}</p>
+                    <h3 class="mt-3 text-sm font-semibold">{"解题解析"}</h3>
+                    <p class="mt-2 whitespace-pre-wrap text-sm leading-7" data-testid="analysis-explanation">{q.explanation.clone()}</p>
+                    <details class="mt-3 text-xs">
+                        <summary class="cursor-pointer">{"查看原始数据证据"}</summary>
+                        <p class="mt-2 whitespace-pre-wrap leading-6">{q.evidence.clone()}</p>
+                    </details>
+                </div>
+            </div>
+        };
+        let review_id = (*review_run_id).clone();
+        let show_history = {
+            let result = result.clone();
+            let run = run.clone();
+            let history_open = history_open.clone();
+            Callback::from(move |_| {
+                result.set(None);
+                run.set(None);
+                history_open.set(true);
+            })
+        };
+        let back_from_review = {
+            let result = result.clone();
+            let run = run.clone();
+            let history_open = history_open.clone();
+            let on_exit = props.on_exit.clone();
+            let reviewing_history = reviewing_history.clone();
+            Callback::from(move |_| {
+                if *reviewing_history {
+                    result.set(None);
+                    run.set(None);
+                    history_open.set(true);
+                } else {
+                    on_exit.emit(());
+                }
+            })
+        };
+        let again = {
+            let result = result.clone();
+            let run = run.clone();
+            let progress = progress.clone();
+            Callback::from(move |_| {
+                result.set(None);
+                run.set(None);
+                progress.set(None);
+            })
+        };
+        return html! {
+            <section class="fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200 p-2 sm:p-3"
+                data-testid="analysis-result" data-view="review">
+                <header class="flex shrink-0 items-center justify-between gap-2 border-b border-base-content/10 pb-2">
+                    <div class="flex min-w-0 items-center gap-2">
+                        <button type="button" class="btn btn-ghost btn-sm" data-testid="analysis-exit"
+                            onclick={back_from_review}>{if *reviewing_history {"← 返回记录"} else {"← 返回专项"}}</button>
+                        <strong class="truncate text-sm">{"综合训练 · 答案解析"}</strong>
+                        <span class="hidden text-xs text-base-content/60 sm:inline">{format!("第 {}/20 题 · 材料 {}/4",index+1,group_index+1)}</span>
+                    </div>
+                    <div class="flex shrink-0 items-center gap-2">
+                        <span class="text-sm font-bold">{format!("{} / {} 正确",score.correct,score.total)}</span>
+                        <button type="button" class="btn btn-outline btn-sm" onclick={show_history}>{"查看练习历史"}</button>
+                        <button type="button" class="btn btn-primary btn-sm" onclick={again}>{"再出一套"}</button>
+                    </div>
+                </header>
+                <div class="min-h-0 flex-1">
+                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",review_id,index)} responsive={true}>
+                        {analysis_panes(&score.materials[group_index],review_question)}
+                    </InkOverlay>
+                </div>
+                {analysis_navigation(current.clone(),index,&marks,true)}
             </section>
         };
     }
@@ -428,11 +649,17 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let error = error.clone();
             let history_open = history_open.clone();
             let run = run.clone();
+            let current = current.clone();
+            let reviewing_history = reviewing_history.clone();
+            let review_run_id = review_run_id.clone();
             Callback::from(move |id: String| {
                 let result = result.clone();
                 let error = error.clone();
                 let history_open = history_open.clone();
                 let run = run.clone();
+                let current = current.clone();
+                let reviewing_history = reviewing_history.clone();
+                let review_run_id = review_run_id.clone();
                 spawn_local(async move {
                     match fetch_json_typed::<AnalysisResult>(
                         &format!("{ANALYSIS_ROOT}/runs/{id}/result"),
@@ -443,6 +670,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         Ok(value) => {
                             run.set(None);
                             history_open.set(false);
+                            current.set(0);
+                            reviewing_history.set(true);
+                            review_run_id.set(id.clone());
                             result.set(Some(value));
                         }
                         Err(e) => error.set(Some(e.to_string())),
@@ -482,12 +712,15 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         }
         if active.paused_remaining_ms.is_some() {
             return html! {
-                <section class="mx-auto max-w-2xl p-6" data-testid="analysis-paused">
+                <section class="fixed inset-0 z-[70] flex h-dvh w-screen items-center justify-center overflow-hidden bg-base-200 p-6" data-testid="analysis-paused">
                     <div class="rounded-box bg-base-100 p-8 text-center">
                         <h2 class="text-2xl font-bold">{"训练已暂停"}</h2>
                         <p class="mt-3 text-base-content/60">{"已隐藏材料和题目，暂停期间不能答题。刷新页面仍保持暂停。"}</p>
                         <p class="my-5 font-mono text-3xl">{format!("{:02}:{:02}",active.paused_remaining_ms.unwrap_or(0)/60000,(active.paused_remaining_ms.unwrap_or(0)/1000)%60)}</p>
-                        <button class="btn btn-primary" disabled={*busy} onclick={toggle_pause}>{"继续计时"}</button>
+                        <div class="flex justify-center gap-3">
+                            <button type="button" class="btn btn-outline" data-testid="analysis-exit" onclick={exit.clone()}>{"← 返回专项"}</button>
+                            <button class="btn btn-primary" disabled={*busy} onclick={toggle_pause}>{"继续计时"}</button>
+                        </div>
                         {if let Some(msg)=(*error).clone(){html!{<p class="mt-4 text-error text-sm">{msg}</p>}}else{Html::default()}}
                     </div>
                 </section>
@@ -503,14 +736,6 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             .map(|ms| ((ms as f64 - Date::now()) / 1000.0).ceil().max(0.0) as u64)
             .unwrap_or(1200);
         let clock = format!("{:02}:{:02}", remaining / 60, remaining % 60);
-        let next = {
-            let current = current.clone();
-            Callback::from(move |_| current.set((*current + 1).min(19)))
-        };
-        let previous = {
-            let current = current.clone();
-            Callback::from(move |_| current.set(current.saturating_sub(1)))
-        };
         let answers=(0..4).map(|i|{
             let id=active.id.clone();let run=run.clone();let csrf=props.csrf.clone();
             let error=error.clone();let selected=active.answers[index]==Some(i);
@@ -534,52 +759,43 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 </button>
             }
         });
+
+        let question_content = html! {
+            <div class="space-y-4 p-4">
+                <div class="flex items-center justify-between text-xs text-base-content/60">
+                    <span>{format!("本材料第 {}/5 题",local_index+1)}</span>
+                    <span>{q.skill.clone()}</span>
+                </div>
+                <h2 class="text-lg font-semibold leading-relaxed">{q.question.clone()}</h2>
+                <div class="grid gap-3">{for answers}</div>
+            </div>
+        };
+        let markers = active.answers.iter().map(|answer| answer.map(|_| true)).collect::<Vec<_>>();
         return html! {
-            <section class="mx-auto flex h-[calc(100dvh-2rem)] max-w-[1500px] flex-col px-3 py-2 sm:px-5" data-testid="analysis-run">
-                <header class="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-3">
-                    <div class="text-sm font-bold">{"资料分析综合训练"} <span class="text-base-content/60">{format!("第 {}/20 题 · 材料 {}/4",index+1,group_index+1)}</span></div>
-                    <div class="flex items-center gap-2">
-                        <button type="button" class={if remaining<=60 {"btn btn-ghost font-mono text-xl text-error"}else{"btn btn-ghost font-mono text-xl"}} data-testid="analysis-clock" title="点击暂停计时" disabled={*busy || remaining==0} onclick={toggle_pause}>{format!("⏸ {clock}")}</button>
-                        <button type="button" class="btn btn-sm btn-error btn-outline" disabled={*busy} onclick={{let submit=submit.clone();Callback::from(move |_|submit.emit(()))}}>{"交卷"}</button>
+            <section class="fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200 p-2 sm:p-3"
+                data-testid="analysis-run" data-view="answer">
+                <header class="flex shrink-0 items-center justify-between gap-2 border-b border-base-content/10 pb-2">
+                    <div class="flex min-w-0 items-center gap-2">
+                        <button type="button" class="btn btn-ghost btn-sm" data-testid="analysis-exit"
+                            onclick={exit.clone()}>{"← 返回专项"}</button>
+                        <strong class="truncate text-sm">{"资料分析综合训练"}</strong>
+                        <span class="hidden text-xs text-base-content/60 sm:inline">{format!("第 {}/20 题 · 材料 {}/4",index+1,group_index+1)}</span>
+                    </div>
+                    <div class="flex shrink-0 items-center gap-2">
+                        <button type="button" class={if remaining<=60 {"btn btn-ghost font-mono text-xl text-error"}else{"btn btn-ghost font-mono text-xl"}}
+                            data-testid="analysis-clock" title="点击暂停计时" disabled={*busy || remaining==0}
+                            onclick={toggle_pause}>{format!("⏸ {clock}")}</button>
+                        <button type="button" class="btn btn-sm btn-error btn-outline" disabled={*busy}
+                            onclick={{let submit=submit.clone();Callback::from(move |_|submit.emit(()))}}>{"交卷"}</button>
                     </div>
                 </header>
-                <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}", active.id, index)} responsive={true}>
-                    <div class="grid h-full min-h-0 grid-cols-1 gap-3 lg:grid-cols-[44%_minmax(0,1fr)]" data-testid="analysis-shared-workspace">
-                        <div class="flex min-h-0 min-w-0 flex-col overflow-auto rounded-box bg-base-100" data-testid="analysis-material">
-                            <div class="p-3 text-sm font-semibold">{format!("{} · {}",group.material.section,group.material.subtopic)}</div>
-                            <div class="px-4 pb-2 text-xs text-base-content/60">{"模拟训练材料 · 根据历年行测真题风格新编，非真题原文"}</div>
-                            <div class="min-h-0 flex-1 overflow-auto">
-                                <div class="whitespace-pre-wrap p-4 text-base leading-8">{group.material.text.clone()}</div>
-                            </div>
-                            if group.material.source_url.starts_with("https://") {
-                                <a class="p-3 text-xs underline" href={group.material.source_url.clone()} target="_blank" rel="noopener noreferrer">{"查看旧版材料参考链接"}</a>
-                            }
-                        </div>
-                        <div class="min-h-0 min-w-0 overflow-auto rounded-box bg-base-100" data-testid="analysis-question">
-                            <div class="space-y-4 p-4">
-                                <div class="flex items-center justify-between text-xs text-base-content/60"><span>{format!("本材料第 {}/5 题",local_index+1)}</span><span>{q.skill.clone()}</span></div>
-                                <h2 class="text-lg font-semibold leading-relaxed">{q.question.clone()}</h2>
-                                <div class="grid gap-3">{for answers}</div>
-                            </div>
-                        </div>
-                    </div>
-                </InkOverlay>
-                {if let Some(msg)=(*error).clone(){html!{<div class="text-error text-xs">{msg}</div>}}else{Html::default()}}
-                <footer class="flex items-center justify-between gap-3 py-3" data-testid="analysis-navigation">
-                    <button type="button" class="btn btn-outline btn-sm" disabled={index==0} onclick={previous}>{"上一题"}</button>
-                    <div class="flex flex-wrap justify-center gap-1">
-                        {for (0..4).map(|g|{
-                            let current=current.clone();
-                            html!{<button type="button" class={if g==group_index{"btn btn-primary btn-xs"}else{"btn btn-ghost btn-xs"}} onclick={Callback::from(move |_|current.set(g*5))}>{format!("材料{}",g+1)}</button>}
-                        })}
-                        {for (group_index*5..group_index*5+5).map(|i|{
-                            let current=current.clone();
-                            let chosen=active.answers[i].is_some();
-                            html!{<button type="button" class={if i==index{"btn btn-primary btn-xs"}else if chosen{"btn btn-success btn-outline btn-xs"}else{"btn btn-ghost btn-xs"}} onclick={Callback::from(move |_|current.set(i))}>{i+1}</button>}
-                        })}
-                    </div>
-                    <button type="button" class="btn btn-primary btn-sm" disabled={index==19} onclick={next}>{"下一题"}</button>
-                </footer>
+                <div class="min-h-0 flex-1">
+                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",active.id,index)} responsive={true}>
+                        {analysis_panes(&group.material,question_content)}
+                    </InkOverlay>
+                </div>
+                if let Some(msg)=(*error).clone(){<div class="shrink-0 text-error text-xs" role="alert">{msg}</div>}
+                {analysis_navigation(current.clone(),index,&markers,false)}
             </section>
         };
     }
@@ -613,13 +829,10 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 <div class="mt-5 grid gap-3">
                     <button class="btn btn-outline w-full" type="button" onclick={{let history_open=history_open.clone();Callback::from(move |_|history_open.set(true))}}>{"查看练习历史"}</button>
                     <div class="rounded-box border border-base-content/15 p-4 space-y-3">
-                        <p class="font-semibold">{"错题分类 · 智能薄弱点强化"}</p>
-                        <p class="text-sm text-base-content/60">{"直接使用 flashcards/资料/错题/ 下的分类；自动推荐结合错题数量、复习记录和训练表现。"}</p>
-                        if let Some(info)=(*status).clone(){
-                            <div class="flex flex-wrap gap-2">{for info.weak_skills.iter().map(|x|html!{<span class="badge badge-outline">{x.clone()}</span>})}</div>
-                        }
+                        <p class="font-semibold">{"选择本轮错题分类"}</p>
+                        <p class="text-sm text-base-content/60">{"仅依据你勾选的 flashcards/资料/错题/ 分类出题；不会自动添加薄弱点或其他考点。"}</p>
                         <div class="flex items-center justify-between gap-3">
-                            <strong class="text-sm">{format!("手动强化考点（已选{}项，最多12项）",manual_skills.len())}</strong>
+                            <strong class="text-sm">{format!("本轮考点（已选{}项，最多12项）",manual_skills.len())}</strong>
                             <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-skill-expand"
                                 onclick={toggle_selector}>{if *skills_expanded{"收起"}else{"添加考点"}}</button>
                         </div>
@@ -646,7 +859,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                                 </div>
                             }
                         }
-                        <p class="text-xs text-base-content/60">{"勾选的名称就是错题文件夹名称。Codex 会读取相应目录的 Flashcard；选择保存在本设备浏览器中。"}</p>
+                        <p class="text-xs text-base-content/60">{"至少选择一个分类后才能出题；全部20题只从已选分类生成。选择会保存在本设备浏览器中。"}</p>
                     </div>
                     if let Some(info)=(*status).clone(){
                         <p class="text-sm text-base-content/65">{format!("出题引擎：{} · 每次主动出题均生成新材料和20道新题",
@@ -669,7 +882,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         </button>
                     } else {
                         <button type="button" class="btn btn-primary w-full" data-testid="analysis-start"
-                            disabled={*loading_status || *busy || *preparing || status.as_ref().as_ref().is_none_or(|s|!s.configured) || props.csrf.is_empty()}
+                            disabled={manual_skills.is_empty() || *loading_status || *busy || *preparing || status.as_ref().as_ref().is_none_or(|s|!s.configured) || props.csrf.is_empty()}
                             onclick={start}>
                             {if *busy || *preparing {"正在出题中…（可以切换页面）"} else {"✨ 智能出题"}}
                         </button>
