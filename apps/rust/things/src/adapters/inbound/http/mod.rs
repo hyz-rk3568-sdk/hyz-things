@@ -807,6 +807,18 @@ fn app_with_assets(
             on(MethodFilter::GET, data_analysis::run),
         )
         .route(
+            "/api/v1/study/data-analysis/unfinished",
+            on(MethodFilter::GET, data_analysis::unfinished),
+        )
+        .route(
+            "/api/v1/study/data-analysis/runs/{id}/claim",
+            on(MethodFilter::POST, data_analysis::claim),
+        )
+        .route(
+            "/api/v1/study/data-analysis/runs/{id}/position",
+            on(MethodFilter::POST, data_analysis::position),
+        )
+        .route(
             "/api/v1/study/data-analysis/history",
             on(MethodFilter::GET, data_analysis::comprehensive_history),
         )
@@ -2630,6 +2642,8 @@ fn is_data_analysis_run_post_path(path: &str) -> bool {
         (Some("answers"), Some(number), None) => number.parse::<usize>().is_ok(),
         (Some("submit"), None, None)
         | (Some("pause"), None, None)
+        | (Some("claim"), None, None)
+        | (Some("position"), None, None)
         | (Some("retry"), None, None) => true,
         _ => false,
     }
@@ -3090,6 +3104,18 @@ mod tests {
         ));
         assert!(is_post_path(
             "/api/v1/study/data-analysis/runs/550e8400-e29b-41d4-a716-446655440000/retry"
+        ));
+        assert!(is_post_path(
+            "/api/v1/study/data-analysis/runs/550e8400-e29b-41d4-a716-446655440000/claim"
+        ));
+        assert!(is_post_path(
+            "/api/v1/study/data-analysis/runs/550e8400-e29b-41d4-a716-446655440000/position"
+        ));
+        assert!(!is_post_path(
+            "/api/v1/study/data-analysis/runs/not-a-uuid/claim"
+        ));
+        assert!(!is_post_path(
+            "/api/v1/study/data-analysis/runs/550e8400-e29b-41d4-a716-446655440000/claim/extra"
         ));
         assert!(!is_post_path(
             "/api/v1/study/data-analysis/runs/not-a-uuid/retry"

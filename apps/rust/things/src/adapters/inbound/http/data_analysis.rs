@@ -109,6 +109,69 @@ pub(super) async fn progress(
         ),
     }
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ControlBody {
+    control_token: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct PositionBody {
+    control_token: String,
+    question: usize,
+}
+pub(super) async fn unfinished(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let Some(service) = get(&state) else {
+        return unavailable();
+    };
+    match service.unfinished().await {
+        Ok(items) => Json(items).into_response(),
+        Err(_) => error("无法读取未完成训练"),
+    }
+}
+pub(super) async fn claim(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control(&state, &headers).await {
+        return response;
+    }
+    let Some(service) = get(&state) else {
+        return unavailable();
+    };
+    match service.claim(&id).await {
+        Ok(claimed) => Json(claimed).into_response(),
+        Err(_) => bad_request("训练已交卷或不存在，无法接管"),
+    }
+}
+pub(super) async fn position(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(body): Json<PositionBody>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control(&state, &headers).await {
+        return response;
+    }
+    let Some(service) = get(&state) else {
+        return unavailable();
+    };
+    match service
+        .save_position(&id, body.question, &body.control_token)
+        .await
+    {
+        Ok(()) => Json(serde_json::json!({"saved":true})).into_response(),
+        Err(_) => error_json(
+            StatusCode::CONFLICT,
+            "study_control_changed",
+            "其他设备已接管本次训练，无法保存题号",
+        ),
+    }
+}
 pub(super) async fn run(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -129,6 +192,7 @@ pub(super) async fn run(
 #[serde(deny_unknown_fields)]
 pub(super) struct AnswerBody {
     choice: usize,
+    control_token: String,
 }
 pub(super) async fn answer(
     State(state): State<AppState>,
@@ -142,7 +206,10 @@ pub(super) async fn answer(
     let Some(service) = get(&state) else {
         return unavailable();
     };
-    match service.answer(&id, number, body.choice).await {
+    match service
+        .answer_controlled(&id, number, body.choice, Some(&body.control_token))
+        .await
+    {
         Ok(()) => Json(serde_json::json!({"saved":true})).into_response(),
         Err(_) => bad_request("题号或答题状态无效，可能已到20分钟截止时间"),
     }
@@ -151,6 +218,7 @@ pub(super) async fn submit(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
+    Json(body): Json<ControlBody>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_control(&state, &headers).await {
         return response;
@@ -158,7 +226,10 @@ pub(super) async fn submit(
     let Some(service) = get(&state) else {
         return unavailable();
     };
-    match service.submit(&id).await {
+    match service
+        .submit_controlled(&id, Some(&body.control_token))
+        .await
+    {
         Ok(result) => Json(result).into_response(),
         Err(_) => bad_request("无法交卷或查询训练结果"),
     }
@@ -221,6 +292,7 @@ pub(super) async fn pause_toggle(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
+    Json(body): Json<ControlBody>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_control(&state, &headers).await {
         return response;
@@ -228,7 +300,10 @@ pub(super) async fn pause_toggle(
     let Some(service) = get(&state) else {
         return unavailable();
     };
-    match service.pause_toggle(&id).await {
+    match service
+        .pause_toggle_controlled(&id, Some(&body.control_token))
+        .await
+    {
         Ok(run) => Json(run).into_response(),
         Err(_) => bad_request("暂停/继续失败：训练已截止或状态变化"),
     }

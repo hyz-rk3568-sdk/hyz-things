@@ -185,6 +185,8 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     let skills_expanded = use_state(|| false);
     let reviewing_history = use_state(|| false);
     let review_run_id = use_state(String::new);
+    let unfinished = use_state(Vec::<UnfinishedRun>::new);
+    let controller = use_state(|| None::<String>);
 
     {
         let status = status.clone();
@@ -196,6 +198,10 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let preparing = preparing.clone();
         let loading_status = loading_status.clone();
         let manual_skills = manual_skills.clone();
+        let unfinished = unfinished.clone();
+        let controller = controller.clone();
+        let current = current.clone();
+        let csrf = props.csrf.clone();
         use_effect_with((), move |_| {
             if let Some(raw) = web_sys::window()
                 .and_then(|w| w.local_storage().ok().flatten())
@@ -242,6 +248,14 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     ));
                 }
                 loading_status.set(false);
+                if let Ok(items) = fetch_json_typed::<Vec<UnfinishedRun>>(
+                    &format!("{ANALYSIS_ROOT}/unfinished"),
+                    "查找未完成训练",
+                )
+                .await
+                {
+                    unfinished.set(items);
+                }
                 if let Ok(items) = fetch_json_typed::<Vec<ComprehensiveHistoryEntry>>(
                     &format!("{ANALYSIS_ROOT}/history"),
                     "综合训练历史",
@@ -250,18 +264,27 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 {
                     history.set(items);
                 }
-                // Restore a started run after iPad Safari reload.
+                // Local Safari reload reclaims the same server record. Other
+                // devices discover it via /unfinished and request takeover.
                 if let Some(id) = web_sys::window()
                     .and_then(|w| w.local_storage().ok().flatten())
                     .and_then(|s| s.get_item("hyz_comprehensive_active_run").ok().flatten())
                 {
-                    if let Ok(v) = fetch_json_typed::<AnalysisRun>(
-                        &format!("{ANALYSIS_ROOT}/runs/{id}"),
+                    if let Ok(claim) = post_json_response_typed::<_, ClaimedRun>(
+                        &format!("{ANALYSIS_ROOT}/runs/{id}/claim"),
+                        &csrf,
+                        &EmptyRequest {},
                         "恢复综合训练",
                     )
                     .await
                     {
-                        run.set(Some(v));
+                        current.set(claim.run.current_question.min(19));
+                        controller.set(Some(claim.control_token));
+                        run.set(Some(claim.run));
+                    } else if let Some(storage) =
+                        web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+                    {
+                        let _ = storage.remove_item("hyz_comprehensive_active_run");
                     }
                 }
             });
@@ -302,6 +325,37 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             || ()
         });
     }
+    // Server records the current question, not a browser-local guess.
+    // Only the holder of the most recently issued control token may write it.
+    {
+        let error = error.clone();
+        let csrf = props.csrf.clone();
+        let id = run.as_ref().as_ref().map(|r| r.id.clone());
+        let token = (*controller).clone();
+        use_effect_with((id, token, *current), move |(id, token, position)| {
+            if let (Some(id), Some(token)) = (id.clone(), token.clone()) {
+                let error = error.clone();
+                let csrf = csrf.clone();
+                let position = *position;
+                spawn_local(async move {
+                    if let Err(e) = post_json_typed(
+                        &format!("{ANALYSIS_ROOT}/runs/{id}/position"),
+                        &csrf,
+                        &PositionRequest {
+                            control_token: token,
+                            question: position,
+                        },
+                        "保存当前题号",
+                    )
+                    .await
+                    {
+                        error.set(Some(format!("进度同步失败：{e}")));
+                    }
+                });
+            }
+            || ()
+        });
+    }
     // Keep the setup page outside fullscreen; active runs and review records
     // make the training workspace cover the entire visual viewport.
     {
@@ -320,11 +374,8 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             },
         );
     }
-    let exit = {
-        let on_exit = props.on_exit.clone();
-        Callback::from(move |_| on_exit.emit(()))
-    };
     let submit = {
+        let controller = controller.clone();
         let run = run.clone();
         let result = result.clone();
         let error = error.clone();
@@ -340,18 +391,28 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let Some(active) = (*run).clone() else { return };
             busy.set(true);
             let result = result.clone();
+            let run = run.clone();
+            let controller = controller.clone();
             let error = error.clone();
             let busy = busy.clone();
             let csrf = csrf.clone();
+            let token = (*controller).clone();
             let history = history.clone();
             let reviewing_history = reviewing_history.clone();
             let review_run_id = review_run_id.clone();
             spawn_local(async move {
+                let Some(token) = token else {
+                    error.set(Some("无法确认当前设备的答题权限，请重新进入训练".into()));
+                    busy.set(false);
+                    return;
+                };
                 let endpoint = format!("{ANALYSIS_ROOT}/runs/{}/submit", active.id);
                 match post_json_response_typed::<_, AnalysisResult>(
                     &endpoint,
                     &csrf,
-                    &EmptyRequest {},
+                    &ControlRequest {
+                        control_token: token,
+                    },
                     "提交综合训练",
                 )
                 .await
@@ -359,6 +420,8 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     Ok(out) => {
                         reviewing_history.set(false);
                         review_run_id.set(active.id.clone());
+                        controller.set(None);
+                        run.set(None);
                         result.set(Some(out));
                         if let Ok(items) = fetch_json_typed::<Vec<ComprehensiveHistoryEntry>>(
                             &format!("{ANALYSIS_ROOT}/history"),
@@ -440,11 +503,13 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     // Opening the prepared paper is the *only* action which starts 20 minutes.
     // A background generation result can remain ready for hours without timing.
     let enter_ready = {
+        let controller = controller.clone();
         let run = run.clone();
         let current = current.clone();
         let ready_id = ready_id.clone();
         let busy = busy.clone();
         let error = error.clone();
+        let csrf = props.csrf.clone();
         Callback::from(move |_| {
             if *busy {
                 return;
@@ -454,19 +519,25 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             };
             busy.set(true);
             let run = run.clone();
+            let controller = controller.clone();
             let current = current.clone();
             let ready_id = ready_id.clone();
             let busy = busy.clone();
             let error = error.clone();
+            let csrf = csrf.clone();
             spawn_local(async move {
-                match fetch_json_typed::<AnalysisRun>(
-                    &format!("{ANALYSIS_ROOT}/runs/{id}"),
+                match post_json_response_typed::<_, ClaimedRun>(
+                    &format!("{ANALYSIS_ROOT}/runs/{id}/claim"),
+                    &csrf,
+                    &EmptyRequest {},
                     "进入综合训练",
                 )
                 .await
                 {
-                    Ok(active) => {
-                        current.set(0);
+                    Ok(claim) => {
+                        let active = claim.run;
+                        current.set(active.current_question.min(19));
+                        controller.set(Some(claim.control_token));
                         if let Some(storage) =
                             web_sys::window().and_then(|w| w.local_storage().ok().flatten())
                         {
@@ -488,6 +559,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         })
     };
     let toggle_pause = {
+        let controller = controller.clone();
         let run = run.clone();
         let busy = busy.clone();
         let error = error.clone();
@@ -502,12 +574,20 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let busy = busy.clone();
             let error = error.clone();
             let csrf = csrf.clone();
+            let token = (*controller).clone();
             spawn_local(async move {
+                let Some(token) = token else {
+                    error.set(Some("无法确认答题权限，请重新进入训练".into()));
+                    busy.set(false);
+                    return;
+                };
                 let endpoint = format!("{ANALYSIS_ROOT}/runs/{}/pause", active.id);
                 match post_json_response_typed::<_, AnalysisRun>(
                     &endpoint,
                     &csrf,
-                    &EmptyRequest {},
+                    &ControlRequest {
+                        control_token: token,
+                    },
                     "暂停或继续综合训练",
                 )
                 .await
@@ -519,9 +599,107 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             });
         })
     };
+    // A different browser sees the same server-held unfinished record and
+    // explicitly claims its edit lease. A takeover invalidates the old lease.
+    let continue_unfinished = {
+        let csrf = props.csrf.clone();
+        let run = run.clone();
+        let controller = controller.clone();
+        let current = current.clone();
+        let ready_id = ready_id.clone();
+        let error = error.clone();
+        let busy = busy.clone();
+        Callback::from(move |id: String| {
+            if *busy {
+                return;
+            }
+            busy.set(true);
+            error.set(None);
+            let csrf = csrf.clone();
+            let run = run.clone();
+            let controller = controller.clone();
+            let current = current.clone();
+            let ready_id = ready_id.clone();
+            let error = error.clone();
+            let busy = busy.clone();
+            spawn_local(async move {
+                match post_json_response_typed::<_, ClaimedRun>(
+                    &format!("{ANALYSIS_ROOT}/runs/{id}/claim"),
+                    &csrf,
+                    &EmptyRequest {},
+                    "接管未完成训练",
+                )
+                .await
+                {
+                    Ok(claim) => {
+                        current.set(claim.run.current_question.min(19));
+                        controller.set(Some(claim.control_token));
+                        if let Some(storage) =
+                            web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+                        {
+                            let _ = storage.set_item("hyz_comprehensive_active_run", &id);
+                            let _ = storage.remove_item(COMPREHENSIVE_READY_KEY);
+                        }
+                        ready_id.set(None);
+                        run.set(Some(claim.run));
+                    }
+                    Err(e) => error.set(Some(format!("恢复训练失败：{e}"))),
+                }
+                busy.set(false);
+            });
+        })
+    };
+    let pause_and_exit = {
+        let run = run.clone();
+        let controller = controller.clone();
+        let busy = busy.clone();
+        let error = error.clone();
+        let on_exit = props.on_exit.clone();
+        let csrf = props.csrf.clone();
+        Callback::from(move |_| {
+            if *busy {
+                return;
+            }
+            let Some(active) = (*run).clone() else {
+                on_exit.emit(());
+                return;
+            };
+            // Already paused: simply leave, without accidentally resuming.
+            if active.paused_remaining_ms.is_some() {
+                on_exit.emit(());
+                return;
+            }
+            let Some(token) = (*controller).clone() else {
+                error.set(Some("无法确认控制权，暂停失败；请重新进入训练".into()));
+                return;
+            };
+            busy.set(true);
+            let busy = busy.clone();
+            let error = error.clone();
+            let on_exit = on_exit.clone();
+            let csrf = csrf.clone();
+            spawn_local(async move {
+                match post_json_response_typed::<_, AnalysisRun>(
+                    &format!("{ANALYSIS_ROOT}/runs/{}/pause", active.id),
+                    &csrf,
+                    &ControlRequest {
+                        control_token: token,
+                    },
+                    "暂停并退出",
+                )
+                .await
+                {
+                    Ok(_) => on_exit.emit(()),
+                    Err(e) => error.set(Some(format!("暂停失败，答题仍在计时：{e}"))),
+                }
+                busy.set(false);
+            });
+        })
+    };
     // The same 60:40 question workspace is reused for redo. The server
     // always clones the original groups into a separate ready run.
     let retry_paper = {
+        let controller = controller.clone();
         let csrf = props.csrf.clone();
         let busy = busy.clone();
         let error = error.clone();
@@ -542,6 +720,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let busy = busy.clone();
             let error = error.clone();
             let run = run.clone();
+            let controller = controller.clone();
             let result = result.clone();
             let history_open = history_open.clone();
             let current = current.clone();
@@ -567,13 +746,17 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         {
                             let _ = storage.set_item(COMPREHENSIVE_READY_KEY, &new_id);
                         }
-                        match fetch_json_typed::<AnalysisRun>(
-                            &format!("{ANALYSIS_ROOT}/runs/{new_id}"),
+                        match post_json_response_typed::<_, ClaimedRun>(
+                            &format!("{ANALYSIS_ROOT}/runs/{new_id}/claim"),
+                            &csrf,
+                            &EmptyRequest {},
                             "开始重做",
                         )
                         .await
                         {
-                            Ok(active) => {
+                            Ok(claim) => {
+                                let active = claim.run;
+                                controller.set(Some(claim.control_token));
                                 if let Some(storage) =
                                     web_sys::window().and_then(|w| w.local_storage().ok().flatten())
                                 {
@@ -828,7 +1011,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         <p class="mt-3 text-base-content/60">{"已隐藏材料和题目，暂停期间不能答题。刷新页面仍保持暂停。"}</p>
                         <p class="my-5 font-mono text-3xl">{format!("{:02}:{:02}",active.paused_remaining_ms.unwrap_or(0)/60000,(active.paused_remaining_ms.unwrap_or(0)/1000)%60)}</p>
                         <div class="flex justify-center gap-3">
-                            <button type="button" class="btn btn-outline" data-testid="analysis-exit" onclick={exit.clone()}>{"← 返回专项"}</button>
+                            <button type="button" class="btn btn-outline" data-testid="analysis-exit" onclick={pause_and_exit.clone()}>{"← 退出训练"}</button>
                             <button class="btn btn-primary" disabled={*busy} onclick={toggle_pause}>{"继续计时"}</button>
                         </div>
                         {if let Some(msg)=(*error).clone(){html!{<p class="mt-4 text-error text-sm">{msg}</p>}}else{Html::default()}}
@@ -848,14 +1031,20 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let clock = format!("{:02}:{:02}", remaining / 60, remaining % 60);
         let answers=(0..4).map(|i|{
             let id=active.id.clone();let run=run.clone();let csrf=props.csrf.clone();
+            let controller=controller.clone();
             let error=error.clone();let selected=active.answers[index]==Some(i);
             html!{
                 <button type="button" class={if selected {"btn btn-primary justify-start min-h-14 h-auto text-left"}else{"btn btn-outline justify-start min-h-14 h-auto text-left"}}
                     data-testid="analysis-choice" disabled={remaining==0} onclick={Callback::from(move |_|{
                         let run=run.clone();let csrf=csrf.clone();let id=id.clone();let error=error.clone();
+                        let token=(*controller).clone();
                         spawn_local(async move {
+                            let Some(token)=token else {
+                                error.set(Some("请重新接管训练后再作答".into()));
+                                return;
+                            };
                             let endpoint=format!("{ANALYSIS_ROOT}/runs/{id}/answers/{}",index+1);
-                            match post_json_typed(&endpoint,&csrf,&SaveAnswer{choice:i},"保存答案").await{
+                            match post_json_typed(&endpoint,&csrf,&SaveAnswer{choice:i,control_token:token},"保存答案").await{
                                 Ok(_)=>{
                                     if let Some(mut copy)=(*run).clone(){
                                         if copy.id==id {copy.answers[index]=Some(i);run.set(Some(copy));}
@@ -891,7 +1080,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 <header class="flex shrink-0 items-center justify-between gap-2 border-b border-base-content/10 pb-2">
                     <div class="flex min-w-0 items-center gap-2">
                         <button type="button" class="btn btn-ghost btn-sm" data-testid="analysis-exit"
-                            onclick={exit.clone()}>{"← 返回专项"}</button>
+                            onclick={pause_and_exit.clone()}>{"← 暂停并退出"}</button>
                         <strong class="truncate text-sm">{"资料分析综合训练"}</strong>
                         <span class="hidden text-xs text-base-content/60 sm:inline">{format!("第 {}/20 题 · 材料 {}/4",index+1,group_index+1)}</span>
                     </div>
@@ -941,6 +1130,33 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 <h2 class="text-xl font-bold">{"资料分析综合训练"}</h2>
                 <p class="mt-1 text-sm text-base-content/60">{"参考历年行测真题组织模拟统计数据 · 4份材料 × 每份5题 · 20分钟"}</p>
                 <div class="mt-5 grid gap-3">
+                    if !unfinished.is_empty() {
+                        <div class="space-y-3 rounded-box border border-primary/30 bg-primary/5 p-4" data-testid="analysis-unfinished">
+                            <h3 class="font-semibold">{"未完成的综合训练 · 多设备共享"}</h3>
+                            <p class="text-xs text-base-content/65">{"以下进度保存在 RK3568。手机或电脑点击继续将接管答题权限，原设备不能再提交答案。"}</p>
+                            {for unfinished.iter().map(|item| {
+                                let id = item.id.clone();
+                                let resume = continue_unfinished.clone();
+                                let state = if item.status == "ready" { "尚未开始" }
+                                    else if item.paused_remaining_ms.is_some() { "已暂停" }
+                                    else if item.deadline_at_ms.is_some_and(|deadline| deadline as f64 <= Date::now()) { "时间已到" }
+                                    else { "进行中" };
+                                html! {
+                                    <div class="flex flex-wrap items-center justify-between gap-2 rounded-box bg-base-100 p-3" key={item.id.clone()}>
+                                        <div>
+                                            <div class="font-semibold text-sm">{format!("{} · 已作答 {}/20 题",state,item.answered)}</div>
+                                            <p class="text-xs text-base-content/60">{format!("上次位于第{}题",item.current_question+1)}</p>
+                                        </div>
+                                        <button type="button" class="btn btn-primary btn-sm" data-testid="analysis-resume"
+                                            disabled={*busy}
+                                            onclick={Callback::from(move |_|resume.emit(id.clone()))}>
+                                            {if item.status == "ready" { "开始训练" } else { "继续 / 接管训练" }}
+                                        </button>
+                                    </div>
+                                }
+                            })}
+                        </div>
+                    }
                     <button class="btn btn-outline w-full" type="button" onclick={{let history_open=history_open.clone();Callback::from(move |_|history_open.set(true))}}>{"查看练习历史"}</button>
                     <div class="rounded-box border border-base-content/15 p-4 space-y-3">
                         <p class="font-semibold">{"选择本轮错题分类"}</p>

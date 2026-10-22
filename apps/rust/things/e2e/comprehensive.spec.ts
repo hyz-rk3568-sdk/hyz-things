@@ -30,7 +30,9 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await page.route("**/api/v1/study/data-analysis/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     let result:unknown = {};
-    if (path.endsWith("/history")) {
+    if (path.endsWith("/unfinished")) {
+      result=[];
+    } else if (path.endsWith("/history")) {
       result=submittedResult && Object.keys(submittedResult as object).length>0 ? [
         {id:"fixture-run",started_at_ms:started,ended_at_ms:started+30000,elapsed_ms:30000,correct:1,total:20,topics:["经济","农业","工业","服务业"]}
       ] : [];
@@ -44,6 +46,8 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
     } else if (path.endsWith("/runs/fixture-run/retry") && route.request().method()==="POST") {
       repeatCreated++;
       result={run_id:"fixture-retry"};
+    } else if (path.endsWith("/runs/fixture-retry/claim") && route.request().method()==="POST") {
+      result={run:{id:"fixture-retry",status:"active",current_question:0,started_at_ms:Date.now(),deadline_at_ms:Date.now()+1200000,paused_remaining_ms:null,duration_seconds:1200,groups,answers:retryAnswers},control_token:"retry-token"};
     } else if (path.endsWith("/runs/fixture-retry") && route.request().method()==="GET") {
       result={id:"fixture-retry",status:"active",started_at_ms:Date.now(),deadline_at_ms:Date.now()+1200000,paused_remaining_ms:null,duration_seconds:1200,groups,answers:retryAnswers};
     } else if (path.includes("/runs/fixture-retry/answers/")) {
@@ -59,8 +63,12 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
           correct_index:0,answer:"1000亿元",explanation:"基期量为现期量除以增长因子",
           topic:topics[Math.floor(i/5)],skill:"基期量",evidence:"业务量1200亿元",
         }))};
+    } else if (path.endsWith("/runs/fixture-run/claim") && route.request().method()==="POST") {
+      result={run:{id:"fixture-run",status:"active",current_question:0,started_at_ms:started,deadline_at_ms:paused?null:started+1200000,paused_remaining_ms:paused?1100000:null,duration_seconds:1200,groups,answers},control_token:"ipad-token"};
     } else if (path.endsWith("/runs/fixture-run") && route.request().method()==="GET") {
       result={id:"fixture-run",status:"active",started_at_ms:started,deadline_at_ms:paused?null:started+1200000,paused_remaining_ms:paused?1100000:null,duration_seconds:1200,groups,answers};
+    } else if (path.endsWith("/position") && route.request().method()==="POST") {
+      result={saved:true};
     } else if (path.endsWith("/pause") && route.request().method()==="POST") {
       paused=!paused;
       result={id:"fixture-run",status:"active",started_at_ms:started,deadline_at_ms:paused?null:started+1200000,paused_remaining_ms:paused?1100000:null,duration_seconds:1200,groups,answers};
@@ -272,6 +280,8 @@ test("AI job survives leaving training; ready paper is untimed until explicit en
     if(path.endsWith("/status")){
       data={configured:true,model:"codex",cached_sources:3,verified_groups:4,
         available_skills:["乘积增长率"],preparing_job_id:jobCreated&&!generated?"same-task":null};
+    }else if(path.endsWith("/unfinished")){
+      data=[];
     }else if(path.endsWith("/history")){
       data=[];
     }else if(path.endsWith("/prepare")&&route.request().method()==="POST"){
@@ -281,6 +291,10 @@ test("AI job survives leaving training; ready paper is untimed until explicit en
       data=generated
         ?{state:"ready",verified:20,message:"出题完成",run_id:"ready-run"}
         :{state:"generating",verified:12,message:"仍在生成",run_id:null};
+    }else if(path.endsWith("/runs/ready-run/claim")){
+      data={run:{id:"ready-run",status:"active",current_question:0,started_at_ms:begun,
+        deadline_at_ms:Date.now()+1200000,paused_remaining_ms:null,
+        duration_seconds:1200,groups,answers:Array(20).fill(null)},control_token:"ready-token"};
     }else if(path.endsWith("/runs/ready-run")){
       data={id:"ready-run",status:"active",started_at_ms:begun,
         deadline_at_ms:Date.now()+1200000,paused_remaining_ms:null,
@@ -313,4 +327,88 @@ test("AI job survives leaving training; ready paper is untimed until explicit en
   await expect(page.getByTestId("analysis-run")).toBeVisible();
   await expect(page.getByTestId("analysis-clock")).toBeVisible();
   expect(starts).toBe(1);
+});
+
+test("iPad pauses and phone resumes server-held answers, position and single-editor lease", async ({ browser, baseURL }) => {
+  const ipad=await browser.newContext({baseURL:baseURL!,viewport:{width:1180,height:820}});
+  const phone=await browser.newContext({baseURL:baseURL!,viewport:{width:390,height:844}});
+  const groups=Array.from({length:4},(_,g)=>({
+    material:{section:"资料分析",subtopic:"跨端训练材料",topic:"工业能源",text:"2025年数据1200亿元，同比上升10%。",source_url:"theme"},
+    questions:Array.from({length:5},(_,j)=>({question:`第${g*5+j+1}题？`,options:["A","B","C","D"]})),
+  }));
+  const answers:(number|null)[]=Array(20).fill(null);
+  let currentQuestion=7,paused=false,controlToken="",serial=0,oldToken="";
+  const respond=async (route:import("@playwright/test").Route) => {
+    const url=new URL(route.request().url());
+    const path=url.pathname,body=(route.request().method()==="POST" ? route.request().postDataJSON() : {}) as Record<string,unknown>;
+    let data:unknown={};
+    let status=200;
+    const run=()=>({id:"server-run",status:"active",started_at_ms:Date.now()-120000,
+      deadline_at_ms:paused?null:Date.now()+1000000,paused_remaining_ms:paused?980000:null,
+      duration_seconds:1200,current_question:currentQuestion,groups,answers});
+    if(path.endsWith("/status")) {
+      data={configured:true,model:"codex",cached_sources:1,verified_groups:4,available_skills:["年均变化"],preparing_job_id:null};
+    } else if(path.endsWith("/unfinished")) {
+      data=[{id:"server-run",status:"active",answered:answers.filter(x=>x!==null).length,
+        current_question:currentQuestion,paused_remaining_ms:paused?980000:null,
+        deadline_at_ms:paused?null:Date.now()+1000000,created_at_ms:Date.now()-120000}];
+    } else if(path.endsWith("/history")) {
+      data=[];
+    } else if(path.endsWith("/runs/server-run/claim")) {
+      oldToken=controlToken;
+      controlToken=`new-lease-${++serial}`;
+      data={run:run(),control_token:controlToken};
+    } else if(path.endsWith("/position")) {
+      if(body.control_token!==controlToken){status=409;data={message:"other device has claimed"};}
+      else {currentQuestion=body.question as number;data={saved:true};}
+    } else if(path.includes("/answers/")) {
+      if(body.control_token!==controlToken){status=409;data={message:"other device has claimed"};}
+      else {answers[Number(path.split("/").pop())-1]=body.choice as number;data={saved:true};}
+    } else if(path.endsWith("/pause")) {
+      if(body.control_token!==controlToken){status=409;data={message:"other device has claimed"};}
+      else {paused=!paused;data=run();}
+    } else if(path.endsWith("/runs/server-run")) {
+      data=run();
+    }
+    await route.fulfill({status,contentType:"application/json",body:JSON.stringify(data)});
+  };
+  await ipad.route("**/api/v1/study/data-analysis/**",respond);
+  await phone.route("**/api/v1/study/data-analysis/**",respond);
+  const ipadPage=await ipad.newPage();
+  await ipadPage.goto("/#/study/training");
+  await ipadPage.getByTestId("training-mode-comprehensive").click();
+  await expect(ipadPage.getByTestId("analysis-unfinished")).toContainText("第8题");
+  await ipadPage.getByTestId("analysis-resume").click();
+  await expect(ipadPage.getByTestId("analysis-run")).toBeVisible();
+  await expect(ipadPage.getByTestId("analysis-question")).toContainText("第8题");
+  await ipadPage.getByTestId("analysis-choice").nth(2).click();
+  await expect.poll(()=>answers[7]).toBe(2);
+  await ipadPage.getByRole("button",{name:"下一题"}).click();
+  await expect.poll(()=>currentQuestion).toBe(8);
+  await ipadPage.getByTestId("analysis-exit").click();
+  await expect(ipadPage.getByRole("group",{name:"训练模式"})).toBeVisible();
+  expect(paused).toBe(true);
+
+  const phonePage=await phone.newPage();
+  await phonePage.goto("/#/study/training");
+  await phonePage.getByTestId("training-mode-comprehensive").click();
+  await expect(phonePage.getByTestId("analysis-unfinished")).toContainText("已作答 1/20");
+  await phonePage.getByTestId("analysis-resume").click();
+  await expect(phonePage.getByTestId("analysis-paused")).toBeVisible();
+  await phonePage.getByRole("button",{name:"继续计时"}).click();
+  await expect(phonePage.getByTestId("analysis-question")).toContainText("第9题");
+  await phonePage.getByRole("button",{name:"上一题"}).click();
+  await expect(phonePage.getByTestId("analysis-choice").nth(2)).toHaveClass(/btn-primary/);
+  // The expired iPad lease can no longer alter the same SQLite record.
+  const before=answers[7];
+  const stale=await ipadPage.evaluate(async ({oldToken})=>{
+    return fetch("/api/v1/study/data-analysis/runs/server-run/answers/8",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({choice:1,control_token:oldToken}),
+    }).then(r=>r.status);
+  },{oldToken});
+  expect(stale).toBe(409);
+  expect(answers[7]).toBe(before);
+  await ipad.close();
+  await phone.close();
 });
