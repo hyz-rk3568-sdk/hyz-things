@@ -1,6 +1,7 @@
 //! 资料分析四选一速算。题目、判题均在浏览器内完成，不修改 Flashcard/设备数据。
 use super::*;
 use js_sys::Date;
+use gloo_timers::callback::Interval;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CalculationKind {
