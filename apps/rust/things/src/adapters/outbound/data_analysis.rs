@@ -986,6 +986,24 @@ mod tests {
     }
 
     #[test]
+    fn only_user_selected_wrong_question_categories_are_valid_generation_targets() {
+        let selected = vec!["乘除变化".to_owned(), "年均变化".to_owned()];
+        assert!(selected_category_coverage(
+            &["乘除变化", "年均变化", "乘除变化", "年均变化", "乘除变化"],
+            &selected, 0
+        ));
+        assert!(!selected_category_coverage(
+            &["乘除变化", "年均变化", "基期", "年均变化", "乘除变化"],
+            &selected, 0
+        ));
+        assert!(!selected_category_coverage(
+            &["乘除变化", "乘除变化", "乘除变化", "乘除变化", "乘除变化"],
+            &selected, 1
+        ));
+        assert!(!selected_category_coverage(&["乘除变化"], &[], 0));
+    }
+
+    #[test]
     fn env_accepts_non_hex_token_without_a_fixed_length() {
         let value = "short-token-12";
         let config = parse_env(&format!(
