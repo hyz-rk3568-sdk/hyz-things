@@ -1197,6 +1197,33 @@ mod tests {
         assert_eq!(historical.questions.len(), 20);
         let (source_count, group_count) = service.counts().await.unwrap();
         assert_eq!((source_count, group_count), (1, 4));
+
+        // Redo opens the exact same twenty questions in a distinct untimed,
+        // unanswered run. The source record must never be overwritten.
+        let redo_id = service.redo(&run_id).await.expect("redo submitted paper");
+        assert_ne!(redo_id, run_id);
+        assert!(service.redo(&redo_id).await.is_err(), "cannot redo unsubmitted paper");
+        let redo_run = service.run(&redo_id).await.expect("enter redo starts timer");
+        assert_eq!(redo_run.status, "active");
+        assert_eq!(redo_run.groups, active.groups);
+        assert_eq!(redo_run.answers, vec![None; 20]);
+        assert!(redo_run.deadline_at_ms.is_some());
+        let original = service.result(&run_id).await.expect("original still graded");
+        assert_eq!(original.correct, 1);
+        service.answer(&redo_id, 1, 3).await.expect("redo answer");
+        let redo_result = service.submit(&redo_id).await.expect("grade independent redo");
+        assert_eq!(redo_result.correct, 0);
+        assert_eq!(redo_result.questions[0].chosen, Some(3));
+        assert_eq!(service.result(&run_id).await.unwrap().correct, 1);
+        let third_id = service.redo(&redo_id).await.expect("redo from a redo");
+        let third = service.run(&third_id).await.expect("enter third attempt");
+        assert_eq!(third.answers, vec![None; 20]);
+        service.submit(&third_id).await.expect("submit third attempt");
+        let history = service.history().await.expect("all attempts");
+        assert_eq!(history.len(), 3);
+        assert_eq!(history.iter().map(|entry| entry.attempt_number).collect::<Vec<_>>(), vec![3, 2, 1]);
+        assert!(history.iter().all(|entry| entry.id == run_id || entry.original_run_id.as_deref() == Some(run_id.as_str())));
+
     }
 
     #[test]
