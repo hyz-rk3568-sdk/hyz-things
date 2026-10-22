@@ -1192,6 +1192,27 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].correct, 1);
         assert_eq!(entries[0].total, 20);
+        // Repeating a completed paper produces a new blank, separately graded
+        // attempt with exactly the same material, questions and options.
+        let repeat_id = service.retry(&run_id).await.expect("retry finished paper");
+        assert_ne!(repeat_id, run_id);
+        let repeated = service.run(&repeat_id).await.expect("start repeated paper");
+        assert_eq!(repeated.answers, vec![None; 20]);
+        assert_eq!(repeated.groups[0].material, active.groups[0].material);
+        assert_eq!(repeated.groups[0].questions, active.groups[0].questions);
+        assert_eq!(repeated.duration_seconds, QUIZ_SECONDS);
+        assert!(service.retry(&repeat_id).await.is_err(), "active repeat cannot be cloned");
+        service.answer(&repeat_id, 1, 0).await.expect("repeat answer");
+        let repeat_result = service.submit(&repeat_id).await.expect("submit repeat");
+        assert_eq!(repeat_result.correct, 0);
+        assert_eq!(service.result(&run_id).await.unwrap().correct, 1);
+        let third_id = service.retry(&repeat_id).await.expect("repeat from repeat");
+        let third = service.run(&third_id).await.unwrap();
+        assert_eq!(third.answers, vec![None; 20]);
+        assert!(service.result(&third_id).await.is_err());
+        let attempt_entries = service.history().await.unwrap();
+        assert_eq!(attempt_entries.iter().find(|entry| entry.id == run_id).unwrap().attempt_no, 1);
+        assert_eq!(attempt_entries.iter().find(|entry| entry.id == repeat_id).unwrap().attempt_no, 2);
         let historical = service.result(&run_id).await.expect("historical review");
         assert_eq!(historical.materials.len(), 4);
         assert_eq!(historical.questions.len(), 20);
