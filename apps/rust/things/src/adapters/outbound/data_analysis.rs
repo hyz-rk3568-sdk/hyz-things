@@ -23,7 +23,15 @@ const NO_COMPREHENSIVE_JUDGMENT_PROMPT: &str = "硬性命题边界：本轮不�
 
 // User-owned style and difficulty policy. Hard limits, selected categories,
 // JSON shape and sources remain server-controlled even if this text changes.
-pub const DEFAULT_USER_PROMPT: &str = "请生成符合国考、省考资料分析风格的原创模拟题。\\n\\n材料：400～1000汉字，分2～4段，统计指标、单位、年份和同比关系自然且自洽；数字接近公报精度，避免刻意凑整。只陈述统计事实，不给公式、找数路径、方法提示或教学说明。\\n\\n命题：优先考查对应 Flashcard 的审题、速算、易错点及变式，避免机械换数字或重复基础题。题干仅提出所求年份、主体和指标，不提示计算步骤。不出需要逐项核对多个陈述的综合判断题。\\n\\n选项：每题四个合理干扰项，适合行测近似速算；答案唯一，材料、选项与解析相符。解析简洁，优先使用 hyz Flashcard 方法。\\n\\n先自行检查数值关系和选项正确性，不得照搬真题原文或数字。";
+pub const DEFAULT_USER_PROMPT: &str = r#"请生成符合国考、省考资料分析风格的原创模拟题。
+
+材料：400～1000汉字，分2～4段，统计指标、单位、年份和同比关系自然且自洽；数字接近公报精度，避免刻意凑整。只陈述统计事实，不给公式、找数路径、方法提示或教学说明。
+
+命题：优先考查对应 Flashcard 的审题、速算、易错点及变式，避免机械换数字或重复基础题。题干仅提出所求年份、主体和指标，不提示计算步骤。不出需要逐项核对多个陈述的综合判断题。
+
+选项：每题四个合理干扰项，适合行测近似速算；答案唯一，材料、选项与解析相符。解析简洁，优先使用 hyz Flashcard 方法。
+
+先自行检查数值关系和选项正确性，不得照搬真题原文或数字。"#;
 
 #[derive(Clone, Serialize)]
 pub struct UserPromptSettings {
