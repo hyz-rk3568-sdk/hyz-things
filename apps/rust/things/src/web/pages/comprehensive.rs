@@ -547,10 +547,13 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     <div class="grid h-full min-h-0 grid-cols-1 gap-3 lg:grid-cols-[44%_minmax(0,1fr)]" data-testid="analysis-shared-workspace">
                         <div class="flex min-h-0 min-w-0 flex-col overflow-auto rounded-box bg-base-100" data-testid="analysis-material">
                             <div class="p-3 text-sm font-semibold">{format!("{} · {}",group.material.section,group.material.subtopic)}</div>
+                            <div class="px-4 pb-2 text-xs text-base-content/60">{"模拟训练材料 · 根据历年行测真题风格新编，非真题原文"}</div>
                             <div class="min-h-0 flex-1 overflow-auto">
                                 <div class="whitespace-pre-wrap p-4 text-base leading-8">{group.material.text.clone()}</div>
                             </div>
-                            <a class="p-3 text-xs underline" href={group.material.source_url.clone()} target="_blank" rel="noopener noreferrer">{"查看统计口径参考资料（非模拟数据来源）"}</a>
+                            if group.material.source_url.starts_with("https://") {
+                                <a class="p-3 text-xs underline" href={group.material.source_url.clone()} target="_blank" rel="noopener noreferrer">{"查看旧版材料参考链接"}</a>
+                            }
                         </div>
                         <div class="min-h-0 min-w-0 overflow-auto rounded-box bg-base-100" data-testid="analysis-question">
                             <div class="space-y-4 p-4">
@@ -606,7 +609,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         <section class="mx-auto max-w-3xl p-4 sm:p-6" data-testid="analysis-setup">
             <div class="rounded-box bg-base-100 p-5 sm:p-7">
                 <h2 class="text-xl font-bold">{"资料分析综合训练"}</h2>
-                <p class="mt-1 text-sm text-base-content/60">{"参考官方统计口径构造模拟数据 · 4份材料 × 每份5题 · 20分钟"}</p>
+                <p class="mt-1 text-sm text-base-content/60">{"参考历年行测真题组织模拟统计数据 · 4份材料 × 每份5题 · 20分钟"}</p>
                 <div class="mt-5 grid gap-3">
                     <button class="btn btn-outline w-full" type="button" onclick={{let history_open=history_open.clone();Callback::from(move |_|history_open.set(true))}}>{"查看练习历史"}</button>
                     <div class="rounded-box border border-base-content/15 p-4 space-y-3">
