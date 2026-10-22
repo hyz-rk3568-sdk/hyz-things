@@ -2,8 +2,8 @@
 //! Codex owns the answer; the application stores each freshly prepared practice attempt.
 use super::codex_app_server::{validate_token, CodexSession, TURN_TIMEOUT};
 use crate::domain::data_analysis::{
-    select_material_batch, Material, VerifiedQuestion, QUIZ_GROUPS, QUIZ_PER_GROUP,
-    QUIZ_SECONDS, SECTIONS,
+    select_material_batch, Material, VerifiedQuestion, QUIZ_GROUPS, QUIZ_PER_GROUP, QUIZ_SECONDS,
+    SECTIONS,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
@@ -20,7 +20,6 @@ use uuid::Uuid;
 
 const ENV_PATH: &str = "/userdata/hyz-things/.env";
 const NO_COMPREHENSIVE_JUDGMENT_PROMPT: &str = "硬性命题边界：本轮不出资料分析综合分析/综合判断题，即不出“下列说法正确的是”“下列说法错误的是”“根据资料可以推出的是”“以下表述符合材料的是”等需要逐项核查多个独立陈述的题。每题只围绕一个明确的数量关系、指标或比较目标，设计四个数值或同一量纲的结果选项。即使手选或自动推荐包含“综合分析与审题”错题目录，也只能借鉴该目录中的审题、年份口径辨析和速算思路，转化为具体计算/比较题；不得将该错题目录名称理解为允许出综合判断题。此禁出规则优先于错题分类覆盖和多样性要求。";
-
 
 #[derive(Clone)]
 pub struct CodexConfig {
@@ -1263,9 +1262,12 @@ mod tests {
         let chosen = select_material_batch(&topics, &[], &HashSet::new(), true, QUIZ_GROUPS);
         assert_eq!(chosen.len(), QUIZ_GROUPS);
         assert_eq!(
-            chosen.iter().map(|m| m.topic.as_str()).collect::<HashSet<_>>().len(),
+            chosen
+                .iter()
+                .map(|m| m.topic.as_str())
+                .collect::<HashSet<_>>()
+                .len(),
             QUIZ_GROUPS
         );
     }
-
 }
