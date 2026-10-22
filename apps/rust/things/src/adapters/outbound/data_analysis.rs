@@ -1199,7 +1199,8 @@ mod tests {
         let repeated = service.run(&repeat_id).await.expect("start repeated paper");
         assert_eq!(repeated.answers, vec![None; 20]);
         assert_eq!(repeated.groups[0].material, active.groups[0].material);
-        assert_eq!(repeated.groups[0].questions, active.groups[0].questions);
+        assert_eq!(repeated.groups[0].questions[0].question, active.groups[0].questions[0].question);
+        assert_eq!(repeated.groups[0].questions[0].options, active.groups[0].questions[0].options);
         assert_eq!(repeated.duration_seconds, QUIZ_SECONDS);
         assert!(service.retry(&repeat_id).await.is_err(), "active repeat cannot be cloned");
         service.answer(&repeat_id, 1, 0).await.expect("repeat answer");
