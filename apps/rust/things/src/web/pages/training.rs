@@ -160,7 +160,8 @@ impl PracticeSession {
     }
 
     fn rate_current(&mut self, grade: PracticeGrade, now: f64) {
-        if self.finished || self.revealed_elapsed_ms[self.index].is_none()
+        if self.finished
+            || self.revealed_elapsed_ms[self.index].is_none()
             || self.answers[self.index].is_some()
         {
             return;
@@ -401,7 +402,9 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
             let reveal = {
                 let session = session.clone();
                 Callback::from(move |_| {
-                    let Some(mut state) = (*session).clone() else { return };
+                    let Some(mut state) = (*session).clone() else {
+                        return;
+                    };
                     state.reveal_current(Date::now());
                     session.set(Some(state));
                 })
@@ -409,7 +412,9 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
             let rate = |grade: PracticeGrade| {
                 let session = session.clone();
                 Callback::from(move |_| {
-                    let Some(mut state) = (*session).clone() else { return };
+                    let Some(mut state) = (*session).clone() else {
+                        return;
+                    };
                     state.rate_current(grade, Date::now());
                     session.set(Some(state));
                 })
@@ -417,7 +422,9 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
             let go_to = {
                 let session = session.clone();
                 Callback::from(move |target: usize| {
-                    let Some(mut state) = (*session).clone() else { return };
+                    let Some(mut state) = (*session).clone() else {
+                        return;
+                    };
                     if target >= state.questions.len() || target == state.index {
                         return;
                     }
@@ -705,7 +712,10 @@ mod tests {
         live.reveal_current(3500.0);
         live.rate_current(PracticeGrade::Skipped, 3600.0);
         assert!(live.finished);
-        assert_eq!(live.answers[2].as_ref().unwrap().grade, PracticeGrade::Skipped);
+        assert_eq!(
+            live.answers[2].as_ref().unwrap().grade,
+            PracticeGrade::Skipped
+        );
     }
 
     #[test]
