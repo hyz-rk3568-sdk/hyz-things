@@ -17,10 +17,7 @@ const MANUAL_SKILLS_KEY: &str = "hyz_comprehensive_manual_skills";
 
 // One fixed-height workspace serves both exam and answer review. Only the
 // material and question panes scroll, never the outer page.
-fn analysis_panes(
-    material: &hyz_things::domain::data_analysis::Material,
-    question: Html,
-) -> Html {
+fn analysis_panes(material: &hyz_things::domain::data_analysis::Material, question: Html) -> Html {
     html! {
         <div class="grid h-full min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-2 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:grid-rows-1"
             data-testid="analysis-shared-workspace">
@@ -284,7 +281,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     {
         use_effect_with(*current, move |_| {
             if let Some(document) = web_sys::window().and_then(|window| window.document()) {
-                if let Ok(Some(question)) = document.query_selector("[data-testid='analysis-question']") {
+                if let Ok(Some(question)) =
+                    document.query_selector("[data-testid='analysis-question']")
+                {
                     question.set_scroll_top(0);
                 }
             }
@@ -294,7 +293,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     {
         use_effect_with(*current / 5, move |_| {
             if let Some(document) = web_sys::window().and_then(|window| window.document()) {
-                if let Ok(Some(material)) = document.query_selector("[data-testid='analysis-material-scroll']") {
+                if let Ok(Some(material)) =
+                    document.query_selector("[data-testid='analysis-material-scroll']")
+                {
                     material.set_scroll_top(0);
                 }
             }
@@ -305,16 +306,19 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     // make the training workspace cover the entire visual viewport.
     {
         let notify = props.on_immersive_change.clone();
-        use_effect_with((run.is_some(), result.is_some()), move |(running, reviewing)| {
-            let fullscreen = *running || *reviewing;
-            notify.emit(fullscreen);
-            if fullscreen {
-                if let Some(window) = web_sys::window() {
-                    window.scroll_to_with_x_and_y(0.0, 0.0);
+        use_effect_with(
+            (run.is_some(), result.is_some()),
+            move |(running, reviewing)| {
+                let fullscreen = *running || *reviewing;
+                notify.emit(fullscreen);
+                if fullscreen {
+                    if let Some(window) = web_sys::window() {
+                        window.scroll_to_with_x_and_y(0.0, 0.0);
+                    }
                 }
-            }
-            || ()
-        });
+                || ()
+            },
+        );
     }
     let exit = {
         let on_exit = props.on_exit.clone();
@@ -522,11 +526,20 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let index = (*current).min(19);
         let group_index = index / 5;
         let local_index = index % 5;
-        let q = score.questions.iter().find(|q| q.number == index + 1).unwrap_or(&score.questions[index]);
-        let marks = (1..=20).map(|number| {
-            score.questions.iter().find(|q| q.number == number)
-                .and_then(|q| q.chosen.map(|selected| selected == q.correct_index))
-        }).collect::<Vec<_>>();
+        let q = score
+            .questions
+            .iter()
+            .find(|q| q.number == index + 1)
+            .unwrap_or(&score.questions[index]);
+        let marks = (1..=20)
+            .map(|number| {
+                score
+                    .questions
+                    .iter()
+                    .find(|q| q.number == number)
+                    .and_then(|q| q.chosen.map(|selected| selected == q.correct_index))
+            })
+            .collect::<Vec<_>>();
         let grade = match q.chosen {
             Some(chosen) if chosen == q.correct_index => "正确",
             Some(_) => "错误",
@@ -770,7 +783,11 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 <div class="grid gap-3">{for answers}</div>
             </div>
         };
-        let markers = active.answers.iter().map(|answer| answer.map(|_| true)).collect::<Vec<_>>();
+        let markers = active
+            .answers
+            .iter()
+            .map(|answer| answer.map(|_| true))
+            .collect::<Vec<_>>();
         return html! {
             <section class="fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200 p-2 sm:p-3"
                 data-testid="analysis-run" data-view="answer">

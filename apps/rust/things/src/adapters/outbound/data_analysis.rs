@@ -215,10 +215,14 @@ where
 fn selected_category_coverage(labels: &[&str], selected: &[String], ordinal: usize) -> bool {
     !selected.is_empty()
         && labels.len() == QUIZ_PER_GROUP
-        && labels.iter().all(|skill| selected.iter().any(|chosen| chosen.as_str() == *skill))
-        && selected.iter().enumerate()
+        && labels
+            .iter()
+            .all(|skill| selected.iter().any(|chosen| chosen.as_str() == *skill))
+        && selected
+            .iter()
+            .enumerate()
             .filter(|(index, _)| index % QUIZ_GROUPS == ordinal % QUIZ_GROUPS)
-            .all(|(_, category)| labels.iter().any(|skill| *skill == category.as_str()))
+            .all(|(_, category)| labels.contains(&category.as_str()))
 }
 
 fn now_ms() -> i64 {
@@ -385,16 +389,25 @@ impl DataAnalysisService {
         let mut attempts = 0;
         for strict_diversity in [true, false] {
             loop {
-                let missing = ready.iter().enumerate()
+                let missing = ready
+                    .iter()
+                    .enumerate()
                     .filter_map(|(slot, group)| group.is_none().then_some(slot))
                     .collect::<Vec<_>>();
                 if missing.is_empty() {
                     break;
                 }
-                let completed: Vec<Material> =
-                    ready.iter().flatten().map(|group| group.material.clone()).collect();
+                let completed: Vec<Material> = ready
+                    .iter()
+                    .flatten()
+                    .map(|group| group.material.clone())
+                    .collect();
                 let wave = select_material_batch(
-                    &ordered, &completed, &attempted, strict_diversity, missing.len()
+                    &ordered,
+                    &completed,
+                    &attempted,
+                    strict_diversity,
+                    missing.len(),
                 );
                 if wave.is_empty() {
                     break;
@@ -419,16 +432,17 @@ impl DataAnalysisService {
                     ready.iter().filter(|group| group.is_some()).count() * QUIZ_PER_GROUP,
                     "最多4个 Codex Thread 正在按所选分类生成模拟题",
                     None,
-                ).await;
+                )
+                .await;
                 let worker = self.clone();
                 let manual = Arc::new(manual_skills.to_vec());
                 for (slot, outcome) in run_generation_wave(requests, move |material, slot| {
                     let worker = worker.clone();
                     let manual = Arc::clone(&manual);
-                    async move {
-                        worker.generate_group(&material, &manual, slot).await
-                    }
-                }).await {
+                    async move { worker.generate_group(&material, &manual, slot).await }
+                })
+                .await
+                {
                     match outcome {
                         Ok(group) if slot < QUIZ_GROUPS => {
                             ordered_results[slot] = Some(group);
@@ -456,7 +470,8 @@ impl DataAnalysisService {
                         ready.iter().filter(|group| group.is_some()).count() * QUIZ_PER_GROUP,
                         "已接收 Codex 完成的模拟试题并保存",
                         None,
-                    ).await;
+                    )
+                    .await;
                 }
             }
             if ready.iter().all(Option::is_some) {
@@ -467,7 +482,8 @@ impl DataAnalysisService {
         if count != QUIZ_GROUPS {
             return Err(format!(
                 "已获得{}/20题，无法组成整卷：{}",
-                count * QUIZ_PER_GROUP, last_error
+                count * QUIZ_PER_GROUP,
+                last_error
             ));
         }
         let groups = ready.into_iter().flatten().collect::<Vec<_>>();
@@ -899,15 +915,18 @@ mod tests {
         let selected = vec!["乘除变化".to_owned(), "年均变化".to_owned()];
         assert!(selected_category_coverage(
             &["乘除变化", "年均变化", "乘除变化", "年均变化", "乘除变化"],
-            &selected, 0
+            &selected,
+            0
         ));
         assert!(!selected_category_coverage(
             &["乘除变化", "年均变化", "基期", "年均变化", "乘除变化"],
-            &selected, 0
+            &selected,
+            0
         ));
         assert!(!selected_category_coverage(
             &["乘除变化", "乘除变化", "乘除变化", "乘除变化", "乘除变化"],
-            &selected, 1
+            &selected,
+            1
         ));
         assert!(!selected_category_coverage(&["乘除变化"], &[], 0));
     }
