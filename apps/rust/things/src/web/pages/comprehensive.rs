@@ -341,7 +341,10 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     if let Err(e) = post_json_typed(
                         &format!("{ANALYSIS_ROOT}/runs/{id}/position"),
                         &csrf,
-                        &PositionRequest { control_token: token, question: position },
+                        &PositionRequest {
+                            control_token: token,
+                            question: position,
+                        },
                         "保存当前题号",
                     )
                     .await
@@ -407,7 +410,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 match post_json_response_typed::<_, AnalysisResult>(
                     &endpoint,
                     &csrf,
-                    &ControlRequest { control_token: token },
+                    &ControlRequest {
+                        control_token: token,
+                    },
                     "提交综合训练",
                 )
                 .await
@@ -580,7 +585,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 match post_json_response_typed::<_, AnalysisRun>(
                     &endpoint,
                     &csrf,
-                    &ControlRequest { control_token: token },
+                    &ControlRequest {
+                        control_token: token,
+                    },
                     "暂停或继续综合训练",
                 )
                 .await
@@ -603,7 +610,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let error = error.clone();
         let busy = busy.clone();
         Callback::from(move |id: String| {
-            if *busy { return; }
+            if *busy {
+                return;
+            }
             busy.set(true);
             error.set(None);
             let csrf = csrf.clone();
@@ -619,12 +628,15 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     &csrf,
                     &EmptyRequest {},
                     "接管未完成训练",
-                ).await {
+                )
+                .await
+                {
                     Ok(claim) => {
                         current.set(claim.run.current_question.min(19));
                         controller.set(Some(claim.control_token));
-                        if let Some(storage) = web_sys::window()
-                            .and_then(|w| w.local_storage().ok().flatten()) {
+                        if let Some(storage) =
+                            web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+                        {
                             let _ = storage.set_item("hyz_comprehensive_active_run", &id);
                             let _ = storage.remove_item(COMPREHENSIVE_READY_KEY);
                         }
@@ -645,10 +657,18 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let on_exit = props.on_exit.clone();
         let csrf = props.csrf.clone();
         Callback::from(move |_| {
-            if *busy { return; }
-            let Some(active) = (*run).clone() else { on_exit.emit(()); return };
+            if *busy {
+                return;
+            }
+            let Some(active) = (*run).clone() else {
+                on_exit.emit(());
+                return;
+            };
             // Already paused: simply leave, without accidentally resuming.
-            if active.paused_remaining_ms.is_some() { on_exit.emit(()); return; }
+            if active.paused_remaining_ms.is_some() {
+                on_exit.emit(());
+                return;
+            }
             let Some(token) = (*controller).clone() else {
                 error.set(Some("无法确认控制权，暂停失败；请重新进入训练".into()));
                 return;
@@ -660,11 +680,15 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let csrf = csrf.clone();
             spawn_local(async move {
                 match post_json_response_typed::<_, AnalysisRun>(
-                    &format!("{ANALYSIS_ROOT}/runs/{}/pause",active.id),
+                    &format!("{ANALYSIS_ROOT}/runs/{}/pause", active.id),
                     &csrf,
-                    &ControlRequest { control_token: token },
+                    &ControlRequest {
+                        control_token: token,
+                    },
                     "暂停并退出",
-                ).await {
+                )
+                .await
+                {
                     Ok(_) => on_exit.emit(()),
                     Err(e) => error.set(Some(format!("暂停失败，答题仍在计时：{e}"))),
                 }
