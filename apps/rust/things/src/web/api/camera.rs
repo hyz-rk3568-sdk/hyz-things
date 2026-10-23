@@ -2,8 +2,6 @@ use super::*;
 
 pub(crate) const CAMERA_STATUS_ENDPOINT: &str = "/api/v1/camera/status";
 
-pub(crate) const CAMERA_VIEWER_TOKEN_ENDPOINT: &str = "/api/v1/camera/viewer-token";
-
 pub(crate) const CAMERA_SESSION_CREATE_ENDPOINT: &str = "/api/v1/control/camera/session/create";
 
 pub(crate) const CAMERA_SESSION_CLOSE_ENDPOINT: &str = "/api/v1/control/camera/session/close";
@@ -13,13 +11,6 @@ pub(crate) const CAMERA_PROFILE_UPDATE_ENDPOINT: &str = "/api/v1/control/camera/
 pub(crate) const CAMERA_ROTATION_UPDATE_ENDPOINT: &str = "/api/v1/control/camera/rotation";
 
 pub(crate) const CAMERA_VOLUME_UPDATE_ENDPOINT: &str = "/api/v1/control/camera/volume";
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct CameraViewerTokenDto {
-    pub(crate) token: String,
-    pub(crate) expires_in_seconds: u64,
-}
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
