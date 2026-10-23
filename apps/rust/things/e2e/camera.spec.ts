@@ -27,7 +27,7 @@ test("keeps the camera session after the page stays hidden for more than one min
   request,
 }) => {
   await installCameraWebRtcMock(page);
-  await page.goto("/");
+  await loginAsAdmin(page);
   await page.getByRole("button", { name: "摄像头", exact: true }).click();
   const camera = page.getByRole("article", { name: "摄像头直播" });
   await camera.getByRole("button", { name: "播放直播" }).click();
@@ -60,7 +60,7 @@ test("keeps the camera session after the page stays hidden for more than one min
     .toEqual([]);
 });
 
-test("plays the camera anonymously and controls it as an administrator", async ({
+test("requires administrator login to view and control the camera", async ({
   page,
   request,
 }) => {
@@ -73,6 +73,10 @@ test("plays the camera anonymously and controls it as an administrator", async (
   ).toHaveCount(0);
 
   await page.getByRole("button", { name: "摄像头", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "管理员登录" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "摄像头直播" })).toHaveCount(0);
+  await loginAsAdmin(page);
+  await goToAppPage(page, "摄像头");
   const camera = page.getByRole("article", { name: "摄像头直播" });
   await expect(camera).toBeVisible();
   await expect(
@@ -87,11 +91,11 @@ test("plays the camera anonymously and controls it as an administrator", async (
     camera.getByText("LAN · 0 个会话", { exact: true }),
   ).toBeVisible();
 
-  // 匿名观看：画面设置禁用，没有旋转按钮。
+  // 复用网络管理员登录后的 Session，直播和画面控制同时可用。
   const presetSelect = camera.getByRole("combobox", {
     name: "画面分辨率与码率",
   });
-  await expect(presetSelect).toBeDisabled();
+  await expect(presetSelect).toBeEnabled();
 
   const harnessSessionId = (createCount: number) =>
     `e2e-camera.${"a".repeat(46)}${createCount.toString(16).padStart(2, "0")}`;
@@ -209,18 +213,13 @@ test("plays the camera anonymously and controls it as an administrator", async (
       );
     }),
   ).toBe(true);
-  await expect(camera.getByRole("button", { name: "旋转画面" })).toHaveCount(0);
+  await expect(camera.getByRole("button", { name: "旋转画面" })).toBeVisible();
 
-  // 登录后回到摄像头视图：画面设置可用，切换视图时匿名会话已停止。
+  // Switching to Network closes this playback while keeping the login session.
   await goToAppPage(page, "网络");
-  await page.getByLabel("密码").fill("admin");
-  await page.getByRole("button", { name: "登录", exact: true }).click();
-  await page.getByLabel("当前密码").fill("admin");
-  await page.getByLabel("新密码", { exact: true }).fill("router-e2e-password");
-  await page.getByLabel("确认新密码").fill("router-e2e-password");
-  await page.getByRole("button", { name: "修改密码" }).click();
-  await expect(page.getByRole("button", { name: "上游 Wi-Fi (STA)" })).toBeVisible();
-
+  await expect
+    .poll(async () => (await readHarnessState(request)).camera.sessions)
+    .toEqual([]);
   await goToAppPage(page, "摄像头");
   await expect(camera.getByText("未播放", { exact: true })).toBeVisible();
   await expect(presetSelect).toBeEnabled();
@@ -335,7 +334,7 @@ test("enables full-duplex intercom with a real microphone track and cleans up", 
   request,
 }) => {
   await installCameraWebRtcMock(page);
-  await page.goto("/");
+  await loginAsAdmin(page);
   await page.getByRole("button", { name: "摄像头", exact: true }).click();
   const camera = page.getByRole("article", { name: "摄像头直播" });
   await camera.getByRole("button", { name: "播放直播" }).click();
@@ -385,20 +384,20 @@ test("enables full-duplex intercom with a real microphone track and cleans up", 
     .toEqual({ pipeline: "stopped", activeSessions: 0 });
 });
 
-test("lets two anonymous viewers watch the camera concurrently", async ({
+test("lets two authenticated tabs watch the camera concurrently", async ({
   context,
   request,
 }) => {
   const first = await context.newPage();
   await installCameraWebRtcMock(first);
-  await first.goto("/");
+  await loginAsAdmin(first);
   await first.getByRole("button", { name: "摄像头", exact: true }).click();
 
   const cameraA = first.getByRole("article", { name: "摄像头直播" });
   await cameraA.getByRole("button", { name: "播放直播" }).click();
   await expect(cameraA.getByText("直播中", { exact: true })).toBeVisible();
 
-  // 两个匿名观看者各自持有独立 viewer 令牌，可并发观看同一摄像头。
+  // Two tabs share the same administrator Session; closing one session leaves the other active.
   const second = await context.newPage();
   await installCameraWebRtcMock(second);
   await second.goto("/");
