@@ -17,19 +17,49 @@ const MANUAL_SKILLS_KEY: &str = "hyz_comprehensive_manual_skills";
 
 // One fixed-height workspace serves both exam and answer review. Only the
 // material and question panes scroll, never the outer page.
-fn analysis_panes(material: &hyz_things::domain::data_analysis::Material, question: Html) -> Html {
+#[derive(Properties, PartialEq)]
+struct AnalysisPanesProps {
+    material: hyz_things::domain::data_analysis::Material,
+    question: Html,
+}
+
+// The scroll distance follows the *visible material pane*, not fixed pixels
+// or the full window height. Keep controls outside the scrollable content.
+#[function_component(AnalysisPanes)]
+fn analysis_panes(props: &AnalysisPanesProps) -> Html {
+    let passage = use_node_ref();
+    let scroll_by_third = |direction: f64| {
+        let passage = passage.clone();
+        Callback::from(move |_: MouseEvent| {
+            if let Some(element) = passage.cast::<web_sys::HtmlElement>() {
+                let distance = element.client_height() as f64 * direction / 3.0;
+                element.scroll_by_with_x_and_y(0.0, distance);
+            }
+        })
+    };
+    let scroll_up = scroll_by_third(-1.0);
+    let scroll_down = scroll_by_third(1.0);
+
     html! {
         <div class="grid h-full min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-2 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:grid-rows-1"
             data-testid="analysis-shared-workspace">
             <article class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="analysis-material">
-                <div class="shrink-0 p-3 pb-1 text-sm font-semibold">{material.topic.clone()}</div>
-                <div class="shrink-0 px-3 pb-2 text-xs text-base-content/60">{"模拟训练材料 · 根据历年行测真题风格新编，非真题原文"}</div>
-                <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y" data-testid="analysis-material-scroll">
-                    <div class="whitespace-pre-wrap px-4 pb-4 pt-2 text-base leading-8">{material.text.clone()}</div>
+                <div class="flex shrink-0 items-start justify-between gap-2 px-3 pt-3 pb-2">
+                    <div class="min-w-0">
+                        <div class="text-sm font-semibold">{props.material.topic.clone()}</div>
+                        <div class="pt-1 text-xs text-base-content/60">{"模拟训练材料 · 根据历年行测真题风格新编，非真题原文"}</div>
+                    </div>
+                    <div class="flex shrink-0 gap-1" role="group" aria-label="材料滚动">
+                        <button type="button" class="btn btn-ghost btn-sm px-2" aria-label="材料向上滚动" title="向上滚动 1/3 可视区域" onclick={scroll_up}>{"↑"}</button>
+                        <button type="button" class="btn btn-ghost btn-sm px-2" aria-label="材料向下滚动" title="向下滚动 1/3 可视区域" onclick={scroll_down}>{"↓"}</button>
+                    </div>
+                </div>
+                <div ref={passage} class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y scroll-smooth" data-testid="analysis-material-scroll">
+                    <div class="whitespace-pre-wrap px-4 pb-4 pt-2 text-base leading-8">{props.material.text.clone()}</div>
                 </div>
             </article>
             <article class="min-h-0 min-w-0 overflow-y-auto overscroll-contain touch-pan-y rounded-box bg-base-100"
-                data-testid="analysis-question">{question}</article>
+                data-testid="analysis-question">{props.question.clone()}</article>
         </div>
     }
 }
@@ -1044,7 +1074,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 </header>
                 <div class="min-h-0 flex-1">
                     <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",review_id,index)} responsive={true}>
-                        {analysis_panes(&score.materials[group_index],review_question)}
+                        <AnalysisPanes material={score.materials[group_index].clone()} question={review_question} />
                     </InkOverlay>
                 </div>
                 if let Some(msg)=(*error).clone() {
@@ -1223,7 +1253,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 </header>
                 <div class="min-h-0 flex-1">
                     <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",active.id,index)} responsive={true}>
-                        {analysis_panes(&group.material,question_content)}
+                        <AnalysisPanes material={group.material.clone()} question={question_content} />
                     </InkOverlay>
                 </div>
                 if let Some(msg)=(*error).clone(){<div class="shrink-0 text-error text-xs" role="alert">{msg}</div>}
