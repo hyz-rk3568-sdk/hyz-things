@@ -292,7 +292,7 @@ endif
 	grep -q '"/api/v1/tailscale/peers"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
 	! grep -q '\.route("/api/v1/control/proxy/mode"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
 	grep -q '"/api/v1/apps"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
-	! grep -q '"/api/v1/camera/viewer-token"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
+	! grep -q 'on(MethodFilter::POST, camera_viewer_token)' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
 	grep -q 'authorize_sensitive_control_admin' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
 	grep -q 'INSTALLED_APPS_REGISTRY_PATH: &str = "/userdata/hyz-things/apps/registry.json"' "$(THINGS_APP)/src/adapters/outbound/registry.rs"
 	grep -q 'CERT_DIRECTORY: &str = "/userdata/hyz-things/tls"' "$(THINGS_APP)/src/adapters/inbound/http/tls.rs"
