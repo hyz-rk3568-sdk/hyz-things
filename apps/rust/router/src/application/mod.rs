@@ -1,3 +1,4 @@
+pub mod ddns;
 pub mod device_policy;
 pub mod dhcp;
 pub mod ethernet_dhcp;

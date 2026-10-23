@@ -1,4 +1,5 @@
 mod activity;
+pub mod aliyun_ddns;
 pub mod device_policy;
 pub mod firmware;
 pub mod geodata;

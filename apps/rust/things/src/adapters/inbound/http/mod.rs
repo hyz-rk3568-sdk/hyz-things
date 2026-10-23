@@ -93,6 +93,7 @@ struct AppState {
     camera_scope: Option<CameraAccessScope>,
     csrf_token: Arc<str>,
     allowed_origin: Arc<str>,
+    additional_allowed_origins: Arc<[String]>,
     /// Serves the portal over TLS: session cookies carry `Secure` and the
     /// allowed origin uses the `https` scheme. The host e2e harness and unit
     /// tests keep plain HTTP on loopback and set this to `false`.
@@ -186,6 +187,7 @@ pub fn app(read_status: PortalStatus) -> Router {
             camera_scope: None,
             csrf_token: String::new(),
             allowed_origin: format!("http://{LAN_ADDRESS}:{DEFAULT_HTTP_PORT}"),
+            additional_allowed_origins: Vec::new(),
             tls: false,
             accept_public_ipv6_origin: false,
             allow_tailscale_self_stop: true,
@@ -201,6 +203,16 @@ pub fn app_with_control(
     csrf_token: String,
     port: u16,
 ) -> Router {
+    app_with_control_and_allowed_origins(read_status, control, csrf_token, port, Vec::new())
+}
+
+pub fn app_with_control_and_allowed_origins(
+    read_status: PortalStatus,
+    control: Arc<dyn PortalControlHandler>,
+    csrf_token: String,
+    port: u16,
+    additional_allowed_origins: Vec<String>,
+) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
     app_with_assets(
         read_status,
@@ -214,6 +226,7 @@ pub fn app_with_control(
             camera_scope: None,
             csrf_token,
             allowed_origin: format!("http://{LAN_ADDRESS}:{port}"),
+            additional_allowed_origins,
             tls: false,
             accept_public_ipv6_origin: false,
             allow_tailscale_self_stop: true,
@@ -243,6 +256,7 @@ pub fn app_with_admin_control(
             camera_scope: None,
             csrf_token,
             allowed_origin: format!("http://{LAN_ADDRESS}:{port}"),
+            additional_allowed_origins: Vec::new(),
             tls: false,
             accept_public_ipv6_origin: false,
             allow_tailscale_self_stop: true,
@@ -329,6 +343,39 @@ pub fn app_with_admin_camera_control_and_flashcards_and_analysis(
     >,
     data_analysis: Option<Arc<crate::adapters::outbound::data_analysis::DataAnalysisService>>,
 ) -> Router {
+    app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_origins(
+        read_status,
+        control,
+        admin,
+        camera,
+        csrf_token,
+        port,
+        installed_apps,
+        tls,
+        flashcards,
+        flashcard_source,
+        data_analysis,
+        Vec::new(),
+    )
+}
+
+#[expect(clippy::too_many_arguments, reason = "production wiring")]
+pub fn app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_origins(
+    read_status: PortalStatus,
+    control: Arc<dyn PortalControlHandler>,
+    admin: Arc<AdminApplication>,
+    camera: Arc<CameraApplication>,
+    csrf_token: String,
+    port: u16,
+    installed_apps: Option<Arc<dyn InstalledAppsPort>>,
+    tls: bool,
+    flashcards: Option<Arc<FlashcardApplication>>,
+    flashcard_source: Option<
+        Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>,
+    >,
+    data_analysis: Option<Arc<crate::adapters::outbound::data_analysis::DataAnalysisService>>,
+    additional_allowed_origins: Vec<String>,
+) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
     app_with_assets(
         read_status,
@@ -345,6 +392,7 @@ pub fn app_with_admin_camera_control_and_flashcards_and_analysis(
                 "{}://{LAN_ADDRESS}:{port}",
                 if tls { "https" } else { "http" }
             ),
+            additional_allowed_origins,
             tls,
             accept_public_ipv6_origin: tls,
             allow_tailscale_self_stop: true,
@@ -375,6 +423,7 @@ pub fn app_with_admin_control_at_address(
             camera_scope: None,
             csrf_token,
             allowed_origin: format!("http://{address}:{port}"),
+            additional_allowed_origins: Vec::new(),
             tls: false,
             accept_public_ipv6_origin: false,
             allow_tailscale_self_stop: false,
@@ -474,6 +523,7 @@ pub fn app_with_admin_camera_control_at_address_and_flashcards_and_analysis(
             camera_scope: Some(CameraAccessScope::Tailscale { address }),
             csrf_token,
             allowed_origin: format!("{}://{address}:{port}", if tls { "https" } else { "http" }),
+            additional_allowed_origins: Vec::new(),
             tls,
             accept_public_ipv6_origin: false,
             allow_tailscale_self_stop: false,
@@ -545,6 +595,7 @@ pub fn app_with_loopback_runtime_frontend_and_flashcards(
             camera_scope: Some(CameraAccessScope::Lan),
             csrf_token,
             allowed_origin: exact_loopback_origin,
+            additional_allowed_origins: Vec::new(),
             tls: false,
             accept_public_ipv6_origin: false,
             allow_tailscale_self_stop: true,
@@ -592,6 +643,7 @@ struct AppConfiguration {
     camera_scope: Option<CameraAccessScope>,
     csrf_token: String,
     allowed_origin: String,
+    additional_allowed_origins: Vec<String>,
     tls: bool,
     accept_public_ipv6_origin: bool,
     allow_tailscale_self_stop: bool,
@@ -613,6 +665,7 @@ fn app_with_assets(
         camera_scope,
         csrf_token,
         allowed_origin,
+        additional_allowed_origins,
         tls,
         accept_public_ipv6_origin,
         allow_tailscale_self_stop,
@@ -860,6 +913,7 @@ fn app_with_assets(
             data_analysis,
             csrf_token: Arc::from(csrf_token),
             allowed_origin: Arc::from(allowed_origin),
+            additional_allowed_origins: Arc::from(additional_allowed_origins),
             tls,
             accept_public_ipv6_origin,
             allowed_ipv6_address: Arc::new(Mutex::new(None)),
@@ -2131,8 +2185,15 @@ fn ipv6_origin(address: Ipv6Addr, base_origin: &str) -> Option<String> {
     Some(format!("https://[{address}]:{port}"))
 }
 
-fn origin_is_allowed(origin: &str, primary_origin: &str, ipv6_origin: Option<&str>) -> bool {
-    origin == primary_origin || ipv6_origin == Some(origin)
+fn origin_is_allowed(
+    origin: &str,
+    primary_origin: &str,
+    additional_origins: &[String],
+    ipv6_origin: Option<&str>,
+) -> bool {
+    origin == primary_origin
+        || additional_origins.iter().any(|allowed| allowed == origin)
+        || ipv6_origin == Some(origin)
 }
 
 fn authorize_json_origin(state: &AppState, headers: &HeaderMap) -> bool {
@@ -2164,6 +2225,7 @@ fn authorize_json_origin(state: &AppState, headers: &HeaderMap) -> bool {
         && origin_is_allowed(
             origin,
             state.allowed_origin.as_ref(),
+            &state.additional_allowed_origins,
             ipv6_origin.as_deref(),
         )
         && fetch_site.is_none_or(|value| value == "same-origin")
@@ -2743,26 +2805,31 @@ mod tests {
         assert!(origin_is_allowed(
             &ipv6_origin,
             "https://192.168.8.1:8080",
+            &[],
             Some(&ipv6_origin)
         ));
         assert!(origin_is_allowed(
             "https://192.168.8.1:8080",
             "https://192.168.8.1:8080",
+            &[],
             None
         ));
         assert!(!origin_is_allowed(
             "https://[240e:380:4308:da10:7c0d:6ff:fec7:144]:8080",
             "https://192.168.8.1:8080",
+            &[],
             Some(&ipv6_origin)
         ));
         assert!(!origin_is_allowed(
             "http://[240e:380:4308:da10:7c0d:6ff:fec7:143]:8080",
             "https://192.168.8.1:8080",
+            &[],
             Some(&ipv6_origin)
         ));
         assert!(!origin_is_allowed(
             "https://[240e:380:4308:da10:7c0d:6ff:fec7:143]:8443",
             "https://192.168.8.1:8080",
+            &[],
             Some(&ipv6_origin)
         ));
     }

@@ -10,6 +10,7 @@ use hyz_router::{
             ota_cli::{parse_ota_cli, OtaCommand, OTA_USAGE},
         },
         outbound::{
+            aliyun_ddns::AliyunDdnsAdapter,
             firmware::FirmwareAdapter,
             subscription::{
                 SubscriptionStore, SystemSubscriptionResolver, UreqSubscriptionTransport,
@@ -18,6 +19,7 @@ use hyz_router::{
         },
     },
     application::{
+        ddns::{DdnsApplication, DdnsRunResult},
         device_policy::DevicePolicyApplication,
         dhcp::{DhcpApplication, DhcpEvent, DhcpPlatformPort, DhcpTransition},
         ethernet_dhcp::EthernetDhcpLifecycleApplication,
@@ -69,6 +71,7 @@ const ETHERNET_DHCP_LIFECYCLE_INTERVAL: Duration = Duration::from_secs(1);
 const DEFERRED_RUNTIME_RECONCILE_INTERVAL: Duration = Duration::from_secs(2);
 const AP_VHT80_UPGRADE_INTERVAL: Duration = Duration::from_secs(2);
 const AP_VHT80_UPGRADE_GRACE: Duration = Duration::from_secs(30);
+const ALIYUN_DDNS_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Clone)]
 struct RuntimeSerial(Arc<AsyncMutex<()>>);
@@ -1669,6 +1672,72 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         return result.map_err(|error| Box::new(error) as Box<dyn Error>);
     }
 
+    let ddns_platform = Arc::new(AliyunDdnsAdapter::new((*runtime.router).clone()));
+    let mut ddns_shutdown = shutdown_rx.clone();
+    let mut ddns = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(ALIYUN_DDNS_INTERVAL);
+        let mut last_error: Option<String> = None;
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    let platform = ddns_platform.clone();
+                    let result = tokio::task::spawn_blocking(move || {
+                        DdnsApplication::new(platform.as_ref(), platform.as_ref(), platform.as_ref())
+                            .reconcile_once()
+                    }).await;
+                    match result {
+                        Ok(Ok(DdnsRunResult::Updated)) => {
+                            last_error = None;
+                            logging::message(
+                                Level::Info,
+                                "ddns",
+                                "aliyun_ipv6",
+                                "updated",
+                                "aliyun_ddns_ipv6_updated",
+                                "the configured AAAA record was updated",
+                            );
+                        }
+                        Ok(Ok(DdnsRunResult::Disabled
+                            | DdnsRunResult::WaitingForStableAddress
+                            | DdnsRunResult::Unchanged)) => last_error = None,
+                        Ok(Err(error)) => {
+                            let detail = error.to_string();
+                            if last_error.as_deref() != Some(detail.as_str()) {
+                                logging::message(
+                                    Level::Warn,
+                                    "ddns",
+                                    "aliyun_ipv6",
+                                    "failed",
+                                    "aliyun_ddns_ipv6_failed",
+                                    format_args!("AliDNS reconciliation failed: {detail}"),
+                                );
+                                last_error = Some(detail);
+                            }
+                        }
+                        Err(error) => {
+                            let detail = format!("AliDNS worker terminated: {error}");
+                            if last_error.as_deref() != Some(detail.as_str()) {
+                                logging::message(
+                                    Level::Warn,
+                                    "ddns",
+                                    "aliyun_ipv6",
+                                    "worker_failed",
+                                    "aliyun_ddns_worker_failed",
+                                    detail.as_str(),
+                                );
+                                last_error = Some(detail);
+                            }
+                        }
+                    }
+                }
+                changed = ddns_shutdown.changed() => {
+                    let _ = changed;
+                    break;
+                }
+            }
+        }
+    });
+
     let ap_upgrade_runtime = runtime.clone();
     let mut ap_upgrade_shutdown = shutdown_rx.clone();
     let mut ap_upgrade = tokio::spawn(async move {
@@ -1923,6 +1992,26 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         )),
     };
     let services = services.and(timeout_task);
+    // DDNS owns no router state, so a delayed cloud request must not gate network teardown.
+    match timeout_at(deadline, &mut ddns).await {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => logging::message(
+            Level::Warn,
+            "ddns",
+            "shutdown",
+            "worker_failed",
+            "aliyun_ddns_shutdown_failed",
+            format_args!("AliDNS worker failed while stopping: {error}"),
+        ),
+        Err(_) => logging::message(
+            Level::Warn,
+            "ddns",
+            "shutdown",
+            "drain_timeout",
+            "aliyun_ddns_shutdown_timeout",
+            "AliDNS worker did not drain before the daemon shutdown deadline",
+        ),
+    }
     // Runtime cleanup starts only after all request handlers have drained. If drain misses the
     // absolute deadline, the process exits with ownership evidence intact instead of cancelling a
     // blocking mutation and releasing its lock while the blocking worker is still running.

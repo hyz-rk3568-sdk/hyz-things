@@ -13,7 +13,10 @@ use std::{
 use async_trait::async_trait;
 use hyz_contract::router::{ControlOperation, ControlResult};
 use hyz_things::{
-    adapters::inbound::http::{app, app_with_control},
+    adapters::{
+        inbound::http::{app, app_with_control, app_with_control_and_allowed_origins},
+        outbound::portal_config::parse_allowed_origins,
+    },
     application::{
         ports::{PortalControlError, PortalControlHandler},
         status::PortalStatus,
@@ -394,6 +397,65 @@ async fn remote_control_code_survives_http_mapping_without_leaking_remote_detail
     assert!(!response.contains("/userdata/credentials"));
     assert!(!response.contains("internal sensitive detail"));
     assert!(response.to_ascii_lowercase().contains("x-hyz-request-id:"));
+
+    server.abort();
+}
+
+#[tokio::test]
+async fn configured_https_origin_allows_mutation_and_keeps_port_exact() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind configured-origin test listener");
+    let address = listener
+        .local_addr()
+        .expect("read configured-origin address");
+    let control = Arc::new(FakeControl::default());
+    let server_control: Arc<dyn PortalControlHandler> = control.clone();
+    let server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app_with_control_and_allowed_origins(
+                read_status(server_control.clone()),
+                server_control,
+                "csrf-test".to_owned(),
+                address.port(),
+                parse_allowed_origins("ALIYUN_DOMAIN=example.invalid\nALIYUN_RR=things\n", 8080)
+                    .expect("derive configured public origin"),
+            ),
+        )
+        .await
+        .expect("serve configured-origin test app");
+    });
+
+    let allowed = tokio::task::spawn_blocking({
+        let origin = "https://things.example.invalid:8080".to_owned();
+        move || {
+            http_json_request(
+                address,
+                "/api/v1/control/display",
+                &origin,
+                Some("csrf-test"),
+                r#"{"enabled":true,"brightness":128}"#,
+            )
+        }
+    })
+    .await
+    .expect("join configured-origin request");
+    assert!(allowed.starts_with("HTTP/1.1 200 OK\r\n"));
+
+    let wrong_port = tokio::task::spawn_blocking(move || {
+        http_json_request(
+            address,
+            "/api/v1/control/display",
+            "https://things.example.invalid:8081",
+            Some("csrf-test"),
+            r#"{"enabled":false,"brightness":64}"#,
+        )
+    })
+    .await
+    .expect("join wrong-port request");
+    assert!(wrong_port.starts_with("HTTP/1.1 403 Forbidden\r\n"));
+    assert_eq!(control.display_mutations.load(Ordering::SeqCst), 1);
 
     server.abort();
 }

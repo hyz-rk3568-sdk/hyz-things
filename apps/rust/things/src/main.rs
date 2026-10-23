@@ -1,8 +1,9 @@
 use hyz_things::{
     adapters::{
         inbound::http::{
-            app_with_admin_camera_control_and_flashcards_and_analysis, bind_fixed_lan_with_retry,
-            bind_ipv6_listener, PortalTls, TlsListener, DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
+            app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_origins,
+            bind_fixed_lan_with_retry, bind_ipv6_listener, PortalTls, TlsListener,
+            DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
         },
         outbound::{
             admin::AdminFileAdapter,
@@ -10,6 +11,7 @@ use hyz_things::{
             data_analysis::{load_codex_env, DataAnalysisService},
             flashcard_source::FilesystemFlashcardSource,
             flashcard_sqlite::SqliteFlashcardRepository,
+            portal_config::load_allowed_origins,
             registry::RegistryAdapter,
             router::RouterControlClient,
             tailscale::{fetch_tailscale_status, PortalListenerApp, TailscaleListenerManager},
@@ -141,6 +143,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     let port = std::env::var("HYZ_THINGS_HTTP_PORT")
         .map(|value| value.parse::<u16>())
         .unwrap_or(Ok(DEFAULT_HTTP_PORT))?;
+    let additional_allowed_origins = load_allowed_origins(port).map_err(std::io::Error::other)?;
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let mut shutdown_rx = shutdown_rx;
@@ -252,7 +255,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
             None
         }
     };
-    let app = app_with_admin_camera_control_and_flashcards_and_analysis(
+    let app = app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_origins(
         status,
         control,
         admin,
@@ -264,6 +267,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         flashcards,
         flashcard_source,
         data_analysis,
+        additional_allowed_origins,
     );
     let ipv6_task = ipv6_listener.map(|listener| {
         let app = app.clone();
