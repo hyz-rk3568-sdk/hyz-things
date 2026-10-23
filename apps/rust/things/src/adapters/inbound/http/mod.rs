@@ -2524,7 +2524,6 @@ fn is_post_path(path: &str) -> bool {
         "/api/v1/auth/login"
             | "/api/v1/auth/logout"
             | "/api/v1/auth/password"
-            | "/api/v1/camera/viewer-token"
             | "/api/v1/control/camera/session/create"
             | "/api/v1/control/camera/session/close"
             | "/api/v1/control/camera/profile"
@@ -2991,7 +2990,7 @@ mod tests {
         assert!(is_post_path("/api/v1/auth/login"));
         assert!(is_post_path("/api/v1/auth/logout"));
         assert!(is_post_path("/api/v1/auth/password"));
-        assert!(is_post_path("/api/v1/camera/viewer-token"));
+        assert!(!is_post_path("/api/v1/camera/viewer-token"));
         assert!(is_post_path("/api/v1/control/camera/session/create"));
         assert!(is_post_path("/api/v1/control/camera/session/close"));
         assert!(is_post_path("/api/v1/control/camera/rotation"));
