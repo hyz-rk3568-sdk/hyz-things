@@ -93,30 +93,25 @@ test("serves the generated bundle through the strict production-shaped HTTP boun
   const anonymousTailscalePeers = await request.get("/api/v1/tailscale/peers");
   expect(anonymousTailscalePeers.status()).toBe(401);
   const anonymousCameraStatus = await request.get("/api/v1/camera/status");
-  expect(anonymousCameraStatus.status()).toBe(200);
+  expect(anonymousCameraStatus.status()).toBe(401);
 
   const anonymousCameraVolume = await request.post("/api/v1/control/camera/volume", {
     headers: { Origin: webOrigin, "X-HYZ-CSRF": csrf },
     data: { volume_percent: 42 },
   });
-  expect(anonymousCameraVolume.status()).toBe(200);
-  expect(await anonymousCameraVolume.json()).toEqual({ applied: true });
-  await expect
-    .poll(async () => (await readHarnessState(request)).camera.status.audio.volume_percent)
-    .toBe(42);
+  expect(anonymousCameraVolume.status()).toBe(401);
 
   const invalidCameraVolume = await request.post("/api/v1/control/camera/volume", {
     headers: { Origin: webOrigin, "X-HYZ-CSRF": csrf },
     data: { volume_percent: 101 },
   });
-  expect(invalidCameraVolume.status()).toBe(400);
-  expect((await invalidCameraVolume.json()).error.code).toBe("camera_invalid_request");
+  expect(invalidCameraVolume.status()).toBe(401);
 
   const unknownCameraVolumeField = await request.post("/api/v1/control/camera/volume", {
     headers: { Origin: webOrigin, "X-HYZ-CSRF": csrf },
     data: { volume_percent: 42, extra: true },
   });
-  expect(unknownCameraVolumeField.status()).toBe(400);
+  expect(unknownCameraVolumeField.status()).toBe(401);
 
   const missingCameraVolumeCsrf = await request.post("/api/v1/control/camera/volume", {
     headers: { Origin: webOrigin },
@@ -163,43 +158,38 @@ test("serves the generated bundle through the strict production-shaped HTTP boun
         app.deployed_at_unix_ms > 0,
     ),
   ).toBeTruthy();
-  // 匿名 viewer 令牌只允许创建/关闭自己的会话，profile/rotation 仍是管理员专属。
+  // Anonymous token issuance is removed; legacy 64-character tokens
+  // must never authorize new camera sessions.
   const viewerToken = await request.post("/api/v1/camera/viewer-token", {
     headers: { Origin: webOrigin, "Content-Type": "application/json" },
     data: {},
   });
-  expect(viewerToken.status()).toBe(200);
-  const { token: viewerTokenValue } = (await viewerToken.json()) as {
-    token: string;
-  };
-  expect(viewerTokenValue).toMatch(/^[0-9a-f]{64}$/);
-  const anonymousViewerCreate = await request.post(
+  expect([404, 405]).toContain(viewerToken.status());
+  const legacyToken = "a".repeat(64);
+  const legacyViewerCreate = await request.post(
     "/api/v1/control/camera/session/create",
     {
-      headers: { Origin: webOrigin, "X-HYZ-CSRF": viewerTokenValue },
-      data: { offer_sdp: "v=0\r\n" },
+      headers: { Origin: webOrigin, "X-HYZ-CSRF": legacyToken },
+      data: { offer_sdp: "v=0\\r\\n" },
     },
   );
-  expect(anonymousViewerCreate.status()).toBe(200);
-  const createdSession = (await anonymousViewerCreate.json()) as {
-    session_id: string;
-  };
-  const anonymousViewerClose = await request.post(
+  expect(legacyViewerCreate.status()).not.toBe(200);
+  const legacyViewerClose = await request.post(
     "/api/v1/control/camera/session/close",
     {
-      headers: { Origin: webOrigin, "X-HYZ-CSRF": viewerTokenValue },
-      data: { session_id: createdSession.session_id },
+      headers: { Origin: webOrigin, "X-HYZ-CSRF": legacyToken },
+      data: { session_id: "invalid" },
     },
   );
-  expect(anonymousViewerClose.status()).toBe(200);
-  const anonymousViewerProfile = await request.post(
+  expect(legacyViewerClose.status()).not.toBe(200);
+  const legacyViewerProfile = await request.post(
     "/api/v1/control/camera/profile",
     {
-      headers: { Origin: webOrigin, "X-HYZ-CSRF": viewerTokenValue },
+      headers: { Origin: webOrigin, "X-HYZ-CSRF": legacyToken },
       data: { preset: "fhd1080p5m" },
     },
   );
-  expect(anonymousViewerProfile.status()).toBe(403);
+  expect(legacyViewerProfile.status()).toBe(403);
   const removedProxyMode = await request.post("/api/v1/control/proxy/mode", {
     headers: { Origin: webOrigin, "X-HYZ-CSRF": csrf },
     data: { mode: "tun" },
@@ -261,4 +251,57 @@ test("serves the generated bundle through the strict production-shaped HTTP boun
   expect(administratorCookie).toContain("SameSite=Strict");
   expect(administratorCookie).toContain("Path=/");
   expect(administratorCookie).toContain("Max-Age=2592000");
+
+  // Initial bootstrap login is restricted until the password is changed.
+  expect((await request.get("/api/v1/camera/status")).status()).toBe(403);
+  const passwordChange = await request.post("/api/v1/auth/password", {
+    headers: { Origin: webOrigin, "X-HYZ-CSRF": csrf },
+    data: {
+      current_password: "admin",
+      new_password: "router-e2e-password",
+    },
+  });
+  expect(passwordChange.status()).toBe(200);
+  expect((await request.get("/api/v1/camera/status")).status()).toBe(200);
+
+  const authenticatedVolume = await request.post("/api/v1/control/camera/volume", {
+    headers: { Origin: webOrigin, "X-HYZ-CSRF": csrf },
+    data: { volume_percent: 42 },
+  });
+  expect(authenticatedVolume.status()).toBe(200);
+  expect(await authenticatedVolume.json()).toEqual({ applied: true });
+  await expect
+    .poll(async () => (await readHarnessState(request)).camera.status.audio.volume_percent)
+    .toBe(42);
+  const invalidAuthenticatedVolume = await request.post("/api/v1/control/camera/volume", {
+    headers: { Origin: webOrigin, "X-HYZ-CSRF": csrf },
+    data: { volume_percent: 101 },
+  });
+  expect(invalidAuthenticatedVolume.status()).toBe(400);
+  expect((await invalidAuthenticatedVolume.json()).error.code).toBe("camera_invalid_request");
+
+  const administratorCreate = await request.post(
+    "/api/v1/control/camera/session/create",
+    {
+      headers: { Origin: webOrigin, "X-HYZ-CSRF": csrf },
+      data: { offer_sdp: "v=0\\r\\n" },
+    },
+  );
+  expect(administratorCreate.status()).toBe(200);
+  const { session_id } = await administratorCreate.json();
+  const administratorClose = await request.post(
+    "/api/v1/control/camera/session/close",
+    {
+      headers: { Origin: webOrigin, "X-HYZ-CSRF": csrf },
+      data: { session_id },
+    },
+  );
+  expect(administratorClose.status()).toBe(200);
+
+  const logout = await request.post("/api/v1/auth/logout", {
+    headers: { Origin: webOrigin, "X-HYZ-CSRF": csrf },
+    data: {},
+  });
+  expect(logout.status()).toBe(200);
+  expect((await request.get("/api/v1/camera/status")).status()).toBe(401);
 });
