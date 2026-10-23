@@ -39,7 +39,7 @@
 - 统一 Web UI 的状态、LCD/代理模式、节点选择和受控延迟刷新已完成板端功能验证；inline proxies 组级测速、超时标记和后续 panel 缓存已按 16/16 匿名覆盖验证；S81 已改为总 deadline 内封顶退避，并通过最终 recovery-free OTA 的冷启动和 restart 验证；
 - 管理员认证、强制首次改密、默认折叠登录表单、typed AP/STA 设置、两阶段 AP 回滚和 write-only Mihomo HTTPS 订阅更新已经进入 hyz-things 门户；错误 STA 自动恢复、AP 未确认超时回滚、无秘密摘要以及凭据型订阅刷新已通过板测，成功切换另一组真实 STA 和管理员实际改密仍待操作者输入本地凭据；
 - 独立 `hyz-camera`、受限 HTTP SDP 信令、V4L2 + GStreamer + Rockchip MPP H.264、`str0m` 和固定 UDP 端口池已进入最终 recovery-free OTA；固定 `1920×1080 @ 30 FPS` 中央裁剪、full-range H.264 SPS/VUI、真实 canvas 非黑像素和全屏交互已通过 LAN 与 Tailscale、桌面与移动端四组真实 MJS/Playwright 播放/停止验收；
-- 门户 UI 已改为 `首页 / 路由器 / 摄像头` 形态：首页聚合应用入口、`/api/v1/apps` 热推送部署记录与运行概览；摄像头直播免登录可看（15 分钟短时 viewer 令牌），画面分辨率与旋转设置保留管理员专属；
+- 门户 UI 已改为 `首页 / 路由器 / 摄像头` 形态：首页聚合应用入口、`/api/v1/apps` 热推送部署记录与运行概览；摄像头直播与画面控制统一要求现有管理员登录，不再发放匿名 viewer 令牌；
 - 三进程拆分（无头 `hyz-router` + `hyz-things` 门户 + `hyz-camera` 媒体）已完成：`deploy-app.sh` 只支持热推送 things/camera，且不重启 router；协议版本不匹配时在停止服务前拒绝；
 - router 开发/授权维护的热替换规则已固定：USB ADB 先上传、校验并备份，再执行 `stop → 原子替换 → start`；网络 ADB（物理 LAN 或 TCP 5555 可达的 Tailscale 路径）在旧进程仍运行时完成校验、备份和原子替换，再执行 `reboot`；正式发布仍通过 recovery-free OTA；
 - `hyz-router` 源码与主机测试已完成 typed `Ethernet/Wi-Fi` 双上游、metric `100/600`、active uplink、按 uplink 隔离的 DHCP/resolver ownership、双出口 firewall/status，以及管理页面的双上游展示；完整板端切换矩阵仍待验收；
