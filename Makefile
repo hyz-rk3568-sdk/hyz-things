@@ -262,7 +262,8 @@ endif
 	grep -q 'npm run build:css' "$(THINGS_APP)/tools/build-frontend-bundle.sh"
 	grep -q 'data-bin="hyz-things-web"' "$(THINGS_APP)/frontend/index.html"
 	grep -q '^hyz-contract = { path = "\.\./contract", default-features = false, optional = true }' "$(THINGS_APP)/Cargo.toml"
-	! grep -q 'hmac\|pbkdf2\|url = ' "$(ROUTER_APP)/Cargo.toml"
+	! grep -q 'pbkdf2\|url = ' "$(ROUTER_APP)/Cargo.toml"
+	grep -q '^hmac = { version = "0.13", optional = true }$$' "$(ROUTER_APP)/Cargo.toml"
 	grep -q '"name": "hyz-things-web"' "$(THINGS_APP)/package.json" "$(THINGS_APP)/package-lock.json"
 	grep -q 'apps/rust/things/frontend/router.css' .gitignore
 	! grep -R -q 'HYZ Router\|HYZ 路由器' "$(THINGS_APP)/src/web" "$(THINGS_APP)/frontend/index.html" "$(THINGS_APP)/e2e"

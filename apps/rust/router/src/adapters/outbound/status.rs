@@ -15,6 +15,7 @@ use crate::{
         status::{StatusRouterPlatformPort, StatusSystemProbePort},
     },
     domain::{
+        ddns::{is_public_global_ipv6, select_stable_public_ipv6},
         network::{
             ForwardingDesired, NetworkDesired, NetworkObserved, OwnedResource, Probe, UplinkId,
             UplinkObserved, ETHERNET_WAN_INTERFACE, LAN_BRIDGE, LAN_MEMBER, WAN_INTERFACE,
@@ -246,6 +247,19 @@ fn read_router_status(platform: &LinuxRouterPlatform) -> Component<RouterStatus>
     }
 }
 
+pub(crate) fn stable_public_ipv6_address(platform: &LinuxRouterPlatform) -> Option<Ipv6Addr> {
+    let routes = probe_output(platform, Tool::Ip, &["-6", "route", "show", "default"])?;
+    let interface = default_ipv6_route_interface(&routes)?;
+    let addresses = probe_output(
+        platform,
+        Tool::Ip,
+        &[
+            "-o", "-6", "address", "show", "dev", interface, "scope", "global",
+        ],
+    )?;
+    select_stable_public_ipv6(addresses.lines().filter_map(parse_global_ipv6_address_line))
+}
+
 fn public_ipv6_address(platform: &LinuxRouterPlatform) -> Option<Ipv6Addr> {
     let routes = probe_output(platform, Tool::Ip, &["-6", "route", "show", "default"])?;
     let interface = default_ipv6_route_interface(&routes)?;
@@ -308,16 +322,6 @@ fn parse_global_ipv6_address_line(line: &str) -> Option<(Ipv6Addr, bool)> {
         return None;
     }
     Some((address.parse().ok()?, fields.contains(&"temporary")))
-}
-
-fn is_public_global_ipv6(address: Ipv6Addr) -> bool {
-    let segments = address.segments();
-    let in_global_unicast_range = segments[0] & 0xe000 == 0x2000;
-    let documentation = (segments[0] == 0x2001 && segments[1] == 0x0db8)
-        || (segments[0] == 0x3fff && segments[1] & 0xf000 == 0);
-    let benchmarking = segments[0] == 0x2001 && segments[1] == 0x0002 && segments[2] == 0;
-    let orchid = segments[0] == 0x2001 && matches!(segments[1] & 0xfff0, 0x0010 | 0x0020);
-    in_global_unicast_range && !documentation && !benchmarking && !orchid && segments[0] != 0x2002
 }
 
 fn router_status_is_degraded(observed: &NetworkObserved) -> bool {
