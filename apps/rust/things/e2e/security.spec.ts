@@ -170,7 +170,7 @@ test("serves the generated bundle through the strict production-shaped HTTP boun
     "/api/v1/control/camera/session/create",
     {
       headers: { Origin: webOrigin, "X-HYZ-CSRF": legacyToken },
-      data: { offer_sdp: "v=0\\r\\n" },
+      data: { offer_sdp: "v=0\r\n" },
     },
   );
   expect(legacyViewerCreate.status()).not.toBe(200);
@@ -284,7 +284,7 @@ test("serves the generated bundle through the strict production-shaped HTTP boun
     "/api/v1/control/camera/session/create",
     {
       headers: { Origin: webOrigin, "X-HYZ-CSRF": csrf },
-      data: { offer_sdp: "v=0\\r\\n" },
+      data: { offer_sdp: "v=0\r\n" },
     },
   );
   expect(administratorCreate.status()).toBe(200);
