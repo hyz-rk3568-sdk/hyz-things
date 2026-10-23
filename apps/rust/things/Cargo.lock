@@ -1328,9 +1328,9 @@ name = "hyz-things"
 version = "0.1.0"
 dependencies = [
  "argon2",
- "base64",
  "async-trait",
  "axum",
+ "base64",
  "chrono",
  "getrandom 0.3.4",
  "gloo-net 0.6.0",
