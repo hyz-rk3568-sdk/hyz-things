@@ -35,13 +35,9 @@ pub(crate) type CameraRuntime = Rc<RefCell<Option<CameraSessionRuntime>>>;
 
 #[derive(Properties, PartialEq)]
 pub(crate) struct CameraLiveViewProps {
-    /// Panel bootstrap CSRF token, used only for administrator mutations
-    /// (profile/rotation) while an administrator session is present.
+    /// Reuse the authenticated administrator session and the panel CSRF for
+    /// both live viewing and camera mutations.
     pub(crate) admin_csrf: String,
-    /// Whether an administrator session is currently authenticated without a
-    /// forced password change. Anonymous viewers must not use the (public)
-    /// panel CSRF as their session token; they get a short-lived viewer token.
-    pub(crate) is_admin: bool,
     pub(crate) stop_generation: u32,
 }
 
@@ -357,24 +353,6 @@ pub(crate) async fn close_camera_session(session_id: String, csrf: String) {
     .await;
 }
 
-pub(crate) async fn fetch_camera_viewer_token() -> Result<String, String> {
-    let response = Request::post(CAMERA_VIEWER_TOKEN_ENDPOINT)
-        .credentials(RequestCredentials::SameOrigin)
-        .header("Accept", "application/json")
-        .header("Content-Type", "application/json")
-        .send()
-        .await
-        .map_err(|error| format!("无法获取观看凭证：{error}"))?;
-    if !response.ok() {
-        return Err(format!("观看凭证接口返回 HTTP {}", response.status()));
-    }
-    response
-        .json::<CameraViewerTokenDto>()
-        .await
-        .map(|dto| dto.token)
-        .map_err(|error| format!("观看凭证数据格式无效：{error}"))
-}
-
 pub(crate) fn take_camera_runtime(
     runtime: &CameraRuntime,
     video: &NodeRef,
@@ -649,33 +627,9 @@ pub(crate) fn camera_live_view(props: &CameraLiveViewProps) -> Html {
         });
     }
 
-    let viewer_token = use_state(|| None::<String>);
-    let viewer_token_error = use_state(|| None::<String>);
-    {
-        let viewer_token = viewer_token.clone();
-        let viewer_token_error = viewer_token_error.clone();
-        use_effect_with(props.is_admin, move |is_admin| {
-            viewer_token.set(None);
-            viewer_token_error.set(None);
-            if !is_admin {
-                spawn_local(async move {
-                    match fetch_camera_viewer_token().await {
-                        Ok(token) => viewer_token.set(Some(token)),
-                        Err(error) => viewer_token_error.set(Some(error)),
-                    }
-                });
-            }
-            || ()
-        });
-    }
-
-    let session_token = if props.is_admin {
-        props.admin_csrf.clone()
-    } else {
-        viewer_token.as_deref().unwrap_or("").to_owned()
-    };
+    let session_token = props.admin_csrf.clone();
     let can_view = !session_token.is_empty();
-    let can_control = props.is_admin && !props.admin_csrf.is_empty();
+    let can_control = can_view;
 
     {
         let runtime = runtime.clone();
@@ -1367,10 +1321,7 @@ pub(crate) fn camera_live_view(props: &CameraLiveViewProps) -> Html {
                     } else {
                         <p class={HELP_TEXT} role="status">{"正在读取摄像头状态…"}</p>
                     }
-                    if let Some(error) = viewer_token_error.as_ref() {
-                        <p class="text-xs text-error" role="status">{format!("观看凭证获取失败：{error}")}</p>
-                    }
-                    <p class={HELP_TEXT}>{"视频不会自动启动。点击麦克风图标即可开启或关闭对讲；播放中可以暂停画面、停止会话或尝试进入画中画。切到后台后会话持续保留，回来可继续播放；手动停止、退出登录、关闭页面或切换门户页面时停止。画面设置需要管理员登录。"}</p>
+                    <p class={HELP_TEXT}>{"视频不会自动启动。点击麦克风图标即可开启或关闭对讲；播放中可以暂停画面、停止会话或尝试进入画中画。切到后台后会话持续保留，回来可继续播放；手动停止、退出登录、关闭页面或切换门户页面时停止。使用前需要登录管理员账号。"}</p>
                     if let Some(message) = notice.as_ref() {
                         <p class={CAMERA_NOTICE} role="status" aria-live="polite">{message}</p>
                     }

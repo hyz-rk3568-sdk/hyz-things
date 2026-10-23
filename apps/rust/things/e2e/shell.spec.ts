@@ -191,7 +191,7 @@ test("switches portal pages with horizontal touch swipes", async ({ page }) => {
   await swipePortal(page, 200, 240, 170, 360);
   await expect(pageButton("应用")).toHaveAttribute("aria-pressed", "true");
   await goToAppPage(page, "摄像头");
-  await expect(page.getByRole("heading", { name: "摄像头直播" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "管理员登录" })).toBeVisible();
 });
 
 test("switches portal pages from browser touch input", async ({ page }) => {
