@@ -143,8 +143,12 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   const scrollInfo=await passage.evaluate(el=>({height:el.clientHeight,total:el.scrollHeight}));
   expect(scrollInfo.total).toBeGreaterThan(scrollInfo.height);
   const beforeFrame=await page.getByTestId("analysis-shared-workspace").boundingBox();
-  await passage.evaluate(el=>{el.scrollTop=140;});
-  expect(await passage.evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
+  // Each click moves one third of the material pane's actual visible height.
+  await page.getByRole("button",{name:"材料向下滚动"}).click();
+  await expect.poll(()=>passage.evaluate(el=>el.scrollTop)).toBeGreaterThan(scrollInfo.height*0.28);
+  await expect.poll(()=>passage.evaluate(el=>el.scrollTop)).toBeLessThan(scrollInfo.height*0.38);
+  await page.getByRole("button",{name:"材料向上滚动"}).click();
+  await expect.poll(()=>passage.evaluate(el=>el.scrollTop)).toBeLessThan(scrollInfo.height*0.04);
   expect(await page.getByTestId("analysis-shared-workspace").boundingBox()).toEqual(beforeFrame);
   expect(await page.evaluate(()=>window.scrollY)).toBe(0);
 
@@ -200,6 +204,11 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   expect(portraitMaterial!.y).toBeLessThan(portraitQuestion!.y);
   expect(portraitQuestion!.y+portraitQuestion!.height).toBeLessThanOrEqual(430);
   expect(await page.getByTestId("analysis-question").evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);
+  const shortPane=page.getByTestId("analysis-material-scroll");
+  const shortHeight=await shortPane.evaluate(el=>el.clientHeight);
+  await page.getByRole("button",{name:"材料向下滚动"}).click();
+  await expect.poll(()=>shortPane.evaluate(el=>el.scrollTop)).toBeGreaterThan(shortHeight*0.28);
+  await expect.poll(()=>shortPane.evaluate(el=>el.scrollTop)).toBeLessThan(shortHeight*0.38);
   await page.getByTestId("analysis-question").evaluate(el=>{el.scrollTop=80;});
   expect(await page.getByTestId("analysis-question").evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
   expect(await page.evaluate(()=>window.scrollY)).toBe(0);
