@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { resetHarness } from "./fixtures";
+import { expectNoHorizontalOverflow, resetHarness } from "./fixtures";
 
 test.beforeEach(async ({ request }) => { await resetHarness(request); });
 
@@ -140,18 +140,8 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   // Long passages scroll only inside the material pane. The full-page card,
   // toolbar and question stay pinned in position.
   const passage=page.getByTestId("analysis-material-scroll");
-  const scrollInfo=await passage.evaluate(el=>({height:el.clientHeight,total:el.scrollHeight}));
-  expect(scrollInfo.total).toBeGreaterThan(scrollInfo.height);
-  const beforeFrame=await page.getByTestId("analysis-shared-workspace").boundingBox();
-  // Each click moves one third of the material pane's actual visible height.
-  await page.getByRole("button",{name:"材料向下滚动"}).click();
-  await expect.poll(()=>passage.evaluate(el=>el.scrollTop)).toBeGreaterThan(scrollInfo.height*0.28);
-  await expect.poll(()=>passage.evaluate(el=>el.scrollTop)).toBeLessThan(scrollInfo.height*0.38);
-  await page.getByRole("button",{name:"材料向上滚动"}).click();
-  await expect.poll(()=>passage.evaluate(el=>el.scrollTop)).toBeLessThan(scrollInfo.height*0.04);
-  expect(await page.getByTestId("analysis-shared-workspace").boundingBox()).toEqual(beforeFrame);
-  expect(await page.evaluate(()=>window.scrollY)).toBe(0);
-
+  const scrollControls=page.getByRole("group",{name:"材料滚动"});
+  await expect(scrollControls).toBeHidden();
   // Exactly ONE transparent canvas and ONE toolbar cover the whole two-column
   // workspace, so the same CSS-pixel pen width applies to both sides.
   const surface=page.getByTestId("analysis-run").getByTestId("calculation-scratchpad");
@@ -160,6 +150,33 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(canvas).toHaveCount(1);
   await expect(toggle).toHaveCount(1);
   await toggle.click();
+  await expect(scrollControls).toBeVisible();
+  const scrollUp=page.getByRole("button",{name:"材料向上滚动"});
+  const scrollDown=page.getByRole("button",{name:"材料向下滚动"});
+  await expect(scrollUp).toBeDisabled();
+  await expect(scrollDown).toBeEnabled();
+  const scrollInfo=await passage.evaluate(el=>({height:el.clientHeight,total:el.scrollHeight}));
+  expect(scrollInfo.total).toBeGreaterThan(scrollInfo.height);
+  const beforeFrame=await page.getByTestId("analysis-shared-workspace").boundingBox();
+  // Each click moves one third of the material pane's actual visible height.
+  await page.getByRole("button",{name:"材料向下滚动"}).click();
+  await expect.poll(()=>passage.evaluate(el=>el.scrollTop)).toBeGreaterThan(scrollInfo.height*0.28);
+  await expect.poll(()=>passage.evaluate(el=>el.scrollTop)).toBeLessThan(scrollInfo.height*0.38);
+  await expect(scrollUp).toBeEnabled();
+  await expect(scrollDown).toBeEnabled();
+  await scrollUp.click();
+  await expect.poll(()=>passage.evaluate(el=>el.scrollTop)).toBeLessThan(scrollInfo.height*0.04);
+  await expect(scrollUp).toBeDisabled();
+  await expect(scrollDown).toBeEnabled();
+  await passage.evaluate(el=>{el.scrollTop=el.scrollHeight;});
+  await expect(scrollDown).toBeDisabled();
+  await expect(scrollUp).toBeEnabled();
+  await passage.evaluate(el=>{el.scrollTop=0;});
+  await expect(scrollUp).toBeDisabled();
+  await expect(scrollDown).toBeEnabled();
+  expect(await page.getByTestId("analysis-shared-workspace").boundingBox()).toEqual(beforeFrame);
+  expect(await page.evaluate(()=>window.scrollY)).toBe(0);
+
   const workspace=await page.getByTestId("analysis-shared-workspace").boundingBox();
   const inkBox=await canvas.boundingBox();
   expect(inkBox).not.toBeNull();
@@ -206,9 +223,25 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   expect(await page.getByTestId("analysis-question").evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);
   const shortPane=page.getByTestId("analysis-material-scroll");
   const shortHeight=await shortPane.evaluate(el=>el.clientHeight);
+  await toggle.click();
+  await expect(scrollControls).toBeVisible();
   await page.getByRole("button",{name:"材料向下滚动"}).click();
   await expect.poll(()=>shortPane.evaluate(el=>el.scrollTop)).toBeGreaterThan(shortHeight*0.28);
   await expect.poll(()=>shortPane.evaluate(el=>el.scrollTop)).toBeLessThan(shortHeight*0.38);
+  await page.getByTestId("calculation-scratchpad-close").click();
+  await expect(scrollControls).toBeHidden();
+  await page.setViewportSize({width:390,height:844});
+  await expectNoHorizontalOverflow(page);
+  await toggle.click();
+  await expect(scrollControls).toBeVisible();
+  await shortPane.evaluate(el=>{el.scrollTop=0;});
+  await expect(scrollUp).toBeDisabled();
+  await expect(scrollDown).toBeEnabled();
+  const phoneStart=await shortPane.evaluate(el=>el.scrollTop);
+  await scrollDown.click();
+  await expect.poll(()=>shortPane.evaluate(el=>el.scrollTop)).toBeGreaterThan(phoneStart);
+  await page.getByTestId("calculation-scratchpad-close").click();
+  await expect(scrollControls).toBeHidden();
   await page.getByTestId("analysis-question").evaluate(el=>{el.scrollTop=80;});
   expect(await page.getByTestId("analysis-question").evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
   expect(await page.evaluate(()=>window.scrollY)).toBe(0);

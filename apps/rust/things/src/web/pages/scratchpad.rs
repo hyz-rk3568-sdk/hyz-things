@@ -539,6 +539,7 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
     let has_visible_ink = strokes.borrow().has_visible_ink();
 
     html! {
+        <ContextProvider<bool> context={*enabled}>
         <section class={if props.responsive { "calculation-scratchpad relative flex-1 min-h-0 min-w-0 h-full rounded-box" } else { "calculation-scratchpad relative min-h-80 min-w-0 rounded-box bg-base-100/60" }} data-testid="calculation-scratchpad" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
             <div class={if props.responsive { "h-full min-h-0 min-w-0" } else { "min-h-80 pt-12" }}>{for props.children.iter()}</div>
             <button
@@ -575,6 +576,7 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
                 <p class="pointer-events-none absolute left-2 top-2 z-30 rounded bg-base-100/85 px-2 py-1 text-xs text-base-content/65">{"手写中 · 关闭后可点选答案"}</p>
             }
         </section>
+        </ContextProvider<bool>>
     }
 }
 

@@ -3,6 +3,7 @@ use super::*;
 use gloo_timers::{callback::Interval, future::TimeoutFuture};
 use js_sys::Date;
 use serde::Serialize;
+use wasm_bindgen::JsCast;
 
 #[derive(Properties, PartialEq)]
 pub(crate) struct ComprehensiveProps {
@@ -23,12 +24,77 @@ struct AnalysisPanesProps {
     question: Html,
 }
 
+#[derive(Clone, Copy, Default, PartialEq)]
+struct MaterialScrollEdges {
+    can_scroll_up: bool,
+    can_scroll_down: bool,
+}
+
+fn material_scroll_edges(element: &web_sys::HtmlElement) -> MaterialScrollEdges {
+    let max_scroll = (element.scroll_height() - element.client_height()).max(0);
+    let scroll_top = element.scroll_top().clamp(0, max_scroll);
+    MaterialScrollEdges {
+        can_scroll_up: scroll_top > 0,
+        can_scroll_down: scroll_top < max_scroll,
+    }
+}
+
 // The scroll distance follows the *visible material pane*, not fixed pixels
 // or the full window height. Keep controls outside scrollable content.
 // The extra right margin clears InkOverlay's top-right toggle on stacked panes.
 #[function_component(AnalysisPanes)]
 fn analysis_panes(props: &AnalysisPanesProps) -> Html {
     let passage = use_node_ref();
+    let scratchpad_open = use_context::<bool>().unwrap_or(false);
+    let scroll_edges = use_state(MaterialScrollEdges::default);
+    let refresh_scroll_edges = {
+        let passage = passage.clone();
+        let scroll_edges = scroll_edges.clone();
+        Callback::from(move |_: ()| {
+            if let Some(element) = passage.cast::<web_sys::HtmlElement>() {
+                let next = material_scroll_edges(&element);
+                if *scroll_edges != next {
+                    scroll_edges.set(next);
+                }
+            }
+        })
+    };
+    let on_passage_scroll = {
+        let refresh_scroll_edges = refresh_scroll_edges.clone();
+        Callback::from(move |_: web_sys::Event| refresh_scroll_edges.emit(()))
+    };
+    {
+        let refresh_scroll_edges = refresh_scroll_edges.clone();
+        use_effect_with((scratchpad_open, props.material.text.clone()), move |_| {
+            refresh_scroll_edges.emit(());
+            || ()
+        });
+    }
+    {
+        let refresh_scroll_edges = refresh_scroll_edges.clone();
+        use_effect_with((), move |_| {
+            let window = web_sys::window();
+            let handler =
+                wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::Event)>::new(move |_| {
+                    refresh_scroll_edges.emit(())
+                });
+            let attached = window.as_ref().is_some_and(|window| {
+                window
+                    .add_event_listener_with_callback("resize", handler.as_ref().unchecked_ref())
+                    .is_ok()
+            });
+            move || {
+                if attached {
+                    if let Some(window) = window {
+                        let _ = window.remove_event_listener_with_callback(
+                            "resize",
+                            handler.as_ref().unchecked_ref(),
+                        );
+                    }
+                }
+            }
+        });
+    }
     let scroll_by_third = |direction: f64| {
         let passage = passage.clone();
         Callback::from(move |_: MouseEvent| {
@@ -50,12 +116,14 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
                         <div class="text-sm font-semibold">{props.material.topic.clone()}</div>
                         <div class="pt-1 text-xs text-base-content/60">{"模拟训练材料 · 根据历年行测真题风格新编，非真题原文"}</div>
                     </div>
-                    <div class="flex shrink-0 gap-1 mr-10 lg:mr-0" role="group" aria-label="材料滚动">
-                        <button type="button" class="btn btn-ghost btn-sm px-2" aria-label="材料向上滚动" title="向上滚动 1/3 可视区域" onclick={scroll_up}>{"↑"}</button>
-                        <button type="button" class="btn btn-ghost btn-sm px-2" aria-label="材料向下滚动" title="向下滚动 1/3 可视区域" onclick={scroll_down}>{"↓"}</button>
-                    </div>
+                    if scratchpad_open {
+                        <div class="relative z-30 flex shrink-0 gap-1 mr-10 lg:mr-0" role="group" aria-label="材料滚动">
+                            <button type="button" class="btn btn-ghost btn-sm px-2" aria-label="材料向上滚动" title="向上滚动 1/3 可视区域" disabled={!scroll_edges.can_scroll_up} onclick={scroll_up}>{"↑"}</button>
+                            <button type="button" class="btn btn-ghost btn-sm px-2" aria-label="材料向下滚动" title="向下滚动 1/3 可视区域" disabled={!scroll_edges.can_scroll_down} onclick={scroll_down}>{"↓"}</button>
+                        </div>
+                    }
                 </div>
-                <div ref={passage} class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y scroll-smooth" data-testid="analysis-material-scroll">
+                <div ref={passage} onscroll={on_passage_scroll} class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y scroll-smooth" data-testid="analysis-material-scroll">
                     <div class="whitespace-pre-wrap px-4 pb-4 pt-2 text-base leading-8">{props.material.text.clone()}</div>
                 </div>
             </article>
