@@ -69,9 +69,6 @@ pub const DEFAULT_BIND_ATTEMPTS: usize = 15;
 pub const ADMIN_SESSION_COOKIE: &str = "hyz_admin_session";
 const MAX_HTTP_JSON_BODY_BYTES: usize = 4 * 1024;
 const MAX_CAMERA_HTTP_JSON_BODY_BYTES: usize = CAMERA_MAX_SDP_BYTES + 4 * 1024;
-const VIEWER_TOKEN_TTL: Duration = Duration::from_secs(15 * 60);
-const VIEWER_TOKEN_TTL_SECONDS: u64 = 15 * 60;
-const MAX_VIEWER_TOKENS: usize = 128;
 const REQUEST_ID_HEADER: &str = "x-hyz-request-id";
 static FALLBACK_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -105,10 +102,6 @@ struct AppState {
     allow_tailscale_self_stop: bool,
     assets: AssetStore,
     installed_apps: Option<Arc<dyn InstalledAppsPort>>,
-    /// Short-lived anonymous camera viewer capabilities. Each token is a
-    /// 256-bit secret issued to the browser and remembered here so a leaked
-    /// token expires even if its owner never closes their sessions.
-    viewer_tokens: Arc<Mutex<HashMap<String, Instant>>>,
 }
 
 #[derive(Clone)]
@@ -642,10 +635,6 @@ fn app_with_assets(
             on(MethodFilter::GET, camera_status),
         )
         .route(
-            "/api/v1/camera/viewer-token",
-            on(MethodFilter::POST, camera_viewer_token),
-        )
-        .route(
             "/api/v1/control/camera/session/create",
             on(MethodFilter::POST, camera_session_create)
                 .layer(DefaultBodyLimit::max(MAX_CAMERA_HTTP_JSON_BODY_BYTES)),
@@ -877,7 +866,6 @@ fn app_with_assets(
             allow_tailscale_self_stop,
             assets,
             installed_apps,
-            viewer_tokens: Arc::new(Mutex::new(HashMap::new())),
         })
 }
 
@@ -1217,12 +1205,6 @@ struct CameraSessionCloseRequest {
 }
 
 #[derive(Serialize)]
-struct CameraViewerTokenResponse {
-    token: String,
-    expires_in_seconds: u64,
-}
-
-#[derive(Serialize)]
 struct AppsResponse {
     apps: Vec<crate::domain::apps::InstalledApp>,
 }
@@ -1237,7 +1219,10 @@ async fn apps_list(State(state): State<AppState>) -> Response {
     }
 }
 
-async fn camera_status(State(state): State<AppState>) -> Response {
+async fn camera_status(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
     let (Some(camera), Some(scope)) = (state.camera.clone(), state.camera_scope) else {
         return service_unavailable_json();
     };
@@ -1249,36 +1234,6 @@ async fn camera_status(State(state): State<AppState>) -> Response {
         .into_response(),
         Err(error) => camera_error_json(error),
     }
-}
-
-async fn camera_viewer_token(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    if !authorize_json_origin(&state, &headers) {
-        return forbidden_json();
-    }
-    let mut bytes = [0u8; 32];
-    if getrandom::fill(&mut bytes).is_err() {
-        return service_unavailable_json();
-    }
-    let token = bytes
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    let mut tokens = match state.viewer_tokens.lock() {
-        Ok(tokens) => tokens,
-        Err(_) => return service_unavailable_json(),
-    };
-    let now = Instant::now();
-    tokens.retain(|_, expiry| *expiry > now);
-    if tokens.len() >= MAX_VIEWER_TOKENS {
-        return StatusCode::TOO_MANY_REQUESTS.into_response();
-    }
-    tokens.insert(token.clone(), now + VIEWER_TOKEN_TTL);
-    drop(tokens);
-    Json(CameraViewerTokenResponse {
-        token,
-        expires_in_seconds: VIEWER_TOKEN_TTL_SECONDS,
-    })
-    .into_response()
 }
 
 fn camera_ipv6_candidate(
@@ -1303,7 +1258,7 @@ async fn camera_session_create(
     headers: HeaderMap,
     payload: Result<Json<CameraSessionCreateRequest>, JsonRejection>,
 ) -> Response {
-    let token = match authorize_camera_viewer(&state, &headers).await {
+    let (token, _) = match authorize_sensitive_control_admin(&state, &headers).await {
         Ok(token) => token,
         Err(response) => return response,
     };
@@ -1340,7 +1295,7 @@ async fn camera_session_close(
     headers: HeaderMap,
     payload: Result<Json<CameraSessionCloseRequest>, JsonRejection>,
 ) -> Response {
-    let token = match authorize_camera_viewer(&state, &headers).await {
+    let (token, _) = match authorize_sensitive_control_admin(&state, &headers).await {
         Ok(token) => token,
         Err(response) => return response,
     };
@@ -1404,8 +1359,8 @@ async fn camera_volume_update(
     headers: HeaderMap,
     payload: Result<Json<CameraVolumeUpdateRequest>, JsonRejection>,
 ) -> Response {
-    if !authorize_control(&state, &headers) {
-        return forbidden_json();
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
+        return response;
     }
     let request = match decode_control_json(payload) {
         Ok(request) => request,
@@ -1422,43 +1377,6 @@ async fn camera_volume_update(
 
 fn camera_session_owner(token: &SecretString) -> [u8; 32] {
     Sha256::digest(token.expose().as_bytes()).into()
-}
-
-/// Camera viewing accepts either an administrator session or a short-lived
-/// anonymous viewer token; either way the presented token becomes the owner
-/// identity for the created sessions, so viewers can only close what they
-/// opened. Profile and rotation mutations stay administrator-only.
-async fn authorize_camera_viewer(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> Result<SecretString, Response> {
-    if authorize_same_origin_csrf(state, headers) {
-        if let Ok((token, _)) = require_admin(state, headers, AdminRequirement::Normal).await {
-            return Ok(token);
-        }
-    }
-    if !authorize_json_origin(state, headers) {
-        return Err(forbidden_json());
-    }
-    let token = headers
-        .get("x-hyz-csrf")
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or_default();
-    if token.len() != 64 || !token.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        // 非 viewer 令牌格式（或管理员 CSRF 而无 session）：认证不足，不是
-        // origin/CSRF 违规，按 401 处理。
-        return Err(authentication_error_json(StatusCode::UNAUTHORIZED));
-    }
-    let mut tokens = match state.viewer_tokens.lock() {
-        Ok(tokens) => tokens,
-        Err(_) => return Err(authentication_error_json(StatusCode::SERVICE_UNAVAILABLE)),
-    };
-    let now = Instant::now();
-    if !matches!(tokens.get(token), Some(expiry) if *expiry > now) {
-        tokens.remove(token);
-        return Err(authentication_error_json(StatusCode::UNAUTHORIZED));
-    }
-    Ok(SecretString::new(token.to_owned()))
 }
 
 async fn close_owned_camera_session(state: &AppState, token: &SecretString) {
@@ -2758,16 +2676,15 @@ mod tests {
             .split_once("async fn close_all_camera_sessions(")
             .expect("camera handler boundary")
             .0;
-        // 状态读取对匿名开放（与 /api/v1/status 一致）；会话创建/关闭走
-        // 管理员或短时 viewer 令牌；profile/rotation 仍是管理员专属。
-        assert!(!handlers.contains("authorize_sensitive_read(&state, &headers).await"));
-        assert!(handlers.contains("authorize_camera_viewer(&state, &headers).await"));
-        assert!(handlers.contains("authorize_sensitive_control_admin(&state, &headers).await"));
+        // 摄像头所有状态/媒体访问与控制都复用现有管理员 Session。
+        assert!(handlers.contains("authorize_sensitive_read(&state, &headers).await"));
+        assert!(!handlers.contains("viewer_tokens"));
+        assert!(!handlers.contains("authorize_camera_viewer"));
         assert_eq!(
             handlers
                 .matches("authorize_sensitive_control_admin(&state, &headers).await")
                 .count(),
-            2
+            5
         );
         assert!(handlers.contains(
             "camera_ipv6_candidate(scope, state.accept_public_ipv6_origin, &snapshot.router)"
