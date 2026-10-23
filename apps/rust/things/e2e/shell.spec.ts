@@ -4,6 +4,7 @@ import {
   expectNoHorizontalOverflow,
   goToAppPage,
   harnessOrigin,
+  loginAsAdmin,
   readHarnessState,
   resetHarness,
 } from "./fixtures";
@@ -58,7 +59,7 @@ test("shows the public IPv6 address and copies it from the route card", async ({
 });
 
 test("controls speaker volume from the System quick controls", async ({ page, request }) => {
-  await page.goto("/");
+  await loginAsAdmin(page);
   await goToAppPage(page, "系统");
   const control = page.getByRole("article", { name: "喇叭音量" });
   const slider = control.getByRole("slider", { name: "喇叭音量" });

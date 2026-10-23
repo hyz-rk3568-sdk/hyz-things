@@ -24,7 +24,8 @@ struct AnalysisPanesProps {
 }
 
 // The scroll distance follows the *visible material pane*, not fixed pixels
-// or the full window height. Keep controls outside the scrollable content.
+// or the full window height. Keep controls outside scrollable content.
+// The extra right margin clears InkOverlay's top-right toggle on stacked panes.
 #[function_component(AnalysisPanes)]
 fn analysis_panes(props: &AnalysisPanesProps) -> Html {
     let passage = use_node_ref();
@@ -49,7 +50,7 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
                         <div class="text-sm font-semibold">{props.material.topic.clone()}</div>
                         <div class="pt-1 text-xs text-base-content/60">{"模拟训练材料 · 根据历年行测真题风格新编，非真题原文"}</div>
                     </div>
-                    <div class="flex shrink-0 gap-1" role="group" aria-label="材料滚动">
+                    <div class="flex shrink-0 gap-1 mr-10 lg:mr-0" role="group" aria-label="材料滚动">
                         <button type="button" class="btn btn-ghost btn-sm px-2" aria-label="材料向上滚动" title="向上滚动 1/3 可视区域" onclick={scroll_up}>{"↑"}</button>
                         <button type="button" class="btn btn-ghost btn-sm px-2" aria-label="材料向下滚动" title="向下滚动 1/3 可视区域" onclick={scroll_down}>{"↓"}</button>
                     </div>
