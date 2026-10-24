@@ -1396,7 +1396,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     <button class="btn btn-outline w-full" type="button" onclick={{let history_open=history_open.clone();Callback::from(move |_|history_open.set(true))}}>{"查看练习历史"}</button>
                     <div class="rounded-box border border-base-content/15 p-4 space-y-3">
                         <p class="font-semibold">{"选择本轮错题分类"}</p>
-                        <p class="text-sm text-base-content/60">{"每个选中的错题分类保底1题，随机均衡分配到4篇材料；剩余题目来自 flashcards/资料/ 的普通知识点卡片。"}</p>
+                        <p class="text-sm text-base-content/60">{"每个选中的错题分类至少1题；其余题位从资料分析的全部 Flashcard（含错题）统一抽取。同篇分类不重复，整卷卡片不重复。"}</p>
                         <div class="flex items-center justify-between gap-3">
                             <strong class="text-sm">{format!("本轮考点（已选{}项，最多12项）",manual_skills.len())}</strong>
                             <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-skill-expand"
