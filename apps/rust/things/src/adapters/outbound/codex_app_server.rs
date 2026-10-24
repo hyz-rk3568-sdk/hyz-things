@@ -60,10 +60,11 @@ fn output_schema() -> Value {
             "explanation":{"type":"string"},
             "skill":{"type":"string"},
             "source_kind":{"type":"string","enum":["wrong","knowledge"]},
+            "target_id":{"type":"string"},
             "evidence":{"type":"string"}
         },
         "required":["question","options","correct_index","answer",
-                    "explanation","skill","source_kind","evidence"],
+                    "explanation","skill","source_kind","target_id","evidence"],
         "additionalProperties":false
     });
     json!({
@@ -399,7 +400,8 @@ mod tests {
         let fields = schema["properties"]["questions"]["items"]["required"]
             .as_array()
             .unwrap();
-        assert_eq!(fields.len(), 8);
+        assert_eq!(fields.len(), 9);
+        assert!(fields.contains(&json!("target_id")));
         assert!(fields.contains(&json!("options")));
         assert!(fields.contains(&json!("correct_index")));
         assert!(schema["properties"]["questions"]["items"]["properties"]["operation"].is_null());

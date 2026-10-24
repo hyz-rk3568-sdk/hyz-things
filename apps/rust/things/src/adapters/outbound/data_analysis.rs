@@ -8,7 +8,7 @@ use crate::domain::data_analysis::{
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     fs,
     future::Future,
     os::unix::fs::MetadataExt,
@@ -182,6 +182,8 @@ pub struct GradedQuestion {
     pub topic: String,
     pub skill: String,
     pub evidence: String,
+    pub card_path: Option<String>,
+    pub card_id: Option<String>,
 }
 #[derive(Clone, Serialize)]
 pub struct RunResult {
@@ -247,65 +249,358 @@ where
     results
 }
 
-// Each selected wrong-category consumes exactly one guaranteed question,
-// balanced randomly across the 4 passages. A plan is created once per job,
-// so failed passage retries retain exactly the same requirements.
-#[derive(Clone, Debug)]
-struct QuestionPlan {
-    required: [Vec<String>; QUIZ_GROUPS],
-    knowledge: Vec<String>,
+// The SQLite flashcards table is the single selection snapshot. A category is
+// shared across wrong/knowledge directories; each card ID is unique per paper.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SourceKind {
+    Wrong,
+    Knowledge,
+}
+impl SourceKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Wrong => "wrong",
+            Self::Knowledge => "knowledge",
+        }
+    }
 }
 
+#[derive(Clone, Debug)]
+struct CardCandidate {
+    id: String,
+    card_path: String,
+    source_hash: String,
+    category: String,
+    source_kind: SourceKind,
+    front_markdown: String,
+    back_markdown: String,
+}
+
+#[derive(Clone, Debug)]
+struct CardTarget {
+    target_id: String,
+    card: CardCandidate,
+}
+
+#[derive(Clone, Debug)]
+struct QuestionPlan {
+    groups: [Vec<CardTarget>; QUIZ_GROUPS],
+}
+
+struct CardRng(u64);
+impl CardRng {
+    fn new(seed: u64) -> Self {
+        Self(seed | 1)
+    }
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+    fn shuffle<T>(&mut self, items: &mut [T]) {
+        for i in (1..items.len()).rev() {
+            let j = self.next() as usize % (i + 1);
+            items.swap(i, j);
+        }
+    }
+}
+
+fn card_from_db(
+    id: String,
+    source_file: String,
+    deck: String,
+    front: String,
+    back: String,
+    hash: String,
+) -> Option<CardCandidate> {
+    // Never accept paths from unrelated modules or nested subdecks.
+    let (kind, category) = if let Some(name) = wrong_question_category(&deck) {
+        (SourceKind::Wrong, name)
+    } else {
+        (SourceKind::Knowledge, knowledge_card_category(&deck)?)
+    };
+    if category == "错题"
+        || !valid_wrong_category(category)
+        || crate::domain::flashcards::FlashcardId::new(id.clone()).is_err()
+        || hash.is_empty()
+        || front.trim().is_empty()
+        || back.trim().is_empty()
+    {
+        return None;
+    }
+    let leaf = std::path::Path::new(&source_file)
+        .file_name()
+        .and_then(|name| name.to_str())?;
+    if !matches!(leaf, "card.md" | "cards.md") {
+        return None;
+    }
+    // The canonical display path is reconstructed from a verified deck, not
+    // trusted from an arbitrary source_file path.
+    let card_path = match kind {
+        SourceKind::Wrong => format!("flashcards/资料/错题/{category}/{leaf}"),
+        SourceKind::Knowledge => format!("flashcards/资料/{category}/{leaf}"),
+    };
+    Some(CardCandidate {
+        id,
+        card_path,
+        source_hash: hash,
+        category: category.to_owned(),
+        source_kind: kind,
+        front_markdown: front,
+        back_markdown: back,
+    })
+}
+
+// Preserve the current random/balanced distribution of the selected wrong
+// categories, but the quota is a minimum, never an exact wrong-question count.
 fn distribute_wrong_categories(
     selected: &[String],
     random_seed: u64,
 ) -> [Vec<String>; QUIZ_GROUPS] {
     let mut required: [Vec<String>; QUIZ_GROUPS] = std::array::from_fn(|_| Vec::new());
-    let mut state = random_seed | 1;
-    let mut next_random = || {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        state
-    };
+    let mut rng = CardRng::new(random_seed);
     for batch in selected.chunks(QUIZ_GROUPS) {
         let mut slots: Vec<_> = (0..QUIZ_GROUPS).collect();
-        for i in (1..QUIZ_GROUPS).rev() {
-            let j = next_random() as usize % (i + 1);
-            slots.swap(i, j);
-        }
-        for (category, slot) in batch.iter().zip(slots.into_iter()) {
+        rng.shuffle(&mut slots);
+        for (category, slot) in batch.iter().zip(slots) {
             required[slot].push(category.clone());
         }
     }
     required
 }
 
-// Exactly one marked wrong question per assigned category. All other slots
-// come from a verified general-knowledge directory. The displayed skill may
-// coincide with a wrong category; source_kind disambiguates those questions.
-fn mixed_category_coverage(
-    labels: &[&str],
-    source_kinds: &[&str],
-    required: &[String],
-    knowledge: &[String],
-) -> bool {
-    if labels.len() != QUIZ_PER_GROUP || source_kinds.len() != QUIZ_PER_GROUP {
-        return false;
-    }
-    let mut wrong_seen = std::collections::HashSet::new();
-    for (&skill, &source) in labels.iter().zip(source_kinds) {
-        match source {
-            "wrong" if required.iter().any(|name| name == skill) => {
-                if !wrong_seen.insert(skill) {
-                    return false;
-                }
-            }
-            "knowledge" if knowledge.iter().any(|name| name == skill) => {}
-            _ => return false,
+// A tiny integral max-flow network: source -> category (capacity) ->
+// passage (capacity one per category/passage) -> sink (unfilled slots).
+struct FlowEdge {
+    to: usize,
+    reverse: usize,
+    capacity: i32,
+}
+struct FlowNetwork {
+    edges: Vec<Vec<FlowEdge>>,
+}
+impl FlowNetwork {
+    fn new(nodes: usize) -> Self {
+        Self {
+            edges: (0..nodes).map(|_| Vec::new()).collect(),
         }
     }
-    wrong_seen.len() == required.len()
+    fn add(&mut self, from: usize, to: usize, capacity: i32) {
+        let reverse_to = self.edges[to].len();
+        let reverse_from = self.edges[from].len();
+        self.edges[from].push(FlowEdge {
+            to,
+            reverse: reverse_to,
+            capacity,
+        });
+        self.edges[to].push(FlowEdge {
+            to: from,
+            reverse: reverse_from,
+            capacity: 0,
+        });
+    }
+    fn max_flow(&mut self, source: usize, sink: usize) -> usize {
+        let mut total = 0;
+        loop {
+            let mut parents = vec![None::<(usize, usize)>; self.edges.len()];
+            parents[source] = Some((source, 0));
+            let mut queue = VecDeque::from([source]);
+            while let Some(from) = queue.pop_front() {
+                for (edge_idx, edge) in self.edges[from].iter().enumerate() {
+                    if edge.capacity > 0 && parents[edge.to].is_none() {
+                        parents[edge.to] = Some((from, edge_idx));
+                        queue.push_back(edge.to);
+                    }
+                }
+                if parents[sink].is_some() {
+                    break;
+                }
+            }
+            if parents[sink].is_none() {
+                return total;
+            }
+            let mut node = sink;
+            while node != source {
+                let (from, edge_idx) = parents[node].expect("visited path");
+                let reverse = self.edges[from][edge_idx].reverse;
+                self.edges[from][edge_idx].capacity -= 1;
+                self.edges[node][reverse].capacity += 1;
+                node = from;
+            }
+            total += 1;
+        }
+    }
+}
+
+fn plan_question_targets(
+    cards: &[CardCandidate],
+    selected: &[String],
+    seed: u64,
+) -> Result<QuestionPlan, String> {
+    let mut rng = CardRng::new(seed);
+    let mut buckets = BTreeMap::<String, Vec<CardCandidate>>::new();
+    for card in cards {
+        buckets
+            .entry(card.category.clone())
+            .or_default()
+            .push(card.clone());
+    }
+    if buckets.len() < QUIZ_PER_GROUP {
+        return Err(format!(
+            "资料分析卡片只有{}个有效分类，同篇需要至少5类",
+            buckets.len()
+        ));
+    }
+    if cards.len() < QUIZ_GROUPS * QUIZ_PER_GROUP {
+        return Err(format!(
+            "资料分析有效卡片只有{}张，无法生成20道不同卡片的题",
+            cards.len()
+        ));
+    }
+    for cards in buckets.values_mut() {
+        rng.shuffle(cards);
+    }
+
+    let required = distribute_wrong_categories(selected, seed);
+    let mut groups: [Vec<CardCandidate>; QUIZ_GROUPS] = std::array::from_fn(|_| Vec::new());
+    for (slot, categories) in required.iter().enumerate() {
+        for category in categories {
+            let group_cards = buckets
+                .get_mut(category)
+                .ok_or_else(|| format!("错题分类「{category}」没有可用卡片"))?;
+            let index = group_cards
+                .iter()
+                .position(|c| c.source_kind == SourceKind::Wrong)
+                .ok_or_else(|| {
+                    format!("错题分类「{category}」没有有效错题卡片，请先同步 Flashcard")
+                })?;
+            groups[slot].push(group_cards.remove(index));
+        }
+    }
+
+    // Minimize maximum per-category frequency across the entire paper. Trying
+    // bounds 1..4 yields broad coverage while respecting scarce categories.
+    let mut categories: Vec<(String, Vec<CardCandidate>)> = buckets.into_iter().collect();
+    rng.shuffle(&mut categories);
+    let already =
+        groups
+            .iter()
+            .flatten()
+            .fold(HashMap::<String, usize>::new(), |mut seen, card| {
+                *seen.entry(card.category.clone()).or_default() += 1;
+                seen
+            });
+    let missing = QUIZ_GROUPS * QUIZ_PER_GROUP - groups.iter().map(Vec::len).sum::<usize>();
+    let mut allocation: Option<Vec<(usize, usize)>> = None;
+    for bound in 1..=QUIZ_GROUPS {
+        if already.values().any(|&n| n > bound) {
+            continue;
+        }
+        let group_base = 1 + categories.len();
+        let sink = group_base + QUIZ_GROUPS;
+        let mut net = FlowNetwork::new(sink + 1);
+        for (index, (name, available)) in categories.iter().enumerate() {
+            let reserved = already.get(name).copied().unwrap_or(0);
+            let capacity = available.len().min(bound.saturating_sub(reserved));
+            if capacity == 0 {
+                continue;
+            }
+            net.add(0, 1 + index, capacity as i32);
+            let mut slots: Vec<_> = (0..QUIZ_GROUPS).collect();
+            rng.shuffle(&mut slots);
+            for slot in slots {
+                if !groups[slot].iter().any(|card| card.category == *name) {
+                    net.add(1 + index, group_base + slot, 1);
+                }
+            }
+        }
+        for (slot, group) in groups.iter().enumerate() {
+            net.add(
+                group_base + slot,
+                sink,
+                (QUIZ_PER_GROUP - group.len()) as i32,
+            );
+        }
+        if net.max_flow(0, sink) != missing {
+            continue;
+        }
+        let mut matched = Vec::new();
+        for index in 0..categories.len() {
+            for edge in &net.edges[1 + index] {
+                if (group_base..sink).contains(&edge.to) && edge.capacity == 0 {
+                    matched.push((index, edge.to - group_base));
+                }
+            }
+        }
+        allocation = Some(matched);
+        break;
+    }
+    let allocation = allocation.ok_or(
+        "现有资料卡片无法同时满足错题保底、每篇5个不同分类及整卷20张不同卡片；请同步或补充卡片"
+            .to_owned(),
+    )?;
+    for (index, slot) in allocation {
+        let chosen = categories[index]
+            .1
+            .pop()
+            .expect("flow capacity never exceeds available cards");
+        groups[slot].push(chosen);
+    }
+
+    let targets = groups.map(|mut group| {
+        rng.shuffle(&mut group);
+        group
+    });
+    let plan = QuestionPlan {
+        groups: std::array::from_fn(|slot| {
+            targets[slot]
+                .iter()
+                .enumerate()
+                .map(|(index, card)| CardTarget {
+                    target_id: format!("g{}-q{}", slot + 1, index + 1),
+                    card: card.clone(),
+                })
+                .collect()
+        }),
+    };
+    validate_question_plan(&plan, selected)?;
+    Ok(plan)
+}
+
+fn validate_question_plan(plan: &QuestionPlan, selected: &[String]) -> Result<(), String> {
+    let mut ids = HashSet::new();
+    let mut covered = HashSet::new();
+    for group in &plan.groups {
+        if group.len() != QUIZ_PER_GROUP {
+            return Err("QuestionPlan 某篇材料不是5个题位".into());
+        }
+        let mut categories = HashSet::new();
+        for target in group {
+            if !ids.insert(target.card.id.as_str()) {
+                return Err("QuestionPlan 整卷存在重复 card_id".into());
+            }
+            if !categories.insert(target.card.category.as_str()) {
+                return Err("QuestionPlan 同篇出现重复知识点分类".into());
+            }
+            if target.card.source_kind == SourceKind::Wrong {
+                covered.insert(target.card.category.as_str());
+            }
+        }
+    }
+    if selected.iter().any(|name| !covered.contains(name.as_str())) {
+        return Err("QuestionPlan 未覆盖所有选中错题分类".into());
+    }
+    Ok(())
+}
+
+fn target_ids_match(expected: &[CardTarget], returned: &[String]) -> bool {
+    if returned.len() != expected.len() {
+        return false;
+    }
+    let planned: HashSet<_> = expected.iter().map(|t| t.target_id.as_str()).collect();
+    let received: HashSet<_> = returned.iter().map(String::as_str).collect();
+    received.len() == expected.len() && received == planned
 }
 
 fn now_ms() -> i64 {
@@ -346,6 +641,8 @@ fn grade_run(
                 topic: group.material.topic.clone(),
                 skill: q.skill.clone(),
                 evidence: q.evidence.clone(),
+                card_path: q.card_path.clone(),
+                card_id: q.card_id.clone(),
             });
         }
     }
@@ -413,13 +710,8 @@ impl DataAnalysisService {
             .collect())
     }
 
-    /// Derive categories from "错题/<分类>" whether RK3568 mounted
-    /// flashcards/, flashcards/资料/, or the enclosing repository.
+    /// Categories from the same synchronized SQLite snapshot used for selection.
     pub async fn available_skills(&self) -> Result<Vec<String>, String> {
-        // Prefer the live mounted folder tree to the previously imported cards.
-        if let Some(live) = mounted_wrong_question_categories().await {
-            return Ok(live);
-        }
         let rows = sqlx::query("SELECT DISTINCT deck_path FROM flashcards WHERE active=1")
             .fetch_all(&self.pool)
             .await
@@ -434,27 +726,31 @@ impl DataAnalysisService {
         Ok(categories.into_iter().collect())
     }
 
-    async fn general_knowledge_skills(&self) -> Result<Vec<String>, String> {
-        if let Some(live) = mounted_knowledge_categories().await {
-            return Ok(live);
+    async fn card_candidates(&self) -> Result<Vec<CardCandidate>, String> {
+        let rows = sqlx::query(
+            "SELECT id,source_file,deck_path,front_markdown,back_markdown,source_hash \
+             FROM flashcards WHERE active=1 ORDER BY id",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(as_error)?;
+        let cards: Vec<_> = rows
+            .into_iter()
+            .filter_map(|row| {
+                card_from_db(
+                    row.try_get("id").ok()?,
+                    row.try_get("source_file").ok()?,
+                    row.try_get("deck_path").ok()?,
+                    row.try_get("front_markdown").ok()?,
+                    row.try_get("back_markdown").ok()?,
+                    row.try_get("source_hash").ok()?,
+                )
+            })
+            .collect();
+        if cards.is_empty() {
+            return Err("SQLite 尚无有效资料分析 Flashcard，请先同步卡片".into());
         }
-        let rows = sqlx::query("SELECT DISTINCT deck_path FROM flashcards WHERE active=1")
-            .fetch_all(&self.pool)
-            .await
-            .map_err(as_error)?;
-        let mut skills = std::collections::BTreeSet::new();
-        for row in rows {
-            let deck: String = row.try_get("deck_path").map_err(as_error)?;
-            if let Some(skill) = knowledge_card_category(&deck) {
-                skills.insert(skill.to_owned());
-            }
-        }
-        if skills.is_empty() {
-            return Err(
-                "没有找到 flashcards/资料/ 中的普通知识点卡片，请检查卡片目录挂载或同步".into(),
-            );
-        }
-        Ok(skills.into_iter().collect())
+        Ok(cards)
     }
 
     pub async fn user_prompt_settings(&self) -> Result<UserPromptSettings, String> {
@@ -616,13 +912,9 @@ impl DataAnalysisService {
             .await;
         // Keep a single randomized, balanced quota plan for the entire job,
         // including retries after a Codex passage fails validation.
-        let plan = Arc::new(QuestionPlan {
-            required: distribute_wrong_categories(
-                manual_skills,
-                Uuid::parse_str(job).map_err(as_error)?.as_u128() as u64,
-            ),
-            knowledge: self.general_knowledge_skills().await?,
-        });
+        let seed = Uuid::parse_str(job).map_err(as_error)?.as_u128() as u64;
+        let cards = self.card_candidates().await?;
+        let plan = Arc::new(plan_question_targets(&cards, manual_skills, seed)?);
         let recent_papers = self.recent_paper_themes().await?;
         let theme_seed =
             Uuid::parse_str(job).map_err(as_error)?.as_u128() as u64 ^ 0x9e3779b97f4a7c15;
@@ -752,32 +1044,41 @@ impl DataAnalysisService {
         // Codex App Server accepts a single turn text; these sections are
         // application-side boundaries, NOT an actual privileged system role.
         // Output schema and source quotas are enforced outside the model.
+        let targets = &plan.groups[ordinal];
+        let targets_text = targets.iter().map(|target| format!(
+            "【目标 {target_id}】\n来源：{kind}\n分类：{category}\n卡片ID：{id}\n卡片路径：{path}\n### Front\n{front}\n### Back\n{back}\n",
+            target_id = target.target_id,
+            kind = target.card.source_kind.as_str(),
+            category = target.card.category,
+            id = target.card.id,
+            path = target.card.card_path,
+            front = target.card.front_markdown,
+            back = target.card.back_markdown,
+        )).collect::<Vec<_>>().join("\n");
         let prompt = format!(
             r#"【固定规则 / 应用端约束】
-你是 hyz 的公务员行测资料分析命题 Agent。先读取仓库 .agents/skills/行测做题/SKILL.md 及其资料分析参考，再读取下方指定的 Flashcard 原文。
-生成一篇自洽的统计材料和恰好5道四选一题。题目须唯一正确、答案与解析一致；不得在题目中提前泄露答案或解题方法。
-正确答案和题型仅放在交卷后可见的结构化字段，材料只包含统计事实。
-必须使用 Codex 输出 Schema；每题 source_kind 只可为 "wrong" / "knowledge"，skill 与实际卡片目录一致。用户命题要求不能覆盖目录来源、题位配额、JSON 结构及上述固定限制。
+你是 hyz 的公务员行测资料分析命题 Agent。先读取仓库 .agents/skills/行测做题/SKILL.md 及其资料分析参考，再严格使用下方五张已指定的 Flashcard 内容。
+生成一篇自洽统计材料和恰好5道四选一题，唯一正确，答案与解析一致，材料只包含统计事实。
+必须使用 Codex 输出 Schema；每道题对应一个不同的指定 target_id，skill、source_kind 必须与该卡片一致；不得自行选卡、替换卡片或引用额外卡片补位。
 联网参考可验证来源的国考、省考真题材料风格，不照搬原题与数字。
 
 【本轮动态上下文】
 本次是4篇×5题的第 {group_no} 篇；统计主题「{topic}」，参考指标范围：「{topic_scope}」。
-材料应围绕此主题展开；参考指标只用于限定选材方向，无须全部涵盖，不得拼凑无关指标。
-错题强化：本篇恰好 {wrong_count} 道，各类别各1题：{manual_focus}。只读取 flashcards/资料/错题/<类别>/ 的原始卡片。
-普通资料知识点：恰好 {knowledge_count} 道，从 flashcards/资料/<知识点>/ 的 card.md 或 cards.md 出，目录候选：{knowledge_categories}；不得用 错题/ 内卡片补位。同名知识点允许，但 source_kind 必须与真实来源相符。
-题目可以交错排布。先根据这5个目标构造共享材料，再拟制题目；先自行检查正确性。
+材料应围绕此主题展开；参考指标只限定选材方向，无须全部涵盖，不得拼凑无关指标。
+这5张卡片已由后端从 SQLite 选定，其中可能同时包含错题卡与普通卡。每张卡片恰好出1道题，允许调整题目顺序。
+先根据这5个目标构造共享统计材料，再设计题目；自己核对计算、正确答案和干扰项。
+
+【本篇固定 Flashcard】
+{targets_text}
 
 【用户出题要求 / 自定义】
 {user_prompt}
 
 只输出 Schema 对应的 JSON，不输出解释性前言。"#,
-            group_no = ordinal % QUIZ_GROUPS + 1,
+            group_no = ordinal + 1,
             topic = context.topic,
             topic_scope = topic_scope(&context.topic).unwrap_or("该主题相关统计指标"),
-            wrong_count = plan.required[ordinal].len(),
-            knowledge_count = QUIZ_PER_GROUP - plan.required[ordinal].len(),
-            manual_focus = plan.required[ordinal].join("、"),
-            knowledge_categories = plan.knowledge.join("、"),
+            targets_text = targets_text,
         );
         let mut session = tokio::time::timeout(
             Duration::from_secs(12),
@@ -793,6 +1094,7 @@ impl DataAnalysisService {
             #[serde(flatten)]
             question: VerifiedQuestion,
             source_kind: String,
+            target_id: String,
         }
         #[derive(Deserialize)]
         struct Batch {
@@ -811,25 +1113,40 @@ impl DataAnalysisService {
         {
             return Err("Codex 返回的试卷结构不完整（需要5题，每题4个选项）".into());
         }
-        let labels: Vec<_> = batch
+        let returned: Vec<_> = batch
             .questions
             .iter()
-            .map(|q| q.question.skill.as_str())
+            .map(|q| q.target_id.clone())
             .collect();
-        let kinds: Vec<_> = batch
-            .questions
-            .iter()
-            .map(|q| q.source_kind.as_str())
-            .collect();
-        if !mixed_category_coverage(&labels, &kinds, &plan.required[ordinal], &plan.knowledge) {
-            return Err("Codex 生成题目未满足错题保底及普通知识点配额，请重试".into());
+        if !target_ids_match(targets, &returned) {
+            return Err("Codex 返回的 target_id 与本篇5张指定 Flashcard 不一致，请重试".into());
+        }
+        let mut questions = Vec::with_capacity(QUIZ_PER_GROUP);
+        for generated in batch.questions {
+            let target = targets
+                .iter()
+                .find(|t| t.target_id == generated.target_id)
+                .expect("target IDs checked above");
+            if generated.source_kind != target.card.source_kind.as_str()
+                || generated.question.skill != target.card.category
+            {
+                return Err("Codex 返回的卡片分类或来源与指定目标不符，请重试".into());
+            }
+            let mut question = generated.question;
+            // Trusted provenance comes from the frozen SQLite selection, not AI.
+            question.skill = target.card.category.clone();
+            question.card_id = Some(target.card.id.clone());
+            question.card_path = Some(target.card.card_path.clone());
+            question.source_kind = Some(target.card.source_kind.as_str().to_owned());
+            question.source_hash = Some(target.card.source_hash.clone());
+            questions.push(question);
         }
         let mut material = context;
         material.text = batch.material_text;
         Ok(QuestionGroup {
-            version: 4,
+            version: 5,
             material,
-            questions: batch.questions.into_iter().map(|q| q.question).collect(),
+            questions,
         })
     }
     async fn fetch_row(
@@ -1280,64 +1597,6 @@ fn exam_theme_materials() -> Vec<Material> {
         .collect()
 }
 
-/// Look at the directory currently mounted into RK3568 rather than
-/// requiring a card sync just to show a newly created folder name.
-async fn mounted_wrong_question_categories() -> Option<Vec<String>> {
-    let root = super::flashcard_source::FLASHCARD_SOURCE_ROOT;
-    for relative in ["资料/错题", "错题", "flashcards/资料/错题"] {
-        let path = std::path::Path::new(root).join(relative);
-        let Ok(mut reader) = tokio::fs::read_dir(path).await else {
-            continue;
-        };
-        let mut result = std::collections::BTreeSet::<String>::new();
-        while let Ok(Some(entry)) = reader.next_entry().await {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if valid_wrong_category(&name)
-                && entry.file_type().await.is_ok_and(|kind| kind.is_dir())
-            {
-                result.insert(name);
-            }
-        }
-        return Some(result.into_iter().collect());
-    }
-    None
-}
-
-// Normal knowledge cards live directly in flashcards/资料/<skill>/card.md,
-// not in 资料/错题/. Support all three source mount layouts already used.
-async fn mounted_knowledge_categories() -> Option<Vec<String>> {
-    let root = super::flashcard_source::FLASHCARD_SOURCE_ROOT;
-    for relative in ["资料", ".", "flashcards/资料"] {
-        let path = std::path::Path::new(root).join(relative);
-        let Ok(mut reader) = tokio::fs::read_dir(path).await else {
-            continue;
-        };
-        let mut names = std::collections::BTreeSet::new();
-        while let Ok(Some(entry)) = reader.next_entry().await {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if name == "错题"
-                || !valid_wrong_category(&name)
-                || !entry.file_type().await.is_ok_and(|file| file.is_dir())
-            {
-                continue;
-            }
-            if tokio::fs::metadata(entry.path().join("card.md"))
-                .await
-                .is_ok()
-                || tokio::fs::metadata(entry.path().join("cards.md"))
-                    .await
-                    .is_ok()
-            {
-                names.insert(name);
-            }
-        }
-        if !names.is_empty() {
-            return Some(names.into_iter().collect());
-        }
-    }
-    None
-}
-
 fn knowledge_card_category(deck: &str) -> Option<&str> {
     let parts: Vec<_> = deck.split('/').filter(|s| !s.is_empty()).collect();
     let category = match parts.as_slice() {
@@ -1426,58 +1685,126 @@ mod tests {
         );
     }
 
+    fn candidate(category: &str, id: usize, source_kind: SourceKind) -> CardCandidate {
+        CardCandidate {
+            id: format!("{category}-{id}"),
+            card_path: "flashcards/资料/test/card.md".into(),
+            source_hash: "hash".into(),
+            category: category.into(),
+            source_kind,
+            front_markdown: "Question".into(),
+            back_markdown: "Answer".into(),
+        }
+    }
+
+    fn ample_pool() -> Vec<CardCandidate> {
+        (0..12)
+            .flat_map(|i| {
+                let cat = format!("category{i}");
+                (0..5).map(move |n| {
+                    candidate(
+                        &cat,
+                        n,
+                        if n < 2 {
+                            SourceKind::Wrong
+                        } else {
+                            SourceKind::Knowledge
+                        },
+                    )
+                })
+            })
+            .collect()
+    }
+
     #[test]
-    fn mixed_paper_accepts_one_per_selected_wrong_and_general_knowledge_filler() {
-        let required = vec!["线段混合".into(), "年均变化".into()];
-        let knowledge = vec!["线段混合".into(), "年均变化".into(), "乘除变化".into()];
-        assert!(mixed_category_coverage(
-            &["线段混合", "乘除变化", "年均变化", "线段混合", "乘除变化"],
-            &["wrong", "knowledge", "wrong", "knowledge", "knowledge"],
-            &required,
-            &knowledge,
-        ));
-        assert!(!mixed_category_coverage(
-            &["线段混合", "乘除变化", "年均变化", "线段混合", "乘除变化"],
-            &["wrong", "wrong", "wrong", "knowledge", "knowledge"],
-            &required,
-            &knowledge,
-        ));
-        assert!(!mixed_category_coverage(
-            &["线段混合", "乘除变化", "年均变化", "线段混合", "乘除变化"],
-            &["wrong", "knowledge", "knowledge", "knowledge", "knowledge"],
-            &required,
-            &knowledge,
-        ));
-        assert!(!mixed_category_coverage(
-            &["线段混合", "乘除变化", "年均变化", "线段混合", "其他分类"],
-            &["wrong", "knowledge", "wrong", "knowledge", "knowledge"],
-            &required,
-            &knowledge,
-        ));
-        assert!(!mixed_category_coverage(
-            &["乘除变化", "乘除变化", "乘除变化", "乘除变化", "乘除变化"],
-            &[
-                "knowledge",
-                "knowledge",
-                "knowledge",
-                "knowledge",
-                "knowledge"
-            ],
-            &required,
-            &knowledge,
-        ));
-        assert!(mixed_category_coverage(
-            &["线段混合", "年均变化", "乘除变化", "年均变化", "乘除变化"],
-            &[
-                "knowledge",
-                "knowledge",
-                "knowledge",
-                "knowledge",
-                "knowledge"
-            ],
-            &[],
-            &knowledge,
-        ));
+    fn whole_paper_card_targets_cover_selected_wrong_and_enforce_uniqueness() {
+        let cards = ample_pool();
+        for count in 1..=12 {
+            let selected = (0..count)
+                .map(|i| format!("category{i}"))
+                .collect::<Vec<_>>();
+            let plan = plan_question_targets(&cards, &selected, 12345).unwrap();
+            validate_question_plan(&plan, &selected).unwrap();
+            let all = plan.groups.iter().flatten().collect::<Vec<_>>();
+            assert_eq!(all.len(), 20);
+            assert_eq!(
+                all.iter().map(|t| &t.card.id).collect::<HashSet<_>>().len(),
+                20
+            );
+            assert!(plan.groups.iter().all(|g| g
+                .iter()
+                .map(|t| &t.card.category)
+                .collect::<HashSet<_>>()
+                .len()
+                == 5));
+            for category in selected {
+                assert!(all.iter().any(
+                    |t| t.card.category == category && t.card.source_kind == SourceKind::Wrong
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn mixed_pool_can_select_unselected_wrong_and_cross_passage_categories() {
+        let cards = ample_pool();
+        let plan = plan_question_targets(&cards, &["category0".into()], 987654).unwrap();
+        let wrong_count = plan
+            .groups
+            .iter()
+            .flatten()
+            .filter(|target| target.card.source_kind == SourceKind::Wrong)
+            .count();
+        assert!(wrong_count >= 1);
+        assert_eq!(plan.groups.iter().map(Vec::len).sum::<usize>(), 20);
+    }
+
+    #[test]
+    fn plan_is_reproducible_and_target_id_set_is_strict() {
+        let cards = ample_pool();
+        let selected = vec!["category0".into(), "category1".into()];
+        let a = plan_question_targets(&cards, &selected, 112233).unwrap();
+        let b = plan_question_targets(&cards, &selected, 112233).unwrap();
+        let a_ids = a
+            .groups
+            .iter()
+            .flatten()
+            .map(|t| &t.card.id)
+            .collect::<Vec<_>>();
+        let b_ids = b
+            .groups
+            .iter()
+            .flatten()
+            .map(|t| &t.card.id)
+            .collect::<Vec<_>>();
+        assert_eq!(a_ids, b_ids);
+        let mut returned = a.groups[0]
+            .iter()
+            .map(|t| t.target_id.clone())
+            .collect::<Vec<_>>();
+        assert!(target_ids_match(&a.groups[0], &returned));
+        returned[0] = "unknown".into();
+        assert!(!target_ids_match(&a.groups[0], &returned));
+        returned[0] = returned[1].clone();
+        assert!(!target_ids_match(&a.groups[0], &returned));
+    }
+
+    #[test]
+    fn impossible_card_pools_fail_instead_of_relaxing_hard_constraints() {
+        let few_categories = (0..4)
+            .flat_map(|i| (0..8).map(move |n| candidate(&format!("cat{i}"), n, SourceKind::Wrong)))
+            .collect::<Vec<_>>();
+        assert!(plan_question_targets(&few_categories, &["cat0".into()], 1).is_err());
+        let few_cards = (0..6)
+            .map(|i| candidate(&format!("cat{i}"), i, SourceKind::Wrong))
+            .collect::<Vec<_>>();
+        assert!(plan_question_targets(&few_cards, &["cat0".into()], 1).is_err());
+        let no_wrong = (0..6)
+            .flat_map(|i| {
+                (0..5).map(move |n| candidate(&format!("cat{i}"), n, SourceKind::Knowledge))
+            })
+            .collect::<Vec<_>>();
+        assert!(plan_question_targets(&no_wrong, &["cat0".into()], 1).is_err());
     }
 
     #[test]
@@ -1687,6 +2014,10 @@ mod tests {
                     explanation: "历史解析".into(),
                     skill: "基期量".into(),
                     evidence: "原始统计数据".into(),
+                    card_id: None,
+                    card_path: None,
+                    source_kind: None,
+                    source_hash: None,
                 })
                 .collect(),
         };
@@ -1822,6 +2153,10 @@ mod tests {
                     explanation: "用现期除以1.152".into(),
                     skill: "基期量".into(),
                     evidence: "本年度业务量1200亿元，比上年增长15.2%。".into(),
+                    card_id: None,
+                    card_path: None,
+                    source_kind: None,
+                    source_hash: None,
                 })
                 .collect::<Vec<_>>();
             let group = QuestionGroup {

@@ -88,6 +88,10 @@ pub(crate) struct GradedQuestion {
     pub explanation: String,
     pub skill: String,
     pub evidence: String,
+    #[serde(default)]
+    pub card_path: Option<String>,
+    #[serde(default)]
+    pub card_id: Option<String>,
 }
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct AnalysisResult {

@@ -57,6 +57,14 @@ pub struct VerifiedQuestion {
     pub explanation: String,
     pub skill: String,
     pub evidence: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_hash: Option<String>,
 }
 
 /// Choose distinct untried topics for a parallel generation wave.
