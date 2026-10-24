@@ -2014,6 +2014,10 @@ mod tests {
                     explanation: "历史解析".into(),
                     skill: "基期量".into(),
                     evidence: "原始统计数据".into(),
+                    card_id: None,
+                    card_path: None,
+                    source_kind: None,
+                    source_hash: None,
                 })
                 .collect(),
         };
@@ -2149,6 +2153,10 @@ mod tests {
                     explanation: "用现期除以1.152".into(),
                     skill: "基期量".into(),
                     evidence: "本年度业务量1200亿元，比上年增长15.2%。".into(),
+                    card_id: None,
+                    card_path: None,
+                    source_kind: None,
+                    source_hash: None,
                 })
                 .collect::<Vec<_>>();
             let group = QuestionGroup {
