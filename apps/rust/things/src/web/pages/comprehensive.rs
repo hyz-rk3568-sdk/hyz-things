@@ -1078,6 +1078,14 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     <details class="mt-3 text-xs">
                         <summary class="cursor-pointer">{"查看原始数据证据"}</summary>
                         <p class="mt-2 whitespace-pre-wrap leading-6">{q.evidence.clone()}</p>
+                        {if let Some(path) = q.card_path.as_ref() {
+                            html! {
+                                <p class="mt-2 break-all leading-6">
+                                    {"Flashcard 来源："}{path.clone()}
+                                    {q.card_id.as_ref().map(|id| format!("（{id}）")).unwrap_or_default()}
+                                </p>
+                            }
+                        } else { html! {} }}
                     </details>
                 </div>
             </div>
