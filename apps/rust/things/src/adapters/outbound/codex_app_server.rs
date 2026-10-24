@@ -400,7 +400,8 @@ mod tests {
         let fields = schema["properties"]["questions"]["items"]["required"]
             .as_array()
             .unwrap();
-        assert_eq!(fields.len(), 8);
+        assert_eq!(fields.len(), 9);
+        assert!(fields.contains(&json!("target_id")));
         assert!(fields.contains(&json!("options")));
         assert!(fields.contains(&json!("correct_index")));
         assert!(schema["properties"]["questions"]["items"]["properties"]["operation"].is_null());
