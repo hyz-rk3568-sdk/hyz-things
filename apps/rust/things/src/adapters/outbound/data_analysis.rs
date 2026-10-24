@@ -289,7 +289,9 @@ struct QuestionPlan {
 
 struct CardRng(u64);
 impl CardRng {
-    fn new(seed: u64) -> Self { Self(seed | 1) }
+    fn new(seed: u64) -> Self {
+        Self(seed | 1)
+    }
     fn next(&mut self) -> u64 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
@@ -340,8 +342,13 @@ fn card_from_db(
         SourceKind::Knowledge => format!("flashcards/资料/{category}/{leaf}"),
     };
     Some(CardCandidate {
-        id, card_path, source_hash: hash, category: category.to_owned(),
-        source_kind: kind, front_markdown: front, back_markdown: back,
+        id,
+        card_path,
+        source_hash: hash,
+        category: category.to_owned(),
+        source_kind: kind,
+        front_markdown: front,
+        back_markdown: back,
     })
 }
 
@@ -365,17 +372,33 @@ fn distribute_wrong_categories(
 
 // A tiny integral max-flow network: source -> category (capacity) ->
 // passage (capacity one per category/passage) -> sink (unfilled slots).
-struct FlowEdge { to: usize, reverse: usize, capacity: i32 }
-struct FlowNetwork { edges: Vec<Vec<FlowEdge>> }
+struct FlowEdge {
+    to: usize,
+    reverse: usize,
+    capacity: i32,
+}
+struct FlowNetwork {
+    edges: Vec<Vec<FlowEdge>>,
+}
 impl FlowNetwork {
     fn new(nodes: usize) -> Self {
-        Self { edges: (0..nodes).map(|_| Vec::new()).collect() }
+        Self {
+            edges: (0..nodes).map(|_| Vec::new()).collect(),
+        }
     }
     fn add(&mut self, from: usize, to: usize, capacity: i32) {
         let reverse_to = self.edges[to].len();
         let reverse_from = self.edges[from].len();
-        self.edges[from].push(FlowEdge { to, reverse: reverse_to, capacity });
-        self.edges[to].push(FlowEdge { to: from, reverse: reverse_from, capacity: 0 });
+        self.edges[from].push(FlowEdge {
+            to,
+            reverse: reverse_to,
+            capacity,
+        });
+        self.edges[to].push(FlowEdge {
+            to: from,
+            reverse: reverse_from,
+            capacity: 0,
+        });
     }
     fn max_flow(&mut self, source: usize, sink: usize) -> usize {
         let mut total = 0;
@@ -390,9 +413,13 @@ impl FlowNetwork {
                         queue.push_back(edge.to);
                     }
                 }
-                if parents[sink].is_some() { break; }
+                if parents[sink].is_some() {
+                    break;
+                }
             }
-            if parents[sink].is_none() { return total; }
+            if parents[sink].is_none() {
+                return total;
+            }
             let mut node = sink;
             while node != source {
                 let (from, edge_idx) = parents[node].expect("visited path");
@@ -414,24 +441,40 @@ fn plan_question_targets(
     let mut rng = CardRng::new(seed);
     let mut buckets = BTreeMap::<String, Vec<CardCandidate>>::new();
     for card in cards {
-        buckets.entry(card.category.clone()).or_default().push(card.clone());
+        buckets
+            .entry(card.category.clone())
+            .or_default()
+            .push(card.clone());
     }
     if buckets.len() < QUIZ_PER_GROUP {
-        return Err(format!("资料分析卡片只有{}个有效分类，同篇需要至少5类", buckets.len()));
+        return Err(format!(
+            "资料分析卡片只有{}个有效分类，同篇需要至少5类",
+            buckets.len()
+        ));
     }
     if cards.len() < QUIZ_GROUPS * QUIZ_PER_GROUP {
-        return Err(format!("资料分析有效卡片只有{}张，无法生成20道不同卡片的题", cards.len()));
+        return Err(format!(
+            "资料分析有效卡片只有{}张，无法生成20道不同卡片的题",
+            cards.len()
+        ));
     }
-    for cards in buckets.values_mut() { rng.shuffle(cards); }
+    for cards in buckets.values_mut() {
+        rng.shuffle(cards);
+    }
 
     let required = distribute_wrong_categories(selected, seed);
     let mut groups: [Vec<CardCandidate>; QUIZ_GROUPS] = std::array::from_fn(|_| Vec::new());
     for (slot, categories) in required.iter().enumerate() {
         for category in categories {
-            let group_cards = buckets.get_mut(category)
+            let group_cards = buckets
+                .get_mut(category)
                 .ok_or_else(|| format!("错题分类「{category}」没有可用卡片"))?;
-            let index = group_cards.iter().position(|c| c.source_kind == SourceKind::Wrong)
-                .ok_or_else(|| format!("错题分类「{category}」没有有效错题卡片，请先同步 Flashcard"))?;
+            let index = group_cards
+                .iter()
+                .position(|c| c.source_kind == SourceKind::Wrong)
+                .ok_or_else(|| {
+                    format!("错题分类「{category}」没有有效错题卡片，请先同步 Flashcard")
+                })?;
             groups[slot].push(group_cards.remove(index));
         }
     }
@@ -440,22 +483,29 @@ fn plan_question_targets(
     // bounds 1..4 yields broad coverage while respecting scarce categories.
     let mut categories: Vec<(String, Vec<CardCandidate>)> = buckets.into_iter().collect();
     rng.shuffle(&mut categories);
-    let already = groups.iter().flatten().fold(HashMap::<String, usize>::new(), |mut seen, card| {
-        *seen.entry(card.category.clone()).or_default() += 1;
-        seen
-    });
-    let missing = QUIZ_GROUPS * QUIZ_PER_GROUP
-        - groups.iter().map(Vec::len).sum::<usize>();
+    let already =
+        groups
+            .iter()
+            .flatten()
+            .fold(HashMap::<String, usize>::new(), |mut seen, card| {
+                *seen.entry(card.category.clone()).or_default() += 1;
+                seen
+            });
+    let missing = QUIZ_GROUPS * QUIZ_PER_GROUP - groups.iter().map(Vec::len).sum::<usize>();
     let mut allocation: Option<Vec<(usize, usize)>> = None;
     for bound in 1..=QUIZ_GROUPS {
-        if already.values().any(|&n| n > bound) { continue; }
+        if already.values().any(|&n| n > bound) {
+            continue;
+        }
         let group_base = 1 + categories.len();
         let sink = group_base + QUIZ_GROUPS;
         let mut net = FlowNetwork::new(sink + 1);
         for (index, (name, available)) in categories.iter().enumerate() {
             let reserved = already.get(name).copied().unwrap_or(0);
             let capacity = available.len().min(bound.saturating_sub(reserved));
-            if capacity == 0 { continue; }
+            if capacity == 0 {
+                continue;
+            }
             net.add(0, 1 + index, capacity as i32);
             let mut slots: Vec<_> = (0..QUIZ_GROUPS).collect();
             rng.shuffle(&mut slots);
@@ -466,9 +516,15 @@ fn plan_question_targets(
             }
         }
         for (slot, group) in groups.iter().enumerate() {
-            net.add(group_base + slot, sink, (QUIZ_PER_GROUP - group.len()) as i32);
+            net.add(
+                group_base + slot,
+                sink,
+                (QUIZ_PER_GROUP - group.len()) as i32,
+            );
         }
-        if net.max_flow(0, sink) != missing { continue; }
+        if net.max_flow(0, sink) != missing {
+            continue;
+        }
         let mut matched = Vec::new();
         for index in 0..categories.len() {
             for edge in &net.edges[1 + index] {
@@ -481,10 +537,13 @@ fn plan_question_targets(
         break;
     }
     let allocation = allocation.ok_or(
-        "现有资料卡片无法同时满足错题保底、每篇5个不同分类及整卷20张不同卡片；请同步或补充卡片".to_owned()
+        "现有资料卡片无法同时满足错题保底、每篇5个不同分类及整卷20张不同卡片；请同步或补充卡片"
+            .to_owned(),
     )?;
     for (index, slot) in allocation {
-        let chosen = categories[index].1.pop()
+        let chosen = categories[index]
+            .1
+            .pop()
             .expect("flow capacity never exceeds available cards");
         groups[slot].push(chosen);
     }
@@ -494,13 +553,16 @@ fn plan_question_targets(
         group
     });
     let plan = QuestionPlan {
-        groups: std::array::from_fn(|slot| targets[slot].iter()
-            .enumerate()
-            .map(|(index, card)| CardTarget {
-                target_id: format!("g{}-q{}", slot + 1, index + 1),
-                card: card.clone(),
-            })
-            .collect()),
+        groups: std::array::from_fn(|slot| {
+            targets[slot]
+                .iter()
+                .enumerate()
+                .map(|(index, card)| CardTarget {
+                    target_id: format!("g{}-q{}", slot + 1, index + 1),
+                    card: card.clone(),
+                })
+                .collect()
+        }),
     };
     validate_question_plan(&plan, selected)?;
     Ok(plan)
@@ -533,7 +595,9 @@ fn validate_question_plan(plan: &QuestionPlan, selected: &[String]) -> Result<()
 }
 
 fn target_ids_match(expected: &[CardTarget], returned: &[String]) -> bool {
-    if returned.len() != expected.len() { return false; }
+    if returned.len() != expected.len() {
+        return false;
+    }
     let planned: HashSet<_> = expected.iter().map(|t| t.target_id.as_str()).collect();
     let received: HashSet<_> = returned.iter().map(String::as_str).collect();
     received.len() == expected.len() && received == planned
@@ -649,7 +713,9 @@ impl DataAnalysisService {
     /// Categories from the same synchronized SQLite snapshot used for selection.
     pub async fn available_skills(&self) -> Result<Vec<String>, String> {
         let rows = sqlx::query("SELECT DISTINCT deck_path FROM flashcards WHERE active=1")
-            .fetch_all(&self.pool).await.map_err(as_error)?;
+            .fetch_all(&self.pool)
+            .await
+            .map_err(as_error)?;
         let mut categories = std::collections::BTreeSet::new();
         for row in rows {
             let deck: String = row.try_get("deck_path").map_err(as_error)?;
@@ -663,18 +729,24 @@ impl DataAnalysisService {
     async fn card_candidates(&self) -> Result<Vec<CardCandidate>, String> {
         let rows = sqlx::query(
             "SELECT id,source_file,deck_path,front_markdown,back_markdown,source_hash \
-             FROM flashcards WHERE active=1 ORDER BY id"
-        ).fetch_all(&self.pool).await.map_err(as_error)?;
-        let cards: Vec<_> = rows.into_iter().filter_map(|row| {
-            card_from_db(
-                row.try_get("id").ok()?,
-                row.try_get("source_file").ok()?,
-                row.try_get("deck_path").ok()?,
-                row.try_get("front_markdown").ok()?,
-                row.try_get("back_markdown").ok()?,
-                row.try_get("source_hash").ok()?,
-            )
-        }).collect();
+             FROM flashcards WHERE active=1 ORDER BY id",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(as_error)?;
+        let cards: Vec<_> = rows
+            .into_iter()
+            .filter_map(|row| {
+                card_from_db(
+                    row.try_get("id").ok()?,
+                    row.try_get("source_file").ok()?,
+                    row.try_get("deck_path").ok()?,
+                    row.try_get("front_markdown").ok()?,
+                    row.try_get("back_markdown").ok()?,
+                    row.try_get("source_hash").ok()?,
+                )
+            })
+            .collect();
         if cards.is_empty() {
             return Err("SQLite 尚无有效资料分析 Flashcard，请先同步卡片".into());
         }
@@ -1041,13 +1113,19 @@ impl DataAnalysisService {
         {
             return Err("Codex 返回的试卷结构不完整（需要5题，每题4个选项）".into());
         }
-        let returned: Vec<_> = batch.questions.iter().map(|q| q.target_id.clone()).collect();
+        let returned: Vec<_> = batch
+            .questions
+            .iter()
+            .map(|q| q.target_id.clone())
+            .collect();
         if !target_ids_match(targets, &returned) {
             return Err("Codex 返回的 target_id 与本篇5张指定 Flashcard 不一致，请重试".into());
         }
         let mut questions = Vec::with_capacity(QUIZ_PER_GROUP);
         for generated in batch.questions {
-            let target = targets.iter().find(|t| t.target_id == generated.target_id)
+            let target = targets
+                .iter()
+                .find(|t| t.target_id == generated.target_id)
                 .expect("target IDs checked above");
             if generated.source_kind != target.card.source_kind.as_str()
                 || generated.question.skill != target.card.category
@@ -1620,27 +1698,49 @@ mod tests {
     }
 
     fn ample_pool() -> Vec<CardCandidate> {
-        (0..12).flat_map(|i| {
-            let cat = format!("category{i}");
-            (0..5).map(move |n| candidate(&cat, n, if n < 2 { SourceKind::Wrong } else { SourceKind::Knowledge }))
-        }).collect()
+        (0..12)
+            .flat_map(|i| {
+                let cat = format!("category{i}");
+                (0..5).map(move |n| {
+                    candidate(
+                        &cat,
+                        n,
+                        if n < 2 {
+                            SourceKind::Wrong
+                        } else {
+                            SourceKind::Knowledge
+                        },
+                    )
+                })
+            })
+            .collect()
     }
 
     #[test]
     fn whole_paper_card_targets_cover_selected_wrong_and_enforce_uniqueness() {
         let cards = ample_pool();
         for count in 1..=12 {
-            let selected = (0..count).map(|i| format!("category{i}")).collect::<Vec<_>>();
+            let selected = (0..count)
+                .map(|i| format!("category{i}"))
+                .collect::<Vec<_>>();
             let plan = plan_question_targets(&cards, &selected, 12345).unwrap();
             validate_question_plan(&plan, &selected).unwrap();
             let all = plan.groups.iter().flatten().collect::<Vec<_>>();
             assert_eq!(all.len(), 20);
-            assert_eq!(all.iter().map(|t| &t.card.id).collect::<HashSet<_>>().len(), 20);
-            assert!(plan.groups.iter().all(|g| g.iter()
-                .map(|t| &t.card.category).collect::<HashSet<_>>().len() == 5));
+            assert_eq!(
+                all.iter().map(|t| &t.card.id).collect::<HashSet<_>>().len(),
+                20
+            );
+            assert!(plan.groups.iter().all(|g| g
+                .iter()
+                .map(|t| &t.card.category)
+                .collect::<HashSet<_>>()
+                .len()
+                == 5));
             for category in selected {
-                assert!(all.iter().any(|t|
-                    t.card.category == category && t.card.source_kind == SourceKind::Wrong));
+                assert!(all.iter().any(
+                    |t| t.card.category == category && t.card.source_kind == SourceKind::Wrong
+                ));
             }
         }
     }
@@ -1649,8 +1749,12 @@ mod tests {
     fn mixed_pool_can_select_unselected_wrong_and_cross_passage_categories() {
         let cards = ample_pool();
         let plan = plan_question_targets(&cards, &["category0".into()], 987654).unwrap();
-        let wrong_count = plan.groups.iter().flatten()
-            .filter(|target| target.card.source_kind == SourceKind::Wrong).count();
+        let wrong_count = plan
+            .groups
+            .iter()
+            .flatten()
+            .filter(|target| target.card.source_kind == SourceKind::Wrong)
+            .count();
         assert!(wrong_count >= 1);
         assert_eq!(plan.groups.iter().map(Vec::len).sum::<usize>(), 20);
     }
@@ -1661,10 +1765,23 @@ mod tests {
         let selected = vec!["category0".into(), "category1".into()];
         let a = plan_question_targets(&cards, &selected, 112233).unwrap();
         let b = plan_question_targets(&cards, &selected, 112233).unwrap();
-        let a_ids = a.groups.iter().flatten().map(|t| &t.card.id).collect::<Vec<_>>();
-        let b_ids = b.groups.iter().flatten().map(|t| &t.card.id).collect::<Vec<_>>();
+        let a_ids = a
+            .groups
+            .iter()
+            .flatten()
+            .map(|t| &t.card.id)
+            .collect::<Vec<_>>();
+        let b_ids = b
+            .groups
+            .iter()
+            .flatten()
+            .map(|t| &t.card.id)
+            .collect::<Vec<_>>();
         assert_eq!(a_ids, b_ids);
-        let mut returned = a.groups[0].iter().map(|t| t.target_id.clone()).collect::<Vec<_>>();
+        let mut returned = a.groups[0]
+            .iter()
+            .map(|t| t.target_id.clone())
+            .collect::<Vec<_>>();
         assert!(target_ids_match(&a.groups[0], &returned));
         returned[0] = "unknown".into();
         assert!(!target_ids_match(&a.groups[0], &returned));
@@ -1674,14 +1791,19 @@ mod tests {
 
     #[test]
     fn impossible_card_pools_fail_instead_of_relaxing_hard_constraints() {
-        let few_categories = (0..4).flat_map(|i| (0..8).map(move |n|
-            candidate(&format!("cat{i}"), n, SourceKind::Wrong))).collect::<Vec<_>>();
+        let few_categories = (0..4)
+            .flat_map(|i| (0..8).map(move |n| candidate(&format!("cat{i}"), n, SourceKind::Wrong)))
+            .collect::<Vec<_>>();
         assert!(plan_question_targets(&few_categories, &["cat0".into()], 1).is_err());
-        let few_cards = (0..6).map(|i| candidate(&format!("cat{i}"), i, SourceKind::Wrong))
+        let few_cards = (0..6)
+            .map(|i| candidate(&format!("cat{i}"), i, SourceKind::Wrong))
             .collect::<Vec<_>>();
         assert!(plan_question_targets(&few_cards, &["cat0".into()], 1).is_err());
-        let no_wrong = (0..6).flat_map(|i| (0..5).map(move |n|
-            candidate(&format!("cat{i}"), n, SourceKind::Knowledge))).collect::<Vec<_>>();
+        let no_wrong = (0..6)
+            .flat_map(|i| {
+                (0..5).map(move |n| candidate(&format!("cat{i}"), n, SourceKind::Knowledge))
+            })
+            .collect::<Vec<_>>();
         assert!(plan_question_targets(&no_wrong, &["cat0".into()], 1).is_err());
     }
 
