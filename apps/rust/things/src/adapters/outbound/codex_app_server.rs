@@ -60,10 +60,11 @@ fn output_schema() -> Value {
             "explanation":{"type":"string"},
             "skill":{"type":"string"},
             "source_kind":{"type":"string","enum":["wrong","knowledge"]},
+            "target_id":{"type":"string"},
             "evidence":{"type":"string"}
         },
         "required":["question","options","correct_index","answer",
-                    "explanation","skill","source_kind","evidence"],
+                    "explanation","skill","source_kind","target_id","evidence"],
         "additionalProperties":false
     });
     json!({
