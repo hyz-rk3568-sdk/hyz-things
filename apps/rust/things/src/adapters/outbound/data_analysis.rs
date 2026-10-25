@@ -1,6 +1,8 @@
 //! Native Codex App Server question preparation from exam-inspired simulated topics.
 //! Codex owns the answer; the application stores each freshly prepared practice attempt.
-use super::codex_app_server::{validate_token, CodexSession, TURN_TIMEOUT};
+use super::codex_app_server::{
+    validate_token, CodexSession, CANCELLED_MESSAGE, UNCONFIRMED_MESSAGE,
+};
 use crate::domain::data_analysis::{
     select_material_batch, topic_scope, Material, VerifiedQuestion, QUIZ_GROUPS, QUIZ_PER_GROUP,
     QUIZ_SECONDS, TOPICS,
@@ -15,11 +17,15 @@ use std::{
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::{sync::Mutex, task::JoinSet};
+use tokio::{
+    sync::{watch, Mutex},
+    task::JoinSet,
+};
 use uuid::Uuid;
 
 const ENV_PATH: &str = "/userdata/hyz-things/.env";
 const RECENT_THEME_PAPERS: usize = 4;
+const MAX_GENERATION_CONCURRENCY: usize = 2;
 
 // User-owned style and difficulty policy. Hard limits, selected categories,
 // JSON shape and sources remain server-controlled even if this text changes.
@@ -236,28 +242,63 @@ async fn run_generation_wave<F, Fut>(
     producer: F,
 ) -> Result<Vec<(usize, Result<QuestionGroup, String>)>, String>
 where
-    F: Fn(Material, usize) -> Fut + Clone + Send + 'static,
+    F: Fn(Material, usize, watch::Sender<bool>) -> Fut + Clone + Send + 'static,
     Fut: Future<Output = Result<QuestionGroup, String>> + Send + 'static,
 {
     debug_assert!(candidates.len() <= QUIZ_GROUPS);
     let mut running = JoinSet::new();
+    let (cancellation, _) = watch::channel(false);
+    let permits = Arc::new(tokio::sync::Semaphore::new(MAX_GENERATION_CONCURRENCY));
     for (index, material) in candidates {
         let produce = producer.clone();
-        running.spawn(async move { (index, produce(material, index).await) });
+        let permits = Arc::clone(&permits);
+        let cancellation = cancellation.clone();
+        running.spawn(async move {
+            let _permit = permits
+                .acquire_owned()
+                .await
+                .expect("generation semaphore open");
+            if *cancellation.borrow() {
+                return (index, Err(CANCELLED_MESSAGE.into()));
+            }
+            let result = produce(material, index, cancellation.clone()).await;
+            if result
+                .as_ref()
+                .err()
+                .is_some_and(|error| is_generation_timeout(error))
+            {
+                // Publish before releasing the permit so queued groups cannot start.
+                cancellation.send_replace(true);
+            }
+            (index, result)
+        });
     }
     let mut results = Vec::new();
+    let mut timeout_error = None;
+    let mut cleanup_unconfirmed = false;
     while let Some(outcome) = running.join_next().await {
         match outcome {
-            Ok((_, Err(error))) if is_generation_timeout(&error) => {
-                // Do not start another wave when a worker exceeds its deadline.
-                // Abort and drain other in-flight Codex sessions before failing.
-                running.abort_all();
-                while running.join_next().await.is_some() {}
-                return Err(error);
+            Ok(result) => {
+                if let Err(error) = &result.1 {
+                    cleanup_unconfirmed |= error.contains(UNCONFIRMED_MESSAGE);
+                    if is_generation_timeout(error) {
+                        cancellation.send_replace(true);
+                        timeout_error.get_or_insert_with(|| error.clone());
+                    }
+                }
+                results.push(result);
             }
-            Ok(result) => results.push(result),
-            Err(_) => results.push((usize::MAX, Err("Codex 并行出题任务意外中断".to_owned()))),
+            Err(_) => {
+                cleanup_unconfirmed = true;
+                results.push((usize::MAX, Err("Codex 并行出题任务意外中断".to_owned())));
+            }
         }
+    }
+    if let Some(mut error) = timeout_error {
+        if cleanup_unconfirmed && !error.contains(UNCONFIRMED_MESSAGE) {
+            error.push_str(&format!("；其他会话{UNCONFIRMED_MESSAGE}，请检查电脑服务"));
+        }
+        return Err(error);
     }
     Ok(results)
 }
@@ -1168,24 +1209,25 @@ impl DataAnalysisService {
                 job,
                 "generating",
                 ready.iter().filter(|group| group.is_some()).count() * QUIZ_PER_GROUP,
-                "最多4个 Codex Thread 正在生成错题强化与资料知识点混合试卷",
+                "最多2个 Codex Thread 正在生成错题强化与资料知识点混合试卷",
                 None,
             )
             .await;
             let worker = self.clone();
             let plan = Arc::clone(&plan);
             let user_prompt = Arc::new(user_prompt.to_owned());
-            for (slot, outcome) in run_generation_wave(requests, move |material, slot| {
-                let worker = worker.clone();
-                let plan = Arc::clone(&plan);
-                let user_prompt = Arc::clone(&user_prompt);
-                async move {
-                    worker
-                        .generate_group(&material, &plan, &user_prompt, slot)
-                        .await
-                }
-            })
-            .await?
+            for (slot, outcome) in
+                run_generation_wave(requests, move |material, slot, cancellation| {
+                    let worker = worker.clone();
+                    let plan = Arc::clone(&plan);
+                    let user_prompt = Arc::clone(&user_prompt);
+                    async move {
+                        worker
+                            .generate_group(&material, &plan, &user_prompt, slot, cancellation)
+                            .await
+                    }
+                })
+                .await?
             {
                 match outcome {
                     Ok(group) if slot < QUIZ_GROUPS => {
@@ -1241,6 +1283,7 @@ impl DataAnalysisService {
         plan: &QuestionPlan,
         user_prompt: &str,
         ordinal: usize,
+        cancellation: watch::Sender<bool>,
     ) -> Result<QuestionGroup, String> {
         let config = self.config.as_ref().ok_or("Codex Token 未配置")?;
         let context = source.clone();
@@ -1283,18 +1326,17 @@ impl DataAnalysisService {
             topic_scope = topic_scope(&context.topic).unwrap_or("该主题相关统计指标"),
             targets_text = targets_text,
         );
-        let mut session = tokio::time::timeout(
-            Duration::from_secs(12),
-            CodexSession::connect(&config.token, &config.cwd),
-        )
-        .await
-        .map_err(|_| "连接 Codex App Server 超时".to_owned())??;
-        let output = tokio::time::timeout(TURN_TIMEOUT, session.turn(&prompt))
-            .await
-            .map_err(|_| {
-                "Codex 出题超时（600 秒 / 10 分钟），本次出题已终止，请检查电脑服务与账号额度"
-                    .to_owned()
-            })??;
+        let mut cancelled = cancellation.subscribe();
+        let mut session = tokio::select! {
+            result = tokio::time::timeout(
+                Duration::from_secs(12),
+                CodexSession::connect(&config.token, &config.cwd),
+            ) => result.map_err(|_| "连接 Codex App Server 超时".to_owned())??,
+            _ = cancelled.wait_for(|value| *value) => {
+                return Err(CANCELLED_MESSAGE.into());
+            }
+        };
+        let output = session.turn_cancellable(&prompt, cancellation).await?;
         #[derive(Deserialize)]
         struct GeneratedQuestion {
             #[serde(flatten)]
@@ -2416,8 +2458,22 @@ mod tests {
         ));
     }
 
+    fn generation_candidates(count: usize) -> Vec<(usize, Material)> {
+        (0..count)
+            .map(|slot| {
+                (
+                    slot,
+                    Material {
+                        topic: format!("topic-{slot}"),
+                        text: "test".into(),
+                    },
+                )
+            })
+            .collect()
+    }
+
     #[tokio::test]
-    async fn one_group_timeout_aborts_other_parallel_workers() {
+    async fn one_group_timeout_cancels_peers_before_returning() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use tokio::sync::Barrier;
 
@@ -2429,25 +2485,18 @@ mod tests {
         }
 
         let dropped = Arc::new(AtomicUsize::new(0));
-        let started = Arc::new(Barrier::new(QUIZ_GROUPS));
-        let candidates = (0..QUIZ_GROUPS)
-            .map(|slot| {
-                (
-                    slot,
-                    Material {
-                        topic: format!("topic-{slot}"),
-                        text: "test".into(),
-                    },
-                )
-            })
-            .collect();
+        let cancelled = Arc::new(AtomicUsize::new(0));
+        let started = Arc::new(Barrier::new(MAX_GENERATION_CONCURRENCY));
+        let candidates = generation_candidates(QUIZ_GROUPS);
         let result = tokio::time::timeout(
             Duration::from_secs(2),
             run_generation_wave(candidates, {
                 let dropped = Arc::clone(&dropped);
+                let cancelled = Arc::clone(&cancelled);
                 let started = Arc::clone(&started);
-                move |_material, slot| {
+                move |_material, slot, cancellation| {
                     let dropped = Arc::clone(&dropped);
+                    let cancelled = Arc::clone(&cancelled);
                     let started = Arc::clone(&started);
                     async move {
                         let _marker = DropMarker(dropped);
@@ -2455,7 +2504,10 @@ mod tests {
                         if slot == 0 {
                             Err("Codex 出题超时，请检查电脑服务与账号额度".into())
                         } else {
-                            std::future::pending::<Result<QuestionGroup, String>>().await
+                            let mut signal = cancellation.subscribe();
+                            let _ = signal.wait_for(|value| *value).await;
+                            cancelled.fetch_add(1, Ordering::SeqCst);
+                            Err("Codex 出题已取消".into())
                         }
                     }
                 }
@@ -2464,33 +2516,59 @@ mod tests {
         .await
         .expect("a timeout should end the wave without waiting for other workers");
         assert!(matches!(result, Err(ref error) if error.contains("超时")));
-        assert_eq!(dropped.load(Ordering::SeqCst), QUIZ_GROUPS);
+        assert_eq!(
+            cancelled.load(Ordering::SeqCst),
+            1,
+            "peer cleanup must finish"
+        );
+        assert_eq!(dropped.load(Ordering::SeqCst), MAX_GENERATION_CONCURRENCY);
     }
 
     #[tokio::test]
-    async fn parallel_wave_runs_four_sessions_and_keeps_source_slots() {
+    async fn batch_timeout_reports_unconfirmed_peer_cleanup() {
+        for timeout in [
+            "连接 Codex App Server 超时",
+            "Codex 出题超时，请检查电脑服务与账号额度",
+        ] {
+            let started = Arc::new(tokio::sync::Barrier::new(2));
+            let candidates = generation_candidates(2);
+            let error = run_generation_wave(candidates, move |_material, slot, cancellation| {
+                let started = Arc::clone(&started);
+                async move {
+                    started.wait().await;
+                    if slot == 0 {
+                        Err(timeout.into())
+                    } else {
+                        let mut signal = cancellation.subscribe();
+                        let _ = signal.wait_for(|value| *value).await;
+                        Err(format!(
+                            "{CANCELLED_MESSAGE}；未确认 Codex 远端已停止，请检查电脑服务"
+                        ))
+                    }
+                }
+            })
+            .await
+            .err()
+            .expect("batch should time out");
+            assert!(error.starts_with(timeout));
+            assert!(error.contains("未确认 Codex 远端已停止"), "{error}");
+        }
+    }
+
+    #[tokio::test]
+    async fn parallel_wave_runs_at_most_two_sessions_and_keeps_source_slots() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use tokio::sync::Barrier;
 
         let active = Arc::new(AtomicUsize::new(0));
         let peak = Arc::new(AtomicUsize::new(0));
-        let barrier = Arc::new(Barrier::new(QUIZ_GROUPS + 1));
-        let candidates = (0..QUIZ_GROUPS)
-            .map(|slot| {
-                (
-                    slot,
-                    Material {
-                        topic: format!("topic-{slot}"),
-                        text: "test".into(),
-                    },
-                )
-            })
-            .collect();
+        let barrier = Arc::new(Barrier::new(MAX_GENERATION_CONCURRENCY + 1));
+        let candidates = generation_candidates(QUIZ_GROUPS);
         let task = tokio::spawn(run_generation_wave(candidates, {
             let active = Arc::clone(&active);
             let peak = Arc::clone(&peak);
             let barrier = Arc::clone(&barrier);
-            move |material, _ordinal| {
+            move |material, _ordinal, _cancellation| {
                 let active = Arc::clone(&active);
                 let peak = Arc::clone(&peak);
                 let barrier = Arc::clone(&barrier);
@@ -2511,16 +2589,18 @@ mod tests {
                 }
             }
         }));
-        tokio::time::timeout(Duration::from_secs(4), barrier.wait())
-            .await
-            .expect("all four independent workers should reach the same barrier");
+        for _ in (0..QUIZ_GROUPS).step_by(MAX_GENERATION_CONCURRENCY) {
+            tokio::time::timeout(Duration::from_secs(4), barrier.wait())
+                .await
+                .expect("each pair of workers should run concurrently");
+        }
         let mut outcomes = tokio::time::timeout(Duration::from_secs(4), task)
             .await
             .unwrap()
             .unwrap()
             .unwrap();
         outcomes.sort_by_key(|(slot, _)| *slot);
-        assert_eq!(peak.load(Ordering::SeqCst), QUIZ_GROUPS);
+        assert_eq!(peak.load(Ordering::SeqCst), 2);
         assert_eq!(active.load(Ordering::SeqCst), 0);
         assert_eq!(outcomes.len(), QUIZ_GROUPS);
         for (slot, item) in outcomes {

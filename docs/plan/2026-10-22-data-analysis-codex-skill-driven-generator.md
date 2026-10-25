@@ -8,7 +8,7 @@
 
 - 将流程由「先改写官方材料 → 从原文数字凑题 → Rust 验算」改为「Codex 读取 hyz Skill/Flashcard → 先规划5题型 → 构造自洽模拟数据 → 组织材料和四选一 → Codex 自检 → 应用展示」。
 - 当前保留每次4组×5题、20分钟、暂停/恢复、历史回看、同材料找数5题和跨模式去重。
-- 每组以独立 ephemeral Codex Thread 生成，最多4组并发；20题全部依据 flashcards/资料/错题/ 中实际存在的卡片与分类，不设置固定题型配额，按不同官方统计主题分组。Codex 可在 read-only 沙盒中自主使用获准的读取、计算等工具；保持非交互审批，不开放仓库写权限。
+- 每组以独立 ephemeral Codex Thread 生成，最多2组同时生成，空出一个位置后继续生成排队题组；20题全部依据 flashcards/资料/错题/ 中实际存在的卡片与分类，不设置固定题型配额，按不同官方统计主题分组。Codex 按用户于 2026-10-26 的决定关闭执行沙箱，保持非交互审批，临时环境变量 `TMPDIR`、`TMP`、`TEMP` 固定为 `/tmp`。
 - 使用电脑仓库 `.agents/skills/行测做题/SKILL.md` (name: `hyz-xingce`) 和 `flashcards/资料/` 的**当前文件**。不把卡片正文预先复制到 RK3568 的 Prompt；Codex 自主读取。
 - 允许构造模拟值；官方公报提供年份、主题、主体、指标、统计口径和写作风格，不声称模拟数值为国家统计局真实数据。网页与材料明确标识模拟训练。
 - Codex 直接返回 `question/options[4]/correct_index/answer/skill/evidence/explanation`；不再由 hyz-things 通过 `Operation` / `verify_recipe` 生成正确项、干扰项或验算。
@@ -26,7 +26,8 @@ HYZ_THINGS_CODEX_CWD=/home/<PC用户>/hyz_things
 - CWD 是**电脑上 Codex App Server 进程能够读取的真实绝对路径**，由 RK3568 后端原样作为 `thread/start.cwd` 发给 App Server；不在板端展开 `~` 或判断电脑目录是否存在。不能从浏览器传入 CWD。
 - 配置校验只允许绝对路径、禁止 `..` 及控制字符；必须同时配置 Token 与 CWD，避免隐式回退至 `/tmp`。
 - PC 上执行 `cd /home/<PC用户>/hyz_things && pwd -P` 确认真实目录，并确认 `AGENTS.md`、`.agents/skills/行测做题/SKILL.md`、`flashcards/资料/` 可读。PC 端按已有 `scripts/run-codex-app-server.sh` 启动。
-- 保持 `sandbox: "read-only"`、`approvalPolicy: "never"`、`ephemeral: true`。Codex 可自主选择沙盒允许的读取与计算工具，客户端拒绝交互式写入/审批请求，不授予完整文件读写与网络权限。
+- 使用 `sandbox: "danger-full-access"`、`approvalPolicy: "never"`、`ephemeral: true`；客户端仍拒绝交互审批请求。关闭沙箱后命令拥有运行 Codex 的 PC 用户权限，`/tmp` 是临时文件位置约定，文件访问范围不受该路径限制。
+- 单篇生成上限保持 600 秒；任一路生成或连接超时会取消同批任务，排队题组停止启动。对运行中的 Turn 发送精确 `threadId` + `turnId` 的 `turn/interrupt`，最多等待 5 秒确认 `turn/completed` 的明确终态后结束清理；若无法确认远端停止，返回明确提示并记录告警。
 - 更新电脑工作树中的 Skill/Flashcard 后，**下一次新 Thread** 可读取新版；正在执行中的 Thread 不保证热更新，RK3568 单独更新卡片数据库不等于 PC 文件已同步。
 - 新出题结果使用 `QuestionGroup.version = 4`，旧版结果和练习历史保持兼容；旧版缓存不会被新生成器当成新题使用。
 
@@ -39,7 +40,7 @@ HYZ_THINGS_CODEX_CWD=/home/<PC用户>/hyz_things
 ## 验收
 
 1. 配置文件 Token+CWD 缺一不可，非法路径拒绝；PC 端路径不在 RK3568 校验其文件存在性。
-2. 假 App Server 测试验证 `thread/start.cwd`、只读沙盒和最终回答 schema；只读命令事件不被误认为交互审批请求。
+2. 假 App Server 测试验证 `thread/start.cwd`、关闭沙箱、`/tmp` 环境和最终回答 schema；命令事件及中断响应不被误认为交互审批请求；覆盖两路上限、超时取消同批任务、排队停止、迟到 Turn ID、部分帧与清理超时。
 3. Native 单测确认新版本直接消费 Codex 提供的选项与正确下标，不进行 Rust 数学复算。
 4. 保持完整20题生命周期、暂停、结果、历史、找数训练；不同模拟材料跨模式去重。
 5. 最终提交在 GitHub Actions 上通过静态、Rust fmt/test/Clippy、Web build/unit、Playwright E2E。

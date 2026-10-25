@@ -3,20 +3,37 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::{json, Value};
 use sha1::{Digest, Sha1};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
+    io::{AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    net::{
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+        TcpStream,
+    },
+    sync::{watch, Mutex},
 };
 
 pub const SERVER: &str = "192.168.8.202:1457";
 const MAX_PACKET: usize = 256 * 1024;
 const MAX_EVENTS: usize = 2048;
 pub const TURN_TIMEOUT: Duration = Duration::from_secs(600);
+const INTERRUPT_TIMEOUT: Duration = Duration::from_secs(5);
+pub(super) const UNCONFIRMED_MESSAGE: &str = "未确认 Codex 远端已停止";
+pub(super) const CANCELLED_MESSAGE: &str = "Codex 出题已取消（同批任务超时）";
+type SharedWriter = Arc<Mutex<OwnedWriteHalf>>;
+
+#[derive(Clone)]
+enum TurnState {
+    NotStarted,
+    Starting,
+    Running(String),
+    Finished,
+}
 
 /// A fixed endpoint: never allow browser input or AI-generated content to select a host.
 pub struct CodexSession {
-    socket: TcpStream,
+    reader: OwnedReadHalf,
+    writer: SharedWriter,
     thread_id: String,
     request_id: i64,
 }
@@ -133,7 +150,11 @@ async fn handshake(socket: &mut TcpStream, host: &str, token: &str) -> Result<()
     Ok(())
 }
 
-async fn write_frame(socket: &mut TcpStream, opcode: u8, payload: &[u8]) -> Result<(), String> {
+async fn write_frame(
+    socket: &mut (impl AsyncWrite + Unpin),
+    opcode: u8,
+    payload: &[u8],
+) -> Result<(), String> {
     if payload.len() > MAX_PACKET {
         return Err("Codex 请求超过大小限制".into());
     }
@@ -163,7 +184,7 @@ async fn write_frame(socket: &mut TcpStream, opcode: u8, payload: &[u8]) -> Resu
         .map_err(|_| "Codex WebSocket 写入失败".into())
 }
 
-async fn read_text(socket: &mut TcpStream) -> Result<String, String> {
+async fn read_text(socket: &mut OwnedReadHalf, writer: &SharedWriter) -> Result<String, String> {
     let mut message = Vec::new();
     let mut fragmented = false;
     loop {
@@ -207,7 +228,7 @@ async fn read_text(socket: &mut TcpStream) -> Result<String, String> {
             .map_err(|_| "Codex 帧读取失败")?;
         match opcode {
             0x8 => return Err("Codex App Server 已关闭连接".into()),
-            0x9 => write_frame(socket, 0xA, &payload).await?,
+            0x9 => write_frame(&mut *writer.lock().await, 0xA, &payload).await?,
             0xA => {}
             0x1 if !fragmented => {
                 message.extend_from_slice(&payload);
@@ -227,6 +248,11 @@ async fn read_text(socket: &mut TcpStream) -> Result<String, String> {
     }
 }
 
+async fn send_message(writer: &SharedWriter, message: &Value) -> Result<(), String> {
+    let bytes = serde_json::to_vec(message).map_err(|_| "Codex JSON-RPC 编码失败")?;
+    write_frame(&mut *writer.lock().await, 1, &bytes).await
+}
+
 impl CodexSession {
     pub async fn connect(token: &str, cwd: &str) -> Result<Self, String> {
         Self::connect_at(SERVER, token, cwd).await
@@ -238,8 +264,10 @@ impl CodexSession {
             .await
             .map_err(|_| "无法连接 192.168.8.202:1457；请检查电脑 Codex App Server")?;
         handshake(&mut socket, address, token).await?;
+        let (reader, writer) = socket.into_split();
         let mut client = Self {
-            socket,
+            reader,
+            writer: Arc::new(Mutex::new(writer)),
             thread_id: String::new(),
             request_id: 0,
         };
@@ -259,7 +287,10 @@ impl CodexSession {
                     "ephemeral":true,
                     "cwd":cwd,
                     "approvalPolicy":"never",
-                    "sandbox":"read-only"
+                    "sandbox":"danger-full-access",
+                    "config":{"shell_environment_policy.set":{
+                        "TMPDIR":"/tmp","TMP":"/tmp","TEMP":"/tmp"
+                    }}
                 }),
             )
             .await?;
@@ -272,21 +303,24 @@ impl CodexSession {
     }
 
     async fn send(&mut self, message: &Value) -> Result<(), String> {
-        let bytes = serde_json::to_vec(message).map_err(|_| "Codex JSON-RPC 编码失败")?;
-        write_frame(&mut self.socket, 1, &bytes).await
+        send_message(&self.writer, message).await
     }
 
     async fn notify(&mut self, method: &str, params: Value) -> Result<(), String> {
         self.send(&json!({"method":method,"params":params})).await
     }
 
-    async fn request(&mut self, method: &str, params: Value) -> Result<Value, String> {
+    fn next_request_id(&mut self) -> i64 {
         self.request_id += 1;
-        let id = self.request_id;
+        self.request_id
+    }
+
+    async fn request(&mut self, method: &str, params: Value) -> Result<Value, String> {
+        let id = self.next_request_id();
         self.send(&json!({"id":id,"method":method,"params":params}))
             .await?;
         for _ in 0..MAX_EVENTS {
-            let text = read_text(&mut self.socket).await?;
+            let text = read_text(&mut self.reader, &self.writer).await?;
             let msg: Value = serde_json::from_str(&text).map_err(|_| "Codex 返回非法 JSON-RPC")?;
             if msg.get("id").and_then(Value::as_i64) != Some(id) {
                 continue;
@@ -304,9 +338,75 @@ impl CodexSession {
 
     /// Run one generation or repair turn in the same ephemeral thread.
     pub async fn turn(&mut self, prompt: &str) -> Result<String, String> {
-        self.turn_with_schema(prompt, output_schema()).await
+        self.turn_cancellable(prompt, watch::channel(false).0).await
     }
-    async fn turn_with_schema(&mut self, prompt: &str, schema: Value) -> Result<String, String> {
+
+    pub async fn turn_cancellable(
+        &mut self,
+        prompt: &str,
+        cancellation: watch::Sender<bool>,
+    ) -> Result<String, String> {
+        let mut cancelled = cancellation.subscribe();
+        if *cancelled.borrow() {
+            return Err(CANCELLED_MESSAGE.into());
+        }
+        let writer = Arc::clone(&self.writer);
+        let thread = self.thread_id.clone();
+        let interrupt_id = self.next_request_id();
+        let (state_tx, mut state) = watch::channel(TurnState::NotStarted);
+        let generation = self.run_turn(prompt, state_tx);
+        tokio::pin!(generation);
+        let error = tokio::select! {
+            result = &mut generation => return result,
+            _ = tokio::time::sleep(TURN_TIMEOUT) => {
+                cancellation.send_replace(true);
+                "Codex 出题超时（600 秒 / 10 分钟），本次出题已终止，请检查电脑服务与账号额度"
+            }
+            _ = cancelled.wait_for(|value| *value) => {
+                CANCELLED_MESSAGE
+            }
+        };
+        // Keep polling the same reader future so partial WebSocket frames survive
+        // the deadline and a late turn/start response can still identify the turn.
+        let cleanup = async {
+            let turn_id = loop {
+                match state.borrow().clone() {
+                    TurnState::NotStarted | TurnState::Finished => return true,
+                    TurnState::Running(id) => break id,
+                    TurnState::Starting => {}
+                }
+                tokio::select! {
+                    _ = &mut generation => return matches!(*state.borrow(), TurnState::Finished),
+                    _ = state.changed() => {}
+                }
+            };
+            let interrupt = json!({"id":interrupt_id,"method":"turn/interrupt",
+                "params":{"threadId":thread,"turnId":turn_id}});
+            tokio::select! {
+                result = send_message(&writer, &interrupt) => {
+                    if result.is_err() { return false; }
+                }
+                _ = &mut generation => return matches!(*state.borrow(), TurnState::Finished),
+            }
+            let _ = generation.await;
+            matches!(*state.borrow(), TurnState::Finished)
+        };
+        if !matches!(
+            tokio::time::timeout(INTERRUPT_TIMEOUT, cleanup).await,
+            Ok(true)
+        ) {
+            tracing::warn!(thread_id = %thread, "Codex turn cancellation was not confirmed");
+            return Err(format!("{error}；{UNCONFIRMED_MESSAGE}，请检查电脑服务"));
+        }
+        Err(error.into())
+    }
+
+    async fn run_turn(
+        &mut self,
+        prompt: &str,
+        state: watch::Sender<TurnState>,
+    ) -> Result<String, String> {
+        state.send_replace(TurnState::Starting);
         let thread = self.thread_id.clone();
         let result = self
             .request(
@@ -314,7 +414,7 @@ impl CodexSession {
                 json!({
                     "threadId":thread,
                     "input":[{"type":"text","text":prompt}],
-                    "outputSchema":schema
+                    "outputSchema":output_schema()
                 }),
             )
             .await?;
@@ -323,14 +423,15 @@ impl CodexSession {
             .and_then(Value::as_str)
             .ok_or("Codex 未返回有效 Turn ID")?
             .to_owned();
+        state.send_replace(TurnState::Running(turn_id.clone()));
         let mut final_answer = String::new();
         for _ in 0..MAX_EVENTS {
-            let raw = read_text(&mut self.socket).await?;
+            let raw = read_text(&mut self.reader, &self.writer).await?;
             let packet: Value =
                 serde_json::from_str(&raw).map_err(|_| "Codex 返回非法 JSON-RPC 通知")?;
-            // With never approval, tools execute under the configured sandbox.
-            // Reject unexpected interactive JSON-RPC prompts; do not auto-approve.
-            if let Some(id) = packet.get("id") {
+            // Reject interactive requests; responses such as interrupt acknowledgements
+            // have an id without a method and need no reply.
+            if let Some(id) = packet.get("id").filter(|_| packet.get("method").is_some()) {
                 self.send(&json!({"id":id,"error":{"code":-32601,"message":"Interactive tools unavailable"}})).await?;
                 continue;
             }
@@ -350,11 +451,14 @@ impl CodexSession {
             if method == Some("turn/completed")
                 && packet.pointer("/params/turn/id").and_then(Value::as_str) == Some(&turn_id)
             {
-                if packet
+                let status = packet
                     .pointer("/params/turn/status")
-                    .and_then(Value::as_str)
-                    != Some("completed")
-                {
+                    .and_then(Value::as_str);
+                if !matches!(status, Some("completed" | "interrupted" | "failed")) {
+                    return Err("Codex 返回未知的 Turn 完成状态".into());
+                }
+                state.send_replace(TurnState::Finished);
+                if status != Some("completed") {
                     return Err("Codex 生成失败或中断（可能登录失效或额度不足）".into());
                 }
                 if final_answer.is_empty() || final_answer.len() > MAX_PACKET {
@@ -469,49 +573,264 @@ mod tests {
         serde_json::from_slice(&body).unwrap()
     }
 
+    async fn accept_session(listener: &TcpListener) -> TcpStream {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut handshake = Vec::new();
+        while !handshake.ends_with(b"\r\n\r\n") {
+            let mut b = [0u8];
+            socket.read_exact(&mut b).await.unwrap();
+            handshake.push(b[0]);
+        }
+        let head = String::from_utf8(handshake).unwrap();
+        assert!(head.contains(&format!("Authorization: Bearer {}", "a".repeat(64))));
+        let key = head
+            .lines()
+            .find_map(|line| line.strip_prefix("Sec-WebSocket-Key: "))
+            .unwrap()
+            .trim();
+        let reply = format!("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {}\r\n\r\n",accept_key(key));
+        socket.write_all(reply.as_bytes()).await.unwrap();
+        let init = client_message(&mut socket).await;
+        assert_eq!(init["method"], "initialize");
+        server_message(&mut socket, json!({"id":1,"result":{}})).await;
+        let initialized = client_message(&mut socket).await;
+        assert_eq!(initialized["method"], "initialized");
+        let thread = client_message(&mut socket).await;
+        assert_eq!(thread["method"], "thread/start");
+        assert_eq!(thread["params"]["ephemeral"], true);
+        assert_eq!(thread["params"]["cwd"], "/home/hyz/hyz_things");
+        assert_eq!(thread["params"]["sandbox"], "danger-full-access");
+        assert_eq!(
+            thread["params"]["config"]["shell_environment_policy.set"],
+            json!({"TMPDIR":"/tmp","TMP":"/tmp","TEMP":"/tmp"})
+        );
+        assert_eq!(thread["params"]["approvalPolicy"], "never");
+        server_message(
+            &mut socket,
+            json!({"id":2,"result":{"thread":{"id":"test-thread"}}}),
+        )
+        .await;
+        socket
+    }
+
+    async fn test_connection() -> (CodexSession, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let token = "a".repeat(64);
+        let (session, socket) = tokio::join!(
+            CodexSession::connect_at(&address, &token, "/home/hyz/hyz_things"),
+            accept_session(&listener)
+        );
+        (session.unwrap(), socket)
+    }
+
+    async fn start_test_turn(socket: &mut TcpStream) {
+        let turn = client_message(socket).await;
+        assert_eq!(turn["method"], "turn/start");
+        server_message(
+            socket,
+            json!({"id":turn["id"],"result":{"turn":{"id":"turn-1"}}}),
+        )
+        .await;
+        // The reply proves the client has consumed turn/start before advancing time.
+        server_message(
+            socket,
+            json!({"id":77,"method":"test/approval","params":{}}),
+        )
+        .await;
+        let rejected = client_message(socket).await;
+        assert_eq!(rejected["id"], 77);
+        assert!(rejected.get("error").is_some());
+    }
+
+    async fn elapse(duration: Duration) {
+        tokio::time::pause();
+        tokio::time::advance(duration).await;
+        // Real loopback I/O needs the runtime clock to resume after the deadline.
+        tokio::time::resume();
+    }
+
+    #[tokio::test]
+    async fn generation_timeout_interrupts_remote_turn() {
+        let (mut session, mut socket) = test_connection().await;
+        let task = tokio::spawn(async move {
+            tokio::time::timeout(Duration::from_secs(611), session.turn("generate")).await
+        });
+        start_test_turn(&mut socket).await;
+        elapse(TURN_TIMEOUT).await;
+        let interrupt = tokio::time::timeout(Duration::from_secs(1), client_message(&mut socket))
+            .await
+            .expect("deadline must send turn/interrupt before disconnecting");
+        assert_eq!(interrupt["method"], "turn/interrupt");
+        assert_eq!(
+            interrupt["params"],
+            json!({"threadId":"test-thread","turnId":"turn-1"})
+        );
+        server_message(&mut socket, json!({"id":interrupt["id"],"result":{}})).await;
+        assert!(
+            !task.is_finished(),
+            "interrupt acknowledgement is not turn completion"
+        );
+        server_message(
+            &mut socket,
+            json!({"method":"turn/completed","params":{
+                "threadId":"test-thread","turn":{"id":"turn-1","status":"interrupted"}
+            }}),
+        )
+        .await;
+        let error = task.await.unwrap().unwrap().unwrap_err();
+        assert!(error.starts_with("Codex 出题超时"), "{error}");
+        assert_eq!(
+            socket.read(&mut [0u8; 1]).await.unwrap(),
+            0,
+            "interrupt responses must not trigger interactive-request replies"
+        );
+    }
+
+    #[tokio::test]
+    async fn batch_timeout_interrupts_peer_before_its_own_deadline() {
+        let (mut first, mut first_socket) = test_connection().await;
+        let (mut peer, mut peer_socket) = test_connection().await;
+        let cancellation = watch::channel(false).0;
+        let first_signal = cancellation.clone();
+        let first_task =
+            tokio::spawn(async move { first.turn_cancellable("first", first_signal).await });
+        start_test_turn(&mut first_socket).await;
+        elapse(TURN_TIMEOUT / 2).await;
+        let peer_task =
+            tokio::spawn(async move { peer.turn_cancellable("peer", cancellation).await });
+        start_test_turn(&mut peer_socket).await;
+        elapse(TURN_TIMEOUT / 2).await;
+        for socket in [&mut first_socket, &mut peer_socket] {
+            let interrupt = tokio::time::timeout(Duration::from_secs(1), client_message(socket))
+                .await
+                .expect("both running turns must be interrupted");
+            assert_eq!(interrupt["method"], "turn/interrupt");
+            server_message(socket, json!({"id":interrupt["id"],"result":{}})).await;
+            complete_test_turn(socket, "interrupted").await;
+        }
+        assert!(first_task
+            .await
+            .unwrap()
+            .unwrap_err()
+            .starts_with("Codex 出题超时"));
+        assert_eq!(peer_task.await.unwrap().unwrap_err(), CANCELLED_MESSAGE);
+    }
+
+    async fn complete_test_turn(socket: &mut TcpStream, status: &str) {
+        server_message(
+            socket,
+            json!({"method":"turn/completed","params":{
+                "threadId":"test-thread","turn":{"id":"turn-1","status":status}
+            }}),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn interrupt_cleanup_is_bounded_when_server_never_confirms() {
+        let (mut session, mut socket) = test_connection().await;
+        let task = tokio::spawn(async move { session.turn("generate").await });
+        start_test_turn(&mut socket).await;
+        elapse(TURN_TIMEOUT).await;
+        let interrupt = tokio::time::timeout(Duration::from_secs(1), client_message(&mut socket))
+            .await
+            .unwrap();
+        assert_eq!(interrupt["method"], "turn/interrupt");
+        server_message(&mut socket, json!({"id":interrupt["id"],"result":{}})).await;
+        elapse(INTERRUPT_TIMEOUT).await;
+        let error = tokio::time::timeout(Duration::from_secs(1), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+        assert!(error.starts_with("Codex 出题超时"));
+        assert!(error.contains("未确认 Codex 远端已停止"));
+    }
+
+    #[tokio::test]
+    async fn interrupt_requires_a_terminal_turn_status() {
+        let (mut session, mut socket) = test_connection().await;
+        let task = tokio::spawn(async move { session.turn("generate").await });
+        start_test_turn(&mut socket).await;
+        elapse(TURN_TIMEOUT).await;
+        let interrupt = tokio::time::timeout(Duration::from_secs(1), client_message(&mut socket))
+            .await
+            .unwrap();
+        assert_eq!(interrupt["method"], "turn/interrupt");
+        complete_test_turn(&mut socket, "inProgress").await;
+        let error = task.await.unwrap().unwrap_err();
+        assert!(error.contains(UNCONFIRMED_MESSAGE), "{error}");
+    }
+
+    #[tokio::test]
+    async fn cancelled_batch_does_not_start_a_new_turn() {
+        let (mut session, mut socket) = test_connection().await;
+        let cancellation = watch::channel(true).0;
+        let error = session
+            .turn_cancellable("generate", cancellation)
+            .await
+            .unwrap_err();
+        assert_eq!(error, CANCELLED_MESSAGE);
+        drop(session);
+        assert_eq!(socket.read(&mut [0u8; 1]).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn late_turn_start_is_interrupted_after_deadline() {
+        let (mut session, mut socket) = test_connection().await;
+        let task = tokio::spawn(async move { session.turn("generate").await });
+        let start = client_message(&mut socket).await;
+        assert_eq!(start["method"], "turn/start");
+        elapse(TURN_TIMEOUT).await;
+        server_message(
+            &mut socket,
+            json!({"id":start["id"],"result":{"turn":{"id":"turn-1"}}}),
+        )
+        .await;
+        let interrupt = tokio::time::timeout(Duration::from_secs(1), client_message(&mut socket))
+            .await
+            .expect("late turn id must still be cancelled");
+        assert_eq!(interrupt["method"], "turn/interrupt");
+        assert_eq!(interrupt["params"]["turnId"], "turn-1");
+        complete_test_turn(&mut socket, "interrupted").await;
+        let error = task.await.unwrap().unwrap_err();
+        assert!(error.starts_with("Codex 出题超时"));
+        assert!(!error.contains("未确认"));
+    }
+
+    #[tokio::test]
+    async fn interrupt_preserves_a_partially_received_websocket_frame() {
+        let (mut session, mut socket) = test_connection().await;
+        let task = tokio::spawn(async move { session.turn("generate").await });
+        start_test_turn(&mut socket).await;
+        let event = serde_json::to_vec(&json!({"method":"test/event","params":{}})).unwrap();
+        socket.write_all(&[0x81, event.len() as u8]).await.unwrap();
+        socket.write_all(&event[..1]).await.unwrap();
+        elapse(TURN_TIMEOUT).await;
+        let interrupt = tokio::time::timeout(Duration::from_secs(1), client_message(&mut socket))
+            .await
+            .unwrap();
+        assert_eq!(interrupt["method"], "turn/interrupt");
+        socket.write_all(&event[1..]).await.unwrap();
+        complete_test_turn(&mut socket, "interrupted").await;
+        let error = task.await.unwrap().unwrap_err();
+        assert!(error.starts_with("Codex 出题超时"));
+        assert!(!error.contains("未确认"));
+    }
+
     #[tokio::test]
     async fn fake_codex_app_server_completes_generation_without_external_network() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let mock = tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let mut handshake = Vec::new();
-            while !handshake.ends_with(b"\r\n\r\n") {
-                let mut b = [0u8];
-                socket.read_exact(&mut b).await.unwrap();
-                handshake.push(b[0]);
-            }
-            let head = String::from_utf8(handshake).unwrap();
-            assert!(head.contains(&format!("Authorization: Bearer {}", "a".repeat(64))));
-            let key = head
-                .lines()
-                .find_map(|line| line.strip_prefix("Sec-WebSocket-Key: "))
-                .unwrap()
-                .trim();
-            let reply = format!("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {}\r\n\r\n",accept_key(key));
-            socket.write_all(reply.as_bytes()).await.unwrap();
-            let init = client_message(&mut socket).await;
-            assert_eq!(init["method"], "initialize");
-            server_message(&mut socket, json!({"id":1,"result":{}})).await;
-            let initialized = client_message(&mut socket).await;
-            assert_eq!(initialized["method"], "initialized");
-            let thread = client_message(&mut socket).await;
-            assert_eq!(thread["method"], "thread/start");
-            assert_eq!(thread["params"]["ephemeral"], true);
-            assert_eq!(thread["params"]["cwd"], "/home/hyz/hyz_things");
-            assert_eq!(thread["params"]["sandbox"], "read-only");
-            assert_eq!(thread["params"]["approvalPolicy"], "never");
-            server_message(
-                &mut socket,
-                json!({"id":2,"result":{"thread":{"id":"test-thread"}}}),
-            )
-            .await;
+            let mut socket = accept_session(&listener).await;
             let turn = client_message(&mut socket).await;
             assert_eq!(turn["method"], "turn/start");
             assert_eq!(turn["params"]["outputSchema"]["type"], "object");
             server_message(
                 &mut socket,
-                json!({"id":3,"result":{"turn":{"id":"turn-1"}}}),
+                json!({"id":turn["id"],"result":{"turn":{"id":"turn-1"}}}),
             )
             .await;
             // Tool execution reports as events, without interactive approval.
