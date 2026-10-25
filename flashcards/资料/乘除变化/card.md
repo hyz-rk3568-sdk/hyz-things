@@ -127,27 +127,6 @@ $$
 ---
 
 ## Card
-<!-- hyz-card-id: 01a17340-7da3-7061-bcb0-6dcc66fb6d2e -->
-
-### Front
-
-设 $A$ 为部分量，$B$ 为总体量，增长率分别为 $r_A、r_B$。
-
-### 现期比重
-
-$$
-\boxed{
-P_{\text{现}}=\frac{A}{B}
-}
-$$
-
-### Back
-
---
-
----
-
-## Card
 <!-- hyz-card-id: 01a17340-7da3-7061-bcb0-6dd54cffc79d -->
 
 ### Front

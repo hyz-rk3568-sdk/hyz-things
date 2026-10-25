@@ -17,3 +17,4 @@ target/
 # Local credentials and generated configuration
 .env
 *.local
+tmp/
