@@ -177,7 +177,20 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   const toggle=surface.getByTestId("calculation-scratchpad-toggle");
   await expect(canvas).toHaveCount(1);
   await expect(toggle).toHaveCount(1);
+  await expect(toggle).toHaveAttribute("aria-label", "开启草稿");
   await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-label", "关闭草稿");
+  await expect(toggle).toHaveText("✕");
+  const controls=surface.getByTestId("calculation-scratchpad-controls");
+  await expect(surface.getByTestId("calculation-scratchpad-toolbar")).toBeVisible();
+  await expect(surface.getByTestId("calculation-scratchpad-close")).toHaveCount(0);
+  await expect(surface.getByLabel("铅笔已选中")).toHaveCount(0);
+  const controlsBox=await controls.boundingBox();
+  const surfaceBox=await surface.boundingBox();
+  expect(controlsBox).not.toBeNull();
+  expect(surfaceBox).not.toBeNull();
+  expect(controlsBox!.y-surfaceBox!.y).toBeLessThan(20);
+  expect(surfaceBox!.x+surfaceBox!.width-(controlsBox!.x+controlsBox!.width)).toBeLessThan(20);
   await expect(scrollControls).toBeVisible();
   const scrollUp=page.getByRole("button",{name:"材料向上滚动"});
   const scrollDown=page.getByRole("button",{name:"材料向下滚动"});
@@ -233,13 +246,15 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   expect(afterUndo).not.toEqual(marked);
   await page.getByTestId("calculation-scratchpad-redo").click();
   expect(await canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL())).toEqual(marked);
-  await page.getByTestId("calculation-scratchpad-close").click();
+  await toggle.click();
+  await expect(surface.getByTestId("calculation-scratchpad-toolbar")).toHaveCount(0);
+  await expect(toggle).toHaveAttribute("aria-label", "开启草稿");
   await page.getByRole("button",{name:"下一题"}).click();
   await expect(canvas).toBeHidden();
   await page.getByRole("button",{name:"上一题"}).click();
   await toggle.click();
   expect(await canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL())).toEqual(marked);
-  await page.getByTestId("calculation-scratchpad-close").click();
+  await toggle.click();
   // Portrait stacks two internally scrollable panes without document scroll.
   await page.setViewportSize({width:820,height:430});
   const portraitMaterial=await page.getByTestId("analysis-material").boundingBox();
@@ -256,19 +271,26 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await page.getByRole("button",{name:"材料向下滚动"}).click();
   await expect.poll(()=>shortPane.evaluate(el=>el.scrollTop)).toBeGreaterThan(shortHeight*0.28);
   await expect.poll(()=>shortPane.evaluate(el=>el.scrollTop)).toBeLessThan(shortHeight*0.38);
-  await page.getByTestId("calculation-scratchpad-close").click();
+  await toggle.click();
   await expect(scrollControls).toBeHidden();
   await page.setViewportSize({width:390,height:844});
   await expectNoHorizontalOverflow(page);
   await toggle.click();
   await expect(scrollControls).toBeVisible();
+  // On stacked phone layouts, material scroll controls must not sit below
+  // the expanded toolbar at the top-right of the shared ink canvas.
+  const phoneInkControls=await controls.boundingBox();
+  const phoneScrollButtons=await scrollControls.boundingBox();
+  expect(phoneInkControls).not.toBeNull();
+  expect(phoneScrollButtons).not.toBeNull();
+  expect(phoneScrollButtons!.x+phoneScrollButtons!.width).toBeLessThanOrEqual(phoneInkControls!.x);
   await shortPane.evaluate(el=>{el.scrollTop=0;});
   await expect(scrollUp).toBeDisabled();
   await expect(scrollDown).toBeEnabled();
   const phoneStart=await shortPane.evaluate(el=>el.scrollTop);
   await scrollDown.click();
   await expect.poll(()=>shortPane.evaluate(el=>el.scrollTop)).toBeGreaterThan(phoneStart);
-  await page.getByTestId("calculation-scratchpad-close").click();
+  await toggle.click();
   await expect(scrollControls).toBeHidden();
   await page.getByTestId("analysis-question").evaluate(el=>{el.scrollTop=80;});
   expect(await page.getByTestId("analysis-question").evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
