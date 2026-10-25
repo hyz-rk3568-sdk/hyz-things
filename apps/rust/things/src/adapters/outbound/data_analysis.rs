@@ -1291,7 +1291,7 @@ impl DataAnalysisService {
         .map_err(|_| "连接 Codex App Server 超时".to_owned())??;
         let output = tokio::time::timeout(TURN_TIMEOUT, session.turn(&prompt))
             .await
-            .map_err(|_| "Codex 出题超时（300 秒），本次出题已终止，请检查电脑服务与账号额度".to_owned())??;
+            .map_err(|_| "Codex 出题超时（600 秒 / 10 分钟），本次出题已终止，请检查电脑服务与账号额度".to_owned())??;
         #[derive(Deserialize)]
         struct GeneratedQuestion {
             #[serde(flatten)]
