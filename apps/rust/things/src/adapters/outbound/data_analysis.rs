@@ -585,9 +585,7 @@ fn plan_question_targets(
             .to_owned(),
     )?;
     for (index, slot) in allocation {
-        let chosen = categories[index]
-            .1
-            .remove(0);
+        let chosen = categories[index].1.remove(0);
         groups[slot].push(chosen);
     }
 
@@ -836,7 +834,9 @@ impl DataAnalysisService {
         plan: &QuestionPlan,
     ) -> Result<(), String> {
         if groups.len() != QUIZ_GROUPS
-            || groups.iter().any(|group| group.questions.len() != QUIZ_PER_GROUP)
+            || groups
+                .iter()
+                .any(|group| group.questions.len() != QUIZ_PER_GROUP)
         {
             return Err("完整20题生成前不得累计调度次数".into());
         }
@@ -849,7 +849,10 @@ impl DataAnalysisService {
         )
         .bind(id)
         .bind(serde_json::to_string(groups).map_err(as_error)?)
-        .bind(serde_json::to_string(&vec![None::<usize>; QUIZ_GROUPS * QUIZ_PER_GROUP]).map_err(as_error)?)
+        .bind(
+            serde_json::to_string(&vec![None::<usize>; QUIZ_GROUPS * QUIZ_PER_GROUP])
+                .map_err(as_error)?,
+        )
         .bind(created_at)
         .execute(&mut *tx)
         .await
@@ -1098,7 +1101,12 @@ impl DataAnalysisService {
         let seed = Uuid::parse_str(job).map_err(as_error)?.as_u128() as u64;
         let cards = self.card_candidates().await?;
         let fairness = self.load_fair_counts(&cards).await?;
-        let plan = Arc::new(plan_question_targets(&cards, manual_skills, seed, &fairness)?);
+        let plan = Arc::new(plan_question_targets(
+            &cards,
+            manual_skills,
+            seed,
+            &fairness,
+        )?);
         let recent_papers = self.recent_paper_themes().await?;
         let theme_seed =
             Uuid::parse_str(job).map_err(as_error)?.as_u128() as u64 ^ 0x9e3779b97f4a7c15;
@@ -1903,7 +1911,8 @@ mod tests {
             let selected = (0..count)
                 .map(|i| format!("category{i}"))
                 .collect::<Vec<_>>();
-            let plan = plan_question_targets(&cards, &selected, 12345, &FairCounts::default()).unwrap();
+            let plan =
+                plan_question_targets(&cards, &selected, 12345, &FairCounts::default()).unwrap();
             validate_question_plan(&plan, &selected).unwrap();
             let all = plan.groups.iter().flatten().collect::<Vec<_>>();
             assert_eq!(all.len(), 20);
@@ -1928,7 +1937,13 @@ mod tests {
     #[test]
     fn mixed_pool_can_select_unselected_wrong_and_cross_passage_categories() {
         let cards = ample_pool();
-        let plan = plan_question_targets(&cards, &["category0".into()], 987654, &FairCounts::default()).unwrap();
+        let plan = plan_question_targets(
+            &cards,
+            &["category0".into()],
+            987654,
+            &FairCounts::default(),
+        )
+        .unwrap();
         let wrong_count = plan
             .groups
             .iter()
@@ -1974,39 +1989,60 @@ mod tests {
         let few_categories = (0..4)
             .flat_map(|i| (0..8).map(move |n| candidate(&format!("cat{i}"), n, SourceKind::Wrong)))
             .collect::<Vec<_>>();
-        assert!(plan_question_targets(&few_categories, &["cat0".into()], 1, &FairCounts::default()).is_err());
+        assert!(plan_question_targets(
+            &few_categories,
+            &["cat0".into()],
+            1,
+            &FairCounts::default()
+        )
+        .is_err());
         let few_cards = (0..6)
             .map(|i| candidate(&format!("cat{i}"), i, SourceKind::Wrong))
             .collect::<Vec<_>>();
-        assert!(plan_question_targets(&few_cards, &["cat0".into()], 1, &FairCounts::default()).is_err());
+        assert!(
+            plan_question_targets(&few_cards, &["cat0".into()], 1, &FairCounts::default()).is_err()
+        );
         let no_wrong = (0..6)
             .flat_map(|i| {
                 (0..5).map(move |n| candidate(&format!("cat{i}"), n, SourceKind::Knowledge))
             })
             .collect::<Vec<_>>();
-        assert!(plan_question_targets(&no_wrong, &["cat0".into()], 1, &FairCounts::default()).is_err());
+        assert!(
+            plan_question_targets(&no_wrong, &["cat0".into()], 1, &FairCounts::default()).is_err()
+        );
     }
-
 
     #[test]
     fn category_scheduler_prefers_least_used_categories_while_respecting_mandatory_wrong() {
         // Only 6 categories for 20 slots. One category must be used 4 times,
         // the others mostly 3 times: avoid the historically expensive category.
-        let cards = (0..6).flat_map(|i| {
-            let name = format!("cat{i}");
-            (0..6).map(move |n| candidate(&name, n, if n == 0 {
-                SourceKind::Wrong
-            } else {
-                SourceKind::Knowledge
-            }))
-        }).collect::<Vec<_>>();
+        let cards = (0..6)
+            .flat_map(|i| {
+                let name = format!("cat{i}");
+                (0..6).map(move |n| {
+                    candidate(
+                        &name,
+                        n,
+                        if n == 0 {
+                            SourceKind::Wrong
+                        } else {
+                            SourceKind::Knowledge
+                        },
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
         let mut fair = FairCounts::default();
         fair.categories.insert("cat5".into(), 100);
         let plan = plan_question_targets(&cards, &["cat5".into()], 99871, &fair).unwrap();
-        let counts = plan.groups.iter().flatten().fold(HashMap::<String,usize>::new(), |mut acc,t| {
-            *acc.entry(t.card.category.clone()).or_default() += 1;
-            acc
-        });
+        let counts =
+            plan.groups
+                .iter()
+                .flatten()
+                .fold(HashMap::<String, usize>::new(), |mut acc, t| {
+                    *acc.entry(t.card.category.clone()).or_default() += 1;
+                    acc
+                });
         // Mandatory cat5 still appears, but the historical penalty stops it
         // from taking an extra slot where another feasible category exists.
         assert_eq!(counts["cat5"], 1);
@@ -2016,14 +2052,22 @@ mod tests {
 
     #[test]
     fn card_scheduler_uses_min_virtual_count_for_wrong_guarantee_and_regular_slots() {
-        let cards = (0..5).flat_map(|i| {
-            let name = format!("cat{i}");
-            (0..6).map(move |n| candidate(&name, n, if n < 2 {
-                SourceKind::Wrong
-            } else {
-                SourceKind::Knowledge
-            }))
-        }).collect::<Vec<_>>();
+        let cards = (0..5)
+            .flat_map(|i| {
+                let name = format!("cat{i}");
+                (0..6).map(move |n| {
+                    candidate(
+                        &name,
+                        n,
+                        if n < 2 {
+                            SourceKind::Wrong
+                        } else {
+                            SourceKind::Knowledge
+                        },
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
         let mut fair = FairCounts::default();
         // cat0 guarantee must pick the lower-count WRONG card, not a knowledge card.
         fair.cards.insert("cat0-0".into(), 12);
@@ -2036,38 +2080,58 @@ mod tests {
             }
         }
         let plan = plan_question_targets(&cards, &["cat0".into()], 74, &fair).unwrap();
-        assert!(plan.groups.iter().flatten().any(|t| t.card.id == "cat0-1"
-            && t.card.source_kind == SourceKind::Wrong));
+        assert!(plan
+            .groups
+            .iter()
+            .flatten()
+            .any(|t| t.card.id == "cat0-1" && t.card.source_kind == SourceKind::Wrong));
         for i in 1..5 {
             let name = format!("cat{i}");
-            assert!(plan.groups.iter().flatten().any(|t| t.card.id == format!("{name}-0")));
+            assert!(plan
+                .groups
+                .iter()
+                .flatten()
+                .any(|t| t.card.id == format!("{name}-0")));
         }
     }
 
     fn test_prepared_groups(plan: &QuestionPlan) -> Vec<QuestionGroup> {
-        plan.groups.iter().enumerate().map(|(slot, targets)| QuestionGroup {
-            version: 5,
-            material: Material { topic: format!("t{slot}"), text: "统计材料".into() },
-            questions: targets.iter().map(|target| VerifiedQuestion {
-                question: "模拟题".into(),
-                options: ["A".into(), "B".into(), "C".into(), "D".into()],
-                correct_index: 0,
-                answer: "A".into(),
-                explanation: "解析".into(),
-                skill: target.card.category.clone(),
-                evidence: "统计材料".into(),
-                card_id: Some(target.card.id.clone()),
-                card_path: Some(target.card.card_path.clone()),
-                source_kind: Some(target.card.source_kind.as_str().into()),
-                source_hash: Some(target.card.source_hash.clone()),
-            }).collect(),
-        }).collect()
+        plan.groups
+            .iter()
+            .enumerate()
+            .map(|(slot, targets)| QuestionGroup {
+                version: 5,
+                material: Material {
+                    topic: format!("t{slot}"),
+                    text: "统计材料".into(),
+                },
+                questions: targets
+                    .iter()
+                    .map(|target| VerifiedQuestion {
+                        question: "模拟题".into(),
+                        options: ["A".into(), "B".into(), "C".into(), "D".into()],
+                        correct_index: 0,
+                        answer: "A".into(),
+                        explanation: "解析".into(),
+                        skill: target.card.category.clone(),
+                        evidence: "统计材料".into(),
+                        card_id: Some(target.card.id.clone()),
+                        card_path: Some(target.card.card_path.clone()),
+                        source_kind: Some(target.card.source_kind.as_str().into()),
+                        source_hash: Some(target.card.source_hash.clone()),
+                    })
+                    .collect(),
+            })
+            .collect()
     }
 
     #[tokio::test]
     async fn two_level_fair_counts_are_persistent_and_replay_does_not_increase_them() {
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
-            .max_connections(1).connect("sqlite::memory:").await.unwrap();
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
         sqlx::migrate!("./migrations").run(&pool).await.unwrap();
         let service = DataAnalysisService::new(pool.clone(), None).unwrap();
         let cards = ample_pool();
@@ -2075,18 +2139,29 @@ mod tests {
         assert_eq!(original.category("category0"), 0);
         let plan = plan_question_targets(&cards, &["category0".into()], 73, &original).unwrap();
         let run_id = Uuid::now_v7().to_string();
-        service.persist_original_run(&run_id, &test_prepared_groups(&plan), &plan).await.unwrap();
+        service
+            .persist_original_run(&run_id, &test_prepared_groups(&plan), &plan)
+            .await
+            .unwrap();
         let actual_count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM data_analysis_card_selection_log WHERE run_id=?",
-        ).bind(&run_id).fetch_one(&pool).await.unwrap();
+        )
+        .bind(&run_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         assert_eq!(actual_count, 20);
-        let all_actual: i64 = sqlx::query_scalar(
-            "SELECT SUM(selected_count) FROM data_analysis_category_usage",
-        ).fetch_one(&pool).await.unwrap();
+        let all_actual: i64 =
+            sqlx::query_scalar("SELECT SUM(selected_count) FROM data_analysis_category_usage")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(all_actual, 20);
-        let card_actual: i64 = sqlx::query_scalar(
-            "SELECT SUM(selected_count) FROM data_analysis_card_usage",
-        ).fetch_one(&pool).await.unwrap();
+        let card_actual: i64 =
+            sqlx::query_scalar("SELECT SUM(selected_count) FROM data_analysis_card_usage")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(card_actual, 20);
         let latest = service.load_fair_counts(&cards).await.unwrap();
         assert!(latest.category("category0") >= 1);
@@ -2094,20 +2169,36 @@ mod tests {
         assert_eq!(latest.card(&chosen.id), 1);
         // Replay must not increase original-paper exposure.
         sqlx::query("UPDATE data_analysis_runs SET status='submitted', ended_at_ms=? WHERE id=?")
-            .bind(now_ms()).bind(&run_id).execute(&pool).await.unwrap();
+            .bind(now_ms())
+            .bind(&run_id)
+            .execute(&pool)
+            .await
+            .unwrap();
         let replay_id = service.retry(&run_id).await.unwrap();
         assert_ne!(run_id, replay_id);
-        let after_replay: i64 = sqlx::query_scalar(
-            "SELECT SUM(selected_count) FROM data_analysis_card_usage",
-        ).fetch_one(&pool).await.unwrap();
+        let after_replay: i64 =
+            sqlx::query_scalar("SELECT SUM(selected_count) FROM data_analysis_card_usage")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(after_replay, 20);
-        assert_eq!(service.load_fair_counts(&cards).await.unwrap().card(&chosen.id), 1);
+        assert_eq!(
+            service
+                .load_fair_counts(&cards)
+                .await
+                .unwrap()
+                .card(&chosen.id),
+            1
+        );
     }
 
     #[tokio::test]
     async fn new_cards_inherit_category_minimum_once_and_new_categories_inherit_global_minimum() {
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
-            .max_connections(1).connect("sqlite::memory:").await.unwrap();
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
         sqlx::migrate!("./migrations").run(&pool).await.unwrap();
         let service = DataAnalysisService::new(pool.clone(), None).unwrap();
         let mut cards = vec![
@@ -2117,13 +2208,21 @@ mod tests {
         ];
         service.load_fair_counts(&cards).await.unwrap();
         sqlx::query("UPDATE data_analysis_category_usage SET fair_count=7 WHERE category='cat0'")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query("UPDATE data_analysis_category_usage SET fair_count=11 WHERE category='cat1'")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query("UPDATE data_analysis_card_usage SET fair_count=8 WHERE card_id='cat0-0'")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query("UPDATE data_analysis_card_usage SET fair_count=12 WHERE card_id='cat0-1'")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
         cards.push(candidate("cat0", 2, SourceKind::Knowledge));
         cards.push(candidate("cat2", 0, SourceKind::Wrong));
         let counted = service.load_fair_counts(&cards).await.unwrap();
@@ -2131,18 +2230,33 @@ mod tests {
         assert_eq!(counted.category("cat2"), 7);
         let new_real: i64 = sqlx::query_scalar(
             "SELECT selected_count FROM data_analysis_card_usage WHERE card_id='cat0-2'",
-        ).fetch_one(&pool).await.unwrap();
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         assert_eq!(new_real, 0);
         // Initialized baselines are never recomputed as the category progresses.
         sqlx::query("UPDATE data_analysis_card_usage SET fair_count=15 WHERE card_id='cat0-0'")
-            .execute(&pool).await.unwrap();
-        assert_eq!(service.load_fair_counts(&cards).await.unwrap().card("cat0-2"), 8);
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            service
+                .load_fair_counts(&cards)
+                .await
+                .unwrap()
+                .card("cat0-2"),
+            8
+        );
     }
 
     #[tokio::test]
     async fn partial_or_duplicate_paper_does_not_increment_any_fair_counter() {
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
-            .max_connections(1).connect("sqlite::memory:").await.unwrap();
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
         sqlx::migrate!("./migrations").run(&pool).await.unwrap();
         let service = DataAnalysisService::new(pool.clone(), None).unwrap();
         let cards = ample_pool();
@@ -2151,25 +2265,44 @@ mod tests {
         let id = Uuid::now_v7().to_string();
         let mut groups = test_prepared_groups(&plan);
         groups.pop();
-        assert!(service.persist_original_run(&id, &groups, &plan).await.is_err());
+        assert!(service
+            .persist_original_run(&id, &groups, &plan)
+            .await
+            .is_err());
         groups = test_prepared_groups(&plan);
-        service.persist_original_run(&id, &groups, &plan).await.unwrap();
-        assert!(service.persist_original_run(&id, &groups, &plan).await.is_err());
-        let tally: i64 = sqlx::query_scalar("SELECT SUM(selected_count) FROM data_analysis_card_usage")
-            .fetch_one(&pool).await.unwrap();
+        service
+            .persist_original_run(&id, &groups, &plan)
+            .await
+            .unwrap();
+        assert!(service
+            .persist_original_run(&id, &groups, &plan)
+            .await
+            .is_err());
+        let tally: i64 =
+            sqlx::query_scalar("SELECT SUM(selected_count) FROM data_analysis_card_usage")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(tally, 20);
         let mut bad = plan_question_targets(&cards, &["category0".into()], 75, &fair).unwrap();
         bad.groups[3][1].card.id = "missing-id".into();
         // The missing card row forces rollback of run + all preceding updates.
         let bad_id = Uuid::now_v7().to_string();
-        assert!(service.persist_original_run(&bad_id, &test_prepared_groups(&bad), &bad).await.is_err());
-        let present: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM data_analysis_runs WHERE id=?",
-        ).bind(&bad_id).fetch_one(&pool).await.unwrap();
+        assert!(service
+            .persist_original_run(&bad_id, &test_prepared_groups(&bad), &bad)
+            .await
+            .is_err());
+        let present: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM data_analysis_runs WHERE id=?")
+            .bind(&bad_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(present, 0);
-        let unchanged: i64 = sqlx::query_scalar(
-            "SELECT SUM(selected_count) FROM data_analysis_card_usage",
-        ).fetch_one(&pool).await.unwrap();
+        let unchanged: i64 =
+            sqlx::query_scalar("SELECT SUM(selected_count) FROM data_analysis_card_usage")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(unchanged, 20);
     }
 
