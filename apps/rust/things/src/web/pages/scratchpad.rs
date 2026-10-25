@@ -379,17 +379,6 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
             enabled.set(!*enabled);
         })
     };
-    let close = {
-        let enabled = enabled.clone();
-        let strokes = strokes.clone();
-        let revision = revision.clone();
-        Callback::from(move |_| {
-            if strokes.borrow_mut().commit_active() {
-                revision.set((*revision).wrapping_add(1));
-            }
-            enabled.set(false);
-        })
-    };
     let undo = {
         let strokes = strokes.clone();
         let canvas_ref = canvas_ref.clone();
@@ -542,16 +531,35 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
         <ContextProvider<bool> context={*enabled}>
         <section class={if props.responsive { "calculation-scratchpad relative flex-1 min-h-0 min-w-0 h-full rounded-box" } else { "calculation-scratchpad relative min-h-80 min-w-0 rounded-box bg-base-100/60" }} data-testid="calculation-scratchpad" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
             <div class={if props.responsive { "h-full min-h-0 min-w-0" } else { "min-h-80 pt-12" }}>{for props.children.iter()}</div>
-            <button
-                type="button"
-                class={if *enabled { "btn btn-primary btn-sm absolute right-2 top-2 z-30" } else { "btn btn-outline btn-sm absolute right-2 top-2 z-30 bg-base-100 shadow-sm" }}
-                data-testid="calculation-scratchpad-toggle"
-                aria-label={if *enabled { "关闭草稿" } else { "开启草稿" }}
-                aria-expanded={(*enabled).to_string()}
-                onclick={toggle}
+            // One top-right control cluster; closed mode shows only the toggle.
+            // Keeping the controls above the transparent canvas preserves
+            // Apple Pencil drawing over both the material and question panes.
+            <div
+                class={if *enabled {
+                    "absolute right-2 top-2 z-30 flex items-center gap-1 rounded-box bg-base-100/95 p-1 shadow-lg"
+                } else {
+                    "absolute right-2 top-2 z-30"
+                }}
+                data-testid="calculation-scratchpad-controls"
             >
-                {"✎"}
-            </button>
+                if *enabled {
+                    <div class="flex items-center gap-1" data-testid="calculation-scratchpad-toolbar">
+                        <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-scratchpad-undo" aria-label="撤销" disabled={!has_undo} onclick={undo}>{"↶"}</button>
+                        <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-scratchpad-redo" aria-label="重做" disabled={!has_redo} onclick={redo}>{"↷"}</button>
+                        <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-scratchpad-clear" aria-label="清屏" disabled={!has_visible_ink} onclick={clear}>{"清屏"}</button>
+                    </div>
+                }
+                <button
+                    type="button"
+                    class={if *enabled { "btn btn-primary btn-sm shrink-0" } else { "btn btn-outline btn-sm bg-base-100 shadow-sm" }}
+                    data-testid="calculation-scratchpad-toggle"
+                    aria-label={if *enabled { "关闭草稿" } else { "开启草稿" }}
+                    aria-expanded={(*enabled).to_string()}
+                    onclick={toggle}
+                >
+                    {if *enabled { "✕" } else { "✎" }}
+                </button>
+            </div>
             <canvas
                 ref={canvas_ref}
                 width={SCRATCH_WIDTH.to_string()}
@@ -565,16 +573,6 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
                 onpointercancel={on_end.clone()}
                 onlostpointercapture={on_end}
             />
-            if *enabled {
-                <div class="absolute bottom-2 left-2 right-2 z-30 flex flex-wrap items-center justify-center gap-1 rounded-box bg-base-100/95 p-2 shadow-lg" data-testid="calculation-scratchpad-toolbar">
-                    <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-scratchpad-undo" aria-label="撤销" disabled={!has_undo} onclick={undo}>{"↶"}</button>
-                    <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-scratchpad-redo" aria-label="重做" disabled={!has_redo} onclick={redo}>{"↷"}</button>
-                    <span class="btn btn-primary btn-sm pointer-events-none" aria-label="铅笔已选中">{"✎ 铅笔"}</span>
-                    <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-scratchpad-clear" aria-label="清屏" disabled={!has_visible_ink} onclick={clear}>{"清屏"}</button>
-                    <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-scratchpad-close" aria-label="关闭手写" onclick={close}>{"✕"}</button>
-                </div>
-                <p class="pointer-events-none absolute left-2 top-2 z-30 rounded bg-base-100/85 px-2 py-1 text-xs text-base-content/65">{"手写中 · 关闭后可点选答案"}</p>
-            }
         </section>
         </ContextProvider<bool>>
     }
