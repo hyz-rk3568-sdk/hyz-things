@@ -12,7 +12,7 @@ use tokio::{
 pub const SERVER: &str = "192.168.8.202:1457";
 const MAX_PACKET: usize = 256 * 1024;
 const MAX_EVENTS: usize = 2048;
-pub const TURN_TIMEOUT: Duration = Duration::from_secs(240);
+pub const TURN_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// A fixed endpoint: never allow browser input or AI-generated content to select a host.
 pub struct CodexSession {
@@ -371,6 +371,11 @@ impl CodexSession {
 mod tests {
     use super::*;
     use tokio::net::TcpListener;
+
+    #[test]
+    fn generation_turn_deadline_is_ten_minutes() {
+        assert_eq!(TURN_TIMEOUT, Duration::from_secs(600));
+    }
 
     #[test]
     fn bearer_token_accepts_opaque_values_but_rejects_unsafe_headers() {
