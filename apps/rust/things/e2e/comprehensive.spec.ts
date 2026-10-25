@@ -277,6 +277,13 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expectNoHorizontalOverflow(page);
   await toggle.click();
   await expect(scrollControls).toBeVisible();
+  // On stacked phone layouts, material scroll controls must not sit below
+  // the expanded toolbar at the top-right of the shared ink canvas.
+  const phoneInkControls=await controls.boundingBox();
+  const phoneScrollButtons=await scrollControls.boundingBox();
+  expect(phoneInkControls).not.toBeNull();
+  expect(phoneScrollButtons).not.toBeNull();
+  expect(phoneScrollButtons!.x+phoneScrollButtons!.width).toBeLessThanOrEqual(phoneInkControls!.x);
   await shortPane.evaluate(el=>{el.scrollTop=0;});
   await expect(scrollUp).toBeDisabled();
   await expect(scrollDown).toBeEnabled();
