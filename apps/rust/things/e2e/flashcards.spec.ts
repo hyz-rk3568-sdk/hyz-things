@@ -181,6 +181,17 @@ test("transparent calculation ink overlays the question, supports history and re
   await expect(toggle).toHaveAttribute("aria-label", "开启草稿");
   await toggle.click();
   await expect(canvas).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-label", "关闭草稿");
+  await expect(toggle).toHaveText("✕");
+  await expect(scratchpad.getByTestId("calculation-scratchpad-toolbar")).toBeVisible();
+  await expect(scratchpad.getByTestId("calculation-scratchpad-close")).toHaveCount(0);
+  await expect(scratchpad.getByLabel("铅笔已选中")).toHaveCount(0);
+  const controls=await scratchpad.getByTestId("calculation-scratchpad-controls").boundingBox();
+  const surfaceBounds=await scratchpad.boundingBox();
+  expect(controls).not.toBeNull();
+  expect(surfaceBounds).not.toBeNull();
+  expect(controls!.y-surfaceBounds!.y).toBeLessThan(20);
+  expect(surfaceBounds!.x+surfaceBounds!.width-(controls!.x+controls!.width)).toBeLessThan(20);
   await expect(canvas).toHaveCSS("touch-action", "none");
   await expect(canvas).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   // Responsive full-screen scratchpad scales its backing pixels to the
@@ -238,8 +249,10 @@ test("transparent calculation ink overlays the question, supports history and re
   await page.getByTestId("calculation-scratchpad-redo").click();
   expect(await snapshot()).toEqual(blank);
 
-  await page.getByTestId("calculation-scratchpad-close").click();
+  await toggle.click();
   await expect(canvas).toBeHidden();
+  await expect(toggle).toHaveAttribute("aria-label", "开启草稿");
+  await expect(scratchpad.getByTestId("calculation-scratchpad-toolbar")).toHaveCount(0);
   await page.getByTestId("calculation-answer").first().click();
   await expect(page.getByTestId("calculation-feedback")).toBeVisible();
   await page.getByTestId("calculation-next").click();
