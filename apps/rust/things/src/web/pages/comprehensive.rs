@@ -1395,10 +1395,10 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     }
                     <button class="btn btn-outline w-full" type="button" onclick={{let history_open=history_open.clone();Callback::from(move |_|history_open.set(true))}}>{"查看练习历史"}</button>
                     <div class="rounded-box border border-base-content/15 p-4 space-y-3">
-                        <p class="font-semibold">{"选择本轮错题分类"}</p>
-                        <p class="text-sm text-base-content/60">{"每个选中的错题分类至少1题；其余题位从资料分析的全部 Flashcard（含错题）统一抽取。同篇分类不重复，整卷卡片不重复。"}</p>
+                        <p class="font-semibold">{"错题保底分类（可选）"}</p>
+                        <p class="text-sm text-base-content/60">{"不选也能出题：系统按分类和卡片两级公平调度，从全部资料分析 Flashcard（含错题）选20张卡片。选中分类时，每类至少安排1道对应错题。同篇分类不重复，整卷卡片不重复。"}</p>
                         <div class="flex items-center justify-between gap-3">
-                            <strong class="text-sm">{format!("本轮考点（已选{}项，最多12项）",manual_skills.len())}</strong>
+                            <strong class="text-sm">{format!("保底分类（已选{}项，最多12项）",manual_skills.len())}</strong>
                             <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-skill-expand"
                                 onclick={toggle_selector}>{if *skills_expanded{"收起"}else{"添加考点"}}</button>
                         </div>
@@ -1411,7 +1411,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                             if let Some(info)=(*status).clone(){
                                 <div class="flex max-h-60 flex-wrap gap-2 overflow-auto rounded-box bg-base-200 p-3" data-testid="analysis-skill-options">
                                     if info.available_skills.is_empty() {
-                                        <p class="text-xs text-base-content/60">{"尚未发现资料/错题分类，请先同步 Flashcard。"}</p>
+                                        <p class="text-xs text-base-content/60">{"暂无可选的错题分类；不选仍可从已同步的资料分析卡片出题。"}</p>
                                     }
                                     {for info.available_skills.iter().map(|name|{
                                         let chosen=manual_skills.contains(name);
@@ -1425,7 +1425,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                                 </div>
                             }
                         }
-                        <p class="text-xs text-base-content/60">{"至少选择一个分类（最多12类）；每类保底1题，其余题目来自资料分析知识点卡片。选择会保存在本设备浏览器中。"}</p>
+                        <p class="text-xs text-base-content/60">{"可不选，最多12类。选中分类每类至少1道错题；其余题位从全部资料分析 Flashcard（含错题）公平抽取。选择保存在本设备浏览器中。"}</p>
                     </div>
                     <details class="rounded-box border border-base-content/15 bg-base-100/50 p-3" data-testid="analysis-user-prompt">
                         <summary class="cursor-pointer select-none font-semibold" data-testid="analysis-user-prompt-toggle">
@@ -1436,7 +1436,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         </summary>
                         <div class="mt-3 space-y-3">
                             <p class="text-xs text-base-content/65">
-                                {"决定材料风格、题目难度和出题限制。错题保底、知识点来源及固定结构由系统控制，不会受本栏内容影响。"}
+                                {"决定材料风格、题目难度和出题限制。可选错题保底、全卡池来源及固定结构由系统控制，不受本栏内容影响。"}
                             </p>
                             <textarea class="textarea textarea-bordered w-full min-h-48 font-mono text-sm leading-6"
                                 data-testid="analysis-user-prompt-editor" maxlength="8000"
@@ -1478,7 +1478,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         </button>
                     } else {
                         <button type="button" class="btn btn-primary w-full" data-testid="analysis-start"
-                            disabled={manual_skills.is_empty() || *loading_status || *busy || *preparing || status.as_ref().as_ref().is_none_or(|s|!s.configured) || props.csrf.is_empty()}
+                            disabled={*loading_status || *busy || *preparing || status.as_ref().as_ref().is_none_or(|s|!s.configured) || props.csrf.is_empty()}
                             onclick={start}>
                             {if *busy || *preparing {"正在出题中…（可以切换页面）"} else {"✨ 智能出题"}}
                         </button>
