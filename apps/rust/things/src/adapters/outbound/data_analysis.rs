@@ -1291,7 +1291,10 @@ impl DataAnalysisService {
         .map_err(|_| "连接 Codex App Server 超时".to_owned())??;
         let output = tokio::time::timeout(TURN_TIMEOUT, session.turn(&prompt))
             .await
-            .map_err(|_| "Codex 出题超时（600 秒 / 10 分钟），本次出题已终止，请检查电脑服务与账号额度".to_owned())??;
+            .map_err(|_| {
+                "Codex 出题超时（600 秒 / 10 分钟），本次出题已终止，请检查电脑服务与账号额度"
+                    .to_owned()
+            })??;
         #[derive(Deserialize)]
         struct GeneratedQuestion {
             #[serde(flatten)]
@@ -2404,9 +2407,13 @@ mod tests {
     #[test]
     fn timeout_detection_only_marks_deadline_errors_as_fatal() {
         assert!(is_generation_timeout("连接 Codex App Server 超时"));
-        assert!(is_generation_timeout("Codex 出题超时，请检查电脑服务与账号额度"));
+        assert!(is_generation_timeout(
+            "Codex 出题超时，请检查电脑服务与账号额度"
+        ));
         assert!(!is_generation_timeout("Codex 返回的试卷结构不完整"));
-        assert!(!is_generation_timeout("Codex 生成失败或中断（可能登录失效或额度不足）"));
+        assert!(!is_generation_timeout(
+            "Codex 生成失败或中断（可能登录失效或额度不足）"
+        ));
     }
 
     #[tokio::test]
