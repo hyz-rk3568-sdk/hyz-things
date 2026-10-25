@@ -8,7 +8,7 @@ use crate::domain::data_analysis::{
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use std::{
-    collections::{BTreeMap, HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fs,
     future::Future,
     os::unix::fs::MetadataExt,
@@ -287,6 +287,22 @@ struct QuestionPlan {
     groups: [Vec<CardTarget>; QUIZ_GROUPS],
 }
 
+/// Two independent virtual counters. Actual selected_count is persisted but
+/// never substituted for fair_count when choosing a target.
+#[derive(Default)]
+struct FairCounts {
+    categories: HashMap<String, i64>,
+    cards: HashMap<String, i64>,
+}
+impl FairCounts {
+    fn category(&self, name: &str) -> i64 {
+        self.categories.get(name).copied().unwrap_or(0)
+    }
+    fn card(&self, id: &str) -> i64 {
+        self.cards.get(id).copied().unwrap_or(0)
+    }
+}
+
 struct CardRng(u64);
 impl CardRng {
     fn new(seed: u64) -> Self {
@@ -370,12 +386,14 @@ fn distribute_wrong_categories(
     required
 }
 
-// A tiny integral max-flow network: source -> category (capacity) ->
-// passage (capacity one per category/passage) -> sink (unfilled slots).
+// Integral min-cost flow. Category -> passage edges enforce one question per
+// category in each passage; source -> category marginal edges encode historical
+// fair_count plus the cost of additional exposure in this paper.
 struct FlowEdge {
     to: usize,
     reverse: usize,
     capacity: i32,
+    cost: i64,
 }
 struct FlowNetwork {
     edges: Vec<Vec<FlowEdge>>,
@@ -386,43 +404,59 @@ impl FlowNetwork {
             edges: (0..nodes).map(|_| Vec::new()).collect(),
         }
     }
-    fn add(&mut self, from: usize, to: usize, capacity: i32) {
+    fn add(&mut self, from: usize, to: usize, capacity: i32, cost: i64) {
         let reverse_to = self.edges[to].len();
         let reverse_from = self.edges[from].len();
         self.edges[from].push(FlowEdge {
             to,
             reverse: reverse_to,
             capacity,
+            cost,
         });
         self.edges[to].push(FlowEdge {
             to: from,
             reverse: reverse_from,
             capacity: 0,
+            cost: -cost,
         });
     }
-    fn max_flow(&mut self, source: usize, sink: usize) -> usize {
+    fn min_cost_flow(&mut self, source: usize, sink: usize) -> usize {
         let mut total = 0;
         loop {
-            let mut parents = vec![None::<(usize, usize)>; self.edges.len()];
-            parents[source] = Some((source, 0));
-            let mut queue = VecDeque::from([source]);
-            while let Some(from) = queue.pop_front() {
-                for (edge_idx, edge) in self.edges[from].iter().enumerate() {
-                    if edge.capacity > 0 && parents[edge.to].is_none() {
-                        parents[edge.to] = Some((from, edge_idx));
-                        queue.push_back(edge.to);
+            // The residual network has negative reverse costs, so BFS alone
+            // would NOT implement fair scheduling. Bellman-Ford finds the
+            // least-cost augmenting path, including reassignments.
+            let n = self.edges.len();
+            let mut distance = vec![i64::MAX / 4; n];
+            let mut parent = vec![None::<(usize, usize)>; n];
+            distance[source] = 0;
+            for _ in 0..n - 1 {
+                let mut changed = false;
+                for from in 0..n {
+                    if distance[from] == i64::MAX / 4 {
+                        continue;
+                    }
+                    for (edge_idx, edge) in self.edges[from].iter().enumerate() {
+                        if edge.capacity > 0 {
+                            let candidate = distance[from].saturating_add(edge.cost);
+                            if candidate < distance[edge.to] {
+                                distance[edge.to] = candidate;
+                                parent[edge.to] = Some((from, edge_idx));
+                                changed = true;
+                            }
+                        }
                     }
                 }
-                if parents[sink].is_some() {
+                if !changed {
                     break;
                 }
             }
-            if parents[sink].is_none() {
+            if parent[sink].is_none() {
                 return total;
             }
             let mut node = sink;
             while node != source {
-                let (from, edge_idx) = parents[node].expect("visited path");
+                let (from, edge_idx) = parent[node].expect("min-cost augmenting path");
                 let reverse = self.edges[from][edge_idx].reverse;
                 self.edges[from][edge_idx].capacity -= 1;
                 self.edges[node][reverse].capacity += 1;
@@ -437,6 +471,7 @@ fn plan_question_targets(
     cards: &[CardCandidate],
     selected: &[String],
     seed: u64,
+    fair: &FairCounts,
 ) -> Result<QuestionPlan, String> {
     let mut rng = CardRng::new(seed);
     let mut buckets = BTreeMap::<String, Vec<CardCandidate>>::new();
@@ -460,6 +495,8 @@ fn plan_question_targets(
     }
     for cards in buckets.values_mut() {
         rng.shuffle(cards);
+        // Stable sort keeps the seeded shuffle among equal fair_count cards.
+        cards.sort_by_key(|card| fair.card(&card.id));
     }
 
     let required = distribute_wrong_categories(selected, seed);
@@ -506,12 +543,18 @@ fn plan_question_targets(
             if capacity == 0 {
                 continue;
             }
-            net.add(0, 1 + index, capacity as i32);
+            // Each marginal slot has cost equal to the category's virtual
+            // exposure after mandatory selections and previous extra slots.
+            for lane in 0..capacity {
+                let base = fair.category(name).min(i64::MAX / 8);
+                let cost = base.saturating_add((reserved + lane) as i64);
+                net.add(0, 1 + index, 1, cost);
+            }
             let mut slots: Vec<_> = (0..QUIZ_GROUPS).collect();
             rng.shuffle(&mut slots);
             for slot in slots {
                 if !groups[slot].iter().any(|card| card.category == *name) {
-                    net.add(1 + index, group_base + slot, 1);
+                    net.add(1 + index, group_base + slot, 1, 0);
                 }
             }
         }
@@ -520,9 +563,10 @@ fn plan_question_targets(
                 group_base + slot,
                 sink,
                 (QUIZ_PER_GROUP - group.len()) as i32,
+                0,
             );
         }
-        if net.max_flow(0, sink) != missing {
+        if net.min_cost_flow(0, sink) != missing {
             continue;
         }
         let mut matched = Vec::new();
@@ -543,8 +587,7 @@ fn plan_question_targets(
     for (index, slot) in allocation {
         let chosen = categories[index]
             .1
-            .pop()
-            .expect("flow capacity never exceeds available cards");
+            .remove(0);
         groups[slot].push(chosen);
     }
 
@@ -708,6 +751,146 @@ impl DataAnalysisService {
                 })
             })
             .collect())
+    }
+
+    /// Register cards once, persisting virtual baseline values even when a
+    /// subsequent Codex attempt fails. Sync and review counters are untouched.
+    async fn load_fair_counts(&self, cards: &[CardCandidate]) -> Result<FairCounts, String> {
+        let mut tx = self.pool.begin().await.map_err(as_error)?;
+        let names: BTreeSet<_> = cards.iter().map(|card| card.category.as_str()).collect();
+        for name in names {
+            sqlx::query(
+                "INSERT INTO data_analysis_category_usage(category, selected_count, fair_count)
+                 SELECT ?, 0, COALESCE((SELECT MIN(fair_count)
+                                        FROM data_analysis_category_usage), 0)
+                 ON CONFLICT(category) DO NOTHING",
+            )
+            .bind(name)
+            .execute(&mut *tx)
+            .await
+            .map_err(as_error)?;
+        }
+
+        for card in cards {
+            // When a card moves to a new category, keep its actual usage history
+            // but rebase its virtual count to that category, only once.
+            sqlx::query(
+                "UPDATE data_analysis_card_usage
+                 SET category=?,
+                     fair_count=COALESCE((SELECT MIN(fair_count)
+                         FROM data_analysis_card_usage WHERE category=?), 0)
+                 WHERE card_id=? AND category<>?",
+            )
+            .bind(&card.category)
+            .bind(&card.category)
+            .bind(&card.id)
+            .bind(&card.category)
+            .execute(&mut *tx)
+            .await
+            .map_err(as_error)?;
+            sqlx::query(
+                "INSERT INTO data_analysis_card_usage(card_id, category, selected_count, fair_count)
+                 SELECT ?, ?, 0, COALESCE((SELECT MIN(fair_count)
+                       FROM data_analysis_card_usage WHERE category=?), 0)
+                 ON CONFLICT(card_id) DO NOTHING",
+            )
+            .bind(&card.id)
+            .bind(&card.category)
+            .bind(&card.category)
+            .execute(&mut *tx)
+            .await
+            .map_err(as_error)?;
+        }
+
+        let mut fair = FairCounts::default();
+        for row in sqlx::query("SELECT category, fair_count FROM data_analysis_category_usage")
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(as_error)?
+        {
+            fair.categories.insert(
+                row.try_get("category").map_err(as_error)?,
+                row.try_get("fair_count").map_err(as_error)?,
+            );
+        }
+        for row in sqlx::query("SELECT card_id, fair_count FROM data_analysis_card_usage")
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(as_error)?
+        {
+            fair.cards.insert(
+                row.try_get("card_id").map_err(as_error)?,
+                row.try_get("fair_count").map_err(as_error)?,
+            );
+        }
+        tx.commit().await.map_err(as_error)?;
+        Ok(fair)
+    }
+
+    /// Only an entirely prepared ORIGINAL paper consumes scheduling credits.
+    /// Run creation, 20 ledger entries and both counter updates commit atomically.
+    async fn persist_original_run(
+        &self,
+        id: &str,
+        groups: &[QuestionGroup],
+        plan: &QuestionPlan,
+    ) -> Result<(), String> {
+        if groups.len() != QUIZ_GROUPS
+            || groups.iter().any(|group| group.questions.len() != QUIZ_PER_GROUP)
+        {
+            return Err("完整20题生成前不得累计调度次数".into());
+        }
+        validate_question_plan(plan, &[])?;
+        let mut tx = self.pool.begin().await.map_err(as_error)?;
+        let created_at = now_ms();
+        sqlx::query(
+            "INSERT INTO data_analysis_runs(id,groups_json,answers_json,status,created_at_ms)
+             VALUES(?,?,?,'ready',?)",
+        )
+        .bind(id)
+        .bind(serde_json::to_string(groups).map_err(as_error)?)
+        .bind(serde_json::to_string(&vec![None::<usize>; QUIZ_GROUPS * QUIZ_PER_GROUP]).map_err(as_error)?)
+        .bind(created_at)
+        .execute(&mut *tx)
+        .await
+        .map_err(as_error)?;
+
+        for target in plan.groups.iter().flatten() {
+            sqlx::query(
+                "INSERT INTO data_analysis_card_selection_log(run_id,card_id,category,selected_at_ms)
+                 VALUES(?,?,?,?)",
+            )
+            .bind(id)
+            .bind(&target.card.id)
+            .bind(&target.card.category)
+            .bind(created_at)
+            .execute(&mut *tx)
+            .await
+            .map_err(as_error)?;
+            let category = sqlx::query(
+                "UPDATE data_analysis_category_usage
+                 SET selected_count=selected_count+1,fair_count=fair_count+1 WHERE category=?",
+            )
+            .bind(&target.card.category)
+            .execute(&mut *tx)
+            .await
+            .map_err(as_error)?;
+            let card = sqlx::query(
+                "UPDATE data_analysis_card_usage
+                 SET selected_count=selected_count+1,fair_count=fair_count+1
+                 WHERE card_id=? AND category=?",
+            )
+            .bind(&target.card.id)
+            .bind(&target.card.category)
+            .execute(&mut *tx)
+            .await
+            .map_err(as_error)?;
+            if category.rows_affected() != 1 || card.rows_affected() != 1 {
+                return Err("卡片公平调度快照发生变化，整卷入库已回滚".into());
+            }
+        }
+        tx.commit().await.map_err(as_error)?;
+        Ok(())
     }
 
     /// Categories from the same synchronized SQLite snapshot used for selection.
@@ -914,7 +1097,8 @@ impl DataAnalysisService {
         // including retries after a Codex passage fails validation.
         let seed = Uuid::parse_str(job).map_err(as_error)?.as_u128() as u64;
         let cards = self.card_candidates().await?;
-        let plan = Arc::new(plan_question_targets(&cards, manual_skills, seed)?);
+        let fairness = self.load_fair_counts(&cards).await?;
+        let plan = Arc::new(plan_question_targets(&cards, manual_skills, seed, &fairness)?);
         let recent_papers = self.recent_paper_themes().await?;
         let theme_seed =
             Uuid::parse_str(job).map_err(as_error)?.as_u128() as u64 ^ 0x9e3779b97f4a7c15;
@@ -1019,11 +1203,7 @@ impl DataAnalysisService {
         }
         let groups = ready.into_iter().flatten().collect::<Vec<_>>();
         let id = Uuid::now_v7().to_string();
-        sqlx::query("INSERT INTO data_analysis_runs(id,groups_json,answers_json,status,created_at_ms) VALUES(?,?,?,'ready',?)")
-            .bind(&id)
-            .bind(serde_json::to_string(&groups).map_err(as_error)?)
-            .bind(serde_json::to_string(&vec![None::<usize>;20]).map_err(as_error)?)
-            .bind(now_ms()).execute(&self.pool).await.map_err(as_error)?;
+        self.persist_original_run(&id, &groups, &plan).await?;
         Ok(id)
     }
     /// Read a small set of hyz's actual wrong questions as question-form
