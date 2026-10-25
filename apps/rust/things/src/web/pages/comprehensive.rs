@@ -41,7 +41,8 @@ fn material_scroll_edges(element: &web_sys::HtmlElement) -> MaterialScrollEdges 
 
 // The scroll distance follows the *visible material pane*, not fixed pixels
 // or the full window height. Keep controls outside scrollable content.
-// The extra right margin clears InkOverlay's top-right toggle on stacked panes.
+// In stacked layouts, leave space for the expanded top-right ink toolbar
+// so the separate material scroll buttons stay clickable.
 #[function_component(AnalysisPanes)]
 fn analysis_panes(props: &AnalysisPanesProps) -> Html {
     let passage = use_node_ref();
@@ -114,10 +115,10 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
                 <div class="flex shrink-0 items-start justify-between gap-2 px-3 pt-3 pb-2">
                     <div class="min-w-0">
                         <div class="text-sm font-semibold">{props.material.topic.clone()}</div>
-                        <div class="pt-1 text-xs text-base-content/60">{"模拟训练材料 · 根据历年行测真题风格新编，非真题原文"}</div>
+                        <div class="truncate pt-1 text-xs text-base-content/60">{"模拟训练材料 · 根据历年行测真题风格新编，非真题原文"}</div>
                     </div>
                     if scratchpad_open {
-                        <div class="relative z-30 flex shrink-0 gap-1 mr-10 lg:mr-0" role="group" aria-label="材料滚动">
+                        <div class="relative z-30 mr-48 flex shrink-0 gap-1 lg:mr-0" role="group" aria-label="材料滚动">
                             <button type="button" class="btn btn-ghost btn-sm px-2" aria-label="材料向上滚动" title="向上滚动 1/3 可视区域" disabled={!scroll_edges.can_scroll_up} onclick={scroll_up}>{"↑"}</button>
                             <button type="button" class="btn btn-ghost btn-sm px-2" aria-label="材料向下滚动" title="向下滚动 1/3 可视区域" disabled={!scroll_edges.can_scroll_down} onclick={scroll_down}>{"↓"}</button>
                         </div>
