@@ -3,6 +3,34 @@ import { expectNoHorizontalOverflow, resetHarness } from "./fixtures";
 
 test.beforeEach(async ({ request }) => { await resetHarness(request); });
 
+test("comprehensive generates with zero selected wrong categories", async ({ page }) => {
+  let submittedSkills: string[] | null = null;
+  await page.route("**/api/v1/study/data-analysis/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    let result: unknown = {};
+    if (path.endsWith("/status")) {
+      result = {configured:true,model:"mock-compatible-model",cached_sources:1,verified_groups:0,
+        available_skills:["乘积增长率"],preparing_job_id:null};
+    } else if (path.endsWith("/unfinished") || path.endsWith("/history")) {
+      result = [];
+    } else if (path.endsWith("/prepare") && route.request().method() === "POST") {
+      submittedSkills = (route.request().postDataJSON() as {manual_skills:string[]}).manual_skills;
+      result = {job_id:"zero-selection-task"};
+    } else if (path.endsWith("/prepare/zero-selection-task")) {
+      result = {state:"ready",verified:20,message:"出题完成",run_id:"zero-selection-run"};
+    }
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(result)});
+  });
+  await page.goto("/#/study/training");
+  await page.getByTestId("training-mode-comprehensive").click();
+  await expect(page.getByTestId("analysis-setup")).toContainText("错题保底分类（可选）");
+  await expect(page.getByTestId("analysis-setup")).toContainText("可不选");
+  await expect(page.getByTestId("analysis-start")).toBeEnabled();
+  await page.getByTestId("analysis-start").click();
+  await expect.poll(() => submittedSkills).toEqual([]);
+  await expect(page.getByTestId("analysis-ready")).toBeVisible();
+});
+
 test("iPad comprehensive 20-question flow with answer save and submit", async ({ page }) => {
   await page.setViewportSize({width: 1180,height: 820});
   const started = Date.now();
@@ -100,7 +128,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(page.getByTestId("analysis-setup")).toBeVisible();
   await expect(page.getByTestId("analysis-setup")).toContainText("20分钟");
   await expect(page.getByTestId("analysis-setup")).toContainText("mock-compatible-model");
-  await expect(page.getByTestId("analysis-start")).toBeDisabled();
+  await expect(page.getByTestId("analysis-start")).toBeEnabled();
   await page.getByTestId("analysis-skill-expand").click();
   await page.getByTestId("analysis-skill-options").getByRole("button",{name:"乘积增长率"}).click();
   await expect(page.getByTestId("analysis-start")).toBeEnabled();
@@ -346,7 +374,7 @@ test("AI job survives leaving training; ready paper is untimed until explicit en
   });
   await page.goto("/#/study/training");
   await page.getByTestId("training-mode-comprehensive").click();
-  await expect(page.getByTestId("analysis-start")).toBeDisabled();
+  await expect(page.getByTestId("analysis-start")).toBeEnabled();
   await page.getByTestId("analysis-skill-expand").click();
   await page.getByTestId("analysis-skill-options").getByRole("button",{name:"乘积增长率"}).click();
   await expect(page.getByTestId("analysis-start")).toBeEnabled();
