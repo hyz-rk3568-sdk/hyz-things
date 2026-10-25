@@ -222,13 +222,19 @@ pub struct DataAnalysisService {
     gate: Arc<tokio::sync::Semaphore>,
 }
 
+/// Deadline failures are fatal to the entire paper. Content/structure errors
+/// may still be retried with a different theme.
+fn is_generation_timeout(error: &str) -> bool {
+    error == "连接 Codex App Server 超时" || error.starts_with("Codex 出题超时")
+}
+
 /// Run one bounded wave. Each task establishes its own Codex WS session and
 /// ephemeral Thread, avoiding response-ID multiplexing and mixed conversations.
 /// Results retain their source slot even if the network finishes out of order.
 async fn run_generation_wave<F, Fut>(
     candidates: Vec<(usize, Material)>,
     producer: F,
-) -> Vec<(usize, Result<QuestionGroup, String>)>
+) -> Result<Vec<(usize, Result<QuestionGroup, String>)>, String>
 where
     F: Fn(Material, usize) -> Fut + Clone + Send + 'static,
     Fut: Future<Output = Result<QuestionGroup, String>> + Send + 'static,
@@ -242,11 +248,18 @@ where
     let mut results = Vec::new();
     while let Some(outcome) = running.join_next().await {
         match outcome {
+            Ok((_, Err(error))) if is_generation_timeout(&error) => {
+                // Do not start another wave when a worker exceeds its deadline.
+                // Abort and drain other in-flight Codex sessions before failing.
+                running.abort_all();
+                while running.join_next().await.is_some() {}
+                return Err(error);
+            }
             Ok(result) => results.push(result),
             Err(_) => results.push((usize::MAX, Err("Codex 并行出题任务意外中断".to_owned()))),
         }
     }
-    results
+    Ok(results)
 }
 
 // The SQLite flashcards table is the single selection snapshot. A category is
@@ -1172,7 +1185,7 @@ impl DataAnalysisService {
                         .await
                 }
             })
-            .await
+            .await?
             {
                 match outcome {
                     Ok(group) if slot < QUIZ_GROUPS => {
@@ -1278,7 +1291,7 @@ impl DataAnalysisService {
         .map_err(|_| "连接 Codex App Server 超时".to_owned())??;
         let output = tokio::time::timeout(TURN_TIMEOUT, session.turn(&prompt))
             .await
-            .map_err(|_| "Codex 出题超时，请检查电脑服务与账号额度".to_owned())??;
+            .map_err(|_| "Codex 出题超时（300 秒），本次出题已终止，请检查电脑服务与账号额度".to_owned())??;
         #[derive(Deserialize)]
         struct GeneratedQuestion {
             #[serde(flatten)]
@@ -2496,6 +2509,7 @@ mod tests {
             .expect("all four independent workers should reach the same barrier");
         let mut outcomes = tokio::time::timeout(Duration::from_secs(4), task)
             .await
+            .unwrap()
             .unwrap()
             .unwrap();
         outcomes.sort_by_key(|(slot, _)| *slot);
