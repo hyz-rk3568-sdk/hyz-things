@@ -2463,7 +2463,7 @@ mod tests {
         )
         .await
         .expect("a timeout should end the wave without waiting for other workers");
-        assert!(result.unwrap_err().contains("超时"));
+        assert!(matches!(result, Err(ref error) if error.contains("超时")));
         assert_eq!(dropped.load(Ordering::SeqCst), QUIZ_GROUPS);
     }
 
