@@ -2388,6 +2388,65 @@ mod tests {
         ))
         .is_err());
     }
+    #[test]
+    fn timeout_detection_only_marks_deadline_errors_as_fatal() {
+        assert!(is_generation_timeout("连接 Codex App Server 超时"));
+        assert!(is_generation_timeout("Codex 出题超时，请检查电脑服务与账号额度"));
+        assert!(!is_generation_timeout("Codex 返回的试卷结构不完整"));
+        assert!(!is_generation_timeout("Codex 生成失败或中断（可能登录失效或额度不足）"));
+    }
+
+    #[tokio::test]
+    async fn one_group_timeout_aborts_other_parallel_workers() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tokio::sync::Barrier;
+
+        struct DropMarker(Arc<AtomicUsize>);
+        impl Drop for DropMarker {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        let dropped = Arc::new(AtomicUsize::new(0));
+        let started = Arc::new(Barrier::new(QUIZ_GROUPS));
+        let candidates = (0..QUIZ_GROUPS)
+            .map(|slot| {
+                (
+                    slot,
+                    Material {
+                        topic: format!("topic-{slot}"),
+                        text: "test".into(),
+                    },
+                )
+            })
+            .collect();
+        let result = tokio::time::timeout(
+            Duration::from_secs(2),
+            run_generation_wave(candidates, {
+                let dropped = Arc::clone(&dropped);
+                let started = Arc::clone(&started);
+                move |_material, slot| {
+                    let dropped = Arc::clone(&dropped);
+                    let started = Arc::clone(&started);
+                    async move {
+                        let _marker = DropMarker(dropped);
+                        started.wait().await;
+                        if slot == 0 {
+                            Err("Codex 出题超时，请检查电脑服务与账号额度".into())
+                        } else {
+                            std::future::pending::<Result<QuestionGroup, String>>().await
+                        }
+                    }
+                }
+            }),
+        )
+        .await
+        .expect("a timeout should end the wave without waiting for other workers");
+        assert!(result.unwrap_err().contains("超时"));
+        assert_eq!(dropped.load(Ordering::SeqCst), QUIZ_GROUPS);
+    }
+
     #[tokio::test]
     async fn parallel_wave_runs_four_sessions_and_keeps_source_slots() {
         use std::sync::atomic::{AtomicUsize, Ordering};
