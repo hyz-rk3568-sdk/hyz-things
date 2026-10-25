@@ -994,8 +994,10 @@ impl DataAnalysisService {
         if requested.len() > 12 {
             return Err("每次最多勾选12个考点".into());
         }
+        // Zero selected categories means a fully fair paper without wrong-card
+        // guarantees. It is valid even when there are no wrong-card decks.
         if requested.is_empty() {
-            return Err("请至少选择一个错题考点".into());
+            return Ok(Vec::new());
         }
         let available = self.available_skills().await?;
         let mut chosen = Vec::new();
@@ -1907,7 +1909,7 @@ mod tests {
     #[test]
     fn whole_paper_card_targets_cover_selected_wrong_and_enforce_uniqueness() {
         let cards = ample_pool();
-        for count in 1..=12 {
+        for count in 0..=12 {
             let selected = (0..count)
                 .map(|i| format!("category{i}"))
                 .collect::<Vec<_>>();
@@ -2448,6 +2450,24 @@ mod tests {
                 assert_eq!(item.unwrap().material.topic, format!("topic-{slot}"));
             }
         }
+    }
+
+    #[tokio::test]
+    async fn no_wrong_categories_is_valid_without_wrong_card_decks() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let service = DataAnalysisService::new(pool, None).unwrap();
+        assert!(service.chosen_manual_skills(&[]).await.unwrap().is_empty());
+        let too_many = (0..13).map(|i| format!("category{i}")).collect::<Vec<_>>();
+        assert!(service.chosen_manual_skills(&too_many).await.is_err());
+        let cards = ample_pool();
+        let plan = plan_question_targets(&cards, &[], 4123, &FairCounts::default()).unwrap();
+        validate_question_plan(&plan, &[]).unwrap();
+        assert_eq!(plan.groups.iter().map(Vec::len).sum::<usize>(), 20);
     }
 
     #[tokio::test]
