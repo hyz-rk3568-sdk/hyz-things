@@ -3,6 +3,50 @@ import { expectNoHorizontalOverflow, resetHarness } from "./fixtures";
 
 test.beforeEach(async ({ request }) => { await resetHarness(request); });
 
+test("all scheduled cards stay height-bounded and scroll under the portal CSP", async ({ page }) => {
+  await page.route("**/api/v1/study/data-analysis/**", async (route) => {
+    const isStatus = new URL(route.request().url()).pathname.endsWith("/status");
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(isStatus ? {
+      configured:true,model:"mock-compatible-model",cached_sources:1,verified_groups:0,
+      available_skills:[],preparing_job_id:null,
+      answer_summary:{answered_count:0,correct_count:0},
+      card_stats:Array.from({length:30},(_,i)=>({
+        card_id:`scroll-card-${i}`,category:"增长量",source_file:"资料/增长量/cards.md",
+        front_markdown:`卡片 ${i}：${"长标题验证".repeat(30)}`,back_markdown:"解题解析",
+        answered_count:0,correct_count:0,
+      })),
+    } : [])});
+  });
+  await page.goto("/#/study/training");
+  await page.getByTestId("training-mode-comprehensive").click();
+  const allCards = page.getByTestId("analysis-all-cards");
+  const summary = allCards.locator("summary");
+  const list = page.getByTestId("analysis-all-card-list");
+  const cards = page.getByTestId("analysis-all-card-item");
+  await summary.click();
+  await expect(cards).toHaveCount(30);
+  for (const width of [1024,390]) {
+    await page.setViewportSize({width,height:740});
+    await expect.poll(() => list.evaluate((pane) => ({
+      bounded: pane.clientHeight > 0 && pane.clientHeight <= 288,
+      scrollable: pane.scrollHeight > pane.clientHeight,
+      overflowY: getComputedStyle(pane).overflowY,
+    }))).toEqual({bounded:true,scrollable:true,overflowY:"auto"});
+    await expectNoHorizontalOverflow(page);
+    await list.hover();
+    await page.mouse.wheel(0,500);
+    await expect.poll(() => list.evaluate((pane) => pane.scrollTop)).toBeGreaterThan(0);
+    await cards.last().click();
+    await expect(page.getByTestId("analysis-card-detail")).toContainText("累计作答 0 次 · 未作答");
+    await page.getByTestId("analysis-card-back").click();
+    await expect(list).toBeVisible();
+  }
+  await summary.click();
+  await expect(list).toBeHidden();
+  await summary.click();
+  await expect(list).toBeVisible();
+});
+
 test("comprehensive schedules globally without manual type selection", async ({ page }) => {
   await page.setViewportSize({width:1024,height:740});
   let prepareBody: unknown = null;
@@ -45,7 +89,7 @@ test("comprehensive schedules globally without manual type selection", async ({ 
   await expect(page.getByTestId("analysis-total-accuracy")).toHaveText("68.8%");
   const allCards = page.getByTestId("analysis-all-cards");
   await expect(allCards).not.toHaveAttribute("open", "");
-  await expect(page.getByTestId("analysis-all-card-item")).toBeHidden();
+  await expect(page.getByTestId("analysis-all-card-list")).toBeHidden();
   await allCards.locator("summary").click();
   await expect(page.getByTestId("analysis-all-card-item")).toHaveCount(13);
   await expect(page.getByTestId("analysis-all-card-item").first()).toContainText("50.0%");

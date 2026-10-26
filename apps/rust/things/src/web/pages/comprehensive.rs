@@ -1419,7 +1419,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         </div>
                         <details class="min-w-0 max-w-full overflow-hidden rounded-box border border-base-content/15 p-3" data-testid="analysis-all-cards">
                             <summary class="cursor-pointer font-semibold">{format!("全部卡片（{}）",info.card_stats.len())}</summary>
-                            <div class="mt-3 w-full min-w-0 max-w-full space-y-2 overflow-y-auto overscroll-contain" style="max-height: 18rem; overflow-x: hidden; contain: paint; -webkit-overflow-scrolling: touch;" data-testid="analysis-all-card-list">
+                            <div class="mt-3 max-h-72 w-full min-w-0 max-w-full space-y-2 overflow-x-hidden overflow-y-auto overscroll-contain [contain:paint] [-webkit-overflow-scrolling:touch]" data-testid="analysis-all-card-list">
                                 if info.card_stats.is_empty() {
                                     <p class="text-sm text-base-content/60">{"尚无已建立调度记录的卡片"}</p>
                                 }
