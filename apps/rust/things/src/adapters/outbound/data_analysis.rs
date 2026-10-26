@@ -715,9 +715,9 @@ impl DataAnalysisService {
     /// Read only newly generated papers, newest first. A replay copies its
     /// parent topics and must never count as an independent theme selection.
     /// Both unfinished and submitted originals count as recently used.
-    /// Aggregate every submitted, actually answered question (including replays),
-    /// then return only the ten weakest ACTIVE cards with a resolvable source.
-    /// Scheduling fields stay private and are never exposed to the UI.
+    /// Aggregate submitted, actually answered questions (including replays).
+    /// Return every ACTIVE card with persisted scheduling state, ordered by
+    /// its actual vcnt. Scheduling counts never leave the server.
     pub async fn card_performance(&self) -> Result<(AnswerSummary, Vec<CardPerformance>), String> {
         let mut tx = self.pool.begin().await.map_err(as_error)?;
         let summary_row = sqlx::query(
@@ -735,10 +735,11 @@ impl DataAnalysisService {
         };
         let rows = sqlx::query(
             "SELECT u.card_id,u.category,f.source_file,f.front_markdown,f.back_markdown,
-                    s.n AS answered_count,s.c AS correct_count
+                    COALESCE(s.n,0) AS answered_count,
+                    COALESCE(s.c,0) AS correct_count
              FROM data_analysis_card_usage u
              JOIN flashcards f ON f.id=u.card_id AND f.active=1
-             JOIN (
+             LEFT JOIN (
                 SELECT r.card_id,COUNT(*) AS n,COALESCE(SUM(r.is_correct),0) AS c
                 FROM data_analysis_results r
                 JOIN data_analysis_runs run ON run.id=r.run_id
@@ -746,9 +747,7 @@ impl DataAnalysisService {
                   AND r.card_id IS NOT NULL
                 GROUP BY r.card_id
              ) s ON s.card_id=u.card_id
-             WHERE s.n>0
-             ORDER BY CAST(s.c AS REAL)/s.n ASC,s.n DESC,u.card_id ASC
-             LIMIT 10"
+             ORDER BY u.vcnt ASC,u.card_id ASC"
         )
         .fetch_all(&mut *tx)
         .await
@@ -2138,7 +2137,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn weak_card_statistics_count_answers_and_cap_top_ten() {
+    async fn all_card_statistics_use_real_vcnt_and_include_unanswered() {
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(1)
             .connect("sqlite::memory:")
@@ -2185,13 +2184,35 @@ mod tests {
         .await
         .unwrap();
         service.submit(&run_id).await.unwrap();
-        let (summary, weakest) = service.card_performance().await.unwrap();
+        let (summary, ordered) = service.card_performance().await.unwrap();
         assert_eq!(summary.answered_count, 12);
         assert_eq!(summary.correct_count, 2);
-        assert_eq!(weakest.len(), 10);
-        assert!(weakest.iter().all(|card| card.answered_count == 1));
-        assert!(weakest.iter().all(|card| card.correct_count == 0));
-        assert!(weakest.iter().all(|card| !card.front_markdown.is_empty()));
+        // All 60 enrolled cards, including the 40 never selected, are present.
+        assert_eq!(ordered.len(), cards.len());
+        assert_eq!(ordered.iter().filter(|card| card.answered_count == 0).count(), 48);
+        assert_eq!(ordered.iter().filter(|card| card.answered_count == 1).count(), 12);
+        assert!(ordered.iter().all(|card| !card.front_markdown.is_empty()));
+        // 40 cards still have vcnt=0, while 20 selected cards have vcnt=1024.
+        // Order must reflect the actual counter, NOT the accuracy or category.
+        let actual_vcnt: Vec<i64> = sqlx::query_scalar(
+            "SELECT vcnt FROM data_analysis_card_usage ORDER BY vcnt ASC,card_id ASC",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(actual_vcnt.len(), cards.len());
+        assert_eq!(actual_vcnt[..40], [0; 40]);
+        assert_eq!(actual_vcnt[40..], [1024; 20]);
+        let expected_ids: Vec<String> = sqlx::query_scalar(
+            "SELECT card_id FROM data_analysis_card_usage ORDER BY vcnt ASC,card_id ASC",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            ordered.iter().map(|card| card.card_id.as_str()).collect::<Vec<_>>(),
+            expected_ids.iter().map(String::as_str).collect::<Vec<_>>()
+        );
         let replay_id = service.retry(&run_id).await.unwrap();
         let mut replay_answers = vec![None::<usize>; 20];
         replay_answers[0] = Some(1);

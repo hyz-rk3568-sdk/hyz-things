@@ -1417,22 +1417,25 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                                 </p>
                             </div>
                         </div>
-                        <details class="min-w-0 max-w-full overflow-hidden rounded-box border border-base-content/15 p-3" data-testid="analysis-weak-top10">
-                            <summary class="cursor-pointer font-semibold">{"薄弱卡片 Top 10"}</summary>
-                            <div class="mt-3 w-full min-w-0 max-w-full space-y-2 overflow-y-auto overscroll-contain" style="max-height: 18rem; overflow-x: hidden; contain: paint; -webkit-overflow-scrolling: touch;" data-testid="analysis-weak-card-list">
+                        <details class="min-w-0 max-w-full overflow-hidden rounded-box border border-base-content/15 p-3" data-testid="analysis-all-cards">
+                            <summary class="cursor-pointer font-semibold">{format!("全部卡片（{}）",info.card_stats.len())}</summary>
+                            <div class="mt-3 w-full min-w-0 max-w-full space-y-2 overflow-y-auto overscroll-contain" style="max-height: 18rem; overflow-x: hidden; contain: paint; -webkit-overflow-scrolling: touch;" data-testid="analysis-all-card-list">
                                 if info.card_stats.is_empty() {
-                                    <p class="text-sm text-base-content/60">{"还没有已作答的卡片"}</p>
+                                    <p class="text-sm text-base-content/60">{"尚无已建立调度记录的卡片"}</p>
                                 }
                                 {for info.card_stats.iter().enumerate().map(|(index, card)|{
                                     let card_id = card.card_id.clone();
                                     let opened_card = opened_card.clone();
                                     let preview = card.front_markdown.lines().find(|line| !line.trim().is_empty())
                                         .unwrap_or("未命名卡片").trim_start_matches('#').trim().trim_matches('*').trim().to_owned();
-                                    let accuracy = format!("{:.1}%",
-                                        100.0*card.correct_count as f64/card.answered_count as f64);
+                                    let accuracy = if card.answered_count == 0 {
+                                        "未作答".to_owned()
+                                    } else {
+                                        format!("{:.1}%", 100.0 * card.correct_count as f64 / card.answered_count as f64)
+                                    };
                                     html!{
                                         <button type="button" key={card.card_id.clone()}
-                                            data-testid="analysis-weak-card-item"
+                                            data-testid="analysis-all-card-item"
                                             class="flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-box bg-base-200 p-3 text-left hover:bg-base-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
                                             onclick={Callback::from(move |_|opened_card.set(Some(card_id.clone())))}>
                                             <span class="w-5 shrink-0 text-xs text-base-content/50">{format!("{}",index+1)}</span>
@@ -1448,7 +1451,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                                     }
                                 })}
                             </div>
-                            <p class="mt-2 text-xs text-base-content/60">{"只统计实际作答；历史重做计入，未作答不算错。"}</p>
+                            <p class="mt-2 text-xs text-base-content/60">{"按卡片虚拟调度次数升序 · 可在列表内滑动 · 历史重做计入作答统计"}</p>
                         </details>
                         <p class="text-sm text-base-content/65">{format!("出题引擎：{} · 每次主动出题均生成新材料和20道新题",
                             info.model.as_deref().unwrap_or("未配置"))}</p>
@@ -1468,8 +1471,12 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                                 </div>
                                 <div class="min-h-0 space-y-4 overflow-y-auto p-4">
                                     <p class="text-sm text-base-content/65">
-                                        {format!("累计作答 {} 次 · 正确率 {:.1}%",card.answered_count,
-                                            100.0*card.correct_count as f64/card.answered_count as f64)}
+                                        {if card.answered_count == 0 {
+                                            "累计作答 0 次 · 未作答".to_owned()
+                                        } else {
+                                            format!("累计作答 {} 次 · 正确率 {:.1}%", card.answered_count,
+                                                100.0 * card.correct_count as f64 / card.answered_count as f64)
+                                        }}
                                     </p>
                                     <section class="rounded-box border border-base-content/15 p-3" data-testid="analysis-card-front">
                                         <p class="mb-2 text-xs font-semibold text-base-content/60">{"Front"}</p>
