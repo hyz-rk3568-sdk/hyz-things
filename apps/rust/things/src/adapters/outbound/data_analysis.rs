@@ -213,11 +213,18 @@ pub struct ComprehensiveHistoryEntry {
 }
 
 #[derive(Clone, Serialize)]
+pub struct AnswerSummary {
+    pub answered_count: i64,
+    pub correct_count: i64,
+}
+
+#[derive(Clone, Serialize)]
 pub struct CardPerformance {
     pub card_id: String,
     pub category: String,
-    pub selected_count: i64,
-    pub vcnt: i64,
+    pub source_file: String,
+    pub front_markdown: String,
+    pub back_markdown: String,
     pub answered_count: i64,
     pub correct_count: i64,
 }
@@ -708,39 +715,59 @@ impl DataAnalysisService {
     /// Read only newly generated papers, newest first. A replay copies its
     /// parent topics and must never count as an independent theme selection.
     /// Both unfinished and submitted originals count as recently used.
-    /// Diagnostic card-level statistics; only committed answers count.
-    pub async fn card_performance(&self) -> Result<Vec<CardPerformance>, String> {
+    /// Aggregate every submitted, actually answered question (including replays),
+    /// then return only the ten weakest ACTIVE cards with a resolvable source.
+    /// Scheduling fields stay private and are never exposed to the UI.
+    pub async fn card_performance(&self) -> Result<(AnswerSummary, Vec<CardPerformance>), String> {
+        let mut tx = self.pool.begin().await.map_err(as_error)?;
+        let summary_row = sqlx::query(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(r.is_correct),0) AS c
+             FROM data_analysis_results r
+             JOIN data_analysis_runs run ON run.id=r.run_id
+             WHERE run.status='submitted' AND r.was_answered=1"
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(as_error)?;
+        let summary = AnswerSummary {
+            answered_count: summary_row.try_get("n").map_err(as_error)?,
+            correct_count: summary_row.try_get("c").map_err(as_error)?,
+        };
         let rows = sqlx::query(
-            "SELECT u.card_id,u.category,u.selected_count,u.vcnt,
-                    COALESCE(s.n,0) AS answered_count,
-                    COALESCE(s.c,0) AS correct_count
+            "SELECT u.card_id,u.category,f.source_file,f.front_markdown,f.back_markdown,
+                    s.n AS answered_count,s.c AS correct_count
              FROM data_analysis_card_usage u
              JOIN flashcards f ON f.id=u.card_id AND f.active=1
-             LEFT JOIN (
-                SELECT r.card_id, COUNT(*) AS n, COALESCE(SUM(r.is_correct),0) AS c
+             JOIN (
+                SELECT r.card_id,COUNT(*) AS n,COALESCE(SUM(r.is_correct),0) AS c
                 FROM data_analysis_results r
                 JOIN data_analysis_runs run ON run.id=r.run_id
                 WHERE run.status='submitted' AND r.was_answered=1
                   AND r.card_id IS NOT NULL
                 GROUP BY r.card_id
              ) s ON s.card_id=u.card_id
-             ORDER BY u.category,u.vcnt,u.card_id",
+             WHERE s.n>0
+             ORDER BY CAST(s.c AS REAL)/s.n ASC,s.n DESC,u.card_id ASC
+             LIMIT 10"
         )
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *tx)
         .await
         .map_err(as_error)?;
-        rows.into_iter()
+        let cards = rows.into_iter()
             .map(|row| {
                 Ok(CardPerformance {
                     card_id: row.try_get("card_id").map_err(as_error)?,
                     category: row.try_get("category").map_err(as_error)?,
-                    selected_count: row.try_get("selected_count").map_err(as_error)?,
-                    vcnt: row.try_get("vcnt").map_err(as_error)?,
+                    source_file: row.try_get("source_file").map_err(as_error)?,
+                    front_markdown: row.try_get("front_markdown").map_err(as_error)?,
+                    back_markdown: row.try_get("back_markdown").map_err(as_error)?,
                     answered_count: row.try_get("answered_count").map_err(as_error)?,
                     correct_count: row.try_get("correct_count").map_err(as_error)?,
                 })
             })
-            .collect()
+            .collect::<Result<Vec<_>,String>>()?;
+        tx.commit().await.map_err(as_error)?;
+        Ok((summary,cards))
     }
 
     async fn recent_paper_themes(&self) -> Result<Vec<Vec<String>>, String> {
@@ -2108,6 +2135,78 @@ mod tests {
             after.increment(&plan.groups[0][0].card.id),
             weighted_increment(2, 0)
         );
+    }
+
+    #[tokio::test]
+    async fn weak_card_statistics_count_answers_and_cap_top_ten() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let service = DataAnalysisService::new(pool.clone(), None).unwrap();
+        let cards = ample_pool();
+        for card in &cards {
+            sqlx::query(
+                "INSERT INTO flashcards
+                 (id,source_file,source_order,deck_path,front_markdown,back_markdown,
+                  source_hash,active,created_at_ms,updated_at_ms)
+                 VALUES (?,?,0,?,?,?,?,1,0,0)",
+            )
+            .bind(&card.id)
+            .bind(&card.card_path)
+            .bind(&card.category)
+            .bind(&card.front_markdown)
+            .bind(&card.back_markdown)
+            .bind(&card.source_hash)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        let schedule = service.load_card_schedule(&cards).await.unwrap();
+        let plan = plan_question_targets(&cards, 33, &schedule).unwrap();
+        let run_id = Uuid::now_v7().to_string();
+        service
+            .persist_original_run(&run_id, &test_prepared_groups(&plan), &plan)
+            .await
+            .unwrap();
+        // Twelve answers: two correct, ten wrong, eight blank.
+        let mut answers = vec![None::<usize>; 20];
+        for (index, answer) in answers.iter_mut().enumerate().take(12) {
+            *answer = Some(if index < 2 { 0 } else { 1 });
+        }
+        sqlx::query(
+            "UPDATE data_analysis_runs SET status='active', answers_json=? WHERE id=?",
+        )
+        .bind(serde_json::to_string(&answers).unwrap())
+        .bind(&run_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        service.submit(&run_id).await.unwrap();
+        let (summary, weakest) = service.card_performance().await.unwrap();
+        assert_eq!(summary.answered_count, 12);
+        assert_eq!(summary.correct_count, 2);
+        assert_eq!(weakest.len(), 10);
+        assert!(weakest.iter().all(|card| card.answered_count == 1));
+        assert!(weakest.iter().all(|card| card.correct_count == 0));
+        assert!(weakest.iter().all(|card| !card.front_markdown.is_empty()));
+        let replay_id = service.retry(&run_id).await.unwrap();
+        let mut replay_answers = vec![None::<usize>; 20];
+        replay_answers[0] = Some(1);
+        sqlx::query(
+            "UPDATE data_analysis_runs SET status='active', answers_json=? WHERE id=?",
+        )
+        .bind(serde_json::to_string(&replay_answers).unwrap())
+        .bind(&replay_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        service.submit(&replay_id).await.unwrap();
+        let (replay_summary, _) = service.card_performance().await.unwrap();
+        assert_eq!(replay_summary.answered_count, 13);
+        assert_eq!(replay_summary.correct_count, 2);
     }
 
     #[test]

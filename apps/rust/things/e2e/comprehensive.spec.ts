@@ -11,8 +11,13 @@ test("comprehensive schedules globally without manual type selection", async ({ 
     if (path.endsWith("/status")) {
       result = {configured:true,model:"mock-compatible-model",cached_sources:1,verified_groups:0,
         available_skills:["乘积增长率"],preparing_job_id:null,
-        card_stats:[{card_id:"019a31b7-8c42-7c16-a6d1-0c1f0f34c821",category:"基期量",selected_count:3,vcnt:3072,answered_count:2,correct_count:1},
-                    {card_id:"019a31b7-8c42-7c16-a6d1-0c1f0f34c822",category:"比重",selected_count:1,vcnt:1024,answered_count:0,correct_count:0}]};
+        answer_summary:{answered_count:16,correct_count:11},
+        card_stats:[{card_id:"019a31b7-8c42-7c16-a6d1-0c1f0f34c821",category:"基期量",
+                     source_file:"资料/基期量/cards.md",front_markdown:"如何快速计算基期量？",back_markdown:"基期量 = 现期量 / (1 + 增长率)",
+                     answered_count:2,correct_count:1},
+                    {card_id:"019a31b7-8c42-7c16-a6d1-0c1f0f34c822",category:"比重",
+                     source_file:"资料/比重/cards.md",front_markdown:"如何判断比重变化？",back_markdown:"比较部分与整体增长率",
+                     answered_count:4,correct_count:3}]};
     } else if (path.endsWith("/unfinished") || path.endsWith("/history")) {
       result = [];
     } else if (path.endsWith("/prepare") && route.request().method() === "POST") {
@@ -25,12 +30,25 @@ test("comprehensive schedules globally without manual type selection", async ({ 
   });
   await page.goto("/#/study/training");
   await page.getByTestId("training-mode-comprehensive").click();
-  await expect(page.getByTestId("analysis-setup")).toContainText("全局卡片 vcnt 公平调度");
+  await expect(page.getByTestId("analysis-setup")).toContainText("智能选卡 · 综合训练");
   await expect(page.getByTestId("analysis-skill-expand")).toHaveCount(0);
   await expect(page.getByTestId("analysis-start")).toBeEnabled();
-  await page.getByTestId("analysis-card-stats").getByText("卡片成绩明细").click();
-  await expect(page.getByTestId("analysis-card-stats")).toContainText("正确率 50.0%");
-  await expect(page.getByTestId("analysis-card-stats")).toContainText("未作答");
+  await expect(page.getByTestId("analysis-total-answered")).toHaveText("16");
+  await expect(page.getByTestId("analysis-total-correct")).toHaveText("11");
+  await expect(page.getByTestId("analysis-total-accuracy")).toHaveText("68.8%");
+  const weak = page.getByTestId("analysis-weak-top10");
+  await expect(weak).not.toHaveAttribute("open", "");
+  await expect(page.getByTestId("analysis-weak-card-item")).toBeHidden();
+  await weak.locator("summary").click();
+  await expect(page.getByTestId("analysis-weak-card-item")).toHaveCount(2);
+  await expect(page.getByTestId("analysis-weak-card-item").first()).toContainText("50.0%");
+  await expect(weak).not.toContainText("vcnt");
+  await page.getByTestId("analysis-weak-card-item").first().click();
+  await expect(page.getByTestId("analysis-card-detail")).toBeVisible();
+  await expect(page.getByTestId("analysis-card-front")).toContainText("如何快速计算基期量？");
+  await expect(page.getByTestId("analysis-card-back-content")).toContainText("基期量");
+  await page.getByTestId("analysis-card-back").click();
+  await expect(page.getByTestId("analysis-card-detail")).toHaveCount(0);
   await page.getByTestId("analysis-start").click();
   await expect.poll(() => prepareBody).toEqual({});
   await expect(page.getByTestId("analysis-ready")).toBeVisible();
