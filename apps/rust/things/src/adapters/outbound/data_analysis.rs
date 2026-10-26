@@ -724,7 +724,7 @@ impl DataAnalysisService {
             "SELECT COUNT(*) AS n, COALESCE(SUM(r.is_correct),0) AS c
              FROM data_analysis_results r
              JOIN data_analysis_runs run ON run.id=r.run_id
-             WHERE run.status='submitted' AND r.was_answered=1"
+             WHERE run.status='submitted' AND r.was_answered=1",
         )
         .fetch_one(&mut *tx)
         .await
@@ -747,12 +747,13 @@ impl DataAnalysisService {
                   AND r.card_id IS NOT NULL
                 GROUP BY r.card_id
              ) s ON s.card_id=u.card_id
-             ORDER BY u.vcnt ASC,u.card_id ASC"
+             ORDER BY u.vcnt ASC,u.card_id ASC",
         )
         .fetch_all(&mut *tx)
         .await
         .map_err(as_error)?;
-        let cards = rows.into_iter()
+        let cards = rows
+            .into_iter()
             .map(|row| {
                 Ok(CardPerformance {
                     card_id: row.try_get("card_id").map_err(as_error)?,
@@ -764,9 +765,9 @@ impl DataAnalysisService {
                     correct_count: row.try_get("correct_count").map_err(as_error)?,
                 })
             })
-            .collect::<Result<Vec<_>,String>>()?;
+            .collect::<Result<Vec<_>, String>>()?;
         tx.commit().await.map_err(as_error)?;
-        Ok((summary,cards))
+        Ok((summary, cards))
     }
 
     async fn recent_paper_themes(&self) -> Result<Vec<Vec<String>>, String> {
@@ -2175,22 +2176,32 @@ mod tests {
         for (index, answer) in answers.iter_mut().enumerate().take(12) {
             *answer = Some(if index < 2 { 0 } else { 1 });
         }
-        sqlx::query(
-            "UPDATE data_analysis_runs SET status='active', answers_json=? WHERE id=?",
-        )
-        .bind(serde_json::to_string(&answers).unwrap())
-        .bind(&run_id)
-        .execute(&pool)
-        .await
-        .unwrap();
+        sqlx::query("UPDATE data_analysis_runs SET status='active', answers_json=? WHERE id=?")
+            .bind(serde_json::to_string(&answers).unwrap())
+            .bind(&run_id)
+            .execute(&pool)
+            .await
+            .unwrap();
         service.submit(&run_id).await.unwrap();
         let (summary, ordered) = service.card_performance().await.unwrap();
         assert_eq!(summary.answered_count, 12);
         assert_eq!(summary.correct_count, 2);
         // All 60 enrolled cards, including the 40 never selected, are present.
         assert_eq!(ordered.len(), cards.len());
-        assert_eq!(ordered.iter().filter(|card| card.answered_count == 0).count(), 48);
-        assert_eq!(ordered.iter().filter(|card| card.answered_count == 1).count(), 12);
+        assert_eq!(
+            ordered
+                .iter()
+                .filter(|card| card.answered_count == 0)
+                .count(),
+            48
+        );
+        assert_eq!(
+            ordered
+                .iter()
+                .filter(|card| card.answered_count == 1)
+                .count(),
+            12
+        );
         assert!(ordered.iter().all(|card| !card.front_markdown.is_empty()));
         // 40 cards still have vcnt=0, while 20 selected cards have vcnt=1024.
         // Order must reflect the actual counter, NOT the accuracy or category.
@@ -2210,20 +2221,21 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(
-            ordered.iter().map(|card| card.card_id.as_str()).collect::<Vec<_>>(),
+            ordered
+                .iter()
+                .map(|card| card.card_id.as_str())
+                .collect::<Vec<_>>(),
             expected_ids.iter().map(String::as_str).collect::<Vec<_>>()
         );
         let replay_id = service.retry(&run_id).await.unwrap();
         let mut replay_answers = vec![None::<usize>; 20];
         replay_answers[0] = Some(1);
-        sqlx::query(
-            "UPDATE data_analysis_runs SET status='active', answers_json=? WHERE id=?",
-        )
-        .bind(serde_json::to_string(&replay_answers).unwrap())
-        .bind(&replay_id)
-        .execute(&pool)
-        .await
-        .unwrap();
+        sqlx::query("UPDATE data_analysis_runs SET status='active', answers_json=? WHERE id=?")
+            .bind(serde_json::to_string(&replay_answers).unwrap())
+            .bind(&replay_id)
+            .execute(&pool)
+            .await
+            .unwrap();
         service.submit(&replay_id).await.unwrap();
         let (replay_summary, _) = service.card_performance().await.unwrap();
         assert_eq!(replay_summary.answered_count, 13);

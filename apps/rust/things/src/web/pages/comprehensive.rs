@@ -304,7 +304,6 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         });
     }
 
-
     {
         let status = status.clone();
         let error = error.clone();
