@@ -1399,16 +1399,16 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         </div>
                     </details>
                     if let Some(info)=(*status).clone(){
-                        <div class="grid grid-cols-3 gap-2" data-testid="analysis-answer-summary">
-                            <div class="rounded-box bg-base-200 p-3">
+                        <div class="grid min-w-0 grid-cols-3 gap-2" data-testid="analysis-answer-summary">
+                            <div class="min-w-0 rounded-box bg-base-200 p-3">
                                 <p class="text-xs text-base-content/60">{"累计作答"}</p>
                                 <p class="text-xl font-semibold" data-testid="analysis-total-answered">{info.answer_summary.answered_count}</p>
                             </div>
-                            <div class="rounded-box bg-base-200 p-3">
+                            <div class="min-w-0 rounded-box bg-base-200 p-3">
                                 <p class="text-xs text-base-content/60">{"累计答对"}</p>
                                 <p class="text-xl font-semibold" data-testid="analysis-total-correct">{info.answer_summary.correct_count}</p>
                             </div>
-                            <div class="rounded-box bg-base-200 p-3">
+                            <div class="min-w-0 rounded-box bg-base-200 p-3">
                                 <p class="text-xs text-base-content/60">{"总体正确率"}</p>
                                 <p class="text-xl font-semibold" data-testid="analysis-total-accuracy">
                                     {if info.answer_summary.answered_count==0 {"未作答".to_owned()} else {
@@ -1417,9 +1417,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                                 </p>
                             </div>
                         </div>
-                        <details class="rounded-box border border-base-content/15 p-3" data-testid="analysis-weak-top10">
+                        <details class="min-w-0 max-w-full overflow-hidden rounded-box border border-base-content/15 p-3" data-testid="analysis-weak-top10">
                             <summary class="cursor-pointer font-semibold">{"薄弱卡片 Top 10"}</summary>
-                            <div class="mt-3 grid max-h-80 gap-2 overflow-y-auto" data-testid="analysis-weak-card-list">
+                            <div class="mt-3 w-full min-w-0 max-w-full space-y-2 overflow-y-auto overscroll-contain" style="max-height: 18rem; overflow-x: hidden; contain: paint; -webkit-overflow-scrolling: touch;" data-testid="analysis-weak-card-list">
                                 if info.card_stats.is_empty() {
                                     <p class="text-sm text-base-content/60">{"还没有已作答的卡片"}</p>
                                 }
@@ -1427,18 +1427,18 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                                     let card_id = card.card_id.clone();
                                     let opened_card = opened_card.clone();
                                     let preview = card.front_markdown.lines().find(|line| !line.trim().is_empty())
-                                        .unwrap_or("未命名卡片").trim_start_matches('#').trim().to_owned();
+                                        .unwrap_or("未命名卡片").trim_start_matches('#').trim().trim_matches('*').trim().to_owned();
                                     let accuracy = format!("{:.1}%",
                                         100.0*card.correct_count as f64/card.answered_count as f64);
                                     html!{
                                         <button type="button" key={card.card_id.clone()}
                                             data-testid="analysis-weak-card-item"
-                                            class="flex w-full items-center gap-3 rounded-box bg-base-200 p-3 text-left hover:bg-base-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                                            class="flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-box bg-base-200 p-3 text-left hover:bg-base-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
                                             onclick={Callback::from(move |_|opened_card.set(Some(card_id.clone())))}>
                                             <span class="w-5 shrink-0 text-xs text-base-content/50">{format!("{}",index+1)}</span>
-                                            <span class="min-w-0 flex-1">
+                                            <span class="min-w-0 flex-1 overflow-hidden">
                                                 <span class="block truncate text-sm font-semibold">{preview}</span>
-                                                <span class="block text-xs text-base-content/60">
+                                                <span class="block truncate text-xs text-base-content/60">
                                                     {format!("{} · 作答 {} 次",card.category,card.answered_count)}
                                                 </span>
                                             </span>
