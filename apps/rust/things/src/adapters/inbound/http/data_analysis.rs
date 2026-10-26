@@ -34,7 +34,6 @@ struct StatusBody {
     model: Option<String>,
     cached_sources: i64,
     verified_groups: i64,
-    available_skills: Vec<String>,
     preparing_job_id: Option<String>,
 }
 pub(super) async fn status(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -53,7 +52,6 @@ pub(super) async fn status(State(state): State<AppState>, headers: HeaderMap) ->
         model: service.configured_model(),
         cached_sources,
         verified_groups,
-        available_skills: service.available_skills().await.unwrap_or_default(),
         preparing_job_id: service.preparing_job().await,
     })
     .into_response()
@@ -100,14 +98,12 @@ struct PrepareBody {
     job_id: String,
 }
 #[derive(Deserialize)]
-pub(super) struct ComprehensivePrepareRequest {
-    #[serde(default)]
-    manual_skills: Vec<String>,
-}
+#[serde(deny_unknown_fields)]
+pub(super) struct ComprehensivePrepareRequest {}
 pub(super) async fn prepare(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(body): Json<ComprehensivePrepareRequest>,
+    Json(_body): Json<ComprehensivePrepareRequest>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_control(&state, &headers).await {
         return response;
@@ -115,7 +111,7 @@ pub(super) async fn prepare(
     let Some(service) = get(&state) else {
         return unavailable();
     };
-    match service.prepare(body.manual_skills).await {
+    match service.prepare().await {
         Ok(job_id) => Json(PrepareBody { job_id }).into_response(),
         Err(reason) if reason.contains("正在执行") => error_json(
             StatusCode::CONFLICT,

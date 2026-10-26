@@ -14,7 +14,6 @@ pub(crate) struct ComprehensiveProps {
 
 const COMPREHENSIVE_JOB_KEY: &str = "hyz_comprehensive_prepare_job";
 const COMPREHENSIVE_READY_KEY: &str = "hyz_comprehensive_ready_run";
-const MANUAL_SKILLS_KEY: &str = "hyz_comprehensive_manual_skills";
 
 // One fixed-height workspace serves both exam and answer review. Only the
 // material and question panes scroll, never the outer page.
@@ -192,9 +191,7 @@ fn analysis_navigation(
 }
 
 #[derive(Serialize)]
-struct ComprehensivePrepareRequest {
-    manual_skills: Vec<String>,
-}
+struct ComprehensivePrepareRequest {}
 
 fn remember_preparation(id: Option<&str>) {
     if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
@@ -289,8 +286,6 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     let tick = use_state(|| 0_u64);
     let history = use_state(Vec::<ComprehensiveHistoryEntry>::new);
     let history_open = use_state(|| false);
-    let manual_skills = use_state(Vec::<String>::new);
-    let skills_expanded = use_state(|| false);
     let user_prompt = use_state(String::new);
     let prompt_settings = use_state(|| None::<UserPromptSettings>);
     let prompt_busy = use_state(|| false);
@@ -310,7 +305,6 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let ready_id = ready_id.clone();
         let preparing = preparing.clone();
         let loading_status = loading_status.clone();
-        let manual_skills = manual_skills.clone();
         let user_prompt = user_prompt.clone();
         let prompt_settings = prompt_settings.clone();
         let prompt_error = prompt_error.clone();
@@ -320,14 +314,6 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let clock_offset_ms = clock_offset_ms.clone();
         let csrf = props.csrf.clone();
         use_effect_with((), move |_| {
-            if let Some(raw) = web_sys::window()
-                .and_then(|w| w.local_storage().ok().flatten())
-                .and_then(|storage| storage.get_item(MANUAL_SKILLS_KEY).ok().flatten())
-            {
-                if let Ok(saved) = serde_json::from_str::<Vec<String>>(&raw) {
-                    manual_skills.set(saved);
-                }
-            }
             let history = history.clone();
             spawn_local(async move {
                 match fetch_json_typed::<UserPromptSettings>(
@@ -675,7 +661,6 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let preparing = preparing.clone();
         let ready_id = ready_id.clone();
         let csrf = props.csrf.clone();
-        let manual_skills = manual_skills.clone();
         Callback::from(move |_| {
             if *busy || *preparing || ready_id.is_some() {
                 return;
@@ -689,14 +674,11 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let preparing = preparing.clone();
             let ready_id = ready_id.clone();
             let csrf = csrf.clone();
-            let selected = (*manual_skills).clone();
             spawn_local(async move {
                 match post_json_response_typed::<_, PrepareTask>(
                     &format!("{ANALYSIS_ROOT}/prepare"),
                     &csrf,
-                    &ComprehensivePrepareRequest {
-                        manual_skills: selected,
-                    },
+                    &ComprehensivePrepareRequest {},
                     "准备综合训练",
                 )
                 .await
@@ -1339,28 +1321,6 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             </section>
         };
     }
-    let toggle_manual = {
-        let manual_skills = manual_skills.clone();
-        Callback::from(move |skill: String| {
-            let mut chosen = (*manual_skills).clone();
-            if let Some(index) = chosen.iter().position(|v| v == &skill) {
-                chosen.remove(index);
-            } else if chosen.len() < 12 {
-                chosen.push(skill);
-            }
-            if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten())
-            {
-                if let Ok(raw) = serde_json::to_string(&chosen) {
-                    let _ = storage.set_item(MANUAL_SKILLS_KEY, &raw);
-                }
-            }
-            manual_skills.set(chosen);
-        })
-    };
-    let toggle_selector = {
-        let skills_expanded = skills_expanded.clone();
-        Callback::from(move |_| skills_expanded.set(!*skills_expanded))
-    };
     html! {
         <section class="mx-auto max-w-3xl p-4 sm:p-6" data-testid="analysis-setup">
             <div class="rounded-box bg-base-100 p-5 sm:p-7">
@@ -1395,38 +1355,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         </div>
                     }
                     <button class="btn btn-outline w-full" type="button" onclick={{let history_open=history_open.clone();Callback::from(move |_|history_open.set(true))}}>{"查看练习历史"}</button>
-                    <div class="rounded-box border border-base-content/15 p-4 space-y-3">
-                        <p class="font-semibold">{"错题保底分类（可选）"}</p>
-                        <p class="text-sm text-base-content/60">{"不选也能出题：系统按分类和卡片两级公平调度，从全部资料分析 Flashcard（含错题）选20张卡片。选中分类时，每类至少安排1道对应错题。同篇分类不重复，整卷卡片不重复。"}</p>
-                        <div class="flex items-center justify-between gap-3">
-                            <strong class="text-sm">{format!("保底分类（已选{}项，最多12项）",manual_skills.len())}</strong>
-                            <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-skill-expand"
-                                onclick={toggle_selector}>{if *skills_expanded{"收起"}else{"添加考点"}}</button>
-                        </div>
-                        <div class="flex flex-wrap gap-2">
-                            {for manual_skills.iter().map(|name|html!{
-                                <span class="badge badge-primary badge-outline">{name.clone()}</span>
-                            })}
-                        </div>
-                        if *skills_expanded {
-                            if let Some(info)=(*status).clone(){
-                                <div class="flex max-h-60 flex-wrap gap-2 overflow-auto rounded-box bg-base-200 p-3" data-testid="analysis-skill-options">
-                                    if info.available_skills.is_empty() {
-                                        <p class="text-xs text-base-content/60">{"暂无可选的错题分类；不选仍可从已同步的资料分析卡片出题。"}</p>
-                                    }
-                                    {for info.available_skills.iter().map(|name|{
-                                        let chosen=manual_skills.contains(name);
-                                        let title=name.clone();let select=toggle_manual.clone();
-                                        html!{<button type="button" data-testid="analysis-skill-toggle"
-                                            class={if chosen{"btn btn-primary btn-sm"}else{"btn btn-outline btn-sm"}}
-                                            aria-pressed={chosen.to_string()}
-                                            disabled={!chosen && manual_skills.len()>=12}
-                                            onclick={Callback::from(move |_|select.emit(title.clone()))}>{name.clone()}</button>}
-                                    })}
-                                </div>
-                            }
-                        }
-                        <p class="text-xs text-base-content/60">{"可不选，最多12类。选中分类每类至少1道错题；其余题位从全部资料分析 Flashcard（含错题）公平抽取。选择保存在本设备浏览器中。"}</p>
+                    <div class="rounded-box border border-base-content/15 p-4 space-y-2">
+                        <p class="font-semibold">{"全局卡片 vcnt 公平调度"}</p>
+                        <p class="text-sm text-base-content/60">{"错题与知识点统一入队；按卡片虚拟次数全局选择20张，同篇5个不同题型。不设置题型保底或配额。"}</p>
                     </div>
                     <details class="rounded-box border border-base-content/15 bg-base-100/50 p-3" data-testid="analysis-user-prompt">
                         <summary class="cursor-pointer select-none font-semibold" data-testid="analysis-user-prompt-toggle">
@@ -1437,7 +1368,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         </summary>
                         <div class="mt-3 space-y-3">
                             <p class="text-xs text-base-content/65">
-                                {"决定材料风格、题目难度和出题限制。可选错题保底、全卡池来源及固定结构由系统控制，不受本栏内容影响。"}
+                                {"决定材料风格、题目难度和出题限制。全卡池来源及同篇不同题型的结构由系统控制，不受本栏内容影响。"}
                             </p>
                             <textarea class="textarea textarea-bordered w-full min-h-48 font-mono text-sm leading-6"
                                 data-testid="analysis-user-prompt-editor" maxlength="8000"

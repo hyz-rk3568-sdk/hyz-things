@@ -6,7 +6,6 @@ pub(crate) const ANALYSIS_ROOT: &str = "/api/v1/study/data-analysis";
 pub(crate) struct AnalysisStatus {
     pub configured: bool,
     pub model: Option<String>,
-    pub available_skills: Vec<String>,
     pub preparing_job_id: Option<String>,
 }
 #[derive(Clone, Debug, Deserialize)]
