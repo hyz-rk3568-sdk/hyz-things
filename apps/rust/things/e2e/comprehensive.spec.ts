@@ -19,11 +19,11 @@ test("comprehensive schedules globally without manual type selection", async ({ 
                     {card_id:"019a31b7-8c42-7c16-a6d1-0c1f0f34c822",category:"比重",
                      source_file:"资料/比重/cards.md",front_markdown:"如何判断比重变化？",back_markdown:"比较部分与整体增长率",
                      answered_count:4,correct_count:3},
-                    ...Array.from({length:8},(_,i)=>({
+                    ...Array.from({length:11},(_,i)=>({
                       card_id:`long-title-${i}`,category:"增长量",
                       source_file:"资料/增长量/cards.md",
                       front_markdown:"这是一张非常长的资料分析 Flashcard 标题，需要截断避免 Safari 中长文本撑破列表容器。".repeat(6),
-                      back_markdown:"解题解析",answered_count:10,correct_count:9
+                      back_markdown:"解题解析",answered_count:i===10?0:10,correct_count:i===10?0:9
                     }))]};
     } else if (path.endsWith("/unfinished") || path.endsWith("/history")) {
       result = [];
@@ -43,13 +43,14 @@ test("comprehensive schedules globally without manual type selection", async ({ 
   await expect(page.getByTestId("analysis-total-answered")).toHaveText("16");
   await expect(page.getByTestId("analysis-total-correct")).toHaveText("11");
   await expect(page.getByTestId("analysis-total-accuracy")).toHaveText("68.8%");
-  const weak = page.getByTestId("analysis-weak-top10");
-  await expect(weak).not.toHaveAttribute("open", "");
-  await expect(page.getByTestId("analysis-weak-card-item")).toBeHidden();
-  await weak.locator("summary").click();
-  await expect(page.getByTestId("analysis-weak-card-item")).toHaveCount(10);
-  await expect(page.getByTestId("analysis-weak-card-item").first()).toContainText("50.0%");
-  const scrollPane = page.getByTestId("analysis-weak-card-list");
+  const allCards = page.getByTestId("analysis-all-cards");
+  await expect(allCards).not.toHaveAttribute("open", "");
+  await expect(page.getByTestId("analysis-all-card-item")).toBeHidden();
+  await allCards.locator("summary").click();
+  await expect(page.getByTestId("analysis-all-card-item")).toHaveCount(13);
+  await expect(page.getByTestId("analysis-all-card-item").first()).toContainText("50.0%");
+  await expect(page.getByTestId("analysis-all-card-item").last()).toContainText("未作答");
+  const scrollPane = page.getByTestId("analysis-all-card-list");
   const fits = await scrollPane.evaluate((pane) => {
     const parent = pane.closest("details")!;
     const cards = [...pane.querySelectorAll("button")];
@@ -67,11 +68,15 @@ test("comprehensive schedules globally without manual type selection", async ({ 
     (pane) => pane.scrollWidth <= pane.clientWidth + 1 &&
       document.documentElement.scrollWidth <= window.innerWidth + 1
   )).toBe(true);
-  await expect(weak).not.toContainText("vcnt");
-  await page.getByTestId("analysis-weak-card-item").first().click();
+  await expect(allCards).not.toContainText("vcnt");
+  await page.getByTestId("analysis-all-card-item").first().click();
   await expect(page.getByTestId("analysis-card-detail")).toBeVisible();
   await expect(page.getByTestId("analysis-card-front")).toContainText("如何快速计算基期量？");
   await expect(page.getByTestId("analysis-card-back-content")).toContainText("基期量");
+  await page.getByTestId("analysis-card-back").click();
+  await expect(page.getByTestId("analysis-card-detail")).toHaveCount(0);
+  await page.getByTestId("analysis-all-card-item").last().click();
+  await expect(page.getByTestId("analysis-card-detail")).toContainText("累计作答 0 次 · 未作答");
   await page.getByTestId("analysis-card-back").click();
   await expect(page.getByTestId("analysis-card-detail")).toHaveCount(0);
   await page.getByTestId("analysis-start").click();
