@@ -4,6 +4,7 @@ import { expectNoHorizontalOverflow, resetHarness } from "./fixtures";
 test.beforeEach(async ({ request }) => { await resetHarness(request); });
 
 test("comprehensive schedules globally without manual type selection", async ({ page }) => {
+  await page.setViewportSize({width:1024,height:740});
   let prepareBody: unknown = null;
   await page.route("**/api/v1/study/data-analysis/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -17,7 +18,13 @@ test("comprehensive schedules globally without manual type selection", async ({ 
                      answered_count:2,correct_count:1},
                     {card_id:"019a31b7-8c42-7c16-a6d1-0c1f0f34c822",category:"比重",
                      source_file:"资料/比重/cards.md",front_markdown:"如何判断比重变化？",back_markdown:"比较部分与整体增长率",
-                     answered_count:4,correct_count:3}]};
+                     answered_count:4,correct_count:3},
+                    ...Array.from({length:8},(_,i)=>({
+                      card_id:`long-title-${i}`,category:"增长量",
+                      source_file:"资料/增长量/cards.md",
+                      front_markdown:"这是一张非常长的资料分析 Flashcard 标题，需要截断避免 Safari 中长文本撑破列表容器。".repeat(6),
+                      back_markdown:"解题解析",answered_count:10,correct_count:9
+                    }))]};
     } else if (path.endsWith("/unfinished") || path.endsWith("/history")) {
       result = [];
     } else if (path.endsWith("/prepare") && route.request().method() === "POST") {
@@ -40,8 +47,26 @@ test("comprehensive schedules globally without manual type selection", async ({ 
   await expect(weak).not.toHaveAttribute("open", "");
   await expect(page.getByTestId("analysis-weak-card-item")).toBeHidden();
   await weak.locator("summary").click();
-  await expect(page.getByTestId("analysis-weak-card-item")).toHaveCount(2);
+  await expect(page.getByTestId("analysis-weak-card-item")).toHaveCount(10);
   await expect(page.getByTestId("analysis-weak-card-item").first()).toContainText("50.0%");
+  const scrollPane = page.getByTestId("analysis-weak-card-list");
+  const fits = await scrollPane.evaluate((pane) => {
+    const parent = pane.closest("details")!;
+    const cards = [...pane.querySelectorAll("button")];
+    return {
+      vertical: pane.clientHeight <= 288 && pane.scrollHeight > pane.clientHeight,
+      horizontal: pane.scrollWidth <= pane.clientWidth + 1,
+      parent: parent.scrollWidth <= parent.clientWidth + 1,
+      cards: cards.every((card) => card.scrollWidth <= card.clientWidth + 1),
+      document: document.documentElement.scrollWidth <= window.innerWidth + 1,
+    };
+  });
+  expect(fits).toEqual({vertical:true,horizontal:true,parent:true,cards:true,document:true});
+  await page.setViewportSize({width:390,height:740});
+  await expect.poll(() => scrollPane.evaluate(
+    (pane) => pane.scrollWidth <= pane.clientWidth + 1 &&
+      document.documentElement.scrollWidth <= window.innerWidth + 1
+  )).toBe(true);
   await expect(weak).not.toContainText("vcnt");
   await page.getByTestId("analysis-weak-card-item").first().click();
   await expect(page.getByTestId("analysis-card-detail")).toBeVisible();
