@@ -295,6 +295,15 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     let unfinished = use_state(Vec::<UnfinishedRun>::new);
     let controller = use_state(|| None::<String>);
     let clock_offset_ms = use_state(|| 0f64);
+    let opened_card = use_state(|| None::<String>);
+    {
+        let selected_id = (*opened_card).clone();
+        use_effect_with(selected_id, move |_| {
+            hydrate_math();
+            || ()
+        });
+    }
+
 
     {
         let status = status.clone();
@@ -1356,7 +1365,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     }
                     <button class="btn btn-outline w-full" type="button" onclick={{let history_open=history_open.clone();Callback::from(move |_|history_open.set(true))}}>{"查看练习历史"}</button>
                     <div class="rounded-box border border-base-content/15 p-4 space-y-2">
-                        <p class="font-semibold">{"全局卡片 vcnt 公平调度"}</p>
+                        <p class="font-semibold">{"智能选卡 · 综合训练"}</p>
                         <p class="text-sm text-base-content/60">{"错题与知识点统一入队；按卡片虚拟次数全局选择20张，同篇5个不同题型。不设置题型保底或配额。"}</p>
                     </div>
                     <details class="rounded-box border border-base-content/15 bg-base-100/50 p-3" data-testid="analysis-user-prompt">
@@ -1390,30 +1399,89 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         </div>
                     </details>
                     if let Some(info)=(*status).clone(){
-                        <details class="rounded-box border border-base-content/15 p-3" data-testid="analysis-card-stats">
-                            <summary class="cursor-pointer font-semibold">{"卡片成绩明细"}</summary>
-                            <div class="mt-3 max-h-80 space-y-2 overflow-y-auto">
+                        <div class="grid grid-cols-3 gap-2" data-testid="analysis-answer-summary">
+                            <div class="rounded-box bg-base-200 p-3">
+                                <p class="text-xs text-base-content/60">{"累计作答"}</p>
+                                <p class="text-xl font-semibold" data-testid="analysis-total-answered">{info.answer_summary.answered_count}</p>
+                            </div>
+                            <div class="rounded-box bg-base-200 p-3">
+                                <p class="text-xs text-base-content/60">{"累计答对"}</p>
+                                <p class="text-xl font-semibold" data-testid="analysis-total-correct">{info.answer_summary.correct_count}</p>
+                            </div>
+                            <div class="rounded-box bg-base-200 p-3">
+                                <p class="text-xs text-base-content/60">{"总体正确率"}</p>
+                                <p class="text-xl font-semibold" data-testid="analysis-total-accuracy">
+                                    {if info.answer_summary.answered_count==0 {"未作答".to_owned()} else {
+                                        format!("{:.1}%",100.0*info.answer_summary.correct_count as f64/info.answer_summary.answered_count as f64)
+                                    }}
+                                </p>
+                            </div>
+                        </div>
+                        <details class="rounded-box border border-base-content/15 p-3" data-testid="analysis-weak-top10">
+                            <summary class="cursor-pointer font-semibold">{"薄弱卡片 Top 10"}</summary>
+                            <div class="mt-3 grid max-h-80 gap-2 overflow-y-auto" data-testid="analysis-weak-card-list">
                                 if info.card_stats.is_empty() {
-                                    <p class="text-sm text-base-content/60">{"暂无已同步的卡片调度记录"}</p>
+                                    <p class="text-sm text-base-content/60">{"还没有已作答的卡片"}</p>
                                 }
-                                {for info.card_stats.iter().map(|card|{
-                                    let accuracy = if card.answered_count==0 {
-                                        "未作答".to_owned()
-                                    } else {
-                                        format!("{:.1}%",100.0*card.correct_count as f64/card.answered_count as f64)
-                                    };
+                                {for info.card_stats.iter().enumerate().map(|(index, card)|{
+                                    let card_id = card.card_id.clone();
+                                    let opened_card = opened_card.clone();
+                                    let preview = card.front_markdown.lines().find(|line| !line.trim().is_empty())
+                                        .unwrap_or("未命名卡片").trim_start_matches('#').trim().to_owned();
+                                    let accuracy = format!("{:.1}%",
+                                        100.0*card.correct_count as f64/card.answered_count as f64);
                                     html!{
-                                        <div class="rounded-box bg-base-200 p-2 text-xs" key={card.card_id.clone()}>
-                                            <div class="font-medium">{format!("{} · {}",card.category,&card.card_id[..8.min(card.card_id.len())])}</div>
-                                            <p class="text-base-content/70">{format!("新出题 {} · 已答 {} · 正确 {} · 正确率 {} · vcnt {}",
-                                                card.selected_count,card.answered_count,card.correct_count,accuracy,card.vcnt)}</p>
-                                        </div>
+                                        <button type="button" key={card.card_id.clone()}
+                                            data-testid="analysis-weak-card-item"
+                                            class="flex w-full items-center gap-3 rounded-box bg-base-200 p-3 text-left hover:bg-base-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                                            onclick={Callback::from(move |_|opened_card.set(Some(card_id.clone())))}>
+                                            <span class="w-5 shrink-0 text-xs text-base-content/50">{format!("{}",index+1)}</span>
+                                            <span class="min-w-0 flex-1">
+                                                <span class="block truncate text-sm font-semibold">{preview}</span>
+                                                <span class="block text-xs text-base-content/60">
+                                                    {format!("{} · 作答 {} 次",card.category,card.answered_count)}
+                                                </span>
+                                            </span>
+                                            <span class="shrink-0 text-sm font-semibold">{accuracy}</span>
+                                            <span aria-hidden="true">{"›"}</span>
+                                        </button>
                                     }
                                 })}
                             </div>
+                            <p class="mt-2 text-xs text-base-content/60">{"只统计实际作答；历史重做计入，未作答不算错。"}</p>
                         </details>
                         <p class="text-sm text-base-content/65">{format!("出题引擎：{} · 每次主动出题均生成新材料和20道新题",
                             info.model.as_deref().unwrap_or("未配置"))}</p>
+                    }
+                    if let Some(card) = (*status).as_ref().and_then(|info| {
+                        (*opened_card).as_deref().and_then(|id| info.card_stats.iter().find(|card| card.card_id==id))
+                    }).cloned() {
+                        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3 sm:p-6"
+                            data-testid="analysis-card-detail" role="dialog" aria-modal="true" aria-label="Flashcard 卡片详情">
+                            <div class="flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-box bg-base-100 shadow-2xl">
+                                <div class="flex shrink-0 items-center justify-between gap-3 border-b border-base-content/10 p-3">
+                                    <p class="font-semibold">{format!("卡片详情 · {}",card.category)}</p>
+                                    <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-card-back"
+                                        onclick={{let opened_card=opened_card.clone();Callback::from(move |_|opened_card.set(None))}}>
+                                        {"← 返回"}
+                                    </button>
+                                </div>
+                                <div class="min-h-0 space-y-4 overflow-y-auto p-4">
+                                    <p class="text-sm text-base-content/65">
+                                        {format!("累计作答 {} 次 · 正确率 {:.1}%",card.answered_count,
+                                            100.0*card.correct_count as f64/card.answered_count as f64)}
+                                    </p>
+                                    <section class="rounded-box border border-base-content/15 p-3" data-testid="analysis-card-front">
+                                        <p class="mb-2 text-xs font-semibold text-base-content/60">{"Front"}</p>
+                                        <div class="study-markdown">{render_markdown(&card.front_markdown,&card.source_file)}</div>
+                                    </section>
+                                    <section class="rounded-box border border-base-content/15 p-3" data-testid="analysis-card-back-content">
+                                        <p class="mb-2 text-xs font-semibold text-base-content/60">{"Back"}</p>
+                                        <div class="study-markdown">{render_markdown(&card.back_markdown,&card.source_file)}</div>
+                                    </section>
+                                </div>
+                            </div>
+                        </div>
                     }
                     if let Some(p)=(*progress).clone(){
                         <div class="rounded-box bg-base-200 p-3 text-sm" data-testid="analysis-progress">

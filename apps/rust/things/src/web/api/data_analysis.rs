@@ -8,14 +8,22 @@ pub(crate) struct AnalysisStatus {
     pub model: Option<String>,
     pub preparing_job_id: Option<String>,
     #[serde(default)]
+    pub answer_summary: AnswerSummary,
+    #[serde(default)]
     pub card_stats: Vec<CardPerformance>,
+}
+#[derive(Clone, Debug, Default, Deserialize)]
+pub(crate) struct AnswerSummary {
+    pub answered_count: i64,
+    pub correct_count: i64,
 }
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct CardPerformance {
     pub card_id: String,
     pub category: String,
-    pub selected_count: i64,
-    pub vcnt: i64,
+    pub source_file: String,
+    pub front_markdown: String,
+    pub back_markdown: String,
     pub answered_count: i64,
     pub correct_count: i64,
 }
