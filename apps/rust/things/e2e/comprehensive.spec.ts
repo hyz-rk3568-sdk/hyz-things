@@ -10,7 +10,9 @@ test("comprehensive schedules globally without manual type selection", async ({ 
     let result: unknown = {};
     if (path.endsWith("/status")) {
       result = {configured:true,model:"mock-compatible-model",cached_sources:1,verified_groups:0,
-        available_skills:["乘积增长率"],preparing_job_id:null};
+        available_skills:["乘积增长率"],preparing_job_id:null,
+        card_stats:[{card_id:"019a31b7-8c42-7c16-a6d1-0c1f0f34c821",category:"基期量",selected_count:3,vcnt:3072,answered_count:2,correct_count:1},
+                    {card_id:"019a31b7-8c42-7c16-a6d1-0c1f0f34c822",category:"比重",selected_count:1,vcnt:1024,answered_count:0,correct_count:0}]};
     } else if (path.endsWith("/unfinished") || path.endsWith("/history")) {
       result = [];
     } else if (path.endsWith("/prepare") && route.request().method() === "POST") {
@@ -26,6 +28,9 @@ test("comprehensive schedules globally without manual type selection", async ({ 
   await expect(page.getByTestId("analysis-setup")).toContainText("全局卡片 vcnt 公平调度");
   await expect(page.getByTestId("analysis-skill-expand")).toHaveCount(0);
   await expect(page.getByTestId("analysis-start")).toBeEnabled();
+  await page.getByTestId("analysis-card-stats").getByText("卡片成绩明细").click();
+  await expect(page.getByTestId("analysis-card-stats")).toContainText("正确率 50.0%");
+  await expect(page.getByTestId("analysis-card-stats")).toContainText("未作答");
   await page.getByTestId("analysis-start").click();
   await expect.poll(() => prepareBody).toEqual({});
   await expect(page.getByTestId("analysis-ready")).toBeVisible();

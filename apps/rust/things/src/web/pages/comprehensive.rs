@@ -1390,6 +1390,28 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         </div>
                     </details>
                     if let Some(info)=(*status).clone(){
+                        <details class="rounded-box border border-base-content/15 p-3" data-testid="analysis-card-stats">
+                            <summary class="cursor-pointer font-semibold">{"卡片成绩明细"}</summary>
+                            <div class="mt-3 max-h-80 space-y-2 overflow-y-auto">
+                                if info.card_stats.is_empty() {
+                                    <p class="text-sm text-base-content/60">{"暂无已同步的卡片调度记录"}</p>
+                                }
+                                {for info.card_stats.iter().map(|card|{
+                                    let accuracy = if card.answered_count==0 {
+                                        "未作答".to_owned()
+                                    } else {
+                                        format!("{:.1}%",100.0*card.correct_count as f64/card.answered_count as f64)
+                                    };
+                                    html!{
+                                        <div class="rounded-box bg-base-200 p-2 text-xs" key={card.card_id.clone()}>
+                                            <div class="font-medium">{format!("{} · {}",card.category,&card.card_id[..8.min(card.card_id.len())])}</div>
+                                            <p class="text-base-content/70">{format!("新出题 {} · 已答 {} · 正确 {} · 正确率 {} · vcnt {}",
+                                                card.selected_count,card.answered_count,card.correct_count,accuracy,card.vcnt)}</p>
+                                        </div>
+                                    }
+                                })}
+                            </div>
+                        </details>
                         <p class="text-sm text-base-content/65">{format!("出题引擎：{} · 每次主动出题均生成新材料和20道新题",
                             info.model.as_deref().unwrap_or("未配置"))}</p>
                     }

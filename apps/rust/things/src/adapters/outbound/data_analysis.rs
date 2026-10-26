@@ -213,6 +213,16 @@ pub struct ComprehensiveHistoryEntry {
 }
 
 #[derive(Clone, Serialize)]
+pub struct CardPerformance {
+    pub card_id: String,
+    pub category: String,
+    pub selected_count: i64,
+    pub vcnt: i64,
+    pub answered_count: i64,
+    pub correct_count: i64,
+}
+
+#[derive(Clone, Serialize)]
 pub struct PrepareProgress {
     pub state: String,
     pub verified: usize,
@@ -516,7 +526,10 @@ fn plan_question_targets(
     let mut rng = CardRng::new(seed);
     let mut queues = BTreeMap::<String, Vec<CardCandidate>>::new();
     for card in cards {
-        queues.entry(card.category.clone()).or_default().push(card.clone());
+        queues
+            .entry(card.category.clone())
+            .or_default()
+            .push(card.clone());
     }
     if queues.len() < QUIZ_PER_GROUP {
         return Err("资料分析至少需要5个有效题型".into());
@@ -568,11 +581,15 @@ fn plan_question_targets(
     let plan = QuestionPlan {
         groups: std::array::from_fn(|slot| {
             rng.shuffle(&mut groups[slot]);
-            groups[slot].iter().enumerate().map(|(index, card)| CardTarget {
-                target_id: format!("g{}-q{}", slot + 1, index + 1),
-                card: card.clone(),
-                vcnt_increment: schedule.increment(&card.id),
-            }).collect()
+            groups[slot]
+                .iter()
+                .enumerate()
+                .map(|(index, card)| CardTarget {
+                    target_id: format!("g{}-q{}", slot + 1, index + 1),
+                    card: card.clone(),
+                    vcnt_increment: schedule.increment(&card.id),
+                })
+                .collect()
         }),
     };
     validate_question_plan(&plan)?;
@@ -689,6 +706,34 @@ impl DataAnalysisService {
     /// Read only newly generated papers, newest first. A replay copies its
     /// parent topics and must never count as an independent theme selection.
     /// Both unfinished and submitted originals count as recently used.
+    /// Diagnostic card-level statistics; only committed answers count.
+    pub async fn card_performance(&self) -> Result<Vec<CardPerformance>, String> {
+        let rows = sqlx::query(
+            "SELECT u.card_id,u.category,u.selected_count,u.vcnt,
+                    COALESCE(s.n,0) AS answered_count,
+                    COALESCE(s.c,0) AS correct_count
+             FROM data_analysis_card_usage u
+             JOIN flashcards f ON f.id=u.card_id AND f.active=1
+             LEFT JOIN (
+                SELECT r.card_id, COUNT(*) AS n, COALESCE(SUM(r.is_correct),0) AS c
+                FROM data_analysis_results r
+                JOIN data_analysis_runs run ON run.id=r.run_id
+                WHERE run.status='submitted' AND r.was_answered=1
+                  AND r.card_id IS NOT NULL
+                GROUP BY r.card_id
+             ) s ON s.card_id=u.card_id
+             ORDER BY u.category,u.vcnt,u.card_id"
+        ).fetch_all(&self.pool).await.map_err(as_error)?;
+        rows.into_iter().map(|row| Ok(CardPerformance {
+            card_id: row.try_get("card_id").map_err(as_error)?,
+            category: row.try_get("category").map_err(as_error)?,
+            selected_count: row.try_get("selected_count").map_err(as_error)?,
+            vcnt: row.try_get("vcnt").map_err(as_error)?,
+            answered_count: row.try_get("answered_count").map_err(as_error)?,
+            correct_count: row.try_get("correct_count").map_err(as_error)?,
+        })).collect()
+    }
+
     async fn recent_paper_themes(&self) -> Result<Vec<Vec<String>>, String> {
         let rows = sqlx::query(
             "SELECT groups_json FROM data_analysis_runs
@@ -718,9 +763,15 @@ impl DataAnalysisService {
     async fn load_card_schedule(&self, cards: &[CardCandidate]) -> Result<CardSchedule, String> {
         let mut tx = self.pool.begin().await.map_err(as_error)?;
         for card in cards {
-            sqlx::query("UPDATE data_analysis_card_usage SET category=? WHERE card_id=? AND category<>?")
-                .bind(&card.category).bind(&card.id).bind(&card.category)
-                .execute(&mut *tx).await.map_err(as_error)?;
+            sqlx::query(
+                "UPDATE data_analysis_card_usage SET category=? WHERE card_id=? AND category<>?",
+            )
+            .bind(&card.category)
+            .bind(&card.id)
+            .bind(&card.category)
+            .execute(&mut *tx)
+            .await
+            .map_err(as_error)?;
             sqlx::query(
                 "INSERT INTO data_analysis_card_usage(card_id,category,selected_count,fair_count,vcnt)
                  SELECT ?, ?, 0, 0, COALESCE((SELECT MIN(vcnt) FROM data_analysis_card_usage), 0)
@@ -731,21 +782,30 @@ impl DataAnalysisService {
         }
         let mut schedule = CardSchedule::default();
         for row in sqlx::query("SELECT card_id,vcnt FROM data_analysis_card_usage")
-            .fetch_all(&mut *tx).await.map_err(as_error)? {
-            schedule.cards.insert(row.try_get("card_id").map_err(as_error)?,
-                row.try_get("vcnt").map_err(as_error)?);
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(as_error)?
+        {
+            schedule.cards.insert(
+                row.try_get("card_id").map_err(as_error)?,
+                row.try_get("vcnt").map_err(as_error)?,
+            );
         }
         for row in sqlx::query(
             "SELECT r.card_id, COUNT(*) AS n, COALESCE(SUM(r.is_correct),0) AS c
              FROM data_analysis_results r
              JOIN data_analysis_runs run ON run.id=r.run_id
              WHERE run.status='submitted' AND r.was_answered=1 AND r.card_id IS NOT NULL
-             GROUP BY r.card_id"
-        ).fetch_all(&mut *tx).await.map_err(as_error)? {
+             GROUP BY r.card_id",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(as_error)?
+        {
             let id: String = row.try_get("card_id").map_err(as_error)?;
             let n: i64 = row.try_get("n").map_err(as_error)?;
             let c: i64 = row.try_get("c").map_err(as_error)?;
-            schedule.increments.insert(id, weighted_increment(n,c));
+            schedule.increments.insert(id, weighted_increment(n, c));
         }
         tx.commit().await.map_err(as_error)?;
         Ok(schedule)
@@ -799,12 +859,16 @@ impl DataAnalysisService {
             let updated = sqlx::query(
                 "UPDATE data_analysis_card_usage
                  SET selected_count=selected_count+1,vcnt=vcnt+?
-                 WHERE card_id=? AND category=? AND vcnt<=?"
+                 WHERE card_id=? AND category=? AND vcnt<=?",
             )
-            .bind(target.vcnt_increment).bind(&target.card.id).bind(&target.card.category)
-            .bind(i64::MAX-target.vcnt_increment)
-            .execute(&mut *tx).await.map_err(as_error)?;
-            if updated.rows_affected()!=1 {
+            .bind(target.vcnt_increment)
+            .bind(&target.card.id)
+            .bind(&target.card.category)
+            .bind(i64::MAX - target.vcnt_increment)
+            .execute(&mut *tx)
+            .await
+            .map_err(as_error)?;
+            if updated.rows_affected() != 1 {
                 return Err("卡片虚拟计数变更失败或溢出，整卷入库已回滚".into());
             }
         }
@@ -969,11 +1033,7 @@ impl DataAnalysisService {
     pub async fn job(&self, id: &str) -> Option<PrepareProgress> {
         self.jobs.lock().await.get(id).cloned()
     }
-    async fn generate(
-        &self,
-        job: &str,
-        user_prompt: &str,
-    ) -> Result<String, String> {
+    async fn generate(&self, job: &str, user_prompt: &str) -> Result<String, String> {
         self.set_progress(job, "selecting", 0, "正在规划参考真题的统计主题", None)
             .await;
         // Keep a single randomized, balanced quota plan for the entire job,
@@ -981,7 +1041,7 @@ impl DataAnalysisService {
         let seed = Uuid::parse_str(job).map_err(as_error)?.as_u128() as u64;
         let cards = self.card_candidates().await?;
         let schedule = self.load_card_schedule(&cards).await?;
-        let plan = Arc::new(plan_question_targets(&cards,seed,&schedule)?);
+        let plan = Arc::new(plan_question_targets(&cards, seed, &schedule)?);
         let recent_papers = self.recent_paper_themes().await?;
         let theme_seed =
             Uuid::parse_str(job).map_err(as_error)?.as_u128() as u64 ^ 0x9e3779b97f4a7c15;
@@ -1509,19 +1569,26 @@ impl DataAnalysisService {
         // Acquire a write reservation before reading; prevents a concurrently
         // saved answer from being graded against a stale read snapshot.
         sqlx::query("UPDATE data_analysis_runs SET status=status WHERE id=?")
-            .bind(id).execute(&mut *tx).await.map_err(as_error)?;
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(as_error)?;
         let row = sqlx::query(
-            "SELECT groups_json,status,controller_token FROM data_analysis_runs WHERE id=?"
-        ).bind(id).fetch_optional(&mut *tx).await.map_err(as_error)?
-            .ok_or("训练不存在")?;
+            "SELECT groups_json,status,controller_token FROM data_analysis_runs WHERE id=?",
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(as_error)?
+        .ok_or("训练不存在")?;
         let current_token: Option<String> = row.try_get("controller_token").map_err(as_error)?;
         if current_token.as_deref() != token {
             return Err("训练已由其他设备接管".into());
         }
         let status: String = row.try_get("status").map_err(as_error)?;
-        let groups: Vec<QuestionGroup> = serde_json::from_str(
-            &row.try_get::<String,_>("groups_json").map_err(as_error)?
-        ).map_err(as_error)?;
+        let groups: Vec<QuestionGroup> =
+            serde_json::from_str(&row.try_get::<String, _>("groups_json").map_err(as_error)?)
+                .map_err(as_error)?;
         if status != "submitted" {
             if status != "active" {
                 return Err("试卷尚未开始".into());
@@ -1529,29 +1596,45 @@ impl DataAnalysisService {
             let updated = sqlx::query(
                 "UPDATE data_analysis_runs SET status='submitted',ended_at_ms=?
                  WHERE id=? AND status='active'
-                   AND ((controller_token IS NULL AND ? IS NULL) OR controller_token=?)"
-            ).bind(now_ms()).bind(id).bind(token).bind(token)
-            .execute(&mut *tx).await.map_err(as_error)?;
-            if updated.rows_affected()!=1 {
+                   AND ((controller_token IS NULL AND ? IS NULL) OR controller_token=?)",
+            )
+            .bind(now_ms())
+            .bind(id)
+            .bind(token)
+            .bind(token)
+            .execute(&mut *tx)
+            .await
+            .map_err(as_error)?;
+            if updated.rows_affected() != 1 {
                 return Err("训练已由其他设备接管或已交卷".into());
             }
         }
-        let raw: String = sqlx::query_scalar(
-            "SELECT answers_json FROM data_analysis_runs WHERE id=?"
-        ).bind(id).fetch_one(&mut *tx).await.map_err(as_error)?;
-        let answers: Vec<Option<usize>>=serde_json::from_str(&raw).map_err(as_error)?;
-        let result=grade_run(id,groups,answers)?;
+        let raw: String =
+            sqlx::query_scalar("SELECT answers_json FROM data_analysis_runs WHERE id=?")
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(as_error)?;
+        let answers: Vec<Option<usize>> = serde_json::from_str(&raw).map_err(as_error)?;
+        let result = grade_run(id, groups, answers)?;
         if status != "submitted" {
             for q in &result.questions {
                 sqlx::query(
                     "INSERT INTO data_analysis_results
                      (run_id,question_no,topic,skill,is_correct,elapsed_ms,card_id,was_answered)
-                     VALUES (?,?,?,?,?,?,?,?)"
+                     VALUES (?,?,?,?,?,?,?,?)",
                 )
-                .bind(id).bind(q.number as i64).bind(&q.topic).bind(&q.skill)
-                .bind((q.chosen==Some(q.correct_index)) as i64).bind(0i64)
-                .bind(&q.card_id).bind(q.chosen.is_some() as i64)
-                .execute(&mut *tx).await.map_err(as_error)?;
+                .bind(id)
+                .bind(q.number as i64)
+                .bind(&q.topic)
+                .bind(&q.skill)
+                .bind((q.chosen == Some(q.correct_index)) as i64)
+                .bind(0i64)
+                .bind(&q.card_id)
+                .bind(q.chosen.is_some() as i64)
+                .execute(&mut *tx)
+                .await
+                .map_err(as_error)?;
             }
         }
         tx.commit().await.map_err(as_error)?;
@@ -1763,44 +1846,90 @@ mod tests {
         }
     }
     fn ample_pool() -> Vec<CardCandidate> {
-        (0..12).flat_map(|i| {
-            let cat=format!("category{i}");
-            (0..5).map(move |n| candidate(&cat,n,
-                if n<2 {SourceKind::Wrong} else {SourceKind::Knowledge}))
-        }).collect()
+        (0..12)
+            .flat_map(|i| {
+                let cat = format!("category{i}");
+                (0..5).map(move |n| {
+                    candidate(
+                        &cat,
+                        n,
+                        if n < 2 {
+                            SourceKind::Wrong
+                        } else {
+                            SourceKind::Knowledge
+                        },
+                    )
+                })
+            })
+            .collect()
     }
     #[test]
     fn global_schedule_selects_lowest_card_cost_without_type_quotas() {
         let cards = ample_pool();
-        let mut schedule=CardSchedule::default();
+        let mut schedule = CardSchedule::default();
         for card in &cards {
             schedule.cards.insert(card.id.clone(), 10_000);
         }
-        for n in 0..4 {schedule.cards.insert(format!("category0-{n}"),n as i64);}
-        let a=plan_question_targets(&cards,123,&schedule).unwrap();
-        let b=plan_question_targets(&cards,123,&schedule).unwrap();
+        for n in 0..4 {
+            schedule.cards.insert(format!("category0-{n}"), n as i64);
+        }
+        let a = plan_question_targets(&cards, 123, &schedule).unwrap();
+        let b = plan_question_targets(&cards, 123, &schedule).unwrap();
         validate_question_plan(&a).unwrap();
-        assert_eq!(a.groups.iter().flatten().map(|t|&t.card.id).collect::<Vec<_>>(),
-                   b.groups.iter().flatten().map(|t|&t.card.id).collect::<Vec<_>>());
-        assert_eq!(a.groups.iter().flatten().filter(|t|t.card.category=="category0").count(),4);
-        assert_eq!(a.groups.iter().flatten().filter(|t|t.card.category=="category0" && t.card.source_kind==SourceKind::Wrong).count(),2);
+        assert_eq!(
+            a.groups
+                .iter()
+                .flatten()
+                .map(|t| &t.card.id)
+                .collect::<Vec<_>>(),
+            b.groups
+                .iter()
+                .flatten()
+                .map(|t| &t.card.id)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            a.groups
+                .iter()
+                .flatten()
+                .filter(|t| t.card.category == "category0")
+                .count(),
+            4
+        );
+        assert_eq!(
+            a.groups
+                .iter()
+                .flatten()
+                .filter(
+                    |t| t.card.category == "category0" && t.card.source_kind == SourceKind::Wrong
+                )
+                .count(),
+            2
+        );
     }
     #[test]
     fn global_schedule_rejects_infeasible_pools() {
-        let cards=(0..4).flat_map(|i|(0..10).map(move |n|
-            candidate(&format!("cat{i}"),n,SourceKind::Knowledge))).collect::<Vec<_>>();
-        assert!(plan_question_targets(&cards,1,&CardSchedule::default()).is_err());
-        let cards=ample_pool();
-        let plan=plan_question_targets(&cards,123,&CardSchedule::default()).unwrap();
-        assert_eq!(plan.groups.iter().map(Vec::len).sum::<usize>(),20);
-        assert!(plan.groups.iter().all(|g|
-            g.iter().map(|t|&t.card.category).collect::<HashSet<_>>().len()==5));
+        let cards = (0..4)
+            .flat_map(|i| {
+                (0..10).map(move |n| candidate(&format!("cat{i}"), n, SourceKind::Knowledge))
+            })
+            .collect::<Vec<_>>();
+        assert!(plan_question_targets(&cards, 1, &CardSchedule::default()).is_err());
+        let cards = ample_pool();
+        let plan = plan_question_targets(&cards, 123, &CardSchedule::default()).unwrap();
+        assert_eq!(plan.groups.iter().map(Vec::len).sum::<usize>(), 20);
+        assert!(plan.groups.iter().all(|g| g
+            .iter()
+            .map(|t| &t.card.category)
+            .collect::<HashSet<_>>()
+            .len()
+            == 5));
     }
     #[test]
     fn weighted_vcnt_favors_weak_cards() {
-        assert_eq!(weighted_increment(0,0),1024);
-        assert_eq!(weighted_increment(5,0),838);
-        assert_eq!(weighted_increment(5,5),1317);
+        assert_eq!(weighted_increment(0, 0), 1024);
+        assert_eq!(weighted_increment(5, 0), 838);
+        assert_eq!(weighted_increment(5, 5), 1317);
     }
 
     fn test_prepared_groups(plan: &QuestionPlan) -> Vec<QuestionGroup> {
@@ -1835,83 +1964,133 @@ mod tests {
 
     #[tokio::test]
     async fn original_paper_increases_vcnt_but_replay_does_not() {
-        let pool=sqlx::sqlite::SqlitePoolOptions::new().max_connections(1)
-            .connect("sqlite::memory:").await.unwrap();
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
         sqlx::migrate!("./migrations").run(&pool).await.unwrap();
-        let service=DataAnalysisService::new(pool.clone(),None).unwrap();
-        let cards=ample_pool();
-        let schedule=service.load_card_schedule(&cards).await.unwrap();
-        let plan=plan_question_targets(&cards,9,&schedule).unwrap();
-        let id=Uuid::now_v7().to_string();
-        service.persist_original_run(&id,&test_prepared_groups(&plan),&plan).await.unwrap();
-        let chosen=&plan.groups[0][0].card.id;
-        let row:(i64,i64)=sqlx::query_as(
-            "SELECT selected_count,vcnt FROM data_analysis_card_usage WHERE card_id=?"
-        ).bind(chosen).fetch_one(&pool).await.unwrap();
-        assert_eq!(row,(1,1024));
+        let service = DataAnalysisService::new(pool.clone(), None).unwrap();
+        let cards = ample_pool();
+        let schedule = service.load_card_schedule(&cards).await.unwrap();
+        let plan = plan_question_targets(&cards, 9, &schedule).unwrap();
+        let id = Uuid::now_v7().to_string();
+        service
+            .persist_original_run(&id, &test_prepared_groups(&plan), &plan)
+            .await
+            .unwrap();
+        let chosen = &plan.groups[0][0].card.id;
+        let row: (i64, i64) = sqlx::query_as(
+            "SELECT selected_count,vcnt FROM data_analysis_card_usage WHERE card_id=?",
+        )
+        .bind(chosen)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row, (1, 1024));
         sqlx::query("UPDATE data_analysis_runs SET status='submitted',ended_at_ms=? WHERE id=?")
-            .bind(now_ms()).bind(&id).execute(&pool).await.unwrap();
-        let replay=service.retry(&id).await.unwrap();
-        assert_ne!(replay,id);
-        let after:(i64,i64)=sqlx::query_as(
-            "SELECT selected_count,vcnt FROM data_analysis_card_usage WHERE card_id=?"
-        ).bind(chosen).fetch_one(&pool).await.unwrap();
-        assert_eq!(after,row);
-        let mut bad=plan.clone();
-        bad.groups[3][1].card.id="missing-card".into();
-        let other=Uuid::now_v7().to_string();
-        assert!(service.persist_original_run(&other,&test_prepared_groups(&bad),&bad).await.is_err());
-        let count:i64=sqlx::query_scalar("SELECT COUNT(*) FROM data_analysis_runs WHERE id=?")
-            .bind(other).fetch_one(&pool).await.unwrap();
-        assert_eq!(count,0);
+            .bind(now_ms())
+            .bind(&id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let replay = service.retry(&id).await.unwrap();
+        assert_ne!(replay, id);
+        let after: (i64, i64) = sqlx::query_as(
+            "SELECT selected_count,vcnt FROM data_analysis_card_usage WHERE card_id=?",
+        )
+        .bind(chosen)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(after, row);
+        let mut bad = plan.clone();
+        bad.groups[3][1].card.id = "missing-card".into();
+        let other = Uuid::now_v7().to_string();
+        assert!(service
+            .persist_original_run(&other, &test_prepared_groups(&bad), &bad)
+            .await
+            .is_err());
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM data_analysis_runs WHERE id=?")
+            .bind(other)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
     }
     #[tokio::test]
     async fn new_cards_inherit_global_minimum_and_keep_vcnt_after_type_move() {
-        let pool=sqlx::sqlite::SqlitePoolOptions::new().max_connections(1)
-            .connect("sqlite::memory:").await.unwrap();
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
         sqlx::migrate!("./migrations").run(&pool).await.unwrap();
-        let service=DataAnalysisService::new(pool.clone(),None).unwrap();
-        let mut cards=vec![candidate("a",0,SourceKind::Knowledge),candidate("b",0,SourceKind::Wrong)];
+        let service = DataAnalysisService::new(pool.clone(), None).unwrap();
+        let mut cards = vec![
+            candidate("a", 0, SourceKind::Knowledge),
+            candidate("b", 0, SourceKind::Wrong),
+        ];
         service.load_card_schedule(&cards).await.unwrap();
         sqlx::query("UPDATE data_analysis_card_usage SET vcnt=5000 WHERE card_id='a-0'")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query("UPDATE data_analysis_card_usage SET vcnt=6000 WHERE card_id='b-0'")
-            .execute(&pool).await.unwrap();
-        cards.push(candidate("c",0,SourceKind::Knowledge));
-        cards[0].category="c".into();
-        let snapshot=service.load_card_schedule(&cards).await.unwrap();
-        assert_eq!(snapshot.card("c-0"),5000);
-        assert_eq!(snapshot.card("a-0"),5000);
+            .execute(&pool)
+            .await
+            .unwrap();
+        cards.push(candidate("c", 0, SourceKind::Knowledge));
+        cards[0].category = "c".into();
+        let snapshot = service.load_card_schedule(&cards).await.unwrap();
+        assert_eq!(snapshot.card("c-0"), 5000);
+        assert_eq!(snapshot.card("a-0"), 5000);
     }
     #[tokio::test]
     async fn only_answered_submitted_questions_affect_card_weight() {
-        let pool=sqlx::sqlite::SqlitePoolOptions::new().max_connections(1)
-            .connect("sqlite::memory:").await.unwrap();
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
         sqlx::migrate!("./migrations").run(&pool).await.unwrap();
-        let service=DataAnalysisService::new(pool.clone(),None).unwrap();
-        let cards=ample_pool();
+        let service = DataAnalysisService::new(pool.clone(), None).unwrap();
+        let cards = ample_pool();
         service.load_card_schedule(&cards).await.unwrap();
-        let plan=plan_question_targets(&cards,9,&CardSchedule::default()).unwrap();
-        let groups=test_prepared_groups(&plan);
-        let id=Uuid::now_v7().to_string();
-        service.persist_original_run(&id,&groups,&plan).await.unwrap();
+        let plan = plan_question_targets(&cards, 9, &CardSchedule::default()).unwrap();
+        let groups = test_prepared_groups(&plan);
+        let id = Uuid::now_v7().to_string();
+        service
+            .persist_original_run(&id, &groups, &plan)
+            .await
+            .unwrap();
         sqlx::query("UPDATE data_analysis_runs SET status='active',answers_json=json_set(answers_json,'$[0]',1) WHERE id=?")
             .bind(&id).execute(&pool).await.unwrap();
         service.submit(&id).await.unwrap();
         service.submit(&id).await.unwrap();
-        let rows:i64=sqlx::query_scalar(
-            "SELECT COUNT(*) FROM data_analysis_results WHERE run_id=? AND was_answered=1"
-        ).bind(&id).fetch_one(&pool).await.unwrap();
-        assert_eq!(rows,1);
-        let changed=service.load_card_schedule(&cards).await.unwrap();
-        assert_eq!(changed.increment(&plan.groups[0][0].card.id),weighted_increment(1,0));
-        assert_eq!(changed.increment(&plan.groups[0][1].card.id),1024);
-        let replay=service.retry(&id).await.unwrap();
+        let rows: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM data_analysis_results WHERE run_id=? AND was_answered=1",
+        )
+        .bind(&id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows, 1);
+        let changed = service.load_card_schedule(&cards).await.unwrap();
+        assert_eq!(
+            changed.increment(&plan.groups[0][0].card.id),
+            weighted_increment(1, 0)
+        );
+        assert_eq!(changed.increment(&plan.groups[0][1].card.id), 1024);
+        let replay = service.retry(&id).await.unwrap();
         sqlx::query("UPDATE data_analysis_runs SET status='active',answers_json=json_set(answers_json,'$[0]',1) WHERE id=?")
             .bind(&replay).execute(&pool).await.unwrap();
         service.submit(&replay).await.unwrap();
-        let after=service.load_card_schedule(&cards).await.unwrap();
-        assert_eq!(after.increment(&plan.groups[0][0].card.id),weighted_increment(2,0));
+        let after = service.load_card_schedule(&cards).await.unwrap();
+        assert_eq!(
+            after.increment(&plan.groups[0][0].card.id),
+            weighted_increment(2, 0)
+        );
     }
 
     #[test]
@@ -2162,9 +2341,12 @@ mod tests {
 
     #[test]
     fn all_knowledge_cards_are_valid_global_candidates() {
-        let cards=(0..5).flat_map(|i|(0..4).map(move |n|
-            candidate(&format!("cat{i}"),n,SourceKind::Knowledge))).collect::<Vec<_>>();
-        let plan=plan_question_targets(&cards,4123,&CardSchedule::default()).unwrap();
+        let cards = (0..5)
+            .flat_map(|i| {
+                (0..4).map(move |n| candidate(&format!("cat{i}"), n, SourceKind::Knowledge))
+            })
+            .collect::<Vec<_>>();
+        let plan = plan_question_targets(&cards, 4123, &CardSchedule::default()).unwrap();
         validate_question_plan(&plan).unwrap();
     }
 

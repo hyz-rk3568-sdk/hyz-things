@@ -1,6 +1,6 @@
 //! Admin-only API for AI-assisted comprehensive data-analysis training.
 use super::*;
-use crate::adapters::outbound::data_analysis::DataAnalysisService;
+use crate::adapters::outbound::data_analysis::{CardPerformance, DataAnalysisService};
 
 fn unavailable() -> Response {
     error_json(
@@ -35,6 +35,7 @@ struct StatusBody {
     cached_sources: i64,
     verified_groups: i64,
     preparing_job_id: Option<String>,
+    card_stats: Vec<CardPerformance>,
 }
 pub(super) async fn status(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if let Err(response) = authorize_sensitive_read(&state, &headers).await {
@@ -47,12 +48,17 @@ pub(super) async fn status(State(state): State<AppState>, headers: HeaderMap) ->
         Ok(counts) => counts,
         Err(_) => return unavailable(),
     };
+    let card_stats = match service.card_performance().await {
+        Ok(stats) => stats,
+        Err(_) => return unavailable(),
+    };
     Json(StatusBody {
         configured: service.configured_model().is_some(),
         model: service.configured_model(),
         cached_sources,
         verified_groups,
         preparing_job_id: service.preparing_job().await,
+        card_stats,
     })
     .into_response()
 }
