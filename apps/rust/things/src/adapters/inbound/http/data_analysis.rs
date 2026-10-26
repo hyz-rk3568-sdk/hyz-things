@@ -1,6 +1,8 @@
 //! Admin-only API for AI-assisted comprehensive data-analysis training.
 use super::*;
-use crate::adapters::outbound::data_analysis::{AnswerSummary, CardPerformance, DataAnalysisService};
+use crate::adapters::outbound::data_analysis::{
+    AnswerSummary, CardPerformance, DataAnalysisService,
+};
 
 fn unavailable() -> Response {
     error_json(
