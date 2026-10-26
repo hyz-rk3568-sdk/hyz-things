@@ -1,6 +1,6 @@
 //! Admin-only API for AI-assisted comprehensive data-analysis training.
 use super::*;
-use crate::adapters::outbound::data_analysis::DataAnalysisService;
+use crate::adapters::outbound::data_analysis::{CardPerformance, DataAnalysisService};
 
 fn unavailable() -> Response {
     error_json(
@@ -34,8 +34,8 @@ struct StatusBody {
     model: Option<String>,
     cached_sources: i64,
     verified_groups: i64,
-    available_skills: Vec<String>,
     preparing_job_id: Option<String>,
+    card_stats: Vec<CardPerformance>,
 }
 pub(super) async fn status(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if let Err(response) = authorize_sensitive_read(&state, &headers).await {
@@ -48,13 +48,17 @@ pub(super) async fn status(State(state): State<AppState>, headers: HeaderMap) ->
         Ok(counts) => counts,
         Err(_) => return unavailable(),
     };
+    let card_stats = match service.card_performance().await {
+        Ok(stats) => stats,
+        Err(_) => return unavailable(),
+    };
     Json(StatusBody {
         configured: service.configured_model().is_some(),
         model: service.configured_model(),
         cached_sources,
         verified_groups,
-        available_skills: service.available_skills().await.unwrap_or_default(),
         preparing_job_id: service.preparing_job().await,
+        card_stats,
     })
     .into_response()
 }
@@ -100,14 +104,12 @@ struct PrepareBody {
     job_id: String,
 }
 #[derive(Deserialize)]
-pub(super) struct ComprehensivePrepareRequest {
-    #[serde(default)]
-    manual_skills: Vec<String>,
-}
+#[serde(deny_unknown_fields)]
+pub(super) struct ComprehensivePrepareRequest {}
 pub(super) async fn prepare(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(body): Json<ComprehensivePrepareRequest>,
+    Json(_body): Json<ComprehensivePrepareRequest>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_control(&state, &headers).await {
         return response;
@@ -115,7 +117,7 @@ pub(super) async fn prepare(
     let Some(service) = get(&state) else {
         return unavailable();
     };
-    match service.prepare(body.manual_skills).await {
+    match service.prepare().await {
         Ok(job_id) => Json(PrepareBody { job_id }).into_response(),
         Err(reason) if reason.contains("正在执行") => error_json(
             StatusCode::CONFLICT,

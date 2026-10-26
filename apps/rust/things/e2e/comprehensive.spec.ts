@@ -3,18 +3,20 @@ import { expectNoHorizontalOverflow, resetHarness } from "./fixtures";
 
 test.beforeEach(async ({ request }) => { await resetHarness(request); });
 
-test("comprehensive generates with zero selected wrong categories", async ({ page }) => {
-  let submittedSkills: string[] | null = null;
+test("comprehensive schedules globally without manual type selection", async ({ page }) => {
+  let prepareBody: unknown = null;
   await page.route("**/api/v1/study/data-analysis/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     let result: unknown = {};
     if (path.endsWith("/status")) {
       result = {configured:true,model:"mock-compatible-model",cached_sources:1,verified_groups:0,
-        available_skills:["乘积增长率"],preparing_job_id:null};
+        available_skills:["乘积增长率"],preparing_job_id:null,
+        card_stats:[{card_id:"019a31b7-8c42-7c16-a6d1-0c1f0f34c821",category:"基期量",selected_count:3,vcnt:3072,answered_count:2,correct_count:1},
+                    {card_id:"019a31b7-8c42-7c16-a6d1-0c1f0f34c822",category:"比重",selected_count:1,vcnt:1024,answered_count:0,correct_count:0}]};
     } else if (path.endsWith("/unfinished") || path.endsWith("/history")) {
       result = [];
     } else if (path.endsWith("/prepare") && route.request().method() === "POST") {
-      submittedSkills = (route.request().postDataJSON() as {manual_skills:string[]}).manual_skills;
+      prepareBody = route.request().postDataJSON();
       result = {job_id:"zero-selection-task"};
     } else if (path.endsWith("/prepare/zero-selection-task")) {
       result = {state:"ready",verified:20,message:"出题完成",run_id:"zero-selection-run"};
@@ -23,11 +25,14 @@ test("comprehensive generates with zero selected wrong categories", async ({ pag
   });
   await page.goto("/#/study/training");
   await page.getByTestId("training-mode-comprehensive").click();
-  await expect(page.getByTestId("analysis-setup")).toContainText("错题保底分类（可选）");
-  await expect(page.getByTestId("analysis-setup")).toContainText("可不选");
+  await expect(page.getByTestId("analysis-setup")).toContainText("全局卡片 vcnt 公平调度");
+  await expect(page.getByTestId("analysis-skill-expand")).toHaveCount(0);
   await expect(page.getByTestId("analysis-start")).toBeEnabled();
+  await page.getByTestId("analysis-card-stats").getByText("卡片成绩明细").click();
+  await expect(page.getByTestId("analysis-card-stats")).toContainText("正确率 50.0%");
+  await expect(page.getByTestId("analysis-card-stats")).toContainText("未作答");
   await page.getByTestId("analysis-start").click();
-  await expect.poll(() => submittedSkills).toEqual([]);
+  await expect.poll(() => prepareBody).toEqual({});
   await expect(page.getByTestId("analysis-ready")).toBeVisible();
 });
 
@@ -39,7 +44,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   let submittedResult:unknown={};
   const retryAnswers:(number|null)[]=Array(20).fill(null);
   let repeatCreated=0;
-  let manualSkillsSubmitted:string[]=[];
+  let prepareBody:unknown=null;
   const topics = ["宏观经济","农业","工业能源","交通物流与服务"];
   const groups = Array.from({length:4},(_,g)=>({
     material: {
@@ -67,7 +72,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
     } else if (path.endsWith("/status")) {
       result={configured:true,model:"mock-compatible-model",cached_sources:1,verified_groups:4,available_skills:["乘积增长率","混合增长率"],preparing_job_id:null};
     } else if (path.endsWith("/prepare") && route.request().method()==="POST") {
-      manualSkillsSubmitted=(route.request().postDataJSON() as {manual_skills:string[]}).manual_skills;
+      prepareBody=route.request().postDataJSON();
       result={job_id:"fixture-task"};
     } else if (path.endsWith("/prepare/fixture-task")) {
       result={state:"ready",verified:20,message:"已完成20题校验",run_id:"fixture-run"};
@@ -129,11 +134,10 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(page.getByTestId("analysis-setup")).toContainText("20分钟");
   await expect(page.getByTestId("analysis-setup")).toContainText("mock-compatible-model");
   await expect(page.getByTestId("analysis-start")).toBeEnabled();
-  await page.getByTestId("analysis-skill-expand").click();
-  await page.getByTestId("analysis-skill-options").getByRole("button",{name:"乘积增长率"}).click();
+  await expect(page.getByTestId("analysis-skill-options")).toHaveCount(0);
   await expect(page.getByTestId("analysis-start")).toBeEnabled();
   await page.getByTestId("analysis-start").click();
-  expect(manualSkillsSubmitted).toEqual(["乘积增长率"]);
+  expect(prepareBody).toEqual({});
   await expect(page.getByTestId("analysis-ready")).toBeVisible();
   await expect(page.getByTestId("analysis-clock")).toHaveCount(0);
   await page.getByTestId("analysis-enter").click();
@@ -397,8 +401,7 @@ test("AI job survives leaving training; ready paper is untimed until explicit en
   await page.goto("/#/study/training");
   await page.getByTestId("training-mode-comprehensive").click();
   await expect(page.getByTestId("analysis-start")).toBeEnabled();
-  await page.getByTestId("analysis-skill-expand").click();
-  await page.getByTestId("analysis-skill-options").getByRole("button",{name:"乘积增长率"}).click();
+  await expect(page.getByTestId("analysis-skill-expand")).toHaveCount(0);
   await expect(page.getByTestId("analysis-start")).toBeEnabled();
   await page.getByTestId("analysis-start").click();
   await expect(page.getByTestId("analysis-start")).toBeDisabled();
