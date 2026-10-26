@@ -345,6 +345,7 @@ struct CardTarget {
     target_id: String,
     card: CardCandidate,
     vcnt_increment: i64,
+    expected_vcnt: i64,
 }
 
 #[derive(Clone, Debug)]
@@ -588,6 +589,7 @@ fn plan_question_targets(
                     target_id: format!("g{}-q{}", slot + 1, index + 1),
                     card: card.clone(),
                     vcnt_increment: schedule.increment(&card.id),
+                    expected_vcnt: schedule.card(&card.id),
                 })
                 .collect()
         }),
@@ -722,16 +724,23 @@ impl DataAnalysisService {
                   AND r.card_id IS NOT NULL
                 GROUP BY r.card_id
              ) s ON s.card_id=u.card_id
-             ORDER BY u.category,u.vcnt,u.card_id"
-        ).fetch_all(&self.pool).await.map_err(as_error)?;
-        rows.into_iter().map(|row| Ok(CardPerformance {
-            card_id: row.try_get("card_id").map_err(as_error)?,
-            category: row.try_get("category").map_err(as_error)?,
-            selected_count: row.try_get("selected_count").map_err(as_error)?,
-            vcnt: row.try_get("vcnt").map_err(as_error)?,
-            answered_count: row.try_get("answered_count").map_err(as_error)?,
-            correct_count: row.try_get("correct_count").map_err(as_error)?,
-        })).collect()
+             ORDER BY u.category,u.vcnt,u.card_id",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(as_error)?;
+        rows.into_iter()
+            .map(|row| {
+                Ok(CardPerformance {
+                    card_id: row.try_get("card_id").map_err(as_error)?,
+                    category: row.try_get("category").map_err(as_error)?,
+                    selected_count: row.try_get("selected_count").map_err(as_error)?,
+                    vcnt: row.try_get("vcnt").map_err(as_error)?,
+                    answered_count: row.try_get("answered_count").map_err(as_error)?,
+                    correct_count: row.try_get("correct_count").map_err(as_error)?,
+                })
+            })
+            .collect()
     }
 
     async fn recent_paper_themes(&self) -> Result<Vec<Vec<String>>, String> {
@@ -859,11 +868,12 @@ impl DataAnalysisService {
             let updated = sqlx::query(
                 "UPDATE data_analysis_card_usage
                  SET selected_count=selected_count+1,vcnt=vcnt+?
-                 WHERE card_id=? AND category=? AND vcnt<=?",
+                 WHERE card_id=? AND category=? AND vcnt=? AND vcnt<=?",
             )
             .bind(target.vcnt_increment)
             .bind(&target.card.id)
             .bind(&target.card.category)
+            .bind(target.expected_vcnt)
             .bind(i64::MAX - target.vcnt_increment)
             .execute(&mut *tx)
             .await
@@ -1988,6 +1998,13 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(row, (1, 1024));
+        // A concurrently committed paper invalidates the frozen vcnt snapshot.
+        let stale_run = Uuid::now_v7().to_string();
+        assert!(service
+            .persist_original_run(&stale_run, &test_prepared_groups(&plan), &plan)
+            .await
+            .is_err());
+
         sqlx::query("UPDATE data_analysis_runs SET status='submitted',ended_at_ms=? WHERE id=?")
             .bind(now_ms())
             .bind(&id)
