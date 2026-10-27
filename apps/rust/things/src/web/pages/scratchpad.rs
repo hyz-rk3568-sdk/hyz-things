@@ -274,6 +274,33 @@ fn paint_content_stroke(
     let _ = context.translate(bounds.x - bounds.scroll_x, bounds.y - bounds.scroll_y);
     paint_stroke(context, canvas, points, false);
     let _ = context.restore();
+    setup_pen(context);
+}
+
+// Live pointermove paints only the new segment, matching history replay
+// without repeatedly stamping a new dot at the previous sample.
+fn paint_content_segment(
+    context: &CanvasRenderingContext2d,
+    canvas: &HtmlCanvasElement,
+    pane: InkPane,
+    from: InkPoint,
+    to: InkPoint,
+) {
+    let Some(bounds) = pane_viewport(canvas, pane) else {
+        return;
+    };
+    let _ = context.save();
+    context.begin_path();
+    context.rect(bounds.x, bounds.y, bounds.width, bounds.height);
+    context.clip();
+    let _ = context.translate(bounds.x - bounds.scroll_x, bounds.y - bounds.scroll_y);
+    setup_pen(context);
+    context.begin_path();
+    context.move_to(from.0, from.1);
+    context.line_to(to.0, to.1);
+    context.stroke();
+    let _ = context.restore();
+    setup_pen(context);
 }
 
 fn redraw_scratch(canvas: &HtmlCanvasElement, actions: &[InkAction], responsive: bool) {
@@ -672,7 +699,7 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
             let previous = points.last().copied().unwrap_or(point);
             points.push(point);
             if let Some(pane) = pane {
-                paint_content_stroke(&context, &canvas, pane, &[previous, point]);
+                paint_content_segment(&context, &canvas, pane, previous, point);
             } else {
                 let (x, y) = canvas_point(point, &canvas, false);
                 context.line_to(x, y);
