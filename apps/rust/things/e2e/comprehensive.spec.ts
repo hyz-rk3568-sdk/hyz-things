@@ -1,7 +1,172 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { expectNoHorizontalOverflow, resetHarness } from "./fixtures";
 
 test.beforeEach(async ({ request }) => { await resetHarness(request); });
+
+async function openHeldScrollWorkspace(page: Page) {
+  const started = Date.now();
+  const groups = Array.from({length:4},(_,group)=>({
+    material:{topic:`材料 ${group+1}`,text:"某项业务量同比增长15.2%。\n\n".repeat(100)},
+    questions:Array.from({length:5},(_,index)=>({
+      question:`第${group*5+index+1}题`,options:["甲","乙","丙","丁"],skill:"基期量",
+    })),
+  }));
+  const run = {id:"held-scroll-run",status:"active",current_question:0,
+    started_at_ms:started,deadline_at_ms:started+1200000,paused_remaining_ms:null,
+    duration_seconds:1200,groups,answers:Array(20).fill(null)};
+  await page.emulateMedia({reducedMotion:"no-preference"});
+  await page.route("**/api/v1/study/data-analysis/**",async route=>{
+    const path = new URL(route.request().url()).pathname;
+    let result: unknown = {};
+    if (path.endsWith("/status")) {
+      result={configured:true,model:"mock-compatible-model",cached_sources:1,
+        verified_groups:4,available_skills:[],preparing_job_id:null};
+    } else if (path.endsWith("/unfinished") || path.endsWith("/history")) {
+      result=[];
+    } else if (path.endsWith("/prepare")) {
+      result={job_id:"held-scroll-job"};
+    } else if (path.endsWith("/prepare/held-scroll-job")) {
+      result={state:"ready",verified:20,message:"完成",run_id:run.id};
+    } else if (path.endsWith("/claim")) {
+      result={run,control_token:"held-scroll-token"};
+    } else if (path.endsWith(`/runs/${run.id}`)) {
+      result=run;
+    }
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(result)});
+  });
+  await page.goto("/#/study/training");
+  await page.getByTestId("training-mode-comprehensive").click();
+  await page.getByTestId("analysis-start").click();
+  await page.getByTestId("analysis-enter").click();
+  await page.getByTestId("calculation-scratchpad-toggle").click();
+}
+
+async function openFrozenScrollWorkspace(page: Page) {
+  await page.clock.install();
+  await openHeldScrollWorkspace(page);
+  await page.clock.pauseAt((await page.evaluate(()=>Date.now()))+1000);
+}
+
+test("material scroll repeats after 300ms and stops without a release click step", async ({page})=>{
+  await page.setViewportSize({width:1180,height:820});
+  await openFrozenScrollWorkspace(page);
+  const passage=page.getByTestId("analysis-material-scroll");
+  for (const [name,start,direction] of [["材料向下滚动",0,1],["材料向上滚动",320,-1]] as const) {
+    await passage.evaluate((element,top)=>{element.scrollTop=top;},start);
+    await page.clock.runFor(20);
+    const button=page.getByRole("button",{name,exact:true});
+    await expect(button).toBeEnabled();
+    await button.hover();
+    await page.mouse.down();
+    await page.clock.runFor(299);
+    expect(await passage.evaluate(el=>el.scrollTop)).toBe(start);
+    await page.clock.runFor(1);
+    expect(await passage.evaluate(el=>el.scrollTop)).toBe(start+32*direction);
+    await page.clock.runFor(240);
+    const held=await passage.evaluate(el=>el.scrollTop);
+    expect((held-start)*direction).toBeGreaterThanOrEqual(96);
+    expect(Math.abs(held-start)%32).toBe(0);
+    await page.mouse.up();
+    await page.clock.runFor(500);
+    expect(await passage.evaluate(el=>el.scrollTop)).toBe(held);
+    await button.click();
+    expect(await passage.evaluate(el=>el.scrollTop)).toBe(held+32*direction);
+  }
+});
+
+test("Pencil and touch holds cancel safely without selection or a long-press menu",async({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  await openFrozenScrollWorkspace(page);
+  const passage=page.getByTestId("analysis-material-scroll");
+  const down=page.getByRole("button",{name:"材料向下滚动",exact:true});
+  await expect(down).toHaveCSS("user-select","none");
+  await expect(down).toHaveCSS("-webkit-user-select","none");
+  await expect(down).toHaveCSS("touch-action","none");
+  expect(await down.evaluate(el=>el.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,cancelable:true})))).toBe(false);
+  for (const pointerType of ["pen","touch"]) {
+    for (const duration of [100,380]) {
+      for (const reason of ["pointercancel","lostpointercapture","blur","visibilitychange","window-pointerup"]) {
+        await passage.evaluate(el=>{el.scrollTop=0;});
+        await page.clock.runFor(20);
+        const pointer={pointerId:41,pointerType,isPrimary:true,button:0,buttons:1};
+        await down.dispatchEvent("pointerdown",pointer);
+        await page.clock.runFor(duration);
+        const before=await passage.evaluate(el=>el.scrollTop);
+        expect(before).toBe(duration<300?0:64);
+        if (reason==="blur") {
+          await page.evaluate(()=>window.dispatchEvent(new Event("blur")));
+        } else if (reason==="visibilitychange") {
+          await page.evaluate(()=>{
+            Object.defineProperty(document,"hidden",{configurable:true,value:true});
+            document.dispatchEvent(new Event("visibilitychange"));
+            Reflect.deleteProperty(document,"hidden");
+          });
+        } else if (reason==="window-pointerup") {
+          await page.evaluate(pointer=>window.dispatchEvent(new PointerEvent("pointerup",{...pointer,buttons:0})),pointer);
+        } else {
+          await down.dispatchEvent(reason,pointer);
+        }
+        await page.clock.runFor(500);
+        expect(await passage.evaluate(el=>el.scrollTop),`${pointerType} ${duration}ms ${reason}`).toBe(before);
+      }
+    }
+  }
+  await down.focus();
+  const before=await passage.evaluate(el=>el.scrollTop);
+  await page.keyboard.press("Enter");
+  expect(await passage.evaluate(el=>el.scrollTop)).toBe(before+32);
+  await page.keyboard.press("Space");
+  expect(await passage.evaluate(el=>el.scrollTop)).toBe(before+64);
+});
+
+test("material scroll holds stop at edges, on closing ink, changing question and leaving training",async({page})=>{
+  await page.setViewportSize({width:1180,height:820});
+  await openFrozenScrollWorkspace(page);
+  const passage=page.getByTestId("analysis-material-scroll");
+  const down=page.getByRole("button",{name:"材料向下滚动",exact:true});
+  const up=page.getByRole("button",{name:"材料向上滚动",exact:true});
+  const pointer={pointerId:41,pointerType:"pen",isPrimary:true,button:0,buttons:1};
+  for (const [button,edge] of [[down,"bottom"],[up,"top"]] as const) {
+    await passage.evaluate((el,edge)=>{el.scrollTop=edge==="bottom"?el.scrollHeight-el.clientHeight-16:16;},edge);
+    await page.clock.runFor(20);
+    await button.dispatchEvent("pointerdown",pointer);
+    await page.clock.runFor(1000);
+    await expect(button).toBeDisabled();
+    const atEdge=await passage.evaluate(el=>el.scrollTop);
+    await passage.evaluate((el,edge)=>{el.scrollTop=edge==="bottom"?el.scrollHeight-el.clientHeight-96:96;},edge);
+    await page.clock.runFor(20);
+    await expect(button).toBeEnabled();
+    const restored=await passage.evaluate(el=>el.scrollTop);
+    expect(restored).not.toBe(atEdge);
+    await page.clock.runFor(500);
+    expect(await passage.evaluate(el=>el.scrollTop)).toBe(restored);
+    await button.dispatchEvent("pointerup",{...pointer,buttons:0});
+  }
+  const toggle=page.getByTestId("calculation-scratchpad-toggle");
+  for (const action of ["close","question","leave"]) {
+    await passage.evaluate(el=>{el.scrollTop=0;});
+    await page.clock.runFor(20);
+    await down.dispatchEvent("pointerdown",pointer);
+    await page.clock.runFor(380);
+    expect(await passage.evaluate(el=>el.scrollTop)).toBe(64);
+    const pane=await passage.elementHandle();
+    if (!pane) throw new Error("material pane missing");
+    if (action==="close") {
+      await toggle.click();
+      await expect(down).toHaveCount(0);
+    } else if (action==="question") {
+      await page.getByRole("button",{name:"下一题",exact:true}).click();
+      await expect(page.getByTestId("analysis-question")).toContainText("第2题");
+    } else {
+      await page.evaluate(()=>{location.hash="#/study";});
+      await expect(page.getByTestId("study-summary")).toBeVisible();
+    }
+    const stopped=await pane.evaluate(el=>el.scrollTop);
+    await page.clock.runFor(500);
+    expect(await pane.evaluate(el=>el.scrollTop)).toBe(stopped);
+    if (action!=="leave") await toggle.click();
+  }
+});
 
 test("all scheduled cards stay height-bounded and scroll under the portal CSP", async ({ page }) => {
   await page.route("**/api/v1/study/data-analysis/**", async (route) => {
@@ -411,6 +576,22 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(page.getByTestId("analysis-result")).toBeVisible();
   await expect(page.getByTestId("analysis-result")).toContainText("1 / 20");
   await expect(page.getByTestId("analysis-result")).toContainText("第1题");
+  // Answer review uses the same held-scroll controls as the active paper.
+  const reviewToggle=page.getByTestId("analysis-result").getByTestId("calculation-scratchpad-toggle");
+  await page.clock.install();
+  await page.clock.pauseAt((await page.evaluate(()=>Date.now()))+1000);
+  await reviewToggle.click();
+  await passage.evaluate(el=>{el.scrollTop=0;});
+  await page.clock.runFor(20);
+  await scrollDown.hover();
+  await page.mouse.down();
+  await page.clock.runFor(380);
+  expect(await passage.evaluate(el=>el.scrollTop)).toBe(64);
+  await page.mouse.up();
+  await page.clock.runFor(500);
+  expect(await passage.evaluate(el=>el.scrollTop)).toBe(64);
+  await reviewToggle.click();
+  await page.clock.resume();
   // Review reuses the exact reading/answer card: right is readonly with
   // the correct answer green, wrong selection red, and explanations scrollable.
   await expect(page.getByTestId("analysis-shared-workspace")).toBeVisible();
