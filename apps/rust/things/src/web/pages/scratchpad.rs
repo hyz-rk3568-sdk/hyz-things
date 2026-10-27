@@ -276,7 +276,21 @@ fn paint_content_stroke(
     context.rect(bounds.x, bounds.y, bounds.width, bounds.height);
     context.clip();
     let _ = context.translate(bounds.x - bounds.scroll_x, bounds.y - bounds.scroll_y);
-    paint_stroke(context, canvas, points, false);
+    // Replaying saved strokes must use the exact same segments as live input,
+    // otherwise undo/redo changes pixels where line caps overlap.
+    setup_pen(context);
+    if let Some(&first) = points.first() {
+        context.begin_path();
+        context.move_to(first.0, first.1);
+        context.line_to(first.0 + 0.1, first.1 + 0.1);
+        context.stroke();
+    }
+    for segment in points.windows(2) {
+        context.begin_path();
+        context.move_to(segment[0].0, segment[0].1);
+        context.line_to(segment[1].0, segment[1].1);
+        context.stroke();
+    }
     let _ = context.restore();
     setup_pen(context);
 }
@@ -372,6 +386,10 @@ pub(crate) struct InkOverlayProps {
     pub(crate) persist_key: String,
     #[prop_or_default]
     pub(crate) responsive: bool,
+    // Content-relative pen coordinates are specific to comprehensive training.
+    // Other responsive ink overlays retain their normalized screen coordinates.
+    #[prop_or_default]
+    pub(crate) scroll_linked: bool,
     pub(crate) children: Children,
 }
 
@@ -512,15 +530,15 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
     {
         let canvas_ref = canvas_ref.clone();
         let strokes = strokes.clone();
-        let responsive = props.responsive;
-        use_effect_with((responsive, *enabled), move |(_, opened)| {
+        let scroll_linked = props.scroll_linked;
+        use_effect_with((scroll_linked, *enabled), move |(_, opened)| {
             let handler = Closure::<dyn FnMut(web_sys::Event)>::new(move |_| {
                 if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
                     redraw_state(&canvas, &strokes.borrow(), true);
                 }
             });
             let mut listeners = Vec::new();
-            if responsive && *opened {
+            if scroll_linked && *opened {
                 if let Some(document) = web_sys::window().and_then(|w| w.document()) {
                     for selector in [
                         "[data-testid='analysis-material-scroll']",
@@ -613,6 +631,7 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
         let canvas_ref = canvas_ref.clone();
         let strokes = strokes.clone();
         let responsive = props.responsive;
+        let scroll_linked = props.scroll_linked;
         let revision = revision.clone();
         Callback::from(move |event: PointerEvent| {
             if event.pointer_type() == "mouse" && event.button() != 0 {
@@ -634,7 +653,7 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
                     revision.set((*revision).wrapping_add(1));
                 }
             }
-            let (point, pane) = if responsive {
+            let (point, pane) = if scroll_linked {
                 let Some(pane) = pane_at_event(&canvas, &event) else {
                     return;
                 };
@@ -643,7 +662,7 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
                 };
                 (point, Some(pane))
             } else {
-                let Some(point) = scratch_point(&event, &canvas, false) else {
+                let Some(point) = scratch_point(&event, &canvas, responsive) else {
                     return;
                 };
                 (point, None)
@@ -660,7 +679,7 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
             if let Some(pane) = pane {
                 paint_content_stroke(&context, &canvas, pane, &[point]);
             } else {
-                let (x, y) = canvas_point(point, &canvas, false);
+                let (x, y) = canvas_point(point, &canvas, responsive);
                 setup_pen(&context);
                 context.begin_path();
                 context.move_to(x, y);
@@ -673,6 +692,7 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
         let canvas_ref = canvas_ref.clone();
         let strokes = strokes.clone();
         let responsive = props.responsive;
+        let scroll_linked = props.scroll_linked;
         Callback::from(move |event: PointerEvent| {
             let mut state = strokes.borrow_mut();
             let pane = state.active_pane;
@@ -685,13 +705,13 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
             let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() else {
                 return;
             };
-            let point = if responsive {
+            let point = if scroll_linked {
                 let Some(pane) = pane else {
                     return;
                 };
                 pane_point(&canvas, &event, pane)
             } else {
-                scratch_point(&event, &canvas, false)
+                scratch_point(&event, &canvas, responsive)
             };
             let Some(point) = point else {
                 return;
@@ -705,7 +725,7 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
             if let Some(pane) = pane {
                 paint_content_segment(&context, &canvas, pane, previous, point);
             } else {
-                let (x, y) = canvas_point(point, &canvas, false);
+                let (x, y) = canvas_point(point, &canvas, responsive);
                 context.line_to(x, y);
                 context.stroke();
                 context.begin_path();
