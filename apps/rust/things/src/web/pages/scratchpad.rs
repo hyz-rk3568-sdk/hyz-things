@@ -42,9 +42,18 @@ fn save_persistent_ink(scope: &str, actions: &[InkAction]) {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+enum InkPane {
+    Material,
+    Question,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 enum InkAction {
+    // Keep legacy screen-relative ink readable in existing saved sessions.
     Stroke(Vec<InkPoint>),
+    // New strokes are stored in each pane's scrollable content coordinates.
+    ContentStroke { pane: InkPane, points: Vec<InkPoint> },
     Clear,
 }
 
@@ -53,13 +62,18 @@ struct InkState {
     history: Vec<InkAction>,
     redo: Vec<InkAction>,
     active: Option<(i32, Vec<InkPoint>)>,
+    active_pane: Option<InkPane>,
 }
 
 impl InkState {
     fn commit_active(&mut self) -> bool {
         if let Some((_, points)) = self.active.take() {
+            let pane = self.active_pane.take();
             if !points.is_empty() {
-                self.history.push(InkAction::Stroke(points));
+                self.history.push(match pane {
+                    Some(pane) => InkAction::ContentStroke { pane, points },
+                    None => InkAction::Stroke(points),
+                });
                 self.redo.clear();
                 return true;
             }
@@ -88,7 +102,7 @@ impl InkState {
             .iter()
             .rev()
             .take_while(|action| !matches!(action, InkAction::Clear))
-            .any(|action| matches!(action, InkAction::Stroke(_)))
+            .any(|action| matches!(action, InkAction::Stroke(_) | InkAction::ContentStroke { .. }))
     }
 
     fn clear(&mut self) -> bool {
@@ -123,6 +137,66 @@ fn setup_pen(context: &CanvasRenderingContext2d) {
     context.set_line_join("round");
     context.set_line_width(INK_LINE_WIDTH);
     context.set_stroke_style_str(INK_COLOR);
+}
+
+// Locate both scrollable content viewports relative to the single, fixed
+// workspace canvas. Stored ink is in *content* CSS pixels, not viewport pixels.
+#[derive(Clone, Copy)]
+struct PaneViewport {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    scroll_x: f64,
+    scroll_y: f64,
+}
+
+fn pane_viewport(canvas: &HtmlCanvasElement, pane: InkPane) -> Option<PaneViewport> {
+    let document = web_sys::window()?.document()?;
+    let selector = match pane {
+        InkPane::Material => "[data-testid='analysis-material-scroll']",
+        InkPane::Question => "[data-testid='analysis-question']",
+    };
+    let element = document.query_selector(selector).ok()??;
+    let canvas_rect = canvas.get_bounding_client_rect();
+    let rect = element.get_bounding_client_rect();
+    Some(PaneViewport {
+        x: rect.left() - canvas_rect.left(),
+        y: rect.top() - canvas_rect.top(),
+        width: rect.width(),
+        height: rect.height(),
+        scroll_x: element.scroll_left() as f64,
+        scroll_y: element.scroll_top() as f64,
+    })
+}
+
+fn pane_at_event(canvas: &HtmlCanvasElement, event: &PointerEvent) -> Option<InkPane> {
+    let rect = canvas.get_bounding_client_rect();
+    let x = event.client_x() as f64 - rect.left();
+    let y = event.client_y() as f64 - rect.top();
+    [InkPane::Material, InkPane::Question]
+        .into_iter()
+        .find(|pane| {
+            pane_viewport(canvas, *pane).is_some_and(|bounds| {
+                x >= bounds.x
+                    && x < bounds.x + bounds.width
+                    && y >= bounds.y
+                    && y < bounds.y + bounds.height
+            })
+        })
+}
+
+fn pane_point(
+    canvas: &HtmlCanvasElement,
+    event: &PointerEvent,
+    pane: InkPane,
+) -> Option<InkPoint> {
+    let bounds = pane_viewport(canvas, pane)?;
+    let rect = canvas.get_bounding_client_rect();
+    Some((
+        event.client_x() as f64 - rect.left() - bounds.x + bounds.scroll_x,
+        event.client_y() as f64 - rect.top() - bounds.y + bounds.scroll_y,
+    ))
 }
 
 fn canvas_point(point: InkPoint, canvas: &HtmlCanvasElement, responsive: bool) -> InkPoint {
@@ -182,6 +256,26 @@ fn paint_stroke(
     }
 }
 
+// Clip each stroke to its own pane. Both panes can scroll independently
+// without ink escaping into the fixed header, the other pane or the toolbar.
+fn paint_content_stroke(
+    context: &CanvasRenderingContext2d,
+    canvas: &HtmlCanvasElement,
+    pane: InkPane,
+    points: &[InkPoint],
+) {
+    let Some(bounds) = pane_viewport(canvas, pane) else {
+        return;
+    };
+    let _ = context.save();
+    context.begin_path();
+    context.rect(bounds.x, bounds.y, bounds.width, bounds.height);
+    context.clip();
+    let _ = context.translate(bounds.x - bounds.scroll_x, bounds.y - bounds.scroll_y);
+    paint_stroke(context, canvas, points, false);
+    let _ = context.restore();
+}
+
 fn redraw_scratch(canvas: &HtmlCanvasElement, actions: &[InkAction], responsive: bool) {
     if responsive {
         let _ = prepare_canvas(canvas, true);
@@ -193,6 +287,9 @@ fn redraw_scratch(canvas: &HtmlCanvasElement, actions: &[InkAction], responsive:
     for action in actions {
         match action {
             InkAction::Stroke(points) => paint_stroke(&context, canvas, points, responsive),
+            InkAction::ContentStroke { pane, points } => {
+                paint_content_stroke(&context, canvas, *pane, points);
+            }
             InkAction::Clear => {
                 scratch_clear(canvas);
                 let _ = prepare_canvas(canvas, responsive);
@@ -201,8 +298,8 @@ fn redraw_scratch(canvas: &HtmlCanvasElement, actions: &[InkAction], responsive:
     }
 }
 
-// The iPad workspace stores normalized points, but paints in CSS px; the
-// existing calculation workspace retains its legacy 900x450 coordinates.
+// Legacy iPad ink was normalized to the entire workspace; new iPad strokes
+// use pane_point() above. Calculation training keeps its 900x450 coordinates.
 fn scratch_point(
     event: &PointerEvent,
     canvas: &HtmlCanvasElement,
@@ -224,6 +321,17 @@ fn scratch_point(
             event.offset_y() as f64 * SCRATCH_HEIGHT as f64 / height as f64,
         )
     })
+}
+
+fn redraw_state(canvas: &HtmlCanvasElement, state: &InkState, responsive: bool) {
+    redraw_scratch(canvas, &state.history, responsive);
+    if responsive {
+        if let (Some(pane), Some((_, points))) = (state.active_pane, state.active.as_ref()) {
+            if let Some(context) = prepare_canvas(canvas, true) {
+                paint_content_stroke(&context, canvas, pane, points);
+            }
+        }
+    }
 }
 
 #[derive(Properties, PartialEq)]
@@ -305,7 +413,7 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
                 ..InkState::default()
             };
             if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                redraw_scratch(&canvas, &strokes.borrow().history, responsive);
+                redraw_state(&canvas, &strokes.borrow(), responsive);
             }
             enabled.set(false);
             revision.set(0);
@@ -329,7 +437,7 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
         use_effect_with(*enabled, move |opened| {
             if *opened {
                 if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                    redraw_scratch(&canvas, &strokes.borrow().history, responsive);
+                    redraw_state(&canvas, &strokes.borrow(), responsive);
                 }
             }
             || ()
@@ -344,7 +452,7 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
             let window = web_sys::window();
             let handler = Closure::<dyn FnMut(web_sys::Event)>::new(move |_| {
                 if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                    redraw_scratch(&canvas, &strokes.borrow().history, responsive);
+                    redraw_state(&canvas, &strokes.borrow(), responsive);
                 }
             });
             if responsive {
@@ -363,6 +471,50 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
                             handler.as_ref().unchecked_ref(),
                         );
                     }
+                }
+            }
+        });
+    }
+
+    // Scroll while the pencil overlay is open: redraw at the new content offset
+    // without changing pen history or triggering a Yew rerender.
+    {
+        let canvas_ref = canvas_ref.clone();
+        let strokes = strokes.clone();
+        let responsive = props.responsive;
+        use_effect_with((responsive, *enabled), move |(_, opened)| {
+            let handler = Closure::<dyn FnMut(web_sys::Event)>::new(move |_| {
+                if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
+                    redraw_state(&canvas, &strokes.borrow(), true);
+                }
+            });
+            let mut listeners = Vec::new();
+            if responsive && *opened {
+                if let Some(document) = web_sys::window().and_then(|w| w.document()) {
+                    for selector in [
+                        "[data-testid='analysis-material-scroll']",
+                        "[data-testid='analysis-question']",
+                    ] {
+                        if let Ok(Some(element)) = document.query_selector(selector) {
+                            if element
+                                .add_event_listener_with_callback(
+                                    "scroll",
+                                    handler.as_ref().unchecked_ref(),
+                                )
+                                .is_ok()
+                            {
+                                listeners.push(element);
+                            }
+                        }
+                    }
+                }
+            }
+            move || {
+                for element in listeners {
+                    let _ = element.remove_event_listener_with_callback(
+                        "scroll",
+                        handler.as_ref().unchecked_ref(),
+                    );
                 }
             }
         });
@@ -451,23 +603,39 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
                     revision.set((*revision).wrapping_add(1));
                 }
             }
-            let Some((x, y)) = scratch_point(&event, &canvas, responsive) else {
-                return;
+            let (point, pane) = if responsive {
+                let Some(pane) = pane_at_event(&canvas, &event) else {
+                    return;
+                };
+                let Some(point) = pane_point(&canvas, &event, pane) else {
+                    return;
+                };
+                (point, Some(pane))
+            } else {
+                let Some(point) = scratch_point(&event, &canvas, false) else {
+                    return;
+                };
+                (point, None)
             };
             let Some(context) = prepare_canvas(&canvas, responsive) else {
                 return;
             };
             event.prevent_default();
-            state.active = Some((event.pointer_id(), vec![(x, y)]));
-            let (x, y) = canvas_point((x, y), &canvas, responsive);
+            state.active_pane = pane;
+            state.active = Some((event.pointer_id(), vec![point]));
             if event.pointer_type() != "pen" {
                 let _ = canvas.set_pointer_capture(event.pointer_id());
             }
-            setup_pen(&context);
-            context.begin_path();
-            context.move_to(x, y);
-            context.line_to(x + 0.1, y + 0.1);
-            context.stroke();
+            if let Some(pane) = pane {
+                paint_content_stroke(&context, &canvas, pane, &[point]);
+            } else {
+                let (x, y) = canvas_point(point, &canvas, false);
+                setup_pen(&context);
+                context.begin_path();
+                context.move_to(x, y);
+                context.line_to(x + 0.1, y + 0.1);
+                context.stroke();
+            }
         })
     };
     let on_move = {
@@ -476,6 +644,7 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
         let responsive = props.responsive;
         Callback::from(move |event: PointerEvent| {
             let mut state = strokes.borrow_mut();
+            let pane = state.active_pane;
             let Some((id, points)) = state.active.as_mut() else {
                 return;
             };
@@ -485,19 +654,32 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
             let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() else {
                 return;
             };
-            let Some((x, y)) = scratch_point(&event, &canvas, responsive) else {
+            let point = if responsive {
+                let Some(pane) = pane else {
+                    return;
+                };
+                pane_point(&canvas, &event, pane)
+            } else {
+                scratch_point(&event, &canvas, false)
+            };
+            let Some(point) = point else {
                 return;
             };
             let Some(context) = prepare_canvas(&canvas, responsive) else {
                 return;
             };
             event.prevent_default();
-            points.push((x, y));
-            let (x, y) = canvas_point((x, y), &canvas, responsive);
-            context.line_to(x, y);
-            context.stroke();
-            context.begin_path();
-            context.move_to(x, y);
+            let previous = points.last().copied().unwrap_or(point);
+            points.push(point);
+            if let Some(pane) = pane {
+                paint_content_stroke(&context, &canvas, pane, &[previous, point]);
+            } else {
+                let (x, y) = canvas_point(point, &canvas, false);
+                context.line_to(x, y);
+                context.stroke();
+                context.begin_path();
+                context.move_to(x, y);
+            }
         })
     };
     let on_end = {
