@@ -1141,7 +1141,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     </div>
                 </header>
                 <div class="min-h-0 flex-1">
-                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",review_id,index)} responsive={true}>
+                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",review_id,index)} responsive={true} scroll_linked={true}>
                         <AnalysisPanes material={score.materials[group_index].clone()} question={review_question} />
                     </InkOverlay>
                 </div>
@@ -1320,7 +1320,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     </div>
                 </header>
                 <div class="min-h-0 flex-1">
-                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",active.id,index)} responsive={true}>
+                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",active.id,index)} responsive={true} scroll_linked={true}>
                         <AnalysisPanes material={group.material.clone()} question={question_content} />
                     </InkOverlay>
                 </div>
