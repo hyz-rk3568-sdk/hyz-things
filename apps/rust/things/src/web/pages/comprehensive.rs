@@ -38,8 +38,8 @@ fn material_scroll_edges(element: &web_sys::HtmlElement) -> MaterialScrollEdges 
     }
 }
 
-// The scroll distance follows the *visible material pane*, not fixed pixels
-// or the full window height. Keep controls outside scrollable content.
+// Match the material's `leading-8` (2rem = 32 CSS px) so each click
+// advances exactly one rendered text line. Keep controls outside scrollable content.
 // In stacked layouts, leave space for the expanded top-right ink toolbar
 // so the separate material scroll buttons stay clickable.
 #[function_component(AnalysisPanes)]
@@ -95,17 +95,17 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
             }
         });
     }
-    let scroll_by_third = |direction: f64| {
+    let scroll_by_line = |direction: f64| {
         let passage = passage.clone();
         Callback::from(move |_: MouseEvent| {
             if let Some(element) = passage.cast::<web_sys::HtmlElement>() {
-                let distance = element.client_height() as f64 * direction / 3.0;
+                let distance = 32.0 * direction;
                 element.scroll_by_with_x_and_y(0.0, distance);
             }
         })
     };
-    let scroll_up = scroll_by_third(-1.0);
-    let scroll_down = scroll_by_third(1.0);
+    let scroll_up = scroll_by_line(-1.0);
+    let scroll_down = scroll_by_line(1.0);
 
     html! {
         <div class="grid h-full min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-2 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:grid-rows-1"
@@ -118,8 +118,8 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
                     </div>
                     if scratchpad_open {
                         <div class="relative z-30 mr-48 flex shrink-0 gap-1 lg:mr-0" role="group" aria-label="材料滚动">
-                            <button type="button" class="btn btn-ghost btn-sm px-2" aria-label="材料向上滚动" title="向上滚动 1/3 可视区域" disabled={!scroll_edges.can_scroll_up} onclick={scroll_up}>{"↑"}</button>
-                            <button type="button" class="btn btn-ghost btn-sm px-2" aria-label="材料向下滚动" title="向下滚动 1/3 可视区域" disabled={!scroll_edges.can_scroll_down} onclick={scroll_down}>{"↓"}</button>
+                            <button type="button" class="btn btn-ghost btn-sm px-2" aria-label="材料向上滚动" title="向上滚动一行" disabled={!scroll_edges.can_scroll_up} onclick={scroll_up}>{"↑"}</button>
+                            <button type="button" class="btn btn-ghost btn-sm px-2" aria-label="材料向下滚动" title="向下滚动一行" disabled={!scroll_edges.can_scroll_down} onclick={scroll_down}>{"↓"}</button>
                         </div>
                     }
                 </div>
@@ -1141,7 +1141,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     </div>
                 </header>
                 <div class="min-h-0 flex-1">
-                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",review_id,index)} responsive={true}>
+                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",review_id,index)} responsive={true} scroll_linked={true}>
                         <AnalysisPanes material={score.materials[group_index].clone()} question={review_question} />
                     </InkOverlay>
                 </div>
@@ -1320,7 +1320,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     </div>
                 </header>
                 <div class="min-h-0 flex-1">
-                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",active.id,index)} responsive={true}>
+                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",active.id,index)} responsive={true} scroll_linked={true}>
                         <AnalysisPanes material={group.material.clone()} question={question_content} />
                     </InkOverlay>
                 </div>
