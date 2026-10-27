@@ -295,14 +295,14 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   const scrollInfo=await passage.evaluate(el=>({height:el.clientHeight,total:el.scrollHeight}));
   expect(scrollInfo.total).toBeGreaterThan(scrollInfo.height);
   const beforeFrame=await page.getByTestId("analysis-shared-workspace").boundingBox();
-  // Each click moves one third of the material pane's actual visible height.
-  await page.getByRole("button",{name:"材料向下滚动"}).click();
-  await expect.poll(()=>passage.evaluate(el=>el.scrollTop)).toBeGreaterThan(scrollInfo.height*0.28);
-  await expect.poll(()=>passage.evaluate(el=>el.scrollTop)).toBeLessThan(scrollInfo.height*0.38);
+  // Each click advances one 32px rendered material line, regardless of pane height.
+  await scrollDown.click();
+  await expect.poll(()=>passage.evaluate(el=>el.scrollTop)).toBeGreaterThan(29);
+  await expect.poll(()=>passage.evaluate(el=>el.scrollTop)).toBeLessThan(35);
   await expect(scrollUp).toBeEnabled();
   await expect(scrollDown).toBeEnabled();
   await scrollUp.click();
-  await expect.poll(()=>passage.evaluate(el=>el.scrollTop)).toBeLessThan(scrollInfo.height*0.04);
+  await expect.poll(()=>passage.evaluate(el=>el.scrollTop)).toBeLessThan(3);
   await expect(scrollUp).toBeDisabled();
   await expect(scrollDown).toBeEnabled();
   await passage.evaluate(el=>{el.scrollTop=el.scrollHeight;});
@@ -342,6 +342,14 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   expect(afterUndo).not.toEqual(marked);
   await page.getByTestId("calculation-scratchpad-redo").click();
   expect(await canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL())).toEqual(marked);
+  // Material ink is anchored to text content: shifting its scroll position
+  // changes the drawing, and scrolling back restores its original placement.
+  await scrollDown.click();
+  await expect.poll(()=>passage.evaluate(el=>el.scrollTop)).toBeGreaterThan(29);
+  await expect.poll(()=>canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL())).not.toEqual(marked);
+  await scrollUp.click();
+  await expect.poll(()=>passage.evaluate(el=>el.scrollTop)).toBeLessThan(3);
+  await expect.poll(()=>canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL())).toEqual(marked);
   await toggle.click();
   await expect(surface.getByTestId("calculation-scratchpad-toolbar")).toHaveCount(0);
   await expect(toggle).toHaveAttribute("aria-label", "开启草稿");
@@ -361,12 +369,11 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   expect(portraitQuestion!.y+portraitQuestion!.height).toBeLessThanOrEqual(430);
   expect(await page.getByTestId("analysis-question").evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);
   const shortPane=page.getByTestId("analysis-material-scroll");
-  const shortHeight=await shortPane.evaluate(el=>el.clientHeight);
   await toggle.click();
   await expect(scrollControls).toBeVisible();
   await page.getByRole("button",{name:"材料向下滚动"}).click();
-  await expect.poll(()=>shortPane.evaluate(el=>el.scrollTop)).toBeGreaterThan(shortHeight*0.28);
-  await expect.poll(()=>shortPane.evaluate(el=>el.scrollTop)).toBeLessThan(shortHeight*0.38);
+  await expect.poll(()=>shortPane.evaluate(el=>el.scrollTop)).toBeGreaterThan(29);
+  await expect.poll(()=>shortPane.evaluate(el=>el.scrollTop)).toBeLessThan(35);
   await toggle.click();
   await expect(scrollControls).toBeHidden();
   await page.setViewportSize({width:390,height:844});
