@@ -31,86 +31,8 @@ env:
   RUST_BACKTRACE: "1"
 
 jobs:
-  static:
-    name: Static checks
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Check committed diff
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git diff --check "origin/${{ github.base_ref }}...HEAD"
-          elif git rev-parse HEAD^ >/dev/null 2>&1; then
-            git diff --check HEAD^ HEAD
-          else
-            git diff --check
-          fi
-
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: apps/rust/things/package-lock.json
-
-      - name: Validate capability Playwright suite layout
-        run: python3 apps/rust/things/tools/check-e2e-suites.py
-
-      - name: Run source and configuration checks
-        run: make check-static
-
-  contract:
-    name: Contract fmt/test/clippy
-    needs: static
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust 1.88
-        shell: bash
-        run: |
-          rustup toolchain install 1.88.0 \
-            --profile minimal \
-            --component rustfmt \
-            --component clippy
-          rustup default 1.88.0
-          rustc --version
-          cargo --version
-
-      - name: Cache Cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            apps/rust/contract/target
-          key: ${{ runner.os }}-contract-1.88-${{ hashFiles('apps/rust/contract/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-contract-1.88-
-            ${{ runner.os }}-rust-1.88-
-
-      - name: Check formatting
-        run: cargo fmt --manifest-path apps/rust/contract/Cargo.toml --all -- --check
-
-      - name: Test
-        run: cargo test --locked --manifest-path apps/rust/contract/Cargo.toml
-
-      - name: Clippy
-        run: cargo clippy --locked --manifest-path apps/rust/contract/Cargo.toml --all-targets -- -D warnings
-
   frontend:
-    name: Frontend build + web unit
-    needs: static
+    name: Verified frontend bundle
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -147,13 +69,6 @@ jobs:
             ${{ runner.os }}-things-web-1.88-trunk-0.21.14-
             ${{ runner.os }}-rust-1.88-
 
-      - name: Install frontend dependencies
-        working-directory: apps/rust/things
-        run: npm ci
-
-      - name: Install WASM target
-        run: rustup target add wasm32-unknown-unknown --toolchain 1.88.0
-
       - name: Install Trunk 0.21.14
         shell: bash
         run: |
@@ -162,49 +77,91 @@ jobs:
           fi
           trunk --version
 
-      - name: Build deterministic frontend bundle
-        run: bash apps/rust/things/tools/build-frontend-bundle.sh
+      - name: Fingerprint frontend inputs and toolchain
+        id: frontend_inputs
+        shell: bash
+        run: |
+          inputs="$(python3 apps/rust/things/tools/frontend-bundle-cache.py fingerprint)"
+          tools="$(python3 apps/rust/things/tools/frontend-bundle-cache.py toolchain)"
+          printf 'sha=%s\ntools=%s\n' "$inputs" "$tools" >> "$GITHUB_OUTPUT"
 
-      - name: Test web unit logic
-        run: cargo test --locked --manifest-path apps/rust/things/Cargo.toml --no-default-features --features web --bin hyz-things-web
+      - name: Cache verified frontend bundle
+        uses: actions/cache@v4
+        with:
+          path: target/frontend-bundle
+          key: ${{ runner.os }}-frontend-bundle-v1-${{ steps.frontend_inputs.outputs.sha }}-${{ steps.frontend_inputs.outputs.tools }}
+
+      - name: Validate cached frontend bundle
+        id: frontend_cache
+        shell: bash
+        env:
+          INPUT_FINGERPRINT: ${{ steps.frontend_inputs.outputs.sha }}
+          TOOLCHAIN_FINGERPRINT: ${{ steps.frontend_inputs.outputs.tools }}
+        run: |
+          if python3 apps/rust/things/tools/frontend-bundle-cache.py check "$INPUT_FINGERPRINT" "$TOOLCHAIN_FINGERPRINT"; then
+            echo 'hit=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'hit=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install frontend dependencies
+        if: steps.frontend_cache.outputs.hit != 'true'
+        working-directory: apps/rust/things
+        run: npm ci
+
+      - name: Install WASM target
+        if: steps.frontend_cache.outputs.hit != 'true'
+        run: rustup target add wasm32-unknown-unknown --toolchain 1.88.0
+
+      - name: Build deterministic frontend bundle
+        if: steps.frontend_cache.outputs.hit != 'true'
+        run: bash apps/rust/things/tools/build-frontend-bundle.sh
 
       - name: Upload verified frontend bundle
         uses: actions/upload-artifact@v4
         with:
           name: hyz-things-frontend-${{ github.run_id }}
-          path: target/frontend-bundle/hyz-things-frontend.tar
+          path: |
+            target/frontend-bundle/hyz-things-frontend.tar
+            target/frontend-bundle/hyz-things-frontend.json
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
 
-  things-native:
-    name: Things native fmt/test/clippy
+  checks:
+    name: Format, static, unit tests and Clippy
     needs: frontend
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Download verified frontend bundle
-        uses: actions/download-artifact@v4
         with:
-          name: hyz-things-frontend-${{ github.run_id }}
-          path: target/frontend-bundle
+          fetch-depth: 0
 
       - name: Install Rust 1.88
+        id: rust
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
-          rustup toolchain install 1.88.0 \
-            --profile minimal \
-            --component rustfmt \
-            --component clippy
+          rustup toolchain install 1.88.0 --profile minimal --component rustfmt --component clippy
           rustup default 1.88.0
           rustc --version
           cargo --version
 
+      - name: Setup Node.js 20
+        id: node
+        if: ${{ !cancelled() }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/rust/things/package-lock.json
+
       - name: Cache Cargo
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
         uses: actions/cache@v4
         with:
           path: |
@@ -212,26 +169,77 @@ jobs:
             ~/.cargo/git
             apps/rust/contract/target
             apps/rust/things/target
-          key: ${{ runner.os }}-things-native-1.88-${{ hashFiles('apps/rust/contract/Cargo.lock', 'apps/rust/things/Cargo.lock') }}
+          key: ${{ runner.os }}-things-checks-1.88-${{ hashFiles('apps/rust/contract/Cargo.lock', 'apps/rust/things/Cargo.lock') }}
           restore-keys: |
+            ${{ runner.os }}-things-checks-1.88-
             ${{ runner.os }}-things-native-1.88-
             ${{ runner.os }}-rust-1.88-
 
-      - name: Check formatting
+      - name: Download verified frontend bundle
+        if: ${{ !cancelled() && needs.frontend.result == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: hyz-things-frontend-${{ github.run_id }}
+          path: target/frontend-bundle
+
+      - name: Validate downloaded frontend bundle
+        if: ${{ !cancelled() && needs.frontend.result == 'success' }}
+        run: python3 apps/rust/things/tools/frontend-bundle-cache.py check
+
+      - name: Check committed diff
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            git diff --check "origin/$BASE_REF...HEAD"
+          elif git rev-parse HEAD^ >/dev/null 2>&1; then
+            git diff --check HEAD^ HEAD
+          else
+            git diff --check
+          fi
+
+      - name: Validate capability Playwright suite layout
+        if: ${{ !cancelled() }}
+        run: python3 apps/rust/things/tools/check-e2e-suites.py
+
+      - name: Run source and configuration checks
+        if: ${{ !cancelled() && steps.node.outcome == 'success' }}
+        run: make check-static
+
+      - name: Check contract formatting
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: cargo fmt --manifest-path apps/rust/contract/Cargo.toml --all -- --check
+
+      - name: Check things formatting
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
         run: cargo fmt --manifest-path apps/rust/things/Cargo.toml --all -- --check
 
+      - name: Test contract
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: cargo test --locked --manifest-path apps/rust/contract/Cargo.toml
+
+      - name: Test web unit logic
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: cargo test --locked --manifest-path apps/rust/things/Cargo.toml --no-default-features --features web --bin hyz-things-web
+
       - name: Test native
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
         run: cargo test --locked --manifest-path apps/rust/things/Cargo.toml --features native
 
-      - name: Clippy
+      - name: Clippy contract
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: cargo clippy --locked --manifest-path apps/rust/contract/Cargo.toml --all-targets -- -D warnings
+
+      - name: Clippy native
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
         run: cargo clippy --locked --manifest-path apps/rust/things/Cargo.toml --all-targets --features e2e -- -D warnings
 
   e2e:
     name: Playwright E2E
-    needs:
-      - contract
-      - things-native
-      - frontend
+    needs: frontend
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -264,6 +272,7 @@ jobs:
           key: ${{ runner.os }}-things-e2e-1.88-${{ hashFiles('apps/rust/contract/Cargo.lock', 'apps/rust/things/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-things-e2e-1.88-
+            ${{ runner.os }}-things-checks-1.88-
             ${{ runner.os }}-rust-1.88-
 
       - name: Setup Node.js 20

@@ -227,6 +227,9 @@ check: check-static
 
 check-static:
 	sh -n "$(THINGS_APP)/tools/build-frontend-bundle.sh"
+	bash -n "$(THINGS_APP)/tools/start-e2e-server.sh"
+	python3 "$(THINGS_APP)/tools/test-frontend-bundle.py"
+	python3 "$(THINGS_APP)/tools/test-portal-ci.py"
 	bash -n "$(THINGS_APP)/tools/deploy-app.sh"
 	bash -n "$(THINGS_APP)/tools/test-deploy-app.sh"
 	bash -n "$(CURDIR)/tools/stage-mihomo-geodata.sh"

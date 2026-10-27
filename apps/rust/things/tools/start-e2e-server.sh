@@ -9,24 +9,15 @@ readonly WEB_PORT="${HYZ_THINGS_E2E_WEB_PORT:-3190}"
 readonly CONTROL_PORT="${HYZ_THINGS_E2E_CONTROL_PORT:-3191}"
 readonly REUSE_FRONTEND_BUNDLE="${HYZ_THINGS_E2E_REUSE_FRONTEND_BUNDLE:-0}"
 
-if ! command -v cargo >/dev/null 2>&1; then
-    printf 'error: required command not found: cargo\n' >&2
-    exit 127
-fi
+for command_name in cargo python3; do
+    if ! command -v "${command_name}" >/dev/null 2>&1; then
+        printf 'error: required command not found: %s\n' "${command_name}" >&2
+        exit 127
+    fi
+done
 
 case "${REUSE_FRONTEND_BUNDLE}" in
     0)
-        for command_name in npm trunk; do
-            if ! command -v "${command_name}" >/dev/null 2>&1; then
-                printf 'error: required command not found: %s\n' "${command_name}" >&2
-                exit 127
-            fi
-        done
-        if [[ ! -d "${PACKAGE_DIR}/node_modules" ]]; then
-            printf 'error: frontend dependencies are not installed\n' >&2
-            printf 'hint: run: (cd %s && npm ci)\n' "${PACKAGE_DIR}" >&2
-            exit 1
-        fi
         "${SCRIPT_DIR}/build-frontend-bundle.sh"
         ;;
     1)
@@ -34,6 +25,7 @@ case "${REUSE_FRONTEND_BUNDLE}" in
             printf 'error: verified frontend bundle is missing: %s\n' "${FRONTEND_TAR}" >&2
             exit 1
         fi
+        python3 "${SCRIPT_DIR}/frontend-bundle-cache.py" check
         printf 'Reusing verified frontend bundle: %s\n' "${FRONTEND_TAR}"
         ;;
     *)

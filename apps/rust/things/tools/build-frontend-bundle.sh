@@ -6,10 +6,11 @@ readonly PACKAGE_DIR="$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)"
 readonly WORKSPACE_DIR="$(CDPATH= cd -- "${PACKAGE_DIR}/../../.." && pwd)"
 readonly FRONTEND_DIR="${PACKAGE_DIR}/frontend"
 readonly EXTERNALIZER="${SCRIPT_DIR}/externalize-trunk-bootstrap.py"
+readonly CACHE_TOOL="${SCRIPT_DIR}/frontend-bundle-cache.py"
 readonly OUTPUT_DIR="${WORKSPACE_DIR}/target/frontend-bundle"
 readonly OUTPUT_FILE="${OUTPUT_DIR}/hyz-things-frontend.tar"
 
-for command_name in node npm python3 rustup trunk tar mktemp; do
+for command_name in node npm python3 rustup rustc trunk tar mktemp cmp flock; do
     if ! command -v "${command_name}" >/dev/null 2>&1; then
         printf 'error: required command not found: %s\n' "${command_name}" >&2
         exit 127
@@ -40,6 +41,19 @@ if [[ ! -x "${PACKAGE_DIR}/node_modules/.bin/tailwindcss" ]]; then
 fi
 
 mkdir -p -- "${OUTPUT_DIR}"
+# Serialize archive and metadata publication across local build invocations.
+exec {BUNDLE_LOCK_FD}>"${OUTPUT_DIR}/.build.lock"
+flock "${BUNDLE_LOCK_FD}"
+
+INPUT_FINGERPRINT="$(python3 "${CACHE_TOOL}" fingerprint)"
+readonly INPUT_FINGERPRINT
+TOOLCHAIN_FINGERPRINT="$(python3 "${CACHE_TOOL}" toolchain)"
+readonly TOOLCHAIN_FINGERPRINT
+if python3 "${CACHE_TOOL}" check "${INPUT_FINGERPRINT}" "${TOOLCHAIN_FINGERPRINT}"; then
+    printf 'Reusing verified frontend bundle: %s\n' "${OUTPUT_FILE}"
+    exit 0
+fi
+
 readonly TEMP_DIR="$(mktemp -d "${OUTPUT_DIR}/.hyz-things-frontend.XXXXXX")"
 cleanup() { rm -rf -- "${TEMP_DIR}"; }
 trap cleanup EXIT INT TERM HUP
@@ -71,5 +85,10 @@ readonly TEMP_ARCHIVE="${TEMP_DIR}/hyz-things-frontend.tar"
 find "${DIST_DIR}" -type d -exec chmod 0755 {} +
 find "${DIST_DIR}" -type f -exec chmod 0644 {} +
 tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -cf "${TEMP_ARCHIVE}" -C "${DIST_DIR}" .
-mv -f -- "${TEMP_ARCHIVE}" "${OUTPUT_FILE}"
+if [[ -f "${OUTPUT_FILE}" ]] && cmp -s -- "${TEMP_ARCHIVE}" "${OUTPUT_FILE}"; then
+    printf 'Frontend archive content unchanged; keeping existing timestamp\n'
+else
+    mv -f -- "${TEMP_ARCHIVE}" "${OUTPUT_FILE}"
+fi
+python3 "${CACHE_TOOL}" record "${INPUT_FINGERPRINT}" "${TOOLCHAIN_FINGERPRINT}"
 printf 'frontend bundle: %s\n' "${OUTPUT_FILE}"
