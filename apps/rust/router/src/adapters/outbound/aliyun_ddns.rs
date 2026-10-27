@@ -70,8 +70,10 @@ impl AliyunDdnsAdapter {
             API_VERSION,
             &date,
             &nonce,
-            config.access_key_id(),
-            config.access_key_secret(),
+            SigningCredentials {
+                id: config.access_key_id(),
+                secret: config.access_key_secret(),
+            },
             &query,
         );
         let url = format!("{API_ENDPOINT}?{}", signed.canonical_query);
@@ -309,16 +311,22 @@ struct SignedRequest {
     authorization: String,
 }
 
+struct SigningCredentials<'a> {
+    id: &'a str,
+    secret: &'a str,
+}
+
 fn sign_request(
     host: &str,
     action: &str,
     version: &str,
     date: &str,
     nonce: &str,
-    access_key_id: &str,
-    access_key_secret: &str,
+    credentials: SigningCredentials<'_>,
     query: &[(&str, &str)],
 ) -> SignedRequest {
+    let access_key_id = credentials.id;
+    let access_key_secret = credentials.secret;
     let canonical_query = canonical_query(query);
     let canonical_headers = format!(
         "host:{host}\nx-acs-action:{action}\nx-acs-content-sha256:{EMPTY_BODY_SHA256}\nx-acs-date:{date}\nx-acs-signature-nonce:{nonce}\nx-acs-version:{version}\n"
@@ -344,7 +352,7 @@ fn sign_request(
 }
 
 fn canonical_query(query: &[(&str, &str)]) -> String {
-    let mut pairs = query.iter().copied().collect::<Vec<_>>();
+    let mut pairs = query.to_vec();
     pairs.sort_unstable_by(|left, right| left.0.cmp(right.0));
     pairs
         .into_iter()
@@ -445,8 +453,10 @@ mod tests {
             "2014-05-26",
             "2023-10-26T10:22:32Z",
             "3156853299f313e23d1673dc12e1703d",
-            "YourAccessKeyId",
-            "YourAccessKeySecret",
+            SigningCredentials {
+                id: "YourAccessKeyId",
+                secret: "YourAccessKeySecret",
+            },
             &[
                 (
                     "ImageId",
