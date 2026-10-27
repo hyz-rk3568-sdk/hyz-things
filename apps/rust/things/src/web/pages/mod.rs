@@ -5,6 +5,7 @@ mod calculation;
 mod camera;
 mod comprehensive;
 mod devices;
+mod material_scroll;
 mod network;
 mod overview;
 mod proxy;

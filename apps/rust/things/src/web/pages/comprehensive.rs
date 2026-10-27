@@ -1,4 +1,5 @@
 //! 20 questions / 20 minutes. Immersive iPad workspace with 60:40 material/question panes.
+use super::material_scroll::MaterialScrollButton;
 use super::*;
 use gloo_timers::{callback::Interval, future::TimeoutFuture};
 use js_sys::Date;
@@ -21,6 +22,7 @@ const COMPREHENSIVE_READY_KEY: &str = "hyz_comprehensive_ready_run";
 struct AnalysisPanesProps {
     material: hyz_things::domain::data_analysis::Material,
     question: Html,
+    question_index: usize,
 }
 
 #[derive(Clone, Copy, Default, PartialEq)]
@@ -95,17 +97,6 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
             }
         });
     }
-    let scroll_by_line = |direction: f64| {
-        let passage = passage.clone();
-        Callback::from(move |_: MouseEvent| {
-            if let Some(element) = passage.cast::<web_sys::HtmlElement>() {
-                let distance = 32.0 * direction;
-                element.scroll_by_with_x_and_y(0.0, distance);
-            }
-        })
-    };
-    let scroll_up = scroll_by_line(-1.0);
-    let scroll_down = scroll_by_line(1.0);
 
     html! {
         <div class="grid h-full min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-2 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:grid-rows-1"
@@ -118,12 +109,12 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
                     </div>
                     if scratchpad_open {
                         <div class="relative z-30 mr-48 flex shrink-0 gap-1 lg:mr-0" role="group" aria-label="材料滚动">
-                            <button type="button" class="btn btn-ghost btn-sm px-2" aria-label="材料向上滚动" title="向上滚动一行" disabled={!scroll_edges.can_scroll_up} onclick={scroll_up}>{"↑"}</button>
-                            <button type="button" class="btn btn-ghost btn-sm px-2" aria-label="材料向下滚动" title="向下滚动一行" disabled={!scroll_edges.can_scroll_down} onclick={scroll_down}>{"↓"}</button>
+                            <MaterialScrollButton passage={passage.clone()} up={true} disabled={!scroll_edges.can_scroll_up} question_index={props.question_index} />
+                            <MaterialScrollButton passage={passage.clone()} up={false} disabled={!scroll_edges.can_scroll_down} question_index={props.question_index} />
                         </div>
                     }
                 </div>
-                <div ref={passage} onscroll={on_passage_scroll} class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y scroll-smooth" data-testid="analysis-material-scroll">
+                <div ref={passage} onscroll={on_passage_scroll} class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y scroll-auto" data-testid="analysis-material-scroll">
                     <div class="whitespace-pre-wrap px-4 pb-4 pt-2 text-base leading-8">{props.material.text.clone()}</div>
                 </div>
             </article>
@@ -1142,7 +1133,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 </header>
                 <div class="min-h-0 flex-1">
                     <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",review_id,index)} responsive={true} scroll_linked={true}>
-                        <AnalysisPanes material={score.materials[group_index].clone()} question={review_question} />
+                        <AnalysisPanes material={score.materials[group_index].clone()} question={review_question} question_index={index} />
                     </InkOverlay>
                 </div>
                 if let Some(msg)=(*error).clone() {
@@ -1321,7 +1312,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 </header>
                 <div class="min-h-0 flex-1">
                     <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",active.id,index)} responsive={true} scroll_linked={true}>
-                        <AnalysisPanes material={group.material.clone()} question={question_content} />
+                        <AnalysisPanes material={group.material.clone()} question={question_content} question_index={index} />
                     </InkOverlay>
                 </div>
                 if let Some(msg)=(*error).clone(){<div class="shrink-0 text-error text-xs" role="alert">{msg}</div>}
