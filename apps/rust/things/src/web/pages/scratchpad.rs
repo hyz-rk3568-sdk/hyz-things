@@ -53,7 +53,10 @@ enum InkAction {
     // Keep legacy screen-relative ink readable in existing saved sessions.
     Stroke(Vec<InkPoint>),
     // New strokes are stored in each pane's scrollable content coordinates.
-    ContentStroke { pane: InkPane, points: Vec<InkPoint> },
+    ContentStroke {
+        pane: InkPane,
+        points: Vec<InkPoint>,
+    },
     Clear,
 }
 
@@ -102,7 +105,12 @@ impl InkState {
             .iter()
             .rev()
             .take_while(|action| !matches!(action, InkAction::Clear))
-            .any(|action| matches!(action, InkAction::Stroke(_) | InkAction::ContentStroke { .. }))
+            .any(|action| {
+                matches!(
+                    action,
+                    InkAction::Stroke(_) | InkAction::ContentStroke { .. }
+                )
+            })
     }
 
     fn clear(&mut self) -> bool {
@@ -186,11 +194,7 @@ fn pane_at_event(canvas: &HtmlCanvasElement, event: &PointerEvent) -> Option<Ink
         })
 }
 
-fn pane_point(
-    canvas: &HtmlCanvasElement,
-    event: &PointerEvent,
-    pane: InkPane,
-) -> Option<InkPoint> {
+fn pane_point(canvas: &HtmlCanvasElement, event: &PointerEvent, pane: InkPane) -> Option<InkPoint> {
     let bounds = pane_viewport(canvas, pane)?;
     let rect = canvas.get_bounding_client_rect();
     Some((
