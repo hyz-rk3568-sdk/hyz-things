@@ -3,7 +3,7 @@ import { expectNoHorizontalOverflow, resetHarness } from "./fixtures";
 
 test.beforeEach(async ({ request }) => { await resetHarness(request); });
 
-async function openHeldScrollWorkspace(page: Page) {
+async function openHeldScrollWorkspace(page: Page, openInk=true) {
   const started = Date.now();
   const groups = Array.from({length:4},(_,group)=>({
     material:{topic:`材料 ${group+1}`,text:"某项业务量同比增长15.2%。\n\n".repeat(100)},
@@ -27,6 +27,15 @@ async function openHeldScrollWorkspace(page: Page) {
       result={job_id:"held-scroll-job"};
     } else if (path.endsWith("/prepare/held-scroll-job")) {
       result={state:"ready",verified:20,message:"完成",run_id:run.id};
+    } else if (path.endsWith("/pause")) {
+      result={...run,paused_remaining_ms:run.paused_remaining_ms===null?1100000:null};
+      Object.assign(run,result);
+    } else if (path.endsWith("/submit")) {
+      result={id:run.id,correct:0,total:20,materials:groups.map(group=>group.material),
+        questions:groups.flatMap((group,g)=>group.questions.map((question,q)=>({
+          number:g*5+q+1,...question,chosen:null,correct_index:0,answer:"甲",
+          explanation:"解析",topic:group.material.topic,evidence:"业务量同比增长15.2%",
+        })))};
     } else if (path.endsWith("/claim")) {
       result={run,control_token:"held-scroll-token"};
     } else if (path.endsWith(`/runs/${run.id}`)) {
@@ -38,8 +47,223 @@ async function openHeldScrollWorkspace(page: Page) {
   await page.getByTestId("training-mode-comprehensive").click();
   await page.getByTestId("analysis-start").click();
   await page.getByTestId("analysis-enter").click();
+  if(openInk) await page.getByTestId("calculation-scratchpad-toggle").click();
+}
+
+async function inkSnapshot(page: Page) {
+  return page.getByTestId("calculation-scratchpad-canvas").evaluate(async element=>{
+    const data=(element as HTMLCanvasElement).toDataURL();
+    const hash=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(data));
+    return Array.from(new Uint8Array(hash),byte=>byte.toString(16).padStart(2,"0")).join("");
+  });
+}
+
+async function drawWorkspaceStroke(page: Page, fromX=60, toX=160) {
+  const box=await page.getByTestId("calculation-scratchpad-canvas").boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x+fromX,box!.y+110);
+  await page.mouse.down();
+  await page.mouse.move(box!.x+toX,box!.y+150,{steps:6});
+  await page.mouse.up();
+}
+
+async function reopenWorkspace(page: Page) {
+  await page.reload();
+  await page.getByTestId("training-mode-comprehensive").click();
   await page.getByTestId("calculation-scratchpad-toggle").click();
 }
+
+test("IndexedDB handwriting survives navigation and reload when localStorage is full", async ({page})=>{
+  await page.addInitScript(()=>{
+    const setItem=Storage.prototype.setItem;
+    Storage.prototype.setItem=function(key,value){
+      if(key.startsWith("hyz-analysis-ink-")) throw new DOMException("Storage full","QuotaExceededError");
+      setItem.call(this,key,value);
+    };
+  });
+  await page.setViewportSize({width:1180,height:820});
+  await openHeldScrollWorkspace(page);
+  const canvas=page.getByTestId("calculation-scratchpad-canvas");
+  const toggle=page.getByTestId("calculation-scratchpad-toggle");
+  const saveStatus=page.getByTestId("calculation-scratchpad-save-status");
+  const blank=await inkSnapshot(page);
+  await drawWorkspaceStroke(page);
+  const first=await inkSnapshot(page);
+  expect(first).not.toEqual(blank);
+  await expect(saveStatus).toHaveText("草稿已保存到本机");
+  await page.getByRole("button",{name:"下一题",exact:true}).click();
+  await expect(canvas).toBeHidden();
+  await toggle.click();
+  expect(await inkSnapshot(page)).toEqual(blank);
+  await drawWorkspaceStroke(page,180,260);
+  const second=await inkSnapshot(page);
+  expect(second).not.toEqual(first);
+  await expect(saveStatus).toHaveText("草稿已保存到本机");
+  await page.getByRole("button",{name:"上一题",exact:true}).click();
+  await toggle.click();
+  expect(await inkSnapshot(page)).toEqual(first);
+  expect(await page.evaluate(()=>localStorage.getItem("hyz-analysis-ink-held-scroll-run-workspace-0"))).toBeNull();
+  await reopenWorkspace(page);
+  expect(await inkSnapshot(page)).toEqual(first);
+  await page.getByRole("button",{name:"下一题",exact:true}).click();
+  await toggle.click();
+  expect(await inkSnapshot(page)).toEqual(second);
+});
+
+test("IndexedDB write failure retains question ink and retries without losing strokes", async ({page})=>{
+  await page.addInitScript(()=>{
+    (window as any).failInkWrites=true;
+    const put=IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put=function(...args: Parameters<typeof put>){
+      if(this.name==="drafts"&&(window as any).failInkWrites) throw new DOMException("Storage full","QuotaExceededError");
+      return put.apply(this,args);
+    };
+  });
+  await page.setViewportSize({width:1180,height:820});
+  await openHeldScrollWorkspace(page);
+  await drawWorkspaceStroke(page);
+  const marked=await inkSnapshot(page);
+  const status=page.getByTestId("calculation-scratchpad-save-status");
+  await expect(status).toHaveText("保存失败，仅当前页面暂存");
+  await page.getByRole("button",{name:"下一题",exact:true}).click();
+  await page.getByRole("button",{name:"上一题",exact:true}).click();
+  await page.getByTestId("calculation-scratchpad-toggle").click();
+  expect(await inkSnapshot(page)).toEqual(marked);
+  await expect(status).toHaveText("保存失败，仅当前页面暂存");
+  await page.evaluate(()=>{(window as any).failInkWrites=false;});
+  await page.getByRole("button",{name:"重试保存",exact:true}).click();
+  await expect(status).toHaveText("草稿已保存到本机");
+  await reopenWorkspace(page);
+  expect(await inkSnapshot(page)).toEqual(marked);
+});
+
+test("PWA reload preserves failed IndexedDB drafts and resumes after saving", async ({page})=>{
+  await page.addInitScript(()=>{
+    (window as any).failInkWrites=true;
+    const put=IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put=function(...args: Parameters<typeof put>){
+      if(this.name==="drafts"&&(window as any).failInkWrites) throw new DOMException("Storage full","QuotaExceededError");
+      return put.apply(this,args);
+    };
+  });
+  await openHeldScrollWorkspace(page);
+  await drawWorkspaceStroke(page);
+  const marked=await inkSnapshot(page);
+  await expect(page.getByTestId("calculation-scratchpad-save-status")).toHaveText("保存失败，仅当前页面暂存");
+  await page.getByTestId("analysis-exit").click();
+  await expect(page.getByTestId("analysis-run")).toBeHidden();
+  await page.evaluate(()=>{(window as any).pagePreserved=true;});
+  await page.getByRole("button",{name:"重新加载",exact:true}).click();
+  await expect(page.locator("[data-pwa-status]")).toContainText("草稿保存失败，已停止刷新");
+  expect(await page.evaluate(()=>(window as any).pagePreserved)).toBe(true);
+  await page.evaluate(()=>{(window as any).failInkWrites=false;});
+  await Promise.all([
+    page.waitForEvent("load"),
+    page.getByRole("button",{name:"重新加载",exact:true}).click(),
+  ]);
+  expect(await page.evaluate(()=>(window as any).pagePreserved)).toBeUndefined();
+  await page.getByTestId("training-mode-comprehensive").click();
+  await expect(page.getByTestId("analysis-paused")).toBeVisible();
+  await page.getByRole("button",{name:"继续计时",exact:true}).click();
+  await page.getByTestId("calculation-scratchpad-toggle").click();
+  expect(await inkSnapshot(page)).toEqual(marked);
+});
+
+test("IndexedDB read failures block blank overwrites and allow retry", async ({page})=>{
+  await page.addInitScript(()=>{
+    (window as any).failInkReads=true;
+    const get=IDBObjectStore.prototype.get;
+    IDBObjectStore.prototype.get=function(...args: Parameters<typeof get>){
+      if(this.name==="drafts"&&(window as any).failInkReads) throw new DOMException("Read unavailable","UnknownError");
+      return get.apply(this,args);
+    };
+  });
+  await openHeldScrollWorkspace(page,false);
+  const toggle=page.getByTestId("calculation-scratchpad-toggle");
+  await expect(page.getByTestId("calculation-scratchpad-save-status")).toHaveText("草稿读取失败，请重试");
+  await expect(toggle).toBeDisabled();
+  await page.evaluate(()=>{(window as any).failInkReads=false;});
+  await page.getByRole("button",{name:"重试保存",exact:true}).click();
+  await toggle.click();
+  await drawWorkspaceStroke(page);
+  await expect(page.getByTestId("calculation-scratchpad-save-status")).toHaveText("草稿已保存到本机");
+});
+
+test("returning to a still-saving question waits for commit without reporting failure", async ({page})=>{
+  await page.addInitScript(()=>{
+    const transaction=IDBDatabase.prototype.transaction;
+    const complete=Object.getOwnPropertyDescriptor(IDBTransaction.prototype,"oncomplete")!;
+    (window as any).finishInkWrites=[];
+    IDBDatabase.prototype.transaction=function(...args: Parameters<typeof transaction>){
+      const tx=transaction.apply(this,args);
+      if(args[1]==="readwrite") Object.defineProperty(tx,"oncomplete",{
+        set(handler){complete.set!.call(tx,(event:Event)=>{
+          (window as any).finishInkWrites.push(()=>handler.call(tx,event));
+        });},
+      });
+      return tx;
+    };
+  });
+  await openHeldScrollWorkspace(page);
+  await drawWorkspaceStroke(page);
+  await expect.poll(()=>page.evaluate(()=>(window as any).finishInkWrites.length)).toBe(1);
+  await page.getByRole("button",{name:"下一题",exact:true}).click();
+  await page.getByRole("button",{name:"上一题",exact:true}).click();
+  await expect(page.getByTestId("calculation-scratchpad-save-status")).toHaveText("正在读取草稿…");
+  await page.evaluate(()=>{for(const finish of (window as any).finishInkWrites) finish();});
+  await expect(page.getByTestId("calculation-scratchpad-save-status")).toHaveText("草稿已保存到本机");
+  await page.getByTestId("calculation-scratchpad-toggle").click();
+  await expect(page.getByTestId("calculation-scratchpad-undo")).toBeEnabled();
+});
+
+test("comprehensive headers and navigation stay inside PWA safe areas at every viewport", async ({page})=>{
+  await openHeldScrollWorkspace(page,false);
+  await page.evaluate(()=>{
+    const style=document.documentElement.style;
+    style.setProperty("--app-safe-top","32px");
+    style.setProperty("--app-safe-bottom","24px");
+    style.setProperty("--app-safe-left","12px");
+    style.setProperty("--app-safe-right","12px");
+  });
+  for(const viewport of [{width:1180,height:820},{width:820,height:1180},{width:360,height:800}]){
+    await page.setViewportSize(viewport);
+    const screen=page.getByTestId("analysis-run");
+    const header=await screen.locator("header").boundingBox();
+    expect(header!.y).toBeGreaterThanOrEqual(40);
+    for(const name of ["analysis-exit","analysis-clock"]){
+      const box=await page.getByTestId(name).boundingBox();
+      expect(box!.x).toBeGreaterThanOrEqual(12);
+      expect(box!.x+box!.width).toBeLessThanOrEqual(viewport.width-12);
+    }
+    const next=await page.getByRole("button",{name:"下一题",exact:true}).boundingBox();
+    expect(next!.y+next!.height).toBeLessThanOrEqual(viewport.height-24);
+    await expectNoHorizontalOverflow(page);
+    await page.getByRole("button",{name:"下一题",exact:true}).click();
+    await page.getByRole("button",{name:"上一题",exact:true}).click();
+  }
+  await page.getByTestId("analysis-clock").click();
+  const paused=page.getByTestId("analysis-paused");
+  await expect(paused).toBeVisible();
+  const pauseCard=await paused.locator("div").first().boundingBox();
+  expect(pauseCard!.y).toBeGreaterThanOrEqual(32);
+  expect(pauseCard!.y+pauseCard!.height).toBeLessThanOrEqual(800-24);
+  await page.getByRole("button",{name:"继续计时",exact:true}).click();
+  await page.getByRole("button",{name:"交卷",exact:true}).click();
+  await expect(page.getByTestId("analysis-result")).toBeVisible();
+  for(const viewport of [{width:1180,height:820},{width:820,height:1180},{width:360,height:800}]){
+    await page.setViewportSize(viewport);
+    const header=page.getByTestId("analysis-result").locator("header");
+    expect((await header.boundingBox())!.y).toBeGreaterThanOrEqual(40);
+    for(const button of await header.getByRole("button").all()){
+      const box=await button.boundingBox();
+      expect(box!.x).toBeGreaterThanOrEqual(12);
+      expect(box!.x+box!.width).toBeLessThanOrEqual(viewport.width-12);
+    }
+    await page.getByRole("button",{name:"下一题",exact:true}).click();
+    await page.getByRole("button",{name:"上一题",exact:true}).click();
+    await expectNoHorizontalOverflow(page);
+  }
+});
 
 async function openFrozenScrollWorkspace(page: Page) {
   await page.clock.install();

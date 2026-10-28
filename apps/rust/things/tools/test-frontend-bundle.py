@@ -53,8 +53,8 @@ elif name == "trunk" and args and args[0] == "build":
     dist = Path(args[args.index("--dist") + 1])
     dist.mkdir(parents=True)
     revision = os.environ.get("FAKE_OUTPUT_REVISION", "one")
-    (dist / "index.html").write_text('<!doctype html><link rel="stylesheet" href="/app.css">'
-        '<script type="module">import init from "/app.js"; await init();</script>')
+    (dist / "index.html").write_text('<!doctype html><html><head><link rel="stylesheet" href="/app.css">'
+        '<script type="module">import init from "/app.js"; await init();</script></head><body></body></html>')
     (dist / "app.css").write_text(".app {color: black}")
     (dist / "app.js").write_text("// " + revision)
     if os.environ.get("FAKE_MUTATE_INPUT"):
