@@ -1115,9 +1115,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             })
         };
         return html! {
-            <section class="fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200 p-2 sm:p-3"
+            <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200"
                 data-testid="analysis-result" data-view="review">
-                <header class="flex shrink-0 items-center justify-between gap-2 border-b border-base-content/10 pb-2">
+                <header class="analysis-header flex shrink-0 items-center justify-between gap-2 border-b border-base-content/10 pb-2">
                     <div class="flex min-w-0 items-center gap-2">
                         <button type="button" class="btn btn-ghost btn-sm" data-testid="analysis-exit"
                             onclick={back_from_review}>{if *reviewing_history {"← 返回记录"} else {"← 返回专项"}}</button>
@@ -1223,7 +1223,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         }
         if active.paused_remaining_ms.is_some() {
             return html! {
-                <section class="fixed inset-0 z-[70] flex h-dvh w-screen items-center justify-center overflow-hidden bg-base-200 p-6" data-testid="analysis-paused">
+                <section class="analysis-fullscreen analysis-paused fixed inset-0 z-[70] flex h-dvh w-screen items-center justify-center overflow-hidden bg-base-200" data-testid="analysis-paused">
                     <div class="rounded-box bg-base-100 p-8 text-center">
                         <h2 class="text-2xl font-bold">{"训练已暂停"}</h2>
                         <p class="mt-3 text-base-content/60">{"已隐藏材料和题目，暂停期间不能答题。刷新页面仍保持暂停。"}</p>
@@ -1293,9 +1293,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             .map(|answer| answer.map(|_| true))
             .collect::<Vec<_>>();
         return html! {
-            <section class="fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200 p-2 sm:p-3"
+            <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200"
                 data-testid="analysis-run" data-view="answer">
-                <header class="flex shrink-0 items-center justify-between gap-2 border-b border-base-content/10 pb-2">
+                <header class="analysis-header flex shrink-0 items-center justify-between gap-2 border-b border-base-content/10 pb-2">
                     <div class="flex min-w-0 items-center gap-2">
                         <button type="button" class="btn btn-ghost btn-sm" data-testid="analysis-exit"
                             onclick={pause_and_exit.clone()}>{"← 暂停并退出"}</button>

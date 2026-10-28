@@ -36,6 +36,7 @@ pub(crate) fn app_shell(props: &AppShellProps) -> Html {
                     </div>
                 </div>
             </header>
+            <PwaControls />
             {props.notice.clone()}
             <div class="grid min-w-0 gap-4 lg:grid-cols-[12rem_minmax(0,1fr)] lg:items-start">
                 <nav

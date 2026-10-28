@@ -72,7 +72,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
     html! {
         <div class={if *training_immersive { "h-dvh overflow-hidden bg-base-200" } else { "min-h-dvh bg-base-200" }} data-testid="training-layout">
             if !*training_immersive {
-            <div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 pt-4 sm:px-8">
+            <div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 pt-[calc(1rem+var(--app-safe-top))] sm:px-8">
                 <div>
                     <h1 class="text-xl font-bold">{"专项训练"}</h1>
                     <p class="text-xs text-base-content/65">{"选择训练模式；切换模式会丢弃当前未保存的作答进度。"}</p>
@@ -82,6 +82,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                     <button type="button" class={if *mode == TrainingMode::Flashcards { "btn btn-primary btn-sm" } else { "btn btn-outline btn-sm" }} data-testid="training-mode-flashcards" aria-pressed={(*mode == TrainingMode::Flashcards).to_string()} onclick={choose_flashcards}>{"错题复练"}</button>
                     <button type="button" class={if *mode == TrainingMode::Comprehensive { "btn btn-primary btn-sm" } else { "btn btn-outline btn-sm" }} data-testid="training-mode-comprehensive" aria-pressed={(*mode == TrainingMode::Comprehensive).to_string()} onclick={choose_comprehensive}>{"综合训练"}</button>
                 </div>
+                <PwaControls />
             </div>
             }
             if *mode == TrainingMode::Calculation {

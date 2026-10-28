@@ -1,0 +1,36 @@
+import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+const source = readFileSync(new URL('../src/web/pwa.js', import.meta.url), 'utf8');
+const { createPwaController } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+test('checks without reloading and ignores invalid or failed responses', async () => {
+  let reloads = 0;
+  let version = 'new';
+  const states = [];
+  const controller = createPwaController({ current: 'old', latest: async () => version, flush: async () => {}, reload: () => reloads++, render: state => states.push({...state}) });
+  await controller.check();
+  assert.equal(states.at(-1).update, true);
+  assert.equal(reloads, 0);
+  version = '';
+  await controller.check();
+  assert.equal(states.at(-1).update, true);
+});
+test('refresh waits for persistence, blocks duplicate clicks and surfaces failures', async () => {
+  let finish;
+  let reloads = 0;
+  let fail = false;
+  const states = [];
+  const controller = createPwaController({ current: 'old', latest: async () => 'old', flush: () => fail ? Promise.reject(Error('quota')) : new Promise(resolve => finish = resolve), reload: () => reloads++, render: state => states.push({...state}) });
+  const pending = controller.refresh();
+  await controller.refresh();
+  assert.equal(reloads, 0);
+  assert.equal(states.at(-1).busy, true);
+  finish();
+  await pending;
+  assert.equal(reloads, 1);
+  fail = true;
+  await controller.refresh();
+  assert.equal(reloads, 1);
+  assert.match(states.at(-1).error, /草稿保存失败/);
+  assert.equal(states.at(-1).busy, false);
+});

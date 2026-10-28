@@ -1,5 +1,5 @@
 //! 专项训练共用的透明手写覆盖层。保留原生 pointermove 直线绘制和 Safari Pencil 防吞笔处理。
-//! 笔画历史、撤销、重做及清屏都只在浏览器内存中，不上传或影响 FSRS。
+//! 综合训练草稿保存在浏览器 IndexedDB，其余专项训练仅保留内存笔迹。
 use super::*;
 use serde::{Deserialize, Serialize};
 
@@ -10,34 +10,37 @@ const INK_LINE_WIDTH: f64 = 2.6;
 
 type InkPoint = (f64, f64);
 
-fn saved_ink_key(scope: &str) -> String {
-    format!("hyz-analysis-ink-{scope}")
+#[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/ink_storage.js")]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = loadInk)]
+    fn load_ink(scope: &str) -> Promise;
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = saveInk)]
+    fn save_ink(scope: &str, data: &str) -> Promise;
 }
-fn load_persistent_ink(scope: &str) -> Vec<InkAction> {
-    if scope.is_empty() || scope.len() > 120 {
-        return Vec::new();
-    }
-    let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) else {
-        return Vec::new();
-    };
-    let Some(data) = storage.get_item(&saved_ink_key(scope)).ok().flatten() else {
-        return Vec::new();
-    };
-    if data.len() > 524288 {
-        return Vec::new();
-    }
-    serde_json::from_str(&data).unwrap_or_default()
+
+#[derive(Deserialize)]
+struct SavedInk {
+    history: Vec<InkAction>,
+    persisted: bool,
 }
-fn save_persistent_ink(scope: &str, actions: &[InkAction]) {
-    if scope.is_empty() || scope.len() > 120 {
-        return;
-    }
-    if let (Some(storage), Ok(data)) = (
-        web_sys::window().and_then(|w| w.local_storage().ok().flatten()),
-        serde_json::to_string(actions),
-    ) {
-        if data.len() <= 524288 {
-            let _ = storage.set_item(&saved_ink_key(scope), &data);
+
+#[derive(Clone, Copy, PartialEq)]
+enum InkSaveStatus {
+    Loading,
+    Saved,
+    Saving,
+    Unsaved,
+    LoadFailed,
+}
+
+impl InkSaveStatus {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Loading => "正在读取草稿…",
+            Self::Saved => "草稿已保存到本机",
+            Self::Saving => "正在保存草稿…",
+            Self::Unsaved => "保存失败，仅当前页面暂存",
+            Self::LoadFailed => "草稿读取失败，请重试",
         }
     }
 }
@@ -399,6 +402,9 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
     let revision = use_state(|| 0_u32);
     let canvas_ref = use_node_ref();
     let strokes = use_mut_ref(InkState::default);
+    let loaded_scope = use_state(|| None::<String>);
+    let save_status = use_state(|| InkSaveStatus::Loading);
+    let load_attempt = use_state(|| 0_u32);
 
     // Apple Pencil 快速连续落笔会被 iPadOS WebKit 的双击/手写手势识别吞掉。
     // 保留 passive:false 及单指触摸取消，不能改成 Yew 默认 passive 监听。
@@ -450,32 +456,79 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
     }
 
     {
-        let canvas_ref = canvas_ref.clone();
         let strokes = strokes.clone();
         let enabled = enabled.clone();
         let revision = revision.clone();
+        let loaded_scope = loaded_scope.clone();
+        let save_status = save_status.clone();
         let scope = props.persist_key.clone();
-        let responsive = props.responsive;
-        use_effect_with((props.question_index, scope.clone()), move |_| {
-            *strokes.borrow_mut() = InkState {
-                history: load_persistent_ink(&scope),
-                ..InkState::default()
-            };
-            if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                redraw_state(&canvas, &strokes.borrow(), responsive);
-            }
-            enabled.set(false);
-            revision.set(0);
-            || ()
-        });
+        use_effect_with(
+            (props.question_index, scope.clone(), *load_attempt),
+            move |_| {
+                let cancelled = Rc::new(Cell::new(false));
+                enabled.set(false);
+                revision.set(0);
+                loaded_scope.set(None);
+                *strokes.borrow_mut() = InkState::default();
+                if scope.is_empty() {
+                    loaded_scope.set(Some(scope.clone()));
+                } else {
+                    save_status.set(InkSaveStatus::Loading);
+                    let cancelled = cancelled.clone();
+                    spawn_local(async move {
+                        let result = JsFuture::from(load_ink(&scope))
+                            .await
+                            .ok()
+                            .and_then(|value| value.as_string())
+                            .and_then(|data| serde_json::from_str::<SavedInk>(&data).ok());
+                        if cancelled.get() {
+                            return;
+                        }
+                        if let Some(saved) = result {
+                            strokes.borrow_mut().history = saved.history;
+                            loaded_scope.set(Some(scope));
+                            save_status.set(if saved.persisted {
+                                InkSaveStatus::Saved
+                            } else {
+                                InkSaveStatus::Unsaved
+                            });
+                        } else {
+                            save_status.set(InkSaveStatus::LoadFailed);
+                        }
+                    });
+                }
+                move || cancelled.set(true)
+            },
+        );
     }
 
     {
         let strokes = strokes.clone();
-        let key = props.persist_key.clone();
-        use_effect_with((*revision, key.clone()), move |_| {
-            save_persistent_ink(&key, &strokes.borrow().history);
-            || ()
+        let scope = props.persist_key.clone();
+        let loaded_scope = loaded_scope.clone();
+        let save_status = save_status.clone();
+        let revision = *revision;
+        use_effect_with((revision, scope.clone()), move |_| {
+            let cancelled = Rc::new(Cell::new(false));
+            if revision > 0 && !scope.is_empty() && loaded_scope.as_deref() == Some(scope.as_str())
+            {
+                if let Ok(data) = serde_json::to_string(&strokes.borrow().history) {
+                    save_status.set(InkSaveStatus::Saving);
+                    let promise = save_ink(&scope, &data);
+                    let cancelled = cancelled.clone();
+                    spawn_local(async move {
+                        let result = JsFuture::from(promise).await;
+                        if !cancelled.get() {
+                            save_status.set(if result.is_ok() {
+                                InkSaveStatus::Saved
+                            } else {
+                                InkSaveStatus::Unsaved
+                            });
+                        }
+                    });
+                }
+            }
+            move || cancelled.set(true)
         });
     }
 
@@ -759,6 +812,20 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
     let has_undo = !strokes.borrow().history.is_empty();
     let has_redo = !strokes.borrow().redo.is_empty();
     let has_visible_ink = strokes.borrow().has_visible_ink();
+    let ink_ready =
+        props.persist_key.is_empty() || loaded_scope.as_deref() == Some(props.persist_key.as_str());
+    let retry = {
+        let load_attempt = load_attempt.clone();
+        let revision = revision.clone();
+        let save_status = save_status.clone();
+        Callback::from(move |_| {
+            if *save_status == InkSaveStatus::LoadFailed {
+                load_attempt.set((*load_attempt).wrapping_add(1));
+            } else {
+                revision.set((*revision).wrapping_add(1));
+            }
+        })
+    };
 
     html! {
         <ContextProvider<bool> context={*enabled}>
@@ -788,11 +855,20 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
                     data-testid="calculation-scratchpad-toggle"
                     aria-label={if *enabled { "关闭草稿" } else { "开启草稿" }}
                     aria-expanded={(*enabled).to_string()}
+                    disabled={!ink_ready}
                     onclick={toggle}
                 >
                     {if *enabled { "✕" } else { "✎" }}
                 </button>
             </div>
+            if !props.persist_key.is_empty() {
+                <div class="absolute bottom-2 left-2 z-30 max-w-[calc(100%-1rem)] rounded bg-base-100/95 px-2 py-1 text-xs shadow-sm">
+                    <span role="status" data-testid="calculation-scratchpad-save-status">{save_status.label()}</span>
+                    if matches!(*save_status, InkSaveStatus::Unsaved | InkSaveStatus::LoadFailed) {
+                        <button type="button" class="btn btn-ghost btn-xs ml-1" onclick={retry}>{"重试保存"}</button>
+                    }
+                </div>
+            }
             <canvas
                 ref={canvas_ref}
                 width={SCRATCH_WIDTH.to_string()}

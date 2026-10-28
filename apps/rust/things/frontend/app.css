@@ -19,6 +19,13 @@
 @source "../src/web/**/*.rs";
 
 @layer base {
+  :root {
+    --app-safe-top: env(safe-area-inset-top, 0px);
+    --app-safe-bottom: env(safe-area-inset-bottom, 0px);
+    --app-safe-left: env(safe-area-inset-left, 0px);
+    --app-safe-right: env(safe-area-inset-right, 0px);
+  }
+
   html {
     @apply min-w-80 bg-base-300;
   }
@@ -43,6 +50,30 @@ nav.tabs > button.tab:not(.tab-active) {
 }
 
 @layer components {
+  .analysis-fullscreen {
+    --analysis-gutter: 0.5rem;
+    padding-top: calc(var(--app-safe-top) + var(--analysis-gutter));
+    padding-bottom: calc(var(--app-safe-bottom) + var(--analysis-gutter));
+    padding-left: calc(var(--app-safe-left) + var(--analysis-gutter));
+    padding-right: calc(var(--app-safe-right) + var(--analysis-gutter));
+  }
+
+  @media (min-width: 640px) {
+    .analysis-fullscreen {
+      --analysis-gutter: 0.75rem;
+    }
+  }
+
+  .analysis-fullscreen.analysis-paused {
+    --analysis-gutter: 1.5rem;
+  }
+
+  .analysis-header,
+  .analysis-header > div {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+
   /* 专项训练是点选与透明手写工作区：屏蔽 iPad Safari 长按选字与菜单，
      但只作用于此路由，不修改站内 Flashcard 等正文的可选中行为。 */
   .calculation-layout,
