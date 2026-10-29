@@ -21,10 +21,6 @@ pub const PORTAL_TAB_ACTIVE: &str = "tab-active bg-primary text-primary-content"
 
 pub const PORTAL_SWIPE_SURFACE: &str = "min-w-0 touch-pan-y";
 
-pub const APP_GRID: &str = "grid grid-cols-1 gap-4 lg:grid-cols-3";
-pub const APP_CARD: &str =
-    "card min-w-0 gap-4 border border-base-content/10 bg-base-100/60 p-5 shadow-sm";
-
 pub const EXAM_SECTION: &str =
     "card relative isolate overflow-hidden border border-base-content/10 bg-base-300/95 p-4 shadow-xl shadow-black/20 sm:p-6";
 pub const EXAM_DECORATION: &str =

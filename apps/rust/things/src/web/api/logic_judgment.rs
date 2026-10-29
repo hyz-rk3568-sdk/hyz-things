@@ -29,7 +29,6 @@ pub(crate) struct LogicGrade {
     pub options: [String; 4],
     pub correct_index: usize,
     pub explanation: String,
-    pub card_id: String,
     pub card_path: String,
     pub front: String,
     pub back: String,
@@ -40,7 +39,6 @@ pub(crate) struct LogicResult {
     pub id: String,
     pub correct: usize,
     pub total: usize,
-    pub answered: usize,
     pub questions: Vec<LogicGrade>,
 }
 #[derive(Clone, Deserialize)]
@@ -99,4 +97,38 @@ pub(crate) async fn enter_logic_run(id: &str, csrf: &str) -> Result<LogicRun, St
 
 pub(crate) async fn read_logic_result(id: &str) -> Result<LogicResult, String> {
     super::fetch_json(&format!("{LOGIC_ROOT}/runs/{id}/result"), "答卷结果").await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LogicResult;
+
+    #[test]
+    fn result_view_deserializes_without_unused_card_metadata() {
+        let result: LogicResult = serde_json::from_value(serde_json::json!({
+            "id": "run-1",
+            "correct": 1,
+            "total": 1,
+            "questions": [{
+                "question": "题目",
+                "options": ["A", "B", "C", "D"],
+                "correct_index": 0,
+                "explanation": "解析",
+                "card_path": "cards/example.md",
+                "front": "题干",
+                "back": "答案",
+                "chosen": 0
+            }]
+        }))
+        .expect("the review page should decode the fields it displays");
+
+        assert_eq!(result.total, 1);
+        assert_eq!(result.questions[0].question, "题目");
+        assert_eq!(result.questions[0].correct_index, 0);
+        assert_eq!(result.questions[0].explanation, "解析");
+        assert_eq!(result.questions[0].card_path, "cards/example.md");
+        assert_eq!(result.questions[0].front, "题干");
+        assert_eq!(result.questions[0].back, "答案");
+        assert_eq!(result.questions[0].chosen, Some(0));
+    }
 }
