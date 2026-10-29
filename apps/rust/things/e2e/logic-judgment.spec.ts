@@ -14,7 +14,7 @@ test("logic judgment persists answers, recovers deadline and reviews exact-paper
     const path = new URL(route.request().url()).pathname;
     const body = route.request().postDataJSON();
     let data: unknown = {};
-    const result = {id:run.id,correct:1,total:10,answered:1,questions:run.questions.map((q,i)=>({...q,chosen:run.answers[i],correct_index:0,explanation:'仅交卷后可见的解析',card_id:`card-${i}`,card_path:'判断/形式推理/card.md',front:'关联方法',back:'方法详解'}))};
+    const result = {id:run.id,correct:1,total:10,answered:1,questions:run.questions.map((q,i)=>({...q,chosen:run.answers[i],correct_index:0,explanation:'仅交卷后可见的解析',card_id:`card-${i}`,card_path:'判断/形式推理/S1-直言命题/card.md',front:'关联方法',back:'方法详解'}))};
     if(path.endsWith('/status')) data={configured:true,eligible_cards:24,preparing_job_id:null};
     else if(path.endsWith('/user-prompt')) data={user_prompt:'',customized:false};
     else if(path.endsWith('/card-performance')) data=[];
@@ -85,7 +85,7 @@ async function logicFixture(page: import('@playwright/test').Page) {
       }
       data={user_prompt:state.prompt,customized:!!state.prompt};
     }
-    else if(path.endsWith('/card-performance')) data=[{card_id:'method-card',category:'形式推理',card_path:'判断/形式推理/card.md',front:'方法卡',back:'方法解析',answered_count:3,correct_count:2}];
+    else if(path.endsWith('/card-performance')) data=[{card_id:'method-card',category:'形式推理',card_path:'判断/形式推理/S1-直言命题/card.md',front:'方法卡',back:'方法解析',answered_count:3,correct_count:2}];
     else if(path.endsWith('/unfinished')) data=state.submitted || !state.available || (state.job && !state.ready)?[]:[state.run];
     else if(path.endsWith('/history')) data=[];
     else if(path.endsWith('/prepare')) { state.prepared++; state.job='recover-job'; data={job_id:state.job}; }
@@ -113,7 +113,7 @@ async function logicFixture(page: import('@playwright/test').Page) {
     else if(path.endsWith('/submit') || path.endsWith('/result')) {
       if(path.endsWith('/submit')) state.submitted++;
       data={id:state.run.id,correct:0,total:10,answered:state.run.answers.filter(a=>a!==null).length,
-        questions:state.run.questions.map((q,i)=>({...q,chosen:state.run.answers[i],correct_index:1,explanation:'交卷解析',card_id:`card-${i}`,card_path:'判断/形式推理/card.md',front:'方法',back:'说明'}))};
+        questions:state.run.questions.map((q,i)=>({...q,chosen:state.run.answers[i],correct_index:1,explanation:'交卷解析',card_id:`card-${i}`,card_path:'判断/形式推理/S1-直言命题/card.md',front:'方法',back:'说明'}))};
     }
     else if(path.includes('/runs/')) data=state.run;
     await route.fulfill({json:data});
