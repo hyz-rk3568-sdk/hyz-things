@@ -447,7 +447,7 @@ impl LogicJudgmentService {
             _ => "Codex 正在生成10道独立题",
         };
         Ok(PrepareProgress {
-            state,
+            state: state.clone(),
             verified: row.try_get::<i64, _>("verified").map_err(error)? as usize,
             message: if state == "failed" {
                 let detail: String = row.try_get("message").map_err(error)?;
