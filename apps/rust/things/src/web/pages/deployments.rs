@@ -49,7 +49,7 @@ pub(crate) fn render_deployment_records(state: &UseReducerHandle<AppState>) -> H
                     })}
                 </ul>
             }
-        },
+        }
         (Some(_), _) => html! {
             <p class={HELP_TEXT} role="status">{"暂无热部署记录（组件可能使用固件内置版本）。"}</p>
         },

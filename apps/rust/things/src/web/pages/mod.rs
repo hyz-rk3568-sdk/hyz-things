@@ -1,9 +1,9 @@
 use super::*;
 
-mod deployments;
 mod calculation;
 mod camera;
 mod comprehensive;
+mod deployments;
 mod devices;
 mod material_scroll;
 mod network;
@@ -16,10 +16,10 @@ mod system;
 mod tailscale;
 mod training;
 
-pub(crate) use deployments::*;
 pub(crate) use calculation::*;
 pub(crate) use camera::*;
 pub(crate) use comprehensive::*;
+pub(crate) use deployments::*;
 pub(crate) use devices::*;
 pub(crate) use network::*;
 pub(crate) use overview::*;
