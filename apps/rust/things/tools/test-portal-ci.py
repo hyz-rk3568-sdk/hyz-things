@@ -83,6 +83,12 @@ if [[ "${0##*/}" == make || "${1:-}" == fmt ]]; then exit 1; fi
         self.assertIn("target/frontend-bundle/hyz-things-frontend.json", frontend)
 
 
+    def test_e2e_installs_webkit_and_uses_the_default_browser(self):
+        steps = named_blocks(self.jobs["e2e"], r"^      - name: ([^\n]+)\n")
+        self.assertIn("Install Playwright WebKit", steps)
+        self.assertIn("npx playwright install --with-deps webkit", steps["Install Playwright WebKit"])
+        self.assertIn("run: npm run test:e2e", steps["Run Playwright E2E"])
+
     def test_verified_cache_hit_skips_dependency_target_and_bundle_build(self):
         steps = named_blocks(self.jobs["frontend"], r"^      - name: ([^\n]+)\n")
         self.assertIn("frontend-bundle-cache.py check", steps["Validate cached frontend bundle"])

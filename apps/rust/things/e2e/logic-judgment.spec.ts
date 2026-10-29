@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { resetHarness, expectNoHorizontalOverflow } from './fixtures';
+import { expectDisabledScrollShield, resetHarness, expectNoHorizontalOverflow } from './fixtures';
 
 const DEFAULT_LOGIC_PROMPT='默认出题要求';
 
@@ -363,6 +363,37 @@ test("insufficient card pool and unconfigured generation cannot create fake pape
   await expect(page.getByTestId('logic-setup')).toContainText('请先配置');
   await expect(page.getByTestId('logic-prepare')).toBeDisabled();
   expect(state.prepared).toBe(0);
+});
+
+test("disabled logic scroll buttons shield text in practice and review", async ({page})=>{
+  await page.clock.install();
+  const {open}=await logicFixture(page);
+  await open();
+  await page.getByTestId('logic-resume').click();
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+  await page.clock.pauseAt((await page.evaluate(()=>Date.now()))+1000);
+  for (const mode of ['practice','review']) {
+    if (mode==='review') {
+      await page.getByTestId('logic-submit').click();
+      await expect(page.getByTestId('logic-result')).toBeVisible();
+    }
+    const first=page.getByRole('button',{name:'题目向上滚动',exact:true});
+    if (!(await first.isVisible())) await page.getByTestId('calculation-scratchpad-toggle').click();
+    for (const viewport of [{width:1180,height:820},{width:834,height:1112},{width:390,height:844}]) {
+      await page.setViewportSize(viewport);
+      for (const [paneId,target] of [['logic-question-scroll','题目'],['logic-answer-scroll','选项']]) {
+        const pane=page.getByTestId(paneId);
+        for (const direction of ['上','下']) {
+          await pane.evaluate((el,direction)=>{el.scrollTop=direction==='上'?0:el.scrollHeight;},direction);
+          await page.clock.runFor(20);
+          const before=await pane.evaluate(el=>el.scrollTop);
+          await expectDisabledScrollShield(page,page.getByRole('button',{name:`${target}向${direction}滚动`,exact:true}));
+          expect(await pane.evaluate(el=>el.scrollTop)).toBe(before);
+        }
+      }
+      await expectNoHorizontalOverflow(page);
+    }
+  }
 });
 
 test("transparent ink controls do not cover the single question stem on mobile", async ({ page }) => {

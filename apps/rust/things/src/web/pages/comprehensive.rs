@@ -1,5 +1,5 @@
 //! 20 questions / 20 minutes. Immersive iPad workspace with 60:40 material/question panes.
-use super::material_scroll::{MaterialScrollButton, ScrollEdges, scroll_edges};
+use super::material_scroll::{scroll_edges, MaterialScrollButton, ScrollEdges};
 use super::*;
 use gloo_timers::{callback::Interval, future::TimeoutFuture};
 use js_sys::Date;
@@ -33,15 +33,15 @@ struct AnalysisPanesProps {
 fn analysis_panes(props: &AnalysisPanesProps) -> Html {
     let passage = use_node_ref();
     let scratchpad_open = use_context::<bool>().unwrap_or(false);
-    let scroll_edges = use_state(ScrollEdges::default);
+    let scroll_state = use_state(ScrollEdges::default);
     let refresh_scroll_edges = {
         let passage = passage.clone();
-        let scroll_edges = scroll_edges.clone();
+        let scroll_state = scroll_state.clone();
         Callback::from(move |_: ()| {
             if let Some(element) = passage.cast::<web_sys::HtmlElement>() {
                 let next = scroll_edges(&element);
-                if *scroll_edges != next {
-                    scroll_edges.set(next);
+                if *scroll_state != next {
+                    scroll_state.set(next);
                 }
             }
         })
@@ -94,8 +94,8 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
                     </div>
                     if scratchpad_open {
                         <div class="relative z-30 mr-48 flex shrink-0 gap-1 lg:mr-0" role="group" aria-label="材料滚动">
-                            <MaterialScrollButton passage={passage.clone()} up={true} disabled={!scroll_edges.can_scroll_up} question_index={props.question_index} />
-                            <MaterialScrollButton passage={passage.clone()} up={false} disabled={!scroll_edges.can_scroll_down} question_index={props.question_index} />
+                            <MaterialScrollButton passage={passage.clone()} up={true} disabled={!scroll_state.can_scroll_up} question_index={props.question_index} />
+                            <MaterialScrollButton passage={passage.clone()} up={false} disabled={!scroll_state.can_scroll_down} question_index={props.question_index} />
                         </div>
                     }
                 </div>

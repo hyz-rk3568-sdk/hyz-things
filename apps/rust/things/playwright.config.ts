@@ -1,5 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const browserName = process.env.HYZ_THINGS_E2E_BROWSER ?? 'webkit';
+if (browserName !== 'webkit' && browserName !== 'chromium') {
+  throw new Error('HYZ_THINGS_E2E_BROWSER must be webkit or chromium');
+}
+
 const defaultWebPort = 20_000 + (process.pid % 20_000) * 2;
 const webPort = parsePort(process.env.HYZ_THINGS_E2E_WEB_PORT, defaultWebPort, 'HYZ_THINGS_E2E_WEB_PORT');
 const controlPort = parsePort(
@@ -39,12 +44,19 @@ export default defineConfig({
   },
   webServer: {
     command: 'bash tools/start-e2e-server.sh',
-    url: `http://127.0.0.1:${webPort}/api/v1/health`,
+    // The harness flushes this record after both listeners and all fixtures are ready.
+    // Stdout readiness avoids an unbounded pre-launch HTTP probe on WSL loopback.
+    wait: {
+      stdout: new RegExp(`"web_origin":"http://127\\.0\\.0\\.1:${webPort}"`),
+    },
     reuseExistingServer: false,
     timeout: 180_000,
   },
   projects: [
-    {
+    browserName === 'webkit' ? {
+      name: 'webkit',
+      use: { ...devices['iPad Pro 11 landscape'] },
+    } : {
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],

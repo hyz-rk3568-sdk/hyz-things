@@ -2,6 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import {
   expectNoHorizontalOverflow,
+  installClipboardMock,
   goToAppPage,
   harnessOrigin,
   loginAsAdmin,
@@ -35,9 +36,10 @@ test("renders the dashboard shell and public overview", async ({ page }) => {
   await expectNoHorizontalOverflow(page);
 });
 
-test("shows the public IPv6 address and copies it from the route card", async ({ page }) => {
+test("shows the public IPv6 address and copies it from the route card", async ({ page, browserName }) => {
   const publicIpv6 = "240e:380:4308:da10:7c0d:6ff:fec7:143";
-  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  if (browserName === 'webkit') await installClipboardMock(page);
+  else await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.route("**/api/v1/status", async route => {
     const response = await route.fetch();
     const snapshot = await response.json();

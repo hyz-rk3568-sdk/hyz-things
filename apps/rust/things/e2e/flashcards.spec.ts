@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { resetHarness, webOrigin } from "./fixtures";
+import { expectUnselectable, resetHarness, webOrigin } from "./fixtures";
+import { inkSnapshot } from "./ink-fixtures";
 
 test.beforeEach(async ({ request }) => {
   await resetHarness(request);
@@ -202,10 +203,10 @@ test("transparent calculation ink overlays the question, supports history and re
   });
   expect(bitmap.width).toBeGreaterThanOrEqual(bitmap.displayWidth);
   expect(bitmap.height).toBeGreaterThanOrEqual(bitmap.displayHeight);
-  await expect(page.getByTestId("calculation-layout")).toHaveCSS("user-select", "none");
-  await expect(page.getByTestId("calculation-expression")).toHaveCSS("user-select", "none");
-  await expect(page.getByTestId("calculation-answer").first()).toHaveCSS("user-select", "none");
-  await expect(scratchpad).toHaveCSS("user-select", "none");
+  await expectUnselectable(page.getByTestId("calculation-layout"));
+  await expectUnselectable(page.getByTestId("calculation-expression"));
+  await expectUnselectable(page.getByTestId("calculation-answer").first());
+  await expectUnselectable(scratchpad);
   const contextMenuAllowed = await canvas.evaluate((element) =>
     element.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
   );
@@ -222,7 +223,7 @@ test("transparent calculation ink overlays the question, supports history and re
   expect(box!.x).toBeCloseTo(scratchBox!.x, 0);
   expect(box!.y).toBeCloseTo(scratchBox!.y, 0);
 
-  const snapshot = () => canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
+  const snapshot = () => inkSnapshot(canvas);
   const blank = await snapshot();
   const draw = async (x1: number, y1: number, x2: number, y2: number) => {
     await page.mouse.move(box!.x + x1, box!.y + y1);
@@ -300,14 +301,17 @@ test("scratchpad cancels Safari single-touch gestures before the second Pencil s
   await page.getByTestId("calculation-scratchpad-toggle").click();
   const prevention = await page.getByTestId("calculation-scratchpad-canvas").evaluate((element) => {
     const canvas = element as HTMLCanvasElement;
-    const makeTouch = (id: number) => new Touch({
+    const makeTouch = (id: number) => ({
       identifier: id, target: canvas, clientX: 42 + id, clientY: 42,
     });
     const emit = (type: "touchstart" | "touchend", fingers: number, cancelable = true) => {
       const touches = Array.from({ length: fingers }, (_, index) => makeTouch(index));
-      const event = new TouchEvent(type, {
-        bubbles: true, cancelable, touches, targetTouches: touches,
-        changedTouches: [makeTouch(10)],
+      // WebKit exposes TouchEvent through createEvent while Touch is not constructible.
+      const event = document.createEvent("TouchEvent");
+      event.initEvent(type, true, cancelable);
+      Object.defineProperties(event, {
+        touches: { value: touches }, targetTouches: { value: touches },
+        changedTouches: { value: [makeTouch(10)] },
       });
       canvas.dispatchEvent(event);
       return event.defaultPrevented;

@@ -286,9 +286,9 @@ jobs:
         working-directory: apps/rust/things
         run: npm ci
 
-      - name: Install Playwright Chromium
+      - name: Install Playwright WebKit
         working-directory: apps/rust/things
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps webkit
 
       - name: Run Playwright E2E
         working-directory: apps/rust/things

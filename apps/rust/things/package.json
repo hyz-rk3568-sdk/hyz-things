@@ -6,7 +6,9 @@
   },
   "scripts": {
     "build:css": "tailwindcss -i ./frontend/app.css -o ./frontend/router.css --minify",
-    "test:e2e": "playwright test",
+    "test:e2e": "npm run test:e2e:startup && playwright test",
+    "test:e2e:startup": "python3 tools/test-e2e-startup.py",
+    "test:e2e:chromium": "HYZ_THINGS_E2E_BROWSER=chromium npm run test:e2e",
     "test:e2e:ui": "playwright test --ui",
     "test:hardware-camera": "node e2e/camera-hardware.mjs"
   },

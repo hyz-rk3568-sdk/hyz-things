@@ -1,7 +1,41 @@
 import { expect, test, type Page } from "@playwright/test";
-import { expectNoHorizontalOverflow, resetHarness } from "./fixtures";
+import { expectDisabledScrollShield, expectNoHorizontalOverflow, expectUnselectable, resetHarness } from "./fixtures";
+
+import { inkSnapshot as captureInk } from "./ink-fixtures";
 
 test.beforeEach(async ({ request }) => { await resetHarness(request); });
+
+test("ink snapshots preserve exact coverage and colors across edge-alpha rasterization", async ({page})=>{
+  await page.route('**/ink-comparison-test',route=>route.fulfill({contentType:'text/html',body:'<canvas id="ink-comparison" width="4" height="4"></canvas>'}));
+  await page.goto('/ink-comparison-test');
+  const canvas=page.locator('#ink-comparison');
+  await canvas.evaluate(element=>{
+    const context=(element as HTMLCanvasElement).getContext('2d')!;
+    const image=context.createImageData(4,4);
+    image.data.set([225,29,72,255],0);
+    image.data.set([225,29,72,64],4);
+    context.putImageData(image,0,0);
+  });
+  const original=await captureInk(canvas);
+  await canvas.evaluate(element=>{
+    const context=(element as HTMLCanvasElement).getContext('2d')!;
+    const image=context.getImageData(0,0,4,4); image.data[7]=96;
+    context.putImageData(image,0,0);
+  });
+  expect(await captureInk(canvas)).toBe(original);
+  await canvas.evaluate(element=>{
+    const context=(element as HTMLCanvasElement).getContext('2d')!;
+    const image=context.getImageData(0,0,4,4); image.data[7]=0;
+    context.putImageData(image,0,0);
+  });
+  expect(await captureInk(canvas)).not.toBe(original);
+  await canvas.evaluate(element=>{
+    const context=(element as HTMLCanvasElement).getContext('2d')!;
+    const image=context.getImageData(0,0,4,4); image.data.set([0,0,255,255],0); image.data.set([225,29,72,64],4);
+    context.putImageData(image,0,0);
+  });
+  expect(await captureInk(canvas)).not.toBe(original);
+});
 
 async function openHeldScrollWorkspace(page: Page, openInk=true) {
   const started = Date.now();
@@ -51,11 +85,7 @@ async function openHeldScrollWorkspace(page: Page, openInk=true) {
 }
 
 async function inkSnapshot(page: Page) {
-  return page.getByTestId("calculation-scratchpad-canvas").evaluate(async element=>{
-    const data=(element as HTMLCanvasElement).toDataURL();
-    const hash=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(data));
-    return Array.from(new Uint8Array(hash),byte=>byte.toString(16).padStart(2,"0")).join("");
-  });
+  return captureInk(page.getByTestId("calculation-scratchpad-canvas"));
 }
 
 async function drawWorkspaceStroke(page: Page, fromX=60, toX=160) {
@@ -101,13 +131,13 @@ test("IndexedDB handwriting survives navigation and reload when localStorage is 
   await expect(saveStatus).toHaveText("草稿已保存到本机");
   await page.getByRole("button",{name:"上一题",exact:true}).click();
   await toggle.click();
-  expect(await inkSnapshot(page)).toEqual(first);
+  await expect.poll(()=>inkSnapshot(page)).toEqual(first);
   expect(await page.evaluate(()=>localStorage.getItem("hyz-analysis-ink-held-scroll-run-workspace-0"))).toBeNull();
   await reopenWorkspace(page);
-  expect(await inkSnapshot(page)).toEqual(first);
+  await expect.poll(()=>inkSnapshot(page)).toEqual(first);
   await page.getByRole("button",{name:"下一题",exact:true}).click();
   await toggle.click();
-  expect(await inkSnapshot(page)).toEqual(second);
+  await expect.poll(()=>inkSnapshot(page)).toEqual(second);
 });
 
 test("IndexedDB write failure retains question ink and retries without losing strokes", async ({page})=>{
@@ -128,13 +158,13 @@ test("IndexedDB write failure retains question ink and retries without losing st
   await page.getByRole("button",{name:"下一题",exact:true}).click();
   await page.getByRole("button",{name:"上一题",exact:true}).click();
   await page.getByTestId("calculation-scratchpad-toggle").click();
-  expect(await inkSnapshot(page)).toEqual(marked);
+  await expect.poll(()=>inkSnapshot(page)).toEqual(marked);
   await expect(status).toHaveText("保存失败，仅当前页面暂存");
   await page.evaluate(()=>{(window as any).failInkWrites=false;});
   await page.getByRole("button",{name:"重试保存",exact:true}).click();
   await expect(status).toHaveText("草稿已保存到本机");
   await reopenWorkspace(page);
-  expect(await inkSnapshot(page)).toEqual(marked);
+  await expect.poll(()=>inkSnapshot(page)).toEqual(marked);
 });
 
 test("PWA reload preserves failed IndexedDB drafts and resumes after saving", async ({page})=>{
@@ -166,7 +196,7 @@ test("PWA reload preserves failed IndexedDB drafts and resumes after saving", as
   await expect(page.getByTestId("analysis-paused")).toBeVisible();
   await page.getByRole("button",{name:"继续计时",exact:true}).click();
   await page.getByTestId("calculation-scratchpad-toggle").click();
-  expect(await inkSnapshot(page)).toEqual(marked);
+  await expect.poll(()=>inkSnapshot(page)).toEqual(marked);
 });
 
 test("IndexedDB read failures block blank overwrites and allow retry", async ({page})=>{
@@ -271,6 +301,30 @@ async function openFrozenScrollWorkspace(page: Page) {
   await page.clock.pauseAt((await page.evaluate(()=>Date.now()))+1000);
 }
 
+test("disabled material scroll buttons intercept long presses before they reach text", async ({page})=>{
+  await openFrozenScrollWorkspace(page);
+  for (const mode of ["practice","review"]) {
+    if (mode==="review") {
+      await page.getByRole("button",{name:"交卷",exact:true}).click();
+      await expect(page.getByTestId("analysis-result")).toBeVisible();
+    }
+    const up=page.getByRole("button",{name:"材料向上滚动",exact:true});
+    if (!(await up.isVisible())) await page.getByTestId("calculation-scratchpad-toggle").click();
+    const passage=page.getByTestId("analysis-material-scroll");
+    for (const viewport of [{width:1180,height:820},{width:834,height:1112},{width:390,height:844}]) {
+      await page.setViewportSize(viewport);
+      for (const direction of ["上","下"]) {
+        await passage.evaluate((el,direction)=>{el.scrollTop=direction==="上"?0:el.scrollHeight;},direction);
+        await page.clock.runFor(20);
+        const before=await passage.evaluate(el=>el.scrollTop);
+        await expectDisabledScrollShield(page,page.getByRole("button",{name:`材料向${direction}滚动`,exact:true}));
+        expect(await passage.evaluate(el=>el.scrollTop)).toBe(before);
+      }
+      await expectNoHorizontalOverflow(page);
+    }
+  }
+});
+
 test("material scroll repeats after 300ms and stops without a release click step", async ({page})=>{
   await page.setViewportSize({width:1180,height:820});
   await openFrozenScrollWorkspace(page);
@@ -303,8 +357,7 @@ test("Pencil and touch holds cancel safely without selection or a long-press men
   await openFrozenScrollWorkspace(page);
   const passage=page.getByTestId("analysis-material-scroll");
   const down=page.getByRole("button",{name:"材料向下滚动",exact:true});
-  await expect(down).toHaveCSS("user-select","none");
-  await expect(down).toHaveCSS("-webkit-user-select","none");
+  await expectUnselectable(down);
   await expect(down).toHaveCSS("touch-action","none");
   expect(await down.evaluate(el=>el.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,cancelable:true})))).toBe(false);
   for (const pointerType of ["pen","touch"]) {
@@ -422,8 +475,7 @@ test("all scheduled cards stay height-bounded and scroll under the portal CSP", 
       overflowY: getComputedStyle(pane).overflowY,
     }))).toEqual({bounded:true,scrollable:true,overflowY:"auto"});
     await expectNoHorizontalOverflow(page);
-    await list.hover();
-    await page.mouse.wheel(0,500);
+    await list.evaluate(pane=>pane.scrollBy(0,500));
     await expect.poll(() => list.evaluate((pane) => pane.scrollTop)).toBeGreaterThan(0);
     await cards.last().click();
     await expect(page.getByTestId("analysis-card-detail")).toContainText("累计作答 0 次 · 未作答");
@@ -710,7 +762,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   expect(workspace).not.toBeNull();
   expect(inkBox!.x).toBeCloseTo(workspace!.x,0);
   expect(inkBox!.width).toBeCloseTo(workspace!.width,0);
-  const initial=await canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL());
+  const initial=await inkSnapshot(page);
   const draw=async (fromX:number,toX:number) => {
     await page.mouse.move(inkBox!.x+fromX, inkBox!.y+110);
     await page.mouse.down();
@@ -719,7 +771,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   };
   await draw(60,160); // left material
   await draw(workspace!.width*.62,workspace!.width*.68); // right options
-  const marked=await canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL());
+  const marked=await inkSnapshot(page);
   expect(marked).not.toEqual(initial);
   const canvasMetrics=await canvas.evaluate(el=>{
     const c=el as HTMLCanvasElement;
@@ -728,18 +780,18 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   expect(canvasMetrics.width).toBeGreaterThanOrEqual(canvasMetrics.clientWidth);
   expect(canvasMetrics.pen).toBeCloseTo(2.6,4);
   await page.getByTestId("calculation-scratchpad-undo").click();
-  const afterUndo=await canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL());
+  const afterUndo=await inkSnapshot(page);
   expect(afterUndo).not.toEqual(marked);
   await page.getByTestId("calculation-scratchpad-redo").click();
-  expect(await canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL())).toEqual(marked);
+  await expect.poll(()=>inkSnapshot(page)).toEqual(marked);
   // Material ink is anchored to text content: shifting its scroll position
   // changes the drawing, and scrolling back restores its original placement.
   await scrollDown.click();
   await expect.poll(()=>passage.evaluate(el=>el.scrollTop)).toBeGreaterThan(29);
-  await expect.poll(()=>canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL())).not.toEqual(marked);
+  await expect.poll(()=>inkSnapshot(page)).not.toEqual(marked);
   await scrollUp.click();
   await expect.poll(()=>passage.evaluate(el=>el.scrollTop)).toBeLessThan(3);
-  await expect.poll(()=>canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL())).toEqual(marked);
+  await expect.poll(()=>inkSnapshot(page)).toEqual(marked);
   await toggle.click();
   await expect(surface.getByTestId("calculation-scratchpad-toolbar")).toHaveCount(0);
   await expect(toggle).toHaveAttribute("aria-label", "开启草稿");
@@ -747,7 +799,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(canvas).toBeHidden();
   await page.getByRole("button",{name:"上一题"}).click();
   await toggle.click();
-  expect(await canvas.evaluate(el=>(el as HTMLCanvasElement).toDataURL())).toEqual(marked);
+  await expect.poll(()=>inkSnapshot(page)).toEqual(marked);
   await toggle.click();
   // Portrait stacks two internally scrollable panes without document scroll.
   await page.setViewportSize({width:820,height:430});

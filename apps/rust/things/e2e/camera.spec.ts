@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { installMicrophoneCapture, readMicrophoneTracks } from "./media-fixtures";
 import {
   expectNoHorizontalOverflow,
   goToAppPage,
@@ -64,6 +65,7 @@ test("requires administrator login to view and control the camera", async ({
   page,
   request,
 }) => {
+  await page.clock.install();
   await installAudioSessionMock(page);
   await installCameraWebRtcMock(page);
   await page.goto("/");
@@ -238,9 +240,14 @@ test("requires administrator login to view and control the camera", async ({
             (await readHarnessState(request)).camera.status.profile.rotation,
         )
         .toBe(`deg_${degrees}`);
-      await expect(
-        camera.getByText(`旋转 ${degrees}°`, { exact: false }),
-      ).toBeVisible();
+      const rotationMetric = camera.getByText(`旋转 ${degrees}°`, { exact: false });
+      await expect
+        .poll(async () => {
+          await page.clock.fastForward(2_000);
+          return rotationMetric.isVisible();
+        })
+        .toBe(true);
+      await expect(rotationMetric).toBeVisible();
     }
   };
   await verifyRotation();
@@ -332,7 +339,9 @@ test("requires administrator login to view and control the camera", async ({
 test("enables full-duplex intercom with a real microphone track and cleans up", async ({
   page,
   request,
+  browserName,
 }) => {
+  await installMicrophoneCapture(page, { generatedAudio: browserName === "webkit" });
   await installCameraWebRtcMock(page);
   await loginAsAdmin(page);
   await page.getByRole("button", { name: "摄像头", exact: true }).click();
@@ -348,7 +357,7 @@ test("enables full-duplex intercom with a real microphone track and cleans up", 
   const talkButton = camera.getByRole("button", { name: "开启对讲" });
   await expect(talkButton).toBeVisible();
 
-  // 点击开启对讲：真实 getUserMedia（fake device）提供麦克风轨道并挂载到 sender。
+  // WebKit 使用 WebAudio 真轨道；Chromium 保留 fake device 的原生 getUserMedia。
   await talkButton.click();
   await expect(camera.getByText("对讲已开启", { exact: false })).toBeVisible();
   await expect(camera.getByRole("button", { name: "关闭对讲" })).toBeVisible();
@@ -357,6 +366,10 @@ test("enables full-duplex intercom with a real microphone track and cleans up", 
       page.evaluate(() => (window as any).__hyzCameraReplaceTrackCalls),
     )
     .toEqual([{ kind: "audio", hasTrack: true }]);
+
+  await expect.poll(() => readMicrophoneTracks(page)).toEqual([
+    { real: true, kind: "audio", readyState: "live" },
+  ]);
 
   // 再次点击关闭对讲：摘下并停止麦克风轨道。
   await camera.getByRole("button", { name: "关闭对讲" }).click();
@@ -370,6 +383,10 @@ test("enables full-duplex intercom with a real microphone track and cleans up", 
       { kind: "audio", hasTrack: true },
       { kind: "audio", hasTrack: false },
     ]);
+
+  await expect.poll(() => readMicrophoneTracks(page)).toEqual([
+    { real: true, kind: "audio", readyState: "ended" },
+  ]);
 
   // 停止直播：会话关闭、管线与 session 归零。
   await camera.getByRole("button", { name: "停止直播" }).click();

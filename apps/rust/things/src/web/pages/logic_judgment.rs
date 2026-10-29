@@ -106,7 +106,8 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
                 if attached {
                     if let Some(window) = window {
                         let _ = window.remove_event_listener_with_callback(
-                            "resize", handler.as_ref().unchecked_ref(),
+                            "resize",
+                            handler.as_ref().unchecked_ref(),
                         );
                     }
                 }

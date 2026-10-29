@@ -1,3 +1,4 @@
+import { installDocumentPipWindowFallback } from "./pip-fixtures";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import {
@@ -173,10 +174,11 @@ test("restarts the selected custom countdown from its configured duration", asyn
     .toBeGreaterThanOrEqual(2);
 });
 
-test("opens the selected custom countdown in a picture-in-picture window", async ({
+test("opens the selected custom countdown in a Document PiP window", async ({
   page,
   context,
 }) => {
+  await installDocumentPipWindowFallback(page);
   await openStudyPage(page);
   const timer = page.getByRole("region", { name: "自定义倒计时" });
 
@@ -199,10 +201,11 @@ test("opens the selected custom countdown in a picture-in-picture window", async
   await pipPage.getByRole("button", { name: "关闭画中画" }).click();
 });
 
-test("shows running, paused, and completed custom countdown completion times in picture-in-picture", async ({
+test("shows running, paused, and completed custom countdown completion times in Document PiP", async ({
   page,
   context,
 }) => {
+  await installDocumentPipWindowFallback(page);
   await openStudyPage(page);
   const timer = page.getByRole("region", { name: "自定义倒计时" });
 
@@ -289,10 +292,11 @@ test("keeps exam countdown cards dark and low-contrast", async ({ page }) => {
   );
 });
 
-test("opens an exam countdown in a picture-in-picture window with a double click", async ({
+test("opens an exam countdown in a Document PiP window with a double click", async ({
   page,
   context,
 }) => {
+  await installDocumentPipWindowFallback(page);
   await openStudyPage(page);
 
   const pipPagePromise = context.waitForEvent("page");
@@ -336,10 +340,11 @@ test("opens an exam countdown in a picture-in-picture window with a double click
   await expectNoHorizontalOverflow(page);
 });
 
-test("keeps the countdown ticking inside the picture-in-picture window", async ({
+test("keeps the countdown ticking inside the Document PiP window", async ({
   page,
   context,
 }) => {
+  await installDocumentPipWindowFallback(page);
   await openStudyPage(page);
   const pipPagePromise = context.waitForEvent("page");
   await page
@@ -359,10 +364,11 @@ test("keeps the countdown ticking inside the picture-in-picture window", async (
   expect(diff).toBeLessThanOrEqual(4);
 });
 
-test("closes the picture-in-picture window with Escape and reopens it", async ({
+test("closes the Document PiP window with Escape and reopens it", async ({
   page,
   context,
 }) => {
+  await installDocumentPipWindowFallback(page);
   await openStudyPage(page);
   const firstPipPromise = context.waitForEvent("page");
   await page
@@ -390,10 +396,11 @@ test("closes the picture-in-picture window with Escape and reopens it", async ({
   ).toBeVisible();
 });
 
-test("opens a countdown picture-in-picture window on mobile", async ({
+test("opens a countdown Document PiP window on mobile", async ({
   page,
   context,
 }) => {
+  await installDocumentPipWindowFallback(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await openStudyPage(page);
 

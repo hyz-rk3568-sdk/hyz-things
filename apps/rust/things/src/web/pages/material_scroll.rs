@@ -201,14 +201,25 @@ pub(super) fn material_scroll_button(props: &MaterialScrollButtonProps) -> Html 
             }
         })
     };
-    let label = format!("{}向{}滚动", props.target, if props.up { "上" } else { "下" });
+    let label = format!(
+        "{}向{}滚动",
+        props.target,
+        if props.up { "上" } else { "下" }
+    );
     html! {
-        <button ref={button} type="button" class="btn btn-ghost btn-sm touch-none select-none px-2 [-webkit-touch-callout:none]"
-            aria-label={label} title="单击滚动一行，长按连续滚动" disabled={props.disabled}
-            onpointerdown={on_down} onpointerup={on_up} onpointercancel={on_cancel.clone()}
-            onlostpointercapture={on_cancel} onclick={on_click}
+        // Disabled buttons ignore hit testing; keep their gesture shield interactive.
+        <span class="inline-flex touch-none select-none [-webkit-touch-callout:none]"
+            onpointerdown={Callback::from(|event: PointerEvent| {
+                event.prevent_default();
+                event.stop_propagation();
+            })}
             oncontextmenu={Callback::from(|event: MouseEvent| event.prevent_default())}>
-            {if props.up { "↑" } else { "↓" }}
-        </button>
+            <button ref={button} type="button" class="btn btn-ghost btn-sm touch-none select-none px-2 [-webkit-touch-callout:none]"
+                aria-label={label} title="单击滚动一行，长按连续滚动" disabled={props.disabled}
+                onpointerdown={on_down} onpointerup={on_up} onpointercancel={on_cancel.clone()}
+                onlostpointercapture={on_cancel} onclick={on_click}>
+                {if props.up { "↑" } else { "↓" }}
+            </button>
+        </span>
     }
 }
