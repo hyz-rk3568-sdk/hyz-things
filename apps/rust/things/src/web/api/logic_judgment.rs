@@ -17,6 +17,7 @@ pub(crate) struct LogicRun {
     pub id: String,
     pub status: String,
     pub deadline_at_ms: Option<i64>,
+    pub paused_remaining_ms: Option<i64>,
     pub server_now_ms: i64,
     pub duration_seconds: u64,
     pub questions: Vec<LogicQuestion>,
@@ -62,6 +63,10 @@ pub(crate) struct LogicRetry {
 #[derive(Clone, Deserialize)]
 pub(crate) struct LogicPerformance {
     pub card_id: String,
+    pub category: String,
+    pub card_path: String,
+    pub front: String,
+    pub back: String,
     pub answered_count: u64,
     pub correct_count: u64,
 }
@@ -82,7 +87,9 @@ pub(crate) async fn enter_logic_run(id: &str, csrf: &str) -> Result<LogicRun, St
         || run.questions.len() != 10
         || run.answers.len() != 10
         || run.duration_seconds != 600
-        || run.deadline_at_ms.is_none()
+        || (run.status == "active"
+        && run.deadline_at_ms.is_none()
+        && run.paused_remaining_ms.is_none())
         || run.answers.iter().flatten().any(|choice| *choice >= 4)
     {
         return Err("服务器试卷不符合10题10分钟约定".into());
