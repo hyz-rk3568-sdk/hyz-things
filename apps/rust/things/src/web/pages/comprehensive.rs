@@ -1389,24 +1389,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         </div>
                     </details>
                     if let Some(info)=(*status).clone(){
-                        <div class="grid min-w-0 grid-cols-3 gap-2" data-testid="analysis-answer-summary">
-                            <div class="min-w-0 rounded-box bg-base-200 p-3">
-                                <p class="text-xs text-base-content/60">{"累计作答"}</p>
-                                <p class="text-xl font-semibold" data-testid="analysis-total-answered">{info.answer_summary.answered_count}</p>
-                            </div>
-                            <div class="min-w-0 rounded-box bg-base-200 p-3">
-                                <p class="text-xs text-base-content/60">{"累计答对"}</p>
-                                <p class="text-xl font-semibold" data-testid="analysis-total-correct">{info.answer_summary.correct_count}</p>
-                            </div>
-                            <div class="min-w-0 rounded-box bg-base-200 p-3">
-                                <p class="text-xs text-base-content/60">{"总体正确率"}</p>
-                                <p class="text-xl font-semibold" data-testid="analysis-total-accuracy">
-                                    {if info.answer_summary.answered_count==0 {"未作答".to_owned()} else {
-                                        format!("{:.1}%",100.0*info.answer_summary.correct_count as f64/info.answer_summary.answered_count as f64)
-                                    }}
-                                </p>
-                            </div>
-                        </div>
+                        <TrainingMetrics answered={info.answer_summary.answered_count} correct={info.answer_summary.correct_count} prefix="analysis" />
                         <details class="min-w-0 max-w-full overflow-hidden rounded-box border border-base-content/15 p-3" data-testid="analysis-all-cards">
                             <summary class="cursor-pointer font-semibold">{format!("全部卡片（{}）",info.card_stats.len())}</summary>
                             <div class="mt-3 max-h-72 w-full min-w-0 max-w-full space-y-2 overflow-x-hidden overflow-y-auto overscroll-contain [contain:paint] [-webkit-overflow-scrolling:touch]" data-testid="analysis-all-card-list">
