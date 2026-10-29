@@ -12,3 +12,7 @@ pub mod tailscale;
 pub mod wifi;
 
 pub mod data_analysis;
+
+pub mod logic_judgment;
+
+pub mod vcnt;

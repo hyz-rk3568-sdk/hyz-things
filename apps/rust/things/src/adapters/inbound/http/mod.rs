@@ -57,6 +57,7 @@ use crate::{
 
 mod data_analysis;
 mod flashcards;
+mod logic_judgment;
 mod tls;
 
 pub use tls::{PortalTls, TlsListener};
@@ -90,6 +91,7 @@ struct AppState {
     flashcard_source:
         Option<Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>>,
     data_analysis: Option<Arc<crate::adapters::outbound::data_analysis::DataAnalysisService>>,
+    logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
     camera_scope: Option<CameraAccessScope>,
     csrf_token: Arc<str>,
     allowed_origin: Arc<str>,
@@ -184,6 +186,7 @@ pub fn app(read_status: PortalStatus) -> Router {
             flashcards: None,
             flashcard_source: None,
             data_analysis: None,
+            logic_judgment: None,
             camera_scope: None,
             csrf_token: String::new(),
             allowed_origin: format!("http://{LAN_ADDRESS}:{DEFAULT_HTTP_PORT}"),
@@ -223,6 +226,7 @@ pub fn app_with_control_and_allowed_origins(
             flashcards: None,
             flashcard_source: None,
             data_analysis: None,
+            logic_judgment: None,
             camera_scope: None,
             csrf_token,
             allowed_origin: format!("http://{LAN_ADDRESS}:{port}"),
@@ -243,6 +247,17 @@ pub fn app_with_admin_control(
     csrf_token: String,
     port: u16,
 ) -> Router {
+    app_with_admin_control_and_logic_judgment(read_status, control, admin, csrf_token, port, None)
+}
+
+pub fn app_with_admin_control_and_logic_judgment(
+    read_status: PortalStatus,
+    control: Arc<dyn PortalControlHandler>,
+    admin: Arc<AdminApplication>,
+    csrf_token: String,
+    port: u16,
+    logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
+) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
     app_with_assets(
         read_status,
@@ -253,6 +268,7 @@ pub fn app_with_admin_control(
             flashcards: None,
             flashcard_source: None,
             data_analysis: None,
+            logic_judgment,
             camera_scope: None,
             csrf_token,
             allowed_origin: format!("http://{LAN_ADDRESS}:{port}"),
@@ -324,6 +340,7 @@ pub fn app_with_admin_camera_control_and_flashcards(
         flashcards,
         flashcard_source,
         None,
+        None,
     )
 }
 
@@ -342,6 +359,7 @@ pub fn app_with_admin_camera_control_and_flashcards_and_analysis(
         Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>,
     >,
     data_analysis: Option<Arc<crate::adapters::outbound::data_analysis::DataAnalysisService>>,
+    logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
 ) -> Router {
     app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_origins(
         read_status,
@@ -355,6 +373,7 @@ pub fn app_with_admin_camera_control_and_flashcards_and_analysis(
         flashcards,
         flashcard_source,
         data_analysis,
+        logic_judgment,
         Vec::new(),
     )
 }
@@ -374,6 +393,7 @@ pub fn app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_or
         Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>,
     >,
     data_analysis: Option<Arc<crate::adapters::outbound::data_analysis::DataAnalysisService>>,
+    logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
     additional_allowed_origins: Vec<String>,
 ) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
@@ -386,6 +406,7 @@ pub fn app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_or
             flashcards,
             flashcard_source,
             data_analysis,
+            logic_judgment,
             camera_scope: Some(CameraAccessScope::Lan),
             csrf_token,
             allowed_origin: format!(
@@ -420,6 +441,7 @@ pub fn app_with_admin_control_at_address(
             flashcards: None,
             flashcard_source: None,
             data_analysis: None,
+            logic_judgment: None,
             camera_scope: None,
             csrf_token,
             allowed_origin: format!("http://{address}:{port}"),
@@ -491,6 +513,7 @@ pub fn app_with_admin_camera_control_at_address_and_flashcards(
         flashcards,
         flashcard_source,
         None,
+        None,
     )
 }
 
@@ -509,6 +532,7 @@ pub fn app_with_admin_camera_control_at_address_and_flashcards_and_analysis(
         Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>,
     >,
     data_analysis: Option<Arc<crate::adapters::outbound::data_analysis::DataAnalysisService>>,
+    logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
 ) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
     app_with_assets(
@@ -520,6 +544,7 @@ pub fn app_with_admin_camera_control_at_address_and_flashcards_and_analysis(
             flashcards,
             flashcard_source,
             data_analysis,
+            logic_judgment,
             camera_scope: Some(CameraAccessScope::Tailscale { address }),
             csrf_token,
             allowed_origin: format!("{}://{address}:{port}", if tls { "https" } else { "http" }),
@@ -559,6 +584,7 @@ pub fn app_with_loopback_runtime_frontend(
         installed_apps,
         None,
         None,
+        None,
     )
 }
 
@@ -580,6 +606,7 @@ pub fn app_with_loopback_runtime_frontend_and_flashcards(
     flashcard_source: Option<
         Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>,
     >,
+    logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
 ) -> io::Result<Router> {
     validate_exact_loopback_origin(&exact_loopback_origin)?;
     let assets = AssetStore::from_tar(frontend_tar)?;
@@ -592,6 +619,7 @@ pub fn app_with_loopback_runtime_frontend_and_flashcards(
             flashcards,
             flashcard_source,
             data_analysis: None,
+            logic_judgment,
             camera_scope: Some(CameraAccessScope::Lan),
             csrf_token,
             allowed_origin: exact_loopback_origin,
@@ -640,6 +668,7 @@ struct AppConfiguration {
     flashcard_source:
         Option<Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>>,
     data_analysis: Option<Arc<crate::adapters::outbound::data_analysis::DataAnalysisService>>,
+    logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
     camera_scope: Option<CameraAccessScope>,
     csrf_token: String,
     allowed_origin: String,
@@ -662,6 +691,7 @@ fn app_with_assets(
         flashcards,
         flashcard_source,
         data_analysis,
+        logic_judgment,
         camera_scope,
         csrf_token,
         allowed_origin,
@@ -672,6 +702,62 @@ fn app_with_assets(
         installed_apps,
     } = configuration;
     Router::new()
+        .route(
+            "/api/v1/study/logic-judgment/status",
+            on(MethodFilter::GET, logic_judgment::status),
+        )
+        .route(
+            "/api/v1/study/logic-judgment/prepare",
+            on(MethodFilter::POST, logic_judgment::prepare),
+        )
+        .route(
+            "/api/v1/study/logic-judgment/prepare/{id}",
+            on(MethodFilter::GET, logic_judgment::progress),
+        )
+        .route(
+            "/api/v1/study/logic-judgment/runs/{id}",
+            on(MethodFilter::GET, logic_judgment::run),
+        )
+        .route(
+            "/api/v1/study/logic-judgment/runs/{id}/start",
+            on(MethodFilter::POST, logic_judgment::start),
+        )
+        .route(
+            "/api/v1/study/logic-judgment/runs/{id}/answers",
+            on(MethodFilter::POST, logic_judgment::answer),
+        )
+        .route(
+            "/api/v1/study/logic-judgment/runs/{id}/submit",
+            on(MethodFilter::POST, logic_judgment::submit),
+        )
+        .route(
+            "/api/v1/study/logic-judgment/runs/{id}/result",
+            on(MethodFilter::GET, logic_judgment::result),
+        )
+        .route(
+            "/api/v1/study/logic-judgment/runs/{id}/retry",
+            on(MethodFilter::POST, logic_judgment::retry),
+        )
+        .route(
+            "/api/v1/study/logic-judgment/unfinished",
+            on(MethodFilter::GET, logic_judgment::unfinished),
+        )
+        .route(
+            "/api/v1/study/logic-judgment/history",
+            on(MethodFilter::GET, logic_judgment::history),
+        )
+        .route(
+            "/api/v1/study/logic-judgment/card-performance",
+            on(MethodFilter::GET, logic_judgment::card_performance),
+        )
+        .route(
+            "/api/v1/study/logic-judgment/user-prompt",
+            on(MethodFilter::GET, logic_judgment::user_prompt)
+                .on(MethodFilter::POST, logic_judgment::save_user_prompt)
+                .layer(DefaultBodyLimit::max(
+                    logic_judgment::MAX_USER_PROMPT_BODY_BYTES,
+                )),
+        )
         .route("/api/v1/health", on(MethodFilter::GET, health))
         .route("/api/v1/status", on(MethodFilter::GET, status))
         .route("/api/v1/panel", on(MethodFilter::GET, panel))
@@ -911,6 +997,7 @@ fn app_with_assets(
             flashcards,
             flashcard_source,
             data_analysis,
+            logic_judgment,
             csrf_token: Arc::from(csrf_token),
             allowed_origin: Arc::from(allowed_origin),
             additional_allowed_origins: Arc::from(additional_allowed_origins),
@@ -2613,8 +2700,27 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/control/study/sync"
             | "/api/v1/study/data-analysis/prepare"
             | "/api/v1/study/data-analysis/user-prompt"
+            | "/api/v1/study/logic-judgment/prepare"
+            | "/api/v1/study/logic-judgment/user-prompt"
     ) || is_data_analysis_run_post_path(path)
+        || is_logic_judgment_run_post_path(path)
 }
+fn is_logic_judgment_run_post_path(path: &str) -> bool {
+    let Some(rest) = path.strip_prefix("/api/v1/study/logic-judgment/runs/") else {
+        return false;
+    };
+    let mut segments = rest.split('/');
+    let Some(id) = segments.next() else {
+        return false;
+    };
+    uuid::Uuid::parse_str(id).is_ok()
+        && matches!(
+            segments.next(),
+            Some("start" | "answers" | "submit" | "retry")
+        )
+        && segments.next().is_none()
+}
+
 fn is_data_analysis_run_post_path(path: &str) -> bool {
     let Some(rest) = path.strip_prefix("/api/v1/study/data-analysis/runs/") else {
         return false;

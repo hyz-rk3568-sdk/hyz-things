@@ -11,11 +11,13 @@ use hyz_things::{
     adapters::inbound::http::app_with_loopback_runtime_frontend_and_flashcards,
     adapters::outbound::{
         flashcard_source::FilesystemFlashcardSource, flashcard_sqlite::SqliteFlashcardRepository,
+        logic_judgment::LogicJudgmentService,
     },
     application::{
         admin::AdminApplication,
         camera::{CameraApplication, CameraControlPort, CameraError, CameraSession},
         flashcards::FlashcardApplication,
+        logic_judgment::LogicJudgmentPort,
         ports::{
             AdminCredentialStorePort, AdminRandomPort, ClockPort, InstalledAppsPort, PlatformError,
             PortalControlError, PortalControlHandler,
@@ -1095,6 +1097,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         SqliteFlashcardRepository::connect(fixture_root.join("flashcards.db"))
             .await
             .map_err(|error| std::io::Error::other(error.to_string()))?;
+    let logic_service = LogicJudgmentService::new(flashcard_repository.pool().clone(), None)
+        .map_err(std::io::Error::other)?;
+    logic_service
+        .recover_interrupted()
+        .await
+        .map_err(std::io::Error::other)?;
+    let logic_judgment = Some(Arc::new(logic_service) as Arc<dyn LogicJudgmentPort>);
     let flashcards = Arc::new(FlashcardApplication::new(
         flashcard_source.clone(),
         Arc::new(flashcard_repository),
@@ -1115,6 +1124,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some(backend.clone()),
         Some(flashcards),
         Some(flashcard_source),
+        logic_judgment,
     )?;
     let harness_app = harness_control_app(backend, admin, camera);
 

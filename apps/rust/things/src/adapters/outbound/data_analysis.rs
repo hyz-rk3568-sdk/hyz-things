@@ -7,6 +7,7 @@ use crate::domain::data_analysis::{
     select_material_batch, topic_scope, Material, VerifiedQuestion, QUIZ_GROUPS, QUIZ_PER_GROUP,
     QUIZ_SECONDS, TOPICS,
 };
+use crate::domain::vcnt::{delta_vcnt, CardSchedule};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use std::{
@@ -50,6 +51,17 @@ pub struct CodexConfig {
     // Fixed-address LAN authentication only; this is NOT the ChatGPT OAuth token.
     token: String,
     cwd: String,
+}
+
+impl CodexConfig {
+    pub(crate) async fn connect(&self) -> Result<CodexSession, String> {
+        tokio::time::timeout(
+            Duration::from_secs(12),
+            CodexSession::connect(&self.token, &self.cwd),
+        )
+        .await
+        .map_err(|_| "连接 Codex App Server 超时".to_owned())?
+    }
 }
 
 /// Root-only .env file. Ignore unrelated configuration rather than accepting
@@ -358,26 +370,6 @@ struct CardTarget {
 #[derive(Clone, Debug)]
 struct QuestionPlan {
     groups: [Vec<CardTarget>; QUIZ_GROUPS],
-}
-
-/// Card-only virtual scheduling state. No category-level fair counter.
-#[derive(Default)]
-struct CardSchedule {
-    cards: HashMap<String, i64>,
-    increments: HashMap<String, i64>,
-}
-impl CardSchedule {
-    fn card(&self, id: &str) -> i64 {
-        self.cards.get(id).copied().unwrap_or(0)
-    }
-    fn increment(&self, id: &str) -> i64 {
-        self.increments.get(id).copied().unwrap_or(1024)
-    }
-}
-fn weighted_increment(answered: i64, correct: i64) -> i64 {
-    let p = (correct as f64 + 2.0) / (answered as f64 + 4.0);
-    let weight = (1.4 - 0.8 * p).clamp(0.7, 1.3);
-    (1024.0 / weight).round() as i64
 }
 
 struct CardRng(u64);
@@ -841,7 +833,9 @@ impl DataAnalysisService {
             let id: String = row.try_get("card_id").map_err(as_error)?;
             let n: i64 = row.try_get("n").map_err(as_error)?;
             let c: i64 = row.try_get("c").map_err(as_error)?;
-            schedule.increments.insert(id, weighted_increment(n, c));
+            schedule
+                .increments
+                .insert(id, delta_vcnt(c as u64, n as u64));
         }
         tx.commit().await.map_err(as_error)?;
         Ok(schedule)
@@ -1964,9 +1958,9 @@ mod tests {
     }
     #[test]
     fn weighted_vcnt_favors_weak_cards() {
-        assert_eq!(weighted_increment(0, 0), 1024);
-        assert_eq!(weighted_increment(5, 0), 838);
-        assert_eq!(weighted_increment(5, 5), 1317);
+        assert_eq!(delta_vcnt(0, 0), 1024);
+        assert_eq!(delta_vcnt(0, 5), 838);
+        assert_eq!(delta_vcnt(5, 5), 1317);
     }
 
     fn test_prepared_groups(plan: &QuestionPlan) -> Vec<QuestionGroup> {
@@ -2123,7 +2117,7 @@ mod tests {
         let changed = service.load_card_schedule(&cards).await.unwrap();
         assert_eq!(
             changed.increment(&plan.groups[0][0].card.id),
-            weighted_increment(1, 0)
+            delta_vcnt(0, 1)
         );
         assert_eq!(changed.increment(&plan.groups[0][1].card.id), 1024);
         let replay = service.retry(&id).await.unwrap();
@@ -2133,7 +2127,7 @@ mod tests {
         let after = service.load_card_schedule(&cards).await.unwrap();
         assert_eq!(
             after.increment(&plan.groups[0][0].card.id),
-            weighted_increment(2, 0)
+            delta_vcnt(0, 2)
         );
     }
 
@@ -2947,7 +2941,7 @@ mod tests {
             .take(QUIZ_GROUPS)
             .map(|m| m.topic.clone())
             .collect::<Vec<_>>();
-        let second = order_exam_themes(themes.clone(), &[previous.clone()], 20261023);
+        let second = order_exam_themes(themes.clone(), std::slice::from_ref(&previous), 20261023);
         assert!(second
             .iter()
             .take(QUIZ_GROUPS)
@@ -2972,7 +2966,7 @@ mod tests {
             QUIZ_GROUPS
         );
         assert_eq!(
-            order_exam_themes(exam_theme_materials(), &[previous.clone()], 42)
+            order_exam_themes(exam_theme_materials(), std::slice::from_ref(&previous), 42)
                 .iter()
                 .map(|m| &m.topic)
                 .collect::<Vec<_>>(),
