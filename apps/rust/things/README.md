@@ -8,29 +8,59 @@
 - 共享 wire 契约：`apps/rust/contract`（`hyz-contract`）
 - 详细设计、架构图和板端验证记录：[docs/architecture.md](../../../docs/architecture.md)
 
-## 能力
+## 当前功能与页面
 
-- 代理设置页保留 LAN TUN 开关，并将原代理开关迁移为“本机系统代理”：使用 Mihomo `127.0.0.1:7890` 提供本机 HTTP/HTTPS 显式代理，不接管所有本机流量，也不控制 Tailscale。
-- 管理员认证：Argon2id 凭据持久化在 `/userdata/hyz-router/admin/credential.json`，bootstrap 密码强制改密、会话与 CSRF 边界沿用原安全模型。
-- 状态聚合 `PortalStatus`：router 不可用时返回明确 degraded 快照，health 保持纯存活探针。
-- 固定 LAN 监听与 Tailscale exact listener 管理：地址变化时先停旧 listener 再绑定新地址，永不回退 `0.0.0.0`。
-- 非 router 应用热推送：`tools/deploy-app.sh` 只支持对 `hyz-things` 和 `hyz-camera` 推送新 ELF，不重启其他应用，并在停止服务前做协议版本兼容性检查。router 的开发热替换使用独立的受控流程：USB ADB 执行 `stop → 原子替换 → start`，网络 ADB 执行 `原子替换 → reboot`；正式发布仍通过 OTA。
+当前页面集合以 [`src/web/navigation.rs`](src/web/navigation.rs) 的 `AppPage::ALL` 为准，导航顺序为 **总览、学习、网络、代理、设备、Tailscale、摄像头、系统**。旧“应用”页面已经取消：热推送组件的当前版本信息归入“系统 → 热部署记录”，不保留 `#/apps` 页面。
+
+| 页面 / 路由 | 实现模块 | 功能范围 |
+| --- | --- | --- |
+| `#/overview` | `web/pages/overview.rs` | 健康状态、网络拓扑、router/代理/系统状态、异常 |
+| `#/study` | `web/pages/study.rs` | 学习概览、Deck/Tag 卡片库、Flashcards 复习与专项训练入口 |
+| `#/network` | `web/pages/network.rs` | Wi-Fi STA 扫描与配置、AP 修改及确认/回滚 |
+| `#/proxy` | `web/pages/proxy.rs` | Mihomo 订阅、节点选择与延迟、LAN TUN、本机系统代理 |
+| `#/devices` | `web/pages/devices.rs` | LAN 设备、活动/流量、单设备策略与详情 |
+| `#/tailscale` | `web/pages/tailscale.rs` | 远程 LAN 管理、Tailscale peers、direct/relay 状态 |
+| `#/camera` | `web/pages/camera.rs` | WebRTC 直播、画中画、音视频对讲、画面预设与旋转 |
+| `#/system` | `web/pages/system.rs`、`deployments.rs` | 系统状态、LCD 背光/亮度、喇叭音量、热部署当前版本 |
+
+当前摄像头观看与设置均复用管理员会话和 CSRF，不是免登录匿名直播。门户的固定 LAN 入口使用 **HTTPS + 自签证书**，可选绑定 IPv6-only 监听，并对精确的 Tailscale IPv4 提供管理 listener；不会回退到 `0.0.0.0` 广泛监听。首次登录必须更改默认管理密码；管理员凭据位于 `/userdata/hyz-router/admin/credential.json`（Argon2id）。外部服务异常时，状态聚合返回明确的 degraded 快照，健康检查不伪装成依赖就绪。
+
+### 学习与出题
+
+`src/web/pages/training.rs` 当前包含 **速算训练、错题复练、资料分析综合训练、逻辑判断** 四种模式；学习中心首页仍可能保留较旧的“三种模式”提示文案，不能据此忽略已接入的逻辑判断页面。
+
+- 卡片源：设备端 `/mnt/hyz-cards`，经 `FilesystemFlashcardSource` 读取 Markdown；主机可运行仓库根目录的 `scripts/share-flashcards.sh` 配置 Samba 共享（默认 TCP 1445），还需独立处理板端挂载。
+- 持久化：`/userdata/hyz-things/flashcards.db`（SQLite），承载卡片索引、间隔复习及资料分析/逻辑判断训练记录。复习与“错题复练”的本轮自评并非同一写入路径。
+- 资料分析：4 份模拟统计材料 × 各 5 题，20 分钟；支持生成、暂停、跨设备续答、历史解析、原题重做和卡片统计。
+- 逻辑判断：形式推理相关卡片生成 10 道独立题，10 分钟；支持答题、暂停/恢复、成绩、解析和重做。
+- 出题配置：需要 PC 侧 Codex App Server、卡片与 Skill 所在工作目录；参见 [`.env.example`](.env.example) 中的 `HYZ_THINGS_CODEX_WS_TOKEN` 和 `HYZ_THINGS_CODEX_CWD`。这些配置不是源码里可公开复用的令牌。
+- 画布与触控：训练阅读区域、滚动控制和 Apple Pencil 草稿层位于 `src/web/pages/`，并通过 Playwright WebKit iPad 预设做主机回归。
+
+### 运行边界
+
+- `hyz-things` 不拥有 LAN/WAN/NAT/firewall：通过 `hyz-contract` 的 `RouterControlClient` 请求 `hyz-router` 的 root-only socket。
+- 摄像头信令使用 `CameraUnixAdapter`，实际 H.264/Opus 媒体通过浏览器和 `hyz-camera` 的 WebRTC UDP 路径传送。
+- `tools/deploy-app.sh` 仅针对 `hyz-things` / `hyz-camera` 推送 ELF 并检查协议兼容性；不会重启 router。注册表 `/userdata/hyz-things/apps/registry.json` 只保存**各组件现用热部署版本**，不保存历次日志；固件内置版本可能没有记录。
+- Router 的 USB ADB、网络 ADB 开发热替换和正式 OTA 有独立的生命周期，不应混用。
 
 ## 代码结构
 
 ```text
-src/domain/                 纯状态、值对象与不变量（大量 re-export 自 hyz-contract）
-src/application/            门户用例：admin、camera client、status、ports
-src/adapters/inbound/       Axum HTTP
-src/adapters/outbound/      RouterControlClient、CameraUnixAdapter、AdminFileAdapter、Tailscale listener、storage
-src/web/                    Yew/WASM 前端（web feature）
-src/e2e/                    host-only loopback harness（e2e feature，bin hyz-things-e2e）
-frontend/                   Trunk HTML/CSS 入口（Tailwind CSS 4 + daisyUI 5）
-tools/                      deterministic bundle、e2e server、deploy-app.sh 与测试
-tests/                      HTTP 安全边界集成测试
+src/domain/                 纯类型与不变量，含 flashcards、资料分析、设备策略
+src/application/            admin、camera、Flashcards、逻辑判断、status 和 ports
+src/adapters/inbound/http/  Axum HTTPS/API，包含学习与控制端点
+src/adapters/outbound/      Router/Camera UDS、管理员、SQLite、卡片文件源、Codex、注册表
+src/web/navigation.rs       当前八页导航和 hash 路由契约
+src/web/pages/             总览、学习、训练、网络、代理、设备、Tailscale、摄像头、系统
+src/e2e/                   host-only loopback harness（e2e feature）
+e2e/                       Playwright E2E 套件与 fixtures
+migrations/                SQLite schema / 训练和复习状态迁移
+frontend/                  Trunk + Tailwind CSS 4 / daisyUI 5 前端入口
+tools/                     前端 bundle、E2E 启动、热部署及测试脚本
+tests/                     HTTP 安全与服务端集成测试
 ```
 
-依赖方向保持为 `adapters -> application -> domain`。浏览器、`hyz-things` 自身都不能直接执行 Linux 命令；所有平台能力经由 router 的 root-only control socket 或 camera 的 control socket。
+各层保持 `adapters -> application -> domain` 调用方向。Yew 浏览器只通过受限 HTTPS API 请求 native 端能力，不直接访问 UDS 或执行 Linux 管理命令。运行时采用独立的 router、things、camera 进程。
 
 ## 构建与检查
 
