@@ -409,14 +409,6 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
         }
         let index = (*current).min(active.questions.len().saturating_sub(1));
         let question = &active.questions[index];
-        let previous = {
-            let current = current.clone();
-            Callback::from(move |_| current.set(index.saturating_sub(1)))
-        };
-        let next = {
-            let current = current.clone();
-            Callback::from(move |_| current.set((index + 1).min(9)))
-        };
         return html! {
             <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" data-testid="logic-run">
                 <header class="analysis-header flex shrink-0 items-center justify-between gap-2 border-b border-base-content/10 pb-2">
@@ -465,14 +457,6 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
             "错误"
         } else {
             "未答"
-        };
-        let previous = {
-            let current = current.clone();
-            Callback::from(move |_| current.set(index.saturating_sub(1)))
-        };
-        let next = {
-            let current = current.clone();
-            Callback::from(move |_| current.set((index + 1).min(9)))
         };
         return html! {
             <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" data-testid="logic-result">
