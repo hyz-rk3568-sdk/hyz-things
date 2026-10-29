@@ -132,9 +132,14 @@ fn admin_auth_gate(props: &AdminAuthGateProps) -> Html {
 
 fn page_updated(state: &AppState, page: AppPage) -> String {
     let values: Vec<Option<&String>> = match page {
-        AppPage::Overview | AppPage::System => vec![
+        AppPage::Overview => vec![
             state.status_meta.last_success.as_ref(),
             state.panel_meta.last_success.as_ref(),
+        ],
+        AppPage::System => vec![
+            state.status_meta.last_success.as_ref(),
+            state.panel_meta.last_success.as_ref(),
+            state.apps_meta.last_success.as_ref(),
         ],
         AppPage::Study => Vec::new(),
         AppPage::Network => vec![
@@ -152,7 +157,6 @@ fn page_updated(state: &AppState, page: AppPage) -> String {
             state.tailscale_peers_meta.last_success.as_ref(),
         ],
         AppPage::Camera => vec![state.panel_meta.last_success.as_ref()],
-        AppPage::Apps => vec![state.apps_meta.last_success.as_ref()],
     };
     values
         .into_iter()
@@ -178,8 +182,10 @@ fn dispatch_page_resources(state: UseReducerHandle<AppState>, page: AppPage, is_
         dispatch_panel_refresh(state.clone());
     }
     match page {
-        AppPage::Overview | AppPage::System => {
+        AppPage::Overview => dispatch_status_refresh(state.clone()),
+        AppPage::System => {
             dispatch_status_refresh(state.clone());
+            dispatch_apps_refresh(state.clone());
         }
         AppPage::Study => {}
         AppPage::Network if is_admin => {
@@ -195,7 +201,6 @@ fn dispatch_page_resources(state: UseReducerHandle<AppState>, page: AppPage, is_
             dispatch_tailscale_refresh(state.clone());
             dispatch_tailscale_peers_refresh(state.clone());
         }
-        AppPage::Apps => dispatch_apps_refresh(state.clone()),
         AppPage::Camera
         | AppPage::Network
         | AppPage::Proxy
@@ -445,11 +450,6 @@ pub(crate) fn app() -> Html {
         overall_status(&state)
     };
     let updated = page_updated(&state, page);
-    let retry_apps = {
-        let state = state.clone();
-        Callback::from(move |_| dispatch_apps_refresh(state.clone()))
-    };
-
     let on_portal_pointer_down = {
         let portal_swipe_surface = portal_swipe_surface.clone();
         let swipe_start = swipe_start.clone();
@@ -520,21 +520,6 @@ pub(crate) fn app() -> Html {
                 AppPage::Devices => html! { <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>{if is_admin { html! { <DevicesPage state={state.clone()} route={(*route).clone()} route_state={route.clone()} /> } } else { html! { <AdminAuthGate state={state.clone()} /> } }}</section> },
                 AppPage::Tailscale => html! { <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>{if is_admin { render_tailscale_control(&state, &admin_csrf) } else { html! { <AdminAuthGate state={state.clone()} /> } }}</section> },
                 AppPage::Camera => html! { <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>{if is_admin { html! { <CameraLiveView admin_csrf={admin_csrf.clone()} stop_generation={*camera_stop_generation} /> } } else { html! { <AdminAuthGate state={state.clone()} /> } }}</section> },
-                AppPage::Apps => html! {
-                    <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>
-                        <SectionCard title_id="apps-title">
-                            <PageHeader title_id="apps-title" eyebrow="APPS" title="应用"><span class={SECTION_META}>{state.apps_meta.status_text()}</span></PageHeader>
-                            if let Some(error) = &state.apps_error {
-                                <div class="grid gap-2"><ErrorState message={format!("部署记录读取失败：{error}")} /><div class={BUTTON_ROW}><button class={BUTTON} type="button" onclick={retry_apps.clone()} disabled={state.apps_meta.loading}>{"重试应用状态"}</button></div></div>
-                            }
-                            <div class={APP_GRID}>
-                                <article class={APP_CARD} aria-labelledby="apps-camera-title"><div class={CONTROL_TITLE}><h3 id="apps-camera-title" class={CONTROL_HEADING}>{"摄像头直播"}</h3>{if is_admin { html! { <CameraAvailability /> } } else { html! { <span class={STATUS_BADGE}>{"登录后查看"}</span> } }}</div><p class={HELP_TEXT}>{"登录管理员账号后可以观看直播、对讲和调整画面。"}</p></article>
-                                <article class={APP_CARD} aria-labelledby="apps-router-title"><div class={CONTROL_TITLE}><h3 id="apps-router-title" class={CONTROL_HEADING}>{"路由器控制面"}</h3></div><p class={HELP_TEXT}>{"网络、代理、设备、Tailscale 与系统能力已拆分为一级页面。"}</p></article>
-                            </div>
-                            {render_deployed_apps(&state)}
-                        </SectionCard>
-                    </section>
-                },
                 AppPage::System => html! { <section id={page.panel_id()} class={WORKSPACE_PANEL} aria-labelledby={page.tab_id()}>{render_system(&state, brightness.clone())}</section> },
             }}
         </AppShell>

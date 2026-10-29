@@ -11,6 +11,8 @@ SUPPORT = E2E / "support.ts"
 PORTAL = E2E / "portal.spec.ts"
 PLAYWRIGHT_CONFIG = ROOT / "apps/rust/things/playwright.config.ts"
 
+# The PWA suite has a separate browser lifecycle and does not use the harness reset fixture.
+AUXILIARY_SPECS = ("pwa.spec.ts",)
 REQUIRED_SPECS = (
     "shell.spec.ts",
     "countdown.spec.ts",
@@ -42,7 +44,7 @@ def main() -> None:
         fail("playwright.config.ts is missing")
 
     actual_specs = tuple(sorted(path.name for path in E2E.glob("*.spec.ts")))
-    expected_specs = tuple(sorted(REQUIRED_SPECS))
+    expected_specs = tuple(sorted((*REQUIRED_SPECS, *AUXILIARY_SPECS)))
     if actual_specs != expected_specs:
         missing = sorted(set(expected_specs) - set(actual_specs))
         unexpected = sorted(set(actual_specs) - set(expected_specs))
