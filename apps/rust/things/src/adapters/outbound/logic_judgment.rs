@@ -289,8 +289,15 @@ impl SavedRun {
             id: id.into(),
             status: self.status,
             started_at_ms: self.started,
-            deadline_at_ms: if self.paused_at.is_some() { None } else { self.deadline },
-            paused_remaining_ms: self.paused_at.zip(self.deadline).map(|(paused, deadline)| (deadline - paused).max(0)),
+            deadline_at_ms: if self.paused_at.is_some() {
+                None
+            } else {
+                self.deadline
+            },
+            paused_remaining_ms: self
+                .paused_at
+                .zip(self.deadline)
+                .map(|(paused, deadline)| (deadline - paused).max(0)),
             server_now_ms: now_ms(),
             duration_seconds: QUIZ_SECONDS,
             questions: self
@@ -596,7 +603,10 @@ impl LogicJudgmentService {
     }
     async fn expire(&self, id: &str) -> Result<(), String> {
         let run = self.fetch(id).await?;
-        if run.status == "active" && run.paused_at.is_none() && run.deadline.is_some_and(|d| d <= now_ms()) {
+        if run.status == "active"
+            && run.paused_at.is_none()
+            && run.deadline.is_some_and(|d| d <= now_ms())
+        {
             self.submit(id).await?;
         }
         Ok(())
@@ -614,13 +624,25 @@ impl LogicJudgmentService {
     /// Match data-analysis: server-persisted pause survives navigation and restarts.
     pub async fn pause_toggle(&self, id: &str) -> Result<RunView, String> {
         let now = now_ms();
-        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await.map_err(error)?;
-        let row = sqlx::query("SELECT status,deadline_at_ms,paused_at_ms FROM logic_judgment_runs WHERE id=?")
-            .bind(id).fetch_optional(&mut *tx).await.map_err(error)?.ok_or(NOT_FOUND)?;
+        let mut tx = self
+            .pool
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(error)?;
+        let row = sqlx::query(
+            "SELECT status,deadline_at_ms,paused_at_ms FROM logic_judgment_runs WHERE id=?",
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(error)?
+        .ok_or(NOT_FOUND)?;
         let status: String = row.try_get("status").map_err(error)?;
         let deadline: Option<i64> = row.try_get("deadline_at_ms").map_err(error)?;
         let paused_at: Option<i64> = row.try_get("paused_at_ms").map_err(error)?;
-        if status != "active" { return Err("只有进行中的训练可以暂停".into()); }
+        if status != "active" {
+            return Err("只有进行中的训练可以暂停".into());
+        }
         let deadline = deadline.ok_or(INVALID)?;
         if let Some(paused) = paused_at {
             let extra = (now - paused).max(0);
@@ -629,7 +651,9 @@ impl LogicJudgmentService {
                 .bind(extra).bind(id).bind(paused)
                 .execute(&mut *tx).await.map_err(error)?;
         } else {
-            if now >= deadline { return Err("训练计时已结束，不能暂停".into()); }
+            if now >= deadline {
+                return Err("训练计时已结束，不能暂停".into());
+            }
             sqlx::query("UPDATE logic_judgment_runs SET paused_at_ms=? WHERE id=? AND status='active' AND paused_at_ms IS NULL")
                 .bind(now).bind(id).execute(&mut *tx).await.map_err(error)?;
         }
@@ -654,7 +678,10 @@ impl LogicJudgmentService {
             .map_err(error)?
             .ok_or(NOT_FOUND)?;
         let mut run = SavedRun::from_row(&row)?;
-        if run.status != "active" || run.paused_at.is_some() || run.deadline.is_none_or(|d| d <= now_ms()) {
+        if run.status != "active"
+            || run.paused_at.is_some()
+            || run.deadline.is_none_or(|d| d <= now_ms())
+        {
             return Err(INVALID.into());
         }
         run.answers[question] = Some(choice);
@@ -686,7 +713,11 @@ impl LogicJudgmentService {
                 sqlx::query("INSERT INTO logic_judgment_results(run_id,question_no,card_id,was_answered,is_correct) VALUES(?,?,?,?,?)")
                     .bind(id).bind(index as i64).bind(&q.card.id).bind(chosen.is_some()).bind(*chosen==Some(q.generated.correct_index)).execute(&mut *tx).await.map_err(error)?;
             }
-            let ended = if run.paused_at.is_some() { now_ms() } else { run.deadline.map(|d| d.min(now_ms())).unwrap_or_else(now_ms) };
+            let ended = if run.paused_at.is_some() {
+                now_ms()
+            } else {
+                run.deadline.map(|d| d.min(now_ms())).unwrap_or_else(now_ms)
+            };
             sqlx::query("UPDATE logic_judgment_runs SET status='submitted',ended_at_ms=? WHERE id=? AND status='active'").bind(ended).bind(id).execute(&mut *tx).await.map_err(error)?;
         }
         let result = run.grade(id);
@@ -769,7 +800,12 @@ impl LogicJudgmentService {
             .into_iter()
             .map(|t| CardPerformance {
                 card_id: t.card.id,
-                category: if t.card.kind == "formal" { "形式推理" } else { "分析推理" }.into(),
+                category: if t.card.kind == "formal" {
+                    "形式推理"
+                } else {
+                    "分析推理"
+                }
+                .into(),
                 card_path: t.card.card_path,
                 front: t.card.front,
                 back: t.card.back,
@@ -987,7 +1023,9 @@ mod service_tests {
         assert!(active.deadline_at_ms.is_some());
         let paused = service.pause_toggle(&id).await.unwrap();
         assert!(paused.deadline_at_ms.is_none());
-        assert!(paused.paused_remaining_ms.is_some_and(|ms| ms > 0 && ms <= 600_000));
+        assert!(paused
+            .paused_remaining_ms
+            .is_some_and(|ms| ms > 0 && ms <= 600_000));
         assert!(service.answer(&id, 0, 0).await.is_err());
         service.expire_all().await.unwrap();
         assert_eq!(service.run(&id).await.unwrap().status, "active");
@@ -1013,8 +1051,11 @@ mod service_tests {
         let id = paper(&service).await;
         service.start(&id).await.unwrap();
         sqlx::query("UPDATE logic_judgment_runs SET deadline_at_ms=? WHERE id=?")
-            .bind(now_ms() - 1).bind(&id)
-            .execute(&service.pool).await.unwrap();
+            .bind(now_ms() - 1)
+            .bind(&id)
+            .execute(&service.pool)
+            .await
+            .unwrap();
         assert!(service.pause_toggle(&id).await.is_err());
         service.expire_all().await.unwrap();
         assert_eq!(service.run(&id).await.unwrap().status, "submitted");
