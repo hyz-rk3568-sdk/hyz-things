@@ -84,9 +84,9 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
     }
 
     html! {
-        <div class="grid h-full min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-2 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:grid-rows-1"
-            data-testid="analysis-shared-workspace">
-            <article class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="analysis-material">
+        <TrainingSplitWorkspace test_id="analysis-shared-workspace"
+            left={html! {
+                <article class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="analysis-material">
                 <div class="flex shrink-0 items-start justify-between gap-2 px-3 pt-3 pb-2">
                     <div class="min-w-0">
                         <div class="text-sm font-semibold">{props.material.topic.clone()}</div>
@@ -102,10 +102,13 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
                 <div ref={passage} onscroll={on_passage_scroll} class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y scroll-auto" data-testid="analysis-material-scroll">
                     <div class="whitespace-pre-wrap px-4 pb-4 pt-2 text-base leading-8">{props.material.text.clone()}</div>
                 </div>
-            </article>
-            <article class="min-h-0 min-w-0 overflow-y-auto overscroll-contain touch-pan-y rounded-box bg-base-100"
-                data-testid="analysis-question">{props.question.clone()}</article>
-        </div>
+                </article>
+            }}
+            right={html! {
+                <article class="min-h-0 min-w-0 overflow-y-auto overscroll-contain touch-pan-y rounded-box bg-base-100"
+                    data-testid="analysis-question">{props.question.clone()}</article>
+            }}
+        />
     }
 }
 
