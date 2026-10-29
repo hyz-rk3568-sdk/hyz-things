@@ -15,6 +15,7 @@ use tokio::{
 
 pub const SERVER: &str = "192.168.8.202:1457";
 const MAX_PACKET: usize = 256 * 1024;
+const MAX_INIT_EVENTS: usize = 2048; // Only the initialization RPC; generation is time-bounded.
 pub const TURN_TIMEOUT: Duration = Duration::from_secs(600);
 const INTERRUPT_TIMEOUT: Duration = Duration::from_secs(5);
 pub(super) const UNCONFIRMED_MESSAGE: &str = "未确认 Codex 远端已停止";
@@ -318,7 +319,7 @@ impl CodexSession {
         let id = self.next_request_id();
         self.send(&json!({"id":id,"method":method,"params":params}))
             .await?;
-        for _ in 0..MAX_EVENTS {
+        for _ in 0..MAX_INIT_EVENTS {
             let text = read_text(&mut self.reader, &self.writer).await?;
             let msg: Value = serde_json::from_str(&text).map_err(|_| "Codex 返回非法 JSON-RPC")?;
             if msg.get("id").and_then(Value::as_i64) != Some(id) {
