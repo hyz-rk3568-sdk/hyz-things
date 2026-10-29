@@ -175,22 +175,41 @@ test("opens countdown video picture-in-picture", async ({ page }) => {
   await expectNoHorizontalOverflow(page);
 });
 
+test("keeps hot deployment records in System and redirects the old Apps route", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("navigation", { name: "主导航" })
+    .getByRole("button", { name: "应用", exact: true })).toHaveCount(0);
+  await goToAppPage(page, "系统");
+  const deployments = page.getByRole("region", { name: "热部署记录" });
+  await expect(deployments.getByText("camera", { exact: true })).toBeVisible();
+  await expect(deployments.getByText("things", { exact: true })).toBeVisible();
+  await expect(deployments.getByText("router", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "摄像头直播" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "路由器控制面" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "刷新记录" })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+
+  await page.goto("/#/apps");
+  await expect(page).toHaveURL(/#\/system$/);
+  await expect(deployments.getByText("things", { exact: true })).toBeVisible();
+});
+
 test("switches portal pages with horizontal touch swipes", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  const pageButton = (name: "总览" | "学习" | "网络" | "代理" | "设备" | "Tailscale" | "摄像头" | "应用" | "系统") =>
+  const pageButton = (name: "总览" | "学习" | "网络" | "代理" | "设备" | "Tailscale" | "摄像头" | "系统") =>
     page.getByRole("button", { name, exact: true });
   await expect(pageButton("总览")).toHaveAttribute("aria-pressed", "true");
-  for (const name of ["学习", "网络", "代理", "设备", "Tailscale", "摄像头", "应用", "系统"] as const) {
+  for (const name of ["学习", "网络", "代理", "设备", "Tailscale", "摄像头", "系统"] as const) {
     await swipePortal(page, 300, 240, 80, 250);
     await expect(pageButton(name)).toHaveAttribute("aria-pressed", "true");
   }
   await swipePortal(page, 300, 240, 80, 250);
   await expect(pageButton("系统")).toHaveAttribute("aria-pressed", "true");
   await swipePortal(page, 80, 240, 300, 250);
-  await expect(pageButton("应用")).toHaveAttribute("aria-pressed", "true");
+  await expect(pageButton("摄像头")).toHaveAttribute("aria-pressed", "true");
   await swipePortal(page, 200, 240, 170, 360);
-  await expect(pageButton("应用")).toHaveAttribute("aria-pressed", "true");
+  await expect(pageButton("摄像头")).toHaveAttribute("aria-pressed", "true");
   await goToAppPage(page, "摄像头");
   await expect(page.getByRole("heading", { name: "管理员登录" })).toBeVisible();
 });
@@ -239,7 +258,7 @@ test("fits a narrow portal screen without horizontal overflow", async ({ page })
   await expect(page.getByRole("heading", { name: "网络拓扑" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "路由 / LAN" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
-  for (const name of ["总览", "学习", "网络", "代理", "设备", "Tailscale", "摄像头", "应用", "系统"] as const) {
+  for (const name of ["总览", "学习", "网络", "代理", "设备", "Tailscale", "摄像头", "系统"] as const) {
     await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
   }
   const mobileNavigation = page.getByRole("navigation", { name: "主导航" });

@@ -25,7 +25,7 @@ pub(crate) fn app_shell(props: &AppShellProps) -> Html {
                     <div>
                         <p class={EYEBROW}>{"LOCAL CONTROL PLANE"}</p>
                         <h1 class={PAGE_TITLE}>{"hyz things"}</h1>
-                        <p class={SUBTITLE}>{"个人门户 · 设备与应用管理"}</p>
+                        <p class={SUBTITLE}>{"个人门户 · 设备与系统管理"}</p>
                     </div>
                 </div>
                 <div class={classes!(OVERALL, props.overall_tone.clone())} role="status" aria-live="polite" aria-atomic="true">

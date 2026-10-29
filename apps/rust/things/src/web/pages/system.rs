@@ -733,6 +733,10 @@ pub(crate) fn render_system(
     state: &UseReducerHandle<AppState>,
     brightness: UseStateHandle<u16>,
 ) -> Html {
+    let refresh_deployments = {
+        let state = state.clone();
+        Callback::from(move |_| dispatch_apps_refresh(state.clone()))
+    };
     html! {
         <>
             if let Some(snapshot) = &state.snapshot {
@@ -740,6 +744,17 @@ pub(crate) fn render_system(
                 {render_issues(snapshot)}
             }
             {render_display_control(state, brightness)}
+            <SectionCard title_id="deployment-records-title">
+                <PageHeader title_id="deployment-records-title" eyebrow="DEPLOYMENTS" title="热部署记录">
+                    <span class={SECTION_META}>{state.apps_meta.status_text()}</span>
+                </PageHeader>
+                {render_deployment_records(state)}
+                <div class={BUTTON_ROW}>
+                    <button class={BUTTON} type="button" onclick={refresh_deployments} disabled={state.apps_meta.loading}>
+                        {if state.apps_meta.loading { "读取中…" } else { "刷新记录" }}
+                    </button>
+                </div>
+            </SectionCard>
         </>
     }
 }

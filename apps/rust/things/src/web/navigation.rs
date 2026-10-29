@@ -29,12 +29,11 @@ pub(crate) enum AppPage {
     Devices,
     Tailscale,
     Camera,
-    Apps,
     System,
 }
 
 impl AppPage {
-    pub(crate) const ALL: [Self; 9] = [
+    pub(crate) const ALL: [Self; 8] = [
         Self::Overview,
         Self::Study,
         Self::Network,
@@ -42,7 +41,6 @@ impl AppPage {
         Self::Devices,
         Self::Tailscale,
         Self::Camera,
-        Self::Apps,
         Self::System,
     ];
 
@@ -55,7 +53,6 @@ impl AppPage {
             Self::Devices => "devices",
             Self::Tailscale => "tailscale",
             Self::Camera => "camera",
-            Self::Apps => "apps",
             Self::System => "system",
         }
     }
@@ -69,7 +66,6 @@ impl AppPage {
             Self::Devices => "设备",
             Self::Tailscale => "Tailscale",
             Self::Camera => "摄像头",
-            Self::Apps => "应用",
             Self::System => "系统",
         }
     }
@@ -83,7 +79,6 @@ impl AppPage {
             Self::Devices => "app-devices-tab",
             Self::Tailscale => "app-tailscale-tab",
             Self::Camera => "app-camera-tab",
-            Self::Apps => "app-apps-tab",
             Self::System => "app-system-tab",
         }
     }
@@ -97,7 +92,6 @@ impl AppPage {
             Self::Devices => "app-devices-panel",
             Self::Tailscale => "app-tailscale-panel",
             Self::Camera => "app-camera-panel",
-            Self::Apps => "app-apps-panel",
             Self::System => "app-system-panel",
         }
     }
@@ -117,8 +111,7 @@ impl AppPage {
             Self::Proxy => Some(Self::Devices),
             Self::Devices => Some(Self::Tailscale),
             Self::Tailscale => Some(Self::Camera),
-            Self::Camera => Some(Self::Apps),
-            Self::Apps => Some(Self::System),
+            Self::Camera => Some(Self::System),
             Self::System => None,
         }
     }
@@ -132,8 +125,7 @@ impl AppPage {
             Self::Devices => Some(Self::Proxy),
             Self::Tailscale => Some(Self::Devices),
             Self::Camera => Some(Self::Tailscale),
-            Self::Apps => Some(Self::Camera),
-            Self::System => Some(Self::Apps),
+            Self::System => Some(Self::Camera),
         }
     }
 }
@@ -250,7 +242,7 @@ impl PortalRoute {
             },
             ["tailscale"] => Self::for_page(AppPage::Tailscale),
             ["camera"] => Self::for_page(AppPage::Camera),
-            ["apps"] => Self::for_page(AppPage::Apps),
+            ["apps"] => Self::for_page(AppPage::System),
             ["system"] => Self::for_page(AppPage::System),
             _ => Self::for_page(AppPage::Overview),
         };
@@ -442,6 +434,17 @@ mod tests {
         let (route, canonical) = PortalRoute::parse("#/study/training");
         assert!(canonical);
         assert_eq!(route.study_view, StudyView::Training);
+    }
+
+    #[test]
+    fn legacy_apps_route_redirects_to_system_without_an_apps_tab() {
+        let (route, canonical) = PortalRoute::parse("#/apps");
+        assert_eq!(route.page, AppPage::System);
+        assert!(!canonical);
+        assert_eq!(route.hash(), "#/system");
+        assert_eq!(AppPage::ALL.len(), 8);
+        assert_eq!(AppPage::Camera.next(), Some(AppPage::System));
+        assert_eq!(AppPage::System.previous(), Some(AppPage::Camera));
     }
 
     #[test]

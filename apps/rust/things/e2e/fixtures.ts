@@ -23,7 +23,6 @@ export type AppPageName =
   | '设备'
   | 'Tailscale'
   | '摄像头'
-  | '应用'
   | '系统';
 
 export async function goToAppPage(page: Page, name: AppPageName) {

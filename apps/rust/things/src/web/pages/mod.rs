@@ -1,6 +1,6 @@
 use super::*;
 
-mod apps;
+mod deployments;
 mod calculation;
 mod camera;
 mod comprehensive;
@@ -16,7 +16,7 @@ mod system;
 mod tailscale;
 mod training;
 
-pub(crate) use apps::*;
+pub(crate) use deployments::*;
 pub(crate) use calculation::*;
 pub(crate) use camera::*;
 pub(crate) use comprehensive::*;
