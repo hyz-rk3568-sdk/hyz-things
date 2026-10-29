@@ -10,6 +10,7 @@ async fn invoke_authorized(state: &AppState, operation: Operation) -> Response {
         Operation::Job(id)
         | Operation::Run(id)
         | Operation::Start(id)
+        | Operation::Pause(id)
         | Operation::Answer { id, .. }
         | Operation::Submit(id)
         | Operation::Result(id)
@@ -156,6 +157,21 @@ pub(super) async fn start(
     }
     invoke_authorized(&state, Operation::Start(id)).await
 }
+pub(super) async fn pause(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    body: Result<Json<EmptyBody>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control(&state, &headers).await {
+        return response;
+    }
+    if let Err(status) = typed_body(body) {
+        return body_error(status);
+    }
+    invoke_authorized(&state, Operation::Pause(id)).await
+}
+
 pub(super) async fn submit(
     State(state): State<AppState>,
     headers: HeaderMap,

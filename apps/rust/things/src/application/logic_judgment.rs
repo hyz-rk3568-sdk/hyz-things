@@ -8,6 +8,7 @@ pub enum LogicJudgmentOperation {
     Job(String),
     Run(String),
     Start(String),
+    Pause(String),
     Answer {
         id: String,
         question: usize,

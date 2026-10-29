@@ -15,7 +15,7 @@ use tokio::{
 
 pub const SERVER: &str = "192.168.8.202:1457";
 const MAX_PACKET: usize = 256 * 1024;
-const MAX_EVENTS: usize = 2048;
+const MAX_INIT_EVENTS: usize = 2048; // Only the initialization RPC; generation is time-bounded.
 pub const TURN_TIMEOUT: Duration = Duration::from_secs(600);
 const INTERRUPT_TIMEOUT: Duration = Duration::from_secs(5);
 pub(super) const UNCONFIRMED_MESSAGE: &str = "未确认 Codex 远端已停止";
@@ -319,7 +319,7 @@ impl CodexSession {
         let id = self.next_request_id();
         self.send(&json!({"id":id,"method":method,"params":params}))
             .await?;
-        for _ in 0..MAX_EVENTS {
+        for _ in 0..MAX_INIT_EVENTS {
             let text = read_text(&mut self.reader, &self.writer).await?;
             let msg: Value = serde_json::from_str(&text).map_err(|_| "Codex 返回非法 JSON-RPC")?;
             if msg.get("id").and_then(Value::as_i64) != Some(id) {
@@ -445,7 +445,9 @@ impl CodexSession {
             .to_owned();
         state.send_replace(TurnState::Running(turn_id.clone()));
         let mut final_answer = String::new();
-        for _ in 0..MAX_EVENTS {
+        // A generation turn is bounded by TURN_TIMEOUT, not by notification count.
+        // A long but healthy reasoning stream may exceed 2048 notifications.
+        loop {
             let raw = read_text(&mut self.reader, &self.writer).await?;
             let packet: Value =
                 serde_json::from_str(&raw).map_err(|_| "Codex 返回非法 JSON-RPC 通知")?;
@@ -487,7 +489,6 @@ impl CodexSession {
                 return Ok(final_answer);
             }
         }
-        Err("Codex 生成过程事件过多".into())
     }
 }
 
@@ -862,6 +863,37 @@ mod tests {
         let error = task.await.unwrap().unwrap_err();
         assert!(error.starts_with("Codex 出题超时"));
         assert!(!error.contains("未确认"));
+    }
+
+    #[tokio::test]
+    async fn more_than_2048_notifications_do_not_abort_a_healthy_turn() {
+        let (mut session, mut socket) = test_connection().await;
+        let worker = tokio::spawn(async move { session.turn("generate").await });
+        let turn = client_message(&mut socket).await;
+        server_message(
+            &mut socket,
+            json!({"id":turn["id"],"result":{"turn":{"id":"turn-1"}}}),
+        )
+        .await;
+        for _ in 0..2100 {
+            server_message(
+                &mut socket,
+                json!({"method":"item/started","params":{
+                    "threadId":"test-thread","turnId":"turn-1","item":{"type":"reasoning"}
+                }}),
+            )
+            .await;
+        }
+        server_message(
+            &mut socket,
+            json!({"method":"item/completed","params":{
+                "threadId":"test-thread","turnId":"turn-1",
+                "item":{"type":"agentMessage","text":"{\"questions\":[]}"}
+            }}),
+        )
+        .await;
+        complete_test_turn(&mut socket, "completed").await;
+        assert_eq!(worker.await.unwrap().unwrap(), "{\"questions\":[]}");
     }
 
     #[tokio::test]

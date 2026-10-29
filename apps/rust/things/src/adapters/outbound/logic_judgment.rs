@@ -186,6 +186,7 @@ pub struct RunView {
     pub status: String,
     pub started_at_ms: Option<i64>,
     pub deadline_at_ms: Option<i64>,
+    pub paused_remaining_ms: Option<i64>,
     pub server_now_ms: i64,
     pub duration_seconds: u64,
     pub questions: Vec<PublicQuestion>,
@@ -222,6 +223,10 @@ pub struct HistoryEntry {
 #[derive(Clone, Serialize)]
 pub struct CardPerformance {
     pub card_id: String,
+    pub category: String,
+    pub card_path: String,
+    pub front: String,
+    pub back: String,
     pub answered_count: i64,
     pub correct_count: i64,
     pub selected_count: i64,
@@ -251,6 +256,7 @@ struct SavedRun {
     status: String,
     started: Option<i64>,
     deadline: Option<i64>,
+    paused_at: Option<i64>,
 }
 impl SavedRun {
     fn from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Self, String> {
@@ -275,6 +281,7 @@ impl SavedRun {
             status: row.try_get("status").map_err(error)?,
             started: row.try_get("started_at_ms").map_err(error)?,
             deadline: row.try_get("deadline_at_ms").map_err(error)?,
+            paused_at: row.try_get("paused_at_ms").map_err(error)?,
         })
     }
     fn view(self, id: &str) -> RunView {
@@ -282,7 +289,15 @@ impl SavedRun {
             id: id.into(),
             status: self.status,
             started_at_ms: self.started,
-            deadline_at_ms: self.deadline,
+            deadline_at_ms: if self.paused_at.is_some() {
+                None
+            } else {
+                self.deadline
+            },
+            paused_remaining_ms: self
+                .paused_at
+                .zip(self.deadline)
+                .map(|(paused, deadline)| (deadline - paused).max(0)),
             server_now_ms: now_ms(),
             duration_seconds: QUIZ_SECONDS,
             questions: self
@@ -588,7 +603,10 @@ impl LogicJudgmentService {
     }
     async fn expire(&self, id: &str) -> Result<(), String> {
         let run = self.fetch(id).await?;
-        if run.status == "active" && run.deadline.is_some_and(|d| d <= now_ms()) {
+        if run.status == "active"
+            && run.paused_at.is_none()
+            && run.deadline.is_some_and(|d| d <= now_ms())
+        {
             self.submit(id).await?;
         }
         Ok(())
@@ -603,6 +621,46 @@ impl LogicJudgmentService {
             .bind(now).bind(now+QUIZ_SECONDS as i64*1000).bind(id).execute(&self.pool).await.map_err(error)?;
         self.run(id).await
     }
+    /// Match data-analysis: server-persisted pause survives navigation and restarts.
+    pub async fn pause_toggle(&self, id: &str) -> Result<RunView, String> {
+        let now = now_ms();
+        let mut tx = self
+            .pool
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(error)?;
+        let row = sqlx::query(
+            "SELECT status,deadline_at_ms,paused_at_ms FROM logic_judgment_runs WHERE id=?",
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(error)?
+        .ok_or(NOT_FOUND)?;
+        let status: String = row.try_get("status").map_err(error)?;
+        let deadline: Option<i64> = row.try_get("deadline_at_ms").map_err(error)?;
+        let paused_at: Option<i64> = row.try_get("paused_at_ms").map_err(error)?;
+        if status != "active" {
+            return Err("只有进行中的训练可以暂停".into());
+        }
+        let deadline = deadline.ok_or(INVALID)?;
+        if let Some(paused) = paused_at {
+            let extra = (now - paused).max(0);
+            sqlx::query("UPDATE logic_judgment_runs SET paused_at_ms=NULL,deadline_at_ms=?,paused_total_ms=paused_total_ms+? WHERE id=? AND status='active' AND paused_at_ms=?")
+                .bind(deadline.saturating_add(extra))
+                .bind(extra).bind(id).bind(paused)
+                .execute(&mut *tx).await.map_err(error)?;
+        } else {
+            if now >= deadline {
+                return Err("训练计时已结束，不能暂停".into());
+            }
+            sqlx::query("UPDATE logic_judgment_runs SET paused_at_ms=? WHERE id=? AND status='active' AND paused_at_ms IS NULL")
+                .bind(now).bind(id).execute(&mut *tx).await.map_err(error)?;
+        }
+        tx.commit().await.map_err(error)?;
+        self.run(id).await
+    }
+
     pub async fn answer(&self, id: &str, question: usize, choice: usize) -> Result<(), String> {
         if question >= QUIZ_QUESTIONS || choice >= 4 {
             return Err(INVALID.into());
@@ -620,11 +678,14 @@ impl LogicJudgmentService {
             .map_err(error)?
             .ok_or(NOT_FOUND)?;
         let mut run = SavedRun::from_row(&row)?;
-        if run.status != "active" || run.deadline.is_none_or(|d| d <= now_ms()) {
+        if run.status != "active"
+            || run.paused_at.is_some()
+            || run.deadline.is_none_or(|d| d <= now_ms())
+        {
             return Err(INVALID.into());
         }
         run.answers[question] = Some(choice);
-        let updated=sqlx::query("UPDATE logic_judgment_runs SET answers_json=? WHERE id=? AND status='active' AND deadline_at_ms>?")
+        let updated=sqlx::query("UPDATE logic_judgment_runs SET answers_json=? WHERE id=? AND status='active' AND paused_at_ms IS NULL AND deadline_at_ms>?")
             .bind(serde_json::to_string(&run.answers).map_err(error)?).bind(id).bind(now_ms()).execute(&mut *tx).await.map_err(error)?;
         if updated.rows_affected() != 1 {
             return Err(INVALID.into());
@@ -652,7 +713,11 @@ impl LogicJudgmentService {
                 sqlx::query("INSERT INTO logic_judgment_results(run_id,question_no,card_id,was_answered,is_correct) VALUES(?,?,?,?,?)")
                     .bind(id).bind(index as i64).bind(&q.card.id).bind(chosen.is_some()).bind(*chosen==Some(q.generated.correct_index)).execute(&mut *tx).await.map_err(error)?;
             }
-            let ended = run.deadline.map(|d| d.min(now_ms())).unwrap_or_else(now_ms);
+            let ended = if run.paused_at.is_some() {
+                now_ms()
+            } else {
+                run.deadline.map(|d| d.min(now_ms())).unwrap_or_else(now_ms)
+            };
             sqlx::query("UPDATE logic_judgment_runs SET status='submitted',ended_at_ms=? WHERE id=? AND status='active'").bind(ended).bind(id).execute(&mut *tx).await.map_err(error)?;
         }
         let result = run.grade(id);
@@ -692,7 +757,7 @@ impl LogicJudgmentService {
     }
     async fn expire_all(&self) -> Result<(), String> {
         let ids: Vec<String> = sqlx::query_scalar(
-            "SELECT id FROM logic_judgment_runs WHERE status='active' AND deadline_at_ms<=?",
+            "SELECT id FROM logic_judgment_runs WHERE status='active' AND paused_at_ms IS NULL AND deadline_at_ms<=?",
         )
         .bind(now_ms())
         .fetch_all(&self.pool)
@@ -735,6 +800,15 @@ impl LogicJudgmentService {
             .into_iter()
             .map(|t| CardPerformance {
                 card_id: t.card.id,
+                category: if t.card.kind == "formal" {
+                    "形式推理"
+                } else {
+                    "分析推理"
+                }
+                .into(),
+                card_path: t.card.card_path,
+                front: t.card.front,
+                back: t.card.back,
                 answered_count: t.answered_count,
                 correct_count: t.correct_count,
                 selected_count: t.before.map(|s| s.1).unwrap_or(0),
@@ -803,6 +877,7 @@ impl crate::application::logic_judgment::LogicJudgmentPort for LogicJudgmentServ
             Op::Job(id) => value(self.progress(&id).await).await,
             Op::Run(id) => value(self.run(&id).await).await,
             Op::Start(id) => value(self.start(&id).await).await,
+            Op::Pause(id) => value(self.pause_toggle(&id).await).await,
             Op::Answer {
                 id,
                 question,
@@ -938,6 +1013,52 @@ mod service_tests {
             .commit_paper(None, &plan, generated(&plan))
             .await
             .unwrap()
+    }
+
+    #[tokio::test]
+    async fn pause_freezes_server_timer_and_survives_service_recreation() {
+        let service = service().await;
+        let id = paper(&service).await;
+        let active = service.start(&id).await.unwrap();
+        assert!(active.deadline_at_ms.is_some());
+        let paused = service.pause_toggle(&id).await.unwrap();
+        assert!(paused.deadline_at_ms.is_none());
+        assert!(paused
+            .paused_remaining_ms
+            .is_some_and(|ms| ms > 0 && ms <= 600_000));
+        assert!(service.answer(&id, 0, 0).await.is_err());
+        service.expire_all().await.unwrap();
+        assert_eq!(service.run(&id).await.unwrap().status, "active");
+
+        let restored = LogicJudgmentService::new(service.pool.clone(), None).unwrap();
+        restored.recover_interrupted().await.unwrap();
+        assert_eq!(
+            restored.run(&id).await.unwrap().paused_remaining_ms,
+            paused.paused_remaining_ms
+        );
+        let resumed = restored.pause_toggle(&id).await.unwrap();
+        assert!(resumed.paused_remaining_ms.is_none());
+        assert!(resumed.deadline_at_ms.is_some_and(|ms| ms > now_ms()));
+        restored.answer(&id, 0, 0).await.unwrap();
+        let result = restored.submit(&id).await.unwrap();
+        assert_eq!(result.answered, 1);
+        assert_eq!(restored.submit(&id).await.unwrap().answered, 1);
+    }
+
+    #[tokio::test]
+    async fn expired_run_cannot_be_paused_and_is_auto_submitted() {
+        let service = service().await;
+        let id = paper(&service).await;
+        service.start(&id).await.unwrap();
+        sqlx::query("UPDATE logic_judgment_runs SET deadline_at_ms=? WHERE id=?")
+            .bind(now_ms() - 1)
+            .bind(&id)
+            .execute(&service.pool)
+            .await
+            .unwrap();
+        assert!(service.pause_toggle(&id).await.is_err());
+        service.expire_all().await.unwrap();
+        assert_eq!(service.run(&id).await.unwrap().status, "submitted");
     }
 
     #[tokio::test]
