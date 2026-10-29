@@ -16,6 +16,7 @@ mod study_markdown;
 mod system;
 mod tailscale;
 mod training;
+mod training_metrics;
 
 pub(crate) use calculation::*;
 pub(crate) use camera::*;
@@ -32,3 +33,4 @@ pub(crate) use study_markdown::*;
 pub(crate) use system::*;
 pub(crate) use tailscale::*;
 pub(crate) use training::*;
+pub(crate) use training_metrics::*;
