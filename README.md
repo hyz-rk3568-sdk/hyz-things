@@ -1,10 +1,10 @@
 # hyz-things
 
-`hyz-things` 是一个面向 ATK RK3568 的个人软路由与家庭设备项目。它把设备网络、管理门户、Tailscale、Mihomo 代理和本地摄像头拆分为三个独立的 Linux 服务，并通过类型化的 root-only Unix socket 协议协作。
+`hyz-things` 是一个面向 ATK RK3568 的个人软路由、家庭设备管理与学习训练项目。板端将路由控制、HTTPS 管理门户和摄像头媒体拆成三个独立 Linux 进程；门户还集成 Flashcards 复习、速算、资料分析和逻辑判断训练。进程间通过类型化、root-only 的 Unix socket 协议协作。
 
 项目不是通用 OpenWrt 后台，也不提供运行时插件 ABI 或任意 Linux 网络配置器。网络、进程、防火墙和固件操作都由产品代码中的固定用例和受限 adapter 驱动。
 
-> 当前项目处于持续的 RK3568 板端 bring-up 和验证阶段。源码结构、主机测试和部分板端能力已经完成；完整双上游切换、代理故障注入和长期稳定性验证仍在进行。
+> **项目状态**：这是面向个人设备的持续开发项目，不是开箱即用的通用路由器发行版。主机测试、部分 RK3568 板端功能和管理页面已有实现；双上游完整切换、代理故障注入、长时间稳定性及部分后续产品范围仍需验收。阅读功能清单时请区分“源码已实现”和“真实硬件已验收”。
 
 ## 产品组成
 
@@ -32,17 +32,16 @@ apps/rust/camera    媒体进程，板端 /usr/bin/hyz-camera，S82
 
 ### `hyz-things`
 
-管理门户和浏览器侧 driving adapter，负责：
+独立 HTTPS 管理门户（Axum + Yew/WASM SPA），不仅展示路由器状态，还负责浏览器会话、学习训练与设备管理：
 
-- HTTPS 管理页面：固定 LAN 地址 `https://192.168.8.1:8080`；
-- 精确绑定的 Tailscale IPv4 管理 listener；
-- Argon2id 管理员凭据、首次改密、会话和 CSRF；
-- 嵌入式 Yew/WASM SPA 与 Axum API；
-- router、WAN、代理、Tailscale、系统和应用状态聚合；
-- 摄像头状态、会话和受限 SDP 信令；
-- 通过注册表展示 `hyz-things`/`hyz-camera` 应用的热推送状态。
+- LAN 固定入口 `https://192.168.8.1:8080`（自签证书）；精确 Tailscale IPv4 监听及可选 IPv6-only HTTPS 监听；
+- Argon2id 管理员认证、首次强制改密、会话与 CSRF；受保护的配置与控制 API；
+- 八个导航页：**总览、学习、网络、代理、设备、Tailscale、摄像头、系统**；
+- 学习中心：本地 SQLite 卡片及复习状态、`/mnt/hyz-cards` 文件源、专项训练记录；可选与 PC 上的 Codex App Server 协作出题；
+- 系统健康、网络拓扑、设备活动、代理状态、LCD 背光/喇叭音量及当前热部署版本展示；
+- 通过 `hyz-contract` 访问 `/run/hyz-router/control.sock`，通过 camera control socket 发起媒体控制和 WebRTC 信令。
 
-门户会等待 `/run/hyz-router/ready` 后才绑定管理地址。它不直接执行网络命令，而是通过 `hyz-contract` 客户端访问 router control socket，通过 `/run/hyz-camera/control.sock` 访问 camera。
+门户等待 `/run/hyz-router/ready` 后才对外提供 HTTPS，不直接执行任意网络/防火墙命令。设备端学习数据位于 `/userdata/hyz-things/flashcards.db`；摄像头播放和受控操作要求管理员会话。
 
 ### `hyz-camera`
 
@@ -57,43 +56,68 @@ apps/rust/camera    媒体进程，板端 /usr/bin/hyz-camera，S82
 
 摄像头不执行 `ip`、`iptables` 或其他网络配置命令。浏览器和摄像头之间的媒体流不经过 Axum 或 router 转发。
 
+## 门户功能与页面
+
+当前导航以 [`apps/rust/things/src/web/navigation.rs`](apps/rust/things/src/web/navigation.rs) 中的 `AppPage` 为准；**不存在独立的“应用”导航页**，`#/apps` 也不是有效的当前页面路由。
+
+| 页面 | 当前功能 |
+| --- | --- |
+| 总览 `#/overview` | 核心健康、网络拓扑、系统/代理状态、故障与只读信息 |
+| 学习 `#/study` | 学习概览、Flashcards 卡片库与间隔复习、专项训练 |
+| 网络 `#/network` | Wi-Fi STA 扫描和配置、AP 设置及受控确认/回滚 |
+| 代理 `#/proxy` | Mihomo 订阅、节点/延迟、LAN 透明代理、本机系统显式代理 |
+| 设备 `#/devices` | LAN 设备列表、搜索、活动流量/连接信息、按设备管理策略 |
+| Tailscale `#/tailscale` | 远程访问模式、登录/启停、peer 与 direct/relay 状态 |
+| 摄像头 `#/camera` | WebRTC 直播、画面预设/旋转、暂停/停止、画中画、双向语音对讲 |
+| 系统 `#/system` | 状态与资源详情、LCD 亮度、喇叭音量、**热部署记录** |
+
+网络、代理、设备、Tailscale、摄像头等管理操作由管理员会话保护；学习内容的阅读/复习与受控同步具有不同的权限边界。热部署记录读取的是当前 registry 快照，**仅记录各组件现有热推送版本，不保存完整的历次部署日志**；固件内置组件可能没有记录。
+
+### 学习中心
+
+学习模块属于门户的一部分，而不是单独的板端服务；相关页面见 `apps/rust/things/src/web/pages/`，持久数据由门户的 SQLite repository 管理。
+
+- **Flashcards**：从板端 `/mnt/hyz-cards` 卡片目录同步 Markdown，按 Deck/Tag 查看、筛选和复习；复习进度存入 `/userdata/hyz-things/flashcards.db`。主机可通过 `scripts/share-flashcards.sh` 提供受控 Samba 共享，需另外完成目标板挂载。
+- **速算训练**：在固定全屏答题区练习计算，支持草稿操作。
+- **错题复练**：利用已同步的 Flashcards 进行专项复练，和正式的间隔复习记录分离。
+- **资料分析综合训练**：每卷 **4 份模拟材料 × 每份 5 题、共 20 题 / 20 分钟**；支持暂停、跨设备续答、交卷解析、历史查看与原题重做，模拟材料不应当作官方真题或真实统计数据。
+- **逻辑判断**：基于已同步的形式推理方法卡出题，每卷 **10 道独立题 / 10 分钟**；支持暂停/恢复、解析、历史记录与原题重做。
+- **出题依赖**：资料分析与逻辑判断的 AI 生成需要另外配置 PC 上的 Codex App Server、能力令牌与有效的 Flashcard/Skill 工作目录；未配置时不能假定出题可用。参见 `apps/rust/things/.env.example` 和相关训练方案文档。
+
+iPad 训练界面使用分区滚动与 Apple Pencil/触控草稿适配。浏览器 WebKit 设备模拟仅用于主机回归，不替代真实 iPad 或板端体验验证。
+
 ## 运行时边界
 
 ```text
-浏览器
-   │ HTTPS / typed HTTP API
-   ▼
-hyz-things ── versioned JSON frame ──> hyz-router
-     │                                  │
-     └──── versioned camera frame ────> hyz-camera
-
-hyz-router 是网络和防火墙的唯一 authority；
-hyz-things 是管理门户；hyz-camera 是媒体进程。
+浏览器 -- HTTPS / 同源 API --> hyz-things (Axum + Yew)
+                               ├── root-only versioned UDS --> hyz-router --> LAN/WAN/Mihomo/Tailscale/OTA
+                               ├── root-only camera UDS  --> hyz-camera --> WebRTC 媒体直连浏览器
+                               ├── SQLite --> /userdata/hyz-things/flashcards.db
+                               └── 可选：/mnt/hyz-cards / PC Codex App Server
 ```
 
-三个进程各自拥有独立的 composition root 和板端 ELF。共享协议位于 `apps/rust/contract`，服务端接受当前和前一协议版本，客户端要求精确匹配。
+三进程各自拥有独立的 composition root 和板端 ELF。共享协议位于 `apps/rust/contract`；router/camera 的系统权限及网络变更不授予浏览器或 Web 层。媒体码流不经门户/路由进程转发。
 
 ## 当前实现状态
 
-已完成或已进入主机验证的主要内容：
+**源码已实现或已有主机/部分板端验证：**
 
-- 三进程拆分：无头 router、things 门户和 camera 媒体进程；
-- router ready 门控和 management-only 降级边界；
-- typed Ethernet/Wi-Fi 双上游模型、有线优先 route metric 和 uplink ownership 隔离；
-- 本机系统代理使用 Mihomo 固定 loopback mixed port `127.0.0.1:7890`，只提供本机 HTTP/HTTPS 显式代理，不接管所有本机流量，也不控制 `tailscaled`；
-- Tailscale 生命周期、RouterOnly/LAN subnet access、peer 状态与 direct/relay/DERP 观测独立运行；
-- things/camera 热推送只重启对应应用，router 保持运行；
-- router 开发热替换规则：USB ADB 使用 `stop → 原子替换 → start`，网络 ADB 使用 `原子替换 → reboot`；
-- 摄像头 WebRTC、固定媒体端口池和匿名短时 viewer 会话边界。
+- 三进程拆分、router ready 门控、管理网络失联降级，以及 typed Ethernet/Wi-Fi 双上游状态与路由优先级；
+- Mihomo 订阅和节点管理、`127.0.0.1:7890` 本机显式代理、LAN TUN 与普通 NAT fail-open；
+- Tailscale RouterOnly / 固定 LAN subnet access、peer 状态、direct/relay/DERP 观测及独立管理入口；
+- HTTPS 管理门户、管理员会话、网络/AP 设置、设备策略与活动视图、系统和显示/喇叭控制；
+- WebRTC 摄像头直播、H.264 画面预设、旋转、画中画及音频对讲；板端媒体链路另有真实硬件验收脚本；
+- 学习中心的 Flashcards、资料分析综合训练、速算、错题复练、逻辑判断和持久化训练历史；
+- things/camera 热推送只重启对应进程，router 继续运行；router 开发热替换与正式 OTA 分离；
+- 前端确定性 bundle、主机单元/静态检查，以及默认 WebKit iPad 横屏的 Playwright E2E。
 
-仍需要板端或更长时间验证的内容包括：
+**尚不能视作全部验收完成：**
 
-- Ethernet、`eth1` 和双上游完整切换矩阵；
-- SR-09 反复切换和长时间稳定性；
-- DNS 接管、所有代理节点失效和 Mihomo live-hang 回退；
-- PPPoE、DNS 中心和黑匣子等后续产品范围。
+- Ethernet/`eth1`/双上游的完整切换矩阵、长时间稳定性及 SR-09 反复切换；
+- DNS 接管、所有代理节点失效、Mihomo live-hang 及更全面的故障注入；
+- PPPoE、DNS 中心、网络黑匣子等规划功能；AI 出题还受外部服务和实际卡片数据可用性约束。
 
-详细验收状态见 [`docs/soft-router-user-stories.md`](docs/soft-router-user-stories.md)。
+实际产品验收仍以 [`docs/soft-router-user-stories.md`](docs/soft-router-user-stories.md)、板端测试与 CI 结果为准；`docs/plan/` 中的历史方案不必然代表当前代码行为。
 
 ## 开发环境
 
@@ -108,7 +132,7 @@ hyz-things 是管理门户；hyz-camera 是媒体进程。
 - 仓库本地 Trunk：`.tools/trunk/bin/trunk`；
 - Android `repo` 工具会在首次使用 SDK 目标时自动下载到 `.tools/repo`。
 
-Rockchip vendor source、Buildroot 和内核位于 `sdk/`，由 Android `repo` manifest 固定具体组件版本；产品应用位于 `apps/`。
+Rockchip vendor source、Buildroot 和内核位于 `sdk/`，由 Android `repo` manifest 固定具体组件版本；产品应用位于 `apps/`。门户 UI 的卡片源、Codex Agent 和 Samba 共享属于额外的个人工作流，不能仅靠编译固件自动启用。
 
 ## 构建和检查
 
@@ -181,7 +205,7 @@ ADB_SERIAL=<serial> make deploy-things
 ADB_SERIAL=<serial> make deploy-camera
 ```
 
-部署工具会先检查 wire protocol 兼容性和 ELF 校验和，只停止并重启对应的 `S83hyz-things` 或 `S82hyz-camera`，不会重启 router。回滚使用：
+部署工具会先检查 wire protocol 兼容性和 ELF 校验和，只停止并重启对应的 `S83hyz-things` 或 `S82hyz-camera`，不会重启 router。门户“系统 → 热部署记录”展示的是 `/userdata/hyz-things/apps/registry.json` 的当前版本快照，不是完整部署流水账。回滚使用：
 
 ```sh
 ADB_SERIAL=<serial> make revert-things
@@ -208,8 +232,11 @@ OTA 构建、传输、SHA-256 校验、安装和重启流程见 [`docs/ota-deplo
 ```text
 apps/rust/contract/  共享 serde wire 契约
 apps/rust/router/    无头路由核心
-apps/rust/things/    HTTPS 管理门户、Yew SPA 和部署工具
+apps/rust/things/    HTTPS 管理门户、学习业务、Yew SPA、E2E 与部署工具
 apps/rust/camera/    V4L2/GStreamer/MPP/WebRTC 媒体进程
+flashcards/          主机侧 Markdown 学习卡片与错题材料
+.agents/skills/      供本地 Agent / Codex 出题使用的技能与参考
+scripts/             主机卡片共享等辅助脚本
 product/             Buildroot rootfs overlay 和 init 脚本
 sdk/                 Android repo 管理的 Rockchip/Buildroot/kernel 组件
 output/              本地构建产物，不应提交
@@ -227,13 +254,15 @@ docs/camera-hardware-e2e.md
 
 更多文档入口：
 
-- [`apps/rust/things/README.md`](apps/rust/things/README.md)：门户进程、HTTP 安全边界和前端测试；
+- [`apps/rust/things/README.md`](apps/rust/things/README.md)：门户进程、页面模块、学习数据、HTTPS 安全边界及前端测试；
 - [`apps/rust/router/README.md`](apps/rust/router/README.md)：router 用例、CLI、持久化配置和 OTA；
 - [`docs/architecture.md`](docs/architecture.md)：完整架构和启动时序；
 - [`docs/soft-router-user-stories.md`](docs/soft-router-user-stories.md)：当前产品状态和未完成验收；
 - [`docs/router-app-debug.md`](docs/router-app-debug.md)：router 开发热替换；
 - [`docs/network-adb.md`](docs/network-adb.md)：物理 LAN/Tailscale 网络 ADB；
-- [`docs/ota-deployment.md`](docs/ota-deployment.md)：OTA 部署和回滚边界。
+- [`docs/ota-deployment.md`](docs/ota-deployment.md)：OTA 部署和回滚边界；
+- [`docs/camera-hardware-e2e.md`](docs/camera-hardware-e2e.md)：真实摄像头与音视频链路验收；
+- [`docs/frontend-bundle-cache.md`](docs/frontend-bundle-cache.md)：前端确定性构建缓存与复用。
 
 ## 安全和公开发布注意事项
 
