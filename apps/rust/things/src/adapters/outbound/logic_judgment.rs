@@ -918,7 +918,7 @@ mod tests {
             "S3-组合排列",
             "S4-特殊题型",
         ] {
-            let method = format!("判断/形式推理/{directory}/card.md");
+            let method = format!("判断/形式推理/{directory}/cards.md");
             let mistake = format!("判断/形式推理/{directory}/错题/cards.md");
             assert_eq!(eligible_path(&method), Some("formal"));
             assert_eq!(eligible_path(&mistake), Some("formal"));
