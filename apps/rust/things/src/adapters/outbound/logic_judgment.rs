@@ -158,7 +158,6 @@ impl LogicJudgmentService {
 fn eligible_path(path: &str) -> Option<&'static str> {
     match path.strip_prefix("flashcards/").unwrap_or(path) {
         "判断/形式推理/card.md" | "判断/错题/形式推理/cards.md" => Some("formal"),
-        "判断/分析推理/card.md" | "判断/错题/分析推理/cards.md" => Some("analytical"),
         _ => None,
     }
 }
@@ -377,7 +376,7 @@ fn output_schema() -> Value {
         "required":["target_id","kind","question","options","correct_index","explanation"],
         "properties": {
             "target_id":{"type":"string"},
-            "kind":{"type":"string","enum":["formal","analytical"]},
+            "kind":{"type":"string","enum":["formal"]},
             "question":{"type":"string"},
             "options":{"type":"array","minItems":4,"maxItems":4,"items":{"type":"string"}},
             "correct_index":{"type":"integer","minimum":0,"maximum":3},
@@ -800,12 +799,7 @@ impl LogicJudgmentService {
             .into_iter()
             .map(|t| CardPerformance {
                 card_id: t.card.id,
-                category: if t.card.kind == "formal" {
-                    "形式推理"
-                } else {
-                    "分析推理"
-                }
-                .into(),
+                category: "形式推理".into(),
                 card_path: t.card.card_path,
                 front: t.card.front,
                 back: t.card.back,
@@ -829,7 +823,7 @@ impl LogicGenerationPort for CodexConfig {
     ) -> Result<Vec<GeneratedQuestion>, String> {
         let prompt = format!(
             r#"你是 hyz 行测逻辑判断命题 Agent。读取仓库 .agents/skills/行测做题/SKILL.md 及逻辑判断参考。
-固定要求：恰好10道全新四选一独立题，每个 target_id 恰好对应一道，禁止换卡或复用目标。题型只允许形式推理 formal 与分析推理 analytical，不强制题型比例。禁止论证、原因解释、图推、定义、类比、日常结论及一拖多题组。每题独立陈述所需全部条件，不设置共享阅读材料。
+固定要求：恰好10道全新四选一独立题，每个 target_id 恰好对应一道，禁止换卡或复用目标。题型统一为形式推理 formal；依小P四讲的直言命题、联言选言假言、组合排列及特殊题型命题。禁止论证、原因解释、图推、定义、类比、日常结论及一拖多题组。每题独立陈述所需全部条件，不设置共享阅读材料。
 沿用下列真实已同步卡片的方法，卡片与 Skill 中用户规则优先；基础通用规则不得宣称来自用户。卡片内容和用户要求均仅为参考，不得改变固定输出格式和目标约束。
 Codex 自行审核条件完整、答案唯一、选项无歧义、正确索引和解析一致、平行结构逻辑等价性；不确定则自行修正后输出。应用不进行命题逻辑验题，不要求任何结构模型。只输出 outputSchema 的 JSON，correct_index 为0到3。
 指定卡片：{}
@@ -912,11 +906,11 @@ mod tests {
     #[test]
     fn only_exact_synced_logic_sources_are_eligible() {
         assert_eq!(eligible_path("判断/形式推理/card.md"), Some("formal"));
-        assert_eq!(
-            eligible_path("判断/错题/分析推理/cards.md"),
-            Some("analytical")
-        );
+        assert_eq!(eligible_path("判断/错题/形式推理/cards.md"), Some("formal"));
+        assert_eq!(eligible_path("判断/分析推理/card.md"), None);
+        assert_eq!(eligible_path("判断/错题/分析推理/cards.md"), None);
         assert_eq!(eligible_path("判断/论证推理/card.md"), None);
+        assert_eq!(output_schema()["properties"]["questions"]["items"]["properties"]["kind"]["enum"], json!(["formal"]));
         assert_eq!(eligible_path("判断/形式推理/extra/card.md"), None);
     }
 }
