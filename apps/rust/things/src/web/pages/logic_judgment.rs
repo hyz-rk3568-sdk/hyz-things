@@ -393,19 +393,26 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 <div class="relative min-h-0 flex-1 overflow-hidden">
                     <InkOverlay question_index={index} responsive={true} persist_key={format!("logic-{}-{index}",active.id)}>
                         <article class="h-full min-w-0 overflow-y-auto overscroll-contain rounded-box bg-base-100 p-4 pb-12 pt-16 sm:p-6 sm:pb-12 sm:pt-16">
-                            <div class="whitespace-pre-wrap break-words text-lg leading-8" data-testid="logic-question">{question.question.clone()}</div>
+                            <div class="mb-3 flex justify-between text-xs text-base-content/60"><span>{format!("第 {}/10 题",index+1)}</span><span>{"作答中"}</span></div>
+                            <h2 class="whitespace-pre-wrap break-words text-lg font-semibold leading-8" data-testid="logic-question">{question.question.clone()}</h2>
                             <div class="mt-5 grid gap-3">{for question.options.iter().enumerate().map(|(choice, text)| {
                                 let selected = active.answers[index] == Some(choice);
                                 html! {
-                                <button class={classes!("btn", "h-auto", "min-h-12", "justify-start", "whitespace-normal", "py-3", "text-left", if selected { "btn-primary" } else { "btn-outline" })} data-testid="logic-choice" aria-pressed={selected.to_string()} disabled={*busy || remaining == 0} onclick={invoke(LogicAction::Answer(index, choice))}>{format!("{} · {}", (b'A' + choice as u8) as char, text)}</button>
+                                <button class={classes!("btn", "h-auto", "min-h-14", "justify-start", "whitespace-normal", "py-3", "text-left", if selected { "btn-primary" } else { "btn-outline" })} data-testid="logic-choice" aria-pressed={selected.to_string()} disabled={*busy || remaining == 0} onclick={invoke(LogicAction::Answer(index, choice))}>{format!("{} · {}", (b'A' + choice as u8) as char, text)}</button>
                             }})}</div>
                         </article>
                     </InkOverlay>
                 </div>
-                <nav class="flex shrink-0 flex-wrap items-center justify-center gap-2 pt-2" aria-label="题号导航">
-                    <button class="btn btn-sm" disabled={index == 0} onclick={previous}>{"上一题"}</button>
-                    {for (0..10).map(|i| { let current = current.clone(); html! { <button class={if i == index {"btn btn-primary btn-xs"} else {"btn btn-outline btn-xs"}} aria-label={format!("第{}题{}",i+1,if active.answers[i].is_some(){" 已答"}else{" 未答"})} aria-current={(i == index).to_string()} onclick={Callback::from(move |_| current.set(i))}>{format!("{}{}",i+1,if active.answers[i].is_some(){" ✓"}else{""})}</button> } })}
-                    <button class="btn btn-sm" disabled={index == 9} onclick={next}>{"下一题"}</button>
+                <nav class="flex shrink-0 items-center justify-between gap-2 py-2" aria-label="题号导航" data-testid="logic-navigation">
+                    <button class="btn btn-outline btn-sm" disabled={index == 0} onclick={previous}>{"上一题"}</button>
+                    <div class="flex min-w-0 flex-1 items-center justify-center gap-1 overflow-x-auto">
+                        {for (0..10).map(|i| { let current = current.clone(); html! {
+                            <button class={if i==index {"btn btn-primary btn-xs shrink-0"} else if active.answers[i].is_some() {"btn btn-primary btn-outline btn-xs shrink-0"} else {"btn btn-ghost btn-xs shrink-0"}}
+                                aria-label={format!("第{}题{}",i+1,if active.answers[i].is_some(){" 已答"}else{" 未答"})} aria-current={(i == index).to_string()}
+                                onclick={Callback::from(move |_|current.set(i))}>{i+1}</button>
+                        } })}
+                    </div>
+                    <button class="btn btn-primary btn-sm" disabled={index == 9} onclick={next}>{"下一题"}</button>
                 </nav>
             </section>
         };
