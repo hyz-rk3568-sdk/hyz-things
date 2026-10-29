@@ -565,7 +565,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                     <button class="btn btn-outline w-full" data-testid="logic-history-toggle" onclick={{let history_open=history_open.clone();Callback::from(move |_|history_open.set(true))}}>{"查看练习历史"}</button>
                     <div class="rounded-box border border-base-content/15 p-4 space-y-2">
                         <p class="font-semibold">{"智能选卡 · 逻辑判断"}</p>
-                        <p class="text-sm text-base-content/60">{"按小P形式推理知识点统一选卡（直言、联言选言假言、组合排列、特殊题型），每次选取10张不同的有效卡片；不出一拖五。"}</p>
+                        <p class="text-sm text-base-content/60">{"按小P S1 直言、S2 联言选言假言、S3 组合排列、S4 特殊题型，从方法卡和错题卡中选取10张有效卡；不出一拖五。"}</p>
                         if let Some(state)=status.as_ref() {
                             <p class="text-xs text-base-content/60">{format!("当前有效卡片：{} 张",state.eligible_cards)}</p>
                         }
