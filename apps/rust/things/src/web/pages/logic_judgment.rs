@@ -14,9 +14,12 @@ enum LogicAction {
     Open(String),
     Answer(usize, usize),
     Submit,
+    Pause,
+    PauseAndExit,
     Result(String),
     Retry(String),
     Prompt,
+    ResetPrompt,
     Back,
 }
 
@@ -26,6 +29,8 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     let unfinished = use_state(Vec::<LogicRun>::new);
     let history = use_state(Vec::<LogicHistory>::new);
     let statistics = use_state(Vec::<LogicPerformance>::new);
+    let history_open = use_state(|| false);
+    let opened_card = use_state(|| None::<String>);
     let prompt = use_state(String::new);
     let run = use_state(|| None::<LogicRun>);
     let result = use_state(|| None::<LogicResult>);
@@ -226,6 +231,25 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                                 run.set(Some(active));
                             }
                         }
+                        LogicAction::Pause | LogicAction::PauseAndExit => {
+                            if let Some(active) = run.as_ref() {
+                                let exiting = matches!(command, LogicAction::PauseAndExit);
+                                if active.paused_remaining_ms.is_none() || !exiting {
+                                    let updated: LogicRun = post_json_response(
+                                        &format!("{LOGIC_ROOT}/runs/{}/pause", active.id),
+                                        &csrf,
+                                        &EmptyRequest {},
+                                        "暂停或继续训练",
+                                    ).await?;
+                                    offset.set(updated.server_now_ms as f64 - Date::now());
+                                    run.set(Some(updated));
+                                }
+                                if exiting {
+                                    run.set(None);
+                                    reload.set(*reload + 1);
+                                }
+                            }
+                        }
                         LogicAction::Submit => {
                             if let Some(active) = run.as_ref() {
                                 let score: LogicResult = post_json_response(
@@ -259,6 +283,13 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                             result.set(None);
                             run.set(Some(active));
                         }
+                        LogicAction::ResetPrompt => {
+                            let settings: UserPromptSettings = post_json_response(
+                                &format!("{LOGIC_ROOT}/user-prompt"), &csrf,
+                                &UserPromptUpdate { user_prompt: None }, "恢复默认出题要求",
+                            ).await?;
+                            prompt.set(settings.user_prompt);
+                        }
                         LogicAction::Prompt => {
                             let settings: UserPromptSettings = post_json_response(
                                 &format!("{LOGIC_ROOT}/user-prompt"),
@@ -289,16 +320,18 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
             });
         })
     };
-    let remaining = run
-        .as_ref()
-        .and_then(|active| active.deadline_at_ms)
-        .map(|deadline| ((deadline as f64 - (*clock + *offset)).max(0.0) / 1000.0).ceil() as u64)
-        .unwrap_or(0);
+    let remaining = run.as_ref().map(|active| {
+        active.paused_remaining_ms
+            .map(|ms| (ms.max(0) as u64).div_ceil(1000))
+            .or_else(|| active.deadline_at_ms.map(|deadline|
+                ((deadline as f64 - (*clock + *offset)).max(0.0) / 1000.0).ceil() as u64
+            )).unwrap_or(0)
+    }).unwrap_or(0);
     {
         let action = action.clone();
         let expiry_attempted_run = expiry_attempted_run.clone();
         use_effect_with(
-            (run.as_ref().map(|r| r.id.clone()), remaining == 0, *busy),
+            (run.as_ref().map(|r| r.id.clone()), remaining == 0 && run.as_ref().is_some_and(|r| r.paused_remaining_ms.is_none()), *busy),
             move |(id, expired, busy)| {
                 if let Some(id) = id {
                     if *expired && !*busy && expiry_attempted_run.borrow().as_ref() != Some(id) {
