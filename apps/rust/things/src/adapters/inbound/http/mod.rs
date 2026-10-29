@@ -723,6 +723,10 @@ fn app_with_assets(
             on(MethodFilter::POST, logic_judgment::start),
         )
         .route(
+            "/api/v1/study/logic-judgment/runs/{id}/pause",
+            on(MethodFilter::POST, logic_judgment::pause),
+        )
+        .route(
             "/api/v1/study/logic-judgment/runs/{id}/answers",
             on(MethodFilter::POST, logic_judgment::answer),
         )
