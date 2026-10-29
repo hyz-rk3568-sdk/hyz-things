@@ -88,8 +88,8 @@ pub(crate) async fn enter_logic_run(id: &str, csrf: &str) -> Result<LogicRun, St
         || run.answers.len() != 10
         || run.duration_seconds != 600
         || (run.status == "active"
-        && run.deadline_at_ms.is_none()
-        && run.paused_remaining_ms.is_none())
+            && run.deadline_at_ms.is_none()
+            && run.paused_remaining_ms.is_none())
         || run.answers.iter().flatten().any(|choice| *choice >= 4)
     {
         return Err("服务器试卷不符合10题10分钟约定".into());
