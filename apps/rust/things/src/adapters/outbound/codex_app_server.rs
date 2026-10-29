@@ -865,6 +865,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn more_than_2048_notifications_do_not_abort_a_healthy_turn() {
+        let (mut session, mut socket) = test_connection().await;
+        let worker = tokio::spawn(async move { session.turn("generate").await });
+        let turn = client_message(&mut socket).await;
+        server_message(&mut socket, json!({"id":turn["id"],"result":{"turn":{"id":"turn-1"}}})).await;
+        for _ in 0..2100 {
+            server_message(&mut socket, json!({"method":"item/started","params":{
+                "threadId":"test-thread","turnId":"turn-1","item":{"type":"reasoning"}
+            }})).await;
+        }
+        server_message(&mut socket, json!({"method":"item/completed","params":{
+            "threadId":"test-thread","turnId":"turn-1",
+            "item":{"type":"agentMessage","text":"{\"questions\":[]}"}
+        }})).await;
+        complete_test_turn(&mut socket, "completed").await;
+        assert_eq!(worker.await.unwrap().unwrap(), "{\"questions\":[]}");
+    }
+
+    #[tokio::test]
     async fn fake_codex_app_server_completes_generation_without_external_network() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
