@@ -149,7 +149,7 @@ test("deadline waits for the in-flight answer before automatically submitting on
 test("user prompt clears through null instead of sending invalid blank text", async ({ page }) => {
   const {state,open}=await logicFixture(page);
   await open();
-  await page.getByText('出题要求',{exact:true}).click();
+  await page.getByTestId('logic-user-prompt').locator('summary').click();
   const prompt=page.getByLabel('补充偏好（保留题型范围与 Codex 自检要求）');
   await expect(prompt).toHaveValue('原提示');
   await prompt.fill('');
@@ -159,7 +159,7 @@ test("user prompt clears through null instead of sending invalid blank text", as
   await expect(page.getByRole('alert')).toHaveCount(0);
   await page.reload();
   await page.getByTestId('training-mode-logic-judgment').click();
-  await page.getByText('出题要求',{exact:true}).click();
+  await page.getByTestId('logic-user-prompt').locator('summary').click();
   await expect(prompt).toHaveValue(DEFAULT_LOGIC_PROMPT);
 });
 
