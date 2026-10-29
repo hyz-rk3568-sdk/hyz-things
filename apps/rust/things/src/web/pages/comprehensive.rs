@@ -124,61 +124,22 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
     }
 }
 
-// None: unanswered; Some(true): answered/correct; Some(false): wrong.
+// The grouping and graded navigation state are shared with logic judgment.
 fn analysis_navigation(
     current: UseStateHandle<usize>,
     index: usize,
     markers: &[Option<bool>],
     is_review: bool,
 ) -> Html {
-    let group_index = index / 5;
-    let previous = {
-        let current = current.clone();
-        Callback::from(move |_| current.set(index.saturating_sub(1)))
-    };
-    let next = {
-        let current = current.clone();
-        Callback::from(move |_| current.set((index + 1).min(19)))
-    };
-    html! {
-        <footer class="flex shrink-0 items-center justify-between gap-2 py-2" data-testid="analysis-navigation">
-            <button type="button" class="btn btn-outline btn-sm" disabled={index==0} onclick={previous}>{"上一题"}</button>
-            <nav class="flex min-w-0 flex-1 items-center justify-center gap-1 overflow-x-auto" aria-label="题目导航">
-                {for (0..4).map(|g|{
-                    let current = current.clone();
-                    html!{<button type="button" class={if g==group_index{"btn btn-primary btn-xs shrink-0"}else{"btn btn-ghost btn-xs shrink-0"}}
-                        onclick={Callback::from(move |_|current.set(g*5))}>{format!("材料{}",g+1)}</button>}
-                })}
-                {for (group_index*5..group_index*5+5).map(|i|{
-                    let current = current.clone();
-                    let marker = markers.get(i).copied().flatten();
-                    let style = if i==index {
-                        if is_review {
-                            match marker {
-                                Some(true) => "btn btn-success btn-xs shrink-0",
-                                Some(false) => "btn btn-error btn-xs shrink-0",
-                                None => "btn btn-primary btn-xs shrink-0",
-                            }
-                        } else {
-                            "btn btn-primary btn-xs shrink-0"
-                        }
-                    } else if !is_review && marker.is_some() {
-                        // Before submission a selected answer is NOT graded.
-                        "btn btn-primary btn-outline btn-xs shrink-0"
-                    } else {
-                        match marker {
-                            Some(true) => "btn btn-success btn-outline btn-xs shrink-0",
-                            Some(false) => "btn btn-error btn-outline btn-xs shrink-0",
-                            None => "btn btn-ghost btn-xs shrink-0",
-                        }
-                    };
-                    html!{<button type="button" class={style} data-testid="analysis-question-tab"
-                        onclick={Callback::from(move |_|current.set(i))}>{i+1}</button>}
-                })}
-            </nav>
-            <button type="button" class="btn btn-primary btn-sm" disabled={index==19} onclick={next}>{"下一题"}</button>
-        </footer>
-    }
+    question_navigation(
+        current,
+        index,
+        markers,
+        is_review,
+        Some(5),
+        "analysis-navigation",
+        "analysis-question-tab",
+    )
 }
 
 #[derive(Serialize)]
