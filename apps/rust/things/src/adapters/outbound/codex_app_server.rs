@@ -15,7 +15,6 @@ use tokio::{
 
 pub const SERVER: &str = "192.168.8.202:1457";
 const MAX_PACKET: usize = 256 * 1024;
-const MAX_EVENTS: usize = 2048;
 pub const TURN_TIMEOUT: Duration = Duration::from_secs(600);
 const INTERRUPT_TIMEOUT: Duration = Duration::from_secs(5);
 pub(super) const UNCONFIRMED_MESSAGE: &str = "未确认 Codex 远端已停止";
@@ -445,7 +444,9 @@ impl CodexSession {
             .to_owned();
         state.send_replace(TurnState::Running(turn_id.clone()));
         let mut final_answer = String::new();
-        for _ in 0..MAX_EVENTS {
+        // A generation turn is bounded by TURN_TIMEOUT, not by notification count.
+        // A long but healthy reasoning stream may exceed 2048 notifications.
+        loop {
             let raw = read_text(&mut self.reader, &self.writer).await?;
             let packet: Value =
                 serde_json::from_str(&raw).map_err(|_| "Codex 返回非法 JSON-RPC 通知")?;
@@ -487,7 +488,6 @@ impl CodexSession {
                 return Ok(final_answer);
             }
         }
-        Err("Codex 生成过程事件过多".into())
     }
 }
 
