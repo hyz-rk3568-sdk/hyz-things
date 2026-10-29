@@ -157,13 +157,13 @@ impl LogicJudgmentService {
 
 fn eligible_path(path: &str) -> Option<&'static str> {
     match path.strip_prefix("flashcards/").unwrap_or(path) {
-        "判断/形式推理/S1-直言命题/card.md"
+        "判断/形式推理/S1-直言命题/cards.md"
         | "判断/形式推理/S1-直言命题/错题/cards.md"
-        | "判断/形式推理/S2-联言选言假言命题/card.md"
+        | "判断/形式推理/S2-联言选言假言命题/cards.md"
         | "判断/形式推理/S2-联言选言假言命题/错题/cards.md"
-        | "判断/形式推理/S3-组合排列/card.md"
+        | "判断/形式推理/S3-组合排列/cards.md"
         | "判断/形式推理/S3-组合排列/错题/cards.md"
-        | "判断/形式推理/S4-特殊题型/card.md"
+        | "判断/形式推理/S4-特殊题型/cards.md"
         | "判断/形式推理/S4-特殊题型/错题/cards.md" => Some("formal"),
         _ => None,
     }
@@ -950,7 +950,7 @@ mod service_tests {
 
     async fn cards(service: &LogicJudgmentService, count: usize) {
         for i in 1..=count {
-            sqlx::query("INSERT OR IGNORE INTO flashcards(id,source_file,source_order,deck_path,front_markdown,back_markdown,source_hash,active,created_at_ms,updated_at_ms) VALUES(?, '判断/形式推理/S1-直言命题/card.md',?, '判断/形式推理','front','back','hash',1,0,0)")
+            sqlx::query("INSERT OR IGNORE INTO flashcards(id,source_file,source_order,deck_path,front_markdown,back_markdown,source_hash,active,created_at_ms,updated_at_ms) VALUES(?, '判断/形式推理/S1-直言命题/cards.md',?, '判断/形式推理','front','back','hash',1,0,0)")
                 .bind(format!("00000000-0000-7000-8000-{i:012}"))
                 .bind(i as i64).execute(&service.pool).await.unwrap();
         }
