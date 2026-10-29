@@ -350,6 +350,22 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     };
     let alert = html! { if let Some(message) = error.as_ref() { <p class="text-error break-words" role="alert">{message}</p> } };
     if let Some(active) = run.as_ref() {
+        if let Some(remaining_ms) = active.paused_remaining_ms {
+            return html! {
+                <section class="analysis-fullscreen analysis-paused fixed inset-0 z-[70] flex h-dvh w-screen items-center justify-center overflow-hidden bg-base-200 p-4" data-testid="logic-paused">
+                    <div class="w-full max-w-md rounded-box bg-base-100 p-6 text-center sm:p-8">
+                        <h2 class="text-2xl font-bold">{"训练已暂停"}</h2>
+                        <p class="mt-3 text-sm text-base-content/60">{"题目已隐藏，暂停期间不能答题。刷新或退出后剩余时间保持不变。"}</p>
+                        <p class="my-6 font-mono text-3xl" role="timer" data-testid="logic-clock">{format!("{:02}:{:02}", remaining_ms.max(0)/60000, (remaining_ms.max(0)/1000)%60)}</p>
+                        <div class="flex flex-wrap justify-center gap-3">
+                            <button class="btn btn-outline" disabled={*busy} onclick={invoke(LogicAction::PauseAndExit)}>{"← 退出训练"}</button>
+                            <button class="btn btn-primary" data-testid="logic-continue" disabled={*busy} onclick={invoke(LogicAction::Pause)}>{"继续计时"}</button>
+                        </div>
+                        {alert}
+                    </div>
+                </section>
+            };
+        }
         let index = (*current).min(active.questions.len().saturating_sub(1));
         let question = &active.questions[index];
         let previous = {
