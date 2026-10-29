@@ -18,6 +18,7 @@ mod system;
 mod tailscale;
 mod training;
 mod training_metrics;
+mod training_split_workspace;
 
 pub(crate) use calculation::*;
 pub(crate) use camera::*;
@@ -36,3 +37,4 @@ pub(crate) use system::*;
 pub(crate) use tailscale::*;
 pub(crate) use training::*;
 pub(crate) use training_metrics::*;
+use training_split_workspace::*;

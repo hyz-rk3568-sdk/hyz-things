@@ -3,6 +3,21 @@ use wasm_bindgen::{closure::Closure, JsCast};
 use web_sys::{Event, EventTarget, MouseEvent, PointerEvent};
 use yew::prelude::*;
 
+#[derive(Clone, Copy, Default, PartialEq)]
+pub(super) struct ScrollEdges {
+    pub(super) can_scroll_up: bool,
+    pub(super) can_scroll_down: bool,
+}
+
+pub(super) fn scroll_edges(element: &web_sys::HtmlElement) -> ScrollEdges {
+    let max_scroll = (element.scroll_height() - element.client_height()).max(0);
+    let scroll_top = element.scroll_top().clamp(0, max_scroll);
+    ScrollEdges {
+        can_scroll_up: scroll_top > 0,
+        can_scroll_down: scroll_top < max_scroll,
+    }
+}
+
 const MATERIAL_HOLD_DELAY_MS: u32 = 300;
 const MATERIAL_REPEAT_MS: u32 = 80;
 
@@ -49,6 +64,8 @@ pub(super) struct MaterialScrollButtonProps {
     pub(super) up: bool,
     pub(super) disabled: bool,
     pub(super) question_index: usize,
+    #[prop_or("材料")]
+    pub(super) target: &'static str,
 }
 
 #[function_component(MaterialScrollButton)]
@@ -184,11 +201,7 @@ pub(super) fn material_scroll_button(props: &MaterialScrollButtonProps) -> Html 
             }
         })
     };
-    let label = if props.up {
-        "材料向上滚动"
-    } else {
-        "材料向下滚动"
-    };
+    let label = format!("{}向{}滚动", props.target, if props.up { "上" } else { "下" });
     html! {
         <button ref={button} type="button" class="btn btn-ghost btn-sm touch-none select-none px-2 [-webkit-touch-callout:none]"
             aria-label={label} title="单击滚动一行，长按连续滚动" disabled={props.disabled}
