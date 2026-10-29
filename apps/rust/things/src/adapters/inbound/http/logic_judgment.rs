@@ -163,7 +163,7 @@ pub(super) async fn pause(
     Path(id): Path<String>,
     body: Result<Json<EmptyBody>, JsonRejection>,
 ) -> Response {
-    if let Err(response) = authorize_sensitive_control(&state, &headers) {
+    if let Err(response) = authorize_sensitive_control(&state, &headers).await {
         return response;
     }
     if let Err(status) = typed_body(body) {
