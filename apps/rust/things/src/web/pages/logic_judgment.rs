@@ -1,4 +1,5 @@
 //! Independent logic drills use server-owned answers and deadlines.
+use super::material_scroll::{scroll_edges, MaterialScrollButton, ScrollEdges};
 use super::*;
 use gloo_timers::callback::Interval;
 
@@ -21,6 +22,107 @@ enum LogicAction {
     Prompt,
     ResetPrompt,
     Back,
+}
+
+// A single scrolling question pane is reused by practice and answer review.
+// When the pen captures touches, the same hold-to-scroll buttons as analysis
+// keep long stems, options and explanations navigable without losing the ink.
+#[derive(Properties, PartialEq)]
+struct LogicScrollPaneProps {
+    question_index: usize,
+    status: &'static str,
+    children: Children,
+}
+
+#[function_component(LogicScrollPane)]
+fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
+    let passage = use_node_ref();
+    let scratchpad_open = use_context::<bool>().unwrap_or(false);
+    let edges = use_state(ScrollEdges::default);
+    let refresh_edges = {
+        let passage = passage.clone();
+        let edges = edges.clone();
+        Callback::from(move |_: ()| {
+            if let Some(element) = passage.cast::<web_sys::HtmlElement>() {
+                let next = scroll_edges(&element);
+                if *edges != next {
+                    edges.set(next);
+                }
+            }
+        })
+    };
+    let on_scroll = {
+        let refresh_edges = refresh_edges.clone();
+        Callback::from(move |_: web_sys::Event| refresh_edges.emit(()))
+    };
+    {
+        let passage = passage.clone();
+        let refresh_edges = refresh_edges.clone();
+        use_effect_with(props.question_index, move |_| {
+            if let Some(element) = passage.cast::<web_sys::HtmlElement>() {
+                element.set_scroll_top(0);
+            }
+            refresh_edges.emit(());
+            || ()
+        });
+    }
+    {
+        let refresh_edges = refresh_edges.clone();
+        use_effect_with(scratchpad_open, move |_| {
+            refresh_edges.emit(());
+            || ()
+        });
+    }
+    {
+        let refresh_edges = refresh_edges.clone();
+        use_effect_with((), move |_| {
+            let window = web_sys::window();
+            let handler =
+                wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::Event)>::new(move |_| {
+                    refresh_edges.emit(());
+                });
+            let attached = window.as_ref().is_some_and(|window| {
+                window
+                    .add_event_listener_with_callback("resize", handler.as_ref().unchecked_ref())
+                    .is_ok()
+            });
+            move || {
+                if attached {
+                    if let Some(window) = window {
+                        let _ = window.remove_event_listener_with_callback(
+                            "resize",
+                            handler.as_ref().unchecked_ref(),
+                        );
+                    }
+                }
+            }
+        });
+    }
+
+    html! {
+        <section class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100"
+            data-testid="logic-scroll-workspace">
+            <div class="relative z-30 flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-16 sm:px-6 sm:pt-16">
+                <div class="flex min-w-0 items-center gap-3 text-xs text-base-content/60">
+                    <span>{format!("第 {}/10 题", props.question_index + 1)}</span>
+                    <span>{props.status}</span>
+                </div>
+                if scratchpad_open {
+                    <div class="flex shrink-0 gap-1" role="group" aria-label="题目滚动" data-testid="logic-scroll-buttons">
+                        <MaterialScrollButton passage={passage.clone()} up={true}
+                            disabled={!edges.can_scroll_up} question_index={props.question_index} target="题目" />
+                        <MaterialScrollButton passage={passage.clone()} up={false}
+                            disabled={!edges.can_scroll_down} question_index={props.question_index} target="题目" />
+                    </div>
+                }
+            </div>
+            <article ref={passage} onscroll={on_scroll}
+                class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y px-4 pb-12 sm:px-6 sm:pb-12"
+                data-testid="logic-scroll-content">
+                {for props.children.iter()}
+            </article>
+        </section>
+    }
 }
 
 #[function_component(LogicJudgmentTraining)]
@@ -424,16 +526,15 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 </header>
                 {alert}
                 <div class="relative min-h-0 flex-1 overflow-hidden">
-                    <InkOverlay question_index={index} responsive={true} persist_key={format!("logic-{}-{index}",active.id)}>
-                        <article class="h-full min-w-0 overflow-y-auto overscroll-contain rounded-box bg-base-100 p-4 pb-12 pt-16 sm:p-6 sm:pb-12 sm:pt-16">
-                            <div class="mb-3 flex justify-between text-xs text-base-content/60"><span>{format!("第 {}/10 题",index+1)}</span><span>{"作答中"}</span></div>
+                    <InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("logic-{}-{index}",active.id)}>
+                        <LogicScrollPane question_index={index} status="作答中">
                             <div class="study-markdown whitespace-pre-wrap break-words text-lg font-semibold leading-8" data-testid="logic-question">{render_markdown(&question.question, "")}</div>
                             <div class="mt-5 grid gap-3">{for question.options.iter().enumerate().map(|(choice, text)| {
                                 let selected = active.answers[index] == Some(choice);
                                 html! {
                                 <button class={classes!("btn", "h-auto", "min-h-14", "justify-start", "whitespace-normal", "py-3", "text-left", if selected { "btn-primary" } else { "btn-outline" })} data-testid="logic-choice" aria-pressed={selected.to_string()} disabled={*busy || remaining == 0} onclick={invoke(LogicAction::Answer(index, choice))}><span class="mr-2 shrink-0">{format!("{} ·", (b'A' + choice as u8) as char)}</span><span class="study-markdown min-w-0">{render_markdown(text, "")}</span></button>
                             }})}</div>
-                        </article>
+                        </LogicScrollPane>
                     </InkOverlay>
                 </div>
                 {question_navigation(
@@ -467,12 +568,9 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 </header>
                 {alert}
                 <div class="relative min-h-0 flex-1 overflow-hidden">
-                    <InkOverlay question_index={index} responsive={true} persist_key={format!("logic-{}-{index}",score.id)}>
-                        <article class="h-full min-w-0 overflow-y-auto overscroll-contain rounded-box bg-base-100 p-4 pb-12 pt-16 sm:p-6 sm:pb-12 sm:pt-16" data-testid="logic-review-content">
-                    <div class="flex justify-between text-xs text-base-content/60">
-                        <span>{format!("第 {}/10 题",index+1)}</span>
-                        <span>{grade}</span>
-                    </div>
+                    <InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("logic-{}-{index}",score.id)}>
+                        <LogicScrollPane question_index={index} status={grade}>
+                            <div data-testid="logic-review-content">
                     <div class="study-markdown my-4 whitespace-pre-wrap break-words text-lg font-semibold leading-8">{render_markdown(&q.question, "")}</div>
                     <div class="grid gap-2">{for q.options.iter().enumerate().map(|(i,option)| {
                         let style = if i==q.correct_index {"flex items-center justify-between rounded-box border border-success bg-success/10 p-3 text-success"}
@@ -496,7 +594,8 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                             </div>
                         </details>
                     </div>
-                        </article>
+                            </div>
+                        </LogicScrollPane>
                     </InkOverlay>
                 </div>
                 {question_navigation(
