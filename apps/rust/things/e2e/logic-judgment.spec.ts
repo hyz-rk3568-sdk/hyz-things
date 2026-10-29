@@ -52,6 +52,11 @@ test("logic judgment persists answers, recovers deadline and reviews exact-paper
   await page.getByTestId('logic-submit').click();
   await expect(page.getByTestId('logic-result')).toContainText('1 / 10');
   await expect(page.getByTestId('logic-result')).toContainText('仅交卷后可见的解析');
+  await expect(page.getByTestId('logic-question-pane')).toBeVisible();
+  await expect(page.getByTestId('logic-answer-pane')).toBeVisible();
+  const reviewQuestion=await page.getByTestId('logic-question-pane').boundingBox();
+  const reviewAnswer=await page.getByTestId('logic-answer-pane').boundingBox();
+  expect(reviewQuestion!.x+reviewQuestion!.width).toBeLessThanOrEqual(reviewAnswer!.x+2);
   await page.getByRole('button',{name:'← 返回训练',exact:true}).click();
   await page.getByTestId('logic-history-toggle').click();
   await expect(page.getByTestId('logic-history')).toContainText('1/10题');
@@ -363,15 +368,35 @@ test("insufficient card pool and unconfigured generation cannot create fake pape
 test("transparent ink controls do not cover the single question stem on mobile", async ({ page }) => {
   await page.setViewportSize({width:390,height:844});
   const {state,open}=await logicFixture(page);
-  state.run.questions[0].question='如果甲参加，则乙不参加。已知乙参加，以下哪项必然成立？'.repeat(3);
+  state.run.questions[0].question='如果甲参加，则乙不参加。已知乙参加，以下哪项必然成立？'.repeat(20);
+  state.run.questions[0].options=['甲'.repeat(80),'乙'.repeat(80),'丙'.repeat(80),'丁'.repeat(80)];
   await open();
   await page.getByTestId('logic-resume').click();
+  const left=page.getByTestId('logic-question-pane');
+  const right=page.getByTestId('logic-answer-pane');
+  const leftBox=await left.boundingBox();
+  const rightBox=await right.boundingBox();
+  expect(leftBox!.y+leftBox!.height).toBeLessThanOrEqual(rightBox!.y+2);
   await page.getByTestId('calculation-scratchpad-toggle').click();
   const question=await page.getByTestId('logic-question').boundingBox();
   const controls=await page.getByTestId('calculation-scratchpad-controls').boundingBox();
   expect(question).not.toBeNull();
   expect(controls).not.toBeNull();
   expect(question!.y).toBeGreaterThanOrEqual(controls!.y+controls!.height+4);
+  const questionScroll=page.getByTestId('logic-question-scroll');
+  const answerScroll=page.getByTestId('logic-answer-scroll');
+  const questionDown=page.getByRole('button',{name:'题目向下滚动',exact:true});
+  const answerDown=page.getByRole('button',{name:'选项向下滚动',exact:true});
+  await expect(questionDown).toBeEnabled();
+  await expect(answerDown).toBeEnabled();
+  await questionDown.click();
+  expect(await questionScroll.evaluate(el=>el.scrollTop)).toBe(32);
+  expect(await answerScroll.evaluate(el=>el.scrollTop)).toBe(0);
+  await answerDown.click();
+  expect(await answerScroll.evaluate(el=>el.scrollTop)).toBe(32);
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+  await expect(questionDown).toHaveCount(0);
+  await expect(answerDown).toHaveCount(0);
 });
 
 test("logic judgment keeps controls inside PWA safe areas across viewports", async ({ page }) => {
@@ -393,6 +418,10 @@ test("logic judgment keeps controls inside PWA safe areas across viewports", asy
     const box=(await next.boundingBox())!;
     expect(box.y+box.height).toBeLessThanOrEqual(viewport.height-24);
     await expectNoHorizontalOverflow(page);
+    const leftPane=await page.getByTestId('logic-question-pane').boundingBox();
+    const rightPane=await page.getByTestId('logic-answer-pane').boundingBox();
+    if(viewport.width>=768) expect(leftPane!.x+leftPane!.width).toBeLessThanOrEqual(rightPane!.x+2);
+    else expect(leftPane!.y+leftPane!.height).toBeLessThanOrEqual(rightPane!.y+2);
     await next.click();
     await expect(page.getByTestId('logic-question')).toHaveText('单题 2');
     await page.getByRole('button',{name:'上一题',exact:true}).click();
