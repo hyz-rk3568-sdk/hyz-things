@@ -53,10 +53,13 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     }
     {
         let immersive = props.on_immersive_change.clone();
-        use_effect_with((run.is_some(), result.is_some()), move |(active, reviewing)| {
-            immersive.emit(*active || *reviewing);
-            move || immersive.emit(false)
-        });
+        use_effect_with(
+            (run.is_some(), result.is_some()),
+            move |(active, reviewing)| {
+                immersive.emit(*active || *reviewing);
+                move || immersive.emit(false)
+            },
+        );
     }
     {
         let (status, unfinished, history, statistics, prompt, job, error) = (
@@ -240,7 +243,8 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                                         &csrf,
                                         &EmptyRequest {},
                                         "暂停或继续训练",
-                                    ).await?;
+                                    )
+                                    .await?;
                                     offset.set(updated.server_now_ms as f64 - Date::now());
                                     run.set(Some(updated));
                                 }
@@ -285,9 +289,12 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         }
                         LogicAction::ResetPrompt => {
                             let settings: UserPromptSettings = post_json_response(
-                                &format!("{LOGIC_ROOT}/user-prompt"), &csrf,
-                                &UserPromptUpdate { user_prompt: None }, "恢复默认出题要求",
-                            ).await?;
+                                &format!("{LOGIC_ROOT}/user-prompt"),
+                                &csrf,
+                                &UserPromptUpdate { user_prompt: None },
+                                "恢复默认出题要求",
+                            )
+                            .await?;
                             prompt.set(settings.user_prompt);
                         }
                         LogicAction::Prompt => {
@@ -320,18 +327,32 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
             });
         })
     };
-    let remaining = run.as_ref().map(|active| {
-        active.paused_remaining_ms
-            .map(|ms| (ms.max(0) as u64).div_ceil(1000))
-            .or_else(|| active.deadline_at_ms.map(|deadline|
-                ((deadline as f64 - (*clock + *offset)).max(0.0) / 1000.0).ceil() as u64
-            )).unwrap_or(0)
-    }).unwrap_or(0);
+    let remaining = run
+        .as_ref()
+        .map(|active| {
+            active
+                .paused_remaining_ms
+                .map(|ms| (ms.max(0) as u64).div_ceil(1000))
+                .or_else(|| {
+                    active.deadline_at_ms.map(|deadline| {
+                        ((deadline as f64 - (*clock + *offset)).max(0.0) / 1000.0).ceil() as u64
+                    })
+                })
+                .unwrap_or(0)
+        })
+        .unwrap_or(0);
     {
         let action = action.clone();
         let expiry_attempted_run = expiry_attempted_run.clone();
         use_effect_with(
-            (run.as_ref().map(|r| r.id.clone()), remaining == 0 && run.as_ref().is_some_and(|r| r.paused_remaining_ms.is_none()), *busy),
+            (
+                run.as_ref().map(|r| r.id.clone()),
+                remaining == 0
+                    && run
+                        .as_ref()
+                        .is_some_and(|r| r.paused_remaining_ms.is_none()),
+                *busy,
+            ),
             move |(id, expired, busy)| {
                 if let Some(id) = id {
                     if *expired && !*busy && expiry_attempted_run.borrow().as_ref() != Some(id) {
@@ -420,10 +441,21 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     if let Some(score) = result.as_ref() {
         let index = (*current).min(score.questions.len().saturating_sub(1));
         let q = &score.questions[index];
-        let grade = if q.chosen == Some(q.correct_index) { "正确" }
-            else if q.chosen.is_some() { "错误" } else { "未答" };
-        let previous = { let current=current.clone(); Callback::from(move |_|current.set(index.saturating_sub(1))) };
-        let next = { let current=current.clone(); Callback::from(move |_|current.set((index+1).min(9))) };
+        let grade = if q.chosen == Some(q.correct_index) {
+            "正确"
+        } else if q.chosen.is_some() {
+            "错误"
+        } else {
+            "未答"
+        };
+        let previous = {
+            let current = current.clone();
+            Callback::from(move |_| current.set(index.saturating_sub(1)))
+        };
+        let next = {
+            let current = current.clone();
+            Callback::from(move |_| current.set((index + 1).min(9)))
+        };
         return html! {
             <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" data-testid="logic-result">
                 <header class="analysis-header flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2">
@@ -504,8 +536,8 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
             </section>
         };
     }
-    let answered: i64 = statistics.iter().map(|s|s.answered_count as i64).sum();
-    let correct: i64 = statistics.iter().map(|s|s.correct_count as i64).sum();
+    let answered: i64 = statistics.iter().map(|s| s.answered_count as i64).sum();
+    let correct: i64 = statistics.iter().map(|s| s.correct_count as i64).sum();
     html! {
         <section class="mx-auto max-w-3xl p-4 sm:p-6" data-testid="logic-setup">
             <div class="rounded-box bg-base-100 p-5 sm:p-7">
