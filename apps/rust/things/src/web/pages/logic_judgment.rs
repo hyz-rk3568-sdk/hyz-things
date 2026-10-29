@@ -44,6 +44,26 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     let clock = use_state(Date::now);
     let offset = use_state(|| 0f64);
     let expiry_attempted_run = use_mut_ref(|| None::<String>);
+    // Match data-analysis: hydrate Markdown math when the visible question,
+    // submitted review, or Flashcard detail is mounted/changed.
+    {
+        let math_view = (
+            run.as_ref().map(|r| {
+                (
+                    r.id.clone(),
+                    r.answers.clone(),
+                    r.paused_remaining_ms.is_some(),
+                )
+            }),
+            result.as_ref().map(|r| r.id.clone()),
+            *current,
+            (*opened_card).clone(),
+        );
+        use_effect_with(math_view, move |_| {
+            hydrate_math();
+            || ()
+        });
+    }
     {
         let clock = clock.clone();
         use_effect_with((), move |_| {
@@ -415,11 +435,11 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                     <InkOverlay question_index={index} responsive={true} persist_key={format!("logic-{}-{index}",active.id)}>
                         <article class="h-full min-w-0 overflow-y-auto overscroll-contain rounded-box bg-base-100 p-4 pb-12 pt-16 sm:p-6 sm:pb-12 sm:pt-16">
                             <div class="mb-3 flex justify-between text-xs text-base-content/60"><span>{format!("第 {}/10 题",index+1)}</span><span>{"作答中"}</span></div>
-                            <h2 class="whitespace-pre-wrap break-words text-lg font-semibold leading-8" data-testid="logic-question">{question.question.clone()}</h2>
+                            <div class="study-markdown whitespace-pre-wrap break-words text-lg font-semibold leading-8" data-testid="logic-question">{render_markdown(&question.question, "")}</div>
                             <div class="mt-5 grid gap-3">{for question.options.iter().enumerate().map(|(choice, text)| {
                                 let selected = active.answers[index] == Some(choice);
                                 html! {
-                                <button class={classes!("btn", "h-auto", "min-h-14", "justify-start", "whitespace-normal", "py-3", "text-left", if selected { "btn-primary" } else { "btn-outline" })} data-testid="logic-choice" aria-pressed={selected.to_string()} disabled={*busy || remaining == 0} onclick={invoke(LogicAction::Answer(index, choice))}>{format!("{} · {}", (b'A' + choice as u8) as char, text)}</button>
+                                <button class={classes!("btn", "h-auto", "min-h-14", "justify-start", "whitespace-normal", "py-3", "text-left", if selected { "btn-primary" } else { "btn-outline" })} data-testid="logic-choice" aria-pressed={selected.to_string()} disabled={*busy || remaining == 0} onclick={invoke(LogicAction::Answer(index, choice))}><span class="mr-2 shrink-0">{format!("{} ·", (b'A' + choice as u8) as char)}</span><span class="study-markdown min-w-0">{render_markdown(text, "")}</span></button>
                             }})}</div>
                         </article>
                     </InkOverlay>
@@ -469,20 +489,20 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         <span>{format!("第 {}/10 题",index+1)}</span>
                         <span>{grade}</span>
                     </div>
-                    <h2 class="my-4 whitespace-pre-wrap break-words text-lg font-semibold leading-8">{q.question.clone()}</h2>
+                    <div class="study-markdown my-4 whitespace-pre-wrap break-words text-lg font-semibold leading-8">{render_markdown(&q.question, "")}</div>
                     <div class="grid gap-2">{for q.options.iter().enumerate().map(|(i,option)| {
                         let style = if i==q.correct_index {"flex items-center justify-between rounded-box border border-success bg-success/10 p-3 text-success"}
                             else if q.chosen==Some(i) {"flex items-center justify-between rounded-box border border-error bg-error/10 p-3 text-error"}
                             else {"flex items-center justify-between rounded-box border border-base-content/20 p-3"};
                         let hint = if i==q.correct_index {"✓ 正确答案"} else if q.chosen==Some(i) {"✕ 你的错选"} else {""};
                         html! {<div class={style} data-testid="logic-review-choice">
-                            <span>{format!("{}. {}",(b'A'+i as u8) as char,option)}</span><span class="shrink-0 text-xs">{hint}</span>
+                            <span class="flex min-w-0 items-start gap-2"><span class="shrink-0">{format!("{}.",(b'A'+i as u8) as char)}</span><span class="study-markdown min-w-0">{render_markdown(option, "")}</span></span><span class="shrink-0 text-xs">{hint}</span>
                         </div>}
                     })}</div>
                     <div class="mt-5 border-t border-base-content/10 pt-4">
                         <p class="text-sm font-semibold">{format!("你的答案：{}",q.chosen.map(|i|((b'A'+i as u8) as char).to_string()).unwrap_or("未答".into()))}</p>
                         <h3 class="mt-3 font-semibold">{"解题解析"}</h3>
-                        <p class="mt-2 whitespace-pre-wrap text-sm leading-7">{q.explanation.clone()}</p>
+                        <div class="study-markdown mt-2 whitespace-pre-wrap text-sm leading-7">{render_markdown(&q.explanation, "")}</div>
                         <details class="mt-4 rounded-box border border-base-content/15 p-3">
                             <summary class="cursor-pointer font-semibold">{"查看关联方法卡"}</summary>
                             <div class="mt-3 space-y-3">

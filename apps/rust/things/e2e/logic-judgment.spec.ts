@@ -85,7 +85,7 @@ async function logicFixture(page: import('@playwright/test').Page) {
       }
       data={user_prompt:state.prompt,customized:!!state.prompt};
     }
-    else if(path.endsWith('/card-performance')) data=[{card_id:'method-card',category:'形式推理',card_path:'判断/形式推理/card.md',front:'方法卡',back:'方法解析',answered_count:3,correct_count:2}];
+    else if(path.endsWith('/card-performance')) data=[{card_id:'method-card',category:'形式推理',card_path:'判断/形式推理/card.md',front:'方法卡\n\n$$\nA\\rightarrow B\n$$',back:'方法解析',answered_count:3,correct_count:2}];
     else if(path.endsWith('/unfinished')) data=state.submitted || !state.available || (state.job && !state.ready)?[]:[state.run];
     else if(path.endsWith('/history')) data=[];
     else if(path.endsWith('/prepare')) { state.prepared++; state.job='recover-job'; data={job_id:state.job}; }
@@ -113,7 +113,7 @@ async function logicFixture(page: import('@playwright/test').Page) {
     else if(path.endsWith('/submit') || path.endsWith('/result')) {
       if(path.endsWith('/submit')) state.submitted++;
       data={id:state.run.id,correct:0,total:10,answered:state.run.answers.filter(a=>a!==null).length,
-        questions:state.run.questions.map((q,i)=>({...q,chosen:state.run.answers[i],correct_index:1,explanation:'交卷解析',card_id:`card-${i}`,card_path:'判断/形式推理/card.md',front:'方法',back:'说明'}))};
+        questions:state.run.questions.map((q,i)=>({...q,chosen:state.run.answers[i],correct_index:1,explanation:'交卷解析：$A \\rightarrow B$',card_id:`card-${i}`,card_path:'判断/形式推理/card.md',front:'方法 $A \\rightarrow B$',back:'说明'}))};
     }
     else if(path.includes('/runs/')) data=state.run;
     await route.fulfill({json:data});
@@ -125,6 +125,25 @@ async function logicFixture(page: import('@playwright/test').Page) {
   };
   return {state,open};
 }
+
+test("logic judgment typesets KaTeX in stems, choices, review and source cards", async ({ page }) => {
+  const {state,open}=await logicFixture(page);
+  state.run.questions[0].question='已知 $A \\rightarrow B$，推断哪项成立？';
+  state.run.questions[0].options[0]='选项 $\\neg B$';
+  await open();
+  await page.getByTestId('logic-statistics').locator('summary').click();
+  await page.getByTestId('logic-card-item').first().click();
+  await expect(page.getByTestId('logic-card-detail').locator('.katex')).toBeVisible();
+  await page.getByTestId('logic-card-detail').getByRole('button',{name:'← 返回'}).click();
+  await page.getByTestId('logic-resume').click();
+  await expect(page.getByTestId('logic-question').locator('.katex')).toBeVisible();
+  await expect(page.getByTestId('logic-choice').first().locator('.katex')).toBeVisible();
+  await page.getByTestId('logic-submit').click();
+  const review=page.getByTestId('logic-review-content');
+  await expect(review.locator('.katex').first()).toBeVisible();
+  await review.locator('summary').click();
+  await expect(review.locator('details .katex').first()).toBeVisible();
+});
 
 test("deadline waits for the in-flight answer before automatically submitting once", async ({ page }) => {
   await page.clock.install();

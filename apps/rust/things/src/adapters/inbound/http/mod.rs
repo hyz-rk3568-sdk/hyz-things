@@ -2720,7 +2720,7 @@ fn is_logic_judgment_run_post_path(path: &str) -> bool {
     uuid::Uuid::parse_str(id).is_ok()
         && matches!(
             segments.next(),
-            Some("start" | "answers" | "submit" | "retry")
+            Some("start" | "pause" | "answers" | "submit" | "retry")
         )
         && segments.next().is_none()
 }
@@ -3212,6 +3212,16 @@ mod tests {
         ));
         assert!(is_post_path(
             "/api/v1/study/data-analysis/runs/550e8400-e29b-41d4-a716-446655440000/position"
+        ));
+        // Logic pause must pass the exact-path POST middleware, not just the Axum route.
+        assert!(is_post_path(
+            "/api/v1/study/logic-judgment/runs/550e8400-e29b-41d4-a716-446655440000/pause"
+        ));
+        assert!(!is_post_path(
+            "/api/v1/study/logic-judgment/runs/not-a-uuid/pause"
+        ));
+        assert!(!is_post_path(
+            "/api/v1/study/logic-judgment/runs/550e8400-e29b-41d4-a716-446655440000/pause/extra"
         ));
         assert!(!is_post_path(
             "/api/v1/study/data-analysis/runs/not-a-uuid/claim"
