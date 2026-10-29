@@ -576,7 +576,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         </div>
                         <p class="mt-2 text-xs text-base-content/60">{"按虚拟调度次数排序，点开卡片可查看 Front/Back。"}</p>
                     </details>
-                    if let Some(card)=opened_card.as_ref().as_ref().and_then(|id|statistics.iter().find(|c|&c.card_id==id)).cloned() {
+                    if let Some(card)=opened_card.as_ref().as_ref().and_then(|id|statistics.iter().find(|c|c.card_id.as_str()==id.as_str())).cloned() {
                         <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3 sm:p-6" data-testid="logic-card-detail" role="dialog" aria-modal="true" aria-label="Flashcard 卡片详情">
                             <div class="flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-box bg-base-100 shadow-2xl">
                                 <div class="flex shrink-0 items-center justify-between border-b border-base-content/10 p-3">
