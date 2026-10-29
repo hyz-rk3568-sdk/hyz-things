@@ -203,6 +203,8 @@ test("server clock compensates a slow device and pause survives exit and resume"
   await page.getByRole('button',{name:'← 暂停并退出',exact:true}).click();
   expect(state.run.paused_remaining_ms).toBe(127000);
   state.run.server_now_ms+=60000;
+  await page.reload();
+  await page.getByTestId('training-mode-logic-judgment').click();
   await page.getByTestId('logic-resume').click();
   await expect(page.getByTestId('logic-paused')).toBeVisible();
   await expect(page.getByTestId('logic-clock')).toHaveText('02:07');
