@@ -850,6 +850,16 @@ mod tests {
     }
 
     #[test]
+    fn markdown_renders_dollar_delimited_inline_math() {
+        // Flashcard source uses $...$ for inline math; the Markdown parser
+        // converts it to math-inline for KaTeX hydration.
+        let html = markdown_html(r"矛盾：$A\to B$，人数：$N-M$，条件：$\ge N-M$", "");
+        assert_eq!(html.matches("math-inline").count(), 3);
+        assert!(html.contains(r"A\to B"));
+        assert!(html.contains(r"\ge N-M"));
+    }
+
+    #[test]
     fn asset_resolution_rejects_escape_and_external_urls() {
         assert!(resolve_asset_url("deck/cards.md", "../../secret.png").is_none());
         assert!(resolve_asset_url("deck/cards.md", "https://example.com/a.png").is_none());
