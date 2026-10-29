@@ -1,5 +1,5 @@
 //! 20 questions / 20 minutes. Immersive iPad workspace with 60:40 material/question panes.
-use super::material_scroll::MaterialScrollButton;
+use super::material_scroll::{MaterialScrollButton, ScrollEdges, scroll_edges};
 use super::*;
 use gloo_timers::{callback::Interval, future::TimeoutFuture};
 use js_sys::Date;
@@ -25,21 +25,6 @@ struct AnalysisPanesProps {
     question_index: usize,
 }
 
-#[derive(Clone, Copy, Default, PartialEq)]
-struct MaterialScrollEdges {
-    can_scroll_up: bool,
-    can_scroll_down: bool,
-}
-
-fn material_scroll_edges(element: &web_sys::HtmlElement) -> MaterialScrollEdges {
-    let max_scroll = (element.scroll_height() - element.client_height()).max(0);
-    let scroll_top = element.scroll_top().clamp(0, max_scroll);
-    MaterialScrollEdges {
-        can_scroll_up: scroll_top > 0,
-        can_scroll_down: scroll_top < max_scroll,
-    }
-}
-
 // Match the material's `leading-8` (2rem = 32 CSS px) so each click
 // advances exactly one rendered text line. Keep controls outside scrollable content.
 // In stacked layouts, leave space for the expanded top-right ink toolbar
@@ -48,13 +33,13 @@ fn material_scroll_edges(element: &web_sys::HtmlElement) -> MaterialScrollEdges 
 fn analysis_panes(props: &AnalysisPanesProps) -> Html {
     let passage = use_node_ref();
     let scratchpad_open = use_context::<bool>().unwrap_or(false);
-    let scroll_edges = use_state(MaterialScrollEdges::default);
+    let scroll_edges = use_state(ScrollEdges::default);
     let refresh_scroll_edges = {
         let passage = passage.clone();
         let scroll_edges = scroll_edges.clone();
         Callback::from(move |_: ()| {
             if let Some(element) = passage.cast::<web_sys::HtmlElement>() {
-                let next = material_scroll_edges(&element);
+                let next = scroll_edges(&element);
                 if *scroll_edges != next {
                     scroll_edges.set(next);
                 }
