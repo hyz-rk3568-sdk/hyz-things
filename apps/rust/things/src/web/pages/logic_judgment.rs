@@ -53,8 +53,8 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     }
     {
         let immersive = props.on_immersive_change.clone();
-        use_effect_with(run.is_some(), move |active| {
-            immersive.emit(*active);
+        use_effect_with((run.is_some(), result.is_some()), move |(active, reviewing)| {
+            immersive.emit(*active || *reviewing);
             move || immersive.emit(false)
         });
     }
@@ -418,23 +418,60 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
         };
     }
     if let Some(score) = result.as_ref() {
+        let index = (*current).min(score.questions.len().saturating_sub(1));
+        let q = &score.questions[index];
+        let grade = if q.chosen == Some(q.correct_index) { "正确" }
+            else if q.chosen.is_some() { "错误" } else { "未答" };
+        let previous = { let current=current.clone(); Callback::from(move |_|current.set(index.saturating_sub(1))) };
+        let next = { let current=current.clone(); Callback::from(move |_|current.set((index+1).min(9))) };
         return html! {
-            <section class="mx-auto max-w-3xl space-y-4 p-4" data-testid="logic-result">
-                <h2 class="text-xl font-bold">{format!("答卷结果 · {} / {}",score.correct,score.total)}</h2>
-                <p>{format!("已答 {} 题 · 正确率 {:.0}% · 未答题不计入卡片错误统计",score.answered,if score.total == 0 {0.0}else{100.0*score.correct as f64/score.total as f64})}</p>
+            <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" data-testid="logic-result">
+                <header class="analysis-header flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2">
+                    <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={invoke(LogicAction::Back)}>{"← 返回训练"}</button>
+                    <strong class="text-sm">{format!("答卷结果 · {} / {}",score.correct,score.total)}</strong>
+                    <button class="btn btn-primary btn-sm" data-testid="logic-retry" disabled={*busy} onclick={invoke(LogicAction::Retry(score.id.clone()))}>{"重做原题"}</button>
+                </header>
                 {alert}
-                <button class="btn btn-sm" disabled={*busy} onclick={invoke(LogicAction::Back)}>{"返回设置"}</button>
-                <button class="btn btn-primary btn-sm" data-testid="logic-retry" disabled={*busy} onclick={invoke(LogicAction::Retry(score.id.clone()))}>{"重做原卷（不增加 VCNT）"}</button>
-                {for score.questions.iter().enumerate().map(|(i,q)| html! {
-                    <article class="space-y-2 rounded-box bg-base-100 p-4">
-                        <h3 class="font-bold">{format!("第{}题 · {}",i+1,if q.chosen == Some(q.correct_index){"正确"}else if q.chosen.is_none(){"未答"}else{"错题"})}</h3>
-                        <p class="whitespace-pre-wrap">{q.question.clone()}</p>
-                        {for q.options.iter().enumerate().map(|(i,text)| html! {<p>{format!("{} · {}",(b'A'+i as u8) as char,text)}</p>})}
-                        <p>{format!("你的答案：{} · 正确答案：{}",q.chosen.map(|i|((b'A'+i as u8) as char).to_string()).unwrap_or("未答".into()),(b'A'+q.correct_index as u8) as char)}</p>
-                        <p class="whitespace-pre-wrap">{q.explanation.clone()}</p>
-                        <details><summary>{format!("关联卡片 · {} · {}",q.card_path,q.card_id)}</summary>{render_markdown(&q.front,&q.card_path)}{render_markdown(&q.back,&q.card_path)}</details>
-                    </article>
-                })}
+                <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-box bg-base-100 p-4 sm:p-6" data-testid="logic-review-content">
+                    <div class="flex justify-between text-xs text-base-content/60">
+                        <span>{format!("第 {}/10 题",index+1)}</span>
+                        <span>{grade}</span>
+                    </div>
+                    <h2 class="my-4 whitespace-pre-wrap break-words text-lg font-semibold leading-8">{q.question.clone()}</h2>
+                    <div class="grid gap-2">{for q.options.iter().enumerate().map(|(i,option)| {
+                        let style = if i==q.correct_index {"flex items-center justify-between rounded-box border border-success bg-success/10 p-3 text-success"}
+                            else if q.chosen==Some(i) {"flex items-center justify-between rounded-box border border-error bg-error/10 p-3 text-error"}
+                            else {"flex items-center justify-between rounded-box border border-base-content/20 p-3"};
+                        let hint = if i==q.correct_index {"✓ 正确答案"} else if q.chosen==Some(i) {"✕ 你的错选"} else {""};
+                        html! {<div class={style} data-testid="logic-review-choice">
+                            <span>{format!("{}. {}",(b'A'+i as u8) as char,option)}</span><span class="shrink-0 text-xs">{hint}</span>
+                        </div>}
+                    })}</div>
+                    <div class="mt-5 border-t border-base-content/10 pt-4">
+                        <p class="text-sm font-semibold">{format!("你的答案：{}",q.chosen.map(|i|((b'A'+i as u8) as char).to_string()).unwrap_or("未答".into()))}</p>
+                        <h3 class="mt-3 font-semibold">{"解题解析"}</h3>
+                        <p class="mt-2 whitespace-pre-wrap text-sm leading-7">{q.explanation.clone()}</p>
+                        <details class="mt-4 rounded-box border border-base-content/15 p-3">
+                            <summary class="cursor-pointer font-semibold">{"查看关联方法卡"}</summary>
+                            <div class="mt-3 space-y-3">
+                                <div class="study-markdown">{render_markdown(&q.front,&q.card_path)}</div>
+                                <div class="divider"></div>
+                                <div class="study-markdown">{render_markdown(&q.back,&q.card_path)}</div>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+                <nav class="flex shrink-0 items-center justify-between gap-2 py-2" aria-label="题号导航">
+                    <button class="btn btn-outline btn-sm" disabled={index==0} onclick={previous}>{"上一题"}</button>
+                    <div class="flex min-w-0 flex-1 items-center justify-center gap-1 overflow-x-auto">
+                        {for score.questions.iter().enumerate().map(|(i,q)| {
+                            let current=current.clone();
+                            let style=if i==index {"btn btn-primary btn-xs shrink-0"} else if q.chosen.is_none() {"btn btn-ghost btn-xs shrink-0"} else if q.chosen==Some(q.correct_index) {"btn btn-success btn-outline btn-xs shrink-0"} else {"btn btn-error btn-outline btn-xs shrink-0"};
+                            html!{<button class={style} onclick={Callback::from(move |_|current.set(i))}>{i+1}</button>}
+                        })}
+                    </div>
+                    <button class="btn btn-primary btn-sm" disabled={index==9} onclick={next}>{"下一题"}</button>
+                </nav>
             </section>
         };
     }
