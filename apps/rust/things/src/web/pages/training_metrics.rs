@@ -13,7 +13,10 @@ pub(crate) fn training_metrics(props: &TrainingMetricsProps) -> Html {
     let accuracy = if props.answered <= 0 {
         "未作答".to_owned()
     } else {
-        format!("{:.1}%", 100.0 * props.correct as f64 / props.answered as f64)
+        format!(
+            "{:.1}%",
+            100.0 * props.correct as f64 / props.answered as f64
+        )
     };
     html! {
         <div class="grid min-w-0 grid-cols-3 gap-2" data-testid={format!("{}-answer-summary", props.prefix)}>
