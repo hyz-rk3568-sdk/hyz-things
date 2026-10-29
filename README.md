@@ -132,7 +132,7 @@ make upgrade
 make check-static    # shell、Python、manifest 和源码引用检查，不编译固件
 make check           # fmt、host tests、Clippy 和部署工具测试
 make things-frontend # 构建确定性的 Yew/Tailwind 前端 bundle
-make things-e2e      # 运行 loopback Axum/Playwright 浏览器测试
+make things-e2e      # 在 loopback Axum harness 上运行默认的 iPad WebKit E2E 测试
 make router-app      # 构建 hyz-router AArch64 ELF
 make things-app      # 构建 hyz-things AArch64 ELF
 make camera-app      # 构建 hyz-camera AArch64 ELF
@@ -141,6 +141,19 @@ make overlay         # 将三个 ELF 和产品元数据放入 rootfs overlay
 ```
 
 `make check` 不会构建 Buildroot 固件；完整 firmware、kernel、rootfs 和 loader 构建由 `make upgrade` 触发。
+
+### 门户浏览器 E2E
+
+`make things-e2e` 默认使用 Playwright 的 **WebKit + `iPad Pro 11 landscape`** 设备预设，验证 iPad 横屏布局、触摸交互及门户功能。此配置是在 Linux/开发机上的浏览器与设备模拟，**不等于真实 iPad Safari 或 RK3568 板端验收**。首次运行需先在 `apps/rust/things` 执行 `npm ci` 并安装 WebKit：
+
+```sh
+cd apps/rust/things
+npm ci
+npx playwright install --with-deps webkit
+npm run test:e2e
+```
+
+`npm run test:e2e` 会先执行启动与就绪信号回归测试，再运行 Playwright 套件；CI 也默认安装并运行 WebKit。需要切换到桌面 Chromium 时，另外安装浏览器并执行 `npm run test:e2e:chromium`。本地 `make things-e2e` 还要求仓库本地 Trunk 已配置。具体用法见 [`apps/rust/things/README.md`](apps/rust/things/README.md)，真实摄像头硬件测试见 [`docs/camera-hardware-e2e.md`](docs/camera-hardware-e2e.md)。
 
 构建产物主要位于：
 
