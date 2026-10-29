@@ -3,8 +3,8 @@
 `hyz-things` 是 RK3568 产品上的**门户与管理进程**，按用户需求以“hyz things”个人网站形式承载设备管理面。它不参与路由/防火墙/NAT，而是通过 root-only Unix socket 驱动独立无头核心 `hyz-router`，并通过 `/run/hyz-camera/control.sock` 驱动独立媒体进程 `hyz-camera`。
 
 - 板端程序：`/usr/bin/hyz-things`（init：`/etc/init.d/S83hyz-things`）
-- 管理地址：`http://192.168.8.1:8080`（LAN 固定监听；Tailscale 认证后精确绑定单个 Tailscale IPv4）
-- 启动前置：等待 `/run/hyz-router/ready` 标记，之后才绑定 HTTP
+- 管理地址：`https://192.168.8.1:8080`（LAN 固定 HTTPS 监听，设备使用自签证书；Tailscale 认证后精确绑定单个 Tailscale IPv4）
+- 启动前置：等待 `/run/hyz-router/ready` 标记，之后才绑定 HTTPS
 - 共享 wire 契约：`apps/rust/contract`（`hyz-contract`）
 - 详细设计、架构图和板端验证记录：[docs/architecture.md](../../../docs/architecture.md)
 
@@ -50,6 +50,29 @@ make things-app
 ```
 
 `things-frontend` 先运行 `npm run build:css`（Tailwind/daisyUI 静态 CSS）再运行 Trunk release WASM 构建，产物为确定性的 `hyz-things-frontend.tar`；`things-e2e` 使用 host-only loopback Axum harness 运行 Playwright，不执行产品网络命令；`things-app` 将 bundle 嵌入 ELF 并完成 AArch64 native 构建。
+
+### Playwright E2E：默认 iPad WebKit
+
+`playwright.config.ts` 默认使用 `webkit` 浏览器与 `iPad Pro 11 landscape` 设备预设（移动端与触控模拟）；它覆盖 iPad 横屏交互，但**不是在真实 iPad 上运行的 Safari 测试**。从仓库根目录执行 `make things-e2e`，或在项目目录直接运行：
+
+```sh
+cd apps/rust/things
+npm ci
+npx playwright install --with-deps webkit
+npm run test:e2e
+```
+
+`npm run test:e2e` 会先执行 `npm run test:e2e:startup`（`tools/test-e2e-startup.py`），再执行 Playwright 用例。启动测试覆盖默认 WebKit、可选 Chromium、非法浏览器配置、服务未就绪和端口占用等情况；测试 harness 通过输出包含 `web_origin` 的就绪记录通知 Playwright，而不是等待 loopback HTTP 健康探针。默认使用独立端口，不复用已运行的服务器。
+
+如需回归桌面 Chromium，请安装相应浏览器后显式选择：
+
+```sh
+npx playwright install --with-deps chromium
+npm run test:e2e:chromium
+# 等价于：HYZ_THINGS_E2E_BROWSER=chromium npm run test:e2e
+```
+
+CI 的 `Portal CI` 工作流默认安装 WebKit 并执行 `npm run test:e2e`，失败时上传 Playwright 截图、trace、视频等可用产物。它复用事先校验的前端 bundle；本地测试仍会按需准备 bundle。真实 RK3568 摄像头和音视频路径不由这些 host-only mock 套件验收，另见 [`docs/camera-hardware-e2e.md`](../../../docs/camera-hardware-e2e.md)。
 
 ## 运行
 
