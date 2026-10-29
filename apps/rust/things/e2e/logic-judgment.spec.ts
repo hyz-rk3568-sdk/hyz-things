@@ -52,10 +52,10 @@ test("logic judgment persists answers, recovers deadline and reviews exact-paper
   await page.getByTestId('logic-submit').click();
   await expect(page.getByTestId('logic-result')).toContainText('1 / 10');
   await expect(page.getByTestId('logic-result')).toContainText('仅交卷后可见的解析');
-  await page.getByRole('button',{name:'返回设置',exact:true}).click();
-  await page.getByTestId('logic-history').locator('summary').click();
-  await expect(page.getByTestId('logic-history')).toContainText('logic-paper');
-  await page.getByRole('button',{name:'查看结果',exact:true}).click();
+  await page.getByRole('button',{name:'← 返回训练',exact:true}).click();
+  await page.getByTestId('logic-history-toggle').click();
+  await expect(page.getByTestId('logic-history')).toContainText('1/10题');
+  await page.getByRole('button',{name:'查看原题与解析',exact:true}).click();
   await expect(page.getByTestId('logic-result')).toContainText('1 / 10');
   await page.getByTestId('logic-retry').click();
   await expect(page.getByTestId('logic-run')).toBeVisible();
@@ -65,7 +65,7 @@ test("logic judgment persists answers, recovers deadline and reviews exact-paper
 async function logicFixture(page: import('@playwright/test').Page) {
   const now = Date.now();
   const state = {
-    run: {id:'logic-boundary',status:'active',deadline_at_ms:now+600000,server_now_ms:now,duration_seconds:600,
+    run: {id:'logic-boundary',status:'active',deadline_at_ms:now+600000 as number|null,paused_remaining_ms:null as number|null,server_now_ms:now,duration_seconds:600,
       questions:Array.from({length:10},(_,i)=>({question:`单题 ${i+1}`,options:['甲','乙','丙','丁']})),answers:Array<number|null>(10).fill(null)},
     job: null as string|null, ready:false, polls:0, prepared:0, submitted:0,
     available:true, started:0, eligible:24, configured:true,
@@ -85,7 +85,7 @@ async function logicFixture(page: import('@playwright/test').Page) {
       }
       data={user_prompt:state.prompt,customized:!!state.prompt};
     }
-    else if(path.endsWith('/card-performance')) data=[{card_id:'方法卡',answered_count:3,correct_count:2}];
+    else if(path.endsWith('/card-performance')) data=[{card_id:'method-card',category:'形式推理',card_path:'判断/形式推理/card.md',front:'方法卡',back:'方法解析',answered_count:3,correct_count:2}];
     else if(path.endsWith('/unfinished')) data=state.submitted || !state.available || (state.job && !state.ready)?[]:[state.run];
     else if(path.endsWith('/history')) data=[];
     else if(path.endsWith('/prepare')) { state.prepared++; state.job='recover-job'; data={job_id:state.job}; }
@@ -95,6 +95,16 @@ async function logicFixture(page: import('@playwright/test').Page) {
       if(state.ready) {state.job=null; state.available=true;}
     }
     else if(path.endsWith('/start')) {state.started++; state.run.status='active'; data=state.run;}
+    else if(path.endsWith('/pause')) {
+      if(state.run.paused_remaining_ms===null) {
+        state.run.paused_remaining_ms=Math.max(0,(state.run.deadline_at_ms??state.run.server_now_ms)-state.run.server_now_ms);
+        state.run.deadline_at_ms=null;
+      } else {
+        state.run.deadline_at_ms=state.run.server_now_ms+state.run.paused_remaining_ms;
+        state.run.paused_remaining_ms=null;
+      }
+      data=state.run;
+    }
     else if(path.endsWith('/answers')) {
       if(state.saveGate) await state.saveGate;
       if(state.failAnswer) { await route.fulfill({status:503,json:{error:{code:'save_failed',message:'保存失败，请重试'}}}); return; }
@@ -111,7 +121,7 @@ async function logicFixture(page: import('@playwright/test').Page) {
   const open=async()=>{
     await page.goto('/#/study/training');
     await page.getByTestId('training-mode-logic-judgment').click();
-    await expect(page.getByTestId('logic-setup')).toContainText('有效卡片池');
+    await expect(page.getByTestId('logic-setup')).toContainText('当前有效卡片');
   };
   return {state,open};
 }
@@ -139,7 +149,7 @@ test("deadline waits for the in-flight answer before automatically submitting on
 test("user prompt clears through null instead of sending invalid blank text", async ({ page }) => {
   const {state,open}=await logicFixture(page);
   await open();
-  await page.getByText('出题用户提示',{exact:true}).click();
+  await page.getByText('出题要求',{exact:true}).click();
   const prompt=page.getByLabel('补充偏好（保留题型范围与 Codex 自检要求）');
   await expect(prompt).toHaveValue('原提示');
   await prompt.fill('');
@@ -149,7 +159,7 @@ test("user prompt clears through null instead of sending invalid blank text", as
   await expect(page.getByRole('alert')).toHaveCount(0);
   await page.reload();
   await page.getByTestId('training-mode-logic-judgment').click();
-  await page.getByText('出题用户提示',{exact:true}).click();
+  await page.getByText('出题要求',{exact:true}).click();
   await expect(prompt).toHaveValue(DEFAULT_LOGIC_PROMPT);
 });
 
@@ -183,18 +193,24 @@ test("failed answer stays unselected and can be retried without losing the paper
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
-test("server clock compensates a slow device and returning does not restart the deadline", async ({ page }) => {
+test("server clock compensates a slow device and pause survives exit and resume", async ({ page }) => {
   const {state,open}=await logicFixture(page);
   state.run.deadline_at_ms=state.run.server_now_ms+127000;
   await page.clock.setFixedTime(new Date(state.run.server_now_ms-240000));
   await open();
   await page.getByTestId('logic-resume').click();
   await expect(page.getByTestId('logic-clock')).toHaveText('02:07');
-  await page.getByRole('button',{name:'返回 · 计时继续',exact:true}).click();
+  await page.getByRole('button',{name:'← 暂停并退出',exact:true}).click();
+  expect(state.run.paused_remaining_ms).toBe(127000);
   state.run.server_now_ms+=60000;
   await page.getByTestId('logic-resume').click();
-  await expect(page.getByTestId('logic-clock')).toHaveText('01:07');
-  expect(state.run.deadline_at_ms).toBe(state.run.server_now_ms+67000);
+  await expect(page.getByTestId('logic-paused')).toBeVisible();
+  await expect(page.getByTestId('logic-clock')).toHaveText('02:07');
+  await expect(page.getByTestId('logic-choice')).toHaveCount(0);
+  await page.getByTestId('logic-continue').click();
+  await expect(page.getByTestId('logic-run')).toBeVisible();
+  await expect(page.getByTestId('logic-clock')).toHaveText('02:07');
+  expect(state.run.deadline_at_ms).toBe(state.run.server_now_ms+127000);
 });
 
 test("mobile single-question ink is transparent and survives question navigation and reload", async ({ page }) => {
@@ -254,7 +270,10 @@ test("newly generated paper stays untimed until explicit entry and statistics re
   state.run.status='prepared';
   await open();
   await page.getByTestId('logic-statistics').locator('summary').click();
-  await expect(page.getByTestId('logic-statistics')).toContainText('方法卡 · 已答 3 · 正确 2');
+  await expect(page.getByTestId('logic-statistics')).toContainText('方法卡');
+  await page.getByTestId('logic-card-item').click();
+  await expect(page.getByTestId('logic-card-detail')).toContainText('方法解析');
+  await page.getByRole('button',{name:'← 返回',exact:true}).click();
   await page.getByTestId('logic-prepare').click();
   await expect(page.getByTestId('logic-progress')).toContainText('3/10');
   expect(state.prepared).toBe(1);
