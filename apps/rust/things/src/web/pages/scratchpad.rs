@@ -166,7 +166,7 @@ fn pane_viewport(canvas: &HtmlCanvasElement, pane: InkPane) -> Option<PaneViewpo
     let document = web_sys::window()?.document()?;
     let selector = match pane {
         InkPane::Material => "[data-testid='analysis-material-scroll']",
-        InkPane::Question => "[data-testid='analysis-question']",
+        InkPane::Question => "[data-testid='analysis-question'], [data-testid='logic-scroll-content']",
     };
     let element = document.query_selector(selector).ok()??;
     let canvas_rect = canvas.get_bounding_client_rect();
@@ -596,6 +596,7 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
                     for selector in [
                         "[data-testid='analysis-material-scroll']",
                         "[data-testid='analysis-question']",
+                        "[data-testid='logic-scroll-content']",
                     ] {
                         if let Ok(Some(element)) = document.query_selector(selector) {
                             if element
