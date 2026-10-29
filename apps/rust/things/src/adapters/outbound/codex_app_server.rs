@@ -870,16 +870,28 @@ mod tests {
         let (mut session, mut socket) = test_connection().await;
         let worker = tokio::spawn(async move { session.turn("generate").await });
         let turn = client_message(&mut socket).await;
-        server_message(&mut socket, json!({"id":turn["id"],"result":{"turn":{"id":"turn-1"}}})).await;
+        server_message(
+            &mut socket,
+            json!({"id":turn["id"],"result":{"turn":{"id":"turn-1"}}}),
+        )
+        .await;
         for _ in 0..2100 {
-            server_message(&mut socket, json!({"method":"item/started","params":{
-                "threadId":"test-thread","turnId":"turn-1","item":{"type":"reasoning"}
-            }})).await;
+            server_message(
+                &mut socket,
+                json!({"method":"item/started","params":{
+                    "threadId":"test-thread","turnId":"turn-1","item":{"type":"reasoning"}
+                }}),
+            )
+            .await;
         }
-        server_message(&mut socket, json!({"method":"item/completed","params":{
-            "threadId":"test-thread","turnId":"turn-1",
-            "item":{"type":"agentMessage","text":"{\"questions\":[]}"}
-        }})).await;
+        server_message(
+            &mut socket,
+            json!({"method":"item/completed","params":{
+                "threadId":"test-thread","turnId":"turn-1",
+                "item":{"type":"agentMessage","text":"{\"questions\":[]}"}
+            }}),
+        )
+        .await;
         complete_test_turn(&mut socket, "completed").await;
         assert_eq!(worker.await.unwrap().unwrap(), "{\"questions\":[]}");
     }
