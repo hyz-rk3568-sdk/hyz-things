@@ -1,7 +1,63 @@
-import { expect, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 
 export const webOrigin = `http://127.0.0.1:${process.env.HYZ_THINGS_E2E_WEB_PORT ?? 3190}`;
 export const harnessOrigin = `http://127.0.0.1:${process.env.HYZ_THINGS_E2E_CONTROL_PORT ?? 3191}`;
+
+export async function expectUnselectable(locator: Locator) {
+  const property = await locator.evaluate(() => CSS.supports('user-select', 'none')
+    ? 'user-select' : '-webkit-user-select');
+  await expect(locator).toHaveCSS(property, 'none');
+  await expect(locator).toHaveCSS('-webkit-user-select', 'none');
+}
+
+export async function installClipboardMock(page: Page) {
+  await page.addInitScript(() => {
+    let text = '';
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: async (value: string) => { text = value; },
+      readText: async () => text,
+    } });
+  });
+}
+
+// Callers freeze the page clock so long presses stay deterministic.
+export async function expectDisabledScrollShield(page: Page, button: Locator) {
+  await expect(button).toBeDisabled();
+  const box = await button.boundingBox();
+  if (!box) throw new Error('scroll button missing');
+  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const shield = await page.evaluate(point => {
+    const target = document.elementFromPoint(point.x, point.y);
+    if (!target) throw new Error('scroll button hit target missing');
+    const style = getComputedStyle(target);
+    const pointerDefaults = ['touch', 'pen'].map(pointerType => target.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        bubbles: true, cancelable: true, pointerId: 91, pointerType,
+        isPrimary: true, button: 0, buttons: 1,
+      }),
+    ));
+    return {
+      pointerDefaults,
+      menuDefault: target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })),
+      userSelect: style.getPropertyValue(CSS.supports('user-select', 'none') ? 'user-select' : '-webkit-user-select'),
+      webkitUserSelect: style.getPropertyValue('-webkit-user-select'),
+      touchAction: style.touchAction,
+    };
+  }, point);
+  expect(shield).toEqual({
+    pointerDefaults: [false, false], menuDefault: false,
+    userSelect: 'none', webkitUserSelect: 'none', touchAction: 'none',
+  });
+  const canvas = page.getByTestId('calculation-scratchpad-canvas');
+  const ink = await canvas.evaluate(el => (el as HTMLCanvasElement).toDataURL());
+  await page.mouse.move(point.x, point.y);
+  await page.mouse.down();
+  await page.clock.runFor(1000);
+  await page.mouse.up();
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('');
+  expect(await canvas.evaluate(el => (el as HTMLCanvasElement).toDataURL())).toBe(ink);
+}
+
 
 export async function resetHarness(request: APIRequestContext) {
   const response = await request.put(`${harnessOrigin}/reset`);

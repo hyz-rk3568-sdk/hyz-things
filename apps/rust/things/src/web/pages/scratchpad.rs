@@ -165,8 +165,12 @@ struct PaneViewport {
 fn pane_viewport(canvas: &HtmlCanvasElement, pane: InkPane) -> Option<PaneViewport> {
     let document = web_sys::window()?.document()?;
     let selector = match pane {
-        InkPane::Material => "[data-testid='analysis-material-scroll'], [data-testid='logic-question-scroll']",
-        InkPane::Question => "[data-testid='analysis-question'], [data-testid='logic-answer-scroll']",
+        InkPane::Material => {
+            "[data-testid='analysis-material-scroll'], [data-testid='logic-question-scroll']"
+        }
+        InkPane::Question => {
+            "[data-testid='analysis-question'], [data-testid='logic-answer-scroll']"
+        }
     };
     let element = document.query_selector(selector).ok()??;
     let canvas_rect = canvas.get_bounding_client_rect();
