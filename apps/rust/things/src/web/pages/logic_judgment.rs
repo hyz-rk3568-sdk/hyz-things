@@ -115,11 +115,11 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
     }
 
     html! {
-        <div class="grid h-full min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-2 md:grid-cols-[minmax(0,11fr)_minmax(0,9fr)] md:grid-rows-1"
-            data-testid="logic-scroll-workspace">
-            <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100"
-                data-testid="logic-question-pane">
-                <div class="relative z-30 flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-16 sm:px-6 sm:pt-16">
+        <TrainingSplitWorkspace test_id="logic-scroll-workspace" split_at_md={true}
+            left={html! {
+                <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100"
+                    data-testid="logic-question-pane">
+                <div class="relative z-30 flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-16 sm:px-6 md:pt-3">
                     <div class="flex min-w-0 items-center gap-3 text-xs text-base-content/60">
                         <span>{format!("第 {}/10 题", props.question_index + 1)}</span>
                         <span>{props.status}</span>
@@ -138,10 +138,12 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
                     data-testid="logic-question-scroll">
                     {props.question.clone()}
                 </article>
-            </section>
-            <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100"
-                data-testid="logic-answer-pane">
-                <div class="relative z-30 flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-16 sm:px-6 sm:pt-16">
+                </section>
+            }}
+            right={html! {
+                <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100"
+                    data-testid="logic-answer-pane">
+                <div class="relative z-30 flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-3 sm:px-6 md:pt-16">
                     <span class="text-xs font-semibold text-base-content/60">{props.right_title}</span>
                     if scratchpad_open {
                         <div class="flex shrink-0 gap-1" role="group" aria-label="选项滚动" data-testid="logic-answer-scroll-buttons">
@@ -157,8 +159,9 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
                     data-testid="logic-answer-scroll">
                     {props.answers.clone()}
                 </article>
-            </section>
-        </div>
+                </section>
+            }}
+        />
     }
 }
 
