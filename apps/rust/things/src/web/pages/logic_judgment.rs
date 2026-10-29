@@ -444,17 +444,15 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         </article>
                     </InkOverlay>
                 </div>
-                <nav class="flex shrink-0 items-center justify-between gap-2 py-2" aria-label="题号导航" data-testid="logic-navigation">
-                    <button class="btn btn-outline btn-sm" disabled={index == 0} onclick={previous}>{"上一题"}</button>
-                    <div class="flex min-w-0 flex-1 items-center justify-center gap-1 overflow-x-auto">
-                        {for (0..10).map(|i| { let current = current.clone(); html! {
-                            <button class={if i==index {"btn btn-primary btn-xs shrink-0"} else if active.answers[i].is_some() {"btn btn-primary btn-outline btn-xs shrink-0"} else {"btn btn-ghost btn-xs shrink-0"}}
-                                aria-label={format!("第{}题{}",i+1,if active.answers[i].is_some(){" 已答"}else{" 未答"})} aria-current={(i == index).to_string()}
-                                onclick={Callback::from(move |_|current.set(i))}>{i+1}</button>
-                        } })}
-                    </div>
-                    <button class="btn btn-primary btn-sm" disabled={index == 9} onclick={next}>{"下一题"}</button>
-                </nav>
+                {question_navigation(
+                    current.clone(),
+                    index,
+                    &active.answers.iter().map(|answer| answer.is_some().then_some(true)).collect::<Vec<_>>(),
+                    false,
+                    None,
+                    "logic-navigation",
+                    "logic-question-tab",
+                )}
             </section>
         };
     }
@@ -484,7 +482,9 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                     <button class="btn btn-primary btn-sm" data-testid="logic-retry" disabled={*busy} onclick={invoke(LogicAction::Retry(score.id.clone()))}>{"重做原题"}</button>
                 </header>
                 {alert}
-                <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-box bg-base-100 p-4 sm:p-6" data-testid="logic-review-content">
+                <div class="relative min-h-0 flex-1 overflow-hidden">
+                    <InkOverlay question_index={index} responsive={true} persist_key={format!("logic-{}-{index}",score.id)}>
+                        <article class="h-full min-w-0 overflow-y-auto overscroll-contain rounded-box bg-base-100 p-4 pb-12 pt-16 sm:p-6 sm:pb-12 sm:pt-16" data-testid="logic-review-content">
                     <div class="flex justify-between text-xs text-base-content/60">
                         <span>{format!("第 {}/10 题",index+1)}</span>
                         <span>{grade}</span>
@@ -512,18 +512,18 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                             </div>
                         </details>
                     </div>
+                        </article>
+                    </InkOverlay>
                 </div>
-                <nav class="flex shrink-0 items-center justify-between gap-2 py-2" aria-label="题号导航">
-                    <button class="btn btn-outline btn-sm" disabled={index==0} onclick={previous}>{"上一题"}</button>
-                    <div class="flex min-w-0 flex-1 items-center justify-center gap-1 overflow-x-auto">
-                        {for score.questions.iter().enumerate().map(|(i,q)| {
-                            let current=current.clone();
-                            let style=if i==index {"btn btn-primary btn-xs shrink-0"} else if q.chosen.is_none() {"btn btn-ghost btn-xs shrink-0"} else if q.chosen==Some(q.correct_index) {"btn btn-success btn-outline btn-xs shrink-0"} else {"btn btn-error btn-outline btn-xs shrink-0"};
-                            html!{<button class={style} onclick={Callback::from(move |_|current.set(i))}>{i+1}</button>}
-                        })}
-                    </div>
-                    <button class="btn btn-primary btn-sm" disabled={index==9} onclick={next}>{"下一题"}</button>
-                </nav>
+                {question_navigation(
+                    current.clone(),
+                    index,
+                    &score.questions.iter().map(|q| q.chosen.map(|chosen| chosen == q.correct_index)).collect::<Vec<_>>(),
+                    true,
+                    None,
+                    "logic-navigation",
+                    "logic-question-tab",
+                )}
             </section>
         };
     }
