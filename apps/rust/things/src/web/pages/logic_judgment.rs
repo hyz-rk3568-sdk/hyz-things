@@ -48,7 +48,13 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     // submitted review, or Flashcard detail is mounted/changed.
     {
         let math_view = (
-            run.as_ref().map(|r| (r.id.clone(), r.answers.clone(), r.paused_remaining_ms.is_some())),
+            run.as_ref().map(|r| {
+                (
+                    r.id.clone(),
+                    r.answers.clone(),
+                    r.paused_remaining_ms.is_some(),
+                )
+            }),
             result.as_ref().map(|r| r.id.clone()),
             *current,
             (*opened_card).clone(),
