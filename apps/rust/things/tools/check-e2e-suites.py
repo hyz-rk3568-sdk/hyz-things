@@ -18,6 +18,7 @@ REQUIRED_SPECS = (
     "countdown.spec.ts",
     "flashcards.spec.ts",
     "comprehensive.spec.ts",
+    "logic-judgment.spec.ts",
     "security.spec.ts",
     "camera.spec.ts",
     "proxy.spec.ts",

@@ -11,6 +11,7 @@ use hyz_things::{
             data_analysis::{load_codex_env, DataAnalysisService},
             flashcard_source::FilesystemFlashcardSource,
             flashcard_sqlite::SqliteFlashcardRepository,
+            logic_judgment::LogicJudgmentService,
             portal_config::load_allowed_origins,
             registry::RegistryAdapter,
             router::RouterControlClient,
@@ -21,6 +22,7 @@ use hyz_things::{
         admin::AdminApplication,
         camera::CameraApplication,
         flashcards::FlashcardApplication,
+        logic_judgment::LogicJudgmentPort,
         ports::{ClockPort, PlatformError, PortalControlHandler},
         status::PortalStatus,
     },
@@ -108,20 +110,35 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     let camera = Arc::new(CameraApplication::new(Arc::new(
         CameraUnixAdapter::default(),
     )));
-    let (flashcards, flashcard_source, data_analysis) =
+    let (flashcards, flashcard_source, data_analysis, logic_judgment) =
         match SqliteFlashcardRepository::connect(FLASHCARD_DB_PATH).await {
             Ok(repository) => {
                 let source = Arc::new(FilesystemFlashcardSource::default());
                 let ai_config = load_codex_env().unwrap_or(None);
-                let data_analysis = DataAnalysisService::new(repository.pool().clone(), ai_config)
-                    .ok()
-                    .map(Arc::new);
+                let data_analysis =
+                    DataAnalysisService::new(repository.pool().clone(), ai_config.clone())
+                        .ok()
+                        .map(Arc::new);
+                let logic_judgment =
+                    match LogicJudgmentService::new(repository.pool().clone(), ai_config) {
+                        Ok(service) => service
+                            .recover_interrupted()
+                            .await
+                            .ok()
+                            .map(|()| Arc::new(service) as Arc<dyn LogicJudgmentPort>),
+                        Err(_) => None,
+                    };
                 let application = Arc::new(FlashcardApplication::new(
                     source.clone(),
                     Arc::new(repository),
                     clock.clone(),
                 ));
-                (Some(application), Some(source), data_analysis)
+                (
+                    Some(application),
+                    Some(source),
+                    data_analysis,
+                    logic_judgment,
+                )
             }
             Err(_error) => {
                 logging::event(
@@ -134,7 +151,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                     None,
                     None,
                 );
-                (None, None, None)
+                (None, None, None, None)
             }
         };
     let control: Arc<dyn PortalControlHandler> = Arc::new(RouterControlClient);
@@ -182,6 +199,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         flashcards: flashcards.clone(),
         flashcard_source: flashcard_source.clone(),
         data_analysis: data_analysis.clone(),
+        logic_judgment: logic_judgment.clone(),
     };
     let tailscale_manager = tailscale.clone();
     let tailscale_control = control.clone();
@@ -255,6 +273,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
             None
         }
     };
+    let logic_judgment_shutdown = logic_judgment.clone();
     let app = app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_origins(
         status,
         control,
@@ -267,6 +286,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         flashcards,
         flashcard_source,
         data_analysis,
+        logic_judgment,
         additional_allowed_origins,
     );
     let ipv6_task = ipv6_listener.map(|listener| {
@@ -316,6 +336,9 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         _ = interrupt.recv() => {}
     }
 
+    if let Some(service) = logic_judgment_shutdown {
+        service.shutdown();
+    }
     let _ = std::fs::remove_file(PORTAL_READY_MARKER);
     let _ = shutdown_tx.send(true);
     let _ = tailscale_task.await;

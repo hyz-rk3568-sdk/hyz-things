@@ -9,5 +9,6 @@ pub mod storage;
 pub mod tailscale;
 
 pub mod data_analysis;
+pub mod logic_judgment;
 
 pub mod codex_app_server;

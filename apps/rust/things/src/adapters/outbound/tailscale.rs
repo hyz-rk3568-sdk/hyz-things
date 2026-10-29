@@ -143,6 +143,7 @@ impl TailscaleListenerManager {
             app.flashcards,
             app.flashcard_source,
             app.data_analysis,
+            app.logic_judgment,
         );
         let tls_listener = TlsListener::new(listener, app.tls.clone());
         let runtime = app.runtime.clone();
@@ -263,6 +264,7 @@ pub struct PortalListenerApp {
     pub admin: Arc<AdminApplication>,
     pub camera: Arc<CameraApplication>,
     pub flashcards: Option<Arc<FlashcardApplication>>,
+    pub logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
     pub data_analysis: Option<Arc<crate::adapters::outbound::data_analysis::DataAnalysisService>>,
     pub flashcard_source:
         Option<Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>>,

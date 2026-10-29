@@ -710,3 +710,330 @@ fn error_contract_keeps_machine_readable_failure_semantics() {
         "PortalControlHandler must preserve typed transport/remote failures"
     );
 }
+
+#[tokio::test]
+async fn logic_judgment_reads_require_an_administrator_session() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind test listener");
+    let address = listener.local_addr().unwrap();
+    let control: Arc<dyn PortalControlHandler> = Arc::new(FakeControl::default());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app(read_status(control)))
+            .await
+            .unwrap();
+    });
+    let response = tokio::task::spawn_blocking(move || {
+        http_request(address, "GET", "/api/v1/study/logic-judgment/status")
+    })
+    .await
+    .unwrap();
+    server.abort();
+    assert!(
+        response.starts_with("HTTP/1.1 401 Unauthorized\r\n"),
+        "{response}"
+    );
+    assert!(response
+        .to_ascii_lowercase()
+        .contains("cache-control: no-store"));
+    assert!(!response.contains("answer_index"));
+    assert!(!response.contains("correct_index"));
+}
+
+#[derive(Default)]
+struct LogicAdminPlatform {
+    credential: std::sync::Mutex<Option<hyz_things::domain::admin::AdminCredential>>,
+    sequence: AtomicUsize,
+}
+impl hyz_things::application::ports::AdminCredentialStorePort for LogicAdminPlatform {
+    fn load_admin_credential(
+        &self,
+    ) -> Result<
+        Option<hyz_things::domain::admin::AdminCredential>,
+        hyz_things::application::ports::PlatformError,
+    > {
+        Ok(self.credential.lock().unwrap().clone())
+    }
+    fn save_admin_credential(
+        &self,
+        credential: &hyz_things::domain::admin::AdminCredential,
+    ) -> Result<(), hyz_things::application::ports::PlatformError> {
+        *self.credential.lock().unwrap() = Some(credential.clone());
+        Ok(())
+    }
+}
+impl hyz_things::application::ports::AdminRandomPort for LogicAdminPlatform {
+    fn fill_random(
+        &self,
+        bytes: &mut [u8],
+    ) -> Result<(), hyz_things::application::ports::PlatformError> {
+        let sequence = self.sequence.fetch_add(1, Ordering::Relaxed);
+        for (index, byte) in bytes.iter_mut().enumerate() {
+            *byte = sequence.wrapping_add(index) as u8;
+        }
+        Ok(())
+    }
+}
+impl hyz_things::application::ports::ClockPort for LogicAdminPlatform {
+    fn unix_time_millis(&self) -> u64 {
+        123
+    }
+}
+#[derive(Default)]
+struct LogicPort {
+    calls: AtomicUsize,
+}
+#[async_trait]
+impl hyz_things::application::logic_judgment::LogicJudgmentPort for LogicPort {
+    async fn execute(
+        &self,
+        operation: hyz_things::application::logic_judgment::LogicJudgmentOperation,
+    ) -> Result<serde_json::Value, hyz_things::application::logic_judgment::LogicJudgmentError>
+    {
+        use hyz_things::application::logic_judgment::{LogicJudgmentError, LogicJudgmentOperation};
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        match operation {
+            LogicJudgmentOperation::Status => Ok(
+                serde_json::json!({"configured":false,"eligible_cards":0,"preparing_job_id":null}),
+            ),
+            LogicJudgmentOperation::Answer {
+                question: 0,
+                choice: 1,
+                ..
+            } => Ok(serde_json::json!({"saved":true})),
+            LogicJudgmentOperation::SaveUserPrompt(Some(prompt)) => {
+                Ok(serde_json::json!({"user_prompt":prompt,"customized":true}))
+            }
+            LogicJudgmentOperation::Prepare => Err(LogicJudgmentError::Busy),
+            _ => Err(LogicJudgmentError::Unavailable),
+        }
+    }
+}
+
+#[tokio::test]
+async fn logic_judgment_authorization_typed_mutations_and_exact_routes() {
+    use hyz_things::{
+        adapters::inbound::http::app_with_admin_control_and_logic_judgment,
+        application::admin::AdminApplication,
+        domain::admin::{
+            AdminLoginRequest, AdminPasswordChangeRequest, SecretString,
+            DEFAULT_ADMIN_BOOTSTRAP_PASSWORD,
+        },
+    };
+    let platform = Arc::new(LogicAdminPlatform::default());
+    let admin = Arc::new(
+        AdminApplication::initialize(platform.clone(), platform.clone(), platform).unwrap(),
+    );
+    let session = admin
+        .login(&AdminLoginRequest {
+            password: SecretString::new(DEFAULT_ADMIN_BOOTSTRAP_PASSWORD),
+        })
+        .unwrap()
+        .token;
+    admin
+        .change_password(
+            &session,
+            &AdminPasswordChangeRequest {
+                current_password: SecretString::new(DEFAULT_ADMIN_BOOTSTRAP_PASSWORD),
+                new_password: SecretString::new("Logic-test-password-2026"),
+            },
+        )
+        .unwrap();
+    let service = Arc::new(LogicPort::default());
+    let control: Arc<dyn PortalControlHandler> = Arc::new(FakeControl::default());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let router = app_with_admin_control_and_logic_judgment(
+        read_status(control.clone()),
+        control,
+        admin,
+        "logic-csrf".into(),
+        8080,
+        Some(service.clone()),
+    );
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    let client = reqwest::Client::new();
+    let root = format!("http://{address}/api/v1/study/logic-judgment");
+    let cookie = format!("hyz_admin_session={}", session.expose());
+    let id = "019a31b7-8c42-7c16-a6d1-0c1f0f34c821";
+    for path in [
+        "status",
+        "history",
+        "unfinished",
+        "card-performance",
+        "user-prompt",
+        &format!("prepare/{id}"),
+        &format!("runs/{id}"),
+        &format!("runs/{id}/result"),
+    ] {
+        let response = client.get(format!("{root}/{path}")).send().await.unwrap();
+        assert_eq!(response.status(), 401, "{path}");
+        assert_eq!(response.headers()["cache-control"], "no-store");
+    }
+    assert_eq!(service.calls.load(Ordering::Relaxed), 0);
+    let response = client
+        .get(format!("{root}/status"))
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert!(!response.text().await.unwrap().contains("correct_index"));
+    let response = client
+        .get(format!("{root}/status"))
+        .header("cookie", &cookie)
+        .header("sec-fetch-site", "cross-site")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 403);
+    for suffix in ["start", "answers", "submit", "retry"] {
+        let response = client
+            .post(format!("{root}/runs/{id}/{suffix}"))
+            .json(&serde_json::json!({"question":0,"choice":1}))
+            .header("cookie", &cookie)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 403, "{suffix}");
+    }
+    let answer = format!("{root}/runs/{id}/answers");
+    let authorized = |url: String| {
+        client
+            .post(url)
+            .header("cookie", &cookie)
+            .header("origin", "http://192.168.8.1:8080")
+            .header("x-hyz-csrf", "logic-csrf")
+    };
+    for (origin, csrf) in [
+        ("http://192.168.8.1:8081", "logic-csrf"),
+        ("https://foreign.example", "logic-csrf"),
+        ("http://192.168.8.1:8080", "wrong-token"),
+    ] {
+        let response = client
+            .post(answer.clone())
+            .header("cookie", &cookie)
+            .header("origin", origin)
+            .header("x-hyz-csrf", csrf)
+            .json(&serde_json::json!({"question":0,"choice":1}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 403);
+    }
+    let response = client
+        .post(answer.clone())
+        .header("origin", "http://192.168.8.1:8080")
+        .header("x-hyz-csrf", "logic-csrf")
+        .json(&serde_json::json!({"question":0,"choice":1}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 401);
+    let response = authorized(answer.clone())
+        .json(&serde_json::json!({"question":"private-token-value","choice":1}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 400);
+    assert!(!response
+        .text()
+        .await
+        .unwrap()
+        .contains("private-token-value"));
+    let response = authorized(answer.clone())
+        .json(&serde_json::json!({"question":0,"choice":1}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response.json::<serde_json::Value>().await.unwrap()["saved"],
+        true
+    );
+    for body in [
+        serde_json::json!({"question":10,"choice":1}),
+        serde_json::json!({"question":0,"choice":4}),
+        serde_json::json!({"question":0,"choice":1,"command":"secret"}),
+    ] {
+        let response = authorized(answer.clone()).json(&body).send().await.unwrap();
+        assert_eq!(response.status(), 400);
+    }
+    let response = authorized(answer.clone())
+        .header("content-type", "application/json")
+        .body(" ".repeat(4097))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 413);
+    for suffix in ["start", "submit", "retry"] {
+        let response = authorized(format!("{root}/runs/{id}/{suffix}"))
+            .json(&serde_json::json!({"command":"do-not-execute"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 400);
+        let response = authorized(format!("{root}/runs/{id}/{suffix}"))
+            .header("content-type", "application/json")
+            .body(" ".repeat(4097))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 413);
+    }
+    let response = authorized(format!("{root}/user-prompt"))
+        .json(&serde_json::json!({"user_prompt":"a".repeat(5000)}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    for prompt in [String::new(), "a".repeat(8001)] {
+        let response = authorized(format!("{root}/user-prompt"))
+            .json(&serde_json::json!({"user_prompt":prompt}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 400);
+    }
+    let response = authorized(format!("{root}/user-prompt"))
+        .header("content-type", "application/json")
+        .body(" ".repeat(16385))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 413);
+    let response = authorized(format!("{root}/prepare"))
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 409);
+    let response = authorized(format!("{root}/runs/{id}/submit"))
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 503);
+    assert_eq!(
+        response.json::<serde_json::Value>().await.unwrap()["error"]["message"],
+        "逻辑判断训练暂不可用"
+    );
+    for (method, path, expected) in [
+        (reqwest::Method::POST, format!("runs/{id}/answers/0"), 405),
+        (reqwest::Method::POST, format!("runs/{id}/start/extra"), 405),
+        (reqwest::Method::PUT, "user-prompt".into(), 405),
+        (reqwest::Method::GET, "status/extra".into(), 404),
+        (reqwest::Method::GET, "prepare".into(), 405),
+    ] {
+        let response = client
+            .request(method, format!("{root}/{path}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected, "{path}");
+    }
+    assert_eq!(service.calls.load(Ordering::Relaxed), 5);
+    server.abort();
+}

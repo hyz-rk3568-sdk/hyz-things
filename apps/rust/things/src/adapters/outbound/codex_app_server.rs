@@ -346,6 +346,25 @@ impl CodexSession {
         prompt: &str,
         cancellation: watch::Sender<bool>,
     ) -> Result<String, String> {
+        self.turn_cancellable_with_schema(prompt, cancellation, output_schema())
+            .await
+    }
+
+    pub async fn turn_with_schema(
+        &mut self,
+        prompt: &str,
+        schema: Value,
+    ) -> Result<String, String> {
+        self.turn_cancellable_with_schema(prompt, watch::channel(false).0, schema)
+            .await
+    }
+
+    pub async fn turn_cancellable_with_schema(
+        &mut self,
+        prompt: &str,
+        cancellation: watch::Sender<bool>,
+        schema: Value,
+    ) -> Result<String, String> {
         let mut cancelled = cancellation.subscribe();
         if *cancelled.borrow() {
             return Err(CANCELLED_MESSAGE.into());
@@ -354,7 +373,7 @@ impl CodexSession {
         let thread = self.thread_id.clone();
         let interrupt_id = self.next_request_id();
         let (state_tx, mut state) = watch::channel(TurnState::NotStarted);
-        let generation = self.run_turn(prompt, state_tx);
+        let generation = self.run_turn(prompt, state_tx, schema);
         tokio::pin!(generation);
         let error = tokio::select! {
             result = &mut generation => return result,
@@ -405,6 +424,7 @@ impl CodexSession {
         &mut self,
         prompt: &str,
         state: watch::Sender<TurnState>,
+        schema: Value,
     ) -> Result<String, String> {
         state.send_replace(TurnState::Starting);
         let thread = self.thread_id.clone();
@@ -414,7 +434,7 @@ impl CodexSession {
                 json!({
                     "threadId":thread,
                     "input":[{"type":"text","text":prompt}],
-                    "outputSchema":output_schema()
+                    "outputSchema":schema
                 }),
             )
             .await?;
@@ -622,6 +642,31 @@ mod tests {
             accept_session(&listener)
         );
         (session.unwrap(), socket)
+    }
+
+    #[tokio::test]
+    async fn custom_output_schema_does_not_change_default_turns() {
+        let custom = json!({"type":"object","properties":{"logic":{"type":"string"}},"required":["logic"],"additionalProperties":false});
+        for schema in [Some(custom), None] {
+            let (mut session, mut socket) = test_connection().await;
+            let expected = schema.clone().unwrap_or_else(output_schema);
+            let task = tokio::spawn(async move {
+                match schema {
+                    Some(schema) => session.turn_with_schema("generate", schema).await,
+                    None => session.turn("generate").await,
+                }
+            });
+            let request = client_message(&mut socket).await;
+            assert_eq!(request["params"]["outputSchema"], expected);
+            server_message(
+                &mut socket,
+                json!({"id":request["id"],"result":{"turn":{"id":"turn-1"}}}),
+            )
+            .await;
+            server_message(&mut socket, json!({"method":"item/completed","params":{"threadId":"test-thread","turnId":"turn-1","item":{"type":"agentMessage","text":"{}"}}})).await;
+            complete_test_turn(&mut socket, "completed").await;
+            assert_eq!(task.await.unwrap().unwrap(), "{}");
+        }
     }
 
     async fn start_test_turn(socket: &mut TcpStream) {
