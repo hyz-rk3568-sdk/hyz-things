@@ -234,6 +234,28 @@ test("server clock compensates a slow device and pause survives exit and resume"
   expect(state.run.deadline_at_ms).toBe(state.run.server_now_ms+127000);
 });
 
+test("review question tabs retain correct and wrong colours even on the selected question", async ({ page }) => {
+  const {open}=await logicFixture(page);
+  await open();
+  await page.getByTestId('logic-resume').click();
+  await page.getByTestId('logic-choice').nth(1).click(); // Correct.
+  await page.getByRole('button',{name:'下一题',exact:true}).click();
+  await page.getByTestId('logic-choice').first().click(); // Wrong.
+  await page.getByTestId('logic-submit').click();
+  const tabs=page.getByTestId('logic-question-tab');
+  await expect(tabs).toHaveCount(10);
+  await expect(tabs.nth(0)).toHaveClass(/btn-success/);
+  await expect(tabs.nth(1)).toHaveClass(/btn-error/);
+  await tabs.nth(0).click();
+  await expect(tabs.nth(0)).toHaveClass(/btn-success/);
+  await expect(tabs.nth(0)).toHaveAttribute('aria-current','true');
+  await tabs.nth(1).click();
+  await expect(tabs.nth(1)).toHaveClass(/btn-error/);
+  await tabs.nth(2).click();
+  await expect(tabs.nth(2)).toHaveClass(/btn-primary/);
+  await expect(tabs.nth(2)).toHaveAttribute('aria-label','第3题 未答');
+});
+
 test("mobile single-question ink is transparent and survives question navigation and reload", async ({ page }) => {
   await page.setViewportSize({width:390,height:844});
   const {open}=await logicFixture(page);
@@ -268,6 +290,19 @@ test("mobile single-question ink is transparent and survives question navigation
   await page.reload();
   await page.getByTestId('training-mode-logic-judgment').click();
   await page.getByTestId('logic-resume').click();
+  await toggle.click();
+  await expect.poll(snapshot).toEqual(marked);
+  await page.getByTestId('logic-submit').click();
+  await expect(page.getByTestId('logic-result')).toBeVisible();
+  await expect(save).toHaveText('草稿已保存到本机');
+  await toggle.click();
+  await expect.poll(snapshot).toEqual(marked);
+  // Question-specific pen strokes survive review navigation.
+  await page.getByRole('button',{name:'下一题',exact:true}).click();
+  await toggle.click();
+  await expect(save).toHaveText('草稿已保存到本机');
+  expect(await snapshot()).toEqual(blank);
+  await page.getByRole('button',{name:'上一题',exact:true}).click();
   await toggle.click();
   await expect.poll(snapshot).toEqual(marked);
 });
