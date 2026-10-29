@@ -242,7 +242,6 @@ impl PortalRoute {
             },
             ["tailscale"] => Self::for_page(AppPage::Tailscale),
             ["camera"] => Self::for_page(AppPage::Camera),
-            ["apps"] => Self::for_page(AppPage::System),
             ["system"] => Self::for_page(AppPage::System),
             _ => Self::for_page(AppPage::Overview),
         };
@@ -437,18 +436,10 @@ mod tests {
     }
 
     #[test]
-    fn legacy_apps_route_redirects_to_system_without_an_apps_tab() {
-        let (route, canonical) = PortalRoute::parse("#/apps");
-        assert_eq!(route.page, AppPage::System);
-        assert!(!canonical);
-        assert_eq!(route.hash(), "#/system");
+    fn study_and_devices_are_first_class_pages() {
         assert_eq!(AppPage::ALL.len(), 8);
         assert_eq!(AppPage::Camera.next(), Some(AppPage::System));
         assert_eq!(AppPage::System.previous(), Some(AppPage::Camera));
-    }
-
-    #[test]
-    fn study_and_devices_are_first_class_pages() {
         assert!(AppPage::ALL.contains(&AppPage::Study));
         assert!(AppPage::ALL.contains(&AppPage::Devices));
         assert_eq!(AppPage::Devices.label(), "设备");

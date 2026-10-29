@@ -175,7 +175,7 @@ test("opens countdown video picture-in-picture", async ({ page }) => {
   await expectNoHorizontalOverflow(page);
 });
 
-test("keeps hot deployment records in System and redirects the old Apps route", async ({ page }) => {
+test("keeps hot deployment records in System without an Apps navigation item", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("navigation", { name: "主导航" })
     .getByRole("button", { name: "应用", exact: true })).toHaveCount(0);
@@ -189,9 +189,6 @@ test("keeps hot deployment records in System and redirects the old Apps route", 
   await expect(page.getByRole("button", { name: "刷新记录" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
-  await page.goto("/#/apps");
-  await expect(page).toHaveURL(/#\/system$/);
-  await expect(deployments.getByText("things", { exact: true })).toBeVisible();
 });
 
 test("switches portal pages with horizontal touch swipes", async ({ page }) => {
