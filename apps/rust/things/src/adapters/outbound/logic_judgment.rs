@@ -985,6 +985,47 @@ mod service_tests {
     }
 
     #[tokio::test]
+    async fn pause_freezes_server_timer_and_survives_service_recreation() {
+        let service = service().await;
+        let id = paper(&service).await;
+        let active = service.start(&id).await.unwrap();
+        assert!(active.deadline_at_ms.is_some());
+        let paused = service.pause_toggle(&id).await.unwrap();
+        assert!(paused.deadline_at_ms.is_none());
+        assert!(paused.paused_remaining_ms.is_some_and(|ms| ms > 0 && ms <= 600_000));
+        assert!(service.answer(&id, 0, 0).await.is_err());
+        service.expire_all().await.unwrap();
+        assert_eq!(service.run(&id).await.unwrap().status, "active");
+
+        let restored = LogicJudgmentService::new(service.pool.clone(), None).unwrap();
+        restored.recover_interrupted().await.unwrap();
+        assert_eq!(
+            restored.run(&id).await.unwrap().paused_remaining_ms,
+            paused.paused_remaining_ms
+        );
+        let resumed = restored.pause_toggle(&id).await.unwrap();
+        assert!(resumed.paused_remaining_ms.is_none());
+        assert!(resumed.deadline_at_ms.is_some_and(|ms| ms > now_ms()));
+        restored.answer(&id, 0, 0).await.unwrap();
+        let result = restored.submit(&id).await.unwrap();
+        assert_eq!(result.answered, 1);
+        assert_eq!(restored.submit(&id).await.unwrap().answered, 1);
+    }
+
+    #[tokio::test]
+    async fn expired_run_cannot_be_paused_and_is_auto_submitted() {
+        let service = service().await;
+        let id = paper(&service).await;
+        service.start(&id).await.unwrap();
+        sqlx::query("UPDATE logic_judgment_runs SET deadline_at_ms=? WHERE id=?")
+            .bind(now_ms() - 1).bind(&id)
+            .execute(&service.pool).await.unwrap();
+        assert!(service.pause_toggle(&id).await.is_err());
+        service.expire_all().await.unwrap();
+        assert_eq!(service.run(&id).await.unwrap().status, "submitted");
+    }
+
+    #[tokio::test]
     async fn start_answers_submission_and_replay_survive_service_recreation() {
         use crate::application::logic_judgment::{LogicJudgmentOperation as Op, LogicJudgmentPort};
         let service = service().await;
