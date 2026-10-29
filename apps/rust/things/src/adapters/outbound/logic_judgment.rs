@@ -434,7 +434,7 @@ impl LogicJudgmentService {
         self.user_prompt().await
     }
     pub async fn progress(&self, id: &str) -> Result<PrepareProgress, String> {
-        let row = sqlx::query("SELECT state,verified,run_id,message FROM logic_judgment_jobs WHERE id=?")
+        let row = sqlx::query("SELECT state,verified,run_id FROM logic_judgment_jobs WHERE id=?")
             .bind(id)
             .fetch_optional(&self.pool)
             .await
@@ -447,14 +447,9 @@ impl LogicJudgmentService {
             _ => "Codex 正在生成10道独立题",
         };
         Ok(PrepareProgress {
-            state: state.clone(),
+            state,
             verified: row.try_get::<i64, _>("verified").map_err(error)? as usize,
-            message: if state == "failed" {
-                let detail: String = row.try_get("message").map_err(error)?;
-                if detail.is_empty() { message.into() } else { format!("出题失败：{detail}") }
-            } else {
-                message.into()
-            },
+            message: message.into(),
             run_id: row.try_get("run_id").map_err(error)?,
         })
     }
