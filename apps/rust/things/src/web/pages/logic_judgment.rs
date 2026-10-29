@@ -542,7 +542,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
         <section class="mx-auto max-w-3xl p-4 sm:p-6" data-testid="logic-setup">
             <div class="rounded-box bg-base-100 p-5 sm:p-7">
                 <h2 class="text-xl font-bold">{"逻辑判断综合训练"}</h2>
-                <p class="mt-1 text-sm text-base-content/60">{"形式推理 + 分析推理 · 每卷10道独立题 · 10分钟 · 支持暂停与恢复"}</p>
+                <p class="mt-1 text-sm text-base-content/60">{"形式推理 · 每卷10道独立题 · 10分钟 · 支持暂停与恢复"}</p>
                 <div class="mt-5 grid gap-3">
                     if !unfinished.is_empty() {
                         <div class="space-y-3 rounded-box border border-primary/30 bg-primary/5 p-4" data-testid="logic-unfinished">
@@ -565,7 +565,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                     <button class="btn btn-outline w-full" data-testid="logic-history-toggle" onclick={{let history_open=history_open.clone();Callback::from(move |_|history_open.set(true))}}>{"查看练习历史"}</button>
                     <div class="rounded-box border border-base-content/15 p-4 space-y-2">
                         <p class="font-semibold">{"智能选卡 · 逻辑判断"}</p>
-                        <p class="text-sm text-base-content/60">{"形式推理与分析推理方法卡、错题卡统一调度，每次选取10张不同的有效卡片，不设固定题型配额。"}</p>
+                        <p class="text-sm text-base-content/60">{"按小P形式推理知识点统一选卡（直言、联言选言假言、组合排列、特殊题型），每次选取10张不同的有效卡片；不出一拖五。"}</p>
                         if let Some(state)=status.as_ref() {
                             <p class="text-xs text-base-content/60">{format!("当前有效卡片：{} 张",state.eligible_cards)}</p>
                         }
