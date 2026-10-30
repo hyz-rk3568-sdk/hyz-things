@@ -548,7 +548,7 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                                 <div class="calculation-problem grid min-w-0 content-start gap-4" data-testid="calculation-problem">
                                     <div class="flex items-center justify-between gap-3 text-sm text-base-content/60">
                                         <span>{format!("第 {progress} / {} 题", live.questions.len())}</span>
-                                        <span>{question.kind.label()}</span>
+                                        <div class="flex items-center gap-2"><span>{question.kind.label()}</span><InkToolbarSlot /></div>
                                     </div>
                                     <div class="grid min-h-36 place-items-center rounded-box border border-base-content/10 bg-base-100 p-5 text-center">
                                         <h1 class="break-words text-3xl font-black leading-snug sm:text-5xl" data-testid="calculation-expression">
@@ -587,50 +587,35 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
     } else {
         let flags = *enabled;
         html! {
-            <section class="mx-auto grid w-full max-w-3xl gap-5" data-testid="calculation-setup">
-                <div class="rounded-box border border-base-content/10 bg-base-100 p-5 sm:p-7">
-                    <h1 class="text-2xl font-black">{"资料分析 · 速算训练"}</h1>
-                    <p class="mt-2 text-sm text-base-content/65">{"正确选项保留真实结果，凭选项前两三位判断，无需心算到最后一位。"}</p>
-                    <fieldset class="mt-5">
-                        <legend class="mb-3 font-bold">{"计算类型"}</legend>
-                        <div class="grid gap-3 sm:grid-cols-3">
-                            {for CalculationKind::ALL.into_iter().enumerate().map(|(index, kind)| {
-                                let enabled = enabled.clone();
-                                html! {
-                                    <label class="flex min-h-12 items-center gap-2 rounded-box border border-base-content/10 p-3">
-                                        <input type="checkbox" class="checkbox checkbox-primary" data-testid={kind.test_id()} checked={flags[index]} onchange={Callback::from(move |_| {
-                                            let mut flags = *enabled;
-                                            flags[index] = !flags[index];
-                                            enabled.set(flags);
-                                        })} />
-                                        <span class="text-sm">{kind.label()}</span>
-                                    </label>
-                                }
-                            })}
-                        </div>
-                    </fieldset>
-                    <label class="mt-5 grid max-w-48 gap-2">
-                        <span class="font-bold">{"本轮题数"}</span>
-                        <select class="select select-bordered w-full" value={count.to_string()} onchange={{
-                            let count = count.clone();
-                            Callback::from(move |event: Event| {
-                                let value = event.target_unchecked_into::<HtmlSelectElement>().value();
-                                if let Ok(value @ (10 | 20 | 50)) = value.parse::<usize>() {
-                                    count.set(value);
-                                }
-                            })
-                        }}>
-                            {for [10, 20, 50].into_iter().map(|value| html! {
-                                <option value={value.to_string()} selected={*count == value}>{format!("{value} 题")}</option>
-                            })}
-                        </select>
-                    </label>
-                    if !flags.iter().any(|checked| *checked) {
-                        <p class="mt-3 text-sm text-error">{"至少选择一种计算类型。"}</p>
-                    }
-                    <button type="button" class="btn btn-primary mt-6 w-full" data-testid="calculation-start" onclick={start} disabled={!flags.iter().any(|checked| *checked)}>{"开始训练"}</button>
+            <TrainingSetupLayout test_id="calculation-setup" summary={format!("本轮 {} 题",*count)} detail={format!("已选 {} 种计算类型",flags.iter().filter(|enabled| **enabled).count())}
+                action={Some(html!{<button type="button" class={TRAINING_PRIMARY_BUTTON} data-testid="calculation-start" onclick={start} disabled={!flags.iter().any(|checked|*checked)}>{"开始训练 →"}</button>})}>
+                <div class="training-hero"><p class="text-xs text-base-content/60">{"资料分析"}</p><h2>{"速算训练"}</h2><p>{"组合计算类型，完成一轮有针对性的速算练习。"}</p></div>
+                <fieldset class="mt-7">
+                    <legend class="mb-3 font-semibold">{"计算类型"}<span class="ml-3 text-xs font-normal text-base-content/50">{"可多选"}</span></legend>
+                    <div class="training-types">
+                        {for CalculationKind::ALL.into_iter().enumerate().map(|(index,kind)|{
+                            let enabled=enabled.clone();
+                            html!{
+                                <label class={classes!("training-type-card",flags[index].then_some("selected"))}>
+                                    <span class="training-type-symbol" aria-hidden="true">{match kind {CalculationKind::Division=>"÷",CalculationKind::Multiplication=>"×",CalculationKind::Percent=>"%"}}</span>
+                                    <span class="text-sm font-semibold">{kind.label()}</span>
+                                    <input type="checkbox" class="checkbox checkbox-primary checkbox-xs absolute right-3 top-1/2 -translate-y-1/2 sm:top-3 sm:translate-y-0" data-testid={kind.test_id()} checked={flags[index]} onchange={Callback::from(move |_| {
+                                        let mut flags = *enabled;
+                                        flags[index] = !flags[index];
+                                        enabled.set(flags);
+                                    })} />
+                                </label>
+                            }
+                        })}
+                    </div>
+                </fieldset>
+                <div class="training-count-row mt-7">
+                    <div><h3 class="font-semibold">{"本轮题数"}</h3><p class="mt-1 text-xs text-base-content/60">{"按自己的节奏安排练习量"}</p></div>
+                    <TrainingQuestionCount value={*count} test_id="calculation-count" on_change={{let count=count.clone();Callback::from(move |value|count.set(value))}} />
                 </div>
-            </section>
+                <p class="training-setup-tip">{"正确选项保留真实结果，凭选项前两三位判断，无需心算到最后一位。"}</p>
+                if !flags.iter().any(|checked|*checked) {<p class="mt-3 text-sm text-error" role="status">{"至少选择一种计算类型。"}</p>}
+            </TrainingSetupLayout>
         }
     };
 
@@ -644,11 +629,12 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
         )
     });
     html! {
-        <div class={if is_training_immersive { format!("calculation-layout {}",super::training::FIXED_TRAINING_LAYOUT) } else { "calculation-layout min-h-dvh bg-base-200 px-4 py-5 sm:px-8".to_owned() }} data-testid="calculation-layout" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
-            <div class={if is_training_immersive { "calculation-header mx-auto flex w-full shrink-0 flex-wrap items-center justify-between gap-3 border-b border-base-content/10 pb-2" } else { "calculation-header mx-auto mb-5 flex w-full items-center justify-between" }}>
+        <div class={if is_training_immersive { format!("calculation-layout {}",super::training::FIXED_TRAINING_LAYOUT) } else { "calculation-layout flex h-full min-h-0 flex-col overflow-hidden".to_owned() }} data-testid="calculation-layout" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
+            if is_training_immersive {
+            <div class="calculation-header mx-auto flex w-full shrink-0 flex-wrap items-center justify-between gap-3 border-b border-base-content/10 pb-2">
                 <div class="flex min-w-0 items-center gap-3">
                     <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-back" onclick={back}>
-                        {if is_training_immersive { "← 返回专项训练" } else { "← 返回学习中心" }}
+                        {"← 返回专项训练"}
                     </button>
                     if let Some((kind,_,_,_)) = active_info {
                         <div class="hidden min-w-0 sm:block">
@@ -667,12 +653,13 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                             </strong>
                         </div>
                     </div>
-                } else {
-                    <span class="text-xs font-semibold uppercase tracking-widest text-base-content/60">{"STUDY / CALCULATION"}</span>
                 }
             </div>
+            }
             if is_training_immersive {
                 <div class="min-h-0 flex-1 overflow-hidden">{content}</div>
+            } else if session.as_ref().is_some_and(|state|state.finished) {
+                <TrainingSetupLayout test_id="calculation-results-layout">{content}</TrainingSetupLayout>
             } else {
                 {content}
             }

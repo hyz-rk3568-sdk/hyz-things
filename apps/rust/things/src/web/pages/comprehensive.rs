@@ -23,20 +23,24 @@ struct AnalysisPanesProps {
     material: hyz_things::domain::data_analysis::Material,
     question: Html,
     question_index: usize,
+    #[prop_or("题目与选项")]
+    right_title: &'static str,
 }
 
 // Match the material's `leading-8` (2rem = 32 CSS px) so each click
 // advances exactly one rendered text line. Keep controls outside scrollable content.
-// In stacked layouts, leave space for the expanded top-right ink toolbar
-// so the separate material scroll buttons stay clickable.
 #[function_component(AnalysisPanes)]
 fn analysis_panes(props: &AnalysisPanesProps) -> Html {
     let passage = use_node_ref();
+    let question_scroll = use_node_ref();
+    let question_edges = use_state(ScrollEdges::default);
     let scratchpad_open = use_context::<bool>().unwrap_or(false);
     let scroll_state = use_state(ScrollEdges::default);
     let refresh_scroll_edges = {
         let passage = passage.clone();
         let scroll_state = scroll_state.clone();
+        let question_scroll = question_scroll.clone();
+        let question_edges = question_edges.clone();
         Callback::from(move |_: ()| {
             if let Some(element) = passage.cast::<web_sys::HtmlElement>() {
                 let next = scroll_edges(&element);
@@ -44,18 +48,31 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
                     scroll_state.set(next);
                 }
             }
+            if let Some(element) = question_scroll.cast::<web_sys::HtmlElement>() {
+                let next = scroll_edges(&element);
+                if *question_edges != next {
+                    question_edges.set(next);
+                }
+            }
         })
     };
-    let on_passage_scroll = {
+    let on_scroll = {
         let refresh_scroll_edges = refresh_scroll_edges.clone();
         Callback::from(move |_: web_sys::Event| refresh_scroll_edges.emit(()))
     };
     {
         let refresh_scroll_edges = refresh_scroll_edges.clone();
-        use_effect_with((scratchpad_open, props.material.text.clone()), move |_| {
-            refresh_scroll_edges.emit(());
-            || ()
-        });
+        use_effect_with(
+            (
+                scratchpad_open,
+                props.material.text.clone(),
+                props.question_index,
+            ),
+            move |_| {
+                refresh_scroll_edges.emit(());
+                || ()
+            },
+        );
     }
     {
         let refresh_scroll_edges = refresh_scroll_edges.clone();
@@ -87,26 +104,36 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
         <TrainingSplitWorkspace test_id="analysis-shared-workspace"
             left={html! {
                 <article class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="analysis-material">
-                <div class="flex shrink-0 items-start justify-between gap-2 px-3 pt-3 pb-2">
-                    <div class="min-w-0">
-                        <div class="text-sm font-semibold">{props.material.topic.clone()}</div>
-                        <div class="truncate pt-1 text-xs text-base-content/60">{"模拟训练材料 · 根据历年行测真题风格新编，非真题原文"}</div>
-                    </div>
+                <div class={TRAINING_PANE_HEADER}>
+                    <div class="min-w-0 text-sm font-semibold">{props.material.topic.clone()}</div>
                     if scratchpad_open {
-                        <div class="relative z-30 mr-48 flex shrink-0 gap-1 lg:mr-0" role="group" aria-label="材料滚动">
+                        <div class="relative z-30 flex shrink-0 gap-1" role="group" aria-label="材料滚动">
                             <MaterialScrollButton passage={passage.clone()} up={true} disabled={!scroll_state.can_scroll_up} question_index={props.question_index} />
                             <MaterialScrollButton passage={passage.clone()} up={false} disabled={!scroll_state.can_scroll_down} question_index={props.question_index} />
                         </div>
                     }
                 </div>
-                <div ref={passage} onscroll={on_passage_scroll} class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y scroll-auto" data-testid="analysis-material-scroll">
+                <div ref={passage} onscroll={on_scroll.clone()} class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y scroll-auto" data-testid="analysis-material-scroll">
                     <div class="whitespace-pre-wrap px-4 pb-4 pt-2 text-base leading-8">{props.material.text.clone()}</div>
                 </div>
                 </article>
             }}
             right={html! {
-                <article class="min-h-0 min-w-0 overflow-y-auto overscroll-contain touch-pan-y rounded-box bg-base-100"
-                    data-testid="analysis-question">{props.question.clone()}</article>
+                <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="analysis-answer-pane">
+                    <div class={classes!(TRAINING_PANE_HEADER, "flex-wrap")} data-testid="analysis-answer-header">
+                        <span class="text-sm font-semibold">{props.right_title}</span>
+                        <div class="ml-auto flex shrink-0 items-center gap-1">
+                            if scratchpad_open {
+                                <div class="flex gap-1" role="group" aria-label="题目滚动">
+                                    <MaterialScrollButton passage={question_scroll.clone()} up={true} disabled={!question_edges.can_scroll_up} question_index={props.question_index} target="题目" />
+                                    <MaterialScrollButton passage={question_scroll.clone()} up={false} disabled={!question_edges.can_scroll_down} question_index={props.question_index} target="题目" />
+                                </div>
+                            }
+                            <InkToolbarSlot />
+                        </div>
+                    </div>
+                    <article ref={question_scroll} onscroll={on_scroll} class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y" data-testid="analysis-question">{props.question.clone()}</article>
+                </section>
             }}
         />
     }
@@ -420,8 +447,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             || ()
         });
     }
-    // Keep the setup page outside fullscreen; active runs and review records
-    // make the training workspace cover the entire visual viewport.
+    // Timed papers and answer review hide the setup shell navigation.
     {
         let notify = props.on_immersive_change.clone();
         use_effect_with(
@@ -1085,7 +1111,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 </header>
                 <div class="min-h-0 flex-1">
                     <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",review_id,index)} responsive={true} scroll_linked={true}>
-                        <AnalysisPanes material={score.materials[group_index].clone()} question={review_question} question_index={index} />
+                        <AnalysisPanes material={score.materials[group_index].clone()} question={review_question} question_index={index} right_title="答案与解析" />
                     </InkOverlay>
                 </div>
                 if let Some(msg)=(*error).clone() {
@@ -1137,11 +1163,11 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             })
         };
         return html! {
-            <section class="mx-auto max-w-4xl space-y-4 p-5" data-testid="analysis-history">
-                <div class="flex items-center justify-between">
+            <TrainingSetupLayout test_id="analysis-history" heading={Some(html!{                <div class="flex items-center justify-between">
                     <h2 class="text-xl font-bold">{"综合训练历史"}</h2>
                     <button class="btn btn-outline btn-sm" onclick={back}>{"返回训练"}</button>
-                </div>
+                </div>})}>
+                <div class="space-y-4">
                 {if history.is_empty(){html!{<p class="text-sm text-base-content/60">{"还没有已交卷的综合训练。"}</p>}}else{Html::default()}}
                 {for history.iter().map(|entry|{
                     let id=entry.id.clone();let open_result=open_result.clone();
@@ -1166,7 +1192,8 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     }
                 })}
                 {if let Some(msg)=(*error).clone(){html!{<p class="text-error text-sm">{msg}</p>}}else{Html::default()}}
-            </section>
+                </div>
+            </TrainingSetupLayout>
         };
     }
     if let Some(active) = (*run).clone() {
@@ -1273,9 +1300,12 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         };
     }
     html! {
-        <section class="mx-auto max-w-3xl p-4 sm:p-6" data-testid="analysis-setup">
-            <div class="rounded-box bg-base-100 p-5 sm:p-7">
-                <h2 class="text-xl font-bold">{"资料分析综合训练"}</h2>
+        <TrainingSetupLayout test_id="analysis-setup" summary="20题 · 20分钟" detail={if ready_id.is_some() {"试卷已准备好，倒计时尚未开始"} else {"4份材料，每份5题"}}
+            action={Some(if ready_id.is_some() {html!{<button type="button" class={TRAINING_PRIMARY_BUTTON} data-testid="analysis-enter" disabled={*busy} onclick={enter_ready}>{if *busy {"进入中…"} else {"进入训练 →"}}</button>}} else {html!{
+                <button type="button" class={TRAINING_PRIMARY_BUTTON} data-testid="analysis-start" disabled={*loading_status || *busy || *preparing || status.as_ref().as_ref().is_none_or(|s|!s.configured) || props.csrf.is_empty()} onclick={start}>
+                    {if *busy || *preparing {"正在出题中…"} else {"准备试卷 →"}}</button>}})}>
+            <div class="training-config">
+                <h2 class="font-bold">{"资料分析综合训练"}</h2>
                 <p class="mt-1 text-sm text-base-content/60">{"参考历年行测真题组织模拟统计数据 · 4份材料 × 每份5题 · 20分钟"}</p>
                 <div class="mt-5 grid gap-3">
                     if !unfinished.is_empty() {
@@ -1321,7 +1351,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                             <p class="text-xs text-base-content/65">
                                 {"决定材料风格、题目难度和出题限制。全卡池来源及同篇不同题型的结构由系统控制，不受本栏内容影响。"}
                             </p>
-                            <textarea class="textarea textarea-bordered w-full min-h-48 font-mono text-sm leading-6"
+                            <textarea class="textarea textarea-bordered w-full min-h-48 font-mono text-base leading-6"
                                 data-testid="analysis-user-prompt-editor" maxlength="8000"
                                 aria-label="用户出题要求" value={(*user_prompt).clone()}
                                 oninput={edit_user_prompt} disabled={prompt_settings.is_none() || *prompt_busy}>
@@ -1427,22 +1457,13 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                             <p class="font-semibold">{"20题已经准备好"}</p>
                             <p class="mt-1 text-sm text-base-content/70">{"倒计时尚未开始。点击进入训练时才启动20分钟计时。"}</p>
                         </div>
-                        <button type="button" class="btn btn-primary w-full" data-testid="analysis-enter" disabled={*busy} onclick={enter_ready}>
-                            {if *busy {"进入中…"}else{"进入训练 · 开始20分钟计时"}}
-                        </button>
-                    } else {
-                        <button type="button" class="btn btn-primary w-full" data-testid="analysis-start"
-                            disabled={*loading_status || *busy || *preparing || status.as_ref().as_ref().is_none_or(|s|!s.configured) || props.csrf.is_empty()}
-                            onclick={start}>
-                            {if *busy || *preparing {"正在出题中…（可以切换页面）"} else {"✨ 智能出题"}}
-                        </button>
                     }
                     <p class="text-xs text-base-content/60">
                         {"在 RK3568 的 /userdata/hyz-things/.env 配置 Codex WebSocket Token。电脑 192.168.8.202 需要运行已登录的 Codex App Server，未通过校验的题不会进入正式训练。"}
                     </p>
                 </div>
             </div>
-        </section>
+        </TrainingSetupLayout>
     }
 }
 

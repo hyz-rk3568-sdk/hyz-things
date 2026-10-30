@@ -162,17 +162,20 @@ struct PaneViewport {
     scroll_y: f64,
 }
 
-fn pane_viewport(canvas: &HtmlCanvasElement, pane: InkPane) -> Option<PaneViewport> {
-    let document = web_sys::window()?.document()?;
-    let selector = match pane {
+fn pane_selector(pane: InkPane) -> &'static str {
+    match pane {
         InkPane::Material => {
-            "[data-testid='analysis-material-scroll'], [data-testid='logic-question-scroll']"
+            "[data-testid='analysis-material-scroll'], [data-testid='logic-question-scroll'], [data-testid='quant-question-scroll']"
         }
         InkPane::Question => {
-            "[data-testid='analysis-question'], [data-testid='logic-answer-scroll']"
+            "[data-testid='analysis-question'], [data-testid='logic-answer-scroll'], [data-testid='quant-answer-scroll']"
         }
-    };
-    let element = document.query_selector(selector).ok()??;
+    }
+}
+
+fn pane_viewport(canvas: &HtmlCanvasElement, pane: InkPane) -> Option<PaneViewport> {
+    let document = web_sys::window()?.document()?;
+    let element = document.query_selector(pane_selector(pane)).ok()??;
     let canvas_rect = canvas.get_bounding_client_rect();
     let rect = element.get_bounding_client_rect();
     Some(PaneViewport {
@@ -393,11 +396,49 @@ pub(crate) struct InkOverlayProps {
     pub(crate) persist_key: String,
     #[prop_or_default]
     pub(crate) responsive: bool,
-    // Content-relative pen coordinates are specific to comprehensive training.
+    // Content-relative coordinates are used by paper-style study views.
     // Other responsive ink overlays retain their normalized screen coordinates.
     #[prop_or_default]
     pub(crate) scroll_linked: bool,
     pub(crate) children: Children,
+}
+
+#[derive(Clone, PartialEq)]
+struct InkToolbarContext {
+    enabled: bool,
+    ready: bool,
+    has_undo: bool,
+    has_redo: bool,
+    has_ink: bool,
+    toggle: Callback<MouseEvent>,
+    undo: Callback<MouseEvent>,
+    redo: Callback<MouseEvent>,
+    clear: Callback<MouseEvent>,
+}
+
+const INK_ICON_BUTTON: &str = "btn btn-ghost btn-sm btn-square";
+
+#[function_component(InkToolbarSlot)]
+pub(crate) fn ink_toolbar_slot() -> Html {
+    let Some(tools) = use_context::<InkToolbarContext>() else {
+        return Html::default();
+    };
+    html! {
+        <div class="relative z-30 flex shrink-0 items-center gap-1" data-testid="calculation-scratchpad-controls">
+            <button type="button" class={if tools.enabled {"btn btn-primary btn-sm btn-square"} else {INK_ICON_BUTTON}}
+                data-testid="calculation-scratchpad-toggle" aria-label={if tools.enabled {"关闭草稿"} else {"开启草稿"}}
+                aria-expanded={tools.enabled.to_string()} disabled={!tools.ready} onclick={tools.toggle}>{"✎"}</button>
+            if tools.enabled {
+                <div class="flex items-center gap-1" data-testid="calculation-scratchpad-toolbar">
+                    <button type="button" class={INK_ICON_BUTTON} data-testid="calculation-scratchpad-undo" aria-label="撤销" disabled={!tools.has_undo} onclick={tools.undo}>{"↶"}</button>
+                    <button type="button" class={INK_ICON_BUTTON} data-testid="calculation-scratchpad-redo" aria-label="重做" disabled={!tools.has_redo} onclick={tools.redo}>{"↷"}</button>
+                    <button type="button" class={INK_ICON_BUTTON} data-testid="calculation-scratchpad-clear" aria-label="清空草稿" disabled={!tools.has_ink} onclick={tools.clear}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18M9 7V4h6v3M5 7l1 13h12l1-13M10 11v5m4-5v5" /></svg>
+                    </button>
+                </div>
+            }
+        </div>
+    }
 }
 
 #[function_component(InkOverlay)]
@@ -597,13 +638,8 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
             let mut listeners = Vec::new();
             if scroll_linked && *opened {
                 if let Some(document) = web_sys::window().and_then(|w| w.document()) {
-                    for selector in [
-                        "[data-testid='analysis-material-scroll']",
-                        "[data-testid='analysis-question']",
-                        "[data-testid='logic-question-scroll']",
-                        "[data-testid='logic-answer-scroll']",
-                    ] {
-                        if let Ok(Some(element)) = document.query_selector(selector) {
+                    for pane in [InkPane::Material, InkPane::Question] {
+                        if let Ok(Some(element)) = document.query_selector(pane_selector(pane)) {
                             if element
                                 .add_event_listener_with_callback(
                                     "scroll",
@@ -833,40 +869,22 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
         })
     };
 
+    let tools = InkToolbarContext {
+        enabled: *enabled,
+        ready: ink_ready,
+        has_undo,
+        has_redo,
+        has_ink: has_visible_ink,
+        toggle,
+        undo,
+        redo,
+        clear,
+    };
     html! {
         <ContextProvider<bool> context={*enabled}>
+        <ContextProvider<InkToolbarContext> context={tools}>
         <section class={if props.responsive { "calculation-scratchpad relative flex-1 min-h-0 min-w-0 h-full rounded-box" } else { "calculation-scratchpad relative min-h-80 min-w-0 rounded-box bg-base-100/60" }} data-testid="calculation-scratchpad" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
             <div class={if props.responsive { "h-full min-h-0 min-w-0" } else { "min-h-80 pt-12" }}>{for props.children.iter()}</div>
-            // One top-right control cluster; closed mode shows only the toggle.
-            // Keeping the controls above the transparent canvas preserves
-            // Apple Pencil drawing over both the material and question panes.
-            <div
-                class={if *enabled {
-                    "absolute right-2 top-2 z-30 flex items-center gap-1 rounded-box bg-base-100/95 p-1 shadow-lg"
-                } else {
-                    "absolute right-2 top-2 z-30"
-                }}
-                data-testid="calculation-scratchpad-controls"
-            >
-                if *enabled {
-                    <div class="flex items-center gap-1" data-testid="calculation-scratchpad-toolbar">
-                        <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-scratchpad-undo" aria-label="撤销" disabled={!has_undo} onclick={undo}>{"↶"}</button>
-                        <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-scratchpad-redo" aria-label="重做" disabled={!has_redo} onclick={redo}>{"↷"}</button>
-                        <button type="button" class="btn btn-ghost btn-sm" data-testid="calculation-scratchpad-clear" aria-label="清屏" disabled={!has_visible_ink} onclick={clear}>{"清屏"}</button>
-                    </div>
-                }
-                <button
-                    type="button"
-                    class={if *enabled { "btn btn-primary btn-sm shrink-0" } else { "btn btn-outline btn-sm bg-base-100 shadow-sm" }}
-                    data-testid="calculation-scratchpad-toggle"
-                    aria-label={if *enabled { "关闭草稿" } else { "开启草稿" }}
-                    aria-expanded={(*enabled).to_string()}
-                    disabled={!ink_ready}
-                    onclick={toggle}
-                >
-                    {if *enabled { "✕" } else { "✎" }}
-                </button>
-            </div>
             if !props.persist_key.is_empty() {
                 <div class="absolute bottom-2 left-2 z-30 max-w-[calc(100%-1rem)] rounded bg-base-100/95 px-2 py-1 text-xs shadow-sm">
                     <span role="status" data-testid="calculation-scratchpad-save-status">{save_status.label()}</span>
@@ -889,6 +907,7 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
                 onlostpointercapture={on_end}
             />
         </section>
+        </ContextProvider<InkToolbarContext>>
         </ContextProvider<bool>>
     }
 }
