@@ -4,8 +4,8 @@ use super::codex_app_server::{
     validate_token, CodexSession, CANCELLED_MESSAGE, UNCONFIRMED_MESSAGE,
 };
 use crate::domain::data_analysis::{
-    select_material_batch, topic_scope, Material, VerifiedQuestion, QUIZ_GROUPS, QUIZ_PER_GROUP,
-    QUIZ_SECONDS, TOPICS,
+    select_material_batch, topic_scope, Material, RelatedCardSnapshot, VerifiedQuestion,
+    QUIZ_GROUPS, QUIZ_PER_GROUP, QUIZ_SECONDS, TOPICS,
 };
 use crate::domain::vcnt::{delta_vcnt, CardSchedule};
 use serde::{Deserialize, Serialize};
@@ -222,6 +222,7 @@ pub struct GradedQuestion {
     pub evidence: String,
     pub card_path: Option<String>,
     pub card_id: Option<String>,
+    pub related_card: Option<RelatedCardSnapshot>,
 }
 #[derive(Clone, Serialize)]
 pub struct RunResult {
@@ -655,6 +656,39 @@ fn as_error(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
 
+async fn restore_related_cards(
+    connection: &mut sqlx::SqliteConnection,
+    groups: &mut [QuestionGroup],
+) -> Result<(), String> {
+    for question in groups.iter_mut().flat_map(|group| &mut group.questions) {
+        if question.related_card.is_some() || question.source_hash.is_none() {
+            continue;
+        }
+        let Some(id) = question.card_id.as_deref() else {
+            continue;
+        };
+        let row = sqlx::query(
+            "SELECT source_hash,front_markdown,back_markdown FROM flashcards WHERE id=?",
+        )
+        .bind(id)
+        .fetch_optional(&mut *connection)
+        .await
+        .map_err(as_error)?;
+        if let Some(row) = row {
+            let hash: String = row.try_get("source_hash").map_err(as_error)?;
+            question.related_card = question.related_card_for(
+                id,
+                &hash,
+                RelatedCardSnapshot {
+                    front: row.try_get("front_markdown").map_err(as_error)?,
+                    back: row.try_get("back_markdown").map_err(as_error)?,
+                },
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Build a graded view from saved answers without changing the run or requiring
 /// the editing lease. Callers must check submission status before history reads.
 fn grade_run(
@@ -685,6 +719,7 @@ fn grade_run(
                 evidence: q.evidence.clone(),
                 card_path: q.card_path.clone(),
                 card_id: q.card_id.clone(),
+                related_card: q.related_card.clone(),
             });
         }
     }
@@ -1317,6 +1352,10 @@ impl DataAnalysisService {
             question.card_path = Some(target.card.card_path.clone());
             question.source_kind = Some(target.card.source_kind.as_str().to_owned());
             question.source_hash = Some(target.card.source_hash.clone());
+            question.related_card = Some(RelatedCardSnapshot {
+                front: target.card.front_markdown.clone(),
+                back: target.card.back_markdown.clone(),
+            });
             questions.push(question);
         }
         let mut material = context;
@@ -1637,7 +1676,7 @@ impl DataAnalysisService {
             return Err("训练已由其他设备接管".into());
         }
         let status: String = row.try_get("status").map_err(as_error)?;
-        let groups: Vec<QuestionGroup> =
+        let mut groups: Vec<QuestionGroup> =
             serde_json::from_str(&row.try_get::<String, _>("groups_json").map_err(as_error)?)
                 .map_err(as_error)?;
         if status != "submitted" {
@@ -1667,6 +1706,7 @@ impl DataAnalysisService {
                 .await
                 .map_err(as_error)?;
         let answers: Vec<Option<usize>> = serde_json::from_str(&raw).map_err(as_error)?;
+        restore_related_cards(&mut tx, &mut groups).await?;
         let result = grade_run(id, groups, answers)?;
         if status != "submitted" {
             for q in &result.questions {
@@ -1729,10 +1769,12 @@ impl DataAnalysisService {
     }
 
     pub async fn result(&self, id: &str) -> Result<RunResult, String> {
-        let (groups, answers, status, _started) = self.fetch_row(id).await?;
+        let (mut groups, answers, status, _started) = self.fetch_row(id).await?;
         if status != "submitted" {
             return Err("训练尚未交卷".into());
         }
+        let mut connection = self.pool.acquire().await.map_err(as_error)?;
+        restore_related_cards(&mut connection, &mut groups).await?;
         grade_run(id, groups, answers)
     }
 
@@ -2007,6 +2049,7 @@ mod tests {
                         card_path: Some(target.card.card_path.clone()),
                         source_kind: Some(target.card.source_kind.as_str().into()),
                         source_hash: Some(target.card.source_hash.clone()),
+                        related_card: None,
                     })
                     .collect(),
             })
@@ -2580,6 +2623,7 @@ mod tests {
                     card_path: None,
                     source_kind: None,
                     source_hash: None,
+                    related_card: None,
                 })
                 .collect(),
         };
@@ -2719,6 +2763,7 @@ mod tests {
                     card_path: None,
                     source_kind: None,
                     source_hash: None,
+                    related_card: None,
                 })
                 .collect::<Vec<_>>();
             let group = QuestionGroup {

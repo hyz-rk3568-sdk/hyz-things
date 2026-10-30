@@ -48,6 +48,12 @@ pub struct Material {
     pub text: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelatedCardSnapshot {
+    pub front: String,
+    pub back: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct VerifiedQuestion {
     pub question: String,
@@ -65,6 +71,23 @@ pub struct VerifiedQuestion {
     pub source_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub related_card: Option<RelatedCardSnapshot>,
+}
+
+impl VerifiedQuestion {
+    pub fn related_card_for(
+        &self,
+        card_id: &str,
+        source_hash: &str,
+        current: RelatedCardSnapshot,
+    ) -> Option<RelatedCardSnapshot> {
+        self.related_card.clone().or_else(|| {
+            (self.card_id.as_deref() == Some(card_id)
+                && self.source_hash.as_deref() == Some(source_hash))
+            .then_some(current)
+        })
+    }
 }
 
 /// Choose distinct untried topics for a parallel generation wave.
@@ -103,6 +126,63 @@ mod tests {
             topic: topic.to_owned(),
             text: "全年粮食产量71488万吨，比上年增加838万吨，增产1.2%。".into(),
         }
+    }
+
+    #[test]
+    fn legacy_review_recovers_only_the_same_card_version() {
+        let mut question: VerifiedQuestion = serde_json::from_value(serde_json::json!({
+            "question":"题目", "options":["1","2","3","4"], "correct_index":0,
+            "answer":"1", "explanation":"解析", "skill":"基期量", "evidence":"统计数据",
+            "card_id":"card-1", "source_hash":"original-hash"
+        }))
+        .unwrap();
+        let card = RelatedCardSnapshot {
+            front: "原题方法".into(),
+            back: "原题解法".into(),
+        };
+        assert_eq!(
+            question.related_card_for("card-1", "original-hash", card.clone()),
+            Some(card.clone())
+        );
+        assert_eq!(
+            question.related_card_for("card-1", "new-hash", card.clone()),
+            None
+        );
+        assert_eq!(
+            question.related_card_for("another-card", "original-hash", card.clone()),
+            None
+        );
+        question.source_hash = None;
+        assert_eq!(
+            question.related_card_for("card-1", "original-hash", card.clone()),
+            None
+        );
+        question.related_card = Some(card.clone());
+        assert_eq!(
+            question.related_card_for(
+                "another-card",
+                "new-hash",
+                RelatedCardSnapshot {
+                    front: "改过的卡片".into(),
+                    back: "改过的解法".into(),
+                }
+            ),
+            Some(card)
+        );
+    }
+
+    #[test]
+    fn saved_question_preserves_its_related_method_card_snapshot() {
+        let value = serde_json::json!({
+            "question":"上一年的业务量？", "options":["1","2","3","4"],
+            "correct_index":0, "answer":"1", "explanation":"解析", "skill":"基期量", "evidence":"统计数据",
+            "related_card":{"front":"基期量方法", "back":"$B=A/(1+r)$"}
+        });
+        let question: VerifiedQuestion = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(
+            serde_json::to_value(question).unwrap()["related_card"],
+            value["related_card"]
+        );
     }
 
     #[test]
