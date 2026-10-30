@@ -20,6 +20,9 @@ process.env.HYZ_THINGS_E2E_CONTROL_PORT = String(controlPort);
 // A specific, explicit PR title marker limits this recovery check to the two
 // previously failing regressions. For every other PR and for main, use all tests.
 function focusedRegressionFilter(): RegExp | undefined {
+  // Startup self-tests import this config through their own --config file.
+  // They must not inherit a filter intended for the main E2E suite.
+  if (process.argv.includes('--config')) return undefined;
   const eventPath = process.env.GITHUB_EVENT_PATH;
   if (!process.env.CI || !eventPath) return undefined;
   try {
