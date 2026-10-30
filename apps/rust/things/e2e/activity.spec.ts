@@ -158,11 +158,8 @@ test("edits policy from device detail and preserves a dirty draft across a 409",
     },
   });
 
-  const raced = await readHarnessState(request);
-  raced.device_policies.config.generation = 2;
-  expect((await request.put(`${harnessOrigin}/state`, { data: raced })).ok()).toBeTruthy();
-  // Changing the harness generation races with device polling. Force a real
-  // 409 on the second write so this test never accidentally saves with HTTP 200.
+  // Stub only the second write with 409. This eliminates generation-refresh
+  // races while exercising the real conflict handling and draft preservation.
   await page.route("**/api/v1/control/proxy/device-policies", route => {
     if (route.request().method() === "POST") {
       return route.fulfill({
