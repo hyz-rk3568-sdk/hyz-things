@@ -66,20 +66,30 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
         TrainingMode::Statistics => "",
     };
     {
-        let event = study_clock.as_ref().map(|v|v.event.clone());
-        use_effect_with((*training_immersive, module),move |(immersive,module)|{
-            if let Some(event)=&event {
+        let event = study_clock.as_ref().map(|v| v.event.clone());
+        use_effect_with((*training_immersive, module), move |(immersive, module)| {
+            if let Some(event) = &event {
                 if *immersive && !module.is_empty() {
-                    event.emit(("enter".into(),Some((*module).into()),Some("answer".into())));
-                }else { event.emit(("leave".into(),None,None)); }
+                    event.emit((
+                        "enter".into(),
+                        Some((*module).into()),
+                        Some("answer".into()),
+                    ));
+                } else {
+                    event.emit(("leave".into(), None, None));
+                }
             }
             || ()
         });
     }
     {
-        let event=study_clock.as_ref().map(|v|v.event.clone());
-        use_effect_with((),move |_|move || {
-            if let Some(event)=event {event.emit(("leave".into(),None,None));}
+        let event = study_clock.as_ref().map(|v| v.event.clone());
+        use_effect_with((), move |_| {
+            move || {
+                if let Some(event) = event {
+                    event.emit(("leave".into(), None, None));
+                }
+            }
         });
     }
     let on_immersive_change = {
@@ -127,9 +137,12 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
         Callback::from(move |_| mode.set(TrainingMode::LogicJudgment))
     };
     let choose_statistics = {
-        let mode=mode.clone();
-        let training_immersive=training_immersive.clone();
-        Callback::from(move |_| {training_immersive.set(false);mode.set(TrainingMode::Statistics);})
+        let mode = mode.clone();
+        let training_immersive = training_immersive.clone();
+        Callback::from(move |_| {
+            training_immersive.set(false);
+            mode.set(TrainingMode::Statistics);
+        })
     };
     let back_to_study = {
         let route = props.route_state.clone();

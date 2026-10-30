@@ -59,8 +59,8 @@ mod data_analysis;
 mod flashcards;
 mod logic_judgment;
 mod quantitative_relations;
-mod training_time;
 mod tls;
+mod training_time;
 
 pub use tls::{PortalTls, TlsListener};
 
@@ -724,12 +724,26 @@ fn app_with_assets(
         allow_tailscale_self_stop,
         installed_apps,
     } = configuration;
-    let training_time = data_analysis.as_ref().map(|service| Arc::new(
-        crate::adapters::outbound::training_time::TrainingTimeService::new(service.pool().clone())));
+    let training_time = data_analysis.as_ref().map(|service| {
+        Arc::new(
+            crate::adapters::outbound::training_time::TrainingTimeService::new(
+                service.pool().clone(),
+            ),
+        )
+    });
     Router::new()
-        .route("/api/v1/study/training-time/current", on(MethodFilter::GET, training_time::current))
-        .route("/api/v1/study/training-time/events", on(MethodFilter::POST, training_time::events))
-        .route("/api/v1/study/training-time/stats", on(MethodFilter::GET, training_time::stats))
+        .route(
+            "/api/v1/study/training-time/current",
+            on(MethodFilter::GET, training_time::current),
+        )
+        .route(
+            "/api/v1/study/training-time/events",
+            on(MethodFilter::POST, training_time::events),
+        )
+        .route(
+            "/api/v1/study/training-time/stats",
+            on(MethodFilter::GET, training_time::stats),
+        )
         .route(
             "/api/v1/study/logic-judgment/status",
             on(MethodFilter::GET, logic_judgment::status),

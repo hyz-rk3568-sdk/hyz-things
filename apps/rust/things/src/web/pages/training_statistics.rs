@@ -2,53 +2,81 @@
 use super::*;
 use std::collections::BTreeMap;
 
-fn module_name(id:&str)->&'static str {
+fn module_name(id: &str) -> &'static str {
     match id {
-        "calculation"=>"速算训练",
-        "flashcards"=>"错题复练",
-        "comprehensive"=>"资料分析",
-        "logic"=>"判断推理",
-        "quantitative"=>"数量关系",
-        _=>"其他",
+        "calculation" => "速算训练",
+        "flashcards" => "错题复练",
+        "comprehensive" => "资料分析",
+        "logic" => "判断推理",
+        "quantitative" => "数量关系",
+        _ => "其他",
     }
 }
-fn hours(ms:i64)->String { format!("{:.1} 小时",ms as f64/3_600_000.0) }
-fn minutes(ms:i64)->String {format!("{} 分钟",ms/60_000)}
+fn hours(ms: i64) -> String {
+    format!("{:.1} 小时", ms as f64 / 3_600_000.0)
+}
+fn minutes(ms: i64) -> String {
+    format!("{} 分钟", ms / 60_000)
+}
 
 #[function_component(TrainingStatistics)]
-pub(super) fn training_statistics()->Html {
-    let stats=use_state(||None::<TrainingTimeStats>);
-    let error=use_state(||None::<String>);
-    let selected=use_state(||None::<String>);
+pub(super) fn training_statistics() -> Html {
+    let stats = use_state(|| None::<TrainingTimeStats>);
+    let error = use_state(|| None::<String>);
+    let selected = use_state(|| None::<String>);
     {
-        let stats=stats.clone();let error=error.clone();
-        use_effect_with((),move |_|{
+        let stats = stats.clone();
+        let error = error.clone();
+        use_effect_with((), move |_| {
             spawn_local(async move {
-                match fetch_json_typed::<TrainingTimeStats>(&format!("{TRAINING_TIME_ROOT}/stats"),"学习统计").await {
-                    Ok(v)=>stats.set(Some(v)),
-                    Err(e)=>error.set(Some(e.to_string())),
+                match fetch_json_typed::<TrainingTimeStats>(
+                    &format!("{TRAINING_TIME_ROOT}/stats"),
+                    "学习统计",
+                )
+                .await
+                {
+                    Ok(v) => stats.set(Some(v)),
+                    Err(e) => error.set(Some(e.to_string())),
                 }
-            });||()
+            });
+            || ()
         });
     }
-    let Some(data)=stats.as_ref() else {
-        return html!{<TrainingSetupLayout test_id="training-statistics">
+    let Some(data) = stats.as_ref() else {
+        return html! {<TrainingSetupLayout test_id="training-statistics">
             <h2 class="text-xl font-bold">{"学习统计"}</h2>
             if let Some(e)=error.as_ref(){<p role="alert" class="text-error">{e.clone()}</p>}
             else{<p class="opacity-60">{"正在读取真实学习记录…"}</p>}
         </TrainingSetupLayout>};
     };
-    let today=data.days.last().map(|d|d.total_ms).unwrap_or_default();
-    let week=data.days.iter().rev().take(7).map(|d|d.total_ms).sum::<i64>();
-    let total=data.days.iter().map(|d|d.total_ms).sum::<i64>();
-    let streak=data.days.iter().rev().skip_while(|d|d.total_ms==0).take_while(|d|d.total_ms>0).count();
-    let chosen=data.days.iter().find(|d|Some(&d.date)==selected.as_ref())
-        .or_else(||data.days.last());
-    let mut by_module=BTreeMap::<String,i64>::new();
-    if let Some(day)=chosen {
-        for (k,v) in &day.modules {*by_module.entry(k.clone()).or_default()+=v;}
+    let today = data.days.last().map(|d| d.total_ms).unwrap_or_default();
+    let week = data
+        .days
+        .iter()
+        .rev()
+        .take(7)
+        .map(|d| d.total_ms)
+        .sum::<i64>();
+    let total = data.days.iter().map(|d| d.total_ms).sum::<i64>();
+    let streak = data
+        .days
+        .iter()
+        .rev()
+        .skip_while(|d| d.total_ms == 0)
+        .take_while(|d| d.total_ms > 0)
+        .count();
+    let chosen = data
+        .days
+        .iter()
+        .find(|d| Some(&d.date) == selected.as_ref())
+        .or_else(|| data.days.last());
+    let mut by_module = BTreeMap::<String, i64>::new();
+    if let Some(day) = chosen {
+        for (k, v) in &day.modules {
+            *by_module.entry(k.clone()).or_default() += v;
+        }
     }
-    html!{
+    html! {
         <TrainingSetupLayout test_id="training-statistics">
             <div class="space-y-5" data-testid="training-statistics-content">
                 <div><h2 class="text-2xl font-bold">{"学习统计"}</h2><p class="mt-1 text-sm opacity-60">{"按北京时间统计有效学习时间 · 真实数据"}</p></div>

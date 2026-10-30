@@ -22,8 +22,10 @@ pub(crate) struct TrainingTimeEventRequest {
 pub(crate) struct TrainingDay {
     pub date: String,
     pub total_ms: i64,
-    pub modules: BTreeMap<String,i64>,
-    pub phases: BTreeMap<String,i64>,
+    pub modules: BTreeMap<String, i64>,
+    pub phases: BTreeMap<String, i64>,
 }
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-pub(crate) struct TrainingTimeStats { pub days: Vec<TrainingDay> }
+pub(crate) struct TrainingTimeStats {
+    pub days: Vec<TrainingDay>,
+}

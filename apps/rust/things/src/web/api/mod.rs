@@ -6,11 +6,11 @@ mod camera;
 mod data_analysis;
 mod flashcards;
 mod logic_judgment;
-mod training_time;
 mod network;
 mod proxy;
 mod status;
 mod tailscale;
+mod training_time;
 
 pub(crate) use apps::*;
 pub(crate) use auth::*;
@@ -18,11 +18,11 @@ pub(crate) use camera::*;
 pub(crate) use data_analysis::*;
 pub(crate) use flashcards::*;
 pub(crate) use logic_judgment::*;
-pub(crate) use training_time::*;
 pub(crate) use network::*;
 pub(crate) use proxy::*;
 pub(crate) use status::*;
 pub(crate) use tailscale::*;
+pub(crate) use training_time::*;
 
 #[derive(serde::Serialize)]
 #[serde(deny_unknown_fields)]
