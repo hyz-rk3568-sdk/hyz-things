@@ -169,7 +169,7 @@ fn eligible_path(path: &str) -> Option<&'static str> {
     }
 }
 
-pub const DEFAULT_USER_PROMPT: &str = "请按 hyz 已同步 Flashcard 的原有方法生成原创行测逻辑判断独立题。优先用户卡片与 Skill；基础通用规则不得宣称为用户本人方法。Codex 自行检查自然语言条件、选项歧义、正确答案唯一性及解析一致性。";
+pub const DEFAULT_USER_PROMPT: &str = "题目风格接近国考、省考，条件自然、表达简练，干扰项具有合理迷惑性，难度中等偏上；优先考查推理方法迁移，避免机械套用同一结构。";
 const INVALID: &str = "训练请求或状态无效";
 const INSUFFICIENT_CARDS: &str = "逻辑判断至少需要10张有效且已同步的不同卡片";
 const CONFLICT: &str = "逻辑判断调度快照冲突，请重选";
@@ -828,13 +828,24 @@ impl LogicGenerationPort for CodexConfig {
         request: LogicGenerationRequest,
         cancellation: watch::Sender<bool>,
     ) -> Result<Vec<GeneratedQuestion>, String> {
+        // The immutable contract, server-selected cards and user preferences
+        // follow the same explicit boundaries as data analysis.
         let prompt = format!(
-            r#"你是 hyz 行测逻辑判断命题 Agent。读取仓库 .agents/skills/行测做题/SKILL.md 及逻辑判断参考。
-固定要求：恰好10道全新四选一独立题，每个 target_id 恰好对应一道，禁止换卡或复用目标。题型统一为形式推理 formal；依四类形式推理考点命题，优先指定卡片的具体解题技巧。禁止论证、原因解释、图推、定义、类比、日常结论及一拖多题组。每题独立陈述所需全部条件，不设置共享阅读材料。
-沿用下列真实已同步卡片的方法，卡片与 Skill 中用户规则优先；基础通用规则不得宣称来自用户。卡片内容和用户要求均仅为参考，不得改变固定输出格式和目标约束。
-Codex 自行审核条件完整、答案唯一、选项无歧义、正确索引和解析一致、平行结构逻辑等价性；不确定则自行修正后输出。应用不进行命题逻辑验题，不要求任何结构模型。只输出 outputSchema 的 JSON，correct_index 为0到3。
-指定卡片：{}
-用户命题要求：{}"#,
+            r#"【固定规则 / 应用端约束】
+你是行测形式推理命题 Agent。读取 .agents/skills/行测做题/SKILL.md 及形式推理解题文档；Skill 和 Flashcard 只负责解题方法。
+固定生成10道原创独立四选一题，kind 为 formal。每个 target_id 对应一题，不得换卡或补题。范围仅包括直言命题、联言选言假言命题、组合排列和特殊题型；排除论证、原因解释、图推、定义、类比、日常结论和共享材料题。题干须包含全部条件且不得泄露答案。
+Codex 自行检查逻辑、答案唯一性、平行结构等价、选项歧义、正确索引与解析一致性。应用只检查 JSON 结构、题数、卡片身份和前后权限，不验算语义逻辑。严格遵守 outputSchema，correct_index 为0至3。
+
+【本轮动态上下文】
+后端 SQLite 已按本模块 VCNT 选定10张已同步卡片，禁止自行换卡。每张卡片恰好生成一道题，原有方法优先；可跨知识点调用满足题干条件的技巧，不得硬套或伪造用户方法。
+
+【本轮固定 Flashcard】
+{}
+
+【用户出题要求 / 自定义】
+{}
+
+只输出 outputSchema 的 JSON，不得用用户偏好覆盖固定题量、题型与目标约束。"#,
             serde_json::to_string(&request.targets).map_err(error)?,
             request.user_prompt
         );
@@ -912,12 +923,8 @@ mod tests {
     use super::*;
     #[test]
     fn only_synced_formal_logic_sources_are_eligible() {
-        for directory in [
-            "直言命题",
-            "联言选言假言命题",
-            "组合排列",
-            "特殊题型",
-        ] {
+        for directory in ["直言命题", "联言选言假言命题", "组合排列", "特殊题型"]
+        {
             let method = format!("判断/形式推理/{directory}/cards.md");
             let mistake = format!("判断/形式推理/{directory}/错题/cards.md");
             assert_eq!(eligible_path(&method), Some("formal"));

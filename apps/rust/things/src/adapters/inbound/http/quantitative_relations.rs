@@ -3,7 +3,9 @@ use super::*;
 
 pub(super) const MAX_USER_PROMPT_BODY_BYTES: usize = 16 * 1024;
 const MAX_USER_PROMPT_BYTES: usize = 8000;
-use crate::application::quantitative_relations::{QuantitativeRelationsError, QuantitativeRelationsOperation as Operation};
+use crate::application::quantitative_relations::{
+    QuantitativeRelationsError, QuantitativeRelationsOperation as Operation,
+};
 
 async fn invoke_authorized(state: &AppState, operation: Operation) -> Response {
     let id = match &operation {

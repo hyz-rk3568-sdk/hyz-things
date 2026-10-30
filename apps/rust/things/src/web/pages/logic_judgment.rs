@@ -174,10 +174,22 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
 pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     // The same independent-question UI serves formal reasoning and quantitative relations.
     // Data analysis separately uses the same split workspace, navigation, ink and metrics.
-    let root: &'static str = if props.quantitative { QUANT_ROOT } else { LOGIC_ROOT };
+    let root: &'static str = if props.quantitative {
+        QUANT_ROOT
+    } else {
+        LOGIC_ROOT
+    };
     let prefix: &'static str = if props.quantitative { "quant" } else { "logic" };
-    let subject: &'static str = if props.quantitative { "数量关系" } else { "逻辑判断" };
-    let title: &'static str = if props.quantitative { "数量关系训练" } else { "逻辑判断综合训练" };
+    let subject: &'static str = if props.quantitative {
+        "数量关系"
+    } else {
+        "逻辑判断"
+    };
+    let title: &'static str = if props.quantitative {
+        "数量关系训练"
+    } else {
+        "逻辑判断综合训练"
+    };
     let seconds: u64 = if props.quantitative { 900 } else { 600 };
     let subtitle: &'static str = if props.quantitative {
         "经济利润、工程、行程、溶液、最值、排列组合、概率与周期 · 10题/15分钟 · 支持暂停"
@@ -466,7 +478,8 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                                 "重做原卷",
                             )
                             .await?;
-                            let active = enter_drill_run(root, seconds, &retry.run_id, &csrf).await?;
+                            let active =
+                                enter_drill_run(root, seconds, &retry.run_id, &csrf).await?;
                             offset.set(active.server_now_ms as f64 - Date::now());
                             current.set(0);
                             result.set(None);

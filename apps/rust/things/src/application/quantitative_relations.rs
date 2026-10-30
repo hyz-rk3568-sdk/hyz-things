@@ -36,8 +36,10 @@ pub enum QuantitativeRelationsError {
 pub trait QuantitativeRelationsPort: Send + Sync {
     fn shutdown(&self) {}
 
-    async fn execute(&self, operation: QuantitativeRelationsOperation)
-        -> Result<Value, QuantitativeRelationsError>;
+    async fn execute(
+        &self,
+        operation: QuantitativeRelationsOperation,
+    ) -> Result<Value, QuantitativeRelationsError>;
 }
 
 #[derive(Clone, serde::Serialize)]

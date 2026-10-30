@@ -12,8 +12,8 @@ use hyz_things::{
             flashcard_source::FilesystemFlashcardSource,
             flashcard_sqlite::SqliteFlashcardRepository,
             logic_judgment::LogicJudgmentService,
-            quantitative_relations::QuantitativeRelationsService,
             portal_config::load_allowed_origins,
+            quantitative_relations::QuantitativeRelationsService,
             registry::RegistryAdapter,
             router::RouterControlClient,
             tailscale::{fetch_tailscale_status, PortalListenerApp, TailscaleListenerManager},
@@ -24,8 +24,8 @@ use hyz_things::{
         camera::CameraApplication,
         flashcards::FlashcardApplication,
         logic_judgment::LogicJudgmentPort,
-        quantitative_relations::QuantitativeRelationsPort,
         ports::{ClockPort, PlatformError, PortalControlHandler},
+        quantitative_relations::QuantitativeRelationsPort,
         status::PortalStatus,
     },
     logging::{self, Level},
@@ -137,7 +137,8 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                 if let Some(service) = &quantitative_relations {
                     let _ = service.recover_interrupted().await;
                 }
-                let quantitative_relations = quantitative_relations.map(|service| service as Arc<dyn QuantitativeRelationsPort>);
+                let quantitative_relations = quantitative_relations
+                    .map(|service| service as Arc<dyn QuantitativeRelationsPort>);
                 let application = Arc::new(FlashcardApplication::new(
                     source.clone(),
                     Arc::new(repository),

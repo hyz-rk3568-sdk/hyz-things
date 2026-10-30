@@ -266,7 +266,8 @@ pub struct PortalListenerApp {
     pub camera: Arc<CameraApplication>,
     pub flashcards: Option<Arc<FlashcardApplication>>,
     pub logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
-    pub quantitative_relations: Option<Arc<dyn crate::application::quantitative_relations::QuantitativeRelationsPort>>,
+    pub quantitative_relations:
+        Option<Arc<dyn crate::application::quantitative_relations::QuantitativeRelationsPort>>,
     pub data_analysis: Option<Arc<crate::adapters::outbound::data_analysis::DataAnalysisService>>,
     pub flashcard_source:
         Option<Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>>,

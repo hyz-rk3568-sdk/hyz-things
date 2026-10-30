@@ -93,7 +93,8 @@ struct AppState {
         Option<Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>>,
     data_analysis: Option<Arc<crate::adapters::outbound::data_analysis::DataAnalysisService>>,
     logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
-    quantitative_relations: Option<Arc<dyn crate::application::quantitative_relations::QuantitativeRelationsPort>>,
+    quantitative_relations:
+        Option<Arc<dyn crate::application::quantitative_relations::QuantitativeRelationsPort>>,
     camera_scope: Option<CameraAccessScope>,
     csrf_token: Arc<str>,
     allowed_origin: Arc<str>,
@@ -346,6 +347,7 @@ pub fn app_with_admin_camera_control_and_flashcards(
         flashcard_source,
         None,
         None,
+        None,
     )
 }
 
@@ -400,7 +402,9 @@ pub fn app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_or
     >,
     data_analysis: Option<Arc<crate::adapters::outbound::data_analysis::DataAnalysisService>>,
     logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
-    quantitative_relations: Option<Arc<dyn crate::application::quantitative_relations::QuantitativeRelationsPort>>,
+    quantitative_relations: Option<
+        Arc<dyn crate::application::quantitative_relations::QuantitativeRelationsPort>,
+    >,
     additional_allowed_origins: Vec<String>,
 ) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
@@ -542,7 +546,9 @@ pub fn app_with_admin_camera_control_at_address_and_flashcards_and_analysis(
     >,
     data_analysis: Option<Arc<crate::adapters::outbound::data_analysis::DataAnalysisService>>,
     logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
-    quantitative_relations: Option<Arc<dyn crate::application::quantitative_relations::QuantitativeRelationsPort>>,
+    quantitative_relations: Option<
+        Arc<dyn crate::application::quantitative_relations::QuantitativeRelationsPort>,
+    >,
 ) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
     app_with_assets(
@@ -681,7 +687,8 @@ struct AppConfiguration {
         Option<Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>>,
     data_analysis: Option<Arc<crate::adapters::outbound::data_analysis::DataAnalysisService>>,
     logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
-    quantitative_relations: Option<Arc<dyn crate::application::quantitative_relations::QuantitativeRelationsPort>>,
+    quantitative_relations:
+        Option<Arc<dyn crate::application::quantitative_relations::QuantitativeRelationsPort>>,
     camera_scope: Option<CameraAccessScope>,
     csrf_token: String,
     allowed_origin: String,

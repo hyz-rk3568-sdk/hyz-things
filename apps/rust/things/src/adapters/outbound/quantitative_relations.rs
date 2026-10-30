@@ -172,7 +172,7 @@ fn eligible_path(path: &str) -> Option<&'static str> {
     }
 }
 
-pub const DEFAULT_USER_PROMPT: &str = "请依据已同步的数量关系 Flashcard 与 .agents/skills/行测做题/references/小P-数量关系-解题方法.md 命10道原创四选一数量关系题，范围限经济利润、工程、行程、溶液、最值、排列组合、概率、周期。优先使用来源方法，题目数值、单位、选项和正确索引须自检一致且只有一个正确答案。";
+pub const DEFAULT_USER_PROMPT: &str = "题目接近国考、省考数量关系风格，难度中等偏上，条件与数字自然；干扰选项合理，优先考查方法迁移和快速计算，避免机械换数字，解析简洁。";
 const INVALID: &str = "训练请求或状态无效";
 const INSUFFICIENT_CARDS: &str = "数量关系至少需要10张有效且已同步的不同卡片";
 const CONFLICT: &str = "数量关系调度快照冲突，请重选";
@@ -412,10 +412,11 @@ impl QuantitativeRelationsService {
     }
     pub async fn status(&self) -> Result<Status, String> {
         let cards = self.candidates().await?;
-        let job = sqlx::query_scalar("SELECT id FROM quantitative_relations_jobs WHERE state='running'")
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(error)?;
+        let job =
+            sqlx::query_scalar("SELECT id FROM quantitative_relations_jobs WHERE state='running'")
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(error)?;
         Ok(Status {
             configured: self.generator.is_some(),
             eligible_cards: cards.len(),
@@ -423,11 +424,12 @@ impl QuantitativeRelationsService {
         })
     }
     pub async fn user_prompt(&self) -> Result<UserPromptSettings, String> {
-        let prompt: Option<String> =
-            sqlx::query_scalar("SELECT user_prompt FROM quantitative_relations_settings WHERE id=1")
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(error)?;
+        let prompt: Option<String> = sqlx::query_scalar(
+            "SELECT user_prompt FROM quantitative_relations_settings WHERE id=1",
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(error)?;
         Ok(UserPromptSettings {
             customized: prompt.is_some(),
             user_prompt: prompt.unwrap_or_else(|| DEFAULT_USER_PROMPT.into()),
@@ -451,12 +453,13 @@ impl QuantitativeRelationsService {
         self.user_prompt().await
     }
     pub async fn progress(&self, id: &str) -> Result<PrepareProgress, String> {
-        let row = sqlx::query("SELECT state,verified,run_id FROM quantitative_relations_jobs WHERE id=?")
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(error)?
-            .ok_or(NOT_FOUND)?;
+        let row =
+            sqlx::query("SELECT state,verified,run_id FROM quantitative_relations_jobs WHERE id=?")
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(error)?
+                .ok_or(NOT_FOUND)?;
         let state: String = row.try_get("state").map_err(error)?;
         let message = match state.as_str() {
             "failed" => "出题失败，请重试",
@@ -810,7 +813,13 @@ impl QuantitativeRelationsService {
             .into_iter()
             .map(|t| CardPerformance {
                 card_id: t.card.id,
-                category: t.card.card_path.split('/').take(2).collect::<Vec<_>>().join("/"),
+                category: t
+                    .card
+                    .card_path
+                    .split('/')
+                    .take(2)
+                    .collect::<Vec<_>>()
+                    .join("/"),
                 card_path: t.card.card_path,
                 front: t.card.front,
                 back: t.card.back,
@@ -838,7 +847,7 @@ impl QuantitativeGenerationPort for CodexConfig {
             .targets
             .iter()
             .map(|target| format!(
-                "【目标 {id}】\\n题型：{kind}\\n卡片ID：{card_id}\\n路径：{path}\\n### Front\\n{front}\\n### Back\\n{back}",
+                "【目标 {id}】\n题型：{kind}\n卡片ID：{card_id}\n路径：{path}\n### Front\n{front}\n### Back\n{back}",
                 id = target.target_id,
                 kind = target.kind,
                 card_id = target.card_id,
@@ -847,7 +856,7 @@ impl QuantitativeGenerationPort for CodexConfig {
                 back = target.back,
             ))
             .collect::<Vec<_>>()
-            .join("\\n\\n");
+            .join("\n\n");
         let prompt = format!(
             r#"【固定规则 / 应用端约束】
 你是 hyz 行测数量关系命题 Agent。先阅读仓库 .agents/skills/行测做题/SKILL.md、references/数量关系.md 和 references/小P-数量关系-解题方法.md。
@@ -874,9 +883,7 @@ Codex 自行验算每题数值、边界、单位、正确选项唯一性、解�
             result=self.connect()=>result?,
             _=cancelled.wait_for(|value|*value)=>return Err("服务正在停止".into()),
         };
-        let output = session
-            .turn_cancellable(&prompt, cancellation)
-            .await?;
+        let output = session.turn_cancellable(&prompt, cancellation).await?;
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
         struct Batch {
@@ -889,7 +896,9 @@ Codex 自行验算每题数值、边界、单位、正确选项唯一性、解�
 }
 
 #[async_trait::async_trait]
-impl crate::application::quantitative_relations::QuantitativeRelationsPort for QuantitativeRelationsService {
+impl crate::application::quantitative_relations::QuantitativeRelationsPort
+    for QuantitativeRelationsService
+{
     fn shutdown(&self) {
         QuantitativeRelationsService::shutdown(self);
     }
@@ -938,16 +947,31 @@ impl crate::application::quantitative_relations::QuantitativeRelationsPort for Q
     }
 }
 
-
 #[cfg(test)]
 mod quantitative_tests {
     use super::*;
     #[test]
     fn quantitative_pool_is_exactly_eleven_method_decks() {
-        for path in ["数量/经济利润/cards.md", "数量/工程效率/cards.md", "数量/行程/相对运动/cards.md", "数量/行程/综合应用/cards.md", "数量/溶液/cards.md", "数量/最值/cards.md", "数量/排列组合/基础/cards.md", "数量/排列组合/插空与同素分堆/cards.md", "数量/排列组合/特殊套路/cards.md", "数量/概率/cards.md", "数量/周期/cards.md"] {
+        for path in [
+            "数量/经济利润/cards.md",
+            "数量/工程效率/cards.md",
+            "数量/行程/相对运动/cards.md",
+            "数量/行程/综合应用/cards.md",
+            "数量/溶液/cards.md",
+            "数量/最值/cards.md",
+            "数量/排列组合/基础/cards.md",
+            "数量/排列组合/插空与同素分堆/cards.md",
+            "数量/排列组合/特殊套路/cards.md",
+            "数量/概率/cards.md",
+            "数量/周期/cards.md",
+        ] {
             assert_eq!(eligible_path(path), Some("quantitative"));
         }
-        for path in ["判断/形式推理/直言命题/cards.md", "数量/几何/cards.md", "数量/错题/cards.md"] {
+        for path in [
+            "判断/形式推理/直言命题/cards.md",
+            "数量/几何/cards.md",
+            "数量/错题/cards.md",
+        ] {
             assert_eq!(eligible_path(path), None);
         }
     }

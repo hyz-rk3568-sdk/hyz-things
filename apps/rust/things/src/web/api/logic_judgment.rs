@@ -70,7 +70,12 @@ pub(crate) struct LogicPerformance {
     pub correct_count: u64,
 }
 
-pub(crate) async fn enter_drill_run(root: &str, seconds: u64, id: &str, csrf: &str) -> Result<LogicRun, String> {
+pub(crate) async fn enter_drill_run(
+    root: &str,
+    seconds: u64,
+    id: &str,
+    csrf: &str,
+) -> Result<LogicRun, String> {
     use super::{fetch_json, post_json_response, EmptyRequest};
     let mut run: LogicRun = fetch_json(&format!("{root}/runs/{id}"), "试卷").await?;
     if run.status == "prepared" {
