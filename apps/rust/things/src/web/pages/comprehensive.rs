@@ -1103,6 +1103,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         <span class="hidden text-xs text-base-content/60 sm:inline">{format!("第 {}/20 题 · 材料 {}/4",index+1,group_index+1)}</span>
                     </div>
                     <div class="flex shrink-0 items-center gap-2">
+                        <StudyTimeInline />
                         <span class="text-sm font-bold">{format!("{} / {} 正确",score.correct,score.total)}</span>
                         <button type="button" class="btn btn-outline btn-sm" onclick={show_history}>{"查看练习历史"}</button>
                         <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-retry-result" disabled={*busy} onclick={redo_from_result}>{"重做原题"}</button>
@@ -1203,6 +1204,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         if active.paused_remaining_ms.is_some() {
             return html! {
                 <section class="analysis-fullscreen analysis-paused fixed inset-0 z-[70] flex h-dvh w-screen items-center justify-center overflow-hidden bg-base-200" data-testid="analysis-paused">
+                    <div class="absolute right-4 top-2"><StudyTimeInline /></div>
                     <div class="rounded-box bg-base-100 p-8 text-center">
                         <h2 class="text-2xl font-bold">{"训练已暂停"}</h2>
                         <p class="mt-3 text-base-content/60">{"已隐藏材料和题目，暂停期间不能答题。刷新页面仍保持暂停。"}</p>
@@ -1282,9 +1284,10 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         <span class="hidden text-xs text-base-content/60 sm:inline">{format!("第 {}/20 题 · 材料 {}/4",index+1,group_index+1)}</span>
                     </div>
                     <div class="flex shrink-0 items-center gap-2">
+                        <StudyTimeInline />
                         <button type="button" class={if remaining<=60 {"btn btn-ghost font-mono text-xl text-error"}else{"btn btn-ghost font-mono text-xl"}}
                             data-testid="analysis-clock" title="点击暂停计时" disabled={*busy || remaining==0}
-                            onclick={toggle_pause}>{format!("⏸ {clock}")}</button>
+                            onclick={toggle_pause}>{clock}</button>
                         <button type="button" class="btn btn-sm btn-error btn-outline" disabled={*busy}
                             onclick={{let submit=submit.clone();Callback::from(move |_|submit.emit(()))}}>{"交卷"}</button>
                     </div>

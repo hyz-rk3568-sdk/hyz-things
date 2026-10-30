@@ -21,6 +21,8 @@ mod training;
 mod training_metrics;
 mod training_setup;
 mod training_split_workspace;
+mod training_statistics;
+mod training_time;
 
 pub(crate) use calculation::*;
 pub(crate) use camera::*;
@@ -42,3 +44,5 @@ pub(crate) use training::*;
 pub(crate) use training_metrics::*;
 use training_setup::*;
 use training_split_workspace::*;
+use training_statistics::*;
+use training_time::*;

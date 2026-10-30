@@ -21,11 +21,16 @@ process.env.HYZ_THINGS_E2E_CONTROL_PORT = String(controlPort);
 // previously failing regressions. For every other PR and for main, use all tests.
 function focusedRegressionFilter(): RegExp | undefined {
   const eventPath = process.env.GITHUB_EVENT_PATH;
-  if (!process.env.CI || !eventPath) return undefined;
+  if (!process.env.CI || !eventPath || process.env.HYZ_THINGS_E2E_DISABLE_FOCUS === '1') return undefined;
   try {
     const event = JSON.parse(readFileSync(eventPath, 'utf8')) as {
       pull_request?: { title?: string };
     };
+    // Only PRs explicitly carrying this marker run the feature-specific E2E cases.
+    // All other PRs and pushes to main retain the complete Playwright suite.
+    if (event.pull_request?.title?.includes('[focus-training-time-e2e]')) {
+      return /sixth statistics text tab shows stored durations and heatmap|pink study clock toggles independently and remains compact|legacy morning afternoon evening countdown panel is removed/;
+    }
     if (event.pull_request?.title?.includes('[focus-study-e2e]')) {
       return /edits policy from device detail and preserves a dirty draft across a 409|iPad comprehensive 20-question flow with answer save and submit/;
     }

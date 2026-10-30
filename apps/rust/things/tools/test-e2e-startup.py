@@ -67,6 +67,7 @@ test('server startup completes', async ({{ browserName, hasTouch, isMobile }}) =
             if browser is not None:
                 environment["HYZ_THINGS_E2E_BROWSER"] = browser
             environment.update(
+                HYZ_THINGS_E2E_DISABLE_FOCUS="1",
                 HYZ_THINGS_E2E_WEB_PORT="31901",
                 HYZ_THINGS_E2E_CONTROL_PORT="31902",
                 NODE_OPTIONS=f"{environment.get('NODE_OPTIONS', '')} --require={hook}",

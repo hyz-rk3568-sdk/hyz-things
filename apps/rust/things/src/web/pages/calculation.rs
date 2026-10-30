@@ -645,6 +645,7 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                 </div>
                 if let Some((_,number,total,elapsed)) = active_info {
                     <div class="flex items-center gap-3" data-testid="calculation-progress-header">
+                        <StudyTimeInline />
                         <span class="text-xs text-base-content/65">{format!("第 {number}/{total} 题")}</span>
                         <div class="rounded-lg border border-primary/25 bg-base-100 px-3 py-1 text-right">
                             <span class="block text-[0.6rem] text-base-content/60">{"本题已用时"}</span>

@@ -10,6 +10,7 @@ mod network;
 mod proxy;
 mod status;
 mod tailscale;
+mod training_time;
 
 pub(crate) use apps::*;
 pub(crate) use auth::*;
@@ -21,6 +22,7 @@ pub(crate) use network::*;
 pub(crate) use proxy::*;
 pub(crate) use status::*;
 pub(crate) use tailscale::*;
+pub(crate) use training_time::*;
 
 #[derive(serde::Serialize)]
 #[serde(deny_unknown_fields)]
