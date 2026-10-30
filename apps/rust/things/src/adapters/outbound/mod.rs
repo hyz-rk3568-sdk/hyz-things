@@ -12,3 +12,5 @@ pub mod data_analysis;
 pub mod logic_judgment;
 
 pub mod codex_app_server;
+
+pub mod quantitative_relations;

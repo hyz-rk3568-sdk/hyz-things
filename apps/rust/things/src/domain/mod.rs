@@ -16,3 +16,5 @@ pub mod data_analysis;
 pub mod logic_judgment;
 
 pub mod vcnt;
+
+pub mod quantitative_relations;

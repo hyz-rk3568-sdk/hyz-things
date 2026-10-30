@@ -145,27 +145,53 @@ test("edits policy from device detail and preserves a dirty draft across a 409",
   await goToAppPage(page, "设备");
   await page.getByRole("button", { name: "打开设备 e2e-phone" }).click();
   const detail = page.getByRole("dialog");
-  const nameInput = detail.getByLabel("02:00:00:00:00:10 显示名");
-  const policy = detail.getByLabel("02:00:00:00:00:10 代理策略");
+  const mac = "02:00:00:00:00:10";
+  const nameInput = detail.getByLabel(`${mac} 显示名`);
+  const policy = detail.getByLabel(`${mac} 代理策略`);
+  const saveButton = detail.getByRole("button", { name: "保存设备设置" });
   await nameInput.fill("我的 iPhone");
   await policy.selectOption("direct");
-  await detail.getByRole("button", { name: "保存设备设置" }).click();
+  await saveButton.click();
   await expect(page.getByRole("status").filter({ hasText: "设备策略已保存" })).toBeVisible();
   expect((await readHarnessState(request)).device_policies).toMatchObject({
     config: {
       generation: 1,
-      entries: [{ mac: "02:00:00:00:00:10", label: "我的 iPhone", policy: "direct" }],
+      entries: [{ mac, label: "我的 iPhone", policy: "direct" }],
     },
   });
 
-  const raced = await readHarnessState(request);
-  raced.device_policies.config.generation = 2;
-  expect((await request.put(`${harnessOrigin}/state`, { data: raced })).ok()).toBeTruthy();
+  const updatePath = "/api/v1/control/proxy/device-policies";
+  const updateEndpoint = `**${updatePath}`;
+  // Advance the server generation after the browser sends its snapshot so polling cannot absorb the race.
+  await page.route(updateEndpoint, async route => {
+    const submitted = route.request().postDataJSON();
+    expect(submitted.expected_generation).toBe(1);
+    const raced = await readHarnessState(request);
+    raced.device_policies.config.generation = submitted.expected_generation + 1;
+    expect((await request.put(`${harnessOrigin}/state`, { data: raced })).ok()).toBeTruthy();
+    await route.continue();
+  });
   await nameInput.fill("冲突时保留的草稿");
   await policy.selectOption("proxy");
-  await detail.getByRole("button", { name: "保存设备设置" }).click();
+  const conflictResponse = page.waitForResponse(response =>
+    response.request().method() === "POST" && response.url().endsWith(updatePath),
+  );
+  await saveButton.click();
+  expect((await conflictResponse).status()).toBe(409);
   await expect(page.getByRole("status").filter({ hasText: "设备策略更新未完成" })).toBeVisible();
   await expect(nameInput).toHaveValue("冲突时保留的草稿");
+  await expect(policy).toHaveValue("proxy");
+  expect((await readHarnessState(request)).device_policies.config).toMatchObject({
+    generation: 2,
+    entries: [{ mac, label: "我的 iPhone", policy: "direct" }],
+  });
+  await page.unroute(updateEndpoint);
+  await saveButton.click();
+  await expect(page.getByRole("status").filter({ hasText: "设备策略已保存" })).toBeVisible();
+  expect((await readHarnessState(request)).device_policies.config).toMatchObject({
+    generation: 3,
+    entries: [{ mac, label: "冲突时保留的草稿", policy: "proxy" }],
+  });
 });
 
 test("reports save success separately when device readback fails", async ({ page }) => {
