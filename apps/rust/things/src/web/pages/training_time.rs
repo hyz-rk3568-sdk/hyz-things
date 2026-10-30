@@ -2,8 +2,7 @@
 use super::*;
 use gloo_timers::callback::Interval;
 use js_sys::{Date, Math};
-use std::rc::Rc;
-use std::cell::Cell;
+use std::{cell::{Cell,RefCell},collections::VecDeque,rc::Rc};
 
 #[derive(Clone, PartialEq)]
 pub(super) struct StudyClockValue {
@@ -14,6 +13,7 @@ pub(super) struct StudyClockValue {
 pub(super) struct StudyClockContext {
     value: UseStateHandle<Option<StudyClockValue>>,
     event: Callback<(String, Option<String>, Option<String>)>,
+    tick: u64,
 }
 #[derive(Properties, PartialEq)]
 pub(super) struct StudyClockProviderProps {
@@ -27,10 +27,16 @@ pub(super) fn study_clock_provider(props: &StudyClockProviderProps) -> Html {
     let tick = use_state(|| 0_u64);
     let warning = use_state(|| None::<String>);
     let sequence = use_mut_ref(|| 0_u64);
+    let queue = use_mut_ref(VecDeque::<TrainingTimeEventRequest>::new);
+    let processing = use_mut_ref(||false);
+    let serial = use_mut_ref(||0_u64);
     let event = {
         let value = value.clone();
         let warning = warning.clone();
         let sequence = sequence.clone();
+        let queue=queue.clone();
+        let processing=processing.clone();
+        let serial=serial.clone();
         let csrf = props.csrf.clone();
         Callback::from(move |(action,module,phase):(String,Option<String>,Option<String>)| {
             let id = {
@@ -39,31 +45,44 @@ pub(super) fn study_clock_provider(props: &StudyClockProviderProps) -> Html {
                 format!("{}-{}-{}", Date::now() as i64, (Math::random()*1_000_000_000.0) as u64, *sequence)
             };
             let request = TrainingTimeEventRequest{event_id:id,action,module,phase};
+            *serial.borrow_mut()+=1;
+            queue.borrow_mut().push_back(request);
+            if *processing.borrow() {return;}
+            *processing.borrow_mut()=true;
+            let queue=queue.clone();
+            let processing=processing.clone();
             let value=value.clone();
             let warning=warning.clone();
             let csrf=csrf.clone();
             spawn_local(async move {
-                match post_json_response_typed::<_,TrainingTimeSnapshot>(
-                    &format!("{TRAINING_TIME_ROOT}/events"),&csrf,&request,"学习计时"
-                ).await {
-                    Ok(snapshot) => {
-                        value.set(Some(StudyClockValue{snapshot,received_ms:Date::now()}));
-                        warning.set(None);
-                    },
-                    Err(err)=>warning.set(Some(format!("学习时间同步失败：{err}"))),
+                loop {
+                    let next=queue.borrow_mut().pop_front();
+                    let Some(request)=next else {break};
+                    match post_json_response_typed::<_,TrainingTimeSnapshot>(
+                        &format!("{TRAINING_TIME_ROOT}/events"),&csrf,&request,"学习计时"
+                    ).await {
+                        Ok(snapshot)=>{
+                            value.set(Some(StudyClockValue{snapshot,received_ms:Date::now()}));
+                            warning.set(None);
+                        },
+                        Err(err)=>warning.set(Some(format!("学习时间同步失败：{err}"))),
+                    }
                 }
+                *processing.borrow_mut()=false;
             });
         })
     };
     {
         let value=value.clone();
         let warning=warning.clone();
+        let serial=serial.clone();
         use_effect_with((),move |_| {
+            let seen=*serial.borrow();
             spawn_local(async move {
                 match fetch_json_typed::<TrainingTimeSnapshot>(
                     &format!("{TRAINING_TIME_ROOT}/current"),"读取学习时间"
                 ).await {
-                    Ok(snapshot)=>value.set(Some(StudyClockValue{snapshot,received_ms:Date::now()})),
+                    Ok(snapshot)=>{if *serial.borrow()==seen {value.set(Some(StudyClockValue{snapshot,received_ms:Date::now()}));}}, 
                     Err(err)=>warning.set(Some(format!("学习计时暂不可用：{err}"))),
                 }
             });
@@ -73,7 +92,7 @@ pub(super) fn study_clock_provider(props: &StudyClockProviderProps) -> Html {
     {
         let tick=tick.clone();
         use_effect_with((),move |_| {
-            let timer=Interval::new(1000,move || tick.set(*tick+1));
+            let timer=Interval::new(1000,move || tick.set(Date::now() as u64));
             move || drop(timer)
         });
     }
@@ -81,7 +100,7 @@ pub(super) fn study_clock_provider(props: &StudyClockProviderProps) -> Html {
     // A server-side grace window excludes an abandoned browser tab.
     {
         let event=event.clone();
-        let running=value.as_ref().as_ref().is_some_and(|v|v.snapshot.running);
+        let running=(*value).as_ref().is_some_and(|v|v.snapshot.running);
         use_effect_with(running,move |running| {
             let timer=if *running {
                 Some(Interval::new(15_000, move || {
@@ -93,9 +112,9 @@ pub(super) fn study_clock_provider(props: &StudyClockProviderProps) -> Html {
             move || drop(timer)
         });
     }
-    let _ = *tick;
+    let tick_value = *tick;
     html! {
-        <ContextProvider<StudyClockContext> context={StudyClockContext{value,event}}>
+        <ContextProvider<StudyClockContext> context={StudyClockContext{value,event,tick:tick_value}}>
             {for props.children.iter()}
             if let Some(message) = (*warning).clone() {
                 <div class="fixed bottom-2 right-2 z-[99] max-w-xs rounded bg-base-100 p-2 text-xs text-error shadow" role="status" data-testid="study-time-error">{message}</div>
@@ -108,7 +127,8 @@ pub(super) fn study_clock_provider(props: &StudyClockProviderProps) -> Html {
 pub(super) fn study_time_inline() -> Html {
     let ctx=use_context::<StudyClockContext>();
     let Some(ctx)=ctx else {return Html::default();};
-    let (ms,paused)=match ctx.value.as_ref() {
+    let _=ctx.tick;
+    let (ms,paused)=match (*ctx.value).as_ref() {
         Some(v)=> {
             let delta=if v.snapshot.running {
                 ((Date::now()-v.received_ms).max(0.0) as i64).min(45_000)
