@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { expectDisabledScrollShield, expectNoHorizontalOverflow, expectUnselectable, resetHarness } from "./fixtures";
 
-import { inkSnapshot as captureInk } from "./ink-fixtures";
+import { expectInlineInkControls, inkSnapshot as captureInk } from "./ink-fixtures";
 
 test.beforeEach(async ({ request }) => { await resetHarness(request); });
 
@@ -102,6 +102,50 @@ async function reopenWorkspace(page: Page) {
   await page.getByTestId("training-mode-comprehensive").click();
   await page.getByTestId("calculation-scratchpad-toggle").click();
 }
+
+test("comprehensive scratchpad tools belong to the answer header and expand from the pen", async ({page})=>{
+  await page.setViewportSize({width:1180,height:820});
+  await openHeldScrollWorkspace(page,false);
+  const answerPane=page.getByTestId("analysis-answer-pane");
+  const toggle=answerPane.getByTestId("calculation-scratchpad-toggle");
+  await expect(toggle).toHaveAttribute("aria-label","开启草稿");
+  await expectInlineInkControls(page.getByTestId("analysis-answer-header"));
+  await expect(answerPane.getByTestId("calculation-scratchpad-toolbar")).toHaveCount(0);
+  await expect(page.getByTestId("analysis-material")).not.toContainText("模拟训练材料");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-label","关闭草稿");
+  const toolbar=answerPane.getByTestId("calculation-scratchpad-toolbar");
+  await expect(toolbar).toBeVisible();
+  await expect(toolbar.getByTestId("calculation-scratchpad-undo")).toBeVisible();
+  await expect(toolbar.getByTestId("calculation-scratchpad-redo")).toBeVisible();
+  await expect(toolbar.getByTestId("calculation-scratchpad-clear")).toHaveAttribute("aria-label","清空草稿");
+  await toggle.click();
+  await expect(answerPane.getByTestId("calculation-scratchpad-toolbar")).toHaveCount(0);
+});
+
+test("comprehensive answer header scrolls the question independently", async ({page})=>{
+  await page.setViewportSize({width:820,height:430});
+  await openHeldScrollWorkspace(page);
+  const answerPane=page.getByTestId("analysis-answer-pane");
+  const question=page.getByTestId("analysis-question");
+  const down=answerPane.getByRole("button",{name:"题目向下滚动",exact:true});
+  await expect(down).toBeEnabled();
+  await down.click();
+  expect(await question.evaluate(el=>el.scrollTop)).toBe(32);
+  expect(await page.getByTestId("analysis-material-scroll").evaluate(el=>el.scrollTop)).toBe(0);
+});
+
+test("timed training navigation uses only safe area and footer spacing at the bottom", async ({page})=>{
+  const viewport = {width:1180,height:820};
+  const bottomSafeArea = 24;
+  await page.setViewportSize(viewport);
+  await openHeldScrollWorkspace(page,false);
+  await page.evaluate(value=>document.documentElement.style.setProperty('--app-safe-bottom',`${value}px`),bottomSafeArea);
+  const next=await page.getByRole('button',{name:'下一题',exact:true}).boundingBox();
+  expect(next).not.toBeNull();
+  const footerSpacing=viewport.height-bottomSafeArea-next!.y-next!.height;
+  expect(footerSpacing).toBeLessThanOrEqual(9);
+});
 
 test("IndexedDB handwriting survives navigation and reload when localStorage is full", async ({page})=>{
   await page.addInitScript(()=>{
@@ -662,7 +706,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   // The retired number-locating mode must not reappear in the workspace.
   await expect(page.getByTestId("training-mode-locating")).toHaveCount(0);
   await expect(page.getByRole("group", { name: "训练模式" }).getByRole("button")).toHaveText([
-    "速算训练", "错题复练", "综合训练", "判断形式推理", "数量关系",
+    "速算训练", "错题复练", "资料分析", "判断推理", "数量关系",
   ]);
   await expect(page.getByTestId("training-mode-logic-judgment")).toBeVisible();
   await page.getByTestId("training-mode-comprehensive").click();
@@ -699,7 +743,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   expect(material!.x).toBeLessThan(question!.x);
   expect(material!.width/(material!.width+question!.width)).toBeCloseTo(0.6,1);
   await expect(page.getByTestId("analysis-material")).toContainText("地区二为720亿元");
-  await expect(page.getByTestId("analysis-material")).toContainText("模拟训练材料");
+  await expect(page.getByTestId("analysis-material")).not.toContainText("模拟训练材料");
   await expect(page.getByTestId("analysis-material").getByRole("link")).toHaveCount(0);
   const passageText=await page.getByTestId("analysis-material").locator(".whitespace-pre-wrap").innerText();
   expect(passageText).toContain("\n\n");
@@ -720,17 +764,12 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(toggle).toHaveAttribute("aria-label", "开启草稿");
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-label", "关闭草稿");
-  await expect(toggle).toHaveText("✕");
+  await expect(toggle).toHaveText("✎");
   const controls=surface.getByTestId("calculation-scratchpad-controls");
   await expect(surface.getByTestId("calculation-scratchpad-toolbar")).toBeVisible();
   await expect(surface.getByTestId("calculation-scratchpad-close")).toHaveCount(0);
   await expect(surface.getByLabel("铅笔已选中")).toHaveCount(0);
-  const controlsBox=await controls.boundingBox();
-  const surfaceBox=await surface.boundingBox();
-  expect(controlsBox).not.toBeNull();
-  expect(surfaceBox).not.toBeNull();
-  expect(controlsBox!.y-surfaceBox!.y).toBeLessThan(20);
-  expect(surfaceBox!.x+surfaceBox!.width-(controlsBox!.x+controlsBox!.width)).toBeLessThan(20);
+  await expectInlineInkControls(page.getByTestId("analysis-answer-header"));
   await expect(scrollControls).toBeVisible();
   const scrollUp=page.getByRole("button",{name:"材料向上滚动"});
   const scrollDown=page.getByRole("button",{name:"材料向下滚动"});
@@ -824,13 +863,13 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expectNoHorizontalOverflow(page);
   await toggle.click();
   await expect(scrollControls).toBeVisible();
-  // On stacked phone layouts, material scroll controls must not sit below
-  // the expanded toolbar at the top-right of the shared ink canvas.
+  // Each stacked pane keeps its controls in its own header.
   const phoneInkControls=await controls.boundingBox();
   const phoneScrollButtons=await scrollControls.boundingBox();
   expect(phoneInkControls).not.toBeNull();
   expect(phoneScrollButtons).not.toBeNull();
-  expect(phoneScrollButtons!.x+phoneScrollButtons!.width).toBeLessThanOrEqual(phoneInkControls!.x);
+  expect(phoneScrollButtons!.y+phoneScrollButtons!.height).toBeLessThanOrEqual(phoneInkControls!.y);
+  await expectInlineInkControls(page.getByTestId("analysis-answer-header"));
   await shortPane.evaluate(el=>{el.scrollTop=0;});
   await expect(scrollUp).toBeDisabled();
   await expect(scrollDown).toBeEnabled();

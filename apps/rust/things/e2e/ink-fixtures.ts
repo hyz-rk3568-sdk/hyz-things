@@ -1,4 +1,4 @@
-import type { Locator } from '@playwright/test';
+import { expect, type Locator } from '@playwright/test';
 
 // WebKit composites incremental strokes and synchronous replay with different
 // edge alpha. Compare every occupied pixel and opaque ink color exactly.
@@ -20,4 +20,17 @@ export async function inkSnapshot(canvas: Locator): Promise<string> {
     const hash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
     return JSON.stringify({ width: surface.width, height: surface.height, colors: [...colors].sort(), hash });
   });
+}
+
+export async function expectInlineInkControls(header: Locator) {
+  const controls = header.getByTestId('calculation-scratchpad-controls');
+  await expect(controls).toBeVisible();
+  const frame = await header.boundingBox();
+  const tools = await controls.boundingBox();
+  expect(frame).not.toBeNull();
+  expect(tools).not.toBeNull();
+  expect(tools!.x).toBeGreaterThanOrEqual(frame!.x);
+  expect(tools!.y).toBeGreaterThanOrEqual(frame!.y);
+  expect(tools!.x + tools!.width).toBeLessThanOrEqual(frame!.x + frame!.width + 1);
+  expect(tools!.y + tools!.height).toBeLessThanOrEqual(frame!.y + frame!.height + 1);
 }

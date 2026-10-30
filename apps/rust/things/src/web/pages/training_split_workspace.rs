@@ -2,6 +2,9 @@
 //! Each caller owns the content and independent scrolling of its panes.
 use super::*;
 
+pub(super) const TRAINING_PANE_HEADER: &str =
+    "relative z-30 flex min-h-12 shrink-0 items-center justify-between gap-2 px-3 py-2";
+
 #[derive(Properties, PartialEq)]
 pub(super) struct TrainingSplitWorkspaceProps {
     pub(super) left: Html,

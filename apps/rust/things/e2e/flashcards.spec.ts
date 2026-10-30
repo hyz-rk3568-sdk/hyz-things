@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { expectUnselectable, resetHarness, webOrigin } from "./fixtures";
-import { inkSnapshot } from "./ink-fixtures";
+import { expectInlineInkControls, inkSnapshot } from "./ink-fixtures";
 
 test.beforeEach(async ({ request }) => {
   await resetHarness(request);
@@ -183,16 +183,11 @@ test("transparent calculation ink overlays the question, supports history and re
   await toggle.click();
   await expect(canvas).toBeVisible();
   await expect(toggle).toHaveAttribute("aria-label", "关闭草稿");
-  await expect(toggle).toHaveText("✕");
+  await expect(toggle).toHaveText("✎");
   await expect(scratchpad.getByTestId("calculation-scratchpad-toolbar")).toBeVisible();
   await expect(scratchpad.getByTestId("calculation-scratchpad-close")).toHaveCount(0);
   await expect(scratchpad.getByLabel("铅笔已选中")).toHaveCount(0);
-  const controls=await scratchpad.getByTestId("calculation-scratchpad-controls").boundingBox();
-  const surfaceBounds=await scratchpad.boundingBox();
-  expect(controls).not.toBeNull();
-  expect(surfaceBounds).not.toBeNull();
-  expect(controls!.y-surfaceBounds!.y).toBeLessThan(20);
-  expect(surfaceBounds!.x+surfaceBounds!.width-(controls!.x+controls!.width)).toBeLessThan(20);
+  await expectInlineInkControls(page.getByTestId("calculation-problem").locator(":scope > div").first());
   await expect(canvas).toHaveCSS("touch-action", "none");
   await expect(canvas).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   // Responsive full-screen scratchpad scales its backing pixels to the
@@ -385,6 +380,7 @@ test("wrong-card practice filters, reveals, self-grades and never writes FSRS", 
   await expect(canvas).toBeHidden();
   await page.getByTestId("calculation-scratchpad-toggle").click();
   await expect(canvas).toBeVisible();
+  await expectInlineInkControls(page.getByTestId("practice-card-header"));
   const practiceBitmap=await canvas.evaluate(el=>{
     const c=el as HTMLCanvasElement;
     return {width:c.width,height:c.height,displayWidth:c.clientWidth,displayHeight:c.clientHeight};
@@ -393,8 +389,8 @@ test("wrong-card practice filters, reveals, self-grades and never writes FSRS", 
   expect(practiceBitmap.height).toBeGreaterThanOrEqual(practiceBitmap.displayHeight);
   await expect(canvas).toHaveCSS("touch-action", "none");
   const blank = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
-  const bounds = await canvas.boundingBox();
-  if (!bounds) throw new Error("missing canvas bounds");
+  const bounds = await page.getByTestId("practice-card-scroll").boundingBox();
+  if (!bounds) throw new Error("missing practice content bounds");
   await page.mouse.move(bounds.x + 25, bounds.y + 30);
   await page.mouse.down();
   await page.mouse.move(bounds.x + 90, bounds.y + 80, { steps: 6 });

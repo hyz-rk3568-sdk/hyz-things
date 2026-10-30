@@ -4,6 +4,12 @@ use super::*;
 use hyz_things::domain::flashcards::{DeckSummary, FlashcardSummary, TagSummary};
 use std::collections::HashSet;
 
+#[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/training_viewport.js")]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = mountTrainingViewport)]
+    fn mount_training_viewport(root: &web_sys::Element) -> js_sys::Function;
+}
+
 const PRACTICE_PAGE_SIZE: u32 = 200;
 const PRACTICE_MAX_CANDIDATES: usize = 1000;
 
@@ -33,6 +39,20 @@ pub(crate) fn render_training(route_state: UseStateHandle<PortalRoute>, csrf: St
 
 #[function_component(TrainingWorkspace)]
 fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
+    let shell = use_node_ref();
+    {
+        let shell = shell.clone();
+        use_effect_with((), move |_| {
+            let cleanup = shell
+                .cast::<web_sys::Element>()
+                .map(|root| mount_training_viewport(&root));
+            move || {
+                if let Some(cleanup) = cleanup {
+                    let _ = cleanup.call0(&JsValue::NULL);
+                }
+            }
+        });
+    }
     let mode = use_state(|| TrainingMode::Calculation);
     let training_immersive = use_state(|| false);
     let on_immersive_change = {
@@ -79,24 +99,40 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
         let mode = mode.clone();
         Callback::from(move |_| mode.set(TrainingMode::LogicJudgment))
     };
+    let back_to_study = {
+        let route = props.route_state.clone();
+        Callback::from(move |_| {
+            navigate_route(
+                &route,
+                PortalRoute::study(StudyView::Dashboard, None, Vec::new()),
+                false,
+            )
+        })
+    };
     html! {
-        <div class={if *training_immersive { "h-dvh overflow-hidden bg-base-200" } else { "min-h-dvh bg-base-200" }} data-testid="training-layout">
+        <div ref={shell} class="training-shell" data-testid="training-layout">
             if !*training_immersive {
-            <div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 pt-[calc(1rem+var(--app-safe-top))] sm:px-8">
-                <div>
-                    <h1 class="text-xl font-bold">{"专项训练"}</h1>
-                    <p class="text-xs text-base-content/65">{"选择训练模式；速算与错题复练切换会丢弃未保存进度；逻辑判断、数量关系答案保存在服务器。"}</p>
-                </div>
-                <div class="flex flex-wrap gap-2" role="group" aria-label="训练模式">
-                    <button type="button" class={if *mode == TrainingMode::Calculation { "btn btn-primary btn-sm" } else { "btn btn-outline btn-sm" }} data-testid="training-mode-calculation" aria-pressed={(*mode == TrainingMode::Calculation).to_string()} onclick={choose_calculation}>{"速算训练"}</button>
-                    <button type="button" class={if *mode == TrainingMode::Flashcards { "btn btn-primary btn-sm" } else { "btn btn-outline btn-sm" }} data-testid="training-mode-flashcards" aria-pressed={(*mode == TrainingMode::Flashcards).to_string()} onclick={choose_flashcards}>{"错题复练"}</button>
-                    <button type="button" class={if *mode == TrainingMode::Comprehensive { "btn btn-primary btn-sm" } else { "btn btn-outline btn-sm" }} data-testid="training-mode-comprehensive" aria-pressed={(*mode == TrainingMode::Comprehensive).to_string()} onclick={choose_comprehensive}>{"综合训练"}</button>
-                    <button type="button" class={if *mode == TrainingMode::LogicJudgment { "btn btn-primary btn-sm" } else { "btn btn-outline btn-sm" }} data-testid="training-mode-logic-judgment" aria-pressed={(*mode == TrainingMode::LogicJudgment).to_string()} onclick={choose_logic}>{"判断形式推理"}</button>
-                    <button type="button" class={if *mode == TrainingMode::QuantitativeRelations { "btn btn-primary btn-sm" } else { "btn btn-outline btn-sm" }} data-testid="training-mode-quantitative" aria-pressed={(*mode == TrainingMode::QuantitativeRelations).to_string()} onclick={choose_quantitative}>{"数量关系"}</button>
-                </div>
-                <PwaControls />
-            </div>
+                <header class="training-topbar" data-testid="training-header">
+                    <div class="training-topbar-inner">
+                        <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="返回学习中心" data-testid="training-back" onclick={back_to_study}>{"‹"}</button>
+                        <h1 class="text-lg font-bold">{"专项训练"}</h1>
+                        <details class="training-more ml-auto">
+                            <summary class="btn btn-ghost btn-sm btn-square" aria-label="应用选项">{"⋯"}</summary>
+                            <div class="training-more-panel"><PwaControls /></div>
+                        </details>
+                    </div>
+                </header>
+                <nav class="training-mode-tabs" data-testid="training-modes">
+                    <div class="training-modes-inner" role="group" aria-label="训练模式">
+                        <button type="button" class="training-mode" data-testid="training-mode-calculation" aria-pressed={(*mode == TrainingMode::Calculation).to_string()} onclick={choose_calculation}>{"速算训练"}</button>
+                        <button type="button" class="training-mode" data-testid="training-mode-flashcards" aria-pressed={(*mode == TrainingMode::Flashcards).to_string()} onclick={choose_flashcards}>{"错题复练"}</button>
+                        <button type="button" class="training-mode" data-testid="training-mode-comprehensive" aria-pressed={(*mode == TrainingMode::Comprehensive).to_string()} onclick={choose_comprehensive}>{"资料分析"}</button>
+                        <button type="button" class="training-mode" data-testid="training-mode-logic-judgment" aria-pressed={(*mode == TrainingMode::LogicJudgment).to_string()} onclick={choose_logic}>{"判断推理"}</button>
+                        <button type="button" class="training-mode" data-testid="training-mode-quantitative" aria-pressed={(*mode == TrainingMode::QuantitativeRelations).to_string()} onclick={choose_quantitative}>{"数量关系"}</button>
+                    </div>
+                </nav>
             }
+            <main class="min-h-0 flex-1 overflow-hidden" data-testid="training-mode-content">
             if *mode == TrainingMode::Calculation {
                 {render_calculation_training(props.route_state.clone(),on_immersive_change.clone())}
             } else if *mode == TrainingMode::Flashcards {
@@ -109,6 +145,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
             } else {
                 <ComprehensiveTraining csrf={props.csrf.clone()} on_immersive_change={on_immersive_change} on_exit={exit_comprehensive} />
             }
+            </main>
         </div>
     }
 }
@@ -501,23 +538,25 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
             };
             html! {
                 <section class="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col gap-2" data-testid="practice-question">
-                    <div class="flex shrink-0 items-center justify-between gap-3 py-1 text-sm text-base-content/60">
-                        <span>{format!("第 {progress} / {} 题", live.questions.len())}</span>
-                        <span class="truncate">{question.deck_path.clone()}</span>
-                    </div>
                     <div class="min-h-0 flex-1">
                         <InkOverlay question_index={live.index} responsive={true}>
-                            <article class="flex h-full min-h-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100">
-                                <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4" data-testid="practice-card-scroll">
-                                    <div class="study-markdown" data-testid="practice-front">{render_markdown(&question.front_markdown, &question.source_file)}</div>
-                                    if current_revealed {
-                                        <div class="mt-4 border-t border-base-content/10 pt-3" data-testid="practice-back">
-                                            <h3 class="mb-3 font-bold">{"原卡片解析"}</h3>
-                                            <div class="study-markdown">{render_markdown(&question.back_markdown, &question.source_file)}</div>
-                                        </div>
-                                    }
+                            <div class="flex h-full min-h-0 flex-col gap-2">
+                                <div class="relative z-30 flex shrink-0 flex-wrap items-center justify-between gap-2 py-1 text-sm text-base-content/60" data-testid="practice-card-header">
+                                    <span>{format!("第 {progress} / {} 题", live.questions.len())}</span>
+                                    <div class="ml-auto flex min-w-0 items-center gap-2"><span class="truncate">{question.deck_path.clone()}</span><InkToolbarSlot /></div>
                                 </div>
-                            </article>
+                                <article class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100">
+                                    <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4" data-testid="practice-card-scroll">
+                                        <div class="study-markdown" data-testid="practice-front">{render_markdown(&question.front_markdown, &question.source_file)}</div>
+                                        if current_revealed {
+                                            <div class="mt-4 border-t border-base-content/10 pt-3" data-testid="practice-back">
+                                                <h3 class="mb-3 font-bold">{"原卡片解析"}</h3>
+                                                <div class="study-markdown">{render_markdown(&question.back_markdown, &question.source_file)}</div>
+                                            </div>
+                                        }
+                                    </div>
+                                </article>
+                            </div>
                         </InkOverlay>
                     </div>
                     <footer class="flex shrink-0 flex-col gap-2 py-1" data-testid="practice-controls">
@@ -587,22 +626,23 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
         };
         let candidate_count = (*candidates).as_ref().map(Vec::len).unwrap_or(0);
         html! {
-            <section class="mx-auto grid max-w-3xl gap-4 px-4 pb-8 pt-5" data-testid="practice-setup">
-                <div class="rounded-box border border-base-content/10 bg-base-100 p-5">
-                    <h2 class="text-xl font-bold">{"Flashcard 错题复练"}</h2>
+            <TrainingSetupLayout test_id="practice-setup" summary={format!("本轮 {} 张",count.min(candidate_count))} detail={format!("{} 张候选卡片",candidate_count)}
+                action={Some(html!{<button type="button" class={TRAINING_PRIMARY_BUTTON} data-testid="practice-start" disabled={candidate_count==0 || candidate_error.is_some()} onclick={start}>{"开始复练 →"}</button>})}>
+                <div class="training-config">
+                    <h2 class="font-bold">{"Flashcard 错题复练"}</h2>
                     <p class="mt-2 text-sm text-base-content/65">{"从已同步卡片读取 Front，手写后看 Back，自评不改变记忆复习计划。"}</p>
                     <div class="mt-4 grid gap-3">
                         <label class="grid gap-2">
-                            <span class="font-semibold">{"Deck"}</span>
-                            <select class="select select-bordered w-full" data-testid="practice-deck-filter" value={(*deck).clone()} onchange={pick_deck}>
-                                <option value="">{"全部 Deck"}</option>
+                            <span class="font-semibold">{"卡组"}</span>
+                            <select class="select select-bordered w-full text-base" data-testid="practice-deck-filter" value={(*deck).clone()} onchange={pick_deck}>
+                                <option value="">{"全部卡组"}</option>
                                 {for decks.iter().map(|item| html! {
                                     <option value={item.path.clone()} selected={*deck == item.path}>{format!("{} ({})", item.path, item.card_count)}</option>
                                 })}
                             </select>
                         </label>
                         <fieldset class="grid gap-2">
-                            <legend class="font-semibold">{"Tag（多选取交集）"}</legend>
+                            <legend class="font-semibold">{"标签（多选取交集）"}</legend>
                             <div class="flex flex-wrap gap-2" data-testid="practice-tag-filter">
                                 {for available_tags.iter().map(|tag| {
                                     let tag_name = tag.tag.clone();
@@ -627,21 +667,7 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
                             </div>
                             <p class="text-xs text-base-content/60">{"默认选中「错题」，可叠加其他标签或取消以练习全部卡片。"}</p>
                         </fieldset>
-                        <label class="grid max-w-48 gap-2">
-                            <span class="font-semibold">{"本轮题数"}</span>
-                            <select class="select select-bordered w-full" data-testid="practice-count" value={count.to_string()} onchange={{
-                                let requested_count = requested_count.clone();
-                                Callback::from(move |event: Event| {
-                                    if let Ok(value @ (10 | 20 | 50)) = event.target_unchecked_into::<HtmlSelectElement>().value().parse::<usize>() {
-                                        requested_count.set(value);
-                                    }
-                                })
-                            }}>
-                                {for [10, 20, 50].into_iter().map(|value| html! {
-                                    <option value={value.to_string()} selected={count == value}>{format!("{value} 题")}</option>
-                                })}
-                            </select>
-                        </label>
+                        <div class="training-count-row mt-3"><span class="font-semibold">{"本轮题数"}</span><TrainingQuestionCount value={count} unit="张" test_id="practice-count" on_change={{let count=requested_count.clone();Callback::from(move |value|count.set(value))}} /></div>
                     </div>
                     if let Some(error) = (*scope_error).clone() {
                         <p class="mt-3 text-sm text-error" role="alert">{error}</p>
@@ -660,19 +686,22 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
                             }
                         </p>
                     }
-                    <button type="button" class="btn btn-primary mt-4" data-testid="practice-start" disabled={candidate_count == 0 || candidate_error.is_some()} onclick={start}>{"开始复练"}</button>
                 </div>
-            </section>
+            </TrainingSetupLayout>
         }
     };
 
     html! {
-        <div class={if is_training_immersive { format!("calculation-layout {}",FIXED_TRAINING_LAYOUT) } else { "calculation-layout min-h-dvh".to_owned() }} data-testid="practice-layout" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
-            <div class={if is_training_immersive { "mx-auto flex w-full shrink-0 justify-end pb-2" } else { "mx-auto flex max-w-5xl justify-end px-4 pt-2" }}>
-                <button type="button" class="btn btn-ghost btn-sm" data-testid="practice-back-to-study" onclick={go_back}>{if is_training_immersive { "← 返回专项训练" } else { "← 返回学习中心" }}</button>
+        <div class={if is_training_immersive { format!("calculation-layout {}",FIXED_TRAINING_LAYOUT) } else { "calculation-layout flex h-full min-h-0 flex-col overflow-hidden".to_owned() }} data-testid="practice-layout" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
+            if is_training_immersive {
+            <div class="mx-auto flex w-full shrink-0 justify-end pb-2">
+                <button type="button" class="btn btn-ghost btn-sm" data-testid="practice-back-to-study" onclick={go_back}>{"← 返回专项训练"}</button>
             </div>
+            }
             if is_training_immersive {
                 <div class="min-h-0 flex-1 overflow-hidden">{content}</div>
+            } else if session.as_ref().is_some_and(|state|state.finished) {
+                <TrainingSetupLayout test_id="practice-results-layout">{content}</TrainingSetupLayout>
             } else {
                 {content}
             }

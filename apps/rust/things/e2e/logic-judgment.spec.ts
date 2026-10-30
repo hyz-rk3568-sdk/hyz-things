@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 import { expectDisabledScrollShield, resetHarness, expectNoHorizontalOverflow } from './fixtures';
 
+import { expectInlineInkControls } from './ink-fixtures';
+
 const DEFAULT_LOGIC_PROMPT='默认出题要求';
 
 test.beforeEach(async ({ request }) => { await resetHarness(request); });
@@ -407,6 +409,7 @@ test("quantitative scratch ink follows the quantitative question and answer pane
   await page.getByTestId('quant-resume').click();
   const toggle=page.getByTestId('calculation-scratchpad-toggle');
   const canvas=page.getByTestId('calculation-scratchpad-canvas');
+  await expectInlineInkControls(page.getByTestId('quant-answer-pane').locator(':scope > div').first());
   await toggle.click();
   await expect(page.getByTestId('calculation-scratchpad-save-status')).toHaveText('草稿已保存到本机');
   const hasInk=()=>canvas.evaluate(element=>{
@@ -433,6 +436,12 @@ test("quantitative scratch ink follows the quantitative question and answer pane
   await expect.poll(hasInk).toBe(false);
   await drawInPane('quant-answer-scroll',18);
   await expect(page.getByTestId('calculation-scratchpad-save-status')).toHaveText('草稿已保存到本机');
+  await page.getByTestId('quant-submit').click();
+  await expect(page.getByTestId('quant-result')).toBeVisible();
+  await expectInlineInkControls(page.getByTestId('quant-answer-pane').locator(':scope > div').first());
+  await expect(page.getByTestId('calculation-scratchpad-save-status')).toHaveText('草稿已保存到本机');
+  await toggle.click();
+  await expect.poll(hasInk).toBe(true);
 });
 
 test("transparent ink controls do not cover the single question stem on mobile", async ({ page }) => {
@@ -448,11 +457,12 @@ test("transparent ink controls do not cover the single question stem on mobile",
   const rightBox=await right.boundingBox();
   expect(leftBox!.y+leftBox!.height).toBeLessThanOrEqual(rightBox!.y+2);
   await page.getByTestId('calculation-scratchpad-toggle').click();
-  const question=await page.getByTestId('logic-question').boundingBox();
+  const question=await page.getByTestId('logic-answer-scroll').boundingBox();
+  await expectInlineInkControls(right.locator(':scope > div').first());
   const controls=await page.getByTestId('calculation-scratchpad-controls').boundingBox();
   expect(question).not.toBeNull();
   expect(controls).not.toBeNull();
-  expect(question!.y).toBeGreaterThanOrEqual(controls!.y+controls!.height+4);
+  expect(question!.y).toBeGreaterThanOrEqual(controls!.y+controls!.height);
   const questionScroll=page.getByTestId('logic-question-scroll');
   const answerScroll=page.getByTestId('logic-answer-scroll');
   const questionDown=page.getByRole('button',{name:'题目向下滚动',exact:true});
@@ -487,6 +497,7 @@ test("logic judgment keeps controls inside PWA safe areas across viewports", asy
     expect((await screen.locator('header').boundingBox())!.y).toBeGreaterThanOrEqual(40);
     const box=(await next.boundingBox())!;
     expect(box.y+box.height).toBeLessThanOrEqual(viewport.height-24);
+    expect(viewport.height-24-box.y-box.height).toBeLessThanOrEqual(9);
     await expectNoHorizontalOverflow(page);
     const leftPane=await page.getByTestId('logic-question-pane').boundingBox();
     const rightPane=await page.getByTestId('logic-answer-pane').boundingBox();

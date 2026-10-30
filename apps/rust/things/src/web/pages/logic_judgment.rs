@@ -125,7 +125,7 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
             left={html! {
                 <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100"
                     data-testid={format!("{prefix}-question-pane")}>
-                <div class="relative z-30 flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-16 sm:px-6 md:pt-3">
+                <div class={classes!(TRAINING_PANE_HEADER, "flex-wrap")}>
                     <div class="flex min-w-0 items-center gap-3 text-xs text-base-content/60">
                         <span>{format!("第 {}/10 题", props.question_index + 1)}</span>
                         <span>{props.status}</span>
@@ -149,8 +149,9 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
             right={html! {
                 <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100"
                     data-testid={format!("{prefix}-answer-pane")}>
-                <div class="relative z-30 flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-3 sm:px-6 md:pt-16">
+                <div class={classes!(TRAINING_PANE_HEADER, "flex-wrap")}>
                     <span class="text-xs font-semibold text-base-content/60">{props.right_title}</span>
+                    <div class="ml-auto flex shrink-0 items-center gap-1">
                     if scratchpad_open {
                         <div class="flex shrink-0 gap-1" role="group" aria-label="选项滚动" data-testid={format!("{prefix}-answer-scroll-buttons")}>
                             <MaterialScrollButton passage={answer_scroll.clone()} up={true}
@@ -159,6 +160,8 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
                                 disabled={!answer_edges.can_scroll_down} question_index={props.question_index} target="选项" />
                         </div>
                     }
+                    <InkToolbarSlot />
+                    </div>
                 </div>
                 <article ref={answer_scroll} onscroll={on_scroll}
                     class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y px-4 pb-8 sm:px-6"
@@ -702,11 +705,11 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     }
     if *history_open {
         return html! {
-            <section class="mx-auto max-w-4xl space-y-4 p-5" data-testid={format!("{prefix}-history")}>
-                <div class="flex items-center justify-between">
+            <TrainingSetupLayout test_id={format!("{prefix}-history")} heading={Some(html!{                <div class="flex items-center justify-between">
                     <h2 class="text-xl font-bold">{format!("{subject}练习历史")}</h2>
                     <button class="btn btn-outline btn-sm" onclick={{let history_open=history_open.clone(); Callback::from(move |_|history_open.set(false))}}>{"返回训练"}</button>
-                </div>
+                </div>})}>
+                <div class="space-y-4">
                 if history.is_empty() { <p class="text-sm text-base-content/60">{format!("尚无已交卷的{subject}训练。")}</p> }
                 {for history.iter().map(|h| {
                     let finished=Date::new(&JsValue::from_f64(h.ended_at_ms as f64)).to_locale_string("zh-CN",&JsValue::UNDEFINED);
@@ -726,15 +729,19 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                     }
                 })}
                 {alert}
-            </section>
+                </div>
+            </TrainingSetupLayout>
         };
     }
     let answered: i64 = statistics.iter().map(|s| s.answered_count as i64).sum();
     let correct: i64 = statistics.iter().map(|s| s.correct_count as i64).sum();
     html! {
-        <section class="mx-auto max-w-3xl p-4 sm:p-6" data-testid={format!("{prefix}-setup")}>
-            <div class="rounded-box bg-base-100 p-5 sm:p-7">
-                <h2 class="text-xl font-bold">{title}</h2>
+        <TrainingSetupLayout test_id={format!("{prefix}-setup")} summary={format!("10题 · {}分钟",seconds/60)} detail="试卷准备完成后再进入答题"
+            action={Some(html!{<button type="button" class={TRAINING_PRIMARY_BUTTON} data-testid={format!("{prefix}-prepare")}
+                disabled={*busy || job.is_some() || status.as_ref().is_none_or(|state|!state.configured || state.eligible_cards<10)} onclick={invoke(LogicAction::Prepare)}>
+                {if job.is_some() {"正在出题中…"} else {"准备试卷 →"}}</button>})}>
+            <div class="training-config">
+                <h2 class="font-bold">{title}</h2>
                 <p class="mt-1 text-sm text-base-content/60">{subtitle}</p>
                 <div class="mt-5 grid gap-3">
                     if !unfinished.is_empty() {
@@ -768,7 +775,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         <div class="mt-3 space-y-3">
                             <p class="text-xs text-base-content/60">{"仅调整难度与命题偏好，系统仍固定题型范围及 Codex 自检约束。"}</p>
                             <label for="logic-prompt" class="text-sm">{"补充偏好（保留题型范围与 Codex 自检要求）"}</label>
-                            <textarea id="logic-prompt" class="textarea textarea-bordered w-full min-h-48 font-mono text-sm leading-6" maxlength="8000" value={(*prompt).clone()} oninput={{let prompt=prompt.clone(); Callback::from(move |e: InputEvent| {let target:web_sys::HtmlTextAreaElement=e.target_unchecked_into();prompt.set(target.value());})}}/>
+                            <textarea id="logic-prompt" class="textarea textarea-bordered w-full min-h-48 font-mono text-base leading-6" maxlength="8000" value={(*prompt).clone()} oninput={{let prompt=prompt.clone(); Callback::from(move |e: InputEvent| {let target:web_sys::HtmlTextAreaElement=e.target_unchecked_into();prompt.set(target.value());})}}/>
                             <div class="flex flex-wrap justify-end gap-2">
                                 <button class="btn btn-outline btn-sm" disabled={*busy} onclick={invoke(LogicAction::ResetPrompt)}>{"恢复默认"}</button>
                                 <button class="btn btn-primary btn-sm" disabled={*busy} onclick={invoke(LogicAction::Prompt)}>{"保存用户提示"}</button>
@@ -822,11 +829,10 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                     if let Some(state)=status.as_ref() {
                         if !state.configured {<p class="text-error text-sm" role="status">{"请先配置 Codex 出题服务。"}</p>}
                         if state.eligible_cards<10 {<p class="text-error text-sm" role="status">{"至少需要10张不同的有效卡片。"}</p>}
-                        <button class="btn btn-primary w-full" data-testid={format!("{prefix}-prepare")} disabled={*busy || job.is_some() || !state.configured || state.eligible_cards<10}
-                            onclick={invoke(LogicAction::Prepare)}>{if job.is_some() {"正在出题中…（可以切换页面）"} else {"✨ 智能出题"}}</button>
+
                     }
                 </div>
             </div>
-        </section>
+        </TrainingSetupLayout>
     }
 }
