@@ -380,7 +380,6 @@ fn bind_questions(
         .collect()
 }
 
-#[allow(dead_code)]
 fn output_schema() -> Value {
     let question = json!({
         "type":"object", "additionalProperties":false,
@@ -883,7 +882,9 @@ Codex 自行验算每题数值、边界、单位、正确选项唯一性、解�
             result=self.connect()=>result?,
             _=cancelled.wait_for(|value|*value)=>return Err("服务正在停止".into()),
         };
-        let output = session.turn_cancellable(&prompt, cancellation).await?;
+        let output = session
+            .turn_cancellable_with_schema(&prompt, cancellation, output_schema())
+            .await?;
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
         struct Batch {

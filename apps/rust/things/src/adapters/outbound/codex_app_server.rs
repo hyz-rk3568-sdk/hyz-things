@@ -258,6 +258,15 @@ impl CodexSession {
         Self::connect_at(SERVER, token, cwd).await
     }
 
+    #[cfg(test)]
+    pub(super) async fn connect_test_server(
+        address: std::net::SocketAddr,
+        token: &str,
+        cwd: &str,
+    ) -> Result<Self, String> {
+        Self::connect_at(&address.to_string(), token, cwd).await
+    }
+
     async fn connect_at(address: &str, token: &str, cwd: &str) -> Result<Self, String> {
         validate_token(token)?;
         let mut socket = TcpStream::connect(address)
@@ -668,6 +677,68 @@ mod tests {
             complete_test_turn(&mut socket, "completed").await;
             assert_eq!(task.await.unwrap().unwrap(), "{}");
         }
+    }
+
+    #[tokio::test]
+    async fn quantitative_generation_uses_its_own_schema_and_decodes_ten_questions() {
+        use super::super::data_analysis::CodexConfig;
+        use crate::application::quantitative_relations::{
+            QuantitativeGenerationPort, QuantitativeGenerationRequest, QuantitativeGenerationTarget,
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let generator = CodexConfig::for_test_server(listener.local_addr().unwrap());
+        let request = QuantitativeGenerationRequest {
+            targets: (0..10)
+                .map(|i| QuantitativeGenerationTarget {
+                    target_id: format!("target-{i}"),
+                    card_id: format!("card-{i}"),
+                    card_path: "数量/经济利润/cards.md".into(),
+                    front: "利润率".into(),
+                    back: "利润除以成本".into(),
+                    kind: "quantitative".into(),
+                })
+                .collect(),
+            user_prompt: "数量出题偏好".into(),
+        };
+        let task =
+            tokio::spawn(async move { generator.generate(request, watch::channel(false).0).await });
+        let mut socket = accept_session(&listener).await;
+        let turn = client_message(&mut socket).await;
+        let schema = &turn["params"]["outputSchema"];
+        assert_eq!(schema["required"], json!(["questions"]));
+        assert_eq!(schema["properties"]["questions"]["minItems"], 10);
+        assert_eq!(schema["properties"]["questions"]["maxItems"], 10);
+        assert_eq!(
+            schema["properties"]["questions"]["items"]["properties"]["kind"]["enum"],
+            json!(["quantitative"])
+        );
+        let questions: Vec<_> = (0..10)
+            .map(|i| {
+                json!({
+                    "target_id": format!("target-{i}"), "kind":"quantitative",
+                    "question":format!("数量题 {i}"), "options":["1","2","3","4"],
+                    "correct_index":0, "explanation":"数量解析"
+                })
+            })
+            .collect();
+        server_message(
+            &mut socket,
+            json!({"id":turn["id"],"result":{"turn":{"id":"turn-1"}}}),
+        )
+        .await;
+        server_message(
+            &mut socket,
+            json!({"method":"item/completed","params":{
+                "threadId":"test-thread","turnId":"turn-1",
+                "item":{"type":"agentMessage","text":json!({"questions":questions}).to_string()}
+            }}),
+        )
+        .await;
+        complete_test_turn(&mut socket, "completed").await;
+        let generated = task.await.unwrap().unwrap();
+        assert_eq!(generated.len(), 10);
+        assert!(generated.iter().all(|q| q.kind == "quantitative"));
     }
 
     async fn start_test_turn(socket: &mut TcpStream) {
