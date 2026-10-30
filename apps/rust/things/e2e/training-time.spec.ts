@@ -30,7 +30,7 @@ async function clockFixture(page:Page) {
   return events;
 }
 
-test('sixth statistics text tab shows stored durations and heatmap',async({page})=>{
+test("sixth statistics text tab shows stored durations and heatmap",async({page})=>{
   await clockFixture(page);
   await page.goto('/#/study/training');
   const tab=page.getByTestId('training-mode-statistics');
@@ -43,7 +43,7 @@ test('sixth statistics text tab shows stored durations and heatmap',async({page}
   await expect(page.getByTestId('training-header')).toBeVisible();
 });
 
-test('pink study clock toggles independently and remains compact',async({page})=>{
+test("pink study clock toggles independently and remains compact",async({page})=>{
   const events=await clockFixture(page);
   await page.goto('/#/study/training');
   const clock=page.getByTestId('study-time-inline');

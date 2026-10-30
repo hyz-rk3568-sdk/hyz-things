@@ -2,7 +2,7 @@
 use super::*;
 use gloo_timers::callback::Interval;
 use js_sys::{Date, Math};
-use std::{cell::{Cell,RefCell},collections::VecDeque,rc::Rc};
+use std::collections::VecDeque;
 
 #[derive(Clone, PartialEq)]
 pub(super) struct StudyClockValue {
@@ -12,7 +12,7 @@ pub(super) struct StudyClockValue {
 #[derive(Clone, PartialEq)]
 pub(super) struct StudyClockContext {
     value: UseStateHandle<Option<StudyClockValue>>,
-    event: Callback<(String, Option<String>, Option<String>)>,
+    pub(super) event: Callback<(String, Option<String>, Option<String>)>,
     tick: u64,
 }
 #[derive(Properties, PartialEq)]
