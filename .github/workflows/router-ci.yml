@@ -15,6 +15,8 @@ on:
     branches:
       - main
     paths:
+      # Study/portal changes also run all three CI suites on the shared PR.
+      - "apps/rust/things/**"
       - "apps/rust/router/**"
       - "apps/rust/contract/**"
       - "tools/stage-mihomo-geodata.sh"

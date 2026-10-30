@@ -41,6 +41,7 @@ struct LogicScrollPaneProps {
 
 #[function_component(LogicScrollPane)]
 fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
+    let prefix = props.prefix;
     let question_scroll = use_node_ref();
     let answer_scroll = use_node_ref();
     let scratchpad_open = use_context::<bool>().unwrap_or(false);
@@ -697,7 +698,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                     <h2 class="text-xl font-bold">{format!("{subject}练习历史")}</h2>
                     <button class="btn btn-outline btn-sm" onclick={{let history_open=history_open.clone(); Callback::from(move |_|history_open.set(false))}}>{"返回训练"}</button>
                 </div>
-                if history.is_empty() { <p class="text-sm text-base-content/60">{"尚无已交卷的逻辑判断训练。"}</p> }
+                if history.is_empty() { <p class="text-sm text-base-content/60">{format!("尚无已交卷的{subject}训练。")}</p> }
                 {for history.iter().map(|h| {
                     let finished=Date::new(&JsValue::from_f64(h.ended_at_ms as f64)).to_locale_string("zh-CN",&JsValue::UNDEFINED);
                     html! {
@@ -724,7 +725,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     html! {
         <section class="mx-auto max-w-3xl p-4 sm:p-6" data-testid={format!("{prefix}-setup")}>
             <div class="rounded-box bg-base-100 p-5 sm:p-7">
-                <h2 class="text-xl font-bold">{"逻辑判断综合训练"}</h2>
+                <h2 class="text-xl font-bold">{title}</h2>
                 <p class="mt-1 text-sm text-base-content/60">{subtitle}</p>
                 <div class="mt-5 grid gap-3">
                     if !unfinished.is_empty() {

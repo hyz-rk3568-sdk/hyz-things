@@ -380,6 +380,7 @@ fn bind_questions(
         .collect()
 }
 
+#[allow(dead_code)]
 fn output_schema() -> Value {
     let question = json!({
         "type":"object", "additionalProperties":false,
@@ -809,7 +810,7 @@ impl QuantitativeRelationsService {
             .into_iter()
             .map(|t| CardPerformance {
                 card_id: t.card.id,
-                category: "形式推理".into(),
+                category: t.card.card_path.split('/').take(2).collect::<Vec<_>>().join("/"),
                 card_path: t.card.card_path,
                 front: t.card.front,
                 back: t.card.back,
@@ -831,15 +832,42 @@ impl QuantitativeGenerationPort for CodexConfig {
         request: QuantitativeGenerationRequest,
         cancellation: watch::Sender<bool>,
     ) -> Result<Vec<GeneratedQuestion>, String> {
+        // Follow the verified data-analysis generation contract: the server fixes
+        // all target cards and checks shape/identity, while Codex checks mathematics.
+        let targets_text = request
+            .targets
+            .iter()
+            .map(|target| format!(
+                "【目标 {id}】\\n题型：{kind}\\n卡片ID：{card_id}\\n路径：{path}\\n### Front\\n{front}\\n### Back\\n{back}",
+                id = target.target_id,
+                kind = target.kind,
+                card_id = target.card_id,
+                path = target.card_path,
+                front = target.front,
+                back = target.back,
+            ))
+            .collect::<Vec<_>>()
+            .join("\\n\\n");
         let prompt = format!(
-            r#"你是 hyz 行测数量关系命题 Agent。先阅读仓库 .agents/skills/行测做题/SKILL.md、references/数量关系.md 和 references/小P-数量关系-解题方法.md。
-固定要求：恰好10道全新四选一独立数量关系题，每个 target_id 恰好对应一题，禁止换卡或复用目标；kind 固定 quantitative。只涵盖经济利润、工程效率、行程、溶液、最值、排列组合、概率和周期，不出几何、特殊题型、数字推理或一拖多题组。每题题干独立完整，包含计算所需全部条件。
-方法以用户已同步卡片为准，先判题型、抓不变量、能用比例就份数化，复杂问题方程兜底；仅作为思路要求，绝不把答案或做法泄露在题干中。
-Codex 必须自行反算验证数值、单位、边界、答案唯一、选项无歧义、correct_index与解析完全一致；不确定则修正后再输出。只输出 outputSchema 的 JSON，correct_index 为0到3。
-指定卡片：{}
-用户命题要求：{}"#,
-            serde_json::to_string(&request.targets).map_err(error)?,
-            request.user_prompt
+            r#"【固定规则 / 应用端约束】
+你是 hyz 行测数量关系命题 Agent。先阅读仓库 .agents/skills/行测做题/SKILL.md、references/数量关系.md 和 references/小P-数量关系-解题方法.md。
+根据后端指定的已同步 Flashcard 命题，生成恰好10道原创四选一独立题，每张卡片恰好对应一道，target_id 不可更换和复用，kind 固定 quantitative。
+只涵盖经济利润、工程效率、行程、溶液、最值、排列组合、概率、周期；排除几何、特殊题型、数字推理与共享材料题。题干只陈述独立完整的已知条件，不泄露思路、公式、答案。
+遵循资料分析已验证的命题责任分工：应用只检验结构、题量、选项、目标唯一性，数学正确性和语义唯一性由 Codex 自检。
+
+【本轮动态上下文】
+所选10张卡由 SQLite 依据本模块 VCNT 排序产生，有方法卡也可有真实错题卡。每张必须生成一题；先识别相关方法再构思不同的完整题目，避免简单替换旧题数字。
+Codex 自行验算每题数值、边界、单位、正确选项唯一性、解析与 correct_index 一致性；发现不确定必须先修正后输出。
+
+【本轮固定 Flashcard】
+{targets_text}
+
+【用户出题要求 / 自定义】
+{user_prompt}
+
+只输出合法 JSON：{{"questions":[{{"target_id":"...","kind":"quantitative","question":"...","options":["...","...","...","..."],"correct_index":0,"explanation":"..."}}]}}，题目恰好10道，correct_index 从0到3，不要前言。"#,
+            targets_text = targets_text,
+            user_prompt = request.user_prompt,
         );
         let mut cancelled = cancellation.subscribe();
         let mut session = tokio::select! {
@@ -847,7 +875,7 @@ Codex 必须自行反算验证数值、单位、边界、答案唯一、选项�
             _=cancelled.wait_for(|value|*value)=>return Err("服务正在停止".into()),
         };
         let output = session
-            .turn_cancellable_with_schema(&prompt, cancellation, output_schema())
+            .turn_cancellable(&prompt, cancellation)
             .await?;
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]

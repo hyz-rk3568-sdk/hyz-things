@@ -130,12 +130,10 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                             .map(|()| Arc::new(service) as Arc<dyn LogicJudgmentPort>),
                         Err(_) => None,
                     };
-                let quantitative_relations = QuantitativeRelationsService::new(repository.pool().clone(), ai_config)
-                    .ok()
-                    .and_then(|service| {
-                        let service = Arc::new(service);
-                        Some(service)
-                    });
+                let quantitative_relations =
+                    QuantitativeRelationsService::new(repository.pool().clone(), ai_config)
+                        .ok()
+                        .map(Arc::new);
                 if let Some(service) = &quantitative_relations {
                     let _ = service.recover_interrupted().await;
                 }

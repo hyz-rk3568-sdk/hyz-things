@@ -6,7 +6,6 @@ tags:
 ---
 
 ## Card
-<!-- hyz-card-id: 019a2345-6789-7abc-8def-000000000013 -->
 
 ### Front
 
@@ -19,7 +18,6 @@ tags:
 ---
 
 ## Card
-<!-- hyz-card-id: 019a2345-6789-7abc-8def-000000000014 -->
 
 ### Front
 
@@ -32,7 +30,6 @@ tags:
 ---
 
 ## Card
-<!-- hyz-card-id: 019a2345-6789-7abc-8def-000000000015 -->
 
 ### Front
 
