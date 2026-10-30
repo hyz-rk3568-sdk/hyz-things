@@ -1,8 +1,8 @@
 # hyz-things 专项训练学习计时与统计 — 实施 Plan
 
-> 状态：实施中（PR #88，尚待 CI 验证和合并）  
-> 目标仓库：`hyz-rk3568-sdk/hyz-things`  
-> 涉及应用：`apps/rust/things`（Rust + Yew + Axum + SQLite）  
+> 状态：实施中（PR #88，尚待 CI 验证和合并）
+> 目标仓库：`hyz-rk3568-sdk/hyz-things`
+> 涉及应用：`apps/rust/things`（Rust + Yew + Axum + SQLite）
 > UI 基准：已确认的专项训练计时原型 v2；以用户最新确认的“两个计时器完全独立”为准。
 
 ## 1. 目标
