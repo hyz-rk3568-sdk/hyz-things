@@ -661,7 +661,9 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await page.goto("/#/study/training");
   // The retired number-locating mode must not reappear in the workspace.
   await expect(page.getByTestId("training-mode-locating")).toHaveCount(0);
-  await expect(page.getByRole("group",{name:"训练模式"}).getByRole("button")).toHaveCount(4);
+  await expect(page.getByRole("group", { name: "训练模式" }).getByRole("button")).toHaveText([
+    "速算训练", "错题复练", "综合训练", "判断形式推理", "数量关系",
+  ]);
   await expect(page.getByTestId("training-mode-logic-judgment")).toBeVisible();
   await page.getByTestId("training-mode-comprehensive").click();
   await expect(page.getByTestId("analysis-setup")).toBeVisible();
