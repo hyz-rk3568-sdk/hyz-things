@@ -62,3 +62,29 @@ $$
 ---
 
 ## Card
+<!-- hyz-card-id: 01a186d5-5938-71d0-bb63-bbcf5ead112a -->
+
+### Front
+
+小P｜两难推理：如何利用 A 和非 A 两条分支？
+
+### Back
+
+**前件全覆盖，两条路都推出同一个结论，就锁定必真。**
+$$
+(A\to B)\land(\neg A\to B)\Rightarrow B
+$$
+
+两条分支推出不同结论时：
+$$
+(A\to B)\land(\neg A\to C)\Rightarrow B\lor C
+$$
+
+同一前件推出矛盾时：
+$$
+(A\to B)\land(A\to\neg B)\Rightarrow\neg A
+$$
+
+小P把**两难推理**作为组合排列中串联条件的常用方法；使用时须确认 A 与非 A 是真正互补的两个情况。
+
+---
