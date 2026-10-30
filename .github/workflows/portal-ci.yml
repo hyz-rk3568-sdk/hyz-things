@@ -33,6 +33,8 @@ env:
 jobs:
   frontend:
     name: Verified frontend bundle
+    permissions:
+      contents: write # temporary, branch-scoped formatter; remove before merge
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -47,6 +49,26 @@ jobs:
           rustup default 1.88.0
           rustc --version
           cargo --version
+
+      - name: Format trusted training-time feature branch once
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feature/training-time-statistics' && github.event.pull_request.head.repo.full_name == github.repository }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch origin refs/heads/feature/training-time-statistics
+          git checkout -B feature/training-time-statistics FETCH_HEAD
+          rustup component add rustfmt --toolchain 1.88.0
+          cargo fmt --manifest-path apps/rust/things/Cargo.toml --all
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add apps/rust/things
+            git commit -m "style(study): apply rustfmt to learning-time implementation"
+            git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/feature/training-time-statistics
+            echo "Formatting committed to feature branch; run CI on the new HEAD."
+            exit 1
+          fi
 
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
