@@ -421,7 +421,8 @@ fn card_from_db(
     hash: String,
 ) -> Option<CardCandidate> {
     // Never accept paths from unrelated modules or nested subdecks.
-    let (kind, category) = if let Some(name) = wrong_question_category(&deck) {
+    let wrong_source = wrong_question_source(&deck);
+    let (kind, category) = if let Some((name, _)) = wrong_source {
         (SourceKind::Wrong, name)
     } else {
         (SourceKind::Knowledge, knowledge_card_category(&deck)?)
@@ -443,9 +444,12 @@ fn card_from_db(
     }
     // The canonical display path is reconstructed from a verified deck, not
     // trusted from an arbitrary source_file path.
-    let card_path = match kind {
-        SourceKind::Wrong => format!("flashcards/资料/错题/{category}/{leaf}"),
-        SourceKind::Knowledge => format!("flashcards/资料/{category}/{leaf}"),
+    let card_path = match (kind, wrong_source) {
+        (SourceKind::Wrong, Some((_, true))) => {
+            format!("flashcards/资料/{category}/错题/{leaf}")
+        }
+        (SourceKind::Wrong, _) => format!("flashcards/资料/错题/{category}/{leaf}"),
+        (SourceKind::Knowledge, _) => format!("flashcards/资料/{category}/{leaf}"),
     };
     Some(CardCandidate {
         id,
@@ -1882,23 +1886,26 @@ fn valid_wrong_category(category: &str) -> bool {
         && !category.chars().any(char::is_control)
 }
 
-/// The directory immediately beneath flashcards/资料/错题/ is the skill.
-/// The flashcard import root can point at flashcards/, 资料/ or 错题's parent.
-fn wrong_question_category(deck: &str) -> Option<&str> {
+/// Accept the legacy 资料/错题/<skill> layout and the current
+/// 资料/<skill>/错题 layout. Only verified product roots and skill segments pass.
+fn wrong_question_source(deck: &str) -> Option<(&str, bool)> {
     let parts = deck
         .split('/')
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>();
     let index = parts.iter().position(|part| *part == "错题")?;
     let prefix = &parts[..index];
-    if !prefix.is_empty() && prefix != ["资料"] && prefix != ["flashcards", "资料"] {
-        return None;
-    }
-    let category = *parts.get(index + 1)?;
-    if !valid_wrong_category(category) {
-        return None;
-    }
-    Some(category)
+    let (category, skill_precedes_wrong_folder) = match prefix {
+        [] | ["资料"] | ["flashcards", "资料"] => (*parts.get(index + 1)?, false),
+        ["资料", category] | ["flashcards", "资料", category] => (*category, true),
+        _ => return None,
+    };
+    valid_wrong_category(category).then_some((category, skill_precedes_wrong_folder))
+}
+
+#[cfg(test)]
+fn wrong_question_category(deck: &str) -> Option<&str> {
+    wrong_question_source(deck).map(|(category, _)| category)
 }
 
 #[cfg(test)]
@@ -1909,6 +1916,14 @@ mod tests {
         assert_eq!(
             wrong_question_category("资料/错题/乘积增长率"),
             Some("乘积增长率")
+        );
+        assert_eq!(
+            wrong_question_category("资料/乘除变化/错题"),
+            Some("乘除变化")
+        );
+        assert_eq!(
+            wrong_question_category("flashcards/资料/线段混合/错题"),
+            Some("线段混合")
         );
         assert_eq!(
             wrong_question_category("错题/混合增长率"),
@@ -1925,6 +1940,81 @@ mod tests {
         assert_eq!(wrong_question_category("资料/错题"), None);
         assert_eq!(wrong_question_category("资料/线段混合"), None);
         assert_eq!(wrong_question_category("其他/错题/乘积增长率"), None);
+    }
+
+    #[test]
+    fn candidates_keep_the_verified_asset_path_for_each_wrong_question_layout() {
+        let current = card_from_db(
+            "00000000-0000-7000-8000-000000000001".into(),
+            "/import/资料/乘除变化/错题/cards.md".into(),
+            "资料/乘除变化/错题".into(),
+            "Front".into(),
+            "Back".into(),
+            "hash".into(),
+        )
+        .unwrap();
+        assert_eq!(current.category, "乘除变化");
+        assert_eq!(current.card_path, "flashcards/资料/乘除变化/错题/cards.md");
+        let legacy = card_from_db(
+            "00000000-0000-7000-8000-000000000002".into(),
+            "/import/资料/错题/乘除变化/cards.md".into(),
+            "资料/错题/乘除变化".into(),
+            "Front".into(),
+            "Back".into(),
+            "hash".into(),
+        )
+        .unwrap();
+        assert_eq!(legacy.card_path, "flashcards/资料/错题/乘除变化/cards.md");
+    }
+
+    #[test]
+    fn current_wrong_question_layout_can_fill_all_four_passages() {
+        let data_categories = [
+            ("乘除变化", 6, 9),
+            ("假设代入思想", 1, 2),
+            ("分数比较大小", 2, 4),
+            ("增长贡献率和拉动增长率", 3, 1),
+            ("年均变化", 7, 1),
+            ("线段混合", 1, 2),
+            ("计算方法及误差分析", 2, 9),
+        ];
+        let mut serial = 1;
+        let mut cards = Vec::new();
+        for (category, knowledge_count, wrong_count) in data_categories {
+            for (deck, count) in [
+                (format!("资料/{category}"), knowledge_count),
+                (format!("资料/{category}/错题"), wrong_count),
+            ] {
+                for _ in 0..count {
+                    cards.push(
+                        card_from_db(
+                            format!("00000000-0000-7000-8000-{serial:012x}"),
+                            format!("/import/{deck}/cards.md"),
+                            deck.clone(),
+                            "Front".into(),
+                            "Back".into(),
+                            format!("hash-{serial}"),
+                        )
+                        .unwrap(),
+                    );
+                    serial += 1;
+                }
+            }
+        }
+        assert_eq!(cards.len(), 50);
+        let plan = plan_question_targets(&cards, 1, &CardSchedule::default()).unwrap();
+        assert!(plan
+            .groups
+            .iter()
+            .all(|group| group.len() == QUIZ_PER_GROUP));
+        assert!(plan.groups.iter().all(|group| {
+            group
+                .iter()
+                .map(|target| target.card.category.as_str())
+                .collect::<HashSet<_>>()
+                .len()
+                == QUIZ_PER_GROUP
+        }));
     }
 
     fn candidate(category: &str, id: usize, source_kind: SourceKind) -> CardCandidate {

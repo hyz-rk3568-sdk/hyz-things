@@ -162,17 +162,20 @@ struct PaneViewport {
     scroll_y: f64,
 }
 
-fn pane_viewport(canvas: &HtmlCanvasElement, pane: InkPane) -> Option<PaneViewport> {
-    let document = web_sys::window()?.document()?;
-    let selector = match pane {
+fn pane_selector(pane: InkPane) -> &'static str {
+    match pane {
         InkPane::Material => {
-            "[data-testid='analysis-material-scroll'], [data-testid='logic-question-scroll']"
+            "[data-testid='analysis-material-scroll'], [data-testid='logic-question-scroll'], [data-testid='quant-question-scroll']"
         }
         InkPane::Question => {
-            "[data-testid='analysis-question'], [data-testid='logic-answer-scroll']"
+            "[data-testid='analysis-question'], [data-testid='logic-answer-scroll'], [data-testid='quant-answer-scroll']"
         }
-    };
-    let element = document.query_selector(selector).ok()??;
+    }
+}
+
+fn pane_viewport(canvas: &HtmlCanvasElement, pane: InkPane) -> Option<PaneViewport> {
+    let document = web_sys::window()?.document()?;
+    let element = document.query_selector(pane_selector(pane)).ok()??;
     let canvas_rect = canvas.get_bounding_client_rect();
     let rect = element.get_bounding_client_rect();
     Some(PaneViewport {
@@ -393,7 +396,7 @@ pub(crate) struct InkOverlayProps {
     pub(crate) persist_key: String,
     #[prop_or_default]
     pub(crate) responsive: bool,
-    // Content-relative pen coordinates are specific to comprehensive training.
+    // Content-relative coordinates are used by paper-style study views.
     // Other responsive ink overlays retain their normalized screen coordinates.
     #[prop_or_default]
     pub(crate) scroll_linked: bool,
@@ -597,13 +600,8 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
             let mut listeners = Vec::new();
             if scroll_linked && *opened {
                 if let Some(document) = web_sys::window().and_then(|w| w.document()) {
-                    for selector in [
-                        "[data-testid='analysis-material-scroll']",
-                        "[data-testid='analysis-question']",
-                        "[data-testid='logic-question-scroll']",
-                        "[data-testid='logic-answer-scroll']",
-                    ] {
-                        if let Ok(Some(element)) = document.query_selector(selector) {
+                    for pane in [InkPane::Material, InkPane::Question] {
+                        if let Ok(Some(element)) = document.query_selector(pane_selector(pane)) {
                             if element
                                 .add_event_listener_with_callback(
                                     "scroll",

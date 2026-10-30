@@ -67,17 +67,21 @@ test("logic judgment persists answers, recovers deadline and reviews exact-paper
   expect(prepared).toBe(0);
 });
 
-async function logicFixture(page: import('@playwright/test').Page) {
+async function logicFixture(page: import('@playwright/test').Page, subject: 'logic' | 'quant' = 'logic') {
   const now = Date.now();
+  const prefix = subject;
+  const endpoint = subject === 'quant' ? 'quantitative-relations' : 'logic-judgment';
+  const trainingMode = subject === 'quant' ? 'quantitative' : 'logic-judgment';
+  const durationSeconds = subject === 'quant' ? 900 : 600;
   const state = {
-    run: {id:'logic-boundary',status:'active',deadline_at_ms:now+600000 as number|null,paused_remaining_ms:null as number|null,server_now_ms:now,duration_seconds:600,
+    run: {id:'logic-boundary',status:'active',deadline_at_ms:now+durationSeconds*1000 as number|null,paused_remaining_ms:null as number|null,server_now_ms:now,duration_seconds:durationSeconds,
       questions:Array.from({length:10},(_,i)=>({question:`单题 ${i+1}`,options:['甲','乙','丙','丁']})),answers:Array<number|null>(10).fill(null)},
     job: null as string|null, ready:false, polls:0, prepared:0, submitted:0,
     available:true, started:0, eligible:24, configured:true,
     failAnswer:false, saveGate:null as Promise<void>|null,
     prompt:'原提示', promptWrites:[] as unknown[],
   };
-  await page.route('**/api/v1/study/logic-judgment/**',async route=>{
+  await page.route(`**/api/v1/study/${endpoint}/**`,async route=>{
     const path=new URL(route.request().url()).pathname;
     const body=route.request().postDataJSON();
     let data:unknown={};
@@ -125,8 +129,8 @@ async function logicFixture(page: import('@playwright/test').Page) {
   });
   const open=async()=>{
     await page.goto('/#/study/training');
-    await page.getByTestId('training-mode-logic-judgment').click();
-    await expect(page.getByTestId('logic-setup')).toContainText('当前有效卡片');
+    await page.getByTestId(`training-mode-${trainingMode}`).click();
+    await expect(page.getByTestId(`${prefix}-setup`)).toContainText('当前有效卡片');
   };
   return {state,open};
 }
@@ -394,6 +398,41 @@ test("disabled logic scroll buttons shield text in practice and review", async (
       await expectNoHorizontalOverflow(page);
     }
   }
+});
+
+test("quantitative scratch ink follows the quantitative question and answer panes", async ({ page }) => {
+  await page.setViewportSize({width:834,height:1112});
+  const {open}=await logicFixture(page,'quant');
+  await open();
+  await page.getByTestId('quant-resume').click();
+  const toggle=page.getByTestId('calculation-scratchpad-toggle');
+  const canvas=page.getByTestId('calculation-scratchpad-canvas');
+  await toggle.click();
+  await expect(page.getByTestId('calculation-scratchpad-save-status')).toHaveText('草稿已保存到本机');
+  const hasInk=()=>canvas.evaluate(element=>{
+    const bitmap=element as HTMLCanvasElement;
+    const data=bitmap.getContext('2d')!.getImageData(0,0,bitmap.width,bitmap.height).data;
+    for(let i=3;i<data.length;i+=4) if(data[i]!==0) return true;
+    return false;
+  });
+  const drawInPane=async(testId:string,pointerId:number)=>{
+    const paneBox=await page.getByTestId(testId).boundingBox();
+    expect(paneBox).not.toBeNull();
+    const pointer={pointerId,pointerType:'pen',isPrimary:true,button:0,buttons:1,
+      clientX:paneBox!.x+paneBox!.width/2,clientY:paneBox!.y+paneBox!.height/2};
+    await canvas.dispatchEvent('pointerdown',pointer);
+    await canvas.dispatchEvent('pointermove',{...pointer,clientX:pointer.clientX+40,clientY:pointer.clientY+35});
+    await canvas.dispatchEvent('pointerup',{...pointer,buttons:0});
+    await expect.poll(hasInk).toBe(true);
+  };
+  await drawInPane('quant-question-scroll',17);
+  await expect(page.getByTestId('calculation-scratchpad-save-status')).toHaveText('草稿已保存到本机');
+  const clear=page.getByTestId('calculation-scratchpad-clear');
+  await expect(clear).toBeEnabled();
+  await clear.click();
+  await expect.poll(hasInk).toBe(false);
+  await drawInPane('quant-answer-scroll',18);
+  await expect(page.getByTestId('calculation-scratchpad-save-status')).toHaveText('草稿已保存到本机');
 });
 
 test("transparent ink controls do not cover the single question stem on mobile", async ({ page }) => {
