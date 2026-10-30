@@ -7,6 +7,8 @@ use gloo_timers::callback::Interval;
 pub(crate) struct LogicJudgmentProps {
     pub csrf: String,
     pub on_immersive_change: Callback<bool>,
+    #[prop_or_default]
+    pub quantitative: bool,
 }
 
 #[derive(Clone)]
@@ -30,6 +32,7 @@ enum LogicAction {
 #[derive(Properties, PartialEq)]
 struct LogicScrollPaneProps {
     question_index: usize,
+    prefix: &'static str,
     status: &'static str,
     right_title: &'static str,
     question: Html,
@@ -116,17 +119,17 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
     }
 
     html! {
-        <TrainingSplitWorkspace test_id="logic-scroll-workspace" split_at_md={true}
+        <TrainingSplitWorkspace test_id={if props.prefix == "logic" {"logic-scroll-workspace"} else {"quant-scroll-workspace"}} split_at_md={true}
             left={html! {
                 <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100"
-                    data-testid="logic-question-pane">
+                    data-testid={format!("{prefix}-question-pane")}>
                 <div class="relative z-30 flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-16 sm:px-6 md:pt-3">
                     <div class="flex min-w-0 items-center gap-3 text-xs text-base-content/60">
                         <span>{format!("第 {}/10 题", props.question_index + 1)}</span>
                         <span>{props.status}</span>
                     </div>
                     if scratchpad_open {
-                        <div class="flex shrink-0 gap-1" role="group" aria-label="题目滚动" data-testid="logic-scroll-buttons">
+                        <div class="flex shrink-0 gap-1" role="group" aria-label="题目滚动" data-testid={format!("{prefix}-scroll-buttons")}>
                             <MaterialScrollButton passage={question_scroll.clone()} up={true}
                                 disabled={!question_edges.can_scroll_up} question_index={props.question_index} target="题目" />
                             <MaterialScrollButton passage={question_scroll.clone()} up={false}
@@ -136,18 +139,18 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
                 </div>
                 <article ref={question_scroll} onscroll={on_scroll.clone()}
                     class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y px-4 pb-8 sm:px-6"
-                    data-testid="logic-question-scroll">
+                    data-testid={format!("{prefix}-question-scroll")}>
                     {props.question.clone()}
                 </article>
                 </section>
             }}
             right={html! {
                 <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100"
-                    data-testid="logic-answer-pane">
+                    data-testid={format!("{prefix}-answer-pane")}>
                 <div class="relative z-30 flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-3 sm:px-6 md:pt-16">
                     <span class="text-xs font-semibold text-base-content/60">{props.right_title}</span>
                     if scratchpad_open {
-                        <div class="flex shrink-0 gap-1" role="group" aria-label="选项滚动" data-testid="logic-answer-scroll-buttons">
+                        <div class="flex shrink-0 gap-1" role="group" aria-label="选项滚动" data-testid={format!("{prefix}-answer-scroll-buttons")}>
                             <MaterialScrollButton passage={answer_scroll.clone()} up={true}
                                 disabled={!answer_edges.can_scroll_up} question_index={props.question_index} target="选项" />
                             <MaterialScrollButton passage={answer_scroll.clone()} up={false}
@@ -157,7 +160,7 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
                 </div>
                 <article ref={answer_scroll} onscroll={on_scroll}
                     class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y px-4 pb-8 sm:px-6"
-                    data-testid="logic-answer-scroll">
+                    data-testid={format!("{prefix}-answer-scroll")}>
                     {props.answers.clone()}
                 </article>
                 </section>
@@ -168,6 +171,24 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
 
 #[function_component(LogicJudgmentTraining)]
 pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
+    // The same independent-question UI serves formal reasoning and quantitative relations.
+    // Data analysis separately uses the same split workspace, navigation, ink and metrics.
+    let root: &'static str = if props.quantitative { QUANT_ROOT } else { LOGIC_ROOT };
+    let prefix: &'static str = if props.quantitative { "quant" } else { "logic" };
+    let subject: &'static str = if props.quantitative { "数量关系" } else { "逻辑判断" };
+    let title: &'static str = if props.quantitative { "数量关系训练" } else { "逻辑判断综合训练" };
+    let seconds: u64 = if props.quantitative { 900 } else { 600 };
+    let subtitle: &'static str = if props.quantitative {
+        "经济利润、工程、行程、溶液、最值、排列组合、概率与周期 · 10题/15分钟 · 支持暂停"
+    } else {
+        "形式推理 · 10题/10分钟 · 支持暂停"
+    };
+    let pool_description: &'static str = if props.quantitative {
+        "按已同步的数量关系方法卡自动选择10张不同有效卡，覆盖经济利润至周期；不出共享材料题组。"
+    } else {
+        "从直言命题、联言选言假言命题、组合排列、特殊题型的方法卡和错题卡中智能选取10张，不出一拖多题组。"
+    };
+
     let status = use_state(|| None::<LogicStatus>);
     let unfinished = use_state(Vec::<LogicRun>::new);
     let history = use_state(Vec::<LogicHistory>::new);
@@ -240,13 +261,13 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
             spawn_local(async move {
                 let loaded = async {
                     let state: LogicStatus =
-                        fetch_json(&format!("{LOGIC_ROOT}/status"), "逻辑判断状态").await?;
+                        fetch_json(&format!("{root}/status"), "逻辑判断状态").await?;
                     let pending: Vec<LogicRun> =
-                        fetch_json(&format!("{LOGIC_ROOT}/unfinished"), "未完成试卷").await?;
+                        fetch_json(&format!("{root}/unfinished"), "未完成试卷").await?;
                     let records: Vec<LogicHistory> =
-                        fetch_json(&format!("{LOGIC_ROOT}/history"), "历史记录").await?;
+                        fetch_json(&format!("{root}/history"), "历史记录").await?;
                     let settings: UserPromptSettings =
-                        fetch_json(&format!("{LOGIC_ROOT}/user-prompt"), "用户提示").await?;
+                        fetch_json(&format!("{root}/user-prompt"), "用户提示").await?;
                     Ok::<_, String>((state, pending, records, settings))
                 }
                 .await;
@@ -264,7 +285,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                     Err(message) => error.set(Some(message)),
                 }
                 match fetch_json::<Vec<LogicPerformance>>(
-                    &format!("{LOGIC_ROOT}/card-performance"),
+                    &format!("{root}/card-performance"),
                     "卡片统计",
                 )
                 .await
@@ -287,7 +308,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 spawn_local(async move {
                     while check.get() {
                         match fetch_json::<PrepareProgress>(
-                            &format!("{LOGIC_ROOT}/prepare/{id}"),
+                            &format!("{root}/prepare/{id}"),
                             "出题进度",
                         )
                         .await
@@ -362,7 +383,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                     match command {
                         LogicAction::Prepare => {
                             let task: PrepareTask = post_json_response(
-                                &format!("{LOGIC_ROOT}/prepare"),
+                                &format!("{root}/prepare"),
                                 &csrf,
                                 &EmptyRequest {},
                                 "出题",
@@ -371,9 +392,9 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                             job.set(Some(task.job_id));
                         }
                         LogicAction::Open(id) => {
-                            let active = enter_logic_run(&id, &csrf).await?;
+                            let active = enter_drill_run(root, seconds, &id, &csrf).await?;
                             if active.status == "submitted" {
-                                let score = read_logic_result(&id).await?;
+                                let score = read_drill_result(root, &id).await?;
                                 result.set(Some(score));
                                 run.set(None);
                                 reload.set(*reload + 1);
@@ -387,7 +408,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         LogicAction::Answer(question, choice) => {
                             if let Some(mut active) = (*run).clone() {
                                 post_json(
-                                    &format!("{LOGIC_ROOT}/runs/{}/answers", active.id),
+                                    &format!("{root}/runs/{}/answers", active.id),
                                     &csrf,
                                     &LogicAnswer { question, choice },
                                     "保存答案",
@@ -402,7 +423,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                                 let exiting = matches!(command, LogicAction::PauseAndExit);
                                 if active.paused_remaining_ms.is_none() || !exiting {
                                     let updated: LogicRun = post_json_response(
-                                        &format!("{LOGIC_ROOT}/runs/{}/pause", active.id),
+                                        &format!("{root}/runs/{}/pause", active.id),
                                         &csrf,
                                         &EmptyRequest {},
                                         "暂停或继续训练",
@@ -420,7 +441,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         LogicAction::Submit => {
                             if let Some(active) = run.as_ref() {
                                 let score: LogicResult = post_json_response(
-                                    &format!("{LOGIC_ROOT}/runs/{}/submit", active.id),
+                                    &format!("{root}/runs/{}/submit", active.id),
                                     &csrf,
                                     &EmptyRequest {},
                                     "交卷",
@@ -432,19 +453,19 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                             }
                         }
                         LogicAction::Result(id) => {
-                            let score = read_logic_result(&id).await?;
+                            let score = read_drill_result(root, &id).await?;
                             result.set(Some(score));
                             run.set(None);
                         }
                         LogicAction::Retry(id) => {
                             let retry: LogicRetry = post_json_response(
-                                &format!("{LOGIC_ROOT}/runs/{id}/retry"),
+                                &format!("{root}/runs/{id}/retry"),
                                 &csrf,
                                 &EmptyRequest {},
                                 "重做原卷",
                             )
                             .await?;
-                            let active = enter_logic_run(&retry.run_id, &csrf).await?;
+                            let active = enter_drill_run(root, seconds, &retry.run_id, &csrf).await?;
                             offset.set(active.server_now_ms as f64 - Date::now());
                             current.set(0);
                             result.set(None);
@@ -452,7 +473,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         }
                         LogicAction::ResetPrompt => {
                             let settings: UserPromptSettings = post_json_response(
-                                &format!("{LOGIC_ROOT}/user-prompt"),
+                                &format!("{root}/user-prompt"),
                                 &csrf,
                                 &UserPromptUpdate { user_prompt: None },
                                 "恢复默认出题要求",
@@ -462,7 +483,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         }
                         LogicAction::Prompt => {
                             let settings: UserPromptSettings = post_json_response(
-                                &format!("{LOGIC_ROOT}/user-prompt"),
+                                &format!("{root}/user-prompt"),
                                 &csrf,
                                 &UserPromptUpdate {
                                     user_prompt: Some((*prompt).clone())
@@ -536,14 +557,14 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     if let Some(active) = run.as_ref() {
         if let Some(remaining_ms) = active.paused_remaining_ms {
             return html! {
-                <section class="analysis-fullscreen analysis-paused fixed inset-0 z-[70] flex h-dvh w-screen items-center justify-center overflow-hidden bg-base-200 p-4" data-testid="logic-paused">
+                <section class="analysis-fullscreen analysis-paused fixed inset-0 z-[70] flex h-dvh w-screen items-center justify-center overflow-hidden bg-base-200 p-4" data-testid={format!("{prefix}-paused")}>
                     <div class="w-full max-w-md rounded-box bg-base-100 p-6 text-center sm:p-8">
                         <h2 class="text-2xl font-bold">{"训练已暂停"}</h2>
                         <p class="mt-3 text-sm text-base-content/60">{"题目已隐藏，暂停期间不能答题。刷新或退出后剩余时间保持不变。"}</p>
-                        <p class="my-6 font-mono text-3xl" role="timer" data-testid="logic-clock">{format!("{:02}:{:02}", remaining_ms.max(0)/60000, (remaining_ms.max(0)/1000)%60)}</p>
+                        <p class="my-6 font-mono text-3xl" role="timer" data-testid={format!("{prefix}-clock")}>{format!("{:02}:{:02}", remaining_ms.max(0)/60000, (remaining_ms.max(0)/1000)%60)}</p>
                         <div class="flex flex-wrap justify-center gap-3">
                             <button class="btn btn-outline" disabled={*busy} onclick={invoke(LogicAction::PauseAndExit)}>{"← 退出训练"}</button>
-                            <button class="btn btn-primary" data-testid="logic-continue" disabled={*busy} onclick={invoke(LogicAction::Pause)}>{"继续计时"}</button>
+                            <button class="btn btn-primary" data-testid={format!("{prefix}-continue")} disabled={*busy} onclick={invoke(LogicAction::Pause)}>{"继续计时"}</button>
                         </div>
                         {alert}
                     </div>
@@ -553,24 +574,24 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
         let index = (*current).min(active.questions.len().saturating_sub(1));
         let question = &active.questions[index];
         return html! {
-            <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" data-testid="logic-run">
+            <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" data-testid={format!("{prefix}-run")}>
                 <header class="analysis-header flex shrink-0 items-center justify-between gap-2 border-b border-base-content/10 pb-2">
                     <div class="flex min-w-0 items-center gap-2">
                         <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={invoke(LogicAction::PauseAndExit)}>{"← 暂停并退出"}</button>
-                        <strong class="truncate text-sm">{"逻辑判断综合训练"}</strong>
+                        <strong class="truncate text-sm">{title}</strong>
                         <span class="hidden text-xs text-base-content/60 sm:inline">{format!("第 {}/10 题",index+1)}</span>
                     </div>
                     <div class="flex shrink-0 items-center gap-2">
-                        <button type="button" role="timer" class={if remaining<=60 {"btn btn-ghost font-mono text-xl text-error"} else {"btn btn-ghost font-mono text-xl"}} data-testid="logic-clock" title="点击暂停计时" disabled={*busy || remaining==0} onclick={invoke(LogicAction::Pause)}>{format!("{:02}:{:02}",remaining/60,remaining%60)}</button>
-                        <button class="btn btn-sm btn-error btn-outline" data-testid="logic-submit" disabled={*busy} onclick={invoke(LogicAction::Submit)}>{"交卷"}</button>
+                        <button type="button" role="timer" class={if remaining<=60 {"btn btn-ghost font-mono text-xl text-error"} else {"btn btn-ghost font-mono text-xl"}} data-testid={format!("{prefix}-clock")} title="点击暂停计时" disabled={*busy || remaining==0} onclick={invoke(LogicAction::Pause)}>{format!("{:02}:{:02}",remaining/60,remaining%60)}</button>
+                        <button class="btn btn-sm btn-error btn-outline" data-testid={format!("{prefix}-submit")} disabled={*busy} onclick={invoke(LogicAction::Submit)}>{"交卷"}</button>
                     </div>
                 </header>
                 {alert}
                 <div class="relative min-h-0 flex-1 overflow-hidden">
-                    <InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("logic-{}-{index}",active.id)}>
-                        <LogicScrollPane question_index={index} status="作答中" right_title="选项"
+                    <InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("{prefix}-{}-{index}",active.id)}>
+                        <LogicScrollPane prefix={prefix} question_index={index} status="作答中" right_title="选项"
                             question={html! {
-                                <div class="study-markdown whitespace-pre-wrap break-words text-lg font-semibold leading-8" data-testid="logic-question">
+                                <div class="study-markdown whitespace-pre-wrap break-words text-lg font-semibold leading-8" data-testid={format!("{prefix}-question")}>
                                     {render_markdown(&question.question, "")}
                                 </div>
                             }}
@@ -579,7 +600,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                                     let selected = active.answers[index] == Some(choice);
                                     html! {
                                         <button class={classes!("btn", "h-auto", "min-h-14", "justify-start", "whitespace-normal", "py-3", "text-left", if selected { "btn-primary" } else { "btn-outline" })}
-                                            data-testid="logic-choice" aria-pressed={selected.to_string()} disabled={*busy || remaining == 0}
+                                            data-testid={format!("{prefix}-choice")} aria-pressed={selected.to_string()} disabled={*busy || remaining == 0}
                                             onclick={invoke(LogicAction::Answer(index, choice))}>
                                             <span class="mr-2 shrink-0">{format!("{} ·", (b'A' + choice as u8) as char)}</span>
                                             <span class="study-markdown min-w-0">{render_markdown(text, "")}</span>
@@ -596,8 +617,8 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                     &active.answers.iter().map(|answer| answer.is_some().then_some(true)).collect::<Vec<_>>(),
                     false,
                     None,
-                    "logic-navigation",
-                    "logic-question-tab",
+                    if prefix == "logic" { "logic-navigation" } else { "quant-navigation" },
+                    if prefix == "logic" { "logic-question-tab" } else { "quant-question-tab" },
                 )}
             </section>
         };
@@ -613,29 +634,29 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
             "未答"
         };
         return html! {
-            <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" data-testid="logic-result">
+            <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" data-testid={format!("{prefix}-result")}>
                 <header class="analysis-header flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2">
                     <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={invoke(LogicAction::Back)}>{"← 返回训练"}</button>
                     <strong class="text-sm">{format!("答卷结果 · {} / {}",score.correct,score.total)}</strong>
-                    <button class="btn btn-primary btn-sm" data-testid="logic-retry" disabled={*busy} onclick={invoke(LogicAction::Retry(score.id.clone()))}>{"重做原题"}</button>
+                    <button class="btn btn-primary btn-sm" data-testid={format!("{prefix}-retry")} disabled={*busy} onclick={invoke(LogicAction::Retry(score.id.clone()))}>{"重做原题"}</button>
                 </header>
                 {alert}
                 <div class="relative min-h-0 flex-1 overflow-hidden">
-                    <InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("logic-{}-{index}",score.id)}>
-                        <LogicScrollPane question_index={index} status={grade} right_title="答案与解析"
+                    <InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("{prefix}-{}-{index}",score.id)}>
+                        <LogicScrollPane prefix={prefix} question_index={index} status={grade} right_title="答案与解析"
                             question={html! {
-                                <div class="study-markdown whitespace-pre-wrap break-words text-lg font-semibold leading-8" data-testid="logic-question">
+                                <div class="study-markdown whitespace-pre-wrap break-words text-lg font-semibold leading-8" data-testid={format!("{prefix}-question")}>
                                     {render_markdown(&q.question, "")}
                                 </div>
                             }}
                             answers={html! {
-                                <div data-testid="logic-review-content">
+                                <div data-testid={format!("{prefix}-review-content")}>
                                     <div class="grid gap-2">{for q.options.iter().enumerate().map(|(i,option)| {
                         let style = if i==q.correct_index {"flex items-center justify-between rounded-box border border-success bg-success/10 p-3 text-success"}
                             else if q.chosen==Some(i) {"flex items-center justify-between rounded-box border border-error bg-error/10 p-3 text-error"}
                             else {"flex items-center justify-between rounded-box border border-base-content/20 p-3"};
                         let hint = if i==q.correct_index {"✓ 正确答案"} else if q.chosen==Some(i) {"✕ 你的错选"} else {""};
-                        html! {<div class={style} data-testid="logic-review-choice">
+                        html! {<div class={style} data-testid={format!("{prefix}-review-choice")}>
                             <span class="flex min-w-0 items-start gap-2"><span class="shrink-0">{format!("{}.",(b'A'+i as u8) as char)}</span><span class="study-markdown min-w-0">{render_markdown(option, "")}</span></span><span class="shrink-0 text-xs">{hint}</span>
                         </div>}
                     })}</div>
@@ -663,17 +684,17 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                     &score.questions.iter().map(|q| q.chosen.map(|chosen| chosen == q.correct_index)).collect::<Vec<_>>(),
                     true,
                     None,
-                    "logic-navigation",
-                    "logic-question-tab",
+                    if prefix == "logic" { "logic-navigation" } else { "quant-navigation" },
+                    if prefix == "logic" { "logic-question-tab" } else { "quant-question-tab" },
                 )}
             </section>
         };
     }
     if *history_open {
         return html! {
-            <section class="mx-auto max-w-4xl space-y-4 p-5" data-testid="logic-history">
+            <section class="mx-auto max-w-4xl space-y-4 p-5" data-testid={format!("{prefix}-history")}>
                 <div class="flex items-center justify-between">
-                    <h2 class="text-xl font-bold">{"逻辑判断练习历史"}</h2>
+                    <h2 class="text-xl font-bold">{format!("{subject}练习历史")}</h2>
                     <button class="btn btn-outline btn-sm" onclick={{let history_open=history_open.clone(); Callback::from(move |_|history_open.set(false))}}>{"返回训练"}</button>
                 </div>
                 if history.is_empty() { <p class="text-sm text-base-content/60">{"尚无已交卷的逻辑判断训练。"}</p> }
@@ -701,14 +722,14 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     let answered: i64 = statistics.iter().map(|s| s.answered_count as i64).sum();
     let correct: i64 = statistics.iter().map(|s| s.correct_count as i64).sum();
     html! {
-        <section class="mx-auto max-w-3xl p-4 sm:p-6" data-testid="logic-setup">
+        <section class="mx-auto max-w-3xl p-4 sm:p-6" data-testid={format!("{prefix}-setup")}>
             <div class="rounded-box bg-base-100 p-5 sm:p-7">
                 <h2 class="text-xl font-bold">{"逻辑判断综合训练"}</h2>
-                <p class="mt-1 text-sm text-base-content/60">{"形式推理 · 每卷10道独立题 · 10分钟 · 支持暂停与恢复"}</p>
+                <p class="mt-1 text-sm text-base-content/60">{subtitle}</p>
                 <div class="mt-5 grid gap-3">
                     if !unfinished.is_empty() {
-                        <div class="space-y-3 rounded-box border border-primary/30 bg-primary/5 p-4" data-testid="logic-unfinished">
-                            <h3 class="font-semibold">{"未完成的逻辑判断训练"}</h3>
+                        <div class="space-y-3 rounded-box border border-primary/30 bg-primary/5 p-4" data-testid={format!("{prefix}-unfinished")}>
+                            <h3 class="font-semibold">{format!("未完成的{subject}训练")}</h3>
                             <p class="text-xs text-base-content/60">{"答案和剩余时间保存在设备，暂停后可以随时回来继续。"}</p>
                             {for unfinished.iter().map(|r| {
                                 let name=if r.status=="prepared" {"尚未开始"} else if r.paused_remaining_ms.is_some() {"已暂停"} else {"进行中"};
@@ -718,21 +739,21 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                                             <div class="font-semibold text-sm">{format!("{} · 已作答 {}/10 题",name,r.answers.iter().flatten().count())}</div>
                                             <p class="text-xs text-base-content/60">{if let Some(ms)=r.paused_remaining_ms {format!("剩余 {:02}:{:02}",ms.max(0)/60000,(ms.max(0)/1000)%60)} else {"服务器保存答题进度".into()}}</p>
                                         </div>
-                                        <button class="btn btn-primary btn-sm" data-testid="logic-resume" disabled={*busy} onclick={invoke(LogicAction::Open(r.id.clone()))}>{if r.status=="prepared" {"开始训练"} else {"继续训练"}}</button>
+                                        <button class="btn btn-primary btn-sm" data-testid={format!("{prefix}-resume")} disabled={*busy} onclick={invoke(LogicAction::Open(r.id.clone()))}>{if r.status=="prepared" {"开始训练"} else {"继续训练"}}</button>
                                     </div>
                                 }
                             })}
                         </div>
                     }
-                    <button class="btn btn-outline w-full" data-testid="logic-history-toggle" onclick={{let history_open=history_open.clone();Callback::from(move |_|history_open.set(true))}}>{"查看练习历史"}</button>
+                    <button class="btn btn-outline w-full" data-testid={format!("{prefix}-history-toggle")} onclick={{let history_open=history_open.clone();Callback::from(move |_|history_open.set(true))}}>{"查看练习历史"}</button>
                     <div class="rounded-box border border-base-content/15 p-4 space-y-2">
-                        <p class="font-semibold">{"智能选卡 · 逻辑判断"}</p>
-                        <p class="text-sm text-base-content/60">{"按小P S1 直言、S2 联言选言假言、S3 组合排列、S4 特殊题型，从方法卡和错题卡中选取10张有效卡；不出一拖五。"}</p>
+                        <p class="font-semibold">{format!("智能选卡 · {subject}")}</p>
+                        <p class="text-sm text-base-content/60">{pool_description}</p>
                         if let Some(state)=status.as_ref() {
                             <p class="text-xs text-base-content/60">{format!("当前有效卡片：{} 张",state.eligible_cards)}</p>
                         }
                     </div>
-                    <details class="rounded-box border border-base-content/15 bg-base-100/50 p-3" data-testid="logic-user-prompt">
+                    <details class="rounded-box border border-base-content/15 bg-base-100/50 p-3" data-testid={format!("{prefix}-user-prompt")}>
                         <summary class="cursor-pointer select-none font-semibold">{"出题要求"}<span class="ml-2 text-xs font-normal text-base-content/60">{"点击编辑"}</span></summary>
                         <div class="mt-3 space-y-3">
                             <p class="text-xs text-base-content/60">{"仅调整难度与命题偏好，系统仍固定题型范围及 Codex 自检约束。"}</p>
@@ -744,8 +765,8 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                             </div>
                         </div>
                     </details>
-                    <TrainingMetrics answered={answered} correct={correct} prefix="logic" />
-                    <details class="min-w-0 max-w-full overflow-hidden rounded-box border border-base-content/15 p-3" data-testid="logic-statistics">
+                    <TrainingMetrics answered={answered} correct={correct} prefix={prefix} />
+                    <details class="min-w-0 max-w-full overflow-hidden rounded-box border border-base-content/15 p-3" data-testid={format!("{prefix}-statistics")}>
                         <summary class="cursor-pointer font-semibold">{format!("全部卡片（{}）",statistics.len())}</summary>
                         <div class="mt-3 max-h-72 w-full min-w-0 space-y-2 overflow-y-auto">
                             {for statistics.iter().enumerate().map(|(i,card)|{
@@ -755,7 +776,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                                 let opened_card=opened_card.clone();
                                 let id=card.card_id.clone();
                                 html! {
-                                    <button class="flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-box bg-base-200 p-3 text-left hover:bg-base-300" key={card.card_id.clone()} data-testid="logic-card-item"
+                                    <button class="flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-box bg-base-200 p-3 text-left hover:bg-base-300" key={card.card_id.clone()} data-testid={format!("{prefix}-card-item")}
                                         onclick={Callback::from(move |_|opened_card.set(Some(id.clone())))}>
                                         <span class="w-5 shrink-0 text-xs text-base-content/50">{i+1}</span>
                                         <span class="min-w-0 flex-1 overflow-hidden">
@@ -771,7 +792,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         <p class="mt-2 text-xs text-base-content/60">{"按虚拟调度次数排序，点开卡片可查看 Front/Back。"}</p>
                     </details>
                     if let Some(card)=opened_card.as_ref().as_ref().and_then(|id|statistics.iter().find(|c|c.card_id.as_str()==id.as_str())).cloned() {
-                        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3 sm:p-6" data-testid="logic-card-detail" role="dialog" aria-modal="true" aria-label="Flashcard 卡片详情">
+                        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3 sm:p-6" data-testid={format!("{prefix}-card-detail")} role="dialog" aria-modal="true" aria-label="Flashcard 卡片详情">
                             <div class="flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-box bg-base-100 shadow-2xl">
                                 <div class="flex shrink-0 items-center justify-between border-b border-base-content/10 p-3">
                                     <p class="font-semibold">{format!("卡片详情 · {}",card.category)}</p>
@@ -785,13 +806,13 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         </div>
                     }
                     if job.is_some() {
-                        <div class="rounded-box bg-base-200 p-3 text-sm" role="status" data-testid="logic-progress">{if progress.is_empty() {"正在恢复出题任务…".to_owned()} else {(*progress).clone()}}</div>
+                        <div class="rounded-box bg-base-200 p-3 text-sm" role="status" data-testid={format!("{prefix}-progress")}>{if progress.is_empty() {"正在恢复出题任务…".to_owned()} else {(*progress).clone()}}</div>
                     }
                     {alert}
                     if let Some(state)=status.as_ref() {
                         if !state.configured {<p class="text-error text-sm" role="status">{"请先配置 Codex 出题服务。"}</p>}
                         if state.eligible_cards<10 {<p class="text-error text-sm" role="status">{"至少需要10张不同的有效卡片。"}</p>}
-                        <button class="btn btn-primary w-full" data-testid="logic-prepare" disabled={*busy || job.is_some() || !state.configured || state.eligible_cards<10}
+                        <button class="btn btn-primary w-full" data-testid={format!("{prefix}-prepare")} disabled={*busy || job.is_some() || !state.configured || state.eligible_cards<10}
                             onclick={invoke(LogicAction::Prepare)}>{if job.is_some() {"正在出题中…（可以切换页面）"} else {"✨ 智能出题"}}</button>
                     }
                 </div>

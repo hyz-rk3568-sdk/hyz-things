@@ -1,6 +1,7 @@
 //! Logic judgment wire views exclude grading data until submission.
 use serde::{Deserialize, Serialize};
 pub(crate) const LOGIC_ROOT: &str = "/api/v1/study/logic-judgment";
+pub(crate) const QUANT_ROOT: &str = "/api/v1/study/quantitative-relations";
 #[derive(Clone, Deserialize)]
 pub(crate) struct LogicStatus {
     pub configured: bool,
@@ -69,12 +70,12 @@ pub(crate) struct LogicPerformance {
     pub correct_count: u64,
 }
 
-pub(crate) async fn enter_logic_run(id: &str, csrf: &str) -> Result<LogicRun, String> {
+pub(crate) async fn enter_drill_run(root: &str, seconds: u64, id: &str, csrf: &str) -> Result<LogicRun, String> {
     use super::{fetch_json, post_json_response, EmptyRequest};
-    let mut run: LogicRun = fetch_json(&format!("{LOGIC_ROOT}/runs/{id}"), "试卷").await?;
+    let mut run: LogicRun = fetch_json(&format!("{root}/runs/{id}"), "试卷").await?;
     if run.status == "prepared" {
         run = post_json_response(
-            &format!("{LOGIC_ROOT}/runs/{id}/start"),
+            &format!("{root}/runs/{id}/start"),
             csrf,
             &EmptyRequest {},
             "开始训练",
@@ -84,19 +85,19 @@ pub(crate) async fn enter_logic_run(id: &str, csrf: &str) -> Result<LogicRun, St
     if !matches!(run.status.as_str(), "active" | "submitted")
         || run.questions.len() != 10
         || run.answers.len() != 10
-        || run.duration_seconds != 600
+        || run.duration_seconds != seconds
         || (run.status == "active"
             && run.deadline_at_ms.is_none()
             && run.paused_remaining_ms.is_none())
         || run.answers.iter().flatten().any(|choice| *choice >= 4)
     {
-        return Err("服务器试卷不符合10题10分钟约定".into());
+        return Err("服务器试卷不符合题量、计时或答案安全性约定".into());
     }
     Ok(run)
 }
 
-pub(crate) async fn read_logic_result(id: &str) -> Result<LogicResult, String> {
-    super::fetch_json(&format!("{LOGIC_ROOT}/runs/{id}/result"), "答卷结果").await
+pub(crate) async fn read_drill_result(root: &str, id: &str) -> Result<LogicResult, String> {
+    super::fetch_json(&format!("{root}/runs/{id}/result"), "答卷结果").await
 }
 
 #[cfg(test)]

@@ -18,6 +18,7 @@ enum TrainingMode {
     Flashcards,
     Comprehensive,
     LogicJudgment,
+    QuantitativeRelations,
 }
 
 #[derive(Properties, PartialEq)]
@@ -70,6 +71,10 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
             mode.set(TrainingMode::Flashcards);
         })
     };
+    let choose_quantitative = {
+        let mode = mode.clone();
+        Callback::from(move |_| mode.set(TrainingMode::QuantitativeRelations))
+    };
     let choose_logic = {
         let mode = mode.clone();
         Callback::from(move |_| mode.set(TrainingMode::LogicJudgment))
@@ -80,13 +85,14 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
             <div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 pt-[calc(1rem+var(--app-safe-top))] sm:px-8">
                 <div>
                     <h1 class="text-xl font-bold">{"专项训练"}</h1>
-                    <p class="text-xs text-base-content/65">{"选择训练模式；速算与错题复练切换会丢弃未保存进度；逻辑判断答案保存在服务器。"}</p>
+                    <p class="text-xs text-base-content/65">{"选择训练模式；速算与错题复练切换会丢弃未保存进度；逻辑判断、数量关系答案保存在服务器。"}</p>
                 </div>
                 <div class="flex flex-wrap gap-2" role="group" aria-label="训练模式">
                     <button type="button" class={if *mode == TrainingMode::Calculation { "btn btn-primary btn-sm" } else { "btn btn-outline btn-sm" }} data-testid="training-mode-calculation" aria-pressed={(*mode == TrainingMode::Calculation).to_string()} onclick={choose_calculation}>{"速算训练"}</button>
                     <button type="button" class={if *mode == TrainingMode::Flashcards { "btn btn-primary btn-sm" } else { "btn btn-outline btn-sm" }} data-testid="training-mode-flashcards" aria-pressed={(*mode == TrainingMode::Flashcards).to_string()} onclick={choose_flashcards}>{"错题复练"}</button>
                     <button type="button" class={if *mode == TrainingMode::Comprehensive { "btn btn-primary btn-sm" } else { "btn btn-outline btn-sm" }} data-testid="training-mode-comprehensive" aria-pressed={(*mode == TrainingMode::Comprehensive).to_string()} onclick={choose_comprehensive}>{"综合训练"}</button>
-                    <button type="button" class={if *mode == TrainingMode::LogicJudgment { "btn btn-primary btn-sm" } else { "btn btn-outline btn-sm" }} data-testid="training-mode-logic-judgment" aria-pressed={(*mode == TrainingMode::LogicJudgment).to_string()} onclick={choose_logic}>{"逻辑判断"}</button>
+                    <button type="button" class={if *mode == TrainingMode::LogicJudgment { "btn btn-primary btn-sm" } else { "btn btn-outline btn-sm" }} data-testid="training-mode-logic-judgment" aria-pressed={(*mode == TrainingMode::LogicJudgment).to_string()} onclick={choose_logic}>{"判断形式推理"}</button>
+                    <button type="button" class={if *mode == TrainingMode::QuantitativeRelations { "btn btn-primary btn-sm" } else { "btn btn-outline btn-sm" }} data-testid="training-mode-quantitative" aria-pressed={(*mode == TrainingMode::QuantitativeRelations).to_string()} onclick={choose_quantitative}>{"数量关系"}</button>
                 </div>
                 <PwaControls />
             </div>
@@ -97,6 +103,8 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                 <FlashcardPractice route_state={props.route_state.clone()} on_immersive_change={on_immersive_change.clone()} />
             } else if *mode == TrainingMode::LogicJudgment {
                 <LogicJudgmentTraining csrf={props.csrf.clone()} on_immersive_change={on_immersive_change.clone()} />
+            } else if *mode == TrainingMode::QuantitativeRelations {
+                <LogicJudgmentTraining csrf={props.csrf.clone()} on_immersive_change={on_immersive_change.clone()} quantitative={true} />
             } else {
                 <ComprehensiveTraining csrf={props.csrf.clone()} on_immersive_change={on_immersive_change} on_exit={exit_comprehensive} />
             }
