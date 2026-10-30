@@ -741,6 +741,7 @@ fn grade_run(
 }
 
 impl DataAnalysisService {
+    pub fn pool(&self) -> &SqlitePool { &self.pool }
     pub fn new(pool: SqlitePool, config: Option<CodexConfig>) -> Result<Self, String> {
         Ok(Self {
             pool,
