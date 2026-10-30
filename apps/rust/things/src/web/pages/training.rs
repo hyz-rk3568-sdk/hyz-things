@@ -25,6 +25,7 @@ enum TrainingMode {
     Comprehensive,
     LogicJudgment,
     QuantitativeRelations,
+    Statistics,
 }
 
 #[derive(Properties, PartialEq)]
@@ -34,7 +35,7 @@ struct TrainingWorkspaceProps {
 }
 
 pub(crate) fn render_training(route_state: UseStateHandle<PortalRoute>, csrf: String) -> Html {
-    html! { <TrainingWorkspace route_state={route_state} csrf={csrf} /> }
+    html! { <StudyClockProvider csrf={csrf.clone()}><TrainingWorkspace route_state={route_state} csrf={csrf} /></StudyClockProvider> }
 }
 
 #[function_component(TrainingWorkspace)]
@@ -54,7 +55,33 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
         });
     }
     let mode = use_state(|| TrainingMode::Calculation);
+    let study_clock = use_context::<StudyClockContext>();
     let training_immersive = use_state(|| false);
+    let module = match *mode {
+        TrainingMode::Calculation => "calculation",
+        TrainingMode::Flashcards => "flashcards",
+        TrainingMode::Comprehensive => "comprehensive",
+        TrainingMode::LogicJudgment => "logic",
+        TrainingMode::QuantitativeRelations => "quantitative",
+        TrainingMode::Statistics => "",
+    };
+    {
+        let event = study_clock.as_ref().map(|v|v.event.clone());
+        use_effect_with((*training_immersive, module),move |(immersive,module)|{
+            if let Some(event)=&event {
+                if *immersive && !module.is_empty() {
+                    event.emit(("enter".into(),Some((*module).into()),Some("answer".into())));
+                }else { event.emit(("leave".into(),None,None)); }
+            }
+            || ()
+        });
+    }
+    {
+        let event=study_clock.as_ref().map(|v|v.event.clone());
+        use_effect_with((),move |_|move || {
+            if let Some(event)=event {event.emit(("leave".into(),None,None));}
+        });
+    }
     let on_immersive_change = {
         let training_immersive = training_immersive.clone();
         Callback::from(move |active: bool| training_immersive.set(active))
@@ -99,6 +126,11 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
         let mode = mode.clone();
         Callback::from(move |_| mode.set(TrainingMode::LogicJudgment))
     };
+    let choose_statistics = {
+        let mode=mode.clone();
+        let training_immersive=training_immersive.clone();
+        Callback::from(move |_| {training_immersive.set(false);mode.set(TrainingMode::Statistics);})
+    };
     let back_to_study = {
         let route = props.route_state.clone();
         Callback::from(move |_| {
@@ -116,7 +148,8 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                     <div class="training-topbar-inner">
                         <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="返回学习中心" data-testid="training-back" onclick={back_to_study}>{"‹"}</button>
                         <h1 class="text-lg font-bold">{"专项训练"}</h1>
-                        <details class="training-more ml-auto">
+                        <div class="ml-auto"><StudyTimeInline /></div>
+                        <details class="training-more">
                             <summary class="btn btn-ghost btn-sm btn-square" aria-label="应用选项">{"⋯"}</summary>
                             <div class="training-more-panel"><PwaControls /></div>
                         </details>
@@ -129,11 +162,14 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                         <button type="button" class="training-mode" data-testid="training-mode-comprehensive" aria-pressed={(*mode == TrainingMode::Comprehensive).to_string()} onclick={choose_comprehensive}>{"资料分析"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-logic-judgment" aria-pressed={(*mode == TrainingMode::LogicJudgment).to_string()} onclick={choose_logic}>{"判断推理"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-quantitative" aria-pressed={(*mode == TrainingMode::QuantitativeRelations).to_string()} onclick={choose_quantitative}>{"数量关系"}</button>
+                        <button type="button" class="training-mode" data-testid="training-mode-statistics" aria-pressed={(*mode == TrainingMode::Statistics).to_string()} onclick={choose_statistics}>{"学习统计"}</button>
                     </div>
                 </nav>
             }
             <main class="min-h-0 flex-1 overflow-hidden" data-testid="training-mode-content">
-            if *mode == TrainingMode::Calculation {
+            if *mode == TrainingMode::Statistics {
+                <TrainingStatistics />
+            } else if *mode == TrainingMode::Calculation {
                 {render_calculation_training(props.route_state.clone(),on_immersive_change.clone())}
             } else if *mode == TrainingMode::Flashcards {
                 <FlashcardPractice route_state={props.route_state.clone()} on_immersive_change={on_immersive_change.clone()} />
@@ -696,6 +732,7 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
             if is_training_immersive {
             <div class="mx-auto flex w-full shrink-0 justify-end pb-2">
                 <button type="button" class="btn btn-ghost btn-sm" data-testid="practice-back-to-study" onclick={go_back}>{"← 返回专项训练"}</button>
+                <StudyTimeInline />
             </div>
             }
             if is_training_immersive {

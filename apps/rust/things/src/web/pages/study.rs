@@ -272,18 +272,16 @@ fn study_workspace(props: &StudyWorkspaceProps) -> Html {
                                 <h3 id="study-calculation-title" class={SECTION_TITLE}>{"专项训练"}</h3>
                                 <p class={SECTION_META}>{"固定全屏答题 · Apple Pencil 草稿"}</p>
                             </div>
-                            <span class="badge badge-outline">{"3种模式"}</span>
+                            <span class="badge badge-outline">{"5种训练模式"}</span>
                         </div>
-                        <p class="text-sm leading-7 text-base-content/75">{"速算训练 / 错题复练 / 综合训练"}</p>
+                        <p class="text-sm leading-7 text-base-content/75">{"速算训练 / 错题复练 / 资料分析 / 判断推理 / 数量关系 · 学习统计"}</p>
                         <p class="text-xs text-base-content/60">{"综合训练支持原题重做、暂停及跨设备续答。"}</p>
                         <div class={BUTTON_ROW}>
                             <button class={BUTTON_PRIMARY} type="button" data-testid="study-open-calculation" onclick={open_calculation}>{"选择训练 →"}</button>
                         </div>
                     </SectionCard>
                 </div>
-                <div class="mt-5" data-testid="study-timers">
-                    <CustomCountdownPanel />
-                </div>
+
             </>
         },
         StudyView::Cards => html! {
@@ -303,7 +301,6 @@ fn study_workspace(props: &StudyWorkspaceProps) -> Html {
                     route={props.route.clone()}
                     route_state={props.route_state.clone()}
                 />
-                <CustomCountdownPanel />
                 <ExamCountdownPanel />
             </>
         },

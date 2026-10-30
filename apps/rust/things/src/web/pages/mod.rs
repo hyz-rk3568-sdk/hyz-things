@@ -19,6 +19,8 @@ mod system;
 mod tailscale;
 mod training;
 mod training_metrics;
+mod training_time;
+mod training_statistics;
 mod training_setup;
 mod training_split_workspace;
 
@@ -40,5 +42,7 @@ pub(crate) use system::*;
 pub(crate) use tailscale::*;
 pub(crate) use training::*;
 pub(crate) use training_metrics::*;
+use training_time::*;
+use training_statistics::*;
 use training_setup::*;
 use training_split_workspace::*;

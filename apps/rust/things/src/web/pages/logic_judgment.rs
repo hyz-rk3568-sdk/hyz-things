@@ -579,6 +579,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                     <div class="w-full max-w-md rounded-box bg-base-100 p-6 text-center sm:p-8">
                         <h2 class="text-2xl font-bold">{"训练已暂停"}</h2>
                         <p class="mt-3 text-sm text-base-content/60">{"题目已隐藏，暂停期间不能答题。刷新或退出后剩余时间保持不变。"}</p>
+                        <div class="absolute right-4 top-2"><StudyTimeInline /></div>
                         <p class="my-6 font-mono text-3xl" role="timer" data-testid={format!("{prefix}-clock")}>{format!("{:02}:{:02}", remaining_ms.max(0)/60000, (remaining_ms.max(0)/1000)%60)}</p>
                         <div class="flex flex-wrap justify-center gap-3">
                             <button class="btn btn-outline" disabled={*busy} onclick={invoke(LogicAction::PauseAndExit)}>{"← 退出训练"}</button>
@@ -600,6 +601,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         <span class="hidden text-xs text-base-content/60 sm:inline">{format!("第 {}/10 题",index+1)}</span>
                     </div>
                     <div class="flex shrink-0 items-center gap-2">
+                        <StudyTimeInline />
                         <button type="button" role="timer" class={if remaining<=60 {"btn btn-ghost font-mono text-xl text-error"} else {"btn btn-ghost font-mono text-xl"}} data-testid={format!("{prefix}-clock")} title="点击暂停计时" disabled={*busy || remaining==0} onclick={invoke(LogicAction::Pause)}>{format!("{:02}:{:02}",remaining/60,remaining%60)}</button>
                         <button class="btn btn-sm btn-error btn-outline" data-testid={format!("{prefix}-submit")} disabled={*busy} onclick={invoke(LogicAction::Submit)}>{"交卷"}</button>
                     </div>
