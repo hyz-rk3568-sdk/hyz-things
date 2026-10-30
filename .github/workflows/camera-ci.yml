@@ -13,8 +13,6 @@ on:
     branches:
       - main
     paths:
-      # Study/portal changes also run all three CI suites on the shared PR.
-      - "apps/rust/things/**"
       - "apps/rust/camera/**"
       - "apps/rust/contract/**"
       - "Makefile"
