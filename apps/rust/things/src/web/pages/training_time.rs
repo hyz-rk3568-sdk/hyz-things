@@ -167,16 +167,16 @@ pub(super) fn study_time_inline() -> Html {
         return Html::default();
     };
     let _ = ctx.tick;
-    let (ms, paused) = match (*ctx.value).as_ref() {
+    let ms = match (*ctx.value).as_ref() {
         Some(v) => {
             let delta = if v.snapshot.running {
                 ((Date::now() - v.received_ms).max(0.0) as i64).min(45_000)
             } else {
                 0
             };
-            (v.snapshot.today_ms.saturating_add(delta), v.snapshot.paused)
+            v.snapshot.today_ms.saturating_add(delta)
         }
-        None => (0, false),
+        None => 0,
     };
     let seconds = ms.max(0) / 1_000;
     let clock = format!(
@@ -185,13 +185,8 @@ pub(super) fn study_time_inline() -> Html {
         (seconds / 60) % 60,
         seconds % 60
     );
-    let onclick = {
-        let event = ctx.event.clone();
-        Callback::from(move |_| event.emit(("toggle".into(), None, None)))
-    };
     html! {
-        <button type="button" class="btn btn-ghost min-h-10 h-10 shrink-0 px-2 font-mono text-base font-semibold tabular-nums whitespace-nowrap text-primary"
-            data-testid="study-time-inline" title="点击独立暂停或继续学习正计时" aria-label={if paused {"学习计时已暂停，点击继续"}else{"今日有效学习时长，点击暂停"}}
-            onclick={onclick}>{clock}</button>
+        <span class="inline-flex min-h-10 h-10 shrink-0 items-center px-2 font-mono text-base font-semibold tabular-nums whitespace-nowrap text-primary"
+            data-testid="study-time-inline" title="今日有效学习时长" aria-label="今日有效学习时长" role="timer">{clock}</span>
     }
 }

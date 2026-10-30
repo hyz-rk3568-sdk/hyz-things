@@ -7,8 +7,6 @@ pub(crate) struct TrainingTimeSnapshot {
     pub now_ms: i64,
     pub today_ms: i64,
     pub running: bool,
-    pub paused: bool,
-    pub manual_paused: bool,
     pub module: String,
 }
 #[derive(Clone, Debug, Serialize)]

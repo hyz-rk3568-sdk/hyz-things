@@ -37,8 +37,6 @@ pub struct ClockSnapshot {
     pub now_ms: i64,
     pub today_ms: i64,
     pub running: bool,
-    pub paused: bool,
-    pub manual_paused: bool,
     pub module: String,
 }
 
@@ -71,7 +69,6 @@ struct ClockState {
     phase: String,
     started_at_ms: Option<i64>,
     last_seen_at_ms: Option<i64>,
-    manual_paused: bool,
 }
 impl ClockState {
     fn from_row(row: sqlx::sqlite::SqliteRow) -> Self {
@@ -81,7 +78,6 @@ impl ClockState {
             phase: row.get("phase"),
             started_at_ms: row.get("started_at_ms"),
             last_seen_at_ms: row.get("last_seen_at_ms"),
-            manual_paused: row.get::<i64, _>("manual_paused") != 0,
         }
     }
     fn credited_end(&self, now: i64) -> i64 {
@@ -104,7 +100,7 @@ impl TrainingTimeService {
     }
 
     async fn load(&self) -> Result<ClockState, String> {
-        let row = sqlx::query("SELECT status,module,phase,started_at_ms,last_seen_at_ms,manual_paused FROM study_time_state WHERE id=1")
+        let row = sqlx::query("SELECT status,module,phase,started_at_ms,last_seen_at_ms FROM study_time_state WHERE id=1")
             .fetch_one(&self.pool).await.map_err(|e| e.to_string())?;
         Ok(ClockState::from_row(row))
     }
@@ -134,10 +130,9 @@ impl TrainingTimeService {
         phase: &str,
         started: Option<i64>,
         seen: Option<i64>,
-        paused: bool,
     ) -> Result<(), String> {
-        sqlx::query("UPDATE study_time_state SET status=?,module=?,phase=?,started_at_ms=?,last_seen_at_ms=?,manual_paused=?,revision=revision+1 WHERE id=1")
-            .bind(status).bind(module).bind(phase).bind(started).bind(seen).bind(i64::from(paused))
+        sqlx::query("UPDATE study_time_state SET status=?,module=?,phase=?,started_at_ms=?,last_seen_at_ms=?,revision=revision+1 WHERE id=1")
+            .bind(status).bind(module).bind(phase).bind(started).bind(seen)
             .execute(&mut **tx).await.map_err(|e|e.to_string())?;
         Ok(())
     }
@@ -152,7 +147,7 @@ impl TrainingTimeService {
         {
             return Err("invalid event id".into());
         }
-        if !["enter", "switch", "leave", "toggle", "heartbeat"].contains(&event.action.as_str()) {
+        if !["enter", "switch", "leave", "heartbeat"].contains(&event.action.as_str()) {
             return Err("invalid action".into());
         }
         if let Some(ref module) = event.module {
@@ -180,7 +175,7 @@ impl TrainingTimeService {
         .await
         .map_err(|e| e.to_string())?;
         if inserted.rows_affected() != 0 {
-            let row = sqlx::query("SELECT status,module,phase,started_at_ms,last_seen_at_ms,manual_paused FROM study_time_state WHERE id=1")
+            let row = sqlx::query("SELECT status,module,phase,started_at_ms,last_seen_at_ms FROM study_time_state WHERE id=1")
                 .fetch_one(&mut *tx).await.map_err(|e|e.to_string())?;
             let state = ClockState::from_row(row);
             let phase = event.phase.as_deref().unwrap_or("answer");
@@ -199,62 +194,18 @@ impl TrainingTimeService {
                             phase,
                             state.started_at_ms,
                             Some(now),
-                            false,
                         )
                         .await?;
                     } else {
                         Self::close(&mut tx, &state, now).await?;
-                        let paused = state.manual_paused;
-                        Self::update_state(
-                            &mut tx,
-                            if paused { "paused" } else { "running" },
-                            module,
-                            phase,
-                            (!paused).then_some(now),
-                            (!paused).then_some(now),
-                            paused,
-                        )
-                        .await?;
+                        Self::update_state(&mut tx, "running", module, phase, Some(now), Some(now))
+                            .await?;
                     }
                 }
                 "leave" => {
                     Self::close(&mut tx, &state, now).await?;
-                    Self::update_state(
-                        &mut tx,
-                        "idle",
-                        &state.module,
-                        &state.phase,
-                        None,
-                        None,
-                        state.manual_paused,
-                    )
-                    .await?;
-                }
-                "toggle" => {
-                    if state.status == "running" {
-                        Self::close(&mut tx, &state, now).await?;
-                        Self::update_state(
-                            &mut tx,
-                            "paused",
-                            &state.module,
-                            &state.phase,
-                            None,
-                            None,
-                            true,
-                        )
+                    Self::update_state(&mut tx, "idle", &state.module, &state.phase, None, None)
                         .await?;
-                    } else if !state.module.is_empty() && state.status == "paused" {
-                        Self::update_state(
-                            &mut tx,
-                            "running",
-                            &state.module,
-                            &state.phase,
-                            Some(now),
-                            Some(now),
-                            false,
-                        )
-                        .await?;
-                    }
                 }
                 "heartbeat" => {
                     if state.status == "running" {
@@ -267,7 +218,6 @@ impl TrainingTimeService {
                                 &state.phase,
                                 Some(now),
                                 Some(now),
-                                false,
                             )
                             .await?;
                         } else {
@@ -278,7 +228,6 @@ impl TrainingTimeService {
                                 &state.phase,
                                 state.started_at_ms,
                                 Some(now),
-                                false,
                             )
                             .await?;
                         }
@@ -336,8 +285,6 @@ impl TrainingTimeService {
             now_ms: now,
             today_ms,
             running: active.status == "running" && active.credited_end(now) == now,
-            paused: active.status == "paused",
-            manual_paused: active.manual_paused,
             module: active.module,
         })
     }
@@ -400,7 +347,26 @@ mod tests {
         assert_eq!(day_start(86_400_000 - 28_800_000), 86_400_000 - 28_800_000);
     }
     #[tokio::test]
-    async fn independent_pause_and_idempotent_events() {
+    async fn schema_removes_manual_pause_state() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let columns: Vec<String> =
+            sqlx::query_scalar("SELECT name FROM pragma_table_info('study_time_state')")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert!(!columns.iter().any(|column| column == "manual_paused"));
+        let table_sql: String = sqlx::query_scalar(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='study_time_state'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(!table_sql.contains("paused"));
+    }
+
+    #[tokio::test]
+    async fn study_clock_runs_until_leave_and_rejects_toggle() {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
         sqlx::migrate!("./migrations").run(&pool).await.unwrap();
         let service = TrainingTimeService::new(pool);
@@ -411,19 +377,26 @@ mod tests {
             phase: None,
         };
         assert!(service.event(enter).await.unwrap().running);
-        let pause = StudyTimeEvent {
-            event_id: "two".into(),
-            action: "toggle".into(),
-            module: None,
-            phase: None,
-        };
-        assert!(service.event(pause).await.unwrap().paused);
         let duplicate = StudyTimeEvent {
+            event_id: "one".into(),
+            action: "enter".into(),
+            module: Some("logic".into()),
+            phase: None,
+        };
+        assert!(service.event(duplicate).await.unwrap().running);
+        let toggle = StudyTimeEvent {
             event_id: "two".into(),
             action: "toggle".into(),
             module: None,
             phase: None,
         };
-        assert!(service.event(duplicate).await.unwrap().paused);
+        assert!(service.event(toggle).await.is_err());
+        let leave = StudyTimeEvent {
+            event_id: "three".into(),
+            action: "leave".into(),
+            module: None,
+            phase: None,
+        };
+        assert!(!service.event(leave).await.unwrap().running);
     }
 }
