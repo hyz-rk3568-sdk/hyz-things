@@ -1103,6 +1103,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         <span class="hidden text-xs text-base-content/60 sm:inline">{format!("第 {}/20 题 · 材料 {}/4",index+1,group_index+1)}</span>
                     </div>
                     <div class="flex shrink-0 items-center gap-2">
+                        <StudyTimeInline />
                         <span class="text-sm font-bold">{format!("{} / {} 正确",score.correct,score.total)}</span>
                         <button type="button" class="btn btn-outline btn-sm" onclick={show_history}>{"查看练习历史"}</button>
                         <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-retry-result" disabled={*busy} onclick={redo_from_result}>{"重做原题"}</button>
