@@ -8,6 +8,7 @@ use hyz_things::domain::data_analysis::RelatedCardSnapshot;
 pub(crate) struct LogicJudgmentProps {
     pub csrf: String,
     pub on_immersive_change: Callback<bool>,
+    pub on_paper_pause_change: Callback<bool>,
     #[prop_or_default]
     pub quantitative: bool,
 }
@@ -261,6 +262,18 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 move || immersive.emit(false)
             },
         );
+    }
+    // A paused paper hides the questions; effective study time stops with it.
+    {
+        let notify = props.on_paper_pause_change.clone();
+        let paused = (*run)
+            .as_ref()
+            .is_some_and(|active| active.paused_remaining_ms.is_some());
+        use_effect_with(paused, move |paused| {
+            notify.emit(*paused);
+            let notify = notify.clone();
+            move || notify.emit(false)
+        });
     }
     {
         let (status, unfinished, history, statistics, prompt, job, error) = (

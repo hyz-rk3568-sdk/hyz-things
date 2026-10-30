@@ -10,6 +10,7 @@ use wasm_bindgen::JsCast;
 pub(crate) struct ComprehensiveProps {
     pub csrf: String,
     pub on_immersive_change: Callback<bool>,
+    pub on_paper_pause_change: Callback<bool>,
     pub on_exit: Callback<()>,
 }
 
@@ -463,6 +464,18 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 || ()
             },
         );
+    }
+    // A paused paper hides the questions; effective study time stops with it.
+    {
+        let notify = props.on_paper_pause_change.clone();
+        let paused = (*run)
+            .as_ref()
+            .is_some_and(|active| active.paused_remaining_ms.is_some());
+        use_effect_with(paused, move |paused| {
+            notify.emit(*paused);
+            let notify = notify.clone();
+            move || notify.emit(false)
+        });
     }
     let submit = {
         let controller = controller.clone();

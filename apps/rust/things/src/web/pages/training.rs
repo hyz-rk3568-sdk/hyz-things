@@ -57,6 +57,8 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
     let mode = use_state(|| TrainingMode::Calculation);
     let study_clock = use_context::<StudyClockContext>();
     let training_immersive = use_state(|| false);
+    // A paused paper hides the questions, so the effective-study clock stops too.
+    let paper_paused = use_state(|| false);
     let module = match *mode {
         TrainingMode::Calculation => "calculation",
         TrainingMode::Flashcards => "flashcards",
@@ -65,11 +67,12 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
         TrainingMode::QuantitativeRelations => "quantitative",
         TrainingMode::Statistics => "",
     };
+    let study_active = *training_immersive && !*paper_paused;
     {
         let event = study_clock.as_ref().map(|v| v.event.clone());
-        use_effect_with((*training_immersive, module), move |(immersive, module)| {
+        use_effect_with((study_active, module), move |(active, module)| {
             if let Some(event) = &event {
-                if *immersive && !module.is_empty() {
+                if *active && !module.is_empty() {
                     event.emit((
                         "enter".into(),
                         Some((*module).into()),
@@ -95,6 +98,10 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
     let on_immersive_change = {
         let training_immersive = training_immersive.clone();
         Callback::from(move |active: bool| training_immersive.set(active))
+    };
+    let on_paper_pause_change = {
+        let paper_paused = paper_paused.clone();
+        Callback::from(move |paused: bool| paper_paused.set(paused))
     };
     let exit_comprehensive = {
         let training_immersive = training_immersive.clone();
@@ -190,9 +197,10 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                 <LogicJudgmentTraining
                     key={if *mode == TrainingMode::QuantitativeRelations { "quantitative" } else { "logic" }}
                     csrf={props.csrf.clone()} on_immersive_change={on_immersive_change.clone()}
+                    on_paper_pause_change={on_paper_pause_change.clone()}
                     quantitative={*mode == TrainingMode::QuantitativeRelations} />
             } else {
-                <ComprehensiveTraining csrf={props.csrf.clone()} on_immersive_change={on_immersive_change} on_exit={exit_comprehensive} />
+                <ComprehensiveTraining csrf={props.csrf.clone()} on_immersive_change={on_immersive_change} on_paper_pause_change={on_paper_pause_change} on_exit={exit_comprehensive} />
             }
             </main>
         </div>
