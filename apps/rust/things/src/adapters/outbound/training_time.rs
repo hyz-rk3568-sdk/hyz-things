@@ -330,7 +330,7 @@ impl TrainingTimeService {
             .await?;
         let today_ms = rows
             .iter()
-            .map(|(_, _, s, e)| (e.min(now) - s.max(start)).max(0))
+            .map(|(_, _, s, e)| ((*e).min(now) - (*s).max(start)).max(0))
             .sum();
         Ok(ClockSnapshot {
             now_ms: now,

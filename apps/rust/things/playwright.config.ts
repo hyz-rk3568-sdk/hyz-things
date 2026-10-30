@@ -21,7 +21,7 @@ process.env.HYZ_THINGS_E2E_CONTROL_PORT = String(controlPort);
 // previously failing regressions. For every other PR and for main, use all tests.
 function focusedRegressionFilter(): RegExp | undefined {
   const eventPath = process.env.GITHUB_EVENT_PATH;
-  if (!process.env.CI || !eventPath) return undefined;
+  if (!process.env.CI || !eventPath || process.env.HYZ_THINGS_E2E_DISABLE_FOCUS === '1') return undefined;
   try {
     const event = JSON.parse(readFileSync(eventPath, 'utf8')) as {
       pull_request?: { title?: string };
