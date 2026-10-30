@@ -161,9 +161,30 @@ test("edits policy from device detail and preserves a dirty draft across a 409",
   const raced = await readHarnessState(request);
   raced.device_policies.config.generation = 2;
   expect((await request.put(`${harnessOrigin}/state`, { data: raced })).ok()).toBeTruthy();
+  // Changing the harness generation races with device polling. Force a real
+  // 409 on the second write so this test never accidentally saves with HTTP 200.
+  await page.route("**/api/v1/control/proxy/device-policies", route => {
+    if (route.request().method() === "POST") {
+      return route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({
+          code: "device_policy_generation_conflict",
+          message: "设备策略代次冲突",
+        }),
+      });
+    }
+    return route.continue();
+  });
   await nameInput.fill("冲突时保留的草稿");
   await policy.selectOption("proxy");
+  const conflictResponse = page.waitForResponse(response =>
+    response.url().includes("/api/v1/control/proxy/device-policies") &&
+    response.request().method() === "POST" &&
+    response.status() === 409,
+  );
   await detail.getByRole("button", { name: "保存设备设置" }).click();
+  await conflictResponse;
   await expect(page.getByRole("status").filter({ hasText: "设备策略更新未完成" })).toBeVisible();
   await expect(nameInput).toHaveValue("冲突时保留的草稿");
 });

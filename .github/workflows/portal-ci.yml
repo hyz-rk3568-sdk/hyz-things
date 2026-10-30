@@ -290,7 +290,24 @@ jobs:
         working-directory: apps/rust/things
         run: npx playwright install --with-deps webkit
 
+      # An explicit maintainer-set PR title marker allows isolated reproduction
+      # of these regressions; normal PRs and main still run the full E2E suite.
+      - name: Run focused study regression E2E (opt-in)
+        if: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.title, '[focus-study-e2e]') }}
+        working-directory: apps/rust/things
+        env:
+          HYZ_THINGS_E2E_REUSE_FRONTEND_BUNDLE: "1"
+        shell: bash
+        run: |
+          set +e
+          npm run test:e2e -- e2e/activity.spec.ts --grep "edits policy from device detail and preserves a dirty draft across a 409"
+          first=$?
+          npm run test:e2e -- e2e/comprehensive.spec.ts --grep "iPad comprehensive 20-question flow with answer save and submit"
+          second=$?
+          if [[ "$first" -ne 0 || "$second" -ne 0 ]]; then exit 1; fi
+
       - name: Run Playwright E2E
+        if: ${{ github.event_name != 'pull_request' || !contains(github.event.pull_request.title, '[focus-study-e2e]') }}
         working-directory: apps/rust/things
         env:
           HYZ_THINGS_E2E_REUSE_FRONTEND_BUNDLE: "1"
