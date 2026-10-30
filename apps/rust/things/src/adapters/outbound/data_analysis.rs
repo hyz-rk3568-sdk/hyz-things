@@ -51,10 +51,25 @@ pub struct CodexConfig {
     // Fixed-address LAN authentication only; this is NOT the ChatGPT OAuth token.
     token: String,
     cwd: String,
+    #[cfg(test)]
+    test_server: Option<std::net::SocketAddr>,
 }
 
 impl CodexConfig {
+    #[cfg(test)]
+    pub(crate) fn for_test_server(address: std::net::SocketAddr) -> Self {
+        Self {
+            token: "a".repeat(64),
+            cwd: "/home/hyz/hyz_things".into(),
+            test_server: Some(address),
+        }
+    }
+
     pub(crate) async fn connect(&self) -> Result<CodexSession, String> {
+        #[cfg(test)]
+        if let Some(address) = self.test_server {
+            return CodexSession::connect_test_server(address, &self.token, &self.cwd).await;
+        }
         tokio::time::timeout(
             Duration::from_secs(12),
             CodexSession::connect(&self.token, &self.cwd),
@@ -134,7 +149,12 @@ fn parse_env(input: &str) -> Result<Option<CodexConfig>, &'static str> {
         }
     }
     match (token, cwd) {
-        (Some(token), Some(cwd)) => Ok(Some(CodexConfig { token, cwd })),
+        (Some(token), Some(cwd)) => Ok(Some(CodexConfig {
+            token,
+            cwd,
+            #[cfg(test)]
+            test_server: None,
+        })),
         (None, None) => Ok(None),
         _ => Err("Codex needs both HYZ_THINGS_CODEX_WS_TOKEN and HYZ_THINGS_CODEX_CWD"),
     }

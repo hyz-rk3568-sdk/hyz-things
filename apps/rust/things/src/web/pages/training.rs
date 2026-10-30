@@ -101,10 +101,11 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                 {render_calculation_training(props.route_state.clone(),on_immersive_change.clone())}
             } else if *mode == TrainingMode::Flashcards {
                 <FlashcardPractice route_state={props.route_state.clone()} on_immersive_change={on_immersive_change.clone()} />
-            } else if *mode == TrainingMode::LogicJudgment {
-                <LogicJudgmentTraining csrf={props.csrf.clone()} on_immersive_change={on_immersive_change.clone()} />
-            } else if *mode == TrainingMode::QuantitativeRelations {
-                <LogicJudgmentTraining csrf={props.csrf.clone()} on_immersive_change={on_immersive_change.clone()} quantitative={true} />
+            } else if matches!(*mode, TrainingMode::LogicJudgment | TrainingMode::QuantitativeRelations) {
+                <LogicJudgmentTraining
+                    key={if *mode == TrainingMode::QuantitativeRelations { "quantitative" } else { "logic" }}
+                    csrf={props.csrf.clone()} on_immersive_change={on_immersive_change.clone()}
+                    quantitative={*mode == TrainingMode::QuantitativeRelations} />
             } else {
                 <ComprehensiveTraining csrf={props.csrf.clone()} on_immersive_change={on_immersive_change} on_exit={exit_comprehensive} />
             }
