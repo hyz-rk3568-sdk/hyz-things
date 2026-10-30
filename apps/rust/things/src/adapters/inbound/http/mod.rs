@@ -347,7 +347,6 @@ pub fn app_with_admin_camera_control_and_flashcards(
         flashcard_source,
         None,
         None,
-        None,
     )
 }
 
@@ -525,6 +524,7 @@ pub fn app_with_admin_camera_control_at_address_and_flashcards(
         tls,
         flashcards,
         flashcard_source,
+        None,
         None,
         None,
     )
