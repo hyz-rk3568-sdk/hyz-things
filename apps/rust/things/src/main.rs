@@ -12,6 +12,7 @@ use hyz_things::{
             flashcard_source::FilesystemFlashcardSource,
             flashcard_sqlite::SqliteFlashcardRepository,
             logic_judgment::LogicJudgmentService,
+            quantitative_relations::QuantitativeRelationsService,
             portal_config::load_allowed_origins,
             registry::RegistryAdapter,
             router::RouterControlClient,
@@ -23,6 +24,7 @@ use hyz_things::{
         camera::CameraApplication,
         flashcards::FlashcardApplication,
         logic_judgment::LogicJudgmentPort,
+        quantitative_relations::QuantitativeRelationsPort,
         ports::{ClockPort, PlatformError, PortalControlHandler},
         status::PortalStatus,
     },
@@ -110,7 +112,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     let camera = Arc::new(CameraApplication::new(Arc::new(
         CameraUnixAdapter::default(),
     )));
-    let (flashcards, flashcard_source, data_analysis, logic_judgment) =
+    let (flashcards, flashcard_source, data_analysis, logic_judgment, quantitative_relations) =
         match SqliteFlashcardRepository::connect(FLASHCARD_DB_PATH).await {
             Ok(repository) => {
                 let source = Arc::new(FilesystemFlashcardSource::default());
@@ -120,7 +122,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                         .ok()
                         .map(Arc::new);
                 let logic_judgment =
-                    match LogicJudgmentService::new(repository.pool().clone(), ai_config) {
+                    match LogicJudgmentService::new(repository.pool().clone(), ai_config.clone()) {
                         Ok(service) => service
                             .recover_interrupted()
                             .await
@@ -128,6 +130,16 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                             .map(|()| Arc::new(service) as Arc<dyn LogicJudgmentPort>),
                         Err(_) => None,
                     };
+                let quantitative_relations = QuantitativeRelationsService::new(repository.pool().clone(), ai_config)
+                    .ok()
+                    .and_then(|service| {
+                        let service = Arc::new(service);
+                        Some(service)
+                    });
+                if let Some(service) = &quantitative_relations {
+                    let _ = service.recover_interrupted().await;
+                }
+                let quantitative_relations = quantitative_relations.map(|service| service as Arc<dyn QuantitativeRelationsPort>);
                 let application = Arc::new(FlashcardApplication::new(
                     source.clone(),
                     Arc::new(repository),
@@ -138,6 +150,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                     Some(source),
                     data_analysis,
                     logic_judgment,
+                    quantitative_relations,
                 )
             }
             Err(_error) => {
@@ -151,7 +164,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                     None,
                     None,
                 );
-                (None, None, None, None)
+                (None, None, None, None, None)
             }
         };
     let control: Arc<dyn PortalControlHandler> = Arc::new(RouterControlClient);
@@ -200,6 +213,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         flashcard_source: flashcard_source.clone(),
         data_analysis: data_analysis.clone(),
         logic_judgment: logic_judgment.clone(),
+        quantitative_relations: quantitative_relations.clone(),
     };
     let tailscale_manager = tailscale.clone();
     let tailscale_control = control.clone();
@@ -274,6 +288,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         }
     };
     let logic_judgment_shutdown = logic_judgment.clone();
+    let quantitative_relations_shutdown = quantitative_relations.clone();
     let app = app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_origins(
         status,
         control,
@@ -287,6 +302,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         flashcard_source,
         data_analysis,
         logic_judgment,
+        quantitative_relations,
         additional_allowed_origins,
     );
     let ipv6_task = ipv6_listener.map(|listener| {
@@ -337,6 +353,9 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     }
 
     if let Some(service) = logic_judgment_shutdown {
+        service.shutdown();
+    }
+    if let Some(service) = quantitative_relations_shutdown {
         service.shutdown();
     }
     let _ = std::fs::remove_file(PORTAL_READY_MARKER);

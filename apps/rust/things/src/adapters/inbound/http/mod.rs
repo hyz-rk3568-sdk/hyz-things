@@ -58,6 +58,7 @@ use crate::{
 mod data_analysis;
 mod flashcards;
 mod logic_judgment;
+mod quantitative_relations;
 mod tls;
 
 pub use tls::{PortalTls, TlsListener};
@@ -92,6 +93,7 @@ struct AppState {
         Option<Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>>,
     data_analysis: Option<Arc<crate::adapters::outbound::data_analysis::DataAnalysisService>>,
     logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
+    quantitative_relations: Option<Arc<dyn crate::application::quantitative_relations::QuantitativeRelationsPort>>,
     camera_scope: Option<CameraAccessScope>,
     csrf_token: Arc<str>,
     allowed_origin: Arc<str>,
@@ -187,6 +189,7 @@ pub fn app(read_status: PortalStatus) -> Router {
             flashcard_source: None,
             data_analysis: None,
             logic_judgment: None,
+            quantitative_relations: None,
             camera_scope: None,
             csrf_token: String::new(),
             allowed_origin: format!("http://{LAN_ADDRESS}:{DEFAULT_HTTP_PORT}"),
@@ -227,6 +230,7 @@ pub fn app_with_control_and_allowed_origins(
             flashcard_source: None,
             data_analysis: None,
             logic_judgment: None,
+            quantitative_relations: None,
             camera_scope: None,
             csrf_token,
             allowed_origin: format!("http://{LAN_ADDRESS}:{port}"),
@@ -269,6 +273,7 @@ pub fn app_with_admin_control_and_logic_judgment(
             flashcard_source: None,
             data_analysis: None,
             logic_judgment,
+            quantitative_relations: None,
             camera_scope: None,
             csrf_token,
             allowed_origin: format!("http://{LAN_ADDRESS}:{port}"),
@@ -374,6 +379,7 @@ pub fn app_with_admin_camera_control_and_flashcards_and_analysis(
         flashcard_source,
         data_analysis,
         logic_judgment,
+        None,
         Vec::new(),
     )
 }
@@ -394,6 +400,7 @@ pub fn app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_or
     >,
     data_analysis: Option<Arc<crate::adapters::outbound::data_analysis::DataAnalysisService>>,
     logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
+    quantitative_relations: Option<Arc<dyn crate::application::quantitative_relations::QuantitativeRelationsPort>>,
     additional_allowed_origins: Vec<String>,
 ) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
@@ -407,6 +414,7 @@ pub fn app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_or
             flashcard_source,
             data_analysis,
             logic_judgment,
+            quantitative_relations,
             camera_scope: Some(CameraAccessScope::Lan),
             csrf_token,
             allowed_origin: format!(
@@ -442,6 +450,7 @@ pub fn app_with_admin_control_at_address(
             flashcard_source: None,
             data_analysis: None,
             logic_judgment: None,
+            quantitative_relations: None,
             camera_scope: None,
             csrf_token,
             allowed_origin: format!("http://{address}:{port}"),
@@ -533,6 +542,7 @@ pub fn app_with_admin_camera_control_at_address_and_flashcards_and_analysis(
     >,
     data_analysis: Option<Arc<crate::adapters::outbound::data_analysis::DataAnalysisService>>,
     logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
+    quantitative_relations: Option<Arc<dyn crate::application::quantitative_relations::QuantitativeRelationsPort>>,
 ) -> Router {
     let assets = AssetStore::embedded().expect("build script must embed a valid frontend archive");
     app_with_assets(
@@ -545,6 +555,7 @@ pub fn app_with_admin_camera_control_at_address_and_flashcards_and_analysis(
             flashcard_source,
             data_analysis,
             logic_judgment,
+            quantitative_relations,
             camera_scope: Some(CameraAccessScope::Tailscale { address }),
             csrf_token,
             allowed_origin: format!("{}://{address}:{port}", if tls { "https" } else { "http" }),
@@ -620,6 +631,7 @@ pub fn app_with_loopback_runtime_frontend_and_flashcards(
             flashcard_source,
             data_analysis: None,
             logic_judgment,
+            quantitative_relations: None,
             camera_scope: Some(CameraAccessScope::Lan),
             csrf_token,
             allowed_origin: exact_loopback_origin,
@@ -669,6 +681,7 @@ struct AppConfiguration {
         Option<Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>>,
     data_analysis: Option<Arc<crate::adapters::outbound::data_analysis::DataAnalysisService>>,
     logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
+    quantitative_relations: Option<Arc<dyn crate::application::quantitative_relations::QuantitativeRelationsPort>>,
     camera_scope: Option<CameraAccessScope>,
     csrf_token: String,
     allowed_origin: String,
@@ -692,6 +705,7 @@ fn app_with_assets(
         flashcard_source,
         data_analysis,
         logic_judgment,
+        quantitative_relations,
         camera_scope,
         csrf_token,
         allowed_origin,
@@ -760,6 +774,66 @@ fn app_with_assets(
                 .on(MethodFilter::POST, logic_judgment::save_user_prompt)
                 .layer(DefaultBodyLimit::max(
                     logic_judgment::MAX_USER_PROMPT_BODY_BYTES,
+                )),
+        )
+        .route(
+            "/api/v1/study/quantitative-relations/status",
+            on(MethodFilter::GET, quantitative_relations::status),
+        )
+        .route(
+            "/api/v1/study/quantitative-relations/prepare",
+            on(MethodFilter::POST, quantitative_relations::prepare),
+        )
+        .route(
+            "/api/v1/study/quantitative-relations/prepare/{id}",
+            on(MethodFilter::GET, quantitative_relations::progress),
+        )
+        .route(
+            "/api/v1/study/quantitative-relations/runs/{id}",
+            on(MethodFilter::GET, quantitative_relations::run),
+        )
+        .route(
+            "/api/v1/study/quantitative-relations/runs/{id}/start",
+            on(MethodFilter::POST, quantitative_relations::start),
+        )
+        .route(
+            "/api/v1/study/quantitative-relations/runs/{id}/pause",
+            on(MethodFilter::POST, quantitative_relations::pause),
+        )
+        .route(
+            "/api/v1/study/quantitative-relations/runs/{id}/answers",
+            on(MethodFilter::POST, quantitative_relations::answer),
+        )
+        .route(
+            "/api/v1/study/quantitative-relations/runs/{id}/submit",
+            on(MethodFilter::POST, quantitative_relations::submit),
+        )
+        .route(
+            "/api/v1/study/quantitative-relations/runs/{id}/result",
+            on(MethodFilter::GET, quantitative_relations::result),
+        )
+        .route(
+            "/api/v1/study/quantitative-relations/runs/{id}/retry",
+            on(MethodFilter::POST, quantitative_relations::retry),
+        )
+        .route(
+            "/api/v1/study/quantitative-relations/unfinished",
+            on(MethodFilter::GET, quantitative_relations::unfinished),
+        )
+        .route(
+            "/api/v1/study/quantitative-relations/history",
+            on(MethodFilter::GET, quantitative_relations::history),
+        )
+        .route(
+            "/api/v1/study/quantitative-relations/card-performance",
+            on(MethodFilter::GET, quantitative_relations::card_performance),
+        )
+        .route(
+            "/api/v1/study/quantitative-relations/user-prompt",
+            on(MethodFilter::GET, quantitative_relations::user_prompt)
+                .on(MethodFilter::POST, quantitative_relations::save_user_prompt)
+                .layer(DefaultBodyLimit::max(
+                    quantitative_relations::MAX_USER_PROMPT_BODY_BYTES,
                 )),
         )
         .route("/api/v1/health", on(MethodFilter::GET, health))
@@ -1002,6 +1076,7 @@ fn app_with_assets(
             flashcard_source,
             data_analysis,
             logic_judgment,
+            quantitative_relations,
             csrf_token: Arc::from(csrf_token),
             allowed_origin: Arc::from(allowed_origin),
             additional_allowed_origins: Arc::from(additional_allowed_origins),
@@ -2706,11 +2781,30 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/study/data-analysis/user-prompt"
             | "/api/v1/study/logic-judgment/prepare"
             | "/api/v1/study/logic-judgment/user-prompt"
+            | "/api/v1/study/quantitative-relations/prepare"
+            | "/api/v1/study/quantitative-relations/user-prompt"
     ) || is_data_analysis_run_post_path(path)
         || is_logic_judgment_run_post_path(path)
+        || is_quantitative_relations_run_post_path(path)
 }
 fn is_logic_judgment_run_post_path(path: &str) -> bool {
     let Some(rest) = path.strip_prefix("/api/v1/study/logic-judgment/runs/") else {
+        return false;
+    };
+    let mut segments = rest.split('/');
+    let Some(id) = segments.next() else {
+        return false;
+    };
+    uuid::Uuid::parse_str(id).is_ok()
+        && matches!(
+            segments.next(),
+            Some("start" | "pause" | "answers" | "submit" | "retry")
+        )
+        && segments.next().is_none()
+}
+
+fn is_quantitative_relations_run_post_path(path: &str) -> bool {
+    let Some(rest) = path.strip_prefix("/api/v1/study/quantitative-relations/runs/") else {
         return false;
     };
     let mut segments = rest.split('/');
