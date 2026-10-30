@@ -1006,6 +1006,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         q.chosen.and_then(|i| ["A","B","C","D"].get(i).copied()).unwrap_or("未答"))}</p>
                     <h3 class="mt-3 text-sm font-semibold">{"解题解析"}</h3>
                     <p class="mt-2 whitespace-pre-wrap text-sm leading-7" data-testid="analysis-explanation">{q.explanation.clone()}</p>
+                    <RelatedMethodCard key={format!("analysis-{}-{index}", score.id)}
+                        card={q.related_card.clone()} source_file={q.card_path.clone().unwrap_or_default()}
+                        test_id="analysis-related-card" />
                     <details class="mt-3 text-xs">
                         <summary class="cursor-pointer">{"查看原始数据证据"}</summary>
                         <p class="mt-2 whitespace-pre-wrap leading-6">{q.evidence.clone()}</p>

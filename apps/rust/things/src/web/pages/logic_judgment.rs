@@ -2,6 +2,7 @@
 use super::material_scroll::{scroll_edges, MaterialScrollButton, ScrollEdges};
 use super::*;
 use gloo_timers::callback::Interval;
+use hyz_things::domain::data_analysis::RelatedCardSnapshot;
 
 #[derive(Properties, PartialEq)]
 pub(crate) struct LogicJudgmentProps {
@@ -678,14 +679,9 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         <p class="text-sm font-semibold">{format!("你的答案：{}",q.chosen.map(|i|((b'A'+i as u8) as char).to_string()).unwrap_or("未答".into()))}</p>
                         <h3 class="mt-3 font-semibold">{"解题解析"}</h3>
                         <div class="study-markdown mt-2 whitespace-pre-wrap text-sm leading-7">{render_markdown(&q.explanation, "")}</div>
-                        <details class="mt-4 rounded-box border border-base-content/15 p-3">
-                            <summary class="cursor-pointer font-semibold">{"查看关联方法卡"}</summary>
-                            <div class="mt-3 space-y-3">
-                                <div class="study-markdown">{render_markdown(&q.front,&q.card_path)}</div>
-                                <div class="divider"></div>
-                                <div class="study-markdown">{render_markdown(&q.back,&q.card_path)}</div>
-                            </div>
-                        </details>
+                        <RelatedMethodCard key={format!("{prefix}-{}-{index}", score.id)}
+                            card={Some(RelatedCardSnapshot { front: q.front.clone(), back: q.back.clone() })}
+                            source_file={q.card_path.clone()} test_id={format!("{prefix}-related-card")} />
                                     </div>
                                 </div>
                             }}
