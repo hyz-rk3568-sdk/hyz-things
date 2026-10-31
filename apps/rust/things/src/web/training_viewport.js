@@ -21,7 +21,11 @@ export function mountTrainingViewport(root) {
   const schedule = () => {
     if (!frame) frame = window.requestAnimationFrame(update);
   };
-  const listeners = [[viewport, 'resize'], [viewport, 'scroll'], [window, 'resize']];
+  // A restored iPad visual viewport may change without window.resize.
+  const listeners = [
+    [viewport, 'resize'], [viewport, 'scroll'], [window, 'resize'],
+    [window, 'pageshow'], [window, 'focus'], [document, 'visibilitychange'],
+  ];
   for (const [target, event] of listeners) target.addEventListener(event, schedule);
   update();
   return () => {
