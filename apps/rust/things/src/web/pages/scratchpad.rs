@@ -425,9 +425,7 @@ pub(crate) fn ink_toolbar_slot() -> Html {
     };
     html! {
         <div class="relative z-30 flex shrink-0 items-center gap-1" data-testid="calculation-scratchpad-controls">
-            <button type="button" class={if tools.enabled {"btn btn-primary btn-sm btn-square"} else {INK_ICON_BUTTON}}
-                data-testid="calculation-scratchpad-toggle" aria-label={if tools.enabled {"关闭草稿"} else {"开启草稿"}}
-                aria-expanded={tools.enabled.to_string()} disabled={!tools.ready} onclick={tools.toggle}>{"✎"}</button>
+            // Keep the pen anchored at the right edge; the expanding tools grow leftwards.
             if tools.enabled {
                 <div class="flex items-center gap-1" data-testid="calculation-scratchpad-toolbar">
                     <button type="button" class={INK_ICON_BUTTON} data-testid="calculation-scratchpad-undo" aria-label="撤销" disabled={!tools.has_undo} onclick={tools.undo}>{"↶"}</button>
@@ -437,6 +435,9 @@ pub(crate) fn ink_toolbar_slot() -> Html {
                     </button>
                 </div>
             }
+            <button type="button" class={if tools.enabled {"btn btn-primary btn-sm btn-square"} else {INK_ICON_BUTTON}}
+                data-testid="calculation-scratchpad-toggle" aria-label={if tools.enabled {"关闭草稿"} else {"开启草稿"}}
+                aria-expanded={tools.enabled.to_string()} disabled={!tools.ready} onclick={tools.toggle}>{"✎"}</button>
         </div>
     }
 }

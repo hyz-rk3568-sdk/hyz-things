@@ -112,8 +112,14 @@ test("comprehensive scratchpad tools belong to the answer header and expand from
   await expectInlineInkControls(page.getByTestId("analysis-answer-header"));
   await expect(answerPane.getByTestId("calculation-scratchpad-toolbar")).toHaveCount(0);
   await expect(page.getByTestId("analysis-material")).not.toContainText("模拟训练材料");
+  const penBefore=await toggle.boundingBox();
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-label","关闭草稿");
+  const penAfter=await toggle.boundingBox();
+  expect(penBefore).not.toBeNull();
+  expect(penAfter).not.toBeNull();
+  expect(Math.abs(penAfter!.x-penBefore!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(penAfter!.y-penBefore!.y)).toBeLessThanOrEqual(1);
   const toolbar=answerPane.getByTestId("calculation-scratchpad-toolbar");
   await expect(toolbar).toBeVisible();
   await expect(toolbar.getByTestId("calculation-scratchpad-undo")).toBeVisible();

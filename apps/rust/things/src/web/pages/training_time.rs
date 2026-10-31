@@ -165,7 +165,7 @@ pub(super) fn study_clock_provider(props: &StudyClockProviderProps) -> Html {
         <ContextProvider<StudyClockContext> context={StudyClockContext{value,event,tick:tick_value}}>
             {for props.children.iter()}
             if let Some(message) = (*warning).clone() {
-                <div class="fixed bottom-2 right-2 z-[99] max-w-xs rounded bg-base-100 p-2 text-xs text-error shadow" role="status" data-testid="study-time-error">{message}</div>
+                <div class="pointer-events-none fixed bottom-2 right-2 z-[99] max-w-xs rounded bg-base-100 p-2 text-xs text-error shadow" role="status" data-testid="study-time-error">{message}</div>
             }
         </ContextProvider<StudyClockContext>>
     }
