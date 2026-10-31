@@ -4,9 +4,9 @@ use super::*;
 use hyz_things::domain::flashcards::{DeckSummary, FlashcardSummary, TagSummary};
 use std::collections::HashSet;
 
-// Long background suspensions can leave WebKit timers and the study clock
-// stale. Reload on return after this gap; short app switches keep their state.
-const HIDDEN_RELOAD_AFTER_MS: f64 = 60_000.0;
+// Long background suspensions can leave the study clock stale. Re-sync on
+// return after this gap; short app switches stay untouched.
+const HIDDEN_REFRESH_AFTER_MS: f64 = 10_000.0;
 
 #[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/training_viewport.js")]
 extern "C" {
@@ -58,25 +58,27 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
             }
         });
     }
+    let resume_generation = use_state(|| 0_u64);
     {
         let hidden_at = use_mut_ref(|| None::<f64>);
+        let resume_generation = resume_generation.clone();
         use_effect_with((), move |_| {
             let document = web_sys::window().and_then(|window| window.document());
             let handler = document.as_ref().map(|document| {
                 let document_for_handler = document.clone();
                 let hidden_at = hidden_at.clone();
+                let resume_generation = resume_generation.clone();
                 let handler = wasm_bindgen::closure::Closure::<dyn FnMut()>::new(move || {
                     if document_for_handler.hidden() {
                         *hidden_at.borrow_mut() = Some(Date::now());
                         return;
                     }
                     let hidden_since = hidden_at.borrow_mut().take();
-                    if let Some(hidden_since) = hidden_since {
-                        if Date::now() - hidden_since >= HIDDEN_RELOAD_AFTER_MS {
-                            if let Some(window) = web_sys::window() {
-                                let _ = window.location().reload();
-                            }
-                        }
+                    if hidden_since
+                        .is_some_and(|since| Date::now() - since >= HIDDEN_REFRESH_AFTER_MS)
+                    {
+                        let next = *resume_generation + 1;
+                        resume_generation.set(next);
                     }
                 });
                 let _ = document.add_event_listener_with_callback(
@@ -113,8 +115,8 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
     {
         let event = study_clock.as_ref().map(|v| v.event.clone());
         use_effect_with(
-            (study_active, module, csrf_ready),
-            move |(active, module, _)| {
+            (study_active, module, csrf_ready, *resume_generation),
+            move |(active, module, _, _)| {
                 if let Some(event) = &event {
                     if *active && !module.is_empty() {
                         event.emit((
