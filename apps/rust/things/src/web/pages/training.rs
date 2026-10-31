@@ -4,10 +4,6 @@ use super::*;
 use hyz_things::domain::flashcards::{DeckSummary, FlashcardSummary, TagSummary};
 use std::collections::HashSet;
 
-// Long background suspensions can leave the study clock stale. Re-sync on
-// return after this gap; short app switches stay untouched.
-const HIDDEN_REFRESH_AFTER_MS: f64 = 10_000.0;
-
 #[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/training_viewport.js")]
 extern "C" {
     #[wasm_bindgen::prelude::wasm_bindgen(js_name = mountTrainingViewport)]
@@ -58,41 +54,61 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
             }
         });
     }
+    // iPad WebKit may suspend timers and restore a page without a usable
+    // visibilitychange event. Treat every foreground signal as a wake-up,
+    // coalescing the events Safari fires together into one study-time resync.
+    // Do not stop or credit background study time here: the server's existing
+    // 45-second heartbeat grace remains authoritative.
     let resume_generation = use_state(|| 0_u64);
     {
-        let hidden_at = use_mut_ref(|| None::<f64>);
+        let last_resume_ms = use_mut_ref(|| 0_f64);
         let resume_generation = resume_generation.clone();
         use_effect_with((), move |_| {
-            let document = web_sys::window().and_then(|window| window.document());
-            let handler = document.as_ref().map(|document| {
-                let document_for_handler = document.clone();
-                let hidden_at = hidden_at.clone();
-                let resume_generation = resume_generation.clone();
-                let handler = wasm_bindgen::closure::Closure::<dyn FnMut()>::new(move || {
-                    if document_for_handler.hidden() {
-                        *hidden_at.borrow_mut() = Some(Date::now());
+            let window = web_sys::window();
+            let document = window.as_ref().and_then(|w| w.document());
+            let document_for_handler = document.clone();
+            let handler = wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::Event)>::new(
+                move |_| {
+                    if document_for_handler.as_ref().is_some_and(|d| d.hidden()) {
                         return;
                     }
-                    let hidden_since = hidden_at.borrow_mut().take();
-                    if hidden_since
-                        .is_some_and(|since| Date::now() - since >= HIDDEN_REFRESH_AFTER_MS)
-                    {
-                        let next = *resume_generation + 1;
-                        resume_generation.set(next);
+                    let now = Date::now();
+                    let previous = *last_resume_ms.borrow();
+                    if now >= previous && now - previous < 750.0 {
+                        return;
                     }
-                });
+                    *last_resume_ms.borrow_mut() = now;
+                    resume_generation.set((*resume_generation).wrapping_add(1));
+                },
+            );
+            if let Some(document) = document.as_ref() {
                 let _ = document.add_event_listener_with_callback(
                     "visibilitychange",
                     handler.as_ref().unchecked_ref(),
                 );
-                handler
-            });
+            }
+            if let Some(window) = window.as_ref() {
+                for name in ["pageshow", "focus"] {
+                    let _ = window.add_event_listener_with_callback(
+                        name,
+                        handler.as_ref().unchecked_ref(),
+                    );
+                }
+            }
             move || {
-                if let (Some(document), Some(handler)) = (document, handler) {
+                if let Some(document) = document {
                     let _ = document.remove_event_listener_with_callback(
                         "visibilitychange",
                         handler.as_ref().unchecked_ref(),
                     );
+                }
+                if let Some(window) = window {
+                    for name in ["pageshow", "focus"] {
+                        let _ = window.remove_event_listener_with_callback(
+                            name,
+                            handler.as_ref().unchecked_ref(),
+                        );
+                    }
                 }
             }
         });
