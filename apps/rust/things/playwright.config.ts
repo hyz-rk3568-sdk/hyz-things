@@ -29,7 +29,7 @@ function focusedRegressionFilter(): RegExp | undefined {
     // Only PRs explicitly carrying this marker run the feature-specific E2E cases.
     // All other PRs and pushes to main retain the complete Playwright suite.
     if (event.pull_request?.title?.includes('[focus-training-time-e2e]')) {
-      return /sixth statistics text tab shows stored durations and heatmap|pink study clock is display only and keeps its compact layout|paper pause stops the study clock and resuming restarts it|legacy morning afternoon evening countdown panel is removed/;
+      return /sixth statistics text tab shows stored durations and heatmap|pink study clock is display only and keeps its compact layout|refresh waits for the CSRF token before syncing study time|paper pause stops the study clock and resuming restarts it|legacy morning afternoon evening countdown panel is removed/;
     }
     if (event.pull_request?.title?.includes('[focus-study-e2e]')) {
       return /edits policy from device detail and preserves a dirty draft across a 409|iPad comprehensive 20-question flow with answer save and submit/;

@@ -92,6 +92,31 @@ test("pink study clock is display only and keeps its compact layout",async({page
   expect(events.filter(action=>action==='toggle')).toHaveLength(0);
 });
 
+test("refresh waits for the CSRF token before syncing study time",async({page})=>{
+  const tokens:string[]=[];
+  await page.route('**/api/v1/panel',async route=>{
+    await new Promise(resolve=>setTimeout(resolve,800));
+    await route.continue();
+  });
+  await page.route('**/api/v1/study/training-time/**',async route=>{
+    const url=new URL(route.request().url());
+    if(url.pathname.endsWith('/events')){
+      const csrf=route.request().headers()['x-hyz-csrf']??'';
+      if(!csrf){
+        await route.fulfill({status:403,contentType:'application/json',
+          body:JSON.stringify({error:{code:'forbidden',message:'Control request rejected'}})});
+        return;
+      }
+      tokens.push(csrf);
+    }
+    await route.fulfill({json:{now_ms:Date.now(),today_ms:0,running:false,module:''}});
+  });
+  await page.goto('/#/study/training');
+  await expect(page.getByTestId('study-time-inline')).toBeVisible();
+  await expect.poll(()=>tokens.length,{timeout:5_000}).toBeGreaterThan(0);
+  await expect(page.getByTestId('study-time-error')).toHaveCount(0);
+});
+
 test("paper pause stops the study clock and resuming restarts it",async({page})=>{
   const events=await clockFixture(page);
   await openComprehensivePaper(page);

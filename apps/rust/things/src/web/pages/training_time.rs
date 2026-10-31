@@ -30,6 +30,13 @@ pub(super) fn study_clock_provider(props: &StudyClockProviderProps) -> Html {
     let queue = use_mut_ref(VecDeque::<TrainingTimeEventRequest>::new);
     let processing = use_mut_ref(|| false);
     let serial = use_mut_ref(|| 0_u64);
+    // The panel bootstrap supplies the CSRF after the first render; keep the
+    // latest token in a stable cell so delayed callbacks and heartbeats never
+    // send a stale or empty value.
+    let csrf = use_mut_ref(|| props.csrf.clone());
+    if *csrf.borrow() != props.csrf {
+        *csrf.borrow_mut() = props.csrf.clone();
+    }
     let event = {
         let value = value.clone();
         let warning = warning.clone();
@@ -37,9 +44,12 @@ pub(super) fn study_clock_provider(props: &StudyClockProviderProps) -> Html {
         let queue = queue.clone();
         let processing = processing.clone();
         let serial = serial.clone();
-        let csrf = props.csrf.clone();
+        let csrf = csrf.clone();
         Callback::from(
             move |(action, module, phase): (String, Option<String>, Option<String>)| {
+                if csrf.borrow().is_empty() {
+                    return;
+                }
                 let id = {
                     let mut sequence = sequence.borrow_mut();
                     *sequence += 1;
@@ -71,9 +81,10 @@ pub(super) fn study_clock_provider(props: &StudyClockProviderProps) -> Html {
                     loop {
                         let next = queue.borrow_mut().pop_front();
                         let Some(request) = next else { break };
+                        let token = csrf.borrow().clone();
                         match post_json_response_typed::<_, TrainingTimeSnapshot>(
                             &format!("{TRAINING_TIME_ROOT}/events"),
-                            &csrf,
+                            &token,
                             &request,
                             "学习计时",
                         )

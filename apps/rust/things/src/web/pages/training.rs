@@ -68,22 +68,26 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
         TrainingMode::Statistics => "",
     };
     let study_active = *training_immersive && !*paper_paused;
+    let csrf_ready = !props.csrf.is_empty();
     {
         let event = study_clock.as_ref().map(|v| v.event.clone());
-        use_effect_with((study_active, module), move |(active, module)| {
-            if let Some(event) = &event {
-                if *active && !module.is_empty() {
-                    event.emit((
-                        "enter".into(),
-                        Some((*module).into()),
-                        Some("answer".into()),
-                    ));
-                } else {
-                    event.emit(("leave".into(), None, None));
+        use_effect_with(
+            (study_active, module, csrf_ready),
+            move |(active, module, _)| {
+                if let Some(event) = &event {
+                    if *active && !module.is_empty() {
+                        event.emit((
+                            "enter".into(),
+                            Some((*module).into()),
+                            Some("answer".into()),
+                        ));
+                    } else {
+                        event.emit(("leave".into(), None, None));
+                    }
                 }
-            }
-            || ()
-        });
+                || ()
+            },
+        );
     }
     {
         let event = study_clock.as_ref().map(|v| v.event.clone());
