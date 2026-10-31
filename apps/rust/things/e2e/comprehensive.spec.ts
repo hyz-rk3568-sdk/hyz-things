@@ -1207,3 +1207,38 @@ test("generation user prompt is collapsed by default, saved centrally, restored 
   await expect(reloaded.getByTestId("analysis-user-prompt-editor")).toHaveValue(defaultPrompt);
   await expect(reloaded).toContainText("默认版本");
 });
+
+test("foreground restore repaints stored ink after WebKit canvas buffer loss",async({page})=>{
+  await page.setViewportSize({width:1180,height:820});
+  await openHeldScrollWorkspace(page);
+  const canvas=page.getByTestId("calculation-scratchpad-canvas");
+  await drawWorkspaceStroke(page);
+  const original=await inkSnapshot(page);
+  await expect(page.getByTestId("calculation-scratchpad-save-status")).toHaveText("草稿已保存到本机");
+
+  await page.evaluate(()=>{
+    Object.defineProperty(document,"hidden",{configurable:true,value:true});
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  // Simulate an iPad WebKit backing buffer being dropped while suspended.
+  await canvas.evaluate(element=>{
+    const surface=element as HTMLCanvasElement;
+    surface.width=surface.width;
+  });
+  expect(await inkSnapshot(page)).not.toEqual(original);
+  await page.evaluate(()=>{
+    Object.defineProperty(document,"hidden",{configurable:true,value:false});
+    document.dispatchEvent(new Event("visibilitychange"));
+    window.dispatchEvent(new Event("pageshow"));
+    window.dispatchEvent(new Event("focus"));
+    Reflect.deleteProperty(document,"hidden");
+  });
+  await expect.poll(()=>inkSnapshot(page)).toEqual(original);
+
+  // A changed backing-store size just before the next pen-down must also
+  // replay previous strokes rather than silently erasing their pixels.
+  await canvas.evaluate(element=>{(element as HTMLCanvasElement).width=1;});
+  await drawWorkspaceStroke(page,180,260);
+  await page.getByTestId("calculation-scratchpad-undo").click();
+  await expect.poll(()=>inkSnapshot(page)).toEqual(original);
+});
