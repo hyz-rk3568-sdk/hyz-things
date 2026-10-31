@@ -21,7 +21,10 @@ extern "C" {
 #[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/ink_recovery.js")]
 extern "C" {
     #[wasm_bindgen::prelude::wasm_bindgen(js_name = mountInkRecovery)]
-    fn mount_ink_recovery(canvas: &HtmlCanvasElement, redraw: &js_sys::Function) -> js_sys::Function;
+    fn mount_ink_recovery(
+        canvas: &HtmlCanvasElement,
+        redraw: &js_sys::Function,
+    ) -> js_sys::Function;
 }
 
 #[derive(Deserialize)]

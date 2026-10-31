@@ -94,10 +94,8 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
             }
             if let Some(window) = window.as_ref() {
                 for name in ["pageshow", "focus"] {
-                    let _ = window.add_event_listener_with_callback(
-                        name,
-                        handler.as_ref().unchecked_ref(),
-                    );
+                    let _ = window
+                        .add_event_listener_with_callback(name, handler.as_ref().unchecked_ref());
                 }
             }
             move || {
