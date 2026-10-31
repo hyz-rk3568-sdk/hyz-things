@@ -62,6 +62,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
     let resume_generation = use_state(|| 0_u64);
     {
         let last_resume_ms = use_mut_ref(|| 0_f64);
+        let resume_counter = use_mut_ref(|| 0_u64);
         let resume_generation = resume_generation.clone();
         use_effect_with((), move |_| {
             let window = web_sys::window();
@@ -78,7 +79,12 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                         return;
                     }
                     *last_resume_ms.borrow_mut() = now;
-                    resume_generation.set((*resume_generation).wrapping_add(1));
+                    let next = {
+                        let mut counter = resume_counter.borrow_mut();
+                        *counter = counter.wrapping_add(1);
+                        *counter
+                    };
+                    resume_generation.set(next);
                 },
             );
             if let Some(document) = document.as_ref() {
