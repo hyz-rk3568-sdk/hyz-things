@@ -18,6 +18,12 @@ extern "C" {
     fn save_ink(scope: &str, data: &str) -> Promise;
 }
 
+#[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/ink_recovery.js")]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = mountInkRecovery)]
+    fn mount_ink_recovery(canvas: &HtmlCanvasElement, redraw: &js_sys::Function) -> js_sys::Function;
+}
+
 #[derive(Deserialize)]
 struct SavedInk {
     history: Vec<InkAction>,
@@ -224,17 +230,28 @@ fn canvas_point(point: InkPoint, canvas: &HtmlCanvasElement, responsive: bool) -
     }
 }
 
+fn canvas_backing_size(canvas: &HtmlCanvasElement) -> (u32, u32) {
+    let scale = web_sys::window()
+        .map(|w| w.device_pixel_ratio())
+        .unwrap_or(1.0)
+        .clamp(1.0, 3.0);
+    (
+        (canvas.client_width().max(1) as f64 * scale).round() as u32,
+        (canvas.client_height().max(1) as f64 * scale).round() as u32,
+    )
+}
+
+fn canvas_size_changed(canvas: &HtmlCanvasElement) -> bool {
+    let (width, height) = canvas_backing_size(canvas);
+    canvas.width() != width || canvas.height() != height
+}
+
 fn prepare_canvas(
     canvas: &HtmlCanvasElement,
     responsive: bool,
 ) -> Option<CanvasRenderingContext2d> {
     if responsive {
-        let scale = web_sys::window()
-            .map(|w| w.device_pixel_ratio())
-            .unwrap_or(1.0)
-            .clamp(1.0, 3.0);
-        let width = (canvas.client_width().max(1) as f64 * scale).round() as u32;
-        let height = (canvas.client_height().max(1) as f64 * scale).round() as u32;
+        let (width, height) = canvas_backing_size(canvas);
         if canvas.width() != width || canvas.height() != height {
             canvas.set_width(width);
             canvas.set_height(height);
@@ -592,33 +609,31 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
         });
     }
 
+    // ResizeObserver covers pane reflow and visualViewport changes that never
+    // fire window.resize on iPad. Also repaint after a foreground return even
+    // when dimensions match: WebKit may have dropped the canvas backing buffer.
     {
         let responsive = props.responsive;
+        let opened = *enabled;
         let canvas_ref = canvas_ref.clone();
         let strokes = strokes.clone();
-        use_effect_with(responsive, move |_| {
-            let window = web_sys::window();
-            let handler = Closure::<dyn FnMut(web_sys::Event)>::new(move |_| {
-                if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                    redraw_state(&canvas, &strokes.borrow(), responsive);
-                }
-            });
-            if responsive {
-                if let Some(w) = window.as_ref() {
-                    let _ = w.add_event_listener_with_callback(
-                        "resize",
-                        handler.as_ref().unchecked_ref(),
-                    );
-                }
-            }
+        use_effect_with((responsive, opened), move |_| {
+            let subscription = if responsive && opened {
+                canvas_ref.cast::<HtmlCanvasElement>().map(|canvas| {
+                    let callback = Closure::<dyn FnMut()>::new(move || {
+                        if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
+                            redraw_state(&canvas, &strokes.borrow(), true);
+                        }
+                    });
+                    let cleanup = mount_ink_recovery(&canvas, callback.as_ref().unchecked_ref());
+                    (cleanup, callback)
+                })
+            } else {
+                None
+            };
             move || {
-                if responsive {
-                    if let Some(w) = window {
-                        let _ = w.remove_event_listener_with_callback(
-                            "resize",
-                            handler.as_ref().unchecked_ref(),
-                        );
-                    }
+                if let Some((cleanup, _callback)) = subscription {
+                    let _ = cleanup.call0(&JsValue::NULL);
                 }
             }
         });
@@ -763,6 +778,11 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
                 };
                 (point, None)
             };
+            // Resizing the backing store erases pixels: restore all completed
+            // strokes before painting the new pen-down sample.
+            if responsive && canvas_size_changed(&canvas) {
+                redraw_state(&canvas, &state, responsive);
+            }
             let Some(context) = prepare_canvas(&canvas, responsive) else {
                 return;
             };
@@ -791,6 +811,12 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
         let scroll_linked = props.scroll_linked;
         Callback::from(move |event: PointerEvent| {
             let mut state = strokes.borrow_mut();
+            let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() else {
+                return;
+            };
+            if responsive && canvas_size_changed(&canvas) {
+                redraw_state(&canvas, &state, responsive);
+            }
             let pane = state.active_pane;
             let Some((id, points)) = state.active.as_mut() else {
                 return;
@@ -798,9 +824,6 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
             if *id != event.pointer_id() {
                 return;
             }
-            let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() else {
-                return;
-            };
             let point = if scroll_linked {
                 let Some(pane) = pane else {
                     return;
