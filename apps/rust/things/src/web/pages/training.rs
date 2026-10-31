@@ -68,8 +68,8 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
             let window = web_sys::window();
             let document = window.as_ref().and_then(|w| w.document());
             let document_for_handler = document.clone();
-            let handler = wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::Event)>::new(
-                move |_| {
+            let handler =
+                wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::Event)>::new(move |_| {
                     if document_for_handler.as_ref().is_some_and(|d| d.hidden()) {
                         return;
                     }
@@ -81,12 +81,11 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                     *last_resume_ms.borrow_mut() = now;
                     let next = {
                         let mut counter = resume_counter.borrow_mut();
-                        *counter = counter.wrapping_add(1);
+                        *counter = (*counter).wrapping_add(1);
                         *counter
                     };
                     resume_generation.set(next);
-                },
-            );
+                });
             if let Some(document) = document.as_ref() {
                 let _ = document.add_event_listener_with_callback(
                     "visibilitychange",
