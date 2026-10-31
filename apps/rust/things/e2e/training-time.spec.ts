@@ -180,7 +180,12 @@ test("foreground resume restores study time after the heartbeat grace expires",a
   const afterFirstReturn=enters();
   await setHidden(true);
   await page.clock.fastForward(2_000);
-  await setHidden(false);
+  // iPad occasionally sends pageshow/focus without a visible-state event.
+  await page.evaluate(()=>{
+    Object.defineProperty(document,'hidden',{configurable:true,get:()=>false});
+    window.dispatchEvent(new Event('pageshow'));
+    window.dispatchEvent(new Event('focus'));
+  });
   await expect.poll(enters).toBe(afterFirstReturn+1);
 });
 
