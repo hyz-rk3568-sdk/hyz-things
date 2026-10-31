@@ -135,14 +135,53 @@ test("returning after a long background soft-refreshes without reloading",async(
   },hidden);
   await setHidden(true);
   await page.clock.fastForward(9_000);
-  await setHidden(false);
-  await page.waitForTimeout(300);
   expect(leaves()).toBe(leavesBefore);
-  await setHidden(true);
-  await page.clock.fastForward(11_000);
   await setHidden(false);
   await expect.poll(leaves).toBeGreaterThan(leavesBefore);
+  const afterShortReturn=leaves();
+  await setHidden(true);
+  await page.clock.fastForward(11_000);
+  expect(leaves()).toBe(afterShortReturn);
+  await setHidden(false);
+  await expect.poll(leaves).toBeGreaterThan(afterShortReturn);
   expect(await page.evaluate(()=>sessionStorage.getItem('training-page-loads'))).toBe('1');
+});
+
+test("foreground resume restores study time after the heartbeat grace expires",async({page})=>{
+  await page.clock.install();
+  const events=await clockFixture(page);
+  await openComprehensivePaper(page);
+  const clock=page.getByTestId('study-time-inline');
+  await expect(clock).toBeVisible();
+  await expect.poll(()=>events.filter(action=>action==='enter').length).toBeGreaterThan(0);
+  const enters=()=>events.filter(action=>action==='enter').length;
+  const initialEnters=enters();
+  const setHidden=(hidden:boolean)=>page.evaluate(hidden=>{
+    Object.defineProperty(document,'hidden',{configurable:true,get:()=>hidden});
+    document.dispatchEvent(new Event('visibilitychange'));
+  },hidden);
+  await setHidden(true);
+  await page.clock.fastForward(60_000);
+  // The existing 45-second server heartbeat grace is preserved: no
+  // background leave, extra heartbeat, or time-freezing request is sent.
+  expect(enters()).toBe(initialEnters);
+  await setHidden(false);
+  await page.evaluate(()=>{
+    window.dispatchEvent(new Event('pageshow'));
+    window.dispatchEvent(new Event('focus'));
+  });
+  await expect.poll(enters).toBe(initialEnters+1);
+  const restored=await clock.innerText();
+  await page.clock.fastForward(3_000);
+  await expect.poll(()=>clock.innerText()).not.toBe(restored);
+
+  // The next app switch must also work: don't capture an obsolete Yew
+  // state handle that only increments the wake generation once.
+  const afterFirstReturn=enters();
+  await setHidden(true);
+  await page.clock.fastForward(2_000);
+  await setHidden(false);
+  await expect.poll(enters).toBe(afterFirstReturn+1);
 });
 
 test("paper pause stops the study clock and resuming restarts it",async({page})=>{
