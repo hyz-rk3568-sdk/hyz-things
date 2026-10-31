@@ -117,6 +117,36 @@ test("refresh waits for the CSRF token before syncing study time",async({page})=
   await expect(page.getByTestId('study-time-error')).toHaveCount(0);
 });
 
+test("returning after a long background reloads the training page",async({page})=>{
+  await page.addInitScript(()=>{
+    const loads=Number(sessionStorage.getItem('training-page-loads')??'0');
+    sessionStorage.setItem('training-page-loads',String(loads+1));
+  });
+  await page.clock.install();
+  await clockFixture(page);
+  await page.goto('/#/study/training');
+  await expect(page.getByTestId('study-time-inline')).toBeVisible();
+  const setHidden=(hidden:boolean)=>page.evaluate(hidden=>{
+    Object.defineProperty(document,'hidden',{configurable:true,get:()=>hidden});
+    document.dispatchEvent(new Event('visibilitychange'));
+  },hidden);
+  await setHidden(true);
+  await page.clock.fastForward(5_000);
+  await setHidden(false);
+  await page.waitForTimeout(200);
+  expect(await page.evaluate(()=>sessionStorage.getItem('training-page-loads'))).toBe('1');
+  await setHidden(true);
+  await page.clock.fastForward(61_000);
+  await Promise.all([
+    page.waitForEvent('load',{timeout:5_000}),
+    setHidden(false),
+  ]);
+  await expect.poll(async()=>{
+    try{return await page.evaluate(()=>sessionStorage.getItem('training-page-loads'));}
+    catch{return null;}
+  }).toBe('2');
+});
+
 test("paper pause stops the study clock and resuming restarts it",async({page})=>{
   const events=await clockFixture(page);
   await openComprehensivePaper(page);

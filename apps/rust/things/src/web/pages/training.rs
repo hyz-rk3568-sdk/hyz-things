@@ -4,6 +4,10 @@ use super::*;
 use hyz_things::domain::flashcards::{DeckSummary, FlashcardSummary, TagSummary};
 use std::collections::HashSet;
 
+// Long background suspensions can leave WebKit timers and the study clock
+// stale. Reload on return after this gap; short app switches keep their state.
+const HIDDEN_RELOAD_AFTER_MS: f64 = 60_000.0;
+
 #[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/training_viewport.js")]
 extern "C" {
     #[wasm_bindgen::prelude::wasm_bindgen(js_name = mountTrainingViewport)]
@@ -50,6 +54,43 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
             move || {
                 if let Some(cleanup) = cleanup {
                     let _ = cleanup.call0(&JsValue::NULL);
+                }
+            }
+        });
+    }
+    {
+        let hidden_at = use_mut_ref(|| None::<f64>);
+        use_effect_with((), move |_| {
+            let document = web_sys::window().and_then(|window| window.document());
+            let handler = document.as_ref().map(|document| {
+                let document_for_handler = document.clone();
+                let hidden_at = hidden_at.clone();
+                let handler = wasm_bindgen::closure::Closure::<dyn FnMut()>::new(move || {
+                    if document_for_handler.hidden() {
+                        *hidden_at.borrow_mut() = Some(Date::now());
+                        return;
+                    }
+                    let hidden_since = hidden_at.borrow_mut().take();
+                    if let Some(hidden_since) = hidden_since {
+                        if Date::now() - hidden_since >= HIDDEN_RELOAD_AFTER_MS {
+                            if let Some(window) = web_sys::window() {
+                                let _ = window.location().reload();
+                            }
+                        }
+                    }
+                });
+                let _ = document.add_event_listener_with_callback(
+                    "visibilitychange",
+                    handler.as_ref().unchecked_ref(),
+                );
+                handler
+            });
+            move || {
+                if let (Some(document), Some(handler)) = (document, handler) {
+                    let _ = document.remove_event_listener_with_callback(
+                        "visibilitychange",
+                        handler.as_ref().unchecked_ref(),
+                    );
                 }
             }
         });
