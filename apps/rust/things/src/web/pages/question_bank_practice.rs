@@ -894,7 +894,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 </section>
             }
             if *settings_open && *mode == PracticeMode::Module {
-                <section class="fixed inset-0 z-[85] flex h-dvh flex-col overflow-hidden bg-base-200"
+                <section class="training-workspace fixed inset-0 z-[85] flex h-dvh flex-col overflow-hidden bg-base-200"
                     data-testid="module-drill-settings" role="dialog" aria-label="自定义刷题设置" aria-modal="true">
                     <header class="flex shrink-0 items-center gap-3 border-b border-base-content/10 px-4 py-3">
                         <button type="button" class="btn btn-ghost btn-sm" onclick={Callback::from({
