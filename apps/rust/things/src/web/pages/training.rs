@@ -26,7 +26,6 @@ enum TrainingMode {
     Comprehensive,
     LogicJudgment,
     QuantitativeRelations,
-    QuestionBank,
     Statistics,
 }
 
@@ -126,12 +125,11 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
     let module = match *mode {
         TrainingMode::Calculation => "calculation",
         TrainingMode::Flashcards => "flashcards",
-        TrainingMode::QuestionBank => "question-bank",
+        TrainingMode::QuestionBank => "question_bank",
         TrainingMode::Comprehensive => "comprehensive",
         TrainingMode::LogicJudgment => "logic",
         TrainingMode::QuantitativeRelations => "quantitative",
         TrainingMode::Statistics => "",
-        TrainingMode::QuestionBank => "question_bank",
     };
     let study_active = *training_immersive && !*paper_paused;
     let csrf_ready = !props.csrf.is_empty();
@@ -221,14 +219,6 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
         let mode = mode.clone();
         Callback::from(move |_| mode.set(TrainingMode::LogicJudgment))
     };
-    let choose_question_bank = {
-        let mode = mode.clone();
-        let immersive = training_immersive.clone();
-        Callback::from(move |_| {
-            immersive.set(false);
-            mode.set(TrainingMode::QuestionBank);
-        })
-    };
     let choose_statistics = {
         let mode = mode.clone();
         let training_immersive = training_immersive.clone();
@@ -269,7 +259,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                         <button type="button" class="training-mode" data-testid="training-mode-comprehensive" aria-pressed={(*mode == TrainingMode::Comprehensive).to_string()} onclick={choose_comprehensive}>{"资料分析"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-logic-judgment" aria-pressed={(*mode == TrainingMode::LogicJudgment).to_string()} onclick={choose_logic}>{"判断推理"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-quantitative" aria-pressed={(*mode == TrainingMode::QuantitativeRelations).to_string()} onclick={choose_quantitative}>{"数量关系"}</button>
-                        <button type="button" class="training-mode" data-testid="training-mode-question-bank" aria-pressed={(*mode == TrainingMode::QuestionBank).to_string()} onclick={choose_question_bank}>{"真题训练"}</button>
+                        
                         <button type="button" class="training-mode" data-testid="training-mode-statistics" aria-pressed={(*mode == TrainingMode::Statistics).to_string()} onclick={choose_statistics}>{"学习统计"}</button>
                     </div>
                 </nav>
@@ -285,9 +275,6 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                     on_paper_pause_change={on_paper_pause_change.clone()} />
             } else if *mode == TrainingMode::Flashcards {
                 <FlashcardPractice route_state={props.route_state.clone()} on_immersive_change={on_immersive_change.clone()} />
-            } else if *mode == TrainingMode::QuestionBank {
-                <QuestionBankTraining csrf={props.csrf.clone()} on_immersive_change={on_immersive_change.clone()}
-                    on_paper_pause_change={on_paper_pause_change.clone()} />
             } else if matches!(*mode, TrainingMode::LogicJudgment | TrainingMode::QuantitativeRelations) {
                 <LogicJudgmentTraining
                     key={if *mode == TrainingMode::QuantitativeRelations { "quantitative" } else { "logic" }}

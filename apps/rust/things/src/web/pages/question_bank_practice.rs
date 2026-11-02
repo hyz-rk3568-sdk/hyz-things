@@ -29,21 +29,6 @@ enum Action {
     Back,
 }
 
-async fn put_bank<T: serde::Serialize, R: serde::de::DeserializeOwned>(
-    endpoint: &str, csrf: &str, body: &T, label: &str,
-) -> Result<R, String> {
-    let request = Request::put(endpoint)
-        .credentials(RequestCredentials::SameOrigin)
-        .header("Accept", "application/json")
-        .header("X-HYZ-CSRF", csrf)
-        .json(body)
-        .map_err(|e| format!("{label}编码失败：{e}"))?;
-    let response = request.send().await.map_err(|e| format!("{label}连接失败：{e}"))?;
-    if !response.ok() {
-        return Err(format!("{label}失败（HTTP {}）", response.status()));
-    }
-    response.json::<R>().await.map_err(|e| format!("{label}响应无效：{e}"))
-}
 
 async fn load_workspace(id: &str) -> Result<PracticeWorkspace, String> {
     fetch_json(&format!("{ROOT}/practice/sessions/{id}"), "真题练习").await
@@ -272,7 +257,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 selected
                             } else { vec![choice] };
                             answer.sort();
-                            let _: PracticeSession = put_bank(
+                            let _: PracticeSession = post_json_response(
                                 &format!("{ROOT}/practice/sessions/{}/answers/{}",active.session.id,q.item.question_id),
                                 &csrf, &SavePracticeAnswer { answer }, "保存真题答案",
                             ).await?;
@@ -285,7 +270,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                         Action::Exit => true,
                                         _ => !active.session.paused,
                                     };
-                                    let _: PracticeSession = put_bank(
+                                    let _: PracticeSession = post_json_response(
                                         &format!("{ROOT}/practice/sessions/{}/pause",active.session.id),
                                         &csrf, &SetPracticePaused { paused: pause, elapsed_seconds: *elapsed },
                                         "暂停训练",
@@ -307,6 +292,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             if !*submit_confirm && active.session.items.iter().any(|q| q.answer.is_empty()) {
                                 submit_confirm.set(true);
                             } else {
+                                let _: PracticeSession = post_json_response(
+                                    &format!("{ROOT}/practice/sessions/{}/pause",active.session.id),
+                                    &csrf, &SetPracticePaused { paused: true, elapsed_seconds: *elapsed },
+                                    "交卷前保存用时",
+                                ).await?;
                                 let completed: PracticeSession = post_json_response(
                                     &format!("{ROOT}/practice/sessions/{}/submit",active.session.id),
                                     &csrf, &EmptyRequest {}, "真题交卷",
@@ -322,7 +312,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             }
                         }
                         Action::Favorite(id) => {
-                            let updated: FavoriteState = put_bank(
+                            let updated: FavoriteState = post_json_response(
                                 &format!("{ROOT}/practice/favorites/{id}"),
                                 &csrf, &SetFavorite { favorite: !*favorite }, "收藏真题",
                             ).await?;

@@ -9,6 +9,7 @@ fn module_name(id: &str) -> &'static str {
         "comprehensive" => "资料分析",
         "logic" => "判断推理",
         "quantitative" => "数量关系",
+        "question_bank" => "真题训练",
         _ => "其他",
     }
 }
