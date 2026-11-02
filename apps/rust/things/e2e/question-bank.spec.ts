@@ -32,6 +32,7 @@ test('question bank paper module practice keeps source numbering and hides answe
   await openSheet(page);
   await expect(page.getByTestId('question-bank-practice-number')).toHaveCount(2);
   await expect(page.getByTestId('question-bank-practice-number').first()).toContainText('26');
+  await page.getByTestId('training-answer-sheet-toggle').click();
   const sessionId = await page.evaluate(async()=>{
     const res=await fetch('/api/v1/question-bank/practice/history');
     const sessions=await res.json();
@@ -91,6 +92,7 @@ test('question bank wrong and favorite mode reuses fixed source items',async({pa
   await page.getByTestId('question-bank-practice-start').click();
   await openSheet(page);
   await expect(page.getByTestId('question-bank-practice-number')).toHaveCount(1);
+  await page.getByTestId('training-answer-sheet-toggle').click();
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('原卷第 26 题');
   await page.getByTestId('question-bank-practice-choice').nth(1).click();
   await page.getByTestId('question-bank-practice-submit').click();
