@@ -2887,7 +2887,7 @@ fn is_question_bank_practice_post_path(path: &str) -> bool {
         && parts[..6] == ["", "api", "v1", "question-bank", "practice", "sessions"]
         && crate::application::question_bank::document::valid_id(parts[6])
     {
-        return matches!(parts.as_slice(), [.., "submit" | "pause"])
+        return parts.len() == 8 && matches!(parts[7], "submit" | "pause")
             || parts.len() == 9
                 && parts[7] == "answers"
                 && crate::application::question_bank::document::valid_id(parts[8]);
@@ -3095,6 +3095,7 @@ mod tests {
         assert!(is_post_path(&format!("/api/v1/question-bank/practice/favorites/{id}")));
         assert!(!is_post_path("/api/v1/question-bank/practice/favorites/bad"));
         assert!(!is_post_path("/api/v1/question-bank/practice/sessions/bad/submit"));
+        assert!(!is_post_path(&format!("/api/v1/question-bank/practice/sessions/{id}/extra/submit")));
     }
 
     #[test]
