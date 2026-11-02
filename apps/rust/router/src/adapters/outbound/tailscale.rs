@@ -404,31 +404,11 @@ impl LinuxTailscalePlatform {
         preferences: TailscalePreferences,
         route: Option<bool>,
     ) -> Result<(), PlatformError> {
-        let accept_dns = bool_arg(preferences.accept_dns);
-        let accept_routes = bool_arg(preferences.accept_routes);
-        let advertise_exit_node = bool_arg(preferences.advertise_exit_node);
-        let ssh = bool_arg(preferences.ssh_enabled);
-        let netfilter = if preferences.netfilter_off {
-            "off"
-        } else {
-            "on"
-        };
-        let route = match route {
-            Some(true) => TAILSCALE_LAN_ROUTE,
-            Some(false) | None => "",
-        };
-        self.tailscale(&[
-            "set",
-            &format!("--accept-dns={accept_dns}"),
-            &format!("--accept-routes={accept_routes}"),
-            &format!("--advertise-exit-node={advertise_exit_node}"),
-            "--exit-node=",
-            &format!("--ssh={ssh}"),
-            &format!("--netfilter-mode={netfilter}"),
-            &format!("--advertise-routes={route}"),
-        ])?;
+        let args = preference_args(preferences, route);
+        let args = args.iter().map(String::as_str).collect::<Vec<_>>();
+        self.tailscale(&args)?;
         let (observed_preferences, observed_route) = self.observe_preferences()?;
-        if observed_preferences != preferences || observed_route != (route == TAILSCALE_LAN_ROUTE) {
+        if observed_preferences != preferences || observed_route != (route == Some(true)) {
             return Err(PlatformError::UnsafeToCutOver(
                 "tailscale did not confirm the fixed preferences and route advertisement"
                     .to_owned(),
@@ -2103,6 +2083,22 @@ fn parse_prefs_json(input: &str) -> Result<(TailscalePreferences, bool), Platfor
     let advertise_exit_node = routes
         .iter()
         .any(|route| matches!(*route, "0.0.0.0/0" | "::/0"));
+    let auto_update = match object.get("AutoUpdate") {
+        Some(Value::Object(auto_update)) => match auto_update.get("Apply") {
+            Some(Value::Bool(value)) => *value,
+            Some(Value::Null) | None => false,
+            _ => {
+                return Err(PlatformError::ProbeFailed(
+                    "Tailscale prefs AutoUpdate.Apply is invalid".to_owned(),
+                ))
+            }
+        },
+        _ => {
+            return Err(PlatformError::ProbeFailed(
+                "Tailscale prefs AutoUpdate is absent or invalid".to_owned(),
+            ))
+        }
+    };
     Ok((
         TailscalePreferences {
             accept_dns: boolean("CorpDNS")?,
@@ -2111,6 +2107,7 @@ fn parse_prefs_json(input: &str) -> Result<(TailscalePreferences, bool), Platfor
             exit_node_selected,
             ssh_enabled: boolean("RunSSH")?,
             netfilter_off,
+            auto_update,
         },
         route_advertised,
     ))
@@ -2888,6 +2885,34 @@ fn mode_text(mode: TailscaleMode) -> &'static str {
     }
 }
 
+fn preference_args(preferences: TailscalePreferences, route: Option<bool>) -> Vec<String> {
+    let accept_dns = bool_arg(preferences.accept_dns);
+    let accept_routes = bool_arg(preferences.accept_routes);
+    let advertise_exit_node = bool_arg(preferences.advertise_exit_node);
+    let ssh = bool_arg(preferences.ssh_enabled);
+    let auto_update = bool_arg(preferences.auto_update);
+    let netfilter = if preferences.netfilter_off {
+        "off"
+    } else {
+        "on"
+    };
+    let route = match route {
+        Some(true) => TAILSCALE_LAN_ROUTE,
+        Some(false) | None => "",
+    };
+    vec![
+        "set".to_owned(),
+        format!("--accept-dns={accept_dns}"),
+        format!("--accept-routes={accept_routes}"),
+        format!("--advertise-exit-node={advertise_exit_node}"),
+        "--exit-node=".to_owned(),
+        format!("--ssh={ssh}"),
+        format!("--netfilter-mode={netfilter}"),
+        format!("--auto-update={auto_update}"),
+        format!("--advertise-routes={route}"),
+    ]
+}
+
 fn bool_arg(value: bool) -> &'static str {
     if value {
         "true"
@@ -3193,6 +3218,7 @@ mod tests {
                     exit_node_selected: false,
                     ssh_enabled: false,
                     netfilter_off: false,
+                    auto_update: false,
                 },
                 false,
             )
@@ -3226,6 +3252,34 @@ mod tests {
             parse_prefs_json(&PREFS_LAN.replace("\"CorpDNS\": false", "\"CorpDNS\": null"))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn prefs_parser_reads_auto_update_apply() {
+        let enabled =
+            parse_prefs_json(&PREFS_LAN.replace("\"Apply\": false", "\"Apply\": true")).unwrap();
+        assert!(enabled.0.auto_update);
+        assert!(
+            parse_prefs_json(&PREFS_LAN.replace("\"Apply\": false", "\"Apply\": \"enabled\""))
+                .is_err()
+        );
+        let mut missing: serde_json::Value = serde_json::from_str(PREFS_LAN).unwrap();
+        missing.as_object_mut().unwrap().remove("AutoUpdate");
+        assert!(parse_prefs_json(&missing.to_string()).is_err());
+    }
+
+    #[test]
+    fn fixed_preferences_disable_auto_update() {
+        let fixed = preference_args(TailscalePreferences::FIXED, None);
+        assert!(fixed.contains(&"--auto-update=false".to_owned()));
+        let restored = preference_args(
+            TailscalePreferences {
+                auto_update: true,
+                ..TailscalePreferences::FIXED
+            },
+            None,
+        );
+        assert!(restored.contains(&"--auto-update=true".to_owned()));
     }
 
     #[test]

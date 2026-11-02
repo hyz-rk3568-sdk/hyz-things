@@ -46,6 +46,7 @@ pub struct TailscalePreferences {
     pub exit_node_selected: bool,
     pub ssh_enabled: bool,
     pub netfilter_off: bool,
+    pub auto_update: bool,
 }
 
 impl TailscalePreferences {
@@ -56,6 +57,7 @@ impl TailscalePreferences {
         exit_node_selected: false,
         ssh_enabled: false,
         netfilter_off: true,
+        auto_update: false,
     };
 }
 

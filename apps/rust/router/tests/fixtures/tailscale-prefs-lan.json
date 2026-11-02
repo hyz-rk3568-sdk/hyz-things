@@ -16,5 +16,9 @@
   "AdvertiseServices": null,
   "NoSNAT": false,
   "NoStatefulFiltering": true,
-  "NetfilterMode": 0
+  "NetfilterMode": 0,
+  "AutoUpdate": {
+    "Check": true,
+    "Apply": false
+  }
 }

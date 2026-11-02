@@ -6,5 +6,9 @@
   "NetfilterMode": 2,
   "ExitNodeID": "",
   "ExitNodeIP": "",
-  "AdvertiseRoutes": null
+  "AdvertiseRoutes": null,
+  "AutoUpdate": {
+    "Check": true,
+    "Apply": false
+  }
 }

@@ -278,6 +278,31 @@ fn persisted_lan_access_router_only_installs_lan_path_when_router_becomes_ready(
 }
 
 #[test]
+fn enabled_auto_update_repairs_fixed_preferences_without_opening_lan_paths() {
+    let mut observed = router_only(Some(TailscaleMode::RouterOnly));
+    observed.preferences = Probe::Known(TailscalePreferences {
+        auto_update: true,
+        ..TailscalePreferences::FIXED
+    });
+
+    assert_eq!(
+        tailscale_plan(
+            &TailscaleDesired::router_only(),
+            &observed,
+            &network_ready(),
+            "new",
+        )
+        .unwrap(),
+        vec![
+            TailscaleAction::SetFixedPreferences,
+            TailscaleAction::CommitDesiredMode {
+                mode: TailscaleMode::RouterOnly,
+            },
+        ]
+    );
+}
+
+#[test]
 fn router_only_to_lan_access_gates_route_and_firewall_on_router_readiness() {
     let desired = TailscaleDesired::lan_subnet_access();
     assert_eq!(

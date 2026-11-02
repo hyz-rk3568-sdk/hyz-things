@@ -82,8 +82,12 @@
 - `exit-node=`
 - `ssh=false`
 - `netfilter-mode=off`
+- `auto-update=false`
 - `advertise-routes=` 或严格等于 `192.168.8.0/24`
 - subnet SNAT 由产品 owned 规则实现，不依赖 Tailscale 自动修改 iptables
+
+`auto-update=false` 会显式写入本地 prefs，覆盖 Tailnet 的默认自动更新策略；
+产品升级只通过 OTA 进行，避免 Tailscale 自行替换 rootfs 中的固定版本。
 
 选择 `netfilter-mode=off` 是为了保持本项目“单一 iptables 产品状态源、精确 ownership、固定规则体”的约束。产品必须自行实现 Tailscale 所需 INPUT/FORWARD/NAT 规则，同时继续依赖 Tailscale 内部 packet filter 执行 Tailnet Grants。
 
