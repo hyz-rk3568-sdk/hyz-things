@@ -1,5 +1,5 @@
-// expected-tests: 110
-// expected-runnable-tests: 109
+// expected-tests: 109
+// expected-runnable-tests: 108
 import type { Page } from "@playwright/test";
 
 export async function installCountdownVideoPipMock(page: Page) {
@@ -122,17 +122,5 @@ export async function readCountdownTotal(target: Page, cardId?: string): Promise
       (total, value, index) => total + value * (weights[index] ?? 0),
       0,
     );
-  }, cardId);
-}
-
-export async function readCustomCountdownTotal(
-  target: Page,
-  cardId?: string,
-): Promise<number> {
-  return target.evaluate((id) => {
-    const card = id
-      ? document.querySelector(`[data-exam-id="${id}"]`)
-      : document.querySelector("[data-remaining-seconds]");
-    return Number(card?.getAttribute("data-remaining-seconds") ?? 0);
   }, cardId);
 }

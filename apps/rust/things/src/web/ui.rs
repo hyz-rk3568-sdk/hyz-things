@@ -21,10 +21,6 @@ pub const PORTAL_TAB_ACTIVE: &str = "tab-active bg-primary text-primary-content"
 
 pub const PORTAL_SWIPE_SURFACE: &str = "min-w-0 touch-pan-y";
 
-pub const EXAM_SECTION: &str =
-    "card relative isolate overflow-hidden border border-base-content/10 bg-base-300/95 p-4 shadow-xl shadow-black/20 sm:p-6";
-pub const EXAM_DECORATION: &str =
-    "pointer-events-none absolute -right-16 -top-16 -z-10 size-48 rounded-full bg-base-content/5 blur-3xl";
 pub const EXAM_GRID: &str = "mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4";
 pub const EXAM_CARD: &str =
     "card min-w-0 touch-manipulation gap-3 border border-base-content/10 bg-base-300/90 p-4 shadow-lg shadow-black/20 transition-shadow";
@@ -107,14 +103,6 @@ pub const FEEDBACK: &str =
     "alert min-h-12 border border-base-content/10 bg-base-100/50 text-xs text-base-content/70";
 pub const INNER_CARD: &str =
     "card min-w-0 gap-4 border border-base-content/10 bg-base-100/60 p-4 shadow-sm sm:p-5";
-pub const CUSTOM_TIMER_GRID: &str =
-    "mt-4 grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3";
-pub const CUSTOM_TIMER_CARD: &str =
-    "card min-w-0 gap-3 border border-base-content/10 bg-base-100/60 p-3 shadow-sm sm:p-4";
-pub const CUSTOM_TIMER_HEAD: &str = "flex min-w-0 items-center justify-between gap-2";
-pub const CUSTOM_TIMER_TITLE: &str = "text-base font-black";
-pub const CUSTOM_TIMER_INPUTS: &str = "grid grid-cols-3 gap-2";
-pub const CUSTOM_TIMER_ACTIONS: &str = "flex flex-wrap gap-2";
 pub const CONTROL_TITLE: &str =
     "flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between";
 pub const CONTROL_HEADING: &str = "text-sm font-bold";

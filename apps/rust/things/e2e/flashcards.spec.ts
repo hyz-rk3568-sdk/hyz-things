@@ -6,14 +6,14 @@ test.beforeEach(async ({ request }) => {
   await resetHarness(request);
 });
 
-test("shows Flashcards on Study while preserving the existing countdown panels", async ({
+test("shows Flashcards on Study alongside the exam countdown", async ({
   page,
 }) => {
   await page.goto("/#/study");
   await expect(page.getByTestId("study-summary")).toBeVisible();
   await expect(page.getByTestId("study-open-cards")).toBeVisible();
   await expect(page.getByTestId("study-start-review")).toBeVisible();
-  await expect(page.getByRole("region", { name: "自定义倒计时" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "自定义倒计时" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "考试冲刺倒计时" })).toBeVisible();
 });
 

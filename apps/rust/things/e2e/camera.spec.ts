@@ -14,7 +14,6 @@ import {
 } from "./fixtures";
 import {
   readCountdownTotal,
-  readCustomCountdownTotal,
   realTouchSwipe,
   swipePortal,
 } from "./support";

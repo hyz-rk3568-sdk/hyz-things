@@ -57,7 +57,7 @@ use web_sys::{
     MediaStreamTrack, MediaTrackConstraints, PointerEvent, RequestCredentials,
     RtcIceGatheringState, RtcPeerConnection, RtcPeerConnectionState, RtcRtpSender,
     RtcRtpTransceiverDirection, RtcRtpTransceiverInit, RtcSdpType, RtcSessionDescriptionInit,
-    RtcTrackEvent, Storage, VideoFrame, VideoFrameInit, Window,
+    RtcTrackEvent, VideoFrame, VideoFrameInit, Window,
 };
 use yew::prelude::*;
 

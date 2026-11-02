@@ -61,7 +61,7 @@ readonly DIST_DIR="${TEMP_DIR}/dist"
 (
     cd -- "${PACKAGE_DIR}"
     NO_COLOR=true npm run build:css
-    NO_COLOR=true trunk build --locked --release --dist "${DIST_DIR}" frontend/index.html
+    NO_COLOR=true RUSTFLAGS="${RUSTFLAGS:+${RUSTFLAGS} }-D warnings" trunk build --locked --release --dist "${DIST_DIR}" frontend/index.html
 )
 python3 "${EXTERNALIZER}" "${DIST_DIR}"
 if [[ ! -s "${DIST_DIR}/index.html" || ! -s "${DIST_DIR}/router-bootstrap.js" ]]; then

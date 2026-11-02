@@ -12,7 +12,6 @@ import {
 import {
   installCountdownVideoPipMock,
   readCountdownTotal,
-  readCustomCountdownTotal,
   realTouchSwipe,
   swipePortal,
 } from "./support";
@@ -108,7 +107,7 @@ test("keeps speaker volume controls usable on a narrow System page", async ({ pa
   await expectNoHorizontalOverflow(page);
 });
 
-test("renders countdowns on the public Study page without unrelated subscriptions", async ({ page }) => {
+test("renders the exam countdown on the public Study page without unrelated subscriptions", async ({ page }) => {
   const unrelated: string[] = [];
   page.on("request", request => {
     if (/device-policies|proxy\/subscription|tailscale\/peers|proxy\/delays/.test(request.url())) {
@@ -117,7 +116,7 @@ test("renders countdowns on the public Study page without unrelated subscription
   });
   await page.goto("/#/study");
   await expect(page.getByRole("heading", { name: "学习中心", level: 2, exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "自定义倒计时" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "自定义倒计时" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "考试冲刺倒计时" })).toBeVisible();
   await page.waitForTimeout(2_500);
   expect(unrelated).toEqual([]);
@@ -139,15 +138,6 @@ test("keeps local countdown state across portal page switches", async ({ page })
   await goToAppPage(page, "网络");
   await goToAppPage(page, "学习");
   await expect.poll(async () => readCountdownTotal(page), { timeout: 7_500 }).toBeLessThanOrEqual(initial);
-});
-
-test("keeps local custom countdown state across portal page switches", async ({ page }) => {
-  await page.goto("/");
-  await goToAppPage(page, "学习");
-  const initial = await readCustomCountdownTotal(page);
-  await goToAppPage(page, "网络");
-  await goToAppPage(page, "学习");
-  await expect.poll(async () => readCustomCountdownTotal(page), { timeout: 7_500 }).toBeLessThanOrEqual(initial);
 });
 
 test("keeps the countdown canvas alive across page switches", async ({ page }) => {

@@ -45,6 +45,10 @@ elif name == "trunk" and args == ["--version"]:
     print(os.environ.get("FAKE_TRUNK_VERSION", "trunk 0.21.14"))
 elif name == "trunk" and args and args[0] == "build":
     record("trunk build")
+    if os.environ.get("FAKE_COMPILER_WARNING"):
+        print("warning: unused frontend code", file=sys.stderr)
+        if "-D warnings" in os.environ.get("RUSTFLAGS", ""):
+            raise SystemExit(17)
     if os.environ.get("FAKE_BUILD_GATE"):
         print("FAKE_BUILD_WAITING", flush=True)
         Path(os.environ["FAKE_BUILD_GATE"]).read_bytes()
@@ -106,7 +110,7 @@ class FrontendBundleTests(unittest.TestCase):
         self.environment = dict(os.environ, PATH=f"{fake_bin}:{os.environ['PATH']}",
                                 FAKE_BUILD_LOG=str(self.log), CARGO_HOME=str(self.root / "cargo-home"))
         for name in ("HYZ_THINGS_E2E_REUSE_FRONTEND_BUNDLE", "FAKE_FAIL_BUILD",
-                     "FAKE_MUTATE_INPUT", "FAKE_OUTPUT_REVISION", "FAKE_BUILD_GATE"):
+                     "FAKE_COMPILER_WARNING", "FAKE_MUTATE_INPUT", "FAKE_OUTPUT_REVISION", "FAKE_BUILD_GATE"):
             self.environment.pop(name, None)
         self.archive = self.root / "target/frontend-bundle/hyz-things-frontend.tar"
         self.metadata = self.archive.with_suffix(".json")
@@ -259,6 +263,10 @@ class FrontendBundleTests(unittest.TestCase):
         self.assertNotEqual(self.archive.read_bytes(), archive)
         self.assertNotEqual(self.archive.stat().st_mtime_ns, timestamp)
         self.run_prebuilt()
+
+    def test_compiler_warning_fails_frontend_build(self):
+        self.run_script(success=False, FAKE_COMPILER_WARNING="1", RUSTFLAGS="")
+        self.assertFalse(self.archive.exists())
 
     def test_build_failure_keeps_previous_archive_and_metadata(self):
         self.run_script()
