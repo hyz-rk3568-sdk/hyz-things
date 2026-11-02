@@ -2903,7 +2903,9 @@ fn is_question_bank_practice_post_path(path: &str) -> bool {
         return false;
     };
     let mut parts = rest.split('/');
-    parts.next().is_some_and(crate::application::question_bank::document::valid_id)
+    parts
+        .next()
+        .is_some_and(crate::application::question_bank::document::valid_id)
         && parts.next() == Some("submit")
         && parts.next().is_none()
 }
@@ -2916,7 +2918,10 @@ fn is_question_bank_practice_put_path(path: &str) -> bool {
         return false;
     };
     let mut parts = rest.split('/');
-    if !parts.next().is_some_and(crate::application::question_bank::document::valid_id) {
+    if !parts
+        .next()
+        .is_some_and(crate::application::question_bank::document::valid_id)
+    {
         return false;
     }
     match (parts.next(), parts.next(), parts.next()) {
@@ -3121,12 +3126,24 @@ mod tests {
     fn question_bank_practice_mutations_have_exact_method_allowlist() {
         let id = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
         assert!(is_post_path("/api/v1/question-bank/practice/sessions"));
-        assert!(is_post_path(&format!("/api/v1/question-bank/practice/sessions/{id}/submit")));
-        assert!(is_question_bank_practice_put_path(&format!("/api/v1/question-bank/practice/sessions/{id}/pause")));
-        assert!(is_question_bank_practice_put_path(&format!("/api/v1/question-bank/practice/sessions/{id}/answers/{id}")));
-        assert!(is_question_bank_practice_put_path(&format!("/api/v1/question-bank/practice/favorites/{id}")));
-        assert!(!is_question_bank_practice_put_path("/api/v1/question-bank/practice/favorites/bad"));
-        assert!(!is_post_path("/api/v1/question-bank/practice/sessions/bad/submit"));
+        assert!(is_post_path(&format!(
+            "/api/v1/question-bank/practice/sessions/{id}/submit"
+        )));
+        assert!(is_question_bank_practice_put_path(&format!(
+            "/api/v1/question-bank/practice/sessions/{id}/pause"
+        )));
+        assert!(is_question_bank_practice_put_path(&format!(
+            "/api/v1/question-bank/practice/sessions/{id}/answers/{id}"
+        )));
+        assert!(is_question_bank_practice_put_path(&format!(
+            "/api/v1/question-bank/practice/favorites/{id}"
+        )));
+        assert!(!is_question_bank_practice_put_path(
+            "/api/v1/question-bank/practice/favorites/bad"
+        ));
+        assert!(!is_post_path(
+            "/api/v1/question-bank/practice/sessions/bad/submit"
+        ));
     }
 
     #[test]

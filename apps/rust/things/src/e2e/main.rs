@@ -8,24 +8,26 @@ use axum::{
 };
 use hyz_contract::router::{ControlOperation, ControlProxyMode, ControlResult};
 use hyz_things::{
-    adapters::inbound::http::{app_with_loopback_runtime_frontend_and_flashcards, with_question_bank},
+    adapters::inbound::http::{
+        app_with_loopback_runtime_frontend_and_flashcards, with_question_bank,
+    },
     adapters::outbound::{
         flashcard_source::FilesystemFlashcardSource, flashcard_sqlite::SqliteFlashcardRepository,
-        logic_judgment::LogicJudgmentService,
-        question_bank_sqlite::SqliteQuestionBankRepository,
+        logic_judgment::LogicJudgmentService, question_bank_sqlite::SqliteQuestionBankRepository,
     },
     application::{
         admin::AdminApplication,
         camera::{CameraApplication, CameraControlPort, CameraError, CameraSession},
         flashcards::FlashcardApplication,
         logic_judgment::LogicJudgmentPort,
-        question_bank::{
-            document::{self, Document}, BankAsset, BankError, BankSnapshot,
-            IndexedPaper, QuestionBankApplication, QuestionBankSourcePort,
-        },
         ports::{
             AdminCredentialStorePort, AdminRandomPort, ClockPort, InstalledAppsPort, PlatformError,
             PortalControlError, PortalControlHandler,
+        },
+        question_bank::{
+            document::{self, Document},
+            BankAsset, BankError, BankSnapshot, IndexedPaper, QuestionBankApplication,
+            QuestionBankSourcePort,
         },
         status::PortalStatus,
     },
@@ -1225,13 +1227,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some(flashcard_source),
         logic_judgment,
     )?;
-    let bank_repository = Arc::new(SqliteQuestionBankRepository::connect(
-        &format!("sqlite://{}", fixture_root.join("question-bank.db").display()),
-    ).await.map_err(|error|std::io::Error::other(error.to_string()))?);
+    let bank_repository = Arc::new(
+        SqliteQuestionBankRepository::connect(&format!(
+            "sqlite://{}",
+            fixture_root.join("question-bank.db").display()
+        ))
+        .await
+        .map_err(|error| std::io::Error::other(error.to_string()))?,
+    );
     let source = Arc::new(QuestionBankFixture);
-    let bank = Arc::new(QuestionBankApplication::new(source.clone(), bank_repository));
-    bank.sync().await.map_err(|error|std::io::Error::other(error.to_string()))?;
-    let web_app = with_question_bank(web_app,Some(bank));
+    let bank = Arc::new(QuestionBankApplication::new(
+        source.clone(),
+        bank_repository,
+    ));
+    bank.sync()
+        .await
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
+    let web_app = with_question_bank(web_app, Some(bank));
     let harness_app = harness_control_app(backend, admin, camera);
 
     println!(

@@ -60,12 +60,17 @@ fn choices(text: &str) -> Vec<String> {
     out
 }
 pub(super) fn option_labels(markdown: &str) -> Vec<String> {
-    markdown.lines().filter_map(|line| {
-        let line = line.trim_start().strip_prefix("- ")?;
-        let (label, rest) = line.split_once(['.', '．', '、', ' '])?;
-        (label.len() == 1 && label.bytes().all(|b| b.is_ascii_uppercase()) && !rest.trim().is_empty())
+    markdown
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim_start().strip_prefix("- ")?;
+            let (label, rest) = line.split_once(['.', '．', '、', ' '])?;
+            (label.len() == 1
+                && label.bytes().all(|b| b.is_ascii_uppercase())
+                && !rest.trim().is_empty())
             .then(|| label.to_string())
-    }).collect()
+        })
+        .collect()
 }
 impl Document {
     pub fn view(&self) -> PaperView {
@@ -211,11 +216,19 @@ fn parse_inner(text: &str, required: bool) -> Result<Document> {
                 && !answer.is_empty()
                 && answer.iter().all(|choice| labels.contains(choice))
                 && meta.issues.is_empty();
-            answers.insert(qid.clone(), AnswerKey {
-                choices: answer.clone(),
-                explanation: fields.get("Explanation").cloned().unwrap_or_default().trim().into(),
-                valid,
-            });
+            answers.insert(
+                qid.clone(),
+                AnswerKey {
+                    choices: answer.clone(),
+                    explanation: fields
+                        .get("Explanation")
+                        .cloned()
+                        .unwrap_or_default()
+                        .trim()
+                        .into(),
+                    valid,
+                },
+            );
             // Key and explanation stay server-side, never in the public DTO.
             questions.push(QuestionView {
                 id: qid,

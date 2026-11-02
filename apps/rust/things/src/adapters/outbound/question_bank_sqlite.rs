@@ -67,7 +67,11 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             let metadata = serde_json::to_string(&paper).map_err(|_| BankError::Storage)?;
             sqlx::query("INSERT INTO papers(id,metadata,active) VALUES(?,?,1) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,active=1").bind(&paper.summary.id).bind(metadata).execute(&mut *tx).await.map_err(|_|BankError::Storage)?;
             for (ordinal, id) in paper.question_ids.iter().enumerate() {
-                let number = paper.question_numbers.get(ordinal).copied().unwrap_or((ordinal + 1) as u32);
+                let number = paper
+                    .question_numbers
+                    .get(ordinal)
+                    .copied()
+                    .unwrap_or((ordinal + 1) as u32);
                 sqlx::query("INSERT INTO questions(id,paper_id,number,source_hash) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET paper_id=excluded.paper_id,number=excluded.number,source_hash=excluded.source_hash")
                     .bind(id).bind(&paper.summary.id).bind(number as i64).bind(&paper.hash)
                     .execute(&mut *tx).await.map_err(|_| BankError::Storage)?;
@@ -100,8 +104,13 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         let mut tx = self.pool.begin().await.map_err(|_| BankError::Storage)?;
         let data = serde_json::to_string(&session).map_err(|_| BankError::Storage)?;
         sqlx::query("INSERT INTO practice_sessions(id,status,revision,data) VALUES(?,?,?,?)")
-            .bind(&session.id).bind(&session.status).bind(session.revision as i64)
-            .bind(data).execute(&mut *tx).await.map_err(|_| BankError::Storage)?;
+            .bind(&session.id)
+            .bind(&session.status)
+            .bind(session.revision as i64)
+            .bind(data)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| BankError::Storage)?;
         for (ordinal, item) in session.items.iter().enumerate() {
             sqlx::query("INSERT INTO practice_items(session_id,ordinal,question_id,paper_id,number,source_hash,answer,grade) VALUES(?,?,?,?,?,?,?,NULL)")
                 .bind(&session.id).bind(ordinal as i64).bind(&item.question_id)
@@ -112,8 +121,12 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
     }
 
     async fn practice_load(&self, id: &str) -> Result<PracticeSession, BankError> {
-        let data: Option<String> = sqlx::query_scalar("SELECT data FROM practice_sessions WHERE id=?")
-            .bind(id).fetch_optional(&self.pool).await.map_err(|_| BankError::Storage)?;
+        let data: Option<String> =
+            sqlx::query_scalar("SELECT data FROM practice_sessions WHERE id=?")
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|_| BankError::Storage)?;
         serde_json::from_str(&data.ok_or(BankError::NotFound)?).map_err(|_| BankError::Storage)
     }
 
@@ -132,10 +145,16 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             return Err(BankError::Conflict);
         }
         for (ordinal, item) in session.items.iter().enumerate() {
-            sqlx::query("UPDATE practice_items SET answer=?,grade=? WHERE session_id=? AND ordinal=?")
-                .bind(serde_json::to_string(&item.answer).map_err(|_| BankError::Storage)?)
-                .bind(&item.grade).bind(&session.id).bind(ordinal as i64)
-                .execute(&mut *tx).await.map_err(|_| BankError::Storage)?;
+            sqlx::query(
+                "UPDATE practice_items SET answer=?,grade=? WHERE session_id=? AND ordinal=?",
+            )
+            .bind(serde_json::to_string(&item.answer).map_err(|_| BankError::Storage)?)
+            .bind(&item.grade)
+            .bind(&session.id)
+            .bind(ordinal as i64)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| BankError::Storage)?;
         }
         if session.status == "completed" {
             for item in &session.items {
@@ -159,7 +178,9 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         let rows: Vec<String> = sqlx::query_scalar(
             "SELECT data FROM practice_sessions ORDER BY json_extract(data,'$.created_at') DESC LIMIT 100"
         ).fetch_all(&self.pool).await.map_err(|_| BankError::Storage)?;
-        rows.iter().map(|json| serde_json::from_str(json).map_err(|_| BankError::Storage)).collect()
+        rows.iter()
+            .map(|json| serde_json::from_str(json).map_err(|_| BankError::Storage))
+            .collect()
     }
 
     async fn practice_candidates(&self, mode: PracticeMode) -> Result<Vec<String>, BankError> {
@@ -168,7 +189,10 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             PracticeMode::Favorite => "SELECT q.id FROM questions q JOIN papers p ON p.id=q.paper_id JOIN favorites s ON s.question_id=q.id WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' AND s.favorite=1 ORDER BY p.id,q.number",
             _ => return Err(BankError::Invalid),
         };
-        sqlx::query_scalar(sql).fetch_all(&self.pool).await.map_err(|_| BankError::Storage)
+        sqlx::query_scalar(sql)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| BankError::Storage)
     }
 
     async fn practice_favorite(&self, question_id: &str, favorite: bool) -> Result<(), BankError> {
@@ -184,9 +208,12 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
     }
 
     async fn practice_is_favorite(&self, question_id: &str) -> Result<bool, BankError> {
-        let value: Option<i64> = sqlx::query_scalar("SELECT favorite FROM favorites WHERE question_id=?")
-            .bind(question_id).fetch_optional(&self.pool).await.map_err(|_| BankError::Storage)?;
+        let value: Option<i64> =
+            sqlx::query_scalar("SELECT favorite FROM favorites WHERE question_id=?")
+                .bind(question_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|_| BankError::Storage)?;
         Ok(value.unwrap_or(0) != 0)
     }
-
 }

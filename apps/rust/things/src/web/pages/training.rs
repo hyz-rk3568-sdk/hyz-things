@@ -259,7 +259,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                         <button type="button" class="training-mode" data-testid="training-mode-comprehensive" aria-pressed={(*mode == TrainingMode::Comprehensive).to_string()} onclick={choose_comprehensive}>{"资料分析"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-logic-judgment" aria-pressed={(*mode == TrainingMode::LogicJudgment).to_string()} onclick={choose_logic}>{"判断推理"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-quantitative" aria-pressed={(*mode == TrainingMode::QuantitativeRelations).to_string()} onclick={choose_quantitative}>{"数量关系"}</button>
-                        
+
                         <button type="button" class="training-mode" data-testid="training-mode-statistics" aria-pressed={(*mode == TrainingMode::Statistics).to_string()} onclick={choose_statistics}>{"学习统计"}</button>
                     </div>
                 </nav>

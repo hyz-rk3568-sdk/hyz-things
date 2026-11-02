@@ -8,10 +8,8 @@ async fn watch_bank_sync(
     reload: UseStateHandle<u64>,
 ) {
     loop {
-        let status = fetch_json::<BankSyncStatus>(
-            "/api/v1/question-bank/sync/status",
-            "题库同步状态",
-        ).await;
+        let status =
+            fetch_json::<BankSyncStatus>("/api/v1/question-bank/sync/status", "题库同步状态").await;
         match status {
             Ok(status) if status.running => {
                 busy.set(true);
@@ -27,7 +25,10 @@ async fn watch_bank_sync(
                     )));
                     reload.set(*reload + 1);
                 } else if let Some(code) = status.error_code {
-                    notice.set(Some(format!("题库同步失败：{}（阶段：{}）", code, status.stage)));
+                    notice.set(Some(format!(
+                        "题库同步失败：{}（阶段：{}）",
+                        code, status.stage
+                    )));
                 }
                 break;
             }
@@ -65,7 +66,12 @@ pub(crate) fn question_bank_panel(props: &QuestionBankPanelProps) -> Html {
                 let busy = busy.clone();
                 let reload = reload.clone();
                 spawn_local(async move {
-                    match fetch_json::<BankSyncStatus>("/api/v1/question-bank/sync/status", "题库同步状态").await {
+                    match fetch_json::<BankSyncStatus>(
+                        "/api/v1/question-bank/sync/status",
+                        "题库同步状态",
+                    )
+                    .await
+                    {
                         Ok(status) if status.running => watch_bank_sync(notice, busy, reload).await,
                         _ => {}
                     }
@@ -117,9 +123,13 @@ pub(crate) fn question_bank_panel(props: &QuestionBankPanelProps) -> Html {
                 spawn_local(async move {
                     loop {
                         let status = fetch_json::<BankSyncStatus>(
-                            "/api/v1/question-bank/sync/status", "题库同步状态",
-                        ).await;
-                        if cancel_task.get() { break; }
+                            "/api/v1/question-bank/sync/status",
+                            "题库同步状态",
+                        )
+                        .await;
+                        if cancel_task.get() {
+                            break;
+                        }
                         match status {
                             Ok(status) => {
                                 syncing.set(status.running);
@@ -128,7 +138,9 @@ pub(crate) fn question_bank_panel(props: &QuestionBankPanelProps) -> Html {
                                         ("completed", Some(summary)) => {
                                             notice.set(Some(format!(
                                                 "已同步 {} 份文件、{} 个题位、{} 份材料",
-                                                summary.papers, summary.questions, summary.materials,
+                                                summary.papers,
+                                                summary.questions,
+                                                summary.materials,
                                             )));
                                             reload.set(*reload + 1);
                                         }
@@ -169,7 +181,9 @@ pub(crate) fn question_bank_panel(props: &QuestionBankPanelProps) -> Html {
         let sync_poll = sync_poll.clone();
         let csrf = csrf.clone();
         Callback::from(move |_| {
-            if *busy || *syncing { return; }
+            if *busy || *syncing {
+                return;
+            }
             busy.set(true);
             notice.set(None);
             let busy = busy.clone();
@@ -179,8 +193,11 @@ pub(crate) fn question_bank_panel(props: &QuestionBankPanelProps) -> Html {
             spawn_local(async move {
                 let result: Result<BankSyncStatus, String> = post_json_response(
                     "/api/v1/control/question-bank/sync",
-                    &csrf, &EmptyRequest {}, "同步题库",
-                ).await;
+                    &csrf,
+                    &EmptyRequest {},
+                    "同步题库",
+                )
+                .await;
                 match result {
                     Ok(_) => sync_poll.set(*sync_poll + 1),
                     Err(error) => notice.set(Some(error)),

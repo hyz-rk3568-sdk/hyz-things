@@ -316,8 +316,14 @@ async fn sync_and_whole_paper_routes_preserve_typed_security_boundaries() {
     let status_url = format!("{base}/api/v1/question-bank/sync/status");
     for _ in 0..100 {
         let status: hyz_things::domain::question_bank::BankSyncStatus = client
-            .get(&status_url).header("cookie", &cookie).send().await.unwrap()
-            .json().await.unwrap();
+            .get(&status_url)
+            .header("cookie", &cookie)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
         if !status.running {
             assert_eq!(status.stage, "completed");
             break;
@@ -435,12 +441,15 @@ struct SlowScan {
 #[async_trait]
 impl QuestionBankSourcePort for SlowScan {
     async fn scan(&self, _known: Vec<IndexedPaper>) -> Result<BankSnapshot, BankError> {
-        self.starts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.starts
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.entered.notify_one();
         self.release.notified().await;
         Ok(BankSnapshot {
             papers: vec![IndexedPaper::new(
-                "papers/a.md".into(), "hash".into(), parse(PAPER).unwrap(),
+                "papers/a.md".into(),
+                "hash".into(),
+                parse(PAPER).unwrap(),
             )],
             generated_ids: 0,
         })
@@ -476,7 +485,9 @@ async fn detached_sync_survives_caller_exit_and_deduplicates_concurrent_starts()
             }
             tokio::task::yield_now().await;
         }
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
     assert_eq!(status.stage, "completed");
     assert_eq!(status.summary.unwrap().papers, 1);
     assert_eq!(source.starts.load(Ordering::SeqCst), 1);
@@ -490,7 +501,9 @@ fn answer_keys_are_server_only_and_unverified_questions_are_not_gradeable() {
     assert_eq!(key.choices, vec!["B"]);
     assert_eq!(key.explanation, "秘密解析。");
     assert!(key.valid);
-    assert!(!serde_json::to_string(&doc.view()).unwrap().contains("秘密解析"));
+    assert!(!serde_json::to_string(&doc.view())
+        .unwrap()
+        .contains("秘密解析"));
 
     let marked = PAPER.replace("issues: []", "issues: [answer_unverified]");
     let key = parse(&marked).unwrap();
@@ -512,7 +525,11 @@ async fn practice_from_original_paper_is_persistent_private_and_idempotent() {
     use hyz_things::adapters::outbound::question_bank_sqlite::SqliteQuestionBankRepository;
     use hyz_things::domain::question_bank::{CreatePracticeRequest, PracticeMode};
     let source = Arc::new(MemoryBank::default());
-    let repository = Arc::new(SqliteQuestionBankRepository::connect("sqlite::memory:").await.unwrap());
+    let repository = Arc::new(
+        SqliteQuestionBankRepository::connect("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
     let app = QuestionBankApplication::new(source.clone(), repository);
     app.sync().await.unwrap();
     let paper_id = "019a3d8c-7f23-7b6e-927d-3c951851d3a2";
@@ -521,10 +538,14 @@ async fn practice_from_original_paper_is_persistent_private_and_idempotent() {
     assert_eq!(modules.modules[0].name, "资料分析");
     assert_eq!(modules.modules[0].count, 1);
     assert_eq!(modules.modules[0].ungradable, 0);
-    let session = app.create_practice(CreatePracticeRequest {
-        mode: PracticeMode::PaperModule, paper_id: Some(paper_id.into()),
-        module: Some("资料分析".into()),
-    }).await.unwrap();
+    let session = app
+        .create_practice(CreatePracticeRequest {
+            mode: PracticeMode::PaperModule,
+            paper_id: Some(paper_id.into()),
+            module: Some("资料分析".into()),
+        })
+        .await
+        .unwrap();
     assert_eq!(session.items.len(), 1);
     assert_eq!(session.items[0].number, 26);
     let workspace = app.practice_workspace(&session.id).await.unwrap();
@@ -532,40 +553,72 @@ async fn practice_from_original_paper_is_persistent_private_and_idempotent() {
     assert!(!before.contains("秘密解析"));
     assert!(!before.contains("correct_answer"));
     assert!(!before.contains(r#""choices""#));
-    assert!(matches!(app.practice_review(&session.id).await, Err(BankError::Conflict)));
+    assert!(matches!(
+        app.practice_review(&session.id).await,
+        Err(BankError::Conflict)
+    ));
     app.save_practice_answer(&session.id, question_id, vec!["A".into()])
-        .await.unwrap();
+        .await
+        .unwrap();
     let saved = app.practice_workspace(&session.id).await.unwrap();
     assert_eq!(saved.session.items[0].answer, vec!["A"]);
     let result = app.submit_practice(&session.id).await.unwrap();
     assert_eq!(result.score.unwrap().wrong, 1);
-    assert_eq!(app.submit_practice(&session.id).await.unwrap().revision, result.revision);
+    assert_eq!(
+        app.submit_practice(&session.id).await.unwrap().revision,
+        result.revision
+    );
     let review = app.practice_review(&session.id).await.unwrap();
     assert_eq!(review.questions[0].correct_answer, vec!["B"]);
     assert!(review.questions[0].explanation.contains("秘密解析"));
     assert!(matches!(
-        app.save_practice_answer(&session.id, question_id, vec!["B".into()]).await,
+        app.save_practice_answer(&session.id, question_id, vec!["B".into()])
+            .await,
         Err(BankError::Conflict)
     ));
-    let wrong = app.create_practice(CreatePracticeRequest {
-        mode: PracticeMode::Wrong, paper_id: None, module: None,
-    }).await.unwrap();
+    let wrong = app
+        .create_practice(CreatePracticeRequest {
+            mode: PracticeMode::Wrong,
+            paper_id: None,
+            module: None,
+        })
+        .await
+        .unwrap();
     assert_eq!(wrong.items[0].question_id, question_id);
-    app.save_practice_answer(&wrong.id, question_id, vec!["B".into()]).await.unwrap();
-    assert_eq!(app.submit_practice(&wrong.id).await.unwrap().score.unwrap().correct, 1);
+    app.save_practice_answer(&wrong.id, question_id, vec!["B".into()])
+        .await
+        .unwrap();
+    assert_eq!(
+        app.submit_practice(&wrong.id)
+            .await
+            .unwrap()
+            .score
+            .unwrap()
+            .correct,
+        1
+    );
     assert!(matches!(
         app.create_practice(CreatePracticeRequest {
-            mode: PracticeMode::Wrong, paper_id: None, module: None,
-        }).await, Err(BankError::NotFound)
+            mode: PracticeMode::Wrong,
+            paper_id: None,
+            module: None,
+        })
+        .await,
+        Err(BankError::NotFound)
     ));
     assert_eq!(app.practice_history().await.unwrap().len(), 2);
-    app.set_favorite(question_id,true).await.unwrap();
+    app.set_favorite(question_id, true).await.unwrap();
     assert!(app.favorite(question_id).await.unwrap().favorite);
-    let favorites=app.create_practice(CreatePracticeRequest {
-        mode: PracticeMode::Favorite, paper_id: None, module: None,
-    }).await.unwrap();
-    assert_eq!(favorites.items[0].question_id,question_id);
-    app.set_favorite(question_id,false).await.unwrap();
+    let favorites = app
+        .create_practice(CreatePracticeRequest {
+            mode: PracticeMode::Favorite,
+            paper_id: None,
+            module: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(favorites.items[0].question_id, question_id);
+    app.set_favorite(question_id, false).await.unwrap();
     assert!(!app.favorite(question_id).await.unwrap().favorite);
 }
 
@@ -594,7 +647,11 @@ async fn detached_sync_does_not_start_overlapping_scan() {
             self.entered.notify_one();
             self.release.notified().await;
             Ok(BankSnapshot {
-                papers: vec![IndexedPaper::new("papers/a.md".into(),"hash".into(),parse(PAPER).unwrap())],
+                papers: vec![IndexedPaper::new(
+                    "papers/a.md".into(),
+                    "hash".into(),
+                    parse(PAPER).unwrap(),
+                )],
                 generated_ids: 0,
             })
         }
@@ -605,26 +662,30 @@ async fn detached_sync_does_not_start_overlapping_scan() {
             Err(BankError::NotFound)
         }
     }
-    let source=Arc::new(SlowSource {
+    let source = Arc::new(SlowSource {
         entered: Arc::new(tokio::sync::Notify::new()),
         release: Arc::new(tokio::sync::Notify::new()),
         scans: AtomicUsize::new(0),
     });
-    let repo=Arc::new(MemoryBank::default());
-    let app=Arc::new(QuestionBankApplication::new(source.clone(),repo));
-    let first=app.start_sync().unwrap();
+    let repo = Arc::new(MemoryBank::default());
+    let app = Arc::new(QuestionBankApplication::new(source.clone(), repo));
+    let first = app.start_sync().unwrap();
     assert!(first.running);
     source.entered.notified().await;
-    let second=app.start_sync().unwrap();
-    assert_eq!(first.task_id,second.task_id);
-    assert_eq!(source.scans.load(Ordering::SeqCst),1);
+    let second = app.start_sync().unwrap();
+    assert_eq!(first.task_id, second.task_id);
+    assert_eq!(source.scans.load(Ordering::SeqCst), 1);
     source.release.notify_one();
     tokio::time::timeout(std::time::Duration::from_secs(3), async {
         loop {
-            if !app.sync_status().running { break; }
+            if !app.sync_status().running {
+                break;
+            }
             tokio::task::yield_now().await;
         }
-    }).await.unwrap();
-    assert_eq!(app.sync_status().stage,"completed");
-    assert_eq!(app.sync_status().summary.unwrap().questions,1);
+    })
+    .await
+    .unwrap();
+    assert_eq!(app.sync_status().stage, "completed");
+    assert_eq!(app.sync_status().summary.unwrap().questions, 1);
 }

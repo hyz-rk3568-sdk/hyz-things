@@ -1,9 +1,8 @@
 //! Real-paper practice: a single workspace for paper, paper-module, wrong and favorite.
 use super::*;
 use hyz_things::domain::question_bank::{
-    CreatePracticeRequest, FavoriteState, PaperModules, PaperSummary, PracticeMode,
-    PracticeReview, PracticeSession, PracticeWorkspace, SavePracticeAnswer, SetFavorite,
-    SetPracticePaused,
+    CreatePracticeRequest, FavoriteState, PaperModules, PaperSummary, PracticeMode, PracticeReview,
+    PracticeSession, PracticeWorkspace, SavePracticeAnswer, SetFavorite, SetPracticePaused,
 };
 
 const ROOT: &str = "/api/v1/question-bank";
@@ -29,18 +28,20 @@ enum Action {
     Back,
 }
 
-
 async fn load_workspace(id: &str) -> Result<PracticeWorkspace, String> {
     fetch_json(&format!("{ROOT}/practice/sessions/{id}"), "真题练习").await
 }
 
 fn answer_options(markdown: &str) -> Vec<(String, String)> {
-    markdown.lines().filter_map(|line| {
-        let line = line.trim_start().strip_prefix("- ")?;
-        let (label, rest) = line.split_once(['.', '．', '、', ' '])?;
-        (label.len() == 1 && label.bytes().all(|b| b.is_ascii_uppercase()))
-            .then(|| (label.to_string(), rest.trim().to_string()))
-    }).collect()
+    markdown
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim_start().strip_prefix("- ")?;
+            let (label, rest) = line.split_once(['.', '．', '、', ' '])?;
+            (label.len() == 1 && label.bytes().all(|b| b.is_ascii_uppercase()))
+                .then(|| (label.to_string(), rest.trim().to_string()))
+        })
+        .collect()
 }
 
 #[function_component(QuestionBankTraining)]
@@ -69,13 +70,18 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let error = error.clone();
         use_effect_with(*refresh, move |_| {
             spawn_local(async move {
-                match fetch_json::<Vec<PaperSummary>>(&format!("{ROOT}/papers"), "真题试卷列表").await {
+                match fetch_json::<Vec<PaperSummary>>(&format!("{ROOT}/papers"), "真题试卷列表")
+                    .await
+                {
                     Ok(list) => papers.set(list),
                     Err(e) => error.set(Some(e)),
                 }
                 if let Ok(items) = fetch_json::<Vec<PracticeSession>>(
-                    &format!("{ROOT}/practice/history"), "练习历史",
-                ).await {
+                    &format!("{ROOT}/practice/history"),
+                    "练习历史",
+                )
+                .await
+                {
                     history.set(items);
                 }
             });
@@ -91,8 +97,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 let id = id.clone();
                 spawn_local(async move {
                     if let Ok(result) = fetch_json::<PaperModules>(
-                        &format!("{ROOT}/papers/{id}/modules"), "试卷模块",
-                    ).await {
+                        &format!("{ROOT}/papers/{id}/modules"),
+                        "试卷模块",
+                    )
+                    .await
+                    {
                         modules.set(Some(result));
                     }
                 });
@@ -115,8 +124,15 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let elapsed = elapsed.clone();
         let seconds_ref = seconds_ref.clone();
         let current_id = workspace.as_ref().as_ref().map(|w| w.session.id.clone());
-        let server_seconds = workspace.as_ref().as_ref().map(|w| w.session.elapsed_seconds).unwrap_or(0);
-        let running = workspace.as_ref().as_ref().is_some_and(|w| w.session.status == "active" && !w.session.paused);
+        let server_seconds = workspace
+            .as_ref()
+            .as_ref()
+            .map(|w| w.session.elapsed_seconds)
+            .unwrap_or(0);
+        let running = workspace
+            .as_ref()
+            .as_ref()
+            .is_some_and(|w| w.session.status == "active" && !w.session.paused);
         use_effect_with((running, current_id), move |(running, _)| {
             *seconds_ref.borrow_mut() = server_seconds;
             let timer = if *running {
@@ -136,7 +152,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     }
     {
         let index_value = *index;
-        let source = workspace.as_ref().as_ref().and_then(|w| w.questions.get(index_value))
+        let source = workspace
+            .as_ref()
+            .as_ref()
+            .and_then(|w| w.questions.get(index_value))
             .map(|q| q.item.question_id.clone());
         let favorite = favorite.clone();
         use_effect_with(source, move |source| {
@@ -145,8 +164,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 let id = id.clone();
                 spawn_local(async move {
                     if let Ok(value) = fetch_json::<FavoriteState>(
-                        &format!("{ROOT}/practice/favorites/{id}"), "真题收藏",
-                    ).await {
+                        &format!("{ROOT}/practice/favorites/{id}"),
+                        "真题收藏",
+                    )
+                    .await
+                    {
                         favorite.set(value.favorite);
                     }
                 });
@@ -155,7 +177,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         });
     }
     {
-        let current = workspace.as_ref().as_ref().and_then(|w| w.questions.get(*index))
+        let current = workspace
+            .as_ref()
+            .as_ref()
+            .and_then(|w| w.questions.get(*index))
             .map(|q| q.item.question_id.clone());
         use_effect_with((current, review.is_some()), move |_| {
             hydrate_math();
@@ -179,7 +204,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let submit_confirm = submit_confirm.clone();
         let elapsed = elapsed.clone();
         Callback::from(move |action: Action| {
-            if *busy { return; }
+            if *busy {
+                return;
+            }
             busy.set(true);
             error.set(None);
             let csrf = csrf.clone();
@@ -205,7 +232,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 mode: (*mode).clone(),
                                 paper_id: match *mode {
                                     PracticeMode::Paper | PracticeMode::PaperModule => {
-                                        if selected_paper.is_empty() || !papers.iter().any(|p| p.id.as_str() == selected_paper.as_str()) {
+                                        if selected_paper.is_empty()
+                                            || !papers
+                                                .iter()
+                                                .any(|p| p.id.as_str() == selected_paper.as_str())
+                                        {
                                             return Err("请先选择原始试卷".into());
                                         }
                                         Some((*selected_paper).clone())
@@ -213,13 +244,21 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     _ => None,
                                 },
                                 module: if *mode == PracticeMode::PaperModule {
-                                    if selected_module.is_empty() { return Err("请先选择原卷模块".into()); }
+                                    if selected_module.is_empty() {
+                                        return Err("请先选择原卷模块".into());
+                                    }
                                     Some((*selected_module).clone())
-                                } else { None },
+                                } else {
+                                    None
+                                },
                             };
                             let session: PracticeSession = post_json_response(
-                                &format!("{ROOT}/practice/sessions"), &csrf, &request, "创建真题练习",
-                            ).await?;
+                                &format!("{ROOT}/practice/sessions"),
+                                &csrf,
+                                &request,
+                                "创建真题练习",
+                            )
+                            .await?;
                             let loaded = load_workspace(&session.id).await?;
                             elapsed.set(loaded.session.elapsed_seconds);
                             workspace.set(Some(loaded));
@@ -239,8 +278,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         }
                         Action::Review(id) => {
                             let loaded: PracticeReview = fetch_json(
-                                &format!("{ROOT}/practice/sessions/{id}/review"), "真题解析",
-                            ).await?;
+                                &format!("{ROOT}/practice/sessions/{id}/review"),
+                                "真题解析",
+                            )
+                            .await?;
                             let plain = load_workspace(&id).await?;
                             workspace.set(Some(plain));
                             review.set(Some(loaded));
@@ -253,14 +294,24 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 let mut selected = q.item.answer.clone();
                                 if let Some(i) = selected.iter().position(|v| v == &choice) {
                                     selected.remove(i);
-                                } else { selected.push(choice); }
+                                } else {
+                                    selected.push(choice);
+                                }
                                 selected
-                            } else { vec![choice] };
+                            } else {
+                                vec![choice]
+                            };
                             answer.sort();
                             let _: PracticeSession = post_json_response(
-                                &format!("{ROOT}/practice/sessions/{}/answers/{}",active.session.id,q.item.question_id),
-                                &csrf, &SavePracticeAnswer { answer }, "保存真题答案",
-                            ).await?;
+                                &format!(
+                                    "{ROOT}/practice/sessions/{}/answers/{}",
+                                    active.session.id, q.item.question_id
+                                ),
+                                &csrf,
+                                &SavePracticeAnswer { answer },
+                                "保存真题答案",
+                            )
+                            .await?;
                             workspace.set(Some(load_workspace(&active.session.id).await?));
                         }
                         Action::Pause | Action::Exit => {
@@ -271,41 +322,70 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                         _ => !active.session.paused,
                                     };
                                     let _: PracticeSession = post_json_response(
-                                        &format!("{ROOT}/practice/sessions/{}/pause",active.session.id),
-                                        &csrf, &SetPracticePaused { paused: pause, elapsed_seconds: *elapsed },
+                                        &format!(
+                                            "{ROOT}/practice/sessions/{}/pause",
+                                            active.session.id
+                                        ),
+                                        &csrf,
+                                        &SetPracticePaused {
+                                            paused: pause,
+                                            elapsed_seconds: *elapsed,
+                                        },
                                         "暂停训练",
-                                    ).await?;
+                                    )
+                                    .await?;
                                     if matches!(action, Action::Exit) {
                                         workspace.set(None);
                                     } else {
-                                        workspace.set(Some(load_workspace(&active.session.id).await?));
+                                        workspace
+                                            .set(Some(load_workspace(&active.session.id).await?));
                                     }
                                 } else {
                                     workspace.set(None);
                                     review.set(None);
                                 }
                             }
-                            if matches!(action, Action::Exit) { refresh.set(*refresh + 1); }
+                            if matches!(action, Action::Exit) {
+                                refresh.set(*refresh + 1);
+                            }
                         }
                         Action::Submit => {
                             let active = workspace.as_ref().as_ref().ok_or("训练不存在")?.clone();
-                            if !*submit_confirm && active.session.items.iter().any(|q| q.answer.is_empty()) {
+                            if !*submit_confirm
+                                && active.session.items.iter().any(|q| q.answer.is_empty())
+                            {
                                 submit_confirm.set(true);
                             } else {
                                 let _: PracticeSession = post_json_response(
-                                    &format!("{ROOT}/practice/sessions/{}/pause",active.session.id),
-                                    &csrf, &SetPracticePaused { paused: true, elapsed_seconds: *elapsed },
+                                    &format!(
+                                        "{ROOT}/practice/sessions/{}/pause",
+                                        active.session.id
+                                    ),
+                                    &csrf,
+                                    &SetPracticePaused {
+                                        paused: true,
+                                        elapsed_seconds: *elapsed,
+                                    },
                                     "交卷前保存用时",
-                                ).await?;
+                                )
+                                .await?;
                                 let completed: PracticeSession = post_json_response(
-                                    &format!("{ROOT}/practice/sessions/{}/submit",active.session.id),
-                                    &csrf, &EmptyRequest {}, "真题交卷",
-                                ).await?;
+                                    &format!(
+                                        "{ROOT}/practice/sessions/{}/submit",
+                                        active.session.id
+                                    ),
+                                    &csrf,
+                                    &EmptyRequest {},
+                                    "真题交卷",
+                                )
+                                .await?;
                                 elapsed.set(completed.elapsed_seconds.max(*elapsed));
                                 workspace.set(Some(load_workspace(&completed.id).await?));
                                 let detail: PracticeReview = fetch_json(
-                                    &format!("{ROOT}/practice/sessions/{}/review",completed.id), "真题解析",
-                                ).await?;
+                                    &format!("{ROOT}/practice/sessions/{}/review", completed.id),
+                                    "真题解析",
+                                )
+                                .await?;
                                 review.set(Some(detail));
                                 submit_confirm.set(false);
                                 refresh.set(*refresh + 1);
@@ -314,8 +394,13 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         Action::Favorite(id) => {
                             let updated: FavoriteState = post_json_response(
                                 &format!("{ROOT}/practice/favorites/{id}"),
-                                &csrf, &SetFavorite { favorite: !*favorite }, "收藏真题",
-                            ).await?;
+                                &csrf,
+                                &SetFavorite {
+                                    favorite: !*favorite,
+                                },
+                                "收藏真题",
+                            )
+                            .await?;
                             favorite.set(updated.favorite);
                         }
                         Action::Back => {
@@ -325,15 +410,20 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         }
                     }
                     Ok(())
-                }.await;
-                if let Err(e) = result { error.set(Some(e)); }
+                }
+                .await;
+                if let Err(e) = result {
+                    error.set(Some(e));
+                }
                 busy.set(false);
             });
         })
     };
     let alert = if let Some(message) = error.as_ref() {
         html! { <p class="rounded-box bg-error/10 px-3 py-2 text-sm text-error" role="alert" data-testid="question-bank-error">{message.clone()}</p> }
-    } else { Html::default() };
+    } else {
+        Html::default()
+    };
 
     if let Some(current) = workspace.as_ref() {
         let item_index = (*index).min(current.questions.len().saturating_sub(1));
@@ -341,7 +431,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             let completed = current.session.status == "completed";
             let selected_review = review.as_ref().and_then(|r| r.questions.get(item_index));
             let question = item.question.as_ref();
-            let options = question.map(|q| answer_options(&q.options_markdown)).unwrap_or_default();
+            let options = question
+                .map(|q| answer_options(&q.options_markdown))
+                .unwrap_or_default();
             let qid = item.item.question_id.clone();
             let starred = *favorite;
             let on_favorite = invoke.clone();
@@ -415,7 +507,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             let shared = !item.materials.is_empty();
             let main = if shared {
                 html! {<TrainingSplitWorkspace test_id="question-bank-practice-split" split_at_md={true}
-                    left={material_pane} right={body}/>}
+                left={material_pane} right={body}/>}
             } else {
                 html! {<div class="h-full min-h-0" data-testid="question-bank-practice-single">{body}</div>}
             };

@@ -94,7 +94,11 @@ pub trait QuestionBankRepositoryPort: Send + Sync {
     async fn practice_candidates(&self, _mode: PracticeMode) -> Result<Vec<String>, BankError> {
         Err(BankError::Unavailable)
     }
-    async fn practice_favorite(&self, _question_id: &str, _favorite: bool) -> Result<(), BankError> {
+    async fn practice_favorite(
+        &self,
+        _question_id: &str,
+        _favorite: bool,
+    ) -> Result<(), BankError> {
         Err(BankError::Unavailable)
     }
     async fn practice_is_favorite(&self, _question_id: &str) -> Result<bool, BankError> {
@@ -130,7 +134,11 @@ impl QuestionBankApplication {
             Ok(permit) => permit,
             Err(_) => {
                 let status = self.sync_status();
-                return if status.running { Ok(status) } else { Err(BankError::Busy) };
+                return if status.running {
+                    Ok(status)
+                } else {
+                    Err(BankError::Busy)
+                };
             }
         };
         let status = BankSyncStatus {
