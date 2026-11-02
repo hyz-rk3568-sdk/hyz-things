@@ -544,6 +544,7 @@ async fn practice_from_original_paper_is_persistent_private_and_idempotent() {
             paper_id: Some(paper_id.into()),
             module: Some("资料分析".into()),
             category: None,
+            filters: Default::default(),
         })
         .await
         .unwrap();
@@ -583,6 +584,7 @@ async fn practice_from_original_paper_is_persistent_private_and_idempotent() {
             paper_id: None,
             module: None,
             category: None,
+            filters: Default::default(),
         })
         .await
         .unwrap();
@@ -605,6 +607,7 @@ async fn practice_from_original_paper_is_persistent_private_and_idempotent() {
             paper_id: None,
             module: None,
             category: None,
+            filters: Default::default(),
         })
         .await,
         Err(BankError::NotFound)
@@ -618,6 +621,7 @@ async fn practice_from_original_paper_is_persistent_private_and_idempotent() {
             paper_id: None,
             module: None,
             category: None,
+            filters: Default::default(),
         })
         .await
         .unwrap();
@@ -708,16 +712,29 @@ async fn indexed_module_and_category_drills_keep_original_sources() {
     let app = QuestionBankApplication::new(source.clone(), repo);
     app.sync().await.unwrap();
 
-    let catalog = app.practice_catalog().await.unwrap();
+    let catalog = app.practice_catalog(&Default::default()).await.unwrap();
     let module = catalog
         .modules
         .iter()
         .find(|m| m.name == "资料分析")
         .unwrap();
     assert_eq!(module.count, 1);
+    assert_eq!(module.done, 0);
     assert_eq!(module.uncategorized, 0);
     assert_eq!(module.categories[0].name, "比重");
     assert_eq!(module.categories[0].count, 1);
+    assert_eq!(module.categories[0].done, 0);
+    let mut filtered = hyz_things::domain::question_bank::ModulePracticeFilters {
+        year_min: Some(2000), year_max: Some(2002), regions: vec!["国考".into()],
+        exclude_regions: false, count: Some(1),
+    };
+    assert_eq!(app.practice_catalog(&filtered).await.unwrap().modules[0].count,1);
+    filtered.exclude_regions = true;
+    assert!(app.practice_catalog(&filtered).await.unwrap().modules.is_empty());
+    filtered.exclude_regions = false;
+    filtered.year_min = Some(2020);
+    assert!(app.practice_catalog(&filtered).await.unwrap().modules.is_empty());
+
 
     let session = app
         .create_practice(CreatePracticeRequest {
@@ -725,12 +742,20 @@ async fn indexed_module_and_category_drills_keep_original_sources() {
             paper_id: None,
             module: Some("资料分析".into()),
             category: Some("比重".into()),
+            filters: Default::default(),
         })
         .await
         .unwrap();
     assert_eq!(session.items.len(), 1);
     assert_eq!(session.items[0].number, 26);
     assert_eq!(session.category.as_deref(), Some("比重"));
+    // A saved answer is counted once even when revised; an empty/new session
+    // does not advance module progress.
+    app.save_practice_answer(&session.id, &session.items[0].question_id, vec!["A".into()]).await.unwrap();
+    app.save_practice_answer(&session.id, &session.items[0].question_id, vec!["B".into()]).await.unwrap();
+    let updated = app.practice_catalog(&Default::default()).await.unwrap();
+    assert_eq!(updated.modules[0].done, 1);
+    assert_eq!(updated.modules[0].categories[0].done, 1);
     assert_eq!(
         session.items[0].paper_id,
         "019a3d8c-7f23-7b6e-927d-3c951851d3a2"
@@ -750,6 +775,7 @@ async fn indexed_module_and_category_drills_keep_original_sources() {
             paper_id: None,
             module: Some("资料分析".into()),
             category: None,
+            filters: Default::default(),
         })
         .await,
         Err(BankError::Invalid)
@@ -760,6 +786,7 @@ async fn indexed_module_and_category_drills_keep_original_sources() {
             paper_id: None,
             module: Some("资料分析".into()),
             category: Some("不存在的题型".into()),
+            filters: Default::default(),
         })
         .await,
         Err(BankError::NotFound)
@@ -770,6 +797,7 @@ async fn indexed_module_and_category_drills_keep_original_sources() {
             paper_id: Some("019a3d8c-7f23-7b6e-927d-3c951851d3a2".into()),
             module: Some("资料分析".into()),
             category: None,
+            filters: Default::default(),
         })
         .await,
         Err(BankError::Invalid)
