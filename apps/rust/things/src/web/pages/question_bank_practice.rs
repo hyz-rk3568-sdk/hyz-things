@@ -75,7 +75,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let error = use_state(|| None::<String>);
     let submit_confirm = use_state(|| false);
     let elapsed = use_state(|| 0u64);
-    let tick = use_state(|| 0u64);
+    let seconds_ref = use_mut_ref(|| 0u64);
     let refresh = use_state(|| 0u64);
 
     {
@@ -128,13 +128,20 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     }
     {
         let elapsed = elapsed.clone();
-        let tick = tick.clone();
+        let seconds_ref = seconds_ref.clone();
+        let current_id = workspace.as_ref().as_ref().map(|w| w.session.id.clone());
+        let server_seconds = workspace.as_ref().as_ref().map(|w| w.session.elapsed_seconds).unwrap_or(0);
         let running = workspace.as_ref().as_ref().is_some_and(|w| w.session.status == "active" && !w.session.paused);
-        use_effect_with(running, move |running| {
+        use_effect_with((running, current_id), move |(running, _)| {
+            *seconds_ref.borrow_mut() = server_seconds;
             if *running {
                 let interval = gloo_timers::callback::Interval::new(1000, move || {
-                    elapsed.set(*elapsed + 1);
-                    tick.set(*tick + 1);
+                    let next = {
+                        let mut seconds = seconds_ref.borrow_mut();
+                        *seconds = seconds.saturating_add(1);
+                        *seconds
+                    };
+                    elapsed.set(next);
                 });
                 Some(interval)
             } else {
@@ -213,7 +220,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 mode: (*mode).clone(),
                                 paper_id: match *mode {
                                     PracticeMode::Paper | PracticeMode::PaperModule => {
-                                        if selected_paper.is_empty() || !papers.iter().any(|p| p.id == **selected_paper) {
+                                        if selected_paper.is_empty() || !papers.iter().any(|p| p.id.as_str() == selected_paper.as_str()) {
                                             return Err("请先选择原始试卷".into());
                                         }
                                         Some((*selected_paper).clone())
@@ -539,7 +546,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             {for info.modules.iter().map(|m| {
                                 let selected_module=selected_module.clone();
                                 let name=m.name.clone();
-                                let selected=*selected_module==m.name;
+                                let selected=selected_module.as_str()==m.name.as_str();
                                 html! {<button type="button" data-testid="question-bank-select-module"
                                     class={classes!("btn","justify-start",if selected {"btn-primary"} else {"btn-outline"})}
                                     onclick={Callback::from(move |_|selected_module.set(name.clone()))}>
