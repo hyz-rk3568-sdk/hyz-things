@@ -2,7 +2,7 @@
 use crate::application::question_bank::practice::primary_module;
 use crate::application::question_bank::{BankError, IndexedPaper, QuestionBankRepositoryPort};
 use crate::domain::question_bank::{
-    PracticeCatalog, PracticeCategory, PracticeMode, PracticeModule, PracticeSession,
+    ModulePracticeFilters, PracticeCatalog, PracticeCategory, PracticeMode, PracticeModule, PracticeSession,
 };
 use async_trait::async_trait;
 use sqlx::{
@@ -193,45 +193,43 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             .collect()
     }
 
-    async fn practice_catalog(&self) -> Result<PracticeCatalog, BankError> {
+    async fn practice_catalog(&self, filters: &ModulePracticeFilters) -> Result<PracticeCatalog, BankError> {
+        let regions = serde_json::to_string(&filters.regions).map_err(|_| BankError::Storage)?;
         let rows = sqlx::query(
-            "SELECT q.module,q.category,COUNT(*) AS total FROM questions q JOIN papers p ON p.id=q.paper_id WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' GROUP BY q.module,q.category ORDER BY q.module,q.category"
-        ).fetch_all(&self.pool).await.map_err(|_| BankError::Storage)?;
-        let mut modules: BTreeMap<String, (usize, usize, BTreeMap<String, usize>)> =
-            BTreeMap::new();
+            "SELECT q.module,q.category,COUNT(*) AS total,              SUM(CASE WHEN EXISTS (SELECT 1 FROM practice_items i WHERE i.question_id=q.id AND i.answer!='[]') THEN 1 ELSE 0 END) AS done              FROM questions q JOIN papers p ON p.id=q.paper_id              WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary'              AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)>=?)              AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)<=?)              AND (?=0 OR (EXISTS (SELECT 1 FROM json_each(?) WHERE value=json_extract(p.metadata,'$.summary.region'))) != (?))              GROUP BY q.module,q.category ORDER BY q.module,q.category"
+        )
+        .bind(filters.year_min).bind(filters.year_min)
+        .bind(filters.year_max).bind(filters.year_max)
+        .bind(i64::from(!filters.regions.is_empty())).bind(regions)
+        .bind(i64::from(filters.exclude_regions))
+        .fetch_all(&self.pool).await.map_err(|_| BankError::Storage)?;
+        let mut modules: BTreeMap<String, (usize, usize, usize, BTreeMap<String, (usize, usize)>)> = BTreeMap::new();
         let mut unclassified = 0;
         for row in rows {
             let module: Option<String> = row.get(0);
             let category: Option<String> = row.get(1);
-            let count: i64 = row.get(2);
-            let count = count as usize;
+            let count = row.get::<i64,_>(2) as usize;
+            let done = row.get::<i64,_>(3) as usize;
             if let Some(module) = module {
                 let entry = modules.entry(module).or_default();
                 entry.0 += count;
+                entry.1 += done;
                 if let Some(category) = category.filter(|c| !c.trim().is_empty()) {
-                    *entry.2.entry(category).or_default() += count;
+                    let item = entry.3.entry(category).or_default();
+                    item.0 += count;
+                    item.1 += done;
                 } else {
-                    entry.1 += count;
+                    entry.2 += count;
                 }
             } else {
                 unclassified += count;
             }
         }
         Ok(PracticeCatalog {
-            modules: modules
-                .into_iter()
-                .map(
-                    |(name, (count, uncategorized, categories))| PracticeModule {
-                        name,
-                        count,
-                        uncategorized,
-                        categories: categories
-                            .into_iter()
-                            .map(|(name, count)| PracticeCategory { name, count })
-                            .collect(),
-                    },
-                )
-                .collect(),
+            modules: modules.into_iter().map(|(name,(count,done,uncategorized,categories))| PracticeModule {
+                name, count, done, uncategorized,
+                categories: categories.into_iter().map(|(name,(count,done))| PracticeCategory {name,count,done}).collect(),
+            }).collect(),
             unclassified,
         })
     }
@@ -240,29 +238,28 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         &self,
         module: &str,
         category: Option<&str>,
+        filters: &ModulePracticeFilters,
         limit: usize,
     ) -> Result<Vec<String>, BankError> {
-        if limit == 0 || limit > 100 {
+        if limit == 0 || limit > 20 {
             return Err(BankError::Invalid);
         }
-        // SQLite's integer sort puts never-practiced questions first. A stable source
-        // ordering keeps a created session fully reproducible on every resume.
+        let regions = serde_json::to_string(&filters.regions).map_err(|_| BankError::Storage)?;
         let base = "SELECT q.id FROM questions q JOIN papers p ON p.id=q.paper_id WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' AND q.module=? ";
+        let filter = " AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)>=?)             AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)<=?)             AND (?=0 OR (EXISTS (SELECT 1 FROM json_each(?) WHERE value=json_extract(p.metadata,'$.summary.region'))) != (?)) ";
         let suffix = " ORDER BY EXISTS(SELECT 1 FROM practice_attempts a WHERE a.question_id=q.id), CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER) DESC, p.id, q.number LIMIT ?";
         let sql = if category.is_some() {
-            format!("{base}AND q.category=?{suffix}")
+            format!("{base}AND q.category=?{filter}{suffix}")
         } else {
-            format!("{base}{suffix}")
+            format!("{base}{filter}{suffix}")
         };
         let mut query = sqlx::query_scalar::<_, String>(&sql).bind(module);
-        if let Some(category) = category {
-            query = query.bind(category);
-        }
-        query
-            .bind(limit as i64)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|_| BankError::Storage)
+        if let Some(category) = category { query = query.bind(category); }
+        query.bind(filters.year_min).bind(filters.year_min)
+            .bind(filters.year_max).bind(filters.year_max)
+            .bind(i64::from(!filters.regions.is_empty())).bind(regions)
+            .bind(i64::from(filters.exclude_regions)).bind(limit as i64)
+            .fetch_all(&self.pool).await.map_err(|_| BankError::Storage)
     }
 
     async fn practice_candidates(&self, mode: PracticeMode) -> Result<Vec<String>, BankError> {
