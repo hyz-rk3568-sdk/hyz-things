@@ -760,11 +760,11 @@ fn app_with_assets(
         )
         .route(
             "/api/v1/question-bank/practice/sessions/{id}/answers/{question_id}",
-            on(MethodFilter::PUT, question_bank::practice_answer),
+            on(MethodFilter::POST, question_bank::practice_answer),
         )
         .route(
             "/api/v1/question-bank/practice/sessions/{id}/pause",
-            on(MethodFilter::PUT, question_bank::practice_pause),
+            on(MethodFilter::POST, question_bank::practice_pause),
         )
         .route(
             "/api/v1/question-bank/practice/sessions/{id}/submit",
@@ -777,7 +777,7 @@ fn app_with_assets(
         .route(
             "/api/v1/question-bank/practice/favorites/{id}",
             on(MethodFilter::GET, question_bank::favorite_get)
-                .on(MethodFilter::PUT, question_bank::favorite_set),
+                .on(MethodFilter::POST, question_bank::favorite_set),
         )
         .route(
             "/api/v1/question-bank/assets/{name}",
@@ -2867,6 +2867,7 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/study/training-time/events"
             | "/api/v1/control/study/sync"
             | "/api/v1/control/question-bank/sync"
+            | "/api/v1/question-bank/practice/sessions"
             | "/api/v1/study/data-analysis/prepare"
             | "/api/v1/study/data-analysis/user-prompt"
             | "/api/v1/study/logic-judgment/prepare"
@@ -2876,7 +2877,26 @@ fn is_post_path(path: &str) -> bool {
     ) || is_data_analysis_run_post_path(path)
         || is_logic_judgment_run_post_path(path)
         || is_quantitative_relations_run_post_path(path)
+        || is_question_bank_practice_post_path(path)
 }
+fn is_question_bank_practice_post_path(path: &str) -> bool {
+    let parts: Vec<&str> = path.split('/').collect();
+    // /api/v1/question-bank/practice/sessions/{id}/{action}
+    // /api/v1/question-bank/practice/sessions/{id}/answers/{question_id}
+    if parts.len() >= 8
+        && parts[..6] == ["", "api", "v1", "question-bank", "practice", "sessions"]
+        && crate::application::question_bank::document::valid_id(parts[6])
+    {
+        return matches!(parts.as_slice(), [.., "submit" | "pause"])
+            || parts.len() == 9
+                && parts[7] == "answers"
+                && crate::application::question_bank::document::valid_id(parts[8]);
+    }
+    parts.len() == 7
+        && parts[..6] == ["", "api", "v1", "question-bank", "practice", "favorites"]
+        && crate::application::question_bank::document::valid_id(parts[6])
+}
+
 fn is_logic_judgment_run_post_path(path: &str) -> bool {
     let Some(rest) = path.strip_prefix("/api/v1/study/logic-judgment/runs/") else {
         return false;
