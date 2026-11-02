@@ -49,6 +49,8 @@ pub(crate) struct QuestionBankTrainingProps {
     pub csrf: String,
     pub on_immersive_change: Callback<bool>,
     pub on_paper_pause_change: Callback<bool>,
+    #[prop_or_default]
+    pub show_history: bool,
 }
 
 #[derive(Clone)]
@@ -83,6 +85,7 @@ fn answer_options(markdown: &str) -> Vec<(String, String)> {
 pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html {
     let papers = use_state(Vec::<PaperSummary>::new);
     let history = use_state(Vec::<PracticeSession>::new);
+    let history_open = use_state(|| props.show_history);
     let selected_paper = use_state(String::new);
     let selected_module = use_state(String::new);
     let modules = use_state(|| None::<PaperModules>);
@@ -682,6 +685,37 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 </section>
             };
         }
+    }
+
+    if *history_open {
+        return html! {
+            <TrainingSetupLayout test_id="question-bank-practice-history" heading={Some(html!{
+                <div class="flex items-center justify-between">
+                    <h2 class="text-xl font-bold">{"真题练习记录"}</h2>
+                    <button class="btn btn-ghost btn-sm" onclick={Callback::from({
+                        let history_open=history_open.clone();move |_|history_open.set(false)
+                    })}>{"返回模块"}</button>
+                </div>
+            })}>
+                <div class="grid gap-2" data-testid="question-bank-practice-history">
+                    {for history.iter().map(|run|{
+                        let active=run.status=="active";
+                        let id=run.id.clone();
+                        let invoke=invoke.clone();
+                        html! {
+                            <button type="button" class="btn btn-outline h-auto min-h-16 justify-between gap-3 p-3"
+                                data-testid="question-bank-practice-history-item"
+                                onclick={Callback::from(move |_|invoke.emit(if active {Action::Continue(id.clone())} else {Action::Review(id.clone())}))}>
+                                <span>{format!("{}题 · {} · {}",
+                                    run.items.len(),run.module.clone().unwrap_or_else(||"整卷".into()),
+                                    if active {"继续练习"} else {"查看解析"})}</span>
+                                <span>{format!("{}分钟",run.elapsed_seconds/60)}</span>
+                            </button>
+                        }
+                    })}
+                </div>
+            </TrainingSetupLayout>
+        };
     }
 
     let start_action = {
