@@ -37,6 +37,9 @@ function focusedRegressionFilter(): RegExp | undefined {
     if (event.pull_request?.title?.includes('[focus-training-time-e2e]')) {
       return /sixth statistics text tab shows stored durations and heatmap|pink study clock is display only and keeps its compact layout|refresh waits for the CSRF token before syncing study time|returning after a long background soft-refreshes without reloading|paper pause stops the study clock and resuming restarts it|legacy morning afternoon evening countdown panel is removed/;
     }
+    if (event.pull_request?.title?.includes('[focus-question-bank-e2e]')) {
+      return /original-paper module keeps all questions in order|single original paper starts without a fixed question count/;
+    }
     if (event.pull_request?.title?.includes('[focus-study-e2e]')) {
       return /edits policy from device detail and preserves a dirty draft across a 409|iPad comprehensive 20-question flow with answer save and submit/;
     }
