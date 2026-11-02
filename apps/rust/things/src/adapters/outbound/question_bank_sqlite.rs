@@ -10,7 +10,7 @@ use std::str::FromStr;
 
 // This migrator is intentionally separate from the portal and Flashcard databases.
 static QUESTION_BANK_MIGRATOR: sqlx::migrate::Migrator =
-    sqlx::migrate!("./question_bank_migrations");
+    sqlx::migrate!("./migrations/question_bank");
 
 pub struct SqliteQuestionBankRepository {
     pool: SqlitePool,
