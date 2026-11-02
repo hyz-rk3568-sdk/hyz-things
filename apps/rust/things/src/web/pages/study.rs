@@ -234,6 +234,9 @@ fn study_workspace(props: &StudyWorkspaceProps) -> Html {
                     </div>
                 </div>
                 <ExamCountdownPanel on_training={open_calculation.clone()}/>
+                if props.route.page == AppPage::Study {
+                    <QuestionBankPanel state={props.state.clone()} is_admin={props.is_admin}/>
+                }
                 <div class="mt-5 grid gap-4 lg:grid-cols-2" data-testid="study-quick-start">
                     <SectionCard title_id="study-flashcards-title" busy={Some(summary.is_none())}>
                         <div class={SECTION_HEAD}>

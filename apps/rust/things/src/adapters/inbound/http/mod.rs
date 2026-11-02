@@ -57,6 +57,8 @@ use crate::{
 
 mod data_analysis;
 mod flashcards;
+mod question_bank;
+pub use question_bank::with_question_bank;
 mod logic_judgment;
 mod quantitative_relations;
 mod tls;
@@ -732,6 +734,22 @@ fn app_with_assets(
         )
     });
     Router::new()
+        .route(
+            "/api/v1/question-bank/papers",
+            on(MethodFilter::GET, question_bank::papers),
+        )
+        .route(
+            "/api/v1/question-bank/papers/{id}",
+            on(MethodFilter::GET, question_bank::paper),
+        )
+        .route(
+            "/api/v1/question-bank/assets/{name}",
+            on(MethodFilter::GET, question_bank::asset),
+        )
+        .route(
+            "/api/v1/control/question-bank/sync",
+            on(MethodFilter::POST, question_bank::sync),
+        )
         .route(
             "/api/v1/study/training-time/current",
             on(MethodFilter::GET, training_time::current),
@@ -2807,6 +2825,7 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/study/review"
             | "/api/v1/study/training-time/events"
             | "/api/v1/control/study/sync"
+            | "/api/v1/control/question-bank/sync"
             | "/api/v1/study/data-analysis/prepare"
             | "/api/v1/study/data-analysis/user-prompt"
             | "/api/v1/study/logic-judgment/prepare"

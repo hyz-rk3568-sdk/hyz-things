@@ -1,0 +1,230 @@
+pub mod document;
+pub mod images;
+
+use crate::domain::question_bank::{BankSyncSummary, PaperSummary, PaperView};
+use async_trait::async_trait;
+use document::{valid_id, Document};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::Semaphore;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BankError {
+    Busy,
+    Unavailable,
+    Storage,
+    Invalid,
+    Conflict,
+    NotFound,
+    Stale,
+}
+impl std::fmt::Display for BankError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "question bank {self:?}")
+    }
+}
+impl std::error::Error for BankError {}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct IndexedPaper {
+    pub summary: PaperSummary,
+    pub path: String,
+    pub hash: String,
+    pub ids: Vec<String>,
+    #[serde(default)]
+    pub question_ids: Vec<String>,
+    #[serde(default)]
+    pub material_ids: Vec<String>,
+}
+impl IndexedPaper {
+    pub fn new(path: String, hash: String, doc: Document) -> Self {
+        Self {
+            summary: doc.summary(),
+            path,
+            hash,
+            ids: doc.ids(),
+            question_ids: doc.question_ids(),
+            material_ids: doc.material_ids(),
+        }
+    }
+}
+pub struct BankSnapshot {
+    pub papers: Vec<IndexedPaper>,
+    pub generated_ids: usize,
+}
+pub struct BankAsset {
+    pub contents: Vec<u8>,
+    pub content_type: &'static str,
+}
+#[async_trait]
+pub trait QuestionBankSourcePort: Send + Sync {
+    async fn scan(&self, known: Vec<IndexedPaper>) -> Result<BankSnapshot, BankError>;
+    async fn load(&self, paper: IndexedPaper) -> Result<Document, BankError>;
+    async fn asset(&self, name: String) -> Result<BankAsset, BankError>;
+}
+#[async_trait]
+pub trait QuestionBankRepositoryPort: Send + Sync {
+    async fn list(&self) -> Result<Vec<IndexedPaper>, BankError>;
+    async fn apply(&self, papers: Vec<IndexedPaper>) -> Result<(), BankError>;
+    async fn known(&self) -> Result<Vec<IndexedPaper>, BankError> {
+        self.list().await
+    }
+}
+
+pub struct QuestionBankApplication {
+    source: Arc<dyn QuestionBankSourcePort>,
+    repository: Arc<dyn QuestionBankRepositoryPort>,
+    gate: Semaphore,
+}
+impl QuestionBankApplication {
+    pub fn new(
+        source: Arc<dyn QuestionBankSourcePort>,
+        repository: Arc<dyn QuestionBankRepositoryPort>,
+    ) -> Self {
+        Self {
+            source,
+            repository,
+            gate: Semaphore::new(1),
+        }
+    }
+    pub async fn sync(&self) -> Result<BankSyncSummary, BankError> {
+        let _permit = self.gate.try_acquire().map_err(|_| BankError::Busy)?;
+        let known = self.repository.known().await?;
+        let snapshot = self.source.scan(known).await?;
+        if snapshot.papers.is_empty() {
+            return Err(BankError::Unavailable);
+        }
+        let mut all = std::collections::BTreeSet::new();
+        for paper in &snapshot.papers {
+            if paper.ids.iter().any(|id| !valid_id(id) || !all.insert(id)) {
+                return Err(BankError::Conflict);
+            }
+        }
+        let questions = snapshot.papers.iter().map(|p| p.summary.questions).sum();
+        let materials = snapshot
+            .papers
+            .iter()
+            .map(|p| p.ids.len().saturating_sub(p.summary.questions + 1))
+            .sum();
+        let summary = BankSyncSummary {
+            papers: snapshot.papers.len(),
+            questions,
+            materials,
+            generated_ids: snapshot.generated_ids,
+        };
+        self.repository.apply(snapshot.papers).await?;
+        Ok(summary)
+    }
+    pub async fn papers(&self) -> Result<Vec<PaperSummary>, BankError> {
+        Ok(self
+            .repository
+            .list()
+            .await?
+            .into_iter()
+            .filter(|p| p.summary.role == "primary")
+            .map(|p| p.summary)
+            .collect())
+    }
+    pub async fn paper(&self, id: &str) -> Result<PaperView, BankError> {
+        if !valid_id(id) {
+            return Err(BankError::Invalid);
+        }
+        let indexed = self
+            .repository
+            .list()
+            .await?
+            .into_iter()
+            .find(|p| p.summary.id == id && p.summary.role == "primary")
+            .ok_or(BankError::NotFound)?;
+        let doc = self.source.load(indexed).await?;
+        if doc.summary().id != id {
+            return Err(BankError::Conflict);
+        }
+        Ok(doc.view())
+    }
+    pub async fn asset(&self, name: String) -> Result<BankAsset, BankError> {
+        self.source.asset(name).await
+    }
+}
+
+pub struct SourceFile {
+    pub path: String,
+    pub text: String,
+}
+pub struct PreparedFile {
+    pub path: String,
+    pub before: String,
+    pub after: String,
+}
+pub struct SyncPlan {
+    pub writes: Vec<PreparedFile>,
+    pub snapshot: BankSnapshot,
+}
+
+pub fn prepare_sync(
+    files: Vec<SourceFile>,
+    known: Vec<IndexedPaper>,
+    mut next: impl FnMut() -> String,
+) -> Result<SyncPlan, BankError> {
+    let mut all = std::collections::BTreeSet::new();
+    let mut writes = Vec::new();
+    let mut papers = Vec::new();
+    let mut generated_ids = 0;
+    for file in files {
+        let (after, count) =
+            document::complete_ids(&file.text, &mut next).map_err(|_| BankError::Invalid)?;
+        let doc = document::parse(&after).map_err(|_| BankError::Invalid)?;
+        let indexed = IndexedPaper::new(file.path.clone(), source_hash(after.as_bytes()), doc);
+        if let Some(old) = known
+            .iter()
+            .find(|old| old.path == file.path || old.summary.id == indexed.summary.id)
+        {
+            if !preserves_identity(old, &indexed) {
+                return Err(BankError::Conflict);
+            }
+        }
+        if indexed.ids.iter().any(|id| !all.insert(id.clone())) {
+            return Err(BankError::Conflict);
+        }
+        papers.push(indexed);
+        generated_ids += count;
+        if count > 0 {
+            writes.push(PreparedFile {
+                path: file.path,
+                before: file.text,
+                after,
+            });
+        }
+    }
+    if papers.is_empty() {
+        return Err(BankError::Unavailable);
+    }
+    Ok(SyncPlan {
+        writes,
+        snapshot: BankSnapshot {
+            papers,
+            generated_ids,
+        },
+    })
+}
+
+pub fn source_hash(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn preserves_identity(old: &IndexedPaper, new: &IndexedPaper) -> bool {
+    old.summary.id == new.summary.id
+        && old.ids.iter().all(|id| new.ids.contains(id))
+        && old
+            .question_ids
+            .iter()
+            .all(|id| new.question_ids.contains(id))
+        && old
+            .material_ids
+            .iter()
+            .all(|id| new.material_ids.contains(id))
+}
