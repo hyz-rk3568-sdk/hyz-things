@@ -289,7 +289,7 @@ async fn sync_and_whole_paper_routes_preserve_typed_security_boundaries() {
             "{\"path\":\"/etc/shadow\"}",
             400,
         ),
-        (base.as_str(), Some("qb-csrf"), "{}", 200),
+        (base.as_str(), Some("qb-csrf"), "{}", 202),
     ] {
         let mut request = client
             .post(&endpoint)
@@ -413,4 +413,60 @@ fn imported_bmp_images_remain_usable_without_transcoding() {
     .unwrap();
     assert!(markdown.contains(&format!("hyz-bank-asset:{name}")));
     assert_eq!(refs, vec![name]);
+}
+
+#[derive(Default)]
+struct SlowScan {
+    entered: tokio::sync::Notify,
+    release: tokio::sync::Notify,
+    starts: std::sync::atomic::AtomicUsize,
+}
+#[async_trait]
+impl QuestionBankSourcePort for SlowScan {
+    async fn scan(&self, _known: Vec<IndexedPaper>) -> Result<BankSnapshot, BankError> {
+        self.starts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.entered.notify_one();
+        self.release.notified().await;
+        Ok(BankSnapshot {
+            papers: vec![IndexedPaper::new(
+                "papers/a.md".into(), "hash".into(), parse(PAPER).unwrap(),
+            )],
+            generated_ids: 0,
+        })
+    }
+    async fn load(&self, _paper: IndexedPaper) -> Result<Document, BankError> {
+        Ok(parse(PAPER).unwrap())
+    }
+    async fn asset(&self, _name: String) -> Result<BankAsset, BankError> {
+        Err(BankError::NotFound)
+    }
+}
+
+#[tokio::test]
+async fn detached_sync_survives_caller_exit_and_deduplicates_concurrent_starts() {
+    use std::sync::atomic::Ordering;
+    let source = Arc::new(SlowScan::default());
+    let repo = Arc::new(MemoryBank::default());
+    let app = Arc::new(QuestionBankApplication::new(source.clone(), repo));
+    let entered = source.entered.notified();
+    let first = app.start_sync().unwrap();
+    assert!(first.running);
+    entered.await;
+    // The first request is gone; no outstanding HTTP future owns the permit.
+    let second = app.start_sync().unwrap();
+    assert_eq!(first.task_id, second.task_id);
+    assert_eq!(source.starts.load(Ordering::SeqCst), 1);
+    source.release.notify_one();
+    let status = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            let status = app.sync_status();
+            if !status.running {
+                break status;
+            }
+            tokio::task::yield_now().await;
+        }
+    }).await.unwrap();
+    assert_eq!(status.stage, "completed");
+    assert_eq!(status.summary.unwrap().papers, 1);
+    assert_eq!(source.starts.load(Ordering::SeqCst), 1);
 }
