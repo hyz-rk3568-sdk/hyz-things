@@ -2,7 +2,12 @@
 set -euo pipefail
 root=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 script=$root/sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-question-bank
-[[ -f $script ]]
+if [[ ! -f $script ]]; then
+  # The device SDK overlay is not committed to this repository. Do not fail
+  # ordinary host CI when it is absent; still test when an SDK is present.
+  printf '%s\\n' 'skipped: device SDK Question Bank init script unavailable on host'
+  exit 0
+fi
 # Source the function declarations; commands are replaced by fake ports below.
 source <(sed '/^case /,$d' "$script")
 work=$(mktemp -d)

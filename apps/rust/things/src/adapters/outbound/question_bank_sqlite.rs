@@ -255,19 +255,31 @@ mod migration_tests {
     async fn upgrade_preserves_legacy_index_and_repeated_migration_preserves_learning() {
         let pool = memory_pool().await;
         sqlx::query("CREATE TABLE papers(id TEXT PRIMARY KEY, metadata TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query("CREATE TABLE identities(id TEXT PRIMARY KEY, paper_id TEXT NOT NULL REFERENCES papers(id))")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query("INSERT INTO papers(id,metadata,active) VALUES('paper-1','{}',1)")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query("INSERT INTO identities(id,paper_id) VALUES('question-1','paper-1')")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
 
         QUESTION_BANK_MIGRATOR.run(&pool).await.unwrap();
         sqlx::query("INSERT INTO favorites(question_id,favorite) VALUES('question-1',1)")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query("INSERT INTO question_progress(question_id,pending,updated_at) VALUES('question-1',1,123)")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
 
         // Reopening the same database is safe and never rebuilds user state.
         QUESTION_BANK_MIGRATOR.run(&pool).await.unwrap();

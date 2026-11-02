@@ -288,7 +288,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             index.set(0);
                         }
                         Action::Answer(choice) => {
-                            let active = workspace.as_ref().as_ref().cloned().ok_or("训练不存在")?;
+                            let active =
+                                workspace.as_ref().as_ref().cloned().ok_or("训练不存在")?;
                             let q = active.questions.get(*index).ok_or("题位不存在")?;
                             let mut answer = if *multi_select {
                                 let mut selected = q.item.answer.clone();
@@ -350,7 +351,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             }
                         }
                         Action::Submit => {
-                            let active = workspace.as_ref().as_ref().cloned().ok_or("训练不存在")?;
+                            let active =
+                                workspace.as_ref().as_ref().cloned().ok_or("训练不存在")?;
                             if !*submit_confirm
                                 && active.session.items.iter().any(|q| q.answer.is_empty())
                             {

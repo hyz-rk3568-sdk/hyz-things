@@ -2956,8 +2956,8 @@ async fn security_headers(request: Request, next: Next) -> Response {
     // 405. Sensitive GET handlers still enforce normal administrator session and JSON Origin/CSRF.
     // Only exact POST mutation paths are allowed; each handler enforces its own policy.
     let path = request.uri().path();
-    let allowed = request.method() == Method::GET
-        || request.method() == Method::POST && is_post_path(path);
+    let allowed =
+        request.method() == Method::GET || request.method() == Method::POST && is_post_path(path);
     let reject_api_method = !allowed && path.starts_with("/api/");
     let mut response = if reject_api_method {
         method_not_allowed_json()
@@ -3089,13 +3089,27 @@ mod tests {
     fn question_bank_practice_mutations_have_exact_post_allowlist() {
         let id = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
         assert!(is_post_path("/api/v1/question-bank/practice/sessions"));
-        assert!(is_post_path(&format!("/api/v1/question-bank/practice/sessions/{id}/submit")));
-        assert!(is_post_path(&format!("/api/v1/question-bank/practice/sessions/{id}/pause")));
-        assert!(is_post_path(&format!("/api/v1/question-bank/practice/sessions/{id}/answers/{id}")));
-        assert!(is_post_path(&format!("/api/v1/question-bank/practice/favorites/{id}")));
-        assert!(!is_post_path("/api/v1/question-bank/practice/favorites/bad"));
-        assert!(!is_post_path("/api/v1/question-bank/practice/sessions/bad/submit"));
-        assert!(!is_post_path(&format!("/api/v1/question-bank/practice/sessions/{id}/extra/submit")));
+        assert!(is_post_path(&format!(
+            "/api/v1/question-bank/practice/sessions/{id}/submit"
+        )));
+        assert!(is_post_path(&format!(
+            "/api/v1/question-bank/practice/sessions/{id}/pause"
+        )));
+        assert!(is_post_path(&format!(
+            "/api/v1/question-bank/practice/sessions/{id}/answers/{id}"
+        )));
+        assert!(is_post_path(&format!(
+            "/api/v1/question-bank/practice/favorites/{id}"
+        )));
+        assert!(!is_post_path(
+            "/api/v1/question-bank/practice/favorites/bad"
+        ));
+        assert!(!is_post_path(
+            "/api/v1/question-bank/practice/sessions/bad/submit"
+        ));
+        assert!(!is_post_path(&format!(
+            "/api/v1/question-bank/practice/sessions/{id}/extra/submit"
+        )));
     }
 
     #[test]

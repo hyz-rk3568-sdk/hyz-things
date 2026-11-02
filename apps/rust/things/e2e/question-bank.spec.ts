@@ -50,6 +50,10 @@ test('question bank paper module practice keeps source numbering and hides answe
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('现期比重');
   await page.getByTestId('question-bank-favorite').click();
   await expect(page.getByTestId('question-bank-favorite')).toContainText('已收藏');
+  // Restore the fixture state so the following test starts with an empty favorite set.
+  await page.getByTestId('question-bank-favorite').click();
+  await expect(page.getByTestId('question-bank-favorite')).toContainText('收藏');
+  await expect(page.getByTestId('question-bank-favorite')).not.toContainText('已收藏');
 });
 
 test('question bank wrong and favorite mode reuses fixed source items',async({page})=>{
@@ -64,6 +68,7 @@ test('question bank wrong and favorite mode reuses fixed source items',async({pa
   await page.getByRole('button',{name:'确认交卷'}).click();
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('原始解析');
   await page.getByTestId('question-bank-favorite').click();
+  await expect(page.getByTestId('question-bank-favorite')).toContainText('已收藏');
   await page.getByRole('button',{name:/暂停并退出/}).click();
   await page.getByTestId('question-bank-mode').filter({hasText:'错题训练'}).click();
   await page.getByTestId('question-bank-practice-start').click();
