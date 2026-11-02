@@ -8,6 +8,10 @@ use sqlx::{
 };
 use std::str::FromStr;
 
+// This migrator is intentionally separate from the portal and Flashcard databases.
+static QUESTION_BANK_MIGRATOR: sqlx::migrate::Migrator =
+    sqlx::migrate!("./question_bank_migrations");
+
 pub struct SqliteQuestionBankRepository {
     pool: SqlitePool,
 }
@@ -22,18 +26,10 @@ impl SqliteQuestionBankRepository {
             .connect_with(options)
             .await
             .map_err(|_| BankError::Storage)?;
-        sqlx::query("CREATE TABLE IF NOT EXISTS papers(id TEXT PRIMARY KEY, metadata TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)").execute(&pool).await.map_err(|_|BankError::Storage)?;
-        sqlx::query("CREATE TABLE IF NOT EXISTS identities(id TEXT PRIMARY KEY, paper_id TEXT NOT NULL REFERENCES papers(id))").execute(&pool).await.map_err(|_|BankError::Storage)?;
-        for ddl in [
-            "CREATE TABLE IF NOT EXISTS questions(id TEXT PRIMARY KEY, paper_id TEXT NOT NULL REFERENCES papers(id), number INTEGER NOT NULL, source_hash TEXT NOT NULL)",
-            "CREATE TABLE IF NOT EXISTS practice_sessions(id TEXT PRIMARY KEY, status TEXT NOT NULL, revision INTEGER NOT NULL, data TEXT NOT NULL)",
-            "CREATE TABLE IF NOT EXISTS practice_items(session_id TEXT NOT NULL REFERENCES practice_sessions(id), ordinal INTEGER NOT NULL, question_id TEXT NOT NULL, paper_id TEXT NOT NULL, number INTEGER NOT NULL, source_hash TEXT NOT NULL, answer TEXT NOT NULL, grade TEXT, PRIMARY KEY(session_id,ordinal))",
-            "CREATE TABLE IF NOT EXISTS practice_attempts(session_id TEXT NOT NULL, question_id TEXT NOT NULL, answer TEXT NOT NULL, grade TEXT NOT NULL, submitted_at INTEGER NOT NULL, PRIMARY KEY(session_id,question_id))",
-            "CREATE TABLE IF NOT EXISTS question_progress(question_id TEXT PRIMARY KEY, pending INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
-            "CREATE TABLE IF NOT EXISTS favorites(question_id TEXT PRIMARY KEY, favorite INTEGER NOT NULL)",
-        ] {
-            sqlx::query(ddl).execute(&pool).await.map_err(|_| BankError::Storage)?;
-        }
+        QUESTION_BANK_MIGRATOR
+            .run(&pool)
+            .await
+            .map_err(|_| BankError::Storage)?;
         Ok(Self { pool })
     }
 }
@@ -215,5 +211,81 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                 .await
                 .map_err(|_| BankError::Storage)?;
         Ok(value.unwrap_or(0) != 0)
+    }
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::*;
+
+    async fn memory_pool() -> SqlitePool {
+        SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn fresh_question_bank_has_all_tables() {
+        let pool = memory_pool().await;
+        QUESTION_BANK_MIGRATOR.run(&pool).await.unwrap();
+        for table in [
+            "papers",
+            "identities",
+            "questions",
+            "practice_sessions",
+            "practice_items",
+            "practice_attempts",
+            "question_progress",
+            "favorites",
+        ] {
+            let exists: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?",
+            )
+            .bind(table)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(exists, 1, "missing Question Bank table: {table}");
+        }
+    }
+
+    #[tokio::test]
+    async fn upgrade_preserves_legacy_index_and_repeated_migration_preserves_learning() {
+        let pool = memory_pool().await;
+        sqlx::query("CREATE TABLE papers(id TEXT PRIMARY KEY, metadata TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)")
+            .execute(&pool).await.unwrap();
+        sqlx::query("CREATE TABLE identities(id TEXT PRIMARY KEY, paper_id TEXT NOT NULL REFERENCES papers(id))")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO papers(id,metadata,active) VALUES('paper-1','{}',1)")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO identities(id,paper_id) VALUES('question-1','paper-1')")
+            .execute(&pool).await.unwrap();
+
+        QUESTION_BANK_MIGRATOR.run(&pool).await.unwrap();
+        sqlx::query("INSERT INTO favorites(question_id,favorite) VALUES('question-1',1)")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO question_progress(question_id,pending,updated_at) VALUES('question-1',1,123)")
+            .execute(&pool).await.unwrap();
+
+        // Reopening the same database is safe and never rebuilds user state.
+        QUESTION_BANK_MIGRATOR.run(&pool).await.unwrap();
+        for (table, expected) in [
+            ("papers", 1_i64),
+            ("identities", 1),
+            ("favorites", 1),
+            ("question_progress", 1),
+        ] {
+            let query = format!("SELECT count(*) FROM {table}");
+            let count: i64 = sqlx::query_scalar(&query).fetch_one(&pool).await.unwrap();
+            assert_eq!(count, expected, "{table} was unexpectedly cleared");
+        }
+        let applied: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM _sqlx_migrations WHERE success=1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(applied, 1, "migration must be recorded exactly once");
     }
 }
