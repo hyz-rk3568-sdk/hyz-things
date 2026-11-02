@@ -194,7 +194,8 @@ impl QuestionBankSourcePort for QuestionBankFixture {
                 IndexedPaper::new(
                     "papers/second.md".into(),
                     "e2e-second-hash".into(),
-                    document::parse(QUESTION_BANK_SECOND_FIXTURE).map_err(|_| BankError::Invalid)?,
+                    document::parse(QUESTION_BANK_SECOND_FIXTURE)
+                        .map_err(|_| BankError::Invalid)?,
                 ),
             ],
             generated_ids: 0,

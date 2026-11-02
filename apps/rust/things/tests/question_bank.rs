@@ -709,40 +709,69 @@ async fn indexed_module_and_category_drills_keep_original_sources() {
     app.sync().await.unwrap();
 
     let catalog = app.practice_catalog().await.unwrap();
-    let module = catalog.modules.iter().find(|m| m.name == "资料分析").unwrap();
+    let module = catalog
+        .modules
+        .iter()
+        .find(|m| m.name == "资料分析")
+        .unwrap();
     assert_eq!(module.count, 1);
     assert_eq!(module.uncategorized, 0);
     assert_eq!(module.categories[0].name, "比重");
     assert_eq!(module.categories[0].count, 1);
 
-    let session = app.create_practice(CreatePracticeRequest {
-        mode: PracticeMode::Module,
-        paper_id: None,
-        module: Some("资料分析".into()),
-        category: Some("比重".into()),
-    }).await.unwrap();
+    let session = app
+        .create_practice(CreatePracticeRequest {
+            mode: PracticeMode::Module,
+            paper_id: None,
+            module: Some("资料分析".into()),
+            category: Some("比重".into()),
+        })
+        .await
+        .unwrap();
     assert_eq!(session.items.len(), 1);
     assert_eq!(session.items[0].number, 26);
     assert_eq!(session.category.as_deref(), Some("比重"));
-    assert_eq!(session.items[0].paper_id, "019a3d8c-7f23-7b6e-927d-3c951851d3a2");
-    assert_eq!(app.practice_workspace(&session.id).await.unwrap().questions.len(), 1);
+    assert_eq!(
+        session.items[0].paper_id,
+        "019a3d8c-7f23-7b6e-927d-3c951851d3a2"
+    );
+    assert_eq!(
+        app.practice_workspace(&session.id)
+            .await
+            .unwrap()
+            .questions
+            .len(),
+        1
+    );
 
-    assert!(matches!(app.create_practice(CreatePracticeRequest {
-        mode: PracticeMode::PaperModule,
-        paper_id: None,
-        module: Some("资料分析".into()),
-        category: None,
-    }).await, Err(BankError::Invalid)));
-    assert!(matches!(app.create_practice(CreatePracticeRequest {
-        mode: PracticeMode::Module,
-        paper_id: None,
-        module: Some("资料分析".into()),
-        category: Some("不存在的题型".into()),
-    }).await, Err(BankError::NotFound)));
-    assert!(matches!(app.create_practice(CreatePracticeRequest {
-        mode: PracticeMode::Module,
-        paper_id: Some("019a3d8c-7f23-7b6e-927d-3c951851d3a2".into()),
-        module: Some("资料分析".into()),
-        category: None,
-    }).await, Err(BankError::Invalid)));
+    assert!(matches!(
+        app.create_practice(CreatePracticeRequest {
+            mode: PracticeMode::PaperModule,
+            paper_id: None,
+            module: Some("资料分析".into()),
+            category: None,
+        })
+        .await,
+        Err(BankError::Invalid)
+    ));
+    assert!(matches!(
+        app.create_practice(CreatePracticeRequest {
+            mode: PracticeMode::Module,
+            paper_id: None,
+            module: Some("资料分析".into()),
+            category: Some("不存在的题型".into()),
+        })
+        .await,
+        Err(BankError::NotFound)
+    ));
+    assert!(matches!(
+        app.create_practice(CreatePracticeRequest {
+            mode: PracticeMode::Module,
+            paper_id: Some("019a3d8c-7f23-7b6e-927d-3c951851d3a2".into()),
+            module: Some("资料分析".into()),
+            category: None,
+        })
+        .await,
+        Err(BankError::Invalid)
+    ));
 }

@@ -1,15 +1,15 @@
 //! Metadata-only index in its own database; Markdown remains the content source.
+use crate::application::question_bank::practice::primary_module;
 use crate::application::question_bank::{BankError, IndexedPaper, QuestionBankRepositoryPort};
 use crate::domain::question_bank::{
     PracticeCatalog, PracticeCategory, PracticeMode, PracticeModule, PracticeSession,
 };
-use crate::application::question_bank::practice::primary_module;
-use std::collections::BTreeMap;
 use async_trait::async_trait;
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
     Row, SqlitePool,
 };
+use std::collections::BTreeMap;
 use std::str::FromStr;
 
 // This migrator is intentionally separate from the portal and Flashcard databases.
@@ -72,10 +72,14 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                     .get(ordinal)
                     .copied()
                     .unwrap_or((ordinal + 1) as u32);
-                let module = paper.question_modules.get(ordinal)
+                let module = paper
+                    .question_modules
+                    .get(ordinal)
                     .and_then(|value| value.as_deref())
                     .and_then(|value| primary_module(Some(value)));
-                let category = paper.question_categories.get(ordinal)
+                let category = paper
+                    .question_categories
+                    .get(ordinal)
                     .and_then(|value| value.as_deref());
                 sqlx::query("INSERT INTO questions(id,paper_id,number,source_hash,module,category) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET paper_id=excluded.paper_id,number=excluded.number,source_hash=excluded.source_hash,module=excluded.module,category=excluded.category")
                     .bind(id).bind(&paper.summary.id).bind(number as i64).bind(&paper.hash)
@@ -189,7 +193,6 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             .collect()
     }
 
-
     async fn practice_catalog(&self) -> Result<PracticeCatalog, BankError> {
         let rows = sqlx::query(
             "SELECT q.module,q.category,COUNT(*) AS total FROM questions q JOIN papers p ON p.id=q.paper_id WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' GROUP BY q.module,q.category ORDER BY q.module,q.category"
@@ -215,16 +218,20 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             }
         }
         Ok(PracticeCatalog {
-            modules: modules.into_iter().map(|(name, (count, uncategorized, categories))| {
-                PracticeModule {
-                    name,
-                    count,
-                    uncategorized,
-                    categories: categories.into_iter()
-                        .map(|(name, count)| PracticeCategory { name, count })
-                        .collect(),
-                }
-            }).collect(),
+            modules: modules
+                .into_iter()
+                .map(
+                    |(name, (count, uncategorized, categories))| PracticeModule {
+                        name,
+                        count,
+                        uncategorized,
+                        categories: categories
+                            .into_iter()
+                            .map(|(name, count)| PracticeCategory { name, count })
+                            .collect(),
+                    },
+                )
+                .collect(),
             unclassified,
         })
     }
@@ -251,7 +258,11 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         if let Some(category) = category {
             query = query.bind(category);
         }
-        query.bind(limit as i64).fetch_all(&self.pool).await.map_err(|_| BankError::Storage)
+        query
+            .bind(limit as i64)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| BankError::Storage)
     }
 
     async fn practice_candidates(&self, mode: PracticeMode) -> Result<Vec<String>, BankError> {

@@ -2,8 +2,8 @@
 use super::*;
 use hyz_things::domain::question_bank::{
     CreatePracticeRequest, FavoriteState, PaperModules, PaperSummary, PracticeCatalog,
-    PracticeMode, PracticeReview,
-    PracticeSession, PracticeWorkspace, SavePracticeAnswer, SetFavorite, SetPracticePaused,
+    PracticeMode, PracticeReview, PracticeSession, PracticeWorkspace, SavePracticeAnswer,
+    SetFavorite, SetPracticePaused,
 };
 
 const ROOT: &str = "/api/v1/question-bank";
@@ -257,7 +257,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     }
                                     _ => None,
                                 },
-                                module: if matches!(*mode, PracticeMode::PaperModule | PracticeMode::Module) {
+                                module: if matches!(
+                                    *mode,
+                                    PracticeMode::PaperModule | PracticeMode::Module
+                                ) {
                                     if selected_module.is_empty() {
                                         return Err("请先选择模块".into());
                                     }
@@ -265,7 +268,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 } else {
                                     None
                                 },
-                                category: if *mode == PracticeMode::Module && !selected_category.is_empty() {
+                                category: if *mode == PracticeMode::Module
+                                    && !selected_category.is_empty()
+                                {
                                     Some((*selected_category).clone())
                                 } else {
                                     None

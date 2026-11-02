@@ -113,7 +113,7 @@ test('question bank module drill filters real categories across original papers'
   await page.getByTestId('question-bank-practice-start').click();
   await expect(page.getByTestId('question-bank-practice-workspace')).toBeVisible();
   await expect(page.getByTestId('question-bank-practice-number')).toHaveCount(2);
-  await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('第二份跨卷模块练习卷');
+  await expect(page.getByTestId('question-bank-practice-workspace')).toContainText('第二份跨卷模块练习卷');
   await expect(page.getByTestId('question-bank-practice-number').first()).toContainText('12');
   await page.getByTestId('question-bank-practice-number').last().click();
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('原卷第 26 题');

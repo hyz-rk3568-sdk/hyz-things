@@ -4,9 +4,8 @@ use super::{
 };
 use crate::domain::question_bank::{
     CreatePracticeRequest, FavoriteState, PaperModule, PaperModules, PracticeCatalog, PracticeItem,
-    PracticeMode,
-    PracticeQuestion, PracticeReview, PracticeScore, PracticeSession, PracticeWorkspace,
-    ReviewQuestion,
+    PracticeMode, PracticeQuestion, PracticeReview, PracticeScore, PracticeSession,
+    PracticeWorkspace, ReviewQuestion,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -89,7 +88,10 @@ impl QuestionBankApplication {
     ) -> Result<PracticeSession, BankError> {
         let module = match request.mode {
             PracticeMode::Paper => {
-                if request.module.is_some() || request.paper_id.is_none() || request.category.is_some() {
+                if request.module.is_some()
+                    || request.paper_id.is_none()
+                    || request.category.is_some()
+                {
                     return Err(BankError::Invalid);
                 }
                 None
@@ -119,22 +121,29 @@ impl QuestionBankApplication {
                 Some(normalized.to_string())
             }
             PracticeMode::Wrong | PracticeMode::Favorite => {
-                if request.module.is_some() || request.paper_id.is_some() || request.category.is_some() {
+                if request.module.is_some()
+                    || request.paper_id.is_some()
+                    || request.category.is_some()
+                {
                     return Err(BankError::Invalid);
                 }
                 None
             }
         };
         let selected_order = match request.mode {
-            PracticeMode::Module => self.repository
-                .practice_module_candidates(
-                    module.as_deref().ok_or(BankError::Invalid)?,
-                    request.category.as_deref(),
-                    20,
-                )
-                .await?,
+            PracticeMode::Module => {
+                self.repository
+                    .practice_module_candidates(
+                        module.as_deref().ok_or(BankError::Invalid)?,
+                        request.category.as_deref(),
+                        20,
+                    )
+                    .await?
+            }
             PracticeMode::Wrong | PracticeMode::Favorite => {
-                self.repository.practice_candidates(request.mode.clone()).await?
+                self.repository
+                    .practice_candidates(request.mode.clone())
+                    .await?
             }
             _ => Vec::new(),
         };
@@ -195,7 +204,9 @@ impl QuestionBankApplication {
         if request.mode == PracticeMode::Module {
             // Keep the repository's unpracticed-first, deterministic twenty-question order.
             items.sort_by_key(|item| {
-                selected_order.iter().position(|id| id == &item.question_id)
+                selected_order
+                    .iter()
+                    .position(|id| id == &item.question_id)
                     .unwrap_or(usize::MAX)
             });
         }

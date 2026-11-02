@@ -56,8 +56,18 @@ impl IndexedPaper {
             question_ids: doc.question_ids(),
             material_ids: doc.material_ids(),
             question_numbers: doc.view().questions.iter().map(|q| q.number).collect(),
-            question_modules: doc.view().questions.iter().map(|q| q.module.clone()).collect(),
-            question_categories: doc.view().questions.iter().map(|q| q.category.clone()).collect(),
+            question_modules: doc
+                .view()
+                .questions
+                .iter()
+                .map(|q| q.module.clone())
+                .collect(),
+            question_categories: doc
+                .view()
+                .questions
+                .iter()
+                .map(|q| q.category.clone())
+                .collect(),
         }
     }
 }
