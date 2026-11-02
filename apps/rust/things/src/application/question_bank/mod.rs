@@ -1,7 +1,7 @@
 pub mod document;
 pub mod images;
 
-use crate::domain::question_bank::{BankSyncSummary, PaperSummary, PaperView};
+use crate::domain::question_bank::{BankSyncStatus, BankSyncSummary, PaperSummary, PaperView};
 use async_trait::async_trait;
 use document::{valid_id, Document};
 use serde::{Deserialize, Serialize};
@@ -202,16 +202,6 @@ impl QuestionBankApplication {
     pub async fn asset(&self, name: String) -> Result<BankAsset, BankError> {
         self.source.asset(name).await
     }
-}
-
-/// Safe status projection: never includes paths or raw errors.
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct BankSyncStatus {
-    pub task_id: Option<String>,
-    pub stage: String,
-    pub running: bool,
-    pub summary: Option<BankSyncSummary>,
-    pub error_code: Option<String>,
 }
 
 impl BankError {
