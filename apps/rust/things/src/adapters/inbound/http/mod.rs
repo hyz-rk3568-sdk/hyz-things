@@ -747,6 +747,10 @@ fn app_with_assets(
             on(MethodFilter::GET, question_bank::asset),
         )
         .route(
+            "/api/v1/question-bank/sync/status",
+            on(MethodFilter::GET, question_bank::sync_status),
+        )
+        .route(
             "/api/v1/control/question-bank/sync",
             on(MethodFilter::POST, question_bank::sync),
         )
