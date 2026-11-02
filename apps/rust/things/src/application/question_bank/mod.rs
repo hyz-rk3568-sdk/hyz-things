@@ -5,7 +5,7 @@ use crate::domain::question_bank::{BankSyncSummary, PaperSummary, PaperView};
 use async_trait::async_trait;
 use document::{valid_id, Document};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::Semaphore;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -74,7 +74,8 @@ pub trait QuestionBankRepositoryPort: Send + Sync {
 pub struct QuestionBankApplication {
     source: Arc<dyn QuestionBankSourcePort>,
     repository: Arc<dyn QuestionBankRepositoryPort>,
-    gate: Semaphore,
+    gate: Arc<Semaphore>,
+    sync_status: Arc<Mutex<BankSyncStatus>>,
 }
 impl QuestionBankApplication {
     pub fn new(
@@ -84,13 +85,68 @@ impl QuestionBankApplication {
         Self {
             source,
             repository,
-            gate: Semaphore::new(1),
+            gate: Arc::new(Semaphore::new(1)),
+            sync_status: Arc::new(Mutex::new(BankSyncStatus::default())),
         }
     }
+    pub fn sync_status(&self) -> BankSyncStatus {
+        self.sync_status.lock().unwrap().clone()
+    }
+
+    /// Detached task owns the permit until scanning and indexing have exited.
+    pub fn start_sync(self: &Arc<Self>) -> Result<BankSyncStatus, BankError> {
+        let permit = match self.gate.clone().try_acquire_owned() {
+            Ok(permit) => permit,
+            Err(_) => {
+                let status = self.sync_status();
+                return if status.running { Ok(status) } else { Err(BankError::Busy) };
+            }
+        };
+        let status = BankSyncStatus {
+            task_id: Some(uuid::Uuid::now_v7().to_string()),
+            stage: "scanning".into(),
+            running: true,
+            summary: None,
+            error_code: None,
+        };
+        *self.sync_status.lock().unwrap() = status.clone();
+        let app = self.clone();
+        tokio::spawn(async move {
+            let _permit = permit;
+            let result = app.run_sync().await;
+            let mut status = app.sync_status.lock().unwrap();
+            status.running = false;
+            match result {
+                Ok(summary) => {
+                    status.stage = "completed".into();
+                    status.summary = Some(summary);
+                }
+                Err(error) => {
+                    status.stage = "failed".into();
+                    status.error_code = Some(error.code().into());
+                }
+            }
+        });
+        Ok(status)
+    }
+
     pub async fn sync(&self) -> Result<BankSyncSummary, BankError> {
         let _permit = self.gate.try_acquire().map_err(|_| BankError::Busy)?;
+        self.run_sync().await
+    }
+
+    fn stage(&self, stage: &str) {
+        let mut status = self.sync_status.lock().unwrap();
+        if status.running {
+            status.stage = stage.into();
+        }
+    }
+
+    async fn run_sync(&self) -> Result<BankSyncSummary, BankError> {
+        self.stage("scanning");
         let known = self.repository.known().await?;
         let snapshot = self.source.scan(known).await?;
+        self.stage("validating");
         if snapshot.papers.is_empty() {
             return Err(BankError::Unavailable);
         }
@@ -112,6 +168,7 @@ impl QuestionBankApplication {
             materials,
             generated_ids: snapshot.generated_ids,
         };
+        self.stage("indexing");
         self.repository.apply(snapshot.papers).await?;
         Ok(summary)
     }
@@ -144,6 +201,30 @@ impl QuestionBankApplication {
     }
     pub async fn asset(&self, name: String) -> Result<BankAsset, BankError> {
         self.source.asset(name).await
+    }
+}
+
+/// Safe status projection: never includes paths or raw errors.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BankSyncStatus {
+    pub task_id: Option<String>,
+    pub stage: String,
+    pub running: bool,
+    pub summary: Option<BankSyncSummary>,
+    pub error_code: Option<String>,
+}
+
+impl BankError {
+    fn code(&self) -> &'static str {
+        match self {
+            Self::Busy => "question_bank_busy",
+            Self::Unavailable => "question_bank_unavailable",
+            Self::Storage => "question_bank_storage",
+            Self::Invalid => "question_bank_invalid",
+            Self::Conflict => "question_bank_conflict",
+            Self::NotFound => "question_bank_not_found",
+            Self::Stale => "question_bank_stale",
+        }
     }
 }
 
