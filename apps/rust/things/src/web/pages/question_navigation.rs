@@ -135,7 +135,7 @@ fn training_swipe_surface(props: &TrainingSwipeSurfaceProps) -> Html {
         let origin = origin.clone();
         Callback::from(move |event: PointerEvent| {
             *origin.borrow_mut() = None;
-            if !ink_active || event.pointer_type() != "touch" || !event.is_primary()
+            if ink_active || event.pointer_type() != "touch" || !event.is_primary()
                 || !swipe_start_allowed(&event)
             {
                 return;
