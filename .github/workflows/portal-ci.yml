@@ -298,7 +298,7 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             npm run test:e2e:startup
-            npx playwright test e2e/question-bank.spec.ts e2e/comprehensive.spec.ts e2e/logic-judgment.spec.ts e2e/training.spec.ts
+            npx playwright test e2e/question-bank.spec.ts e2e/comprehensive.spec.ts e2e/logic-judgment.spec.ts e2e/training-subjects.spec.ts e2e/training-time.spec.ts
           else
             npm run test:e2e
           fi
