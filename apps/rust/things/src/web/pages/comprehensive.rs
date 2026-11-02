@@ -1126,9 +1126,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     </div>
                 </header>
                 <div class="min-h-0 flex-1">
-                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",review_id,index)} responsive={true} scroll_linked={true}>
+                    <TrainingSwipeSurface current={current.clone()} total={score.questions.len()}><InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",review_id,index)} responsive={true} scroll_linked={true}>
                         <AnalysisPanes material={score.materials[group_index].clone()} question={review_question} question_index={index} right_title="答案与解析" />
-                    </InkOverlay>
+                    </InkOverlay></TrainingSwipeSurface>
                 </div>
                 if let Some(msg)=(*error).clone() {
                     <p class="shrink-0 text-error text-xs" role="alert">{msg}</p>
@@ -1308,9 +1308,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     </div>
                 </header>
                 <div class="min-h-0 flex-1">
-                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",active.id,index)} responsive={true} scroll_linked={true}>
+                    <TrainingSwipeSurface current={current.clone()} total={active.answers.len()}><InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",active.id,index)} responsive={true} scroll_linked={true}>
                         <AnalysisPanes material={group.material.clone()} question={question_content} question_index={index} />
-                    </InkOverlay>
+                    </InkOverlay></TrainingSwipeSurface>
                 </div>
                 if let Some(msg)=(*error).clone(){<div class="shrink-0 text-error text-xs" role="alert">{msg}</div>}
                 {analysis_navigation(current.clone(),index,&markers,false)}
