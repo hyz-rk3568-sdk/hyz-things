@@ -35,11 +35,46 @@ struct Metadata {
 #[derive(Clone, Debug)]
 pub struct Document {
     view: PaperView,
+    answers: BTreeMap<String, AnswerKey>,
+}
+#[derive(Clone, Debug)]
+pub struct AnswerKey {
+    pub choices: Vec<String>,
+    pub explanation: String,
+    pub valid: bool,
+}
+fn choices(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for token in text.trim().split(|c: char| !c.is_ascii_alphabetic()) {
+        if token.is_empty() {
+            continue;
+        }
+        for choice in token.chars() {
+            let value = choice.to_ascii_uppercase().to_string();
+            if !out.contains(&value) {
+                out.push(value);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+fn option_labels(markdown: &str) -> Vec<String> {
+    markdown.lines().filter_map(|line| {
+        let line = line.trim_start().strip_prefix("- ")?;
+        let (label, rest) = line.split_once(['.', '．', '、', ' '])?;
+        (label.len() == 1 && label.bytes().all(|b| b.is_ascii_uppercase()) && !rest.trim().is_empty())
+            .then(|| label.to_string())
+    }).collect()
 }
 impl Document {
     pub fn view(&self) -> PaperView {
         self.view.clone()
     }
+    pub fn key(&self, question_id: &str) -> Option<&AnswerKey> {
+        self.answers.get(question_id)
+    }
+
     pub fn summary(&self) -> PaperSummary {
         let v = &self.view;
         PaperSummary {
@@ -133,6 +168,7 @@ fn parse_inner(text: &str, required: bool) -> Result<Document> {
     let id = marker(&blocks[0].1, "paper", required)?;
     let mut materials = Vec::new();
     let mut questions = Vec::new();
+    let mut answers = BTreeMap::new();
     let mut numbers = BTreeSet::new();
     for (heading, content) in blocks.iter().skip(1) {
         if let Some(name) = heading.strip_prefix("## Material ") {
@@ -166,7 +202,21 @@ fn parse_inner(text: &str, required: bool) -> Result<Document> {
                 .ok_or("unterminated question metadata")?;
             let meta: Metadata = serde_yaml::from_str(yaml).map_err(|_| "invalid question YAML")?;
             let fields = question_fields(sections)?;
-            // Answer, Explanation and Notes are deliberately discarded from the public projection.
+            let labels = option_labels(fields["Options"].trim());
+            let answer = choices(fields["Answer"].trim());
+            let valid = !fields["Stem"].trim().is_empty()
+                && labels.len() >= 2
+                && labels.len() <= 12
+                && labels.iter().collect::<BTreeSet<_>>().len() == labels.len()
+                && !answer.is_empty()
+                && answer.iter().all(|choice| labels.contains(choice))
+                && meta.issues.is_empty();
+            answers.insert(qid.clone(), AnswerKey {
+                choices: answer.clone(),
+                explanation: fields.get("Explanation").cloned().unwrap_or_default().trim().into(),
+                valid,
+            });
+            // Key and explanation stay server-side, never in the public DTO.
             questions.push(QuestionView {
                 id: qid,
                 number,
@@ -203,6 +253,7 @@ fn parse_inner(text: &str, required: bool) -> Result<Document> {
             .collect::<Result<_>>()?;
     }
     let doc = Document {
+        answers,
         view: PaperView {
             id,
             title: header.title,
