@@ -623,7 +623,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 </header>
                 {alert}
                 <div class="relative min-h-0 flex-1 overflow-hidden">
-                    <InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("{prefix}-{}-{index}",active.id)}>
+                    <TrainingSwipeSurface current={current.clone()} total={active.questions.len()}><InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("{prefix}-{}-{index}",active.id)}>
                         <LogicScrollPane prefix={prefix} question_index={index} status="作答中" right_title="选项"
                             question={html! {
                                 <div class="study-markdown whitespace-pre-wrap break-words text-lg font-semibold leading-8" data-testid={format!("{prefix}-question")}>
@@ -644,7 +644,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                                 })}</div>
                             }}
                         />
-                    </InkOverlay>
+                    </InkOverlay></TrainingSwipeSurface>
                 </div>
                 {question_navigation(
                     current.clone(),
@@ -678,7 +678,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 </header>
                 {alert}
                 <div class="relative min-h-0 flex-1 overflow-hidden">
-                    <InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("{prefix}-{}-{index}",score.id)}>
+                    <TrainingSwipeSurface current={current.clone()} total={score.questions.len()}><InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("{prefix}-{}-{index}",score.id)}>
                         <LogicScrollPane prefix={prefix} question_index={index} status={grade} right_title="答案与解析"
                             question={html! {
                                 <div class="study-markdown whitespace-pre-wrap break-words text-lg font-semibold leading-8" data-testid={format!("{prefix}-question")}>
@@ -707,7 +707,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                                 </div>
                             }}
                         />
-                    </InkOverlay>
+                    </InkOverlay></TrainingSwipeSurface>
                 </div>
                 {question_navigation(
                     current.clone(),
