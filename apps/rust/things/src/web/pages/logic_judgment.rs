@@ -11,6 +11,8 @@ pub(crate) struct LogicJudgmentProps {
     pub on_paper_pause_change: Callback<bool>,
     #[prop_or_default]
     pub quantitative: bool,
+    #[prop_or_default]
+    pub show_history: bool,
 }
 
 #[derive(Clone)]
@@ -211,7 +213,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     let unfinished = use_state(Vec::<LogicRun>::new);
     let history = use_state(Vec::<LogicHistory>::new);
     let statistics = use_state(Vec::<LogicPerformance>::new);
-    let history_open = use_state(|| false);
+    let history_open = use_state(|| props.show_history);
     let opened_card = use_state(|| None::<String>);
     let prompt = use_state(String::new);
     let run = use_state(|| None::<LogicRun>);
@@ -778,7 +780,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                             })}
                         </div>
                     }
-                    <button class="btn btn-outline w-full" data-testid={format!("{prefix}-history-toggle")} onclick={{let history_open=history_open.clone();Callback::from(move |_|history_open.set(true))}}>{"查看练习历史"}</button>
+
                     <div class="rounded-box border border-base-content/15 p-4 space-y-2">
                         <p class="font-semibold">{format!("智能选卡 · {subject}")}</p>
                         <p class="text-sm text-base-content/60">{pool_description}</p>
