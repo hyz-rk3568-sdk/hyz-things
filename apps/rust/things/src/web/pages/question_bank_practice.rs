@@ -25,7 +25,6 @@ enum Action {
     Exit,
     Submit,
     Favorite(String),
-    Back,
 }
 
 async fn load_workspace(id: &str) -> Result<PracticeWorkspace, String> {
@@ -49,6 +48,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let papers = use_state(Vec::<PaperSummary>::new);
     let history = use_state(Vec::<PracticeSession>::new);
     let selected_paper = use_state(String::new);
+    let paper_search = use_state(String::new);
     let selected_module = use_state(String::new);
     let modules = use_state(|| None::<PaperModules>);
     let mode = use_state(|| PracticeMode::Paper);
@@ -403,11 +403,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             .await?;
                             favorite.set(updated.favorite);
                         }
-                        Action::Back => {
-                            workspace.set(None);
-                            review.set(None);
-                            refresh.set(*refresh + 1);
-                        }
                     }
                     Ok(())
                 }
@@ -450,9 +445,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 </section>
             };
             let body = html! {
-                <section class="flex min-h-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="question-bank-practice-question-pane">
+                <section class="flex h-full min-h-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="question-bank-practice-question-pane">
                     <div class={TRAINING_PANE_HEADER}>
                         <strong>{format!("原卷第 {} 题（{}/{})", item.item.number,item_index+1,current.questions.len())}</strong>
+                        <InkToolbarSlot />
                         <button type="button" class="btn btn-ghost btn-sm" data-testid="question-bank-favorite"
                             onclick={Callback::from(move |_| on_favorite.emit(Action::Favorite(qid.clone())))}>
                             {if starred {"★ 已收藏"} else {"☆ 收藏"}}
@@ -547,7 +543,12 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 <button class="btn btn-sm btn-error" data-testid="question-bank-practice-submit"
                                     onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Submit)})}>{"交卷"}</button>
                             } else if let Some(score) = &current.session.score {
-                                <span class="font-semibold">{format!("正确 {} / 有效 {}",score.correct,score.correct+score.wrong+score.unanswered)}</span>
+                                <span class="font-semibold" data-testid="question-bank-practice-score">
+                                    {format!("正确 {} · 错误 {} · 未答 {} · 不可判分 {} · 正确率 {:.1}%",
+                                        score.correct,score.wrong,score.unanswered,score.ungradable,
+                                        if score.correct+score.wrong+score.unanswered==0 {0.0}
+                                        else {100.0*(score.correct as f64)/((score.correct+score.wrong+score.unanswered) as f64)})}
+                                </span>
                             }
                         </div>
                     </header>
@@ -585,8 +586,18 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         }
     }
 
+    let start_action = {
+        let invoke = invoke.clone();
+        html! {
+            <button class={TRAINING_PRIMARY_BUTTON} data-testid="question-bank-practice-start"
+                disabled={*busy || props.csrf.is_empty()}
+                onclick={Callback::from(move |_| invoke.emit(Action::Start))}>
+                {"开始真题训练"}
+            </button>
+        }
+    };
     html! {
-        <TrainingSetupLayout test_id="question-bank-practice-setup"
+        <TrainingSetupLayout test_id="question-bank-practice-setup" action={Some(start_action)}
             summary="真题训练" detail="原卷整卷 / 原卷完整模块，不跨卷随机抽题">
             <h2 class="text-xl font-bold">{"真题训练"}</h2>
             {alert}
@@ -607,6 +618,14 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 })}
             </div>
             if matches!(*mode,PracticeMode::Paper | PracticeMode::PaperModule) {
+                <label class="block">{"搜索原卷（年份 / 地区 / 试卷名称）"}
+                    <input class="input input-bordered mt-2 w-full" data-testid="question-bank-search-paper"
+                        value={(*paper_search).clone()} placeholder="搜索全部年份与地区"
+                        oninput={Callback::from({let paper_search=paper_search.clone();move |e: InputEvent| {
+                            let input: HtmlInputElement=e.target_unchecked_into();
+                            paper_search.set(input.value());
+                        }})}/>
+                </label>
                 <label class="block">{"选择原卷"}
                     <select class="select select-bordered mt-2 w-full" data-testid="question-bank-select-paper"
                         value={(*selected_paper).clone()}
@@ -616,7 +635,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             selected_module.set(String::new());
                         }})}>
                         <option value="">{"请选择年份 / 地区 / 试卷"}</option>
-                        {for papers.iter().map(|p|html!{
+                        {for papers.iter().filter(|p| {
+                            let query=paper_search.trim();
+                            query.is_empty() || format!("{} {} {} {}",p.year,p.region,p.variant,p.title).contains(query)
+                        }).map(|p|html!{
                             <option value={p.id.clone()}>{format!("{} · {} · {} · {}（{}题）",p.year,p.region,p.variant,p.title,p.questions)}</option>
                         })}
                     </select>
@@ -639,11 +661,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     }
                 }
             }
-            <button class={TRAINING_PRIMARY_BUTTON} data-testid="question-bank-practice-start"
-                disabled={*busy || props.csrf.is_empty()}
-                onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Start)})}>
-                {"开始真题训练"}
-            </button>
             <h3 class="text-lg font-bold">{"未完成与练习历史"}</h3>
             <div class="grid gap-2" data-testid="question-bank-practice-history">
                 {for history.iter().map(|h| {
@@ -653,7 +670,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         data-testid="question-bank-practice-history-item"
                         onclick={Callback::from(move |_| action.emit(if active {Action::Continue(id.clone())} else {Action::Review(id.clone())}))}>
                         <span>{format!("{:?} · {} 题 · {}",h.mode,h.items.len(),if active {"继续练习"} else {"查看解析"})}</span>
-                        <span>{h.module.clone().unwrap_or_default()}</span>
+                        <span>{format!("{} · {} 分钟",h.module.clone().unwrap_or_default(),h.elapsed_seconds/60)}</span>
                     </button>}
                 })}
             </div>
