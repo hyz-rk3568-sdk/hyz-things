@@ -1,6 +1,9 @@
 use super::*;
 use crate::application::question_bank::{BankError, QuestionBankApplication};
 use axum::Extension;
+use crate::domain::question_bank::{
+    CreatePracticeRequest, SavePracticeAnswer, SetFavorite, SetPracticePaused,
+};
 
 pub fn with_question_bank(
     router: Router,
@@ -143,5 +146,126 @@ pub(super) async fn asset(
             response
         }
         Err(error) => bank_error(error),
+    }
+}
+
+pub(super) async fn modules(
+    State(state): State<AppState>, headers: HeaderMap, service: Service, Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await { return response; }
+    let app = match available(service) { Ok(app) => app, Err(e) => return bank_error(e) };
+    match app.modules(&id).await {
+        Ok(value) => Json(value).into_response(),
+        Err(e) => bank_error(e),
+    }
+}
+
+pub(super) async fn practice_create(
+    State(state): State<AppState>, headers: HeaderMap, service: Service,
+    payload: Result<Json<CreatePracticeRequest>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await { return response; }
+    let request = match decode_control_json(payload) { Ok(value) => value, Err(e) => return e.response() };
+    let app = match available(service) { Ok(app) => app, Err(e) => return bank_error(e) };
+    match app.create_practice(request).await {
+        Ok(value) => (StatusCode::CREATED, Json(value)).into_response(),
+        Err(e) => bank_error(e),
+    }
+}
+
+pub(super) async fn practice_history(
+    State(state): State<AppState>, headers: HeaderMap, service: Service,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await { return response; }
+    let app = match available(service) { Ok(app) => app, Err(e) => return bank_error(e) };
+    match app.practice_history().await {
+        Ok(value) => Json(value).into_response(),
+        Err(e) => bank_error(e),
+    }
+}
+
+pub(super) async fn practice_session(
+    State(state): State<AppState>, headers: HeaderMap, service: Service, Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await { return response; }
+    let app = match available(service) { Ok(app) => app, Err(e) => return bank_error(e) };
+    match app.practice_workspace(&id).await {
+        Ok(value) => Json(value).into_response(),
+        Err(e) => bank_error(e),
+    }
+}
+
+pub(super) async fn practice_answer(
+    State(state): State<AppState>, headers: HeaderMap, service: Service,
+    Path((id, question_id)): Path<(String, String)>,
+    payload: Result<Json<SavePracticeAnswer>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await { return response; }
+    let request = match decode_control_json(payload) { Ok(value) => value, Err(e) => return e.response() };
+    let app = match available(service) { Ok(app) => app, Err(e) => return bank_error(e) };
+    match app.save_practice_answer(&id, &question_id, request.answer).await {
+        Ok(value) => Json(value).into_response(),
+        Err(e) => bank_error(e),
+    }
+}
+
+pub(super) async fn practice_pause(
+    State(state): State<AppState>, headers: HeaderMap, service: Service,
+    Path(id): Path<String>, payload: Result<Json<SetPracticePaused>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await { return response; }
+    let request = match decode_control_json(payload) { Ok(value) => value, Err(e) => return e.response() };
+    let app = match available(service) { Ok(app) => app, Err(e) => return bank_error(e) };
+    match app.pause_practice(&id, request.paused, request.elapsed_seconds).await {
+        Ok(value) => Json(value).into_response(),
+        Err(e) => bank_error(e),
+    }
+}
+
+pub(super) async fn practice_submit(
+    State(state): State<AppState>, headers: HeaderMap, service: Service,
+    Path(id): Path<String>, payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await { return response; }
+    if let Err(e) = decode_control_json(payload) { return e.response(); }
+    let app = match available(service) { Ok(app) => app, Err(e) => return bank_error(e) };
+    match app.submit_practice(&id).await {
+        Ok(value) => Json(value).into_response(),
+        Err(e) => bank_error(e),
+    }
+}
+
+pub(super) async fn practice_review(
+    State(state): State<AppState>, headers: HeaderMap, service: Service, Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await { return response; }
+    let app = match available(service) { Ok(app) => app, Err(e) => return bank_error(e) };
+    match app.practice_review(&id).await {
+        Ok(value) => Json(value).into_response(),
+        Err(e) => bank_error(e),
+    }
+}
+
+pub(super) async fn favorite_get(
+    State(state): State<AppState>, headers: HeaderMap, service: Service, Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await { return response; }
+    let app = match available(service) { Ok(app) => app, Err(e) => return bank_error(e) };
+    match app.favorite(&id).await {
+        Ok(value) => Json(value).into_response(),
+        Err(e) => bank_error(e),
+    }
+}
+
+pub(super) async fn favorite_set(
+    State(state): State<AppState>, headers: HeaderMap, service: Service,
+    Path(id): Path<String>, payload: Result<Json<SetFavorite>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await { return response; }
+    let request = match decode_control_json(payload) { Ok(value) => value, Err(e) => return e.response() };
+    let app = match available(service) { Ok(app) => app, Err(e) => return bank_error(e) };
+    match app.set_favorite(&id, request.favorite).await {
+        Ok(value) => Json(value).into_response(),
+        Err(e) => bank_error(e),
     }
 }
