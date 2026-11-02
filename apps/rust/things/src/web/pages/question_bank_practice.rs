@@ -1,12 +1,47 @@
 //! Real-paper practice: one workspace for original paper, cross-paper module and review modes.
 use super::*;
 use hyz_things::domain::question_bank::{
-    CreatePracticeRequest, FavoriteState, PaperModules, PaperSummary, PracticeCatalog,
+    CreatePracticeRequest, FavoriteState, ModulePracticeFilters, PaperModules, PaperSummary, PracticeCatalog,
     PracticeMode, PracticeReview, PracticeSession, PracticeWorkspace, SavePracticeAnswer,
     SetFavorite, SetPracticePaused,
 };
 
 const ROOT: &str = "/api/v1/question-bank";
+const MODULE_FILTERS_STORAGE: &str = "hyz-question-bank-module-settings-v1";
+
+fn read_module_filters() -> ModulePracticeFilters {
+    web_sys::window()
+        .and_then(|window| window.local_storage().ok().flatten())
+        .and_then(|storage| storage.get_item(MODULE_FILTERS_STORAGE).ok().flatten())
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default()
+}
+
+fn persist_module_filters(filters: &ModulePracticeFilters) -> bool {
+    let Some(storage) = web_sys::window().and_then(|window| window.local_storage().ok().flatten()) else {
+        return false;
+    };
+    let Ok(json) = serde_json::to_string(filters) else { return false; };
+    storage.set_item(MODULE_FILTERS_STORAGE, &json).is_ok()
+}
+
+fn catalog_filter_url(filters: &ModulePracticeFilters) -> String {
+    let mut query = url::form_urlencoded::Serializer::new(String::new());
+    if let Some(year) = filters.year_min {
+        query.append_pair("year_min", &year.to_string());
+    }
+    if let Some(year) = filters.year_max {
+        query.append_pair("year_max", &year.to_string());
+    }
+    if !filters.regions.is_empty() {
+        query.append_pair("regions", &filters.regions.join(","));
+        if filters.exclude_regions {
+            query.append_pair("exclude_regions", "true");
+        }
+    }
+    format!("{ROOT}/practice/catalog?{}", query.finish())
+}
+
 const WORKSPACE: &str = "fixed inset-0 z-[70] flex h-dvh w-screen flex-col overflow-hidden bg-base-200 px-3 py-2 sm:px-6 sm:py-3";
 
 #[derive(Properties, PartialEq)]
@@ -53,6 +88,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let modules = use_state(|| None::<PaperModules>);
     let catalog = use_state(|| None::<PracticeCatalog>);
     let selected_category = use_state(String::new);
+    let module_filters = use_state(read_module_filters);
+    let draft_filters = use_state(read_module_filters);
+    let settings_open = use_state(|| false);
+    let custom_years = use_state(|| false);
+
     let mode = use_state(|| PracticeMode::Paper);
     let workspace = use_state(|| None::<PracticeWorkspace>);
     let review = use_state(|| None::<PracticeReview>);
@@ -69,7 +109,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     {
         let papers = papers.clone();
         let history = history.clone();
-        let catalog = catalog.clone();
         let error = error.clone();
         use_effect_with(*refresh, move |_| {
             spawn_local(async move {
@@ -87,13 +126,21 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 {
                     history.set(items);
                 }
-                if let Ok(items) = fetch_json::<PracticeCatalog>(
-                    &format!("{ROOT}/practice/catalog"),
-                    "模块题型目录",
-                )
-                .await
-                {
-                    catalog.set(Some(items));
+
+            });
+            || ()
+        });
+    }
+    {
+        let filters = (*module_filters).clone();
+        let catalog = catalog.clone();
+        let error = error.clone();
+        use_effect_with((filters, *refresh), move |(filters, _)| {
+            let url = catalog_filter_url(filters);
+            spawn_local(async move {
+                match fetch_json::<PracticeCatalog>(&url, "模块题型进度").await {
+                    Ok(result) => catalog.set(Some(result)),
+                    Err(message) => error.set(Some(message)),
                 }
             });
             || ()
@@ -205,6 +252,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let selected_paper = selected_paper.clone();
         let selected_module = selected_module.clone();
         let selected_category = selected_category.clone();
+        let module_filters = module_filters.clone();
         let workspace = workspace.clone();
         let review = review.clone();
         let index = index.clone();
@@ -227,6 +275,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             let selected_paper = selected_paper.clone();
             let selected_module = selected_module.clone();
             let selected_category = selected_category.clone();
+            let module_filters = module_filters.clone();
             let workspace = workspace.clone();
             let review = review.clone();
             let index = index.clone();
@@ -274,6 +323,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 } else {
                                     None
                                 },
+                                filters: if *mode == PracticeMode::Module {
+                                    (*module_filters).clone()
+                                } else {
+                                    ModulePracticeFilters::default()
+                                },
                             };
                             let session: PracticeSession = post_json_response(
                                 &format!("{ROOT}/practice/sessions"),
@@ -314,6 +368,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             let active =
                                 workspace.as_ref().as_ref().cloned().ok_or("训练不存在")?;
                             let q = active.questions.get(*index).ok_or("题位不存在")?;
+                            let question_id = q.item.question_id.clone();
                             let mut answer = if *multi_select {
                                 let mut selected = q.item.answer.clone();
                                 if let Some(i) = selected.iter().position(|v| v == &choice) {
@@ -329,7 +384,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             let _: PracticeSession = post_json_response(
                                 &format!(
                                     "{ROOT}/practice/sessions/{}/answers/{}",
-                                    active.session.id, q.item.question_id
+                                    active.session.id, question_id
                                 ),
                                 &csrf,
                                 &SavePracticeAnswer { answer: answer.clone() },
@@ -343,7 +398,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 question.item.answer = answer.clone();
                             }
                             if let Some(question) = updated.session.items.iter_mut()
-                                .find(|question| question.question_id == q.item.question_id)
+                                .find(|question| question.question_id == question_id)
                             {
                                 question.answer = answer;
                             }
@@ -567,23 +622,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     answered={current.questions.iter().map(|q|!q.item.answer.is_empty()).collect::<Vec<_>>()}/>
             };
             let paused = current.session.paused && !completed;
-            let nav = html! {
-                <nav class="shrink-0 flex flex-wrap items-center justify-center gap-1 overflow-y-auto border-t border-base-content/10 py-2" data-testid="question-bank-practice-navigation">
-                    <button class="btn btn-sm" disabled={item_index == 0} onclick={Callback::from({
-                        let index=index.clone();move |_| index.set(item_index.saturating_sub(1))
-                    })}>{"上一题"}</button>
-                    {for current.questions.iter().enumerate().map(|(i,question)| {
-                        let index=index.clone();
-                        html! {<button class={classes!("btn","btn-xs",if i==item_index {"btn-primary"} else if !question.item.answer.is_empty() {"btn-success"} else {"btn-outline"})}
-                            data-testid="question-bank-practice-number" onclick={Callback::from(move |_| index.set(i))}>
-                            {question.item.number}
-                        </button>}
-                    })}
-                    <button class="btn btn-sm" disabled={item_index+1 >= current.questions.len()} onclick={Callback::from({
-                        let index=index.clone();move |_|index.set(item_index+1)
-                    })}>{"下一题"}</button>
-                </nav>
-            };
             return html! {
                 <section class={WORKSPACE} data-testid="question-bank-practice-workspace">
                     <header class="flex shrink-0 flex-wrap items-center justify-between gap-2 pb-2">
@@ -751,7 +789,33 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             }
             if *mode == PracticeMode::Module {
                 <section class="space-y-3" data-testid="question-bank-cross-module-setup">
-                    <p class="text-sm text-base-content/65">{"选择一个模块；可展开筛选题型。本轮最多20题。"}</p>
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <h3 class="font-semibold">{"专项模块"}</h3>
+                            <p class="text-xs text-base-content/65">{"选择模块，按需展开二级题型。"}</p>
+                        </div>
+                        <button type="button" class="btn btn-outline btn-sm" data-testid="module-drill-settings-open"
+                            onclick={Callback::from({
+                                let draft_filters=draft_filters.clone();
+                                let module_filters=module_filters.clone();
+                                let settings_open=settings_open.clone();
+                                move |_| {
+                                    draft_filters.set((*module_filters).clone());
+                                    settings_open.set(true);
+                                }
+                            })}>{"⚙ 自定义刷题"}</button>
+                    </div>
+                    <div class="rounded-box bg-base-200/70 px-3 py-2 text-sm" data-testid="module-drill-filter-summary">
+                        {format!("{} · {}地区 · 每轮{}题",
+                            match (module_filters.year_min,module_filters.year_max) {
+                                (None,None) => "全部年份".into(),
+                                (Some(min),Some(max)) => format!("{min}—{max}年"),
+                                (Some(min),None) => format!("{min}年以后"),
+                                (None,Some(max)) => format!("{max}年以前"),
+                            },
+                            if module_filters.regions.is_empty() {"不限".into()} else if module_filters.exclude_regions {"屏蔽指定".into()} else {format!("已选{}个",module_filters.regions.len())},
+                            module_filters.count.unwrap_or(20))}
+                    </div>
                     if let Some(info) = &*catalog {
                         <div class="grid gap-2 sm:grid-cols-2" role="group" aria-label="一级模块">
                             {for info.modules.iter().map(|m| {
@@ -761,20 +825,21 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 let selected=*selected_module==name;
                                 html! {<button type="button" data-testid="question-bank-cross-module"
                                     aria-pressed={selected.to_string()}
-                                    class={classes!("btn","min-h-14","h-auto","justify-between",if selected {"btn-primary"} else {"btn-outline"})}
+                                    class={classes!("btn","min-h-20","h-auto","flex-col","items-stretch","justify-center","gap-1",if selected {"btn-primary"} else {"btn-outline"})}
                                     onclick={Callback::from(move |_|{selected_module.set(name.clone());selected_category.set(String::new());})}>
-                                    <span>{m.name.clone()}</span><span class="text-xs opacity-65">{format!("{}题",m.count)}</span>
+                                    <span class="flex items-center justify-between gap-2"><strong>{m.name.clone()}</strong><span class="text-xs">{format!("已做 {}/{} 题",m.done,m.count)}</span></span>
+                                    <progress class="progress progress-primary w-full" max={m.count.max(1).to_string()} value={m.done.to_string()} aria-label={format!("{}进度",m.name)} />
                                 </button>}
                             })}
                         </div>
                         if let Some(module) = info.modules.iter().find(|m|m.name==*selected_module) {
                             <details class="rounded-box border border-base-content/10 p-3">
                                 <summary class="cursor-pointer select-none text-sm">{"筛选二级题型（可选）"}</summary>
-                                <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3" role="group" aria-label="二级题型">
+                                <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2" role="group" aria-label="二级题型">
                                     <button type="button" data-testid="question-bank-cross-category"
-                                        class={classes!("btn","btn-sm",if selected_category.is_empty() {"btn-primary"} else {"btn-outline"})}
+                                        class={classes!("btn","justify-between","min-h-12",if selected_category.is_empty() {"btn-primary"} else {"btn-outline"})}
                                         onclick={Callback::from({let selected_category=selected_category.clone(); move |_|selected_category.set(String::new())})}>
-                                        {"全部题型"}
+                                        <span>{"全部题型"}</span><span class="text-xs">{format!("{}/{}",module.done,module.count)}</span>
                                     </button>
                                     {for module.categories.iter().map(|category|{
                                         let name=category.name.clone();
@@ -782,9 +847,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                         let selected_category=selected_category.clone();
                                         html! {<button type="button" data-testid="question-bank-cross-category"
                                             aria-pressed={selected.to_string()}
-                                            class={classes!("btn","h-auto","min-h-10",if selected {"btn-primary"} else {"btn-outline"})}
+                                            class={classes!("btn","h-auto","min-h-12","justify-between",if selected {"btn-primary"} else {"btn-outline"})}
                                             onclick={Callback::from(move |_| selected_category.set(name.clone()))}>
-                                            {format!("{} · {}",category.name,category.count)}
+                                            <span>{category.name.clone()}</span><span class="text-xs">{format!("已做 {}/{} 题",category.done,category.count)}</span>
                                         </button>}
                                     })}
                                 </div>
@@ -793,6 +858,135 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     } else {
                         <p class="text-sm">{"暂无可用模块，请先在题库管理同步原卷。"}</p>
                     }
+                </section>
+            }
+            if *settings_open && *mode == PracticeMode::Module {
+                <section class="fixed inset-0 z-[85] flex h-dvh flex-col overflow-hidden bg-base-200"
+                    data-testid="module-drill-settings" role="dialog" aria-label="自定义刷题设置" aria-modal="true">
+                    <header class="flex shrink-0 items-center gap-3 border-b border-base-content/10 px-4 py-3">
+                        <button type="button" class="btn btn-ghost btn-sm" onclick={Callback::from({
+                            let settings_open=settings_open.clone(); move |_|settings_open.set(false)
+                        })}>{"← 返回"}</button>
+                        <h3 class="text-lg font-bold">{"自定义刷题"}</h3>
+                    </header>
+                    <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
+                        <div class="mx-auto max-w-2xl space-y-7">
+                            <div class="space-y-2">
+                                <h4 class="font-semibold">{"出题年份"}</h4>
+                                <div class="grid grid-cols-4 gap-2">
+                                    {for [(0,"不限"),(3,"近3年"),(5,"近5年"),(10,"近10年")].into_iter().map(|(years,label)|{
+                                        let draft_filters=draft_filters.clone();
+                                        let custom_years=custom_years.clone();
+                                        html!{<button type="button" class="btn btn-outline btn-sm"
+                                            data-testid="module-filter-year"
+                                            onclick={Callback::from(move |_|{
+                                                let mut filters=(*draft_filters).clone();
+                                                let now=js_sys::Date::new_0().get_full_year() as i32;
+                                                filters.year_min=(years>0).then_some(now-years+1);
+                                                filters.year_max=(years>0).then_some(now);
+                                                draft_filters.set(filters);
+                                                custom_years.set(false);
+                                            })}>{label}</button>}
+                                    })}
+                                </div>
+                                <button type="button" class="btn btn-sm btn-ghost" data-testid="module-filter-custom-year-toggle"
+                                    onclick={Callback::from({let custom_years=custom_years.clone();move |_|custom_years.set(!*custom_years)})}>{"自定义年份范围 ▾"}</button>
+                                if *custom_years {
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <label class="text-sm">{"起始年份"}
+                                            <input class="input input-bordered mt-1 w-full" type="number" min="1900" max="2100"
+                                                data-testid="module-filter-year-min" value={draft_filters.year_min.map(|v|v.to_string()).unwrap_or_default()}
+                                                oninput={Callback::from({let draft_filters=draft_filters.clone(); move |e:InputEvent|{
+                                                    let input:HtmlInputElement=e.target_unchecked_into();
+                                                    let mut filters=(*draft_filters).clone();
+                                                    filters.year_min=input.value().parse().ok();draft_filters.set(filters);
+                                                }})}/>
+                                        </label>
+                                        <label class="text-sm">{"结束年份"}
+                                            <input class="input input-bordered mt-1 w-full" type="number" min="1900" max="2100"
+                                                data-testid="module-filter-year-max" value={draft_filters.year_max.map(|v|v.to_string()).unwrap_or_default()}
+                                                oninput={Callback::from({let draft_filters=draft_filters.clone(); move |e:InputEvent|{
+                                                    let input:HtmlInputElement=e.target_unchecked_into();
+                                                    let mut filters=(*draft_filters).clone();
+                                                    filters.year_max=input.value().parse().ok();draft_filters.set(filters);
+                                                }})}/>
+                                        </label>
+                                    </div>
+                                }
+                            </div>
+                            <div class="space-y-3">
+                                <h4 class="font-semibold">{"地区筛选"}</h4>
+                                <p class="text-xs text-base-content/60">{"不选地区默认使用全部地区；可选择只练或屏蔽指定地区。"}</p>
+                                <div class="grid grid-cols-2 gap-2">
+                                    {for [(false,"只练所选地区"),(true,"屏蔽所选地区")].into_iter().map(|(exclude,label)|{
+                                        let draft_filters=draft_filters.clone();
+                                        html!{<button type="button" class={classes!("btn","btn-sm",if draft_filters.exclude_regions==exclude {"btn-primary"} else {"btn-outline"})}
+                                            data-testid="module-filter-region-mode" onclick={Callback::from(move |_|{
+                                                let mut filters=(*draft_filters).clone();filters.exclude_regions=exclude;draft_filters.set(filters);
+                                            })}>{label}</button>}
+                                    })}
+                                </div>
+                                <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                    {for {
+                                        let mut regions=papers.iter().filter(|p|p.role=="primary").map(|p|p.region.clone()).collect::<Vec<_>>();
+                                        regions.sort();regions.dedup();
+                                        regions.into_iter().map(|region|{
+                                            let draft_filters=draft_filters.clone();
+                                            let checked=draft_filters.regions.contains(&region);
+                                            html!{<button type="button" data-testid="module-filter-region"
+                                                aria-pressed={checked.to_string()}
+                                                class={classes!("btn","btn-sm","justify-start",if checked {"btn-primary"} else {"btn-outline"})}
+                                                onclick={Callback::from(move |_|{
+                                                    let mut filters=(*draft_filters).clone();
+                                                    if filters.regions.contains(&region) {filters.regions.retain(|r|r!=&region);}
+                                                    else {filters.regions.push(region.clone());}
+                                                    draft_filters.set(filters);
+                                                })}>{region.clone()}</button>}
+                                        })
+                                    }}
+                                </div>
+                            </div>
+                            <div class="space-y-2">
+                                <h4 class="font-semibold">{"每轮题量"}</h4>
+                                <div class="grid grid-cols-2 gap-2">
+                                    {for [10usize,20].into_iter().map(|value|{
+                                        let draft_filters=draft_filters.clone();
+                                        html!{<button type="button" data-testid="module-filter-count"
+                                            aria-pressed={(draft_filters.count.unwrap_or(20)==value).to_string()}
+                                            class={classes!("btn",if draft_filters.count.unwrap_or(20)==value {"btn-primary"} else {"btn-outline"})}
+                                            onclick={Callback::from(move |_|{
+                                                let mut filters=(*draft_filters).clone();filters.count=Some(value);draft_filters.set(filters);
+                                            })}>{format!("{value}题" )}</button>}
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <footer class="shrink-0 border-t border-base-content/10 bg-base-100 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                        <div class="mx-auto flex max-w-2xl items-center gap-3">
+                            <button type="button" class="btn btn-ghost" data-testid="module-filter-reset"
+                                onclick={Callback::from({let draft_filters=draft_filters.clone();let custom_years=custom_years.clone(); move |_|{
+                                    draft_filters.set(ModulePracticeFilters::default());custom_years.set(false);
+                                }})}>{"恢复默认"}</button>
+                            <button type="button" class="btn btn-primary flex-1" data-testid="module-filter-save"
+                                disabled={matches!((draft_filters.year_min,draft_filters.year_max),(Some(a),Some(b)) if a>b)}
+                                onclick={Callback::from({
+                                    let draft_filters=draft_filters.clone();
+                                    let module_filters=module_filters.clone();
+                                    let settings_open=settings_open.clone();
+                                    let error=error.clone();
+                                    move |_|{
+                                        let next=(*draft_filters).clone();
+                                        if persist_module_filters(&next) {
+                                            module_filters.set(next);
+                                            settings_open.set(false);
+                                        } else {
+                                            error.set(Some("设置保存失败，请检查浏览器存储权限。".into()));
+                                        }
+                                    }
+                                })}>{"保存设置"}</button>
+                        </div>
+                    </footer>
                 </section>
             }
             if let Some(active) = history.iter().find(|h|h.status=="active") {
