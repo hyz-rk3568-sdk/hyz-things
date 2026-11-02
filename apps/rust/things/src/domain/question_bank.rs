@@ -51,3 +51,12 @@ pub struct BankSyncSummary {
     pub materials: usize,
     pub generated_ids: usize,
 }
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BankSyncStatus {
+    pub task_id: Option<String>,
+    pub stage: String,
+    pub running: bool,
+    pub summary: Option<BankSyncSummary>,
+    pub error_code: Option<String>,
+}
