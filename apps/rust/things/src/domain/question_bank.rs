@@ -189,3 +189,98 @@ pub struct FavoriteState {
     pub question_id: String,
     pub favorite: bool,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PracticeMode {
+    Paper,
+    PaperModule,
+    Wrong,
+    Favorite,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PracticeCreateRequest {
+    pub mode: PracticeMode,
+    #[serde(default)]
+    pub paper_id: Option<String>,
+    #[serde(default)]
+    pub module: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PracticeAnswerRequest {
+    pub choices: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PracticeFavoriteRequest {
+    pub favorite: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PaperModuleSummary {
+    pub module: String,
+    pub questions: usize,
+    pub ungradable: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PaperModulesView {
+    pub modules: Vec<PaperModuleSummary>,
+    pub unclassified: usize,
+    pub total_questions: usize,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PracticeScore {
+    pub total: usize,
+    pub correct: usize,
+    pub wrong: usize,
+    pub unanswered: usize,
+    pub ungradable: usize,
+    pub elapsed_ms: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PracticeItemView {
+    pub paper_id: String,
+    pub question_id: String,
+    pub number: u32,
+    pub question: Option<QuestionView>,
+    pub materials: Vec<MaterialView>,
+    pub choices: Vec<String>,
+    pub favorite: bool,
+    pub stale: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grade: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub correct_answer: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub explanation: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PracticeSessionView {
+    pub id: String,
+    pub mode: PracticeMode,
+    pub title: String,
+    pub paper_id: Option<String>,
+    pub module: Option<String>,
+    pub status: String,
+    pub started_at: i64,
+    pub elapsed_ms: u64,
+    pub items: Vec<PracticeItemView>,
+    pub score: Option<PracticeScore>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PracticeHistoryItem {
+    pub id: String,
+    pub mode: PracticeMode,
+    pub title: String,
+    pub status: String,
+    pub started_at: i64,
+    pub total: usize,
+    pub score: Option<PracticeScore>,
+}
