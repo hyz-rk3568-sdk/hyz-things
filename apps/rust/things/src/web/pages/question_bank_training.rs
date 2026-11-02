@@ -220,6 +220,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     };
 
     let save_answer = {
+        let index = index.clone();
         let csrf = props.csrf.clone();
         let workspace = workspace.clone();
         let multi_select = multi_select.clone();
