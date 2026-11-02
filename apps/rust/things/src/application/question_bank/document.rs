@@ -59,7 +59,7 @@ fn choices(text: &str) -> Vec<String> {
     out.sort();
     out
 }
-fn option_labels(markdown: &str) -> Vec<String> {
+pub(super) fn option_labels(markdown: &str) -> Vec<String> {
     markdown.lines().filter_map(|line| {
         let line = line.trim_start().strip_prefix("- ")?;
         let (label, rest) = line.split_once(['.', '．', '、', ' '])?;
