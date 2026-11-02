@@ -8,7 +8,7 @@ test('question bank paper module practice keeps source numbering and hides answe
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-question-bank').click();
   await expect(page.getByTestId('question-bank-practice-setup')).toBeVisible();
-  await page.getByTestId('question-bank-select-paper').selectOption({label:/行测真题训练端到端样卷/});
+  await page.getByTestId('question-bank-select-paper').selectOption({index:1});
   await page.getByTestId('question-bank-mode').filter({hasText:'原卷模块练习'}).click();
   await expect(page.getByTestId('question-bank-select-module').filter({hasText:'资料分析'})).toBeVisible();
   await page.getByTestId('question-bank-select-module').filter({hasText:'资料分析'}).click();
@@ -56,7 +56,7 @@ test('question bank wrong and favorite mode reuses fixed source items',async({pa
   await loginAsAdmin(page);
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-question-bank').click();
-  await page.getByTestId('question-bank-select-paper').selectOption({label:/行测真题训练端到端样卷/});
+  await page.getByTestId('question-bank-select-paper').selectOption({index:1});
   await page.getByTestId('question-bank-practice-start').click();
   await page.getByTestId('question-bank-practice-choice').first().click();
   await page.getByTestId('question-bank-practice-submit').click();
