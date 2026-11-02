@@ -28,6 +28,9 @@ function focusedRegressionFilter(): RegExp | undefined {
     };
     // Only PRs explicitly carrying this marker run the feature-specific E2E cases.
     // All other PRs and pushes to main retain the complete Playwright suite.
+    if (event.pull_request?.title?.includes('[focus-question-bank-e2e]')) {
+      return /question bank/;
+    }
     if (event.pull_request?.title?.includes('[focus-ipad-resume-e2e]')) {
       return /returning after a long background soft-refreshes without reloading|foreground resume restores study time after the heartbeat grace expires|paper pause stops the study clock and resuming restarts it|foreground restore repaints stored ink after WebKit canvas buffer loss/;
     }
