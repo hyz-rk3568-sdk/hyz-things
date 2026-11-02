@@ -2868,6 +2868,7 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/control/study/sync"
             | "/api/v1/control/question-bank/sync"
             | "/api/v1/question-bank/practice/sessions"
+            | "/api/v1/question-bank/practice/sessions"
             | "/api/v1/study/data-analysis/prepare"
             | "/api/v1/study/data-analysis/user-prompt"
             | "/api/v1/study/logic-judgment/prepare"
@@ -2895,6 +2896,36 @@ fn is_question_bank_practice_post_path(path: &str) -> bool {
     parts.len() == 7
         && parts[..6] == ["", "api", "v1", "question-bank", "practice", "favorites"]
         && crate::application::question_bank::document::valid_id(parts[6])
+}
+
+fn is_question_bank_practice_post_path(path: &str) -> bool {
+    let Some(rest) = path.strip_prefix("/api/v1/question-bank/practice/sessions/") else {
+        return false;
+    };
+    let mut parts = rest.split('/');
+    parts.next().is_some_and(crate::application::question_bank::document::valid_id)
+        && parts.next() == Some("submit")
+        && parts.next().is_none()
+}
+
+fn is_question_bank_practice_put_path(path: &str) -> bool {
+    if let Some(id) = path.strip_prefix("/api/v1/question-bank/practice/favorites/") {
+        return crate::application::question_bank::document::valid_id(id);
+    }
+    let Some(rest) = path.strip_prefix("/api/v1/question-bank/practice/sessions/") else {
+        return false;
+    };
+    let mut parts = rest.split('/');
+    if !parts.next().is_some_and(crate::application::question_bank::document::valid_id) {
+        return false;
+    }
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some("pause"), None, None) => true,
+        (Some("answers"), Some(id), None) => {
+            crate::application::question_bank::document::valid_id(id)
+        }
+        _ => false,
+    }
 }
 
 fn is_logic_judgment_run_post_path(path: &str) -> bool {
@@ -2954,10 +2985,11 @@ fn is_data_analysis_run_post_path(path: &str) -> bool {
 async fn security_headers(request: Request, next: Next) -> Response {
     // GET remains globally allowed so exact routes and the API fallback can distinguish 404 from
     // 405. Sensitive GET handlers still enforce normal administrator session and JSON Origin/CSRF.
-    // Only exact mutation paths accept POST; every POST handler enforces its own policy.
+    // Only exact mutation paths accept POST or feature-specific PUT; each handler enforces its own policy.
     let path = request.uri().path();
-    let allowed =
-        request.method() == Method::GET || request.method() == Method::POST && is_post_path(path);
+    let allowed = request.method() == Method::GET
+        || request.method() == Method::POST && is_post_path(path)
+        || request.method() == Method::PUT && is_question_bank_practice_put_path(path);
     let reject_api_method = !allowed && path.starts_with("/api/");
     let mut response = if reject_api_method {
         method_not_allowed_json()
@@ -3083,6 +3115,18 @@ mod tests {
         assert!(is_post_path("/api/v1/control/camera/volume"));
         assert!(!is_post_path("/api/v1/control/camera/session/create/extra"));
         assert!(!is_post_path("/api/v1/control/camera/rotation/extra"));
+    }
+
+    #[test]
+    fn question_bank_practice_mutations_have_exact_method_allowlist() {
+        let id = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
+        assert!(is_post_path("/api/v1/question-bank/practice/sessions"));
+        assert!(is_post_path(&format!("/api/v1/question-bank/practice/sessions/{id}/submit")));
+        assert!(is_question_bank_practice_put_path(&format!("/api/v1/question-bank/practice/sessions/{id}/pause")));
+        assert!(is_question_bank_practice_put_path(&format!("/api/v1/question-bank/practice/sessions/{id}/answers/{id}")));
+        assert!(is_question_bank_practice_put_path(&format!("/api/v1/question-bank/practice/favorites/{id}")));
+        assert!(!is_question_bank_practice_put_path("/api/v1/question-bank/practice/favorites/bad"));
+        assert!(!is_post_path("/api/v1/question-bank/practice/sessions/bad/submit"));
     }
 
     #[test]
