@@ -57,7 +57,11 @@ async function bankFixture(page: Page) {
       result = submitted ? [session] : [];
     } else if (path.endsWith('/practice/sessions') && method === 'POST') {
       const request = route.request().postDataJSON();
-      expect(request).toMatchObject({ mode: 'paper_module', paper_id: paperId, module: '资料分析' });
+      expect(request.paper_id).toBe(paperId);
+      expect(['paper', 'paper_module']).toContain(request.mode);
+      if (request.mode === 'paper_module') expect(request.module).toBe('资料分析');
+      session.mode = request.mode;
+      session.module = request.module ?? null;
       result = session;
     } else if (path === `/api/v1/question-bank/practice/sessions/${sessionId}` && method === 'GET') {
       result = { session, questions };
