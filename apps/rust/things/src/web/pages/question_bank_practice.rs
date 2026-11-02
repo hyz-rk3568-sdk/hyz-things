@@ -365,8 +365,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             index.set(0);
                         }
                         Action::Answer(choice) => {
-                            let active =
-                                workspace.as_ref().as_ref().cloned().ok_or("训练不存在")?;
+                            let active = (*workspace).clone().ok_or("训练不存在")?;
                             let q = active.questions.get(*index).ok_or("题位不存在")?;
                             let question_id = q.item.question_id.clone();
                             let mut answer = if *multi_select {
