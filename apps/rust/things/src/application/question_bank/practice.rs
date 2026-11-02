@@ -3,7 +3,8 @@ use super::{
     document::valid_id, document::Document, BankError, IndexedPaper, QuestionBankApplication,
 };
 use crate::domain::question_bank::{
-    CreatePracticeRequest, FavoriteState, PaperModule, PaperModules, PracticeItem, PracticeMode,
+    CreatePracticeRequest, FavoriteState, PaperModule, PaperModules, PracticeCatalog, PracticeItem,
+    PracticeMode,
     PracticeQuestion, PracticeReview, PracticeScore, PracticeSession, PracticeWorkspace,
     ReviewQuestion,
 };
@@ -78,13 +79,17 @@ impl QuestionBankApplication {
         })
     }
 
+    pub async fn practice_catalog(&self) -> Result<PracticeCatalog, BankError> {
+        self.repository.practice_catalog().await
+    }
+
     pub async fn create_practice(
         &self,
         request: CreatePracticeRequest,
     ) -> Result<PracticeSession, BankError> {
         let module = match request.mode {
             PracticeMode::Paper => {
-                if request.module.is_some() || request.paper_id.is_none() {
+                if request.module.is_some() || request.paper_id.is_none() || request.category.is_some() {
                     return Err(BankError::Invalid);
                 }
                 None
@@ -92,26 +97,51 @@ impl QuestionBankApplication {
             PracticeMode::PaperModule => {
                 let raw = request.module.as_deref().ok_or(BankError::Invalid)?;
                 let normalized = primary_module(Some(raw)).ok_or(BankError::Invalid)?;
-                if request.paper_id.is_none() || raw != normalized {
+                if request.paper_id.is_none() || raw != normalized || request.category.is_some() {
+                    return Err(BankError::Invalid);
+                }
+                Some(normalized.to_string())
+            }
+            PracticeMode::Module => {
+                let raw = request.module.as_deref().ok_or(BankError::Invalid)?;
+                let normalized = primary_module(Some(raw)).ok_or(BankError::Invalid)?;
+                if request.paper_id.is_some() || raw != normalized {
+                    return Err(BankError::Invalid);
+                }
+                if request.category.as_ref().is_some_and(|category| {
+                    category.trim() != category
+                        || category.is_empty()
+                        || category.len() > 128
+                        || category.chars().any(char::is_control)
+                }) {
                     return Err(BankError::Invalid);
                 }
                 Some(normalized.to_string())
             }
             PracticeMode::Wrong | PracticeMode::Favorite => {
-                if request.module.is_some() || request.paper_id.is_some() {
+                if request.module.is_some() || request.paper_id.is_some() || request.category.is_some() {
                     return Err(BankError::Invalid);
                 }
                 None
             }
         };
+        let selected_order = match request.mode {
+            PracticeMode::Module => self.repository
+                .practice_module_candidates(
+                    module.as_deref().ok_or(BankError::Invalid)?,
+                    request.category.as_deref(),
+                    20,
+                )
+                .await?,
+            PracticeMode::Wrong | PracticeMode::Favorite => {
+                self.repository.practice_candidates(request.mode.clone()).await?
+            }
+            _ => Vec::new(),
+        };
         let selected = match request.mode {
-            PracticeMode::Wrong | PracticeMode::Favorite => Some(
-                self.repository
-                    .practice_candidates(request.mode.clone())
-                    .await?
-                    .into_iter()
-                    .collect::<BTreeSet<_>>(),
-            ),
+            PracticeMode::Module | PracticeMode::Wrong | PracticeMode::Favorite => {
+                Some(selected_order.iter().cloned().collect::<BTreeSet<_>>())
+            }
             _ => None,
         };
         let indexed = match request.paper_id.as_deref() {
@@ -162,13 +192,21 @@ impl QuestionBankApplication {
         if items.is_empty() {
             return Err(BankError::NotFound);
         }
-        // No random sampling, truncation or cross-paper fill for paper/module mode.
+        if request.mode == PracticeMode::Module {
+            // Keep the repository's unpracticed-first, deterministic twenty-question order.
+            items.sort_by_key(|item| {
+                selected_order.iter().position(|id| id == &item.question_id)
+                    .unwrap_or(usize::MAX)
+            });
+        }
+        // Original-paper and original-paper-module modes never sample or truncate.
         let timestamp = now();
         let session = PracticeSession {
             id: uuid::Uuid::now_v7().to_string(),
             mode: request.mode,
             paper_id: request.paper_id,
             module,
+            category: request.category,
             status: "active".into(),
             created_at: timestamp,
             updated_at: timestamp,

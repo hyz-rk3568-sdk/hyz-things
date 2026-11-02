@@ -1,6 +1,10 @@
 //! Metadata-only index in its own database; Markdown remains the content source.
 use crate::application::question_bank::{BankError, IndexedPaper, QuestionBankRepositoryPort};
-use crate::domain::question_bank::{PracticeMode, PracticeSession};
+use crate::domain::question_bank::{
+    PracticeCatalog, PracticeCategory, PracticeMode, PracticeModule, PracticeSession,
+};
+use crate::application::question_bank::practice::primary_module;
+use std::collections::BTreeMap;
 use async_trait::async_trait;
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
@@ -68,8 +72,14 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                     .get(ordinal)
                     .copied()
                     .unwrap_or((ordinal + 1) as u32);
-                sqlx::query("INSERT INTO questions(id,paper_id,number,source_hash) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET paper_id=excluded.paper_id,number=excluded.number,source_hash=excluded.source_hash")
+                let module = paper.question_modules.get(ordinal)
+                    .and_then(|value| value.as_deref())
+                    .and_then(|value| primary_module(Some(value)));
+                let category = paper.question_categories.get(ordinal)
+                    .and_then(|value| value.as_deref());
+                sqlx::query("INSERT INTO questions(id,paper_id,number,source_hash,module,category) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET paper_id=excluded.paper_id,number=excluded.number,source_hash=excluded.source_hash,module=excluded.module,category=excluded.category")
                     .bind(id).bind(&paper.summary.id).bind(number as i64).bind(&paper.hash)
+                    .bind(module).bind(category)
                     .execute(&mut *tx).await.map_err(|_| BankError::Storage)?;
             }
             for id in paper.ids {
@@ -177,6 +187,71 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         rows.iter()
             .map(|json| serde_json::from_str(json).map_err(|_| BankError::Storage))
             .collect()
+    }
+
+
+    async fn practice_catalog(&self) -> Result<PracticeCatalog, BankError> {
+        let rows = sqlx::query(
+            "SELECT q.module,q.category,COUNT(*) AS total FROM questions q JOIN papers p ON p.id=q.paper_id WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' GROUP BY q.module,q.category ORDER BY q.module,q.category"
+        ).fetch_all(&self.pool).await.map_err(|_| BankError::Storage)?;
+        let mut modules: BTreeMap<String, (usize, usize, BTreeMap<String, usize>)> =
+            BTreeMap::new();
+        let mut unclassified = 0;
+        for row in rows {
+            let module: Option<String> = row.get(0);
+            let category: Option<String> = row.get(1);
+            let count: i64 = row.get(2);
+            let count = count as usize;
+            if let Some(module) = module {
+                let entry = modules.entry(module).or_default();
+                entry.0 += count;
+                if let Some(category) = category.filter(|c| !c.trim().is_empty()) {
+                    *entry.2.entry(category).or_default() += count;
+                } else {
+                    entry.1 += count;
+                }
+            } else {
+                unclassified += count;
+            }
+        }
+        Ok(PracticeCatalog {
+            modules: modules.into_iter().map(|(name, (count, uncategorized, categories))| {
+                PracticeModule {
+                    name,
+                    count,
+                    uncategorized,
+                    categories: categories.into_iter()
+                        .map(|(name, count)| PracticeCategory { name, count })
+                        .collect(),
+                }
+            }).collect(),
+            unclassified,
+        })
+    }
+
+    async fn practice_module_candidates(
+        &self,
+        module: &str,
+        category: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<String>, BankError> {
+        if limit == 0 || limit > 100 {
+            return Err(BankError::Invalid);
+        }
+        // SQLite's integer sort puts never-practiced questions first. A stable source
+        // ordering keeps a created session fully reproducible on every resume.
+        let base = "SELECT q.id FROM questions q JOIN papers p ON p.id=q.paper_id WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' AND q.module=? ";
+        let suffix = " ORDER BY EXISTS(SELECT 1 FROM practice_attempts a WHERE a.question_id=q.id), CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER) DESC, p.id, q.number LIMIT ?";
+        let sql = if category.is_some() {
+            format!("{base}AND q.category=?{suffix}")
+        } else {
+            format!("{base}{suffix}")
+        };
+        let mut query = sqlx::query_scalar::<_, String>(&sql).bind(module);
+        if let Some(category) = category {
+            query = query.bind(category);
+        }
+        query.bind(limit as i64).fetch_all(&self.pool).await.map_err(|_| BankError::Storage)
     }
 
     async fn practice_candidates(&self, mode: PracticeMode) -> Result<Vec<String>, BankError> {
@@ -298,6 +373,6 @@ mod migration_tests {
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        assert_eq!(applied, 1, "migration must be recorded exactly once");
+        assert_eq!(applied, 2, "each version is applied exactly once");
     }
 }

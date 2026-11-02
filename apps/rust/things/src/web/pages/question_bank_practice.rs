@@ -1,7 +1,8 @@
-//! Real-paper practice: a single workspace for paper, paper-module, wrong and favorite.
+//! Real-paper practice: one workspace for original paper, cross-paper module and review modes.
 use super::*;
 use hyz_things::domain::question_bank::{
-    CreatePracticeRequest, FavoriteState, PaperModules, PaperSummary, PracticeMode, PracticeReview,
+    CreatePracticeRequest, FavoriteState, PaperModules, PaperSummary, PracticeCatalog,
+    PracticeMode, PracticeReview,
     PracticeSession, PracticeWorkspace, SavePracticeAnswer, SetFavorite, SetPracticePaused,
 };
 
@@ -51,6 +52,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let paper_search = use_state(String::new);
     let selected_module = use_state(String::new);
     let modules = use_state(|| None::<PaperModules>);
+    let catalog = use_state(|| None::<PracticeCatalog>);
+    let selected_category = use_state(String::new);
     let mode = use_state(|| PracticeMode::Paper);
     let workspace = use_state(|| None::<PracticeWorkspace>);
     let review = use_state(|| None::<PracticeReview>);
@@ -67,6 +70,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     {
         let papers = papers.clone();
         let history = history.clone();
+        let catalog = catalog.clone();
         let error = error.clone();
         use_effect_with(*refresh, move |_| {
             spawn_local(async move {
@@ -83,6 +87,14 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 .await
                 {
                     history.set(items);
+                }
+                if let Ok(items) = fetch_json::<PracticeCatalog>(
+                    &format!("{ROOT}/practice/catalog"),
+                    "模块题型目录",
+                )
+                .await
+                {
+                    catalog.set(Some(items));
                 }
             });
             || ()
@@ -193,6 +205,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let mode = mode.clone();
         let selected_paper = selected_paper.clone();
         let selected_module = selected_module.clone();
+        let selected_category = selected_category.clone();
         let workspace = workspace.clone();
         let review = review.clone();
         let index = index.clone();
@@ -214,6 +227,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             let mode = mode.clone();
             let selected_paper = selected_paper.clone();
             let selected_module = selected_module.clone();
+            let selected_category = selected_category.clone();
             let workspace = workspace.clone();
             let review = review.clone();
             let index = index.clone();
@@ -243,11 +257,16 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     }
                                     _ => None,
                                 },
-                                module: if *mode == PracticeMode::PaperModule {
+                                module: if matches!(*mode, PracticeMode::PaperModule | PracticeMode::Module) {
                                     if selected_module.is_empty() {
-                                        return Err("请先选择原卷模块".into());
+                                        return Err("请先选择模块".into());
                                     }
                                     Some((*selected_module).clone())
+                                } else {
+                                    None
+                                },
+                                category: if *mode == PracticeMode::Module && !selected_category.is_empty() {
+                                    Some((*selected_category).clone())
                                 } else {
                                     None
                                 },
@@ -607,15 +626,19 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 {for [
                     (PracticeMode::Paper,"整卷训练"),
                     (PracticeMode::PaperModule,"原卷模块练习"),
+                    (PracticeMode::Module,"模块刷题"),
                     (PracticeMode::Wrong,"错题训练"),
                     (PracticeMode::Favorite,"收藏训练"),
                 ].into_iter().map(|(value,label)| {
                     let mode=mode.clone();
                     let selected_module=selected_module.clone();
+                    let selected_category=selected_category.clone();
                     html! {<button class={classes!("btn","btn-sm",if *mode==value {"btn-primary"}else{"btn-outline"})}
                         data-testid="question-bank-mode" aria-pressed={(*mode==value).to_string()}
                         onclick={Callback::from(move |_|{
-                            mode.set(value.clone());selected_module.set(String::new());
+                            mode.set(value.clone());
+                            selected_module.set(String::new());
+                            selected_category.set(String::new());
                         })}>{label}</button>}
                 })}
             </div>
@@ -662,6 +685,52 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         </div>
                     }
                 }
+            }
+            if *mode == PracticeMode::Module {
+                <div class="space-y-3 rounded-box bg-base-200/60 p-3" data-testid="question-bank-cross-module-setup">
+                    <p class="text-sm">{"按全库一级模块刷题，可选二级题型；每次最多 20 题，优先未练题，保留原卷来源和题号。"}</p>
+                    if let Some(info) = &*catalog {
+                        <p class="text-xs opacity-70">{format!("未归类题位：{}。二级 category 为空的题仍参加一级模块刷题。",info.unclassified)}</p>
+                        <label class="block text-sm">{"一级模块"}
+                            <select class="select select-bordered mt-1 w-full" data-testid="question-bank-cross-module"
+                                value={(*selected_module).clone()}
+                                onchange={Callback::from({
+                                    let selected_module=selected_module.clone();
+                                    let selected_category=selected_category.clone();
+                                    move |e: Event| {
+                                        let select: HtmlSelectElement=e.target_unchecked_into();
+                                        selected_module.set(select.value());
+                                        selected_category.set(String::new());
+                                    }
+                                })}>
+                                <option value="">{"请选择模块"}</option>
+                                {for info.modules.iter().map(|m|html!{
+                                    <option value={m.name.clone()}>{format!("{}（{}题）",m.name,m.count)}</option>
+                                })}
+                            </select>
+                        </label>
+                        if let Some(module) = info.modules.iter().find(|m|m.name==*selected_module) {
+                            <label class="block text-sm">{"二级题型 category（可选）"}
+                                <select class="select select-bordered mt-1 w-full" data-testid="question-bank-cross-category"
+                                    value={(*selected_category).clone()}
+                                    onchange={Callback::from({
+                                        let selected_category=selected_category.clone();
+                                        move |e: Event| {
+                                            let select: HtmlSelectElement=e.target_unchecked_into();
+                                            selected_category.set(select.value());
+                                        }
+                                    })}>
+                                    <option value="">{format!("全部题型（{}题，未标注 {}题）",module.count,module.uncategorized)}</option>
+                                    {for module.categories.iter().map(|c|html!{
+                                        <option value={c.name.clone()}>{format!("{}（{}题）",c.name,c.count)}</option>
+                                    })}
+                                </select>
+                            </label>
+                        }
+                    } else {
+                        <p class="text-warning">{"暂无模块索引，请先在题库管理同步原卷，再进入专项训练。"}</p>
+                    }
+                </div>
             }
             <h3 class="text-lg font-bold">{"未完成与练习历史"}</h3>
             <div class="grid gap-2" data-testid="question-bank-practice-history">

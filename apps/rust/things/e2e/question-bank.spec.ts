@@ -99,3 +99,23 @@ test('question bank practice mutations enforce admin, origin and CSRF',async({re
   const read=await request.get('/api/v1/question-bank/practice/history');
   expect(read.status()).toBe(401);
 });
+
+test('question bank module drill filters real categories across original papers',async({page})=>{
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank').click();
+  await page.getByTestId('question-bank-mode').filter({hasText:'模块刷题'}).click();
+  await expect(page.getByTestId('question-bank-cross-module')).toBeVisible();
+  await page.getByTestId('question-bank-cross-module').selectOption('资料分析');
+  await expect(page.getByTestId('question-bank-cross-category')).toContainText('比重');
+  await page.getByTestId('question-bank-cross-category').selectOption('比重');
+  await page.getByTestId('question-bank-practice-start').click();
+  await expect(page.getByTestId('question-bank-practice-workspace')).toBeVisible();
+  await expect(page.getByTestId('question-bank-practice-number')).toHaveCount(2);
+  await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('第二份跨卷模块练习卷');
+  await expect(page.getByTestId('question-bank-practice-number').first()).toContainText('12');
+  await page.getByTestId('question-bank-practice-number').last().click();
+  await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('原卷第 26 题');
+  await expect(page.getByTestId('question-bank-practice-stem')).toContainText('材料中的正确选项');
+  await expect(page.getByTestId('question-bank-practice-material-pane')).toContainText('两道题共用材料');
+});

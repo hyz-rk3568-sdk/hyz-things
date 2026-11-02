@@ -66,6 +66,7 @@ pub struct BankSyncStatus {
 pub enum PracticeMode {
     Paper,
     PaperModule,
+    Module,
     Wrong,
     Favorite,
 }
@@ -76,6 +77,8 @@ pub struct CreatePracticeRequest {
     pub mode: PracticeMode,
     pub paper_id: Option<String>,
     pub module: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -88,6 +91,26 @@ pub struct PaperModule {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PaperModules {
     pub modules: Vec<PaperModule>,
+    pub unclassified: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PracticeCategory {
+    pub name: String,
+    pub count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PracticeModule {
+    pub name: String,
+    pub count: usize,
+    pub uncategorized: usize,
+    pub categories: Vec<PracticeCategory>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PracticeCatalog {
+    pub modules: Vec<PracticeModule>,
     pub unclassified: usize,
 }
 
@@ -117,6 +140,8 @@ pub struct PracticeSession {
     pub mode: PracticeMode,
     pub paper_id: Option<String>,
     pub module: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
     pub status: String,
     pub created_at: i64,
     pub updated_at: i64,

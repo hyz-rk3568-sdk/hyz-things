@@ -92,7 +92,7 @@ variant: 统考
 <!-- hyz-question-id: 019a3d8e-1b32-7a60-9c83-f34217a6e210 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: [现期比重, 原卷模块]
 materials: [M1]
 issues: []
@@ -112,7 +112,7 @@ B
 <!-- hyz-question-id: 019a3d8e-1b32-7a60-9c83-f34217a6e211 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: [共用材料]
 materials: [M1]
 issues: []
@@ -132,7 +132,7 @@ C
 <!-- hyz-question-id: 019a3d8e-1b32-7a60-9c83-f34217a6e212 -->
 ```yaml
 module: 图形推理
-category: null
+category: 图形推理
 topics: [模块别名兼容]
 materials: []
 issues: []
@@ -148,22 +148,65 @@ A
 判断推理解析。
 "#;
 
+const QUESTION_BANK_SECOND_FIXTURE: &str = r#"---
+schema: hyz-paper/v1
+title: 第二份跨卷模块练习卷
+year: 2018
+region: 广东
+variant: 省考
+---
+<!-- hyz-paper-id: 019a3d8c-7f23-7b6e-927d-3c951851d3a3 -->
+# 第二份试卷
+## Question 12
+<!-- hyz-question-id: 019a3d8e-1b32-7a60-9c83-f34217a6e213 -->
+```yaml
+module: 资料分析
+category: 比重
+topics: [跨卷来源]
+materials: []
+issues: []
+```
+### Stem
+第二份试卷的比重题。
+### Options
+- A. 甲
+- B. 乙
+- C. 丙
+- D. 丁
+### Answer
+D
+### Explanation
+跨卷第二题解析。
+"#;
+
 struct QuestionBankFixture;
 
 #[async_trait]
 impl QuestionBankSourcePort for QuestionBankFixture {
     async fn scan(&self, _known: Vec<IndexedPaper>) -> Result<BankSnapshot, BankError> {
         Ok(BankSnapshot {
-            papers: vec![IndexedPaper::new(
-                "papers/e2e.md".into(),
-                "e2e-test-hash".into(),
-                document::parse(QUESTION_BANK_FIXTURE).map_err(|_| BankError::Invalid)?,
-            )],
+            papers: vec![
+                IndexedPaper::new(
+                    "papers/e2e.md".into(),
+                    "e2e-test-hash".into(),
+                    document::parse(QUESTION_BANK_FIXTURE).map_err(|_| BankError::Invalid)?,
+                ),
+                IndexedPaper::new(
+                    "papers/second.md".into(),
+                    "e2e-second-hash".into(),
+                    document::parse(QUESTION_BANK_SECOND_FIXTURE).map_err(|_| BankError::Invalid)?,
+                ),
+            ],
             generated_ids: 0,
         })
     }
-    async fn load(&self, _paper: IndexedPaper) -> Result<Document, BankError> {
-        document::parse(QUESTION_BANK_FIXTURE).map_err(|_| BankError::Invalid)
+    async fn load(&self, paper: IndexedPaper) -> Result<Document, BankError> {
+        let markdown = if paper.summary.id == "019a3d8c-7f23-7b6e-927d-3c951851d3a3" {
+            QUESTION_BANK_SECOND_FIXTURE
+        } else {
+            QUESTION_BANK_FIXTURE
+        };
+        document::parse(markdown).map_err(|_| BankError::Invalid)
     }
     async fn asset(&self, _name: String) -> Result<BankAsset, BankError> {
         Err(BankError::NotFound)

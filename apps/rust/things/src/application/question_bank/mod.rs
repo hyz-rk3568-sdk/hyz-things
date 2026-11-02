@@ -3,7 +3,8 @@ pub mod images;
 pub mod practice;
 
 use crate::domain::question_bank::{
-    BankSyncStatus, BankSyncSummary, PaperSummary, PaperView, PracticeMode, PracticeSession,
+    BankSyncStatus, BankSyncSummary, PaperSummary, PaperView, PracticeCatalog, PracticeMode,
+    PracticeSession,
 };
 use async_trait::async_trait;
 use document::{valid_id, Document};
@@ -40,6 +41,10 @@ pub struct IndexedPaper {
     pub material_ids: Vec<String>,
     #[serde(default)]
     pub question_numbers: Vec<u32>,
+    #[serde(default)]
+    pub question_modules: Vec<Option<String>>,
+    #[serde(default)]
+    pub question_categories: Vec<Option<String>>,
 }
 impl IndexedPaper {
     pub fn new(path: String, hash: String, doc: Document) -> Self {
@@ -51,6 +56,8 @@ impl IndexedPaper {
             question_ids: doc.question_ids(),
             material_ids: doc.material_ids(),
             question_numbers: doc.view().questions.iter().map(|q| q.number).collect(),
+            question_modules: doc.view().questions.iter().map(|q| q.module.clone()).collect(),
+            question_categories: doc.view().questions.iter().map(|q| q.category.clone()).collect(),
         }
     }
 }
@@ -92,6 +99,17 @@ pub trait QuestionBankRepositoryPort: Send + Sync {
         Err(BankError::Unavailable)
     }
     async fn practice_candidates(&self, _mode: PracticeMode) -> Result<Vec<String>, BankError> {
+        Err(BankError::Unavailable)
+    }
+    async fn practice_catalog(&self) -> Result<PracticeCatalog, BankError> {
+        Err(BankError::Unavailable)
+    }
+    async fn practice_module_candidates(
+        &self,
+        _module: &str,
+        _category: Option<&str>,
+        _limit: usize,
+    ) -> Result<Vec<String>, BankError> {
         Err(BankError::Unavailable)
     }
     async fn practice_favorite(
