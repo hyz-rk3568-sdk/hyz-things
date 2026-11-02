@@ -275,16 +275,6 @@ impl BankError {
     }
 }
 
-/// Sanitized observable lifecycle; no filesystem paths or user content.
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct BankSyncStatus {
-    pub task_id: Option<String>,
-    pub stage: String,
-    pub running: bool,
-    pub summary: Option<BankSyncSummary>,
-    pub error_code: Option<String>,
-}
-
 impl BankError {
     fn code(&self) -> &'static str {
         match self {
