@@ -52,6 +52,8 @@ pub(crate) fn question_bank_panel(props: &QuestionBankPanelProps) -> Html {
     let paper = use_state(|| None::<PaperView>);
     let notice = use_state(|| None::<String>);
     let busy = use_state(|| false);
+    let syncing = use_state(|| false);
+    let sync_poll = use_state(|| 0u64);
     let reload = use_state(|| 0u64);
     {
         let notice = notice.clone();
@@ -103,6 +105,57 @@ pub(crate) fn question_bank_panel(props: &QuestionBankPanelProps) -> Html {
             || ()
         });
     }
+    // The job belongs to the server, not the page; refreshing resumes polling.
+    {
+        let notice = notice.clone();
+        let syncing = syncing.clone();
+        let reload = reload.clone();
+        use_effect_with((props.is_admin, *sync_poll), move |(is_admin, _)| {
+            let cancel = std::rc::Rc::new(std::cell::Cell::new(false));
+            if *is_admin {
+                let cancel_task = cancel.clone();
+                spawn_local(async move {
+                    loop {
+                        let status = fetch_json::<BankSyncStatus>(
+                            "/api/v1/question-bank/sync/status", "题库同步状态",
+                        ).await;
+                        if cancel_task.get() { break; }
+                        match status {
+                            Ok(status) => {
+                                syncing.set(status.running);
+                                if !status.running {
+                                    match (status.stage.as_str(), status.summary) {
+                                        ("completed", Some(summary)) => {
+                                            notice.set(Some(format!(
+                                                "已同步 {} 份文件、{} 个题位、{} 份材料",
+                                                summary.papers, summary.questions, summary.materials,
+                                            )));
+                                            reload.set(*reload + 1);
+                                        }
+                                        ("failed", _) => notice.set(Some(format!(
+                                            "题库同步失败（{}），可检查源文件后重试",
+                                            status.error_code.unwrap_or_else(|| "unknown".into()),
+                                        ))),
+                                        _ => {}
+                                    }
+                                    break;
+                                }
+                            }
+                            Err(error) => {
+                                syncing.set(false);
+                                notice.set(Some(error));
+                                break;
+                            }
+                        }
+                        TimeoutFuture::new(900).await;
+                    }
+                });
+            } else {
+                syncing.set(false);
+            }
+            move || cancel.set(true)
+        });
+    }
     let csrf = props
         .state
         .panel
@@ -111,45 +164,38 @@ pub(crate) fn question_bank_panel(props: &QuestionBankPanelProps) -> Html {
         .unwrap_or_default();
     let on_sync = {
         let busy = busy.clone();
+        let syncing = syncing.clone();
         let notice = notice.clone();
-        let reload = reload.clone();
-        let paper = paper.clone();
+        let sync_poll = sync_poll.clone();
         let csrf = csrf.clone();
         Callback::from(move |_| {
-            if *busy {
-                return;
-            }
+            if *busy || *syncing { return; }
             busy.set(true);
             notice.set(None);
             let busy = busy.clone();
             let notice = notice.clone();
-            let reload = reload.clone();
-            let paper = paper.clone();
+            let sync_poll = sync_poll.clone();
             let csrf = csrf.clone();
             spawn_local(async move {
                 let result: Result<BankSyncStatus, String> = post_json_response(
                     "/api/v1/control/question-bank/sync",
-                    &csrf,
-                    &EmptyRequest {},
-                    "同步题库",
-                )
-                .await;
+                    &csrf, &EmptyRequest {}, "同步题库",
+                ).await;
                 match result {
-                    Ok(_) => {
-                        paper.set(None);
-                        watch_bank_sync(notice.clone(), busy.clone(), reload.clone()).await;
-                    }
+                    Ok(_) => sync_poll.set(*sync_poll + 1),
                     Err(error) => notice.set(Some(error)),
                 }
+                busy.set(false);
             });
         })
     };
     let on_open = {
         let busy = busy.clone();
+        let syncing = syncing.clone();
         let notice = notice.clone();
         let paper = paper.clone();
         Callback::from(move |id: String| {
-            if *busy {
+            if *busy || *syncing {
                 return;
             }
             busy.set(true);
@@ -172,11 +218,11 @@ pub(crate) fn question_bank_panel(props: &QuestionBankPanelProps) -> Html {
         })
     };
     html! {
-        <SectionCard title_id="question-bank-title" busy={Some(*busy)}>
+        <SectionCard title_id="question-bank-title" busy={Some(*busy || *syncing)}>
             <div class={SECTION_HEAD}>
                 <div><h3 id="question-bank-title" class={SECTION_TITLE}>{"行测题库"}</h3><p class={SECTION_META}>{"历年真题 · 整卷阅读"}</p></div>
                 if props.is_admin {
-                    <button class={BUTTON_PRIMARY} type="button" data-testid="question-bank-sync" disabled={*busy || csrf.is_empty()} onclick={on_sync}>{if *busy {"处理中…"} else {"同步题库"}}</button>
+                    <button class={BUTTON_PRIMARY} type="button" data-testid="question-bank-sync" disabled={*busy || *syncing || csrf.is_empty()} onclick={on_sync}>{if *syncing {"同步中…"} else if *busy {"处理中…"} else {"同步题库"}}</button>
                 }
             </div>
             if !props.is_admin {
@@ -191,7 +237,7 @@ pub(crate) fn question_bank_panel(props: &QuestionBankPanelProps) -> Html {
                         if papers.is_empty() {<p class={HELP_TEXT}>{"题库为空。首次使用请先同步题库。"}</p>}
                         {for papers.iter().map(|entry| {
                             let open=on_open.clone();let id=entry.id.clone();
-                            html! {<button class="btn btn-outline h-auto min-h-12 w-full justify-between py-3 text-left" type="button" data-testid="question-bank-open" disabled={*busy} onclick={Callback::from(move |_|open.emit(id.clone()))}>
+                            html! {<button class="btn btn-outline h-auto min-h-12 w-full justify-between py-3 text-left" type="button" data-testid="question-bank-open" disabled={*busy || *syncing} onclick={Callback::from(move |_|open.emit(id.clone()))}>
                                 <span>{entry.title.clone()}</span><span class="text-xs opacity-60">{format!("{} · {} · {} 个题位",entry.year,entry.region,entry.questions)}</span>
                             </button>}
                         })}
