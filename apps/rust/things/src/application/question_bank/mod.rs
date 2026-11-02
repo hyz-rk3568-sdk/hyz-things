@@ -130,6 +130,49 @@ impl QuestionBankApplication {
         Ok(status)
     }
 
+    pub fn sync_status(&self) -> BankSyncStatus {
+        self.sync_status.lock().unwrap().clone()
+    }
+
+    /// The task owns its semaphore permit even when the initiating HTTP request
+    /// is cancelled. Subsequent requests observe the same job.
+    pub fn start_sync(self: &Arc<Self>) -> Result<BankSyncStatus, BankError> {
+        let permit = match self.gate.clone().try_acquire_owned() {
+            Ok(permit) => permit,
+            Err(_) => {
+                let status = self.sync_status();
+                return if status.running { Ok(status) } else { Err(BankError::Busy) };
+            }
+        };
+        let status = BankSyncStatus {
+            task_id: Some(uuid::Uuid::now_v7().to_string()),
+            stage: "scanning".into(),
+            running: true,
+            summary: None,
+            error_code: None,
+        };
+        *self.sync_status.lock().unwrap() = status.clone();
+        let app = Arc::clone(self);
+        tokio::spawn(async move {
+            let _permit = permit;
+            let result = app.run_sync().await;
+            let mut status = app.sync_status.lock().unwrap();
+            status.running = false;
+            match result {
+                Ok(summary) => {
+                    status.stage = "completed".into();
+                    status.summary = Some(summary);
+                }
+                Err(error) => {
+                    status.stage = "failed".into();
+                    status.error_code = Some(error.code().into());
+                }
+            }
+        });
+        Ok(status)
+    }
+
+    /// Synchronous entrypoint retained for application-level tests.
     pub async fn sync(&self) -> Result<BankSyncSummary, BankError> {
         let _permit = self.gate.try_acquire().map_err(|_| BankError::Busy)?;
         self.run_sync().await
@@ -144,8 +187,21 @@ impl QuestionBankApplication {
 
     async fn run_sync(&self) -> Result<BankSyncSummary, BankError> {
         self.stage("scanning");
+        self.run_sync().await
+    }
+
+    fn stage(&self, stage: &str) {
+        let mut status = self.sync_status.lock().unwrap();
+        if status.running {
+            status.stage = stage.into();
+        }
+    }
+
+    async fn run_sync(&self) -> Result<BankSyncSummary, BankError> {
+        self.stage("scanning");
         let known = self.repository.known().await?;
         let snapshot = self.source.scan(known).await?;
+        self.stage("validating");
         self.stage("validating");
         if snapshot.papers.is_empty() {
             return Err(BankError::Unavailable);
@@ -168,6 +224,7 @@ impl QuestionBankApplication {
             materials,
             generated_ids: snapshot.generated_ids,
         };
+        self.stage("indexing");
         self.stage("indexing");
         self.repository.apply(snapshot.papers).await?;
         Ok(summary)
@@ -202,6 +259,30 @@ impl QuestionBankApplication {
     pub async fn asset(&self, name: String) -> Result<BankAsset, BankError> {
         self.source.asset(name).await
     }
+}
+
+impl BankError {
+    fn code(&self) -> &'static str {
+        match self {
+            Self::Busy => "question_bank_busy",
+            Self::Unavailable => "question_bank_unavailable",
+            Self::Storage => "question_bank_storage",
+            Self::Invalid => "question_bank_invalid",
+            Self::Conflict => "question_bank_conflict",
+            Self::NotFound => "question_bank_not_found",
+            Self::Stale => "question_bank_stale",
+        }
+    }
+}
+
+/// Sanitized observable lifecycle; no filesystem paths or user content.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BankSyncStatus {
+    pub task_id: Option<String>,
+    pub stage: String,
+    pub running: bool,
+    pub summary: Option<BankSyncSummary>,
+    pub error_code: Option<String>,
 }
 
 impl BankError {
