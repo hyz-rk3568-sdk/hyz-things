@@ -116,7 +116,6 @@ mod tests {
     }
 }
 
-
 /// Shared swipe region for all question-based training screens. Only a primary
 /// finger gesture with a decisive horizontal displacement changes the item.
 /// Pen, mouse, interactive controls and active inking are deliberately ignored.
@@ -135,7 +134,9 @@ pub(super) fn training_swipe_surface(props: &TrainingSwipeSurfaceProps) -> Html 
         let origin = origin.clone();
         Callback::from(move |event: PointerEvent| {
             *origin.borrow_mut() = None;
-            if ink_active || event.pointer_type() != "touch" || !event.is_primary()
+            if ink_active
+                || event.pointer_type() != "touch"
+                || !event.is_primary()
                 || !swipe_start_allowed(&event)
             {
                 return;
@@ -149,7 +150,9 @@ pub(super) fn training_swipe_surface(props: &TrainingSwipeSurfaceProps) -> Html 
         let total = props.total;
         Callback::from(move |event: PointerEvent| {
             let start = origin.borrow_mut().take();
-            let Some((pointer_id, start_x, start_y)) = start else { return; };
+            let Some((pointer_id, start_x, start_y)) = start else {
+                return;
+            };
             if event.pointer_type() != "touch" || event.pointer_id() != pointer_id {
                 return;
             }

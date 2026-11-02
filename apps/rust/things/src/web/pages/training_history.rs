@@ -32,7 +32,12 @@ pub(super) fn training_history(props: &TrainingHistoryProps) -> Html {
                 let mut rows = Vec::new();
                 let mut errors = Vec::new();
 
-                match fetch_json::<Vec<PracticeSession>>("/api/v1/question-bank/practice/history", "真题练习记录").await {
+                match fetch_json::<Vec<PracticeSession>>(
+                    "/api/v1/question-bank/practice/history",
+                    "真题练习记录",
+                )
+                .await
+                {
                     Ok(items) => {
                         for run in items {
                             let label = match run.mode {
@@ -46,60 +51,128 @@ pub(super) fn training_history(props: &TrainingHistoryProps) -> Html {
                                 id: run.id,
                                 source: "question_bank",
                                 title: format!("真题 · {label}"),
-                                subtitle: format!("{} · {}题 · 已用{}分钟",run.module.unwrap_or_default(),run.items.len(),run.elapsed_seconds/60),
+                                subtitle: format!(
+                                    "{} · {}题 · 已用{}分钟",
+                                    run.module.unwrap_or_default(),
+                                    run.items.len(),
+                                    run.elapsed_seconds / 60
+                                ),
                                 timestamp: run.updated_at,
                                 active: run.status == "active",
                             });
                         }
-                    },
+                    }
                     Err(_) => errors.push("真题"),
                 }
-                match fetch_json_typed::<Vec<ComprehensiveHistoryEntry>>(&format!("{ANALYSIS_ROOT}/history"),"资料分析历史").await {
-                    Ok(items) => for run in items {
-                        rows.push(TrainingHistoryRow {
-                            id: run.id, source: "analysis", title: "资料分析 · 综合训练".into(),
-                            subtitle: format!("正确 {}/{} · 用时{}分钟",run.correct,run.total,run.elapsed_ms/60000),
-                            timestamp: run.started_at_ms, active: false,
-                        });
-                    },
+                match fetch_json_typed::<Vec<ComprehensiveHistoryEntry>>(
+                    &format!("{ANALYSIS_ROOT}/history"),
+                    "资料分析历史",
+                )
+                .await
+                {
+                    Ok(items) => {
+                        for run in items {
+                            rows.push(TrainingHistoryRow {
+                                id: run.id,
+                                source: "analysis",
+                                title: "资料分析 · 综合训练".into(),
+                                subtitle: format!(
+                                    "正确 {}/{} · 用时{}分钟",
+                                    run.correct,
+                                    run.total,
+                                    run.elapsed_ms / 60000
+                                ),
+                                timestamp: run.started_at_ms,
+                                active: false,
+                            });
+                        }
+                    }
                     Err(_) => errors.push("资料分析"),
                 }
-                if let Ok(items) = fetch_json_typed::<Vec<UnfinishedRun>>(&format!("{ANALYSIS_ROOT}/unfinished"),"资料分析未完成").await {
+                if let Ok(items) = fetch_json_typed::<Vec<UnfinishedRun>>(
+                    &format!("{ANALYSIS_ROOT}/unfinished"),
+                    "资料分析未完成",
+                )
+                .await
+                {
                     for run in items {
-                        if rows.iter().any(|row|row.source=="analysis" && row.id==run.id) { continue; }
+                        if rows
+                            .iter()
+                            .any(|row| row.source == "analysis" && row.id == run.id)
+                        {
+                            continue;
+                        }
                         rows.push(TrainingHistoryRow {
-                            id:run.id, source:"analysis", title:"资料分析 · 未完成".into(),
-                            subtitle:format!("已答{}题 · 可继续练习",run.answered),
-                            timestamp:0,active:true,
+                            id: run.id,
+                            source: "analysis",
+                            title: "资料分析 · 未完成".into(),
+                            subtitle: format!("已答{}题 · 可继续练习", run.answered),
+                            timestamp: 0,
+                            active: true,
                         });
                     }
                 }
-                for (source,root,title) in [("logic",LOGIC_ROOT,"判断推理"),("quant",QUANT_ROOT,"数量关系")] {
-                    match fetch_json::<Vec<LogicHistory>>(&format!("{root}/history"),"专项训练历史").await {
-                        Ok(items) => for run in items {
-                            rows.push(TrainingHistoryRow{
-                                id:run.id,source,title:format!("{title} · 综合训练"),
-                                subtitle:format!("正确 {}/{} · 已答{}题",run.correct,run.total,run.answered),
-                                timestamp:run.ended_at_ms,active:false,
-                            });
-                        },
+                for (source, root, title) in [
+                    ("logic", LOGIC_ROOT, "判断推理"),
+                    ("quant", QUANT_ROOT, "数量关系"),
+                ] {
+                    match fetch_json::<Vec<LogicHistory>>(
+                        &format!("{root}/history"),
+                        "专项训练历史",
+                    )
+                    .await
+                    {
+                        Ok(items) => {
+                            for run in items {
+                                rows.push(TrainingHistoryRow {
+                                    id: run.id,
+                                    source,
+                                    title: format!("{title} · 综合训练"),
+                                    subtitle: format!(
+                                        "正确 {}/{} · 已答{}题",
+                                        run.correct, run.total, run.answered
+                                    ),
+                                    timestamp: run.ended_at_ms,
+                                    active: false,
+                                });
+                            }
+                        }
                         Err(_) => errors.push(title),
                     }
-                    if let Ok(items) = fetch_json::<Vec<LogicRun>>(&format!("{root}/unfinished"),"专项未完成练习").await {
+                    if let Ok(items) =
+                        fetch_json::<Vec<LogicRun>>(&format!("{root}/unfinished"), "专项未完成练习")
+                            .await
+                    {
                         for run in items {
-                            if rows.iter().any(|row|row.source==source && row.id==run.id) { continue; }
+                            if rows
+                                .iter()
+                                .any(|row| row.source == source && row.id == run.id)
+                            {
+                                continue;
+                            }
                             rows.push(TrainingHistoryRow {
-                                id:run.id,source,title:format!("{title} · 未完成"),
-                                subtitle:format!("已答{}题 · 可继续练习",run.answers.iter().filter(|answer|answer.is_some()).count()),
-                                timestamp:0,active:true,
+                                id: run.id,
+                                source,
+                                title: format!("{title} · 未完成"),
+                                subtitle: format!(
+                                    "已答{}题 · 可继续练习",
+                                    run.answers.iter().filter(|answer| answer.is_some()).count()
+                                ),
+                                timestamp: 0,
+                                active: true,
                             });
                         }
                     }
                 }
-                rows.sort_by(|a,b| b.active.cmp(&a.active).then_with(||b.timestamp.cmp(&a.timestamp)).then_with(||a.id.cmp(&b.id)));
+                rows.sort_by(|a, b| {
+                    b.active
+                        .cmp(&a.active)
+                        .then_with(|| b.timestamp.cmp(&a.timestamp))
+                        .then_with(|| a.id.cmp(&b.id))
+                });
                 records.set(rows);
                 if !errors.is_empty() {
-                    problem.set(Some(format!("部分模块记录暂不可用：{}",errors.join("、"))));
+                    problem.set(Some(format!("部分模块记录暂不可用：{}", errors.join("、"))));
                 }
                 loading.set(false);
             });

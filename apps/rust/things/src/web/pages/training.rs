@@ -240,7 +240,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
     let on_open_history_source = {
         let mode = mode.clone();
         let history_jump = history_jump.clone();
-        Callback::from(move |source:String| {
+        Callback::from(move |source: String| {
             let target = match source.as_str() {
                 "question_bank" => TrainingMode::QuestionBank,
                 "analysis" => TrainingMode::Comprehensive,

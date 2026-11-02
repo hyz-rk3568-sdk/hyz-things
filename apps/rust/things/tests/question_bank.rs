@@ -725,16 +725,31 @@ async fn indexed_module_and_category_drills_keep_original_sources() {
     assert_eq!(module.categories[0].count, 1);
     assert_eq!(module.categories[0].done, 0);
     let mut filtered = hyz_things::domain::question_bank::ModulePracticeFilters {
-        year_min: Some(2000), year_max: Some(2002), regions: vec!["国考".into()],
-        exclude_regions: false, count: Some(1),
+        year_min: Some(2000),
+        year_max: Some(2002),
+        regions: vec!["国考".into()],
+        exclude_regions: false,
+        count: Some(1),
     };
-    assert_eq!(app.practice_catalog(&filtered).await.unwrap().modules[0].count,1);
+    assert_eq!(
+        app.practice_catalog(&filtered).await.unwrap().modules[0].count,
+        1
+    );
     filtered.exclude_regions = true;
-    assert!(app.practice_catalog(&filtered).await.unwrap().modules.is_empty());
+    assert!(app
+        .practice_catalog(&filtered)
+        .await
+        .unwrap()
+        .modules
+        .is_empty());
     filtered.exclude_regions = false;
     filtered.year_min = Some(2020);
-    assert!(app.practice_catalog(&filtered).await.unwrap().modules.is_empty());
-
+    assert!(app
+        .practice_catalog(&filtered)
+        .await
+        .unwrap()
+        .modules
+        .is_empty());
 
     let session = app
         .create_practice(CreatePracticeRequest {
@@ -751,8 +766,12 @@ async fn indexed_module_and_category_drills_keep_original_sources() {
     assert_eq!(session.category.as_deref(), Some("比重"));
     // A saved answer is counted once even when revised; an empty/new session
     // does not advance module progress.
-    app.save_practice_answer(&session.id, &session.items[0].question_id, vec!["A".into()]).await.unwrap();
-    app.save_practice_answer(&session.id, &session.items[0].question_id, vec!["B".into()]).await.unwrap();
+    app.save_practice_answer(&session.id, &session.items[0].question_id, vec!["A".into()])
+        .await
+        .unwrap();
+    app.save_practice_answer(&session.id, &session.items[0].question_id, vec!["B".into()])
+        .await
+        .unwrap();
     let updated = app.practice_catalog(&Default::default()).await.unwrap();
     assert_eq!(updated.modules[0].done, 1);
     assert_eq!(updated.modules[0].categories[0].done, 1);

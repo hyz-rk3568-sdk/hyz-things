@@ -294,14 +294,7 @@ jobs:
         working-directory: apps/rust/things
         env:
           HYZ_THINGS_E2E_REUSE_FRONTEND_BUNDLE: "1"
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            npm run test:e2e:startup
-            npx playwright test e2e/question-bank.spec.ts e2e/comprehensive.spec.ts e2e/logic-judgment.spec.ts e2e/training-subjects.spec.ts e2e/training-time.spec.ts
-          else
-            npm run test:e2e
-          fi
+        run: npm run test:e2e -- ${{ github.event_name == 'pull_request' && 'e2e/question-bank.spec.ts e2e/comprehensive.spec.ts e2e/logic-judgment.spec.ts e2e/training-subjects.spec.ts e2e/training-time.spec.ts' || '' }}
 
       - name: Upload Playwright failure artifacts
         if: failure()

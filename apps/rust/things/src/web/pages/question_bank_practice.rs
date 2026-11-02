@@ -1,9 +1,9 @@
 //! Real-paper practice: one workspace for original paper, cross-paper module and review modes.
 use super::*;
 use hyz_things::domain::question_bank::{
-    CreatePracticeRequest, FavoriteState, ModulePracticeFilters, PaperModules, PaperSummary, PracticeCatalog,
-    PracticeMode, PracticeReview, PracticeSession, PracticeWorkspace, SavePracticeAnswer,
-    SetFavorite, SetPracticePaused,
+    CreatePracticeRequest, FavoriteState, ModulePracticeFilters, PaperModules, PaperSummary,
+    PracticeCatalog, PracticeMode, PracticeReview, PracticeSession, PracticeWorkspace,
+    SavePracticeAnswer, SetFavorite, SetPracticePaused,
 };
 
 const ROOT: &str = "/api/v1/question-bank";
@@ -18,10 +18,13 @@ fn read_module_filters() -> ModulePracticeFilters {
 }
 
 fn persist_module_filters(filters: &ModulePracticeFilters) -> bool {
-    let Some(storage) = web_sys::window().and_then(|window| window.local_storage().ok().flatten()) else {
+    let Some(storage) = web_sys::window().and_then(|window| window.local_storage().ok().flatten())
+    else {
         return false;
     };
-    let Ok(json) = serde_json::to_string(filters) else { return false; };
+    let Ok(json) = serde_json::to_string(filters) else {
+        return false;
+    };
     storage.set_item(MODULE_FILTERS_STORAGE, &json).is_ok()
 }
 
@@ -129,7 +132,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 {
                     history.set(items);
                 }
-
             });
             || ()
         });
@@ -389,7 +391,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     active.session.id, question_id
                                 ),
                                 &csrf,
-                                &SavePracticeAnswer { answer: answer.clone() },
+                                &SavePracticeAnswer {
+                                    answer: answer.clone(),
+                                },
                                 "保存真题答案",
                             )
                             .await?;
@@ -399,7 +403,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             if let Some(question) = updated.questions.get_mut(*index) {
                                 question.item.answer = answer.clone();
                             }
-                            if let Some(question) = updated.session.items.iter_mut()
+                            if let Some(question) = updated
+                                .session
+                                .items
+                                .iter_mut()
                                 .find(|question| question.question_id == question_id)
                             {
                                 question.answer = answer;

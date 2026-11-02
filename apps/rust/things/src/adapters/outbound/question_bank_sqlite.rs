@@ -2,7 +2,8 @@
 use crate::application::question_bank::practice::primary_module;
 use crate::application::question_bank::{BankError, IndexedPaper, QuestionBankRepositoryPort};
 use crate::domain::question_bank::{
-    ModulePracticeFilters, PracticeCatalog, PracticeCategory, PracticeMode, PracticeModule, PracticeSession,
+    ModulePracticeFilters, PracticeCatalog, PracticeCategory, PracticeMode, PracticeModule,
+    PracticeSession,
 };
 use async_trait::async_trait;
 use sqlx::{
@@ -193,7 +194,10 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             .collect()
     }
 
-    async fn practice_catalog(&self, filters: &ModulePracticeFilters) -> Result<PracticeCatalog, BankError> {
+    async fn practice_catalog(
+        &self,
+        filters: &ModulePracticeFilters,
+    ) -> Result<PracticeCatalog, BankError> {
         let regions = serde_json::to_string(&filters.regions).map_err(|_| BankError::Storage)?;
         let rows = sqlx::query(
             "SELECT q.module,q.category,COUNT(*) AS total,              SUM(CASE WHEN EXISTS (SELECT 1 FROM practice_items i WHERE i.question_id=q.id AND i.answer!='[]') THEN 1 ELSE 0 END) AS done              FROM questions q JOIN papers p ON p.id=q.paper_id              WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary'              AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)>=?)              AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)<=?)              AND (?=0 OR (EXISTS (SELECT 1 FROM json_each(?) WHERE value=json_extract(p.metadata,'$.summary.region'))) != (?))              GROUP BY q.module,q.category ORDER BY q.module,q.category"
@@ -203,13 +207,14 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         .bind(i64::from(!filters.regions.is_empty())).bind(regions)
         .bind(i64::from(filters.exclude_regions))
         .fetch_all(&self.pool).await.map_err(|_| BankError::Storage)?;
-        let mut modules: BTreeMap<String, (usize, usize, usize, BTreeMap<String, (usize, usize)>)> = BTreeMap::new();
+        let mut modules: BTreeMap<String, (usize, usize, usize, BTreeMap<String, (usize, usize)>)> =
+            BTreeMap::new();
         let mut unclassified = 0;
         for row in rows {
             let module: Option<String> = row.get(0);
             let category: Option<String> = row.get(1);
-            let count = row.get::<i64,_>(2) as usize;
-            let done = row.get::<i64,_>(3) as usize;
+            let count = row.get::<i64, _>(2) as usize;
+            let done = row.get::<i64, _>(3) as usize;
             if let Some(module) = module {
                 let entry = modules.entry(module).or_default();
                 entry.0 += count;
@@ -226,10 +231,21 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             }
         }
         Ok(PracticeCatalog {
-            modules: modules.into_iter().map(|(name,(count,done,uncategorized,categories))| PracticeModule {
-                name, count, done, uncategorized,
-                categories: categories.into_iter().map(|(name,(count,done))| PracticeCategory {name,count,done}).collect(),
-            }).collect(),
+            modules: modules
+                .into_iter()
+                .map(
+                    |(name, (count, done, uncategorized, categories))| PracticeModule {
+                        name,
+                        count,
+                        done,
+                        uncategorized,
+                        categories: categories
+                            .into_iter()
+                            .map(|(name, (count, done))| PracticeCategory { name, count, done })
+                            .collect(),
+                    },
+                )
+                .collect(),
             unclassified,
         })
     }
@@ -254,12 +270,21 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             format!("{base}{filter}{suffix}")
         };
         let mut query = sqlx::query_scalar::<_, String>(&sql).bind(module);
-        if let Some(category) = category { query = query.bind(category); }
-        query.bind(filters.year_min).bind(filters.year_min)
-            .bind(filters.year_max).bind(filters.year_max)
-            .bind(i64::from(!filters.regions.is_empty())).bind(regions)
-            .bind(i64::from(filters.exclude_regions)).bind(limit as i64)
-            .fetch_all(&self.pool).await.map_err(|_| BankError::Storage)
+        if let Some(category) = category {
+            query = query.bind(category);
+        }
+        query
+            .bind(filters.year_min)
+            .bind(filters.year_min)
+            .bind(filters.year_max)
+            .bind(filters.year_max)
+            .bind(i64::from(!filters.regions.is_empty()))
+            .bind(regions)
+            .bind(i64::from(filters.exclude_regions))
+            .bind(limit as i64)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| BankError::Storage)
     }
 
     async fn practice_candidates(&self, mode: PracticeMode) -> Result<Vec<String>, BankError> {
@@ -381,6 +406,6 @@ mod migration_tests {
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        assert_eq!(applied, 2, "each version is applied exactly once");
+        assert_eq!(applied, 3, "each version is applied exactly once");
     }
 }

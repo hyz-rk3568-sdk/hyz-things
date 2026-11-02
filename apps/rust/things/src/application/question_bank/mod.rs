@@ -111,7 +111,10 @@ pub trait QuestionBankRepositoryPort: Send + Sync {
     async fn practice_candidates(&self, _mode: PracticeMode) -> Result<Vec<String>, BankError> {
         Err(BankError::Unavailable)
     }
-    async fn practice_catalog(&self, _filters: &crate::domain::question_bank::ModulePracticeFilters) -> Result<PracticeCatalog, BankError> {
+    async fn practice_catalog(
+        &self,
+        _filters: &crate::domain::question_bank::ModulePracticeFilters,
+    ) -> Result<PracticeCatalog, BankError> {
         Err(BankError::Unavailable)
     }
     async fn practice_module_candidates(

@@ -1,7 +1,8 @@
 use super::*;
 use crate::application::question_bank::{BankError, QuestionBankApplication};
 use crate::domain::question_bank::{
-    CreatePracticeRequest, ModulePracticeFilters, SavePracticeAnswer, SetFavorite, SetPracticePaused,
+    CreatePracticeRequest, ModulePracticeFilters, SavePracticeAnswer, SetFavorite,
+    SetPracticePaused,
 };
 use axum::Extension;
 
@@ -215,7 +216,13 @@ pub(super) async fn practice_catalog(
     let filters = ModulePracticeFilters {
         year_min: query.year_min,
         year_max: query.year_max,
-        regions: query.regions.unwrap_or_default().split(',').filter(|v|!v.is_empty()).map(str::to_owned).collect(),
+        regions: query
+            .regions
+            .unwrap_or_default()
+            .split(',')
+            .filter(|v| !v.is_empty())
+            .map(str::to_owned)
+            .collect(),
         exclude_regions: query.exclude_regions.unwrap_or(false),
         count: None,
     };
