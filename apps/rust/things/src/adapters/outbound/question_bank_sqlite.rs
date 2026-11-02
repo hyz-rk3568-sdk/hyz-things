@@ -164,8 +164,8 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
 
     async fn practice_candidates(&self, mode: PracticeMode) -> Result<Vec<String>, BankError> {
         let sql = match mode {
-            PracticeMode::Wrong => "SELECT q.id FROM questions q JOIN papers p ON p.id=q.paper_id JOIN question_progress s ON s.question_id=q.id WHERE p.active=1 AND p.metadata LIKE '%\\\"role\\\":\\\"primary\\\"%' AND s.pending=1 ORDER BY p.id,q.number",
-            PracticeMode::Favorite => "SELECT q.id FROM questions q JOIN papers p ON p.id=q.paper_id JOIN favorites s ON s.question_id=q.id WHERE p.active=1 AND p.metadata LIKE '%\\\"role\\\":\\\"primary\\\"%' AND s.favorite=1 ORDER BY p.id,q.number",
+            PracticeMode::Wrong => "SELECT q.id FROM questions q JOIN papers p ON p.id=q.paper_id JOIN question_progress s ON s.question_id=q.id WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' AND s.pending=1 ORDER BY p.id,q.number",
+            PracticeMode::Favorite => "SELECT q.id FROM questions q JOIN papers p ON p.id=q.paper_id JOIN favorites s ON s.question_id=q.id WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' AND s.favorite=1 ORDER BY p.id,q.number",
             _ => return Err(BankError::Invalid),
         };
         sqlx::query_scalar(sql).fetch_all(&self.pool).await.map_err(|_| BankError::Storage)
