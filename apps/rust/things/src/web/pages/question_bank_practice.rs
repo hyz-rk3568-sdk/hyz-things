@@ -558,11 +558,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             <span class="font-mono text-sm" role="timer" data-testid="question-bank-practice-timer">{format!("{:02}:{:02}",(*elapsed/60),(*elapsed%60))}</span>
                             if !completed {
                                 <button class="btn btn-sm btn-outline" data-testid="question-bank-practice-pause"
-                                    onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Pause)})}>
+                                    disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Pause)})}>
                                     {if paused {"继续"} else {"暂停"}}
                                 </button>
                                 <button class="btn btn-sm btn-error" data-testid="question-bank-practice-submit"
-                                    onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Submit)})}>{"交卷"}</button>
+                                    disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Submit)})}>{"交卷"}</button>
                             } else if let Some(score) = &current.session.score {
                                 <span class="font-semibold" data-testid="question-bank-practice-score">
                                     {format!("正确 {} · 错误 {} · 未答 {} · 不可判分 {} · 正确率 {:.1}%",

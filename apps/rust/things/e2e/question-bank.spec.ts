@@ -63,6 +63,7 @@ test('question bank wrong and favorite mode reuses fixed source items',async({pa
   await page.getByTestId('question-bank-select-paper').selectOption({index:1});
   await page.getByTestId('question-bank-practice-start').click();
   await page.getByTestId('question-bank-practice-choice').first().click();
+  await expect(page.getByTestId('question-bank-practice-choice').first()).toHaveAttribute('aria-pressed','true');
   await page.getByTestId('question-bank-practice-submit').click();
   await expect(page.getByTestId('question-bank-submit-confirm')).toBeVisible();
   await page.getByRole('button',{name:'确认交卷'}).click();
