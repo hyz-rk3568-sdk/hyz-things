@@ -9,7 +9,9 @@ async function chooseFixturePaper(page:import('@playwright/test').Page) {
   await page.getByTestId('question-bank-paper-option').filter({hasText:'行测真题训练端到端样卷'}).click();
 }
 async function openSheet(page:import('@playwright/test').Page) {
-  await page.getByTestId('training-answer-sheet-toggle').click();
+  if (!(await page.getByTestId('training-answer-sheet').isVisible())) {
+    await page.getByTestId('training-answer-sheet-toggle').click();
+  }
   await expect(page.getByTestId('training-answer-sheet')).toBeVisible();
 }
 
