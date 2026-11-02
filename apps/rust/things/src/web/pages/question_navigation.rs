@@ -210,7 +210,7 @@ pub(super) fn compact_question_navigation(props: &CompactQuestionNavigationProps
             data-testid="question-bank-practice-navigation">
             <button type="button" class="btn btn-outline btn-sm" disabled={index==0} onclick={previous}>{"上一题"}</button>
             <button type="button" class="btn btn-ghost btn-sm" aria-expanded={open.to_string()}
-                aria-controls="training-question-sheet" data-testid="training-answer-sheet-toggle" onclick={toggle}>
+                aria-controls="training-question-sheet" data-testid="training-answer-sheet-toggle" onclick={toggle.clone()}>
                 {format!("答题卡 · {}/{}",index+1,total)}
             </button>
             <button type="button" class="btn btn-primary btn-sm" disabled={index+1>=total} onclick={next}>{"下一题"}</button>
