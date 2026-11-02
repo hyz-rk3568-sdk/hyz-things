@@ -743,6 +743,43 @@ fn app_with_assets(
             on(MethodFilter::GET, question_bank::paper),
         )
         .route(
+            "/api/v1/question-bank/papers/{id}/modules",
+            on(MethodFilter::GET, question_bank::modules),
+        )
+        .route(
+            "/api/v1/question-bank/practice/history",
+            on(MethodFilter::GET, question_bank::practice_history),
+        )
+        .route(
+            "/api/v1/question-bank/practice/sessions",
+            on(MethodFilter::POST, question_bank::practice_create),
+        )
+        .route(
+            "/api/v1/question-bank/practice/sessions/{id}",
+            on(MethodFilter::GET, question_bank::practice_session),
+        )
+        .route(
+            "/api/v1/question-bank/practice/sessions/{id}/answers/{question_id}",
+            on(MethodFilter::PUT, question_bank::practice_answer),
+        )
+        .route(
+            "/api/v1/question-bank/practice/sessions/{id}/pause",
+            on(MethodFilter::PUT, question_bank::practice_pause),
+        )
+        .route(
+            "/api/v1/question-bank/practice/sessions/{id}/submit",
+            on(MethodFilter::POST, question_bank::practice_submit),
+        )
+        .route(
+            "/api/v1/question-bank/practice/sessions/{id}/review",
+            on(MethodFilter::GET, question_bank::practice_review),
+        )
+        .route(
+            "/api/v1/question-bank/practice/favorites/{id}",
+            on(MethodFilter::GET, question_bank::favorite_get)
+                .on(MethodFilter::PUT, question_bank::favorite_set),
+        )
+        .route(
             "/api/v1/question-bank/assets/{name}",
             on(MethodFilter::GET, question_bank::asset),
         )
