@@ -4,7 +4,7 @@
 
 ## 电脑端独立共享
 
-题库在本仓库 `question_bank/`，导入和维护方式见 [导入工具](../scripts/question_bank/README.md)。内容目录仍是独立本地 Git 仓库，主项目忽略它；没有配置远程或 submodule。
+设备题库在本仓库 `question_bank/papers/` 和 `question_bank/assets/`，作为普通文件随公开主仓库版本管理；导入器清单、审计报告及备份保留在本机，不纳入公开提交。维护方式见 [导入工具](../scripts/question_bank/README.md)。
 
 先保留现有 `hyz-cards` 共享，然后运行：
 

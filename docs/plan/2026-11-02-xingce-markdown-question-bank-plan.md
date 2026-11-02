@@ -23,7 +23,7 @@
 以下记录对应电脑端导入。之后追加的同步与整卷加载实现见 P3/P4 和 [设备接入说明](../question-bank-device.md)。
 
 - 工具与使用方法：[`scripts/question_bank/README.md`](../../scripts/question_bank/README.md)，开发分支 `hyz/question-bank-import`。
-- 正式题库：`/home/hyz/Code/hyz_things/question_bank`，独立本地 Git 仓库；源缓存：`/home/hyz/.cache/question-bank/gwy-zhenti`。
+- 正式题库：`question_bank/papers/` 与 `question_bank/assets/` 随公开主仓库提交；`manifest.json`、`reports/` 和备份为本机导入状态，不公开提交。源缓存：`/home/hyz/.cache/question-bank/gwy-zhenti`。
 - 固定上游 commit：`d928ae3d36e2aac47a0c04f96533658df6aba295`；候选覆盖 2008–2026，739 份行测文件（含 1 份明确标记的从属佐证副本），排除 944 份申论。
 - 保留 86,545 个题位、3,030 份共享材料；16,449 处图片引用归并为 9,137 个实际引用图片文件。题位包括缺题占位，不等于完整可作答题量。
 - `role: primary/evidence` 区分普通卷与佐证副本；逐题 `issues` 保留缺损/待核标签。来源声明及作答说明保存在 `Paper Notes`，答案性质等附注保存在 `Notes`；正文仍以 Markdown 为唯一正式可编辑来源。
@@ -42,7 +42,7 @@
 8. **共用已有 Samba 进程、端口和账号，新增独立可读写 share**；不要复用现有 `hyz-cards` 的目录树，避免 Flashcard 递归扫描并试图按 `## Card` 解析。
 9. 题库允许人工编辑，使用本地 Git 追踪修改；**Git 历史不能替代冲突检测或自动备份**，导入器不得静默覆盖手工修改、丢失 UUID 或破坏旧题序。
 
-> 版权边界：去掉平台名前缀、`source` 字段或改变存储格式，不等于获得试卷、解析和图片的再分发许可。默认在独立本地 Git 仓库中管理题库，不自动推送公开远程；保留可审计的来源信息。
+> 版权边界：去掉平台名前缀、`source` 字段或改变存储格式，不等于获得试卷、解析和图片的再分发许可。本次按用户明确要求将 `papers/` 与 `assets/` 纳入公开主仓库；这项提交不代表上游内容取得再分发许可，后续来源及授权情况仍需单独核实。
 
 ## 二、已确认的上游事实及不确定性
 
@@ -66,20 +66,20 @@
 
 ## 三、目标目录及数据流
 
-按用户要求，正式题库放在 `hyz-things/question_bank/`，使用**独立本地 Git 仓库**；主项目通过 `/question_bank/` 忽略整棵内容目录：
+按用户要求，正式题库放在 `hyz-things/question_bank/`。公开主仓库只跟踪 `papers/` 与 `assets/`；导入清单、报告和备份留在本地并由 `.gitignore` 排除：
 
 ~~~text
 hyz-things/
 ├── flashcards/                     # 现有内容，不改
 ├── scripts/question_bank/          # 电脑端导入与校验工具，纳入主项目
-└── question_bank/                  # 独立本地 Git 仓库，主项目忽略
+└── question_bank/                  # papers/、assets/ 纳入公开主仓库
     ├── papers/
     │   ├── 国考/2016/行测-副省级.md
     │   ├── 国考/2026/行测-副省级.md
     │   └── 省考/江苏/2024/行测-C类.md
     ├── assets/                     # 仅保留正式正文实际引用的图片
     ├── manifest.json               # 本地题库清单，不存完整题干
-    ├── reports/                    # 转换、溯源、冲突、质量审计
+    ├── reports/                    # 本地转换、溯源、冲突和质量审计，不公开提交
     └── README.md
 ~~~
 

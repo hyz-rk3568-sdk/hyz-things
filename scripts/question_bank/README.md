@@ -22,20 +22,22 @@ git -C /home/hyz/.cache/question-bank/gwy-zhenti rev-parse HEAD
   --output /home/hyz/Code/hyz_things/question_bank
 ```
 
-题库位于主项目的 `question_bank/`，已由主项目 `.gitignore` 排除，以独立本地 Git 仓库管理。工具不会 clone/fetch、初始化 Git、提交或 push；源库版本由操作者固定，实际 commit、源文件 SHA-256 和转换器指纹写入清单与报告。原始源库留在缓存目录。
+题库位于主项目的 `question_bank/`。公开仓库只跟踪设备运行需要的 `papers/` 与 `assets/`；`manifest.json`、审计报告和备份是本机导入状态，不公开提交。工具不会 clone/fetch、初始化 Git、提交或 push；源库版本由操作者固定，实际 commit、源文件 SHA-256 和转换器指纹写入本地清单与报告。原始源库留在缓存目录。
 
 退出码：0 表示结构转换/校验成功；1 表示有冲突、解析失败或图片异常；2 表示输入、已有题库或文件操作不能安全处理。缺题占位等上游内容问题写入逐题 issues，不编造内容，不因此丢弃整卷。
 
-## 内容与报告
+## 内容与本地报告
 
 - `papers/`：一卷一 Markdown，`hyz-paper/v1`；题目保留来源题号，三种 UUID 由未来设备首次同步分配，导入器不生成或替换已有 UUID。
 - `assets/`：只复制正文、选项、解析、材料及说明实际引用的图片；按内容 SHA-256 去重，无有损压缩，同时处理 Markdown 和 HTML img。
-- `manifest.json`：来源文件与正式文件的映射、源/生成指纹、已观察 UUID 和计数；不存整题正文。
+- `manifest.json`：本地来源文件与正式文件的映射、源/生成指纹、已观察 UUID 和计数；不存整题正文，也不公开提交。
 - `reports/inventory.{md,json}`：逐文件纳入/排除及年份分布。
 - `reports/quality.md`、`reports/import.json`：覆盖率、已知缺损、多标签统计、图片、冲突及解析错误。
 - `reports/issues.jsonl`：逐题问题标签；同一题可有多种问题，标签计数不可直接相加当作题数。
 - `reports/backups/`：替换正式 Markdown 和清单前保留的旧版本（按内容哈希命名）。
 - `reports/provenance.jsonl`、`reports/sources/`：来源元数据、源哈希、原始答案标签、逐题来源、材料关联依据及各版本审计记录。
+
+首次从公开仓库检出后，题目和图片可直接供设备同步。导入器的 `--update`/`--verify` 还需要本地 `manifest.json`；若要在新工作区维护上游转换，先从固定源重新构建并人工核对，不能对缺少本地清单的既有题库直接执行更新。
 
 模块优先取卷首显式题号范围，类别只读取明确标题值；classification.yaml 仅维护确定的类别→模块关系。原始考点按顿号拆列表，未知题型不猜测。没有 AI 补题或自动标注。上游明确标记的从属佐证副本保留为 `role: evidence`，普通卷为 `role: primary`；佐证版不进入正常练习池。`Paper Notes` 保留来源声明与作答说明，`Notes` 保留答案状态/性质等额外原文；无原始解析则省略 Explanation。
 

@@ -19,5 +19,7 @@ target/
 *.local
 tmp/
 
-# Local question-bank content (independent private Git repository)
-/question_bank/
+# Publish only the runtime bank contents; importer state and reports stay local.
+/question_bank/*
+!/question_bank/papers/
+!/question_bank/assets/
