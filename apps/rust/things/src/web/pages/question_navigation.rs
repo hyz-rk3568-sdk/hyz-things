@@ -128,7 +128,7 @@ pub(super) struct TrainingSwipeSurfaceProps {
 }
 
 #[function_component(TrainingSwipeSurface)]
-fn training_swipe_surface(props: &TrainingSwipeSurfaceProps) -> Html {
+pub(super) fn training_swipe_surface(props: &TrainingSwipeSurfaceProps) -> Html {
     let origin = use_mut_ref(|| None::<(i32, i32, i32)>);
     let ink_active = use_context::<bool>().unwrap_or(false);
     let down = {
@@ -189,7 +189,7 @@ pub(super) struct CompactQuestionNavigationProps {
 }
 
 #[function_component(CompactQuestionNavigation)]
-fn compact_question_navigation(props: &CompactQuestionNavigationProps) -> Html {
+pub(super) fn compact_question_navigation(props: &CompactQuestionNavigationProps) -> Html {
     let open = use_state(|| false);
     let total = props.numbers.len();
     let index = (*props.current).min(total.saturating_sub(1));
@@ -227,7 +227,7 @@ fn compact_question_navigation(props: &CompactQuestionNavigationProps) -> Html {
                             let open = open.clone();
                             let done = props.answered.get(i).copied().unwrap_or(false);
                             html! {<button type="button"
-                                class={classes!("btn","btn-sm",if i==index {"btn-primary"} else if done {"btn-outline","border-primary/40"} else {"btn-ghost"})}
+                                class={classes!("btn","btn-sm",if i==index {"btn-primary"} else if done {"btn-outline border-primary/40"} else {"btn-ghost"})}
                                 data-testid="question-bank-practice-number"
                                 aria-current={(i==index).to_string()}
                                 aria-label={format!("原卷第 {number} 题")}
