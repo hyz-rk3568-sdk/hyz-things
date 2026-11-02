@@ -470,3 +470,28 @@ async fn detached_sync_survives_caller_exit_and_deduplicates_concurrent_starts()
     assert_eq!(status.summary.unwrap().papers, 1);
     assert_eq!(source.starts.load(Ordering::SeqCst), 1);
 }
+
+#[test]
+fn answer_keys_are_server_only_and_unverified_questions_are_not_gradeable() {
+    let doc = parse(PAPER).unwrap();
+    let id = doc.view().questions[0].id.clone();
+    let key = doc.key(&id).unwrap();
+    assert_eq!(key.choices, vec!["B"]);
+    assert_eq!(key.explanation, "秘密解析。");
+    assert!(key.valid);
+    assert!(!serde_json::to_string(&doc.view()).unwrap().contains("秘密解析"));
+
+    let marked = PAPER.replace("issues: []", "issues: [answer_unverified]");
+    let key = parse(&marked).unwrap();
+    assert!(!key.key(&id).unwrap().valid);
+}
+
+#[test]
+fn one_paper_module_aliases_do_not_merge_political_theory_with_common_knowledge() {
+    use hyz_things::application::question_bank::practice::primary_module;
+    assert_eq!(primary_module(Some("图形推理")), Some("判断推理"));
+    assert_eq!(primary_module(Some("逻辑判断")), Some("判断推理"));
+    assert_eq!(primary_module(Some("政治理论")), Some("政治理论"));
+    assert_eq!(primary_module(Some("常识判断")), Some("常识判断"));
+    assert_eq!(primary_module(Some("未知一级模块")), None);
+}
