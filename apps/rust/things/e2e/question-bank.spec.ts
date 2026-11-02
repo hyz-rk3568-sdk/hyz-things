@@ -80,10 +80,17 @@ test('question bank wrong and favorite mode reuses fixed source items',async({pa
 });
 
 test('question bank practice mutations enforce admin, origin and CSRF',async({request})=>{
+  const panel=await request.get('/api/v1/panel');
+  const csrf=(await panel.json() as {csrf_token:string}).csrf_token;
+  const body={mode:'paper',paper_id:null,module:null};
   const noAuth=await request.post('/api/v1/question-bank/practice/sessions',{
-    headers:{Origin:webOrigin,'X-HYZ-CSRF':'invalid'},data:{mode:'paper',paper_id:null,module:null},
+    headers:{Origin:webOrigin,'X-HYZ-CSRF':csrf},data:body,
   });
   expect(noAuth.status()).toBe(401);
+  const invalidCsrf=await request.post('/api/v1/question-bank/practice/sessions',{
+    headers:{Origin:webOrigin,'X-HYZ-CSRF':'invalid'},data:body,
+  });
+  expect(invalidCsrf.status()).toBe(403);
   const read=await request.get('/api/v1/question-bank/practice/history');
   expect(read.status()).toBe(401);
 });
