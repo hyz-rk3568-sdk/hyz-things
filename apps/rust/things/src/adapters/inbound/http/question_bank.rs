@@ -99,8 +99,21 @@ pub(super) async fn sync(
         Ok(app) => app,
         Err(error) => return bank_error(error),
     };
-    match app.sync().await {
-        Ok(summary) => Json(summary).into_response(),
+    match app.start_sync() {
+        Ok(status) => (StatusCode::ACCEPTED, Json(status)).into_response(),
+        Err(error) => bank_error(error),
+    }
+}
+pub(super) async fn sync_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    match available(service) {
+        Ok(app) => Json(app.sync_status()).into_response(),
         Err(error) => bank_error(error),
     }
 }
