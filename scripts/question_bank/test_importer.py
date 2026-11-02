@@ -188,6 +188,109 @@ class ImportTests(unittest.TestCase):
         self.assertEqual(row["questions"][0]["raw_topics"], ["甲、乙"])
         self.assertIn("module_basis", row["questions"][0])
 
+    def test_update_normalizes_only_classification_and_preserves_uuid_and_topics(self):
+        source_text = SAMPLE.replace("原始解析。", "原始解析。\n**考点**：原始考点")
+        (self.upstream / self.path).write_text(source_text)
+        import_bank(self.upstream, self.output)
+        paper = self.output / "papers" / self.path
+        uuid = "019a3d8e-1b32-7a60-9c83-f34217a6e210"
+        before = paper.read_text().replace(
+            "## Question 1\n", f"## Question 1\n\n<!-- hyz-question-id: {uuid} -->\n"
+        )
+        paper.write_text(before)
+        revised = source_text.replace("### 第 1 题", "## 第 1 题　<sub>图形推理</sub>")
+        (self.upstream / self.path).write_text(revised)
+
+        report = import_bank(self.upstream, self.output, update=True)
+        after = paper.read_text()
+        self.assertEqual(report["conflicts"], [])
+        self.assertIn(uuid, after)
+        from identity import without_ids
+
+        self.assertEqual(
+            without_ids(after)
+            .replace("module: 判断推理", "module: <masked>")
+            .replace("category: 图形推理", "category: <masked>"),
+            without_ids(before)
+            .replace("module: null", "module: <masked>")
+            .replace("category: null", "category: <masked>"),
+        )
+        from verify import validate_document
+
+        _, questions = validate_document(after)
+        self.assertEqual(questions[0]["module"], "判断推理")
+        self.assertEqual(questions[0]["category"], "图形推理")
+        self.assertEqual(questions[0]["topics"], ["原始考点"])
+        self.assertEqual(report["classification"]["before"]["category_covered"], 0)
+        self.assertEqual(report["classification"]["after"]["category_covered"], 1)
+        self.assertEqual(report["classification"]["metadata_only_update_papers"], 1)
+        self.assertEqual(
+            report["classification"]["nonclassification_change_papers"], []
+        )
+
+    def test_manual_classification_edit_is_not_overwritten_by_update(self):
+        import_bank(self.upstream, self.output)
+        paper = self.output / "papers" / self.path
+        manual = paper.read_text().replace("category: null", "category: 逻辑判断")
+        paper.write_text(manual)
+        (self.upstream / self.path).write_text(
+            SAMPLE.replace("### 第 1 题", "## 第 1 题　<sub>图形推理</sub>")
+        )
+
+        report = import_bank(self.upstream, self.output, update=True)
+        self.assertTrue(report["conflicts"])
+        self.assertIn("category: 逻辑判断", paper.read_text())
+
+    def test_metadata_only_update_preserves_ids_for_duplicate_question_signatures(self):
+        body = """### 第 1 题
+相同题干。
+A. 甲
+B. 乙
+C. 丙
+D. 丁
+<details><summary>第 1 题 · 答案与解析</summary>
+**答案**：A
+**解析**
+相同解析。
+</details>
+### 第 2 题
+相同题干。
+A. 甲
+B. 乙
+C. 丙
+D. 丁
+<details><summary>第 2 题 · 答案与解析</summary>
+**答案**：A
+**解析**
+相同解析。
+</details>
+"""
+        original = source(body, year=2001)
+        (self.upstream / self.path).write_text(original)
+        import_bank(self.upstream, self.output)
+        paper = self.output / "papers" / self.path
+        first_id = "019a3d8e-1b32-7a60-9c83-f34217a6e210"
+        second_id = "019a3d8e-1b32-7a60-9c83-f34217a6e211"
+        text = paper.read_text()
+        text = text.replace(
+            "## Question 1\n",
+            f"## Question 1\n\n<!-- hyz-question-id: {first_id} -->\n",
+        )
+        text = text.replace(
+            "## Question 2\n",
+            f"## Question 2\n\n<!-- hyz-question-id: {second_id} -->\n",
+        )
+        paper.write_text(text)
+        revised = original.replace(
+            "### 第 1 题", "## 第 1 题　<sub>图形推理</sub>"
+        ).replace("### 第 2 题", "## 第 2 题　<sub>图形推理</sub>")
+        (self.upstream / self.path).write_text(revised)
+
+        report = import_bank(self.upstream, self.output, update=True)
+        self.assertEqual(report["conflicts"], [])
+        self.assertIn(first_id, paper.read_text())
+        self.assertIn(second_id, paper.read_text())
+
     def test_update_backs_up_previous_paper_before_replacement(self):
         import_bank(self.upstream, self.output)
         paper = self.output / "papers" / self.path

@@ -4,19 +4,21 @@ import hashlib
 from collections import Counter
 import json
 from pathlib import Path
+import re
 import subprocess
 
-from identity import without_ids, preserve_ids, markers
+from identity import UNIT, without_ids, preserve_ids, markers, unit_records
 from quality import (
     read_evidence,
     qualify,
     paper_statistics,
     inventory_text,
+    classification_report,
     summary_text,
 )
 from verify import validate_document
 from assets import AssetStore, prepare_images
-from bank import InvalidPaper, parse_paper, render_paper
+from bank import InvalidPaper, frontmatter, parse_paper, render_paper
 
 
 def digest(value):
@@ -40,22 +42,99 @@ def write_if_changed(path, content):
     temporary.replace(path)
 
 
+def classification_mask(text):
+    """Mask only module/category in each question metadata block."""
+    text = without_ids(text)
+    headings = list(UNIT.finditer(text))
+    pieces = []
+    cursor = 0
+    for index, heading in enumerate(headings):
+        if not heading[2]:
+            continue
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        stem = text.find("### Stem", heading.end(), end)
+        if stem < 0:
+            return text
+        block = text[heading.end() : stem]
+        metadata = re.search(r"```yaml\n(.*?)\n```", block, re.S)
+        if not metadata:
+            return text
+        fields = set(re.findall(r"(?m)^(module|category):", metadata[1]))
+        if fields != {"module", "category"}:
+            return text
+        masked = re.sub(
+            r"(?m)^(module|category):.*$", r"\1: __classification__", metadata[0]
+        )
+        start = heading.end() + metadata.start()
+        finish = heading.end() + metadata.end()
+        pieces.extend((text[cursor:start], masked))
+        cursor = finish
+    pieces.append(text[cursor:])
+    return "".join(pieces)
+
+
+def preserve_classification_ids(local, generated, previously_seen):
+    """Carry UUIDs by unchanged unit keys for a verified metadata-only update."""
+    if classification_mask(local) != classification_mask(generated):
+        return None
+    old_records, new_records = unit_records(local), unit_records(generated)
+    old_units = {key: value for key, value in old_records.items() if key != "paper"}
+    new_units = {key: value for key, value in new_records.items() if key != "paper"}
+    if old_units.keys() != new_units.keys():
+        return None
+    for key, old in old_units.items():
+        new = new_units[key]
+        if old["kind"] != new["kind"] or old["signature"] != new["signature"]:
+            return None
+    old_ids = {row["id"] for row in old_records.values() if row["id"]}
+    if not set(previously_seen or []) <= old_ids:
+        raise InvalidPaper("previously recorded UUID removed")
+    insertions = {
+        key: f"<!-- hyz-{row['kind']}-id: {row['id']} -->"
+        for key, row in old_units.items()
+        if row["id"]
+    }
+    generated = UNIT.sub(
+        lambda match: match[0] + "\n\n" + insertions[match[1]]
+        if match[1] in insertions
+        else match[0],
+        generated,
+    )
+    paper_id = old_records.get("paper", {}).get("id")
+    if paper_id:
+        _, body = frontmatter(generated)
+        offset = len(generated) - len(body)
+        generated = (
+            generated[:offset]
+            + "\n<!-- hyz-paper-id: "
+            + paper_id
+            + " -->\n"
+            + generated[offset:]
+        )
+    if {value for kind, value in markers(generated)} != old_ids:
+        raise InvalidPaper("classification-only update changed UUID set")
+    return generated
+
+
 def preflight_existing(output):
     seen = set()
+    documents = {}
     for path in (output / "papers").rglob("*.md"):
         if path.is_symlink() or not path.resolve().is_relative_to(output):
             raise InvalidPaper("unsafe destination path")
         text = path.read_text()
-        validate_document(text)
+        _, questions = validate_document(text)
+        documents[path.relative_to(output).as_posix()] = questions
         current = {v for k, v in markers(text)}
         if current & seen:
             raise InvalidPaper("duplicate UUID across papers")
         seen.update(current)
+    return documents
 
 
 def import_bank(source, output, *, update=False, dry_run=False):
     source, output = Path(source).resolve(), Path(output).resolve()
-    preflight_existing(output)
+    before_documents = preflight_existing(output)
     importer_hash = digest(
         b"".join(
             p.read_bytes()
@@ -75,6 +154,7 @@ def import_bank(source, output, *, update=False, dry_run=False):
     catalog, gaps = read_evidence(source)
     counts = Counter()
     provenance, issues, decisions = [], [], []
+    classification_records = []
     snapshots = {}
     manifest_path = output / "manifest.json"
     previous = (
@@ -137,6 +217,23 @@ def import_bank(source, output, *, update=False, dry_run=False):
         except (InvalidPaper, ValueError) as error:
             report["parse_failures"].append({"path": relative, "reason": str(error)})
             continue
+        classification_records.extend(
+            {
+                "path": target_relative,
+                "source_path": relative,
+                "number": q.number,
+                "raw_module": q.provenance.get("raw_module"),
+                "raw_category": q.provenance.get("raw_category"),
+                "module": q.metadata.get("module"),
+                "category": q.metadata.get("category"),
+                "topics": q.metadata.get("topics", []),
+                "module_basis": q.provenance.get("module_basis"),
+                "category_basis": q.provenance.get("category_basis"),
+                "evidence": q.provenance.get("classification_evidence", []),
+                "conflicts": q.provenance.get("classification_conflicts", []),
+            }
+            for q in paper.questions
+        )
         statistics, missing_numbers = paper_statistics(paper)
         counts.update(statistics)
         evidence = {
@@ -195,7 +292,12 @@ def import_bank(source, output, *, update=False, dry_run=False):
                 continue
         if target.exists():
             try:
-                rendered = preserve_ids(local, rendered, old.get("known_ids", []))
+                metadata_only = preserve_classification_ids(
+                    local, rendered, old.get("known_ids", [])
+                )
+                rendered = metadata_only or preserve_ids(
+                    local, rendered, old.get("known_ids", [])
+                )
             except InvalidPaper as error:
                 report["conflicts"].append({"path": relative, "reason": str(error)})
                 continue
@@ -227,6 +329,42 @@ def import_bank(source, output, *, update=False, dry_run=False):
     report["image_references"] = assets.references
     report["unique_images"] = len(assets.files)
     report["archived_sources"] = sorted(set(records) - source_paths)
+    after_documents = dict(before_documents)
+    for path, text in pending.items():
+        _, questions = validate_document(text)
+        after_documents[path.relative_to(output).as_posix()] = questions
+    classification_summary, classification_details = classification_report(
+        before_documents, after_documents, classification_records
+    )
+    metadata_only_updates = []
+    unchanged_outputs = []
+    nonclassification_changes = []
+    for path, text in pending.items():
+        if not path.exists():
+            continue
+        local = path.read_text()
+        if classification_mask(local) == classification_mask(text):
+            if without_ids(local) == without_ids(text):
+                unchanged_outputs.append(path.relative_to(output).as_posix())
+            else:
+                metadata_only_updates.append(path.relative_to(output).as_posix())
+        else:
+            nonclassification_changes.append(path.relative_to(output).as_posix())
+    classification_summary.update(
+        metadata_only_update_papers=len(metadata_only_updates),
+        unchanged_output_papers=len(unchanged_outputs),
+        nonclassification_change_papers=nonclassification_changes,
+        new_paper_count=sum(not path.exists() for path in pending),
+    )
+    classification_details["summary"] = classification_summary
+    report["classification"] = classification_summary
+    report["asset_changes"] = []
+    for relative, source_asset in sorted(assets.files.items()):
+        output_asset = output / relative
+        if not output_asset.is_file() or digest(output_asset.read_bytes()) != digest(
+            source_asset.read_bytes()
+        ):
+            report["asset_changes"].append(relative)
     manifest = {
         "schema": "hyz-question-bank-manifest/v1",
         "source_commit": commit,
@@ -255,6 +393,9 @@ def import_bank(source, output, *, update=False, dry_run=False):
         write_if_changed(manifest_path, json_text(manifest))
         write_if_changed(output / "reports/import.json", json_text(report))
         write_if_changed(output / "reports/quality.md", summary_text(report))
+        write_if_changed(
+            output / "reports/classification.json", json_text(classification_details)
+        )
         write_if_changed(
             output / "reports/inventory.md", inventory_text(decisions, commit)
         )

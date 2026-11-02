@@ -45,6 +45,30 @@ A
         )
         self.assertEqual(render_paper(paper).count("共享原文与表格。"), 1)
 
+    def test_unknown_material_boundary_is_distinct_from_unset_boundary(self):
+        body = """| 题型模块 | 题量 | 题号 |
+| 综合分析能力 | 1 | 1–1 |
+| 判断推理 | 1 | 2–2 |
+## 材料 1
+共享原文。
+"""
+        for number in (1, 2):
+            body += f"""### 第 {number} 题
+题干。
+A. 甲
+B. 乙
+C. 丙
+D. 丁
+<details><summary>第 {number} 题 · 答案与解析</summary>
+**答案**：A
+</details>
+"""
+        paper = parse_paper(source(body))
+        self.assertIsNone(paper.questions[0].metadata["module"])
+        self.assertEqual(
+            [q.metadata["materials"] for q in paper.questions], [["M1"], []]
+        )
+
     def test_source_placeholder_is_kept_but_not_ready(self):
         paper = parse_paper(
             source("""### 第 4 题
@@ -162,6 +186,75 @@ B
         self.assertIn("题干含 **强调** 与 $x$。", rendered)
         self.assertNotIn("粉笔", rendered)
         self.assertNotIn("source_url:", rendered)
+
+    def test_question_type_module_is_normalized_without_changing_topics(self):
+        paper = parse_paper(
+            source("""| 题型模块 | 题量 | 题号 |
+| 图形推理 | 1 | 1–1 |
+### 第 1 题
+题干
+A. 甲
+B. 乙
+C. 丙
+D. 丁
+<details><summary>第 1 题 · 答案与解析</summary>
+**答案**：A
+**考点**：数量规律-线、属性规律-对称性
+</details>
+""")
+        )
+        question = paper.questions[0]
+        self.assertEqual(question.metadata["module"], "判断推理")
+        self.assertEqual(question.metadata["category"], "图形推理")
+        self.assertEqual(
+            question.metadata["topics"], ["数量规律-线", "属性规律-对称性"]
+        )
+        self.assertEqual(question.provenance["raw_module"], "图形推理")
+
+    def test_explicit_question_type_overrides_topic_inference(self):
+        paper = parse_paper(
+            source("""| 题型模块 | 题量 | 题号 |
+| 判断推理 | 1 | 1–1 |
+## 第 1 题　<sub>逻辑关系-对应关系</sub>
+题干
+A. 甲
+B. 乙
+C. 丙
+D. 丁
+<details><summary>第 1 题 · 答案与解析</summary>
+**答案**：A
+**考点**：数量规律-线
+</details>
+""")
+        )
+        question = paper.questions[0]
+        self.assertEqual(question.metadata["module"], "判断推理")
+        self.assertEqual(question.metadata["category"], "类比推理")
+        self.assertEqual(question.provenance["category_basis"], "explicit_category")
+
+    def test_explicit_module_and_type_conflict_is_left_for_review(self):
+        paper = parse_paper(
+            source("""| 题型模块 | 题量 | 题号 |
+| 言语理解与表达 | 1 | 1–1 |
+## 第 1 题　<sub>图形推理</sub>
+题干
+A. 甲
+B. 乙
+C. 丙
+D. 丁
+<details><summary>第 1 题 · 答案与解析</summary>
+**答案**：A
+**考点**：数量规律-线
+</details>
+""")
+        )
+        question = paper.questions[0]
+        self.assertEqual(question.metadata["module"], "言语理解与表达")
+        self.assertIsNone(question.metadata["category"])
+        self.assertIn(
+            "explicit_category_module_mismatch",
+            question.provenance["classification_conflicts"],
+        )
 
 
 if __name__ == "__main__":

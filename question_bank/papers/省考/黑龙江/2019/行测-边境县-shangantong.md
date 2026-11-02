@@ -11,8 +11,8 @@ issues:
 - evidence_only
 ---
 
-<!-- hyz-paper-id: 01a19c8a-6579-7ba2-8974-46a1e2a7dd4b -->
 
+<!-- hyz-paper-id: 01a19c8a-6579-7ba2-8974-46a1e2a7dd4b -->
 # 2019 黑龙江省公务员录用考试 行测（边境县）
 
 ## Paper Notes
@@ -28,8 +28,8 @@ issues:
 
 ## Material M1
 
-<!-- hyz-material-id: 01a19c8a-6579-7ba2-8974-46b3b26912a5 -->
 
+<!-- hyz-material-id: 01a19c8a-6579-7ba2-8974-46b3b26912a5 -->
 近年来，在政策推动下，我国乡村旅游取得了很大的发展。2016年，全国有近10万个村开展休闲农业与乡村旅游活动，休闲农业与乡村旅游经营单位达290万家，其中农家乐超过200万家，而到了2017年，全国农家乐数量已达到了220万家。2017年，休闲农业和乡村旅游从业人员达到900万人，较2015年增加了110万人；休闲农业与乡村旅游接待人数从2012年的7.2亿人次增至2017年的28亿人次，年均复合增长率高达31.2%，占国内游客接待人次的56.0%，较上年提高了1.9个百分点。2013～2017年，休闲农业与乡村旅游营业收入增长迅速，2017年休闲农业与乡村旅游营业收入达7400亿元，占国内旅游总收入的16.2%，较上年提高了1.7个百分点。
 
 ![](../../../../assets/6e576337b181c2d9e0259b7000062a61092e58037d68dd69239f05fc7589aeb9.webp)
@@ -38,8 +38,8 @@ issues:
 
 ## Material M2
 
-<!-- hyz-material-id: 01a19c8a-6579-7ba2-8974-46c63fa81cdb -->
 
+<!-- hyz-material-id: 01a19c8a-6579-7ba2-8974-46c63fa81cdb -->
 改革开放40年来，我国国民经济大踏步前进，经济总量连上新台阶，综合国力和国际影响力显著提升。2017年，我国国内生产总值按不变价计算比1978年增长33.5倍，年均增长
 9.5%
 ，远高于同期世界经济
@@ -61,8 +61,8 @@ issues:
 
 ## Material M3
 
-<!-- hyz-material-id: 01a19c8a-6579-7ba2-8974-46d5c5fac98e -->
 
+<!-- hyz-material-id: 01a19c8a-6579-7ba2-8974-46d5c5fac98e -->
 2018年，B省实现地区生产总值83608.59亿元，全省大力实施创新驱动发展战略，创新驱动指数从2014年的
 71.2%
 提高到2018年的
@@ -89,8 +89,8 @@ issues:
 
 ## Material M4
 
-<!-- hyz-material-id: 01a19c8a-6579-7ba2-8974-46e30608c915 -->
 
+<!-- hyz-material-id: 01a19c8a-6579-7ba2-8974-46e30608c915 -->
 2013年以来，C省全年农作物播种面积累计增加了超160万公顷，截至2018年末，全年农作物总播种面积由2013年末的721.1万公顷增加到了2018年末的882.4万公顷。其中粮食作物播种面积679.0万公顷，经济作物播种面积由2013年的159.4万公顷增加至203.4万公顷。
         2018年，C省粮食总产量3553.3万吨，比上年增长
 9.2%
@@ -114,11 +114,11 @@ issues:
 
 ## Question 1
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-46fbeb94aaf5 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-46fbeb94aaf5 -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -147,11 +147,11 @@ issues:
 
 ## Question 2
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-470b77df4e75 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-470b77df4e75 -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -186,11 +186,11 @@ issues:
 
 ## Question 3
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-471b198dfae8 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-471b198dfae8 -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -219,11 +219,11 @@ issues:
 
 ## Question 4
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-472e70121b61 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-472e70121b61 -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -252,11 +252,11 @@ issues:
 
 ## Question 5
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-4732076e1863 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-4732076e1863 -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -285,11 +285,11 @@ issues:
 
 ## Question 6
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-474517683b68 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-474517683b68 -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -318,11 +318,11 @@ issues:
 
 ## Question 7
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-4757710df68c -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-4757710df68c -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -358,11 +358,11 @@ issues:
 
 ## Question 8
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-476a913e75ad -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-476a913e75ad -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -391,11 +391,11 @@ issues:
 
 ## Question 9
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-477d11b3cc23 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-477d11b3cc23 -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -424,11 +424,11 @@ issues:
 
 ## Question 10
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-47841db7830f -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-47841db7830f -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -465,11 +465,11 @@ issues:
 
 ## Question 11
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-479d7fe7d921 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-479d7fe7d921 -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -498,11 +498,11 @@ issues:
 
 ## Question 12
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-47aa9267876f -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-47aa9267876f -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -531,11 +531,11 @@ issues:
 
 ## Question 13
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-47b0da3d6c84 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-47b0da3d6c84 -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -564,11 +564,11 @@ issues:
 
 ## Question 14
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-47cefb827d4b -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-47cefb827d4b -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -597,11 +597,11 @@ issues:
 
 ## Question 15
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-47d9b2d19565 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-47d9b2d19565 -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -630,11 +630,11 @@ issues:
 
 ## Question 16
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-47e62f5f9ee6 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-47e62f5f9ee6 -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -663,11 +663,11 @@ issues:
 
 ## Question 17
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-47fa489b6a05 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-47fa489b6a05 -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -696,11 +696,11 @@ issues:
 
 ## Question 18
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-480e0198dc0d -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-480e0198dc0d -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -729,11 +729,11 @@ issues:
 
 ## Question 19
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-48191aa0fcf5 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-48191aa0fcf5 -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -762,11 +762,11 @@ issues:
 
 ## Question 20
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-4826d4658f3f -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-4826d4658f3f -->
 ```yaml
 module: 常识判断
-category: 常识判断
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -797,11 +797,11 @@ issues:
 
 ## Question 21
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-4834c8ef64dc -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-4834c8ef64dc -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -831,11 +831,11 @@ issues:
 
 ## Question 22
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-484be53677ae -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-484be53677ae -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -865,11 +865,11 @@ issues:
 
 ## Question 23
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-485dc55c08f3 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-485dc55c08f3 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -899,11 +899,11 @@ issues:
 
 ## Question 24
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-48654ed9c6ef -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-48654ed9c6ef -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -933,11 +933,11 @@ issues:
 
 ## Question 25
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-487f438bfc91 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-487f438bfc91 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -967,11 +967,11 @@ issues:
 
 ## Question 26
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-488a27503866 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-488a27503866 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1001,11 +1001,11 @@ issues:
 
 ## Question 27
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-489cc3ca0767 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-489cc3ca0767 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1035,11 +1035,11 @@ issues:
 
 ## Question 28
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-48a569b41ece -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-48a569b41ece -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1069,11 +1069,11 @@ issues:
 
 ## Question 29
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-48b7088cd301 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-48b7088cd301 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1103,11 +1103,11 @@ issues:
 
 ## Question 30
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-48c9b3f0daae -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-48c9b3f0daae -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1137,11 +1137,11 @@ issues:
 
 ## Question 31
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-48dc1d8b683f -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-48dc1d8b683f -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1171,11 +1171,11 @@ issues:
 
 ## Question 32
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-48edadce6bdc -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-48edadce6bdc -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1207,11 +1207,11 @@ issues:
 
 ## Question 33
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-48f87f011ac6 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-48f87f011ac6 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1241,11 +1241,11 @@ issues:
 
 ## Question 34
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-490e203f0128 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-490e203f0128 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1275,11 +1275,11 @@ issues:
 
 ## Question 35
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-4918d85a042b -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-4918d85a042b -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1309,11 +1309,11 @@ issues:
 
 ## Question 36
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-49295e2782f0 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-49295e2782f0 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1343,11 +1343,11 @@ issues:
 
 ## Question 37
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-4936076e500a -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-4936076e500a -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1377,11 +1377,11 @@ issues:
 
 ## Question 38
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-494de2f4f436 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-494de2f4f436 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1411,11 +1411,11 @@ issues:
 
 ## Question 39
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-4951794337c3 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-4951794337c3 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1445,11 +1445,11 @@ issues:
 
 ## Question 40
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-496dc7e67ed4 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-496dc7e67ed4 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1479,11 +1479,11 @@ issues:
 
 ## Question 41
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-4971ab93f0e5 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-4971ab93f0e5 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1513,11 +1513,11 @@ issues:
 
 ## Question 42
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-4981af494dd3 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-4981af494dd3 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1547,11 +1547,11 @@ issues:
 
 ## Question 43
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-499b13feeeb1 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-499b13feeeb1 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1581,11 +1581,11 @@ issues:
 
 ## Question 44
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-49ad0fcdadb4 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-49ad0fcdadb4 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1615,11 +1615,11 @@ issues:
 
 ## Question 45
 
-<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-49bd5124aef8 -->
 
+<!-- hyz-question-id: 01a19c8a-6579-7ba2-8974-49bd5124aef8 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1649,11 +1649,11 @@ issues:
 
 ## Question 46
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e02da141b38 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e02da141b38 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1683,11 +1683,11 @@ issues:
 
 ## Question 47
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e12ae98be34 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e12ae98be34 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1717,11 +1717,11 @@ issues:
 
 ## Question 48
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e250667b4a6 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e250667b4a6 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1755,11 +1755,11 @@ issues:
 
 ## Question 49
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e3b11278f42 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e3b11278f42 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1789,11 +1789,11 @@ issues:
 
 ## Question 50
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e45ba42ff36 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e45ba42ff36 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1823,11 +1823,11 @@ issues:
 
 ## Question 51
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e53e536f307 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e53e536f307 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1857,11 +1857,11 @@ issues:
 
 ## Question 52
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e68b8b2f6e6 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e68b8b2f6e6 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1895,11 +1895,11 @@ issues:
 
 ## Question 53
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e786d85d0d7 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e786d85d0d7 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1933,11 +1933,11 @@ issues:
 
 ## Question 54
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e8e4765bbeb -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e8e4765bbeb -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -1967,11 +1967,11 @@ issues:
 
 ## Question 55
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e92c4938908 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8e92c4938908 -->
 ```yaml
 module: 言语理解与表达
-category: 言语理解与表达
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2001,11 +2001,11 @@ issues:
 
 ## Question 56
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8ea27408b259 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8ea27408b259 -->
 ```yaml
 module: 数量关系
-category: 数量关系
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2034,11 +2034,11 @@ issues:
 
 ## Question 57
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8eb2dadbda56 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8eb2dadbda56 -->
 ```yaml
 module: 数量关系
-category: 数量关系
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2073,11 +2073,11 @@ issues:
 
 ## Question 58
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8ec49ffbbab8 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8ec49ffbbab8 -->
 ```yaml
 module: 数量关系
-category: 数量关系
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2106,11 +2106,11 @@ issues:
 
 ## Question 59
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8ed6b252d03b -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8ed6b252d03b -->
 ```yaml
 module: 数量关系
-category: 数量关系
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2139,11 +2139,11 @@ issues:
 
 ## Question 60
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8eee72581588 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8eee72581588 -->
 ```yaml
 module: 数量关系
-category: 数量关系
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2172,11 +2172,11 @@ issues:
 
 ## Question 61
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8ef8d9b12c7c -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8ef8d9b12c7c -->
 ```yaml
 module: 数量关系
-category: 数量关系
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2205,11 +2205,11 @@ issues:
 
 ## Question 62
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f0b41b6bae0 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f0b41b6bae0 -->
 ```yaml
 module: 数量关系
-category: 数量关系
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2238,11 +2238,11 @@ issues:
 
 ## Question 63
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f18bdb0802e -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f18bdb0802e -->
 ```yaml
 module: 数量关系
-category: 数量关系
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2277,11 +2277,11 @@ issues:
 
 ## Question 64
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f240ea02449 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f240ea02449 -->
 ```yaml
 module: 数量关系
-category: 数量关系
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2310,11 +2310,11 @@ issues:
 
 ## Question 65
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f3b32ac71ff -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f3b32ac71ff -->
 ```yaml
 module: 数量关系
-category: 数量关系
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2343,11 +2343,11 @@ issues:
 
 ## Question 66
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f4362902f69 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f4362902f69 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2378,11 +2378,11 @@ issues:
 
 ## Question 67
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f5935f05e24 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f5935f05e24 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2413,11 +2413,11 @@ issues:
 
 ## Question 68
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f688ceab8ff -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f688ceab8ff -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2448,11 +2448,11 @@ issues:
 
 ## Question 69
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f704e39e35b -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f704e39e35b -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2483,11 +2483,11 @@ issues:
 
 ## Question 70
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f88737675e8 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f88737675e8 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2518,11 +2518,11 @@ issues:
 
 ## Question 71
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f9bfb4b896e -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8f9bfb4b896e -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2552,11 +2552,11 @@ issues:
 
 ## Question 72
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8fa6e36c3e57 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8fa6e36c3e57 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2586,11 +2586,11 @@ issues:
 
 ## Question 73
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8fbb411f5349 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8fbb411f5349 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2620,11 +2620,11 @@ issues:
 
 ## Question 74
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8fc1925f7d24 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8fc1925f7d24 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2654,11 +2654,11 @@ issues:
 
 ## Question 75
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8fd6babb185b -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8fd6babb185b -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2688,11 +2688,11 @@ issues:
 
 ## Question 76
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8fe0858ce6b5 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8fe0858ce6b5 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2722,11 +2722,11 @@ issues:
 
 ## Question 77
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8ff0161ecb33 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-8ff0161ecb33 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2756,11 +2756,11 @@ issues:
 
 ## Question 78
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-900215724699 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-900215724699 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2790,11 +2790,11 @@ issues:
 
 ## Question 79
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-901d07e306b0 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-901d07e306b0 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2824,11 +2824,11 @@ issues:
 
 ## Question 80
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-90216039f292 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-90216039f292 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2858,11 +2858,11 @@ issues:
 
 ## Question 81
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-903b9f614066 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-903b9f614066 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2891,11 +2891,11 @@ issues:
 
 ## Question 82
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-904087f32287 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-904087f32287 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2924,11 +2924,11 @@ issues:
 
 ## Question 83
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-905367be5ff2 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-905367be5ff2 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2957,11 +2957,11 @@ issues:
 
 ## Question 84
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-906bbc22d87c -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-906bbc22d87c -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -2990,11 +2990,11 @@ issues:
 
 ## Question 85
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-907314b86a76 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-907314b86a76 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -3023,11 +3023,11 @@ issues:
 
 ## Question 86
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-90818bef8e83 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-90818bef8e83 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -3056,11 +3056,11 @@ issues:
 
 ## Question 87
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-9097903eda1c -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-9097903eda1c -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -3089,11 +3089,11 @@ issues:
 
 ## Question 88
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-90a28d12903e -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-90a28d12903e -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -3122,11 +3122,11 @@ issues:
 
 ## Question 89
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-90bcbe037406 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-90bcbe037406 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -3155,11 +3155,11 @@ issues:
 
 ## Question 90
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-90c7e91e9879 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-90c7e91e9879 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -3188,11 +3188,11 @@ issues:
 
 ## Question 91
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-90d0f77c5703 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-90d0f77c5703 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -3222,11 +3222,11 @@ issues:
 
 ## Question 92
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-90e22ac0eb33 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-90e22ac0eb33 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -3256,11 +3256,11 @@ issues:
 
 ## Question 93
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-90fc95770592 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-90fc95770592 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -3294,11 +3294,11 @@ issues:
 
 ## Question 94
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-910a9d3e2731 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-910a9d3e2731 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -3328,11 +3328,11 @@ issues:
 
 ## Question 95
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-9117e0e2aed3 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-9117e0e2aed3 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -3366,11 +3366,11 @@ issues:
 
 ## Question 96
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-91246a486495 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-91246a486495 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -3404,11 +3404,11 @@ issues:
 
 ## Question 97
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-91395fb22890 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-91395fb22890 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -3438,11 +3438,11 @@ issues:
 
 ## Question 98
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-914b0ee61feb -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-914b0ee61feb -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -3472,11 +3472,11 @@ issues:
 
 ## Question 99
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-915e35904fd3 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-915e35904fd3 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -3506,11 +3506,11 @@ issues:
 
 ## Question 100
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-9167a420fdc7 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-9167a420fdc7 -->
 ```yaml
 module: 判断推理
-category: 判断推理
+category: null
 topics: []
 materials: []
 passage_source: null
@@ -3540,11 +3540,11 @@ issues:
 
 ## Question 101
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-917284da66be -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-917284da66be -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M1
@@ -3574,11 +3574,11 @@ issues:
 
 ## Question 102
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-918780d25672 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-918780d25672 -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M1
@@ -3608,11 +3608,11 @@ issues:
 
 ## Question 103
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-91919c7b5787 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-91919c7b5787 -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M1
@@ -3642,11 +3642,11 @@ issues:
 
 ## Question 104
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-91a3e25d959f -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-91a3e25d959f -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M1
@@ -3676,11 +3676,11 @@ issues:
 
 ## Question 105
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-91b188e88f29 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-91b188e88f29 -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M1
@@ -3710,11 +3710,11 @@ issues:
 
 ## Question 106
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-91c18dafa9c0 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-91c18dafa9c0 -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M2
@@ -3744,11 +3744,11 @@ issues:
 
 ## Question 107
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-91dd9675e779 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-91dd9675e779 -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M2
@@ -3778,11 +3778,11 @@ issues:
 
 ## Question 108
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-91eb360b0588 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-91eb360b0588 -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M2
@@ -3812,11 +3812,11 @@ issues:
 
 ## Question 109
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-91f9070fab71 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-91f9070fab71 -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M2
@@ -3846,11 +3846,11 @@ issues:
 
 ## Question 110
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-92096e75bbd8 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-92096e75bbd8 -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M2
@@ -3880,11 +3880,11 @@ issues:
 
 ## Question 111
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-9215a9b5f5a5 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-9215a9b5f5a5 -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M3
@@ -3914,11 +3914,11 @@ issues:
 
 ## Question 112
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-922ec1f94aef -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-922ec1f94aef -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M3
@@ -3948,11 +3948,11 @@ issues:
 
 ## Question 113
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-923c7160c724 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-923c7160c724 -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M3
@@ -3982,11 +3982,11 @@ issues:
 
 ## Question 114
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-9244dda6e7ef -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-9244dda6e7ef -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M3
@@ -4016,11 +4016,11 @@ issues:
 
 ## Question 115
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-925274458311 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-925274458311 -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M3
@@ -4050,11 +4050,11 @@ issues:
 
 ## Question 116
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-92666a457c8e -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-92666a457c8e -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M4
@@ -4084,11 +4084,11 @@ issues:
 
 ## Question 117
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-927aeae2134e -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-927aeae2134e -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M4
@@ -4118,11 +4118,11 @@ issues:
 
 ## Question 118
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-928a37dabdd7 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-928a37dabdd7 -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M4
@@ -4152,11 +4152,11 @@ issues:
 
 ## Question 119
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-92906621bc1c -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-92906621bc1c -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M4
@@ -4186,11 +4186,11 @@ issues:
 
 ## Question 120
 
-<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-92a2d4bfefc4 -->
 
+<!-- hyz-question-id: 01a19c8a-657a-71b2-95bd-92a2d4bfefc4 -->
 ```yaml
 module: 资料分析
-category: 资料分析
+category: null
 topics: []
 materials:
 - M4

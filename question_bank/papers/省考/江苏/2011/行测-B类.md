@@ -10,8 +10,8 @@ role: primary
 issues: []
 ---
 
-<!-- hyz-paper-id: 01a19c8a-22e3-7241-afd8-44f444973ba8 -->
 
+<!-- hyz-paper-id: 01a19c8a-22e3-7241-afd8-44f444973ba8 -->
 # 2011年江苏省公务员录用考试《行测》题（B类）
 
 ## Paper Notes
@@ -52,8 +52,8 @@ issues: []
 
 ## Material M1
 
-<!-- hyz-material-id: 01a19c8a-22e3-7241-afd8-450d0e5cae50 -->
 
+<!-- hyz-material-id: 01a19c8a-22e3-7241-afd8-450d0e5cae50 -->
 ![](../../../../assets/ee99eef3eaf3616d4d6c70d44db89d52b595351d2aa5f34196823a275460c5b2.png)
 
 | A | B | C | D |
@@ -63,14 +63,14 @@ issues: []
 
 ## Material M2
 
-<!-- hyz-material-id: 01a19c8a-22e3-7241-afd8-451de2ac1b0f -->
 
+<!-- hyz-material-id: 01a19c8a-22e3-7241-afd8-451de2ac1b0f -->
 ![](../../../../assets/2bc6c80d1fe981f74cda6a7529828f91d9124debf80ca6687c2756a080ae7082.jpg)
 
 ## Material M3
 
-<!-- hyz-material-id: 01a19c8a-22e3-7241-afd8-45273416f767 -->
 
+<!-- hyz-material-id: 01a19c8a-22e3-7241-afd8-45273416f767 -->
 男人和女人之间的想法常常相左，这简直就是个常识了，人们一直将这些男女之间的差异解释为性激素的作用，或者是产生男女特定行为方式的社会压力所导致，这种情况直到最近才有所改观。不管怎么说，大部分人还是认为两性的大脑在基本结构和功能上是没有什么差别的。然而这种观念开始日益受到＿＿＿＿＿＿。
 
         研究发现，男性和女性的脑在解剖结构上有很大不同。不但如此，其神经环路和神经元间传递信号的化学物质也有所不同。这些都是在基因水平就决定了的。所有这些研究都会让人得出一个结论，那就是人脑不止是一种，而是男女两种。
@@ -85,8 +85,8 @@ issues: []
 
 ## Material M4
 
-<!-- hyz-material-id: 01a19c8a-22e3-7241-afd8-453bd460224c -->
 
+<!-- hyz-material-id: 01a19c8a-22e3-7241-afd8-453bd460224c -->
 一、根据以下资料，完成各题。
 
         2010年江苏经济运行高开稳走、持续向好，综合实力明显增强，经初步核算，全省实现地区生产总值40903.3亿元，增长12.6%。其中，第一、二、三产业增加值分别达到2539.6亿元、21753.9亿元和16609.8亿元，分别增长4.3%、13.0%和13.1%；三次产业增加值比例为6.3：53.1：40.6。先进制造业和现代服务业发展水平提升，全年实现高新技术产业产值30355亿元，增长38.0%，占规模以上工业总产值比重达33.0%，比上年提高3个百分点；实现现代服务业增加值16731亿元，增长13.0%，占GDP的比重为40.9%，比上年提高1个百分点。战略性新兴产业快速增长，六大新兴产业全年销售收入达20647亿元，增长38.0%。非公有制经济进一步发展，实现增加值在地区生产总值中的份额达65.2%，其中私营个体经济比重为40.2%，分别比上年提高1.1个和0.8个百分点。城乡区域协调发展水平提高，城乡居民收入比为2.52：1，城乡收入差距是全国较小的省份之一。三大区域均呈较快发展态势，苏中、苏北大部分经济指标增幅继续超过全省平均水平，对全省经济增长的贡献率达39%。
@@ -95,8 +95,8 @@ issues: []
 
 ## Material M5
 
-<!-- hyz-material-id: 01a19c8a-22e3-7241-afd8-454d98415d92 -->
 
+<!-- hyz-material-id: 01a19c8a-22e3-7241-afd8-454d98415d92 -->
 二、根据以下资料，完成各题。
 
 东部地区2010年商品房销售面积和销售额增长情况
@@ -123,8 +123,8 @@ issues: []
 
 ## Material M6
 
-<!-- hyz-material-id: 01a19c8a-22e3-7241-afd8-455cf2e51d53 -->
 
+<!-- hyz-material-id: 01a19c8a-22e3-7241-afd8-455cf2e51d53 -->
 三、根据以下资料，完成各题。
 
 2010年各种运输方式完成运输量（江苏与全国对照）
@@ -133,8 +133,8 @@ issues: []
 
 ## Material M7
 
-<!-- hyz-material-id: 01a19c8a-22e3-7241-afd8-456550567c09 -->
 
+<!-- hyz-material-id: 01a19c8a-22e3-7241-afd8-456550567c09 -->
 四、根据以下资料，完成各题。
 
 ![](../../../../assets/0e57b4adeb9ed947dbc50614bc5494ed65fc3e15f42a636e5bcab167bd7f6ccf.png)
@@ -143,10 +143,10 @@ issues: []
 
 ## Question 1
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-457cc0f8a60e -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-457cc0f8a60e -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -181,10 +181,10 @@ C
 
 ## Question 2
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-4589b88ace79 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-4589b88ace79 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -219,10 +219,10 @@ D
 
 ## Question 3
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-45967948423e -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-45967948423e -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -257,10 +257,10 @@ B
 
 ## Question 4
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-45ad9a0a9b0b -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-45ad9a0a9b0b -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -295,10 +295,10 @@ C
 
 ## Question 5
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-45b3cca3ca0e -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-45b3cca3ca0e -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -333,10 +333,10 @@ D
 
 ## Question 6
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-45cc9a18516a -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-45cc9a18516a -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -371,10 +371,10 @@ C
 
 ## Question 7
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-45d1445381a8 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-45d1445381a8 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -409,10 +409,10 @@ A
 
 ## Question 8
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-45e70fe89423 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-45e70fe89423 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -447,10 +447,10 @@ B
 
 ## Question 9
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-45f8c15f340c -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-45f8c15f340c -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -485,10 +485,10 @@ A
 
 ## Question 10
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-4606636015d0 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-4606636015d0 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -523,10 +523,10 @@ C
 
 ## Question 11
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46171d43675b -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46171d43675b -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -561,10 +561,10 @@ A
 
 ## Question 12
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-462b24cb3c63 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-462b24cb3c63 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -599,10 +599,10 @@ B
 
 ## Question 13
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-463b58e6ca7a -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-463b58e6ca7a -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -637,10 +637,10 @@ D
 
 ## Question 14
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-464310e8dced -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-464310e8dced -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -675,10 +675,10 @@ A
 
 ## Question 15
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46540f466409 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46540f466409 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -713,10 +713,10 @@ C
 
 ## Question 16
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46651bba0fe1 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46651bba0fe1 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -751,10 +751,10 @@ A
 
 ## Question 17
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-4670828edd02 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-4670828edd02 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -789,10 +789,10 @@ B
 
 ## Question 18
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46827cbffac6 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46827cbffac6 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -827,10 +827,10 @@ A
 
 ## Question 19
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46954f1e6923 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46954f1e6923 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -865,10 +865,10 @@ C
 
 ## Question 20
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46a351414887 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46a351414887 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -903,10 +903,10 @@ D
 
 ## Question 21
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46bca6b10cb4 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46bca6b10cb4 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -941,10 +941,10 @@ A
 
 ## Question 22
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46c059d0b97e -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46c059d0b97e -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -979,10 +979,10 @@ A
 
 ## Question 23
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46d57e6c8d0f -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46d57e6c8d0f -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -1017,10 +1017,10 @@ B
 
 ## Question 24
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46edc3ba6dea -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46edc3ba6dea -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -1055,10 +1055,10 @@ C
 
 ## Question 25
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46f5b4488035 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-46f5b4488035 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -1093,10 +1093,10 @@ B
 
 ## Question 26
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-470c1b88a963 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-470c1b88a963 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -1131,10 +1131,10 @@ B
 
 ## Question 27
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-471f53239167 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-471f53239167 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -1169,10 +1169,10 @@ A
 
 ## Question 28
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-4722d3125e29 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-4722d3125e29 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -1207,10 +1207,10 @@ B
 
 ## Question 29
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-473bcb6b82d0 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-473bcb6b82d0 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -1245,10 +1245,10 @@ A
 
 ## Question 30
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-474e15826e68 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-474e15826e68 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -1283,10 +1283,10 @@ C
 
 ## Question 31
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-475a8e4fed4d -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-475a8e4fed4d -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -1321,10 +1321,10 @@ B
 
 ## Question 32
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-4763f81c91f7 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-4763f81c91f7 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -1359,10 +1359,10 @@ C
 
 ## Question 33
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-477a02fb50c6 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-477a02fb50c6 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -1397,10 +1397,10 @@ B
 
 ## Question 34
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-4788064f959c -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-4788064f959c -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -1435,10 +1435,10 @@ D
 
 ## Question 35
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-479daff14df0 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-479daff14df0 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials: []
@@ -1473,10 +1473,10 @@ B
 
 ## Question 36
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-47ae798e0d50 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-47ae798e0d50 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -1512,10 +1512,10 @@ D
 
 ## Question 37
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-47b1ef08d2dc -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-47b1ef08d2dc -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -1551,10 +1551,10 @@ C
 
 ## Question 38
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-47c57444acd7 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-47c57444acd7 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -1590,10 +1590,10 @@ A
 
 ## Question 39
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-47d4cb6d091c -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-47d4cb6d091c -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -1629,10 +1629,10 @@ B
 
 ## Question 40
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-47e143109e69 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-47e143109e69 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -1668,10 +1668,10 @@ C
 
 ## Question 41
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-47f237a4c893 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-47f237a4c893 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -1707,10 +1707,10 @@ C
 
 ## Question 42
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-48011f58b226 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-48011f58b226 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -1746,10 +1746,10 @@ A
 
 ## Question 43
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-481ce9380dd1 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-481ce9380dd1 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -1785,10 +1785,10 @@ B
 
 ## Question 44
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-482a638452e2 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-482a638452e2 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -1824,10 +1824,10 @@ A
 
 ## Question 45
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-4832adc6cc1d -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-4832adc6cc1d -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -1863,10 +1863,10 @@ C
 
 ## Question 46
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-484982331db5 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-484982331db5 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -1902,10 +1902,10 @@ D
 
 ## Question 47
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-4851f64bafb4 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-4851f64bafb4 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -1941,10 +1941,10 @@ D
 
 ## Question 48
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-48628aa5d97a -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-48628aa5d97a -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -1980,10 +1980,10 @@ B
 
 ## Question 49
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-487abc388d06 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-487abc388d06 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -2019,10 +2019,10 @@ A
 
 ## Question 50
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-4886729a4df8 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-4886729a4df8 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -2058,10 +2058,10 @@ D
 
 ## Question 51
 
-<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-489e709b2073 -->
 
+<!-- hyz-question-id: 01a19c8a-22e3-7241-afd8-489e709b2073 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -2097,10 +2097,10 @@ B
 
 ## Question 52
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-49366d5219a5 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-49366d5219a5 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -2136,10 +2136,10 @@ D
 
 ## Question 53
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-494209cb9f17 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-494209cb9f17 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -2175,10 +2175,10 @@ C
 
 ## Question 54
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-495439c2722c -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-495439c2722c -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -2214,10 +2214,10 @@ B
 
 ## Question 55
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-496a3cc9b5ca -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-496a3cc9b5ca -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -2253,10 +2253,10 @@ D
 
 ## Question 56
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4976b7532e31 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4976b7532e31 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -2292,10 +2292,10 @@ B
 
 ## Question 57
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-498c9c68d857 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-498c9c68d857 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -2331,10 +2331,10 @@ B
 
 ## Question 58
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-499bdfe8671e -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-499bdfe8671e -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -2370,10 +2370,10 @@ C
 
 ## Question 59
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-49afaf80fcdd -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-49afaf80fcdd -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -2409,10 +2409,10 @@ C
 
 ## Question 60
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-49bfd24a6919 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-49bfd24a6919 -->
 ```yaml
-module: 知觉速度与准确性
+module: null
 category: null
 topics: []
 materials:
@@ -2448,11 +2448,11 @@ D
 
 ## Question 61
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-49cc475e1575 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-49cc475e1575 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 关联词-因果
 materials: []
@@ -2495,11 +2495,11 @@ A项的“主要特征”，C项的“最高标准”，D项的“最终目标�
 
 ## Question 62
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-49d9a29104d9 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-49d9a29104d9 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 关联词-转折
 materials: []
@@ -2540,11 +2540,11 @@ B
 
 ## Question 63
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-49eddd4e283c -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-49eddd4e283c -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 materials: []
@@ -2585,11 +2585,11 @@ C、D两项，根据“几乎所有客人面对空笼子都会产生好奇和疑
 
 ## Question 64
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-49f6d55edba2 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-49f6d55edba2 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 实词
 materials: []
@@ -2632,11 +2632,11 @@ C
 
 ## Question 65
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a012c3929df -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a012c3929df -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 句子
 materials: []
@@ -2677,8 +2677,8 @@ A
 
 ## Question 66
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a1ff3b2b5d2 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a1ff3b2b5d2 -->
 ```yaml
 module: 言语理解与表达
 category: null
@@ -2722,8 +2722,8 @@ C
 
 ## Question 67
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a256bd3fad7 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a256bd3fad7 -->
 ```yaml
 module: 言语理解与表达
 category: null
@@ -2763,8 +2763,8 @@ D
 
 ## Question 68
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a3b4c0556c7 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a3b4c0556c7 -->
 ```yaml
 module: 言语理解与表达
 category: null
@@ -2804,8 +2804,8 @@ A
 
 ## Question 69
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a4f89a25f74 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a4f89a25f74 -->
 ```yaml
 module: 言语理解与表达
 category: null
@@ -2849,8 +2849,8 @@ B
 
 ## Question 70
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a5dff50e3aa -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a5dff50e3aa -->
 ```yaml
 module: 言语理解与表达
 category: null
@@ -2894,11 +2894,11 @@ D
 
 ## Question 71
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a69465206ae -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a69465206ae -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 对应关系-解释说明
 - 成语填空
@@ -2944,11 +2944,11 @@ C
 
 ## Question 72
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a79ae0b1c40 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a79ae0b1c40 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 实词填空
 - 对应关系-前后呼应
@@ -2992,11 +2992,11 @@ C
 
 ## Question 73
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a8a21978873 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a8a21978873 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 对应关系-前后呼应
 - 混搭填空
@@ -3040,11 +3040,11 @@ D
 
 ## Question 74
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a96c523f8db -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4a96c523f8db -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 对应关系-前后呼应
 - 混搭填空
@@ -3086,8 +3086,8 @@ B
 
 ## Question 75
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4aa2570bde55 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4aa2570bde55 -->
 ```yaml
 module: 言语理解与表达
 category: null
@@ -3129,8 +3129,8 @@ A
 
 ## Question 76
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ab8679b30bb -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ab8679b30bb -->
 ```yaml
 module: 数量关系
 category: null
@@ -3169,8 +3169,8 @@ C
 
 ## Question 77
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4acc828f69bf -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4acc828f69bf -->
 ```yaml
 module: 数量关系
 category: null
@@ -3207,8 +3207,8 @@ B
 
 ## Question 78
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ad268395990 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ad268395990 -->
 ```yaml
 module: 数量关系
 category: null
@@ -3253,8 +3253,8 @@ C
 
 ## Question 79
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ae0ba4018c7 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ae0ba4018c7 -->
 ```yaml
 module: 数量关系
 category: null
@@ -3291,8 +3291,8 @@ C
 
 ## Question 80
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4afe569d87e7 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4afe569d87e7 -->
 ```yaml
 module: 数量关系
 category: null
@@ -3339,8 +3339,8 @@ A
 
 ## Question 81
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b0af313499a -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b0af313499a -->
 ```yaml
 module: 数量关系
 category: null
@@ -3381,8 +3381,8 @@ D
 
 ## Question 82
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b1a6fec2109 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b1a6fec2109 -->
 ```yaml
 module: 数量关系
 category: null
@@ -3419,8 +3419,8 @@ A
 
 ## Question 83
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b2d61d3e640 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b2d61d3e640 -->
 ```yaml
 module: 数量关系
 category: null
@@ -3465,8 +3465,8 @@ B
 
 ## Question 84
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b3011c6ca3d -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b3011c6ca3d -->
 ```yaml
 module: 数量关系
 category: null
@@ -3503,8 +3503,8 @@ C
 
 ## Question 85
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b45125706d0 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b45125706d0 -->
 ```yaml
 module: 数量关系
 category: null
@@ -3549,11 +3549,11 @@ B
 
 ## Question 86
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b5c071c13ea -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b5c071c13ea -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 和差倍比问题
 materials: []
@@ -3594,11 +3594,11 @@ B
 
 ## Question 87
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b6be92d45a1 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b6be92d45a1 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 和差倍比问题
 materials: []
@@ -3639,11 +3639,11 @@ C
 
 ## Question 88
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b763fd7a988 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b763fd7a988 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 给效率比例型
 materials: []
@@ -3684,11 +3684,11 @@ D
 
 ## Question 89
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b81d27b4c49 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b81d27b4c49 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 非典型最值问题
 materials: []
@@ -3723,11 +3723,11 @@ C
 
 ## Question 90
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b967c00b2b0 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b967c00b2b0 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 相遇追及
 materials: []
@@ -3762,11 +3762,11 @@ D
 
 ## Question 91
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ba7108c5103 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ba7108c5103 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 几何公式类-立体图形
 materials: []
@@ -3801,11 +3801,11 @@ B
 
 ## Question 92
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4bbcd3c47921 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4bbcd3c47921 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 基础排列组合
 materials: []
@@ -3840,11 +3840,11 @@ A
 
 ## Question 93
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4bc961867f92 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4bc961867f92 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 和差倍比问题
 materials: []
@@ -3879,11 +3879,11 @@ B
 
 ## Question 94
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4bd46c1ee3d9 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4bd46c1ee3d9 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 经济利润问题
 materials: []
@@ -3918,11 +3918,11 @@ A
 
 ## Question 95
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4be139c7e130 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4be139c7e130 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 和差倍比问题
 materials: []
@@ -3963,11 +3963,11 @@ A
 
 ## Question 96
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4bf963dc8a6b -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4bf963dc8a6b -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 逻辑关系-对应关系
 materials: []
@@ -4008,11 +4008,11 @@ A、B、D三项中的两词均为并列关系；C项中的两词为属性关系�
 
 ## Question 97
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c0d211057db -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c0d211057db -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 语义关系-反义关系
 materials: []
@@ -4053,11 +4053,11 @@ A项两词为语义关系中的反义词关系；B项为并列关系中的矛盾
 
 ## Question 98
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c15dbd7ec6d -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c15dbd7ec6d -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 逻辑关系-包容关系
 - 逻辑关系-对应关系
@@ -4097,11 +4097,11 @@ C
 
 ## Question 99
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c2ae2f5298e -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c2ae2f5298e -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 逻辑关系-并列关系
 materials: []
@@ -4142,11 +4142,11 @@ B
 
 ## Question 100
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c3e60a77691 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c3e60a77691 -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 逻辑关系-对应关系
 materials: []
@@ -4185,11 +4185,11 @@ A项中前两词为属性关系，后两词不构成逻辑关系；B项中前两
 
 ## Question 101
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c4eb226fc54 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c4eb226fc54 -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 逻辑关系-包容关系
 materials: []
@@ -4230,11 +4230,11 @@ D项：两组词均为包容关系中的组成关系，前后逻辑关系一致�
 
 ## Question 102
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c5e4100acd4 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c5e4100acd4 -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 逻辑关系-对应关系
 materials: []
@@ -4277,8 +4277,8 @@ D项：申请学校之后获得批准；跑步时可能穿球鞋，前后逻辑�
 
 ## Question 103
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c629994f167 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c629994f167 -->
 ```yaml
 module: 判断推理
 category: null
@@ -4319,8 +4319,8 @@ B
 
 ## Question 104
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c762197bf35 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c762197bf35 -->
 ```yaml
 module: 判断推理
 category: null
@@ -4361,8 +4361,8 @@ A
 
 ## Question 105
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c83c263a082 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c83c263a082 -->
 ```yaml
 module: 判断推理
 category: null
@@ -4405,8 +4405,8 @@ A
 
 ## Question 106
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c9d83563c59 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4c9d83563c59 -->
 ```yaml
 module: 判断推理
 category: null
@@ -4447,8 +4447,8 @@ D
 
 ## Question 107
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4cac4d1a6c01 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4cac4d1a6c01 -->
 ```yaml
 module: 判断推理
 category: null
@@ -4489,8 +4489,8 @@ A
 
 ## Question 108
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4cb1dbe10690 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4cb1dbe10690 -->
 ```yaml
 module: 判断推理
 category: null
@@ -4531,11 +4531,11 @@ C
 
 ## Question 109
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4cc3570561de -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4cc3570561de -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics:
 - 数量规律-线
 materials: []
@@ -4572,11 +4572,11 @@ B
 
 ## Question 110
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4cd2a9b8102e -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4cd2a9b8102e -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics:
 - 样式规律-遍历
 materials: []
@@ -4615,11 +4615,11 @@ A
 
 ## Question 111
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ce6fe1dc902 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ce6fe1dc902 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics:
 - 数量规律-点
 materials: []
@@ -4662,11 +4662,11 @@ A
 
 ## Question 112
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4cfaf7816d62 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4cfaf7816d62 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics:
 - 数量规律-素
 materials: []
@@ -4703,8 +4703,8 @@ B
 
 ## Question 113
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d0fb9ed8db5 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d0fb9ed8db5 -->
 ```yaml
 module: 判断推理
 category: null
@@ -4743,11 +4743,11 @@ C
 
 ## Question 114
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d1b6df78869 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d1b6df78869 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics:
 - 空间类-空间重构-六面体
 materials: []
@@ -4782,8 +4782,8 @@ A
 
 ## Question 115
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d29b554b5df -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d29b554b5df -->
 ```yaml
 module: 判断推理
 category: null
@@ -4820,11 +4820,11 @@ D
 
 ## Question 116
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d3d78d1f0c3 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d3d78d1f0c3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 常规翻译
 materials: []
@@ -4867,11 +4867,11 @@ B
 
 ## Question 117
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d431bedc4fc -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d431bedc4fc -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 常规翻译
 materials: []
@@ -4914,11 +4914,11 @@ C
 
 ## Question 118
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d50b9eb7b30 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d50b9eb7b30 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 常规翻译
 materials: []
@@ -4961,11 +4961,11 @@ B
 
 ## Question 119
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d68534f0a58 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d68534f0a58 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 常规翻译
 materials: []
@@ -5014,11 +5014,11 @@ C
 
 ## Question 120
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d7075c90db6 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d7075c90db6 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 从确定信息开始推
 materials: []
@@ -5065,11 +5065,11 @@ A
 
 ## Question 121
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d81eecbd67a -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d81eecbd67a -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 常规翻译
 materials: []
@@ -5112,11 +5112,11 @@ B
 
 ## Question 122
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d92d6f97786 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4d92d6f97786 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 从最大信息开始推
 materials: []
@@ -5167,11 +5167,11 @@ D
 
 ## Question 123
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4dafef822093 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4dafef822093 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 常规翻译
 materials: []
@@ -5218,11 +5218,11 @@ A项从题干无法得出；B项中否定了选言命题的一个选言支，无
 
 ## Question 124
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4db29e6d8a2d -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4db29e6d8a2d -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 日常结论
 materials: []
@@ -5259,11 +5259,11 @@ C
 
 ## Question 125
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4dcb649c6c79 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4dcb649c6c79 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 集合推理
 materials: []
@@ -5304,11 +5304,11 @@ D
 
 ## Question 126
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ddd0ccc3ab8 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ddd0ccc3ab8 -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 方式目的
 materials: []
@@ -5351,11 +5351,11 @@ A项中的坚持运动为改善体弱的身体缺陷；B项中的练习是为防
 
 ## Question 127
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4deaef42a478 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4deaef42a478 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 单定义-其他句式
 materials: []
@@ -5398,11 +5398,11 @@ A项中的高级管理人员董事长负责公司内一切事务，与“日常�
 
 ## Question 128
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4dfd30c7b97f -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4dfd30c7b97f -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 单定义-其他句式
 materials: []
@@ -5445,11 +5445,11 @@ A项中孩子喜欢与否是内在动机，家长要求孩子学习是外在动�
 
 ## Question 129
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e01122b2520 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e01122b2520 -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 拆词
 materials: []
@@ -5492,11 +5492,11 @@ A项中较亮的几颗星并未真实连接起来；B项中的经理并未在现
 
 ## Question 130
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e112953b47a -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e112953b47a -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 故事类
 materials: []
@@ -5539,8 +5539,8 @@ A项中没有涉及人格描述；B、D项中只有人格描述，没有体现�
 
 ## Question 131
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e28fad53c59 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e28fad53c59 -->
 ```yaml
 module: 判断推理
 category: null
@@ -5598,8 +5598,8 @@ A
 
 ## Question 132
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e309447d785 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e309447d785 -->
 ```yaml
 module: 判断推理
 category: null
@@ -5659,8 +5659,8 @@ D
 
 ## Question 133
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e43421a5092 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e43421a5092 -->
 ```yaml
 module: 判断推理
 category: null
@@ -5720,8 +5720,8 @@ C
 
 ## Question 134
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e51cbf314c6 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e51cbf314c6 -->
 ```yaml
 module: 判断推理
 category: null
@@ -5781,8 +5781,8 @@ B
 
 ## Question 135
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e6b4c749ed7 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e6b4c749ed7 -->
 ```yaml
 module: 判断推理
 category: null
@@ -5842,8 +5842,8 @@ A
 
 ## Question 136
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e7501917c2f -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e7501917c2f -->
 ```yaml
 module: 资料分析
 category: null
@@ -5887,8 +5887,8 @@ D项正确，2010年，苏中、苏北大部分经济指标增幅继续超过全
 
 ## Question 137
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e82c482c0d3 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e82c482c0d3 -->
 ```yaml
 module: 资料分析
 category: null
@@ -5926,8 +5926,8 @@ C
 
 ## Question 138
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e949e6abfa1 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e949e6abfa1 -->
 ```yaml
 module: 资料分析
 category: null
@@ -5965,8 +5965,8 @@ B
 
 ## Question 139
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ea738e14efc -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ea738e14efc -->
 ```yaml
 module: 资料分析
 category: null
@@ -6004,8 +6004,8 @@ A
 
 ## Question 140
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ebde91441b9 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ebde91441b9 -->
 ```yaml
 module: 资料分析
 category: null
@@ -6055,8 +6055,8 @@ C
 
 ## Question 141
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4eceaedafa86 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4eceaedafa86 -->
 ```yaml
 module: 资料分析
 category: null
@@ -6104,8 +6104,8 @@ D
 
 ## Question 142
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ed2fdf7b247 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ed2fdf7b247 -->
 ```yaml
 module: 资料分析
 category: null
@@ -6143,8 +6143,8 @@ C
 
 ## Question 143
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ee16c8517e0 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ee16c8517e0 -->
 ```yaml
 module: 资料分析
 category: null
@@ -6184,8 +6184,8 @@ A
 
 ## Question 144
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ef140ef1550 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ef140ef1550 -->
 ```yaml
 module: 资料分析
 category: null
@@ -6223,8 +6223,8 @@ B
 
 ## Question 145
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f0aa86a5447 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f0aa86a5447 -->
 ```yaml
 module: 资料分析
 category: null
@@ -6272,8 +6272,8 @@ D项正确，由表格可求出2010年海南商品房单位面积平均售价比
 
 ## Question 146
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f14b07c1480 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f14b07c1480 -->
 ```yaml
 module: 资料分析
 category: null
@@ -6311,8 +6311,8 @@ C
 
 ## Question 147
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f20f59fc98d -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f20f59fc98d -->
 ```yaml
 module: 资料分析
 category: null
@@ -6356,8 +6356,8 @@ D项错误，确定货物运输的最主要方式不仅要考虑货物运输量�
 
 ## Question 148
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f3321f26b58 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f3321f26b58 -->
 ```yaml
 module: 资料分析
 category: null
@@ -6395,8 +6395,8 @@ A
 
 ## Question 149
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f45490ac54b -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f45490ac54b -->
 ```yaml
 module: 资料分析
 category: null
@@ -6434,8 +6434,8 @@ B
 
 ## Question 150
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f582efd4846 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f582efd4846 -->
 ```yaml
 module: 资料分析
 category: null
@@ -6473,8 +6473,8 @@ B
 
 ## Question 151
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f62fa936f00 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f62fa936f00 -->
 ```yaml
 module: 资料分析
 category: null
@@ -6524,8 +6524,8 @@ C
 
 ## Question 152
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f76a9c7839f -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f76a9c7839f -->
 ```yaml
 module: 资料分析
 category: null
@@ -6563,8 +6563,8 @@ C
 
 ## Question 153
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f8508c77267 -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f8508c77267 -->
 ```yaml
 module: 资料分析
 category: null
@@ -6602,8 +6602,8 @@ B
 
 ## Question 154
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f96049af3fa -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f96049af3fa -->
 ```yaml
 module: 资料分析
 category: null
@@ -6641,8 +6641,8 @@ A
 
 ## Question 155
 
-<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4fa61e67d7ba -->
 
+<!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4fa61e67d7ba -->
 ```yaml
 module: 资料分析
 category: null

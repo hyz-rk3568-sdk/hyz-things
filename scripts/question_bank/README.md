@@ -33,13 +33,16 @@ git -C /home/hyz/.cache/question-bank/gwy-zhenti rev-parse HEAD
 - `manifest.json`：本地来源文件与正式文件的映射、源/生成指纹、已观察 UUID 和计数；不存整题正文，也不公开提交。
 - `reports/inventory.{md,json}`：逐文件纳入/排除及年份分布。
 - `reports/quality.md`、`reports/import.json`：覆盖率、已知缺损、多标签统计、图片、冲突及解析错误。
+- `reports/classification.json`：六大模块与二级题型的导入前后统计、归位与 topics 推导依据、剩余未分类题目和规则冲突清单。
 - `reports/issues.jsonl`：逐题问题标签；同一题可有多种问题，标签计数不可直接相加当作题数。
 - `reports/backups/`：替换正式 Markdown 和清单前保留的旧版本（按内容哈希命名）。
 - `reports/provenance.jsonl`、`reports/sources/`：来源元数据、源哈希、原始答案标签、逐题来源、材料关联依据及各版本审计记录。
 
 首次从公开仓库检出后，题目和图片可直接供设备同步。导入器的 `--update`/`--verify` 还需要本地 `manifest.json`；若要在新工作区维护上游转换，先从固定源重新构建并人工核对，不能对缺少本地清单的既有题库直接执行更新。
 
-模块优先取卷首显式题号范围，类别只读取明确标题值；classification.yaml 仅维护确定的类别→模块关系。原始考点按顿号拆列表，未知题型不猜测。没有 AI 补题或自动标注。上游明确标记的从属佐证副本保留为 `role: evidence`，普通卷为 `role: primary`；佐证版不进入正常练习池。`Paper Notes` 保留来源声明与作答说明，`Notes` 保留答案状态/性质等额外原文；无原始解析则省略 Explanation。
+分类规则统一维护在 `classification.yaml`：先把来源 module 映射到六大模块，或把误放在 module 的二级题型归位；再规范化明确题型；明确题型缺失时，才用 module 限定的 topics 精确/前缀规则推导，且多个 topics 必须唯一落到一个 category。政治理论与常识判断分别保留；未知 module 不靠 topics 猜测，显式题型冲突或未知标签留待审核。`topics` 按原顺序原样保留。分类依据、未分类题目和冲突写入本机 `reports/classification.json`。`--update` 仍使用 manifest 三方冲突检查，人工编辑不会被分类修复绕过冲突检测。
+
+没有 AI 补题或自动标注。上游明确标记的从属佐证副本保留为 `role: evidence`，普通卷为 `role: primary`；佐证版不进入正常练习池。`Paper Notes` 保留来源声明与作答说明，`Notes` 保留答案状态/性质等额外原文；无原始解析则省略 Explanation。
 
 `ready` 要求无已知问题；`structurally_answerable` 仅指未发现影响题面/判分的已知缺损，仍可能题序待核。两者都不代表官方原卷认证。标题与逐题来源冲突、答案映射待核、公式待核等应查看报告。目录中保留这些候选内容不意味着已通过人工审核。
 

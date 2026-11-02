@@ -4,6 +4,13 @@ from collections import Counter
 import csv
 import json
 
+from classification import (
+    RULES,
+    STANDARD_CATEGORIES,
+    STANDARD_MODULES,
+    normalize_classification,
+)
+
 
 BLOCKING = {
     "missing_stem",
@@ -127,6 +134,182 @@ def inventory_text(decisions, source_commit):
     )
 
 
+def classification_snapshot(documents):
+    modules = Counter()
+    categories = Counter()
+    module_categories = {}
+    positions = 0
+    topics_covered = 0
+    nonstandard_modules = 0
+    misplaced_type_modules = 0
+    nonstandard_categories = 0
+    conflict_questions = 0
+    type_modules = {
+        label for label, value in RULES["type_aliases"].items() if value.get("category")
+    }
+    type_modules.update(
+        label
+        for label, value in RULES["module_aliases"].items()
+        if value.get("category")
+    )
+    for questions in documents.values():
+        for question in questions:
+            positions += 1
+            module = question.get("module")
+            category = question.get("category")
+            module_key = module or "<null>"
+            category_key = category or "<null>"
+            modules[module_key] += 1
+            categories[category_key] += 1
+            module_categories.setdefault(module_key, Counter())[category_key] += 1
+            topics_covered += bool(question.get("topics"))
+            if module and module not in STANDARD_MODULES:
+                nonstandard_modules += 1
+                misplaced_type_modules += module in type_modules
+            if category and (
+                module not in STANDARD_CATEGORIES
+                or category not in STANDARD_CATEGORIES.get(module, ())
+            ):
+                nonstandard_categories += 1
+            normalized = normalize_classification(
+                module, category, question.get("topics", [])
+            )
+            conflict_questions += bool(normalized["conflicts"])
+    covered = positions - categories.get("<null>", 0)
+    return {
+        "papers": len(documents),
+        "question_positions": positions,
+        "module_counts": dict(sorted(modules.items())),
+        "category_counts": dict(sorted(categories.items())),
+        "module_category_counts": {
+            module: dict(sorted(values.items()))
+            for module, values in sorted(module_categories.items())
+        },
+        "module_covered": positions - modules.get("<null>", 0),
+        "category_covered": covered,
+        "category_null": positions - covered,
+        "category_coverage": covered / positions if positions else 0,
+        "topics_covered": topics_covered,
+        "topics_empty": positions - topics_covered,
+        "nonstandard_modules": nonstandard_modules,
+        "misplaced_type_modules": misplaced_type_modules,
+        "nonstandard_categories": nonstandard_categories,
+        "classification_conflict_questions": conflict_questions,
+    }
+
+
+def classification_report(before_documents, after_documents, records):
+    before = classification_snapshot(before_documents)
+    after = classification_snapshot(after_documents)
+    before_index = {
+        (path, q["number"]): q
+        for path, questions in before_documents.items()
+        for q in questions
+    }
+    after_index = {
+        (path, q["number"]): q
+        for path, questions in after_documents.items()
+        for q in questions
+    }
+    module_changes = 0
+    module_resolved = 0
+    module_cleared = 0
+    category_changes = 0
+    for key in before_index.keys() & after_index.keys():
+        old_module = before_index[key].get("module")
+        new_module = after_index[key].get("module")
+        module_changes += old_module != new_module
+        module_resolved += (
+            old_module not in STANDARD_MODULES and new_module in STANDARD_MODULES
+        )
+        module_cleared += bool(old_module and old_module not in STANDARD_MODULES) and (
+            new_module is None
+        )
+        category_changes += before_index[key].get("category") != after_index[key].get(
+            "category"
+        )
+    record_index = {(row["path"], row["number"]): row for row in records}
+    relocations = []
+    topic_inferences = []
+    proposed_conflicts = []
+    conflict_reasons = Counter()
+    cleared_unknown_modules = []
+    raw_modules = Counter()
+    raw_categories = Counter()
+    for row in records:
+        if row.get("raw_module"):
+            raw_modules[row["raw_module"]] += 1
+        else:
+            raw_modules["<null>"] += 1
+        if row.get("raw_category"):
+            raw_categories[row["raw_category"]] += 1
+        else:
+            raw_categories["<null>"] += 1
+        if row.get("module") in STANDARD_MODULES:
+            key = (row["path"], row["number"])
+            previous = before_index.get(key)
+            current = after_index.get(key)
+            if previous is not None and current is not None:
+                changed = previous.get("module") != current.get("module")
+            else:
+                changed = bool(
+                    (row.get("raw_module") and row["raw_module"] != row["module"])
+                    or row.get("module_basis") == "explicit_category"
+                )
+            if changed:
+                relocations.append(row)
+        if row.get("category_basis") == "topics":
+            topic_inferences.append(row)
+        if row.get("conflicts"):
+            proposed_conflicts.append(row)
+            conflict_reasons.update(row["conflicts"])
+        if row.get("raw_module") and row.get("module") is None:
+            cleared_unknown_modules.append(row)
+    unclassified = []
+    for (path, number), question in sorted(after_index.items()):
+        if question.get("category") is not None:
+            continue
+        source = record_index.get((path, number), {})
+        unclassified.append(
+            {
+                "path": path,
+                "number": number,
+                "module": question.get("module"),
+                "category": None,
+                "topics": question.get("topics", []),
+                "raw_module": source.get("raw_module"),
+                "raw_category": source.get("raw_category"),
+                "reason": source.get("conflicts") or ["no_unique_category_rule"],
+            }
+        )
+    summary = {
+        "before": before,
+        "after": after,
+        "module_change_count": module_changes,
+        "module_resolved_count": module_resolved,
+        "unknown_module_cleared_count": module_cleared,
+        "category_change_count": category_changes,
+        "module_relocation_count": len(relocations),
+        "topics_inferred_count": len(topic_inferences),
+        "remaining_category_null_count": len(unclassified),
+        "conflict_count": len(proposed_conflicts),
+        "conflict_reason_counts": dict(sorted(conflict_reasons.items())),
+        "report": "reports/classification.json",
+    }
+    details = {
+        "schema": "hyz-question-bank-classification-audit/v1",
+        "summary": summary,
+        "raw_module_counts": dict(sorted(raw_modules.items())),
+        "raw_category_counts": dict(sorted(raw_categories.items())),
+        "module_relocations": relocations,
+        "unknown_module_cleared": cleared_unknown_modules,
+        "topics_inferred": topic_inferences,
+        "unclassified": unclassified,
+        "conflicts": proposed_conflicts,
+    }
+    return summary, details
+
+
 def summary_text(report):
     counts = report.get("source_content_counts", {})
     total = counts.get("question_positions", 0)
@@ -155,7 +338,16 @@ def summary_text(report):
             if total
             else f"| {key} | 0 | — |"
         )
+    classification = report.get("classification", {})
+    before = classification.get("before", {})
+    after = classification.get("after", {})
     lines += [
+        "",
+        "## 模块与题型分类",
+        "",
+        f"category 覆盖：{before.get('category_covered', 0)} → {after.get('category_covered', 0)} / {after.get('question_positions', 0)}（{before.get('category_coverage', 0):.2%} → {after.get('category_coverage', 0):.2%}）。",
+        f"module 变化 {classification.get('module_change_count', 0)} 题；category 变化 {classification.get('category_change_count', 0)} 题；题型 module 归位 {classification.get('module_relocation_count', 0)} 题；topics 推导 {classification.get('topics_inferred_count', 0)} 题。",
+        f"剩余 category: null {classification.get('remaining_category_null_count', 0)} 题；分类冲突 {classification.get('conflict_count', 0)} 题。完整未分类与冲突清单见 `reports/classification.json`。",
         "",
         "不使用 AI 补题或标注。原始模块范围和显式类别映射的依据保存在 provenance.jsonl；未知标签保持 null/空列表。",
         "",

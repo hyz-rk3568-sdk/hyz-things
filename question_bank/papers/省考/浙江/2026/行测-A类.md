@@ -10,8 +10,8 @@ role: primary
 issues: []
 ---
 
-<!-- hyz-paper-id: 01a19c8a-3d79-73f1-af21-b19f4f517754 -->
 
+<!-- hyz-paper-id: 01a19c8a-3d79-73f1-af21-b19f4f517754 -->
 # 2026年浙江省公务员录用考试《行测》题（A类）（网友回忆版）
 
 ## Paper Notes
@@ -58,8 +58,8 @@ issues: []
 
 ## Material M1
 
-<!-- hyz-material-id: 01a19c8a-3d79-73f1-af21-b1ae8cca1d93 -->
 
+<!-- hyz-material-id: 01a19c8a-3d79-73f1-af21-b1ae8cca1d93 -->
 每到假期，在良渚古城遗址公园的公众考古区，招募成团的公众考古志愿者总会如约而至，来自浙江省文物考古研究所良渚工作站的专家会耐心地给志愿者讲解良渚文化和考古知识。
 
 “\_\_\_\_\_\_\_\_” 杭州市民小杨听得津津有味。第一次体验考古的他兴奋地挥着手铲，走向发掘体验区内画好的方格网，跃跃欲试。
@@ -70,8 +70,8 @@ issues: []
 
 ## Material M2
 
-<!-- hyz-material-id: 01a19c8a-3d79-73f1-af21-b1b08e4de083 -->
 
+<!-- hyz-material-id: 01a19c8a-3d79-73f1-af21-b1b08e4de083 -->
 2024年，中国化工新材料产业规模达到1655.6亿美元，居全球第一位。其次是美国，化工新材料产业规模为1455.0亿美元。
 
 ![](../../../../assets/1ad87cec1ab81898463d6ae187c99221d38e170a369a24d5ce4e27d89c8ad4de.png)
@@ -86,8 +86,8 @@ issues: []
 
 ## Material M3
 
-<!-- hyz-material-id: 01a19c8a-3d79-73f1-af21-b1cefe822bf1 -->
 
+<!-- hyz-material-id: 01a19c8a-3d79-73f1-af21-b1cefe822bf1 -->
 2025年8月，全国电梯采购规模25.11亿元，环比增长7.77%，同比增长43%。
 
 全国电梯采购规模突破千万元的有河北省、湖北省等22个省份，其中，河北省、湖北省和北京市位居全国电梯采购规模前三，采购规模依次为67006.13万元、33061.49万元和23594.98万元。
@@ -100,8 +100,8 @@ issues: []
 
 ## Material M4
 
-<!-- hyz-material-id: 01a19c8a-3d79-73f1-af21-b1d3fea3fa76 -->
 
+<!-- hyz-material-id: 01a19c8a-3d79-73f1-af21-b1d3fea3fa76 -->
 2025年初，某杂志社联合民生智库开展城乡居民消费调查，全面了解城乡居民收支与消费信心状况，深入分析居民消费意愿、能力、行为与场景。
 
 调查显示，城乡居民在2024年有48.07%的家庭收入持平，22.01%的家庭收入增加，其中6.09%的家庭收入明显增加；近三成被访者表示收入减少，其中11.23%的家庭明显减少。对于2025年的家庭收入，46.10%的居民预计将基本持平，19.04%的居民预期收入将增加，23.28%的居民对未来收入变化不确定，11.58%的居民预期收入将明显减少。
@@ -114,11 +114,11 @@ issues: []
 
 ## Question 1
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b1e2065112f6 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b1e2065112f6 -->
 ```yaml
 module: 政治理论
-category: null
+category: 马克思主义
 topics:
 - 唯物辩证法
 materials: []
@@ -175,11 +175,11 @@ C
 
 ## Question 2
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b1fd7abd8aa3 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b1fd7abd8aa3 -->
 ```yaml
 module: 政治理论
-category: null
+category: 时事政治
 topics:
 - 经济建设
 - 重要文件
@@ -239,11 +239,11 @@ C
 
 ## Question 3
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b203167d7228 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b203167d7228 -->
 ```yaml
 module: 政治理论
-category: null
+category: 新思想
 topics:
 - 新思想总论
 materials: []
@@ -284,11 +284,11 @@ B项错误，续写经济快速发展和社会长期稳定两大奇迹，围绕�
 
 ## Question 4
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b21ae65beefc -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b21ae65beefc -->
 ```yaml
 module: 政治理论
-category: null
+category: 时事政治
 topics:
 - 经济建设
 materials: []
@@ -337,11 +337,11 @@ A
 
 ## Question 5
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b221ddbf6bb7 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b221ddbf6bb7 -->
 ```yaml
 module: 政治理论
-category: null
+category: 时事政治
 topics:
 - 其他建设
 materials: []
@@ -384,11 +384,11 @@ D项错误，2021年2月28日，《求是》杂志发表的习近平总书记的
 
 ## Question 6
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b2353d7bface -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b2353d7bface -->
 ```yaml
 module: 政治理论
-category: null
+category: 时事政治
 topics:
 - 经济建设
 - 重要文件
@@ -446,11 +446,11 @@ A
 
 ## Question 7
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b24ac8dd3016 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b24ac8dd3016 -->
 ```yaml
 module: 政治理论
-category: null
+category: 时事政治
 topics:
 - 重要会议讲话
 - 社会建设
@@ -496,11 +496,11 @@ D项错误，党的二十大报告在“九、增进民生福祉，提高人民�
 
 ## Question 8
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b25c00fc12cc -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b25c00fc12cc -->
 ```yaml
 module: 政治理论
-category: null
+category: 时事政治
 topics:
 - 重要事件
 - 其他建设
@@ -544,11 +544,11 @@ D项错误，2012年9月25日，辽宁舰入列；2019年12月17日，山东舰�
 
 ## Question 9
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b2686aab2033 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b2686aab2033 -->
 ```yaml
 module: 政治理论
-category: null
+category: 时事政治
 topics:
 - 重要会议讲话
 - 其他建设
@@ -594,11 +594,11 @@ D项正确，文章中指出：“为了促进世界安危与共，中方愿在�
 
 ## Question 10
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b27147471707 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b27147471707 -->
 ```yaml
 module: 政治理论
-category: null
+category: 时事政治
 topics:
 - 经济建设
 - 重要会议讲话
@@ -644,11 +644,11 @@ D项错误，习近平总书记在主持集体学习时强调：“要持续加�
 
 ## Question 11
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b284b652e5a5 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b284b652e5a5 -->
 ```yaml
 module: 常识判断
-category: null
+category: 经济常识
 topics:
 - 宏观经济与调控政策
 materials: []
@@ -691,11 +691,11 @@ D项正确，2025年6月，世界银行发布的《全球经济展望》将当�
 
 ## Question 12
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b2963fe5865d -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b2963fe5865d -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics:
 - 党的历史
 materials: []
@@ -748,11 +748,11 @@ C
 
 ## Question 13
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b2a6e4cf0d84 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b2a6e4cf0d84 -->
 ```yaml
 module: 常识判断
-category: null
+category: 法律常识
 topics:
 - 其他法律法规
 materials: []
@@ -797,11 +797,11 @@ D项正确，根据《中华人民共和国反不正当竞争法》第二条第�
 
 ## Question 14
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b2bf23feb8ff -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b2bf23feb8ff -->
 ```yaml
 module: 常识判断
-category: null
+category: 人文常识
 topics:
 - 文化常识
 materials: []
@@ -846,11 +846,11 @@ D项错误，图中女子着装是清朝汉族女性的典型服饰袄裙装。�
 
 ## Question 15
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b2c3a06c4986 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b2c3a06c4986 -->
 ```yaml
 module: 常识判断
-category: null
+category: 法律常识
 topics:
 - 其他法律法规
 materials: []
@@ -893,11 +893,11 @@ D项错误，《关于做好取消普通高等学校毕业生就业报到证有�
 
 ## Question 16
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b2dbb2c516a8 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b2dbb2c516a8 -->
 ```yaml
 module: 常识判断
-category: null
+category: 地理国情
 topics:
 - 中国地理
 materials: []
@@ -940,11 +940,11 @@ D项错误，在浙江嘉兴，水稻插秧的时间主要集中在每年的6月
 
 ## Question 17
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b2e5e62e6016 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b2e5e62e6016 -->
 ```yaml
 module: 常识判断
-category: null
+category: 人文常识
 topics:
 - 文学常识
 materials: []
@@ -987,11 +987,11 @@ D项正确，“山一程，水一程，身向榆关那畔行，夜深千帐灯�
 
 ## Question 18
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b2f3b079ccc8 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b2f3b079ccc8 -->
 ```yaml
 module: 常识判断
-category: null
+category: 科技常识
 topics:
 - 物理常识
 materials: []
@@ -1034,11 +1034,11 @@ D项错误，其余颜色的光未能抵达月球，主要原因是大气散射�
 
 ## Question 19
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b3011cc49388 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b3011cc49388 -->
 ```yaml
 module: 常识判断
-category: null
+category: 科技常识
 topics:
 - 生活常识
 materials: []
@@ -1083,11 +1083,11 @@ D项错误，谷氨酸钠俗名味精，是典型的增味剂，而增味剂属�
 
 ## Question 20
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b310decb3335 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b310decb3335 -->
 ```yaml
 module: 常识判断
-category: null
+category: 地理国情
 topics:
 - 中国地理
 materials: []
@@ -1134,11 +1134,11 @@ D项正确，义乌市是金华市代管的县级市，是金华-义乌都市区
 
 ## Question 21
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b32fe441b6ab -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b32fe441b6ab -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 对应关系-前后呼应
 - 成语填空
@@ -1179,11 +1179,11 @@ C
 
 ## Question 22
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b33fdce06311 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b33fdce06311 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 词的辨析-搭配对象
 - 实词填空
@@ -1227,11 +1227,11 @@ A
 
 ## Question 23
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b34d8f62330d -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b34d8f62330d -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 词的辨析-搭配对象
 - 实词填空
@@ -1274,11 +1274,11 @@ B
 
 ## Question 24
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b3565425ede8 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b3565425ede8 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 词的辨析-程度轻重
 - 对应关系-前后呼应
@@ -1322,11 +1322,11 @@ B
 
 ## Question 25
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b361cdf06509 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b361cdf06509 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 词的辨析-搭配对象
 - 对应关系-前后呼应
@@ -1369,11 +1369,11 @@ C
 
 ## Question 26
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b37866d46adb -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b37866d46adb -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 词的辨析-感情色彩
 - 对应关系-前后呼应
@@ -1416,11 +1416,11 @@ B
 
 ## Question 27
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b38e513e583a -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b38e513e583a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 词的辨析-搭配对象
 - 对应关系-前后呼应
@@ -1465,11 +1465,11 @@ D
 
 ## Question 28
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b395c091b4eb -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b395c091b4eb -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 词的辨析-搭配对象
 - 实词填空
@@ -1514,11 +1514,11 @@ A
 
 ## Question 29
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b3a39c45db5a -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b3a39c45db5a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics:
 - 确定尾句
 - 确定顺序
@@ -1568,11 +1568,11 @@ A
 
 ## Question 30
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b3b5dccd3eae -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b3b5dccd3eae -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 横线在结尾
 materials: []
@@ -1617,11 +1617,11 @@ D项，“随心所欲”强调“不受约束”，与智能防撞系统的“�
 
 ## Question 31
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b3cc1f0b46b6 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b3cc1f0b46b6 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 关联关系-转折关系
 materials: []
@@ -1662,11 +1662,11 @@ A
 
 ## Question 32
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b3d1b14d4870 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b3d1b14d4870 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 横线在中间
 materials: []
@@ -1711,11 +1711,11 @@ C项，“无论古今中外、短章史诗”对文段中提到的所有诗歌�
 
 ## Question 33
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b3e2a640bb62 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b3e2a640bb62 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 materials: []
@@ -1760,11 +1760,11 @@ D项，根据“南宋少帝赵员逃至潮州，饥渴交加时，寺庙僧人�
 
 ## Question 34
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b3f3bd754cba -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b3f3bd754cba -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 materials: []
@@ -1809,11 +1809,11 @@ D项，根据“码洋是一本图书定价和销售册数的乘积”可知，�
 
 ## Question 35
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b40de89b40c1 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b40de89b40c1 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 实词
 materials: []
@@ -1856,11 +1856,11 @@ C项，文段强调恐惧来源于“不认识脱离网络后的自我”，未�
 
 ## Question 36
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b41c29787b90 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b41c29787b90 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 materials: []
@@ -1905,11 +1905,11 @@ D项，根据“只要看看他们的家谱和他们祖先的喜好，就会发�
 
 ## Question 37
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b42e938dd996 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b42e938dd996 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 materials: []
@@ -1954,11 +1954,11 @@ D项，根据“西夏文字参照汉字形体创制”及“根据汉字部首�
 
 ## Question 38
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b43c98e13e39 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b43c98e13e39 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 materials: []
@@ -2003,11 +2003,11 @@ D项，文段仅提到“《史记》被当作诽谤愤怨之书”，但未解�
 
 ## Question 39
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b441326976ca -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b441326976ca -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 关联词-因果
 materials: []
@@ -2052,11 +2052,11 @@ C项，“混淆概念边界”与文意不符，文段说的是“割裂”二�
 
 ## Question 40
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b45abd7b809f -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b45abd7b809f -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 materials: []
@@ -2099,8 +2099,8 @@ D项，根据“熁（xié）盏，预热茶盏，相当于现在的‘温杯’
 
 ## Question 41
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b465be072817 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b465be072817 -->
 ```yaml
 module: 言语理解与表达
 category: null
@@ -2146,8 +2146,8 @@ D项，对应文段“因此”之前的内容，并非将造纸与修复技术�
 
 ## Question 42
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b4759ff3085e -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b4759ff3085e -->
 ```yaml
 module: 言语理解与表达
 category: null
@@ -2191,8 +2191,8 @@ C项，文段中并未对“人工智能在写作领域掀起变革”作例证�
 
 ## Question 43
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b487ecb36987 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b487ecb36987 -->
 ```yaml
 module: 言语理解与表达
 category: null
@@ -2242,8 +2242,8 @@ D项，缺少文段核心话题“量子手环”，且文段重点强调量子�
 
 ## Question 44
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b49a415d14ea -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b49a415d14ea -->
 ```yaml
 module: 言语理解与表达
 category: null
@@ -2291,8 +2291,8 @@ D项，“赶紧开始挖吧！”表达出了急于“挖宝”的迫切心情�
 
 ## Question 45
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b4a0155c07da -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b4a0155c07da -->
 ```yaml
 module: 言语理解与表达
 category: null
@@ -2340,11 +2340,11 @@ D项，文中小杨的话属于自己在活动中的感受，仅代表参与者�
 
 ## Question 46
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b4ba3f0e0751 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b4ba3f0e0751 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 和差倍比问题
 materials: []
@@ -2379,11 +2379,11 @@ A
 
 ## Question 47
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b4c856871cc9 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b4c856871cc9 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 两溶液混合
 materials: []
@@ -2418,11 +2418,11 @@ A
 
 ## Question 48
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b4d040c14e53 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b4d040c14e53 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 普通行程
 materials: []
@@ -2457,11 +2457,11 @@ B
 
 ## Question 49
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b4eae2c3c9a9 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b4eae2c3c9a9 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 周期余数问题
 materials: []
@@ -2504,11 +2504,11 @@ D
 
 ## Question 50
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b4ffb4efe330 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b4ffb4efe330 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 和差倍比问题
 materials: []
@@ -2549,11 +2549,11 @@ C
 
 ## Question 51
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b502a531145b -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b502a531145b -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 相邻问题
 materials: []
@@ -2592,11 +2592,11 @@ B
 
 ## Question 52
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b5141fad9a72 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b5141fad9a72 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 非典型最值问题
 - 普通不定方程
@@ -2632,11 +2632,11 @@ C
 
 ## Question 53
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b52a133508c5 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b52a133508c5 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 和差倍比问题
 materials: []
@@ -2673,11 +2673,11 @@ A
 
 ## Question 54
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b53279b56359 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b53279b56359 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 和差倍比问题
 materials: []
@@ -2718,11 +2718,11 @@ C
 
 ## Question 55
 
-<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b547d35c10a4 -->
 
+<!-- hyz-question-id: 01a19c8a-3d79-73f1-af21-b547d35c10a4 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 几何结论类-三角形相关
 - 几何公式类-平面图形
@@ -2760,11 +2760,11 @@ C
 
 ## Question 56
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a54a69040e4b -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a54a69040e4b -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 给具体单位型
 materials: []
@@ -2803,11 +2803,11 @@ B
 
 ## Question 57
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a550343d9526 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a550343d9526 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 流水行船
 - 相遇追及
@@ -2845,11 +2845,11 @@ D
 
 ## Question 58
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a567a7e6ca13 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a567a7e6ca13 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 经济利润问题
 materials: []
@@ -2884,11 +2884,11 @@ D
 
 ## Question 59
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a5757d12be49 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a5757d12be49 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 几何公式类-平面图形
 materials: []
@@ -2925,11 +2925,11 @@ B
 
 ## Question 60
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a58e8a80ac63 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a58e8a80ac63 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 构造数列
 materials: []
@@ -2988,11 +2988,11 @@ C
 
 ## Question 61
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a5948415bb6e -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a5948415bb6e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 基础排列组合
 materials: []
@@ -3035,11 +3035,11 @@ D
 
 ## Question 62
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a5a4bb4a7cfa -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a5a4bb4a7cfa -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 不相邻问题
 - 给情况求概率
@@ -3079,11 +3079,11 @@ D
 
 ## Question 63
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a5b9c3935f7d -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a5b9c3935f7d -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 给情况求概率
 materials: []
@@ -3126,11 +3126,11 @@ B
 
 ## Question 64
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a5c23e8c5c82 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a5c23e8c5c82 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 几何公式类-立体图形
 materials: []
@@ -3165,11 +3165,11 @@ A
 
 ## Question 65
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a5d8890dbca5 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a5d8890dbca5 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 星期日期问题
 - 非典型最值问题
@@ -3213,11 +3213,11 @@ A
 
 ## Question 66
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a5e1a2d20a53 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a5e1a2d20a53 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics:
 - 黑白块类
 - 属性规律-对称性
@@ -3255,11 +3255,11 @@ A
 
 ## Question 67
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a5fc500f95b3 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a5fc500f95b3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics:
 - 数量规律-点
 materials: []
@@ -3296,11 +3296,11 @@ D
 
 ## Question 68
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a606613d2f0e -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a606613d2f0e -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics:
 - 特殊规律-图形间关系
 materials: []
@@ -3337,11 +3337,11 @@ A
 
 ## Question 69
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a610866710c7 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a610866710c7 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics:
 - 黑白块类
 - 数量规律-面
@@ -3379,11 +3379,11 @@ B
 
 ## Question 70
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a623455aefae -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a623455aefae -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics:
 - 样式规律-加减同异
 materials: []
@@ -3420,11 +3420,11 @@ C
 
 ## Question 71
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a631f9bcb49b -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a631f9bcb49b -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics:
 - 数量规律-线
 materials: []
@@ -3461,11 +3461,11 @@ A
 
 ## Question 72
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a64de8b2066d -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a64de8b2066d -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics:
 - 数量规律-面
 materials: []
@@ -3502,11 +3502,11 @@ C
 
 ## Question 73
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a65b97d823d3 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a65b97d823d3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics:
 - 数量规律-素
 materials: []
@@ -3543,11 +3543,11 @@ B
 
 ## Question 74
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a669612aeb34 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a669612aeb34 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics:
 - 空间类-多面体折叠
 materials: []
@@ -3600,11 +3600,11 @@ D项：选项与题干展开图一致，当选。
 
 ## Question 75
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a675f813fbf3 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a675f813fbf3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics:
 - 空间类-立体拼合
 materials: []
@@ -3643,11 +3643,11 @@ D
 
 ## Question 76
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a68a3b9ae303 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a68a3b9ae303 -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 逻辑关系-包容关系
 materials: []
@@ -3694,11 +3694,11 @@ D项：“水银”和“银”是两种不同的金属，二者为并列关系�
 
 ## Question 77
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a69d6fee491d -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a69d6fee491d -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 逻辑关系-并列关系
 - 逻辑关系-对应关系
@@ -3746,11 +3746,11 @@ D项：朝饮木兰之坠露，即早晨我饮木兰上的露滴；夕餐秋菊�
 
 ## Question 78
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a6a6b26315c2 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a6a6b26315c2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 逻辑关系-对应关系
 materials: []
@@ -3797,11 +3797,11 @@ D项：牛排和牛角梳的原材料都来自牛，二者原材料一致，与�
 
 ## Question 79
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a6bfdd2ffe6b -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a6bfdd2ffe6b -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 逻辑关系-对应关系
 materials: []
@@ -3848,11 +3848,11 @@ D项：有朋自远方来，不亦乐乎指有志同道合的人从远方来，�
 
 ## Question 80
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a6cb65af594b -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a6cb65af594b -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 逻辑关系-并列关系
 - 逻辑关系-包容关系
@@ -3900,11 +3900,11 @@ D项：界碑和界河都代表“界限”，第二个词和第三个词是并�
 
 ## Question 81
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a6def8361963 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a6def8361963 -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 语法关系
 materials: []
@@ -3951,11 +3951,11 @@ D项：积累和累积都是动词，与题干词性不一致，排除。
 
 ## Question 82
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a6e9ff9ed1e2 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a6e9ff9ed1e2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 逻辑关系-并列关系
 materials: []
@@ -4002,11 +4002,11 @@ D项：助听器是因其具有助听的功能而命名，防晒霜是因其具�
 
 ## Question 83
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a6f93fcead4d -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a6f93fcead4d -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 逻辑关系-对应关系
 materials: []
@@ -4053,11 +4053,11 @@ D项：考试时准考证是证明身份的必要凭证，但不一定需要签�
 
 ## Question 84
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a70384c759bd -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a70384c759bd -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 逻辑关系-交叉关系
 - 逻辑关系-包容关系
@@ -4105,11 +4105,11 @@ D项：公司职员、自媒体博主、文艺青年是人的三种不同身份�
 
 ## Question 85
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a71e3cd423d5 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a71e3cd423d5 -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 逻辑关系-并列关系
 materials: []
@@ -4152,11 +4152,11 @@ D项：木雕是一种雕塑艺术，二者为种属关系，糯米经过发酵�
 
 ## Question 86
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a72bdc5a5b1e -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a72bdc5a5b1e -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 常规问法
 materials: []
@@ -4207,11 +4207,11 @@ D项：销售员因业绩压力自发对产品产生强烈信心，未体现其�
 
 ## Question 87
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a7321997369a -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a7321997369a -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 方式目的
 materials: []
@@ -4260,11 +4260,11 @@ D项：企业通过部门分工和逐级审批制度保障运营效率，强化�
 
 ## Question 88
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a74869c1a60f -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a74869c1a60f -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 单定义-其他句式
 materials: []
@@ -4315,11 +4315,11 @@ D项：跨文化研究中不同国家的礼仪规范差异，礼仪规范是外�
 
 ## Question 89
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a7560da2c002 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a7560da2c002 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 常规问法
 materials: []
@@ -4370,11 +4370,11 @@ D项：“我建议大会把这个提案取消”的结构是“把+提案+取�
 
 ## Question 90
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a76726d0f5a0 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a76726d0f5a0 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 单定义-其他句式
 materials: []
@@ -4423,11 +4423,11 @@ D项：该项中的中国为“生产国”，英国为“消费国”，荷兰�
 
 ## Question 91
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a77bfd905ade -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a77bfd905ade -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 原因结果
 materials: []
@@ -4476,11 +4476,11 @@ D项：敲击瓶底或大力甩瓶身让粘在瓶底的番茄酱流出，不符�
 
 ## Question 92
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a78568df0087 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a78568df0087 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 常规问法
 materials: []
@@ -4533,11 +4533,11 @@ D项：随机选择的男性甲和女性乙，二者的身高概率分布存在�
 
 ## Question 93
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a79b9ca5fd10 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a79b9ca5fd10 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 单定义-其他句式
 materials: []
@@ -4586,11 +4586,11 @@ D项：失足青年的家庭一般都不稳定，符合“在被研究现象出�
 
 ## Question 94
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a7a3fcd1d630 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a7a3fcd1d630 -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 方式目的
 materials: []
@@ -4639,11 +4639,11 @@ D项：人形机器人符合“智能体”，突然看到被困群众，立马�
 
 ## Question 95
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a7bc30581bea -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a7bc30581bea -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics:
 - 方式目的
 materials: []
@@ -4692,11 +4692,11 @@ D项：小李比赛获得二等奖，心里想再多答对一题就能获得一�
 
 ## Question 96
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a7c909df8a44 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a7c909df8a44 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 常规翻译
 materials: []
@@ -4751,11 +4751,11 @@ A
 
 ## Question 97
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a7d7e886271c -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a7d7e886271c -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 从确定信息开始推
 materials: []
@@ -4814,11 +4814,11 @@ A
 
 ## Question 98
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a7ef7fcf990f -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a7ef7fcf990f -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 假设
 materials: []
@@ -4877,11 +4877,11 @@ C
 
 ## Question 99
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a7fe05c7c2c1 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a7fe05c7c2c1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 推理形式
 materials: []
@@ -4928,11 +4928,11 @@ D项：诗句可翻译为：非群玉山头见（-A）→瑶台月下逢（B）�
 
 ## Question 100
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a80ab08f80af -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a80ab08f80af -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 削弱选非题
 materials: []
@@ -4985,11 +4985,11 @@ D项：该项指出玉米穗行数由遗传基因决定且始终为双数，但�
 
 ## Question 101
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a8165ced4ce6 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a8165ced4ce6 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 搭桥
 materials: []
@@ -5042,11 +5042,11 @@ D项：该项指出miR-205对软化细胞骨架起着重要作用，即在“miR
 
 ## Question 102
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a82a48d60041 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a82a48d60041 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 削弱论点
 materials: []
@@ -5099,11 +5099,11 @@ D项：该项指出文物走私是仅次于毒品走私和武器走私的第三�
 
 ## Question 103
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a83965bbafde -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a83965bbafde -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 加强选非题
 materials: []
@@ -5156,11 +5156,11 @@ D项指出即使是负面情绪也是有意义的，补充论据，可以加强�
 
 ## Question 104
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a84e69a6d015 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a84e69a6d015 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 削弱论点
 materials: []
@@ -5213,11 +5213,11 @@ D项：指出喝蛋白粉与其他摄入蛋白质方式无明显区别，只是�
 
 ## Question 105
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a8537423e167 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a8537423e167 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 论证结构
 materials: []
@@ -5276,11 +5276,11 @@ D项：小周说“神不存在因为没有证据证明存在”，小林用钟�
 
 ## Question 106
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a86b88cde590 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a86b88cde590 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -5317,11 +5317,11 @@ D
 
 ## Question 107
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a8773624dd50 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a8773624dd50 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 增长量计算
 - 综合资料
@@ -5358,11 +5358,11 @@ B
 
 ## Question 108
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a888ccb38d2c -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a888ccb38d2c -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics:
 - 两期比重
 - 综合资料
@@ -5399,11 +5399,11 @@ C
 
 ## Question 109
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a89457e465ed -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a89457e465ed -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -5462,11 +5462,11 @@ A
 
 ## Question 110
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a8afbcb25887 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a8afbcb25887 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics:
 - 现期倍数
 - 综合资料
@@ -5503,11 +5503,11 @@ A
 
 ## Question 111
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a8bfd6a620fd -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a8bfd6a620fd -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 文字资料
 - 基期计算
@@ -5544,11 +5544,11 @@ A
 
 ## Question 112
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a8cc841a5e63 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a8cc841a5e63 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics:
 - 文字资料
 - 现期倍数
@@ -5585,11 +5585,11 @@ D
 
 ## Question 113
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a8d9ec88c144 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a8d9ec88c144 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics:
 - 文字资料
 - 基期比重
@@ -5626,11 +5626,11 @@ B
 
 ## Question 114
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a8e63cda1b06 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a8e63cda1b06 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics:
 - 文字资料
 - 现期比重
@@ -5667,11 +5667,11 @@ B
 
 ## Question 115
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a8f3a6bf6ee0 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a8f3a6bf6ee0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 文字资料
 - 综合分析
@@ -5714,11 +5714,11 @@ D项：定位文字材料第一、二段可得，2025年8月，全国电梯采�
 
 ## Question 116
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a90d14e64b60 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a90d14e64b60 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics:
 - 现期倍数
 - 综合资料
@@ -5755,11 +5755,11 @@ C
 
 ## Question 117
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a91d9047e0ba -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a91d9047e0ba -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -5796,8 +5796,8 @@ B
 
 ## Question 118
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a927dbc37c5a -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a927dbc37c5a -->
 ```yaml
 module: 资料分析
 category: null
@@ -5837,11 +5837,11 @@ D
 
 ## Question 119
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a9344d58ab06 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a9344d58ab06 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -5878,11 +5878,11 @@ A
 
 ## Question 120
 
-<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a94435c6eee1 -->
 
+<!-- hyz-question-id: 01a19c8a-3d7a-7e12-a5fc-a94435c6eee1 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料

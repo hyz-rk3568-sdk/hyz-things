@@ -2,9 +2,9 @@
 
 from dataclasses import dataclass, field
 import re
-from pathlib import Path
 
 import yaml
+from classification import material_boundary_module, normalize_classification
 
 
 class InvalidPaper(ValueError):
@@ -54,14 +54,6 @@ def frontmatter(text):
     return metadata, text[match.end() :]
 
 
-CLASSIFICATION = yaml.safe_load(
-    Path(__file__).with_name("classification.yaml").read_text()
-)
-CATEGORY_MODULE = {
-    category: module
-    for module, categories in CLASSIFICATION.items()
-    for category in categories
-}
 QUESTION_HEADING = re.compile(r"^#{2,3} 第\s*(\d+)\s*题([^\n]*)\n", re.M)
 OPTION = re.compile(r"^(?:- )?(?:\*\*)?([A-H])(?:\*\*)?[.．][ \t]*", re.M)
 LABEL = re.compile(
@@ -155,7 +147,7 @@ def parse_question(number, text, heading=""):
         explanation,
         notes="\n\n".join(notes),
         metadata={
-            "module": CATEGORY_MODULE.get(category),
+            "module": None,
             "category": category,
             "topics": topics,
             "materials": [],
@@ -170,7 +162,7 @@ def parse_question(number, text, heading=""):
             "answer_labels": [k for k, v in sections if "答案" in k],
             "raw_topics": [v for k, v in sections if k == "考点"],
             "raw_heading": heading,
-            "category_basis": "explicit_title" if category else "missing",
+            "raw_category": category,
             "source": [v for k, v in sections if k == "来源"],
         },
     )
@@ -203,7 +195,8 @@ def parse_paper(text):
     )
     questions, materials = [], []
     active = None
-    active_module = None
+    unset_module = object()
+    active_module = unset_module
     for i, event in enumerate(events):
         content = body[
             event.end() : events[i + 1].start() if i + 1 < len(events) else len(body)
@@ -217,30 +210,41 @@ def parse_paper(text):
                 int(bounds[2]) if bounds else None,
             )
             materials.append(active)
-            active_module = None
+            active_module = unset_module
         elif event[1]:
             number = int(event[1])
             q = parse_question(number, content, event[2])
-            module = next(
+            raw_module = next(
                 (name for name, first, last in ranges if first <= number <= last),
-                q.metadata["module"],
+                None,
             )
-            q.metadata["module"] = module
-            q.provenance["module_basis"] = (
-                "explicit_module_range"
-                if any(first <= number <= last for name, first, last in ranges)
-                else "category_mapping"
-                if module
-                else "missing"
+            normalized = normalize_classification(
+                raw_module,
+                q.metadata["category"],
+                q.metadata["topics"],
+                raw_category=q.provenance["raw_category"],
+            )
+            q.metadata["module"] = normalized["module"]
+            q.metadata["category"] = normalized["category"]
+            q.provenance.update(
+                raw_module=raw_module,
+                module_basis=normalized["module_basis"],
+                category_basis=normalized["category_basis"],
+                classification_evidence=normalized["category_evidence"],
+                classification_conflicts=normalized["conflicts"],
+            )
+            module = q.metadata["module"]
+            boundary_module = material_boundary_module(
+                raw_module, q.provenance.get("raw_category")
             )
             if active and active.first is not None:
                 if active.first <= number <= active.last:
                     q.metadata["materials"] = [active.name]
                     q.provenance["material_basis"] = "explicit_range"
             elif active:
-                if active_module is None:
-                    active_module = module
-                if module != active_module:
+                if active_module is unset_module:
+                    active_module = boundary_module
+                if boundary_module != active_module:
                     active = None
                 else:
                     q.metadata["materials"] = [active.name]
