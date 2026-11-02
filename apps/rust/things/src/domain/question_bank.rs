@@ -60,3 +60,13 @@ pub struct BankSyncStatus {
     pub summary: Option<BankSyncSummary>,
     pub error_code: Option<String>,
 }
+
+/// Sanitized job status; visible to the browser and safe to serialize.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BankSyncStatus {
+    pub task_id: Option<String>,
+    pub stage: String,
+    pub running: bool,
+    pub summary: Option<BankSyncSummary>,
+    pub error_code: Option<String>,
+}
