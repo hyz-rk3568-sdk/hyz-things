@@ -42,7 +42,7 @@ fn catalog_filter_url(filters: &ModulePracticeFilters) -> String {
     format!("{ROOT}/practice/catalog?{}", query.finish())
 }
 
-const WORKSPACE: &str = "fixed inset-0 z-[70] flex h-dvh w-screen flex-col overflow-hidden bg-base-200 px-3 py-2 sm:px-6 sm:py-3";
+const WORKSPACE: &str = "training-workspace fixed inset-0 z-[70] flex h-dvh w-screen flex-col overflow-hidden bg-base-200 px-3 py-2 sm:px-6 sm:py-3";
 
 #[derive(Properties, PartialEq)]
 pub(crate) struct QuestionBankTrainingProps {
@@ -933,6 +933,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                         regions.into_iter().map(|region|{
                                             let draft_filters=draft_filters.clone();
                                             let checked=draft_filters.regions.contains(&region);
+                                            let label=region.clone();
                                             html!{<button type="button" data-testid="module-filter-region"
                                                 aria-pressed={checked.to_string()}
                                                 class={classes!("btn","btn-sm","justify-start",if checked {"btn-primary"} else {"btn-outline"})}
@@ -941,7 +942,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                                     if filters.regions.contains(&region) {filters.regions.retain(|r|r!=&region);}
                                                     else {filters.regions.push(region.clone());}
                                                     draft_filters.set(filters);
-                                                })}>{region.clone()}</button>}
+                                                })}>{label}</button>}
                                         })
                                     }}
                                 </div>
