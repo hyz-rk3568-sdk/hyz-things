@@ -1,7 +1,10 @@
 pub mod document;
 pub mod images;
+pub mod practice;
 
-use crate::domain::question_bank::{BankSyncStatus, BankSyncSummary, PaperSummary, PaperView};
+use crate::domain::question_bank::{
+    BankSyncStatus, BankSyncSummary, PaperSummary, PaperView, PracticeMode, PracticeSession,
+};
 use async_trait::async_trait;
 use document::{valid_id, Document};
 use serde::{Deserialize, Serialize};
@@ -35,6 +38,8 @@ pub struct IndexedPaper {
     pub question_ids: Vec<String>,
     #[serde(default)]
     pub material_ids: Vec<String>,
+    #[serde(default)]
+    pub question_numbers: Vec<u32>,
 }
 impl IndexedPaper {
     pub fn new(path: String, hash: String, doc: Document) -> Self {
@@ -45,6 +50,7 @@ impl IndexedPaper {
             ids: doc.ids(),
             question_ids: doc.question_ids(),
             material_ids: doc.material_ids(),
+            question_numbers: doc.view().questions.iter().map(|q| q.number).collect(),
         }
     }
 }
@@ -68,6 +74,31 @@ pub trait QuestionBankRepositoryPort: Send + Sync {
     async fn apply(&self, papers: Vec<IndexedPaper>) -> Result<(), BankError>;
     async fn known(&self) -> Result<Vec<IndexedPaper>, BankError> {
         self.list().await
+    }
+    async fn practice_create(&self, _session: PracticeSession) -> Result<(), BankError> {
+        Err(BankError::Unavailable)
+    }
+    async fn practice_load(&self, _id: &str) -> Result<PracticeSession, BankError> {
+        Err(BankError::Unavailable)
+    }
+    async fn practice_update(
+        &self,
+        _session: PracticeSession,
+        _previous_revision: u64,
+    ) -> Result<(), BankError> {
+        Err(BankError::Unavailable)
+    }
+    async fn practice_history(&self) -> Result<Vec<PracticeSession>, BankError> {
+        Err(BankError::Unavailable)
+    }
+    async fn practice_candidates(&self, _mode: PracticeMode) -> Result<Vec<String>, BankError> {
+        Err(BankError::Unavailable)
+    }
+    async fn practice_favorite(&self, _question_id: &str, _favorite: bool) -> Result<(), BankError> {
+        Err(BankError::Unavailable)
+    }
+    async fn practice_is_favorite(&self, _question_id: &str) -> Result<bool, BankError> {
+        Err(BankError::Unavailable)
     }
 }
 
