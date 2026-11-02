@@ -289,7 +289,7 @@ async fn sync_and_whole_paper_routes_preserve_typed_security_boundaries() {
             "{\"path\":\"/etc/shadow\"}",
             400,
         ),
-        (base.as_str(), Some("qb-csrf"), "{}", 200),
+        (base.as_str(), Some("qb-csrf"), "{}", 202),
     ] {
         let mut request = client
             .post(&endpoint)
@@ -313,6 +313,23 @@ async fn sync_and_whole_paper_routes_preserve_typed_security_boundaries() {
         .await
         .unwrap();
     assert_eq!(response.status(), 413);
+    let status_url = format!("{base}/api/v1/question-bank/sync/status");
+    for _ in 0..100 {
+        let status: hyz_things::domain::question_bank::BankSyncStatus = client
+            .get(&status_url)
+            .header("cookie", &cookie)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        if !status.running {
+            assert_eq!(status.stage, "completed");
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
     let papers: Vec<hyz_things::domain::question_bank::PaperSummary> = client
         .get(format!("{base}/api/v1/question-bank/papers"))
         .header("cookie", &cookie)
@@ -413,4 +430,348 @@ fn imported_bmp_images_remain_usable_without_transcoding() {
     .unwrap();
     assert!(markdown.contains(&format!("hyz-bank-asset:{name}")));
     assert_eq!(refs, vec![name]);
+}
+
+#[derive(Default)]
+struct SlowScan {
+    entered: tokio::sync::Notify,
+    release: tokio::sync::Notify,
+    starts: std::sync::atomic::AtomicUsize,
+}
+#[async_trait]
+impl QuestionBankSourcePort for SlowScan {
+    async fn scan(&self, _known: Vec<IndexedPaper>) -> Result<BankSnapshot, BankError> {
+        self.starts
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.entered.notify_one();
+        self.release.notified().await;
+        Ok(BankSnapshot {
+            papers: vec![IndexedPaper::new(
+                "papers/a.md".into(),
+                "hash".into(),
+                parse(PAPER).unwrap(),
+            )],
+            generated_ids: 0,
+        })
+    }
+    async fn load(&self, _paper: IndexedPaper) -> Result<Document, BankError> {
+        Ok(parse(PAPER).unwrap())
+    }
+    async fn asset(&self, _name: String) -> Result<BankAsset, BankError> {
+        Err(BankError::NotFound)
+    }
+}
+
+#[tokio::test]
+async fn detached_sync_survives_caller_exit_and_deduplicates_concurrent_starts() {
+    use std::sync::atomic::Ordering;
+    let source = Arc::new(SlowScan::default());
+    let repo = Arc::new(MemoryBank::default());
+    let app = Arc::new(QuestionBankApplication::new(source.clone(), repo));
+    let entered = source.entered.notified();
+    let first = app.start_sync().unwrap();
+    assert!(first.running);
+    entered.await;
+    // The first request is gone; no outstanding HTTP future owns the permit.
+    let second = app.start_sync().unwrap();
+    assert_eq!(first.task_id, second.task_id);
+    assert_eq!(source.starts.load(Ordering::SeqCst), 1);
+    source.release.notify_one();
+    let status = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            let status = app.sync_status();
+            if !status.running {
+                break status;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(status.stage, "completed");
+    assert_eq!(status.summary.unwrap().papers, 1);
+    assert_eq!(source.starts.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn answer_keys_are_server_only_and_unverified_questions_are_not_gradeable() {
+    let doc = parse(PAPER).unwrap();
+    let id = doc.view().questions[0].id.clone();
+    let key = doc.key(&id).unwrap();
+    assert_eq!(key.choices, vec!["B"]);
+    assert_eq!(key.explanation, "秘密解析。");
+    assert!(key.valid);
+    assert!(!serde_json::to_string(&doc.view())
+        .unwrap()
+        .contains("秘密解析"));
+
+    let marked = PAPER.replace("issues: []", "issues: [answer_unverified]");
+    let key = parse(&marked).unwrap();
+    assert!(!key.key(&id).unwrap().valid);
+}
+
+#[test]
+fn one_paper_module_aliases_do_not_merge_political_theory_with_common_knowledge() {
+    use hyz_things::application::question_bank::practice::primary_module;
+    assert_eq!(primary_module(Some("图形推理")), Some("判断推理"));
+    assert_eq!(primary_module(Some("逻辑判断")), Some("判断推理"));
+    assert_eq!(primary_module(Some("政治理论")), Some("政治理论"));
+    assert_eq!(primary_module(Some("常识判断")), Some("常识判断"));
+    assert_eq!(primary_module(Some("未知一级模块")), None);
+}
+
+#[tokio::test]
+async fn practice_from_original_paper_is_persistent_private_and_idempotent() {
+    use hyz_things::adapters::outbound::question_bank_sqlite::SqliteQuestionBankRepository;
+    use hyz_things::domain::question_bank::{CreatePracticeRequest, PracticeMode};
+    let source = Arc::new(MemoryBank::default());
+    let repository = Arc::new(
+        SqliteQuestionBankRepository::connect("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    let app = QuestionBankApplication::new(source.clone(), repository);
+    app.sync().await.unwrap();
+    let paper_id = "019a3d8c-7f23-7b6e-927d-3c951851d3a2";
+    let question_id = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
+    let modules = app.modules(paper_id).await.unwrap();
+    assert_eq!(modules.modules[0].name, "资料分析");
+    assert_eq!(modules.modules[0].count, 1);
+    assert_eq!(modules.modules[0].ungradable, 0);
+    let session = app
+        .create_practice(CreatePracticeRequest {
+            mode: PracticeMode::PaperModule,
+            paper_id: Some(paper_id.into()),
+            module: Some("资料分析".into()),
+            category: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(session.items.len(), 1);
+    assert_eq!(session.items[0].number, 26);
+    let workspace = app.practice_workspace(&session.id).await.unwrap();
+    let before = serde_json::to_string(&workspace).unwrap();
+    assert!(!before.contains("秘密解析"));
+    assert!(!before.contains("correct_answer"));
+    assert!(!before.contains(r#""choices""#));
+    assert!(matches!(
+        app.practice_review(&session.id).await,
+        Err(BankError::Conflict)
+    ));
+    app.save_practice_answer(&session.id, question_id, vec!["A".into()])
+        .await
+        .unwrap();
+    let saved = app.practice_workspace(&session.id).await.unwrap();
+    assert_eq!(saved.session.items[0].answer, vec!["A"]);
+    let result = app.submit_practice(&session.id).await.unwrap();
+    assert_eq!(result.score.unwrap().wrong, 1);
+    assert_eq!(
+        app.submit_practice(&session.id).await.unwrap().revision,
+        result.revision
+    );
+    let review = app.practice_review(&session.id).await.unwrap();
+    assert_eq!(review.questions[0].correct_answer, vec!["B"]);
+    assert!(review.questions[0].explanation.contains("秘密解析"));
+    assert!(matches!(
+        app.save_practice_answer(&session.id, question_id, vec!["B".into()])
+            .await,
+        Err(BankError::Conflict)
+    ));
+    let wrong = app
+        .create_practice(CreatePracticeRequest {
+            mode: PracticeMode::Wrong,
+            paper_id: None,
+            module: None,
+            category: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(wrong.items[0].question_id, question_id);
+    app.save_practice_answer(&wrong.id, question_id, vec!["B".into()])
+        .await
+        .unwrap();
+    assert_eq!(
+        app.submit_practice(&wrong.id)
+            .await
+            .unwrap()
+            .score
+            .unwrap()
+            .correct,
+        1
+    );
+    assert!(matches!(
+        app.create_practice(CreatePracticeRequest {
+            mode: PracticeMode::Wrong,
+            paper_id: None,
+            module: None,
+            category: None,
+        })
+        .await,
+        Err(BankError::NotFound)
+    ));
+    assert_eq!(app.practice_history().await.unwrap().len(), 2);
+    app.set_favorite(question_id, true).await.unwrap();
+    assert!(app.favorite(question_id).await.unwrap().favorite);
+    let favorites = app
+        .create_practice(CreatePracticeRequest {
+            mode: PracticeMode::Favorite,
+            paper_id: None,
+            module: None,
+            category: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(favorites.items[0].question_id, question_id);
+    app.set_favorite(question_id, false).await.unwrap();
+    assert!(!app.favorite(question_id).await.unwrap().favorite);
+}
+
+#[test]
+fn module_aliases_are_deterministic_and_keep_politics_separate() {
+    use hyz_things::application::question_bank::practice::primary_module;
+    assert_eq!(primary_module(Some("图形推理")), Some("判断推理"));
+    assert_eq!(primary_module(Some("政治理论")), Some("政治理论"));
+    assert_eq!(primary_module(Some("常识判断")), Some("常识判断"));
+    assert_eq!(primary_module(Some("未知模块")), None);
+    assert_eq!(primary_module(None), None);
+}
+
+#[tokio::test]
+async fn detached_sync_does_not_start_overlapping_scan() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct SlowSource {
+        entered: Arc<tokio::sync::Notify>,
+        release: Arc<tokio::sync::Notify>,
+        scans: AtomicUsize,
+    }
+    #[async_trait]
+    impl QuestionBankSourcePort for SlowSource {
+        async fn scan(&self, _known: Vec<IndexedPaper>) -> Result<BankSnapshot, BankError> {
+            self.scans.fetch_add(1, Ordering::SeqCst);
+            self.entered.notify_one();
+            self.release.notified().await;
+            Ok(BankSnapshot {
+                papers: vec![IndexedPaper::new(
+                    "papers/a.md".into(),
+                    "hash".into(),
+                    parse(PAPER).unwrap(),
+                )],
+                generated_ids: 0,
+            })
+        }
+        async fn load(&self, _paper: IndexedPaper) -> Result<Document, BankError> {
+            Ok(parse(PAPER).unwrap())
+        }
+        async fn asset(&self, _name: String) -> Result<BankAsset, BankError> {
+            Err(BankError::NotFound)
+        }
+    }
+    let source = Arc::new(SlowSource {
+        entered: Arc::new(tokio::sync::Notify::new()),
+        release: Arc::new(tokio::sync::Notify::new()),
+        scans: AtomicUsize::new(0),
+    });
+    let repo = Arc::new(MemoryBank::default());
+    let app = Arc::new(QuestionBankApplication::new(source.clone(), repo));
+    let first = app.start_sync().unwrap();
+    assert!(first.running);
+    source.entered.notified().await;
+    let second = app.start_sync().unwrap();
+    assert_eq!(first.task_id, second.task_id);
+    assert_eq!(source.scans.load(Ordering::SeqCst), 1);
+    source.release.notify_one();
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            if !app.sync_status().running {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(app.sync_status().stage, "completed");
+    assert_eq!(app.sync_status().summary.unwrap().questions, 1);
+}
+
+#[tokio::test]
+async fn indexed_module_and_category_drills_keep_original_sources() {
+    use hyz_things::adapters::outbound::question_bank_sqlite::SqliteQuestionBankRepository;
+    use hyz_things::domain::question_bank::{CreatePracticeRequest, PracticeMode};
+
+    let source = Arc::new(MemoryBank::default());
+    let repo = Arc::new(
+        SqliteQuestionBankRepository::connect("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    let app = QuestionBankApplication::new(source.clone(), repo);
+    app.sync().await.unwrap();
+
+    let catalog = app.practice_catalog().await.unwrap();
+    let module = catalog
+        .modules
+        .iter()
+        .find(|m| m.name == "资料分析")
+        .unwrap();
+    assert_eq!(module.count, 1);
+    assert_eq!(module.uncategorized, 0);
+    assert_eq!(module.categories[0].name, "比重");
+    assert_eq!(module.categories[0].count, 1);
+
+    let session = app
+        .create_practice(CreatePracticeRequest {
+            mode: PracticeMode::Module,
+            paper_id: None,
+            module: Some("资料分析".into()),
+            category: Some("比重".into()),
+        })
+        .await
+        .unwrap();
+    assert_eq!(session.items.len(), 1);
+    assert_eq!(session.items[0].number, 26);
+    assert_eq!(session.category.as_deref(), Some("比重"));
+    assert_eq!(
+        session.items[0].paper_id,
+        "019a3d8c-7f23-7b6e-927d-3c951851d3a2"
+    );
+    assert_eq!(
+        app.practice_workspace(&session.id)
+            .await
+            .unwrap()
+            .questions
+            .len(),
+        1
+    );
+
+    assert!(matches!(
+        app.create_practice(CreatePracticeRequest {
+            mode: PracticeMode::PaperModule,
+            paper_id: None,
+            module: Some("资料分析".into()),
+            category: None,
+        })
+        .await,
+        Err(BankError::Invalid)
+    ));
+    assert!(matches!(
+        app.create_practice(CreatePracticeRequest {
+            mode: PracticeMode::Module,
+            paper_id: None,
+            module: Some("资料分析".into()),
+            category: Some("不存在的题型".into()),
+        })
+        .await,
+        Err(BankError::NotFound)
+    ));
+    assert!(matches!(
+        app.create_practice(CreatePracticeRequest {
+            mode: PracticeMode::Module,
+            paper_id: Some("019a3d8c-7f23-7b6e-927d-3c951851d3a2".into()),
+            module: Some("资料分析".into()),
+            category: None,
+        })
+        .await,
+        Err(BankError::Invalid)
+    ));
 }

@@ -51,3 +51,156 @@ pub struct BankSyncSummary {
     pub materials: usize,
     pub generated_ids: usize,
 }
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BankSyncStatus {
+    pub task_id: Option<String>,
+    pub stage: String,
+    pub running: bool,
+    pub summary: Option<BankSyncSummary>,
+    pub error_code: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PracticeMode {
+    Paper,
+    PaperModule,
+    Module,
+    Wrong,
+    Favorite,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreatePracticeRequest {
+    pub mode: PracticeMode,
+    pub paper_id: Option<String>,
+    pub module: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PaperModule {
+    pub name: String,
+    pub count: usize,
+    pub ungradable: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PaperModules {
+    pub modules: Vec<PaperModule>,
+    pub unclassified: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PracticeCategory {
+    pub name: String,
+    pub count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PracticeModule {
+    pub name: String,
+    pub count: usize,
+    pub uncategorized: usize,
+    pub categories: Vec<PracticeCategory>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PracticeCatalog {
+    pub modules: Vec<PracticeModule>,
+    pub unclassified: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PracticeItem {
+    pub question_id: String,
+    pub paper_id: String,
+    pub source_hash: String,
+    pub number: u32,
+    pub answer: Vec<String>,
+    pub grade: Option<String>,
+    pub gradable: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PracticeScore {
+    pub total: usize,
+    pub correct: usize,
+    pub wrong: usize,
+    pub unanswered: usize,
+    pub ungradable: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PracticeSession {
+    pub id: String,
+    pub mode: PracticeMode,
+    pub paper_id: Option<String>,
+    pub module: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+    pub status: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub elapsed_seconds: u64,
+    pub paused: bool,
+    pub revision: u64,
+    pub items: Vec<PracticeItem>,
+    pub score: Option<PracticeScore>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PracticeQuestion {
+    pub item: PracticeItem,
+    pub paper_title: String,
+    pub question: Option<QuestionView>,
+    pub materials: Vec<MaterialView>,
+    pub content_changed: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PracticeWorkspace {
+    pub session: PracticeSession,
+    pub questions: Vec<PracticeQuestion>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviewQuestion {
+    pub question: PracticeQuestion,
+    pub correct_answer: Vec<String>,
+    pub explanation: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PracticeReview {
+    pub session: PracticeSession,
+    pub questions: Vec<ReviewQuestion>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SavePracticeAnswer {
+    pub answer: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SetPracticePaused {
+    pub paused: bool,
+    pub elapsed_seconds: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SetFavorite {
+    pub favorite: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FavoriteState {
+    pub question_id: String,
+    pub favorite: bool,
+}

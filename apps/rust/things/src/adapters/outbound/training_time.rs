@@ -13,12 +13,13 @@ use tokio::sync::Mutex;
 const GRACE_MS: i64 = 45_000;
 const DAY_MS: i64 = 86_400_000;
 const ZONE_OFFSET_MS: i64 = 8 * 3_600_000;
-const MODULES: [&str; 5] = [
+const MODULES: [&str; 6] = [
     "calculation",
     "flashcards",
     "comprehensive",
     "logic",
     "quantitative",
+    "question_bank",
 ];
 
 fn now_ms() -> i64 {

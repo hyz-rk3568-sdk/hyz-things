@@ -743,8 +743,53 @@ fn app_with_assets(
             on(MethodFilter::GET, question_bank::paper),
         )
         .route(
+            "/api/v1/question-bank/papers/{id}/modules",
+            on(MethodFilter::GET, question_bank::modules),
+        )
+        .route(
+            "/api/v1/question-bank/practice/catalog",
+            on(MethodFilter::GET, question_bank::practice_catalog),
+        )
+        .route(
+            "/api/v1/question-bank/practice/history",
+            on(MethodFilter::GET, question_bank::practice_history),
+        )
+        .route(
+            "/api/v1/question-bank/practice/sessions",
+            on(MethodFilter::POST, question_bank::practice_create),
+        )
+        .route(
+            "/api/v1/question-bank/practice/sessions/{id}",
+            on(MethodFilter::GET, question_bank::practice_session),
+        )
+        .route(
+            "/api/v1/question-bank/practice/sessions/{id}/answers/{question_id}",
+            on(MethodFilter::POST, question_bank::practice_answer),
+        )
+        .route(
+            "/api/v1/question-bank/practice/sessions/{id}/pause",
+            on(MethodFilter::POST, question_bank::practice_pause),
+        )
+        .route(
+            "/api/v1/question-bank/practice/sessions/{id}/submit",
+            on(MethodFilter::POST, question_bank::practice_submit),
+        )
+        .route(
+            "/api/v1/question-bank/practice/sessions/{id}/review",
+            on(MethodFilter::GET, question_bank::practice_review),
+        )
+        .route(
+            "/api/v1/question-bank/practice/favorites/{id}",
+            on(MethodFilter::GET, question_bank::favorite_get)
+                .on(MethodFilter::POST, question_bank::favorite_set),
+        )
+        .route(
             "/api/v1/question-bank/assets/{name}",
             on(MethodFilter::GET, question_bank::asset),
+        )
+        .route(
+            "/api/v1/question-bank/sync/status",
+            on(MethodFilter::GET, question_bank::sync_status),
         )
         .route(
             "/api/v1/control/question-bank/sync",
@@ -2826,6 +2871,7 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/study/training-time/events"
             | "/api/v1/control/study/sync"
             | "/api/v1/control/question-bank/sync"
+            | "/api/v1/question-bank/practice/sessions"
             | "/api/v1/study/data-analysis/prepare"
             | "/api/v1/study/data-analysis/user-prompt"
             | "/api/v1/study/logic-judgment/prepare"
@@ -2835,7 +2881,26 @@ fn is_post_path(path: &str) -> bool {
     ) || is_data_analysis_run_post_path(path)
         || is_logic_judgment_run_post_path(path)
         || is_quantitative_relations_run_post_path(path)
+        || is_question_bank_practice_post_path(path)
 }
+fn is_question_bank_practice_post_path(path: &str) -> bool {
+    let parts: Vec<&str> = path.split('/').collect();
+    // /api/v1/question-bank/practice/sessions/{id}/{action}
+    // /api/v1/question-bank/practice/sessions/{id}/answers/{question_id}
+    if parts.len() >= 8
+        && parts[..6] == ["", "api", "v1", "question-bank", "practice", "sessions"]
+        && crate::application::question_bank::document::valid_id(parts[6])
+    {
+        return parts.len() == 8 && matches!(parts[7], "submit" | "pause")
+            || parts.len() == 9
+                && parts[7] == "answers"
+                && crate::application::question_bank::document::valid_id(parts[8]);
+    }
+    parts.len() == 7
+        && parts[..6] == ["", "api", "v1", "question-bank", "practice", "favorites"]
+        && crate::application::question_bank::document::valid_id(parts[6])
+}
+
 fn is_logic_judgment_run_post_path(path: &str) -> bool {
     let Some(rest) = path.strip_prefix("/api/v1/study/logic-judgment/runs/") else {
         return false;
@@ -2893,7 +2958,7 @@ fn is_data_analysis_run_post_path(path: &str) -> bool {
 async fn security_headers(request: Request, next: Next) -> Response {
     // GET remains globally allowed so exact routes and the API fallback can distinguish 404 from
     // 405. Sensitive GET handlers still enforce normal administrator session and JSON Origin/CSRF.
-    // Only exact mutation paths accept POST; every POST handler enforces its own policy.
+    // Only exact POST mutation paths are allowed; each handler enforces its own policy.
     let path = request.uri().path();
     let allowed =
         request.method() == Method::GET || request.method() == Method::POST && is_post_path(path);
@@ -3022,6 +3087,33 @@ mod tests {
         assert!(is_post_path("/api/v1/control/camera/volume"));
         assert!(!is_post_path("/api/v1/control/camera/session/create/extra"));
         assert!(!is_post_path("/api/v1/control/camera/rotation/extra"));
+    }
+
+    #[test]
+    fn question_bank_practice_mutations_have_exact_post_allowlist() {
+        let id = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
+        assert!(is_post_path("/api/v1/question-bank/practice/sessions"));
+        assert!(is_post_path(&format!(
+            "/api/v1/question-bank/practice/sessions/{id}/submit"
+        )));
+        assert!(is_post_path(&format!(
+            "/api/v1/question-bank/practice/sessions/{id}/pause"
+        )));
+        assert!(is_post_path(&format!(
+            "/api/v1/question-bank/practice/sessions/{id}/answers/{id}"
+        )));
+        assert!(is_post_path(&format!(
+            "/api/v1/question-bank/practice/favorites/{id}"
+        )));
+        assert!(!is_post_path(
+            "/api/v1/question-bank/practice/favorites/bad"
+        ));
+        assert!(!is_post_path(
+            "/api/v1/question-bank/practice/sessions/bad/submit"
+        ));
+        assert!(!is_post_path(&format!(
+            "/api/v1/question-bank/practice/sessions/{id}/extra/submit"
+        )));
     }
 
     #[test]

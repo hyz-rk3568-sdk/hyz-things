@@ -457,12 +457,23 @@ test("syncs the question bank and loads one whole paper with shared material", a
   const material = "019a3d8d-4a21-739a-8b15-7c54e259b610";
   const summary = { id, title: "2001 示例真题卷", year: 2001, region: "国考", variant: "统考", role: "primary", questions: 2 };
   await page.route("**/api/v1/question-bank/papers", route => route.fulfill({ json: synced ? [summary] : [] }));
+  const syncSummary = { papers: 1, questions: 2, materials: 1, generated_ids: 4 };
+  await page.route("**/api/v1/question-bank/sync/status", route => route.fulfill({ json: {
+    task_id: synced ? "test-sync-task" : null,
+    stage: synced ? "completed" : "idle",
+    running: false,
+    summary: synced ? syncSummary : null,
+    error_code: null,
+  } }));
   await page.route("**/api/v1/control/question-bank/sync", async route => {
     expect(route.request().method()).toBe("POST");
     expect(route.request().postDataJSON()).toEqual({});
     expect(route.request().headers()["x-hyz-csrf"]).toBeTruthy();
     synced = true;
-    await route.fulfill({ json: { papers: 1, questions: 2, materials: 1, generated_ids: 4 } });
+    await route.fulfill({ status: 202, json: {
+      task_id: "test-sync-task", stage: "scanning", running: true,
+      summary: null, error_code: null,
+    } });
   });
   await page.route(`**/api/v1/question-bank/papers/${id}`, route => route.fulfill({ json: {
     ...summary,

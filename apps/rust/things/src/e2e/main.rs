@@ -8,10 +8,12 @@ use axum::{
 };
 use hyz_contract::router::{ControlOperation, ControlProxyMode, ControlResult};
 use hyz_things::{
-    adapters::inbound::http::app_with_loopback_runtime_frontend_and_flashcards,
+    adapters::inbound::http::{
+        app_with_loopback_runtime_frontend_and_flashcards, with_question_bank,
+    },
     adapters::outbound::{
         flashcard_source::FilesystemFlashcardSource, flashcard_sqlite::SqliteFlashcardRepository,
-        logic_judgment::LogicJudgmentService,
+        logic_judgment::LogicJudgmentService, question_bank_sqlite::SqliteQuestionBankRepository,
     },
     application::{
         admin::AdminApplication,
@@ -21,6 +23,11 @@ use hyz_things::{
         ports::{
             AdminCredentialStorePort, AdminRandomPort, ClockPort, InstalledAppsPort, PlatformError,
             PortalControlError, PortalControlHandler,
+        },
+        question_bank::{
+            document::{self, Document},
+            BankAsset, BankError, BankSnapshot, IndexedPaper, QuestionBankApplication,
+            QuestionBankSourcePort,
         },
         status::PortalStatus,
     },
@@ -68,6 +75,144 @@ use std::{
         Arc, Mutex, MutexGuard,
     },
 };
+
+const QUESTION_BANK_FIXTURE: &str = r#"---
+schema: hyz-paper/v1
+title: 行测真题训练端到端样卷
+year: 2008
+region: 国考
+variant: 统考
+---
+<!-- hyz-paper-id: 019a3d8c-7f23-7b6e-927d-3c951851d3a2 -->
+# 样卷
+## Material M1
+<!-- hyz-material-id: 019a3d8d-4a21-739a-8b15-7c54e259b610 -->
+两道题共用材料。
+## Question 26
+<!-- hyz-question-id: 019a3d8e-1b32-7a60-9c83-f34217a6e210 -->
+```yaml
+module: 资料分析
+category: 比重
+topics: [现期比重, 原卷模块]
+materials: [M1]
+issues: []
+```
+### Stem
+材料中的正确选项是什么？
+### Options
+- A. 错误项
+- B. 正确项
+- C. 干扰项
+- D. 其他项
+### Answer
+B
+### Explanation
+原始解析：B 是正确项。
+## Question 27
+<!-- hyz-question-id: 019a3d8e-1b32-7a60-9c83-f34217a6e211 -->
+```yaml
+module: 资料分析
+category: 增长
+topics: [共用材料]
+materials: [M1]
+issues: []
+```
+### Stem
+第二道题答案？
+### Options
+- A. 甲
+- B. 乙
+- C. 丙
+- D. 丁
+### Answer
+C
+### Explanation
+第二题解析。
+## Question 28
+<!-- hyz-question-id: 019a3d8e-1b32-7a60-9c83-f34217a6e212 -->
+```yaml
+module: 图形推理
+category: 图形推理
+topics: [模块别名兼容]
+materials: []
+issues: []
+```
+### Stem
+这是一道判断推理题。
+### Options
+- A. 对
+- B. 错
+### Answer
+A
+### Explanation
+判断推理解析。
+"#;
+
+const QUESTION_BANK_SECOND_FIXTURE: &str = r#"---
+schema: hyz-paper/v1
+title: 第二份跨卷模块练习卷
+year: 2018
+region: 广东
+variant: 省考
+---
+<!-- hyz-paper-id: 019a3d8c-7f23-7b6e-927d-3c951851d3a3 -->
+# 第二份试卷
+## Question 12
+<!-- hyz-question-id: 019a3d8e-1b32-7a60-9c83-f34217a6e213 -->
+```yaml
+module: 资料分析
+category: 比重
+topics: [跨卷来源]
+materials: []
+issues: []
+```
+### Stem
+第二份试卷的比重题。
+### Options
+- A. 甲
+- B. 乙
+- C. 丙
+- D. 丁
+### Answer
+D
+### Explanation
+跨卷第二题解析。
+"#;
+
+struct QuestionBankFixture;
+
+#[async_trait]
+impl QuestionBankSourcePort for QuestionBankFixture {
+    async fn scan(&self, _known: Vec<IndexedPaper>) -> Result<BankSnapshot, BankError> {
+        Ok(BankSnapshot {
+            papers: vec![
+                IndexedPaper::new(
+                    "papers/e2e.md".into(),
+                    "e2e-test-hash".into(),
+                    document::parse(QUESTION_BANK_FIXTURE).map_err(|_| BankError::Invalid)?,
+                ),
+                IndexedPaper::new(
+                    "papers/second.md".into(),
+                    "e2e-second-hash".into(),
+                    document::parse(QUESTION_BANK_SECOND_FIXTURE)
+                        .map_err(|_| BankError::Invalid)?,
+                ),
+            ],
+            generated_ids: 0,
+        })
+    }
+    async fn load(&self, paper: IndexedPaper) -> Result<Document, BankError> {
+        let markdown = if paper.summary.id == "019a3d8c-7f23-7b6e-927d-3c951851d3a3" {
+            QUESTION_BANK_SECOND_FIXTURE
+        } else {
+            QUESTION_BANK_FIXTURE
+        };
+        document::parse(markdown).map_err(|_| BankError::Invalid)
+    }
+    async fn asset(&self, _name: String) -> Result<BankAsset, BankError> {
+        Err(BankError::NotFound)
+    }
+}
 
 const LOOPBACK: Ipv4Addr = Ipv4Addr::LOCALHOST;
 const CSRF_TOKEN: &str = "hyz-things-e2e-csrf";
@@ -1126,6 +1271,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some(flashcard_source),
         logic_judgment,
     )?;
+    let bank_repository = Arc::new(
+        SqliteQuestionBankRepository::connect(&format!(
+            "sqlite://{}",
+            fixture_root.join("question-bank.db").display()
+        ))
+        .await
+        .map_err(|error| std::io::Error::other(error.to_string()))?,
+    );
+    let source = Arc::new(QuestionBankFixture);
+    let bank = Arc::new(QuestionBankApplication::new(
+        source.clone(),
+        bank_repository,
+    ));
+    bank.sync()
+        .await
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
+    let web_app = with_question_bank(web_app, Some(bank));
     let harness_app = harness_control_app(backend, admin, camera);
 
     println!(

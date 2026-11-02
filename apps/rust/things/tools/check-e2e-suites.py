@@ -12,7 +12,7 @@ PORTAL = E2E / "portal.spec.ts"
 PLAYWRIGHT_CONFIG = ROOT / "apps/rust/things/playwright.config.ts"
 
 # The PWA suite has a separate browser lifecycle and does not use the harness reset fixture.
-AUXILIARY_SPECS = ("pwa.spec.ts", "related-method-card.spec.ts", "training-subjects.spec.ts")
+AUXILIARY_SPECS = ("pwa.spec.ts", "related-method-card.spec.ts", "training-subjects.spec.ts", "question-bank.spec.ts")
 REQUIRED_SPECS = (
     "shell.spec.ts",
     "countdown.spec.ts",

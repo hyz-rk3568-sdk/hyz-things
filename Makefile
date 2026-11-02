@@ -238,7 +238,11 @@ check-static:
 	bash -n "$(CURDIR)/scripts/share-question-bank.sh"
 	bash "$(CURDIR)/scripts/test-share-question-bank.sh"
 	bash "$(CURDIR)/scripts/test-question-bank-mount.sh"
+ifneq ($(wildcard sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-question-bank),)
 	sh -n sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-question-bank
+else
+	@printf '%s\n' 'SKIP: Question Bank SDK init script static check (SDK tree is not present)'
+endif
 	grep -q '^SHARE_DIR=.*flashcards' "$(CURDIR)/scripts/share-flashcards.sh"
 	grep -q 'valid_share_ipv4' "$(CURDIR)/scripts/share-flashcards.sh"
 	grep -F -q '192.168.8.202' "$(CURDIR)/scripts/share-flashcards.sh"
