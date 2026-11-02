@@ -299,6 +299,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let busy = busy.clone();
         let notice = notice.clone();
         let history_reload = history_reload.clone();
+        let elapsed = elapsed.clone();
         let on_pause = props.on_paper_pause_change.clone();
         let on_immersive = props.on_immersive_change.clone();
         Callback::from(move |_| {
@@ -319,10 +320,22 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             let busy = busy.clone();
             let notice = notice.clone();
             let history_reload = history_reload.clone();
+            let seconds = *elapsed;
             let on_pause = on_pause.clone();
             let on_immersive = on_immersive.clone();
             spawn_local(async move {
                 let path = format!("/api/v1/question-bank/practice/sessions/{id}");
+                // Persist time before the idempotent submit so the score includes
+                // uninterrupted sessions as well as previously paused ones.
+                let paused: Result<PracticeSession, String> = post_json_response(
+                    &format!("{path}/pause"), &csrf,
+                    &SetPracticePaused { paused: true, elapsed_seconds: seconds }, "记录用时",
+                ).await;
+                if let Err(error) = paused {
+                    notice.set(Some(error));
+                    busy.set(false);
+                    return;
+                }
                 match post_json_response::<_, PracticeSession>(
                     &format!("{path}/submit"), &csrf, &EmptyRequest {}, "交卷",
                 ).await {
