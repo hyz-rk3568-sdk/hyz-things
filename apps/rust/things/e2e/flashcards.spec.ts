@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { expectUnselectable, resetHarness, webOrigin } from "./fixtures";
+import { expectUnselectable, loginAsAdmin, resetHarness, webOrigin } from "./fixtures";
 import { expectInlineInkControls, inkSnapshot } from "./ink-fixtures";
 
 test.beforeEach(async ({ request }) => {
@@ -448,4 +448,39 @@ test("wrong-card navigation never grades unvisited cards or converts unanswered 
   await expect(page.getByTestId("practice-summary")).toContainText("未答");
   await expect(page.getByTestId("practice-summary")).toContainText("1");
   await expect(page.getByTestId("practice-summary")).toContainText("做对");
+});
+
+
+test("syncs the question bank and loads one whole paper with shared material", async ({ page }) => {
+  let synced = false;
+  const id = "019a3d8c-7f23-7b6e-927d-3c951851d3a2";
+  const material = "019a3d8d-4a21-739a-8b15-7c54e259b610";
+  const summary = { id, title: "2001 示例真题卷", year: 2001, region: "国考", variant: "统考", role: "primary", questions: 2 };
+  await page.route("**/api/v1/question-bank/papers", route => route.fulfill({ json: synced ? [summary] : [] }));
+  await page.route("**/api/v1/control/question-bank/sync", async route => {
+    expect(route.request().method()).toBe("POST");
+    expect(route.request().postDataJSON()).toEqual({});
+    expect(route.request().headers()["x-hyz-csrf"]).toBeTruthy();
+    synced = true;
+    await route.fulfill({ json: { papers: 1, questions: 2, materials: 1, generated_ids: 4 } });
+  });
+  await page.route(`**/api/v1/question-bank/papers/${id}`, route => route.fulfill({ json: {
+    ...summary,
+    materials: [{ id: material, name: "M1", markdown: "完整共享材料，只显示一次。" }],
+    questions: [26, 27].map(number => ({
+      id: `019a3d8e-1b32-7a60-9c83-f34217a6e2${number}`,
+      number, stem: `原始题干${number}`, options_markdown: "- A. 甲\n- B. 乙\n- C. 丙\n- D. 丁",
+      materials: [material], module: "资料分析", category: null, topics: [], issues: [],
+    })),
+  } }));
+  await loginAsAdmin(page);
+  await page.goto("/#/study");
+  await page.getByTestId("question-bank-sync").click();
+  await expect(page.getByTestId("question-bank-notice")).toContainText("已同步 1 份文件");
+  await page.getByTestId("question-bank-open").click();
+  await expect(page.getByTestId("question-bank-paper")).toContainText("2001 示例真题卷");
+  await expect(page.getByTestId("question-bank-question")).toHaveCount(2);
+  await expect(page.getByTestId("question-bank-material")).toHaveCount(1);
+  await expect(page.getByTestId("question-bank-paper")).toContainText("原卷第 26 题");
+  await expect(page.getByTestId("question-bank-paper")).toContainText("原卷第 27 题");
 });

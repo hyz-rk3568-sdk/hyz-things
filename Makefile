@@ -235,6 +235,10 @@ check-static:
 	bash -n "$(CURDIR)/tools/stage-mihomo-geodata.sh"
 	bash -n "$(CURDIR)/scripts/share-flashcards.sh"
 	bash "$(CURDIR)/scripts/test-share-flashcards.sh"
+	bash -n "$(CURDIR)/scripts/share-question-bank.sh"
+	bash "$(CURDIR)/scripts/test-share-question-bank.sh"
+	bash "$(CURDIR)/scripts/test-question-bank-mount.sh"
+	sh -n sdk/buildroot/board/rockchip/hyz_things/fs-overlay/etc/init.d/S83hyz-question-bank
 	grep -q '^SHARE_DIR=.*flashcards' "$(CURDIR)/scripts/share-flashcards.sh"
 	grep -q 'valid_share_ipv4' "$(CURDIR)/scripts/share-flashcards.sh"
 	grep -F -q '192.168.8.202' "$(CURDIR)/scripts/share-flashcards.sh"

@@ -1,12 +1,12 @@
 use super::*;
 
 #[derive(Properties, PartialEq)]
-struct AdminAuthGateProps {
-    state: UseReducerHandle<AppState>,
+pub(crate) struct AdminAuthGateProps {
+    pub state: UseReducerHandle<AppState>,
 }
 
 #[function_component(AdminAuthGate)]
-fn admin_auth_gate(props: &AdminAuthGateProps) -> Html {
+pub(crate) fn admin_auth_gate(props: &AdminAuthGateProps) -> Html {
     let state = &props.state;
     let login_password = use_node_ref();
     let current_password = use_node_ref();

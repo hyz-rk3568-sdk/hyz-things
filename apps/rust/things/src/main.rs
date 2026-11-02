@@ -2,8 +2,8 @@ use hyz_things::{
     adapters::{
         inbound::http::{
             app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_origins,
-            bind_fixed_lan_with_retry, bind_ipv6_listener, PortalTls, TlsListener,
-            DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
+            bind_fixed_lan_with_retry, bind_ipv6_listener, with_question_bank, PortalTls,
+            TlsListener, DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
         },
         outbound::{
             admin::AdminFileAdapter,
@@ -14,6 +14,8 @@ use hyz_things::{
             logic_judgment::LogicJudgmentService,
             portal_config::load_allowed_origins,
             quantitative_relations::QuantitativeRelationsService,
+            question_bank_source::FilesystemQuestionBankSource,
+            question_bank_sqlite::SqliteQuestionBankRepository,
             registry::RegistryAdapter,
             router::RouterControlClient,
             tailscale::{fetch_tailscale_status, PortalListenerApp, TailscaleListenerManager},
@@ -26,6 +28,7 @@ use hyz_things::{
         logic_judgment::LogicJudgmentPort,
         ports::{ClockPort, PlatformError, PortalControlHandler},
         quantitative_relations::QuantitativeRelationsPort,
+        question_bank::QuestionBankApplication,
         status::PortalStatus,
     },
     logging::{self, Level},
@@ -198,6 +201,20 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     std::fs::create_dir_all(PORTAL_READY_DIRECTORY)?;
     let _ = std::fs::remove_file(PORTAL_READY_MARKER);
 
+    let question_bank = match SqliteQuestionBankRepository::connect(
+        "/userdata/hyz-things/question-bank.db",
+    )
+    .await
+    {
+        Ok(repository) => Some(Arc::new(QuestionBankApplication::new(
+            Arc::new(FilesystemQuestionBankSource::default()),
+            Arc::new(repository),
+        ))),
+        Err(_) => {
+            tracing::warn!("question bank index unavailable");
+            None
+        }
+    };
     let tailscale = TailscaleListenerManager::new();
     let tailscale_app = PortalListenerApp {
         status: status.clone(),
@@ -208,6 +225,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         runtime: tokio::runtime::Handle::current(),
         clock: clock.clone(),
         tls: tls_acceptor.clone(),
+        question_bank: question_bank.clone(),
         flashcards: flashcards.clone(),
         flashcard_source: flashcard_source.clone(),
         data_analysis: data_analysis.clone(),
@@ -304,6 +322,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         quantitative_relations,
         additional_allowed_origins,
     );
+    let app = with_question_bank(app, question_bank);
     let ipv6_task = ipv6_listener.map(|listener| {
         let app = app.clone();
         let tls_acceptor = tls_acceptor.clone();

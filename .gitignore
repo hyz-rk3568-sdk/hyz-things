@@ -18,3 +18,8 @@ target/
 .env
 *.local
 tmp/
+
+# Publish only the runtime bank contents; importer state and reports stay local.
+/question_bank/*
+!/question_bank/papers/
+!/question_bank/assets/

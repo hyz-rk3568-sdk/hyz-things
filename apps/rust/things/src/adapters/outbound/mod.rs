@@ -15,3 +15,6 @@ pub mod codex_app_server;
 
 pub mod quantitative_relations;
 pub mod training_time;
+
+pub mod question_bank_source;
+pub mod question_bank_sqlite;
