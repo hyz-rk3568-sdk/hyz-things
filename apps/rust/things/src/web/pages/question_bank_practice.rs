@@ -119,19 +119,19 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let running = workspace.as_ref().as_ref().is_some_and(|w| w.session.status == "active" && !w.session.paused);
         use_effect_with((running, current_id), move |(running, _)| {
             *seconds_ref.borrow_mut() = server_seconds;
-            if *running {
-                let interval = gloo_timers::callback::Interval::new(1000, move || {
+            let timer = if *running {
+                Some(gloo_timers::callback::Interval::new(1000, move || {
                     let next = {
                         let mut seconds = seconds_ref.borrow_mut();
                         *seconds = seconds.saturating_add(1);
                         *seconds
                     };
                     elapsed.set(next);
-                });
-                Some(interval)
+                }))
             } else {
                 None
-            }
+            };
+            move || drop(timer)
         });
     }
     {
