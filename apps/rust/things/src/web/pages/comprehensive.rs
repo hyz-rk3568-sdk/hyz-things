@@ -1323,7 +1323,13 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 <button type="button" class={TRAINING_PRIMARY_BUTTON} data-testid="analysis-start" disabled={*loading_status || *busy || *preparing || status.as_ref().as_ref().is_none_or(|s|!s.configured) || props.csrf.is_empty()} onclick={start}>
                     {if *busy || *preparing {"正在出题中…"} else {"准备试卷 →"}}</button>}})}>
             <div class="training-config">
-                <h2 class="font-bold">{"资料分析综合训练"}</h2>
+                <div class="flex items-center justify-between gap-3">
+                    <h2 class="font-bold">{"资料分析综合训练"}</h2>
+                    <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-history-open"
+                        onclick={Callback::from({let history_open=history_open.clone();move |_|history_open.set(true)})}>
+                        {"练习记录"}
+                    </button>
+                </div>
                 <p class="mt-1 text-sm text-base-content/60">{"参考历年行测真题组织模拟统计数据 · 4份材料 × 每份5题 · 20分钟"}</p>
                 <div class="mt-5 grid gap-3">
                     if !unfinished.is_empty() {
