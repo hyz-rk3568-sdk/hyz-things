@@ -488,7 +488,7 @@ A
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-173550c1801f -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -530,7 +530,7 @@ B项的句子缺少主语，可通过去掉句首介词来达到改正的目的�
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-174baa6b04d6 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials: []
 passage_source: null
@@ -574,7 +574,7 @@ A项中“翻手为云，覆手为雨”形容人反复无常或惯于玩弄权�
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-17532bb684ec -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -614,7 +614,7 @@ B项的“起来”表示动作的开始；A、C、D三项的“起来”是趋�
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-1764dc98a60e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: null
@@ -752,7 +752,7 @@ D项，“气质与众不同”无中生有，文段并未提及，排除。
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-179ed736a322 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: null
@@ -1039,7 +1039,7 @@ D项，根据文段“等到鼠类减少到一定程度，草原生态系统才�
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-17f84ea0b628 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials:
 - M1
@@ -1088,7 +1088,7 @@ D项表述片面，文章只是在最后一段提到公历有很多优点，不�
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-180f7456ee36 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -1133,7 +1133,7 @@ C项说法错误，文章第4段说的是“把这年的10月5日改为10月15�
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-181382486a5f -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -1176,7 +1176,7 @@ D项说法错误，文章通篇运用的都是拟人手法，并没有非拟人�
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-1829a55bf2ad -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M2
@@ -1217,7 +1217,7 @@ C
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-183d9a29e3df -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M2
@@ -1264,7 +1264,7 @@ B项是对原文“人的心理，包括儿童的心理，并不是什么先天�
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-184e396521f0 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M2
@@ -1305,7 +1305,7 @@ D
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-185768e219d2 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M2
@@ -1350,7 +1350,7 @@ A、C、D三项都没有提到“儿童心理发展”这一关键词，故不�
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-186bc1c3b598 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1392,7 +1392,7 @@ A
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-1874adeba1f6 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1434,7 +1434,7 @@ B
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-188566d74aa4 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1476,7 +1476,7 @@ B
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-189fed7d0602 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1516,7 +1516,7 @@ D
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-18a0166a7217 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1801,7 +1801,7 @@ D项中的鄂伦春族认为与公熊、母熊有血缘关系，三者都属于�
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-1901e3392d86 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -1882,7 +1882,7 @@ C
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-19228152a722 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2619,7 +2619,7 @@ D项，实施犯罪→作案动机 且 作案时间，李先生：作案动机
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-ce1024099c0b -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials: []
 passage_source: null
@@ -3204,8 +3204,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-ceee80380585 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 基期比重
 - 综合资料
@@ -3245,8 +3245,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-cefb1c558cf0 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 倍数
 topics:
 - 现期倍数
 - 综合资料
@@ -3286,8 +3286,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-cf007c9a7c2d -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -3327,8 +3327,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-cf19a47dd87e -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -3374,8 +3374,8 @@ D项：定位文字材料，全市“家电下乡”实现销售额8亿元，社
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-cf2e4923b8e3 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 倍数
 topics:
 - 现期倍数
 - 统计表
@@ -3415,8 +3415,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-cf3c3912cb72 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 一般增长率
 - 统计表
@@ -3456,8 +3456,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-cf4fa2515608 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 增长量比较
 - 统计表
@@ -3507,8 +3507,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-cf58f7f36f5f -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 统计表
 - 综合分析
@@ -3554,8 +3554,8 @@ D项：定位表格年末常住人口一栏，2009年浦东新区常住人口数
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-cf6ff08a9d7a -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 一般增长率
 - 综合资料
@@ -3595,8 +3595,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-cf7476253c53 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 一般增长率
 - 综合资料
@@ -3636,8 +3636,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-cf8f421dc310 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 年均增长率
 - 综合资料
@@ -3687,8 +3687,8 @@ D项：21494/20906≈1^+。
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-cf9eb3c9a0d8 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -3740,8 +3740,8 @@ D项：定位柱形图，根据公式，增长率 = (现期 − 基期)/基期�
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-cfa90203c4a2 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -3781,8 +3781,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-cfbd6f7b1441 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 简单加减计算
 - 综合资料
@@ -3822,8 +3822,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-cfc7f08083c2 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -3864,7 +3864,7 @@ D
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-cfd243726d99 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -3984,7 +3984,7 @@ C
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-d009edfc233b -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4231,7 +4231,7 @@ C、D选项正确，都是为确保粮食安全的措施，一国的粮食安全
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-d0671ae3f4e1 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4308,7 +4308,7 @@ C项错误，不属于“战略性新兴产业”的特点。“战略性新兴�
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-d084ad01ec43 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4385,7 +4385,7 @@ BD
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-d0a99254db84 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4484,7 +4484,7 @@ ABC
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-d0cd6f0500de -->
 ```yaml
 module: 常识判断
-category: null
+category: 经济常识
 topics: []
 materials: []
 passage_source: null
@@ -4565,7 +4565,7 @@ D项错误，不告不理是民事司法的特点，不属于行政执法的特�
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-d0e9c7f7da0d -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4603,7 +4603,7 @@ C
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-d0fee48d4011 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4745,7 +4745,7 @@ ABCD
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-d128d3aa6164 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4783,7 +4783,7 @@ D
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-d13bbdece3f4 -->
 ```yaml
 module: 常识判断
-category: null
+category: 人文常识
 topics: []
 materials: []
 passage_source: null
@@ -5525,8 +5525,8 @@ AD
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-d2505c2b4625 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 马克思主义
 topics:
 - 唯物辩证法
 materials:
@@ -5565,8 +5565,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-d261abf92b97 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 人文常识
 topics:
 - 文化建设
 materials:
@@ -5605,8 +5605,8 @@ AD
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-d2765dcee98b -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 人文常识
 topics:
 - 文化建设
 materials:
@@ -5645,8 +5645,8 @@ AB
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-d28ef98906d2 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M7
@@ -5686,8 +5686,8 @@ ABCD
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-d29db500f170 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M8
@@ -5725,8 +5725,8 @@ BC
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-d2ae02df1203 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M8
@@ -5764,8 +5764,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-d2be037bc719 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M9
@@ -5803,8 +5803,8 @@ BD
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-d2c52cacbb8f -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M9
@@ -5844,8 +5844,8 @@ CD
 
 <!-- hyz-question-id: 01a19c89-ef5e-7123-b438-d2d4f7d1d922 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M9
@@ -5885,8 +5885,8 @@ BD
 
 <!-- hyz-question-id: 01a19c89-ef5f-75e3-81cc-28238ddee1b3 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 时事政治
 topics:
 - 政治建设
 materials:
@@ -5925,8 +5925,8 @@ ABCD
 
 <!-- hyz-question-id: 01a19c89-ef5f-75e3-81cc-2832f14835ec -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 政治建设
 materials:
@@ -5965,8 +5965,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-ef5f-75e3-81cc-284cd4a34e69 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M10
@@ -6004,8 +6004,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-ef5f-75e3-81cc-285fd52f4ab8 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M11
@@ -6043,8 +6043,8 @@ A选项缺少发文机关名称是比较常见的，因为如果有的时候标�
 
 <!-- hyz-question-id: 01a19c89-ef5f-75e3-81cc-286358c7c292 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M11
@@ -6082,8 +6082,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-ef5f-75e3-81cc-28726957349a -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M11
@@ -6121,8 +6121,8 @@ BD
 
 <!-- hyz-question-id: 01a19c89-ef5f-75e3-81cc-2883c95ec672 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M11
@@ -6160,8 +6160,8 @@ AB
 
 <!-- hyz-question-id: 01a19c89-ef5f-75e3-81cc-289b8f209092 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -6200,8 +6200,8 @@ CD
 
 <!-- hyz-question-id: 01a19c89-ef5f-75e3-81cc-28a48c6f4b0b -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -6240,8 +6240,8 @@ CD
 
 <!-- hyz-question-id: 01a19c89-ef5f-75e3-81cc-28b8ba884c03 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -6280,8 +6280,8 @@ AC
 
 <!-- hyz-question-id: 01a19c89-ef5f-75e3-81cc-28cc0307f5bb -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:

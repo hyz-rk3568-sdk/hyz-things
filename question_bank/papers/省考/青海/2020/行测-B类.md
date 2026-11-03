@@ -437,7 +437,7 @@ D项错误，随着我国经济由高速增长阶段转向高质量发展阶段�
 <!-- hyz-question-id: 01a19c8a-60ed-7d33-abf1-ba5f6fc2a0b8 -->
 ```yaml
 module: 常识判断
-category: null
+category: 人文常识
 topics: []
 materials: []
 passage_source: null
@@ -5485,7 +5485,7 @@ issues:
 <!-- hyz-question-id: 01a19c8a-60ee-76c0-84ad-e9a4b971b9c4 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 直接找数
 - 综合资料
@@ -6036,7 +6036,7 @@ D
 <!-- hyz-question-id: 01a19c8a-60ee-76c0-84ad-ea77aa8d0a53 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 统计表
 - 直接找数

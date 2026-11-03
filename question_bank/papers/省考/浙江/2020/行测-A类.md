@@ -1673,7 +1673,7 @@ D项，根据文段，作者认为人们选择居家环境要兼顾“视野辽�
 <!-- hyz-question-id: 01a19c8a-3a53-7080-b342-8db6f1ef2909 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-对策
 - 主题词
@@ -1874,7 +1874,7 @@ D项，“数据安全问题”为问题表述，文段重点在对策，排除�
 <!-- hyz-question-id: 01a19c8a-3a53-7080-b342-8df0d3e541a1 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 主题词
 - 特殊问法
@@ -2579,7 +2579,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3a53-7080-b342-8f06a5e20eed -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null

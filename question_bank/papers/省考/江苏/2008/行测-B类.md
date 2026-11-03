@@ -2464,7 +2464,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a0c431b2bd19 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2504,7 +2504,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a0d1b997ac87 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2546,7 +2546,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a0eb20159731 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2634,7 +2634,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a10a13b80004 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2750,7 +2750,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a139a67112af -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2792,7 +2792,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a14966a4ab35 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2836,7 +2836,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a155acc9233f -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2915,7 +2915,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a17edc53e592 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3035,7 +3035,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a1a6fbe7996f -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3112,7 +3112,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a1c773a01015 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3584,7 +3584,7 @@ D项：与A项一样，顶面应为白色，与题干不一致，排除。
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a27156466c41 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3667,7 +3667,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a29406b1b5a2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3707,7 +3707,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a2aa1accfbdf -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3747,7 +3747,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a2bcb9af3c3c -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3793,7 +3793,7 @@ C项，数字4的方向不对，且与其相邻的面不可能上下都是空白
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a2cfc4e3a84b -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3833,7 +3833,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a2deb9bf2183 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3873,7 +3873,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a2ef5495da95 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4027,7 +4027,7 @@ B的意思是只有三年级学生才有资格成为学生会成员，恰是第�
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a310a4ac6754 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials: []
 passage_source: null
@@ -4476,7 +4476,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a3904589fe14 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -4531,7 +4531,7 @@ D项：企业仓库库存量管理是有一定的管理方案和规则的，并�
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a3ae39279c92 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -4584,7 +4584,7 @@ D项甲厂和乙厂不属于国家或地区，不符合劳务输出的定义。
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a3bc1d16a7e3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -4633,7 +4633,7 @@ A、B、D项都符合定义；
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a3cc06d3fe39 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -4682,7 +4682,7 @@ B项中昨天南京下暴雨并不是一段时间内大量天气过程的综合�
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a3d364164929 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4735,7 +4735,7 @@ D项木工按照甲的要求制作，符合定义。
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a3ee3f97bd98 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -4841,7 +4841,7 @@ D项中测量人的智商是对社会现象的特征进行测量，且智商是�
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a40f30358da0 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -4945,7 +4945,7 @@ D项：由于Ei是绝对值，所以Ei不可能小于0，D项正确。
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a42b858eb502 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -4998,7 +4998,7 @@ D项符合定义属于行政许可。
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a436f2cd26b9 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -5069,7 +5069,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a4428d2f9c72 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -5140,7 +5140,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a457e74026bc -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -5211,7 +5211,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a46039cfdb03 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -5282,7 +5282,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a47347c94a45 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -5629,7 +5629,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a4ed1bfe0799 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: null
@@ -5720,7 +5720,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a501a29fb085 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: null
@@ -5817,7 +5817,7 @@ C项偷换概念，是“物质生产方式”，而不是“社会物质生活�
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a52ff24ca31e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials:
 - M3
@@ -5858,7 +5858,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a532f1925ad1 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M3
@@ -5907,7 +5907,7 @@ D项错误，第一段第四句话提到“机械化战争时代，杀伤敌人�
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a5401a4a5750 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M3
@@ -5954,7 +5954,7 @@ D错误，D选项在原文中是“人类发明了火药，战争进入到火器
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a55b85ab9170 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials:
 - M3
@@ -5995,7 +5995,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a56097147846 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M3
@@ -6075,7 +6075,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a587e8f71c2c -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -6159,7 +6159,7 @@ D选项正确，2006年高新技术产业化指数的全国平均水平是43.88%
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a5a9c787b5ce -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -6286,7 +6286,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a5de468c5efb -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6325,7 +6325,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a5e4634246fa -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M5
@@ -6403,7 +6403,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a605aa958103 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -6448,7 +6448,7 @@ D项错误：定位统计表可得，表格中未体现少数民族教师从事�
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a6173c2a0064 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -6487,7 +6487,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a62805094130 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -6526,7 +6526,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a6393971129f -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -6571,7 +6571,7 @@ D项：A、B、C三项均错误，因此以上答案都不对，当选。
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a64942151fdd -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M6
@@ -6688,7 +6688,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a67e19a4fcbf -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M7
@@ -6727,7 +6727,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a68de522c4c3 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M7
@@ -6811,7 +6811,7 @@ D项：A、B、C三项均说法错误，因此以上说法都不对，当选。
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a6ac0da6d62d -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M7

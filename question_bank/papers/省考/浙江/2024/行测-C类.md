@@ -1838,7 +1838,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3cb2-7060-adb0-379216fd9834 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 逻辑填空题
 - 普通篇章
@@ -1883,7 +1883,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3cb2-7060-adb0-37a2d462d69d -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 语句填空题
 - 普通篇章
@@ -1928,7 +1928,7 @@ A、B两项的“医生”及D项的“医学专业数据”均与前文阐述�
 <!-- hyz-question-id: 01a19c8a-3cb2-7060-adb0-37b09f751ceb -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1977,7 +1977,7 @@ D项，根据第三段“目前看来，完全依赖大模型进行独立推理�
 <!-- hyz-question-id: 01a19c8a-3cb2-7060-adb0-37c28e858ad5 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2026,7 +2026,7 @@ D项，根据第一段“极光是由于来自磁层和太阳风的带电高能�
 <!-- hyz-question-id: 01a19c8a-3cb2-7060-adb0-37d9a8dd7121 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -5632,7 +5632,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3cb2-7060-adb0-3c6a91ccec03 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 文字资料
 - 排序类

@@ -1026,7 +1026,7 @@ D项错误，1903年12月17日，世界上第一架载人动力飞机在美国�
 <!-- hyz-question-id: 01a19c8a-6057-77e2-8a6d-732b26ec6d02 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -1792,7 +1792,7 @@ C
 <!-- hyz-question-id: 01a19c8a-6057-77e2-8a6d-7429918fbe41 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -2164,7 +2164,7 @@ B
 <!-- hyz-question-id: 01a19c8a-6057-77e2-8a6d-74ad8affb257 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials: []
 passage_source: null
@@ -5199,7 +5199,7 @@ C
 <!-- hyz-question-id: 01a19c8a-6058-7371-8e78-ccf020476e57 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 代入法
 materials: []
@@ -5445,7 +5445,7 @@ B
 <!-- hyz-question-id: 01a19c8a-6058-7371-8e78-cd4efd681c4e -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 文字资料
 - 简单加减计算

@@ -1705,7 +1705,7 @@ D项：文段意在说明互联网能够帮助人们记忆信息，成为人们�
 <!-- hyz-question-id: 01a19c8a-2594-7f63-bdf2-e3dd8a9078d6 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: 《家庭医生多地遇冷缘于基础不牢》
@@ -1801,7 +1801,7 @@ D项：“语法”和“句法”仅为结论中的一部分，表述片面，�
 <!-- hyz-question-id: 01a19c8a-2594-7f63-bdf2-e3f295ef3a84 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1850,7 +1850,7 @@ D项：根据第一段“两个大脑的建议被平均加权，做出最终的�
 <!-- hyz-question-id: 01a19c8a-2594-7f63-bdf2-e4064f5d0df3 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 逻辑填空题
 - 普通篇章
@@ -1895,7 +1895,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2594-7f63-bdf2-e411ca697d80 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1942,7 +1942,7 @@ C项：“人脑对事物的思考要比电脑复杂得多”表述不明确，�
 <!-- hyz-question-id: 01a19c8a-2594-7f63-bdf2-e42946122bde -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1989,7 +1989,7 @@ C项：根据第六段“对这些问题的研究和回答，恐怕比单纯观�
 <!-- hyz-question-id: 01a19c8a-2594-7f63-bdf2-e431e4fe99f8 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 标题填入题
 - 普通篇章
@@ -3904,7 +3904,7 @@ D项：位置2、3的符号相同，位置7、8的符号相同，并且其他位
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c00310af54c1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4026,7 +4026,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c033936e3c68 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4070,7 +4070,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c041976bd0ed -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4114,7 +4114,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c05a89206b15 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4672,7 +4672,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c10690796c34 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials: []
 passage_source: null
@@ -4746,7 +4746,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c11acd8acdaf -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -4797,7 +4797,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c123731ed760 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -4846,7 +4846,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c131ad78db89 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -5003,7 +5003,7 @@ D项：老冯将拼板餐桌从商场运回家，对照安装说明组装成功�
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c16685ec5501 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials:
@@ -5111,7 +5111,7 @@ D项：抛一枚硬币观察带有数字的一面朝上次数的实验，实验�
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c18305ade4e8 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5167,7 +5167,7 @@ D项：老赵因车祸失去左腿，体现了遭遇意外伤害等变故，但�
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c1908912f700 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials:
@@ -5221,7 +5221,7 @@ D项：某机构职工申请提前退休说明还没有到法定退休年龄，�
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c1afa10cfe76 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5275,7 +5275,7 @@ D项：物业公司委托专业保安公司强化培养新入职的保安，是�
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c1b2e58b3533 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -5331,7 +5331,7 @@ D项：北方某市交通局宣布某风景优美的县级公路设卡收费，�
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c1c72232bd6f -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5385,7 +5385,7 @@ D项：未体现盘活闲置资源，同时需求方厂家并未节省研发费�
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c1dd5299abf5 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5439,7 +5439,7 @@ D项：某公司与招聘的工人均未签订书面劳动合同是企业主动�
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c1e0a2084886 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5495,7 +5495,7 @@ D项：家电产品上印着行内专家的专业评价是借助对商品的评�
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c1fb3e53a1d3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5549,7 +5549,7 @@ D项：小金毕业前就创办了公司，而不是毕业后，属于提前就�
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c20956fda3f7 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5657,7 +5657,7 @@ D项：程某之前在乡村小学当校长为村民服务，退休后挖掘家�
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c22bb57b618a -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5711,7 +5711,7 @@ D项：某公司在制造感光材料时，聘请盲人工作，没有体现自�
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c239804903d1 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -5889,7 +5889,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c2776f8c5128 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -5936,7 +5936,7 @@ D项：定位表格数据可得，2011年原油生产量为28.9百万吨标准�
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c28f552ea45d -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -5975,7 +5975,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c29ddc494eb7 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -6014,7 +6014,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c2af56501bd5 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -6092,7 +6092,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c2c5fe8d277f -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -6254,7 +6254,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c30b215a7208 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M5
@@ -6295,7 +6295,7 @@ J省专利授权率=J省专利授权量/J省专利申请量=a，S市发明专利
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c318b3a511a0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -6340,7 +6340,7 @@ D项：定位文字材料第二段可得“人才总数由2010年末的146万人
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c328f31956d5 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -6379,7 +6379,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c33e4e6d4cea -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -6418,7 +6418,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c34141aa75f6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -6467,7 +6467,7 @@ D项：1576/6065 = 25^+%；
 <!-- hyz-question-id: 01a19c8a-2595-7420-8481-c35c62ddc138 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6

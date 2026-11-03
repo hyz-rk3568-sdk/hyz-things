@@ -331,7 +331,7 @@ B、C选项是为了减少碳排放量可以采取的措施，文段并没有要
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-909e84dd7f40 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -376,7 +376,7 @@ A、B、D选项都夸大了叶绿素对抗致癌物质的作用，因此排除�
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-90ab0abdc1df -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -421,7 +421,7 @@ D选项“可以被排出”表述错误，文中没有提及“排出”，只�
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-90b240c861c1 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -464,7 +464,7 @@ A、B选项是叶绿素的抗癌机制，并非最重要的作用；D选项表�
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-90c5a775dd8e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -507,7 +507,7 @@ B选项“微量”是从量的方面控制黄曲霉素对人体的危害；C选
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-90d12ebed0a1 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -829,7 +829,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-914f42069da3 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -869,7 +869,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-915b4580d786 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -907,7 +907,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-916f52497fb2 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -945,7 +945,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-9172cafc9744 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1027,7 +1027,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-9196ce90cafc -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1071,7 +1071,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-91a866f5d95e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1355,7 +1355,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-9216b845cf7a -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2300,7 +2300,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-93794b692400 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2342,7 +2342,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-938d2f6ee75e -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2384,7 +2384,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-93993b99a7c3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2958,7 +2958,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-944bdaa12535 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -3005,7 +3005,7 @@ A项中的“旅游景点票价”，B项中的“供电”，C项中的“52°�
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-9451e949bfd2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3052,7 +3052,7 @@ A项中的“敲缸沽酒的方法”不是医学领域的知识，符合关键�
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-946127785634 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3099,7 +3099,7 @@ C项中“像音乐停止后空中袅袅的余音”一句将视觉“笑容”�
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-947b9be4a0a6 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3199,7 +3199,7 @@ A、B、D三项都符合定义关键词强调的内容，属于绿色消费；C�
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-949e4f4d441e -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3346,7 +3346,7 @@ A项中的“学校每天按时升国旗”已成为一种礼节仪式；B项中
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-94ced1f935ec -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M2
@@ -3385,7 +3385,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-94db0e86fce1 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M2
@@ -3426,7 +3426,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-94efabc370c9 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M2
@@ -3516,7 +3516,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-9500aa533eeb -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -3555,7 +3555,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-951de20e0d7f -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -3594,7 +3594,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-9525665248de -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -3645,7 +3645,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-9536b7736318 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -3819,7 +3819,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-95717f49c805 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M4

@@ -579,7 +579,7 @@ B
 <!-- hyz-question-id: 01a19c8a-24b7-7420-b165-5a09ec7f9253 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -618,7 +618,7 @@ A
 <!-- hyz-question-id: 01a19c8a-24b7-7420-b165-5a1b654a35f8 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -657,7 +657,7 @@ C
 <!-- hyz-question-id: 01a19c8a-24b7-7420-b165-5a2da4367353 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -696,7 +696,7 @@ D
 <!-- hyz-question-id: 01a19c8a-24b7-7420-b165-5a391d2c5c4f -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -735,7 +735,7 @@ B
 <!-- hyz-question-id: 01a19c8a-24b7-7420-b165-5a4df2f9546d -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -953,7 +953,7 @@ C
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-8553aea03c6f -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials:
 - M1
@@ -1221,7 +1221,7 @@ B
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-85bff4337bb9 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1259,7 +1259,7 @@ C
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-85cf260e35b4 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1297,7 +1297,7 @@ B
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-85d1a5e4ff27 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1335,7 +1335,7 @@ D
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-85ea6a092410 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1373,7 +1373,7 @@ C
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-85fa401eda3e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1534,7 +1534,7 @@ B
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-8631ce22c121 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -1613,7 +1613,7 @@ B
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-865c31fb6c0e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2279,7 +2279,7 @@ A
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-874adc933456 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2405,7 +2405,7 @@ A
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-8772675b5e48 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2447,7 +2447,7 @@ C
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-878d1b6e7de8 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2489,7 +2489,7 @@ D
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-879be0ccd6d9 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2531,7 +2531,7 @@ A
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-87a600018766 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2583,7 +2583,7 @@ D项：立体图中面④的右方图形是面①，平面图中面④的右方�
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-87b48e3fa582 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3008,7 +3008,7 @@ C项对别人请求题字一般不推托，仅为书法交流，是一种客观�
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-883d5ae65596 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 代入法
 materials: []
@@ -3171,7 +3171,7 @@ D
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-886be51a837b -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -3214,7 +3214,7 @@ B
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-88756e6d4790 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -3363,7 +3363,7 @@ D选项，人的脸色蜡黄与某种疾病是有必然的联系的，排除。
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-88aba2a9a8c7 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials:
@@ -3413,7 +3413,7 @@ B、C、D三项均涉及到“亲身参与产品试用、感受产品质量”�
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-88bebf7ad050 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -3467,7 +3467,7 @@ D项：未体现呈现出了“外形上的相似性”，不符合定义，排�
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-88c63318444c -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials:
@@ -3569,7 +3569,7 @@ D项：将天柱山周围的三座山峰看做卧佛，即赋予了一个客观�
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-88ee5ecc02bc -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -3625,7 +3625,7 @@ D项：“周末加班”不符合“双休日过分消耗精力处理工作之�
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-88fcf20fabe1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -3679,7 +3679,7 @@ D项：未体现出“对某种品牌认知度较高”，不符合定义，排�
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-890a3bc93f80 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials:
@@ -3731,7 +3731,7 @@ D项：“某市为确保城市公交畅通安全”对应“政府部门为了�
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-89133e333da0 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials:
@@ -3990,7 +3990,7 @@ C
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-89755a0930b8 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -4037,7 +4037,7 @@ A
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-898e83001691 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -4129,7 +4129,7 @@ A
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-89a4f79c53d7 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M4
@@ -4168,7 +4168,7 @@ C
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-89bc1a5acc68 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -4213,7 +4213,7 @@ D项：从文字材料得，来自日本入境游人数为160.5+38.7=199.2万人
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-89c0147851f2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -4254,7 +4254,7 @@ B
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-89d06ad08302 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -4307,7 +4307,7 @@ A
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-89e3bd4640a4 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M5
@@ -4475,7 +4475,7 @@ B
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-8a2a530f7593 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -4592,7 +4592,7 @@ A
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-8a50a9145fec -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6

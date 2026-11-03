@@ -3612,7 +3612,7 @@ D项，根据“他们的基因分析中还包含了与现代瑞典人群及现�
 <!-- hyz-question-id: 01a19c8a-3aeb-71e2-828b-d255e44a826e -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 文字资料
 - 简单加减计算
@@ -4048,7 +4048,7 @@ D项：定位文字材料第四部分第一段和第二段，“8月份，天然
 <!-- hyz-question-id: 01a19c8a-3aeb-71e2-828b-d2f7a79f64e4 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 统计表
 - 简单加减计算
@@ -4130,7 +4130,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3aeb-71e2-828b-d317c5ae38db -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics:
 - 统计表
 - 比值比较
@@ -5007,7 +5007,7 @@ D项：因为自己支持这个做法就认为反对者都是错误的，无意�
 <!-- hyz-question-id: 01a19c8a-3aec-7941-bf4f-72e8adfa5aef -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []

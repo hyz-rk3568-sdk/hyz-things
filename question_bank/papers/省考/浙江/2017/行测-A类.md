@@ -1952,7 +1952,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3921-72a3-8b95-1e4627c9d7c0 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2468,7 +2468,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3921-72a3-8b95-1f0c61895883 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2793,7 +2793,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3921-72a3-8b95-1f73c3cb950e -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -5915,7 +5915,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3922-7712-bf7d-6902b456f5cf -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 直接找数
 - 综合资料

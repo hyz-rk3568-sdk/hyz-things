@@ -2103,7 +2103,7 @@ D项，根据“熁（xié）盏，预热茶盏，相当于现在的‘温杯’
 <!-- hyz-question-id: 01a19c8a-3da9-7d43-b845-b04b3f2f56c3 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 特殊问法
 materials: []
@@ -2150,7 +2150,7 @@ D项，对应文段“因此”之前的内容，并非将造纸与修复技术�
 <!-- hyz-question-id: 01a19c8a-3da9-7d43-b845-b05d10f59c42 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 特殊问法
 materials: []
@@ -2246,7 +2246,7 @@ D项，缺少文段核心话题“量子手环”，且文段重点强调量子�
 <!-- hyz-question-id: 01a19c8a-3da9-7d43-b845-b073700b01bc -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics:
 - 语句填空题
 - 普通篇章
@@ -2295,7 +2295,7 @@ D项，“赶紧开始挖吧！”表达出了急于“挖宝”的迫切心情�
 <!-- hyz-question-id: 01a19c8a-3da9-7d43-b845-b083517e61ae -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -5565,7 +5565,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3daa-7760-84df-9f4cec83e314 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics:
 - 综合资料
 - 简单加减计算

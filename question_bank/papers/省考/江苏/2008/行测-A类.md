@@ -261,7 +261,7 @@ D
 <!-- hyz-question-id: 01a19c8a-213d-7f81-8fc8-88a29a11602e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -345,7 +345,7 @@ A
 <!-- hyz-question-id: 01a19c8a-213d-7f81-8fc8-88c534ead70f -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -461,7 +461,7 @@ C
 <!-- hyz-question-id: 01a19c8a-213d-7f81-8fc8-88f99e6c0af8 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -499,7 +499,7 @@ B
 <!-- hyz-question-id: 01a19c8a-213d-7f81-8fc8-890833b12363 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -545,7 +545,7 @@ A
 <!-- hyz-question-id: 01a19c8a-213d-7f81-8fc8-89178777aba0 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -583,7 +583,7 @@ A
 <!-- hyz-question-id: 01a19c8a-213d-7f81-8fc8-892097fdfb3e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -662,7 +662,7 @@ A
 <!-- hyz-question-id: 01a19c8a-213d-7f81-8fc8-894f36df5639 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2420,7 +2420,7 @@ D项，不到长城→好汉，明显错误，排除。
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8c12af323332 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials: []
 passage_source: null
@@ -2699,7 +2699,7 @@ D项：题干主要是在说交通事故的问题，并没有提到冰雪融化�
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8c6adb1e7c85 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 代入法
 materials: []
@@ -2939,7 +2939,7 @@ B项采用先进技术来降低售价的做法属于正当竞争行为，当选�
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8caf5c8a0e1e -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -2990,7 +2990,7 @@ D项中的房屋为不动产，不符合定义。
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8cbaf1f56bc0 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -3037,7 +3037,7 @@ D
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8ccdb0e46c17 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -3086,7 +3086,7 @@ C项“今年冬天”是一段较长的时期，不符合“某瞬时或某一�
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8cd872c84d58 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -3135,7 +3135,7 @@ C项船长为了大家的安全，将货主的货物扔进大海，损害了货�
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8ce0b4ccb664 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -3200,7 +3200,7 @@ C
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8cf7ed1a7b6a -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -3267,7 +3267,7 @@ B
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8d089ae0d4e3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -3338,7 +3338,7 @@ B
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8d1c804a68a5 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -3409,7 +3409,7 @@ C
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8d22644b93e2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -4048,7 +4048,7 @@ B
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8dd998612c5b -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -4091,7 +4091,7 @@ B、C、D三项都是围绕A项这个问题讨论的，是对A项的支持，排
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8decc7e0a7d7 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -4136,7 +4136,7 @@ B、D两项在文中均未体现，排除。
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8dffc97923fe -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -4183,7 +4183,7 @@ D项，可从第一段“新的一轮改革开放同时也是利益格局大调�
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8e0e58c99975 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -4226,7 +4226,7 @@ D
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8e14a64d3376 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -4269,7 +4269,7 @@ D
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8e2bd6250092 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M2
@@ -4425,7 +4425,7 @@ D
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8e67fb2e5e55 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M2
@@ -4581,7 +4581,7 @@ A
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8ea6b933661c -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -4620,7 +4620,7 @@ D
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8ebf5f5aaecf -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -4659,7 +4659,7 @@ D
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8ec548687dd1 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -4700,7 +4700,7 @@ B
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8eda3f261287 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -4741,7 +4741,7 @@ A
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8ee84d460e14 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -4780,7 +4780,7 @@ B
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8efc17e0d116 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -4860,7 +4860,7 @@ A
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8f14988856b5 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -4899,7 +4899,7 @@ A
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8f2e08c692ed -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5

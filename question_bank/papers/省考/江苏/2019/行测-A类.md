@@ -799,7 +799,7 @@ D项错误，冰川水是地球上最宝贵、最丰富的淡水资源，蕴藏�
 <!-- hyz-question-id: 01a19c8a-26ba-7353-8e88-036d241057c3 -->
 ```yaml
 module: 常识判断
-category: null
+category: 科技常识
 topics:
 - 其他
 materials: []
@@ -1176,7 +1176,7 @@ C
 <!-- hyz-question-id: 01a19c8a-26ba-7353-8e88-03e17bc2b0cd -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 特殊问法
 materials: []
@@ -2016,7 +2016,7 @@ B
 <!-- hyz-question-id: 01a19c8a-26ba-7353-8e88-050618e6a8f1 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 逻辑填空题
 - 普通篇章
@@ -2059,7 +2059,7 @@ A
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1a316e9171a4 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 词句理解题
 - 普通篇章
@@ -2104,7 +2104,7 @@ C项，文段并未明确指出“不可用于公共领域”，表述过于绝�
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1a47b091ae73 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2151,7 +2151,7 @@ D项，“缺乏合理的规范和控制”为知识产权不受限制自由使�
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1a5bb92e476a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 词句理解题
 - 普通篇章
@@ -2196,7 +2196,7 @@ C项，根据“类似的，版权领域内的演绎行为的权利传统上归�
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1a66ff2cdca8 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -2736,7 +2736,7 @@ C
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1b3f1014966e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3581,7 +3581,7 @@ D项：位置7、9符号不相同，与题干逻辑关系不一致，排除。
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1c5ed71cda77 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3748,7 +3748,7 @@ D
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1c98d73ae0ee -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3790,7 +3790,7 @@ A
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1ca3f72c68d1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3830,7 +3830,7 @@ B
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1cb01f5bf01e -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3872,7 +3872,7 @@ A
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1cca064b9767 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4181,7 +4181,7 @@ A
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1d2fa2b26a92 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4728,7 +4728,7 @@ D项：指出武仙星团接收到信号的时间会在2.2万年以后，之后�
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1dc95ca97b88 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -4785,7 +4785,7 @@ A
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1ddbf5cb01e1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -4848,7 +4848,7 @@ D项：根据分析可知丁选东风路和南塘路，不可能选西河路或�
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1de75f668d60 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -4902,7 +4902,7 @@ D项：在某县未来五年发展规划制定过程中，符合“在公共政�
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1dfad90f77d7 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -4956,7 +4956,7 @@ D项：开网店可以理解为“信息技术手段”，但未体现“解决�
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1e06221d918e -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5064,7 +5064,7 @@ D项：长江沿岸的一家化工企业，多次不顾禁令向长江偷偷排�
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1e2bacaffb11 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -5118,7 +5118,7 @@ D项：某少数民族的传统手工艺产品打不开销路，没有体现出�
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1e3f9fecc604 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5172,7 +5172,7 @@ D项：小秦耐心、细致了解只体现工作负责，未体现“个人感�
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1e4d4c4313de -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5226,7 +5226,7 @@ D项：小李提醒丈夫结婚纪念日，把丈夫手机屏保换成婚纱照�
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1e539b0f91de -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -5280,7 +5280,7 @@ D项：从大城市换防到千里之外的戈壁滩，林女士打算带着儿�
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1e6b302a3420 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -5334,7 +5334,7 @@ D项：仙霞路上有大型活动，每个人都选择了一条自认为畅通�
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1e74b30d87e9 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5388,7 +5388,7 @@ D项：某书店定位销售高品位的专业图书符合“个性化手段”�
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1e8ff84ec401 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5442,7 +5442,7 @@ D项：新用户买同样商品比老用户便宜符合“相同的产品或服�
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1e97c57b0d69 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5496,7 +5496,7 @@ D项：方老师询问学生日常生活符合“同一对话过程”、用英�
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1ea3f5a867e6 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5779,7 +5779,7 @@ C
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1f02b242a6ff -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -5818,7 +5818,7 @@ A
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1f119eb18e60 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -5863,7 +5863,7 @@ D项：定位材料第二段可得，“看病就医平均用时4分钟，参与
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1f223ccb267d -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -5902,7 +5902,7 @@ B
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1f3fc585f45d -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M4
@@ -5971,7 +5971,7 @@ B
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1f4c998a578b -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -6059,7 +6059,7 @@ C
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1f658c568608 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -6104,7 +6104,7 @@ D项：定位表格材料可知，2017年苏中农村常住居民人均可支配
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1f70d2f7aab9 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6182,7 +6182,7 @@ C
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1f90b9ef0d3e -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6270,7 +6270,7 @@ B
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1fb6a6470399 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -6315,7 +6315,7 @@ D项：定位文字材料可得，2018年互联网企业信息服务收入8594�
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-1fcd96ae6cdd -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -6499,7 +6499,7 @@ V纯 = (700-603)/603≈97/600≈16%。
 <!-- hyz-question-id: 01a19c8a-26bb-7c63-88c4-200cb86c729a -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6

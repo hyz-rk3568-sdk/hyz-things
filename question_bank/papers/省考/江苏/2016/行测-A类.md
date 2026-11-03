@@ -317,7 +317,7 @@ D项：体现的哲理是尊重客观规律，按照规律办事，错误。
 <!-- hyz-question-id: 01a19c8a-2501-73b0-b72a-be27ea067726 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics:
 - 其他
 materials: []
@@ -504,7 +504,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2501-73b0-b72a-be6c3fc0afeb -->
 ```yaml
 module: 常识判断
-category: null
+category: 经济常识
 topics:
 - 其他
 materials: []
@@ -807,7 +807,7 @@ D项错误：出自李白的《望庐山瀑布》，描写的是江西省九江�
 <!-- hyz-question-id: 01a19c8a-2501-73b0-b72a-bed0466e75cf -->
 ```yaml
 module: 常识判断
-category: null
+category: 地理国情
 topics:
 - 其他
 materials: []
@@ -1714,7 +1714,7 @@ D项：文段并未提到“可穿戴光传感器实验”主要应用的方面�
 <!-- hyz-question-id: 01a19c8a-2501-73b0-b72a-c0145264086a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 逻辑填空题
 - 普通篇章
@@ -1755,7 +1755,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2501-73b0-b72a-c0209c0d9006 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1798,7 +1798,7 @@ D项：对应第四段尾句“性别和文化的偏见，也在不断阻碍实�
 <!-- hyz-question-id: 01a19c8a-2501-73b0-b72a-c03c4367aea8 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 词句理解题
 - 普通篇章
@@ -1843,7 +1843,7 @@ C、D两项：对应文段中的“两派”，即“自然使用价值的支持
 <!-- hyz-question-id: 01a19c8a-2501-73b0-b72a-c0429a2297a4 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1886,7 +1886,7 @@ A项“在保护环境的目的问题上存在分歧”、B项“论争逐渐演
 <!-- hyz-question-id: 01a19c8a-2501-73b0-b72a-c05fc407f73f -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -3765,7 +3765,7 @@ D项：位置3、5、8汉字不相同，与题干不一致，排除。
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b1d49a0351d1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3930,7 +3930,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b21054d00466 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3972,7 +3972,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b220069a62ce -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4664,7 +4664,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b2fd4b261d32 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials: []
 passage_source: null
@@ -4728,7 +4728,7 @@ D项：由“己与庚的参加情况完全相同”与条件③可知，庚不�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b30c1c5d73ae -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials: []
 passage_source: null
@@ -4788,7 +4788,7 @@ D项：如果乙参加了羽毛球组，己也参加了羽毛球组，同时己�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b3174ccf155d -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -4947,7 +4947,7 @@ D项：工作之余阅读科幻小说不符合定义中的“只选择阅读那�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b34081d0b026 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5053,7 +5053,7 @@ D项：看到不认识的字下意识地去查字典，这正是因为遇到过�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b36b14d576ec -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5106,7 +5106,7 @@ D项：老孙卖掉大房买二手小房住并将卖房款存进银行获得利�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b37dcbea48db -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5212,7 +5212,7 @@ D项：自由撰稿人是一种新型的自由职业，符合定义中的“没�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b396860a3927 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5267,7 +5267,7 @@ D项：青年艺术家是“有创造能力但缺乏资金的发起人”，为�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b3a8db5fe012 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -5320,7 +5320,7 @@ D项：小王十分生气，猛按喇叭，嘴里骂个不停，符合定义中�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b3b6f2da180d -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5373,7 +5373,7 @@ D项：巡警将伤员送到医院的行为未体现“避免因统一指挥造�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b3cb6adbc18b -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5426,7 +5426,7 @@ D项：赵总为玉器配置了红木底座，请他人为玉器写诗等行为�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b3df640be01b -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5479,7 +5479,7 @@ D项：出国旅游、买电脑还是买黄金首饰满足的是小李的不同�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b3e3c532fbe4 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -5532,7 +5532,7 @@ D项：小王在工会羽毛球循环赛中失手，不属于定义中的“工�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b3f241e2bb71 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -5585,7 +5585,7 @@ D项：啃老男对父母这一代人的评价是对上代人的评价，不是�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b40a91fc1d95 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M2
@@ -5624,7 +5624,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b417bc73b42c -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M2
@@ -5763,7 +5763,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b446b6e9de03 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M2
@@ -5887,7 +5887,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b47bab01a616 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M3
@@ -5965,7 +5965,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b49f3060fca7 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -6006,7 +6006,7 @@ D项：“其他”棚户区类型中，表示“基本满意”的占比36.5%�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b4a7dc28fd9d -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -6084,7 +6084,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b4c9d8155a12 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -6162,7 +6162,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b4e83d08b54a -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -6207,7 +6207,7 @@ D项：由表格材料可知，2015年一、二季度水力发电量分别为：
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b4f21179ac9d -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M5
@@ -6246,7 +6246,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b5020a7db403 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6285,7 +6285,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b51197e94ebc -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6324,7 +6324,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b5238c9f7069 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -6363,7 +6363,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b532ab785a9b -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5

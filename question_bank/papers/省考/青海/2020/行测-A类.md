@@ -498,7 +498,7 @@ D项错误，在股市中，跟庄是指跟随大资金做同方向的操作。�
 <!-- hyz-question-id: 01a19c8a-60b7-7511-9f23-79f3d6f4b524 -->
 ```yaml
 module: 常识判断
-category: null
+category: 人文常识
 topics: []
 materials: []
 passage_source: null
@@ -6138,7 +6138,7 @@ D项：定位表格，2017年A市气候调节价值年值为732.34，水源涵�
 <!-- hyz-question-id: 01a19c8a-60b8-79c1-9eae-4862d5de2fde -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 直接找数
 - 综合资料

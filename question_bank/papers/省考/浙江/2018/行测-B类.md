@@ -2110,7 +2110,7 @@ C、D两项：均与“行车之德”无关。偏离文段的中心，排除。
 <!-- hyz-question-id: 01a19c8a-39bb-7091-b862-fd3bf8dc2ffa -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-对策
 - 主题词
@@ -2757,7 +2757,7 @@ D项，“影响较大”表述错误，文段意为改变模式后，慈善组�
 <!-- hyz-question-id: 01a19c8a-39bb-7091-b862-fe01f34414cf -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 主题词
 - 关联词-转折
@@ -3460,7 +3460,7 @@ A
 <!-- hyz-question-id: 01a19c8a-39bb-7091-b862-ff0d71d3c55f -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -4196,7 +4196,7 @@ B
 <!-- hyz-question-id: 01a19c8a-39bb-7091-b863-0003283f6c4a -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -6199,7 +6199,7 @@ D项：定位文字材料第二段，“长三角区域25个城市平均PM2.5和
 <!-- hyz-question-id: 01a19c8a-39bc-7043-922b-a855340aea8b -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 综合资料
 - 简单加减计算
@@ -6509,7 +6509,7 @@ D
 <!-- hyz-question-id: 01a19c8a-39bc-7043-922b-a8ca479f1531 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 综合资料
 - 简单加减计算

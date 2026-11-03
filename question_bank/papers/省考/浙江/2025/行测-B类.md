@@ -4841,7 +4841,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3d21-71e2-b521-e1cba1ad4174 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 代入法
 materials: []
@@ -5767,7 +5767,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3d21-71e2-b521-e2edf476b5ca -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 综合资料
 - 简单加减计算
@@ -5822,7 +5822,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3d21-71e2-b521-e2fad4a6cf8f -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 直接找数
 - 综合资料

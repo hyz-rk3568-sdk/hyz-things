@@ -3982,7 +3982,7 @@ D项：乙婚前未告知有重大疾病，甲请求撤销婚姻，符合权利�
 <!-- hyz-question-id: 01a19c8a-3b1b-7551-89dd-5aee8965794a -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5176,7 +5176,7 @@ D项：该项说的是杂草稻会一直伴随水稻生长，对正常水稻的�
 <!-- hyz-question-id: 01a19c8a-3b1b-7551-89dd-5c437ba02c97 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 文字资料
 - 简单加减计算
@@ -5612,7 +5612,7 @@ D项：定位文字材料第四部分第一段和第二段，“8月份，天然
 <!-- hyz-question-id: 01a19c8a-3b1b-7551-89dd-5cee9776a11c -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 统计表
 - 简单加减计算
@@ -5694,7 +5694,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3b1b-7551-89dd-5d042dedefb6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics:
 - 统计表
 - 比值比较

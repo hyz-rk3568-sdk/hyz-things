@@ -1418,7 +1418,7 @@ B
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8a0cb5445d5f -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -1969,7 +1969,7 @@ C
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8ac94ee1c011 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials: []
 passage_source: 羊城晚报《【人物】保护母语方言，你我共同努力！暨大甘于恩获中国语言资源保护奖》
@@ -2062,7 +2062,7 @@ B
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8ae003533b84 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: 《人民网评：人走“查”未凉，退休仍不可任性胡为》
@@ -2108,7 +2108,7 @@ D项，将“体制和法律对权力的约束”比喻为“笼子”，使用�
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8af67e584a7d -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials: []
 passage_source: null
@@ -2152,7 +2152,7 @@ D项，“三人成虎”比喻说的人多了，就能使人们把谣言当作�
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8b0f985cf7f4 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -2493,7 +2493,7 @@ D项，文段重点强调的是轻断食要有意义必须从根本上做到“�
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8b75a880ab52 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-对策
 - 主题词
@@ -2639,7 +2639,7 @@ D项，“现代诗歌的特质”文段并未提及，无中生有，排除。
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8baee3bb299d -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: 白居易《初除户曹，喜而言志》
@@ -2683,7 +2683,7 @@ A项“来京城任职”，B项“官位的级别提升”，D项“来道贺�
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8bb4ae888d9e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2728,7 +2728,7 @@ A项“大脑脆弱易毁”、B项“大脑工作机制没有解密”、D项�
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8bc29fa3f584 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2777,7 +2777,7 @@ D项，根据第二段“通过EEG或功能性磁共振成像（FMRI）等手段
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8bdfb75d8817 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2824,7 +2824,7 @@ D项，文段仅提及“神经科学领域的进展给传统的哲学与伦理�
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8be842f77c83 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2873,7 +2873,7 @@ B、C、D三项均表述错误，排除。
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8bf281932c7c -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2922,7 +2922,7 @@ D项，根据“总的来说，商品交换是以价值量为基础而进行的�
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8c0ca2829d3b -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2971,7 +2971,7 @@ D项，根据“白银货币化推动了赋役货币化······匠班银摊�
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8c1689c58df7 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -3449,7 +3449,7 @@ C
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8cc2510bb494 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3489,7 +3489,7 @@ A
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8cdd59e192d5 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3529,7 +3529,7 @@ B
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8ce0264c6eaa -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3581,7 +3581,7 @@ D项：糖类物质的粒径大于反渗透技术对应的孔径，可以被拦�
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8cf0c0ffe461 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3627,7 +3627,7 @@ D项：共振是指机械所受的激励频率与该系统的固有频率相接�
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8d0d0ec4ea2b -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3667,7 +3667,7 @@ A
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8d1382efd49d -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3713,7 +3713,7 @@ D项：由于配重空间站和同步空间站通过缆绳相连，由B项分析
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8d216975072d -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3759,7 +3759,7 @@ D项：4是乙醇（分子量46，沸点78°C，含1个羟基），5是乙硫醇
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8d30acad9ad3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3805,7 +3805,7 @@ C、D两项：由于手机相同，电池的容量相同，因此从1%充到93%�
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8d4d3d40fe1d -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3853,7 +3853,7 @@ A
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8d5aa3c3a8b1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -4372,7 +4372,7 @@ B
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8de8d6d17520 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M3
@@ -4425,7 +4425,7 @@ D
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-8df73c6d24ac -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M3
@@ -4906,8 +4906,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-9ffd4631ea4b -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 统计图
 - 简单加减计算
@@ -4947,8 +4947,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a00efce245cc -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 统计图
 - 直接找数
@@ -4988,8 +4988,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a01571172653 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 统计图
@@ -5029,8 +5029,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a022a0f159ef -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 一般增长率
 - 统计图
@@ -5080,8 +5080,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a037c40a9f39 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 统计图
@@ -5127,8 +5127,8 @@ D项：定位图2可知2018-2020年B市中心城区工作日绿色出行方式�
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a045c88e883f -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 平均数
 topics:
 - 比值计算
 - 统计表
@@ -5168,8 +5168,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a056d9dd4a3f -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 统计表
 - 基期比较
@@ -5219,8 +5219,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a067529a24c0 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 平均数
 topics:
 - 两期平均数比较
 - 统计表
@@ -5260,8 +5260,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a07f4e8a9202 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 平均数
 topics:
 - 现期平均数
 - 统计表
@@ -5301,8 +5301,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a08561036eb6 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 平均数
 topics:
 - 现期平均数
 - 统计表
@@ -5342,8 +5342,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a0962fb5403d -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 综合资料
 - 基期计算
@@ -5383,8 +5383,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a0ac3547856e -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 平均数
 topics:
 - 平均数的增长量
 - 综合资料
@@ -5424,8 +5424,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a0b44196e322 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 直接找数
 - 综合资料
@@ -5475,8 +5475,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a0c450d76441 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -5518,8 +5518,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a0db0db8f068 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 倍数
 topics:
 - 比值比较
 - 综合资料
@@ -5569,8 +5569,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a0ea7258747a -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 时事政治
 topics:
 - 政治建设
 materials:
@@ -5611,8 +5611,8 @@ B项正确，A、C、D三项错误，党的十一届三中全会作出把党和�
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a0f41c8aac1e -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 时事政治
 topics:
 - 政治建设
 materials:
@@ -5659,8 +5659,8 @@ D项错误，党的十八届三中全会于2013年召开，全会审议并通过
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a10d10fe8719 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 重要会议讲话
 materials:
@@ -5709,8 +5709,8 @@ D项正确，《说明》指出：“第四，这是应对重大风险挑战、�
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a117bf112617 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 新思想
 topics:
 - 政治建设
 materials:
@@ -5757,8 +5757,8 @@ D项正确，改革开放只有进行时没有完成时，是对时代课题的�
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a125ac9ea96c -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 时事政治
 topics:
 - 重要会议讲话
 materials:
@@ -5799,8 +5799,8 @@ C项正确，A、B、D三项错误，党的二十届三中全会通过的《中�
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a137464b6795 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M8
@@ -5846,8 +5846,8 @@ D项错误，事业单位组织是指国家为了社会公益目的，由国家�
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a146a1d1fd29 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M8
@@ -5893,8 +5893,8 @@ D项错误，权利人是指依法享有特定权利的主体，如对财产享�
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a1515104aeaf -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M8
@@ -5940,8 +5940,8 @@ D项正确，材料中提到“摸底排查、统计上报农村留守儿童、�
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a164d2f111eb -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M8
@@ -5987,8 +5987,8 @@ D项错误，材料中没有提及各村（居）的儿童主任通常由从事�
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a175004052a4 -->
 ```yaml
-module: null
-category: null
+module: 言语理解与表达
+category: 篇章阅读
 topics: []
 materials:
 - M8
@@ -6034,8 +6034,8 @@ D项错误，材料中没有提及与其他地区相比，J省的儿童主任保
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a18735358c2d -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 重要会议讲话
 materials:
@@ -6082,8 +6082,8 @@ D项正确，通过大力简化市场准入程序，削减那些不必要的审�
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a19f975115d7 -->
 ```yaml
-module: null
-category: null
+module: 言语理解与表达
+category: 逻辑填空
 topics:
 - 重要会议讲话
 materials:
@@ -6130,8 +6130,8 @@ D项错误，我国市场准入制度主要规范的是在我国境内的市场�
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a1a4b98eb6af -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 经济常识
 topics:
 - 重要会议讲话
 materials:
@@ -6178,8 +6178,8 @@ D项正确，加强内外资准入政策调整协同，消除了不合理的政�
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a1bbe94371e9 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 经济常识
 topics:
 - 重要会议讲话
 materials:
@@ -6224,8 +6224,8 @@ D项错误，《意见》在“六、有序放宽服务业准入限制”部分�
 
 <!-- hyz-question-id: 01a19c89-f41e-73e0-accf-a1cc84ea8c8b -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 重要会议讲话
 materials:

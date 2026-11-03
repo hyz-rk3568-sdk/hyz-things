@@ -3905,7 +3905,7 @@ D项：有线电视的信号可同时供多人使用，一个人使用时不会�
 <!-- hyz-question-id: 01a19c8a-3bb9-75f0-be02-1d48b2bf8321 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5494,7 +5494,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3bb9-75f0-be02-1f2fc93d8968 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 统计表
 - 简单加减计算
@@ -5834,7 +5834,7 @@ D项：定位文字材料第一段可得：2021年上半年，S市工业战略�
 <!-- hyz-question-id: 01a19c8a-3bb9-75f0-be02-1fa14c06082a -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 综合资料
 - 简单加减计算

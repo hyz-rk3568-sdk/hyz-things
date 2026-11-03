@@ -2103,7 +2103,7 @@ D项，根据“熁（xié）盏，预热茶盏，相当于现在的‘温杯’
 <!-- hyz-question-id: 01a19c8a-3dd8-74c0-b677-e1dd8d99c8c7 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 特殊问法
 materials: []
@@ -2150,7 +2150,7 @@ D项，对应文段“因此”之前的内容，并非将造纸与修复技术�
 <!-- hyz-question-id: 01a19c8a-3dd8-74c0-b677-e1e5a9c20497 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 特殊问法
 materials: []
@@ -2246,7 +2246,7 @@ D项，缺少文段核心话题“量子手环”，且文段重点强调量子�
 <!-- hyz-question-id: 01a19c8a-3dd8-74c0-b677-e200d4c0a904 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials:
 - M1
@@ -2293,7 +2293,7 @@ D项，“赶紧开始挖吧！”表达出了急于“挖宝”的迫切心情�
 <!-- hyz-question-id: 01a19c8a-3dd8-74c0-b677-e215962bb111 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials:
 - M1
@@ -2379,7 +2379,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3dd8-74c0-b677-e23f77a336a2 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3237,7 +3237,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3dd9-7e20-808d-89a7ea69df59 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -5336,7 +5336,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3dd9-7e20-808d-8c3c1bf8782e -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics:
 - 综合资料
 - 简单加减计算

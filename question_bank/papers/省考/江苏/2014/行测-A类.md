@@ -321,7 +321,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fb064381fa00 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 主题词
 - 关联词-对策
@@ -568,7 +568,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fb664156d77e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -613,7 +613,7 @@ D项，根据文段“化学家从没尝试过抽取化合物的随机样本，�
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fb703bb9e186 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -655,7 +655,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fb838e4118c7 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -700,7 +700,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fb90b757e3c2 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -739,7 +739,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fbaab6eb7d74 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -1239,7 +1239,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fc522322dac5 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1393,7 +1393,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fc98de51f891 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1607,7 +1607,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fce926ec6932 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -1645,7 +1645,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fcfdf0a2fec9 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2130,7 +2130,7 @@ D项：“琴声”来自“钢琴”是主宾关系，“喝彩”与“乒乓�
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fda840a92601 -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics: []
 materials: []
 passage_source: null
@@ -2409,7 +2409,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fe1e0d942f07 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2452,7 +2452,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fe24f735d2a1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2496,7 +2496,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fe360200ae0e -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2550,7 +2550,7 @@ D项：该项出现面a和面c，展开图中面a和面c的公共边与面c的�
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fe44ce184b16 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2700,7 +2700,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fe7937e2828e -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3170,7 +3170,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-ff01a872d2c6 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -3209,7 +3209,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-ff1dd0ba7ed7 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -3248,7 +3248,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-ff2802c8a23d -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -3344,7 +3344,7 @@ A、B、C三项中的“禁止拍摄”“特地交代她千万不能打开”�
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-ff45523853e6 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials:
@@ -3452,7 +3452,7 @@ D项：消极因素是“违规搞集体土地承包”，积极的发展是“�
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-ff6f385a3ed7 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -3506,7 +3506,7 @@ D 项：没有体现出具有同等权限的单位或部门面临的共同问�
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-ff746c818b37 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials:
@@ -3610,7 +3610,7 @@ D项：王先生随时关注股票走势，没有体现出他是否“不需要�
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-ff91b01a57c1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -3664,7 +3664,7 @@ D项：原因是民政部门把是智障的小明安排到残疾人康复中心�
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-ffa8f1648353 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -3772,7 +3772,7 @@ D项：老赵只有厨师这一种专业技能，不符合定义，排除。
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-ffcac6e37b0d -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -3934,7 +3934,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920d-00022231841a -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -3982,7 +3982,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920d-0017fc315839 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -4031,7 +4031,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2426-72b0-93cc-e11b02c74d3d -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -4070,7 +4070,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2426-72b0-93cc-e1292214c75a -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -4148,7 +4148,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2426-72b0-93cc-e14e6be67157 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -4199,7 +4199,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2426-72b0-93cc-e157f75a5ada -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -4238,7 +4238,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2426-72b0-93cc-e164ccb9b8ec -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -4289,7 +4289,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2426-72b0-93cc-e173c5c4c9bf -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -4328,7 +4328,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2426-72b0-93cc-e188abe26d54 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -4377,7 +4377,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2426-72b0-93cc-e192871760b3 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -4467,7 +4467,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2426-72b0-93cc-e1bff0f5fa06 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M6
@@ -4506,7 +4506,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2426-72b0-93cc-e1cc663fca16 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -4635,7 +4635,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2426-72b0-93cc-e1ff8109056a -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7
@@ -4684,7 +4684,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2426-72b0-93cc-e20895281f47 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7
@@ -4764,7 +4764,7 @@ V_1、V_2、V_3分别表示2012年全国光缆线路长度、移动电话交换�
 <!-- hyz-question-id: 01a19c8a-2426-72b0-93cc-e2257b012fd2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M7
@@ -4803,7 +4803,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2426-72b0-93cc-e2327bdc973e -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M7

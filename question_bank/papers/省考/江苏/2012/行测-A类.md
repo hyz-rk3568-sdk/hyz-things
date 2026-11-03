@@ -329,7 +329,7 @@ D项错误，“实现经济状况改善”在文段中没有提及。
 <!-- hyz-question-id: 01a19c8a-2334-7232-80b3-2021c94d34d8 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -370,7 +370,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2334-7232-80b3-2031ac4ea742 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -411,7 +411,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2334-7232-80b3-20413cb8592e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -454,7 +454,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2334-7232-80b3-20565132c76f -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -497,7 +497,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2334-7232-80b3-20699db9a27a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -964,7 +964,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-3054a4e21a8b -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1002,7 +1002,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-306e2b74b073 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1040,7 +1040,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-307b95884494 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1118,7 +1118,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-30918e0620df -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1279,7 +1279,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-30debd30010c -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -1356,7 +1356,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-30f1b4744894 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -1720,7 +1720,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-31840c17c794 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2103,7 +2103,7 @@ D选项，光辉、光明是全同关系，正义之于圣人是属性关系，�
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-3201f575f63b -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2315,7 +2315,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-325dcbe8398e -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2355,7 +2355,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-326b1f6b2488 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2563,7 +2563,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-32b13adbf933 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3080,7 +3080,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-3359439407af -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 排除法
 materials: []
@@ -3294,7 +3294,7 @@ D选项“白发”与“秋霜”颜色相似。
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-339f919d5d5a -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -3347,7 +3347,7 @@ D选项中没有出现上级机关，只有相关人员，不符合“上级机�
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-33a19ae23da3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3447,7 +3447,7 @@ B、C、D三项都不符合“行动从一个人传向另一个人”的过程�
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-33c1cbe547eb -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3502,7 +3502,7 @@ A、B、D三项都是一种思维定势。
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-33dfbea49ed5 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3604,7 +3604,7 @@ C选项中白领小丹不是不会使用小汽车，而是对小汽车陷入泥�
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-33fd50b96d6c -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3653,7 +3653,7 @@ D选项中崔经理与员工交流是为了“判定公司是否正朝着既定�
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-340dcf656a5b -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3743,7 +3743,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-342399332122 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M2
@@ -3821,7 +3821,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-34444e180853 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M2
@@ -4093,7 +4093,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-34a9767f901f -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -4259,7 +4259,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-34e94dd4d748 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M4

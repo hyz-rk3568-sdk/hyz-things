@@ -390,7 +390,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f6366884a8b7 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2255,7 +2255,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f87fd869de49 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2372,7 +2372,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f8a925a07147 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2422,7 +2422,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f8b12f1dcb49 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2471,8 +2471,8 @@ B
 
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f8c5a915fa62 -->
 ```yaml
-module: 数量关系
-category: null
+module: 判断推理
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2522,7 +2522,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f8d02ffdc0d2 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2572,7 +2572,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f8ee46136acd -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2882,7 +2882,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f95a7811c863 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -5291,7 +5291,7 @@ C、D两项：均与“行车之德”无关。偏离文段的中心，排除。
 <!-- hyz-question-id: 01a19c8a-3983-7be2-9504-26e9cde7165e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 主题词
 - 关联词-对策
@@ -5938,7 +5938,7 @@ D项，“影响较大”表述错误，文段意为改变模式后，慈善组�
 <!-- hyz-question-id: 01a19c8a-3983-7be2-9504-27b843839838 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 主题词
 - 关联词-转折
@@ -6205,7 +6205,7 @@ D项：定位文字材料第二段，“长三角区域25个城市平均PM2.5和
 <!-- hyz-question-id: 01a19c8a-3983-7be2-9504-281642804ad2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 综合资料
 - 简单加减计算
@@ -6515,7 +6515,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3983-7be2-9504-288d508faa1c -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 综合资料
 - 简单加减计算

@@ -552,7 +552,7 @@ D项错误，移动支付与银行是有关联的，需要将钱转到移动支�
 <!-- hyz-question-id: 01a19c8a-268a-7d23-9352-4df9e287d755 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -2266,7 +2266,7 @@ D
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-2390a2805b7e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2315,7 +2315,7 @@ D项，根据第1段 “指纹识别是生物识别技术中发展最成熟··�
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-23a2daa5c374 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 逻辑填空题
 - 普通篇章
@@ -2360,7 +2360,7 @@ A项“义无反顾”指从道义上只有勇往直前，不能犹豫回顾，�
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-23b42d9fe91b -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2409,7 +2409,7 @@ D项，根据“一个好的指纹识别方案需要传感器和算法芯片的�
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-23cad66360bb -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2458,7 +2458,7 @@ D项，“准入门槛”无中生有，文段没有提及，当选。
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-23de0433ee21 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -3604,7 +3604,7 @@ D项：位置1、8的符号相同；位置2、3的符号相同；位置4、6的�
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-2572a3326431 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3685,7 +3685,7 @@ C
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-259c899e69f3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3766,7 +3766,7 @@ A
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-25b875c1532e -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3810,7 +3810,7 @@ D
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-25c2bc6ca76e -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3850,7 +3850,7 @@ A
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-25d768e8fc07 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3892,7 +3892,7 @@ B
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-25e2767afd25 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3932,7 +3932,7 @@ C
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-25fe267c1cd6 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4684,7 +4684,7 @@ D项：老鼠和人的差异很大以及老鼠实验的结论对于人类只有�
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-26d57942b85b -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 排除法
 materials: []
@@ -4731,7 +4731,7 @@ A
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-26e30376ba72 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -4784,7 +4784,7 @@ D
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-26f3c6457037 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -4951,7 +4951,7 @@ D项：义务献血不属于不良行为，不符合定义，排除。
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-272fbcb6d3c3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5113,7 +5113,7 @@ D项：从金融机构到附近的保险公司不符合“由大城市到中小�
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-275daeb5eaaf -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5167,7 +5167,7 @@ D项：小区受到骚扰后直接购买“呼死你”软件解决问题，未�
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-276dcd15805c -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials:
@@ -5221,7 +5221,7 @@ D项：“老王在看过丁某推荐的名医后，病情未见好转，而老�
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-2770eccb418c -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 故事类
 materials:
@@ -5275,7 +5275,7 @@ D项：董事长在审阅后交待几句，对方案结果的评论，不符合�
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-27864d5eb4fa -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5329,7 +5329,7 @@ D项：小黄坚持学习和模仿播音员的发音，不属于“在完全不�
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-279e4466d807 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -5383,7 +5383,7 @@ D项：张女士通过手机购买理财产品被骗，不属于“由于过度�
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-27a042bf43f4 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -5461,7 +5461,7 @@ B
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-27c428f6d5aa -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -5500,7 +5500,7 @@ C
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-27d768d45bd2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -5539,7 +5539,7 @@ B
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-27e4ea1042ad -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -5584,7 +5584,7 @@ D选项：选项求的是“2013—2017年全国汽车保有量年均增速”�
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-27f99a894d1b -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -5623,7 +5623,7 @@ D
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-280945970118 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M4
@@ -5701,7 +5701,7 @@ D
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-2820930f53d3 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -5740,7 +5740,7 @@ A
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-283cc2e05eb2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -5785,7 +5785,7 @@ D项：定位文字材料与表格材料可得，苏北地区有763.42万人，�
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-284b93d75741 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -5863,7 +5863,7 @@ C
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-2862411c2a8c -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -5941,7 +5941,7 @@ B
 <!-- hyz-question-id: 01a19c8a-268c-7173-a922-2229ed455ece -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -5986,7 +5986,7 @@ D项：定位统计图可知2017年全国农村居民人均可支配收入是134
 <!-- hyz-question-id: 01a19c8a-268c-7173-a922-2233671251d0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -6025,7 +6025,7 @@ B
 <!-- hyz-question-id: 01a19c8a-268c-7173-a922-22441446cbe0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M6
@@ -6064,7 +6064,7 @@ C
 <!-- hyz-question-id: 01a19c8a-268c-7173-a922-225b6bac03d4 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -6103,7 +6103,7 @@ B
 <!-- hyz-question-id: 01a19c8a-268c-7173-a922-226a23f04204 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -6142,7 +6142,7 @@ A
 <!-- hyz-question-id: 01a19c8a-268c-7173-a922-2277660edbcb -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6

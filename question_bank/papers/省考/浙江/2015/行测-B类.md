@@ -147,7 +147,7 @@ D项错误，根据《中华人民共和国民法典》第一千零六十七条�
 <!-- hyz-question-id: 01a19c8a-3895-7452-bdbf-f1dae2e0f4b3 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -185,7 +185,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3895-7452-bdbf-f1e9b960fb1f -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -2492,7 +2492,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-dbebdad8dbf2 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2682,7 +2682,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-dc33dd85d0bf -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2726,7 +2726,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-dc48c9118045 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -5502,7 +5502,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3897-7242-871a-574b29b94957 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 直接找数
 - 综合资料

@@ -2270,7 +2270,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b25046c15c08 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2315,7 +2315,7 @@ B项，由第一段首句的“任何强制性技术标准的制定，必然建�
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b26590df69a5 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 逻辑填空题
 - 普通篇章
@@ -2358,7 +2358,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b278881d1b20 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2403,7 +2403,7 @@ A项“增产效益”只对应“总收益”，未提及“总成本与总收�
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b28d27305d5c -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2448,7 +2448,7 @@ A、B两项，“仍有可能给人造成伤害”与“仍不可能是零风险
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b29bdc71e385 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -3615,7 +3615,7 @@ D项：位置1和9分别是同一字母的大小写形式；位置2、6、7的�
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b4389fb166a6 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3780,7 +3780,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b4740974f6f4 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3822,7 +3822,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b48fb7e1a2d0 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3862,7 +3862,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b49c616721b5 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3902,7 +3902,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b4ac6224793e -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3944,7 +3944,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b4ba6e05b5d8 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4355,7 +4355,7 @@ D项：说明吃一小块匹萨产生的能量相当于运动一小时所消耗�
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b53619b29102 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials: []
 passage_source: null
@@ -4689,7 +4689,7 @@ D项：母亲由于夜晚哺乳会影响睡眠，导致工作节奏被打乱，�
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b59af1b23f47 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 排除法
 materials: []
@@ -4736,7 +4736,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b5ab0633fb0c -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -4789,7 +4789,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b5b1b58d8255 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -4848,7 +4848,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b5c86a53578b -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -4956,7 +4956,7 @@ D项：义务献血不属于不良行为，不符合定义，排除。
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b5e7db44fdba -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials:
@@ -5014,7 +5014,7 @@ D项：历史文化遗产及人文景观不断消失，旧城改造，体现了�
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b5f9d5cb6d04 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 故事类
 materials:
@@ -5176,7 +5176,7 @@ D项：从金融机构到附近的保险公司不符合“由大城市到中小�
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b62a330febad -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5230,7 +5230,7 @@ D项：自动播报系统是人为设置的，未体现人机交流，也不符�
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b63af86ad9d8 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5284,7 +5284,7 @@ D项：小梁夫妇担心女儿上学买学区房的事情，小梁夫妇是否�
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b64310c26704 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5338,7 +5338,7 @@ D项：小区受到骚扰后直接购买“呼死你”软件解决问题，未�
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b65ffb7c097c -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials:
@@ -5446,7 +5446,7 @@ D项：学者长期驻守农村，并根据田野调查写成论文专著，但�
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e7a4e2b3ed5f -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5554,7 +5554,7 @@ D项：某新媒体公司，属于“互联网公司、媒体”，通过分析�
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e7cb48265f6d -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -5608,7 +5608,7 @@ D项：张女士通过手机购买理财产品被骗，不属于“由于过度�
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e7dff75f82ed -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5662,7 +5662,7 @@ D项：小黄坚持学习和模仿播音员的发音，不属于“在完全不�
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e7ed9080f210 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -5740,7 +5740,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e80ac20c071b -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -5779,7 +5779,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e814438bd5d2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -5818,7 +5818,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e821759b4acc -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -5863,7 +5863,7 @@ D选项：选项求的是“2013—2017年全国汽车保有量年均增速”�
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e83701ed6609 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -5941,7 +5941,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e85cdb8bb3e0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -6019,7 +6019,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e87ee71aaf7a -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -6064,7 +6064,7 @@ D项：定位统计图可知2017年全国农村居民人均可支配收入是134
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e88ff521a844 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6148,7 +6148,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e8a4e3b3662d -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6273,7 +6273,7 @@ D项，定位文字材料可得2016年主营业收入为2720.5亿元，增长9.9
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e8d0262f11dd -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -6312,7 +6312,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e8eeb5ef6cf6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M6
@@ -6351,7 +6351,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e8fe8cc2e757 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -6390,7 +6390,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e9085411c905 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -6429,7 +6429,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e9124c725895 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6

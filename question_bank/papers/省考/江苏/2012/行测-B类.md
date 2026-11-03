@@ -2745,7 +2745,7 @@ A项表述与文段有出入，C项“更好”无从推知，D项“缺乏人�
 <!-- hyz-question-id: 01a19c8a-235c-7402-9c1b-2042aec2d8dc -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M2
@@ -2788,7 +2788,7 @@ A项的“减少相关问题的不确定性”是实现科学进步的一个环�
 <!-- hyz-question-id: 01a19c8a-235c-7402-9c1b-20550d4b39a0 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M2
@@ -2831,7 +2831,7 @@ A项“千真万确”侧重真实性，与“事实”语意重复；B项“不
 <!-- hyz-question-id: 01a19c8a-235c-7402-9c1b-2065fd1d3b3e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M2
@@ -2872,7 +2872,7 @@ A
 <!-- hyz-question-id: 01a19c8a-235c-7402-9c1b-207bb83eec5f -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M2
@@ -2915,7 +2915,7 @@ A项的“一个世纪”是对第⑩段内容的错误理解；B项强调旧理
 <!-- hyz-question-id: 01a19c8a-235c-7402-9c1b-2087a1bf8a73 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M2
@@ -3360,7 +3360,7 @@ C
 <!-- hyz-question-id: 01a19c8a-235c-7402-9c1b-2121bb5604e6 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3438,7 +3438,7 @@ D
 <!-- hyz-question-id: 01a19c8a-235c-7402-9c1b-214ef24a2384 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3476,7 +3476,7 @@ A
 <!-- hyz-question-id: 01a19c8a-235c-7402-9c1b-215390c2e5af -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3520,7 +3520,7 @@ A
 <!-- hyz-question-id: 01a19c8a-235c-7402-9c1b-2160a7613d6b -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3560,7 +3560,7 @@ C
 <!-- hyz-question-id: 01a19c8a-235c-7402-9c1b-217c3934e215 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3729,7 +3729,7 @@ D
 <!-- hyz-question-id: 01a19c8a-235c-7402-9c1b-21baff2e14fc -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -4350,7 +4350,7 @@ A项代入后，指南针是中国的“四大发明”之一，构成对应关�
 <!-- hyz-question-id: 01a19c8a-235c-7402-9c1b-229697a099eb -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics: []
 materials: []
 passage_source: null
@@ -4592,7 +4592,7 @@ A
 <!-- hyz-question-id: 01a19c8a-235c-7402-9c1b-22f06159cfb0 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4796,7 +4796,7 @@ B
 <!-- hyz-question-id: 01a19c8a-235c-7402-9c1b-234189bdf8e2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -5409,7 +5409,7 @@ D
 <!-- hyz-question-id: 01a19c8a-235c-7402-9c1b-2402355be817 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5454,7 +5454,7 @@ A、B、C三项都符合关键词强调的内容，即都是“由组织实施�
 <!-- hyz-question-id: 01a19c8a-235c-7402-9c1b-241a37e816d2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5499,7 +5499,7 @@ A、B、D三项均与“公开承认或奖励员工贡献”无关，不属于�
 <!-- hyz-question-id: 01a19c8a-235c-7402-9c1b-242271257555 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5695,7 +5695,7 @@ B项“不会使用音响”、C项“不会发短信”以及D项“不会使�
 <!-- hyz-question-id: 01a19c8a-235d-7093-ae8d-fae369ad285d -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -5920,7 +5920,7 @@ C
 <!-- hyz-question-id: 01a19c8a-235d-7093-ae8d-fb3ba6a9fd23 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -5998,7 +5998,7 @@ B
 <!-- hyz-question-id: 01a19c8a-235d-7093-ae8d-fb5ba8d1684e -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -6219,7 +6219,7 @@ D
 <!-- hyz-question-id: 01a19c8a-235d-7093-ae8d-fbac9f025243 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M4
@@ -6489,7 +6489,7 @@ C
 <!-- hyz-question-id: 01a19c8a-235d-7093-ae8d-fc0ff20c6e2f -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5

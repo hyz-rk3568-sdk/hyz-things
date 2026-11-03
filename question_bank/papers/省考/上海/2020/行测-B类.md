@@ -410,7 +410,7 @@ C
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-0ecad7574181 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -456,7 +456,7 @@ D项，“人固有一死，或重于泰山，或轻于鸿毛”出自司马迁�
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-0edecb873d46 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -502,7 +502,7 @@ D项，该句通过“一言以蔽之”进行概括总结，接着引出中国�
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-0ee2982edeb5 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -601,7 +601,7 @@ B
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-0f02b4d02960 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -1042,7 +1042,7 @@ D项，对应文段“汉数千里争利，则人马罢，虏以全制其敝，�
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-0f9aaa1aaf48 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -1089,7 +1089,7 @@ C项“不置可否”指不表明态度，文段作者态度很明确，即不�
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-0fa012163705 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1138,7 +1138,7 @@ D项，根据第2自然段“其二，日常生活的论证语境和法律过程
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-0fb1edcdfbb9 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1187,7 +1187,7 @@ D项，根据最后一段“是最理想的，它清晰明确、难以质疑”�
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-0fc7d86cb5e9 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1236,7 +1236,7 @@ D项，根据第四段“但楚氏族带着北方夷夏原始巫术宗教文化�
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-0fdf86c7ba07 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1287,7 +1287,7 @@ D项，根据文章第一段中“《湘君》《湘夫人》《山鬼》，长�
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-0fedfe58e291 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1336,7 +1336,7 @@ C项，根据“这不是屈原冒天下之大不韪。西周盛行的体现··
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-0ff3f5c37413 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -1385,7 +1385,7 @@ D项，“《九歌》的文化特色”仅对应文章结尾段的内容，表�
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-1002d87fe261 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1423,7 +1423,7 @@ B
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-1016fd920053 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1461,7 +1461,7 @@ A
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-1025d0b666fb -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1503,7 +1503,7 @@ D
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-103a6f41df6d -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1554,7 +1554,7 @@ D项，Li_2O和MgO是离子晶体，离子晶体中的作用力为离子键，�
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-10459e92fd58 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1592,7 +1592,7 @@ B
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-1057cc933ea6 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1636,7 +1636,7 @@ C
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-106b7b4f8226 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1684,7 +1684,7 @@ D项，当用户用电设备消耗功率变化时，降压变压器输出功率�
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-107b5368bf5d -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1734,7 +1734,7 @@ D项，火车向南减速转弯，火车和桌面相对于小球有正西方向�
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-1087078450f0 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1782,7 +1782,7 @@ D项，匀速圆周运动中，周期T = 2π/ω，角速度相等，周期相等
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-1094e2e49ed3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1820,7 +1820,7 @@ C
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-10a2ccb2535b -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2841,7 +2841,7 @@ A
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-11fbf9cb649b -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 代入法
 materials: []
@@ -2904,7 +2904,7 @@ D项：代入的话，即：最多购买3种，但根据题干条件，可以购
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-12096e9580f7 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 代入法
 materials: []
@@ -3736,8 +3736,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-936f-ffe8068fab43 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 增长量计算
 - 综合资料
@@ -3777,8 +3777,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-936f-fff0baacc1b4 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 倍数
 topics:
 - 现期倍数
 - 综合资料
@@ -3818,8 +3818,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-00034f122ffc -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -3859,8 +3859,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-00193bc629de -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 一般增长率
 - 综合资料
@@ -3900,8 +3900,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-0028c34077a8 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -3947,8 +3947,8 @@ D项：定位图形，2019年上半年网店码洋为215.31亿元，下半年环
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-0036ce0bfd08 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 统计表
 - 直接找数
@@ -3988,8 +3988,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-004b340bc60f -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 现期计算
 - 统计表
@@ -4029,8 +4029,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-0051cd92d3b2 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 现期计算
 - 统计表
@@ -4070,8 +4070,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-006e5369dd4b -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 倍数
 topics:
 - 现期倍数
 - 统计表
@@ -4111,8 +4111,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-007be377bb10 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 统计表
@@ -4158,8 +4158,8 @@ D项：定位表格1,2019-2021年我国工业大数据市场规模=146.9+192.6+2
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-0083e925e485 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 统计表
 - 简单加减计算
@@ -4199,8 +4199,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-0097143745ff -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 两期比重
 - 统计表
@@ -4240,8 +4240,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-00adaf4edda1 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 倍数
 topics:
 - 现期倍数
 - 统计表
@@ -4281,8 +4281,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-00bcec2cd6d6 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 增长量比较
 - 统计表
@@ -4328,8 +4328,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-00c11ec7d8aa -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 统计表
@@ -4501,7 +4501,7 @@ B
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-0106d02d3747 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4725,8 +4725,8 @@ D项错误，唯心主义强调意识是世界的本原，世界上一切物质�
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-0158fbed9670 -->
 ```yaml
-module: 常识判断
-category: null
+module: 政治理论
+category: 时事政治
 topics: []
 materials: []
 passage_source: null
@@ -4944,7 +4944,7 @@ B
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-01a3130dd6d9 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4990,7 +4990,7 @@ D项正确，权力机关监督是指各级人大及其常委会对国家行政�
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-01b424ec3842 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5036,7 +5036,7 @@ D项错误，公共政策能力是指一个政府正确地制定和有效地执�
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-01c9b0f9f0fe -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5084,7 +5084,7 @@ D项错误，传媒不属于制定公共政策的主体，不能制定公共政�
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-01d1a9772059 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5481,8 +5481,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-026e8eb61b4b -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 新思想
 topics:
 - 新思想总论
 - 重要会议讲话
@@ -5524,8 +5524,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-02740e91a21e -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 重要会议讲话
 materials:
@@ -5565,8 +5565,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-02849dd88a90 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 其他建设
 materials:
@@ -5611,8 +5611,8 @@ D项正确，党的政治建设是党的根本性建设，决定党的建设方�
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-029db1083d7a -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 政治建设
 materials:
@@ -5653,8 +5653,8 @@ AC
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-02a47d24be14 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 经济建设
 materials:
@@ -5695,8 +5695,8 @@ BD
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-02bc6b51db7f -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 经济建设
 materials:
@@ -5735,8 +5735,8 @@ ABD
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-02c78810fef1 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 新思想
 topics:
 - 新思想总论
 materials:
@@ -5777,8 +5777,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-02d31439bb2e -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M8
@@ -5822,8 +5822,8 @@ C项错误，根据第三段内容“提供公共文化服务是博物馆的基�
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-02e6269c2689 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 重要事件
 materials:
@@ -5870,8 +5870,8 @@ D项正确，根据第一段“故宫综合运用市场化手段进行创造性�
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-02fd461b0d72 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 市场经济
 materials:
@@ -5918,8 +5918,8 @@ D项错误，市场营销指借助互联网、新媒体以及其他传播渠道�
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-030d702f3f31 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 经济常识
 topics:
 - 市场经济
 materials:
@@ -5964,8 +5964,8 @@ D项正确，题干中提到“实际上，提供公共文化服务是博物馆�
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-0314622b5344 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 宪法
 materials:
@@ -6010,8 +6010,8 @@ C、D项错误，根据《宪法》第八十五条规定：“中华人民共和
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-0323273352d4 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 宪法
 materials:
@@ -6058,8 +6058,8 @@ D项正确，民法典属于民事基本法律，必须由全国人大制定。
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-033f0c625a7c -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 宪法
 materials:
@@ -6106,8 +6106,8 @@ D项错误，社会主义法制是社会主义民主的保障，主要体现在�
 
 <!-- hyz-question-id: 01a19c89-f2e3-7f00-9370-0344d21596b9 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 宪法
 materials:

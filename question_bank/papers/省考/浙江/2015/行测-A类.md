@@ -147,7 +147,7 @@ D项错误，根据《中华人民共和国民法典》第一千零六十七条�
 <!-- hyz-question-id: 01a19c8a-3866-7ad1-8260-88d5aa83323e -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -185,7 +185,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3866-7ad1-8260-88e269e7994a -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -2492,7 +2492,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fc58441710ae -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2682,7 +2682,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fcae0242d55b -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2726,7 +2726,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fcbd413d07ff -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3900,7 +3900,7 @@ D项：烟草受损起决定性因素为船舶进水，船舶进水属于近因�
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fe61ae5b158e -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4008,7 +4008,7 @@ D项：辛某房屋被强拆，上访过程被拘留说明辛某的合法权利�
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fe86c09d8fd3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5736,7 +5736,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae93-00caf3af99f2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 直接找数
 - 综合资料

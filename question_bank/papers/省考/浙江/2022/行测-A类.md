@@ -5730,7 +5730,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3b5f-78d0-afca-9bb1bf1e06e8 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics:
 - 比值计算
 - 综合资料

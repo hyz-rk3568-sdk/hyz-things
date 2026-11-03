@@ -1002,7 +1002,7 @@ D项错误，重阳节是农历9月9日，有登高祈福、拜神祭祖、晒�
 <!-- hyz-question-id: 01a19c8a-2a72-7c21-b9eb-3c0293fbee94 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -1091,7 +1091,7 @@ D项正确，A、B、C三项错误，青藏高原由于海拔高气温低，冻�
 <!-- hyz-question-id: 01a19c8a-2a72-7c21-b9eb-3c2d441f0ac5 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -1826,7 +1826,7 @@ D项：“禾本科植物经历的进化和选择的过程”非重点，排除�
 <!-- hyz-question-id: 01a19c8a-2a72-7c21-b9eb-3d29a48f0e64 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: 知网《光合细菌代谢与其在医药领域的应用》
@@ -2342,7 +2342,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2a72-7c21-b9eb-3de3695acf06 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 逻辑填空题
 - 普通篇章
@@ -2387,7 +2387,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2a72-7c21-b9eb-3df560c893b5 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2436,7 +2436,7 @@ D项：根据第六段“虽然芒果有种子，但很多芒果果核很大，�
 <!-- hyz-question-id: 01a19c8a-2a72-7c21-b9eb-3e0aba61b859 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2483,7 +2483,7 @@ D项：根据第五段“像香蕉这些没有种子的作物，通常是把一�
 <!-- hyz-question-id: 01a19c8a-2a72-7c21-b9eb-3e1cb23a8849 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -2528,7 +2528,7 @@ A、C、D三项：A项“容量大”、C项“管理方式”、D项“设计�
 <!-- hyz-question-id: 01a19c8a-2a72-7c21-b9eb-3e277da7d6ad -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 标题填入题
 - 普通篇章
@@ -4052,7 +4052,7 @@ issues:
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-10c723ad6b2b -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4094,7 +4094,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-10d92abfc163 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4476,7 +4476,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-1148d0bf6f45 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials: []
 passage_source: null
@@ -4780,7 +4780,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-11950655d912 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -4845,7 +4845,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-11ad410a4139 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -4912,7 +4912,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-11bcc7e5680e -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -4966,7 +4966,7 @@ D项：某电商平台公布了平台补贴及政府补贴的申领方案，但�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-11cbcbfa736a -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5020,7 +5020,7 @@ D项：某博物馆从古代名画中选取“意象”元素，实景搭建了�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-11dfb46e35b5 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5074,7 +5074,7 @@ D项：清江社区对废旧电池回收问题进行讲解，居民表示再也�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-11e3fd3acf89 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials:
@@ -5128,7 +5128,7 @@ D项：村民自发组织巡查队，检测上报森林火情，不涉及政府�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-11fea6ad4f7e -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5182,7 +5182,7 @@ D项：某公司实行末位淘汰制，规模和影响力越来越大，符合�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-1200be13582f -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials:
@@ -5236,7 +5236,7 @@ D项：赵先生在每次与同事的聚会中，都能让大家笑得前仰后�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-121b9be19739 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -5290,7 +5290,7 @@ D项：小王打电话告诉女友，临时又要加班，没法一起去看电�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-122c81c0c2cc -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials:
@@ -5344,7 +5344,7 @@ D项：带爸妈外出游玩时，胡女士会拍摄攻略短视频，并对当�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-123e72a0dc90 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -5398,7 +5398,7 @@ D项：独居的李奶奶每天都泡在“50后时光”直播间，符合“�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-124ef5e93c46 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -5452,7 +5452,7 @@ D项：在医院搭乘电梯，符合“在相对封闭、狭小的空间中”�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-125a0c166014 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -5530,7 +5530,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-12780238a34e -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -5569,7 +5569,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-12851506a1de -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -5608,7 +5608,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-129c9d931e5a -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -5653,7 +5653,7 @@ D项：定位文字材料第二段可得，2023年，我国水泥产量20.2亿�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-12a5e1365878 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -5692,7 +5692,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-12bc801dd41b -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -5731,7 +5731,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-12cfe02785bc -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -5809,7 +5809,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-12ece0199626 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -5854,7 +5854,7 @@ D项：定位文字材料可得，2023年，M市东北片区接待过夜游客11
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-12f20334376f -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -5893,7 +5893,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-1304a6c83c0c -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -5932,7 +5932,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-131066eb4f39 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6010,7 +6010,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-13311b115002 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -6055,7 +6055,7 @@ D项：定位文字材料可得，2024年8月末，国有企业资产负债率64
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-134e9cffb52a -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -6094,7 +6094,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-1359c1ec3ec9 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -6133,7 +6133,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-13693eb942c5 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -6172,7 +6172,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-137108dd7bad -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6
@@ -6211,7 +6211,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-13821ce396c6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6

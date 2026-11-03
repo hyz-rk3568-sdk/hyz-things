@@ -457,7 +457,7 @@ C项“距离”、D项“难题”与“海峡”的喻意也完全不符。
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b3bd6734a784 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 特殊问法
 materials: []
@@ -584,7 +584,7 @@ B、C、D三项表述均与“就业率”毫无关联，直接排除。
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b3e14f375865 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -627,7 +627,7 @@ C
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b3f808c7182a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -666,7 +666,7 @@ D
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b40ce2f69a4b -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -705,7 +705,7 @@ A
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b4128e0fd663 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -750,7 +750,7 @@ D项表述正确：第五段整段可知，门罗善于以旁观者的视角表�
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b42a02566a03 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -1285,7 +1285,7 @@ C
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b4e14a2a4426 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1399,7 +1399,7 @@ C
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b51e01a574c8 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1556,7 +1556,7 @@ C
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b5566cb78504 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -1594,7 +1594,7 @@ B
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b5640a11d2a1 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -1634,7 +1634,7 @@ C
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b578ffbe58a7 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -1715,7 +1715,7 @@ D
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b59d8dfadcd4 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -1753,7 +1753,7 @@ C
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b5a244d072aa -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2166,7 +2166,7 @@ D项：自信与自大含义相近，都有对自身能力认可的含义，谨�
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b635d3ef280c -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2427,7 +2427,7 @@ C
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b693a3296ef5 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2467,7 +2467,7 @@ D
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b6a68d5dfb17 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2509,7 +2509,7 @@ C
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b6b745734625 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2559,7 +2559,7 @@ D项：选项由面a和面b构成，展开图中面a白色梯形的长边挨着�
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6e380ea8e794 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2703,7 +2703,7 @@ D项：组合正确。
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6e61e4782a4a -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3179,7 +3179,7 @@ D
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6ef8180908ed -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -3226,7 +3226,7 @@ D
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6f03273b8552 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -3267,7 +3267,7 @@ D
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6f16d7fab345 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -3319,7 +3319,7 @@ C项为了要表达清楚教学方法的内涵，将“疏导”与“启发”�
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6f233182f65f -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -3373,7 +3373,7 @@ D项：《1965年××统计年鉴》符合“科学文献”，但是其数据�
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6f38f33f8505 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials:
@@ -3427,7 +3427,7 @@ D项：黄先生准备卖掉房子回老家养老不符合“市民经常到对�
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6f4f056d67e4 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -3481,7 +3481,7 @@ D项：原因是民政部门把是智障的小明安排到残疾人康复中心�
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6f5b25275205 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -3535,7 +3535,7 @@ D项：故宫“失窃门”被曝光，符合“某地或某人曝出某个丑�
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6f6efbdfdfec -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials:
@@ -3639,7 +3639,7 @@ D项：某酒店准备扩建自己的停车场不符合“公共设施”，与�
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6f83a1a519d1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -3693,7 +3693,7 @@ D项：准备好开工的各项资金，“资金”与“原材料”相悖，�
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6f9a2e2e6481 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -3834,7 +3834,7 @@ A
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6fcbfaa42228 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -3885,7 +3885,7 @@ B
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6fde8cde8fea -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -3924,7 +3924,7 @@ C
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6feed0cf9a49 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -3973,7 +3973,7 @@ A
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6ff2f8b84a7f -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -4102,7 +4102,7 @@ C
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-702439de7953 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -4141,7 +4141,7 @@ B
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-7037ea2bbc7f -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -4225,7 +4225,7 @@ D选项：根据选项定位到第五段“上海浦东机场口岸，230.28万�
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-7059ff73e224 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -4264,7 +4264,7 @@ B
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-7065dca03c7e -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -4342,7 +4342,7 @@ C
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-708fda7904ca -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -4551,7 +4551,7 @@ B
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-70dca992fefc -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -4635,7 +4635,7 @@ D项，2013年江苏省货运量增速为8.8%，明显高于客运量增速4.0%�
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-70fe7dac771d -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7

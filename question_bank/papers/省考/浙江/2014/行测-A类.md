@@ -785,7 +785,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3807-7392-9048-0152a3e41d20 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -823,7 +823,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3807-7392-9048-016d15ffa577 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -1576,7 +1576,7 @@ D项，根据“‘衣服令’就是奈良时代模仿唐代制定的制度之�
 <!-- hyz-question-id: 01a19c8a-3808-7143-a202-4c5b4bae8bf4 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 特殊问法
 materials: []
@@ -1751,7 +1751,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3808-7143-a202-4c92d6320758 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1865,7 +1865,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3808-7143-a202-4ccff2621999 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1903,7 +1903,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3808-7143-a202-4cd353d3def7 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1979,7 +1979,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3808-7143-a202-4cf93161cb6f -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2093,7 +2093,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3808-7143-a202-4d2d757ca425 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2253,7 +2253,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3808-7143-a202-4d5294f8dd86 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2291,7 +2291,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3808-7143-a202-4d6ccdb201c4 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3392,7 +3392,7 @@ D项：是宋明两代“心学”的开山之祖陆九渊思想的主要内容�
 <!-- hyz-question-id: 01a19c8a-3808-7143-a202-4ee09c36d97f -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 故事类
 materials: []
@@ -4961,7 +4961,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3808-7143-a202-50ef683ed365 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5095,7 +5095,7 @@ D项错误，法拉第电磁感应定律是电磁学中的一条基本定律，�
 <!-- hyz-question-id: 01a19c8a-3808-7143-a202-511f0fab3bbc -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics:
 - 其他
 materials: []
@@ -5506,7 +5506,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3808-7143-a202-51a7a25c917c -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 统计表
 - 简单加减计算
@@ -5721,7 +5721,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3808-7143-a202-51f61a124770 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 文字资料
 - 简单加减计算
@@ -5983,7 +5983,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3809-7701-af4b-6a0036fd3bf6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 直接找数
 - 综合资料

@@ -245,7 +245,7 @@ D项错误，A、B、C三项正确，2021年9月27日至28日，习近平总书�
 <!-- hyz-question-id: 01a19c8a-2876-7ad1-97d9-663c282ce29c -->
 ```yaml
 module: 常识判断
-category: null
+category: 法律常识
 topics: []
 materials: []
 passage_source: null
@@ -484,7 +484,7 @@ D项正确，习近平总书记在讲话中指出：“几年来，在党中央�
 <!-- hyz-question-id: 01a19c8a-2876-7ad1-97d9-6685610a30bd -->
 ```yaml
 module: 常识判断
-category: null
+category: 经济常识
 topics: []
 materials: []
 passage_source: null
@@ -530,7 +530,7 @@ D项错误，在布局对元宇宙市场的管理之前，应当对该市场有�
 <!-- hyz-question-id: 01a19c8a-2876-7ad1-97d9-66995a3b0a36 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -619,7 +619,7 @@ D项错误，小满是二十四节气中的第八个节气，通常在每年公�
 <!-- hyz-question-id: 01a19c8a-2876-7ad1-97d9-66bcc0043f5c -->
 ```yaml
 module: 常识判断
-category: null
+category: 人文常识
 topics: []
 materials: []
 passage_source: null
@@ -761,7 +761,7 @@ D项正确，根据《民法典》第一千一百七十七条规定：“合法�
 <!-- hyz-question-id: 01a19c8a-2876-7ad1-97d9-66e2fdf1117e -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -1107,7 +1107,7 @@ D项，根据“随着学科的不断延伸、细分、侧生和增多，现在�
 <!-- hyz-question-id: 01a19c8a-2876-7ad1-97d9-6757273ff944 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-对策
 - 主题词
@@ -1206,7 +1206,7 @@ C项，文段尾句并未论述“科研工作者”，无法对应文段最后�
 <!-- hyz-question-id: 01a19c8a-2876-7ad1-97d9-677cc88b6328 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 特殊问法
 materials: []
@@ -2093,7 +2093,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2876-7ad1-97d9-689e02d548be -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 逻辑填空题
 - 普通篇章
@@ -2138,7 +2138,7 @@ A项“一站式”指一次性完成、一步到位，俗称一条龙服务，B
 <!-- hyz-question-id: 01a19c8a-2876-7ad1-97d9-68a4f09b1dd8 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2187,7 +2187,7 @@ C项，“太阳活动周循环进入新上升阶段”文章并未提及，无�
 <!-- hyz-question-id: 01a19c8a-2876-7ad1-97d9-68b9cf34bafa -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2236,7 +2236,7 @@ D项，根据第三段“地磁暴期间，高层大气密度会迅速上升，�
 <!-- hyz-question-id: 01a19c8a-2876-7ad1-97d9-68c4f4faee7e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2285,7 +2285,7 @@ D项，根据文章第九段“时刻监视空间环境的变化······协�
 <!-- hyz-question-id: 01a19c8a-2876-7ad1-97d9-68d1f29bc64a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 标题填入题
 - 普通篇章
@@ -2603,7 +2603,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7733a6034a4e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3933,7 +3933,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7902f17ac0f3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3975,7 +3975,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-791a5991370b -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4017,7 +4017,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-79273bbd0311 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4059,7 +4059,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7935afd96951 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4109,7 +4109,7 @@ D项：可以由题干图形拼合而成，拼合方式如图所示，当选。
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-79418e20f6e2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4672,7 +4672,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-79eb15b22c7e -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -4735,7 +4735,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-79fa6faaefed -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -5162,7 +5162,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7a61267e60ec -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M3
@@ -5217,7 +5217,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7a73c21ed804 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M3
@@ -5282,7 +5282,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7a84c58900e5 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -5346,7 +5346,7 @@ D项：在互联网公司工作的小何由于工作强度高，决定每年给�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7a9cb14f7ab1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials:
@@ -5400,7 +5400,7 @@ D项：该项中某农业科技服务公司对于农民的土地来说只是起�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7aa82fa0f8fa -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5454,7 +5454,7 @@ D项：小孟依托网络平台更新写的小说，符合“作为独立个体�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7ab092aba55d -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5508,7 +5508,7 @@ D项：小缪决定购买官网中按摩椅的依据是常用的视频网站经�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7ac563c3fcbe -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5562,7 +5562,7 @@ D项：市场监管、税务等职能部门联合办公，符合“部门联动�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7ad2b190d744 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5616,7 +5616,7 @@ D项：小佳将自己前些年穿过的厚衣物寄给平台，属于向灾区�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7ae445347102 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5670,7 +5670,7 @@ D项：该家具厂的办公椅意外地受到办公人士的喜爱，没有体�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7af0995cbde2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5724,7 +5724,7 @@ D项：找出与朋友们的合影来掩盖脱落墙皮的地方，符合“表�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7b068a43ad1f -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -5778,7 +5778,7 @@ D项：小青进入幼儿园后，与同学和老师都不认识，符合“在�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7b140b6af1d2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5949,7 +5949,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7b5fa199d166 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -5988,7 +5988,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7b6c08f83fd0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -6152,7 +6152,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7ba2fea492f6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6197,7 +6197,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7bb173008d87 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -6242,7 +6242,7 @@ D项：定位统计表，可知2018年、2019年全球主要国家或地区发�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7bce522bfe7b -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -6359,7 +6359,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7bfa3239dacf -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -6410,7 +6410,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7c0193ffc096 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -6455,7 +6455,7 @@ D项：定位统计表可得，2015-2020年我国住房公积金实缴额分别�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7c1c1c22ca20 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M7
@@ -6547,7 +6547,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7c372476470d -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M7
@@ -6625,7 +6625,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7c5bdbb17b36 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M7

@@ -548,7 +548,7 @@ B
 <!-- hyz-question-id: 01a19c8a-42d7-7780-b1d7-1fd0be14433e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -1605,7 +1605,7 @@ B
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-57c4e9d605fb -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1685,7 +1685,7 @@ C
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-57ed8a450e12 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1849,7 +1849,7 @@ D
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-582b50e1e085 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1891,7 +1891,7 @@ A
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-583b27ffee0b -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -1986,7 +1986,7 @@ a + b + d ≥ 8，
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-585ef83616d5 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2073,7 +2073,7 @@ D
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-58757f4c1a69 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2467,7 +2467,7 @@ C
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-590a5c05d2f9 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2593,7 +2593,7 @@ A
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-593460501c8a -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2718,7 +2718,7 @@ B
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-59602abf9461 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2966,7 +2966,7 @@ B、C两项都是通过求同求异并用法来推导因果关系，与题干的
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-59b687c3b039 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 排除法
 materials: []
@@ -3492,7 +3492,7 @@ C
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-5a50d4d4b0ef -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -3598,7 +3598,7 @@ D
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-5a752cc192e4 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -3647,7 +3647,7 @@ B中的家庭企业从事小商品生产，是独立商品生产单位，符合�
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-5a898cfbfad9 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -3694,7 +3694,7 @@ D中商场中的名牌电视机是用来卖的，不是供整个社会共同享�
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-5a97bd4da6b1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -3741,7 +3741,7 @@ D项中隐瞒身患癌症的事实明显不是诚实守信的行为，不符合�
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-5aa52ffe241e -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -4540,7 +4540,7 @@ C
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-5bba1852e823 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4665,8 +4665,8 @@ D项错误，一般授权立法是指国家行政机关直接依照宪法和有�
 
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-5be530b80ddc -->
 ```yaml
-module: 常识判断
-category: null
+module: 政治理论
+category: 马克思主义
 topics: []
 materials: []
 passage_source: null
@@ -4742,8 +4742,8 @@ A、B、D错误，刑法第六条第三款规定：“犯罪的行为或结果�
 
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-5c088a67d4ba -->
 ```yaml
-module: 常识判断
-category: null
+module: 政治理论
+category: 马克思主义
 topics: []
 materials: []
 passage_source: null
@@ -5363,7 +5363,7 @@ B
 <!-- hyz-question-id: 01a19c8a-42d9-7312-afbc-97d36abf25e5 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 文字资料
 - 直接找数
@@ -5527,7 +5527,7 @@ D
 <!-- hyz-question-id: 01a19c8a-42d9-7312-afbc-9816a9307de5 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 直接找数
 - 统计表
@@ -5803,7 +5803,7 @@ A
 <!-- hyz-question-id: 01a19c8a-42d9-7312-afbc-9872bc3156ec -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 简单加减计算
 - 统计表
@@ -5854,7 +5854,7 @@ D
 <!-- hyz-question-id: 01a19c8a-42d9-7312-afbc-988a1946dee8 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics:
 - 比值计算
 - 统计表
@@ -5995,7 +5995,7 @@ D选项错误，1978-2003年，城乡居民收入比率明显呈非递增趋势�
 <!-- hyz-question-id: 01a19c8a-42d9-7312-afbc-98b36b1a8fa7 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 排序类
 - 统计图

@@ -131,7 +131,7 @@ issues: []
 <!-- hyz-question-id: 01a19c8a-223c-7e70-8f7b-c964ddeb6e9f -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 主题词
 - 关联词-并列
@@ -596,7 +596,7 @@ A项主要在转折前讲述；B项“驯化”出现在“在······中”
 <!-- hyz-question-id: 01a19c8a-223c-7e70-8f7b-ca04c1420e9e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -641,7 +641,7 @@ A、C、D三项都是对王蒙说法的否定态度，不合原文含义，均�
 <!-- hyz-question-id: 01a19c8a-223c-7e70-8f7b-ca191356c6b0 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -686,7 +686,7 @@ A项“惺惺相惜”指性格、志趣、境遇相同的人互相爱护、同�
 <!-- hyz-question-id: 01a19c8a-223c-7e70-8f7b-ca247fe34d85 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials:
 - M1
@@ -727,7 +727,7 @@ A项，由原文“新时期以来，言路广开，催生出文坛无数‘对�
 <!-- hyz-question-id: 01a19c8a-223c-7e70-8f7b-ca349de80fb7 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials:
 - M1
@@ -772,7 +772,7 @@ A项无中生有，这句话并没有体现“把握机会和人脉”；B项“
 <!-- hyz-question-id: 01a19c8a-223c-7e70-8f7b-ca4daf3795c7 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -815,7 +815,7 @@ A项出自书店老板之口，并非作者对《王干随笔选》的直接评�
 <!-- hyz-question-id: 01a19c8a-223c-7e70-8f7b-ca51d4a1393e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -971,7 +971,7 @@ A
 <!-- hyz-question-id: 01a19c8a-223c-7e70-8f7b-ca960cd979ac -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1009,7 +1009,7 @@ A
 <!-- hyz-question-id: 01a19c8a-223c-7e70-8f7b-caab6d08bea6 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1125,7 +1125,7 @@ A
 <!-- hyz-question-id: 01a19c8a-223c-7e70-8f7b-caddab2a995e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1280,7 +1280,7 @@ A
 <!-- hyz-question-id: 01a19c8a-223c-7e70-8f7b-cb163f44b157 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -1652,7 +1652,7 @@ B
 <!-- hyz-question-id: 01a19c8a-223c-7e70-8f7b-cba4efaf7ece -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -1690,7 +1690,7 @@ D
 <!-- hyz-question-id: 01a19c8a-223c-7e70-8f7b-cbb4ab91b7b6 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -1730,7 +1730,7 @@ A
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-18a200170761 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2411,7 +2411,7 @@ B
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1992c94c4ba2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3185,7 +3185,7 @@ D
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1a9726588175 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 排除法
 materials: []
@@ -3291,7 +3291,7 @@ D项：对中国社会发展中的种种问题畅所欲言，能在极短时间�
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1ab5b97cc472 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -3344,7 +3344,7 @@ D项政府相关部门依据法律，追认赵某为烈士，也是行政机关�
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1acdbec532d2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3397,7 +3397,7 @@ D项是安慰，而不是“替自己的行为提供解释”。
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1adafe91bffb -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3450,7 +3450,7 @@ D项是将自己生产的酱油装入名牌酱油瓶中，属于假冒行为，�
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1ae880e52725 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 故事类
 materials: []
@@ -3503,7 +3503,7 @@ D项：由于水库受到多个部门的管理，因为“不同的工作目标�
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1afa9c510f29 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -3568,7 +3568,7 @@ D
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1b0f86b01ce8 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -3637,7 +3637,7 @@ D
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1b1cd1cd0047 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -3706,7 +3706,7 @@ A
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1b23eea6cc08 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -3775,7 +3775,7 @@ B
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1b33f7c777cc -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -3844,7 +3844,7 @@ B
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1b4a3d0a48a3 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M2
@@ -3883,7 +3883,7 @@ C
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1b51ae195a9f -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M2
@@ -3922,7 +3922,7 @@ B
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1b64d76f1c05 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M2
@@ -4000,7 +4000,7 @@ B
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1b8f60d8d3d8 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M2
@@ -4045,7 +4045,7 @@ D项：定位文字材料第一段可得，2009年江苏省第一产业增加值
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1b996a5198da -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -4084,7 +4084,7 @@ C
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1ba40c3e9fb7 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -4178,7 +4178,7 @@ B
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1bcddda291d9 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -4217,7 +4217,7 @@ D
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1bd1b71790eb -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M3
@@ -4256,7 +4256,7 @@ B
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1bebdfaf0bda -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -4336,7 +4336,7 @@ B
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1c0564320dcb -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M4
@@ -4375,7 +4375,7 @@ C
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1c1a4b5d13cc -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -4414,7 +4414,7 @@ C
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1c28cdbfd269 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -4543,7 +4543,7 @@ D
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1c55c8c78ef8 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5

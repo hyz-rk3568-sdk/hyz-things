@@ -1272,7 +1272,7 @@ A
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e63d522763c1 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1314,7 +1314,7 @@ C
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e6410858b3a2 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1390,7 +1390,7 @@ B
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e660aa52237c -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1428,7 +1428,7 @@ A
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e679c5b43e0a -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1468,7 +1468,7 @@ B
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e683cf8c25da -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1506,7 +1506,7 @@ C
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e696f3a25df6 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1582,7 +1582,7 @@ C
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e6b86e111b58 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1622,7 +1622,7 @@ A
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e6ce0e444378 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1993,7 +1993,7 @@ D
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e7532d873756 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2113,7 +2113,7 @@ D
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e782fd37eedf -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -4636,7 +4636,7 @@ A
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-eac6966f474e -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics:
 - 比值计算
 - 文字资料
@@ -4726,7 +4726,7 @@ D项，定位文字材料第四段，地方国有企业资产负债率（负债�
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-eaecc68048f3 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 统计图
 - 简单加减计算
@@ -5523,7 +5523,7 @@ D项正确，《大红灯笼高高挂》改编自苏童的小说《妻妾成群�
 <!-- hyz-question-id: 01a19c8a-38f4-74f0-8108-df5e51f61222 -->
 ```yaml
 module: 常识判断
-category: null
+category: 人文常识
 topics:
 - 其他
 materials: []

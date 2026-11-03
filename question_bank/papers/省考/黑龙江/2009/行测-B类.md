@@ -108,7 +108,7 @@ issues: []
 <!-- hyz-question-id: 01a19c8a-6279-7740-a9b8-daf0b33e8b05 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -146,7 +146,7 @@ D
 <!-- hyz-question-id: 01a19c8a-6279-7740-a9b8-db02e0a48cd4 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -222,7 +222,7 @@ C
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-076f0cfa1df2 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -260,7 +260,7 @@ D
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-0774ef39f11e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -298,7 +298,7 @@ C
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-078f60a9e3b0 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -545,7 +545,7 @@ B
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-07e09bf3421f -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -667,7 +667,7 @@ D
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-0810157a594d -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -959,7 +959,7 @@ C
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-0885eae6e292 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 主题词
 - 关联词-因果
@@ -4232,7 +4232,7 @@ A、C、D均与销量无直接关系，为无关项，排除。
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-0ce8e20fb60a -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 排除法
 materials: []
@@ -4285,7 +4285,7 @@ C
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-0cfc199a455c -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 代入法
 materials: []
@@ -4871,8 +4871,8 @@ BD
 
 <!-- hyz-question-id: 01a19c8a-627b-7a90-b0e5-66be97fcd685 -->
 ```yaml
-module: 常识判断
-category: null
+module: 政治理论
+category: 新思想
 topics: []
 materials: []
 passage_source: null
@@ -4910,7 +4910,7 @@ A
 <!-- hyz-question-id: 01a19c8a-627b-7a90-b0e5-66c7653bfc07 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5163,7 +5163,7 @@ D项正确，哈尔滨市人民代表大会属于省人民政府所在地的市�
 <!-- hyz-question-id: 01a19c8a-627b-7a90-b0e5-672e9b375f4d -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5250,7 +5250,7 @@ C
 <!-- hyz-question-id: 01a19c8a-627b-7a90-b0e5-6748eafc4756 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -6049,7 +6049,7 @@ D项：定位统计图，根据公式：利润＝出厂价-成本，则2004年�
 <!-- hyz-question-id: 01a19c8a-627b-7a90-b0e5-68687d65189f -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 现期计算
 - 综合资料
@@ -6313,7 +6313,7 @@ A
 <!-- hyz-question-id: 01a19c8a-627b-7a90-b0e5-68c64e6e12ea -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 简单加减计算
 - 统计图
@@ -6354,7 +6354,7 @@ A
 <!-- hyz-question-id: 01a19c8a-627b-7a90-b0e5-68da1985cf0c -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 直接找数
 - 统计图

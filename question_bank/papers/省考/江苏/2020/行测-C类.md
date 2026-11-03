@@ -331,8 +331,8 @@ B
 
 <!-- hyz-question-id: 01a19c8a-27ad-7af0-983e-5100f4ef236b -->
 ```yaml
-module: 常识判断
-category: null
+module: 政治理论
+category: 新思想
 topics: []
 materials: []
 passage_source: null
@@ -801,7 +801,7 @@ D项正确，习近平总书记在党的十九大报告中提出：“积极应�
 <!-- hyz-question-id: 01a19c8a-27ad-7af0-983e-51aa1d93b12a -->
 ```yaml
 module: 常识判断
-category: null
+category: 经济常识
 topics: []
 materials: []
 passage_source: null
@@ -1041,7 +1041,7 @@ D项，“书院制度”对应解释说明内容，非重点，且表述片面�
 <!-- hyz-question-id: 01a19c8a-27ad-7af0-983e-51fa2050c55e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-对策
 - 主题词
@@ -2051,7 +2051,7 @@ A
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-eb3e6cc78e54 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -2100,7 +2100,7 @@ D项，“生活成本”无中生有，排除；
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-eb4b60eaa897 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics:
 - 语句填空题
 - 普通篇章
@@ -2147,7 +2147,7 @@ C项“加剧家庭矛盾”是指在原有的基础之上，再次加重，文�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-eb50faa27a32 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2194,7 +2194,7 @@ D项，“对居住条件的要求”，文段没有提及，当选。
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-eb69c1702a35 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2239,7 +2239,7 @@ B
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-eb7790c913e5 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -2689,7 +2689,7 @@ C
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ec20e73e1a1a -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3549,7 +3549,7 @@ D项：位置6、8的符号不相同，与题干逻辑关系不一致，排除�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ed5f007d7f1a -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3729,7 +3729,7 @@ C
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ed95d039ddc7 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3771,7 +3771,7 @@ B
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-eda7bbfc01d2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3813,7 +3813,7 @@ C
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-edb784fb7a92 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3855,7 +3855,7 @@ D
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-edcc789abbe6 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3897,7 +3897,7 @@ D
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-edd0e2332700 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4149,7 +4149,7 @@ D项：选项中包含面b、面c和面f，展开图中面c和面f为相对面�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ee2900f75726 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4510,7 +4510,7 @@ D
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ee9824f57f67 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 代入法
 materials: []
@@ -4746,7 +4746,7 @@ D项：雄蝇可以和很多只雌蝇交配，说明一只经高辐射处理的�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-eed627551560 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -4805,7 +4805,7 @@ A
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-eeedc929e4c9 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -4876,7 +4876,7 @@ C
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-eefd86f90ac0 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -4930,7 +4930,7 @@ D项：为了解决全村苹果严重滞销的问题，村里的几个年轻人�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ef052f721eaf -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -4984,7 +4984,7 @@ D项：某区组织党员干部分系统观看专题纪录片《警钟长鸣》�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ef1d256ebdcf -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5038,7 +5038,7 @@ D项：患健忘症的陈奶奶多次走失，区民政部门了解情况后，�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ef24b664cd64 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials:
@@ -5092,7 +5092,7 @@ D项：将厨余垃圾等有机物分离出来，制成肥料，将无机物分�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ef35fdd610b5 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -5146,7 +5146,7 @@ D项：某校多次聘请大学教授为参赛选手进行强化训练，符合�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ef40ba73eaf2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials:
@@ -5200,7 +5200,7 @@ D项：博物馆并不是企业，主体不符合，并且它是为让大家了�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ef507ccd9ad2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -5254,7 +5254,7 @@ D项：李大妈在推销员的劝说下买了一台加湿器，加湿器本身�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ef6dcda3660b -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials:
@@ -5308,7 +5308,7 @@ D项：蔡先生办理营业执照注销手续，不符合“办理个体工商�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ef7bb2a64888 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics:
 - 特殊问法
 materials:
@@ -5364,7 +5364,7 @@ C
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ef8406a2628f -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials:
@@ -5512,7 +5512,7 @@ A
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-efb9ce933f15 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -5600,7 +5600,7 @@ D项：2011-2018年：13.0%-8.9%=4.1%，即4.1个百分点。
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-efd0886e9ca9 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -5645,7 +5645,7 @@ D项：定位文字资料第三段“1982年末全国高中及以上受教育程
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-efe5f80ebfad -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -5684,7 +5684,7 @@ A
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-effb72719fbb -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -5809,7 +5809,7 @@ D
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-f025b9cf85c3 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -5932,7 +5932,7 @@ C
 <!-- hyz-question-id: 01a19c8a-27af-7a83-99ea-a525390576a7 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6010,7 +6010,7 @@ B
 <!-- hyz-question-id: 01a19c8a-27af-7a83-99ea-a543e94d69a9 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -6055,7 +6055,7 @@ D项：定位文字资料可知，上学日，儿童日平均使用电子产品�
 <!-- hyz-question-id: 01a19c8a-27af-7a83-99ea-a55d4008c86b -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -6133,7 +6133,7 @@ C
 <!-- hyz-question-id: 01a19c8a-27af-7a83-99ea-a5771ecf6ba4 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -6182,7 +6182,7 @@ D项：2017年，9931-8954=977个。
 <!-- hyz-question-id: 01a19c8a-27af-7a83-99ea-a5812bbe0872 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -6221,7 +6221,7 @@ A
 <!-- hyz-question-id: 01a19c8a-27af-7a83-99ea-a59a57f8b1d2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6

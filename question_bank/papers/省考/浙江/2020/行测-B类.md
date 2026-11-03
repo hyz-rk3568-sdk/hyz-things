@@ -791,7 +791,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3a7b-7142-ad1f-404e2d51b41a -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -1849,7 +1849,7 @@ D项，根据文段，作者认为人们选择居家环境要兼顾“视野辽�
 <!-- hyz-question-id: 01a19c8a-3a7b-7142-ad1f-41a96f5204da -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-对策
 - 主题词
@@ -2050,7 +2050,7 @@ D项，“数据安全问题”为问题表述，文段重点在对策，排除�
 <!-- hyz-question-id: 01a19c8a-3a7b-7142-ad1f-41e85916462b -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 主题词
 - 特殊问法

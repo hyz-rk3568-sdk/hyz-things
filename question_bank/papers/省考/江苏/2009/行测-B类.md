@@ -2635,7 +2635,7 @@ B
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f61d2fd6313e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2715,7 +2715,7 @@ C
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f63452841b16 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2753,7 +2753,7 @@ D
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f64e84641633 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2829,7 +2829,7 @@ D
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f6612ab001af -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2867,7 +2867,7 @@ D
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f67175595eb2 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2905,7 +2905,7 @@ D
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f68ddd2de6a5 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2983,7 +2983,7 @@ C
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f6ab4ba0fc4b -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3025,7 +3025,7 @@ B
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f6bbb4ed858e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3112,7 +3112,7 @@ B
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f6d331bb470e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3150,7 +3150,7 @@ B
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f6eaf2d2f503 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3994,7 +3994,7 @@ D
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f80fbfa41185 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4036,7 +4036,7 @@ A
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f81e77831f5c -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4078,7 +4078,7 @@ B
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f82e94d5b331 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4120,7 +4120,7 @@ A
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f83dd4e336a6 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4162,7 +4162,7 @@ C
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f8429f1083c2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4206,7 +4206,7 @@ B
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f85edf18693f -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials: []
 passage_source: null
@@ -4669,7 +4669,7 @@ B
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f8de17393eca -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 排除法
 materials: []
@@ -4836,7 +4836,7 @@ D项中，张氏一家连续几代出现著名文学家，属于血缘型人才�
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f904f26ff47f -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4889,7 +4889,7 @@ D项中，企业变化的是生产、服务系统，变化原因是技术进步�
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f91a8b5b0dac -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -4938,7 +4938,7 @@ B项，杜牧的《赤壁》是以赤壁之战为题材，抒发了诗人对历�
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f9224aa804e7 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4991,7 +4991,7 @@ D项中“粉丝”对偶像言听计从，同样跟教育无关，不符合定�
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f93657b3337d -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -5044,7 +5044,7 @@ D项中涉及的参与者、参与方式跟谈判内容均不符合定义。
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f94fa4cd97ac -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -5115,7 +5115,7 @@ C
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f950d6eb9121 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -5184,7 +5184,7 @@ D
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f96aeddbd36a -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -5255,7 +5255,7 @@ C
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f97cfec56a81 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -5324,7 +5324,7 @@ C
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f98d355bc667 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -5855,7 +5855,7 @@ D项表述错误，改变的是生殖细胞特性而非环境性别；B项“改
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fa3a8666d4fc -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials:
 - M1
@@ -5900,7 +5900,7 @@ B项“繁衍”、C项“外渗“、D项“形成”均不是“早期相关�
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fa4b6230a2d1 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials:
 - M1
@@ -5943,7 +5943,7 @@ C项表述有误，Twist的作用是提高癌细胞的转移能力，而并非�
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fa545a0facaf -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials:
 - M1
@@ -5986,7 +5986,7 @@ B项表述有误，并非是一种淋巴组织；C项表述有误，并非是血
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fa6fa364289d -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials:
 - M1
@@ -6029,7 +6029,7 @@ D项表述正确，通过文中最后一段“或者可以借由筛检这些基�
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fa788b9320de -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -6074,7 +6074,7 @@ A项表述过于泛化而没有针对性；B项表述在文中并无具体论述
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fa82b67b8f54 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M2
@@ -6113,7 +6113,7 @@ A
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fa979d7983e1 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M2
@@ -6246,7 +6246,7 @@ B
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-faceb63d73da -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M2
@@ -6285,7 +6285,7 @@ D
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fad8ee8f2963 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -6324,7 +6324,7 @@ B
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-faeaac20c12c -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -6451,7 +6451,7 @@ D
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fb1b0d2a3658 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M3
@@ -6502,7 +6502,7 @@ D
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fb2b632230ed -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -6582,7 +6582,7 @@ C
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fb4469d92bc2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -6621,7 +6621,7 @@ A
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fb5da3a4e59f -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -6660,7 +6660,7 @@ D
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fb6d263ab2d2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -6740,7 +6740,7 @@ B
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fb8ddcc582b0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6781,7 +6781,7 @@ C
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fb93d8cf8117 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M5
@@ -6820,7 +6820,7 @@ A
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fbaf6cc2dd2d -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5

@@ -488,7 +488,7 @@ B
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-38400268f218 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -526,7 +526,7 @@ C项中“八十挂零的耄耋老翁”语义重复，“耄耋”指八九十�
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-385d7120b370 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -564,7 +564,7 @@ A项，“从各种不同的角度去看待它”强调观察事物的角度要�
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-3867ad7c29ea -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: 《情绪智力及其培养》
@@ -606,7 +606,7 @@ B
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-3877f10aa99f -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -644,7 +644,7 @@ A、B、D三项中的“谁知道”在句中的意思是“我不知道”；�
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-3880df8124c6 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: 《新刊 | 卜键：朕亦一书生——从乾隆帝登基之初的一份上谕谈起》
@@ -692,7 +692,7 @@ D项，“希望官员能知书爱民”无中生有，文段并未提及，且�
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-3897d3bc1499 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-举例子
 - 关联词-因果
@@ -981,7 +981,7 @@ D项，未提及“过往的事件”，排除。
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-38fd7d787d45 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1026,7 +1026,7 @@ B
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-390e28978346 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 词句理解题
 - 普通篇章
@@ -1073,7 +1073,7 @@ B项“人口密集”表述错误，篇章后两段的例子中提及的是“�
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-391737fd5184 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -1120,7 +1120,7 @@ C、D两项文中并没有提到，无中生有，排除。
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-392036f50907 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1263,7 +1263,7 @@ D项，对应文段“火烧令坚先设一铁板，其上以松脂、蜡和纸�
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-39550635ec04 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 其他
 materials:
@@ -1367,7 +1367,7 @@ C项，文段未介绍雕版印刷的工艺，故“活板印刷与雕版印刷�
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-39775348de24 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1411,7 +1411,7 @@ D
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-398c6846eb31 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1451,7 +1451,7 @@ A
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-399b420fe64e -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1491,7 +1491,7 @@ A
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-39ac8e70d5de -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1537,7 +1537,7 @@ D
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-39b7aed4b7c9 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1577,7 +1577,7 @@ B
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-39cdc987de16 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1623,7 +1623,7 @@ D项：曝光时间不太长时，底片上出现的光点密集度太低，明�
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-39d0f59daea2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1663,7 +1663,7 @@ B
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-39e0249c085e -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1705,7 +1705,7 @@ A
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-39fb68ad60f0 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1745,7 +1745,7 @@ B
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-3a09d8f7862e -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1785,7 +1785,7 @@ C
 <!-- hyz-question-id: 01a19c89-f22e-73f0-8fe2-3a1f0c3f70db -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3662,8 +3662,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-71325233c50d -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 现期计算
 - 综合资料
@@ -3785,8 +3785,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-7165d377e11b -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 综合资料
 - 简单加减计算
@@ -3826,8 +3826,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-7173eaf52ec1 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -3873,8 +3873,8 @@ D选项：定位文字材料第二段“截至2015年底，N市私家汽车拥�
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-71816f6e6c33 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 统计表
@@ -3914,8 +3914,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-7197102a35ae -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 统计表
 - 直接找数
@@ -3955,8 +3955,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-71a775d52154 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 统计表
 - 简单加减计算
@@ -3996,8 +3996,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-71b90458afab -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 一般增长率
 - 统计表
@@ -4047,8 +4047,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-71cb5ea12195 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 统计表
@@ -4094,8 +4094,8 @@ D.由表格可知，2015年长江经济带进出口总额占全国比重为16691
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-71df27e55aa0 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 综合资料
 - 基期计算
@@ -4135,8 +4135,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-71ecb2a336b0 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 年均增长量
 - 综合资料
@@ -4176,8 +4176,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-71f05923eb93 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -4217,8 +4217,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-7208c77a52f2 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 平均数
 topics:
 - 现期平均数
 - 综合资料
@@ -4258,8 +4258,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-7213b2cd11e5 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -4347,7 +4347,7 @@ C
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-7230cca048df -->
 ```yaml
 module: 常识判断
-category: null
+category: 法律常识
 topics: []
 materials: []
 passage_source: null
@@ -4740,7 +4740,7 @@ D项错误，《立法法》第七十二条第一款规定：“省、自治区�
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-72cb6eca14fb -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4870,7 +4870,7 @@ B
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-72f741f01f42 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4918,7 +4918,7 @@ D
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-730591f72a64 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5431,8 +5431,8 @@ D项错误，“黄梅时节家家雨，青草池塘处处蛙”，“黄梅时�
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-73bb55d4c08c -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 经济建设
 materials:
@@ -5477,8 +5477,8 @@ D项错误，独立自主，自力更生，指一个国家或一个政权不受�
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-73c06e52da77 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 经济建设
 materials:
@@ -5525,8 +5525,8 @@ D项正确，中国对外开放既发展了自己，也惠及世界，连续多�
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-73d36fac2929 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 时事政治
 topics: []
 materials:
 - M6
@@ -5566,8 +5566,8 @@ ABD
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-73efa8471b72 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 时事政治
 topics:
 - 重要会议讲话
 materials:
@@ -5608,8 +5608,8 @@ ABD
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-73fcbda4c8b1 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 重要文件
 materials:
@@ -5652,8 +5652,8 @@ D项错误。在《深化党和国家机构改革方案》中提到：“二、�
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-7402f587796d -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 时事政治
 topics:
 - 重要文件
 materials:
@@ -5700,8 +5700,8 @@ D项错误，材料中指出“组建中央全面依法治国委员会，负责�
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-74193f3302e4 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 时事政治
 topics:
 - 重要事件
 materials:
@@ -5748,8 +5748,8 @@ D项正确，领导小组属于一种“阶段性”的工作机制；委员会�
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-7429916b239c -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 时事政治
 topics:
 - 重要事件
 materials:
@@ -5796,8 +5796,8 @@ D项正确，从材料最后一段可得知，汇总掌握社会治安综合治�
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-7431adb3edbf -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -5842,8 +5842,8 @@ D项错误，根据《行政诉讼法》第三十四条第一款规定：“被�
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-744cce8f2a39 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -5888,8 +5888,8 @@ D项错误，根据《行政许可法》第四十八条第二款规定：“行�
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-7453151f5f1a -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -5932,8 +5932,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-746bb45ea00c -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M9
@@ -5979,8 +5979,8 @@ D项正确，行政成本是否有效降低是衡量“最多跑一次”改革�
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-747e926ba626 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M9
@@ -6026,8 +6026,8 @@ D项正确，“阳光政府”主要是指政务公开，政府部门对所有�
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-7484e2a93bd7 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M9
@@ -6073,8 +6073,8 @@ D项错误，把专项基金的主管部门、专项名称和预算金额等进�
 
 <!-- hyz-question-id: 01a19c89-f22f-74d0-9526-74917d78510a -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 时事政治
 topics:
 - 政治建设
 materials:

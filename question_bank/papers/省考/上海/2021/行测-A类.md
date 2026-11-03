@@ -460,7 +460,7 @@ B
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-44360ca2aff4 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: 新华网《有了高铁，为何还要研制时速600公里磁浮列车》
@@ -560,7 +560,7 @@ B
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-4452e4e7b4fb -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -604,7 +604,7 @@ D项，“虽然如今乳香已不再是······依然不菲”语序不当�
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-44655773aa25 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials: []
 passage_source: null
@@ -648,7 +648,7 @@ D项，“出淤泥而不染”意思是生长在淤泥中，而不被污泥所�
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-447549150fe8 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials: []
 passage_source: null
@@ -784,7 +784,7 @@ C项，“法律”与“信用”均是契约在进行中的两个方面，是�
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-44a1bdad6f49 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: null
@@ -1012,7 +1012,7 @@ D项，对应回答问题部分解释说明的内容，非重点，排除。
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-44f7ae0202f6 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 词句理解题
 - 普通篇章
@@ -1059,7 +1059,7 @@ C项“21世纪初”为后文内容，并非是“这一时段”所指代的�
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-450a1c69510c -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 词句理解题
 - 普通篇章
@@ -1108,7 +1108,7 @@ C项，“价格更便宜，功耗更低”对应第五段内容，并非“立�
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-45134737a4fd -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1157,7 +1157,7 @@ D项，根据第四段“2010年6月，‘曙光6000’系统排名世界第二�
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-4527235af27f -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -1252,7 +1252,7 @@ D项，由第二段“若戏而必行之，是周公教王遂过也”，可译�
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-4549ec6ce285 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 其他
 materials:
@@ -1300,7 +1300,7 @@ D项，“且家人、父子尚不能以此自克，况号为君臣者邪！”�
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-455ee2296434 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 其他
 materials:
@@ -1348,7 +1348,7 @@ D项，根据最后一段内容可知，文段并未提及这些内容是证明�
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-45676e2e94ee -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 其他
 materials:
@@ -1396,7 +1396,7 @@ D项，文段并未体现出“作者与古人隔空辩论”“双方的激烈�
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-457419b3e0ab -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1434,7 +1434,7 @@ B
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-458674e3b08d -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1478,7 +1478,7 @@ D项：用细棉线将被磁化的缝衣针吊在导线上方，靠近有绝缘�
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-459f122bc7eb -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1524,7 +1524,7 @@ D项：由动能的公式Ek=1/2mv^2可知，在碰撞之前两车的质量m，�
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-45ae50eee632 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1564,7 +1564,7 @@ C
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-45b4d5f5802d -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1622,7 +1622,7 @@ D项：陶瓷是粘土、石英等混合烧制而成的，属于混合物，但�
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-45cb26df2efc -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1666,7 +1666,7 @@ C、D项：设蚂蚁的重力为G， 蚂蚁和圆心连线与竖直方向的夹�
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-45ddd81e4268 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1710,7 +1710,7 @@ D项：设小球的质量为m，分析小球的受力情况，小球在下降过
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-45e8b354bbef -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1756,7 +1756,7 @@ D项：由以上分析可知，参加反应的甲为54克，生成的丙为30克
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-45fa148a2b4a -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1800,7 +1800,7 @@ D项：利用高锰酸钾加热生产氧气，产物还有锰酸钾和二氧化�
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-460959562ed6 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1844,7 +1844,7 @@ D项：铝的质地柔软，延展性比较好，可以直接把铝块压制成�
 <!-- hyz-question-id: 01a19c89-f335-7f00-96cb-461996a890d1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2980,7 +2980,7 @@ A
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-55b3964a50a3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M3
@@ -3029,7 +3029,7 @@ B
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-55cea0259d08 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M3
@@ -3736,8 +3736,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-56c9fde3fc1f -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 倍数
 topics:
 - 比值计算
 - 综合资料
@@ -3777,8 +3777,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-56d172ec92d0 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 一般增长率
 - 综合资料
@@ -3818,8 +3818,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-56eeb7f8f9b5 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 平均数
 topics:
 - 现期平均数
 - 综合资料
@@ -3859,8 +3859,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-56fee92fbc47 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 一般增长率
 - 综合资料
@@ -3902,8 +3902,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-5708bafe7d97 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -3957,8 +3957,8 @@ D项：定位图形可知，2020年湿垃圾、可回收物、干垃圾的目标
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-571ee1436cef -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 一般增长率
 - 综合资料
@@ -3998,8 +3998,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-572d44729647 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 综合资料
 - 简单加减计算
@@ -4039,8 +4039,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-573623c88d6d -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 两期比重
 - 综合资料
@@ -4080,8 +4080,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-574ce89ae6ff -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 倍数
 topics:
 - 现期倍数
 - 综合资料
@@ -4121,8 +4121,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-57599ecd2343 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -4168,8 +4168,8 @@ D项：根据公式：年均增长率= ^n√(现期/基期) − 1，其中年份
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-57617cfb9c3d -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -4209,8 +4209,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-577d8bcf1641 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 增长量比较
 - 综合资料
@@ -4262,8 +4262,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-5782a3ebc520 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 混合比重
 - 综合资料
@@ -4307,8 +4307,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-579b340544bf -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 增长量比较
 - 综合资料
@@ -4356,8 +4356,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-57a60630f128 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -4989,7 +4989,7 @@ D项错误，南京西路街道社区根据《静安区社区代表会议实施�
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-5886a60aa580 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5035,7 +5035,7 @@ D项错误，政策制定是针对公共政策问题提出并选择解决方案�
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-5894e94d3675 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5077,7 +5077,7 @@ C
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-58a396a90fe9 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5123,7 +5123,7 @@ D项正确，领导者价值观是影响公共行政价值选择的主要因素�
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-58bb64a43371 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5542,8 +5542,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-59422464d0f8 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 经济建设
 materials:
@@ -5590,8 +5590,8 @@ D项正确，1992年7月26日，经原国家外经贸部批准，我国第一家
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-595299fab9fa -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 经济建设
 materials:
@@ -5632,8 +5632,8 @@ ACD
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-5962e40ba122 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 新思想
 topics:
 - 经济建设
 materials:
@@ -5674,8 +5674,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-597975a7d53e -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 经济常识
 topics:
 - 经济建设
 materials:
@@ -5716,8 +5716,8 @@ ACD
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-598144c980c1 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 经济常识
 topics:
 - 宏观经济与调控政策
 materials:
@@ -5766,8 +5766,8 @@ D项错误，扩张性财政政策主要措施有增加国债、降低税率、�
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-599e1ab55c02 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 新思想
 topics:
 - 经济建设
 materials:
@@ -5812,8 +5812,8 @@ D项正确，党的十六大报告指出：“在社会变革中出现的民营�
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-59aa33870718 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 马克思主义
 topics:
 - 唯物辩证法
 materials:
@@ -5862,8 +5862,8 @@ D项错误，“推动建设开放型世界经济，推动构建人类命运共�
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-59b7dd642679 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 民法典
 materials:
@@ -5904,8 +5904,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-59c41a172731 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 民法典
 materials:
@@ -5946,8 +5946,8 @@ ABC
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-59d8bdc11bd7 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 民法典
 materials:
@@ -5988,8 +5988,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-59e2db8c76aa -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 民法典
 materials:
@@ -6030,8 +6030,8 @@ ABCD
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-59f55ae67ec5 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 经济建设
 materials:
@@ -6078,8 +6078,8 @@ D项错误，环境综合治理是在实施异地搬迁之后才采取的举措�
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-5a028d191b51 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 经济建设
 materials:
@@ -6124,8 +6124,8 @@ C项错误，材料中并未体现出村民对于异地搬迁心存顾虑。
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-5a153ff38531 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 经济建设
 materials:
@@ -6172,8 +6172,8 @@ D项正确，德治重在依靠社会舆论、风俗习惯、内心信念等正�
 
 <!-- hyz-question-id: 01a19c89-f336-7bb1-8fe1-5a2019961112 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 社会建设
 materials:

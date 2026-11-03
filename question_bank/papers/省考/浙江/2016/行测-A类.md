@@ -4696,7 +4696,7 @@ A
 <!-- hyz-question-id: 01a19c8a-38c4-7571-9a1f-bd338ae1b87f -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics:
 - 比值计算
 - 文字资料
@@ -4786,7 +4786,7 @@ D项，定位文字材料第四段，地方国有企业资产负债率（负债�
 <!-- hyz-question-id: 01a19c8a-38c4-7571-9a1f-bd5c66ea5a8c -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 统计图
 - 简单加减计算
@@ -5307,7 +5307,7 @@ D项，“天宫”系列是我国空间站项目的命名方式。早在1992年
 <!-- hyz-question-id: 01a19c8a-38c4-7571-9a1f-be17fe0cfa59 -->
 ```yaml
 module: 常识判断
-category: null
+category: 人文常识
 topics: []
 materials: []
 passage_source: null
@@ -5806,7 +5806,7 @@ D
 <!-- hyz-question-id: 01a19c8a-38c4-7571-9a1f-bec07f4cf3f5 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null

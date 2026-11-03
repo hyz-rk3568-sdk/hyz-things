@@ -413,7 +413,7 @@ B
 <!-- hyz-question-id: 01a19c89-f2b2-7cd1-b7a6-b802e1cdaabd -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -459,7 +459,7 @@ D项，“人固有一死，或重于泰山，或轻于鸿毛”出自司马迁�
 <!-- hyz-question-id: 01a19c89-f2b2-7cd1-b7a6-b81985139aff -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -497,7 +497,7 @@ A项缺少宾语，应改为“加大了对贪污、腐败、徇私枉法等的�
 <!-- hyz-question-id: 01a19c89-f2b2-7cd1-b7a6-b826471528f9 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -596,7 +596,7 @@ C
 <!-- hyz-question-id: 01a19c89-f2b2-7cd1-b7a6-b842ab72d5ce -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -1035,7 +1035,7 @@ D项，对应文段“丰富度、多样性和保真度世界一流”，文段�
 <!-- hyz-question-id: 01a19c89-f2b2-7cd1-b7a6-b8dcbcc3fdb0 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -1082,7 +1082,7 @@ C项“不置可否”指不表明态度，文段作者态度很明确，即不�
 <!-- hyz-question-id: 01a19c89-f2b2-7cd1-b7a6-b8e7ffd91c85 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1131,7 +1131,7 @@ D项，根据第2自然段“其二，日常生活的论证语境和法律过程
 <!-- hyz-question-id: 01a19c89-f2b2-7cd1-b7a6-b8f320a29f67 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1180,7 +1180,7 @@ D项，根据最后一段“是最理想的，它清晰明确、难以质疑”�
 <!-- hyz-question-id: 01a19c89-f2b2-7cd1-b7a6-b9030eed5887 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 其他
 materials:
@@ -1372,7 +1372,7 @@ D项，指这一年杭州免于过重的灾祸，人民不用颠沛流离，体�
 <!-- hyz-question-id: 01a19c89-f2b2-7cd1-b7a6-b9438f81f279 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1410,7 +1410,7 @@ B
 <!-- hyz-question-id: 01a19c89-f2b2-7cd1-b7a6-b95bf28d6a7e -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1456,7 +1456,7 @@ D项：第一次未溶解气体通入到敞口烧杯内，会进行再次溶解�
 <!-- hyz-question-id: 01a19c89-f2b2-7cd1-b7a6-b96df05b16af -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1507,7 +1507,7 @@ D项，Li_2O和MgO是离子晶体，离子晶体中的作用力为离子键，�
 <!-- hyz-question-id: 01a19c89-f2b2-7cd1-b7a6-b9723bfe11fe -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1553,7 +1553,7 @@ D项：氧气不易溶于水，可以通过观察是否有气泡产生，判别�
 <!-- hyz-question-id: 01a19c89-f2b2-7cd1-b7a6-b98f54682389 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1591,7 +1591,7 @@ B
 <!-- hyz-question-id: 01a19c89-f2b2-7cd1-b7a6-b99c9191fe3b -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1635,7 +1635,7 @@ C
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-e88b04dfd5b9 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1673,7 +1673,7 @@ C
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-e89839817bc4 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1723,7 +1723,7 @@ D项，火车向南减速转弯，火车和桌面相对于小球有正西方向�
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-e8a6da3225e0 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1767,7 +1767,7 @@ A
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-e8b0f48e8d51 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1809,7 +1809,7 @@ C
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-e8c7b2add427 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2877,7 +2877,7 @@ D项：根据条件（4）可知，珍稀品种→玫瑰，有许多玫瑰是珍
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ea2c9ce0240e -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 代入法
 materials: []
@@ -2940,7 +2940,7 @@ D项：代入芬兰、丹麦和冰岛，同B项，只能根据去冰岛得出去
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ea3b0358a2f1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 代入法
 materials: []
@@ -3706,8 +3706,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-eb45dc4151de -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 增长量比较
 - 统计表
@@ -3755,8 +3755,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-eb56a4ec381c -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 一般增长率
 - 统计表
@@ -3796,8 +3796,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-eb62b162cccb -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 统计表
@@ -3839,8 +3839,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-eb7dee7a0cf9 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 增长量比较
 - 统计表
@@ -3890,8 +3890,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-eb841058ea88 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 统计表
@@ -3937,8 +3937,8 @@ D项：定位表格可得：重庆2012年末人口和2013年末人口分别为29
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-eb90b16b5088 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 统计表
 - 直接找数
@@ -3978,8 +3978,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-eba57f7db31c -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 现期计算
 - 统计表
@@ -4019,8 +4019,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ebb36ed87e44 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 现期计算
 - 统计表
@@ -4060,8 +4060,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ebc9f11aec2d -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 倍数
 topics:
 - 现期倍数
 - 统计表
@@ -4101,8 +4101,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ebde57b0c77f -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 统计表
@@ -4189,8 +4189,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ebf9e5dae7b4 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 两期比重
 - 统计表
@@ -4230,8 +4230,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ec0e7a82779b -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 倍数
 topics:
 - 现期倍数
 - 统计表
@@ -4271,8 +4271,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ec1c1d26c767 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 增长量比较
 - 统计表
@@ -4318,8 +4318,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ec230e3f02cb -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 统计表
@@ -4490,7 +4490,7 @@ B
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ec6300925a4b -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4631,8 +4631,8 @@ D项错误，人能够通过想象将观念中的对象变成现实的东西，�
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ec9934127cfb -->
 ```yaml
-module: 常识判断
-category: null
+module: 政治理论
+category: 时事政治
 topics: []
 materials: []
 passage_source: null
@@ -4931,7 +4931,7 @@ D项正确，《公务员法》第二十七条规定：“录用公务员，应�
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ed031c9434cb -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4979,7 +4979,7 @@ D项错误，传媒不属于制定公共政策的主体，不能制定公共政�
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ed1cea0a8a22 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5025,7 +5025,7 @@ D项正确，行政协调是行政主体为达到一定的行政目标而引导�
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ed2c5da45c88 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5071,7 +5071,7 @@ D项正确，权力机关监督是指各级人大及其常委会对国家行政�
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ed3aa203af5d -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5474,8 +5474,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-edc739228d12 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 新思想
 topics:
 - 新思想总论
 - 重要会议讲话
@@ -5517,8 +5517,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-edd9a90f7888 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 重要会议讲话
 materials:
@@ -5558,8 +5558,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-edebfab2b5b5 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 其他建设
 materials:
@@ -5604,8 +5604,8 @@ D项正确，党的政治建设是党的根本性建设，决定党的建设方�
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-edf4c656f206 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 政治建设
 materials:
@@ -5646,8 +5646,8 @@ AC
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ee04f853977a -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 经济建设
 materials:
@@ -5688,8 +5688,8 @@ BD
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ee1fce9a383f -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 经济建设
 materials:
@@ -5728,8 +5728,8 @@ ABD
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ee27e5b78120 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 新思想
 topics:
 - 新思想总论
 materials:
@@ -5770,8 +5770,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ee39d8b29c47 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 人文常识
 topics:
 - 中国历史
 materials:
@@ -5814,8 +5814,8 @@ D项错误，材料未体现，故排除。
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ee42b893212a -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M8
@@ -5861,8 +5861,8 @@ D项正确，根据材料，绩效管理“采用‘有效公共服务+预算’
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ee5e6b988448 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M8
@@ -5908,8 +5908,8 @@ D项正确，绩效管理过程各项评价结果应按法律、《信息公开�
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ee64b6a1b295 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M8
@@ -5953,8 +5953,8 @@ C、D项正确，求是网《全面实施绩效管理，提升国家治理能力
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ee7e61d79649 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 宪法
 materials:
@@ -5999,8 +5999,8 @@ C、D项错误，根据《宪法》第八十五条规定：“中华人民共和
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ee8935fc4297 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 宪法
 materials:
@@ -6047,8 +6047,8 @@ D项正确，民法典属于民事基本法律，必须由全国人大制定。
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ee9dbafdad40 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 宪法
 materials:
@@ -6095,8 +6095,8 @@ D项错误，社会主义法制是社会主义民主的保障，主要体现在�
 
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-eeadf04c9ef7 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 宪法
 materials:

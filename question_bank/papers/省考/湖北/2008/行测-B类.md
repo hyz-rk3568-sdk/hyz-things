@@ -530,7 +530,7 @@ C
 <!-- hyz-question-id: 01a19c8a-4307-7a50-a429-963e285f8535 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -619,8 +619,8 @@ D项“新”是与“旧”相对应的，材料中并没有提到“旧”，�
 
 <!-- hyz-question-id: 01a19c8a-4307-7a50-a429-965c5a8fadb4 -->
 ```yaml
-module: 言语理解与表达
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -1245,7 +1245,7 @@ A
 <!-- hyz-question-id: 01a19c8a-4307-7a50-a429-973642bbe682 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1321,7 +1321,7 @@ C
 <!-- hyz-question-id: 01a19c8a-4307-7a50-a429-9759a3112fca -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1441,7 +1441,7 @@ B
 <!-- hyz-question-id: 01a19c8a-4307-7a50-a429-9782e887eaa1 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1481,7 +1481,7 @@ D
 <!-- hyz-question-id: 01a19c8a-4307-7a50-a429-9798dd8468d3 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1519,7 +1519,7 @@ D
 <!-- hyz-question-id: 01a19c8a-4307-7a50-a429-97a077b6d8a7 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1559,7 +1559,7 @@ C
 <!-- hyz-question-id: 01a19c8a-4307-7a50-a429-97b8d5837539 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1645,7 +1645,7 @@ C
 <!-- hyz-question-id: 01a19c8a-4307-7a50-a429-97db6569147a -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -1724,7 +1724,7 @@ D
 <!-- hyz-question-id: 01a19c8a-4307-7a50-a429-97f61723c43e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -1938,7 +1938,7 @@ D
 <!-- hyz-question-id: 01a19c8a-4307-7a50-a429-984cc7606fcb -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2582,7 +2582,7 @@ D
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a2027a303e04 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials: []
 passage_source: null
@@ -3006,7 +3006,7 @@ D项中受害者向歹徒求取的赔偿不是因社会义务而发生的收支�
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a28609f638f1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3147,7 +3147,7 @@ A项中下属工厂、B项中的学生食堂均不承担负债，C项中的某�
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a2b2f82a3217 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -3249,7 +3249,7 @@ B、C两项不是有规律的变动，D项不存在随着季节的变化，均�
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a2d6ef3ccf8c -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -3349,7 +3349,7 @@ C项正确，是企业的固定资产，属于资本范畴。
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a2f4e3e0165b -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -4062,7 +4062,7 @@ A
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a3e4faa4c0b9 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4151,7 +4151,7 @@ D项，实现“三个代表”是我党保持先进性和增强创造力的目�
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a40b151ef9a2 -->
 ```yaml
 module: 常识判断
-category: null
+category: 法律常识
 topics: []
 materials: []
 passage_source: null
@@ -4400,7 +4400,7 @@ D
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a46b5a9b3589 -->
 ```yaml
 module: 常识判断
-category: null
+category: 经济常识
 topics: []
 materials: []
 passage_source: null
@@ -4516,7 +4516,7 @@ D
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a490d33467a7 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics:
 - 其他
 materials: []
@@ -5180,7 +5180,7 @@ D
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a596a0939b43 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 直接找数
 - 统计图
@@ -5559,7 +5559,7 @@ A
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a620e6caf576 -->
 ```yaml
 module: 资料分析
-category: 增长
+category: 平均数
 topics:
 - 基期和差
 - 文字资料

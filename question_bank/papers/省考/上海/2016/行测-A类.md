@@ -475,7 +475,7 @@ D
 <!-- hyz-question-id: 01a19c89-f0d3-7ea1-8bbc-6ea64ef39745 -->
 ```yaml
 module: 常识判断
-category: null
+category: 法律常识
 topics: []
 materials: []
 passage_source: null
@@ -630,7 +630,7 @@ B
 <!-- hyz-question-id: 01a19c89-f0d3-7ea1-8bbc-6ee6608337e2 -->
 ```yaml
 module: 常识判断
-category: null
+category: 法律常识
 topics: []
 materials: []
 passage_source: null
@@ -668,7 +668,7 @@ ABC
 <!-- hyz-question-id: 01a19c89-f0d3-7ea1-8bbc-6ef1e86474ab -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -993,7 +993,7 @@ C
 <!-- hyz-question-id: 01a19c89-f0d3-7ea1-8bbc-6f7ed79fd5e8 -->
 ```yaml
 module: 常识判断
-category: null
+category: 人文常识
 topics: []
 materials:
 - M1
@@ -1073,7 +1073,7 @@ ABC
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f2e883195896 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials:
 - M1
@@ -1112,7 +1112,7 @@ ABCD
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f2f4f7f09386 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials:
 - M1
@@ -1311,7 +1311,7 @@ ABCD
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f348ea4ea7e7 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials:
 - M3
@@ -1350,7 +1350,7 @@ B
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f358a615a162 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials:
 - M3
@@ -1389,7 +1389,7 @@ ABC
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f36d663c21bd -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials:
 - M3
@@ -1428,7 +1428,7 @@ A选项只有先有活动安排才可以部署他们的工作，所以位置不�
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f374e72585c3 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials:
 - M3
@@ -1467,7 +1467,7 @@ A
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f380197c2672 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials: []
 passage_source: null
@@ -1712,7 +1712,7 @@ D
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f3dc2dfa9c47 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -1754,7 +1754,7 @@ C项中语义重复，“偷袭”包含了“悄悄”的含义，排除。
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f3e63d6d1ff5 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -1794,7 +1794,7 @@ A、B、D三项均无歧义，排除。
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f3fe1099a812 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -1894,7 +1894,7 @@ C
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f41d4ddf7764 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: 南方周末卢昌海《对地球1.0我们了解多少？》
@@ -2119,7 +2119,7 @@ A
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f467566f298d -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 词句理解题
 - 普通篇章
@@ -2168,7 +2168,7 @@ D项，“动植物获得进化的机会”无中生有，排除。
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f47b4a65b068 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2217,7 +2217,7 @@ D项，根据“食物易得，物种多样性较少，这都抑制了种间的�
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f48304ecb7a2 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2264,7 +2264,7 @@ C项，根据“红隼的捕猎方式也与以往不同，不再捕食鼩鼱和�
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f497ec438de2 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 标题填入题
 - 普通篇章
@@ -2313,7 +2313,7 @@ D项，因果倒置，是动植物因城市而改变，排除。
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f4a1e7050500 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2356,7 +2356,7 @@ D
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f4bfac2f41c7 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2399,7 +2399,7 @@ A项“白地青花瓷”无中生有，且根据“青白瓷胎骨较清薄而�
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f4c2a0ded3ff -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -2819,7 +2819,7 @@ C
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f56f0433efb3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2857,7 +2857,7 @@ A
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f57e068ae8e5 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2897,7 +2897,7 @@ D
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f58c8f6296c3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2945,7 +2945,7 @@ D项，这种机器不能永恒运动的关键是违背了“能量守恒定律�
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f592abf6771d -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2989,7 +2989,7 @@ D项，声音的传播需要介质，真空下声音无法传播，玻璃抽成�
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f5a4b5e46b48 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3029,7 +3029,7 @@ B
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f5b40ea7e9ed -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3067,7 +3067,7 @@ D
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f5c6a1a7f6ce -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3105,7 +3105,7 @@ B
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f5dabeaa1541 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3145,7 +3145,7 @@ D
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f5eff53c0176 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3185,7 +3185,7 @@ A
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f5f22a41b09a -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3885,7 +3885,7 @@ D项：题干论点说的是近10年的情况，选项说的是今年的情况�
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f6e4509e4a8c -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials: []
 passage_source: null
@@ -4156,7 +4156,7 @@ A
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f732aedb9abc -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 代入法
 materials: []
@@ -4273,8 +4273,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f75bc4e16c04 -->
 ```yaml
-module: 判断推理
-category: null
+module: 数量关系
+category: 数学运算
 topics:
 - 星期日期问题
 materials: []
@@ -4313,7 +4313,7 @@ C
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f76b6da1bda5 -->
 ```yaml
 module: 资料分析
-category: 比重
+category: 增长
 topics:
 - 两期比重
 - 统计图
@@ -4354,7 +4354,7 @@ D
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f77cfab616ca -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 统计图
 - 简单加减计算

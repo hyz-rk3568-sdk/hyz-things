@@ -3395,7 +3395,7 @@ D项：定位表格材料可得，2020年全国艺术表演团体演出场次225
 <!-- hyz-question-id: 01a19c8a-3b8d-7e41-904d-23779bf60d68 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics:
 - 比值计算
 - 综合资料

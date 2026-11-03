@@ -483,7 +483,7 @@ C、D项错误：社会意识具有能动性是指社会意识对社会存在的
 <!-- hyz-question-id: 01a19c8a-2563-7591-932f-3d6427ba4f84 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -1021,7 +1021,7 @@ D项错误：公平责任原则，是指在当事人双方对损害的发生均�
 <!-- hyz-question-id: 01a19c8a-2563-7591-932f-3e2a1e147428 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 逻辑填空题
 - 普通篇章
@@ -1064,7 +1064,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2563-7591-932f-3e37dab8ac2a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1107,7 +1107,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2563-7591-932f-3e47af1f9c2c -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1156,7 +1156,7 @@ D项，为研究目的方面的不同，并非主要的不同点，排除。
 <!-- hyz-question-id: 01a19c8a-2563-7591-932f-3e55f5c6e896 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1205,7 +1205,7 @@ D项，根据“具有实证主义方法论的社会研究者，通常采用调�
 <!-- hyz-question-id: 01a19c8a-2563-7591-932f-3e6364c615c1 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -3574,7 +3574,7 @@ D项：位置2、8不同，排除。
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1d82278fe816 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3741,7 +3741,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1dc7c9ebf991 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3783,7 +3783,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1dd15dd2e02d -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3825,7 +3825,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1dede9f7a670 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4519,7 +4519,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1ebc559e34ee -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics:
 - 代入法
 materials: []
@@ -4788,7 +4788,7 @@ D项：“旅客”是指临时客住在外的人或旅行者，这群人不符�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1f0222fa656e -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -4896,7 +4896,7 @@ D项：不涨价承诺并未体现“降幅”，与题干定义关键词不符�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1f2a2858e157 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5002,7 +5002,7 @@ D项：高校教务部门建立的学生选课、评课、成绩管理系统面�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1f4b2e24af18 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5055,7 +5055,7 @@ D项：老孙卖掉大房买二手小房住并将卖房款存进银行获得利�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1f54af9daa47 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5108,7 +5108,7 @@ D项：山坡上的植物长势是自然状态，并不是良种筛选的过程�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1f638aabb7a1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -5161,7 +5161,7 @@ D项：小王十分生气，猛按喇叭，嘴里骂个不停，符合定义中�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1f7c7742b704 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -5216,7 +5216,7 @@ D项：老张的妻子特意在他的行李箱里塞几件厚衣服，并不是�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1f846d2d8419 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5269,7 +5269,7 @@ D项：出国旅游、买电脑还是买黄金首饰满足的是小李的不同�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1f95667d1177 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -5322,7 +5322,7 @@ D项：小王在工会羽毛球循环赛中失手，不属于定义中的“工�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1fa6944146c6 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -5375,7 +5375,7 @@ D项：小丽是《舌尖上的中国》的忠实观众，看节目废寝忘食�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1fb5a5cf1bcf -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M2
@@ -5414,7 +5414,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1fc5bdc3f931 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M2
@@ -5531,7 +5531,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1ffe056df643 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M2
@@ -5576,7 +5576,7 @@ D项：根据文字材料第一段“64.3%的受访老人为男性。”可知�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-200272474795 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -5615,7 +5615,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-20148d9deaf9 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M3
@@ -5654,7 +5654,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-2024b9e8c3f3 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -5693,7 +5693,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-203f3356e01a -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -5732,7 +5732,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-204014126368 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -5816,7 +5816,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-206ec3ed6b99 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -5859,7 +5859,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-207cefd3eadc -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -5943,7 +5943,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-209c37f5a777 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -5988,7 +5988,7 @@ D项：定位柱状图可得，2014年6月至2015年3月美国进口额最低的
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-20a39e2a1916 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6027,7 +6027,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-20bba1b6a41b -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6066,7 +6066,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-20ccd8019dc9 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6152,7 +6152,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-20e48017c313 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5

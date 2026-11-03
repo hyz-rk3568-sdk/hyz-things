@@ -785,7 +785,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-bb717a309bc0 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -823,7 +823,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-bb8c4da25e21 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -1576,7 +1576,7 @@ D项，根据“‘衣服令’就是奈良时代模仿唐代制定的制度之�
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-bc839bf6b674 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 特殊问法
 materials: []
@@ -1827,7 +1827,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-bce9bf041828 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1903,7 +1903,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-bd008ea02007 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2063,7 +2063,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-bd3ff421634d -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2101,7 +2101,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-bd47d56b9919 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2943,7 +2943,7 @@ D项：是宋明两代“心学”的开山之祖陆九渊思想的主要内容�
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-be726a2873a7 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 故事类
 materials: []
@@ -4512,7 +4512,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-c078807b420d -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4646,7 +4646,7 @@ D项错误，法拉第电磁感应定律是电磁学中的一条基本定律，�
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-c0a2fd7eb4fa -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics:
 - 其他
 materials: []
@@ -5057,7 +5057,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3839-70c3-8a86-e4b4d419c97d -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 统计表
 - 简单加减计算
@@ -5272,7 +5272,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3839-70c3-8a86-e50ec83c7921 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 文字资料
 - 简单加减计算
@@ -5534,7 +5534,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3839-70c3-8a86-e568a5d03c5f -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 直接找数
 - 综合资料

@@ -3431,7 +3431,7 @@ C
 <!-- hyz-question-id: 01a19c8a-39f2-7323-8bfa-39b38c5fc482 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -5783,7 +5783,7 @@ A
 <!-- hyz-question-id: 01a19c8a-39f3-79d1-badb-7c681cd9f6af -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 统计表
 - 简单加减计算
@@ -6092,7 +6092,7 @@ B
 <!-- hyz-question-id: 01a19c8a-39f3-79d1-badb-7cde17f5e81a -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 综合资料
 - 简单加减计算
