@@ -49,6 +49,14 @@ export async function expectDisabledScrollShield(page: Page, button: Locator) {
     userSelect: 'none', webkitUserSelect: 'none', touchAction: 'none',
   });
   const canvas = page.getByTestId('calculation-scratchpad-canvas');
+  // Responsive ink backing size may settle on the next ResizeObserver turn
+  // after a viewport change. Compare stable pixels, not two different sizes.
+  await expect.poll(() => canvas.evaluate(el => {
+    const node = el as HTMLCanvasElement;
+    const ratio = Math.max(1, Math.min(3, window.devicePixelRatio));
+    return node.width === Math.round(Math.max(1, node.clientWidth) * ratio)
+      && node.height === Math.round(Math.max(1, node.clientHeight) * ratio);
+  })).toBe(true);
   const ink = await canvas.evaluate(el => (el as HTMLCanvasElement).toDataURL());
   await page.mouse.move(point.x, point.y);
   await page.mouse.down();

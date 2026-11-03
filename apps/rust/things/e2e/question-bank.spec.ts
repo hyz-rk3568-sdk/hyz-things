@@ -167,7 +167,7 @@ test('module filter settings persist, apply server-side, and reflect answered/to
   await page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'}).click();
   await page.getByTestId('question-bank-practice-start').click();
   await expect(page.getByTestId('question-bank-practice-workspace')).toBeVisible();
-  await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('第二份跨卷模块练习卷');
+  await expect(page.getByTestId('question-bank-practice-workspace')).toContainText('第二份跨卷模块练习卷');
   await expect(page.getByTestId('training-answer-sheet-toggle')).toContainText('1/1');
   await page.getByTestId('question-bank-practice-choice').first().click();
   await page.getByRole('button',{name:/暂停并退出/}).click();

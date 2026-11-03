@@ -926,6 +926,7 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
                 height={SCRATCH_HEIGHT.to_string()}
                 class={if *enabled { "absolute inset-0 z-20 block h-full w-full touch-none rounded-box bg-transparent" } else { "hidden" }}
                 data-testid="calculation-scratchpad-canvas"
+                data-swipe-ignore="true"
                 aria-label="透明草稿层，可用 Apple Pencil 或手指书写"
                 onpointerdown={on_down}
                 onpointermove={on_move}
