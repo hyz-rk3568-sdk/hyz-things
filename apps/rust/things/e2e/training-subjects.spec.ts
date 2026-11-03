@@ -208,13 +208,10 @@ test('training shell follows the keyboard-visible viewport without resizing the 
   });
   await subjectFixture(page);
   await page.goto('/#/study/training');
-  // WebKit cannot reliably auto-scroll the horizontal tab strip with a synthetic visualViewport.
-  const logicTab=page.getByTestId('training-mode-logic-judgment');
-  await logicTab.evaluate(el=>{
-    const scroller=el.closest('.training-modes-inner') as HTMLElement;
-    scroller.scrollLeft=(el as HTMLElement).offsetLeft-scroller.clientWidth/2;
-  });
-  await logicTab.click();
+  // A synthetic visualViewport makes WebKit's hit-target logic unreliable for
+  // horizontally off-screen tabs. Enter the mode via a DOM click here; regular
+  // user-visible tab navigation is covered by separate browser tests.
+  await page.getByTestId('training-mode-logic-judgment').evaluate(el=>(el as HTMLButtonElement).click());
   await page.getByTestId('logic-user-prompt').locator('summary').click();
   await page.getByTestId('logic-user-prompt').locator('textarea').focus();
   await expect(page.getByTestId('logic-user-prompt').locator('textarea')).toHaveCSS('font-size','16px');

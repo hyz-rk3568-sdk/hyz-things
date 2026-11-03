@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { expectDisabledScrollShield, resetHarness, expectNoHorizontalOverflow } from './fixtures';
 
-import { expectInlineInkControls } from './ink-fixtures';
+import { expectInlineInkControls, inkSnapshot } from './ink-fixtures';
 
 const DEFAULT_LOGIC_PROMPT='默认出题要求';
 
@@ -278,7 +278,8 @@ test("mobile single-question ink is transparent and survives question navigation
   const toggle=page.getByTestId('calculation-scratchpad-toggle');
   const canvas=page.getByTestId('calculation-scratchpad-canvas');
   const save=page.getByTestId('calculation-scratchpad-save-status');
-  const snapshot=()=>canvas.evaluate(element=>(element as HTMLCanvasElement).toDataURL());
+  // Compare actual occupied pixels, not WebKit's variable edge-alpha encoding.
+  const snapshot=()=>inkSnapshot(canvas);
   const hasInk=()=>canvas.evaluate(element=>{
     const bitmap=element as HTMLCanvasElement;
     const data=bitmap.getContext('2d')!.getImageData(0,0,bitmap.width,bitmap.height).data;

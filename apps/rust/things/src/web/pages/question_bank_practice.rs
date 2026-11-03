@@ -843,7 +843,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 <section class={WORKSPACE} data-testid="question-bank-practice-workspace">
                     <header class="flex shrink-0 flex-wrap items-center justify-between gap-2 pb-2">
                         <div class="flex min-w-0 gap-2">
-                            <button class="btn btn-ghost btn-sm" onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Exit)})}>{"← 暂停并退出"}</button>
+                            <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Exit)})}>{"← 暂停并退出"}</button>
                             <strong class="truncate text-sm">{item.paper_title.clone()}</strong>
                         </div>
                         <div class="flex items-center gap-2">

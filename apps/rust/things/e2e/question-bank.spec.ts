@@ -195,6 +195,7 @@ test('module filter settings persist, apply server-side, and reflect answered/to
   await expect(page.getByTestId('training-answer-sheet-toggle')).toContainText('1/1');
   await page.getByTestId('question-bank-practice-choice').first().click();
   await page.getByRole('button',{name:/暂停并退出/}).click();
+  await expect(page.getByTestId('question-bank-practice-setup')).toBeVisible();
   await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toContainText('1/1');
 });
 test('swipe changes questions only for horizontal finger gesture and keeps document locked',async({page})=>{
