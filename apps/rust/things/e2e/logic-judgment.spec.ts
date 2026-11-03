@@ -60,8 +60,7 @@ test("logic judgment persists answers, recovers deadline and reviews exact-paper
   const reviewAnswer=await page.getByTestId('logic-answer-pane').boundingBox();
   expect(reviewQuestion!.x+reviewQuestion!.width).toBeLessThanOrEqual(reviewAnswer!.x+2);
   await page.getByRole('button',{name:'← 返回训练',exact:true}).click();
-  await page.getByTestId('training-mode-history').click();
-  await page.getByTestId('training-history-item').filter({hasText:'判断推理'}).first().click();
+  await page.getByTestId('logic-history-open').click();
   await expect(page.getByTestId('logic-history')).toContainText('1/10题');
   await page.getByRole('button',{name:'查看原题与解析',exact:true}).click();
   await expect(page.getByTestId('logic-result')).toContainText('1 / 10');
