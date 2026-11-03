@@ -270,28 +270,119 @@ test('module filter settings persist, apply server-side, and reflect answered/to
   await expect(page.getByTestId('question-bank-practice-setup')).toBeVisible();
   await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toContainText('1/1');
 });
-test('swipe changes questions only for horizontal finger gesture and keeps document locked',async({page})=>{
+test('swipe follows the finger before release and reveals the neighbouring page',async({page})=>{
   await loginAsAdmin(page);
   await page.goto('/#/study/training');
+  await page.emulateMedia({reducedMotion:'no-preference'});
   await page.getByTestId('training-mode-question-bank-paper').click();
   await chooseFixturePaper(page);
   await page.getByTestId('question-bank-practice-start').click();
   const surface=page.getByTestId('training-swipe-surface');
-  await expect(page.getByTestId('training-answer-sheet-toggle')).toContainText('1/3');
-  await surface.evaluate((node)=>{
-    const emit=(type:string,pointerType:string,x:number,y:number)=>node.dispatchEvent(new PointerEvent(type,{
-      bubbles:true,pointerType,pointerId:17,isPrimary:true,clientX:x,clientY:y
+  const heading=page.getByTestId('question-bank-practice-heading');
+  const sheet=page.getByTestId('training-answer-sheet-toggle');
+  const stem=page.getByTestId('question-bank-practice-stem');
+  const outgoing=page.locator('[data-page-turn="out"]');
+  await expect(sheet).toContainText('1/3');
+
+  // Keep the finger down: the pages must already be sliding and both must be readable.
+  const firstDrag=await surface.evaluate((node)=>{
+    const emit=(type:string,x:number)=>node.dispatchEvent(new PointerEvent(type,{
+      bubbles:true,pointerType:'touch',pointerId:17,isPrimary:true,clientX:x,clientY:230
     }));
-    emit('pointerdown','touch',500,230);emit('pointerup','touch',250,230);
+    emit('pointerdown',500);emit('pointermove',460);emit('pointermove',400);emit('pointermove',300);
+    const out=document.querySelector('[data-page-turn="out"]') as HTMLElement | null;
+    const rect=out?.getBoundingClientRect();
+    return out ? {
+      text:out.textContent ?? '',
+      direction:out.getAttribute('data-direction'),
+      transform:out.style.transform,
+      animations:out.getAnimations().length,
+      duplicateTestIds:out.querySelectorAll('[data-testid]').length,
+      left:rect?.left ?? 0,
+      right:rect?.right ?? 0,
+    } : null;
   });
-  await expect(page.getByTestId('training-answer-sheet-toggle')).toContainText('2/3');
+  expect(firstDrag).not.toBeNull();
+  expect(firstDrag?.text).toContain('材料中的正确选项');
+  expect(firstDrag?.direction).toBe('next');
+  expect(firstDrag?.transform).toContain('translateX(-200px)');
+  expect(firstDrag?.animations).toBe(0);
+  expect(firstDrag?.duplicateTestIds).toBe(0);
+  expect(firstDrag!.left).toBeLessThan(0);
+  expect(firstDrag!.right).toBeGreaterThan(0);
+  await expect(heading).toContainText('第 2/3 题');
+  await expect(sheet).toContainText('2/3');
+  await expect(stem).toContainText('第二道题');
+  await expect(outgoing).toHaveCount(1);
+
+  // Releasing past the threshold finishes the turn.
   await surface.evaluate((node)=>{
-    const emit=(type:string,pointerType:string,x:number,y:number)=>node.dispatchEvent(new PointerEvent(type,{
-      bubbles:true,pointerType,pointerId:18,isPrimary:true,clientX:x,clientY:y
+    node.dispatchEvent(new PointerEvent('pointerup',{
+      bubbles:true,pointerType:'touch',pointerId:17,isPrimary:true,clientX:300,clientY:230
     }));
-    emit('pointerdown','pen',250,230);emit('pointerup','pen',500,230);
   });
-  await expect(page.getByTestId('training-answer-sheet-toggle')).toContainText('2/3');
+  await expect(outgoing).toHaveCount(0,{timeout:2000});
+  await expect(heading).toContainText('第 2/3 题');
+  await expect(stem).toHaveCount(1);
+  await expect(stem).toContainText('第二道题');
+
+  // A short drag previews the next page, then snaps back when released.
+  await surface.evaluate((node)=>{
+    const emit=(type:string,x:number)=>node.dispatchEvent(new PointerEvent(type,{
+      bubbles:true,pointerType:'touch',pointerId:18,isPrimary:true,clientX:x,clientY:230
+    }));
+    emit('pointerdown',500);emit('pointermove',470);emit('pointermove',450);
+  });
+  await expect(heading).toContainText('第 3/3 题');
+  await expect(stem).toContainText('这是一道判断推理题');
+  const cancelDrag=await surface.evaluate(()=>document.querySelector('[data-page-turn="out"]')?.textContent ?? '');
+  expect(cancelDrag).toContain('第二道题');
+  await surface.evaluate((node)=>{
+    node.dispatchEvent(new PointerEvent('pointerup',{
+      bubbles:true,pointerType:'touch',pointerId:18,isPrimary:true,clientX:450,clientY:230
+    }));
+  });
+  await expect(heading).toContainText('第 2/3 题');
+  await expect(outgoing).toHaveCount(0,{timeout:2000});
+  await expect(stem).toContainText('第二道题');
+
+  // Pen drags follow the same live path.
+  await surface.evaluate((node)=>{
+    const emit=(type:string,x:number)=>node.dispatchEvent(new PointerEvent(type,{
+      bubbles:true,pointerType:'pen',pointerId:19,isPrimary:true,clientX:x,clientY:230
+    }));
+    emit('pointerdown',250);emit('pointermove',350);emit('pointermove',450);
+    const out=document.querySelector('[data-page-turn="out"]') as HTMLElement | null;
+    return out ? {
+      text:out.textContent ?? '',
+      direction:out.getAttribute('data-direction'),
+      transform:out.style.transform,
+    } : null;
+  }).then((penDrag)=>{
+    expect(penDrag).not.toBeNull();
+    expect(penDrag?.text).toContain('第二道题');
+    expect(penDrag?.direction).toBe('previous');
+    expect(penDrag?.transform).toContain('translateX(200px)');
+  });
+  await expect(heading).toContainText('第 1/3 题');
+  await expect(stem).toContainText('材料中的正确选项');
+  await surface.evaluate((node)=>{
+    node.dispatchEvent(new PointerEvent('pointerup',{
+      bubbles:true,pointerType:'pen',pointerId:19,isPrimary:true,clientX:450,clientY:230
+    }));
+  });
+  await expect(outgoing).toHaveCount(0,{timeout:2000});
+  await expect(sheet).toContainText('1/3');
+
+  // A vertical gesture never starts a page turn.
+  await surface.evaluate((node)=>{
+    const emit=(type:string,x:number,y:number)=>node.dispatchEvent(new PointerEvent(type,{
+      bubbles:true,pointerType:'touch',pointerId:20,isPrimary:true,clientX:x,clientY:y
+    }));
+    emit('pointerdown',300,180);emit('pointermove',304,270);emit('pointerup',300,380);
+  });
+  await expect(outgoing).toHaveCount(0);
+  await expect(sheet).toContainText('1/3');
   const overflow=await page.evaluate(()=>document.documentElement.scrollHeight-document.documentElement.clientHeight);
   expect(overflow).toBeLessThanOrEqual(1);
 });
