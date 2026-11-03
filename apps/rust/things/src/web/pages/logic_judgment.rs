@@ -759,7 +759,14 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 disabled={*busy || job.is_some() || status.as_ref().is_none_or(|state|!state.configured || state.eligible_cards<10)} onclick={invoke(LogicAction::Prepare)}>
                 {if job.is_some() {"正在出题中…"} else {"准备试卷 →"}}</button>})}>
             <div class="training-config">
-                <h2 class="font-bold">{title}</h2>
+                <div class="flex items-center justify-between gap-3">
+                    <h2 class="font-bold">{title}</h2>
+                    <button type="button" class="btn btn-outline btn-sm"
+                        data-testid={format!("{prefix}-history-open")}
+                        onclick={Callback::from({let history_open=history_open.clone(); move |_|history_open.set(true)})}>
+                        {"练习记录"}
+                    </button>
+                </div>
                 <p class="mt-1 text-sm text-base-content/60">{subtitle}</p>
                 <div class="mt-5 grid gap-3">
                     if !unfinished.is_empty() {
