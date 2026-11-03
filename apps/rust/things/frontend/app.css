@@ -453,6 +453,16 @@ nav.tabs > button.tab:not(.tab-active) {
     line-height: 1.7;
     color: color-mix(in srgb,var(--color-base-content) 65%,transparent);
   }
+  @media (min-width: 640px) and (max-width: 1366px) {
+    .training-shell .training-setup-layout {
+      --training-content-max: none;
+    }
+    .training-topbar-inner,
+    .training-modes-inner {
+      max-width: none;
+    }
+  }
+
   @media (max-width: 639px) {
     .training-shell {
       --training-gutter: 1rem;

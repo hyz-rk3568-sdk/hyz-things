@@ -1,11 +1,13 @@
-//! Question-bank index with a parsed-content cache; Markdown remains the source of truth.
-use crate::application::question_bank::practice::primary_module;
+//! Runtime question content in SQLite, populated by explicit Markdown import.
+use crate::application::question_bank::document::structural_gradable;
 use crate::application::question_bank::{
-    BankError, IndexedPaper, PaperContent, QuestionBankRepositoryPort, StoredQuestion,
+    BankError, IndexedPaper, PaperContent, PracticeContent, QuestionBankRepositoryPort,
+    StoredQuestion,
 };
+use crate::domain::question_bank::primary_module;
 use crate::domain::question_bank::{
-    MaterialView, ModulePracticeFilters, PracticeBrowseItem, PracticeCatalog, PracticeCategory,
-    PracticeMode, PracticeModule, PracticeSession,
+    MaterialView, ModulePracticeFilters, PaperSummary, PracticeBrowseItem, PracticeCatalog,
+    PracticeCategory, PracticeMode, PracticeModule, PracticeSession,
 };
 use async_trait::async_trait;
 use sqlx::{
@@ -18,6 +20,74 @@ use std::str::FromStr;
 // This migrator is intentionally separate from the portal and Flashcard databases.
 static QUESTION_BANK_MIGRATOR: sqlx::migrate::Migrator =
     sqlx::migrate!("./migrations/question_bank");
+
+/// Indexes written by binaries before structural gradability was detached
+/// from issue verification contain stale `gradable=0` rows. The repair is a
+/// one-time data migration guarded by `PRAGMA user_version`.
+const QUESTION_BANK_GRADABLE_REPAIR_VERSION: i64 = 1;
+
+async fn initialize_schema(pool: &SqlitePool) -> Result<(), BankError> {
+    QUESTION_BANK_MIGRATOR
+        .run(pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
+    // Additive indexes keep migration versions unchanged for previous-ELF rollback.
+    sqlx::query(include_str!("question_bank_catalog_index.sql"))
+        .execute(pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
+    repair_gradable(pool).await
+}
+
+async fn repair_gradable(pool: &SqlitePool) -> Result<(), BankError> {
+    let version: i64 = sqlx::query_scalar("PRAGMA user_version")
+        .fetch_one(pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
+    if version >= QUESTION_BANK_GRADABLE_REPAIR_VERSION {
+        return Ok(());
+    }
+    let mut tx = pool.begin().await.map_err(|_| BankError::Storage)?;
+    let mut last_rowid = 0_i64;
+    loop {
+        let rows = sqlx::query(
+            "SELECT rowid AS rowid,id,COALESCE(stem,'') AS stem,COALESCE(options_markdown,'') AS options_markdown,correct_answer FROM questions WHERE rowid>? ORDER BY rowid LIMIT 1000",
+        )
+        .bind(last_rowid)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|_| BankError::Storage)?;
+        if rows.is_empty() {
+            break;
+        }
+        for row in rows {
+            let rowid: i64 = row.get("rowid");
+            last_rowid = rowid;
+            let answer: Vec<String> = row
+                .try_get::<Option<&str>, _>("correct_answer")
+                .map_err(|_| BankError::Storage)?
+                .and_then(|text| serde_json::from_str(text).ok())
+                .unwrap_or_default();
+            let gradable = i64::from(structural_gradable(
+                row.get("stem"),
+                row.get("options_markdown"),
+                &answer,
+            ));
+            sqlx::query("UPDATE questions SET gradable=? WHERE rowid=? AND gradable<>?")
+                .bind(gradable)
+                .bind(rowid)
+                .bind(gradable)
+                .execute(&mut *tx)
+                .await
+                .map_err(|_| BankError::Storage)?;
+        }
+    }
+    sqlx::query("PRAGMA user_version=1")
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| BankError::Storage)?;
+    tx.commit().await.map_err(|_| BankError::Storage)
+}
 
 pub struct SqliteQuestionBankRepository {
     pool: SqlitePool,
@@ -33,15 +103,30 @@ impl SqliteQuestionBankRepository {
             .connect_with(options)
             .await
             .map_err(|_| BankError::Storage)?;
-        QUESTION_BANK_MIGRATOR
-            .run(&pool)
-            .await
-            .map_err(|_| BankError::Storage)?;
+        initialize_schema(&pool).await?;
         Ok(Self { pool })
     }
 }
 #[async_trait]
 impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
+    async fn paper_summaries(&self) -> Result<Vec<PaperSummary>, BankError> {
+        let rows: Vec<String> = sqlx::query_scalar("SELECT json_extract(metadata,'$.summary') FROM papers WHERE active=1 AND json_extract(metadata,'$.summary.role')='primary' ORDER BY id")
+            .fetch_all(&self.pool).await.map_err(|_| BankError::Storage)?;
+        rows.into_iter()
+            .map(|summary| serde_json::from_str(&summary).map_err(|_| BankError::Storage))
+            .collect()
+    }
+
+    async fn indexed_paper(&self, id: &str) -> Result<IndexedPaper, BankError> {
+        let metadata: Option<String> =
+            sqlx::query_scalar("SELECT metadata FROM papers WHERE id=? AND active=1")
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|_| BankError::Storage)?;
+        serde_json::from_str(&metadata.ok_or(BankError::NotFound)?).map_err(|_| BankError::Storage)
+    }
+
     async fn list(&self) -> Result<Vec<IndexedPaper>, BankError> {
         let rows = sqlx::query("SELECT metadata FROM papers WHERE active=1 ORDER BY id")
             .fetch_all(&self.pool)
@@ -74,20 +159,27 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                     .fetch_optional(&mut *tx)
                     .await
                     .map_err(|_| BankError::Storage)?;
-            let cached: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM questions WHERE paper_id=? AND stem IS NOT NULL",
+            let cached_questions: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM questions WHERE paper_id=? AND stem IS NOT NULL AND source_hash=?",
             )
             .bind(&paper.summary.id)
+            .bind(&paper.hash)
             .fetch_one(&mut *tx)
             .await
             .map_err(|_| BankError::Storage)?;
+            let cached_materials: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM paper_materials WHERE paper_id=?")
+                    .bind(&paper.summary.id)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(|_| BankError::Storage)?;
             let metadata = serde_json::to_string(&paper).map_err(|_| BankError::Storage)?;
-            sqlx::query("INSERT INTO papers(id,metadata,active) VALUES(?,?,1) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,active=1").bind(&paper.summary.id).bind(metadata).execute(&mut *tx).await.map_err(|_|BankError::Storage)?;
+            sqlx::query("INSERT INTO papers(id,metadata,active) VALUES(?,?,1) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,active=1").bind(&paper.summary.id).bind(metadata).execute(&mut *tx).await.map_err(|_| BankError::Storage)?;
             // Rewrite parsed content only when the source hash changed or the
-            // database predates the content cache. Re-running sync must not
-            // rewrite thousands of unchanged question rows.
-            let content_changed =
-                previous_hash.as_deref() != Some(paper.hash.as_str()) || cached == 0;
+            // cache is incomplete. Re-running sync keeps complete unchanged rows.
+            let content_changed = previous_hash.as_deref() != Some(paper.hash.as_str())
+                || cached_questions as usize != paper.summary.questions
+                || cached_materials as usize != paper.material_ids.len();
             if content_changed && !paper.content.questions.is_empty() {
                 sqlx::query("DELETE FROM questions WHERE paper_id=?")
                     .bind(&paper.summary.id)
@@ -104,19 +196,19 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                         serde_json::to_string(&question.topics).map_err(|_| BankError::Storage)?;
                     let materials = serde_json::to_string(&question.materials)
                         .map_err(|_| BankError::Storage)?;
-                    let issues =
-                        serde_json::to_string(&question.issues).map_err(|_| BankError::Storage)?;
                     let correct = serde_json::to_string(&question.correct_answer)
                         .map_err(|_| BankError::Storage)?;
                     let module = question
                         .module
                         .as_deref()
                         .and_then(|value| primary_module(Some(value)));
-                    sqlx::query("INSERT INTO questions(id,paper_id,number,source_hash,module,category,stem,options_markdown,topics,materials,issues,gradable,correct_answer,explanation) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET paper_id=excluded.paper_id,number=excluded.number,source_hash=excluded.source_hash,module=excluded.module,category=excluded.category,stem=excluded.stem,options_markdown=excluded.options_markdown,topics=excluded.topics,materials=excluded.materials,issues=excluded.issues,gradable=excluded.gradable,correct_answer=excluded.correct_answer,explanation=excluded.explanation")
+                    // `issues` is a legacy column kept empty so a rollback to a
+                    // binary that still reads it remains compatible.
+                    sqlx::query("INSERT INTO questions(id,paper_id,number,source_hash,module,category,stem,options_markdown,topics,materials,issues,gradable,correct_answer,explanation) VALUES(?,?,?,?,?,?,?,?,?,?,'[]',?,?,?) ON CONFLICT(id) DO UPDATE SET paper_id=excluded.paper_id,number=excluded.number,source_hash=excluded.source_hash,module=excluded.module,category=excluded.category,stem=excluded.stem,options_markdown=excluded.options_markdown,topics=excluded.topics,materials=excluded.materials,gradable=excluded.gradable,correct_answer=excluded.correct_answer,explanation=excluded.explanation")
                         .bind(&question.id).bind(&paper.summary.id).bind(question.number as i64)
                         .bind(&paper.hash).bind(module).bind(&question.category)
                         .bind(&question.stem).bind(&question.options_markdown)
-                        .bind(topics).bind(materials).bind(issues)
+                        .bind(topics).bind(materials)
                         .bind(i64::from(question.gradable)).bind(correct).bind(&question.explanation)
                         .execute(&mut *tx).await.map_err(|_| BankError::Storage)?;
                 }
@@ -173,58 +265,77 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         Ok(())
     }
 
+    async fn paper_module_counts(
+        &self,
+        paper_id: &str,
+        source_hash: &str,
+    ) -> Result<Vec<(Option<String>, usize, usize)>, BankError> {
+        let cached_hash: Option<String> =
+            sqlx::query_scalar("SELECT source_hash FROM questions WHERE paper_id=? LIMIT 1")
+                .bind(paper_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|_| BankError::Storage)?;
+        if cached_hash.as_deref() != Some(source_hash) {
+            return Err(BankError::Stale);
+        }
+        let rows = sqlx::query(
+            "SELECT module,\
+             SUM(CASE WHEN gradable=1 THEN 1 ELSE 0 END),\
+             SUM(CASE WHEN gradable=1 THEN 0 ELSE 1 END)\
+             FROM questions WHERE paper_id=? AND source_hash=? GROUP BY module",
+        )
+        .bind(paper_id)
+        .bind(source_hash)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                (
+                    row.get::<Option<String>, _>(0),
+                    row.get::<i64, _>(1) as usize,
+                    row.get::<i64, _>(2) as usize,
+                )
+            })
+            .collect())
+    }
+
     async fn paper_content(&self, paper_id: &str) -> Result<PaperContent, BankError> {
+        let mut tx = self.pool.begin().await.map_err(|_| BankError::Storage)?;
         let metadata: Option<String> = sqlx::query_scalar("SELECT metadata FROM papers WHERE id=?")
             .bind(paper_id)
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut *tx)
             .await
             .map_err(|_| BankError::Storage)?;
         let paper: IndexedPaper = serde_json::from_str(&metadata.ok_or(BankError::NotFound)?)
             .map_err(|_| BankError::Storage)?;
-        let rows = sqlx::query("SELECT id,number,module,category,topics,materials,issues,stem,options_markdown,gradable,correct_answer,explanation FROM questions WHERE paper_id=? AND stem IS NOT NULL ORDER BY number")
-            .bind(paper_id)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|_| BankError::Storage)?;
-        if rows.is_empty() {
-            return Err(BankError::NotFound);
+        let rows = sqlx::query(
+            "SELECT * FROM questions WHERE paper_id=? AND stem IS NOT NULL ORDER BY number",
+        )
+        .bind(paper_id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|_| BankError::Storage)?;
+        if rows.len() != paper.summary.questions {
+            return Err(BankError::Unavailable);
         }
         let questions = rows
-            .into_iter()
+            .iter()
             .map(|row| {
-                let topics: Option<String> = row.get(4);
-                let materials: Option<String> = row.get(5);
-                let issues: Option<String> = row.get(6);
-                let correct: Option<String> = row.get(10);
-                StoredQuestion {
-                    id: row.get(0),
-                    number: row.get::<i64, _>(1) as u32,
-                    module: row.get(2),
-                    category: row.get(3),
-                    topics: topics
-                        .and_then(|value| serde_json::from_str(&value).ok())
-                        .unwrap_or_default(),
-                    materials: materials
-                        .and_then(|value| serde_json::from_str(&value).ok())
-                        .unwrap_or_default(),
-                    issues: issues
-                        .and_then(|value| serde_json::from_str(&value).ok())
-                        .unwrap_or_default(),
-                    stem: row.get::<Option<String>, _>(7).unwrap_or_default(),
-                    options_markdown: row.get::<Option<String>, _>(8).unwrap_or_default(),
-                    gradable: row.get::<i64, _>(9) != 0,
-                    correct_answer: correct
-                        .and_then(|value| serde_json::from_str(&value).ok())
-                        .unwrap_or_default(),
-                    explanation: row.get::<Option<String>, _>(11).unwrap_or_default(),
+                let hash: String = row.try_get("source_hash").map_err(|_| BankError::Storage)?;
+                if hash != paper.hash {
+                    return Err(BankError::Stale);
                 }
+                decode_question(row)
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
         let materials = sqlx::query(
             "SELECT material_id,name,markdown FROM paper_materials WHERE paper_id=? ORDER BY ordinal",
         )
         .bind(paper_id)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *tx)
         .await
         .map_err(|_| BankError::Storage)?
         .into_iter()
@@ -233,7 +344,20 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             name: row.get(1),
             markdown: row.get(2),
         })
-        .collect();
+        .collect::<Vec<_>>();
+        let ids = materials
+            .iter()
+            .map(|material: &MaterialView| material.id.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        if questions.iter().any(|question| {
+            question
+                .materials
+                .iter()
+                .any(|id| !ids.contains(id.as_str()))
+        }) {
+            return Err(BankError::Unavailable);
+        }
+        tx.commit().await.map_err(|_| BankError::Storage)?;
         Ok(PaperContent {
             paper_id: paper.summary.id,
             hash: paper.hash,
@@ -241,6 +365,78 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             materials,
         })
     }
+    async fn question_contents(&self, ids: &[String]) -> Result<Vec<PracticeContent>, BankError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let requested = serde_json::to_string(ids).map_err(|_| BankError::Storage)?;
+        let mut tx = self.pool.begin().await.map_err(|_| BankError::Storage)?;
+        let rows = sqlx::query(
+            "SELECT q.*,json_extract(p.metadata,'$.summary.title') AS paper_title,              (p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary') AS active              FROM json_each(?) selected JOIN questions q ON q.id=selected.value              JOIN papers p ON p.id=q.paper_id              WHERE q.stem IS NOT NULL AND q.source_hash=json_extract(p.metadata,'$.hash')"
+        ).bind(requested).fetch_all(&mut *tx).await.map_err(|_| BankError::Storage)?;
+        let mut contents = rows
+            .iter()
+            .map(|row| {
+                Ok(PracticeContent {
+                    paper_id: row.try_get("paper_id").map_err(|_| BankError::Storage)?,
+                    paper_title: row.try_get("paper_title").map_err(|_| BankError::Storage)?,
+                    source_hash: row.try_get("source_hash").map_err(|_| BankError::Storage)?,
+                    active: row
+                        .try_get::<i64, _>("active")
+                        .map_err(|_| BankError::Storage)?
+                        != 0,
+                    question: decode_question(row)?,
+                    materials: Vec::new(),
+                })
+            })
+            .collect::<Result<Vec<_>, BankError>>()?;
+        let materials = contents
+            .iter()
+            .flat_map(|content| {
+                content
+                    .question
+                    .materials
+                    .iter()
+                    .map(|id| (content.paper_id.clone(), id.clone()))
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        let requested = serde_json::to_string(&materials).map_err(|_| BankError::Storage)?;
+        let rows = sqlx::query(
+            "SELECT m.paper_id,m.material_id,m.name,m.markdown              FROM json_each(?) selected JOIN paper_materials m              ON m.paper_id=json_extract(selected.value,'$[0]')              AND m.material_id=json_extract(selected.value,'$[1]')"
+        ).bind(requested).fetch_all(&mut *tx).await.map_err(|_| BankError::Storage)?;
+        let materials = rows
+            .into_iter()
+            .map(|row| {
+                (
+                    (
+                        row.get::<String, _>("paper_id"),
+                        row.get::<String, _>("material_id"),
+                    ),
+                    MaterialView {
+                        id: row.get("material_id"),
+                        name: row.get("name"),
+                        markdown: row.get("markdown"),
+                    },
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        for content in &mut contents {
+            content.materials = content
+                .question
+                .materials
+                .iter()
+                .map(|id| {
+                    materials
+                        .get(&(content.paper_id.clone(), id.clone()))
+                        .cloned()
+                        .ok_or(BankError::Unavailable)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+        }
+        tx.commit().await.map_err(|_| BankError::Storage)?;
+        Ok(contents)
+    }
+
     async fn practice_create(&self, session: PracticeSession) -> Result<(), BankError> {
         let mut tx = self.pool.begin().await.map_err(|_| BankError::Storage)?;
         let data = serde_json::to_string(&session).map_err(|_| BankError::Storage)?;
@@ -269,6 +465,81 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                 .await
                 .map_err(|_| BankError::Storage)?;
         serde_json::from_str(&data.ok_or(BankError::NotFound)?).map_err(|_| BankError::Storage)
+    }
+
+    async fn practice_save_answer(
+        &self,
+        session: PracticeSession,
+        question_id: &str,
+        previous_revision: u64,
+    ) -> Result<(), BankError> {
+        if session.status != "active"
+            || session.paused
+            || previous_revision.checked_add(1) != Some(session.revision)
+        {
+            return Err(BankError::Conflict);
+        }
+        let mut matching = session
+            .items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| item.question_id == question_id);
+        let (ordinal, item) = matching.next().ok_or(BankError::NotFound)?;
+        if matching.next().is_some() {
+            return Err(BankError::Conflict);
+        }
+        let revision = i64::try_from(session.revision).map_err(|_| BankError::Invalid)?;
+        let previous_revision = i64::try_from(previous_revision).map_err(|_| BankError::Invalid)?;
+        let ordinal = i64::try_from(ordinal).map_err(|_| BankError::Invalid)?;
+        let answer = serde_json::to_string(&item.answer).map_err(|_| BankError::Storage)?;
+        let answer_path = format!("$.items[{ordinal}].answer");
+        let question_path = format!("$.items[{ordinal}].question_id");
+        let mut tx = self.pool.begin().await.map_err(|_| BankError::Storage)?;
+        let result = async {
+            let updated = sqlx::query(
+                "UPDATE practice_sessions SET revision=?,data=json_set(data,?,json(?),'$.revision',?,'$.updated_at',?) \
+                 WHERE id=? AND status='active' AND revision=? \
+                 AND json_extract(data,'$.status')='active' \
+                 AND json_extract(data,'$.revision')=? AND json_extract(data,'$.paused')=0 \
+                 AND json_extract(data,?)=?",
+            )
+            .bind(revision)
+            .bind(&answer_path)
+            .bind(&answer)
+            .bind(revision)
+            .bind(session.updated_at)
+            .bind(&session.id)
+            .bind(previous_revision)
+            .bind(previous_revision)
+            .bind(&question_path)
+            .bind(question_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| BankError::Storage)?;
+            if updated.rows_affected() != 1 {
+                return Err(BankError::Conflict);
+            }
+            let updated = sqlx::query(
+                "UPDATE practice_items SET answer=? WHERE session_id=? AND ordinal=? AND question_id=?",
+            )
+            .bind(&answer)
+            .bind(&session.id)
+            .bind(ordinal)
+            .bind(question_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| BankError::Storage)?;
+            if updated.rows_affected() != 1 {
+                return Err(BankError::Conflict);
+            }
+            Ok(())
+        }
+        .await;
+        if let Err(error) = result {
+            tx.rollback().await.map_err(|_| BankError::Storage)?;
+            return Err(error);
+        }
+        tx.commit().await.map_err(|_| BankError::Storage)
     }
 
     async fn practice_update(
@@ -329,14 +600,33 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         filters: &ModulePracticeFilters,
     ) -> Result<PracticeCatalog, BankError> {
         let regions = serde_json::to_string(&filters.regions).map_err(|_| BankError::Storage)?;
+        // LIMIT -1 prevents older SQLite versions from flattening the paper filter.
         let rows = sqlx::query(
-            "SELECT q.module,q.category,COUNT(*) AS total,              SUM(CASE WHEN EXISTS (SELECT 1 FROM practice_items i WHERE i.question_id=q.id AND i.answer!='[]') THEN 1 ELSE 0 END) AS done              FROM questions q JOIN papers p ON p.id=q.paper_id              WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary'              AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)>=?)              AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)<=?)              AND (?=0 OR (EXISTS (SELECT 1 FROM json_each(?) WHERE value=json_extract(p.metadata,'$.summary.region'))) != (?))              GROUP BY q.module,q.category ORDER BY q.module,q.category"
+            "WITH eligible_papers AS MATERIALIZED (\
+             SELECT p.id FROM papers p \
+             WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' \
+             AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)>=?) \
+             AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)<=?) \
+             AND (?=0 OR (EXISTS (SELECT 1 FROM json_each(?) \
+                  WHERE value=json_extract(p.metadata,'$.summary.region'))) != (?)) \
+             LIMIT -1) \
+             SELECT q.module,q.category,COUNT(*) AS total, \
+             SUM(CASE WHEN EXISTS (SELECT 1 FROM practice_items i \
+                 WHERE i.question_id=q.id AND i.answer!='[]') THEN 1 ELSE 0 END) AS done \
+             FROM eligible_papers p JOIN questions q ON q.paper_id=p.id \
+             WHERE q.gradable=1 \
+             GROUP BY q.module,q.category ORDER BY q.module,q.category",
         )
-        .bind(filters.year_min).bind(filters.year_min)
-        .bind(filters.year_max).bind(filters.year_max)
-        .bind(i64::from(!filters.regions.is_empty())).bind(regions)
+        .bind(filters.year_min)
+        .bind(filters.year_min)
+        .bind(filters.year_max)
+        .bind(filters.year_max)
+        .bind(i64::from(!filters.regions.is_empty()))
+        .bind(regions)
         .bind(i64::from(filters.exclude_regions))
-        .fetch_all(&self.pool).await.map_err(|_| BankError::Storage)?;
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
         let mut modules: BTreeMap<String, (usize, usize, usize, BTreeMap<String, (usize, usize)>)> =
             BTreeMap::new();
         let mut unclassified = 0;
@@ -380,30 +670,60 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         })
     }
 
-    async fn practice_module_candidates(
+    async fn practice_module_groups(
         &self,
         module: &str,
         category: Option<&str>,
         filters: &ModulePracticeFilters,
-        limit: usize,
-    ) -> Result<Vec<String>, BankError> {
-        if limit == 0 || limit > 20 {
+        group_limit: usize,
+    ) -> Result<Vec<Vec<String>>, BankError> {
+        if group_limit == 0 || group_limit > 100 {
             return Err(BankError::Invalid);
         }
         let regions = serde_json::to_string(&filters.regions).map_err(|_| BankError::Storage)?;
-        let base = "SELECT q.id FROM questions q JOIN papers p ON p.id=q.paper_id WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' AND q.module=? ";
-        let filter = " AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)>=?)             AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)<=?)             AND (?=0 OR (EXISTS (SELECT 1 FROM json_each(?) WHERE value=json_extract(p.metadata,'$.summary.region'))) != (?)) ";
-        let suffix = " ORDER BY EXISTS(SELECT 1 FROM practice_attempts a WHERE a.question_id=q.id), CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER) DESC, p.id, q.number LIMIT ?";
-        let sql = if category.is_some() {
-            format!("{base}AND q.category=?{filter}{suffix}")
-        } else {
-            format!("{base}{filter}{suffix}")
-        };
-        let mut query = sqlx::query_scalar::<_, String>(&sql).bind(module);
-        if let Some(category) = category {
-            query = query.bind(category);
-        }
-        query
+        // LIMIT -1 keeps the paper metadata filter materialized on older SQLite.
+        let papers = "WITH eligible_papers AS MATERIALIZED (\
+            SELECT p.id,CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER) AS year \
+            FROM papers p \
+            WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' \
+            AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)>=?) \
+            AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)<=?) \
+            AND (?=0 OR (EXISTS (SELECT 1 FROM json_each(?) \
+                 WHERE value=json_extract(p.metadata,'$.summary.region'))) != (?)) \
+            LIMIT -1) ";
+        // A material-linked group is atomic. Passage-based 言语 categories
+        // outside 篇章阅读 are single questions even when the source attaches
+        // a section-level material to them.
+        let sql = format!(
+            "{papers}, filtered AS (\
+             SELECT q.id,q.paper_id,q.number,\
+             EXISTS(SELECT 1 FROM practice_attempts a WHERE a.question_id=q.id) AS seen,\
+             (? IS NULL OR q.category=?) AS matches,\
+             CASE \
+               WHEN q.materials IS NULL OR q.materials IN ('[]','') THEN 'solo:'||q.id \
+               WHEN q.module='言语理解与表达' AND COALESCE(q.category,'')<>'篇章阅读' \
+                 THEN 'solo:'||q.id \
+               ELSE 'group:'||q.paper_id||':'||q.materials \
+             END AS group_key \
+             FROM eligible_papers p JOIN questions q ON q.paper_id=p.id \
+             WHERE q.module=? AND q.gradable=1),\
+             blocks AS (\
+               SELECT group_key,paper_id,MIN(number) AS first_number,\
+                      MIN(seen) AS unseen,MAX(matches) AS matched \
+               FROM filtered GROUP BY group_key,paper_id),\
+             eligible_blocks AS (SELECT * FROM blocks WHERE matched=1),\
+             ranked AS (\
+               SELECT group_key,ROW_NUMBER() OVER (\
+                 ORDER BY unseen,position,RANDOM(),group_key) AS rn \
+               FROM (SELECT group_key,unseen,\
+                     ROW_NUMBER() OVER (PARTITION BY paper_id ORDER BY first_number) AS position \
+                     FROM eligible_blocks)),\
+             selected AS (SELECT group_key,rn FROM ranked ORDER BY rn LIMIT ?) \
+             SELECT selected.rn,filtered.id FROM selected \
+             JOIN filtered ON filtered.group_key=selected.group_key \
+             ORDER BY selected.rn,filtered.number"
+        );
+        let rows = sqlx::query_as::<_, (i64, String)>(&sql)
             .bind(filters.year_min)
             .bind(filters.year_min)
             .bind(filters.year_max)
@@ -411,10 +731,25 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             .bind(i64::from(!filters.regions.is_empty()))
             .bind(regions)
             .bind(i64::from(filters.exclude_regions))
-            .bind(limit as i64)
+            .bind(category)
+            .bind(category)
+            .bind(module)
+            .bind(group_limit as i64)
             .fetch_all(&self.pool)
             .await
-            .map_err(|_| BankError::Storage)
+            .map_err(|_| BankError::Storage)?;
+        let mut groups: Vec<Vec<String>> = Vec::new();
+        let mut current = i64::MIN;
+        for (rank, id) in rows {
+            if rank != current {
+                groups.push(Vec::new());
+                current = rank;
+            }
+            if let Some(group) = groups.last_mut() {
+                group.push(id);
+            }
+        }
+        Ok(groups)
     }
 
     async fn practice_browse(
@@ -425,10 +760,16 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         category: Option<&str>,
         filters: &ModulePracticeFilters,
     ) -> Result<Vec<PracticeBrowseItem>, BankError> {
-        let condition = match mode {
-            PracticeMode::Paper | PracticeMode::Module => "1=1",
-            PracticeMode::Wrong => "COALESCE(progress.pending,0)=1",
-            PracticeMode::Favorite => "COALESCE(saved.favorite,0)=1",
+        let (source, condition) = match mode {
+            PracticeMode::Paper | PracticeMode::Module => ("questions q", "1=1"),
+            PracticeMode::Wrong => (
+                "question_progress progress JOIN questions q ON q.id=progress.question_id",
+                "progress.pending=1",
+            ),
+            PracticeMode::Favorite => (
+                "favorites saved JOIN questions q ON q.id=saved.question_id",
+                "saved.favorite=1",
+            ),
             PracticeMode::PaperModule => return Err(BankError::Invalid),
         };
         let regions = serde_json::to_string(&filters.regions).map_err(|_| BankError::Storage)?;
@@ -436,10 +777,9 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             "SELECT q.id,q.paper_id,json_extract(p.metadata,'$.summary.title'),\
              CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER),\
              json_extract(p.metadata,'$.summary.region'),q.number,q.module,q.category \
-             FROM questions q JOIN papers p ON p.id=q.paper_id \
-             LEFT JOIN question_progress progress ON progress.question_id=q.id \
-             LEFT JOIN favorites saved ON saved.question_id=q.id \
+             FROM {source} JOIN papers p ON p.id=q.paper_id \
              WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' \
+             AND q.gradable=1 \
              AND {condition} \
              AND (? IS NULL OR q.paper_id=?) \
              AND (? IS NULL OR q.module=?) \
@@ -484,8 +824,8 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
 
     async fn practice_candidates(&self, mode: PracticeMode) -> Result<Vec<String>, BankError> {
         let sql = match mode {
-            PracticeMode::Wrong => "SELECT q.id FROM questions q JOIN papers p ON p.id=q.paper_id JOIN question_progress s ON s.question_id=q.id WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' AND s.pending=1 ORDER BY p.id,q.number",
-            PracticeMode::Favorite => "SELECT q.id FROM questions q JOIN papers p ON p.id=q.paper_id JOIN favorites s ON s.question_id=q.id WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' AND s.favorite=1 ORDER BY p.id,q.number",
+            PracticeMode::Wrong => "SELECT q.id FROM questions q JOIN papers p ON p.id=q.paper_id JOIN question_progress s ON s.question_id=q.id WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' AND q.gradable=1 AND s.pending=1 ORDER BY p.id,q.number",
+            PracticeMode::Favorite => "SELECT q.id FROM questions q JOIN papers p ON p.id=q.paper_id JOIN favorites s ON s.question_id=q.id WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' AND q.gradable=1 AND s.favorite=1 ORDER BY p.id,q.number",
             _ => return Err(BankError::Invalid),
         };
         sqlx::query_scalar(sql)
@@ -517,6 +857,35 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
     }
 }
 
+fn decode_question(row: &sqlx::sqlite::SqliteRow) -> Result<StoredQuestion, BankError> {
+    fn text(row: &sqlx::sqlite::SqliteRow, column: &str) -> Result<String, BankError> {
+        row.try_get(column).map_err(|_| BankError::Storage)
+    }
+    fn values(row: &sqlx::sqlite::SqliteRow, column: &str) -> Result<Vec<String>, BankError> {
+        serde_json::from_str(&text(row, column)?).map_err(|_| BankError::Storage)
+    }
+    Ok(StoredQuestion {
+        id: text(row, "id")?,
+        number: u32::try_from(
+            row.try_get::<i64, _>("number")
+                .map_err(|_| BankError::Storage)?,
+        )
+        .map_err(|_| BankError::Storage)?,
+        module: row.try_get("module").map_err(|_| BankError::Storage)?,
+        category: row.try_get("category").map_err(|_| BankError::Storage)?,
+        topics: values(row, "topics")?,
+        materials: values(row, "materials")?,
+        stem: text(row, "stem")?,
+        options_markdown: text(row, "options_markdown")?,
+        gradable: row
+            .try_get::<i64, _>("gradable")
+            .map_err(|_| BankError::Storage)?
+            != 0,
+        correct_answer: values(row, "correct_answer")?,
+        explanation: text(row, "explanation")?,
+    })
+}
+
 #[cfg(test)]
 mod migration_tests {
     use super::*;
@@ -530,9 +899,160 @@ mod migration_tests {
     }
 
     #[tokio::test]
+    async fn resync_repairs_missing_materials_even_when_the_source_hash_is_unchanged() {
+        let repository = SqliteQuestionBankRepository::connect("sqlite::memory:")
+            .await
+            .unwrap();
+        let markdown = r#"---
+schema: hyz-paper/v1
+title: 缓存修复样卷
+year: 2001
+exam: 国考
+region: 国考
+variant: 统考
+status: unverified
+---
+<!-- hyz-paper-id: 019a3d8c-7f23-7b6e-927d-3c951851d3a2 -->
+## Material M1
+<!-- hyz-material-id: 019a3d8d-4a21-739a-8b15-7c54e259b610 -->
+共享材料。
+## Question 1
+<!-- hyz-question-id: 019a3d8e-1b32-7a60-9c83-f34217a6e210 -->
+```yaml
+materials: [M1]
+```
+### Stem
+题干。
+### Options
+- A. 甲
+- B. 乙
+### Answer
+B
+### Explanation
+解析。
+"#;
+        let paper = IndexedPaper::new(
+            "papers/a.md".into(),
+            "hash".into(),
+            crate::application::question_bank::document::parse(markdown).unwrap(),
+        );
+        let id = paper.summary.id.clone();
+        let mut incomplete = paper.clone();
+        incomplete.content.materials.clear();
+        repository.apply(vec![incomplete]).await.unwrap();
+        assert_eq!(
+            repository.paper_content(&id).await,
+            Err(BankError::Unavailable)
+        );
+        repository.apply(vec![paper]).await.unwrap();
+        assert_eq!(
+            repository.paper_content(&id).await.unwrap().materials[0].markdown,
+            "共享材料。"
+        );
+    }
+
+    #[tokio::test]
+    async fn stale_gradable_flags_are_repaired_from_stored_question_content() {
+        let pool = memory_pool().await;
+        initialize_schema(&pool).await.unwrap();
+        sqlx::query("INSERT INTO papers(id,metadata,active) VALUES('paper-1','{}',1)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        // An older binary marked complete order-unverified questions as
+        // ungradable. Repair must derive the flag from stem/options/answer.
+        for (id, stem, options, answer, issues) in [
+            (
+                "q-ok",
+                "题干",
+                "- A. 甲\n- B. 乙",
+                r#"["B"]"#,
+                r#"["order_unverified"]"#,
+            ),
+            ("q-no-answer", "题干", "- A. 甲\n- B. 乙", "[]", "[]"),
+            ("q-bad-label", "题干", "- A. 甲\n- B. 乙", r#"["C"]"#, "[]"),
+            ("q-no-stem", "", "- A. 甲\n- B. 乙", r#"["A"]"#, "[]"),
+        ] {
+            sqlx::query("INSERT INTO questions(id,paper_id,number,source_hash,stem,options_markdown,correct_answer,issues,gradable) VALUES(?, 'paper-1', 1, 'hash', ?, ?, ?, ?, 0)")
+                .bind(id)
+                .bind(stem)
+                .bind(options)
+                .bind(answer)
+                .bind(issues)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        sqlx::query("PRAGMA user_version=0")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        initialize_schema(&pool).await.unwrap();
+        initialize_schema(&pool).await.unwrap();
+
+        let flags: Vec<(String, i64)> =
+            sqlx::query_as("SELECT id,gradable FROM questions ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            flags,
+            vec![
+                ("q-bad-label".into(), 0),
+                ("q-no-answer".into(), 0),
+                ("q-no-stem".into(), 0),
+                ("q-ok".into(), 1),
+            ]
+        );
+        let version: i64 = sqlx::query_scalar("PRAGMA user_version")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(version, 1);
+    }
+
+    #[tokio::test]
+    async fn catalog_index_keeps_the_previous_binary_migration_set_compatible() {
+        let pool = memory_pool().await;
+        initialize_schema(&pool).await.unwrap();
+        let legacy = sqlx::migrate::Migrator {
+            migrations: std::borrow::Cow::Owned(
+                QUESTION_BANK_MIGRATOR
+                    .iter()
+                    .filter(|migration| migration.version <= 4)
+                    .cloned()
+                    .collect(),
+            ),
+            ..sqlx::migrate::Migrator::DEFAULT
+        };
+        assert!(
+            legacy.run(&pool).await.is_ok(),
+            "an index-only optimization must preserve ELF rollback"
+        );
+    }
+
+    #[tokio::test]
+    async fn catalog_projection_uses_a_covering_index() {
+        let pool = memory_pool().await;
+        initialize_schema(&pool).await.unwrap();
+        let plan = sqlx::query("EXPLAIN QUERY PLAN SELECT q.module,q.category,q.id,q.number FROM questions q WHERE q.paper_id=?")
+            .bind("paper-1").fetch_all(&pool).await.unwrap();
+        assert!(
+            plan.iter().any(|row| row
+                .get::<String, _>("detail")
+                .contains("USING COVERING INDEX")),
+            "catalog reads must not fetch large question content rows: {:?}",
+            plan.iter()
+                .map(|row| row.get::<String, _>("detail"))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
     async fn fresh_question_bank_has_all_tables() {
         let pool = memory_pool().await;
-        QUESTION_BANK_MIGRATOR.run(&pool).await.unwrap();
+        initialize_schema(&pool).await.unwrap();
         for table in [
             "papers",
             "identities",
@@ -575,7 +1095,7 @@ mod migration_tests {
             .await
             .unwrap();
 
-        QUESTION_BANK_MIGRATOR.run(&pool).await.unwrap();
+        initialize_schema(&pool).await.unwrap();
         sqlx::query("INSERT INTO favorites(question_id,favorite) VALUES('question-1',1)")
             .execute(&pool)
             .await
@@ -586,7 +1106,7 @@ mod migration_tests {
             .unwrap();
 
         // Reopening the same database is safe and never rebuilds user state.
-        QUESTION_BANK_MIGRATOR.run(&pool).await.unwrap();
+        initialize_schema(&pool).await.unwrap();
         for (table, expected) in [
             ("papers", 1_i64),
             ("identities", 1),

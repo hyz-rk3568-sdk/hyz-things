@@ -2,9 +2,9 @@
 use super::material_scroll::{scroll_edges, MaterialScrollButton, ScrollEdges};
 use super::*;
 use hyz_things::domain::question_bank::{
-    CreatePracticeRequest, FavoriteState, ModulePracticeFilters, PaperSummary, PracticeBrowseItem,
-    PracticeCatalog, PracticeMode, PracticeReview, PracticeSession, PracticeWorkspace,
-    SavePracticeAnswer, SetFavorite, SetPracticePaused,
+    primary_module, CreatePracticeRequest, FavoriteState, ModulePracticeFilters, PaperSummary,
+    PracticeBrowseItem, PracticeCatalog, PracticeMode, PracticeQuestion, PracticeReview,
+    PracticeSession, PracticeWorkspace, SavePracticeAnswer, SetFavorite, SetPracticePaused,
 };
 
 const ROOT: &str = "/api/v1/question-bank";
@@ -51,6 +51,42 @@ fn history_mode_label(mode: &PracticeMode) -> &'static str {
         PracticeMode::Wrong => "错题复练",
         PracticeMode::Favorite => "收藏练习",
     }
+}
+
+fn question_scope(question: Option<&PracticeQuestion>) -> Option<String> {
+    let view = question?.question.as_ref()?;
+    let module = primary_module(view.module.as_deref())
+        .map(str::to_owned)
+        .or_else(|| view.module.clone())?;
+    Some(
+        match view.category.as_deref().filter(|value| !value.is_empty()) {
+            Some(category) => format!("{module} · {category}"),
+            None => module,
+        },
+    )
+}
+
+fn navigation_groups(questions: &[PracticeQuestion]) -> Vec<NavigationGroup> {
+    let mut groups: Vec<NavigationGroup> = Vec::new();
+    for (index, question) in questions.iter().enumerate() {
+        let label = primary_module(
+            question
+                .question
+                .as_ref()
+                .and_then(|view| view.module.as_deref()),
+        )
+        .unwrap_or("未分类")
+        .to_owned();
+        match groups.last_mut() {
+            Some(group) if group.label == label => group.end = index + 1,
+            _ => groups.push(NavigationGroup {
+                label,
+                start: index,
+                end: index + 1,
+            }),
+        }
+    }
+    groups
 }
 
 fn history_filter_matches(run: &PracticeSession, filter: Option<&PracticeMode>) -> bool {
@@ -183,6 +219,178 @@ enum Action {
     Favorite(String),
 }
 
+#[derive(Clone, PartialEq)]
+struct PendingAnswer {
+    session_id: String,
+    question_id: String,
+    answer: Vec<String>,
+}
+
+struct PracticeCollectionCache {
+    items: UseStateHandle<Option<Vec<PracticeBrowseItem>>>,
+    loading: UseStateHandle<bool>,
+    failure: UseStateHandle<Option<String>>,
+    invalidate: Callback<()>,
+}
+
+#[hook]
+fn use_practice_collection(scope: PracticeMode, refresh: u64) -> PracticeCollectionCache {
+    let items = use_state(|| None::<Vec<PracticeBrowseItem>>);
+    let loading = use_state(|| true);
+    let failure = use_state(|| None::<String>);
+    let revision = use_state(|| 0u64);
+    let generation = use_mut_ref(|| 0u64);
+    {
+        let items = items.clone();
+        let loading = loading.clone();
+        let failure = failure.clone();
+        let generation = generation.clone();
+        use_effect_with((scope, refresh, *revision), move |(scope, _, _)| {
+            *generation.borrow_mut() += 1;
+            let request_generation = *generation.borrow();
+            let response_generation = generation.clone();
+            let url = browse_filter_url(
+                scope,
+                &PracticeMode::Paper,
+                "",
+                "",
+                "",
+                &ModulePracticeFilters::default(),
+            );
+            loading.set(true);
+            failure.set(None);
+            spawn_local(async move {
+                let result = fetch_json::<Vec<PracticeBrowseItem>>(&url, "真题分类浏览").await;
+                if *response_generation.borrow() != request_generation {
+                    return;
+                }
+                match result {
+                    Ok(result) => items.set(Some(result)),
+                    Err(message) => failure.set(Some(message)),
+                }
+                loading.set(false);
+            });
+            move || *generation.borrow_mut() += 1
+        });
+    }
+    let invalidate = {
+        let loading = loading.clone();
+        let failure = failure.clone();
+        Callback::from(move |()| {
+            *generation.borrow_mut() += 1;
+            loading.set(true);
+            failure.set(None);
+            revision.set(*generation.borrow());
+        })
+    };
+    PracticeCollectionCache {
+        items,
+        loading,
+        failure,
+        invalidate,
+    }
+}
+
+#[derive(Clone)]
+struct PracticeFavorite {
+    value: UseStateHandle<Option<FavoriteState>>,
+    failure: UseStateHandle<Option<(String, String)>>,
+    ready: Rc<RefCell<Option<FavoriteState>>>,
+    source: Rc<RefCell<Option<String>>>,
+    generation: Rc<RefCell<u64>>,
+    retry: Callback<()>,
+}
+
+#[hook]
+fn use_practice_favorite(question_id: Option<String>) -> PracticeFavorite {
+    let value = use_state(|| None::<FavoriteState>);
+    let failure = use_state(|| None::<(String, String)>);
+    let ready = use_mut_ref(|| None::<FavoriteState>);
+    let source = use_mut_ref(|| None::<String>);
+    let reading = use_mut_ref(|| false);
+    let generation = use_mut_ref(|| 0u64);
+    let revision = use_state(|| 0u64);
+    if *source.borrow() != question_id {
+        *ready.borrow_mut() = None;
+    }
+    *source.borrow_mut() = question_id.clone();
+    {
+        let value = value.clone();
+        let failure = failure.clone();
+        let ready = ready.clone();
+        let source = source.clone();
+        let reading = reading.clone();
+        let generation = generation.clone();
+        use_effect_with((question_id, *revision), move |(question_id, _)| {
+            *generation.borrow_mut() += 1;
+            let request_generation = *generation.borrow();
+            *reading.borrow_mut() = question_id.is_some();
+            *ready.borrow_mut() = None;
+            value.set(None);
+            failure.set(None);
+            if let Some(id) = question_id.clone() {
+                let response_generation = generation.clone();
+                let response_reading = reading.clone();
+                let response_ready = ready.clone();
+                spawn_local(async move {
+                    let result = fetch_json::<FavoriteState>(
+                        &format!("{ROOT}/practice/favorites/{id}"),
+                        "真题收藏",
+                    )
+                    .await;
+                    if *response_generation.borrow() != request_generation
+                        || source.borrow().as_ref() != Some(&id)
+                    {
+                        return;
+                    }
+                    let result = result.and_then(|state| {
+                        if state.question_id == id {
+                            Ok(state)
+                        } else {
+                            Err("收藏状态响应不匹配，请重试".into())
+                        }
+                    });
+                    match result {
+                        Ok(state) => {
+                            *response_ready.borrow_mut() = Some(state.clone());
+                            value.set(Some(state));
+                        }
+                        Err(message) => failure.set(Some((id, message))),
+                    }
+                    *response_reading.borrow_mut() = false;
+                });
+            }
+            move || {
+                *generation.borrow_mut() += 1;
+                *reading.borrow_mut() = false;
+                *ready.borrow_mut() = None;
+            }
+        });
+    }
+    let retry = {
+        let failure = failure.clone();
+        let source = source.clone();
+        let generation = generation.clone();
+        Callback::from(move |()| {
+            if *reading.borrow() || source.borrow().is_none() {
+                return;
+            }
+            *reading.borrow_mut() = true;
+            *generation.borrow_mut() += 1;
+            failure.set(None);
+            revision.set(*generation.borrow());
+        })
+    };
+    PracticeFavorite {
+        value,
+        failure,
+        ready,
+        source,
+        generation,
+        retry,
+    }
+}
+
 async fn load_workspace(id: &str) -> Result<PracticeWorkspace, String> {
     fetch_json(&format!("{ROOT}/practice/sessions/{id}"), "真题练习").await
 }
@@ -289,17 +497,26 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let settings_open = use_state(|| false);
     let custom_years = use_state(|| false);
     let collection = use_state(|| None::<PracticeMode>);
-    let browse = use_state(Vec::<PracticeBrowseItem>::new);
-    let wrong_total = use_state(|| 0usize);
-    let favorite_total = use_state(|| 0usize);
 
     let mode = use_state(|| props.entry_mode.clone());
     let workspace = use_state(|| None::<PracticeWorkspace>);
     let review = use_state(|| None::<PracticeReview>);
     let index = use_state(|| 0usize);
     let multi_select = use_state(|| false);
-    let favorite = use_state(|| false);
+    let current_favorite_source = workspace
+        .as_ref()
+        .as_ref()
+        .and_then(|w| w.questions.get(*index))
+        .map(|q| q.item.question_id.clone());
+    let favorite = use_practice_favorite(current_favorite_source);
+    let mounted = use_mut_ref(|| true);
+    {
+        let mounted = mounted.clone();
+        use_effect_with((), move |_| move || *mounted.borrow_mut() = false);
+    }
     let busy = use_state(|| false);
+    let operation_lock = use_mut_ref(|| false);
+    let pending_answer = use_state(|| None::<PendingAnswer>);
     let error = use_state(|| None::<String>);
     let submit_confirm = use_state(|| false);
     let elapsed = use_state(|| 0u64);
@@ -309,6 +526,29 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let question_scroll = use_node_ref();
     let material_edges = use_state(ScrollEdges::default);
     let question_edges = use_state(ScrollEdges::default);
+    let wrong_collection = use_practice_collection(PracticeMode::Wrong, *refresh);
+    let favorite_collection = use_practice_collection(PracticeMode::Favorite, *refresh);
+    let wrong_total = wrong_collection
+        .items
+        .as_ref()
+        .map(|items| items.len().to_string())
+        .unwrap_or_else(|| "…".into());
+    let favorite_total = favorite_collection
+        .items
+        .as_ref()
+        .map(|items| items.len().to_string())
+        .unwrap_or_else(|| "…".into());
+    let selected_collection = match collection.as_ref() {
+        Some(PracticeMode::Wrong) => Some(&wrong_collection),
+        Some(PracticeMode::Favorite) => Some(&favorite_collection),
+        _ => None,
+    };
+    let collection_items = selected_collection.and_then(|cache| cache.items.as_ref());
+    let collection_loaded = collection_items.is_some();
+    let collection_loading = selected_collection.is_some_and(|cache| *cache.loading);
+    let collection_failed = selected_collection.is_some_and(|cache| cache.failure.is_some());
+    let collection_retry = selected_collection.map(|cache| cache.invalidate.clone());
+    let browse = collection_items.map(Vec::as_slice).unwrap_or(&[]);
     let refresh_edges = {
         let material_scroll = material_scroll.clone();
         let question_scroll = question_scroll.clone();
@@ -335,66 +575,32 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let history = history.clone();
         let error = error.clone();
         use_effect_with(*refresh, move |_| {
+            let current = std::rc::Rc::new(std::cell::Cell::new(true));
+            let response_current = current.clone();
             spawn_local(async move {
-                match fetch_json::<Vec<PaperSummary>>(&format!("{ROOT}/papers"), "真题试卷列表")
-                    .await
-                {
+                let result =
+                    fetch_json::<Vec<PaperSummary>>(&format!("{ROOT}/papers"), "真题试卷列表")
+                        .await;
+                if !response_current.get() {
+                    return;
+                }
+                match result {
                     Ok(list) => papers.set(list),
                     Err(e) => error.set(Some(e)),
                 }
-                if let Ok(items) = fetch_json::<Vec<PracticeSession>>(
+                let result = fetch_json::<Vec<PracticeSession>>(
                     &format!("{ROOT}/practice/history"),
                     "练习历史",
                 )
-                .await
-                {
+                .await;
+                if !response_current.get() {
+                    return;
+                }
+                if let Ok(items) = result {
                     history.set(items);
                 }
             });
-            || ()
-        });
-    }
-    {
-        // The collection chips show how much is waiting. Browse results are
-        // already small metadata rows, so reuse that endpoint instead of
-        // introducing a second count-only contract.
-        let wrong_total = wrong_total.clone();
-        let favorite_total = favorite_total.clone();
-        use_effect_with(*refresh, move |_| {
-            spawn_local(async move {
-                let filters = ModulePracticeFilters::default();
-                if let Ok(items) = fetch_json::<Vec<PracticeBrowseItem>>(
-                    &browse_filter_url(
-                        &PracticeMode::Wrong,
-                        &PracticeMode::Paper,
-                        "",
-                        "",
-                        "",
-                        &filters,
-                    ),
-                    "错题数量",
-                )
-                .await
-                {
-                    wrong_total.set(items.len());
-                }
-                if let Ok(items) = fetch_json::<Vec<PracticeBrowseItem>>(
-                    &browse_filter_url(
-                        &PracticeMode::Favorite,
-                        &PracticeMode::Paper,
-                        "",
-                        "",
-                        "",
-                        &filters,
-                    ),
-                    "收藏数量",
-                )
-                .await
-                {
-                    favorite_total.set(items.len());
-                }
-            });
-            || ()
+            move || current.set(false)
         });
     }
     {
@@ -403,13 +609,19 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let error = error.clone();
         use_effect_with((filters, *refresh), move |(filters, _)| {
             let url = catalog_filter_url(filters);
+            let current = std::rc::Rc::new(std::cell::Cell::new(true));
+            let response_current = current.clone();
             spawn_local(async move {
-                match fetch_json::<PracticeCatalog>(&url, "模块题型进度").await {
+                let result = fetch_json::<PracticeCatalog>(&url, "模块题型进度").await;
+                if !response_current.get() {
+                    return;
+                }
+                match result {
                     Ok(result) => catalog.set(Some(result)),
                     Err(message) => error.set(Some(message)),
                 }
             });
-            || ()
+            move || current.set(false)
         });
     }
     {
@@ -454,32 +666,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         });
     }
     {
-        let index_value = *index;
-        let source = workspace
-            .as_ref()
-            .as_ref()
-            .and_then(|w| w.questions.get(index_value))
-            .map(|q| q.item.question_id.clone());
-        let favorite = favorite.clone();
-        use_effect_with(source, move |source| {
-            favorite.set(false);
-            if let Some(id) = source {
-                let id = id.clone();
-                spawn_local(async move {
-                    if let Ok(value) = fetch_json::<FavoriteState>(
-                        &format!("{ROOT}/practice/favorites/{id}"),
-                        "真题收藏",
-                    )
-                    .await
-                    {
-                        favorite.set(value.favorite);
-                    }
-                });
-            }
-            || ()
-        });
-    }
-    {
         let current = workspace
             .as_ref()
             .as_ref()
@@ -487,35 +673,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             .map(|q| q.item.question_id.clone());
         use_effect_with((current, review.is_some()), move |_| {
             hydrate_math();
-            || ()
-        });
-    }
-    {
-        // Only saved collections use the browse endpoint now. The setup cards
-        // provide module/category filtering locally, so switching a chip does
-        // not refetch or reset the result list.
-        let query = collection.as_ref().map(|scope| {
-            browse_filter_url(
-                scope,
-                &PracticeMode::Paper,
-                "",
-                "",
-                "",
-                &ModulePracticeFilters::default(),
-            )
-        });
-        let browse = browse.clone();
-        let error = error.clone();
-        use_effect_with((query, *refresh), move |(query, _)| {
-            browse.set(Vec::new());
-            if let Some(url) = query.clone() {
-                spawn_local(async move {
-                    match fetch_json::<Vec<PracticeBrowseItem>>(&url, "真题分类浏览").await {
-                        Ok(items) => browse.set(items),
-                        Err(message) => error.set(Some(message)),
-                    }
-                });
-            }
             || ()
         });
     }
@@ -534,7 +691,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let invoke = {
         let csrf = props.csrf.clone();
         let papers = papers.clone();
-        let history = history.clone();
         let mode = mode.clone();
         let collection = collection.clone();
         let selected_paper = selected_paper.clone();
@@ -551,15 +707,35 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let refresh = refresh.clone();
         let submit_confirm = submit_confirm.clone();
         let elapsed = elapsed.clone();
+        let operation_lock = operation_lock.clone();
+        let pending_answer = pending_answer.clone();
+        let invalidate_favorites = favorite_collection.invalidate.clone();
+        let mounted = mounted.clone();
         Callback::from(move |action: Action| {
-            if *busy {
+            if !*mounted.borrow() || *operation_lock.borrow() {
                 return;
             }
+            let favorite_target = if let Action::Favorite(id) = &action {
+                let ready = favorite.ready.borrow();
+                let Some(saved) = ready.as_ref().filter(|saved| {
+                    saved.question_id == *id && favorite.source.borrow().as_ref() == Some(id)
+                }) else {
+                    return;
+                };
+                Some(!saved.favorite)
+            } else {
+                None
+            };
+            *operation_lock.borrow_mut() = true;
+            let answer_index = *index;
+            if favorite_target.is_some() {
+                *favorite.generation.borrow_mut() += 1;
+            }
+            let mutation_generation = *favorite.generation.borrow();
             busy.set(true);
             error.set(None);
             let csrf = csrf.clone();
             let papers = papers.clone();
-            let history = history.clone();
             let mode = mode.clone();
             let collection = collection.clone();
             let selected_paper = selected_paper.clone();
@@ -576,8 +752,15 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             let refresh = refresh.clone();
             let submit_confirm = submit_confirm.clone();
             let elapsed = elapsed.clone();
+            let operation_lock = operation_lock.clone();
+            let pending_answer = pending_answer.clone();
+            let invalidate_favorites = invalidate_favorites.clone();
+            let mounted = mounted.clone();
             spawn_local(async move {
                 let result: Result<(), String> = async {
+                    if !*mounted.borrow() {
+                        return Ok(());
+                    }
                     match action {
                         Action::Start => {
                             let practice_mode = collection
@@ -641,6 +824,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             )
                             .await?;
                             let loaded = load_workspace(&session.id).await?;
+                            if !*mounted.borrow() {
+                                return Ok(());
+                            }
                             elapsed.set(loaded.session.elapsed_seconds);
                             workspace.set(Some(loaded));
                             review.set(None);
@@ -650,6 +836,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         }
                         Action::Continue(id) => {
                             let loaded = load_workspace(&id).await?;
+                            if !*mounted.borrow() {
+                                return Ok(());
+                            }
                             elapsed.set(loaded.session.elapsed_seconds);
                             workspace.set(Some(loaded));
                             review.set(None);
@@ -658,36 +847,17 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             submit_confirm.set(false);
                         }
                         Action::Repeat(id) => {
-                            let run = history
-                                .iter()
-                                .find(|run| run.id == id)
-                                .cloned()
-                                .ok_or("练习记录不存在")?;
-                            let practice_mode = run.mode.clone();
-                            let request = CreatePracticeRequest {
-                                mode: practice_mode.clone(),
-                                paper_id: run.paper_id.clone(),
-                                module: run.module.clone(),
-                                category: run.category.clone(),
-                                filters: match practice_mode {
-                                    PracticeMode::Module => (*module_filters).clone(),
-                                    PracticeMode::Wrong | PracticeMode::Favorite => {
-                                        ModulePracticeFilters {
-                                            count: Some(20),
-                                            ..Default::default()
-                                        }
-                                    }
-                                    _ => ModulePracticeFilters::default(),
-                                },
-                            };
                             let session: PracticeSession = post_json_response(
-                                &format!("{ROOT}/practice/sessions"),
+                                &format!("{ROOT}/practice/sessions/{id}/repeat"),
                                 &csrf,
-                                &request,
-                                "重新开始真题练习",
+                                &EmptyRequest {},
+                                "按原题重做",
                             )
                             .await?;
                             let loaded = load_workspace(&session.id).await?;
+                            if !*mounted.borrow() {
+                                return Ok(());
+                            }
                             elapsed.set(loaded.session.elapsed_seconds);
                             workspace.set(Some(loaded));
                             review.set(None);
@@ -702,13 +872,16 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             )
                             .await?;
                             let plain = load_workspace(&id).await?;
+                            if !*mounted.borrow() {
+                                return Ok(());
+                            }
                             workspace.set(Some(plain));
                             review.set(Some(loaded));
                             index.set(0);
                         }
                         Action::Answer(choice) => {
                             let active = (*workspace).clone().ok_or("训练不存在")?;
-                            let q = active.questions.get(*index).ok_or("题位不存在")?;
+                            let q = active.questions.get(answer_index).ok_or("题位不存在")?;
                             let question_id = q.item.question_id.clone();
                             let mut answer = if *multi_select {
                                 let mut selected = q.item.answer.clone();
@@ -722,31 +895,43 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 vec![choice]
                             };
                             answer.sort();
-                            let _: PracticeSession = post_json_response(
+                            pending_answer.set(Some(PendingAnswer {
+                                session_id: active.session.id.clone(),
+                                question_id: question_id.clone(),
+                                answer: answer.clone(),
+                            }));
+                            let saved: PracticeSession = post_json_response(
                                 &format!(
                                     "{ROOT}/practice/sessions/{}/answers/{}",
                                     active.session.id, question_id
                                 ),
                                 &csrf,
-                                &SavePracticeAnswer {
-                                    answer: answer.clone(),
-                                },
+                                &SavePracticeAnswer { answer },
                                 "保存真题答案",
                             )
-                            .await?;
-                            // The server has saved the answer. Keep the current
-                            // workspace and avoid downloading every question again.
-                            let mut updated = active;
-                            if let Some(question) = updated.questions.get_mut(*index) {
-                                question.item.answer = answer.clone();
+                            .await
+                            .map_err(|message| {
+                                format!("保存失败，请重新选择答案重试：{message}")
+                            })?;
+                            if saved.id != active.session.id {
+                                return Err("保存响应不匹配，请重新选择答案重试".into());
                             }
-                            if let Some(question) = updated
-                                .session
+                            let saved_item = saved
                                 .items
-                                .iter_mut()
-                                .find(|question| question.question_id == question_id)
-                            {
-                                question.answer = answer;
+                                .iter()
+                                .find(|item| item.question_id == question_id)
+                                .ok_or("保存响应缺少题目，请重新选择答案重试")?
+                                .clone();
+                            let mut updated = active;
+                            let question = updated
+                                .questions
+                                .get_mut(answer_index)
+                                .filter(|question| question.item.question_id == question_id)
+                                .ok_or("保存题位不匹配，请重新选择答案重试")?;
+                            question.item = saved_item;
+                            updated.session = saved;
+                            if !*mounted.borrow() {
+                                return Ok(());
                             }
                             workspace.set(Some(updated));
                         }
@@ -770,11 +955,17 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                         "暂停训练",
                                     )
                                     .await?;
+                                    if !*mounted.borrow() {
+                                        return Ok(());
+                                    }
                                     if matches!(action, Action::Exit) {
                                         workspace.set(None);
                                     } else {
-                                        workspace
-                                            .set(Some(load_workspace(&active.session.id).await?));
+                                        let loaded = load_workspace(&active.session.id).await?;
+                                        if !*mounted.borrow() {
+                                            return Ok(());
+                                        }
+                                        workspace.set(Some(loaded));
                                     }
                                 } else {
                                     workspace.set(None);
@@ -816,13 +1007,20 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     "真题交卷",
                                 )
                                 .await?;
+                                let loaded = load_workspace(&completed.id).await?;
+                                if !*mounted.borrow() {
+                                    return Ok(());
+                                }
                                 elapsed.set(completed.elapsed_seconds.max(*elapsed));
-                                workspace.set(Some(load_workspace(&completed.id).await?));
+                                workspace.set(Some(loaded));
                                 let detail: PracticeReview = fetch_json(
                                     &format!("{ROOT}/practice/sessions/{}/review", completed.id),
                                     "真题解析",
                                 )
                                 .await?;
+                                if !*mounted.borrow() {
+                                    return Ok(());
+                                }
                                 review.set(Some(detail));
                                 submit_confirm.set(false);
                                 refresh.set(*refresh + 1);
@@ -833,25 +1031,44 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 &format!("{ROOT}/practice/favorites/{id}"),
                                 &csrf,
                                 &SetFavorite {
-                                    favorite: !*favorite,
+                                    favorite: favorite_target.ok_or("收藏状态尚未加载")?,
                                 },
                                 "收藏真题",
                             )
                             .await?;
-                            favorite.set(updated.favorite);
+                            if *mounted.borrow() {
+                                invalidate_favorites.emit(());
+                                if *favorite.generation.borrow() == mutation_generation
+                                    && favorite.source.borrow().as_ref() == Some(&id)
+                                    && updated.question_id == id
+                                {
+                                    *favorite.ready.borrow_mut() = Some(updated.clone());
+                                    favorite.value.set(Some(updated));
+                                }
+                            }
                         }
                     }
                     Ok(())
                 }
                 .await;
+                *operation_lock.borrow_mut() = false;
+                if !*mounted.borrow() {
+                    return;
+                }
                 if let Err(e) = result {
                     error.set(Some(e));
                 }
+                pending_answer.set(None);
                 busy.set(false);
             });
         })
     };
-    let alert = if let Some(message) = error.as_ref() {
+    let visible_error = error
+        .as_ref()
+        .or_else(|| selected_collection.and_then(|cache| cache.failure.as_ref()))
+        .or_else(|| wrong_collection.failure.as_ref())
+        .or_else(|| favorite_collection.failure.as_ref());
+    let alert = if let Some(message) = visible_error {
         html! { <p class="rounded-box bg-error/10 px-3 py-2 text-sm text-error" role="alert" data-testid="question-bank-error">{message.clone()}</p> }
     } else {
         Html::default()
@@ -866,9 +1083,34 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             let options = question
                 .map(|q| answer_options(&q.options_markdown))
                 .unwrap_or_default();
+            let pending = pending_answer.as_ref().filter(|pending| {
+                pending.session_id == current.session.id
+                    && pending.question_id == item.item.question_id
+            });
+            let displayed_answer = pending
+                .map(|pending| &pending.answer)
+                .unwrap_or(&item.item.answer);
             let qid = item.item.question_id.clone();
-            let starred = *favorite;
+            let favorite_value = favorite
+                .value
+                .as_ref()
+                .filter(|state| state.question_id == item.item.question_id);
+            let favorite_failure = favorite
+                .failure
+                .as_ref()
+                .filter(|(id, _)| *id == item.item.question_id);
+            let favorite_pending = favorite_value.is_none() && favorite_failure.is_none();
+            let starred = favorite_value.is_some_and(|state| state.favorite);
             let on_favorite = invoke.clone();
+            let retry_favorite = {
+                let retry = favorite.retry.clone();
+                let operation_lock = operation_lock.clone();
+                Callback::from(move |_| {
+                    if !*operation_lock.borrow() {
+                        retry.emit(());
+                    }
+                })
+            };
             let on_scrolling = {
                 let refresh_edges = refresh_edges.clone();
                 Callback::from(move |_: web_sys::Event| refresh_edges.emit(()))
@@ -914,8 +1156,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     <div class={classes!(TRAINING_PANE_HEADER,"question-bank-pane-header")}>
                         <button type="button" class="btn btn-ghost btn-sm shrink-0" data-testid="question-bank-favorite"
                             onclick={Callback::from(move |_| on_favorite.emit(Action::Favorite(qid.clone())))}
-                            aria-label={if starred {"取消收藏"} else {"收藏题目"}}>
-                            {if starred {"★"} else {"☆"}}
+                            disabled={favorite_value.is_none() || *busy}
+                            aria-busy={favorite_pending.to_string()}
+                            aria-label={if favorite_pending {"正在加载收藏状态"} else if favorite_failure.is_some() {"收藏状态加载失败"} else if starred {"取消收藏"} else {"收藏题目"}}>
+                            {if favorite_pending {"…"} else if starred {"★"} else {"☆"}}
                         </button>
                         <strong class="min-w-0 truncate text-sm" data-testid="question-bank-practice-heading">
                             {if completed {
@@ -935,18 +1179,22 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     <div ref={question_scroll.clone()} onscroll={on_scrolling.clone()}
                         class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4 space-y-4"
                         data-testid="question-bank-practice-question-scroll">
+                    if let Some((_, message)) = favorite_failure {
+                        <div class="space-y-2 text-sm text-error" role="alert" data-testid="question-bank-favorite-error">
+                            <p>{message.clone()}</p>
+                            <button type="button" class="btn btn-outline btn-sm" disabled={*busy}
+                                data-testid="question-bank-favorite-retry" onclick={retry_favorite}>{"重试收藏状态"}</button>
+                        </div>
+                    }
                     if item.content_changed {
                         <p class="text-warning">{"题目源文件已更新或暂不可用，不能用新版题面替代旧题。"}</p>
                     } else if let Some(q) = question {
                         if shared {
                             <div class="study-markdown question-bank-passage" data-testid="question-bank-practice-stem">{render_question_bank_markdown(&q.stem)}</div>
                         }
-                        if !q.issues.is_empty() && !completed {
-                            <p class="text-xs text-base-content/60">{"本题内容尚待核验，可能不计入成绩。"}</p>
-                        }
                         <div class="space-y-2">
                             {for options.iter().map(|(label, markdown)| {
-                                let chosen = item.item.answer.contains(label);
+                                let chosen = displayed_answer.contains(label);
                                 let correct = selected_review.is_some_and(|r|r.correct_answer.contains(label));
                                 let grade = item.item.grade.as_deref();
                                 if completed {
@@ -971,7 +1219,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     };
                                     let action = invoke.clone(); let choice = label.clone();
                                     html! {<button type="button" class={classes!("flex","w-full","items-start","gap-2.5","rounded-xl","border","p-3","text-left","text-sm","leading-6","transition-colors","disabled:opacity-60",style)}
-                                        aria-pressed={chosen.to_string()} data-testid="question-bank-practice-choice"
+                                        aria-pressed={chosen.to_string()} aria-busy={(pending.is_some() && chosen).to_string()}
+                                        data-testid="question-bank-practice-choice"
                                         disabled={current.session.paused || *busy}
                                         onclick={Callback::from(move |_|action.emit(Action::Answer(choice.clone())))}>
                                         <span class="shrink-0 font-bold">{format!("{label}.")}</span>
@@ -982,9 +1231,13 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         </div>
                         if !completed {
                             <label class="flex items-center gap-2 text-sm">
-                                <input type="checkbox" class="checkbox checkbox-sm" checked={*multi_select}
-                                    onchange={Callback::from({let multi_select=multi_select.clone();move |e: Event| {
+                                <input type="checkbox" class="checkbox checkbox-sm" checked={*multi_select} disabled={*busy}
+                                    onchange={Callback::from({let multi_select=multi_select.clone();let operation_lock=operation_lock.clone();move |e: Event| {
                                         let checkbox: HtmlInputElement=e.target_unchecked_into();
+                                        if *operation_lock.borrow() {
+                                            checkbox.set_checked(*multi_select);
+                                            return;
+                                        }
                                         multi_select.set(checkbox.checked());
                                     }})}/>
                                 {"多选作答（题目明确允许多选时开启）"}
@@ -1038,13 +1291,21 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 <TrainingSplitWorkspace test_id="question-bank-practice-split" split_at_md={true}
                     left={left_pane} right={body}/>
             };
+            let navigation_allowed = {
+                let operation_lock = operation_lock.clone();
+                Callback::from(move |()| !*operation_lock.borrow())
+            };
             let nav = html! {
+                <fieldset disabled={*busy} class="min-w-0 shrink-0 border-0 p-0">
                 <CompactQuestionNavigation current={index.clone()}
+                    navigation_allowed={Some(navigation_allowed.clone())}
                     numbers={current.questions.iter().map(|q|q.item.number).collect::<Vec<_>>()}
                     answered={current.questions.iter().map(|q|!q.item.answer.is_empty()).collect::<Vec<_>>()}
+                    groups={navigation_groups(&current.questions)}
                     grades={if completed {Some(current.questions.iter().map(|q| match q.item.grade.as_deref() {
                         Some("correct") => Some(true), Some("wrong") => Some(false), _ => None
                     }).collect::<Vec<_>>())} else {None}}/>
+                </fieldset>
             };
             let display_seconds = if completed {
                 current.session.elapsed_seconds
@@ -1052,10 +1313,17 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 *elapsed
             };
             let paused = current.session.paused && !completed;
-            let subtitle = match (&current.session.module, &current.session.category) {
-                (Some(module), Some(category)) => format!("模块训练 · {module} · {category}"),
-                (Some(module), None) => format!("模块训练 · {module}"),
-                _ => "套卷训练".to_string(),
+            let scope = question_scope(Some(item));
+            let subtitle_base = match current.session.mode {
+                PracticeMode::Paper => "套卷训练",
+                PracticeMode::PaperModule => "模块训练",
+                PracticeMode::Module => "模块训练",
+                PracticeMode::Wrong => "错题复练",
+                PracticeMode::Favorite => "收藏练习",
+            };
+            let subtitle = match scope {
+                Some(scope) => format!("{subtitle_base} · {scope}"),
+                None => subtitle_base.to_string(),
             };
             return html! {
                 <section class={WORKSPACE} data-testid="question-bank-practice-workspace">
@@ -1066,7 +1334,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             </button>
                             <div class="min-w-0">
                                 <strong class="block truncate text-sm">{item.paper_title.clone()}</strong>
-                                <span class="block truncate text-[11px] text-base-content/50">{subtitle.clone()}</span>
+                                <span class="block truncate text-[11px] text-base-content/50" data-testid="question-bank-practice-scope">{subtitle.clone()}</span>
                             </div>
                         </div>
                         <div class="flex shrink-0 items-center gap-2">
@@ -1115,7 +1383,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         } else {
                             <InkOverlay question_index={item_index} responsive={true} scroll_linked={true}
                                     persist_key={format!("question-bank-{}-{}",current.session.id,item.item.question_id)}>
-                                <TrainingSwipeSurface current={index.clone()} total={current.questions.len()}>
+                                <TrainingSwipeSurface current={index.clone()} total={current.questions.len()}
+                                    navigation_allowed={Some(navigation_allowed)}>
                                     {main}
                                 </TrainingSwipeSurface>
                             </InkOverlay>
@@ -1301,7 +1570,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         .filter(|width| *width >= 1024.0)
         .map(|_| 2)
         .unwrap_or(1);
-    let collection_groups = collection_modules(&browse, catalog.as_ref());
+    let collection_groups = collection_modules(browse, catalog.as_ref());
     let collection_filtered = browse
         .iter()
         .filter(|item| {
@@ -1324,10 +1593,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     };
     let setup_explanation = match collection.as_ref() {
         Some(PracticeMode::Wrong) => {
-            format!("错题按现有模块与二级题型分类，共 {} 题", *wrong_total)
+            format!("错题按现有模块与二级题型分类，共 {} 题", wrong_total)
         }
         Some(PracticeMode::Favorite) => {
-            format!("收藏按现有模块与二级题型分类，共 {} 题", *favorite_total)
+            format!("收藏按现有模块与二级题型分类，共 {} 题", favorite_total)
         }
         _ if *mode == PracticeMode::Paper => "选择完整原卷，按原始题号顺序作答".to_string(),
         _ => format!(
@@ -1342,6 +1611,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         _ => "模块训练",
     };
     let action_detail = match collection.as_ref() {
+        Some(_) if !collection_loaded => "题目尚未加载".into(),
         Some(_) => format!(
             "{} · {} 题 · 每轮最多 {} 题",
             if selection_scope.is_empty() {
@@ -1440,8 +1710,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             <div class="flex flex-wrap gap-2" role="group" aria-label="题目浏览分类">
                 {for [
                     (None,"全部题目","question-bank-collection-all",None),
-                    (Some(PracticeMode::Wrong),"我的错题","question-bank-collection-wrong",Some(*wrong_total)),
-                    (Some(PracticeMode::Favorite),"我的收藏","question-bank-collection-favorite",Some(*favorite_total)),
+                    (Some(PracticeMode::Wrong),"我的错题","question-bank-collection-wrong",Some(wrong_total)),
+                    (Some(PracticeMode::Favorite),"我的收藏","question-bank-collection-favorite",Some(favorite_total)),
                 ].into_iter().map(|(target,label,id,count)| {
                     let collection=collection.clone();
                     let selected_module=selected_module.clone();
@@ -1600,6 +1870,17 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             }
             if collection.is_some() {
                 <section class="space-y-3" data-testid="question-bank-collection-browser">
+                    if collection_loading {
+                        <p class="text-sm text-base-content/60" role="status" data-testid="question-bank-collection-loading">
+                            {if collection_loaded {"正在刷新题目，保留上次结果…"} else {"正在加载题目…"}}
+                        </p>
+                    }
+                    if collection_failed {
+                        if let Some(retry) = collection_retry.clone() {
+                            <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-collection-retry"
+                                onclick={Callback::from(move |_|retry.emit(()))}>{"重试加载"}</button>
+                        }
+                    }
                     <div class="question-bank-collections-layout">
                         <div class="space-y-3">
                             <div class="flex items-center justify-between gap-2">
@@ -1607,7 +1888,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             <button type="button" class="btn btn-ghost btn-xs" data-testid="question-bank-collection-module"
                                 aria-pressed={selected_module.is_empty().to_string()}
                                 onclick={Callback::from({let selected_module=selected_module.clone();let selected_category=selected_category.clone();move |_|{selected_module.set(String::new());selected_category.set(String::new());}})}>
-                                {format!("全部题目 {}",browse.len())}
+                                {format!("全部题目 {}",if collection_loaded {browse.len().to_string()} else {"…".into()})}
                             </button>
                             </div>
                             <div class="question-bank-collection-grid">
@@ -1647,11 +1928,17 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             <div class="flex min-h-6 items-center justify-between gap-2">
                                 <h3 class="font-semibold">{"筛选结果"}</h3>
                                 <span class="text-xs text-base-content/50" data-testid="question-bank-browse-count">
-                                    {format!("{}{}{}题",selection_scope,if selection_scope.is_empty() {""} else {" · "},collection_filtered.len())}
+                                    {if collection_loaded {
+                                        format!("{}{}{}题",selection_scope,if selection_scope.is_empty() {""} else {" · "},collection_filtered.len())
+                                    } else {"题目数量待加载".into()}}
                                 </span>
                             </div>
                             <div class="question-bank-results">
-                            if collection_filtered.is_empty() {
+                            if !collection_loaded {
+                                if !collection_loading {
+                                    <p class="p-4 text-sm text-base-content/60">{"题目尚未加载，请重试。"}</p>
+                                }
+                            } else if collection_filtered.is_empty() {
                                 <p class="p-4 text-sm text-base-content/60">{"这个分类还没有题目。"}</p>
                             } else {
                                 <div class="question-bank-results-list" data-testid="question-bank-browse-list">

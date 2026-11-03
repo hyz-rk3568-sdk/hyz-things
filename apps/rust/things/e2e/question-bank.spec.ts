@@ -45,6 +45,11 @@ test('paper practice hides numbering and scroll tools until they are needed',asy
   await openSheet(page);
   await expect(page.getByTestId('question-bank-practice-number')).toHaveCount(3);
   await expect(page.getByTestId('question-bank-practice-number').first()).toContainText('26');
+  await expect(page.getByTestId('question-bank-practice-scope')).toContainText('资料分析 · 比重');
+  const groups = page.getByTestId('question-bank-practice-group');
+  await expect(groups).toHaveCount(2);
+  await expect(groups.nth(0)).toHaveAttribute('data-group-label', '资料分析');
+  await expect(groups.nth(1)).toHaveAttribute('data-group-label', '判断推理');
   await page.getByTestId('training-answer-sheet-toggle').click();
   const sessionId = await page.evaluate(async()=>{
     const res=await fetch('/api/v1/question-bank/practice/history');
@@ -91,11 +96,17 @@ test('paper practice hides numbering and scroll tools until they are needed',asy
   await openSheet(page);
   await page.getByTestId('question-bank-practice-number').nth(2).click();
   await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 28 题');
+  await expect(page.getByTestId('question-bank-practice-scope')).toContainText('判断推理 · 图形推理');
+  await expect(page.getByTestId('question-bank-practice-issues')).toHaveCount(0);
+  await expect(page.getByTestId('question-bank-practice-workspace')).not.toContainText('待核验');
+  await expect(page.getByTestId('question-bank-practice-workspace')).not.toContainText('未核验');
   await expect(page.getByTestId('question-bank-practice-choice').first()).toHaveClass(/border-success/);
   await openSheet(page);
   await expect(page.getByTestId('question-bank-practice-score')).toContainText('正确 1');
   await expect(page.getByTestId('question-bank-practice-score')).toContainText('错误 1');
   await expect(page.getByTestId('question-bank-practice-score')).toContainText('未答 1');
+  await expect(page.getByTestId('question-bank-practice-ungradable')).toHaveCount(0);
+  await expect(page.getByTestId('question-bank-practice-score')).not.toContainText('待核验');
   await expect(page.getByTestId('question-bank-practice-workspace')).not.toContainText('ungradable');
   await expect(page.getByTestId('question-bank-practice-workspace')).not.toContainText('正确率');
   await expect(page.getByTestId('question-bank-practice-number').first()).toHaveClass(/btn-error/);
@@ -111,6 +122,18 @@ test('paper practice hides numbering and scroll tools until they are needed',asy
   await page.getByTestId('question-bank-favorite').click();
   await expect(page.getByTestId('question-bank-favorite')).toHaveAttribute('aria-label','收藏题目');
   await expect(page.getByTestId('question-bank-favorite')).not.toHaveAttribute('aria-label','取消收藏');
+});
+
+test('question bank reading omits source verification labels',async({page})=>{
+  await loginAsAdmin(page);
+  await page.goto('/#/study');
+  const paperButton=page.getByTestId('question-bank-open').filter({hasText:'行测真题训练端到端样卷'});
+  await expect(paperButton).toBeVisible();
+  await paperButton.click();
+  const paper=page.getByTestId('question-bank-paper');
+  await expect(paper).toContainText('原卷第 28 题');
+  await expect(paper).not.toContainText('待核');
+  await expect(paper).not.toContainText('未核验');
 });
 
 test('saved collections are classified by module and category before practicing',async({page})=>{
@@ -140,6 +163,7 @@ test('saved collections are classified by module and category before practicing'
   await expect(page.getByTestId('question-bank-practice-number')).toHaveCount(1);
   await expect(page.getByTestId('question-bank-practice-heading')).toContainText('第 1/1 题');
   await expect(page.getByTestId('question-bank-practice-heading')).not.toContainText('原卷第');
+  await expect(page.getByTestId('question-bank-practice-material-pane')).toContainText('两道题共用材料');
   await page.getByTestId('training-answer-sheet-toggle').click();
   await page.getByTestId('question-bank-practice-choice').nth(1).click();
   await page.getByTestId('question-bank-practice-submit').click();
@@ -153,6 +177,7 @@ test('saved collections are classified by module and category before practicing'
   await openSheet(page);
   await expect(page.getByTestId('question-bank-practice-number')).toHaveCount(1);
   await expect(page.getByTestId('question-bank-practice-heading')).toContainText('第 1/1 题');
+  await expect(page.getByTestId('question-bank-practice-material-pane')).toContainText('两道题共用材料');
 });
 
 test('question bank practice mutations enforce admin, origin and CSRF',async({request})=>{
@@ -182,17 +207,31 @@ test('question bank module drill filters real categories across original papers'
   await expect(page.getByTestId('question-bank-cross-category').filter({hasText:'比重'})).toHaveAttribute('aria-pressed','true');
   await page.getByTestId('question-bank-practice-start').click();
   await expect(page.getByTestId('question-bank-practice-workspace')).toBeVisible();
-  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('第 1/2 题');
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('第 1/3 题');
   await expect(page.getByTestId('question-bank-practice-heading')).not.toContainText('原卷第');
   await openSheet(page);
-  await expect(page.getByTestId('question-bank-practice-number')).toHaveCount(2);
+  // The 比重 category selects the whole M1 material group, so its 增长 sibling
+  // stays with it; the second paper contributes one solo question.
+  const numbers=page.getByTestId('question-bank-practice-number');
+  await expect(numbers).toHaveCount(3);
+  await expect(numbers.filter({hasText:'12'})).toHaveCount(1);
+  await expect(numbers.filter({hasText:'26'})).toHaveCount(1);
+  await expect(numbers.filter({hasText:'27'})).toHaveCount(1);
+  const sheetOrder=await numbers.allTextContents();
+  expect(sheetOrder.indexOf('26')).toBeLessThan(sheetOrder.indexOf('27'));
+  await numbers.filter({hasText:'12'}).click();
+  await expect(page.getByTestId('question-bank-practice-heading')).not.toContainText('原卷第');
   await expect(page.getByTestId('question-bank-practice-workspace')).toContainText('第二份跨卷模块练习卷');
-  await expect(page.getByTestId('question-bank-practice-number').first()).toContainText('12');
+  await expect(page.getByTestId('question-bank-practice-stem')).toContainText('第二份试卷的比重题');
   await openSheet(page);
-  await page.getByTestId('question-bank-practice-number').last().click();
-  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('第 2/2 题');
+  await numbers.filter({hasText:'26'}).click();
   await expect(page.getByTestId('question-bank-practice-heading')).not.toContainText('原卷第');
+  await expect(page.getByTestId('question-bank-practice-workspace')).toContainText('行测真题训练端到端样卷');
   await expect(page.getByTestId('question-bank-practice-stem')).toContainText('材料中的正确选项');
+  await expect(page.getByTestId('question-bank-practice-material-pane')).toContainText('两道题共用材料');
+  await openSheet(page);
+  await numbers.filter({hasText:'27'}).click();
+  await expect(page.getByTestId('question-bank-practice-scope')).toContainText('资料分析 · 增长');
   await expect(page.getByTestId('question-bank-practice-material-pane')).toContainText('两道题共用材料');
 });
 

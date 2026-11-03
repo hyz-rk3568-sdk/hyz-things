@@ -116,6 +116,13 @@ mod tests {
     }
 }
 
+fn allows_navigation(guard: &Option<Callback<(), bool>>) -> bool {
+    match guard {
+        Some(guard) => guard.emit(()),
+        None => true,
+    }
+}
+
 /// Shared swipe region for all question-based training screens. Only a primary
 /// finger gesture with a decisive horizontal displacement changes the item.
 /// Pen, mouse, interactive controls and active inking are deliberately ignored.
@@ -124,6 +131,8 @@ pub(super) struct TrainingSwipeSurfaceProps {
     pub(super) current: UseStateHandle<usize>,
     pub(super) total: usize,
     pub(super) children: Children,
+    #[prop_or_default]
+    pub(super) navigation_allowed: Option<Callback<(), bool>>,
 }
 
 #[function_component(TrainingSwipeSurface)]
@@ -132,9 +141,11 @@ pub(super) fn training_swipe_surface(props: &TrainingSwipeSurfaceProps) -> Html 
     let ink_active = use_context::<bool>().unwrap_or(false);
     let down = {
         let origin = origin.clone();
+        let navigation_allowed = props.navigation_allowed.clone();
         Callback::from(move |event: PointerEvent| {
             *origin.borrow_mut() = None;
-            if ink_active
+            if !allows_navigation(&navigation_allowed)
+                || ink_active
                 || event.pointer_type() != "touch"
                 || !event.is_primary()
                 || !swipe_start_allowed(&event)
@@ -148,8 +159,12 @@ pub(super) fn training_swipe_surface(props: &TrainingSwipeSurfaceProps) -> Html 
         let origin = origin.clone();
         let current = props.current.clone();
         let total = props.total;
+        let navigation_allowed = props.navigation_allowed.clone();
         Callback::from(move |event: PointerEvent| {
             let start = origin.borrow_mut().take();
+            if !allows_navigation(&navigation_allowed) {
+                return;
+            }
             let Some((pointer_id, start_x, start_y)) = start else {
                 return;
             };
@@ -182,6 +197,14 @@ pub(super) fn training_swipe_surface(props: &TrainingSwipeSurfaceProps) -> Html 
     }
 }
 
+/// One contiguous module section in the compact answer sheet.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct NavigationGroup {
+    pub(super) label: String,
+    pub(super) start: usize,
+    pub(super) end: usize,
+}
+
 /// Compact shared navigation used by large papers. All question numbers live
 /// in an overlay and never grow the fixed footer beyond one row.
 #[derive(Properties, PartialEq)]
@@ -190,6 +213,9 @@ pub(super) struct CompactQuestionNavigationProps {
     pub(super) numbers: Vec<u32>,
     pub(super) answered: Vec<bool>,
     pub(super) grades: Option<Vec<Option<bool>>>,
+    pub(super) groups: Vec<NavigationGroup>,
+    #[prop_or_default]
+    pub(super) navigation_allowed: Option<Callback<(), bool>>,
 }
 
 #[function_component(CompactQuestionNavigation)]
@@ -199,15 +225,30 @@ pub(super) fn compact_question_navigation(props: &CompactQuestionNavigationProps
     let index = (*props.current).min(total.saturating_sub(1));
     let previous = {
         let current = props.current.clone();
-        Callback::from(move |_| current.set(index.saturating_sub(1)))
+        let navigation_allowed = props.navigation_allowed.clone();
+        Callback::from(move |_| {
+            if allows_navigation(&navigation_allowed) {
+                current.set(index.saturating_sub(1));
+            }
+        })
     };
     let next = {
         let current = props.current.clone();
-        Callback::from(move |_| current.set((index + 1).min(total.saturating_sub(1))))
+        let navigation_allowed = props.navigation_allowed.clone();
+        Callback::from(move |_| {
+            if allows_navigation(&navigation_allowed) {
+                current.set((index + 1).min(total.saturating_sub(1)));
+            }
+        })
     };
     let toggle = {
         let open = open.clone();
-        Callback::from(move |_| open.set(!*open))
+        let navigation_allowed = props.navigation_allowed.clone();
+        Callback::from(move |_| {
+            if allows_navigation(&navigation_allowed) {
+                open.set(!*open);
+            }
+        })
     };
     html! {
         <footer class="training-compact-footer relative z-40 flex shrink-0 items-center justify-between gap-2 border-t border-base-content/10 py-2"
@@ -225,37 +266,57 @@ pub(super) fn compact_question_navigation(props: &CompactQuestionNavigationProps
                         <strong>{"答题卡"}</strong>
                         <button class="btn btn-ghost btn-xs" onclick={toggle.clone()}>{"收起"}</button>
                     </div>
-                    <div class="grid grid-cols-6 gap-2 sm:grid-cols-10">
-                        {for props.numbers.iter().enumerate().map(|(i,number)| {
-                            let current = props.current.clone();
-                            let open = open.clone();
-                            let done = props.answered.get(i).copied().unwrap_or(false);
-                            let is_review = props.grades.is_some();
-                            let grade = props.grades.as_ref().and_then(|grades| grades.get(i)).copied().flatten();
-                            let style = if is_review {
-                                match grade {
-                                    Some(true) => "btn-success",
-                                    Some(false) => "btn-error",
-                                    None => "btn-outline",
-                                }
-                            } else if i == index { "btn-primary" }
-                            else if done { "btn-outline border-primary/40" }
-                            else { "btn-ghost" };
-                            let label = if is_review {
-                                match grade {
-                                    Some(true) => format!("原卷第 {number} 题 正确"),
-                                    Some(false) => format!("原卷第 {number} 题 错误"),
-                                    None => format!("原卷第 {number} 题"),
-                                }
-                            } else { format!("原卷第 {number} 题") };
-                            html! {<button type="button"
-                                class={classes!("btn","btn-sm",style,if i==index && is_review {"ring-2 ring-primary"} else {""})}
-                                data-testid="question-bank-practice-number"
-                                aria-current={(i==index).to_string()}
-                                aria-label={label}
-                                onclick={Callback::from(move |_|{current.set(i);open.set(false);})}>{number}</button>}
-                        })}
-                    </div>
+                    {for props.groups.iter().map(|group| {
+                        let start = group.start.min(total);
+                        let end = group.end.min(total);
+                        html! {
+                            <section class="mb-3 last:mb-0" data-testid="question-bank-practice-group"
+                                data-group-label={group.label.clone()}>
+                                <div class="mb-1.5 flex items-baseline justify-between gap-2">
+                                    <strong class="text-xs text-base-content/70">{group.label.clone()}</strong>
+                                    <span class="text-[11px] text-base-content/45">{format!("第 {}—{} 题 · {} 题", start + 1, end, end.saturating_sub(start))}</span>
+                                </div>
+                                <div class="grid grid-cols-6 gap-2 sm:grid-cols-10" data-testid="question-bank-practice-group-grid">
+                                    {for (start..end).map(|i| {
+                                        let current = props.current.clone();
+                                        let open = open.clone();
+                                        let navigation_allowed = props.navigation_allowed.clone();
+                                        let number = props.numbers.get(i).copied().unwrap_or_default();
+                                        let done = props.answered.get(i).copied().unwrap_or(false);
+                                        let is_review = props.grades.is_some();
+                                        let grade = props.grades.as_ref().and_then(|grades| grades.get(i)).copied().flatten();
+                                        let style = if is_review {
+                                            match grade {
+                                                Some(true) => "btn-success",
+                                                Some(false) => "btn-error",
+                                                None => "btn-outline",
+                                            }
+                                        } else if i == index { "btn-primary" }
+                                        else if done { "btn-outline border-primary/40" }
+                                        else { "btn-ghost" };
+                                        let label = if is_review {
+                                            match grade {
+                                                Some(true) => format!("原卷第 {number} 题 正确"),
+                                                Some(false) => format!("原卷第 {number} 题 错误"),
+                                                None => format!("原卷第 {number} 题"),
+                                            }
+                                        } else { format!("原卷第 {number} 题") };
+                                        html! {<button type="button"
+                                            class={classes!("btn","btn-sm",style,if i==index && is_review {"ring-2 ring-primary"} else {""})}
+                                            data-testid="question-bank-practice-number"
+                                            aria-current={(i==index).to_string()}
+                                            aria-label={label}
+                                            onclick={Callback::from(move |_|{
+                                                if allows_navigation(&navigation_allowed) {
+                                                    current.set(i);
+                                                    open.set(false);
+                                                }
+                                            })}>{number}</button>}
+                                    })}
+                                </div>
+                            </section>
+                        }
+                    })}
                 </nav>
             }
         </footer>

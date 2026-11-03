@@ -31,16 +31,37 @@ pub(crate) fn render_question_bank_markdown(markdown: &str) -> Html {
     Html::from_html_unchecked(AttrValue::from(question_bank_markdown_html(markdown)))
 }
 
+fn bank_asset_name(name: &str) -> Option<&str> {
+    let (hash, extension) = name.split_once('.')?;
+    (hash.len() == 64
+        && hash
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        && ["png", "jpg", "jpeg", "webp", "gif", "bmp"].contains(&extension))
+    .then_some(name)
+}
+
+fn question_bank_destination(destination: &str) -> Option<&str> {
+    if let Some(name) = destination.strip_prefix("hyz-bank-asset:") {
+        return bank_asset_name(name);
+    }
+    // Indexes synced before the asset rewrite still contain relative source
+    // paths such as ../../../assets/<hash>.png. Resolve their final asset name
+    // so existing question banks render without a full rescan.
+    if destination.contains([':', '\\', '\0', '?', '#']) {
+        return None;
+    }
+    let segments = destination.split('/').collect::<Vec<_>>();
+    if !segments.iter().any(|segment| *segment == "assets") {
+        return None;
+    }
+    bank_asset_name(segments.last()?)
+}
+
 fn question_bank_markdown_html(markdown: &str) -> String {
     let mut html = markdown_with_assets(markdown, |destination| {
-        let name = destination.strip_prefix("hyz-bank-asset:")?;
-        let (hash, extension) = name.split_once('.')?;
-        (hash.len() == 64
-            && hash
-                .bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-            && ["png", "jpg", "jpeg", "webp", "gif", "bmp"].contains(&extension))
-        .then(|| format!("/api/v1/question-bank/assets/{name}"))
+        question_bank_destination(destination)
+            .map(|name| format!("/api/v1/question-bank/assets/{name}"))
     });
     // Source HTML is already escaped; rewrite only generated table-cell tags.
     for alignment in ["left", "center", "right"] {
@@ -134,5 +155,12 @@ mod question_bank_markdown_tests {
             question_bank_markdown_html(&format!("![](hyz-bank-asset:{hash}.bmp)"))
                 .contains(&format!("/api/v1/question-bank/assets/{hash}.bmp"))
         );
+        let legacy = question_bank_markdown_html(&format!("![](../../../assets/{hash}.png)"));
+        assert!(legacy.contains(&format!("/api/v1/question-bank/assets/{hash}.png")));
+        assert!(!legacy.contains("../../../assets"));
+        assert!(!question_bank_markdown_html(&format!(
+            "![](https://example.com/assets/{hash}.png)"
+        ))
+        .contains("/api/v1/question-bank/assets/"));
     }
 }

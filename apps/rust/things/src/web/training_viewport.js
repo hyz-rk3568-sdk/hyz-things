@@ -3,23 +3,39 @@ export function mountTrainingViewport(root) {
   const viewport = window.visualViewport;
   if (!viewport) return () => {};
   let frame = 0;
+  let settle = 0;
   const update = () => {
     frame = 0;
-    if (Math.abs(viewport.scale - 1) > 0.01 ||
-        !Number.isFinite(viewport.height) || viewport.height <= 0 ||
-        !Number.isFinite(viewport.width) || viewport.width <= 0) return;
+    const layoutWidth = window.innerWidth || document.documentElement?.clientWidth || 0;
+    const layoutHeight = window.innerHeight || document.documentElement?.clientHeight || 0;
+    if (!Number.isFinite(layoutWidth) || layoutWidth <= 0 ||
+        !Number.isFinite(layoutHeight) || layoutHeight <= 0) return;
+    const scale = Number.isFinite(viewport.scale) ? viewport.scale : 1;
+    const visualWidth = Number.isFinite(viewport.width) ? viewport.width : 0;
+    const visualHeight = Number.isFinite(viewport.height) ? viewport.height : 0;
+    const visualUsable = Math.abs(scale - 1) <= 0.01 &&
+      visualWidth > 0 && visualHeight > 0 && visualHeight <= layoutHeight + 1;
+    // Width always follows the layout viewport. iPad Safari can keep a stale
+    // reduced visualViewport.width after returning from another app, which
+    // otherwise leaves the whole training shell at partial width.
     const geometry = {
-      height: viewport.height,
-      width: viewport.width,
-      top: Math.max(0, viewport.offsetTop),
-      left: Math.max(0, viewport.offsetLeft),
+      height: visualUsable ? visualHeight : layoutHeight,
+      width: layoutWidth,
+      top: visualUsable ? Math.max(0, viewport.offsetTop) : 0,
+      left: visualUsable ? Math.max(0, viewport.offsetLeft) : 0,
     };
     for (const [dimension, value] of Object.entries(geometry)) {
       root.style.setProperty(`--training-viewport-${dimension}`, `${value}px`);
     }
   };
   const schedule = () => {
-    if (!frame) frame = window.requestAnimationFrame(update);
+    if (frame) return;
+    frame = window.requestAnimationFrame(() => {
+      update();
+      // iPad can report transitional geometry right after app switching.
+      clearTimeout(settle);
+      settle = window.setTimeout(update, 250);
+    });
   };
   // A restored iPad visual viewport may change without window.resize.
   const listeners = [
@@ -31,5 +47,6 @@ export function mountTrainingViewport(root) {
   return () => {
     for (const [target, event] of listeners) target.removeEventListener(event, schedule);
     if (frame) window.cancelAnimationFrame(frame);
+    if (settle) clearTimeout(settle);
   };
 }

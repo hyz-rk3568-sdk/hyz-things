@@ -39,7 +39,6 @@ pub struct StoredQuestion {
     pub module: Option<String>,
     pub category: Option<String>,
     pub topics: Vec<String>,
-    pub issues: Vec<String>,
     pub materials: Vec<String>,
     pub stem: String,
     pub options_markdown: String,
@@ -59,7 +58,6 @@ impl StoredQuestion {
             module: self.module.clone(),
             category: self.category.clone(),
             topics: self.topics.clone(),
-            issues: self.issues.clone(),
         }
     }
 }
@@ -86,11 +84,10 @@ impl PaperContent {
                     module: question.module,
                     category: question.category,
                     topics: question.topics,
-                    issues: question.issues,
                     materials: question.materials,
                     stem: question.stem,
                     options_markdown: question.options_markdown,
-                    gradable: key.is_some_and(|key| key.valid),
+                    gradable: key.is_some_and(|key| key.gradable),
                     correct_answer: key.map(|key| key.choices.clone()).unwrap_or_default(),
                     explanation: key.map(|key| key.explanation.clone()).unwrap_or_default(),
                 }
@@ -107,6 +104,16 @@ impl PaperContent {
     pub fn question(&self, id: &str) -> Option<&StoredQuestion> {
         self.questions.iter().find(|question| question.id == id)
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PracticeContent {
+    pub paper_id: String,
+    pub paper_title: String,
+    pub source_hash: String,
+    pub active: bool,
+    pub question: StoredQuestion,
+    pub materials: Vec<crate::domain::question_bank::MaterialView>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -173,6 +180,18 @@ pub trait QuestionBankSourcePort: Send + Sync {
 #[async_trait]
 pub trait QuestionBankRepositoryPort: Send + Sync {
     async fn list(&self) -> Result<Vec<IndexedPaper>, BankError>;
+    async fn paper_summaries(&self) -> Result<Vec<PaperSummary>, BankError> {
+        Ok(self
+            .list()
+            .await?
+            .into_iter()
+            .filter(|paper| paper.summary.role == "primary")
+            .map(|paper| paper.summary)
+            .collect())
+    }
+    async fn indexed_paper(&self, _id: &str) -> Result<IndexedPaper, BankError> {
+        Err(BankError::Unavailable)
+    }
     async fn apply(&self, papers: Vec<IndexedPaper>) -> Result<(), BankError>;
     async fn known(&self) -> Result<Vec<IndexedPaper>, BankError> {
         self.list().await
@@ -181,10 +200,48 @@ pub trait QuestionBankRepositoryPort: Send + Sync {
     async fn paper_content(&self, _paper_id: &str) -> Result<PaperContent, BankError> {
         Err(BankError::Unavailable)
     }
+    /// Aggregates one paper's module counts without loading question content.
+    /// SQLite overrides this with a `GROUP BY`; the default keeps simple test
+    /// doubles working from their cached content.
+    async fn paper_module_counts(
+        &self,
+        paper_id: &str,
+        source_hash: &str,
+    ) -> Result<Vec<(Option<String>, usize, usize)>, BankError> {
+        let content = self.paper_content(paper_id).await?;
+        if content.hash != source_hash {
+            return Err(BankError::Stale);
+        }
+        let mut counts: std::collections::BTreeMap<Option<String>, (usize, usize)> =
+            std::collections::BTreeMap::new();
+        for question in content.questions {
+            let entry = counts.entry(question.module).or_default();
+            if question.gradable {
+                entry.0 += 1;
+            } else {
+                entry.1 += 1;
+            }
+        }
+        Ok(counts
+            .into_iter()
+            .map(|(module, (gradable, ungradable))| (module, gradable, ungradable))
+            .collect())
+    }
+    async fn question_contents(&self, _ids: &[String]) -> Result<Vec<PracticeContent>, BankError> {
+        Err(BankError::Unavailable)
+    }
     async fn practice_create(&self, _session: PracticeSession) -> Result<(), BankError> {
         Err(BankError::Unavailable)
     }
     async fn practice_load(&self, _id: &str) -> Result<PracticeSession, BankError> {
+        Err(BankError::Unavailable)
+    }
+    async fn practice_save_answer(
+        &self,
+        _session: PracticeSession,
+        _question_id: &str,
+        _previous_revision: u64,
+    ) -> Result<(), BankError> {
         Err(BankError::Unavailable)
     }
     async fn practice_update(
@@ -216,13 +273,16 @@ pub trait QuestionBankRepositoryPort: Send + Sync {
     ) -> Result<PracticeCatalog, BankError> {
         Err(BankError::Unavailable)
     }
-    async fn practice_module_candidates(
+    /// Returns complete practice groups in draw order. A group contains every
+    /// question that shares one source material, so callers never split a
+    /// material block while sampling.
+    async fn practice_module_groups(
         &self,
         _module: &str,
         _category: Option<&str>,
         _filters: &crate::domain::question_bank::ModulePracticeFilters,
-        _limit: usize,
-    ) -> Result<Vec<String>, BankError> {
+        _group_limit: usize,
+    ) -> Result<Vec<Vec<String>>, BankError> {
         Err(BankError::Unavailable)
     }
     async fn practice_favorite(
@@ -344,31 +404,25 @@ impl QuestionBankApplication {
         Ok(summary)
     }
     pub async fn papers(&self) -> Result<Vec<PaperSummary>, BankError> {
-        Ok(self
-            .repository
-            .list()
-            .await?
-            .into_iter()
-            .filter(|p| p.summary.role == "primary")
-            .map(|p| p.summary)
-            .collect())
+        self.repository.paper_summaries().await
     }
     pub async fn paper(&self, id: &str) -> Result<PaperView, BankError> {
         if !valid_id(id) {
             return Err(BankError::Invalid);
         }
-        let indexed = self
-            .repository
-            .list()
-            .await?
-            .into_iter()
-            .find(|p| p.summary.id == id && p.summary.role == "primary")
-            .ok_or(BankError::NotFound)?;
-        let doc = self.source.load(indexed).await?;
-        if doc.summary().id != id {
-            return Err(BankError::Conflict);
-        }
-        Ok(doc.view())
+        let indexed = self.primary_indexed(id).await?;
+        let content = self.indexed_content(&indexed).await?;
+        let summary = indexed.summary;
+        Ok(PaperView {
+            id: summary.id,
+            title: summary.title,
+            year: summary.year,
+            region: summary.region,
+            variant: summary.variant,
+            role: summary.role,
+            questions: content.questions.iter().map(StoredQuestion::view).collect(),
+            materials: content.materials,
+        })
     }
     pub async fn asset(&self, name: String) -> Result<BankAsset, BankError> {
         self.source.asset(name).await

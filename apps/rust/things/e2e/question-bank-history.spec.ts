@@ -76,10 +76,48 @@ test('question bank history shares paper and module records, filters unfinished 
   await expect(records).toContainText('模块训练');
 });
 
+test('question bank repeat keeps the recorded question set instead of resampling', async ({ page }) => {
+  await loginWithIsolatedHistory(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-module').click();
+  await page.getByTestId('question-bank-cross-module').filter({ hasText: '资料分析' }).click();
+  await page.getByTestId('question-bank-practice-start').click();
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button', { name: '确认交卷', exact: true }).click();
+  await expect(page.getByTestId('question-bank-practice-score')).toBeVisible();
+  const completed = await page.evaluate(async () => {
+    const response = await fetch('/api/v1/question-bank/practice/history');
+    const runs = await response.json() as {
+      id: string; status: string; items: { question_id: string; paper_id: string }[];
+    }[];
+    const run = runs.find(candidate => candidate.status === 'completed')!;
+    return { id: run.id, items: run.items };
+  });
+  await page.getByRole('button', { name: '← 返回训练', exact: true }).click();
+  await page.getByTestId('question-bank-history-open').click();
+  await page.getByTestId('question-bank-history-filter-module').click();
+  const repeated = page.waitForRequest(request =>
+    request.method() === 'POST' && request.url().endsWith(`/practice/sessions/${completed.id}/repeat`));
+  await page.getByRole('button', { name: '再做一遍', exact: true }).click();
+  await repeated;
+  await expect(page.getByTestId('question-bank-practice-workspace')).toBeVisible();
+  const copied = await page.evaluate(async () => {
+    const response = await fetch('/api/v1/question-bank/practice/history');
+    const runs = await response.json() as {
+      status: string; items: { question_id: string; paper_id: string; number: number; answer: string[]; grade: string | null }[];
+    }[];
+    return runs.find(run => run.status === 'active')!.items;
+  });
+  const shape = (items: { question_id: string; paper_id: string; number: number }[]) =>
+    items.map(({ question_id, paper_id, number }) => ({ question_id, paper_id, number }));
+  expect(shape(copied)).toEqual(shape(completed.items));
+  expect(copied.every(item => item.answer.length === 0 && item.grade === null)).toBe(true);
+});
+
 test('question bank history shows a failed repeat and allows retrying the same record', async ({ page }) => {
   await completeFixturePaper(page);
   await page.getByTestId('question-bank-history-open').click();
-  const endpoint = '**/api/v1/question-bank/practice/sessions';
+  const endpoint = '**/api/v1/question-bank/practice/sessions/*/repeat';
   await page.route(endpoint, route => route.fulfill({
     status: 503, json: { error: 'temporary-unavailable' },
   }));

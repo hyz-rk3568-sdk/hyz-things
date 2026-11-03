@@ -95,7 +95,6 @@ module: 资料分析
 category: 比重
 topics: [现期比重, 原卷模块]
 materials: [M1]
-issues: []
 ```
 ### Stem
 材料中的正确选项是什么？
@@ -115,7 +114,6 @@ module: 资料分析
 category: 增长
 topics: [共用材料]
 materials: [M1]
-issues: []
 ```
 ### Stem
 第二道题答案？
@@ -135,7 +133,6 @@ module: 图形推理
 category: 图形推理
 topics: [模块别名兼容]
 materials: []
-issues: []
 ```
 ### Stem
 这是一道判断推理题。
@@ -164,7 +161,6 @@ module: 资料分析
 category: 比重
 topics: [跨卷来源]
 materials: []
-issues: []
 ```
 ### Stem
 第二份试卷的比重题。
