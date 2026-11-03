@@ -22,12 +22,12 @@ pub(super) const FIXED_TRAINING_LAYOUT: &str =
 enum TrainingMode {
     Calculation,
     Flashcards,
-    QuestionBank,
+    QuestionBankPaper,
+    QuestionBankModule,
     Comprehensive,
     LogicJudgment,
     QuantitativeRelations,
     Statistics,
-    History,
 }
 
 #[derive(Properties, PartialEq)]
@@ -119,7 +119,6 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
         });
     }
     let mode = use_state(|| TrainingMode::Calculation);
-    let history_jump = use_state(|| None::<TrainingMode>);
     let study_clock = use_context::<StudyClockContext>();
     let training_immersive = use_state(|| false);
     // A paused paper hides the questions, so the effective-study clock stops too.
@@ -127,11 +126,11 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
     let module = match *mode {
         TrainingMode::Calculation => "calculation",
         TrainingMode::Flashcards => "flashcards",
-        TrainingMode::QuestionBank => "question_bank",
+        TrainingMode::QuestionBankPaper | TrainingMode::QuestionBankModule => "question_bank",
         TrainingMode::Comprehensive => "comprehensive",
         TrainingMode::LogicJudgment => "logic",
         TrainingMode::QuantitativeRelations => "quantitative",
-        TrainingMode::Statistics | TrainingMode::History => "",
+        TrainingMode::Statistics => "",
     };
     let study_active = *training_immersive && !*paper_paused;
     let csrf_ready = !props.csrf.is_empty();
@@ -189,12 +188,20 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
             mode.set(TrainingMode::Calculation);
         })
     };
-    let choose_question_bank = {
+    let choose_question_bank_paper = {
         let mode = mode.clone();
         let training_immersive = training_immersive.clone();
         Callback::from(move |_| {
             training_immersive.set(false);
-            mode.set(TrainingMode::QuestionBank);
+            mode.set(TrainingMode::QuestionBankPaper);
+        })
+    };
+    let choose_question_bank_module = {
+        let mode = mode.clone();
+        let training_immersive = training_immersive.clone();
+        Callback::from(move |_| {
+            training_immersive.set(false);
+            mode.set(TrainingMode::QuestionBankModule);
         })
     };
     let choose_comprehensive = {
@@ -229,29 +236,6 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
             mode.set(TrainingMode::Statistics);
         })
     };
-    let choose_history = {
-        let mode = mode.clone();
-        let history_jump = history_jump.clone();
-        Callback::from(move |_| {
-            history_jump.set(None);
-            mode.set(TrainingMode::History);
-        })
-    };
-    let on_open_history_source = {
-        let mode = mode.clone();
-        let history_jump = history_jump.clone();
-        Callback::from(move |source: String| {
-            let target = match source.as_str() {
-                "question_bank" => TrainingMode::QuestionBank,
-                "analysis" => TrainingMode::Comprehensive,
-                "logic" => TrainingMode::LogicJudgment,
-                "quant" => TrainingMode::QuantitativeRelations,
-                _ => return,
-            };
-            history_jump.set(Some(target));
-            mode.set(target);
-        })
-    };
     let back_to_study = {
         let route = props.route_state.clone();
         Callback::from(move |_| {
@@ -280,26 +264,26 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                     <div class="training-modes-inner" role="group" aria-label="训练模式">
                         <button type="button" class="training-mode" data-testid="training-mode-calculation" aria-pressed={(*mode == TrainingMode::Calculation).to_string()} onclick={choose_calculation}>{"速算训练"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-flashcards" aria-pressed={(*mode == TrainingMode::Flashcards).to_string()} onclick={choose_flashcards}>{"错题复练"}</button>
-                        <button type="button" class="training-mode" data-testid="training-mode-question-bank" aria-pressed={(*mode == TrainingMode::QuestionBank).to_string()} onclick={choose_question_bank}>{"真题训练"}</button>
+                        <button type="button" class="training-mode" data-testid="training-mode-question-bank-paper" aria-pressed={(*mode == TrainingMode::QuestionBankPaper).to_string()} onclick={choose_question_bank_paper}>{"套卷训练"}</button>
+                        <button type="button" class="training-mode" data-testid="training-mode-question-bank-module" aria-pressed={(*mode == TrainingMode::QuestionBankModule).to_string()} onclick={choose_question_bank_module}>{"模块训练"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-comprehensive" aria-pressed={(*mode == TrainingMode::Comprehensive).to_string()} onclick={choose_comprehensive}>{"资料分析"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-logic-judgment" aria-pressed={(*mode == TrainingMode::LogicJudgment).to_string()} onclick={choose_logic}>{"判断推理"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-quantitative" aria-pressed={(*mode == TrainingMode::QuantitativeRelations).to_string()} onclick={choose_quantitative}>{"数量关系"}</button>
 
                         <button type="button" class="training-mode" data-testid="training-mode-statistics" aria-pressed={(*mode == TrainingMode::Statistics).to_string()} onclick={choose_statistics}>{"学习统计"}</button>
-                        <button type="button" class="training-mode" data-testid="training-mode-history" aria-pressed={(*mode == TrainingMode::History).to_string()} onclick={choose_history}>{"练习记录"}</button>
                     </div>
                 </nav>
             }
             <main class="min-h-0 flex-1 overflow-hidden" data-testid="training-mode-content">
-            if *mode == TrainingMode::History {
-                <TrainingHistory on_open_source={on_open_history_source} />
-            } else if *mode == TrainingMode::Statistics {
+            if *mode == TrainingMode::Statistics {
                 <TrainingStatistics />
             } else if *mode == TrainingMode::Calculation {
                 {render_calculation_training(props.route_state.clone(),on_immersive_change.clone())}
-            } else if *mode == TrainingMode::QuestionBank {
-                <QuestionBankTraining csrf={props.csrf.clone()}
-                    show_history={*history_jump == Some(TrainingMode::QuestionBank)}
+            } else if matches!(*mode, TrainingMode::QuestionBankPaper | TrainingMode::QuestionBankModule) {
+                <QuestionBankTraining
+                    key={if *mode == TrainingMode::QuestionBankPaper { "paper" } else { "module" }}
+                    entry_mode={if *mode == TrainingMode::QuestionBankPaper { PracticeMode::Paper } else { PracticeMode::Module }}
+                    csrf={props.csrf.clone()}
                     on_immersive_change={on_immersive_change.clone()}
                     on_paper_pause_change={on_paper_pause_change.clone()} />
             } else if *mode == TrainingMode::Flashcards {
@@ -310,9 +294,9 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                     csrf={props.csrf.clone()} on_immersive_change={on_immersive_change.clone()}
                     on_paper_pause_change={on_paper_pause_change.clone()}
                     quantitative={*mode == TrainingMode::QuantitativeRelations}
-                    show_history={*history_jump == Some(*mode)} />
+                    show_history={false} />
             } else {
-                <ComprehensiveTraining csrf={props.csrf.clone()} show_history={*history_jump == Some(TrainingMode::Comprehensive)} on_immersive_change={on_immersive_change} on_paper_pause_change={on_paper_pause_change} on_exit={exit_comprehensive} />
+                <ComprehensiveTraining csrf={props.csrf.clone()} show_history={false} on_immersive_change={on_immersive_change} on_paper_pause_change={on_paper_pause_change} on_exit={exit_comprehensive} />
             }
             </main>
         </div>
