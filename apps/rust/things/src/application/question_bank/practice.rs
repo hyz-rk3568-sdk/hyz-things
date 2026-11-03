@@ -118,7 +118,9 @@ impl QuestionBankApplication {
         filters: &ModulePracticeFilters,
     ) -> Result<Vec<PracticeBrowseItem>, BankError> {
         validate_filters(filters)?;
-        if !matches!(mode, PracticeMode::Wrong | PracticeMode::Favorite)
+        if matches!(mode, PracticeMode::PaperModule)
+            || matches!(mode, PracticeMode::Paper) && (paper_id.is_none() || module.is_some() || category.is_some())
+            || matches!(mode, PracticeMode::Module) && (paper_id.is_some() || module.is_none())
             || paper_id.is_some_and(|id| !valid_id(id))
             || module.is_some_and(|m| primary_module(Some(m)) != Some(m))
             || category.is_some_and(|c| {
