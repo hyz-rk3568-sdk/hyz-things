@@ -823,3 +823,75 @@ async fn indexed_module_and_category_drills_keep_original_sources() {
         Err(BankError::Invalid)
     ));
 }
+
+#[derive(Default)]
+struct CountingSource {
+    loads: std::sync::atomic::AtomicUsize,
+}
+#[async_trait]
+impl QuestionBankSourcePort for CountingSource {
+    async fn scan(&self, _known: Vec<IndexedPaper>) -> Result<BankSnapshot, BankError> {
+        Ok(BankSnapshot {
+            papers: vec![IndexedPaper::new(
+                "papers/a.md".into(),
+                "hash".into(),
+                parse(PAPER).unwrap(),
+            )],
+            generated_ids: 0,
+        })
+    }
+    async fn load(&self, _paper: IndexedPaper) -> Result<Document, BankError> {
+        self.loads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(parse(PAPER).unwrap())
+    }
+    async fn asset(&self, _name: String) -> Result<BankAsset, BankError> {
+        Err(BankError::NotFound)
+    }
+}
+
+#[tokio::test]
+async fn synced_question_content_is_served_from_sqlite_without_markdown_reloads() {
+    use hyz_things::adapters::outbound::question_bank_sqlite::SqliteQuestionBankRepository;
+    use hyz_things::domain::question_bank::{CreatePracticeRequest, PracticeMode};
+
+    let source = Arc::new(CountingSource::default());
+    let repository = Arc::new(
+        SqliteQuestionBankRepository::connect("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    let app = QuestionBankApplication::new(source.clone(), repository);
+    app.sync().await.unwrap();
+
+    let session = app
+        .create_practice(CreatePracticeRequest {
+            mode: PracticeMode::Paper,
+            paper_id: Some("019a3d8c-7f23-7b6e-927d-3c951851d3a2".into()),
+            module: None,
+            category: None,
+            filters: Default::default(),
+        })
+        .await
+        .unwrap();
+    let workspace = app.practice_workspace(&session.id).await.unwrap();
+    let question = workspace.questions[0].question.as_ref().unwrap();
+    assert_eq!(question.stem, "题干。");
+    assert_eq!(
+        question.options_markdown,
+        "- A. 甲\n- B. 乙\n- C. 丙\n- D. 丁"
+    );
+    assert_eq!(workspace.questions[0].materials[0].markdown, "共享材料。");
+
+    app.save_practice_answer(&session.id, &session.items[0].question_id, vec!["B".into()])
+        .await
+        .unwrap();
+    app.submit_practice(&session.id).await.unwrap();
+    let review = app.practice_review(&session.id).await.unwrap();
+    assert_eq!(review.questions[0].explanation, "秘密解析。");
+    assert_eq!(review.questions[0].correct_answer, vec!["B"]);
+    assert_eq!(
+        source.loads.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "practice must read synced content from SQLite"
+    );
+}

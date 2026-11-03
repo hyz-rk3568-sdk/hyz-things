@@ -1,9 +1,11 @@
-//! Metadata-only index in its own database; Markdown remains the content source.
+//! Question-bank index with a parsed-content cache; Markdown remains the source of truth.
 use crate::application::question_bank::practice::primary_module;
-use crate::application::question_bank::{BankError, IndexedPaper, QuestionBankRepositoryPort};
+use crate::application::question_bank::{
+    BankError, IndexedPaper, PaperContent, QuestionBankRepositoryPort, StoredQuestion,
+};
 use crate::domain::question_bank::{
-    ModulePracticeFilters, PracticeBrowseItem, PracticeCatalog, PracticeCategory, PracticeMode,
-    PracticeModule, PracticeSession,
+    MaterialView, ModulePracticeFilters, PracticeBrowseItem, PracticeCatalog, PracticeCategory,
+    PracticeMode, PracticeModule, PracticeSession,
 };
 use async_trait::async_trait;
 use sqlx::{
@@ -65,27 +67,86 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             .await
             .map_err(|_| BankError::Storage)?;
         for paper in papers {
+            // Read the previous hash before the metadata upsert below.
+            let previous_hash: Option<String> =
+                sqlx::query_scalar("SELECT json_extract(metadata,'$.hash') FROM papers WHERE id=?")
+                    .bind(&paper.summary.id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(|_| BankError::Storage)?;
+            let cached: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM questions WHERE paper_id=? AND stem IS NOT NULL",
+            )
+            .bind(&paper.summary.id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|_| BankError::Storage)?;
             let metadata = serde_json::to_string(&paper).map_err(|_| BankError::Storage)?;
             sqlx::query("INSERT INTO papers(id,metadata,active) VALUES(?,?,1) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,active=1").bind(&paper.summary.id).bind(metadata).execute(&mut *tx).await.map_err(|_|BankError::Storage)?;
-            for (ordinal, id) in paper.question_ids.iter().enumerate() {
-                let number = paper
-                    .question_numbers
-                    .get(ordinal)
-                    .copied()
-                    .unwrap_or((ordinal + 1) as u32);
-                let module = paper
-                    .question_modules
-                    .get(ordinal)
-                    .and_then(|value| value.as_deref())
-                    .and_then(|value| primary_module(Some(value)));
-                let category = paper
-                    .question_categories
-                    .get(ordinal)
-                    .and_then(|value| value.as_deref());
-                sqlx::query("INSERT INTO questions(id,paper_id,number,source_hash,module,category) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET paper_id=excluded.paper_id,number=excluded.number,source_hash=excluded.source_hash,module=excluded.module,category=excluded.category")
-                    .bind(id).bind(&paper.summary.id).bind(number as i64).bind(&paper.hash)
-                    .bind(module).bind(category)
-                    .execute(&mut *tx).await.map_err(|_| BankError::Storage)?;
+            // Rewrite parsed content only when the source hash changed or the
+            // database predates the content cache. Re-running sync must not
+            // rewrite thousands of unchanged question rows.
+            let content_changed =
+                previous_hash.as_deref() != Some(paper.hash.as_str()) || cached == 0;
+            if content_changed && !paper.content.questions.is_empty() {
+                sqlx::query("DELETE FROM questions WHERE paper_id=?")
+                    .bind(&paper.summary.id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|_| BankError::Storage)?;
+                sqlx::query("DELETE FROM paper_materials WHERE paper_id=?")
+                    .bind(&paper.summary.id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|_| BankError::Storage)?;
+                for question in &paper.content.questions {
+                    let topics =
+                        serde_json::to_string(&question.topics).map_err(|_| BankError::Storage)?;
+                    let materials = serde_json::to_string(&question.materials)
+                        .map_err(|_| BankError::Storage)?;
+                    let issues =
+                        serde_json::to_string(&question.issues).map_err(|_| BankError::Storage)?;
+                    let correct = serde_json::to_string(&question.correct_answer)
+                        .map_err(|_| BankError::Storage)?;
+                    let module = question
+                        .module
+                        .as_deref()
+                        .and_then(|value| primary_module(Some(value)));
+                    sqlx::query("INSERT INTO questions(id,paper_id,number,source_hash,module,category,stem,options_markdown,topics,materials,issues,gradable,correct_answer,explanation) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET paper_id=excluded.paper_id,number=excluded.number,source_hash=excluded.source_hash,module=excluded.module,category=excluded.category,stem=excluded.stem,options_markdown=excluded.options_markdown,topics=excluded.topics,materials=excluded.materials,issues=excluded.issues,gradable=excluded.gradable,correct_answer=excluded.correct_answer,explanation=excluded.explanation")
+                        .bind(&question.id).bind(&paper.summary.id).bind(question.number as i64)
+                        .bind(&paper.hash).bind(module).bind(&question.category)
+                        .bind(&question.stem).bind(&question.options_markdown)
+                        .bind(topics).bind(materials).bind(issues)
+                        .bind(i64::from(question.gradable)).bind(correct).bind(&question.explanation)
+                        .execute(&mut *tx).await.map_err(|_| BankError::Storage)?;
+                }
+                for (ordinal, material) in paper.content.materials.iter().enumerate() {
+                    sqlx::query("INSERT INTO paper_materials(paper_id,material_id,ordinal,name,markdown) VALUES(?,?,?,?,?)")
+                        .bind(&paper.summary.id).bind(&material.id).bind(ordinal as i64)
+                        .bind(&material.name).bind(&material.markdown)
+                        .execute(&mut *tx).await.map_err(|_| BankError::Storage)?;
+                }
+            } else if content_changed {
+                for (ordinal, id) in paper.question_ids.iter().enumerate() {
+                    let number = paper
+                        .question_numbers
+                        .get(ordinal)
+                        .copied()
+                        .unwrap_or((ordinal + 1) as u32);
+                    let module = paper
+                        .question_modules
+                        .get(ordinal)
+                        .and_then(|value| value.as_deref())
+                        .and_then(|value| primary_module(Some(value)));
+                    let category = paper
+                        .question_categories
+                        .get(ordinal)
+                        .and_then(|value| value.as_deref());
+                    sqlx::query("INSERT INTO questions(id,paper_id,number,source_hash,module,category) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET paper_id=excluded.paper_id,number=excluded.number,source_hash=excluded.source_hash,module=excluded.module,category=excluded.category")
+                        .bind(id).bind(&paper.summary.id).bind(number as i64).bind(&paper.hash)
+                        .bind(module).bind(category)
+                        .execute(&mut *tx).await.map_err(|_| BankError::Storage)?;
+                }
             }
             for id in paper.ids {
                 let owner: Option<String> =
@@ -110,6 +171,75 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         }
         tx.commit().await.map_err(|_| BankError::Storage)?;
         Ok(())
+    }
+
+    async fn paper_content(&self, paper_id: &str) -> Result<PaperContent, BankError> {
+        let metadata: Option<String> = sqlx::query_scalar("SELECT metadata FROM papers WHERE id=?")
+            .bind(paper_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|_| BankError::Storage)?;
+        let paper: IndexedPaper = serde_json::from_str(&metadata.ok_or(BankError::NotFound)?)
+            .map_err(|_| BankError::Storage)?;
+        let rows = sqlx::query("SELECT id,number,module,category,topics,materials,issues,stem,options_markdown,gradable,correct_answer,explanation FROM questions WHERE paper_id=? AND stem IS NOT NULL ORDER BY number")
+            .bind(paper_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| BankError::Storage)?;
+        if rows.is_empty() {
+            return Err(BankError::NotFound);
+        }
+        let questions = rows
+            .into_iter()
+            .map(|row| {
+                let topics: Option<String> = row.get(4);
+                let materials: Option<String> = row.get(5);
+                let issues: Option<String> = row.get(6);
+                let correct: Option<String> = row.get(10);
+                StoredQuestion {
+                    id: row.get(0),
+                    number: row.get::<i64, _>(1) as u32,
+                    module: row.get(2),
+                    category: row.get(3),
+                    topics: topics
+                        .and_then(|value| serde_json::from_str(&value).ok())
+                        .unwrap_or_default(),
+                    materials: materials
+                        .and_then(|value| serde_json::from_str(&value).ok())
+                        .unwrap_or_default(),
+                    issues: issues
+                        .and_then(|value| serde_json::from_str(&value).ok())
+                        .unwrap_or_default(),
+                    stem: row.get::<Option<String>, _>(7).unwrap_or_default(),
+                    options_markdown: row.get::<Option<String>, _>(8).unwrap_or_default(),
+                    gradable: row.get::<i64, _>(9) != 0,
+                    correct_answer: correct
+                        .and_then(|value| serde_json::from_str(&value).ok())
+                        .unwrap_or_default(),
+                    explanation: row.get::<Option<String>, _>(11).unwrap_or_default(),
+                }
+            })
+            .collect();
+        let materials = sqlx::query(
+            "SELECT material_id,name,markdown FROM paper_materials WHERE paper_id=? ORDER BY ordinal",
+        )
+        .bind(paper_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| BankError::Storage)?
+        .into_iter()
+        .map(|row| MaterialView {
+            id: row.get(0),
+            name: row.get(1),
+            markdown: row.get(2),
+        })
+        .collect();
+        Ok(PaperContent {
+            paper_id: paper.summary.id,
+            hash: paper.hash,
+            questions,
+            materials,
+        })
     }
     async fn practice_create(&self, session: PracticeSession) -> Result<(), BankError> {
         let mut tx = self.pool.begin().await.map_err(|_| BankError::Storage)?;
@@ -407,6 +537,7 @@ mod migration_tests {
             "papers",
             "identities",
             "questions",
+            "paper_materials",
             "practice_sessions",
             "practice_items",
             "practice_attempts",
@@ -471,6 +602,6 @@ mod migration_tests {
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        assert_eq!(applied, 3, "each version is applied exactly once");
+        assert_eq!(applied, 4, "each version is applied exactly once");
     }
 }
