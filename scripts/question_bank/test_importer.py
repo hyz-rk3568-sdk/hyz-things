@@ -291,6 +291,134 @@ D. 丁
         self.assertIn(first_id, paper.read_text())
         self.assertIn(second_id, paper.read_text())
 
+    def test_audit_managed_metadata_update_survives_reimport_without_body_override(
+        self,
+    ):
+        import json
+        from classification_audit import audit_bank, apply_changes
+        from identity import without_ids
+        from importer import digest
+
+        source_text = (
+            SAMPLE.replace(
+                "# 示例卷\n",
+                "# 示例卷\n| 题型模块 | 题量 | 题号 |\n| 判断推理 | 1 | 1–1 |\n",
+            )
+            .replace(
+                "题干。",
+                "某术语是指一种长期形成并受到社会环境影响的群体行为模式，根据上述定义，下列属于该术语的是？",
+            )
+            .replace("原始解析。", "原始解析。\n**考点**：方式目的")
+        )
+        (self.upstream / self.path).write_text(source_text)
+        import_bank(self.upstream, self.output)
+        paper = self.output / "papers" / self.path
+        paper_uuid = "019a3d8e-1b32-7a60-9c83-f34217a6e201"
+        question_uuid = "019a3d8e-1b32-7a60-9c83-f34217a6e210"
+        text = (
+            paper.read_text()
+            .replace("# 示例卷", f"<!-- hyz-paper-id: {paper_uuid} -->\n# 示例卷")
+            .replace(
+                "## Question 1\n",
+                f"## Question 1\n\n<!-- hyz-question-id: {question_uuid} -->\n",
+            )
+            .replace("category: 定义判断", "category: 类比推理")
+        )
+        paper.write_text(text)
+        manifest_path = self.output / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["papers"][self.path.as_posix()]["generated_sha256"] = digest(
+            without_ids(text)
+        )
+        manifest["papers"][self.path.as_posix()]["managed_sha256"] = digest(
+            without_ids(text)
+        )
+        manifest_path.write_text(json.dumps(manifest))
+
+        self.assertEqual(apply_changes(self.output, audit_bank(self.output)), 1)
+        corrected = paper.read_text()
+        self.assertIn("category: 定义判断", corrected)
+        report = import_bank(self.upstream, self.output, update=True)
+        self.assertEqual(report["conflicts"], [])
+        self.assertIn(question_uuid, paper.read_text())
+        self.assertIn(paper_uuid, paper.read_text())
+        self.assertIn("category: 定义判断", paper.read_text())
+        self.assertEqual(corrected, paper.read_text())
+        paper.write_text(corrected.replace("原始解析。", "人工改写解析。"))
+        (self.upstream / self.path).write_text(
+            source_text.replace("原始解析。", "上游改写解析。")
+        )
+        report = import_bank(self.upstream, self.output, update=True)
+        self.assertTrue(report["conflicts"])
+        self.assertIn("人工改写解析。", paper.read_text())
+
+    def test_human_approved_uuid_override_survives_reimport_and_stale_body_change_fails(
+        self,
+    ):
+        from classification_audit import audit_bank
+        from classification_overrides import approve_proposals, validate_proposals
+
+        source_text = SAMPLE.replace(
+            "# 示例卷\n",
+            "# 示例卷\n| 题型模块 | 题量 | 题号 |\n| 判断推理 | 1 | 1–1 |\n",
+        ).replace("题干。", "关系判断题，请根据题目选择最合适的答案。")
+        (self.upstream / self.path).write_text(source_text)
+        import_bank(self.upstream, self.output)
+        paper = self.output / "papers" / self.path
+        paper_uuid = "019a3d8e-1b32-7a60-9c83-f34217a6e201"
+        question_uuid = "019a3d8e-1b32-7a60-9c83-f34217a6e210"
+        paper.write_text(
+            paper.read_text()
+            .replace("# 示例卷", f"<!-- hyz-paper-id: {paper_uuid} -->\n# 示例卷")
+            .replace(
+                "## Question 1\n",
+                f"## Question 1\n\n<!-- hyz-question-id: {question_uuid} -->\n",
+            )
+        )
+        row = audit_bank(self.output)["rows"][0]
+        proposal = {
+            "uuid": question_uuid,
+            "paper_uuid": paper_uuid,
+            "question_hash": row["question_hash"],
+            "source_hash": row["source_hash"],
+            "classification_rule_version": row["classification_rule_version"],
+            "module": "判断推理",
+            "category": "逻辑判断",
+            "reviewed_source": "本地AI复核结果",
+            "review_status": "reviewed",
+            "rationale": "题干结构经人工核对后确定为逻辑判断。",
+            "status": "suggested",
+        }
+        validated = validate_proposals([proposal], [row])
+        approve_proposals(
+            validated,
+            [
+                {
+                    "uuid": question_uuid,
+                    "proposal_digest": validated[0]["proposal_digest"],
+                    "reviewer": "human-reviewer",
+                    "rationale": "人工复核通过。",
+                    "status": "approved",
+                }
+            ],
+            self.output / "classification_overrides.yaml",
+        )
+        import_bank(self.upstream, self.output, update=True)
+        self.assertIn(question_uuid, paper.read_text())
+        self.assertIn("category: 逻辑判断", paper.read_text())
+        stable = paper.read_text()
+        import_bank(self.upstream, self.output, update=True)
+        self.assertEqual(paper.read_text(), stable)
+        paper.write_text(stable.replace("关系判断题", "修改后的不同题干"))
+        from classification_audit import audit_bank
+
+        self.assertIn(
+            "stale_override", audit_bank(self.output)["rows"][0]["conflict_reasons"]
+        )
+        report = import_bank(self.upstream, self.output, update=True)
+        self.assertTrue(report["conflicts"])
+        self.assertIn("修改后的不同题干", paper.read_text())
+
     def test_update_backs_up_previous_paper_before_replacement(self):
         import_bank(self.upstream, self.output)
         paper = self.output / "papers" / self.path

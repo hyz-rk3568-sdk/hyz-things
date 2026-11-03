@@ -203,7 +203,7 @@ issues: []
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cb9b47c14164 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials: []
 passage_source: null
@@ -442,7 +442,7 @@ B
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cbe56b47ccf8 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -537,7 +537,7 @@ C
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cc02ba180d56 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -577,7 +577,7 @@ A项指干完工作再去说自己做了哪些事情；B项指不好意思继续
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cc116ec4e0f4 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -621,7 +621,7 @@ D项，意为，（如果这样）我就会被有大学问的人所嘲笑了。�
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cc280b3e07de -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: 《自觉的当代意识是理解历史的钥匙》
@@ -963,7 +963,7 @@ D项，“回顾历史”非重点，文段在分析沪剧缺乏观众与后继�
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cca3429cfd21 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -1004,7 +1004,7 @@ B
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-ccb9cfba3d47 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -1045,7 +1045,7 @@ C
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-ccc9162c0ce1 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -1086,7 +1086,7 @@ D
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-ccd9962ee419 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials:
 - M1
@@ -1127,7 +1127,7 @@ C
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-ccec31e90e03 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -1168,7 +1168,7 @@ D
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-ccfc6be40533 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M2
@@ -1209,7 +1209,7 @@ B
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cd0b63b4e8e8 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M2
@@ -1250,7 +1250,7 @@ B
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cd13c1e09851 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M2
@@ -1291,7 +1291,7 @@ C
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cd205c210c9a -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1333,7 +1333,7 @@ D
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cd3ff90609e1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1375,7 +1375,7 @@ D
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cd4212f025c8 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1415,7 +1415,7 @@ A
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cd50b2a59edc -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1457,7 +1457,7 @@ A
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cd654529a583 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1497,7 +1497,7 @@ D
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cd76da598d20 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1541,7 +1541,7 @@ D项：红色衣服呈红色是因为我们看到反射到眼睛的红色光线�
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cd8ad088384b -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1581,7 +1581,7 @@ B
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cd9c02b2a34b -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1619,7 +1619,7 @@ D
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cdaa8b1a7bc4 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1661,7 +1661,7 @@ D
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cdb56c7cf4fd -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1699,7 +1699,7 @@ B
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cdcfdff2f49f -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -1752,7 +1752,7 @@ D项：英语国家的学习者受到母语的影响，而不是连在一起的�
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cdd0a108afec -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3483,7 +3483,7 @@ D
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c08c56df13d6 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3600,8 +3600,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c0b51ccfa876 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 基期和差
 - 文字资料
@@ -3643,8 +3643,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c0c2b82c0045 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 基期和差
 - 文字资料
@@ -3684,8 +3684,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c0d38694efa8 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 基期计算
 - 文字资料
@@ -3725,8 +3725,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c0e86f496284 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 文字资料
 - 现期比重
@@ -3766,8 +3766,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c0fdd03ab287 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 文字资料
 - 综合分析
@@ -3813,8 +3813,8 @@ D项：定位材料最后一段，2013年1~11月，德国进口22.29万辆，22.
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c10f87c0bb04 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 增长量计算
 - 综合资料
@@ -3854,8 +3854,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c116639b7050 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -3895,8 +3895,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c12c71ffc721 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 两期比重
 - 综合资料
@@ -3936,8 +3936,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c13c378bb5a7 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 两期比重
 - 综合资料
@@ -3977,8 +3977,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c14d47cc39c8 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -4024,8 +4024,8 @@ D项：定位文字材料可得，汽车制造业完成工业总产值1372.12亿
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c15b11485b43 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -4071,8 +4071,8 @@ D项：定位表格可知，2007年至2012年证券投资基金只数逐年增�
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c167d5ed1071 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -4120,8 +4120,8 @@ D项：定位表格可知，2011至2012年债券成交额
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c175516f42f4 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -4167,8 +4167,8 @@ D项：定位图一可知，股票成交量并非逐年递增，说法错误。
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c18c6f337fc2 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -4214,8 +4214,8 @@ D项：由图2可知，2007年国债发行额约为25000亿元，企业债券发
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c191298e7116 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -4301,7 +4301,7 @@ B项正确：《决定》指出，明确立法权力边界，从体制机制和�
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c1be06309241 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics:
 - 中国地理
 - 社会建设
@@ -4342,8 +4342,8 @@ A、C项正确：2013年11月召开的中共十八届三中全会提出，城乡
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c1cb95aadf15 -->
 ```yaml
-module: 常识判断
-category: null
+module: 政治理论
+category: 时事政治
 topics: []
 materials: []
 passage_source: null
@@ -4469,7 +4469,7 @@ C项错误，公务委托合同，属于行政委托范畴，行政委托是行�
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c1f0dfd7cdee -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4511,7 +4511,7 @@ C项错误：网格化管理是以事件管理为内容，而不是更适合对�
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c2017397e976 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4772,7 +4772,7 @@ C项正确：大数据技术的战略意义不在于掌握庞大的数据信息�
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c26d8ac76823 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics:
 - 其他
 materials: []
@@ -4813,7 +4813,7 @@ D项正确：信息的形式包括文字形态信息、声像形态信息和记�
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c27b0e50e5d9 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4859,7 +4859,7 @@ D项正确：抽样调查是根据随机的原则从总体中抽取部分实际�
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c284cd04604e -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4987,7 +4987,7 @@ A项正确：12月6日，第68届联合国大会第二委员会通过有关人�
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c2b7f6e7bca6 -->
 ```yaml
 module: 常识判断
-category: null
+category: 地理国情
 topics:
 - 其他
 materials: []
@@ -5547,8 +5547,8 @@ D项错误：两句词分别出自北宋词人晏几道的《临江仙·梦后�
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c389775271b9 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 其他建设
 - 重要文件
@@ -5598,8 +5598,8 @@ D项错误，《决定》明确要求“完善司法体制，推动实行审判�
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c399bce59a9d -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 法理学
 materials:
@@ -5648,8 +5648,8 @@ D项正确，相当一部分法院的司法公开工作仍处于应付状态，�
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c3a6a39bf0bd -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 其他建设
 - 重要文件
@@ -5699,8 +5699,8 @@ D项错误，死刑复核是《中华人民共和国刑事诉讼法》规定的�
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c3b8f1934280 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 时事政治
 topics:
 - 其他建设
 - 重要文件
@@ -5750,8 +5750,8 @@ D项正确，《决定》明确指出加强人权司法保障，要切实解决�
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c3c59e14ee0b -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M7
@@ -5797,8 +5797,8 @@ D项正确，根据《方案》，高校可以根据专业要求和办学特色�
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c3d3c8f6f02f -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M7
@@ -5844,8 +5844,8 @@ D项错误，选项本身说法没有错误，但是题干中没有体现“多�
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c3e2ec750309 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M7
@@ -5891,8 +5891,8 @@ D项：错误，题干中说的是政策方案制定给考生造成的困难，�
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c3fd1856a416 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M7
@@ -5936,8 +5936,8 @@ D项：文段虽然未提及高考加分政策，但根据尾句“最终出台�
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c40ed0e65f7b -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -5984,8 +5984,8 @@ D项正确，原告作为普通公民，认为其无法知晓相关缴款凭证�
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c41bededc6ef -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -6032,8 +6032,8 @@ D项正确，根据《政府信息公开条例》第二十一条第（四）项�
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c42e89df7401 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -6080,8 +6080,8 @@ D项正确，根据《行政诉讼法》第46条规定：“公民、法人或�
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c43e7a6b085b -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -6126,8 +6126,8 @@ D项：正确，由案例可知，法院判决撤销被诉政府信息公开答�
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c44c4c55755b -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 地理国情
 topics:
 - 中国地理
 materials:
@@ -6168,8 +6168,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c45273daefb6 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 人文常识
 topics:
 - 中国地理
 materials:
@@ -6216,8 +6216,8 @@ D项错误，自行车制造属于轻工业，飞鸽牌自行车是天津飞鸽�
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c462295f734d -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 地理国情
 topics:
 - 中国地理
 materials:
@@ -6264,8 +6264,8 @@ D项正确，根据国务院批复的《上海市城市总体规划（1999年至
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c47639d273c6 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 中国地理
 materials:
@@ -6312,8 +6312,8 @@ D项正确，完善现代航运服务体系有利于推进上海国际航运中�
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c483963bd51d -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M10
@@ -6359,8 +6359,8 @@ D项错误，分类法是指将类或组按照相互间的关系，组成系统�
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c49ed88e1eae -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -6407,8 +6407,8 @@ D项正确，律师为停车场管理办法提供专业意见，应该选取代�
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c4a92f20dae9 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -6457,8 +6457,8 @@ D项错误，马蹄形或“U”形的会议布置形式，椅子内外都摆放
 
 <!-- hyz-question-id: 01a19c89-f075-77c1-85c8-c4b62c4d8e8a -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M10

@@ -223,6 +223,9 @@ def parse_paper(text):
                 q.metadata["category"],
                 q.metadata["topics"],
                 raw_category=q.provenance["raw_category"],
+                stem=q.stem,
+                options=q.options,
+                has_material=bool(active),
             )
             q.metadata["module"] = normalized["module"]
             q.metadata["category"] = normalized["category"]

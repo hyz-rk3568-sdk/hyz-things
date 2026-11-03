@@ -256,7 +256,7 @@ C
 <!-- hyz-question-id: 01a19c89-f1a4-7cc3-9650-12ba63f3153d -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials: []
 passage_source: 《杭州“御街联盟”演练 三下五除二 拿下俩“歹徒”》《上幼儿园，宝宝不再哭闹全攻略》
@@ -475,7 +475,7 @@ D
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-7ef2b4ab750f -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -513,7 +513,7 @@ A项，“发现······活性”搭配不当，应改为：发现人类皮�
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-7f007d12e645 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: 《豫见中国，老家河南》《流金岁月》《让基层医疗脉络更通畅》《规范中成药品命名应避免误伤》
@@ -553,7 +553,7 @@ D项，“规范中成药命名应该通盘考虑，避免造成社会误解。�
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-7f1770354112 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials: []
 passage_source: 《唐代长安与西域文明》
@@ -599,7 +599,7 @@ D项“恍如隔世”指一种因人事或景物发生很大变化而引发的�
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-7f259f91de30 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics:
 - 文学常识
 materials: []
@@ -642,7 +642,7 @@ A项“常思奋不顾身，而殉国家之急”出自《报任安书》，意�
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-7f3cde0a4b98 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: 《超星发现、读秀学术搜索、百链云图书馆》
@@ -921,7 +921,7 @@ C、D两项虽为对策，但是均体现不出自身的决定性作用，偏离
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-7f9a3055ea7d -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-并列
 - 主题词
@@ -1157,7 +1157,7 @@ C项“时刻警惕无所松懈”指不能松懈，与文段“冠胄衣甲，�
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-7feae07dc567 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1204,7 +1204,7 @@ D项，根据“原先，科学家认为，······只有在猕猴等灵长�
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-7ff7211b2d28 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 标题填入题
 - 普通篇章
@@ -1251,7 +1251,7 @@ C项对应中间部分，出现在结论前，非重点，排除。
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-8005221f3f6f -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1298,7 +1298,7 @@ D项对应文段“98%以上新形成的突触都遵循‘部分新增’的规�
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-80133ae20b57 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1345,7 +1345,7 @@ D项对应文段“这项极具价值的研究通过脑科学卓越中心的合�
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-802fbdc3e44b -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1393,7 +1393,7 @@ N-G=ma，在d点时，N-G=1500-500=1000N最大，此时加速度a也最大，D�
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-80388024c045 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1435,7 +1435,7 @@ D
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-8047ce10404d -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1481,7 +1481,7 @@ D图，所有开关均闭合也无法形成短路。灯泡与电源均连接在�
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-805e38ae5a47 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1527,7 +1527,7 @@ C
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-80679e334d22 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1565,7 +1565,7 @@ A
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-8072c9370aa1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1611,7 +1611,7 @@ D
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-808938b2be0b -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1653,7 +1653,7 @@ B
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-80976241a034 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1697,7 +1697,7 @@ A
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-80a018f3c425 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1765,7 +1765,7 @@ mgh_1\>mgh_2，h_1\>h_2，C项正确。
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-80bdc15ccc04 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1819,7 +1819,7 @@ D项，汽车在P点，由重力G和支持力FP提供向心力，则G＞FP，错
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-80c2fda9e589 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2287,7 +2287,7 @@ B
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-8175c14f70c1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2951,7 +2951,7 @@ D项，第一种情况下，24日是周四，每个人都可以参加，当选�
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-823873c45191 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials: []
 passage_source: null
@@ -3711,8 +3711,8 @@ x=500，则大瓶子最多装2x=1000克
 
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-834326a48ca7 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -3752,8 +3752,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-835209133b75 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合资料
 - 排序类
@@ -3793,8 +3793,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-836cca7e2b96 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 综合资料
 - 简单加减计算
@@ -3834,8 +3834,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-837873475493 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 现期计算
 - 综合资料
@@ -3875,8 +3875,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-8388fb8a730e -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -3922,8 +3922,8 @@ D项：定位图1，2016年华东对新加坡、菲律宾出口额分别是163.0
 
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-83992e74a580 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 年均增长率
 - 统计表
@@ -3969,8 +3969,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-83a558527da2 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 平均数
 topics:
 - 现期平均数
 - 统计表
@@ -4010,8 +4010,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-83b7143c12cc -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 平均数
 topics:
 - 平均数的增长量
 - 统计表
@@ -4051,8 +4051,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-83c3ef30e87a -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 平均数
 topics:
 - 现期平均数
 - 统计表
@@ -4102,8 +4102,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-83d3520d2263 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 统计表
@@ -4149,8 +4149,8 @@ D项：定位表格第四、五行，平均每家影院的观影人次=观影人
 
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-83e6e215768e -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -4190,8 +4190,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-83f4c49dd596 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 一般增长率
 - 综合资料
@@ -4231,8 +4231,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-840a52a23ad9 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 直接找数
 - 综合资料
@@ -4272,8 +4272,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-8418037779fb -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 增长量计算
 - 综合资料
@@ -4313,8 +4313,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-842d33f6b22e -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -4411,7 +4411,7 @@ B
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-844dcb045ac1 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4449,7 +4449,7 @@ A
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-8453e780d586 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4491,7 +4491,7 @@ B
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-846bceb9bcb4 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4900,7 +4900,7 @@ A
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-ce12afabe6b8 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4997,7 +4997,7 @@ D项正确，预算划转是指根据某地或某部门、企事业单位行政�
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-ce3ba3ffd909 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5043,7 +5043,7 @@ D项正确，社会职能是指除政治、经济、文化职能以外政府必�
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-ce4ba8ad897b -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5527,8 +5527,8 @@ D项错误，出自北宋柳永的《蝶恋花》“衣带渐宽终不悔，为�
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-cee830b9e9f3 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 马克思主义
 topics:
 - 科学社会主义
 materials:
@@ -5569,8 +5569,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-cefd9d2bec70 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 其他建设
 materials:
@@ -5611,8 +5611,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-cf079d34688f -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 其他建设
 materials:
@@ -5655,8 +5655,8 @@ BC
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-cf188da1ebe1 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 新思想
 topics:
 - 其他建设
 - 重要文件
@@ -5700,8 +5700,8 @@ ABD
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-cf2b21e460a3 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 新思想
 topics:
 - 新思想总论
 - 重要文件
@@ -5743,8 +5743,8 @@ AD
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-cf3c9b8799ec -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 新思想
 topics:
 - 新思想总论
 - 重要文件
@@ -5786,8 +5786,8 @@ AC
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-cf457e1ae0d2 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 新思想
 topics:
 - 新思想总论
 - 重要文件
@@ -5829,8 +5829,8 @@ ACD
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-cf53610b55f1 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 新思想
 topics:
 - 新思想总论
 - 重要文件
@@ -5872,8 +5872,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-cf65ce6a53f5 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -5924,8 +5924,8 @@ D项错误，行政授权，指行政组织内部上级机关把某些权力授�
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-cf7f2d31f2ca -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -5968,8 +5968,8 @@ CD项正确，《行政许可法》第三十六条规定：“行政机关对行
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-cf8c63ed73fd -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -6010,8 +6010,8 @@ ABCD
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-cf9bdb6a09ef -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -6058,8 +6058,8 @@ D项正确，《行政诉讼法》第十八条规定：“行政案件由最初�
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-cfaf05a60c14 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M9
@@ -6105,8 +6105,8 @@ D项正确，城市综合管理涉及多个部门，联合执法有利于提高�
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-cfb3cfbc7b63 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M9
@@ -6154,8 +6154,8 @@ D项正确，社会治理综合执法委员会，作为城市管理工作的领�
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-cfc14a7962e5 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M9
@@ -6203,8 +6203,8 @@ D项错误，“市政公用事业和市容环境卫生”属于区政府部门�
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-cfd97319ed1b -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M9
@@ -6252,8 +6252,8 @@ D项正确，联合执法由诸多职能部门组成，加强了城市基层治�
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-cfef86ba2b84 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M10
@@ -6301,8 +6301,8 @@ D项错误，该标题缺少文种“通知”，排除。
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-cffa0577df4d -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 其他法律法规
 materials:
@@ -6351,8 +6351,8 @@ D项错误，我国的行政机关名称复杂多样，主送机关中的文化�
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-d00be1f9d766 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 其他法律法规
 materials:
@@ -6399,8 +6399,8 @@ D项正确，依据《国家标准：出版物上数字用法》（GB/T 15835—
 
 <!-- hyz-question-id: 01a19c89-f1a6-7462-a6f9-d011fc227e0d -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M10

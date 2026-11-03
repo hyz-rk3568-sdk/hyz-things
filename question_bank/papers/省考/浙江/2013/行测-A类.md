@@ -680,7 +680,7 @@ C
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f095b3b49254 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials: []
 passage_source: null
@@ -811,7 +811,7 @@ A
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f0c481a93b86 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -853,7 +853,7 @@ D项中应为“纷至沓来”。
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f0d583c69f44 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -897,7 +897,7 @@ D项，“万马产喑（àn）”读音错误，应修改为“万马产喑（y
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f0e5e56ce72e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -1152,7 +1152,7 @@ C
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f13a35283e1a -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1324,7 +1324,7 @@ D项对应结论词之前的内容，非重点，排除。
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f17b6ae8a5eb -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: 《孟子》
@@ -1368,7 +1368,7 @@ A项“民主思想”即人民享有参与国家事务和社会事务管理或�
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f1824fe2e517 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-举例子
 - 关联词-并列
@@ -1416,7 +1416,7 @@ D项“政府收入过高会成为企业的负担”文段未阐述两者关系�
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f194dad4fb15 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-举例子
 - 关联词-因果
@@ -1641,7 +1641,7 @@ C
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f1e06f41c2e4 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -1684,7 +1684,7 @@ B项“经济增长”只是后面诸多好处的其中一个，表述片面，�
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f1fcacf3e7e0 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1722,7 +1722,7 @@ D
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f20c0f56277e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1760,7 +1760,7 @@ A
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f21211eb5c0b -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1798,7 +1798,7 @@ A
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f226fa03a988 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1836,7 +1836,7 @@ C
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f233a8cd73c3 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1874,7 +1874,7 @@ B
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f246e14219d5 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1912,7 +1912,7 @@ B
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f25b3c9ca8d3 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1952,7 +1952,7 @@ C
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f264e516b4de -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1990,7 +1990,7 @@ D
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f27fb0d62486 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2028,7 +2028,7 @@ B
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f289ec3b522a -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2109,7 +2109,7 @@ D
 <!-- hyz-question-id: 01a19c8a-37aa-7f82-9bdb-f2abff4d9dc6 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2268,7 +2268,7 @@ n=苹果+柚子+香蕉+梨=(苹果+柚子)+(柚子+香蕉+梨)-柚子=30+50-1/4 
 <!-- hyz-question-id: 01a19c8a-37ab-7bf2-9920-ee152789a131 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -2306,7 +2306,7 @@ D
 <!-- hyz-question-id: 01a19c8a-37ab-7bf2-9920-ee2368f2f7c7 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3193,7 +3193,7 @@ A项主要演员穿了不同的衣服而观众没发现；B项小李没有发现
 <!-- hyz-question-id: 01a19c8a-37ab-7bf2-9920-ef671a233337 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -3344,7 +3344,7 @@ A项墙上的涂鸦、B项地上的垃圾、D项教室学生讲话都是不良�
 <!-- hyz-question-id: 01a19c8a-37ab-7bf2-9920-ef9b56ccf865 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4462,7 +4462,7 @@ D项正确，南昌起义指在1927年8月1日中共联合国民党左派，打�
 <!-- hyz-question-id: 01a19c8a-37ab-7bf2-9920-f10051c750b3 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4799,7 +4799,7 @@ D项正确，盗窃罪，是指以非法占有为目的，秘密窃取数额较�
 <!-- hyz-question-id: 01a19c8a-37ab-7bf2-9920-f18c64046283 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4839,7 +4839,7 @@ D
 <!-- hyz-question-id: 01a19c8a-37ab-7bf2-9920-f198652a1860 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4916,7 +4916,7 @@ A
 <!-- hyz-question-id: 01a19c8a-37ab-7bf2-9920-f1bf4af3f755 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5124,7 +5124,7 @@ D项错误，艾滋病病毒在蚊虫体内会被蚊虫消化掉，无法在蚊�
 <!-- hyz-question-id: 01a19c8a-37ab-7bf2-9920-f207e596ee0d -->
 ```yaml
 module: 常识判断
-category: null
+category: 地理国情
 topics:
 - 其他
 materials: []
@@ -5163,7 +5163,7 @@ C
 <!-- hyz-question-id: 01a19c8a-37ab-7bf2-9920-f21bfa48e49b -->
 ```yaml
 module: 常识判断
-category: null
+category: 地理国情
 topics:
 - 其他
 materials: []
@@ -5253,7 +5253,7 @@ D
 <!-- hyz-question-id: 01a19c8a-37ab-7bf2-9920-f2354d1d93d3 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 直接找数
 - 综合资料
@@ -5294,7 +5294,7 @@ D
 <!-- hyz-question-id: 01a19c8a-37ab-7bf2-9920-f2477a3cf932 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 直接找数
 - 综合资料
@@ -5464,7 +5464,7 @@ C
 <!-- hyz-question-id: 01a19c8a-37ab-7bf2-9920-f2855d887dc6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 现期计算
 - 文字资料
@@ -5759,7 +5759,7 @@ C
 <!-- hyz-question-id: 01a19c8a-37ab-7bf2-9920-f2ff7279bf15 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 统计表
 - 简单加减计算

@@ -2472,7 +2472,7 @@ D项，根据“乾隆朝宫作松花砚体现的是清宫在艺术审美领域�
 <!-- hyz-question-id: 01a19c8a-3b8c-7f22-b8f8-9e662e3eb658 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-多角度论述
 - 关联词-对策
@@ -2523,7 +2523,7 @@ D项，“土壤中可完全降解”对应“同时”之后解释说明的内�
 <!-- hyz-question-id: 01a19c8a-3b8d-7e41-904d-2256eaad03bc -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -2858,7 +2858,7 @@ C项，强调“工业互联网”在智能制造中的应用，缺少文段另�
 <!-- hyz-question-id: 01a19c8a-3b8d-7e41-904d-22c9a7803a2b -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-因果
 - 分述句特征-引入铺垫
@@ -3111,7 +3111,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3b8d-7e41-904d-2313b1a1dd70 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -3395,7 +3395,7 @@ D项：定位表格材料可得，2020年全国艺术表演团体演出场次225
 <!-- hyz-question-id: 01a19c8a-3b8d-7e41-904d-23779bf60d68 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics:
 - 比值计算
 - 综合资料
@@ -3530,7 +3530,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3b8d-7e41-904d-23ab8e3f82e3 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 现期计算
 - 综合资料
@@ -4343,7 +4343,7 @@ D项：安防巡检机器人通过识别工人的图像来判定工人是否佩�
 <!-- hyz-question-id: 01a19c8a-3b8d-7e41-904d-24c58217fd1a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4396,7 +4396,7 @@ D项：聘请专业的第三方机构，说明除第三方机构外可能还有�
 <!-- hyz-question-id: 01a19c8a-3b8d-7e41-904d-24d020e937de -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -4502,7 +4502,7 @@ D项：小张在意卫生状况是因为小张的父母都是医生，小张的�
 <!-- hyz-question-id: 01a19c8a-3b8d-7e41-904d-24f6935e90f5 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -4555,7 +4555,7 @@ D项：做一个叱咤风云的英雄是小林的“欲望能量”，因此他�
 <!-- hyz-question-id: 01a19c8a-3b8d-7e41-904d-25096b297cb0 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4608,7 +4608,7 @@ D项：某古塔倾斜，专家们只纠偏一度，说明修复的很少，符�
 <!-- hyz-question-id: 01a19c8a-3b8d-7e41-904d-2519d7e6003b -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -4661,7 +4661,7 @@ D项：奶茶是牛奶和茶叶水的混合物，在介绍奶茶的制作原材�
 <!-- hyz-question-id: 01a19c8a-3b8d-7e41-904d-252b331f32c9 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4714,7 +4714,7 @@ D项：两位先生分别在各自手机上搜索某公司后，搜索结果的�
 <!-- hyz-question-id: 01a19c8a-3b8d-7e41-904d-253d393ca553 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -4769,7 +4769,7 @@ D项：黄某认出假酒，仍选择购买，说明没有对此酒产生错误�
 <!-- hyz-question-id: 01a19c8a-3b8d-7e41-904d-2544dd6e5d65 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []

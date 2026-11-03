@@ -1120,7 +1120,7 @@ D项，仅提到“党内法规体系”，未涉及“法律规范体系”，�
 <!-- hyz-question-id: 01a19c8a-25c6-7332-9e38-9be4ce3b8b75 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -1264,7 +1264,7 @@ D项：文段意在说明互联网能够帮助人们记忆信息，成为人们�
 <!-- hyz-question-id: 01a19c8a-25c6-7332-9e38-9c135744ee67 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -1311,7 +1311,7 @@ B、C两项：B 项“6点至8点之间”、C项“剧烈运动”分别对应�
 <!-- hyz-question-id: 01a19c8a-25c6-7332-9e38-9c2f7c98c37a -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1796,7 +1796,7 @@ A、C、D三项：均未涉及文段核心概念“制度、体系、机制”�
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d4799ccf67e3 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 逻辑填空题
 - 普通篇章
@@ -1839,7 +1839,7 @@ A
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d481b5a41746 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1882,7 +1882,7 @@ A、B两项均未提到“农产品价格”，排除；C项中“预先知道�
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d492bd2d611b -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1927,7 +1927,7 @@ D项为强迷惑项，会有同学误将其对应到“没有追责索赔渠道�
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d4afd0ed04ab -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1970,7 +1970,7 @@ A项对应文段“吸收进金融惠农和科技惠农的扶持体系之内”�
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d4b713bf1a4f -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 标题填入题
 - 普通篇章
@@ -3876,7 +3876,7 @@ D项：位置3、4的符号相同，位置6、7的符号也相同，与题干不
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d745a49f64c8 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3998,7 +3998,7 @@ C
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d773ffdb8f86 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4042,7 +4042,7 @@ C
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d78647d61e2b -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4086,7 +4086,7 @@ D
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d79400adac01 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4719,7 +4719,7 @@ D
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d8510abb43f7 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -4768,7 +4768,7 @@ D
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d865c4dc9273 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -4817,7 +4817,7 @@ A
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d877d4395d13 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -4974,7 +4974,7 @@ D项：老冯将拼板餐桌从商场运回家，对照安装说明组装成功�
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d8afdbe10b01 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 主客体
 materials:
@@ -5082,7 +5082,7 @@ D项：抛一枚硬币观察带有数字的一面朝上次数的实验，实验�
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d8c049eaa926 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5138,7 +5138,7 @@ D项：老赵因车祸失去左腿，体现了遭遇意外伤害等变故，但�
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d8d51ef2c387 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 拆词
 materials:
@@ -5192,7 +5192,7 @@ D项：某机构职工申请提前退休说明还没有到法定退休年龄，�
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d8ec4f0fba29 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5246,7 +5246,7 @@ D项：物业公司委托专业保安公司强化培养新入职的保安，是�
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d8f0ee67dad8 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5300,7 +5300,7 @@ D项：王工程师赴灾区考察不是经历生活挫折，不符合定义，�
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d906b41bb53d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5354,7 +5354,7 @@ D项：“提供了唯一的采用外文标识的电冰箱”“将她们的婚�
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d91f0607a574 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5408,7 +5408,7 @@ D项：某公司与招聘的工人均未签订书面劳动合同是企业主动�
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d92c0b233e45 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5464,7 +5464,7 @@ D项：家电产品上印着行内专家的专业评价是借助对商品的评�
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d93336b3352f -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5518,7 +5518,7 @@ D项：小金毕业前就创办了公司，而不是毕业后，属于提前就�
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d941669d00fc -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5626,7 +5626,7 @@ D项：程某之前在乡村小学当校长为村民服务，退休后挖掘家�
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d96c8a921085 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5680,7 +5680,7 @@ D项：某公司在制造感光材料时，聘请盲人工作，没有体现自�
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d97d270a82d2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -5719,7 +5719,7 @@ A
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d98545a84374 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -5758,7 +5758,7 @@ D
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d9986f0093e9 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -5797,7 +5797,7 @@ A
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d9a4b1d3c5bb -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -5836,7 +5836,7 @@ C
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d9b46b19c73c -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -5887,7 +5887,7 @@ D项：定位材料第一段和第三段，2015年11月1日零时江苏常住人
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d9c4d7893f0a -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -5926,7 +5926,7 @@ B
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d9dfd393afe6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -5965,7 +5965,7 @@ C
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d9e7a0220f3c -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -6004,7 +6004,7 @@ A
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-d9ff8d836cf2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -6053,7 +6053,7 @@ C
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-da0ee693f973 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -6098,7 +6098,7 @@ D项：一、二、三星级饭店营业收入分别为0.3亿元、27.2亿元、
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-da131ebf7b84 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6137,7 +6137,7 @@ C
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-da222920f6fc -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -6176,7 +6176,7 @@ B
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-da39efd955ae -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -6215,7 +6215,7 @@ B
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-da4582799cd7 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -6264,7 +6264,7 @@ A项小学及以下花费的时间最多。
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-da5ec395732a -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -6309,7 +6309,7 @@ D项：观察表中数据第三行，“高中/中专”类双休/节假日看�
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-da6d3f41a743 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -6348,7 +6348,7 @@ C
 <!-- hyz-question-id: 01a19c8a-25c7-79f1-a54d-da73c5154a32 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -6387,7 +6387,7 @@ B
 <!-- hyz-question-id: 01a19c8a-25c8-7e23-b37f-5cb8361b7bd1 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -6426,7 +6426,7 @@ C
 <!-- hyz-question-id: 01a19c8a-25c8-7e23-b37f-5cc1f8db4028 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -6465,7 +6465,7 @@ D
 <!-- hyz-question-id: 01a19c8a-25c8-7e23-b37f-5cdc4aa57245 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6

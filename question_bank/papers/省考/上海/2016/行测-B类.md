@@ -209,7 +209,7 @@ XX市卫生和计划生育委员会办公室
 <!-- hyz-question-id: 01a19c89-f0fa-7aa2-a884-00cfd90a9d88 -->
 ```yaml
 module: 常识判断
-category: null
+category: 法律常识
 topics: []
 materials: []
 passage_source: null
@@ -831,7 +831,7 @@ D选项过氧化氢化学式为H_2O_2，过氧化氢是淡蓝色的黏稠液体�
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4d20cb91b645 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -908,7 +908,7 @@ ABCD
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4d4c92e0cf51 -->
 ```yaml
 module: 常识判断
-category: null
+category: 法律常识
 topics: []
 materials: []
 passage_source: null
@@ -1419,8 +1419,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4e1a20f68794 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 经济建设
 - 重要事件
@@ -1460,8 +1460,8 @@ AC
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4e28b12a1a02 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 经济建设
 - 重要事件
@@ -1501,8 +1501,8 @@ ACD
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4e3edc742b8d -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 重要事件
 - 其他建设
@@ -1542,8 +1542,8 @@ ABCD
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4e492f28dc9f -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 时事政治
 topics:
 - 经济建设
 - 重要文件
@@ -1583,8 +1583,8 @@ ACD
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4e508e091c88 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M2
@@ -1622,8 +1622,8 @@ A选项新媒体具有危害性表述片面，新媒体既能反映社会真实�
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4e6b16ec695e -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 时事政治
 topics:
 - 政治建设
 - 重要事件
@@ -1663,8 +1663,8 @@ ABC
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4e7ad036dac0 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M2
@@ -1702,8 +1702,8 @@ ABCD
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4e87e9f35417 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M2
@@ -1741,8 +1741,8 @@ ABCD
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4e931765cdbc -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -1781,8 +1781,8 @@ ACD
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4eadc3885ae7 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -1821,8 +1821,8 @@ ACD
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4eb0f8c0c401 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -1861,8 +1861,8 @@ ABC
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4ec1bc316c9b -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -1901,8 +1901,8 @@ ABCD
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4ed59be6f6f8 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 经济常识
 topics:
 - 市场经济
 materials:
@@ -1941,8 +1941,8 @@ CD
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4eee4dd814fd -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 经济常识
 topics:
 - 市场经济
 materials:
@@ -1981,8 +1981,8 @@ AC
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4efd77674e6d -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 市场经济
 materials:
@@ -2021,8 +2021,8 @@ ABD
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4f0bb1324c4f -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 宪法
 materials:
@@ -2061,8 +2061,8 @@ ABC
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4f13d88beb69 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M5
@@ -2100,8 +2100,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4f2d15ffd4bd -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M5
@@ -2139,8 +2139,8 @@ ABC
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4f321d5baf10 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M5
@@ -2178,8 +2178,8 @@ A选项只有先有活动安排才可以部署他们的工作，所以位置不�
 
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4f4e0fbad227 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M5
@@ -2484,7 +2484,7 @@ C
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4fa0add9c82d -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -2528,7 +2528,7 @@ D
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4fbd82a01171 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -2570,7 +2570,7 @@ A项“狭路相逢”一词通常形容敌人、仇人相逢，文段形容两�
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4fcc2c51a43a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -2608,7 +2608,7 @@ C
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-4fd088d17e07 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -2782,7 +2782,7 @@ A
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-501e1d82ad00 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: 新华网《我们正被手机“禁锢”在信息孤岛上》
@@ -2824,7 +2824,7 @@ D
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-50220cc471fb -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: 南方周末卢昌海《对地球1.0我们了解多少？》
@@ -3008,7 +3008,7 @@ A
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-5062879ceaa4 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -3051,7 +3051,7 @@ D
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-507076531f71 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -3094,7 +3094,7 @@ A项“白地青花瓷”无中生有，且根据“青白瓷胎骨较清薄而�
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-508288fa8906 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -3135,7 +3135,7 @@ A项，没有提及青白瓷与宋代的联系，排除。C项仅对应第二段
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-5099b8c3b296 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -3178,7 +3178,7 @@ C
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-50ab12ff12aa -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -3219,7 +3219,7 @@ B
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-50bc04f46ec6 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -3260,7 +3260,7 @@ B
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-50cb1d05cfaf -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 词句理解题
 - 普通篇章
@@ -3301,7 +3301,7 @@ A
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-50d4cef4dda1 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 标题填入题
 - 普通篇章
@@ -3788,7 +3788,7 @@ A
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-518cfda4d9db -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3836,7 +3836,7 @@ C.对木块和铁球整体分析，两者只有重力做功，所以木块和铁
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-519f2642e1d3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3880,7 +3880,7 @@ D项，声音的传播需要介质，真空下声音无法传播，玻璃抽成�
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-51a9cdd83936 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3920,7 +3920,7 @@ B
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-51bda826868b -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3962,7 +3962,7 @@ A
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-51c80ff1e2d4 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -4008,7 +4008,7 @@ D项，报警器的报警电压值一定，调节R_2的阻值，要使b点电势
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-51d476542229 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -4046,7 +4046,7 @@ B
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-51e89acf5e9c -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -4088,7 +4088,7 @@ D项，运动员下落过程中，高度降低，重力势能减小，即D项正
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-51fe0a5e0521 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -4128,7 +4128,7 @@ D
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-5205e3e9be1d -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -4168,7 +4168,7 @@ A
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-521581c021d7 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -4206,7 +4206,7 @@ D
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-522516c97396 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4312,7 +4312,7 @@ D项：小李改变交流方式，属于方法的改变，不符合“生理适�
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-524093cf2395 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4365,7 +4365,7 @@ D项：有居民要求物业将绿地改为停车位，不属于共同行动，�
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-525543bfaa75 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -4471,7 +4471,7 @@ D项：病菌并未体现是具体哪种生物，也未体现生物规律，不�
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-527c17a5c31c -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -5040,7 +5040,7 @@ B
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-534a43bc83f4 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials: []
 passage_source: null
@@ -5692,7 +5692,7 @@ A
 <!-- hyz-question-id: 01a19c89-f0fc-7831-adef-e4960b464a84 -->
 ```yaml
 module: 资料分析
-category: 比重
+category: 增长
 topics:
 - 两期比重
 - 统计图
@@ -6028,7 +6028,7 @@ C
 <!-- hyz-question-id: 01a19c89-f0fc-7831-adef-e517017c3d50 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics:
 - 综合资料
 - 简单加减计算

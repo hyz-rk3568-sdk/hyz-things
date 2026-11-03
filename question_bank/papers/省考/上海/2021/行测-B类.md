@@ -486,7 +486,7 @@ A
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-31f6aa8f1bff -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: 新华网《有了高铁，为何还要研制时速600公里磁浮列车》
@@ -532,7 +532,7 @@ D项，“最高速度约为600公里”成分残缺，应为“最高速度约�
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-32053ef9c184 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -572,7 +572,7 @@ B、C、D三项均没有病句，只有A项存在语序不当的语病，将A项
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-321de8330f64 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials: []
 passage_source: null
@@ -612,7 +612,7 @@ B项“与其说······不如说······”、C项“宁可······
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-3221cbbae467 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials: []
 passage_source: null
@@ -889,7 +889,7 @@ C项，“法律”与“信用”均是契约在进行中的两个方面，是�
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-32841ace24e3 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: null
@@ -1159,7 +1159,7 @@ D项，由第二段“若戏而必行之，是周公教王遂过也”，可译�
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-32f6f3f2b992 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 其他
 materials:
@@ -1207,7 +1207,7 @@ D项，“且家人、父子尚不能以此自克，况号为君臣者邪！”�
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-3304479691d7 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 其他
 materials:
@@ -1255,7 +1255,7 @@ D项，根据最后一段内容可知，文段并未提及这些内容是证明�
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-3317fedcc681 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 其他
 materials:
@@ -1303,7 +1303,7 @@ D项，文段并未体现出“作者与古人隔空辩论”“双方的激烈�
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-3324dab7a0d4 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1343,7 +1343,7 @@ C
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-333784377708 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1381,7 +1381,7 @@ B
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-3341f18fb0c5 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1429,7 +1429,7 @@ D项，若Q_1 = Q = U_1^2/(0.5R) t，U1^2=0.5U^2，U_1=√(1/2)U，错误。
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-335cbc366844 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1475,7 +1475,7 @@ D项：由以上分析可知，参加反应的甲为54克，生成的丙为30克
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-33650a91d1ae -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1519,7 +1519,7 @@ D项，10mA=0.01A，家庭电路的电压为220V，若电流为0.01A，根据P=U
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-33760b8a29aa -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1566,7 +1566,7 @@ D项：蚂蚁从a点向上爬时，摩擦力向上，达到最高点时，摩擦
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-33845c2336e0 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1610,7 +1610,7 @@ D项：设小球的质量为m，分析小球的受力情况，小球在下降过
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-339d9a77dcf8 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1668,7 +1668,7 @@ D项：陶瓷是粘土、石英等混合烧制而成的，属于混合物，但�
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-33a5c2f74b21 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1714,7 +1714,7 @@ D项，碳酸氢铵（NH4HCO3）容易分解挥发，损失肥效，施用后要
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-33bcd25e59be -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1758,7 +1758,7 @@ D项：利用高锰酸钾加热生产氧气，产物还有锰酸钾和二氧化�
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-33c3c9245266 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2919,7 +2919,7 @@ D项：该项说明该药物配方有记载可依，但是没提到该药物对�
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-35337372cc0a -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -2968,7 +2968,7 @@ B
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-354e25f1e7a8 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -3710,8 +3710,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-365126714920 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 一般增长率
 - 综合资料
@@ -3753,8 +3753,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-366cd0cf0149 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 增长量比较
 - 综合资料
@@ -3804,8 +3804,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-367f2ea5e6c8 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 一般增长率
 - 综合资料
@@ -3879,8 +3879,8 @@ issues:
 
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-369d71247054 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -3920,8 +3920,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-36ac5561e672 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 增长量比较
 - 综合资料
@@ -3973,8 +3973,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-36b59dc5b95c -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 混合比重
 - 综合资料
@@ -4018,8 +4018,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f365-7ea1-8ddf-36cfcef94510 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 增长量比较
 - 综合资料
@@ -4067,8 +4067,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f366-7523-912f-d294d72a70c1 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -4114,8 +4114,8 @@ D项：定位表格材料，2016-2019年间，年末人口数据中，2016年澳
 
 <!-- hyz-question-id: 01a19c89-f366-7523-912f-d2abe013f2ff -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 倍数
 topics:
 - 比值计算
 - 综合资料
@@ -4155,8 +4155,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f366-7523-912f-d2b062d89b71 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 一般增长率
 - 综合资料
@@ -4196,8 +4196,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f366-7523-912f-d2ccf6856e88 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 平均数
 topics:
 - 现期平均数
 - 综合资料
@@ -4237,8 +4237,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f366-7523-912f-d2d3699ef1ed -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 一般增长率
 - 综合资料
@@ -4280,8 +4280,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f366-7523-912f-d2e698d27834 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -4893,7 +4893,7 @@ D项正确，某区人民法院对某区公安局的强制措施进行合法性�
 <!-- hyz-question-id: 01a19c89-f366-7523-912f-d3b768ac7572 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4939,7 +4939,7 @@ D项错误，政策制定是针对公共政策问题提出并选择解决方案�
 <!-- hyz-question-id: 01a19c89-f366-7523-912f-d3cc7e3d01d4 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4981,7 +4981,7 @@ C
 <!-- hyz-question-id: 01a19c89-f366-7523-912f-d3dec2c430f5 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5027,7 +5027,7 @@ D项错误，基层群众自治制度，是依照宪法和法律，由居民（�
 <!-- hyz-question-id: 01a19c89-f366-7523-912f-d3e627ff59a7 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5075,7 +5075,7 @@ D项正确，国家管制枪支弹药体现了法律规制功能。
 <!-- hyz-question-id: 01a19c89-f366-7523-912f-d3f6cf3d057a -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5490,8 +5490,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f366-7523-912f-d48d3edd911e -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 经济建设
 materials:
@@ -5538,8 +5538,8 @@ D项正确，1992年7月26日，经原国家外经贸部批准，我国第一家
 
 <!-- hyz-question-id: 01a19c89-f366-7523-912f-d4901632a8cf -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 经济建设
 materials:
@@ -5580,8 +5580,8 @@ ACD
 
 <!-- hyz-question-id: 01a19c89-f366-7523-912f-d4a719a4ac75 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 时事政治
 topics:
 - 经济建设
 materials:
@@ -5894,8 +5894,8 @@ issues:
 
 <!-- hyz-question-id: 01a19c89-f366-7523-912f-d5367871c8a8 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 民法典
 materials:
@@ -5936,8 +5936,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f366-7523-912f-d54777869bb6 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 民法典
 materials:
@@ -5978,8 +5978,8 @@ ABC
 
 <!-- hyz-question-id: 01a19c89-f366-7523-912f-d5560afcc072 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 民法典
 materials:
@@ -6020,8 +6020,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f366-7523-912f-d565f4738acc -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 民法典
 materials:

@@ -313,7 +313,7 @@ D项错误，神舟十四号是中国空间站建造阶段第二次飞行任务�
 <!-- hyz-question-id: 01a19c8a-2910-7260-9029-ded97d0c0ffd -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -797,7 +797,7 @@ D项错误，《意见》中未涉及政务服务事项“跨省通办”的途�
 <!-- hyz-question-id: 01a19c8a-2910-7260-9029-df7f7b7aca9b -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -845,7 +845,7 @@ D项正确，从图片看，秦国统一后的“马”字与原秦国字示例�
 <!-- hyz-question-id: 01a19c8a-2910-7260-9029-df832e9fde78 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -893,7 +893,7 @@ D项错误，创新思维是指以新颖独创的方法解决问题的思维过�
 <!-- hyz-question-id: 01a19c8a-2910-7260-9029-df91e238f5c1 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -989,7 +989,7 @@ D项，“艺术化表现”仅对应文中对“再现”进行解释说明的�
 <!-- hyz-question-id: 01a19c8a-2910-7260-9029-dfb27dbb989b -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1085,7 +1085,7 @@ D项，根据“在自然界中，形式对称性的生成，源自受到作用�
 <!-- hyz-question-id: 01a19c8a-2910-7260-9029-dfd5d0d340fd -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -1473,7 +1473,7 @@ D项，根据“从构成的材料和信号处理过程的方式来看，它们�
 <!-- hyz-question-id: 01a19c8a-2910-7260-9029-e059e178e854 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -2117,7 +2117,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2910-7260-9029-e1295f607b8c -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 逻辑填空题
 - 普通篇章
@@ -2160,7 +2160,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2910-7260-9029-e13da4b3966e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2205,7 +2205,7 @@ A项“用数学建立各研究对象之间的映射关系”、B项“对事物
 <!-- hyz-question-id: 01a19c8a-2910-7260-9029-e14b276403fc -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2252,7 +2252,7 @@ D项，根据“例如，卫星遥感通过云图可以很直观地显示各种�
 <!-- hyz-question-id: 01a19c8a-2910-7260-9029-e1563a332791 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2301,7 +2301,7 @@ D项，根据第二段“自然科学的分析、对规律现象的确定性描�
 <!-- hyz-question-id: 01a19c8a-2910-7260-9029-e169fd251a9a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -3115,7 +3115,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7a74d95cbc06 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3910,7 +3910,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7b8857e1f582 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3952,7 +3952,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7b992f43cd2a -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3994,7 +3994,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7ba9887ac4f1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4036,7 +4036,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7bba691618ce -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4078,7 +4078,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7bc15d2efc52 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4665,7 +4665,7 @@ D项：该项仅说明用户在使用过程中可以重新设定某些APP获取�
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7c77736e45fe -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -4730,7 +4730,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7c85f6917385 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -5094,7 +5094,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7ceb5e1ceb4f -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M3
@@ -5155,7 +5155,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7cfabd1dcfc6 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M3
@@ -5278,7 +5278,7 @@ D项：大学组织学生党员到市郊革命烈士陵园开展义务宣讲活�
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7d1f3f2b9f91 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 拆词
 materials:
@@ -5332,7 +5332,7 @@ D项：某知名玩具公司利用的是世界杯的热度推出了足球玩具�
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7d2fcf463461 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5386,7 +5386,7 @@ D项：某地依托城市洪涝数值模拟模型发布了市区积水地图，�
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7d32dff1b393 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5440,7 +5440,7 @@ D项：小邓购买了心仪已久的手机，说明是因喜爱该手机而购�
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7d45eb1096ce -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5548,7 +5548,7 @@ D项：“何当共剪西窗烛，却话巴山夜雨时”的意思是：什么�
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7d6610a4a62e -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -5658,7 +5658,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7d8f3d8fc3b5 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -5766,7 +5766,7 @@ D项：该图工具中横杆的一端并未连接水桶，另一端也并未悬�
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7da15552b5d8 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -5805,7 +5805,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7db3b37a6142 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -5844,7 +5844,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7dc981287659 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -5883,7 +5883,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7dd2fb370daa -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -5922,7 +5922,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7de20933fe0d -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -5967,7 +5967,7 @@ D项：定位文字材料第三段可得，2021年全国地表水考核断面中
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7df6a9e95161 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6016,7 +6016,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7e0a86a444db -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -6055,7 +6055,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7e1e1e6aec5b -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6094,7 +6094,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7e26cdb5d4a4 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6133,7 +6133,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7e324c58aecc -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -6178,7 +6178,7 @@ D项：定位统计表可知，“十三五”时期，我国制作综艺益智�
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7e46c231eb95 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -6217,7 +6217,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7e53750c4485 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -6256,7 +6256,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7e6d55ed3f31 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -6321,7 +6321,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7e7ae87f5d95 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6
@@ -6360,7 +6360,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7e83df326274 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -6405,7 +6405,7 @@ D项，定位表格材料可得：2021、2022年受访者使用智能手机挂�
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7e9d6df2c79e -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M7
@@ -6444,7 +6444,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7ea04b65f533 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7
@@ -6493,7 +6493,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7ebe54df34b6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M7
@@ -6532,7 +6532,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7ecd696bb2a0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7
@@ -6571,7 +6571,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7edf0a40c04d -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M7

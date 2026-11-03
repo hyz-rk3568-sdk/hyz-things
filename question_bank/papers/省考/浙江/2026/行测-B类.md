@@ -2007,7 +2007,7 @@ D项，文段仅提到“《史记》被当作诽谤愤怨之书”，但未解�
 <!-- hyz-question-id: 01a19c8a-3da9-7d43-b845-b02247ff508e -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -2103,7 +2103,7 @@ D项，根据“熁（xié）盏，预热茶盏，相当于现在的‘温杯’
 <!-- hyz-question-id: 01a19c8a-3da9-7d43-b845-b04b3f2f56c3 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 特殊问法
 materials: []
@@ -2150,7 +2150,7 @@ D项，对应文段“因此”之前的内容，并非将造纸与修复技术�
 <!-- hyz-question-id: 01a19c8a-3da9-7d43-b845-b05d10f59c42 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 特殊问法
 materials: []
@@ -2195,7 +2195,7 @@ C项，文段中并未对“人工智能在写作领域掀起变革”作例证�
 <!-- hyz-question-id: 01a19c8a-3da9-7d43-b845-b06a834fc34b -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-其他
 - 主题词
@@ -2246,7 +2246,7 @@ D项，缺少文段核心话题“量子手环”，且文段重点强调量子�
 <!-- hyz-question-id: 01a19c8a-3da9-7d43-b845-b073700b01bc -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics:
 - 语句填空题
 - 普通篇章
@@ -2295,7 +2295,7 @@ D项，“赶紧开始挖吧！”表达出了急于“挖宝”的迫切心情�
 <!-- hyz-question-id: 01a19c8a-3da9-7d43-b845-b083517e61ae -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -3921,7 +3921,7 @@ D项：木雕是一种雕塑艺术，二者为种属关系，糯米经过发酵�
 <!-- hyz-question-id: 01a19c8a-3da9-7d43-b845-b2c19a5263f3 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -3976,7 +3976,7 @@ D项：销售员因业绩压力自发对产品产生强烈信心，未体现其�
 <!-- hyz-question-id: 01a19c8a-3da9-7d43-b845-b2d14b6c5ae6 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4084,7 +4084,7 @@ D项：跨文化研究中不同国家的礼仪规范差异，礼仪规范是外�
 <!-- hyz-question-id: 01a19c8a-3da9-7d43-b845-b2f62dcded52 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -4192,7 +4192,7 @@ D项：该项中的中国为“生产国”，英国为“消费国”，荷兰�
 <!-- hyz-question-id: 01a19c8a-3da9-7d43-b845-b319f0951acd -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -4245,7 +4245,7 @@ D项：敲击瓶底或大力甩瓶身让粘在瓶底的番茄酱流出，不符�
 <!-- hyz-question-id: 01a19c8a-3da9-7d43-b845-b32c0b6db11e -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -4355,7 +4355,7 @@ D项：失足青年的家庭一般都不稳定，符合“在被研究现象出�
 <!-- hyz-question-id: 01a19c8a-3da9-7d43-b845-b345fc664f6b -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4408,7 +4408,7 @@ D项：人形机器人符合“智能体”，突然看到被困群众，立马�
 <!-- hyz-question-id: 01a19c8a-3da9-7d43-b845-b35abc997a07 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5565,7 +5565,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3daa-7760-84df-9f4cec83e314 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics:
 - 综合资料
 - 简单加减计算

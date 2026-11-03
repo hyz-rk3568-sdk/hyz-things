@@ -147,7 +147,7 @@ D项错误，根据《中华人民共和国民法典》第一千零六十七条�
 <!-- hyz-question-id: 01a19c8a-3895-7452-bdbf-f1dae2e0f4b3 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -185,7 +185,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3895-7452-bdbf-f1e9b960fb1f -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -1796,7 +1796,7 @@ C项：文段一直在论述家庭氛围不和谐、缺少父母关爱的情况�
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-daf0cb033af2 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1892,7 +1892,7 @@ D项，根据文段“随着森林、田野中物种的丧失可能导致某些�
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-db1070aca01a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 主题词
 - 关联词-转折
@@ -2145,7 +2145,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-db62556ac5cd -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -2237,7 +2237,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-db8eaa7ec53c -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -2284,7 +2284,7 @@ D项“犯下罪恶”出现在反面论证当中的结果部分，并且文段�
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-db9939fbee98 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -2378,7 +2378,7 @@ C项，对应文段第二句话，即“科学技术的发展弱化环境要素�
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-dbb02b4aa03e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2416,7 +2416,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-dbcc8f496003 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2454,7 +2454,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-dbd7d498192e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2492,7 +2492,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-dbebdad8dbf2 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2530,7 +2530,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-dbf359729adb -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2568,7 +2568,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-dc09b2833b37 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2606,7 +2606,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-dc1052142be1 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2644,7 +2644,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-dc289050e9a4 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2682,7 +2682,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-dc33dd85d0bf -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2726,7 +2726,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-dc48c9118045 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3614,7 +3614,7 @@ C项：画边法，如下图所示，从三角形顶点边开始在三角形面�
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-dd922040f665 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3776,7 +3776,7 @@ D项：烟草受损起决定性因素为船舶进水，船舶进水属于近因�
 <!-- hyz-question-id: 01a19c8a-3896-7f11-a844-ddc41cc05c3a -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -5502,7 +5502,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3897-7242-871a-574b29b94957 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 直接找数
 - 综合资料

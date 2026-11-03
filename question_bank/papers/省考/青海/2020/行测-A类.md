@@ -498,7 +498,7 @@ D项错误，在股市中，跟庄是指跟随大资金做同方向的操作。�
 <!-- hyz-question-id: 01a19c8a-60b7-7511-9f23-79f3d6f4b524 -->
 ```yaml
 module: 常识判断
-category: null
+category: 人文常识
 topics: []
 materials: []
 passage_source: null
@@ -2111,7 +2111,7 @@ C
 <!-- hyz-question-id: 01a19c8a-60b7-7511-9f23-7c18d47ffb02 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-其他
 - 关联词-因果
@@ -2209,7 +2209,7 @@ D项，根据“研究人员发现在大脑中存在着不同种类和巨大数�
 <!-- hyz-question-id: 01a19c8a-60b7-7511-9f23-7c3a1c1f175d -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -2305,7 +2305,7 @@ D项，根据文段可知“黑天鹅”是小概率事件，“灰犀牛”是�
 <!-- hyz-question-id: 01a19c8a-60b7-7511-9f23-7c5d828c203e -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -2354,7 +2354,7 @@ C项“火星自身具有杀菌自净的能力”属于结论前的内容，非�
 <!-- hyz-question-id: 01a19c8a-60b7-7511-9f23-7c68aea765ae -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: 《尊重哲学》
@@ -2402,7 +2402,7 @@ D项，文段讲述的是苏格拉底三位学生的不同做法，而非“苏�
 <!-- hyz-question-id: 01a19c8a-60b7-7511-9f23-7c753d549576 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 - 关联词-转折
@@ -2644,7 +2644,7 @@ D项，根据“冰行星或冰卫星将直接进入极端炎热的温室逃逸�
 <!-- hyz-question-id: 01a19c8a-60b7-7511-9f23-7cc50fea6a4b -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-对策
 - 主题词
@@ -2793,7 +2793,7 @@ D项，根据“简而言之，隐身衣使用的超材料，可以让雷达波�
 <!-- hyz-question-id: 01a19c8a-60b7-7511-9f23-7cf6eae9f17e -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 - 关联词-对策
@@ -4951,7 +4951,7 @@ D项：“世味年来薄似纱”与“斥责”无明显逻辑关系，“金�
 <!-- hyz-question-id: 01a19c8a-60b8-79c1-9eae-46d0a5b37011 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -5004,7 +5004,7 @@ D项：小红听奶奶回忆自己在旧社会的苦日子时，禁不住潸然�
 <!-- hyz-question-id: 01a19c8a-60b8-79c1-9eae-46e40d34d9ab -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5057,7 +5057,7 @@ D项：岳飞的母亲为了激励岳飞而刺字，并非是想在他人面前�
 <!-- hyz-question-id: 01a19c8a-60b8-79c1-9eae-46f479e7cbba -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -5110,7 +5110,7 @@ D项：热水中加入冷水，符合“介质内无宏观运动”，冷水和�
 <!-- hyz-question-id: 01a19c8a-60b8-79c1-9eae-470eaf0c74e5 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5169,7 +5169,7 @@ D项：围海造田是把海洋变成陆地、田地，有效利用海洋空间�
 <!-- hyz-question-id: 01a19c8a-60b8-79c1-9eae-47163207aa8e -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -5222,7 +5222,7 @@ D项：某招聘网站给男性推送高薪职位的广告次数是女性的6倍
 <!-- hyz-question-id: 01a19c8a-60b8-79c1-9eae-472ee669ec4c -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -5277,7 +5277,7 @@ D项：从轻发落戴罪立功，意思是处罚从宽，争取立下功劳，�
 <!-- hyz-question-id: 01a19c8a-60b8-79c1-9eae-4738d4d34f1b -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -5332,7 +5332,7 @@ D项：小陈在众筹平台匿名捐款,其中众筹平台符合“互联网创
 <!-- hyz-question-id: 01a19c8a-60b8-79c1-9eae-4744a7921c6e -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -5391,7 +5391,7 @@ D项：某工厂排出了大量废水和有害气体，给周围居民带来健�
 <!-- hyz-question-id: 01a19c8a-60b8-79c1-9eae-475d22a884dc -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -5446,7 +5446,7 @@ D项：蝉噪林逾静，鸟鸣山更幽，出自南朝王籍的《入若耶溪�
 <!-- hyz-question-id: 01a19c8a-60b8-79c1-9eae-4762a0ea9320 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -6138,7 +6138,7 @@ D项：定位表格，2017年A市气候调节价值年值为732.34，水源涵�
 <!-- hyz-question-id: 01a19c8a-60b8-79c1-9eae-4862d5de2fde -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 直接找数
 - 综合资料
@@ -6273,7 +6273,7 @@ D
 <!-- hyz-question-id: 01a19c8a-60b8-79c1-9eae-489b9aa6e464 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 现期计算
 - 综合资料

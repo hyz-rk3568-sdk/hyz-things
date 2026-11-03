@@ -903,7 +903,7 @@ D项，“助力又好又快发展”对应文段“高质量发展”，表述�
 <!-- hyz-question-id: 01a19c8a-2845-7591-b6e6-7b4db82752a5 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -999,7 +999,7 @@ C项，只提及“法治”，前文“深化经济法的立法理论·····
 <!-- hyz-question-id: 01a19c8a-2845-7591-b6e6-7b6b41bd4c02 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1144,7 +1144,7 @@ A项和D项比较，A项的“医疗领域”和D项的“患者自决权”均�
 <!-- hyz-question-id: 01a19c8a-2845-7591-b6e6-7b966768b2a3 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 - 关联词-转折
@@ -1290,7 +1290,7 @@ D项，根据“积极宣传推广预防儿童青少年近视的视力健康科�
 <!-- hyz-question-id: 01a19c8a-2845-7591-b6e6-7bcab52dd705 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-举例子
 - 关联词-因果
@@ -1389,7 +1389,7 @@ D项，根据“‘DC/EP’不需要网络就能支付”及“‘DC/EP’的双
 <!-- hyz-question-id: 01a19c8a-2845-7591-b6e6-7be59973c9b5 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1540,7 +1540,7 @@ D项，根据“刹那永恒，物我两忘”可知，“可使人纯净安详�
 <!-- hyz-question-id: 01a19c8a-2845-7591-b6e6-7c14b94f0949 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -2070,7 +2070,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2845-7591-b6e6-7ccd01d54515 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 词句理解题
 - 普通篇章
@@ -2119,7 +2119,7 @@ D项，位于第一段结尾，在“这个原理”之后，不属于其所指�
 <!-- hyz-question-id: 01a19c8a-2845-7591-b6e6-7cdc764bb041 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2168,7 +2168,7 @@ D项，第二段指出复合肥是“含有两种及两种以上养分的化肥�
 <!-- hyz-question-id: 01a19c8a-2845-7591-b6e6-7ce30cd74209 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2217,7 +2217,7 @@ D项，对应第三段“这也许是因为某些目前土壤肥料科学还没�
 <!-- hyz-question-id: 01a19c8a-2845-7591-b6e6-7cfc7da731b9 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2266,7 +2266,7 @@ D项，文中没有提到“改善土壤品质”“提升农产品质量”，�
 <!-- hyz-question-id: 01a19c8a-2845-7591-b6e6-7d040220d285 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 标题填入题
 - 普通篇章
@@ -3963,7 +3963,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f31bec8e2e48 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4009,7 +4009,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f323a568c9f4 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4051,7 +4051,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f333800a0bdd -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4093,7 +4093,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f34acf01d489 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4821,7 +4821,7 @@ D项：通过举例子说明“随手拍交通违法”小程序上线以来，�
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f41a8d96ca22 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials: []
 passage_source: null
@@ -4877,7 +4877,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f423397d10e0 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials: []
 passage_source: null
@@ -4939,7 +4939,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f437be3aede6 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4992,7 +4992,7 @@ D项：市民蒋先生受街道办委托把新医保政策编成快板，并录�
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f44f86b209fe -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5045,7 +5045,7 @@ D项：牛牛勇敢地推开轮椅，不符合“获得科学活动实践体验�
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f45e2f701a7d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5098,7 +5098,7 @@ D项：刘先生夫妇将租下的一栋小楼改造成了民宿，符合“凭�
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f46a41f608d7 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -5151,7 +5151,7 @@ D项：某高校不符合题干主体“企业”，不符合定义，排除。
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f4720a9ad2ff -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -5204,7 +5204,7 @@ D项：王师傅擅长淮扬菜，到四川后学着做川菜，是做不擅长�
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f4899555fa2d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5257,7 +5257,7 @@ D项：小李已经将计划书发给了经理，但是经理十几天之后问�
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f49929e3d98a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -5310,7 +5310,7 @@ D项：老钱不会上网，符合“老年人由于生活习惯、文化水平�
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f4a6aa92957a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5416,7 +5416,7 @@ D项：“老师”“先生”是两种不同的称呼，不涉及同一个词�
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f4c08b461644 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -5508,7 +5508,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f4e5f3b2b70a -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M2
@@ -5547,7 +5547,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f4ff1196954f -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M2
@@ -5586,7 +5586,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f501cbdf619d -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M2
@@ -5635,7 +5635,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f519f22b012b -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M2
@@ -5680,7 +5680,7 @@ D项：定位统计图材料可知，2011-2014年这四年，出生人口连续�
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f52541141b00 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -5719,7 +5719,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f53a1dea61e7 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -5768,7 +5768,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f54c194de1c8 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -5819,7 +5819,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f556c82a1290 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -5868,7 +5868,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f56974896e2a -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -5913,7 +5913,7 @@ D项：定位表格材料，可知5类指数每年的增速，发现2018年转�
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f57a8fd38931 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -5952,7 +5952,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f588f3b8548d -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -5991,7 +5991,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f593505e71aa -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -6042,7 +6042,7 @@ B项：海洋船舶工业：(1182/(1 + 11.3%)) × 11.3%≈ 1182/(1+1/9) × 1/9= 
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f5a3e01da57b -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -6085,7 +6085,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f5bd59ecb60f -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -6130,7 +6130,7 @@ D项：定位图形材料，2016—2019年，我国海洋第二产业增加值�
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f5cbb28a5003 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6169,7 +6169,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f5d0b5f29361 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6218,7 +6218,7 @@ D项：2018年全球卫星产业收入增长率=(2774−2690)/2690≈84/2690≈3
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f5e960f634a3 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6259,7 +6259,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f5f3354c7f9d -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6312,7 +6312,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f6056e470f83 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5

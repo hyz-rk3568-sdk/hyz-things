@@ -1864,7 +1864,7 @@ D项：根据“它们能爬出水面······也能爬上陆地，从一片�
 <!-- hyz-question-id: 01a19c8a-3d20-7ea3-b895-e5fd36be23c3 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-因果
 - 主题词
@@ -2305,7 +2305,7 @@ B项“言辞优美”指言辞在表达上具有高度的艺术性和美感，�
 <!-- hyz-question-id: 01a19c8a-3d20-7ea3-b895-e68a7134bc3b -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -2352,7 +2352,7 @@ B项“人类社会得以运转的基础”、D项“人类区别于其他动物
 <!-- hyz-question-id: 01a19c8a-3d20-7ea3-b895-e69691d98cbe -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-对策
 - 主题词
@@ -2500,7 +2500,7 @@ C项：文段并未提及“开发旅游消费新业态”，无中生有，且�
 <!-- hyz-question-id: 01a19c8a-3d20-7ea3-b895-e6c5a7e2774c -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-并列
 - 主题词
@@ -4120,7 +4120,7 @@ D项：青山是青翠的山，白云是白色的云，二者为并列关系；�
 <!-- hyz-question-id: 01a19c8a-3d20-7ea3-b895-e906c209b4ac -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -4173,7 +4173,7 @@ D项：奶奶照顾双目失明的爷爷，符合“专注于照护生病、受�
 <!-- hyz-question-id: 01a19c8a-3d20-7ea3-b895-e9144c5ca902 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -4226,7 +4226,7 @@ D项：某网红因害怕承担刑事责任主动删除冲突视频，说明其�
 <!-- hyz-question-id: 01a19c8a-3d20-7ea3-b895-e921ad908d1f -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -4389,7 +4389,7 @@ D项：车速指车辆运行的速度，由“车”“速”两个名词复合�
 <!-- hyz-question-id: 01a19c8a-3d21-71e2-b521-e14ada2a2e6e -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4442,7 +4442,7 @@ D项：某咨询机构根据一钢铁企业工艺流程中能耗情况提出节�
 <!-- hyz-question-id: 01a19c8a-3d21-71e2-b521-e15d7db91437 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -4495,7 +4495,7 @@ D项：用语言复述现场情况的人对犯罪过程的记忆比另一个没�
 <!-- hyz-question-id: 01a19c8a-3d21-71e2-b521-e16b09e7dd07 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -4548,7 +4548,7 @@ D项：该项指出因为组队的同事都很优秀，所以丁绩效评价较�
 <!-- hyz-question-id: 01a19c8a-3d21-71e2-b521-e17cd82763a9 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -4601,7 +4601,7 @@ D项：小赛长期忍受丈夫肢体与语言暴力，还在社交平台秀恩�
 <!-- hyz-question-id: 01a19c8a-3d21-71e2-b521-e18ecf68e678 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -5767,7 +5767,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3d21-71e2-b521-e2edf476b5ca -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 综合资料
 - 简单加减计算
@@ -5822,7 +5822,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3d21-71e2-b521-e2fad4a6cf8f -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 直接找数
 - 综合资料

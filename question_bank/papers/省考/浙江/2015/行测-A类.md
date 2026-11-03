@@ -147,7 +147,7 @@ D项错误，根据《中华人民共和国民法典》第一千零六十七条�
 <!-- hyz-question-id: 01a19c8a-3866-7ad1-8260-88d5aa83323e -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -185,7 +185,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3866-7ad1-8260-88e269e7994a -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -1796,7 +1796,7 @@ C项：文段一直在论述家庭氛围不和谐、缺少父母关爱的情况�
 <!-- hyz-question-id: 01a19c8a-3866-7ad1-8260-8b2f61418d60 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1892,7 +1892,7 @@ D项，根据文段“随着森林、田野中物种的丧失可能导致某些�
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fb84c98da6b1 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 主题词
 - 关联词-转折
@@ -2145,7 +2145,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fbd5ecdafa22 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -2237,7 +2237,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fbf1f75b8b51 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -2284,7 +2284,7 @@ D项“犯下罪恶”出现在反面论证当中的结果部分，并且文段�
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fc0f7a17290f -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -2378,7 +2378,7 @@ C项，对应文段第二句话，即“科学技术的发展弱化环境要素�
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fc26c64534df -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2416,7 +2416,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fc369160121e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2454,7 +2454,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fc40f874704a -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2492,7 +2492,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fc58441710ae -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2530,7 +2530,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fc65e6e2e2a7 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2568,7 +2568,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fc7c737cba8f -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2606,7 +2606,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fc8fa931054d -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2644,7 +2644,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fc91c159da45 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2682,7 +2682,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fcae0242d55b -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2726,7 +2726,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fcbd413d07ff -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3738,7 +3738,7 @@ C项：画边法，如下图所示，从三角形顶点边开始在三角形面�
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fe3b97a122a6 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3900,7 +3900,7 @@ D项：烟草受损起决定性因素为船舶进水，船舶进水属于近因�
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fe61ae5b158e -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3953,7 +3953,7 @@ D项：市政府公开新建垃圾填埋场选址方案，民众提出反对意�
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fe7bb4bc02ee -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -4008,7 +4008,7 @@ D项：辛某房屋被强拆，上访过程被拘留说明辛某的合法权利�
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae92-fe86c09d8fd3 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5736,7 +5736,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3867-7c81-ae93-00caf3af99f2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 直接找数
 - 综合资料

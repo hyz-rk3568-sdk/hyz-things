@@ -1101,7 +1101,7 @@ D项错误：《中华人民共和国民法典》第四百六十五条规定：�
 <!-- hyz-question-id: 01a19c8a-29ad-76d0-8efb-d795c4488e58 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1148,7 +1148,7 @@ C项，“息息相关”偏离文段中心，文段重点强调新发展阶段�
 <!-- hyz-question-id: 01a19c8a-29ad-76d0-8efb-d7a75fc959a0 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-因果
 - 关联词-对策
@@ -1396,7 +1396,7 @@ D项：根据“冷湖所在的经度区域尚属世界大型光学望远镜的�
 <!-- hyz-question-id: 01a19c8a-29ad-76d0-8efb-d7f0f96b918c -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -2076,7 +2076,7 @@ A
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-7319b8186e6b -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 逻辑填空题
 - 普通篇章
@@ -2119,7 +2119,7 @@ B
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-732b4607602d -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 词句理解题
 - 普通篇章
@@ -2168,7 +2168,7 @@ D项，“提示词工程师适配的对象”文段并未提及，无中生有�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-733cc8784460 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2217,7 +2217,7 @@ D项，根据第三段“它非文非理、非农非工······以及一种�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-73483635e2ed -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2268,7 +2268,7 @@ D项，“播音员”符合“易于标准化、模式化”的特性，最可�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-735091a1c92b -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -3904,7 +3904,7 @@ C
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-75a26597aec6 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3946,7 +3946,7 @@ B
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-75b8890ed459 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3988,7 +3988,7 @@ A
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-75c4e75b202f -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4030,7 +4030,7 @@ B
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-75daccde737e -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4072,7 +4072,7 @@ B
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-75e16f7ce15b -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4706,7 +4706,7 @@ D项：假设D项不成立，即李 且 赵，根据条件（2）可以推出王
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-769db02886ef -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -4761,7 +4761,7 @@ C
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-76a634392355 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -4816,7 +4816,7 @@ D
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-76b4f89060cc -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -5109,7 +5109,7 @@ D项：甲根据“小刘在过去的一年中连续犯下三起盗窃案”的�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-770ad77b2d24 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M3
@@ -5168,7 +5168,7 @@ C
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-771f610da259 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M3
@@ -5221,7 +5221,7 @@ A
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-77225bfd7c6a -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5275,7 +5275,7 @@ D项：卫生健康执法人员在查处无证行医过程中，符合“执法�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-773b85733fa9 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5329,7 +5329,7 @@ D项：某野生动物园分片区建了许多防护围栏，符合“人们做�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-774efd4eae57 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5383,7 +5383,7 @@ D项：多家公司推出各自的AI自然语言处理模型，有的只能简�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-77576862c86e -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5437,7 +5437,7 @@ D项：厂家对菜刀质量问题的回应，目的是为了解释菜刀因拍�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-77641d460294 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5491,7 +5491,7 @@ D项：某小区物业发布通知提醒居民，热身器材存在安全隐患�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-777344d28cdf -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5599,7 +5599,7 @@ D项：草莓种植户在销售期开放“自采自买”模式，顾客可以�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-779960a6b6fa -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5653,7 +5653,7 @@ D项：冯先生在住进民宿之前是否存在学习、工作和生活压力�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-77a447bf018e -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5707,7 +5707,7 @@ D项：电视剧中揭示了部分家庭遭遇的教育问题，展现了孩子�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-77bc24284e2f -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials:
@@ -5771,7 +5771,7 @@ B
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-77cf9260e465 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -5810,7 +5810,7 @@ A
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-77daeeb0c4a0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -5849,7 +5849,7 @@ C
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-77e61f804c81 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -5888,7 +5888,7 @@ B
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-77ff8129f8af -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -5927,7 +5927,7 @@ D
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-7801ef0fa941 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -5972,7 +5972,7 @@ D项：定位文字资料第一段可知，2023年第二季度末全国普通门
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-781ea6621710 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -6011,7 +6011,7 @@ A
 <!-- hyz-question-id: 01a19c8a-29af-7701-9dd5-846208b6e486 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -6058,7 +6058,7 @@ C
 <!-- hyz-question-id: 01a19c8a-29af-7701-9dd5-847ea4bb24ea -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6097,7 +6097,7 @@ D
 <!-- hyz-question-id: 01a19c8a-29af-7701-9dd5-848ec697e13a -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6136,7 +6136,7 @@ B
 <!-- hyz-question-id: 01a19c8a-29af-7701-9dd5-8494394cf675 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -6183,7 +6183,7 @@ D项：定位表格可知2015-2022年各年我国酱油进口量和进口额。�
 <!-- hyz-question-id: 01a19c8a-29af-7701-9dd5-84a99fb76b4b -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -6222,7 +6222,7 @@ B
 <!-- hyz-question-id: 01a19c8a-29af-7701-9dd5-84b3b95d51ea -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -6261,7 +6261,7 @@ C
 <!-- hyz-question-id: 01a19c8a-29af-7701-9dd5-84cb09f0c990 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -6300,7 +6300,7 @@ D
 <!-- hyz-question-id: 01a19c8a-29af-7701-9dd5-84d3b0c98700 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -6339,7 +6339,7 @@ A
 <!-- hyz-question-id: 01a19c8a-29af-7701-9dd5-84e734e7bbd6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -6384,7 +6384,7 @@ D项：定位文字材料第一段可得：2023年上半年，江苏省、设区
 <!-- hyz-question-id: 01a19c8a-29af-7701-9dd5-84f02e85269b -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7
@@ -6433,7 +6433,7 @@ B
 <!-- hyz-question-id: 01a19c8a-29af-7701-9dd5-850d70c5f421 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M7
@@ -6472,7 +6472,7 @@ D
 <!-- hyz-question-id: 01a19c8a-29af-7701-9dd5-8516d9b7f541 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7
@@ -6511,7 +6511,7 @@ A
 <!-- hyz-question-id: 01a19c8a-29af-7701-9dd5-8529b1b2cc8a -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7
@@ -6550,7 +6550,7 @@ C
 <!-- hyz-question-id: 01a19c8a-29af-7701-9dd5-8537ca1569ca -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7

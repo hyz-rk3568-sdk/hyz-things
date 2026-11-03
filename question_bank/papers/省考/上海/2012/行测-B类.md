@@ -436,7 +436,7 @@ B
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-ce735ca74d5d -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: null
@@ -478,7 +478,7 @@ C
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-ce8b86a7ad8a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -518,7 +518,7 @@ B项的“起来”表示动作的开始；A、C、D三项的“起来”是趋�
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-ce9f5419b8bd -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -560,7 +560,7 @@ B项的句子缺少主语，可通过去掉句首介词来达到改正的目的�
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-cea9ffe8df55 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -751,7 +751,7 @@ C
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-cee5b3bd8dd6 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: null
@@ -942,7 +942,7 @@ D项，根据文段“等到鼠类减少到一定程度，草原生态系统才�
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-cf29a304ed9e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: null
@@ -992,7 +992,7 @@ D项只描述了文段第二句的过程，没有指出结合的结果，没有�
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-cf325d780352 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: null
@@ -1042,7 +1042,7 @@ A
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-cf48d656c94d -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -1089,7 +1089,7 @@ D
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-cf52b390f033 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -1136,7 +1136,7 @@ C项是原文的复述，也正确，排除；
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-cf67b4098976 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -1185,7 +1185,7 @@ C项“所谓的环境不仅仅是指外界的空气、阳光或者各种接触�
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-cf7a5db26768 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M2
@@ -1230,7 +1230,7 @@ A、C、D三项都没有提到“儿童心理发展”这一关键词，故不�
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-cf85781990f4 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M2
@@ -1271,7 +1271,7 @@ C
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-cf9d96380b5e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M2
@@ -1318,7 +1318,7 @@ B项是对原文“人的心理，包括儿童的心理，并不是什么先天�
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-cfa6dcbe63ed -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M2
@@ -1359,7 +1359,7 @@ D
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-cfbae38705a7 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1399,7 +1399,7 @@ D
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-cfcb7b5985c4 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1439,7 +1439,7 @@ A
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-cfdea2f18707 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1481,7 +1481,7 @@ D
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-cfef665dbde1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1521,7 +1521,7 @@ B
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-cffd3de07a36 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1714,7 +1714,7 @@ A、B、D三个学科均不研究“资源最优使用效果”。
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d0326fe8cdc0 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -2068,7 +2068,7 @@ A
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d0be2ca7b3ee -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2223,7 +2223,7 @@ F项：找到图形和题干对应的面后，判断各个面位置对应关系�
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d0ef9f0e947b -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2723,7 +2723,7 @@ D
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d1728f192201 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials: []
 passage_source: null
@@ -3233,8 +3233,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d230c3df30ff -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 年均增长率
 - 综合资料
@@ -3284,8 +3284,8 @@ D项：21494/20906≈1^+。
 
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d2464aac7d0d -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 年均增长率
 - 综合资料
@@ -3335,8 +3335,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d250895c6508 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 倍数
 topics:
 - 一般增长率
 - 综合资料
@@ -3376,8 +3376,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d262fd7bcbc8 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 一般增长率
 - 综合资料
@@ -3417,8 +3417,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d271bec7204a -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -3468,8 +3468,8 @@ D项：定位柱形图，根据公式增长率 = (现期 − 基期)/基期，
 
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d28c2686f593 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -3515,8 +3515,8 @@ D项：定位柱形图，观察发现，2010年上海市常住人口中65岁及�
 
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d29c23f2413e -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 两期比重
 - 综合资料
@@ -3558,8 +3558,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d2af74da3ba7 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -3605,8 +3605,8 @@ D项，定位文字材料，第六次人口普查，总人口为2301.91万人，
 
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d2b62c41225b -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -3646,8 +3646,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d2c7aefad808 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -3687,8 +3687,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d2d42caa4225 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -3728,8 +3728,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d2eeec1131a7 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -3769,8 +3769,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d2faf273e855 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 基期比重
 - 综合资料
@@ -3810,8 +3810,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d304d427df30 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -3851,8 +3851,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d31dffffd2c3 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -3899,7 +3899,7 @@ D项：定位文字材料，全市“家电下乡”实现销售额8亿元，社
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d32f926118e5 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4019,7 +4019,7 @@ B
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d35ac3714171 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4305,7 +4305,7 @@ B、C两项错误，属于财政政策的作用，调节国民收入分配、增
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-e7917a28ac07 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4579,7 +4579,7 @@ BCD
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-e80d3f38a253 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4617,7 +4617,7 @@ D
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-e8115d5c04e6 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4829,7 +4829,7 @@ B、C、D项错误，三个选项都无法从题干中找到依据。
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-e864a468656f -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5550,8 +5550,8 @@ D选项错误，生物多样性遭破坏并不会造成土壤酸化。
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-e9727b5f08d4 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 文化建设
 materials:
@@ -5590,8 +5590,8 @@ ABC
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-e9837a418d46 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 文化建设
 materials:
@@ -5630,8 +5630,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-e99dc05b7446 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 经济常识
 topics:
 - 文化建设
 materials:
@@ -5670,8 +5670,8 @@ ABD
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-e9a894dabae6 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M8
@@ -5711,8 +5711,8 @@ CD
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-e9b021aa8a09 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M8
@@ -5752,8 +5752,8 @@ BD
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-e9c92e341a14 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M9
@@ -5791,8 +5791,8 @@ BC
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-e9d904d171bd -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M9
@@ -5830,8 +5830,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-e9eeba7356f1 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 其他建设
 materials:
@@ -5870,8 +5870,8 @@ BD
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-e9fb57580087 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 政治建设
 materials:
@@ -5910,8 +5910,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-ea0809c47ff9 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 时事政治
 topics:
 - 政治建设
 materials:
@@ -5950,8 +5950,8 @@ ABCD
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-ea17167c7028 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 时事政治
 topics:
 - 政治建设
 materials:
@@ -5990,8 +5990,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-ea23835363c3 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M12
@@ -6029,8 +6029,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-ea3191d7e6c7 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M12
@@ -6068,8 +6068,8 @@ ABC
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-ea437b484ef5 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M12
@@ -6107,8 +6107,8 @@ AC
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-ea5db3177703 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M12
@@ -6146,8 +6146,8 @@ AB
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-ea6c47a2fcd0 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M12
@@ -6185,8 +6185,8 @@ AD
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-ea7e6bd48e86 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -6225,8 +6225,8 @@ AC
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-ea88d03a73fb -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -6265,8 +6265,8 @@ CD
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-ea9d2eba3ba4 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -6305,8 +6305,8 @@ CD
 
 <!-- hyz-question-id: 01a19c89-ef8d-75d1-84a1-eaa0c93b1599 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:

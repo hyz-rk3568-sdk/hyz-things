@@ -309,7 +309,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8c8fda101179 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -348,7 +348,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8c944618a746 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -393,7 +393,7 @@ C项，“维生素K”可促进凝血因子的合成，血管破裂时起作用
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8cae347cdf31 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -432,7 +432,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8cb696c41dd7 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -471,7 +471,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8cc229187bb8 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials:
 - M1
@@ -730,7 +730,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8d2cca38e835 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -768,7 +768,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8d3371fd68a6 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -806,7 +806,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8d438bea15b6 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -844,7 +844,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8d5cf9ee0eac -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -882,7 +882,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8d60d8738ac1 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -920,7 +920,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8d748bf5864e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -958,7 +958,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8d8a667a2c2e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1002,7 +1002,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8d956148de9c -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1040,7 +1040,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8dacf5aa2363 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1078,7 +1078,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8dbba6570ca6 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1116,7 +1116,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8dc50afe5737 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -1154,7 +1154,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8ddd7b766eb5 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -1192,7 +1192,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8dea1374f730 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -1347,7 +1347,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8e2c2fed8b8b -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -1830,7 +1830,7 @@ D项河床和海底没有明显的逻辑关系，天空和朝霞是方位与事�
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8ed7dbe5149e -->
 ```yaml
 module: 判断推理
-category: null
+category: 类比推理
 topics: []
 materials: []
 passage_source: null
@@ -1870,7 +1870,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8ee46b63c912 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -1910,7 +1910,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8ef5ed17c7d8 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -1956,7 +1956,7 @@ D选项第2个字母和第3个字母不同，与题干规律不一致。
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8f00828181af -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2039,7 +2039,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8f21eb7d00fb -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2081,7 +2081,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8f33b816cad2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2123,7 +2123,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8f4b1f8d925d -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2165,7 +2165,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8f50d5c4366d -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2250,7 +2250,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2401-7291-a530-8f7b2e579182 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2300,7 +2300,7 @@ D项：选项由面f和面g构成，如图所示，题干展开图面g中的箭�
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df3-fe41ca935f87 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2983,7 +2983,7 @@ C、D项由第二步推论可知，小张不入选，小金不入选，C项和D�
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df3-ff031a71cb11 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3089,7 +3089,7 @@ D项小许对娇妻的事事好强感到压抑与不快，可见小许是以妻�
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df3-ff2fa1fc7c45 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3142,7 +3142,7 @@ D项小赵采用先易后难的原则，没有对问题进行变形、转化，�
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df3-ff3ff88d8792 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -3195,7 +3195,7 @@ D项孙先生是主动放弃美国的工作回京当高管，不满足关键词�
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df3-ff48ac506aba -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -3244,7 +3244,7 @@ A项落叶经过细菌分解，C项太空彗星雹暴袭击地球，D项火山�
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df3-ff561ad5fa8a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3293,7 +3293,7 @@ A项小赵为爷爷买保险，B项小刘为奶奶雇保姆，D项小王给父�
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df3-ff6030b980c6 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3342,7 +3342,7 @@ A项儿子再次去门口超市买盐，C项按老师教的方法解题，D项�
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df3-ff7865c18641 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -3391,7 +3391,7 @@ B项向日葵叶子变白是建化工厂之后发现的，C项白蛇不是植物
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df3-ff8acdb98617 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -3440,7 +3440,7 @@ A、B、C项的叙述结构均对应三个定义要件，符合定义。
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df3-ff9208cf6e35 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3495,7 +3495,7 @@ D项：公车私用体现了“缺点”，监督员、抓拍、网络、解释�
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df3-ffaa511cc45c -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M2
@@ -3534,7 +3534,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df3-ffb2ca68bff5 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M2
@@ -3573,7 +3573,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df3-ffcd0b3ad07a -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M2
@@ -3612,7 +3612,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df3-ffd3c0f471e5 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M2
@@ -3651,7 +3651,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df3-ffea1711e470 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M2
@@ -3702,7 +3702,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df3-fff1203bac97 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -3751,7 +3751,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df4-000b186fae19 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -3790,7 +3790,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df4-0013d5ea8794 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -3829,7 +3829,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df4-0027b6eba48d -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -3868,7 +3868,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df4-0037d1c73bef -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -3913,7 +3913,7 @@ D项，定位文字材料第二段可得：“2011年全国粮食产量57121万�
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df4-0042af49ea41 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -3952,7 +3952,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df4-0050e32d2c9f -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -4001,7 +4001,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df4-006c38acfeae -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -4040,7 +4040,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df4-007dab3245e7 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -4095,7 +4095,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df4-0088f0b7ef5f -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -4146,7 +4146,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df4-009ce2fa3d4e -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -4195,7 +4195,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df4-00a66ba81a7e -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -4234,7 +4234,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df4-00b294a825d0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -4283,7 +4283,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df4-00c894921359 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -4322,7 +4322,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df4-00dff7730d56 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -4371,7 +4371,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df4-00e2d928ada8 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -4420,7 +4420,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df4-00f28f8ebd09 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -4459,7 +4459,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df4-010bb709daae -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6
@@ -4498,7 +4498,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df4-0115bafae78e -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -4537,7 +4537,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2402-7e90-8df4-0126136f7561 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6

@@ -845,7 +845,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3714-72d2-a645-b851b782ce42 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -887,7 +887,7 @@ D项，语句杂糅，应去掉“作品本身要有”或者“缺一不可”�
 <!-- hyz-question-id: 01a19c8a-3714-72d2-a645-b86f35888a38 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -973,7 +973,7 @@ A项“热爱生活”、B项“人类的天性”、D项“现代人的生存�
 <!-- hyz-question-id: 01a19c8a-3714-72d2-a645-b88c4cb8f75d -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -1112,7 +1112,7 @@ B、C两项不全面，对读书人的影响只是“为渊驱鱼”的效果之
 <!-- hyz-question-id: 01a19c8a-3714-72d2-a645-b8bf058b0dbe -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1194,7 +1194,7 @@ A项，“理论基础”对应“康德拉吉耶夫经济长波理论或熊彼�
 <!-- hyz-question-id: 01a19c8a-3714-72d2-a645-b8da9b18b0dc -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1237,7 +1237,7 @@ A项“软实力”无中生有，排除；B、D两项，“文化力表现形�
 <!-- hyz-question-id: 01a19c8a-3714-72d2-a645-b8ef5378b95e -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -1496,7 +1496,7 @@ B、C、D三项均未包含文段主题词“保护富人”，排除。
 <!-- hyz-question-id: 01a19c8a-3714-72d2-a645-b94418421fdc -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1586,7 +1586,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3714-72d2-a645-b96ea6d7682f -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -2904,7 +2904,7 @@ D项“将家居饰品当作赠品免费送给购买者”，没有说明家居�
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-ed819fbe8d90 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -2957,7 +2957,7 @@ D项“李某不支付约定的报酬”符合“债务人不履行到期债务�
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-ed955fe1df52 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -3114,7 +3114,7 @@ D项：“走私毒品”属于犯罪行为，但“以暴力方法抗拒检查�
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-edc8e77f34dc -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3560,7 +3560,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-ee7e5e1dfd5c -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3598,7 +3598,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-ee81d669bd3b -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3636,7 +3636,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-ee9b84fd4a2f -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3723,7 +3723,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-eeb768b470e1 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -4185,8 +4185,8 @@ A
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-ef6ff63f9c33 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 新思想总论
 materials: []
@@ -4244,8 +4244,8 @@ D
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-ef7839350b7a -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 文化建设
 materials: []
@@ -4291,8 +4291,8 @@ D
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-ef80bb292103 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 文化建设
 materials: []
@@ -4330,8 +4330,8 @@ B
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-ef9e0e233657 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 宪法
 materials: []
@@ -4375,8 +4375,8 @@ D项正确，根据《中华人民共和国立法法》第七十五条第一款�
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-efa934eb1f5e -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 民法典
 materials: []
@@ -4422,8 +4422,8 @@ C
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-efb51ac3ede7 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials: []
@@ -4465,8 +4465,8 @@ D项错误，根据C项引用法条内容，该企业“可以”而不是“应
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-efc7e4ec2d64 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 民法典
 materials: []
@@ -4518,8 +4518,8 @@ D项错误，留置权指当债务人逾期不履行债务时，合法占有债�
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-efd060cf22a6 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 刑法
 materials: []
@@ -4561,8 +4561,8 @@ D
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-efe0976e6b3c -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 民法典
 materials: []
@@ -4606,8 +4606,8 @@ D项正确，甲由于收银员的疏忽，致使一件价值500元的衣服未�
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-efff0d5c38c1 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials: []
@@ -4645,8 +4645,8 @@ D
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-f00b32ca0f6f -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4689,8 +4689,8 @@ D项错误，组织职能是指按计划对企业的活动及其生产要素进�
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-f010638acff6 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 经济常识
 topics:
 - 微观经济
 materials: []
@@ -4732,8 +4732,8 @@ D项错误，外部效应指在实际经济活动中，生产者或者消费者�
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-f026312d2cd0 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 经济常识
 topics:
 - 世界历史
 materials: []
@@ -4781,8 +4781,8 @@ D项正确，2001年12月11日，中国正式加入世界贸易组织，成为�
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-f039b1a30c6a -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 科技常识
 topics:
 - 科技理论与成就
 materials: []
@@ -4836,8 +4836,8 @@ C
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-f043f8a120a9 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 科技常识
 topics:
 - 科技理论与成就
 materials: []
@@ -4883,8 +4883,8 @@ D项错误，詹姆斯·克拉克·麦克斯韦，英国物理学家、数学家
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-f05460cf5fd2 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 地理国情
 topics:
 - 中国地理
 materials: []
@@ -4928,8 +4928,8 @@ D项正确，我国海岸线总长度3.2万公里,其中大陆海岸线自鸭绿
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-f069a582b20a -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 党的历史
 materials: []
@@ -4975,8 +4975,8 @@ D项错误，中共五大于1927年4月25日至5月9日在当时革命的中心�
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-f0723cc173bb -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5017,8 +5017,8 @@ D项错误，公文版记包括主题词、抄送机关、印发机关和印发�
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-f0851c387227 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 人文常识
 topics:
 - 文学常识
 materials: []
@@ -5060,8 +5060,8 @@ B
 
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-f09258508d4d -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 科技常识
 topics:
 - 生活常识
 materials: []
@@ -5100,7 +5100,7 @@ C项错误，运动时脚扭伤肿了，在扭伤后24小时内是应该冷敷�
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-f0a2d63c9152 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 文字资料
 - 简单加减计算
@@ -5182,7 +5182,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-f0ca3411abce -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 文字资料
 - 简单加减计算
@@ -5563,7 +5563,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-f15fc760f2b4 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 统计表
 - 直接找数
@@ -5852,7 +5852,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-f1c8525dbf56 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 统计图
 - 简单加减计算

@@ -104,7 +104,7 @@ issues: []
 <!-- hyz-question-id: 01a19c8a-3c10-7193-953f-5e670d92e8d2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 统计表
 - 直接找数
@@ -186,7 +186,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3c10-7193-953f-5e8dd5ea6b47 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 统计表
 - 简单加减计算
@@ -526,7 +526,7 @@ D项：定位文字材料第一段可得：2021年上半年，S市工业战略�
 <!-- hyz-question-id: 01a19c8a-3c10-7193-953f-5f07904336e3 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 综合资料
 - 简单加减计算
@@ -3035,7 +3035,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3c11-7823-8f43-7b4bf2412ced -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-对策
 - 主题词
@@ -3085,7 +3085,7 @@ D项，“‘常识’的负面影响”并非文段重点，且表述不明确�
 <!-- hyz-question-id: 01a19c8a-3c11-7823-8f43-7b5171e13041 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-对策
 - 主题词
@@ -3231,7 +3231,7 @@ D项，“算法应用的局限性”文段并未提及，衔接不当，排除�
 <!-- hyz-question-id: 01a19c8a-3c11-7823-8f43-7b8aa386b12c -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -3327,7 +3327,7 @@ C、D两项，均偏离文段核心话题“拥抱”，排除。
 <!-- hyz-question-id: 01a19c8a-3c11-7823-8f43-7ba2b17eee85 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -3472,7 +3472,7 @@ C项，“歌咏紫薇花的名篇”为文段最后转折前的内容，与文�
 <!-- hyz-question-id: 01a19c8a-3c11-7823-8f43-7bd595dfe72f -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-并列
 - 分述句特征-引入铺垫
@@ -3619,7 +3619,7 @@ B、C两项，均未提及文段另一主题词“PAM 识别序列”，偏离�
 <!-- hyz-question-id: 01a19c8a-3c11-7823-8f43-7c099b433952 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -4176,7 +4176,7 @@ D项：无法截出，当选。
 <!-- hyz-question-id: 01a19c8a-3c11-7823-8f43-7ccf26acd6ae -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4229,7 +4229,7 @@ D项：农村出现大量富余劳动力，体现出在农业方面劳动力供�
 <!-- hyz-question-id: 01a19c8a-3c11-7823-8f43-7cdea3a126c7 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -4284,7 +4284,7 @@ D项：有线电视的信号可同时供多人使用，一个人使用时不会�
 <!-- hyz-question-id: 01a19c8a-3c11-7823-8f43-7cecb47be832 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4337,7 +4337,7 @@ D项：某AI算法通过模拟双方对抗情况获取训练数据，不断提�
 <!-- hyz-question-id: 01a19c8a-3c11-7823-8f43-7cf6bb0238bf -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4390,7 +4390,7 @@ D项：网络游戏过程中为提高游戏技术相互切磋，符合“以网�
 <!-- hyz-question-id: 01a19c8a-3c11-7823-8f43-7d0530856f58 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -4602,7 +4602,7 @@ D项：李同学面临“研究生录取”和“心仪公司入职”两个目�
 <!-- hyz-question-id: 01a19c8a-3c11-7823-8f43-7d42f1621be1 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -4657,7 +4657,7 @@ D项：城市中的博物馆图书馆集中区，符合“按照人类社会的�
 <!-- hyz-question-id: 01a19c8a-3c11-7823-8f43-7d5d3186645b -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []

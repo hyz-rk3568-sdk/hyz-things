@@ -307,7 +307,7 @@ C
 <!-- hyz-question-id: 01a19c89-f3ec-7522-acc1-8e1a3f8b1c44 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials: []
 passage_source: 《“故宫口红”遭遇市场热冷变脸尴尬了谁》
@@ -400,7 +400,7 @@ A
 <!-- hyz-question-id: 01a19c89-f3ec-7522-acc1-8e38b2102d8a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials: []
 passage_source: null
@@ -444,7 +444,7 @@ D项，“泄露国家机密”为固定搭配，“泄漏”多指液体、气�
 <!-- hyz-question-id: 01a19c89-f3ec-7522-acc1-8e48fd105efd -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -488,7 +488,7 @@ D项，“真水无香”出自明代张源《茶录品泉》：“茶者水之�
 <!-- hyz-question-id: 01a19c89-f3ec-7522-acc1-8e52ffa2c50e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: 《微量营养素 多吃可能无益》
@@ -581,7 +581,7 @@ C项，③处之前强调“添加新技术应当科学合理，不可盲从”�
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d295f86c5012 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -769,7 +769,7 @@ D项，根据“扶贫题材创作要求创作者走向现实的更深处，突�
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d2d81e9341b1 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 特殊问法
 materials: []
@@ -818,7 +818,7 @@ D项，造成“空白期”“黑暗期”的核心原因是未见到明确属�
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d2e1c32e3986 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -916,7 +916,7 @@ D项，根据“当基因发生变化时，其编码的蛋白质不能履行自�
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d305655f5459 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -965,7 +965,7 @@ D项，文章并未提及中国古代是否有啤酒，无中生有，排除。
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d31165741ec7 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1063,7 +1063,7 @@ C项，“讲解资料”通常会浅显易懂，而文章后半部分从科学�
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d33405bf505a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 标题填入题
 - 普通篇章
@@ -1962,8 +1962,8 @@ issues:
 
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d485049dd2ca -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 一般增长率
 - 综合资料
@@ -2003,8 +2003,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d49417d443a3 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -2045,7 +2045,7 @@ A
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d4a8202e3583 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics:
 - 综合资料
 - 简单加减计算
@@ -2085,8 +2085,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d4b996634f24 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 综合资料
 - 基期计算
@@ -2126,8 +2126,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d4ceeb1240af -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 两期比重
 - 综合资料
@@ -2167,8 +2167,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d4d6a4ce05b5 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 统计图
@@ -2208,8 +2208,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d4eecd4d8ca6 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 增长量比较
 - 统计图
@@ -2249,8 +2249,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d4f6fe0743e1 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 平均数
 topics:
 - 现期平均数
 - 统计图
@@ -2290,8 +2290,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d5055e5cb7a8 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 统计图
@@ -2333,8 +2333,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d511f5be5379 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 增长量比较
 - 一般增长率
@@ -2375,8 +2375,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d522dc9a195a -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 综合资料
 - 简单加减计算
@@ -2416,8 +2416,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d53e6c2f70ae -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -2465,8 +2465,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d54e132bd5f2 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 两期比重
 - 综合资料
@@ -2506,8 +2506,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d5558a01f0d1 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合资料
 - 简单加减计算
@@ -2547,8 +2547,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d563461c879e -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -2595,7 +2595,7 @@ D项：定位文字材料第一段，2020年上半年和2021年上半年，中�
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d571b4d41c23 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2641,7 +2641,7 @@ D项：碳中和是指国家、企业、产品、活动或个人在一定时间�
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d58b7ea77a0f -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2687,7 +2687,7 @@ D项：电解水是指水通电后生成氢气和氧气，此过程需要消耗�
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d59a8de8a55c -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2733,7 +2733,7 @@ D项：利用光催化将二氧化碳还原为甲酸不仅可以消耗二氧化�
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d5ab70b9365c -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2785,7 +2785,7 @@ D项：纯净物指的是由单一物质组成的物质，由上述分析可知�
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d5bae9dd38d3 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2841,7 +2841,7 @@ D项：若研究酸的种类对反应速率的影响，则应选择酸的种类�
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d5c24d29da45 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2895,7 +2895,7 @@ D项：加热1.5kg的水需要的热量Q吸=cmΔt= 4.2×10^3×1.5×50=3.15×10^5
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d5ddda05e6bd -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2943,7 +2943,7 @@ D
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d5e12fd640ca -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2989,7 +2989,7 @@ C、D两项：当风速大时，迎风板会在风力的作用下向左移动并
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d5f029e94cf2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3029,7 +3029,7 @@ D
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d60d1e3788c8 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3069,7 +3069,7 @@ B
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d61e17bb592e -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3599,7 +3599,7 @@ D
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d6debcb15a00 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4251,7 +4251,7 @@ A
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d7846f6f1fbf -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M6
@@ -4302,7 +4302,7 @@ A
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d795905b9ec9 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M6
@@ -5490,8 +5490,8 @@ C项正确，A、B、D三项错误，2021年7月14日，上海市政府官网发
 
 <!-- hyz-question-id: 01a19c89-f3ee-7102-a78f-632acdbb0331 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 新思想
 topics:
 - 政治建设
 - 重要会议讲话
@@ -5533,8 +5533,8 @@ A、B、C、D四项正确，从过程环节来看，全过程人民民主包括�
 
 <!-- hyz-question-id: 01a19c89-f3ee-7102-a78f-63355315902a -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 政治建设
 - 重要会议讲话
@@ -5576,8 +5576,8 @@ A、C、D三项正确，B项错误，党的十九大报告中提出：“坚持�
 
 <!-- hyz-question-id: 01a19c89-f3ee-7102-a78f-634812290f90 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 政治建设
 - 重要事件
@@ -5623,8 +5623,8 @@ D项正确，近年来，北京市人大常委会坚持科学立法、民主立�
 
 <!-- hyz-question-id: 01a19c89-f3ee-7102-a78f-635eb97c25b6 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 政治建设
 - 重要事件
@@ -5668,8 +5668,8 @@ C项错误，全过程人民民主是近代以来党团结带领人民长期奋�
 
 <!-- hyz-question-id: 01a19c89-f3ee-7102-a78f-636ab2625862 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 新思想
 topics:
 - 政治建设
 - 重要事件
@@ -5717,8 +5717,8 @@ D项正确，全国人大常委会法制工作委员会发言人表示，新设�
 
 <!-- hyz-question-id: 01a19c89-f3ee-7102-a78f-637ba4e14d6b -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -5767,8 +5767,8 @@ D项错误，勘验笔录是在行政程序和诉讼过程中由勘验人员对�
 
 <!-- hyz-question-id: 01a19c89-f3ee-7102-a78f-638b34019e44 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -5815,8 +5815,8 @@ D项错误，人身罚也称自由罚，是指特定行政主体限制和剥夺�
 
 <!-- hyz-question-id: 01a19c89-f3ee-7102-a78f-639edcf108c3 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -5863,8 +5863,8 @@ D项正确，根据《行政处罚法》第六十四条第八项规定：“听�
 
 <!-- hyz-question-id: 01a19c89-f3ee-7102-a78f-63aec7928828 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -5911,8 +5911,8 @@ D项正确，根据《中华人民共和国行政诉讼法》第十二条规定�
 
 <!-- hyz-question-id: 01a19c89-f3ee-7102-a78f-63b4d8104de7 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -5953,8 +5953,8 @@ A项正确，B、C、D三项错误，根据《中华人民共和国行政诉讼�
 
 <!-- hyz-question-id: 01a19c89-f3ee-7102-a78f-63c65e9595d0 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M9
@@ -5996,8 +5996,8 @@ C、D两项正确，根据材料“‘数字枢纽’借助长三角医疗健康
 
 <!-- hyz-question-id: 01a19c89-f3ee-7102-a78f-63d036c704bf -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 科技常识
 topics: []
 materials:
 - M9
@@ -6043,8 +6043,8 @@ D项错误，材料中未体现。
 
 <!-- hyz-question-id: 01a19c89-f3ee-7102-a78f-63e07203ac1c -->
 ```yaml
-module: null
-category: null
+module: 言语理解与表达
+category: 片段阅读
 topics: []
 materials:
 - M9
@@ -6090,8 +6090,8 @@ D项错误，医疗数字化转型能大大提高整个医疗体系的效率，�
 
 <!-- hyz-question-id: 01a19c89-f3ee-7102-a78f-63f9ef0c8601 -->
 ```yaml
-module: null
-category: null
+module: 言语理解与表达
+category: 片段阅读
 topics: []
 materials:
 - M9
@@ -6137,8 +6137,8 @@ D项错误，根据材料，长三角（上海）智慧互联网医院虽然借�
 
 <!-- hyz-question-id: 01a19c89-f3ee-7102-a78f-6404cfb08120 -->
 ```yaml
-module: null
-category: null
+module: 言语理解与表达
+category: 片段阅读
 topics:
 - 社会建设
 materials:

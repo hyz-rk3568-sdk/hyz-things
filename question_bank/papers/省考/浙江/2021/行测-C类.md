@@ -2114,7 +2114,7 @@ D项，“引领未来变革”无中生有，文段未体现对未来变革的�
 <!-- hyz-question-id: 01a19c8a-3b1b-7551-89dd-5844494c2f76 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 - 关联词-转折
@@ -2213,7 +2213,7 @@ D项，缺少主题词“肿瘤细胞”，偏离中心，排除。
 <!-- hyz-question-id: 01a19c8a-3b1b-7551-89dd-5868bd2b5467 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -2262,7 +2262,7 @@ D项，“中国家庭结构的变化”仅对应“同时”之前内容，表�
 <!-- hyz-question-id: 01a19c8a-3b1b-7551-89dd-5871b721b888 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -2356,7 +2356,7 @@ A项“下架不适宜未成年人的网络游戏”、B项“控制游戏在线
 <!-- hyz-question-id: 01a19c8a-3b1b-7551-89dd-589fc285e59d -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -2405,7 +2405,7 @@ D项，表述不明确，未明确指出文段的重点即应探索适合自身�
 <!-- hyz-question-id: 01a19c8a-3b1b-7551-89dd-58a2bfc3d44c -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -3815,7 +3815,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3b1b-7551-89dd-5ab40638b434 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -3982,7 +3982,7 @@ D项：乙婚前未告知有重大疾病，甲请求撤销婚姻，符合权利�
 <!-- hyz-question-id: 01a19c8a-3b1b-7551-89dd-5aee8965794a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4035,7 +4035,7 @@ D项：关于联合整治超限超载专项行动合作协议，不符合“具�
 <!-- hyz-question-id: 01a19c8a-3b1b-7551-89dd-5af157e436d2 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -4090,7 +4090,7 @@ D项：哥白尼根据在不同的时间和地点观察到的行星运行情况�
 <!-- hyz-question-id: 01a19c8a-3b1b-7551-89dd-5b0f07d6d8f3 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5176,7 +5176,7 @@ D项：该项说的是杂草稻会一直伴随水稻生长，对正常水稻的�
 <!-- hyz-question-id: 01a19c8a-3b1b-7551-89dd-5c437ba02c97 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 文字资料
 - 简单加减计算
@@ -5612,7 +5612,7 @@ D项：定位文字材料第四部分第一段和第二段，“8月份，天然
 <!-- hyz-question-id: 01a19c8a-3b1b-7551-89dd-5cee9776a11c -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 统计表
 - 简单加减计算
@@ -5694,7 +5694,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3b1b-7551-89dd-5d042dedefb6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics:
 - 统计表
 - 比值比较

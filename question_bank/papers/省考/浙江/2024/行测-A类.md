@@ -1838,7 +1838,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3c4d-7e31-bca0-685a8d62c32b -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics:
 - 逻辑填空题
 - 普通篇章
@@ -1883,7 +1883,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3c4d-7e31-bca0-6863a8a3d653 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 语句填空题
 - 普通篇章
@@ -1928,7 +1928,7 @@ A、B两项的“医生”及D项的“医学专业数据”均与前文阐述�
 <!-- hyz-question-id: 01a19c8a-3c4d-7e31-bca0-687353f99cb9 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1977,7 +1977,7 @@ D项，根据第三段“目前看来，完全依赖大模型进行独立推理�
 <!-- hyz-question-id: 01a19c8a-3c4d-7e31-bca0-6886a04a7924 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2026,7 +2026,7 @@ D项，根据第一段“极光是由于来自磁层和太阳风的带电高能�
 <!-- hyz-question-id: 01a19c8a-3c4d-7e31-bca0-689c64f68234 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2425,7 +2425,7 @@ D项，“得到越来越多人的认可”文段并未提及，无中生有，�
 <!-- hyz-question-id: 01a19c8a-3c4d-7e31-bca0-69117fc25a09 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-因果
 - 主题词
@@ -2477,7 +2477,7 @@ D项，偏离文段核心话题“市场需求”，且根据“技术是经济�
 <!-- hyz-question-id: 01a19c8a-3c4d-7e31-bca0-692fed007f8a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-对策
 - 主题词
@@ -2528,7 +2528,7 @@ D项，“珊瑚礁对海洋环境和人类社会的影响”对应前文内容�
 <!-- hyz-question-id: 01a19c8a-3c4d-7e31-bca0-6934d7983011 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 主题词
 - 关联词-转折
@@ -3897,7 +3897,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3c4e-7d91-8845-aebdc5ccd4b6 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -3952,7 +3952,7 @@ D项：69的因数包括1、3、23、69，不符合“除了1和它本身以外�
 <!-- hyz-question-id: 01a19c8a-3c4e-7d91-8845-aec67ba96745 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4005,7 +4005,7 @@ D项：有针对性地大规模部署军事进攻设施，这显示了武力或�
 <!-- hyz-question-id: 01a19c8a-3c4e-7d91-8845-aed456773a57 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -4060,7 +4060,7 @@ D项：“大江东去”的前后两部分为“大江”和“东去”，“�
 <!-- hyz-question-id: 01a19c8a-3c4e-7d91-8845-aee959ed1824 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4168,7 +4168,7 @@ D项：重工业国家丁国发现了大量矿藏资源，大批工人向采矿�
 <!-- hyz-question-id: 01a19c8a-3c4e-7d91-8845-af0a6d134a94 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -4225,7 +4225,7 @@ D项：甲对乙说如果敢动手就不退还押金，乙随后将甲打成重�
 <!-- hyz-question-id: 01a19c8a-3c4e-7d91-8845-af14f21ab28b -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -4404,7 +4404,7 @@ D项：某部门要求即使线下完成的审批事项，服务对象也要在�
 <!-- hyz-question-id: 01a19c8a-3c4e-7d91-8845-af405379800d -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -6097,7 +6097,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3c4e-7d91-8845-b151a6015b24 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 文字资料
 - 排序类

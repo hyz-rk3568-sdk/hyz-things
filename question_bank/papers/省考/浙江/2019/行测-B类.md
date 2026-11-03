@@ -544,7 +544,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3a23-7ee3-9176-71c5af522fcd -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -650,7 +650,7 @@ D项：商户交管理费会有经济压力，不符合“每人具有一种至�
 <!-- hyz-question-id: 01a19c8a-3a23-7ee3-9176-71e17a55a989 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -703,7 +703,7 @@ D项：高中生小王为了在高考中不犯错而不断复习做错的试题�
 <!-- hyz-question-id: 01a19c8a-3a23-7ee3-9176-71f51851c8df -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -756,7 +756,7 @@ D项：田某就买卖合同争议向法院起诉赵某时支付的费用，没�
 <!-- hyz-question-id: 01a19c8a-3a23-7ee3-9176-7201aceea1b1 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -809,7 +809,7 @@ D项：参加公司员工聚餐，不符合“符合公正、平等、尊严等�
 <!-- hyz-question-id: 01a19c8a-3a23-7ee3-9176-721aa4f26ed6 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -862,7 +862,7 @@ D项：“我在香港住了七天，有三天下雨，所以香港大约有一�
 <!-- hyz-question-id: 01a19c8a-3a23-7ee3-9176-72266e76e382 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3754,7 +3754,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3a24-7462-8aca-a48816336a80 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -4792,7 +4792,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3a24-7462-8aca-a5e9e0de7ce2 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -5050,7 +5050,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3a24-7462-8aca-a63a96301a04 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -5289,7 +5289,7 @@ A项“导游”、B项“地方旅游管理部门”、C项“商家能实现�
 <!-- hyz-question-id: 01a19c8a-3a24-7462-8aca-a68a2b264682 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -5338,7 +5338,7 @@ C项，“刺鼻味道对人体是无害的”无中生有，文段未提及，�
 <!-- hyz-question-id: 01a19c8a-3a24-7462-8aca-a69212110a78 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -5581,7 +5581,7 @@ D项，“识别枝蕨类植物”，文段没有提及如何识别，无中生�
 <!-- hyz-question-id: 01a19c8a-3a24-7462-8aca-a6e321fb723e -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -5630,7 +5630,7 @@ D项，“科学原理”为具体解释说明“查重”弊端的内容，排�
 <!-- hyz-question-id: 01a19c8a-3a24-7462-8aca-a6fa85f02429 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 - 关联词-转折
@@ -5813,7 +5813,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3a25-7a71-8759-283fb08d551b -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 统计表
 - 简单加减计算
@@ -6122,7 +6122,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3a25-7a71-8759-28ab5de20b2c -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics:
 - 综合资料
 - 简单加减计算

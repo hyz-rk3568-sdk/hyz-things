@@ -459,8 +459,8 @@ D项正确：根据《中华人民共和国非物质文化遗产法》，非物�
 
 <!-- hyz-question-id: 01a19c8a-29de-7c70-969f-c2af997f2cbc -->
 ```yaml
-module: 常识判断
-category: 科技常识
+module: 政治理论
+category: 马克思主义
 topics: []
 materials: []
 passage_source: null
@@ -1911,7 +1911,7 @@ D项：根据第七段“科学家在雀形目候鸟的身体中发现了一种�
 <!-- hyz-question-id: 01a19c8a-29de-7c70-969f-c4e453ce20e7 -->
 ```yaml
 module: 数量关系
-category: 数学运算
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1946,8 +1946,8 @@ D
 
 <!-- hyz-question-id: 01a19c8a-29de-7c70-969f-c4fe208a0cf5 -->
 ```yaml
-module: null
-category: null
+module: 数量关系
+category: 数字推理
 topics: []
 materials: []
 passage_source: null

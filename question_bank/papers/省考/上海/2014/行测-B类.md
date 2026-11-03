@@ -487,7 +487,7 @@ D
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a7a9841e7f03 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -531,7 +531,7 @@ D项，滥用介词造成主语残缺，应删除“对于”，或改为“对�
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a7b145c9cc9d -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -575,7 +575,7 @@ D项主语是“智慧”，补语是“说到底”，谓语是“是”，宾�
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a7c189582d92 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -619,7 +619,7 @@ D项“望之蔚然而深秀者，琅琊也”的“然”为助词，用在形�
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a7d50e46f2c9 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -667,7 +667,7 @@ D项是主谓宾+谓宾+谓宾，没有状语，排除。
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a7e82cddfad0 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -803,7 +803,7 @@ D
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a8163d626a5c -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1026,7 +1026,7 @@ B
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a865e0899726 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1075,7 +1075,7 @@ D项“亦余心之所善兮，虽九死其犹未悔。”指这些都是我内�
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a87dff164acc -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -1120,7 +1120,7 @@ C
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a882e8d86026 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -1159,7 +1159,7 @@ B
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a89fc0b42d2d -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -1198,7 +1198,7 @@ A
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a8a4f653479a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M1
@@ -1237,7 +1237,7 @@ D
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a8bffd5b46ad -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M2
@@ -1282,7 +1282,7 @@ A项是对此句的原文陈述，故A项是正确描述。而文中对灼见的
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a8cc877a8dc3 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M2
@@ -1321,7 +1321,7 @@ A
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a8d0c6c25644 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics: []
 materials:
 - M2
@@ -1360,7 +1360,7 @@ C
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a8e430e81b4a -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1400,7 +1400,7 @@ D
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a8fc51ed1219 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1440,7 +1440,7 @@ C
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a906213f3444 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1480,7 +1480,7 @@ D
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a914fe629ad7 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1522,7 +1522,7 @@ B
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a929b1525698 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1564,7 +1564,7 @@ B、C两项使用的是同样的金属棒，故不会产生电势差，不会产
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a93a8c855ceb -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1614,7 +1614,7 @@ D选项甲房间的铃铛一直响，没有开关控制，排除。
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a942ebae3fc8 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1656,7 +1656,7 @@ C
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a95e09724114 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1694,7 +1694,7 @@ A
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a96cef70926c -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1740,7 +1740,7 @@ C
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a9775786bc85 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -1788,7 +1788,7 @@ D项错误，该实验是著名的奥斯特实验，该实验说明了通电导�
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a9808e0eba1c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -1835,7 +1835,7 @@ B、C、D三项均能减少一个人的碳足迹；而A项早睡早起锻炼身�
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a9960962149e -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -1943,7 +1943,7 @@ D选项周总理在两个“马路”之间偷换了概念。
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a9bbce343bed -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -1998,7 +1998,7 @@ D项：“骑马射箭”侧重于“怎么办”，属于程序性知识，归�
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a9c48c771139 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -2255,7 +2255,7 @@ D项赤眼蜂对玉米螟虫不利，不符合要点②。
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-aa1d30265767 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -2679,7 +2679,7 @@ B
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-aab8117b4b2b -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -2829,7 +2829,7 @@ A
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-aae464a77f13 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials: []
 passage_source: null
@@ -3579,7 +3579,7 @@ D项：这四种人的总数=60-25=35人，不满足结论②，排除。
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-abe096f19bee -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3617,7 +3617,7 @@ A
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-abf04aaa3342 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数学运算
 topics: []
 materials: []
 passage_source: null
@@ -3654,8 +3654,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-ac0ec2aaa04e -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期平均数
 - 综合资料
@@ -3695,8 +3695,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-ac17cb615275 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 两期比重
 - 综合资料
@@ -3740,8 +3740,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-ac28bff709d3 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 现期比重
 - 综合资料
@@ -3781,8 +3781,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-ac3030ea9752 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -3828,8 +3828,8 @@ D项：定位表格，1973年，女性在科研工作者中的比例为10700/(10
 
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-ac4eb297e165 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 倍数
 topics:
 - 比值比较
 - 综合资料
@@ -3877,8 +3877,8 @@ D项：材料中指出所有领域中平均工资差异为18%，意为男性平�
 
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-ac57b5291f91 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 统计表
@@ -3920,8 +3920,8 @@ A项： 16~19岁群体的失业率为70/283≈1/4=25%＞10% ，满足题意，
 
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-ac6b4403b5a5 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 统计表
@@ -3961,8 +3961,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-ac73eb82fd71 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 直接找数
 - 统计表
@@ -4006,8 +4006,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-ac89324ead82 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 统计表
 - 综合分析
@@ -4053,8 +4053,8 @@ D项：定位表格，结合备注，45~54岁的女性失业率为69/1089；而5
 
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-ac9b13cb2bfd -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 统计表
 - 综合分析
@@ -4100,8 +4100,8 @@ D项：定位表格，结合备注，男性25~34岁的失业率为108/1207 ＜ 1
 
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-acae22b0be28 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 文字资料
 - 间隔增长率
@@ -4141,8 +4141,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-acb6aa82f1c7 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 基期比较
 - 文字资料
@@ -4190,8 +4190,8 @@ D项：服装行业为：56.7/1.194 ≈ 47.5，汽车制造业为：57.4/1.093�
 
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-accfb08eeeeb -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 文字资料
 - 混合增长率
@@ -4233,8 +4233,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-acd46a42fa80 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 基期比重
 - 文字资料
@@ -4276,8 +4276,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-ace38a2492c3 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 文字资料
 - 综合分析
@@ -5387,7 +5387,7 @@ D
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-bf6a18aa9a2b -->
 ```yaml
 module: 常识判断
-category: null
+category: 科技常识
 topics:
 - 物理常识
 - 自然地理
@@ -5590,8 +5590,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-bfb37d8b1d0f -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 时事政治
 topics: []
 materials:
 - M6
@@ -5629,8 +5629,8 @@ ABD
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-bfcb997f59c5 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M6
@@ -5668,8 +5668,8 @@ AC
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-bfd7e5c48b7b -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M6
@@ -5707,8 +5707,8 @@ BCD
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-bfee5219e4b9 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M6
@@ -5746,8 +5746,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-bff5a188d0bb -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 经济常识
 topics:
 - 宏观经济与调控政策
 materials:
@@ -5784,8 +5784,8 @@ ABD
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-c008d080a2f9 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 经济常识
 topics:
 - 宏观经济与调控政策
 materials:
@@ -5824,8 +5824,8 @@ ABCD
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-c01c2e1a842a -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 宏观经济与调控政策
 materials:
@@ -5864,8 +5864,8 @@ ACD
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-c02b0e306303 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 宏观经济与调控政策
 materials:
@@ -5904,8 +5904,8 @@ ABD
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-c03a074e2dcf -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -5950,8 +5950,8 @@ BC
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-c0487b8e464f -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -5990,8 +5990,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-c0570007e6b7 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -6036,8 +6036,8 @@ D项正确，根据《行政复议法》第十六条规定：公民、法人或�
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-c06392f5936c -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -6076,8 +6076,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-c07cdf64f284 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M9
@@ -6115,8 +6115,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-c08d10646c17 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M9
@@ -6160,8 +6160,8 @@ ABCD
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-c09d5b600736 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M9
@@ -6199,8 +6199,8 @@ BCD
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-c0ae944127c3 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics: []
 materials:
 - M9
@@ -6268,8 +6268,8 @@ AC
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-c0bf7d7d9941 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M10
@@ -6311,8 +6311,8 @@ C项错误，属于引用公文，所以应该使用书名号。
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-c0c925e4318e -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M10
@@ -6350,8 +6350,8 @@ AC
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-c0d0ed5d7fa7 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M10
@@ -6389,8 +6389,8 @@ A项引用标题应该是“《公文标题》（发文字号）”的格式；B
 
 <!-- hyz-question-id: 01a19c89-f044-7dc0-a557-c0e4dd394319 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M10

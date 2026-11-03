@@ -399,7 +399,7 @@ D项正确，与人们熟知的其他遗产相比，农业文化遗产最显著�
 <!-- hyz-question-id: 01a19c8a-2945-79d0-b91f-5675364b3339 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -1154,7 +1154,7 @@ D项，“艺术化表现”仅对应文中对“再现”进行解释说明的�
 <!-- hyz-question-id: 01a19c8a-2945-79d0-b91f-577ec2675c83 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -2079,7 +2079,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2945-79d0-b91f-58a191ef358a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 逻辑填空题
 - 普通篇章
@@ -2122,7 +2122,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2945-79d0-b91f-58b932fd151b -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2167,7 +2167,7 @@ A项“用数学建立各研究对象之间的映射关系”、B项“对事物
 <!-- hyz-question-id: 01a19c8a-2945-79d0-b91f-58c709fd2c8c -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2214,7 +2214,7 @@ D项，根据“例如，卫星遥感通过云图可以很直观地显示各种�
 <!-- hyz-question-id: 01a19c8a-2945-79d0-b91f-58de44e8cbcf -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -2263,7 +2263,7 @@ D项，根据第二段“自然科学的分析、对规律现象的确定性描�
 <!-- hyz-question-id: 01a19c8a-2945-79d0-b91f-58ef9fad2d42 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 篇章阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -3884,7 +3884,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0cdf355469cd -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3926,7 +3926,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0ce77211b633 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -3968,7 +3968,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0cfd42b17a6e -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4010,7 +4010,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0d04a82fc144 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4060,7 +4060,7 @@ D项：中间上边的五边形是由图③直接平移得到，颜色应该为�
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0d1b8eb2c626 -->
 ```yaml
 module: 判断推理
-category: null
+category: 图形推理
 topics: []
 materials: []
 passage_source: null
@@ -4949,7 +4949,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0e187e603203 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -5014,7 +5014,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0e25bb23f3ed -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M2
@@ -5067,7 +5067,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0e3c2e68ac08 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M3
@@ -5128,7 +5128,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0e46896f3499 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M3
@@ -5305,7 +5305,7 @@ D项：“何当共剪西窗烛，却话巴山夜雨时”的意思是：什么�
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0e7dfb68e874 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5359,7 +5359,7 @@ D项：某地依托城市洪涝数值模拟模型发布了市区积水地图，�
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0e8c9f0a6f6d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -5413,7 +5413,7 @@ D项：赵先生一年后收到欠费通知才知道有每年消费12次才能�
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0e9ab02580e3 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -5467,7 +5467,7 @@ D项：60岁的丁先生多年来一直保持着良好的运动习惯，说明�
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0ea4adab85fc -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5521,7 +5521,7 @@ D项：汪粤、徐少华、迟重瑞等演员先后在《西游记》中扮演�
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0ebf59444268 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials:
@@ -5629,7 +5629,7 @@ D项：某小区多个角落增设小片绿地，只能供该小区居民使用�
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0edbf92ec797 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials:
@@ -5683,7 +5683,7 @@ D项：张先生周末到湿地公园拍摄鸟类和游客的身影，周末不�
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0eed92bb79f1 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials:
@@ -5737,7 +5737,7 @@ D项：小丁见到老师的丈夫时找不到合适的称呼，符合“面对�
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0eff1c6a32fa -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -5776,7 +5776,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0f02e5fba197 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -5815,7 +5815,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0f16198c07df -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -5854,7 +5854,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0f20d8571465 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -5893,7 +5893,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0f3a4419db01 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -5938,7 +5938,7 @@ D项：定位文字材料第三段可得，2021年全国地表水考核断面中
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0f4a407807e6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -5977,7 +5977,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0f55a972db7f -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -6016,7 +6016,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0f6fb6b0c5fc -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6059,7 +6059,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0f758123468b -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6098,7 +6098,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0f810261cf71 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -6145,7 +6145,7 @@ D项：定位文字材料第一段可得，2021年我国机器人销售额839.0�
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0f9a36e21234 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -6184,7 +6184,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0fa9f1400d08 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -6223,7 +6223,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0fbfbdedd678 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -6288,7 +6288,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0fc22d6d32d1 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6
@@ -6327,7 +6327,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0fdbccf67688 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -6372,7 +6372,7 @@ D项，定位表格材料可得：2021、2022年受访者使用智能手机挂�
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0fe83a8d412c -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7
@@ -6421,7 +6421,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0ff0f1d20df2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M7
@@ -6460,7 +6460,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-1005d847ef7d -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7
@@ -6499,7 +6499,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-101a14203b3a -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7
@@ -6538,7 +6538,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-10269816c00c -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M7

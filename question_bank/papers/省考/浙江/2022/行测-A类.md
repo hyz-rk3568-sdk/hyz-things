@@ -1967,7 +1967,7 @@ B、C、D三项，均未提及文段核心话题“数字技术”，与前文�
 <!-- hyz-question-id: 01a19c8a-3b5e-7de3-a103-67cd0c9693ed -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-因果
 - 分述句特征-引入铺垫
@@ -2162,7 +2162,7 @@ C项，强调“工业互联网”在智能制造中的应用，缺少文段另�
 <!-- hyz-question-id: 01a19c8a-3b5e-7de3-a103-680ab0004379 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -2209,7 +2209,7 @@ C项，“北方地区水资源衰减态势”文段未提及，无中生有，�
 <!-- hyz-question-id: 01a19c8a-3b5e-7de3-a103-68199490f172 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-多角度论述
 - 关联词-对策
@@ -2512,7 +2512,7 @@ A、B、D三项均偏离文段核心话题“活态传承”，排除。
 <!-- hyz-question-id: 01a19c8a-3b5e-7de3-a103-6872db6ae2c4 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -3829,7 +3829,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3b5e-7de3-a103-6a6b7d5b436c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -3882,7 +3882,7 @@ D项：做一个叱咤风云的英雄是小林的“欲望能量”，因此他�
 <!-- hyz-question-id: 01a19c8a-3b5e-7de3-a103-6a79dd6c5c72 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -3935,7 +3935,7 @@ D项：奶茶是牛奶和茶叶水的混合物，在介绍奶茶的制作原材�
 <!-- hyz-question-id: 01a19c8a-3b5e-7de3-a103-6a8a8b4154b0 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3988,7 +3988,7 @@ D项：聘请专业的第三方机构，说明除第三方机构外可能还有�
 <!-- hyz-question-id: 01a19c8a-3b5e-7de3-a103-6a989d8a31f8 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4041,7 +4041,7 @@ D项：两位先生分别在各自手机上搜索某公司后，搜索结果的�
 <!-- hyz-question-id: 01a19c8a-3b5e-7de3-a103-6aad10a22fca -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -4149,7 +4149,7 @@ D项：安防巡检机器人通过识别工人的图像来判定工人是否佩�
 <!-- hyz-question-id: 01a19c8a-3b5e-7de3-a103-6acce3f425bd -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -4202,7 +4202,7 @@ D项：“乡贤成立妈祖慈善基金会”说明当地人认同本地区的�
 <!-- hyz-question-id: 01a19c8a-3b5e-7de3-a103-6ad127588dde -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4308,7 +4308,7 @@ D项：小张在意卫生状况是因为小张的父母都是医生，小张的�
 <!-- hyz-question-id: 01a19c8a-3b5e-7de3-a103-6afab9e13e64 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -5730,7 +5730,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3b5f-78d0-afca-9bb1bf1e06e8 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics:
 - 比值计算
 - 综合资料
@@ -5824,7 +5824,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3b5f-78d0-afca-9bd428d890e7 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 现期计算
 - 综合资料

@@ -415,7 +415,7 @@ C
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-aa79875d91f2 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -459,7 +459,7 @@ C项，“在滨江大道上参加集体婚礼的新人们今天早上都在摄�
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-aa8a55b6def8 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -499,7 +499,7 @@ A、B、D三项均表意明确，没有语病，排除。
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-aa9e41a794d6 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -597,7 +597,7 @@ D
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-aab2a52d5a95 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 语句表达
 topics: []
 materials: []
 passage_source: null
@@ -784,7 +784,7 @@ D项，“‘五运六气’的出处”文段未提及，无中生有，排除�
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-aaf92850ab5a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: 《【光明网评】对外开放，始终是中国发展的关键词》
@@ -928,7 +928,7 @@ C项“人们对石墨烯的应用寄予厚望”、D项“取得重大突破”
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-ab29eee92ce5 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-并列
 - 主题词
@@ -974,7 +974,7 @@ B项“新旧社会结构”、C项“社会环境”、D项“社会生活习�
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-ab3ca5d48259 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1023,7 +1023,7 @@ D项，根据第一段“过去的案例研究、样本研究体现的是数据�
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-ab41960bcd4a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 细节判断题
 - 普通篇章
@@ -1117,7 +1117,7 @@ A项、C项、D项均不属于总分关系，排除。
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-ab6610db94c4 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 中心理解题
 - 普通篇章
@@ -2005,8 +2005,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-aca00b9735a3 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 直接找数
 - 综合资料
@@ -2046,8 +2046,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-acb6caa785cf -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 比重
 topics:
 - 现期比重
 - 综合资料
@@ -2087,8 +2087,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-acc90b6671f0 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 年均增长量
 - 综合资料
@@ -2128,8 +2128,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-acd4c0563658 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 一般增长率
 - 综合资料
@@ -2169,8 +2169,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-ace79093fa66 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -2216,8 +2216,8 @@ D项：定位表格材料，直接查找数据，2015—2019年北京固定宽�
 
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-acf613656b2f -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 增长量比较
 - 综合资料
@@ -2308,8 +2308,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-ad1c017723ad -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 一般增长率
 - 综合资料
@@ -2359,8 +2359,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-ad2f3fb12cb4 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 增长
 topics:
 - 现期计算
 - 综合资料
@@ -2400,8 +2400,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-ad33aa31fe00 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -2447,8 +2447,8 @@ D项：定位统计表可知，2016-2020年日本论文发表量为23912篇，�
 
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-ad42e8bf73bc -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合资料
 - 基期比较
@@ -2488,8 +2488,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-ad5f78553962 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 平均数
 topics:
 - 现期平均数
 - 综合资料
@@ -2529,8 +2529,8 @@ D
 
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-ad62bb368523 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合资料
 - 简单加减计算
@@ -2570,8 +2570,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-ad7a968d5aee -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合分析
 - 综合资料
@@ -2619,8 +2619,8 @@ C
 
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-ad876ee4f461 -->
 ```yaml
-module: 数量关系
-category: null
+module: 资料分析
+category: 综合分析
 topics:
 - 综合资料
 - 简单加减计算
@@ -2671,7 +2671,7 @@ B项：通勤高峰拥堵榜中拥堵指数环比2021年第一季度增长率最
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-ad9b94750099 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2709,7 +2709,7 @@ C
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-adafa0df105c -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2755,7 +2755,7 @@ D项：石油分馏出的残留物主要是沥青，可以用于制造涂料、�
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-adb364e95f24 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2797,7 +2797,7 @@ D项：根据KNO_3与Na反应生成单质乙和两种氧化物，单质乙为N_2
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-adc3bf00d8a6 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2841,7 +2841,7 @@ D项：根据图像可知，在4℃以上时，随温度升高，水的体积增
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-add4b76d26f0 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2887,7 +2887,7 @@ C
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-aded44f4b1fa -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2927,7 +2927,7 @@ A
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-adfdea1a63c2 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -2974,7 +2974,7 @@ B
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-ae05d69a665f -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3014,7 +3014,7 @@ B
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-ae1b86919392 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3052,7 +3052,7 @@ A
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-ae2dbf29354f -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3090,7 +3090,7 @@ mAh为电量单位，充电宝剩余电量为20000mAh×45%=9000mAh，手机充�
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-ae36f6719702 -->
 ```yaml
 module: 判断推理
-category: null
+category: 科学推理
 topics: []
 materials: []
 passage_source: null
@@ -3877,7 +3877,7 @@ D项：该项说的是真正的道德之士追求的是精神的净土和心灵�
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-af43cf921f07 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials: []
 passage_source: null
@@ -4218,7 +4218,7 @@ D
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-afa5e7896f28 -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M6
@@ -4265,7 +4265,7 @@ A
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-afb3d568973e -->
 ```yaml
 module: 判断推理
-category: null
+category: 逻辑判断
 topics: []
 materials:
 - M6
@@ -4569,7 +4569,7 @@ D项正确，A、B、C三项错误，国家主席习近平9月21日在北京以�
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-0fb93378e9f7 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4691,7 +4691,7 @@ A项正确，B、C、D三项错误，1940年3月6日，中共中央发出毛泽�
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-0fe17ccd0281 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -4731,7 +4731,7 @@ D项正确，A、B、C项错误，1953年9月25日，《人民日报》正式公
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-0ff61306fd4f -->
 ```yaml
 module: 常识判断
-category: null
+category: 人文常识
 topics: []
 materials: []
 passage_source: null
@@ -4974,7 +4974,7 @@ D项正确，2021年2月21日，《中共中央 国务院关于全面推进乡�
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-1044bbf4af69 -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5020,7 +5020,7 @@ D项正确，行政技术指行政方法当中运用自然科学与工程科学�
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-105b481626fe -->
 ```yaml
 module: 常识判断
-category: null
+category: 政治常识
 topics: []
 materials: []
 passage_source: null
@@ -5478,8 +5478,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-10f91e7e9eba -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 文化建设
 materials:
@@ -5520,8 +5520,8 @@ ABD
 
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-1106046f8117 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 唯物史观
 materials:
@@ -5562,8 +5562,8 @@ A
 
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-1111896fcec4 -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 新思想
 topics:
 - 唯物史观
 materials:
@@ -5604,8 +5604,8 @@ B
 
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-112bec90583f -->
 ```yaml
-module: null
-category: null
+module: 政治理论
+category: 马克思主义
 topics:
 - 哲学-其他
 materials:
@@ -5652,8 +5652,8 @@ D项正确，时代性是马克思主义的鲜明特征，与时俱进是马克�
 
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-1137b9b147bb -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics:
 - 哲学-其他
 materials:
@@ -5694,8 +5694,8 @@ A项正确，B、C、D三项错误，唯物史观和剩余价值理论是马克�
 
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-1149234c491e -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 法理学
 materials:
@@ -5742,8 +5742,8 @@ D项正确，服务大局是社会主义法治的重要使命。材料中“《�
 
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-115bf344159c -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -5790,8 +5790,8 @@ D项错误，以经济建设为中心是指中国共产党在社会主义初级�
 
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-116dd3daced7 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -5832,8 +5832,8 @@ ABCD
 
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-117031b4141e -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -5874,8 +5874,8 @@ ACD
 
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-118e2147ad7f -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 法律常识
 topics:
 - 行政法
 materials:
@@ -5920,8 +5920,8 @@ D项错误，合法行政原则指行政机关必须遵守和执行法律，一�
 
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-11943e7f7447 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 科技常识
 topics:
 - 经济建设
 materials:
@@ -5968,8 +5968,8 @@ D项错误，城市大脑连接散落在城市各个单元的数据资源，打�
 
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-11a226995fa8 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M9
@@ -6009,8 +6009,8 @@ C项正确，A、B、D三项错误，城市大脑是支撑未来城市可持续�
 
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-11b6c8abf736 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M9
@@ -6050,8 +6050,8 @@ A、C、D三项正确，B项错误，根据第四段“上海实施垃圾分类�
 
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-11c516d80225 -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 科技常识
 topics: []
 materials:
 - M9
@@ -6097,8 +6097,8 @@ D项正确，材料所述：“如今垃圾分类场景已经将浦东新区全�
 
 <!-- hyz-question-id: 01a19c89-f3be-7bc2-96d0-11d1de057c2b -->
 ```yaml
-module: null
-category: null
+module: 常识判断
+category: 政治常识
 topics: []
 materials:
 - M9
