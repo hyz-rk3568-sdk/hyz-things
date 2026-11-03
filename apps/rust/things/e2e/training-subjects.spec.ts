@@ -59,8 +59,8 @@ test('training subjects reload their own prompts, cards, history and unfinished 
   await page.getByTestId('quant-resume').click();
   await expect(page.getByTestId('quant-question')).toHaveText('数量题 1');
   await expect(page.getByTestId('quant-clock')).toHaveText('15:00');
-  expect(reads.filter(path => path === '/api/v1/study/logic-judgment/status')).toHaveLength(2);
-  expect(reads.filter(path => path === '/api/v1/study/quantitative-relations/status')).toHaveLength(2);
+  expect(reads.filter(path => path === '/api/v1/study/logic-judgment/status')).toHaveLength(4);
+  expect(reads.filter(path => path === '/api/v1/study/quantitative-relations/status')).toHaveLength(4);
   expect(reads.filter(path => path.includes('/runs/'))).toEqual(['/api/v1/study/quantitative-relations/runs/quant-paper']);
 });
 

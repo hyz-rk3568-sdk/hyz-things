@@ -1126,9 +1126,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     </div>
                 </header>
                 <div class="min-h-0 flex-1">
-                    <TrainingSwipeSurface current={current.clone()} total={score.questions.len()}><InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",review_id,index)} responsive={true} scroll_linked={true}>
+                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",review_id,index)} responsive={true} scroll_linked={true}><TrainingSwipeSurface current={current.clone()} total={score.questions.len()}>
                         <AnalysisPanes material={score.materials[group_index].clone()} question={review_question} question_index={index} right_title="答案与解析" />
-                    </InkOverlay></TrainingSwipeSurface>
+                    </TrainingSwipeSurface></InkOverlay>
                 </div>
                 if let Some(msg)=(*error).clone() {
                     <p class="shrink-0 text-error text-xs" role="alert">{msg}</p>
@@ -1219,7 +1219,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         if active.paused_remaining_ms.is_some() {
             return html! {
                 <section class="analysis-fullscreen analysis-paused fixed inset-0 z-[70] flex h-dvh w-screen items-center justify-center overflow-hidden bg-base-200" data-testid="analysis-paused">
-                    <div class="absolute right-4 top-2"><StudyTimeInline /></div>
+                    <div class="absolute right-4 top-2" style="top:calc(var(--app-safe-top) + 0.5rem);right:calc(var(--app-safe-right) + 1rem)"><StudyTimeInline /></div>
                     <div class="rounded-box bg-base-100 p-8 text-center">
                         <h2 class="text-2xl font-bold">{"训练已暂停"}</h2>
                         <p class="mt-3 text-base-content/60">{"已隐藏材料和题目，暂停期间不能答题。刷新页面仍保持暂停。"}</p>
@@ -1308,9 +1308,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     </div>
                 </header>
                 <div class="min-h-0 flex-1">
-                    <TrainingSwipeSurface current={current.clone()} total={active.answers.len()}><InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",active.id,index)} responsive={true} scroll_linked={true}>
+                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",active.id,index)} responsive={true} scroll_linked={true}><TrainingSwipeSurface current={current.clone()} total={active.answers.len()}>
                         <AnalysisPanes material={group.material.clone()} question={question_content} question_index={index} />
-                    </InkOverlay></TrainingSwipeSurface>
+                    </TrainingSwipeSurface></InkOverlay>
                 </div>
                 if let Some(msg)=(*error).clone(){<div class="shrink-0 text-error text-xs" role="alert">{msg}</div>}
                 {analysis_navigation(current.clone(),index,&markers,false)}

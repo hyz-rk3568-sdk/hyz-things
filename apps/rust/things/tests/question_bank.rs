@@ -744,6 +744,7 @@ async fn indexed_module_and_category_drills_keep_original_sources() {
         .is_empty());
     filtered.exclude_regions = false;
     filtered.year_min = Some(2020);
+    filtered.year_max = Some(2020);
     assert!(app
         .practice_catalog(&filtered)
         .await

@@ -67,6 +67,10 @@ nav.tabs > button.tab:not(.tab-active) {
   .analysis-fullscreen.analysis-paused {
     --analysis-gutter: 1.5rem;
   }
+  .analysis-fullscreen.analysis-paused > .rounded-box {
+    max-height: calc(100% - var(--app-safe-top) - var(--app-safe-bottom));
+    overflow-y: auto;
+  }
 
   .analysis-header,
   .analysis-header > div {

@@ -680,12 +680,12 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 </div>
                             </div>
                         } else {
-                            <TrainingSwipeSurface current={index.clone()} total={current.questions.len()}>
-                                <InkOverlay question_index={item_index} responsive={true} scroll_linked={true}
+                            <InkOverlay question_index={item_index} responsive={true} scroll_linked={true}
                                     persist_key={format!("question-bank-{}-{}",current.session.id,item.item.question_id)}>
+                                <TrainingSwipeSurface current={index.clone()} total={current.questions.len()}>
                                     {main}
-                                </InkOverlay>
-                            </TrainingSwipeSurface>
+                                </TrainingSwipeSurface>
+                            </InkOverlay>
                         }
                     </div>
                     {nav}

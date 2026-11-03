@@ -233,6 +233,7 @@ test("PWA reload preserves failed IndexedDB drafts and resumes after saving", as
   await page.getByTestId("analysis-exit").click();
   await expect(page.getByTestId("analysis-run")).toBeHidden();
   await page.evaluate(()=>{(window as any).pagePreserved=true;});
+  await page.locator('summary[aria-label="应用选项"]').click();
   await page.getByRole("button",{name:"重新加载",exact:true}).click();
   await expect(page.locator("[data-pwa-status]")).toContainText("草稿保存失败，已停止刷新");
   expect(await page.evaluate(()=>(window as any).pagePreserved)).toBe(true);
@@ -324,7 +325,7 @@ test("comprehensive headers and navigation stay inside PWA safe areas at every v
   await page.getByTestId("analysis-clock").click();
   const paused=page.getByTestId("analysis-paused");
   await expect(paused).toBeVisible();
-  const pauseCard=await paused.locator("div").first().boundingBox();
+  const pauseCard=await paused.locator(".rounded-box").first().boundingBox();
   expect(pauseCard!.y).toBeGreaterThanOrEqual(32);
   expect(pauseCard!.y+pauseCard!.height).toBeLessThanOrEqual(800-24);
   await page.getByRole("button",{name:"继续计时",exact:true}).click();
@@ -712,7 +713,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   // The retired number-locating mode must not reappear in the workspace.
   await expect(page.getByTestId("training-mode-locating")).toHaveCount(0);
   await expect(page.getByRole("group", { name: "训练模式" }).getByRole("button")).toHaveText([
-    "速算训练", "错题复练", "资料分析", "判断推理", "数量关系",
+    "速算训练", "错题复练", "真题训练", "资料分析", "判断推理", "数量关系", "学习统计", "练习记录",
   ]);
   await expect(page.getByTestId("training-mode-logic-judgment")).toBeVisible();
   await page.getByTestId("training-mode-comprehensive").click();

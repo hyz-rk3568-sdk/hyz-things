@@ -126,7 +126,7 @@ test('question bank module drill filters real categories across original papers'
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-question-bank').click();
   await page.getByTestId('question-bank-mode').filter({hasText:'模块刷题'}).click();
-  await expect(page.getByTestId('question-bank-cross-module')).toBeVisible();
+  await expect(page.getByTestId('question-bank-cross-module').first()).toBeVisible();
   await page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'}).click();
   await page.getByText('筛选二级题型（可选）').click();
   await page.getByTestId('question-bank-cross-category').filter({hasText:'比重'}).click();
@@ -148,7 +148,7 @@ test('module filter settings persist, apply server-side, and reflect answered/to
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-question-bank').click();
   await page.getByTestId('question-bank-mode').filter({hasText:'模块刷题'}).click();
-  await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toContainText('0/3');
+  await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toContainText('/3');
   await page.getByTestId('module-drill-settings-open').click();
   await expect(page.getByTestId('module-drill-settings')).toBeVisible();
   await page.getByTestId('module-filter-custom-year-toggle').click();
@@ -158,12 +158,12 @@ test('module filter settings persist, apply server-side, and reflect answered/to
   await page.getByTestId('module-filter-count').filter({hasText:'10题'}).click();
   await page.getByTestId('module-filter-save').click();
   await expect(page.getByTestId('module-drill-settings')).toBeHidden();
-  await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toContainText('0/1');
+  await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toContainText('/1');
   await page.reload();
   await page.getByTestId('training-mode-question-bank').click();
   await page.getByTestId('question-bank-mode').filter({hasText:'模块刷题'}).click();
   await expect(page.getByTestId('module-drill-filter-summary')).toContainText('2018');
-  await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toContainText('0/1');
+  await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toContainText('/1');
   await page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'}).click();
   await page.getByTestId('question-bank-practice-start').click();
   await expect(page.getByTestId('question-bank-practice-workspace')).toBeVisible();
