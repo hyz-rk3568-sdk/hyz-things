@@ -626,12 +626,16 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     }
     {
         let current = workspace.as_ref().as_ref().map(|w| w.session.clone());
+        let reviewing = review.is_some();
         let immersive = props.on_immersive_change.clone();
         let paused = props.on_paper_pause_change.clone();
-        use_effect_with(current, move |value| {
+        use_effect_with((current, reviewing), move |(value, reviewing)| {
             let active = value.as_ref().is_some_and(|s| s.status == "active");
-            immersive.emit(active);
-            paused.emit(value.as_ref().is_some_and(|s| s.paused));
+            // Submitted papers keep the workspace open for review. Review is
+            // still effective study time even though the session is completed
+            // and its pause flag remains set.
+            immersive.emit(active || *reviewing);
+            paused.emit(active && value.as_ref().is_some_and(|s| s.paused));
             || ()
         });
     }
