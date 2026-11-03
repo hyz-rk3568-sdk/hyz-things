@@ -14,6 +14,9 @@ pub(super) struct TrainingSetupLayoutProps {
     pub(super) action: Option<Html>,
     #[prop_or_default]
     pub(super) heading: Option<Html>,
+    /// Use the wider content column for question-bank setup.
+    #[prop_or_default]
+    pub(super) wide: bool,
     pub(super) children: Children,
 }
 
@@ -30,7 +33,7 @@ pub(super) fn training_setup_layout(props: &TrainingSetupLayoutProps) -> Html {
         });
     }
     html! {
-        <section class={classes!("training-setup-layout",props.action.is_none().then_some("training-setup-without-action"))} data-testid={props.test_id.clone()}>
+        <section class={classes!("training-setup-layout",props.action.is_none().then_some("training-setup-without-action"),props.wide.then_some("training-setup-wide"))} data-testid={props.test_id.clone()}>
             if let Some(heading) = props.heading.clone() {
                 <div class="training-setup-heading">{heading}</div>
             }

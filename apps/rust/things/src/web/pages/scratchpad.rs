@@ -173,12 +173,18 @@ struct PaneViewport {
 
 fn pane_selector(pane: InkPane) -> &'static str {
     match pane {
-        InkPane::Material => {
-            "[data-testid='analysis-material-scroll'], [data-testid='logic-question-scroll'], [data-testid='quant-question-scroll']"
-        }
-        InkPane::Question => {
-            "[data-testid='analysis-question'], [data-testid='logic-answer-scroll'], [data-testid='quant-answer-scroll']"
-        }
+        InkPane::Material => concat!(
+            "[data-testid='analysis-material-scroll'], ",
+            "[data-testid='logic-question-scroll'], ",
+            "[data-testid='quant-question-scroll'], ",
+            "[data-testid='question-bank-practice-material-scroll']",
+        ),
+        InkPane::Question => concat!(
+            "[data-testid='analysis-question'], ",
+            "[data-testid='logic-answer-scroll'], ",
+            "[data-testid='quant-answer-scroll'], ",
+            "[data-testid='question-bank-practice-question-scroll']",
+        ),
     }
 }
 

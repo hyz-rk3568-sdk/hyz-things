@@ -8,7 +8,8 @@ async function chooseFixturePaper(page:import('@playwright/test').Page) {
   if (!(await region.evaluate(node=>(node.closest('details') as HTMLDetailsElement | null)?.open))) {
     await region.click();
   }
-  await page.getByTestId('question-bank-year').filter({hasText:'2008'}).click();
+  const year=page.getByTestId('question-bank-year').filter({hasText:'2008'});
+  if (!(await year.evaluate(node=>(node.closest('details') as HTMLDetailsElement).open))) await year.click();
   await page.getByTestId('question-bank-paper-option').filter({hasText:'行测真题训练端到端样卷'}).click();
 }
 async function openSheet(page:import('@playwright/test').Page) {
@@ -32,6 +33,7 @@ test('paper practice hides numbering and scroll tools until they are needed',asy
   await expect(page.getByTestId('question-bank-practice-heading')).toContainText('第 1/3 题');
   await expect(page.getByTestId('question-bank-practice-heading')).not.toContainText('原卷第');
   await expect(page.getByTestId('question-bank-practice-stem')).toContainText('材料中的正确选项');
+  await expect(page.getByTestId('question-bank-practice-stem')).toHaveCSS('font-weight','400');
   await expect(page.getByTestId('question-bank-practice-material-pane')).toContainText('两道题共用材料');
   await expect(page.getByRole('button',{name:'题目向下滚动'})).toHaveCount(0);
   await expect(page.getByRole('button',{name:'材料向下滚动'})).toHaveCount(0);
@@ -131,7 +133,7 @@ test('saved collections are classified by module and category before practicing'
   await expect(page.getByTestId('question-bank-collection-module').filter({hasText:'资料分析'})).toBeVisible();
   await page.getByTestId('question-bank-collection-category').filter({hasText:'比重'}).click();
   await expect(page.getByTestId('question-bank-browse-count')).toContainText('1题');
-  await expect(page.getByTestId('question-bank-collection-item')).toContainText('2008年 · 国考 · 第26题');
+  await expect(page.getByTestId('question-bank-collection-item')).toContainText(/2008\s+国考\s*·\s*第\s*26\s*题/);
   await expect(page.getByTestId('question-bank-browse-preview')).toHaveCount(0);
   await page.getByTestId('question-bank-practice-start').click();
   await openSheet(page);

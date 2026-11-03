@@ -9,6 +9,61 @@ use hyz_things::domain::question_bank::{
 
 const ROOT: &str = "/api/v1/question-bank";
 
+fn module_filter_labels(filters: &ModulePracticeFilters) -> [String; 3] {
+    let years = match (filters.year_min, filters.year_max) {
+        (None, None) => "全部年份".into(),
+        (Some(min), Some(max)) => format!("{min}—{max} 年"),
+        (Some(min), None) => format!("{min} 年以后"),
+        (None, Some(max)) => format!("{max} 年以前"),
+    };
+    let regions = if filters.regions.is_empty() {
+        "不限地区".into()
+    } else if filters.exclude_regions {
+        format!("屏蔽 {}", filters.regions.join("、"))
+    } else {
+        filters.regions.join("、")
+    };
+    [
+        years,
+        regions,
+        format!("每轮 {} 题", filters.count.unwrap_or(20)),
+    ]
+}
+
+fn paper_catalog_label(papers: &[PaperSummary]) -> String {
+    let mut years = papers
+        .iter()
+        .filter(|paper| paper.role == "primary")
+        .map(|paper| paper.year);
+    let Some(first) = years.next() else {
+        return "0 份原卷".into();
+    };
+    let (min, max, count) = years.fold((first, first, 1), |(min, max, count), year| {
+        (min.min(year), max.max(year), count + 1)
+    });
+    format!("{min}—{max} · {count} 份原卷")
+}
+
+fn history_mode_label(mode: &PracticeMode) -> &'static str {
+    match mode {
+        PracticeMode::Paper | PracticeMode::PaperModule => "套卷训练",
+        PracticeMode::Module => "模块训练",
+        PracticeMode::Wrong => "错题复练",
+        PracticeMode::Favorite => "收藏练习",
+    }
+}
+
+fn history_filter_matches(run: &PracticeSession, filter: Option<&PracticeMode>) -> bool {
+    match filter {
+        None => true,
+        Some(PracticeMode::Paper) => {
+            matches!(run.mode, PracticeMode::Paper | PracticeMode::PaperModule)
+        }
+        Some(PracticeMode::Module) => run.mode == PracticeMode::Module,
+        Some(mode) => run.mode == *mode,
+    }
+}
+
 fn history_matches_entry(entry: &PracticeMode, run: &PracticeSession) -> bool {
     let paper_run = matches!(run.mode, PracticeMode::Paper | PracticeMode::PaperModule)
         || matches!(run.mode, PracticeMode::Wrong | PracticeMode::Favorite)
@@ -103,7 +158,7 @@ fn browse_filter_url(
     format!("{ROOT}/practice/questions?{}", query.finish())
 }
 
-const WORKSPACE: &str = "training-workspace fixed inset-0 z-[70] flex h-dvh w-screen flex-col overflow-hidden bg-base-200 px-3 py-2 sm:px-6 sm:py-3";
+const WORKSPACE: &str = "question-bank-workspace training-workspace fixed inset-0 z-[70] flex h-dvh w-screen flex-col overflow-hidden bg-base-200 px-3 py-2";
 
 #[derive(Properties, PartialEq)]
 pub(crate) struct QuestionBankTrainingProps {
@@ -119,6 +174,7 @@ pub(crate) struct QuestionBankTrainingProps {
 enum Action {
     Start,
     Continue(String),
+    Repeat(String),
     Review(String),
     Answer(String),
     Pause,
@@ -177,7 +233,10 @@ struct CollectionModule {
     categories: Vec<(String, usize)>,
 }
 
-fn collection_modules(items: &[PracticeBrowseItem]) -> Vec<CollectionModule> {
+fn collection_modules(
+    items: &[PracticeBrowseItem],
+    catalog: Option<&PracticeCatalog>,
+) -> Vec<CollectionModule> {
     let mut grouped = std::collections::BTreeMap::<String, CollectionModule>::new();
     for item in items {
         let name = item.module.clone().unwrap_or_else(|| "未分类".into());
@@ -201,7 +260,17 @@ fn collection_modules(items: &[PracticeBrowseItem]) -> Vec<CollectionModule> {
             }
         }
     }
-    grouped.into_values().collect()
+    let mut modules = grouped.into_values().collect::<Vec<_>>();
+    if let Some(catalog) = catalog {
+        modules.sort_by_key(|module| {
+            catalog
+                .modules
+                .iter()
+                .position(|entry| entry.name == module.name)
+                .unwrap_or(usize::MAX)
+        });
+    }
+    modules
 }
 
 #[function_component(QuestionBankTraining)]
@@ -209,6 +278,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let papers = use_state(Vec::<PaperSummary>::new);
     let history = use_state(Vec::<PracticeSession>::new);
     let history_open = use_state(|| props.show_history);
+    let history_filter = use_state(|| None::<PracticeMode>);
+    let history_unfinished = use_state(|| false);
     let selected_paper = use_state(String::new);
     let selected_module = use_state(String::new);
     let catalog = use_state(|| None::<PracticeCatalog>);
@@ -219,6 +290,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let custom_years = use_state(|| false);
     let collection = use_state(|| None::<PracticeMode>);
     let browse = use_state(Vec::<PracticeBrowseItem>::new);
+    let wrong_total = use_state(|| 0usize);
+    let favorite_total = use_state(|| 0usize);
 
     let mode = use_state(|| props.entry_mode.clone());
     let workspace = use_state(|| None::<PracticeWorkspace>);
@@ -276,6 +349,49 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 .await
                 {
                     history.set(items);
+                }
+            });
+            || ()
+        });
+    }
+    {
+        // The collection chips show how much is waiting. Browse results are
+        // already small metadata rows, so reuse that endpoint instead of
+        // introducing a second count-only contract.
+        let wrong_total = wrong_total.clone();
+        let favorite_total = favorite_total.clone();
+        use_effect_with(*refresh, move |_| {
+            spawn_local(async move {
+                let filters = ModulePracticeFilters::default();
+                if let Ok(items) = fetch_json::<Vec<PracticeBrowseItem>>(
+                    &browse_filter_url(
+                        &PracticeMode::Wrong,
+                        &PracticeMode::Paper,
+                        "",
+                        "",
+                        "",
+                        &filters,
+                    ),
+                    "错题数量",
+                )
+                .await
+                {
+                    wrong_total.set(items.len());
+                }
+                if let Ok(items) = fetch_json::<Vec<PracticeBrowseItem>>(
+                    &browse_filter_url(
+                        &PracticeMode::Favorite,
+                        &PracticeMode::Paper,
+                        "",
+                        "",
+                        "",
+                        &filters,
+                    ),
+                    "收藏数量",
+                )
+                .await
+                {
+                    favorite_total.set(items.len());
                 }
             });
             || ()
@@ -418,6 +534,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let invoke = {
         let csrf = props.csrf.clone();
         let papers = papers.clone();
+        let history = history.clone();
         let mode = mode.clone();
         let collection = collection.clone();
         let selected_paper = selected_paper.clone();
@@ -442,6 +559,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             error.set(None);
             let csrf = csrf.clone();
             let papers = papers.clone();
+            let history = history.clone();
             let mode = mode.clone();
             let collection = collection.clone();
             let selected_paper = selected_paper.clone();
@@ -532,6 +650,44 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         }
                         Action::Continue(id) => {
                             let loaded = load_workspace(&id).await?;
+                            elapsed.set(loaded.session.elapsed_seconds);
+                            workspace.set(Some(loaded));
+                            review.set(None);
+                            index.set(0);
+                            multi_select.set(false);
+                            submit_confirm.set(false);
+                        }
+                        Action::Repeat(id) => {
+                            let run = history
+                                .iter()
+                                .find(|run| run.id == id)
+                                .cloned()
+                                .ok_or("练习记录不存在")?;
+                            let practice_mode = run.mode.clone();
+                            let request = CreatePracticeRequest {
+                                mode: practice_mode.clone(),
+                                paper_id: run.paper_id.clone(),
+                                module: run.module.clone(),
+                                category: run.category.clone(),
+                                filters: match practice_mode {
+                                    PracticeMode::Module => (*module_filters).clone(),
+                                    PracticeMode::Wrong | PracticeMode::Favorite => {
+                                        ModulePracticeFilters {
+                                            count: Some(20),
+                                            ..Default::default()
+                                        }
+                                    }
+                                    _ => ModulePracticeFilters::default(),
+                                },
+                            };
+                            let session: PracticeSession = post_json_response(
+                                &format!("{ROOT}/practice/sessions"),
+                                &csrf,
+                                &request,
+                                "重新开始真题练习",
+                            )
+                            .await?;
+                            let loaded = load_workspace(&session.id).await?;
                             elapsed.set(loaded.session.elapsed_seconds);
                             workspace.set(Some(loaded));
                             review.set(None);
@@ -717,11 +873,23 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 let refresh_edges = refresh_edges.clone();
                 Callback::from(move |_: web_sys::Event| refresh_edges.emit(()))
             };
+            let material_meta = if item.materials.len() == 1 {
+                item.materials[0].name.clone()
+            } else {
+                question
+                    .map(|q| match (&q.module, &q.category) {
+                        (Some(module), Some(category)) => format!("{module} · {category}"),
+                        (Some(module), None) => module.clone(),
+                        _ => String::new(),
+                    })
+                    .unwrap_or_default()
+            };
             let material_pane = html! {
-                <section class="flex min-h-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="question-bank-practice-material-pane">
-                    <div class={TRAINING_PANE_HEADER}>
+                <section class="flex min-h-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100" data-testid="question-bank-practice-material-pane">
+                    <div class={classes!(TRAINING_PANE_HEADER,"question-bank-pane-header")}>
                         <strong>{"原卷材料"}</strong>
-                        <div class="ml-auto">
+                        <div class="ml-auto flex shrink-0 items-center gap-2">
+                            <span class="hidden max-w-40 truncate text-[11px] text-base-content/45 sm:inline">{material_meta.clone()}</span>
                             <QuestionBankScrollButtons passage={material_scroll.clone()}
                                 can_scroll_up={material_edges.can_scroll_up}
                                 can_scroll_down={material_edges.can_scroll_down}
@@ -732,8 +900,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4"
                         data-testid="question-bank-practice-material-scroll">
                         {for item.materials.iter().map(|m| html!{
-                            <section class="mb-5"><h3 class="font-bold">{m.name.clone()}</h3>
-                                <div class="study-markdown">{render_question_bank_markdown(&m.markdown)}</div>
+                            <section class="mb-5">
+                                if item.materials.len()>1 { <h3 class="font-bold">{m.name.clone()}</h3> }
+                                <div class="study-markdown question-bank-passage">{render_question_bank_markdown(&m.markdown)}</div>
                             </section>
                         })}
                     </div>
@@ -741,8 +910,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             };
             let shared = !item.materials.is_empty();
             let body = html! {
-                <section class="flex h-full min-h-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="question-bank-practice-question-pane">
-                    <div class={TRAINING_PANE_HEADER}>
+                <section class="flex h-full min-h-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100" data-testid="question-bank-practice-question-pane">
+                    <div class={classes!(TRAINING_PANE_HEADER,"question-bank-pane-header")}>
                         <button type="button" class="btn btn-ghost btn-sm shrink-0" data-testid="question-bank-favorite"
                             onclick={Callback::from(move |_| on_favorite.emit(Action::Favorite(qid.clone())))}
                             aria-label={if starred {"取消收藏"} else {"收藏题目"}}>
@@ -750,7 +919,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         </button>
                         <strong class="min-w-0 truncate text-sm" data-testid="question-bank-practice-heading">
                             {if completed {
-                                format!("原卷第 {} 题（{}/{})", item.item.number, item_index + 1, current.questions.len())
+                                format!("原卷第 {} 题 · {}/{}", item.item.number, item_index + 1, current.questions.len())
                             } else {
                                 format!("第 {}/{} 题", item_index + 1, current.questions.len())
                             }}
@@ -770,7 +939,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         <p class="text-warning">{"题目源文件已更新或暂不可用，不能用新版题面替代旧题。"}</p>
                     } else if let Some(q) = question {
                         if shared {
-                            <div class="study-markdown text-lg font-semibold leading-8" data-testid="question-bank-practice-stem">{render_question_bank_markdown(&q.stem)}</div>
+                            <div class="study-markdown question-bank-passage" data-testid="question-bank-practice-stem">{render_question_bank_markdown(&q.stem)}</div>
                         }
                         if !q.issues.is_empty() && !completed {
                             <p class="text-xs text-base-content/60">{"本题内容尚待核验，可能不计入成绩。"}</p>
@@ -782,27 +951,31 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 let grade = item.item.grade.as_deref();
                                 if completed {
                                     let style = if correct && grade != Some("ungradable") {
-                                        "flex items-start gap-2 rounded-box border border-success bg-success/10 p-3 text-success"
+                                        "flex items-start gap-2.5 rounded-xl border border-success bg-success/10 p-3 text-sm leading-6 text-success"
                                     } else if chosen && grade == Some("wrong") {
-                                        "flex items-start gap-2 rounded-box border border-error bg-error/10 p-3 text-error"
+                                        "flex items-start gap-2.5 rounded-xl border border-error bg-error/10 p-3 text-sm leading-6 text-error"
                                     } else if chosen && grade == Some("correct") {
-                                        "flex items-start gap-2 rounded-box border border-success bg-success/10 p-3 text-success"
+                                        "flex items-start gap-2.5 rounded-xl border border-success bg-success/10 p-3 text-sm leading-6 text-success"
                                     } else {
-                                        "flex items-start gap-2 rounded-box border border-base-content/20 p-3"
+                                        "flex items-start gap-2.5 rounded-xl border border-base-content/20 p-3 text-sm leading-6"
                                     };
                                     html! {<div class={style} data-testid="question-bank-practice-choice">
-                                        <span class="shrink-0">{format!("{label}.")}</span>
+                                        <span class="shrink-0 font-bold">{format!("{label}.")}</span>
                                         <span class="study-markdown min-w-0">{render_question_bank_markdown(markdown)}</span>
                                     </div>}
                                 } else {
-                                    let style = if chosen {"btn-primary"} else {"btn-outline"};
+                                    let style = if chosen {
+                                        "border-primary bg-primary text-primary-content"
+                                    } else {
+                                        "border-base-content/20 bg-base-100 hover:border-primary/50"
+                                    };
                                     let action = invoke.clone(); let choice = label.clone();
-                                    html! {<button type="button" class={classes!("btn","h-auto","min-h-12","w-full","justify-start","whitespace-normal","text-left",style)}
+                                    html! {<button type="button" class={classes!("flex","w-full","items-start","gap-2.5","rounded-xl","border","p-3","text-left","text-sm","leading-6","transition-colors","disabled:opacity-60",style)}
                                         aria-pressed={chosen.to_string()} data-testid="question-bank-practice-choice"
                                         disabled={current.session.paused || *busy}
                                         onclick={Callback::from(move |_|action.emit(Action::Answer(choice.clone())))}>
-                                        <span class="mr-2">{format!("{label}.")}</span>
-                                        <span class="study-markdown">{render_question_bank_markdown(markdown)}</span>
+                                        <span class="shrink-0 font-bold">{format!("{label}.")}</span>
+                                        <span class="study-markdown min-w-0">{render_question_bank_markdown(markdown)}</span>
                                     </button>}
                                 }
                             })}
@@ -818,15 +991,17 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             </label>
                         }
                         if let Some(r) = selected_review {
-                            <p class="font-semibold" data-testid="question-bank-practice-review-answer">
+                            <p class="text-sm font-semibold" data-testid="question-bank-practice-review-answer">
                                 {format!("你的答案：{} · 正确答案：{}",
                                     if item.item.answer.is_empty() {"未答".into()} else {item.item.answer.join("、")},
                                     if r.correct_answer.is_empty() {"暂无可靠答案".into()} else {r.correct_answer.join("、")})}
                             </p>
-                            <h3 class="font-bold">{"原始解析"}</h3>
-                            <div class="study-markdown">{if r.explanation.is_empty() {html!{"暂无解析"}} else {render_question_bank_markdown(&r.explanation)}}</div>
-                            <h3 class="font-bold">{"考点"}</h3>
-                            <p class="text-sm">{if q.topics.is_empty() {"暂无考点".into()} else {q.topics.join("、")}}</p>
+                            <div class="border-t border-base-content/10 pt-3">
+                                <h3 class="font-bold">{"原始解析"}</h3>
+                                <div class="study-markdown mt-2 text-sm leading-7 text-base-content/75">{if r.explanation.is_empty() {html!{"暂无解析"}} else {render_question_bank_markdown(&r.explanation)}}</div>
+                                <h3 class="mt-3 font-bold">{"考点"}</h3>
+                                <p class="text-sm text-base-content/60">{if q.topics.is_empty() {"暂无考点".into()} else {q.topics.join("、")}}</p>
+                            </div>
                         }
                     }
                     </div>
@@ -836,9 +1011,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 material_pane
             } else {
                 html! {
-                    <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100"
+                    <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100"
                         data-testid="question-bank-practice-stem-pane">
-                        <div class={TRAINING_PANE_HEADER}>
+                        <div class={classes!(TRAINING_PANE_HEADER,"question-bank-pane-header")}>
                             <strong>{"题干"}</strong>
                             <div class="ml-auto">
                                 <QuestionBankScrollButtons passage={material_scroll.clone()}
@@ -851,7 +1026,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4"
                             data-testid="question-bank-practice-material-scroll">
                             if let Some(q) = question {
-                                <div class="study-markdown text-lg font-semibold leading-8" data-testid="question-bank-practice-stem">
+                                <div class="study-markdown question-bank-passage" data-testid="question-bank-practice-stem">
                                     {render_question_bank_markdown(&q.stem)}
                                 </div>
                             }
@@ -871,6 +1046,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         Some("correct") => Some(true), Some("wrong") => Some(false), _ => None
                     }).collect::<Vec<_>>())} else {None}}/>
             };
+            let display_seconds = if completed {
+                current.session.elapsed_seconds
+            } else {
+                *elapsed
+            };
             let paused = current.session.paused && !completed;
             let subtitle = match (&current.session.module, &current.session.category) {
                 (Some(module), Some(category)) => format!("模块训练 · {module} · {category}"),
@@ -879,25 +1059,26 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             };
             return html! {
                 <section class={WORKSPACE} data-testid="question-bank-practice-workspace">
-                    <header class="flex shrink-0 flex-wrap items-center justify-between gap-2 pb-2">
-                        <div class="flex min-w-0 gap-2">
+                    <header class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2">
+                        <div class="flex min-w-0 items-center gap-3">
                             <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Exit)})}>
                                 {if completed {"← 返回训练"} else {"← 暂停并退出"}}
                             </button>
                             <div class="min-w-0">
                                 <strong class="block truncate text-sm">{item.paper_title.clone()}</strong>
-                                <span class="block truncate text-xs text-base-content/55">{subtitle.clone()}</span>
+                                <span class="block truncate text-[11px] text-base-content/50">{subtitle.clone()}</span>
                             </div>
                         </div>
-                        <div class="flex items-center gap-2">
+                        <div class="flex shrink-0 items-center gap-2">
+                            <span class="hidden text-xs text-base-content/55 sm:inline">{"学习"}</span>
                             <StudyTimeInline />
-                            <span class="font-mono text-sm" role="timer" data-testid="question-bank-practice-timer">{format!("{:02}:{:02}",(*elapsed/60),(*elapsed%60))}</span>
+                            <span class="font-mono text-xl font-semibold tabular-nums" role="timer" data-testid="question-bank-practice-timer">{format!("{:02}:{:02}:{:02}",display_seconds/3600,display_seconds/60%60,display_seconds%60)}</span>
                             if !completed {
                                 <button class="btn btn-sm btn-outline" data-testid="question-bank-practice-pause"
                                     disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Pause)})}>
                                     {if paused {"继续"} else {"暂停"}}
                                 </button>
-                                <button class="btn btn-sm btn-error" data-testid="question-bank-practice-submit"
+                                <button class="btn btn-sm btn-outline btn-error" data-testid="question-bank-practice-submit"
                                     disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Submit)})}>{"交卷"}</button>
                             } else if let Some(score) = &current.session.score {
                                 <span class="flex shrink-0 items-center gap-3 font-semibold" data-testid="question-bank-practice-score">
@@ -947,20 +1128,59 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     }
 
     if *history_open {
+        let filter = history_filter.as_ref();
+        let only_unfinished = *history_unfinished;
+        let visible = history
+            .iter()
+            .filter(|run| {
+                history_filter_matches(run, filter) && (!only_unfinished || run.status == "active")
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let back_label = if *mode == PracticeMode::Paper {
+            "返回套卷"
+        } else {
+            "返回模块"
+        };
         return html! {
-            <TrainingSetupLayout test_id="question-bank-practice-history" heading={Some(html!{
-                <div class="flex items-center justify-between">
-                    <h2 class="text-xl font-bold">{"真题练习记录"}</h2>
-                    <button class="btn btn-outline btn-sm" onclick={Callback::from({
-                        let history_open=history_open.clone();move |_|history_open.set(false)
-                    })}>{"返回训练"}</button>
-                </div>
-            })}>
-                <div class="space-y-4" data-testid="question-bank-practice-history">
-                    if history.iter().filter(|run|history_matches_entry(&mode,run)).count()==0 {
-                        <p class="text-sm text-base-content/60">{"还没有这条训练线的练习记录。"}</p>
+            <TrainingSetupLayout test_id="question-bank-practice-history">
+                <div class="question-bank-history-content space-y-3">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <h2 class="text-2xl font-black tracking-tight">{"练习记录"}</h2>
+                            <p class="mt-1 text-sm text-base-content/60">{"套卷、模块、错题与收藏共用同一份历史记录"}</p>
+                        </div>
+                        <button class="btn btn-outline btn-sm" onclick={Callback::from({
+                            let history_open=history_open.clone();move |_|history_open.set(false)
+                        })}>{back_label}</button>
+                    </div>
+                    {alert}
+                    <div class="flex flex-wrap items-center gap-2">
+                        {for [
+                            (None,"全部","question-bank-history-filter-all"),
+                            (Some(PracticeMode::Paper),"套卷","question-bank-history-filter-paper"),
+                            (Some(PracticeMode::Module),"模块","question-bank-history-filter-module"),
+                            (Some(PracticeMode::Wrong),"错题","question-bank-history-filter-wrong"),
+                            (Some(PracticeMode::Favorite),"收藏","question-bank-history-filter-favorite"),
+                        ].into_iter().map(|(target,label,id)| {
+                            let history_filter=history_filter.clone();
+                            let selected=*history_filter==target;
+                            html! {<button type="button"
+                                class={classes!("btn","btn-xs",if selected {"btn-primary"} else {"btn-outline"})}
+                                data-testid={id} aria-pressed={selected.to_string()}
+                                onclick={Callback::from(move |_|history_filter.set(target.clone()))}>{label}</button>}
+                        })}
+                        <button type="button" class={classes!("btn","btn-xs","ml-auto",if only_unfinished {"btn-primary"} else {"btn-ghost"})}
+                            data-testid="question-bank-history-unfinished" aria-pressed={only_unfinished.to_string()}
+                            onclick={Callback::from({
+                                let history_unfinished=history_unfinished.clone();
+                                move |_|history_unfinished.set(!*history_unfinished)
+                            })}>{"仅看未完成"}</button>
+                    </div>
+                    if visible.is_empty() {
+                        <p class="text-sm text-base-content/60" data-testid="question-bank-history-empty">{"还没有符合条件的练习记录。"}</p>
                     }
-                    {for history.iter().filter(|run| history_matches_entry(&mode, run)).map(|run|{
+                    {for visible.iter().map(|run|{
                         let active=run.status=="active";
                         let id=run.id.clone();
                         let invoke=invoke.clone();
@@ -968,29 +1188,84 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         let date=format!("{}-{:02}-{:02} {:02}:{:02}",
                             stamp.get_full_year(),stamp.get_month()+1,stamp.get_date(),
                             stamp.get_hours(),stamp.get_minutes());
-                        let title=run.paper_id.as_ref()
-                            .and_then(|id|papers.iter().find(|paper|paper.id==*id))
-                            .map(|paper|paper.title.clone())
-                            .unwrap_or_else(||run.module.clone().unwrap_or_else(||"真题训练".into()));
-                        let source=run.category.clone().or_else(||run.module.clone()).unwrap_or_else(||"整卷".into());
-                        let result=run.score.as_ref()
-                            .map(|score|format!("{}/{} 题",score.correct,score.total))
-                            .unwrap_or_else(||"进行中".into());
+                        let mode_label=history_mode_label(&run.mode);
+                        let title=match run.mode {
+                            PracticeMode::Paper | PracticeMode::PaperModule => run.paper_id.as_ref()
+                                .and_then(|id|papers.iter().find(|paper|paper.id==*id))
+                                .map(|paper|paper.title.clone())
+                                .unwrap_or_else(||"真题训练".into()),
+                            _ => {
+                                let module=run.module.clone().unwrap_or_else(||"真题训练".into());
+                                match run.category.as_ref().filter(|category|!category.is_empty()) {
+                                    Some(category)=>format!("{module} · {category}"),
+                                    None=>module,
+                                }
+                            }
+                        };
+                        let headline=match run.mode {
+                            PracticeMode::Wrong=>format!("{date} · 错题复练 · {title}"),
+                            PracticeMode::Favorite=>format!("{date} · 收藏练习 · {title}"),
+                            _=>format!("{date} · {title}"),
+                        };
+                        let (badge,badge_class)=if active {
+                            if run.paused {("已暂停".to_string(),"badge-warning")} else {("进行中".to_string(),"badge-primary")}
+                        } else {
+                            run.score.as_ref()
+                                .map(|score|(format!("{}/{}",score.correct,score.total),"badge-success"))
+                                .unwrap_or_else(||("已完成".to_string(),"badge-ghost"))
+                        };
+                        let detail=if active {
+                            let answered=run.items.iter().filter(|item|!item.answer.is_empty()).count();
+                            format!("{mode_label} · {} 题 · 已作答 {answered} 题 · 已用 {} 分钟",run.items.len(),run.elapsed_seconds/60)
+                        } else if let Some(score)=&run.score {
+                            let time=format!("{} 分 {:02} 秒",run.elapsed_seconds/60,run.elapsed_seconds%60);
+                            match run.mode {
+                                PracticeMode::Paper | PracticeMode::PaperModule=>format!(
+                                    "{mode_label} · 用时 {time} · 正确 {} · 错误 {} · 未答 {}",
+                                    score.correct,score.wrong,score.unanswered),
+                                _=>format!(
+                                    "{mode_label} · 用时 {time} · 正确率 {}%",
+                                    score.correct.saturating_mul(100)/score.total.max(1)),
+                            }
+                        } else {
+                            mode_label.to_string()
+                        };
+                        let can_repeat=matches!(run.mode,PracticeMode::Paper|PracticeMode::PaperModule|PracticeMode::Module);
                         html! {
-                            <article class="rounded-box bg-base-100 p-4" data-testid="question-bank-practice-history-item">
+                            <article class="rounded-box border border-base-content/10 bg-base-100 p-4" data-testid="question-bank-practice-history-item">
                                 <div class="flex flex-wrap items-center justify-between gap-3">
                                     <div class="min-w-0">
-                                        <strong class="block truncate">{format!("{} · {}",date,title)}</strong>
-                                        <p class="mt-1 text-xs text-base-content/60">
-                                            {format!("{} · {} · 已用 {} 分钟",source,result,run.elapsed_seconds/60)}
-                                        </p>
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <strong class="min-w-0 truncate">{headline}</strong>
+                                            <span class={classes!("badge","badge-sm",badge_class)}>{badge}</span>
+                                        </div>
+                                        <p class="mt-1 text-xs text-base-content/55">{detail}</p>
                                     </div>
                                     <div class="flex flex-wrap gap-2">
-                                        <button type="button" class={classes!("btn","btn-sm",if active {"btn-primary"} else {"btn-outline"})}
-                                            disabled={*busy}
-                                            onclick={Callback::from(move |_|invoke.emit(if active {Action::Continue(id.clone())} else {Action::Review(id.clone())}))}>
-                                            {if active {"继续练习"} else {"查看原题与解析"}}
-                                        </button>
+                                        if active {
+                                            <button type="button" class="btn btn-primary btn-sm"
+                                                disabled={*busy}
+                                                onclick={Callback::from(move |_|invoke.emit(Action::Continue(id.clone())))}>
+                                                {"继续练习"}
+                                            </button>
+                                        } else {
+                                            <button type="button" class="btn btn-outline btn-sm"
+                                                disabled={*busy}
+                                                onclick={Callback::from({
+                                                    let invoke=invoke.clone();
+                                                    let id=id.clone();
+                                                    move |_|invoke.emit(Action::Review(id.clone()))
+                                                })}>
+                                                {"查看原题与解析"}
+                                            </button>
+                                            if can_repeat {
+                                                <button type="button" class="btn btn-ghost btn-sm"
+                                                    disabled={*busy}
+                                                    onclick={Callback::from(move |_|invoke.emit(Action::Repeat(id.clone())))}>
+                                                    {"再做一遍"}
+                                                </button>
+                                            }
+                                        }
                                     </div>
                                 </div>
                             </article>
@@ -1020,16 +1295,86 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             </button>
         }
     };
-    let setup_summary = match collection.as_ref() {
+    let expanded_regions = web_sys::window()
+        .and_then(|window| window.inner_width().ok())
+        .and_then(|width| width.as_f64())
+        .filter(|width| *width >= 1024.0)
+        .map(|_| 2)
+        .unwrap_or(1);
+    let collection_groups = collection_modules(&browse, catalog.as_ref());
+    let collection_filtered = browse
+        .iter()
+        .filter(|item| {
+            (selected_module.is_empty() || item.module.as_deref() == Some(selected_module.as_str()))
+                && (selected_category.is_empty()
+                    || item.category.as_deref() == Some(selected_category.as_str()))
+        })
+        .collect::<Vec<_>>();
+    let filter_labels = module_filter_labels(&module_filters);
+    let selection_scope = [selected_module.as_str(), selected_category.as_str()]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ");
+    let setup_heading = match collection.as_ref() {
+        Some(PracticeMode::Wrong) => "我的错题",
+        Some(PracticeMode::Favorite) => "我的收藏",
+        _ if *mode == PracticeMode::Paper => "套卷训练",
+        _ => "模块训练",
+    };
+    let setup_explanation = match collection.as_ref() {
+        Some(PracticeMode::Wrong) => {
+            format!("错题按现有模块与二级题型分类，共 {} 题", *wrong_total)
+        }
+        Some(PracticeMode::Favorite) => {
+            format!("收藏按现有模块与二级题型分类，共 {} 题", *favorite_total)
+        }
+        _ if *mode == PracticeMode::Paper => "选择完整原卷，按原始题号顺序作答".to_string(),
+        _ => format!(
+            "按一级模块与二级题型逐层筛选，每轮最多 {} 题",
+            module_filters.count.unwrap_or(20)
+        ),
+    };
+    let action_summary = match collection.as_ref() {
         Some(PracticeMode::Wrong) => "错题复练",
         Some(PracticeMode::Favorite) => "收藏题练习",
         _ if *mode == PracticeMode::Paper => "套卷训练",
         _ => "模块训练",
     };
-    let setup_detail = match collection.as_ref() {
-        Some(_) => "按模块与二级题型分类查看，选中后开始复练",
-        None if *mode == PracticeMode::Paper => "选择完整原卷，按原始题号顺序作答",
-        None => "按一级模块和二级题型分类浏览、自定义刷题",
+    let action_detail = match collection.as_ref() {
+        Some(_) => format!(
+            "{} · {} 题 · 每轮最多 {} 题",
+            if selection_scope.is_empty() {
+                "全部分类"
+            } else {
+                &selection_scope
+            },
+            collection_filtered.len(),
+            module_filters.count.unwrap_or(20)
+        ),
+        None if *mode == PracticeMode::Paper => papers
+            .iter()
+            .find(|paper| paper.id == *selected_paper)
+            .map(|paper| format!("{} · {} 题", paper.title, paper.questions))
+            .unwrap_or_else(|| "请选择完整原卷，按原始题号顺序作答".into()),
+        None => [
+            if selection_scope.is_empty() {
+                "选择模块与二级题型".into()
+            } else {
+                selection_scope.clone()
+            },
+            filter_labels[2].clone(),
+            filter_labels[0].clone(),
+            if module_filters.regions.is_empty() {
+                String::new()
+            } else {
+                filter_labels[1].clone()
+            },
+        ]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · "),
     };
     let resume_view = active_resume.as_ref().map(|active| {
         let answered = active
@@ -1042,7 +1387,14 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             .as_ref()
             .and_then(|id| papers.iter().find(|paper| paper.id == *id))
             .map(|paper| paper.title.clone())
-            .unwrap_or_else(|| active.module.clone().unwrap_or_else(|| "真题训练".into()));
+            .unwrap_or_else(|| match (&active.module, &active.category) {
+                (Some(module), Some(category)) => format!(
+                    "{module} · {category} · {}",
+                    history_mode_label(&active.mode)
+                ),
+                (Some(module), None) => format!("{module} · {}", history_mode_label(&active.mode)),
+                _ => "真题训练".into(),
+            });
         (
             answered,
             active.items.len(),
@@ -1051,31 +1403,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             active.id.clone(),
         )
     });
-    let collection_groups = collection_modules(&browse);
-    let collection_filtered = browse
-        .iter()
-        .filter(|item| {
-            (selected_module.is_empty() || item.module.as_deref() == Some(selected_module.as_str()))
-                && (selected_category.is_empty()
-                    || item.category.as_deref() == Some(selected_category.as_str()))
-        })
-        .collect::<Vec<_>>();
-    html! {
-        <TrainingSetupLayout test_id="question-bank-practice-setup" action={Some(start_action)}
-            summary={setup_summary}
-            detail={setup_detail}>
-            <div class="space-y-4">
-            <div class="flex items-center justify-between gap-3">
-                <h2 class="text-xl font-bold">
-                    {if collection.is_some() {"分类浏览"}
-                        else if *mode == PracticeMode::Paper {"套卷训练"} else {"模块训练"}}
-                </h2>
-                <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-history-open"
-                    onclick={Callback::from({let history_open=history_open.clone();move |_|history_open.set(true)})}>
-                    {"练习记录"}
-                </button>
-            </div>
-            {alert}
+    let resume_card = html! {
             if let Some((answered,total,minutes,title,id)) = resume_view.as_ref() {
                 <div class="rounded-box border border-primary/30 bg-primary/5 p-4" data-testid="question-bank-resume-card">
                     <div class="flex flex-wrap items-center justify-between gap-3">
@@ -1091,12 +1419,30 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     </div>
                 </div>
             }
+    };
+    html! {
+        <TrainingSetupLayout test_id="question-bank-practice-setup" wide={true} action={Some(start_action)}
+            summary={action_summary}
+            detail={action_detail}>
+            <div class="question-bank-setup-content space-y-5">
+            <div class="question-bank-heading flex items-center justify-between gap-3">
+                <div><h2 class="text-2xl font-bold">
+                    {setup_heading}
+                </h2>
+                <p class="mt-1 text-sm leading-6 text-base-content/60">{setup_explanation}</p>
+                </div>
+                <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-history-open"
+                    onclick={Callback::from({let history_open=history_open.clone();move |_|history_open.set(true)})}>
+                    {"练习记录"}
+                </button>
+            </div>
+            {alert}
             <div class="flex flex-wrap gap-2" role="group" aria-label="题目浏览分类">
                 {for [
-                    (None,"全部题目","question-bank-collection-all"),
-                    (Some(PracticeMode::Wrong),"我的错题","question-bank-collection-wrong"),
-                    (Some(PracticeMode::Favorite),"我的收藏","question-bank-collection-favorite"),
-                ].into_iter().map(|(target,label,id)| {
+                    (None,"全部题目","question-bank-collection-all",None),
+                    (Some(PracticeMode::Wrong),"我的错题","question-bank-collection-wrong",Some(*wrong_total)),
+                    (Some(PracticeMode::Favorite),"我的收藏","question-bank-collection-favorite",Some(*favorite_total)),
+                ].into_iter().map(|(target,label,id,count)| {
                     let collection=collection.clone();
                     let selected_module=selected_module.clone();
                     let selected_category=selected_category.clone();
@@ -1108,9 +1454,15 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             collection.set(target.clone());
                             selected_module.set(String::new());
                             selected_category.set(String::new());
-                        })}>{label}</button>}
+                        })}>
+                        {label}
+                        if let Some(count)=count {
+                            <span class="question-bank-count" data-testid="question-bank-collection-count">{count}</span>
+                        }
+                    </button>}
                 })}
             </div>
+            if collection.is_none() { {resume_card} }
             if collection.is_none() && *mode == PracticeMode::Paper {
                 <section class="space-y-3" aria-label="选择原卷">
                     <div class="flex items-end justify-between gap-3">
@@ -1118,12 +1470,12 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             <h3 class="font-semibold">{"选择原卷"}</h3>
                             <p class="text-xs text-base-content/60">{"按地区展开年份与原卷；已选原卷高亮显示。"}</p>
                         </div>
-                        <span class="text-xs text-base-content/50" data-testid="question-bank-paper-total">{format!("{} 份原卷",papers.len())}</span>
+                        <span class="text-xs text-base-content/50" data-testid="question-bank-paper-total">{paper_catalog_label(&papers)}</span>
                     </div>
                     if papers.is_empty() {
                         <p class="rounded-box bg-base-200 p-4 text-sm">{"暂无可用试卷，请先在题库管理同步原卷。"}</p>
                     }
-                    <div class="grid gap-3 md:grid-cols-2">
+                    <div class="question-bank-paper-grid">
                     {for {
                         let mut grouped = std::collections::BTreeMap::<String,std::collections::BTreeMap<i32,Vec<&PaperSummary>>>::new();
                         for paper in papers.iter().filter(|paper|paper.role=="primary") {
@@ -1133,15 +1485,17 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         grouped.into_iter().enumerate().map(|(group_index,(region,years))| {
                             let total=years.values().map(Vec::len).sum::<usize>();
                             html! {
-                            <details class="rounded-box border border-base-content/10 bg-base-100" open={group_index<2} data-testid="question-bank-region-group">
+                            <details class="rounded-box border border-base-content/10 bg-base-100" open={group_index<expanded_regions} data-testid="question-bank-region-group">
                                 <summary class="flex cursor-pointer select-none items-center justify-between px-4 py-3" data-testid="question-bank-region">
                                     <span class="font-semibold">{region.clone()}</span>
                                     <span class="text-xs text-base-content/50">{format!("{total}份")}</span>
                                 </summary>
                                 <div class="space-y-2 border-t border-base-content/10 p-3">
-                                    {for years.into_iter().rev().map(|(year,items)|html! {
-                                        <div class="rounded-box bg-base-200/50" data-testid="question-bank-year-group">
-                                            <p class="px-3 py-2 text-sm font-medium" data-testid="question-bank-year">{format!("{year}年 · {}份",items.len())}</p>
+                                    {for years.into_iter().rev().enumerate().map(|(year_index,(year,items))|html! {
+                                        <details class="question-bank-year-group rounded-box bg-base-200/50" open={year_index==0} data-testid="question-bank-year-group">
+                                            <summary class="flex items-center justify-between px-3 py-2 text-sm" data-testid="question-bank-year">
+                                                <span>{format!("{year} 年")}</span><span class="text-xs text-base-content/45">{format!("{} 份",items.len())}</span>
+                                            </summary>
                                             <div class="grid gap-2 px-2 pb-2">
                                                 {for items.into_iter().map(|paper|{
                                                     let id=paper.id.clone();
@@ -1149,16 +1503,19 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                                     let selected_paper=selected_paper.clone();
                                                     let selected_module=selected_module.clone();
                                                     html! {
-                                                        <button type="button" class={classes!("btn","h-auto","min-h-14","w-full","justify-between","whitespace-normal","text-left",if active {"btn-primary"} else {"btn-outline"})}
+                                                        <button type="button" class="question-bank-paper-option"
                                                             data-testid="question-bank-paper-option" aria-pressed={active.to_string()}
                                                             onclick={Callback::from(move |_|{selected_paper.set(id.clone());selected_module.set(String::new());})}>
-                                                            <span class="min-w-0">{paper.title.clone()}</span>
+                                                            <span class="min-w-0">
+                                                                <strong class="block text-sm">{paper.title.clone()}</strong>
+                                                                if !paper.variant.is_empty() { <span class="mt-0.5 block text-xs text-base-content/50">{paper.variant.clone()}</span> }
+                                                            </span>
                                                             <span class="shrink-0 text-xs opacity-60">{format!("{}题",paper.questions)}</span>
                                                         </button>
                                                     }
                                                 })}
                                             </div>
-                                        </div>
+                                        </details>
                                     })}
                                 </div>
                             </details>
@@ -1193,58 +1550,47 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 }
                             })}>{"⚙ 自定义刷题"}</button>
                     </div>
-                    <div class="rounded-box bg-base-200/70 px-3 py-2 text-sm" data-testid="module-drill-filter-summary">
-                        {format!("{} · {}地区 · 每轮{}题",
-                            match (module_filters.year_min,module_filters.year_max) {
-                                (None,None) => "全部年份".into(),
-                                (Some(min),Some(max)) => format!("{min}—{max}年"),
-                                (Some(min),None) => format!("{min}年以后"),
-                                (None,Some(max)) => format!("{max}年以前"),
-                            },
-                            if module_filters.regions.is_empty() {"不限".into()}
-                            else if module_filters.exclude_regions {format!("屏蔽 {}",module_filters.regions.join("、"))}
-                            else {module_filters.regions.join("、")},
-                            module_filters.count.unwrap_or(20))}
+                    <div class="question-bank-filter-summary" data-testid="module-drill-filter-summary">
+                        <strong>{"当前筛选"}</strong>
+                        {for filter_labels.iter().map(|label|html!{<span>{label}</span>})}
                     </div>
                     if let Some(info) = &*catalog {
-                        <div class="grid gap-3 sm:grid-cols-2" role="group" aria-label="一级模块">
-                            {for info.modules.iter().map(|m| {
-                                let name=m.name.clone();
-                                let selected=*selected_module==name;
-                                let module_name=name.clone();
-                                let selected_module_click=selected_module.clone();
-                                let selected_category_click=selected_category.clone();
-                                let category_module=name.clone();
-                                html! {<div class={classes!("rounded-box","border","p-3","space-y-2",if selected {"border-primary bg-primary/5"} else {"border-base-content/10 bg-base-100"})}>
-                                    <button type="button" class="flex w-full items-center justify-between gap-2 text-left"
-                                        data-testid="question-bank-cross-module" aria-pressed={selected.to_string()}
-                                        onclick={Callback::from(move |_|{selected_module_click.set(module_name.clone());selected_category_click.set(String::new());})}>
-                                        <strong>{m.name.clone()}</strong>
-                                        <span class="text-xs text-base-content/60">{format!("已做 {}/{} 题",m.done,m.count)}</span>
-                                    </button>
-                                    <progress class="progress progress-primary w-full" max={m.count.max(1).to_string()} value={m.done.to_string()} aria-label={format!("{}进度",m.name)} />
-                                    <div class="flex flex-wrap gap-1.5" role="group" aria-label={format!("{}二级题型",m.name)}>
-                                        <button type="button" data-testid="question-bank-cross-category"
-                                            aria-pressed={((*selected_category).is_empty() && selected).to_string()}
-                                            class={classes!("btn","btn-xs","h-auto","min-h-7","rounded-full","px-2.5",if (*selected_category).is_empty() && selected {"btn-primary"} else {"btn-outline"})}
-                                            onclick={Callback::from({let selected_module=selected_module.clone();let selected_category=selected_category.clone();let name=m.name.clone();move |_|{selected_module.set(name.clone());selected_category.set(String::new());}})}>
-                                            {"全部"}
-                                        </button>
-                                        {for m.categories.iter().map(|category|{
-                                            let chip_selected=*selected_category==category.name;
-                                            let category_name=category.name.clone();
+                        <div class="question-bank-module-grid" role="group" aria-label="一级模块">
+                            {for info.modules.iter().map(|module| {
+                                let selected=*selected_module==module.name;
+                                html! {
+                                    <QuestionBankModuleCard name={module.name.clone()}
+                                        summary={format!("已做 {}/{} 题",module.done,module.count)}
+                                        value={module.done} max={module.count} selected={selected}
+                                        test_id="question-bank-cross-module"
+                                        on_select={Callback::from({
                                             let selected_module=selected_module.clone();
                                             let selected_category=selected_category.clone();
-                                            let module_name=category_module.clone();
-                                            html!{<button type="button" data-testid="question-bank-cross-category"
-                                                aria-pressed={chip_selected.to_string()}
-                                                class={classes!("btn","btn-xs","h-auto","min-h-7","rounded-full","px-2.5",if chip_selected {"btn-primary"} else {"btn-outline"})}
-                                                onclick={Callback::from(move |_|{selected_module.set(module_name.clone());selected_category.set(category_name.clone());})}>
-                                                {format!("{} {}",category.name,category.count)}
-                                            </button>}
+                                            let name=module.name.clone();
+                                            move |_|{selected_module.set(name.clone());selected_category.set(String::new());}
+                                        })}>
+                                        <QuestionBankCategoryButton label="全部题型" count={format!("{}/{}",module.done,module.count)}
+                                            selected={selected && selected_category.is_empty()} test_id="question-bank-cross-category"
+                                            on_select={Callback::from({
+                                                let selected_module=selected_module.clone();
+                                                let selected_category=selected_category.clone();
+                                                let name=module.name.clone();
+                                                move |_|{selected_module.set(name.clone());selected_category.set(String::new());}
+                                            })}/>
+                                        {for module.categories.iter().map(|category|html! {
+                                            <QuestionBankCategoryButton label={category.name.clone()}
+                                                count={format!("{}/{}",category.done,category.count)}
+                                                selected={selected && *selected_category==category.name} test_id="question-bank-cross-category"
+                                                on_select={Callback::from({
+                                                    let selected_module=selected_module.clone();
+                                                    let selected_category=selected_category.clone();
+                                                    let name=module.name.clone();
+                                                    let category=category.name.clone();
+                                                    move |_|{selected_module.set(name.clone());selected_category.set(category.clone());}
+                                                })}/>
                                         })}
-                                    </div>
-                                </div>}
+                                    </QuestionBankModuleCard>
+                                }
                             })}
                         </div>
                     } else {
@@ -1254,67 +1600,73 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             }
             if collection.is_some() {
                 <section class="space-y-3" data-testid="question-bank-collection-browser">
-                    <div class="grid gap-3 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-                        <div class="space-y-2">
-                            <div class={classes!("rounded-box","border","p-3",if selected_module.is_empty() {"border-primary bg-primary/5"} else {"border-base-content/10 bg-base-100"})}>
-                                <button type="button" class="flex w-full items-center justify-between gap-2 text-left"
-                                    data-testid="question-bank-collection-module" aria-pressed={selected_module.is_empty().to_string()}
-                                    onclick={Callback::from({let selected_module=selected_module.clone();let selected_category=selected_category.clone();move |_|{selected_module.set(String::new());selected_category.set(String::new());}})}>
-                                    <strong>{"全部题目"}</strong>
-                                    <span class="text-xs text-base-content/60">{format!("{}题",browse.len())}</span>
-                                </button>
+                    <div class="question-bank-collections-layout">
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between gap-2">
+                            <h3 class="font-semibold">{"按模块查看"}</h3>
+                            <button type="button" class="btn btn-ghost btn-xs" data-testid="question-bank-collection-module"
+                                aria-pressed={selected_module.is_empty().to_string()}
+                                onclick={Callback::from({let selected_module=selected_module.clone();let selected_category=selected_category.clone();move |_|{selected_module.set(String::new());selected_category.set(String::new());}})}>
+                                {format!("全部题目 {}",browse.len())}
+                            </button>
                             </div>
-                            {for collection_groups.iter().map(|group| {
-                                let selected=*selected_module==group.name;
-                                let module_name=group.name.clone();
-                                let selected_module_click=selected_module.clone();
-                                let selected_category_click=selected_category.clone();
-                                let category_module=group.name.clone();
-                                html!{<div class={classes!("rounded-box","border","p-3","space-y-2",if selected {"border-primary bg-primary/5"} else {"border-base-content/10 bg-base-100"})}>
-                                    <button type="button" class="flex w-full items-center justify-between gap-2 text-left"
-                                        data-testid="question-bank-collection-module" aria-pressed={selected.to_string()}
-                                        onclick={Callback::from(move |_|{selected_module_click.set(module_name.clone());selected_category_click.set(String::new());})}>
-                                        <strong>{group.name.clone()}</strong>
-                                        <span class="text-xs text-base-content/60">{format!("{}题",group.count)}</span>
-                                    </button>
-                                    if !group.categories.is_empty() {
-                                        <div class="flex flex-wrap gap-1.5" role="group" aria-label={format!("{}二级题型",group.name)}>
-                                            {for group.categories.iter().map(|(category,count)|{
-                                                let chip_selected=*selected_category==*category;
-                                                let category_name=category.clone();
-                                                let selected_module=selected_module.clone();
-                                                let selected_category=selected_category.clone();
-                                                let module_name=category_module.clone();
-                                                html!{<button type="button" data-testid="question-bank-collection-category"
-                                                    aria-pressed={chip_selected.to_string()}
-                                                    class={classes!("btn","btn-xs","h-auto","min-h-7","rounded-full","px-2.5",if chip_selected {"btn-primary"} else {"btn-outline"})}
-                                                    onclick={Callback::from(move |_|{selected_module.set(module_name.clone());selected_category.set(category_name.clone());})}>
-                                                    {format!("{} {}",category,count)}
-                                                </button>}
-                                            })}
-                                        </div>
-                                    }
-                                </div>}
+                            <div class="question-bank-collection-grid">
+                            {for collection_groups.iter().map(|module| {
+                                let selected=*selected_module==module.name;
+                                html! {
+                                    <QuestionBankModuleCard name={module.name.clone()} summary={format!("{} 题",module.count)}
+                                        value={module.count} max={browse.len()} selected={selected}
+                                        test_id="question-bank-collection-module"
+                                        on_select={Callback::from({
+                                            let selected_module=selected_module.clone();let selected_category=selected_category.clone();
+                                            let name=module.name.clone();
+                                            move |_|{selected_module.set(name.clone());selected_category.set(String::new());}
+                                        })}>
+                                        <QuestionBankCategoryButton label="全部" count={module.count.to_string()}
+                                            selected={selected && selected_category.is_empty()} test_id="question-bank-collection-category"
+                                            on_select={Callback::from({
+                                                let selected_module=selected_module.clone();let selected_category=selected_category.clone();
+                                                let name=module.name.clone();
+                                                move |_|{selected_module.set(name.clone());selected_category.set(String::new());}
+                                            })}/>
+                                        {for module.categories.iter().map(|(category,count)|html! {
+                                            <QuestionBankCategoryButton label={category.clone()} count={count.to_string()}
+                                                selected={selected && *selected_category==*category} test_id="question-bank-collection-category"
+                                                on_select={Callback::from({
+                                                    let selected_module=selected_module.clone();let selected_category=selected_category.clone();
+                                                    let name=module.name.clone();let category=category.clone();
+                                                    move |_|{selected_module.set(name.clone());selected_category.set(category.clone());}
+                                                })}/>
+                                        })}
+                                    </QuestionBankModuleCard>
+                                }
                             })}
-                        </div>
-                        <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
-                            <div class="mb-2 flex items-center justify-between gap-2">
-                                <h3 class="font-semibold">{"筛选结果"}</h3>
-                                <span class="text-xs text-base-content/60" data-testid="question-bank-browse-count">{format!("{}题",collection_filtered.len())}</span>
                             </div>
+                        </div>
+                        <div class="space-y-3 min-w-0">
+                            <div class="flex min-h-6 items-center justify-between gap-2">
+                                <h3 class="font-semibold">{"筛选结果"}</h3>
+                                <span class="text-xs text-base-content/50" data-testid="question-bank-browse-count">
+                                    {format!("{}{}{}题",selection_scope,if selection_scope.is_empty() {""} else {" · "},collection_filtered.len())}
+                                </span>
+                            </div>
+                            <div class="question-bank-results">
                             if collection_filtered.is_empty() {
-                                <p class="text-sm text-base-content/60">{"这个分类还没有题目。"}</p>
+                                <p class="p-4 text-sm text-base-content/60">{"这个分类还没有题目。"}</p>
                             } else {
-                                <div class="max-h-[55vh] space-y-2 overflow-y-auto" data-testid="question-bank-browse-list">
-                                    {for collection_filtered.iter().take(100).map(|item|{
-                                        html!{<div class="rounded-box border border-base-content/10 px-3 py-2" data-testid="question-bank-collection-item">
-                                            <strong class="block truncate text-sm">{format!("{}年 · {} · 第{}题",item.year,item.region,item.number)}</strong>
-                                            <p class="truncate text-xs text-base-content/60">{item.paper_title.clone()}</p>
-                                            <span class="mt-1 inline-block text-xs text-primary">{item.category.as_deref().or(item.module.as_deref()).unwrap_or("未分类")}</span>
-                                        </div>}
+                                <div class="question-bank-results-list" data-testid="question-bank-browse-list">
+                                    {for collection_filtered.iter().take(100).map(|item|html! {
+                                        <div class="question-bank-result-row" data-testid="question-bank-collection-item" title={item.paper_title.clone()}>
+                                            <div class="min-w-0">
+                                                <strong class="block truncate text-sm">{format!("{} {} · 第 {} 题",item.year,item.region,item.number)}</strong>
+                                                <p class="mt-0.5 truncate text-xs text-base-content/50">{format!("{} / {}",item.module.as_deref().unwrap_or("未分类"),item.category.as_deref().unwrap_or("未分类"))}</p>
+                                            </div>
+                                            <span class="question-bank-result-year">{item.year}</span>
+                                        </div>
                                     })}
                                 </div>
                             }
+                            </div>
                         </div>
                     </div>
                 </section>

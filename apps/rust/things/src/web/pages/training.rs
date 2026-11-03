@@ -248,7 +248,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
         })
     };
     html! {
-        <div ref={shell} class="training-shell" data-testid="training-layout">
+        <div ref={shell} class={classes!("training-shell",matches!(*mode,TrainingMode::QuestionBankPaper|TrainingMode::QuestionBankModule).then_some("question-bank-shell"))} data-testid="training-layout">
             if !*training_immersive {
                 <header class="training-topbar" data-testid="training-header">
                     <div class="training-topbar-inner">
