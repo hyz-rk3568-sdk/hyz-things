@@ -58,12 +58,15 @@ test('paper practice preserves source numbering and hides answers until submissi
   await expect(page.getByTestId('question-bank-practice-material-pane')).toContainText('两道题共用材料');
   await page.getByTestId('question-bank-practice-choice').nth(2).click();
   await page.getByTestId('question-bank-practice-submit').click();
+  await expect(page.getByTestId('question-bank-submit-confirm')).toBeVisible();
+  await page.getByRole('button',{name:'确认交卷'}).click();
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('原始解析');
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('第二题解析');
   await openSheet(page);
   await page.getByTestId('question-bank-practice-number').first().click();
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('B 是正确项');
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('现期比重');
+  await openSheet(page);
   await expect(page.getByTestId('question-bank-practice-score')).toContainText('正确 1');
   await expect(page.getByTestId('question-bank-practice-score')).toContainText('错误 1');
   await expect(page.getByTestId('question-bank-practice-workspace')).not.toContainText('ungradable');
@@ -104,6 +107,7 @@ test('question bank saved collections browse items before practicing',async({pag
   await expect(page.getByTestId('question-bank-browse-count')).toContainText('1题');
   await page.getByTestId('question-bank-browse-item').first().click();
   await expect(page.getByTestId('question-bank-browse-preview')).toContainText('材料中的正确选项');
+  await expect(page.getByTestId('question-bank-browse-preview')).toContainText('两道题共用材料');
   await page.getByTestId('question-bank-practice-start').click();
   await openSheet(page);
   await expect(page.getByTestId('question-bank-practice-number')).toHaveCount(1);

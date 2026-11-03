@@ -2,10 +2,9 @@
 use super::material_scroll::{scroll_edges, MaterialScrollButton, ScrollEdges};
 use super::*;
 use hyz_things::domain::question_bank::{
-    CreatePracticeRequest, FavoriteState, MaterialView, ModulePracticeFilters,
-    PaperSummary, PaperView, PracticeBrowseItem, PracticeCatalog, PracticeMode, PracticeReview,
-    PracticeSession, PracticeWorkspace, QuestionView,
-    SavePracticeAnswer, SetFavorite, SetPracticePaused,
+    CreatePracticeRequest, FavoriteState, MaterialView, ModulePracticeFilters, PaperSummary,
+    PaperView, PracticeBrowseItem, PracticeCatalog, PracticeMode, PracticeReview, PracticeSession,
+    PracticeWorkspace, QuestionView, SavePracticeAnswer, SetFavorite, SetPracticePaused,
 };
 
 const ROOT: &str = "/api/v1/question-bank";
@@ -15,7 +14,11 @@ fn history_matches_entry(entry: &PracticeMode, run: &PracticeSession) -> bool {
     let paper_run = matches!(run.mode, PracticeMode::Paper | PracticeMode::PaperModule)
         || matches!(run.mode, PracticeMode::Wrong | PracticeMode::Favorite)
             && run.paper_id.is_some();
-    if *entry == PracticeMode::Paper { paper_run } else { !paper_run }
+    if *entry == PracticeMode::Paper {
+        paper_run
+    } else {
+        !paper_run
+    }
 }
 const MODULE_FILTERS_STORAGE: &str = "hyz-question-bank-module-settings-v1";
 
@@ -56,27 +59,46 @@ fn catalog_filter_url(filters: &ModulePracticeFilters) -> String {
 }
 
 fn browse_filter_url(
-    scope: &PracticeMode, entry_mode: &PracticeMode, paper_id: &str,
-    module: &str, category: &str, filters: &ModulePracticeFilters,
+    scope: &PracticeMode,
+    entry_mode: &PracticeMode,
+    paper_id: &str,
+    module: &str,
+    category: &str,
+    filters: &ModulePracticeFilters,
 ) -> String {
     let mut query = url::form_urlencoded::Serializer::new(String::new());
-    query.append_pair("mode", match scope {
-        PracticeMode::Paper => "paper",
-        PracticeMode::Module => "module",
-        PracticeMode::Wrong => "wrong",
-        PracticeMode::Favorite => "favorite",
-        PracticeMode::PaperModule => "paper_module",
-    });
+    query.append_pair(
+        "mode",
+        match scope {
+            PracticeMode::Paper => "paper",
+            PracticeMode::Module => "module",
+            PracticeMode::Wrong => "wrong",
+            PracticeMode::Favorite => "favorite",
+            PracticeMode::PaperModule => "paper_module",
+        },
+    );
     if *entry_mode == PracticeMode::Paper {
-        if !paper_id.is_empty() { query.append_pair("paper_id", paper_id); }
+        if !paper_id.is_empty() {
+            query.append_pair("paper_id", paper_id);
+        }
     } else {
-        if !module.is_empty() { query.append_pair("module", module); }
-        if !category.is_empty() { query.append_pair("category", category); }
-        if let Some(year) = filters.year_min { query.append_pair("year_min", &year.to_string()); }
-        if let Some(year) = filters.year_max { query.append_pair("year_max", &year.to_string()); }
+        if !module.is_empty() {
+            query.append_pair("module", module);
+        }
+        if !category.is_empty() {
+            query.append_pair("category", category);
+        }
+        if let Some(year) = filters.year_min {
+            query.append_pair("year_min", &year.to_string());
+        }
+        if let Some(year) = filters.year_max {
+            query.append_pair("year_max", &year.to_string());
+        }
         if !filters.regions.is_empty() {
             query.append_pair("regions", &filters.regions.join(","));
-            if filters.exclude_regions { query.append_pair("exclude_regions", "true"); }
+            if filters.exclude_regions {
+                query.append_pair("exclude_regions", "true");
+            }
         }
     }
     format!("{ROOT}/practice/questions?{}", query.finish())
@@ -165,11 +187,15 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         Callback::from(move |_: ()| {
             if let Some(node) = material_scroll.cast::<web_sys::HtmlElement>() {
                 let value = scroll_edges(&node);
-                if *material_edges != value { material_edges.set(value); }
+                if *material_edges != value {
+                    material_edges.set(value);
+                }
             }
             if let Some(node) = question_scroll.cast::<web_sys::HtmlElement>() {
                 let value = scroll_edges(&node);
-                if *question_edges != value { question_edges.set(value); }
+                if *question_edges != value {
+                    question_edges.set(value);
+                }
             }
         })
     };
@@ -292,13 +318,25 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         });
     }
     {
-        let scope = collection.as_ref().cloned().unwrap_or_else(|| (*mode).clone());
-        let query = if (*mode == PracticeMode::Paper && selected_paper.is_empty())
-            || (*mode == PracticeMode::Module && selected_module.is_empty()) {
+        let scope = collection
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| (*mode).clone());
+        // Saved collections can be inspected before choosing a paper or module.
+        let query = if collection.is_none()
+            && ((*mode == PracticeMode::Paper && selected_paper.is_empty())
+                || (*mode == PracticeMode::Module && selected_module.is_empty()))
+        {
             None
         } else {
-            Some(browse_filter_url(&scope, &mode, &selected_paper,
-                &selected_module, &selected_category, &module_filters))
+            Some(browse_filter_url(
+                &scope,
+                &mode,
+                &selected_paper,
+                &selected_module,
+                &selected_category,
+                &module_filters,
+            ))
         };
         let browse = browse.clone();
         let browse_page = browse_page.clone();
@@ -321,8 +359,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     }
     {
         let refresh_edges = refresh_edges.clone();
-        let selected = (*index, review.is_some(),
-            workspace.as_ref().as_ref().map(|w| w.session.id.clone()));
+        let selected = (
+            *index,
+            review.is_some(),
+            workspace.as_ref().as_ref().map(|w| w.session.id.clone()),
+        );
         use_effect_with(selected, move |_| {
             refresh_edges.emit(());
             || ()
@@ -377,7 +418,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 let result: Result<(), String> = async {
                     match action {
                         Action::Start => {
-                            let practice_mode = collection.as_ref().cloned()
+                            let practice_mode = collection
+                                .as_ref()
+                                .cloned()
                                 .unwrap_or_else(|| (*mode).clone());
                             let collection_active = collection.is_some();
                             let request = CreatePracticeRequest {
@@ -394,22 +437,43 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                         Some((*selected_paper).clone())
                                     }
                                     PracticeMode::Wrong | PracticeMode::Favorite
-                                        if *mode == PracticeMode::Paper && !selected_paper.is_empty() =>
-                                            Some((*selected_paper).clone()),
+                                        if *mode == PracticeMode::Paper
+                                            && !selected_paper.is_empty() =>
+                                    {
+                                        Some((*selected_paper).clone())
+                                    }
                                     _ => None,
                                 },
                                 module: if *mode == PracticeMode::Module {
-                                    if selected_module.is_empty() { return Err("请先选择模块".into()); }
-                                    Some((*selected_module).clone())
-                                } else { None },
-                                category: if *mode == PracticeMode::Module && !selected_category.is_empty() {
+                                    if selected_module.is_empty() {
+                                        if collection_active {
+                                            None
+                                        } else {
+                                            return Err("请先选择模块".into());
+                                        }
+                                    } else {
+                                        Some((*selected_module).clone())
+                                    }
+                                } else {
+                                    None
+                                },
+                                category: if *mode == PracticeMode::Module
+                                    && !selected_category.is_empty()
+                                {
                                     Some((*selected_category).clone())
-                                } else { None },
+                                } else {
+                                    None
+                                },
                                 filters: if *mode == PracticeMode::Module {
                                     (*module_filters).clone()
                                 } else if collection_active {
-                                    ModulePracticeFilters { count: Some(20), ..Default::default() }
-                                } else { ModulePracticeFilters::default() },
+                                    ModulePracticeFilters {
+                                        count: Some(20),
+                                        ..Default::default()
+                                    }
+                                } else {
+                                    ModulePracticeFilters::default()
+                                },
                             };
                             let session: PracticeSession = post_json_response(
                                 &format!("{ROOT}/practice/sessions"),
@@ -569,13 +633,22 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             }
                         }
                         Action::Preview(paper_id, id) => {
-                            let paper: PaperView = fetch_json(
-                                &format!("{ROOT}/papers/{paper_id}"), "真题预览"
-                            ).await?;
-                            let question = paper.questions.into_iter().find(|q| q.id == id)
+                            let paper: PaperView =
+                                fetch_json(&format!("{ROOT}/papers/{paper_id}"), "真题预览")
+                                    .await?;
+                            let question = paper
+                                .questions
+                                .into_iter()
+                                .find(|q| q.id == id)
                                 .ok_or("题目不存在")?;
-                            let materials = paper.materials.into_iter()
-                                .filter(|m| question.materials.contains(&m.id)).collect();
+                            let materials = paper
+                                .materials
+                                .into_iter()
+                                .filter(|m| {
+                                    question.materials.contains(&m.id)
+                                        || question.materials.contains(&m.name)
+                                })
+                                .collect();
                             preview.set(Some((question, materials)));
                         }
                         Action::Favorite(id) => {
@@ -1190,8 +1263,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         {format!("{}题",browse.len())}
                     </span>
                 </div>
-                if (*mode==PracticeMode::Paper && selected_paper.is_empty())
-                    || (*mode==PracticeMode::Module && selected_module.is_empty()) {
+                if collection.is_none() && ((*mode==PracticeMode::Paper && selected_paper.is_empty())
+                    || (*mode==PracticeMode::Module && selected_module.is_empty())) {
                     <p class="text-sm text-base-content/60">
                         {if *mode==PracticeMode::Paper {"先选择地区、年份和原卷，再浏览这套卷的题目。"}
                             else {"先选择模块，即可浏览对应题目和二级题型。"}}

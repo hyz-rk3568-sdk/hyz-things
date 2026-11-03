@@ -58,8 +58,8 @@ test('training subjects reload their own prompts, cards, history and unfinished 
   await page.getByTestId('quant-resume').click();
   await expect(page.getByTestId('quant-question')).toHaveText('数量题 1');
   await expect(page.getByTestId('quant-clock')).toHaveText('15:00');
-  expect(reads.filter(path => path === '/api/v1/study/logic-judgment/status')).toHaveLength(4);
-  expect(reads.filter(path => path === '/api/v1/study/quantitative-relations/status')).toHaveLength(4);
+  expect(reads.filter(path => path === '/api/v1/study/logic-judgment/status')).toHaveLength(2);
+  expect(reads.filter(path => path === '/api/v1/study/quantitative-relations/status')).toHaveLength(2);
   expect(reads.filter(path => path.includes('/runs/'))).toEqual(['/api/v1/study/quantitative-relations/runs/quant-paper']);
 });
 
@@ -208,7 +208,13 @@ test('training shell follows the keyboard-visible viewport without resizing the 
   });
   await subjectFixture(page);
   await page.goto('/#/study/training');
-  await page.getByTestId('training-mode-logic-judgment').click();
+  // WebKit cannot reliably auto-scroll the horizontal tab strip with a synthetic visualViewport.
+  const logicTab=page.getByTestId('training-mode-logic-judgment');
+  await logicTab.evaluate(el=>{
+    const scroller=el.closest('.training-modes-inner') as HTMLElement;
+    scroller.scrollLeft=(el as HTMLElement).offsetLeft-scroller.clientWidth/2;
+  });
+  await logicTab.click();
   await page.getByTestId('logic-user-prompt').locator('summary').click();
   await page.getByTestId('logic-user-prompt').locator('textarea').focus();
   await expect(page.getByTestId('logic-user-prompt').locator('textarea')).toHaveCSS('font-size','16px');
