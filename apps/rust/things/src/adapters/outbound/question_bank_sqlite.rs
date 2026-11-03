@@ -2,8 +2,8 @@
 use crate::application::question_bank::practice::primary_module;
 use crate::application::question_bank::{BankError, IndexedPaper, QuestionBankRepositoryPort};
 use crate::domain::question_bank::{
-    ModulePracticeFilters, PracticeBrowseItem, PracticeCatalog, PracticeCategory, PracticeMode, PracticeModule,
-    PracticeSession,
+    ModulePracticeFilters, PracticeBrowseItem, PracticeCatalog, PracticeCategory, PracticeMode,
+    PracticeModule, PracticeSession,
 };
 use async_trait::async_trait;
 use sqlx::{
@@ -321,24 +321,35 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
              ORDER BY CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER) DESC,p.id,q.number"
         );
         let rows = sqlx::query(&sql)
-            .bind(paper_id).bind(paper_id)
-            .bind(module).bind(module)
-            .bind(category).bind(category)
-            .bind(filters.year_min).bind(filters.year_min)
-            .bind(filters.year_max).bind(filters.year_max)
+            .bind(paper_id)
+            .bind(paper_id)
+            .bind(module)
+            .bind(module)
+            .bind(category)
+            .bind(category)
+            .bind(filters.year_min)
+            .bind(filters.year_min)
+            .bind(filters.year_max)
+            .bind(filters.year_max)
             .bind(i64::from(!filters.regions.is_empty()))
-            .bind(regions).bind(i64::from(filters.exclude_regions))
-            .fetch_all(&self.pool).await.map_err(|_| BankError::Storage)?;
-        Ok(rows.into_iter().map(|row| PracticeBrowseItem {
-            question_id: row.get(0),
-            paper_id: row.get(1),
-            paper_title: row.get(2),
-            year: row.get::<i64, _>(3) as i32,
-            region: row.get(4),
-            number: row.get::<i64, _>(5) as u32,
-            module: row.get(6),
-            category: row.get(7),
-        }).collect())
+            .bind(regions)
+            .bind(i64::from(filters.exclude_regions))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| BankError::Storage)?;
+        Ok(rows
+            .into_iter()
+            .map(|row| PracticeBrowseItem {
+                question_id: row.get(0),
+                paper_id: row.get(1),
+                paper_title: row.get(2),
+                year: row.get::<i64, _>(3) as i32,
+                region: row.get(4),
+                number: row.get::<i64, _>(5) as u32,
+                module: row.get(6),
+                category: row.get(7),
+            })
+            .collect())
     }
 
     async fn practice_candidates(&self, mode: PracticeMode) -> Result<Vec<String>, BankError> {

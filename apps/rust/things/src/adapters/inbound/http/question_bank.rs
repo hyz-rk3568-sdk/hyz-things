@@ -260,13 +260,26 @@ pub(super) async fn practice_browse(
     let filters = ModulePracticeFilters {
         year_min: query.year_min,
         year_max: query.year_max,
-        regions: query.regions.unwrap_or_default().split(',')
-            .filter(|value| !value.is_empty()).map(str::to_owned).collect(),
+        regions: query
+            .regions
+            .unwrap_or_default()
+            .split(',')
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .collect(),
         exclude_regions: query.exclude_regions.unwrap_or(false),
         count: None,
     };
-    match app.practice_browse(query.mode, query.paper_id.as_deref(),
-        query.module.as_deref(), query.category.as_deref(), &filters).await {
+    match app
+        .practice_browse(
+            query.mode,
+            query.paper_id.as_deref(),
+            query.module.as_deref(),
+            query.category.as_deref(),
+            &filters,
+        )
+        .await
+    {
         Ok(value) => Json(value).into_response(),
         Err(error) => bank_error(error),
     }

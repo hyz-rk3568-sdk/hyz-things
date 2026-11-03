@@ -53,7 +53,7 @@ test('paper practice preserves source numbering and hides answers until submissi
   await expect(page.getByTestId('question-bank-practice-paused')).toBeVisible();
   await page.getByRole('button',{name:'继续练习'}).click();
   await openSheet(page);
-  await page.getByTestId('question-bank-practice-number').last().click();
+  await page.getByTestId('question-bank-practice-number').nth(1).click();
   await expect(page.getByTestId('question-bank-practice-stem')).toContainText('第二道题');
   await expect(page.getByTestId('question-bank-practice-material-pane')).toContainText('两道题共用材料');
   await page.getByTestId('question-bank-practice-choice').nth(2).click();
@@ -175,7 +175,7 @@ test('module filter settings persist, apply server-side, and reflect answered/to
   await expect(page.getByTestId('module-drill-settings')).toBeHidden();
   await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toContainText('/1');
   await page.reload();
-  await page.getByTestId('training-mode-question-bank-paper').click();
+  await page.getByTestId('training-mode-question-bank-module').click();
   await expect(page.getByTestId('module-drill-filter-summary')).toContainText('2018');
   await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toContainText('/1');
   await page.getByTestId('module-drill-settings-open').click();

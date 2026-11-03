@@ -4,8 +4,8 @@ use super::{
 };
 use crate::domain::question_bank::{
     CreatePracticeRequest, FavoriteState, ModulePracticeFilters, PaperModule, PaperModules,
-    PracticeBrowseItem, PracticeCatalog, PracticeItem, PracticeMode, PracticeQuestion, PracticeReview, PracticeScore,
-    PracticeSession, PracticeWorkspace, ReviewQuestion,
+    PracticeBrowseItem, PracticeCatalog, PracticeItem, PracticeMode, PracticeQuestion,
+    PracticeReview, PracticeScore, PracticeSession, PracticeWorkspace, ReviewQuestion,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -119,18 +119,24 @@ impl QuestionBankApplication {
     ) -> Result<Vec<PracticeBrowseItem>, BankError> {
         validate_filters(filters)?;
         if matches!(mode, PracticeMode::PaperModule)
-            || matches!(mode, PracticeMode::Paper) && (paper_id.is_none() || module.is_some() || category.is_some())
+            || matches!(mode, PracticeMode::Paper)
+                && (paper_id.is_none() || module.is_some() || category.is_some())
             || matches!(mode, PracticeMode::Module) && (paper_id.is_some() || module.is_none())
             || paper_id.is_some_and(|id| !valid_id(id))
             || module.is_some_and(|m| primary_module(Some(m)) != Some(m))
             || category.is_some_and(|c| {
-                module.is_none() || c.is_empty() || c.trim() != c
-                    || c.len() > 128 || c.chars().any(char::is_control)
+                module.is_none()
+                    || c.is_empty()
+                    || c.trim() != c
+                    || c.len() > 128
+                    || c.chars().any(char::is_control)
             })
         {
             return Err(BankError::Invalid);
         }
-        self.repository.practice_browse(mode, paper_id, module, category, filters).await
+        self.repository
+            .practice_browse(mode, paper_id, module, category, filters)
+            .await
     }
 
     pub async fn create_practice(
@@ -138,8 +144,10 @@ impl QuestionBankApplication {
         request: CreatePracticeRequest,
     ) -> Result<PracticeSession, BankError> {
         validate_filters(&request.filters)?;
-        if matches!(request.mode, PracticeMode::Paper | PracticeMode::PaperModule)
-            && request.filters != ModulePracticeFilters::default()
+        if matches!(
+            request.mode,
+            PracticeMode::Paper | PracticeMode::PaperModule
+        ) && request.filters != ModulePracticeFilters::default()
         {
             return Err(BankError::Invalid);
         }
@@ -181,8 +189,10 @@ impl QuestionBankApplication {
                 if request.paper_id.as_ref().is_some_and(|id| !valid_id(id))
                     || request.category.as_ref().is_some_and(|category| {
                         request.module.is_none()
-                            || category.trim() != category || category.is_empty()
-                            || category.len() > 128 || category.chars().any(char::is_control)
+                            || category.trim() != category
+                            || category.is_empty()
+                            || category.len() > 128
+                            || category.chars().any(char::is_control)
                     })
                 {
                     return Err(BankError::Invalid);
@@ -205,21 +215,20 @@ impl QuestionBankApplication {
                     )
                     .await?
             }
-            PracticeMode::Wrong | PracticeMode::Favorite => {
-                self.repository
-                    .practice_browse(
-                        request.mode.clone(),
-                        request.paper_id.as_deref(),
-                        module.as_deref(),
-                        request.category.as_deref(),
-                        &request.filters,
-                    )
-                    .await?
-                    .into_iter()
-                    .take(request.filters.count.unwrap_or(20))
-                    .map(|item| item.question_id)
-                    .collect()
-            }
+            PracticeMode::Wrong | PracticeMode::Favorite => self
+                .repository
+                .practice_browse(
+                    request.mode.clone(),
+                    request.paper_id.as_deref(),
+                    module.as_deref(),
+                    request.category.as_deref(),
+                    &request.filters,
+                )
+                .await?
+                .into_iter()
+                .take(request.filters.count.unwrap_or(20))
+                .map(|item| item.question_id)
+                .collect(),
             _ => Vec::new(),
         };
         let selected = match request.mode {
@@ -276,7 +285,10 @@ impl QuestionBankApplication {
         if items.is_empty() {
             return Err(BankError::NotFound);
         }
-        if matches!(request.mode, PracticeMode::Module | PracticeMode::Wrong | PracticeMode::Favorite) {
+        if matches!(
+            request.mode,
+            PracticeMode::Module | PracticeMode::Wrong | PracticeMode::Favorite
+        ) {
             // Respect the repository's deterministic selection and filter order.
             items.sort_by_key(|item| {
                 selected_order

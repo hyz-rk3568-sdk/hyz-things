@@ -10,6 +10,13 @@ use hyz_things::domain::question_bank::{
 
 const ROOT: &str = "/api/v1/question-bank";
 const BROWSE_PAGE_SIZE: usize = 20;
+
+fn history_matches_entry(entry: &PracticeMode, run: &PracticeSession) -> bool {
+    let paper_run = matches!(run.mode, PracticeMode::Paper | PracticeMode::PaperModule)
+        || matches!(run.mode, PracticeMode::Wrong | PracticeMode::Favorite)
+            && run.paper_id.is_some();
+    if *entry == PracticeMode::Paper { paper_run } else { !paper_run }
+}
 const MODULE_FILTERS_STORAGE: &str = "hyz-question-bank-module-settings-v1";
 
 fn read_module_filters() -> ModulePracticeFilters {
@@ -831,12 +838,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 </div>
             })}>
                 <div class="grid gap-2" data-testid="question-bank-practice-history">
-                    {for history.iter().filter(|run| {
-                        let paper_run = matches!(run.mode, PracticeMode::Paper | PracticeMode::PaperModule)
-                            || matches!(run.mode, PracticeMode::Wrong | PracticeMode::Favorite)
-                                && run.paper_id.is_some();
-                        if *mode == PracticeMode::Paper { paper_run } else { !paper_run }
-                    }).map(|run|{
+                    {for history.iter().filter(|run| history_matches_entry(&mode, run)).map(|run|{
                         let active=run.status=="active";
                         let id=run.id.clone();
                         let invoke=invoke.clone();
@@ -860,7 +862,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let invoke = invoke.clone();
         html! {
             <button class={TRAINING_PRIMARY_BUTTON} data-testid="question-bank-practice-start"
-                disabled={*busy || props.csrf.is_empty() || 
+                disabled={*busy || props.csrf.is_empty() ||
                     (collection.is_some() && browse.is_empty()) ||
                     (collection.is_none() && *mode == PracticeMode::Paper && selected_paper.is_empty()) ||
                     (collection.is_none() && *mode == PracticeMode::Module && selected_module.is_empty())}
@@ -1245,7 +1247,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     </article>
                 }
             </section>
-            if let Some(active) = history.iter().find(|h|h.status=="active") {
+            if let Some(active) = history.iter().find(|h| h.status=="active" && history_matches_entry(&mode, h)) {
                 <div class="rounded-box border border-primary/20 bg-base-100 p-3" data-testid="question-bank-resume-card">
                     <p class="text-sm font-semibold">{"继续上次练习"}</p>
                     <div class="mt-2 flex items-center justify-between gap-3">
