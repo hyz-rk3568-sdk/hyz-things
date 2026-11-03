@@ -751,6 +751,10 @@ fn app_with_assets(
             on(MethodFilter::GET, question_bank::practice_catalog),
         )
         .route(
+            "/api/v1/question-bank/practice/questions",
+            on(MethodFilter::GET, question_bank::practice_browse),
+        )
+        .route(
             "/api/v1/question-bank/practice/history",
             on(MethodFilter::GET, question_bank::practice_history),
         )

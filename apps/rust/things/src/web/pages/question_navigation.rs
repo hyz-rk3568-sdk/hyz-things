@@ -189,6 +189,7 @@ pub(super) struct CompactQuestionNavigationProps {
     pub(super) current: UseStateHandle<usize>,
     pub(super) numbers: Vec<u32>,
     pub(super) answered: Vec<bool>,
+    pub(super) grades: Option<Vec<Option<bool>>>,
 }
 
 #[function_component(CompactQuestionNavigation)]
@@ -229,11 +230,29 @@ pub(super) fn compact_question_navigation(props: &CompactQuestionNavigationProps
                             let current = props.current.clone();
                             let open = open.clone();
                             let done = props.answered.get(i).copied().unwrap_or(false);
+                            let is_review = props.grades.is_some();
+                            let grade = props.grades.as_ref().and_then(|grades| grades.get(i)).copied().flatten();
+                            let style = if is_review {
+                                match grade {
+                                    Some(true) => "btn-success",
+                                    Some(false) => "btn-error",
+                                    None => "btn-outline",
+                                }
+                            } else if i == index { "btn-primary" }
+                            else if done { "btn-outline border-primary/40" }
+                            else { "btn-ghost" };
+                            let label = if is_review {
+                                match grade {
+                                    Some(true) => format!("原卷第 {number} 题 正确"),
+                                    Some(false) => format!("原卷第 {number} 题 错误"),
+                                    None => format!("原卷第 {number} 题"),
+                                }
+                            } else { format!("原卷第 {number} 题") };
                             html! {<button type="button"
-                                class={classes!("btn","btn-sm",if i==index {"btn-primary"} else if done {"btn-outline border-primary/40"} else {"btn-ghost"})}
+                                class={classes!("btn","btn-sm",style,if i==index && is_review {"ring-2 ring-primary"} else {""})}
                                 data-testid="question-bank-practice-number"
                                 aria-current={(i==index).to_string()}
-                                aria-label={format!("原卷第 {number} 题")}
+                                aria-label={label}
                                 onclick={Callback::from(move |_|{current.set(i);open.set(false);})}>{number}</button>}
                         })}
                     </div>

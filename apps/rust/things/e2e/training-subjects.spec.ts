@@ -51,16 +51,15 @@ test('training subjects reload their own prompts, cards, history and unfinished 
     await expect(prompt.locator('textarea')).toHaveValue(`${quantitative ? '数量' : '判断'}专用提示`);
     await page.getByTestId(`${subject}-statistics`).locator('summary').click();
     await expect(page.getByTestId(`${subject}-card-item`)).toContainText(`${quantitative ? '数量' : '判断'}方法卡`);
-    await page.getByTestId('training-mode-history').click();
-    await page.getByTestId('training-history-item').filter({hasText:quantitative ? '数量关系':'判断推理'}).first().click();
+    await page.getByTestId(`${subject}-history-open`).click();
     await expect(page.getByTestId(`${subject}-history`)).toContainText(`${quantitative ? 8 : 3}/10题`);
     await page.getByRole('button', { name: '返回训练', exact: true }).click();
   }
   await page.getByTestId('quant-resume').click();
   await expect(page.getByTestId('quant-question')).toHaveText('数量题 1');
   await expect(page.getByTestId('quant-clock')).toHaveText('15:00');
-  expect(reads.filter(path => path === '/api/v1/study/logic-judgment/status')).toHaveLength(4);
-  expect(reads.filter(path => path === '/api/v1/study/quantitative-relations/status')).toHaveLength(4);
+  expect(reads.filter(path => path === '/api/v1/study/logic-judgment/status')).toHaveLength(2);
+  expect(reads.filter(path => path === '/api/v1/study/quantitative-relations/status')).toHaveLength(2);
   expect(reads.filter(path => path.includes('/runs/'))).toEqual(['/api/v1/study/quantitative-relations/runs/quant-paper']);
 });
 
@@ -156,8 +155,7 @@ test('setup and history stay inside safe areas while prompt editing and viewport
     await prompt.locator('textarea').focus();
     await expect(action.getByTestId('logic-prepare')).toBeVisible();
     await prompt.locator('summary').click();
-    await page.getByTestId('training-mode-history').click();
-    await page.getByTestId('training-history-item').filter({hasText:'判断推理'}).first().click();
+    await page.getByTestId('logic-history-open').click();
     const back=page.getByRole('button',{name:'返回训练',exact:true});
     const before=await back.boundingBox();
     await page.getByTestId('training-setup-scroll').evaluate(el=>el.scrollTop=el.scrollHeight);
@@ -210,7 +208,10 @@ test('training shell follows the keyboard-visible viewport without resizing the 
   });
   await subjectFixture(page);
   await page.goto('/#/study/training');
-  await page.getByTestId('training-mode-logic-judgment').click();
+  // A synthetic visualViewport makes WebKit's hit-target logic unreliable for
+  // horizontally off-screen tabs. Enter the mode via a DOM click here; regular
+  // user-visible tab navigation is covered by separate browser tests.
+  await page.getByTestId('training-mode-logic-judgment').evaluate(el=>(el as HTMLButtonElement).click());
   await page.getByTestId('logic-user-prompt').locator('summary').click();
   await page.getByTestId('logic-user-prompt').locator('textarea').focus();
   await expect(page.getByTestId('logic-user-prompt').locator('textarea')).toHaveCSS('font-size','16px');
@@ -234,8 +235,7 @@ test('footerless history keeps its last entry above the bottom safe area', async
   await page.goto('/#/study/training');
   await page.evaluate(()=>document.documentElement.style.setProperty('--app-safe-bottom','80px'));
   await page.getByTestId('training-mode-logic-judgment').click();
-  await page.getByTestId('training-mode-history').click();
-  await page.getByTestId('training-history-item').filter({hasText:'判断推理'}).first().click();
+  await page.getByTestId('logic-history-open').click();
   await page.getByTestId('training-setup-scroll').evaluate(el=>el.scrollTop=el.scrollHeight);
   const last=await page.getByTestId('logic-history').locator('article').last().boundingBox();
   expect(last!.y+last!.height).toBeLessThanOrEqual(640-80);

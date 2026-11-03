@@ -16,21 +16,20 @@ async function openSheet(page:import('@playwright/test').Page) {
 }
 
 
-test('question bank paper module practice keeps source numbering and hides answers until submission',async({page,request})=>{
+test('paper practice preserves source numbering and hides answers until submission',async({page,request})=>{
   await loginAsAdmin(page);
   await page.goto('/#/study/training');
-  await page.getByTestId('training-mode-question-bank').click();
+  await page.getByTestId('training-mode-question-bank-paper').click();
   await expect(page.getByTestId('question-bank-practice-setup')).toBeVisible();
   await chooseFixturePaper(page);
-  await page.getByTestId('question-bank-mode').filter({hasText:'原卷模块练习'}).click();
-  await expect(page.getByTestId('question-bank-select-module').filter({hasText:'资料分析'})).toBeVisible();
-  await page.getByTestId('question-bank-select-module').filter({hasText:'资料分析'}).click();
+  await expect(page.getByTestId('question-bank-mode')).toHaveCount(0);
+  await expect(page.getByTestId('question-bank-browse-count')).toContainText('3题');
   await page.getByTestId('question-bank-practice-start').click();
   await expect(page.getByTestId('question-bank-practice-workspace')).toBeVisible();
   await expect(page.getByTestId('question-bank-practice-stem')).toContainText('材料中的正确选项');
   await expect(page.getByTestId('question-bank-practice-material-pane')).toContainText('两道题共用材料');
   await openSheet(page);
-  await expect(page.getByTestId('question-bank-practice-number')).toHaveCount(2);
+  await expect(page.getByTestId('question-bank-practice-number')).toHaveCount(3);
   await expect(page.getByTestId('question-bank-practice-number').first()).toContainText('26');
   await page.getByTestId('training-answer-sheet-toggle').click();
   const sessionId = await page.evaluate(async()=>{
@@ -48,35 +47,51 @@ test('question bank paper module practice keeps source numbering and hides answe
   await page.getByTestId('question-bank-practice-pause').click();
   await expect(page.getByTestId('question-bank-practice-paused')).toBeVisible();
   await page.reload();
-  await page.getByTestId('training-mode-question-bank').click();
+  await page.getByTestId('training-mode-question-bank-paper').click();
   await expect(page.getByTestId('question-bank-resume-card')).toContainText('继续练习');
   await page.getByTestId('question-bank-resume-card').getByRole('button',{name:'继续练习'}).click();
   await expect(page.getByTestId('question-bank-practice-paused')).toBeVisible();
   await page.getByRole('button',{name:'继续练习'}).click();
   await openSheet(page);
-  await page.getByTestId('question-bank-practice-number').last().click();
+  await page.getByTestId('question-bank-practice-number').nth(1).click();
   await expect(page.getByTestId('question-bank-practice-stem')).toContainText('第二道题');
   await expect(page.getByTestId('question-bank-practice-material-pane')).toContainText('两道题共用材料');
   await page.getByTestId('question-bank-practice-choice').nth(2).click();
   await page.getByTestId('question-bank-practice-submit').click();
+  await expect(page.getByTestId('question-bank-submit-confirm')).toBeVisible();
+  await page.getByRole('button',{name:'确认交卷'}).click();
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('原始解析');
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('第二题解析');
   await openSheet(page);
   await page.getByTestId('question-bank-practice-number').first().click();
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('B 是正确项');
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('现期比重');
+  await openSheet(page);
+  await expect(page.getByTestId('question-bank-practice-score')).toContainText('正确 1');
+  await expect(page.getByTestId('question-bank-practice-score')).toContainText('错误 1');
+  await expect(page.getByTestId('question-bank-practice-workspace')).not.toContainText('ungradable');
+  await expect(page.getByTestId('question-bank-practice-workspace')).not.toContainText('正确率');
+  await expect(page.getByTestId('question-bank-practice-number').first()).toHaveClass(/btn-error/);
+  await expect(page.getByTestId('question-bank-practice-number').nth(1)).toHaveClass(/btn-success/);
+  await expect(page.getByTestId('question-bank-practice-number').nth(2)).not.toHaveClass(/btn-(success|error)/);
+  await page.getByTestId('training-answer-sheet-toggle').click();
+  await expect(page.getByRole('button',{name:'题目向下滚动'})).toHaveCount(1);
+  await expect(page.getByRole('button',{name:'材料向下滚动'})).toHaveCount(1);
+  const star=await page.getByTestId('question-bank-favorite').boundingBox();
+  const title=await page.getByTestId('question-bank-practice-question-pane').locator('strong').first().boundingBox();
+  expect(star!.x).toBeLessThan(title!.x);
   await page.getByTestId('question-bank-favorite').click();
-  await expect(page.getByTestId('question-bank-favorite')).toContainText('已收藏');
+  await expect(page.getByTestId('question-bank-favorite')).toHaveAttribute('aria-label','取消收藏');
   // Restore the fixture state so the following test starts with an empty favorite set.
   await page.getByTestId('question-bank-favorite').click();
-  await expect(page.getByTestId('question-bank-favorite')).toContainText('收藏');
-  await expect(page.getByTestId('question-bank-favorite')).not.toContainText('已收藏');
+  await expect(page.getByTestId('question-bank-favorite')).toHaveAttribute('aria-label','收藏题目');
+  await expect(page.getByTestId('question-bank-favorite')).not.toHaveAttribute('aria-label','取消收藏');
 });
 
-test('question bank wrong and favorite mode reuses fixed source items',async({page})=>{
+test('question bank saved collections browse items before practicing',async({page})=>{
   await loginAsAdmin(page);
   await page.goto('/#/study/training');
-  await page.getByTestId('training-mode-question-bank').click();
+  await page.getByTestId('training-mode-question-bank-paper').click();
   await chooseFixturePaper(page);
   await page.getByTestId('question-bank-practice-start').click();
   await page.getByTestId('question-bank-practice-choice').first().click();
@@ -86,9 +101,13 @@ test('question bank wrong and favorite mode reuses fixed source items',async({pa
   await page.getByRole('button',{name:'确认交卷'}).click();
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('原始解析');
   await page.getByTestId('question-bank-favorite').click();
-  await expect(page.getByTestId('question-bank-favorite')).toContainText('已收藏');
+  await expect(page.getByTestId('question-bank-favorite')).toHaveAttribute('aria-label','取消收藏');
   await page.getByRole('button',{name:/暂停并退出/}).click();
-  await page.getByTestId('question-bank-mode').filter({hasText:'错题训练'}).click();
+  await page.getByTestId('question-bank-collection-wrong').click();
+  await expect(page.getByTestId('question-bank-browse-count')).toContainText('1题');
+  await page.getByTestId('question-bank-browse-item').first().click();
+  await expect(page.getByTestId('question-bank-browse-preview')).toContainText('材料中的正确选项');
+  await expect(page.getByTestId('question-bank-browse-preview')).toContainText('两道题共用材料');
   await page.getByTestId('question-bank-practice-start').click();
   await openSheet(page);
   await expect(page.getByTestId('question-bank-practice-number')).toHaveCount(1);
@@ -98,7 +117,8 @@ test('question bank wrong and favorite mode reuses fixed source items',async({pa
   await page.getByTestId('question-bank-practice-submit').click();
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('正确答案');
   await page.getByRole('button',{name:/暂停并退出/}).click();
-  await page.getByTestId('question-bank-mode').filter({hasText:'收藏训练'}).click();
+  await page.getByTestId('question-bank-collection-favorite').click();
+  await expect(page.getByTestId('question-bank-browse-count')).toContainText('1题');
   await page.getByTestId('question-bank-practice-start').click();
   await openSheet(page);
   await expect(page.getByTestId('question-bank-practice-number')).toHaveCount(1);
@@ -119,13 +139,13 @@ test('question bank practice mutations enforce admin, origin and CSRF',async({re
   expect(invalidCsrf.status()).toBe(403);
   const read=await request.get('/api/v1/question-bank/practice/history');
   expect(read.status()).toBe(401);
+  expect((await request.get('/api/v1/question-bank/practice/questions?mode=favorite')).status()).toBe(401);
 });
 
 test('question bank module drill filters real categories across original papers',async({page})=>{
   await loginAsAdmin(page);
   await page.goto('/#/study/training');
-  await page.getByTestId('training-mode-question-bank').click();
-  await page.getByTestId('question-bank-mode').filter({hasText:'模块刷题'}).click();
+  await page.getByTestId('training-mode-question-bank-module').click();
   await expect(page.getByTestId('question-bank-cross-module').first()).toBeVisible();
   await page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'}).click();
   await page.getByText('筛选二级题型（可选）').click();
@@ -146,8 +166,7 @@ test('question bank module drill filters real categories across original papers'
 test('module filter settings persist, apply server-side, and reflect answered/total progress',async({page})=>{
   await loginAsAdmin(page);
   await page.goto('/#/study/training');
-  await page.getByTestId('training-mode-question-bank').click();
-  await page.getByTestId('question-bank-mode').filter({hasText:'模块刷题'}).click();
+  await page.getByTestId('training-mode-question-bank-module').click();
   await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toContainText('/3');
   await page.getByTestId('module-drill-settings-open').click();
   await expect(page.getByTestId('module-drill-settings')).toBeVisible();
@@ -160,10 +179,15 @@ test('module filter settings persist, apply server-side, and reflect answered/to
   await expect(page.getByTestId('module-drill-settings')).toBeHidden();
   await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toContainText('/1');
   await page.reload();
-  await page.getByTestId('training-mode-question-bank').click();
-  await page.getByTestId('question-bank-mode').filter({hasText:'模块刷题'}).click();
+  await page.getByTestId('training-mode-question-bank-module').click();
   await expect(page.getByTestId('module-drill-filter-summary')).toContainText('2018');
   await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toContainText('/1');
+  await page.getByTestId('module-drill-settings-open').click();
+  await expect(page.getByTestId('module-filter-custom-year-toggle')).toHaveAttribute('aria-pressed','true');
+  await expect(page.getByTestId('module-filter-year-min')).toHaveValue('2018');
+  await expect(page.getByTestId('module-filter-year-max')).toHaveValue('2018');
+  await expect(page.getByTestId('module-filter-region').filter({hasText:'广东'})).toHaveAttribute('aria-pressed','true');
+  await page.getByRole('button',{name:'← 返回'}).click();
   await page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'}).click();
   await page.getByTestId('question-bank-practice-start').click();
   await expect(page.getByTestId('question-bank-practice-workspace')).toBeVisible();
@@ -171,33 +195,31 @@ test('module filter settings persist, apply server-side, and reflect answered/to
   await expect(page.getByTestId('training-answer-sheet-toggle')).toContainText('1/1');
   await page.getByTestId('question-bank-practice-choice').first().click();
   await page.getByRole('button',{name:/暂停并退出/}).click();
-  await page.getByTestId('question-bank-mode').filter({hasText:'模块刷题'}).click();
+  await expect(page.getByTestId('question-bank-practice-setup')).toBeVisible();
   await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toContainText('1/1');
 });
 test('swipe changes questions only for horizontal finger gesture and keeps document locked',async({page})=>{
   await loginAsAdmin(page);
   await page.goto('/#/study/training');
-  await page.getByTestId('training-mode-question-bank').click();
+  await page.getByTestId('training-mode-question-bank-paper').click();
   await chooseFixturePaper(page);
-  await page.getByTestId('question-bank-mode').filter({hasText:'原卷模块练习'}).click();
-  await page.getByTestId('question-bank-select-module').filter({hasText:'资料分析'}).click();
   await page.getByTestId('question-bank-practice-start').click();
   const surface=page.getByTestId('training-swipe-surface');
-  await expect(page.getByTestId('training-answer-sheet-toggle')).toContainText('1/2');
+  await expect(page.getByTestId('training-answer-sheet-toggle')).toContainText('1/3');
   await surface.evaluate((node)=>{
     const emit=(type:string,pointerType:string,x:number,y:number)=>node.dispatchEvent(new PointerEvent(type,{
       bubbles:true,pointerType,pointerId:17,isPrimary:true,clientX:x,clientY:y
     }));
     emit('pointerdown','touch',500,230);emit('pointerup','touch',250,230);
   });
-  await expect(page.getByTestId('training-answer-sheet-toggle')).toContainText('2/2');
+  await expect(page.getByTestId('training-answer-sheet-toggle')).toContainText('2/3');
   await surface.evaluate((node)=>{
     const emit=(type:string,pointerType:string,x:number,y:number)=>node.dispatchEvent(new PointerEvent(type,{
       bubbles:true,pointerType,pointerId:18,isPrimary:true,clientX:x,clientY:y
     }));
     emit('pointerdown','pen',250,230);emit('pointerup','pen',500,230);
   });
-  await expect(page.getByTestId('training-answer-sheet-toggle')).toContainText('2/2');
+  await expect(page.getByTestId('training-answer-sheet-toggle')).toContainText('2/3');
   const overflow=await page.evaluate(()=>document.documentElement.scrollHeight-document.documentElement.clientHeight);
   expect(overflow).toBeLessThanOrEqual(1);
 });
