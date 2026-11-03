@@ -2,7 +2,7 @@
 use crate::application::question_bank::practice::primary_module;
 use crate::application::question_bank::{BankError, IndexedPaper, QuestionBankRepositoryPort};
 use crate::domain::question_bank::{
-    ModulePracticeFilters, PracticeCatalog, PracticeCategory, PracticeMode, PracticeModule,
+    ModulePracticeFilters, PracticeBrowseItem, PracticeCatalog, PracticeCategory, PracticeMode, PracticeModule,
     PracticeSession,
 };
 use async_trait::async_trait;
@@ -285,6 +285,59 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             .fetch_all(&self.pool)
             .await
             .map_err(|_| BankError::Storage)
+    }
+
+    async fn practice_browse(
+        &self,
+        mode: PracticeMode,
+        paper_id: Option<&str>,
+        module: Option<&str>,
+        category: Option<&str>,
+        filters: &ModulePracticeFilters,
+    ) -> Result<Vec<PracticeBrowseItem>, BankError> {
+        let condition = match mode {
+            PracticeMode::Wrong => "COALESCE(progress.pending,0)=1",
+            PracticeMode::Favorite => "COALESCE(saved.favorite,0)=1",
+            _ => return Err(BankError::Invalid),
+        };
+        let regions = serde_json::to_string(&filters.regions).map_err(|_| BankError::Storage)?;
+        let sql = format!(
+            "SELECT q.id,q.paper_id,json_extract(p.metadata,'$.summary.title'),\
+             CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER),\
+             json_extract(p.metadata,'$.summary.region'),q.number,q.module,q.category \
+             FROM questions q JOIN papers p ON p.id=q.paper_id \
+             LEFT JOIN question_progress progress ON progress.question_id=q.id \
+             LEFT JOIN favorites saved ON saved.question_id=q.id \
+             WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' \
+             AND {condition} \
+             AND (? IS NULL OR q.paper_id=?) \
+             AND (? IS NULL OR q.module=?) \
+             AND (? IS NULL OR q.category=?) \
+             AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)>=?) \
+             AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)<=?) \
+             AND (?=0 OR (EXISTS (SELECT 1 FROM json_each(?) \
+                  WHERE value=json_extract(p.metadata,'$.summary.region'))) != (?)) \
+             ORDER BY CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER) DESC,p.id,q.number"
+        );
+        let rows = sqlx::query(&sql)
+            .bind(paper_id).bind(paper_id)
+            .bind(module).bind(module)
+            .bind(category).bind(category)
+            .bind(filters.year_min).bind(filters.year_min)
+            .bind(filters.year_max).bind(filters.year_max)
+            .bind(i64::from(!filters.regions.is_empty()))
+            .bind(regions).bind(i64::from(filters.exclude_regions))
+            .fetch_all(&self.pool).await.map_err(|_| BankError::Storage)?;
+        Ok(rows.into_iter().map(|row| PracticeBrowseItem {
+            question_id: row.get(0),
+            paper_id: row.get(1),
+            paper_title: row.get(2),
+            year: row.get::<i64, _>(3) as i32,
+            region: row.get(4),
+            number: row.get::<i64, _>(5) as u32,
+            module: row.get(6),
+            category: row.get(7),
+        }).collect())
     }
 
     async fn practice_candidates(&self, mode: PracticeMode) -> Result<Vec<String>, BankError> {
