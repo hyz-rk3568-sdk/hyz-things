@@ -335,7 +335,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     }
     {
         let refresh_edges = refresh_edges.clone();
-        let selected = (*index, review.is_some());
+        let selected = (*index, review.is_some(),
+            workspace.as_ref().as_ref().map(|w| w.session.id.clone()));
         use_effect_with(selected, move |_| {
             refresh_edges.emit(());
             || ()
@@ -632,10 +633,24 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             let qid = item.item.question_id.clone();
             let starred = *favorite;
             let on_favorite = invoke.clone();
+            let on_scrolling = {
+                let refresh_edges = refresh_edges.clone();
+                Callback::from(move |_: web_sys::Event| refresh_edges.emit(()))
+            };
             let material_pane = html! {
                 <section class="flex min-h-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="question-bank-practice-material-pane">
-                    <div class={TRAINING_PANE_HEADER}><strong>{"原卷材料"}</strong></div>
-                    <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4" data-testid="question-bank-practice-material-scroll">
+                    <div class={TRAINING_PANE_HEADER}>
+                        <strong>{"原卷材料"}</strong>
+                        <div class="ml-auto flex shrink-0 gap-1" role="group" aria-label="材料滚动">
+                            <MaterialScrollButton passage={material_scroll.clone()} up={true}
+                                disabled={!material_edges.can_scroll_up} question_index={item_index} />
+                            <MaterialScrollButton passage={material_scroll.clone()} up={false}
+                                disabled={!material_edges.can_scroll_down} question_index={item_index} />
+                        </div>
+                    </div>
+                    <div ref={material_scroll.clone()} onscroll={on_scrolling.clone()}
+                        class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4"
+                        data-testid="question-bank-practice-material-scroll">
                         {for item.materials.iter().map(|m| html!{
                             <section class="mb-5"><h3 class="font-bold">{m.name.clone()}</h3>
                                 <div class="study-markdown">{render_question_bank_markdown(&m.markdown)}</div>
@@ -648,14 +663,25 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             let body = html! {
                 <section class="flex h-full min-h-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="question-bank-practice-question-pane">
                     <div class={TRAINING_PANE_HEADER}>
-                        <strong>{format!("原卷第 {} 题（{}/{})", item.item.number,item_index+1,current.questions.len())}</strong>
-                        <InkToolbarSlot />
-                        <button type="button" class="btn btn-ghost btn-sm" data-testid="question-bank-favorite"
-                            onclick={Callback::from(move |_| on_favorite.emit(Action::Favorite(qid.clone())))}>
-                            {if starred {"★ 已收藏"} else {"☆ 收藏"}}
+                        <button type="button" class="btn btn-ghost btn-sm shrink-0" data-testid="question-bank-favorite"
+                            onclick={Callback::from(move |_| on_favorite.emit(Action::Favorite(qid.clone())))}
+                            aria-label={if starred {"取消收藏"} else {"收藏题目"}}>
+                            {if starred {"★"} else {"☆"}}
                         </button>
+                        <strong class="min-w-0 truncate text-sm">{format!("原卷第 {} 题（{}/{})", item.item.number,item_index+1,current.questions.len())}</strong>
+                        <div class="ml-auto flex shrink-0 items-center gap-1">
+                            <div class="flex gap-1" role="group" aria-label="题目与解析滚动">
+                                <MaterialScrollButton passage={question_scroll.clone()} up={true}
+                                    disabled={!question_edges.can_scroll_up} question_index={item_index} target="题目" />
+                                <MaterialScrollButton passage={question_scroll.clone()} up={false}
+                                    disabled={!question_edges.can_scroll_down} question_index={item_index} target="题目" />
+                            </div>
+                            <InkToolbarSlot />
+                        </div>
                     </div>
-                    <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4 space-y-4" data-testid="question-bank-practice-question-scroll">
+                    <div ref={question_scroll.clone()} onscroll={on_scrolling.clone()}
+                        class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4 space-y-4"
+                        data-testid="question-bank-practice-question-scroll">
                     if item.content_changed {
                         <p class="text-warning">{"题目源文件已更新或暂不可用，不能用新版题面替代旧题。"}</p>
                     } else if let Some(q) = question {
@@ -669,7 +695,16 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             {for options.iter().map(|(label, markdown)| {
                                 let chosen = item.item.answer.contains(label);
                                 let correct = selected_review.is_some_and(|r|r.correct_answer.contains(label));
-                                let style = if completed && correct {"btn-success"} else if completed && chosen {"btn-error"} else if chosen {"btn-primary"} else {"btn-outline"};
+                                let grade = item.item.grade.as_deref();
+                                let style = if completed && correct && grade != Some("ungradable") {
+                                    "btn-success"
+                                } else if completed && chosen && grade == Some("wrong") {
+                                    "btn-error"
+                                } else if completed && chosen && grade == Some("correct") {
+                                    "btn-success"
+                                } else if !completed && chosen {
+                                    "btn-primary"
+                                } else {"btn-outline"};
                                 let action = invoke.clone(); let choice = label.clone();
                                 html! {<button type="button" class={classes!("btn","h-auto","min-h-12","w-full","justify-start","whitespace-normal","text-left",style)}
                                     aria-pressed={chosen.to_string()} data-testid="question-bank-practice-choice"
@@ -691,10 +726,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             </label>
                         }
                         if let Some(r) = selected_review {
-                            <p class="font-semibold">{format!("你的答案：{} · 正确答案：{} · 状态：{}",
-                                if item.item.answer.is_empty() {"未答".into()} else {item.item.answer.join("、")},
-                                if r.correct_answer.is_empty() {"不可判分".into()} else {r.correct_answer.join("、")},
-                                item.item.grade.clone().unwrap_or_default())}</p>
+                            <p class="font-semibold" data-testid="question-bank-practice-review-answer">
+                                {format!("你的答案：{} · 正确答案：{}",
+                                    if item.item.answer.is_empty() {"未答".into()} else {item.item.answer.join("、")},
+                                    if r.correct_answer.is_empty() {"暂无可靠答案".into()} else {r.correct_answer.join("、")})}
+                            </p>
                             <h3 class="font-bold">{"原始解析"}</h3>
                             <div class="study-markdown">{if r.explanation.is_empty() {html!{"暂无解析"}} else {render_question_bank_markdown(&r.explanation)}}</div>
                             <h3 class="font-bold">{"考点"}</h3>
@@ -710,8 +746,18 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 html! {
                     <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100"
                         data-testid="question-bank-practice-stem-pane">
-                        <div class={TRAINING_PANE_HEADER}><strong>{"题干"}</strong></div>
-                        <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4">
+                        <div class={TRAINING_PANE_HEADER}>
+                            <strong>{"题干"}</strong>
+                            <div class="ml-auto flex shrink-0 gap-1" role="group" aria-label="题干滚动">
+                                <MaterialScrollButton passage={material_scroll.clone()} up={true}
+                                    disabled={!material_edges.can_scroll_up} question_index={item_index} target="题干" />
+                                <MaterialScrollButton passage={material_scroll.clone()} up={false}
+                                    disabled={!material_edges.can_scroll_down} question_index={item_index} target="题干" />
+                            </div>
+                        </div>
+                        <div ref={material_scroll.clone()} onscroll={on_scrolling.clone()}
+                            class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4"
+                            data-testid="question-bank-practice-material-scroll">
                             if let Some(q) = question {
                                 <div class="study-markdown text-base leading-8" data-testid="question-bank-practice-stem">
                                     {render_question_bank_markdown(&q.stem)}
@@ -728,7 +774,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             let nav = html! {
                 <CompactQuestionNavigation current={index.clone()}
                     numbers={current.questions.iter().map(|q|q.item.number).collect::<Vec<_>>()}
-                    answered={current.questions.iter().map(|q|!q.item.answer.is_empty()).collect::<Vec<_>>()}/>
+                    answered={current.questions.iter().map(|q|!q.item.answer.is_empty()).collect::<Vec<_>>()}
+                    grades={if completed {Some(current.questions.iter().map(|q| match q.item.grade.as_deref() {
+                        Some("correct") => Some(true), Some("wrong") => Some(false), _ => None
+                    }).collect::<Vec<_>>())} else {None}}/>
             };
             let paused = current.session.paused && !completed;
             return html! {
@@ -749,11 +798,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 <button class="btn btn-sm btn-error" data-testid="question-bank-practice-submit"
                                     disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Submit)})}>{"交卷"}</button>
                             } else if let Some(score) = &current.session.score {
-                                <span class="font-semibold" data-testid="question-bank-practice-score">
-                                    {format!("正确 {} · 错误 {} · 未答 {} · 不可判分 {} · 正确率 {:.1}%",
-                                        score.correct,score.wrong,score.unanswered,score.ungradable,
-                                        if score.correct+score.wrong+score.unanswered==0 {0.0}
-                                        else {100.0*(score.correct as f64)/((score.correct+score.wrong+score.unanswered) as f64)})}
+                                <span class="flex shrink-0 items-center gap-3 font-semibold" data-testid="question-bank-practice-score">
+                                    <span class="text-success">{format!("正确 {}",score.correct)}</span>
+                                    <span class="text-error">{format!("错误 {}",score.wrong)}</span>
                                 </span>
                             }
                         </div>
