@@ -4,8 +4,12 @@ import {loginAsAdmin,resetHarness,webOrigin} from './fixtures';
 test.beforeEach(async ({request})=>{await resetHarness(request)});
 
 async function chooseFixturePaper(page:import('@playwright/test').Page) {
-  await page.getByTestId('question-bank-region').filter({hasText:'国考'}).click();
-  await page.getByTestId('question-bank-year').filter({hasText:'2008'}).click();
+  const region=page.getByTestId('question-bank-region').filter({hasText:'国考'});
+  if (!(await region.evaluate(node=>(node.closest('details') as HTMLDetailsElement | null)?.open))) {
+    await region.click();
+  }
+  const year=page.getByTestId('question-bank-year').filter({hasText:'2008'});
+  if (!(await year.evaluate(node=>(node.closest('details') as HTMLDetailsElement).open))) await year.click();
   await page.getByTestId('question-bank-paper-option').filter({hasText:'行测真题训练端到端样卷'}).click();
 }
 async function openSheet(page:import('@playwright/test').Page) {
@@ -16,18 +20,28 @@ async function openSheet(page:import('@playwright/test').Page) {
 }
 
 
-test('paper practice preserves source numbering and hides answers until submission',async({page,request})=>{
+test('paper practice hides numbering and scroll tools until they are needed',async({page,request})=>{
   await loginAsAdmin(page);
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-question-bank-paper').click();
   await expect(page.getByTestId('question-bank-practice-setup')).toBeVisible();
   await chooseFixturePaper(page);
   await expect(page.getByTestId('question-bank-mode')).toHaveCount(0);
-  await expect(page.getByTestId('question-bank-browse-count')).toContainText('3题');
+  await expect(page.getByTestId('question-bank-browse-count')).toHaveCount(0);
   await page.getByTestId('question-bank-practice-start').click();
   await expect(page.getByTestId('question-bank-practice-workspace')).toBeVisible();
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('第 1/3 题');
+  await expect(page.getByTestId('question-bank-practice-heading')).not.toContainText('原卷第');
   await expect(page.getByTestId('question-bank-practice-stem')).toContainText('材料中的正确选项');
+  await expect(page.getByTestId('question-bank-practice-stem')).toHaveCSS('font-weight','400');
   await expect(page.getByTestId('question-bank-practice-material-pane')).toContainText('两道题共用材料');
+  await expect(page.getByRole('button',{name:'题目向下滚动'})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'材料向下滚动'})).toHaveCount(0);
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+  await expect(page.getByRole('button',{name:'题目向下滚动'})).toHaveCount(1);
+  await expect(page.getByRole('button',{name:'材料向下滚动'})).toHaveCount(1);
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+  await expect(page.getByRole('button',{name:'题目向下滚动'})).toHaveCount(0);
   await openSheet(page);
   await expect(page.getByTestId('question-bank-practice-number')).toHaveCount(3);
   await expect(page.getByTestId('question-bank-practice-number').first()).toContainText('26');
@@ -56,29 +70,40 @@ test('paper practice preserves source numbering and hides answers until submissi
   await page.getByTestId('question-bank-practice-number').nth(1).click();
   await expect(page.getByTestId('question-bank-practice-stem')).toContainText('第二道题');
   await expect(page.getByTestId('question-bank-practice-material-pane')).toContainText('两道题共用材料');
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('第 2/3 题');
+  await expect(page.getByTestId('question-bank-practice-heading')).not.toContainText('原卷第');
   await page.getByTestId('question-bank-practice-choice').nth(2).click();
   await page.getByTestId('question-bank-practice-submit').click();
   await expect(page.getByTestId('question-bank-submit-confirm')).toBeVisible();
   await page.getByRole('button',{name:'确认交卷'}).click();
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 27 题');
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('原始解析');
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('第二题解析');
   await openSheet(page);
   await page.getByTestId('question-bank-practice-number').first().click();
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 26 题');
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('B 是正确项');
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('现期比重');
+  await expect(page.getByTestId('question-bank-practice-choice').first()).toHaveClass(/border-error/);
+  await expect(page.getByTestId('question-bank-practice-choice').nth(1)).toHaveClass(/border-success/);
+  await expect(page.getByTestId('question-bank-practice-choice').first()).not.toContainText('正确答案');
+  await expect(page.getByTestId('question-bank-practice-choice').first()).not.toContainText('你的错选');
+  await openSheet(page);
+  await page.getByTestId('question-bank-practice-number').nth(2).click();
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 28 题');
+  await expect(page.getByTestId('question-bank-practice-choice').first()).toHaveClass(/border-success/);
   await openSheet(page);
   await expect(page.getByTestId('question-bank-practice-score')).toContainText('正确 1');
   await expect(page.getByTestId('question-bank-practice-score')).toContainText('错误 1');
+  await expect(page.getByTestId('question-bank-practice-score')).toContainText('未答 1');
   await expect(page.getByTestId('question-bank-practice-workspace')).not.toContainText('ungradable');
   await expect(page.getByTestId('question-bank-practice-workspace')).not.toContainText('正确率');
   await expect(page.getByTestId('question-bank-practice-number').first()).toHaveClass(/btn-error/);
   await expect(page.getByTestId('question-bank-practice-number').nth(1)).toHaveClass(/btn-success/);
   await expect(page.getByTestId('question-bank-practice-number').nth(2)).not.toHaveClass(/btn-(success|error)/);
   await page.getByTestId('training-answer-sheet-toggle').click();
-  await expect(page.getByRole('button',{name:'题目向下滚动'})).toHaveCount(1);
-  await expect(page.getByRole('button',{name:'材料向下滚动'})).toHaveCount(1);
   const star=await page.getByTestId('question-bank-favorite').boundingBox();
-  const title=await page.getByTestId('question-bank-practice-question-pane').locator('strong').first().boundingBox();
+  const title=await page.getByTestId('question-bank-practice-heading').boundingBox();
   expect(star!.x).toBeLessThan(title!.x);
   await page.getByTestId('question-bank-favorite').click();
   await expect(page.getByTestId('question-bank-favorite')).toHaveAttribute('aria-label','取消收藏');
@@ -88,7 +113,7 @@ test('paper practice preserves source numbering and hides answers until submissi
   await expect(page.getByTestId('question-bank-favorite')).not.toHaveAttribute('aria-label','取消收藏');
 });
 
-test('question bank saved collections browse items before practicing',async({page})=>{
+test('saved collections are classified by module and category before practicing',async({page})=>{
   await loginAsAdmin(page);
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-question-bank-paper').click();
@@ -102,27 +127,32 @@ test('question bank saved collections browse items before practicing',async({pag
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('原始解析');
   await page.getByTestId('question-bank-favorite').click();
   await expect(page.getByTestId('question-bank-favorite')).toHaveAttribute('aria-label','取消收藏');
-  await page.getByRole('button',{name:/暂停并退出/}).click();
+  await page.getByRole('button',{name:/返回训练/}).click();
   await page.getByTestId('question-bank-collection-wrong').click();
   await expect(page.getByTestId('question-bank-browse-count')).toContainText('1题');
-  await page.getByTestId('question-bank-browse-item').first().click();
-  await expect(page.getByTestId('question-bank-browse-preview')).toContainText('材料中的正确选项');
-  await expect(page.getByTestId('question-bank-browse-preview')).toContainText('两道题共用材料');
+  await expect(page.getByTestId('question-bank-collection-module').filter({hasText:'资料分析'})).toBeVisible();
+  await page.getByTestId('question-bank-collection-category').filter({hasText:'比重'}).click();
+  await expect(page.getByTestId('question-bank-browse-count')).toContainText('1题');
+  await expect(page.getByTestId('question-bank-collection-item')).toContainText(/2008\s+国考\s*·\s*第\s*26\s*题/);
+  await expect(page.getByTestId('question-bank-browse-preview')).toHaveCount(0);
   await page.getByTestId('question-bank-practice-start').click();
   await openSheet(page);
   await expect(page.getByTestId('question-bank-practice-number')).toHaveCount(1);
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('第 1/1 题');
+  await expect(page.getByTestId('question-bank-practice-heading')).not.toContainText('原卷第');
   await page.getByTestId('training-answer-sheet-toggle').click();
-  await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('原卷第 26 题');
   await page.getByTestId('question-bank-practice-choice').nth(1).click();
   await page.getByTestId('question-bank-practice-submit').click();
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 26 题');
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('正确答案');
-  await page.getByRole('button',{name:/暂停并退出/}).click();
+  await page.getByRole('button',{name:/返回训练/}).click();
   await page.getByTestId('question-bank-collection-favorite').click();
   await expect(page.getByTestId('question-bank-browse-count')).toContainText('1题');
+  await expect(page.getByTestId('question-bank-collection-item')).toBeVisible();
   await page.getByTestId('question-bank-practice-start').click();
   await openSheet(page);
   await expect(page.getByTestId('question-bank-practice-number')).toHaveCount(1);
-  await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('原卷第 26 题');
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('第 1/1 题');
 });
 
 test('question bank practice mutations enforce admin, origin and CSRF',async({request})=>{
@@ -148,17 +178,20 @@ test('question bank module drill filters real categories across original papers'
   await page.getByTestId('training-mode-question-bank-module').click();
   await expect(page.getByTestId('question-bank-cross-module').first()).toBeVisible();
   await page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'}).click();
-  await page.getByText('筛选二级题型（可选）').click();
   await page.getByTestId('question-bank-cross-category').filter({hasText:'比重'}).click();
+  await expect(page.getByTestId('question-bank-cross-category').filter({hasText:'比重'})).toHaveAttribute('aria-pressed','true');
   await page.getByTestId('question-bank-practice-start').click();
   await expect(page.getByTestId('question-bank-practice-workspace')).toBeVisible();
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('第 1/2 题');
+  await expect(page.getByTestId('question-bank-practice-heading')).not.toContainText('原卷第');
   await openSheet(page);
   await expect(page.getByTestId('question-bank-practice-number')).toHaveCount(2);
   await expect(page.getByTestId('question-bank-practice-workspace')).toContainText('第二份跨卷模块练习卷');
   await expect(page.getByTestId('question-bank-practice-number').first()).toContainText('12');
   await openSheet(page);
   await page.getByTestId('question-bank-practice-number').last().click();
-  await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('原卷第 26 题');
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('第 2/2 题');
+  await expect(page.getByTestId('question-bank-practice-heading')).not.toContainText('原卷第');
   await expect(page.getByTestId('question-bank-practice-stem')).toContainText('材料中的正确选项');
   await expect(page.getByTestId('question-bank-practice-material-pane')).toContainText('两道题共用材料');
 });

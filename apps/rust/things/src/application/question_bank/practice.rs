@@ -1,7 +1,5 @@
 //! Question Bank practice use cases. Never return answer keys before submission.
-use super::{
-    document::valid_id, document::Document, BankError, IndexedPaper, QuestionBankApplication,
-};
+use super::{document::valid_id, BankError, IndexedPaper, PaperContent, QuestionBankApplication};
 use crate::domain::question_bank::{
     CreatePracticeRequest, FavoriteState, ModulePracticeFilters, PaperModule, PaperModules,
     PracticeBrowseItem, PracticeCatalog, PracticeItem, PracticeMode, PracticeQuestion,
@@ -64,24 +62,31 @@ impl QuestionBankApplication {
             .ok_or(BankError::NotFound)
     }
 
-    async fn primary_document(&self, id: &str) -> Result<(IndexedPaper, Document), BankError> {
-        let indexed = self.primary_indexed(id).await?;
-        let doc = self.source.load(indexed.clone()).await?;
-        if doc.summary().id != indexed.summary.id {
+    /// Prefer the synced SQLite content cache. Falling back to the Markdown
+    /// source keeps an upgraded device usable before its next full sync.
+    async fn indexed_content(&self, paper: &IndexedPaper) -> Result<PaperContent, BankError> {
+        if let Ok(content) = self.repository.paper_content(&paper.summary.id).await {
+            if content.hash == paper.hash && !content.questions.is_empty() {
+                return Ok(content);
+            }
+        }
+        let doc = self.source.load(paper.clone()).await?;
+        if doc.summary().id != paper.summary.id {
             return Err(BankError::Conflict);
         }
-        Ok((indexed, doc))
+        Ok(PaperContent::from_document(&paper.hash, &doc))
     }
 
     pub async fn modules(&self, paper_id: &str) -> Result<PaperModules, BankError> {
-        let (_, doc) = self.primary_document(paper_id).await?;
+        let indexed = self.primary_indexed(paper_id).await?;
+        let content = self.indexed_content(&indexed).await?;
         let mut counts: BTreeMap<String, (usize, usize)> = BTreeMap::new();
         let mut unclassified = 0;
-        for q in doc.view().questions {
+        for q in &content.questions {
             if let Some(module) = primary_module(q.module.as_deref()) {
                 let count = counts.entry(module.into()).or_default();
                 count.0 += 1;
-                if !doc.key(&q.id).is_some_and(|key| key.valid) {
+                if !q.gradable {
                     count.1 += 1;
                 }
             } else {
@@ -255,11 +260,8 @@ impl QuestionBankApplication {
             {
                 continue;
             }
-            let doc = self.source.load(paper.clone()).await?;
-            if doc.summary().id != paper.summary.id {
-                return Err(BankError::Conflict);
-            }
-            for question in doc.view().questions {
+            let content = self.indexed_content(&paper).await?;
+            for question in content.questions {
                 if let Some(module) = module.as_ref() {
                     if primary_module(question.module.as_deref()) != Some(module.as_str()) {
                         continue;
@@ -278,7 +280,7 @@ impl QuestionBankApplication {
                     number: question.number,
                     answer: Vec::new(),
                     grade: None,
-                    gradable: doc.key(&question.id).is_some_and(|key| key.valid),
+                    gradable: question.gradable,
                 });
             }
         }
@@ -328,7 +330,7 @@ impl QuestionBankApplication {
         }
         let session = self.repository.practice_load(id).await?;
         let indexed = self.repository.known().await?;
-        let mut cache: BTreeMap<String, Option<Document>> = BTreeMap::new();
+        let mut cache: BTreeMap<String, Option<PaperContent>> = BTreeMap::new();
         let mut questions = Vec::new();
         for item in &session.items {
             let paper = indexed.iter().find(|p| p.summary.id == item.paper_id);
@@ -338,35 +340,24 @@ impl QuestionBankApplication {
             let matching = paper.filter(|p| p.hash == item.source_hash);
             if let Some(paper) = matching {
                 if !cache.contains_key(&item.paper_id) {
-                    let doc = self
-                        .source
-                        .load(paper.clone())
-                        .await
-                        .ok()
-                        .filter(|doc| doc.summary().id == item.paper_id);
-                    cache.insert(item.paper_id.clone(), doc);
+                    let content = self.indexed_content(paper).await.ok();
+                    cache.insert(item.paper_id.clone(), content);
                 }
             }
-            let doc = cache
+            let content = cache
                 .get(&item.paper_id)
                 .and_then(|v| v.as_ref())
                 .filter(|_| matching.is_some());
-            let question = doc.and_then(|doc| {
-                doc.view()
-                    .questions
-                    .into_iter()
-                    .find(|q| q.id == item.question_id)
-            });
-            let materials = doc
-                .map(|doc| {
-                    doc.view()
+            let question = content.and_then(|content| content.question(&item.question_id));
+            let materials = content
+                .map(|content| {
+                    content
                         .materials
-                        .into_iter()
-                        .filter(|m| {
-                            question
-                                .as_ref()
-                                .is_some_and(|q| q.materials.contains(&m.id))
+                        .iter()
+                        .filter(|material| {
+                            question.is_some_and(|q| q.materials.contains(&material.id))
                         })
+                        .cloned()
                         .collect()
                 })
                 .unwrap_or_default();
@@ -374,7 +365,7 @@ impl QuestionBankApplication {
                 item: item.clone(),
                 paper_title: title,
                 content_changed: question.is_none(),
-                question,
+                question: question.map(|question| question.view()),
                 materials,
             });
         }
@@ -406,17 +397,14 @@ impl QuestionBankApplication {
             .iter_mut()
             .find(|q| q.question_id == question_id)
             .ok_or(BankError::NotFound)?;
-        let indexed = self.primary_indexed(&item.paper_id).await?;
-        if indexed.hash != item.source_hash {
+        let paper_id = item.paper_id.clone();
+        let source_hash = item.source_hash.clone();
+        let indexed = self.primary_indexed(&paper_id).await?;
+        if indexed.hash != source_hash {
             return Err(BankError::Stale);
         }
-        let doc = self.source.load(indexed).await?;
-        let question = doc
-            .view()
-            .questions
-            .into_iter()
-            .find(|q| q.id == question_id)
-            .ok_or(BankError::NotFound)?;
+        let content = self.indexed_content(&indexed).await?;
+        let question = content.question(question_id).ok_or(BankError::NotFound)?;
         let labels = super::document::option_labels(&question.options_markdown);
         if answer.iter().any(|choice| !labels.contains(choice)) {
             return Err(BankError::Invalid);
@@ -467,7 +455,7 @@ impl QuestionBankApplication {
             return Err(BankError::Conflict);
         }
         let indexed = self.repository.known().await?;
-        let mut docs: BTreeMap<String, Option<Document>> = BTreeMap::new();
+        let mut contents: BTreeMap<String, Option<PaperContent>> = BTreeMap::new();
         let mut score = PracticeScore {
             total: session.items.len(),
             correct: 0,
@@ -476,21 +464,21 @@ impl QuestionBankApplication {
             ungradable: 0,
         };
         for item in &mut session.items {
-            if !docs.contains_key(&item.paper_id) {
-                let doc = match indexed
+            if !contents.contains_key(&item.paper_id) {
+                let content = match indexed
                     .iter()
                     .find(|p| p.summary.id == item.paper_id && p.hash == item.source_hash)
                 {
-                    Some(p) => Some(self.source.load(p.clone()).await?),
+                    Some(p) => self.indexed_content(p).await.ok(),
                     None => None,
                 };
-                docs.insert(item.paper_id.clone(), doc);
+                contents.insert(item.paper_id.clone(), content);
             }
-            let key = docs
+            let key = contents
                 .get(&item.paper_id)
                 .and_then(|v| v.as_ref())
-                .and_then(|doc| doc.key(&item.question_id));
-            let grade = if !item.gradable || !key.is_some_and(|k| k.valid) {
+                .and_then(|content| content.question(&item.question_id));
+            let grade = if !item.gradable || !key.is_some_and(|key| key.gradable) {
                 score.ungradable += 1;
                 "ungradable"
             } else if item.answer.is_empty() {
@@ -499,7 +487,7 @@ impl QuestionBankApplication {
             } else {
                 let mut answer = item.answer.clone();
                 answer.sort();
-                if key.is_some_and(|key| key.choices == answer) {
+                if key.is_some_and(|key| key.correct_answer == answer) {
                     score.correct += 1;
                     "correct"
                 } else {
@@ -539,27 +527,27 @@ impl QuestionBankApplication {
             return Err(BankError::Conflict);
         }
         let indexed = self.repository.known().await?;
-        let mut cache: BTreeMap<String, Option<Document>> = BTreeMap::new();
+        let mut cache: BTreeMap<String, Option<PaperContent>> = BTreeMap::new();
         let mut questions = Vec::new();
         for q in workspace.questions {
             if !cache.contains_key(&q.item.paper_id) {
-                let doc = match indexed
+                let content = match indexed
                     .iter()
                     .find(|p| p.summary.id == q.item.paper_id && p.hash == q.item.source_hash)
                 {
-                    Some(p) => self.source.load(p.clone()).await.ok(),
+                    Some(p) => self.indexed_content(p).await.ok(),
                     None => None,
                 };
-                cache.insert(q.item.paper_id.clone(), doc);
+                cache.insert(q.item.paper_id.clone(), content);
             }
             let key = cache
                 .get(&q.item.paper_id)
                 .and_then(|v| v.as_ref())
                 .filter(|_| !q.content_changed)
-                .and_then(|doc| doc.key(&q.item.question_id));
+                .and_then(|content| content.question(&q.item.question_id));
             questions.push(ReviewQuestion {
                 question: q,
-                correct_answer: key.map(|k| k.choices.clone()).unwrap_or_default(),
+                correct_answer: key.map(|k| k.correct_answer.clone()).unwrap_or_default(),
                 explanation: key.map(|k| k.explanation.clone()).unwrap_or_default(),
             });
         }

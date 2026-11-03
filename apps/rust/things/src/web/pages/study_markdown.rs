@@ -32,7 +32,7 @@ pub(crate) fn render_question_bank_markdown(markdown: &str) -> Html {
 }
 
 fn question_bank_markdown_html(markdown: &str) -> String {
-    markdown_with_assets(markdown, |destination| {
+    let mut html = markdown_with_assets(markdown, |destination| {
         let name = destination.strip_prefix("hyz-bank-asset:")?;
         let (hash, extension) = name.split_once('.')?;
         (hash.len() == 64
@@ -41,7 +41,17 @@ fn question_bank_markdown_html(markdown: &str) -> String {
                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
             && ["png", "jpg", "jpeg", "webp", "gif", "bmp"].contains(&extension))
         .then(|| format!("/api/v1/question-bank/assets/{name}"))
-    })
+    });
+    // Source HTML is already escaped; rewrite only generated table-cell tags.
+    for alignment in ["left", "center", "right"] {
+        for cell in ["th", "td"] {
+            html = html.replace(
+                &format!("<{cell} style=\"text-align: {alignment}\">"),
+                &format!("<{cell} class=\"study-table-align-{alignment}\">"),
+            );
+        }
+    }
+    html
 }
 
 fn markdown_with_assets(markdown: &str, mut resolve: impl FnMut(&str) -> Option<String>) -> String {

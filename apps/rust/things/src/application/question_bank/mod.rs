@@ -29,6 +29,86 @@ impl std::fmt::Display for BankError {
 }
 impl std::error::Error for BankError {}
 
+/// Parsed question content cached by the SQLite index so practice does not
+/// rescan Markdown. Answer keys stay on the server and are never serialized
+/// into the browser-facing workspace DTOs.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredQuestion {
+    pub id: String,
+    pub number: u32,
+    pub module: Option<String>,
+    pub category: Option<String>,
+    pub topics: Vec<String>,
+    pub issues: Vec<String>,
+    pub materials: Vec<String>,
+    pub stem: String,
+    pub options_markdown: String,
+    pub gradable: bool,
+    pub correct_answer: Vec<String>,
+    pub explanation: String,
+}
+
+impl StoredQuestion {
+    pub fn view(&self) -> crate::domain::question_bank::QuestionView {
+        crate::domain::question_bank::QuestionView {
+            id: self.id.clone(),
+            number: self.number,
+            stem: self.stem.clone(),
+            options_markdown: self.options_markdown.clone(),
+            materials: self.materials.clone(),
+            module: self.module.clone(),
+            category: self.category.clone(),
+            topics: self.topics.clone(),
+            issues: self.issues.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PaperContent {
+    pub paper_id: String,
+    pub hash: String,
+    pub questions: Vec<StoredQuestion>,
+    pub materials: Vec<crate::domain::question_bank::MaterialView>,
+}
+
+impl PaperContent {
+    pub fn from_document(hash: &str, doc: &Document) -> Self {
+        let view = doc.view();
+        let questions = view
+            .questions
+            .into_iter()
+            .map(|question| {
+                let key = doc.key(&question.id);
+                StoredQuestion {
+                    id: question.id,
+                    number: question.number,
+                    module: question.module,
+                    category: question.category,
+                    topics: question.topics,
+                    issues: question.issues,
+                    materials: question.materials,
+                    stem: question.stem,
+                    options_markdown: question.options_markdown,
+                    gradable: key.is_some_and(|key| key.valid),
+                    correct_answer: key.map(|key| key.choices.clone()).unwrap_or_default(),
+                    explanation: key.map(|key| key.explanation.clone()).unwrap_or_default(),
+                }
+            })
+            .collect();
+        Self {
+            paper_id: view.id,
+            hash: hash.into(),
+            questions,
+            materials: view.materials,
+        }
+    }
+
+    pub fn question(&self, id: &str) -> Option<&StoredQuestion> {
+        self.questions.iter().find(|question| question.id == id)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexedPaper {
     pub summary: PaperSummary,
@@ -45,9 +125,13 @@ pub struct IndexedPaper {
     pub question_modules: Vec<Option<String>>,
     #[serde(default)]
     pub question_categories: Vec<Option<String>>,
+    /// Indexed content is written to SQLite and skipped in the metadata JSON.
+    #[serde(skip)]
+    pub content: PaperContent,
 }
 impl IndexedPaper {
     pub fn new(path: String, hash: String, doc: Document) -> Self {
+        let content = PaperContent::from_document(&hash, &doc);
         Self {
             summary: doc.summary(),
             path,
@@ -68,6 +152,7 @@ impl IndexedPaper {
                 .iter()
                 .map(|q| q.category.clone())
                 .collect(),
+            content,
         }
     }
 }
@@ -91,6 +176,10 @@ pub trait QuestionBankRepositoryPort: Send + Sync {
     async fn apply(&self, papers: Vec<IndexedPaper>) -> Result<(), BankError>;
     async fn known(&self) -> Result<Vec<IndexedPaper>, BankError> {
         self.list().await
+    }
+    /// Reads the synced Markdown-derived question content from the index.
+    async fn paper_content(&self, _paper_id: &str) -> Result<PaperContent, BankError> {
+        Err(BankError::Unavailable)
     }
     async fn practice_create(&self, _session: PracticeSession) -> Result<(), BankError> {
         Err(BankError::Unavailable)
