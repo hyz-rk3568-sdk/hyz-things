@@ -27,8 +27,7 @@ for (const viewport of [{ width: 1180, height: 820 }, { width: 390, height: 844 
     });
     await page.goto('/#/study/training');
     await page.getByTestId('training-mode-comprehensive').click();
-    await page.getByTestId('training-mode-history').click();
-    await page.getByTestId('training-history-item').filter({hasText:'资料分析'}).first().click();
+    await page.getByTestId('analysis-history-open').click();
     await page.getByRole('button', { name: '查看原题与解析', exact: true }).click();
     const card = page.getByTestId('analysis-related-card');
     await expect(card).toBeVisible();
@@ -75,8 +74,7 @@ for (const [prefix, mode, endpoint] of [
     });
     await page.goto('/#/study/training');
     await page.getByTestId(`training-mode-${mode}`).click();
-    await page.getByTestId('training-mode-history').click();
-    await page.getByTestId('training-history-item').filter({hasText:mode === 'quantitative' ? '数量关系' : '判断推理'}).first().click();
+    await page.getByTestId(`${prefix}-history-open`).click();
     await page.getByRole('button', { name: '查看原题与解析', exact: true }).click();
     const card = page.getByTestId(`${prefix}-related-card`);
     await card.locator('summary').click();
