@@ -1,4 +1,5 @@
-//! 专项训练：保留既有速算，读取已同步的 Flashcard 进行手写错题复练。
+//! 专项训练：套卷与模块分别进入真题工作区，各学科保存自身练习记录。
+use hyz_things::domain::question_bank::PracticeMode;
 //! 复练自评只驻留本轮浏览器状态，绝不写入 FSRS review API。
 use super::*;
 use hyz_things::domain::flashcards::{DeckSummary, FlashcardSummary, TagSummary};
