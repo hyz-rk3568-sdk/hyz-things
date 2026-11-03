@@ -44,9 +44,12 @@ pub(crate) fn render_training(route_state: UseStateHandle<PortalRoute>, csrf: St
 #[function_component(TrainingWorkspace)]
 fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
     let shell = use_node_ref();
+    let resume_generation = use_state(|| 0_u64);
     {
         let shell = shell.clone();
-        use_effect_with((), move |_| {
+        // Re-measure the visual viewport on every foreground wake. iPad
+        // Safari can restore stale geometry after switching apps.
+        use_effect_with(*resume_generation, move |_| {
             let cleanup = shell
                 .cast::<web_sys::Element>()
                 .map(|root| mount_training_viewport(&root));
@@ -62,7 +65,6 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
     // coalescing the events Safari fires together into one study-time resync.
     // Do not stop or credit background study time here: the server's existing
     // 45-second heartbeat grace remains authoritative.
-    let resume_generation = use_state(|| 0_u64);
     {
         let last_resume_ms = use_mut_ref(|| 0_f64);
         let resume_counter = use_mut_ref(|| 0_u64);

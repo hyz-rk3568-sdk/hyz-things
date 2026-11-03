@@ -22,7 +22,6 @@ module: 资料分析
 category: 比重
 topics: [现期比重]
 materials: [M1]
-issues: []
 ```
 ### Stem
 题干。
@@ -90,6 +89,9 @@ use std::sync::{Arc, Mutex};
 struct MemoryBank {
     papers: Mutex<Vec<IndexedPaper>>,
     fail_source: std::sync::atomic::AtomicBool,
+    loads: std::sync::atomic::AtomicUsize,
+    content_error: Mutex<Option<BankError>>,
+    list_error: Mutex<Option<BankError>>,
 }
 #[async_trait]
 impl QuestionBankSourcePort for MemoryBank {
@@ -107,6 +109,7 @@ impl QuestionBankSourcePort for MemoryBank {
         })
     }
     async fn load(&self, _paper: IndexedPaper) -> Result<Document, BankError> {
+        self.loads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(parse(PAPER).unwrap())
     }
     async fn asset(&self, _name: String) -> Result<BankAsset, BankError> {
@@ -116,11 +119,50 @@ impl QuestionBankSourcePort for MemoryBank {
 #[async_trait]
 impl QuestionBankRepositoryPort for MemoryBank {
     async fn list(&self) -> Result<Vec<IndexedPaper>, BankError> {
+        if let Some(error) = self.list_error.lock().unwrap().clone() {
+            return Err(error);
+        }
         Ok(self.papers.lock().unwrap().clone())
+    }
+    async fn paper_summaries(
+        &self,
+    ) -> Result<Vec<hyz_things::domain::question_bank::PaperSummary>, BankError> {
+        Ok(self
+            .papers
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|paper| paper.summary.role == "primary")
+            .map(|paper| paper.summary.clone())
+            .collect())
+    }
+    async fn indexed_paper(&self, id: &str) -> Result<IndexedPaper, BankError> {
+        self.papers
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|paper| paper.summary.id == id)
+            .cloned()
+            .ok_or(BankError::NotFound)
     }
     async fn apply(&self, papers: Vec<IndexedPaper>) -> Result<(), BankError> {
         *self.papers.lock().unwrap() = papers;
         Ok(())
+    }
+    async fn paper_content(
+        &self,
+        paper_id: &str,
+    ) -> Result<hyz_things::application::question_bank::PaperContent, BankError> {
+        if let Some(error) = self.content_error.lock().unwrap().clone() {
+            return Err(error);
+        }
+        self.papers
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|paper| paper.summary.id == paper_id)
+            .map(|paper| paper.content.clone())
+            .ok_or(BankError::NotFound)
     }
 }
 #[tokio::test]
@@ -494,25 +536,32 @@ async fn detached_sync_survives_caller_exit_and_deduplicates_concurrent_starts()
 }
 
 #[test]
-fn answer_keys_are_server_only_and_unverified_questions_are_not_gradeable() {
+fn answer_keys_stay_server_only_and_legacy_issue_metadata_is_ignored() {
     let doc = parse(PAPER).unwrap();
     let id = doc.view().questions[0].id.clone();
     let key = doc.key(&id).unwrap();
     assert_eq!(key.choices, vec!["B"]);
     assert_eq!(key.explanation, "秘密解析。");
-    assert!(key.valid);
+    assert!(key.gradable);
     assert!(!serde_json::to_string(&doc.view())
         .unwrap()
         .contains("秘密解析"));
 
-    let marked = PAPER.replace("issues: []", "issues: [answer_unverified]");
-    let key = parse(&marked).unwrap();
-    assert!(!key.key(&id).unwrap().valid);
+    // Older papers may still carry the removed `issues` metadata. It must be
+    // ignored without changing parsing or grading.
+    let legacy = PAPER.replace(
+        "topics: [现期比重]",
+        "issues: [order_unverified]\ntopics: [现期比重]",
+    );
+    let doc = parse(&legacy).unwrap();
+    assert!(doc.key(&id).unwrap().gradable);
+    let content = hyz_things::application::question_bank::PaperContent::from_document("hash", &doc);
+    assert!(content.questions[0].gradable);
 }
 
 #[test]
 fn one_paper_module_aliases_do_not_merge_political_theory_with_common_knowledge() {
-    use hyz_things::application::question_bank::practice::primary_module;
+    use hyz_things::domain::question_bank::primary_module;
     assert_eq!(primary_module(Some("图形推理")), Some("判断推理"));
     assert_eq!(primary_module(Some("逻辑判断")), Some("判断推理"));
     assert_eq!(primary_module(Some("政治理论")), Some("政治理论"));
@@ -632,7 +681,7 @@ async fn practice_from_original_paper_is_persistent_private_and_idempotent() {
 
 #[test]
 fn module_aliases_are_deterministic_and_keep_politics_separate() {
-    use hyz_things::application::question_bank::practice::primary_module;
+    use hyz_things::domain::question_bank::primary_module;
     assert_eq!(primary_module(Some("图形推理")), Some("判断推理"));
     assert_eq!(primary_module(Some("政治理论")), Some("政治理论"));
     assert_eq!(primary_module(Some("常识判断")), Some("常识判断"));
@@ -894,4 +943,68 @@ async fn synced_question_content_is_served_from_sqlite_without_markdown_reloads(
         0,
         "practice must read synced content from SQLite"
     );
+}
+
+#[tokio::test]
+async fn sqlite_content_failure_is_reported_without_opening_markdown() {
+    let ports = Arc::new(MemoryBank::default());
+    let app = QuestionBankApplication::new(ports.clone(), ports.clone());
+    app.sync().await.unwrap();
+    *ports.content_error.lock().unwrap() = Some(BankError::Storage);
+    assert_eq!(
+        app.modules("019a3d8c-7f23-7b6e-927d-3c951851d3a2").await,
+        Err(BankError::Storage)
+    );
+    assert_eq!(ports.loads.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn whole_paper_reads_synced_content_without_opening_markdown() {
+    let ports = Arc::new(MemoryBank::default());
+    let app = QuestionBankApplication::new(ports.clone(), ports.clone());
+    app.sync().await.unwrap();
+    let paper = app
+        .paper("019a3d8c-7f23-7b6e-927d-3c951851d3a2")
+        .await
+        .unwrap();
+    assert_eq!(paper.questions[0].stem, "题干。");
+    assert_eq!(paper.materials[0].markdown, "共享材料。");
+    assert_eq!(ports.loads.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn reading_one_paper_does_not_load_the_entire_catalog() {
+    let ports = Arc::new(MemoryBank::default());
+    let app = QuestionBankApplication::new(ports.clone(), ports.clone());
+    app.sync().await.unwrap();
+    *ports.list_error.lock().unwrap() = Some(BankError::Storage);
+    let paper = app
+        .paper("019a3d8c-7f23-7b6e-927d-3c951851d3a2")
+        .await
+        .unwrap();
+    assert_eq!(paper.questions.len(), 1);
+}
+
+#[tokio::test]
+async fn incomplete_sqlite_content_requires_sync_without_a_source_reload() {
+    let ports = Arc::new(MemoryBank::default());
+    let app = QuestionBankApplication::new(ports.clone(), ports.clone());
+    app.sync().await.unwrap();
+    ports.papers.lock().unwrap()[0].content.questions.clear();
+    assert_eq!(
+        app.paper("019a3d8c-7f23-7b6e-927d-3c951851d3a2").await,
+        Err(BankError::Unavailable)
+    );
+    assert_eq!(ports.loads.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn paper_list_uses_only_the_summary_projection() {
+    let ports = Arc::new(MemoryBank::default());
+    let app = QuestionBankApplication::new(ports.clone(), ports.clone());
+    app.sync().await.unwrap();
+    *ports.list_error.lock().unwrap() = Some(BankError::Storage);
+    let summaries = app.papers().await.unwrap();
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].title, "示例卷");
 }

@@ -42,7 +42,7 @@ Buildroot overlay 新增 `/etc/init.d/S83hyz-question-bank`，固定挂载：
 3. 对缺失的 paper/question/material UUIDv7，仅插入必要 HTML 注释并写回 Markdown。
 4. 写回前按原内容哈希备份到共享根 `.hyz-sync-backups/`；再次核对文件版本，经同目录临时文件原子替换。
 5. 全批复核成功后，事务性更新 `/userdata/hyz-things/question-bank.db` 的索引。
-6. 点击试卷，按来源题号加载整卷题面、选项、共享材料与图片。材料在首次引用处展示一次；已知缺损/待核标签随题显示。
+6. 点击试卷，按来源题号加载整卷题面、选项、共享材料与图片。材料在首次引用处展示一次。
 
 普通列表排除 `role: evidence` 的同卷佐证副本。题库数据库只存索引与稳定身份，不存整题正文，也不接触 `flashcards.db`。源文件变化后旧索引拒绝加载该卷并提示重新同步；源不可用或扫描失败时保留上次索引，不把断连视作删除。归档身份仍保留，以检测旧文件恢复后 UUID 丢失。
 

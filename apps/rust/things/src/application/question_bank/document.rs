@@ -28,8 +28,6 @@ struct Metadata {
     topics: Vec<String>,
     #[serde(default)]
     materials: Vec<String>,
-    #[serde(default)]
-    issues: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -41,7 +39,8 @@ pub struct Document {
 pub struct AnswerKey {
     pub choices: Vec<String>,
     pub explanation: String,
-    pub valid: bool,
+    /// The key is structurally usable for local practice scoring.
+    pub gradable: bool,
 }
 fn choices(text: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -72,6 +71,20 @@ pub(super) fn option_labels(markdown: &str) -> Vec<String> {
         })
         .collect()
 }
+
+/// Structural eligibility for practice. Order/verification metadata is
+/// deliberately ignored: a complete question stays gradable even when its
+/// original number order is unverified.
+pub(crate) fn structural_gradable(stem: &str, options_markdown: &str, answer: &[String]) -> bool {
+    let labels = option_labels(options_markdown);
+    !stem.trim().is_empty()
+        && labels.len() >= 2
+        && labels.len() <= 12
+        && labels.iter().collect::<BTreeSet<_>>().len() == labels.len()
+        && !answer.is_empty()
+        && answer.iter().all(|choice| labels.contains(choice))
+}
+
 impl Document {
     pub fn view(&self) -> PaperView {
         self.view.clone()
@@ -207,15 +220,9 @@ fn parse_inner(text: &str, required: bool) -> Result<Document> {
                 .ok_or("unterminated question metadata")?;
             let meta: Metadata = serde_yaml::from_str(yaml).map_err(|_| "invalid question YAML")?;
             let fields = question_fields(sections)?;
-            let labels = option_labels(fields["Options"].trim());
             let answer = choices(fields["Answer"].trim());
-            let valid = !fields["Stem"].trim().is_empty()
-                && labels.len() >= 2
-                && labels.len() <= 12
-                && labels.iter().collect::<BTreeSet<_>>().len() == labels.len()
-                && !answer.is_empty()
-                && answer.iter().all(|choice| labels.contains(choice))
-                && meta.issues.is_empty();
+            let gradable =
+                structural_gradable(fields["Stem"].trim(), fields["Options"].trim(), &answer);
             answers.insert(
                 qid.clone(),
                 AnswerKey {
@@ -226,7 +233,7 @@ fn parse_inner(text: &str, required: bool) -> Result<Document> {
                         .unwrap_or_default()
                         .trim()
                         .into(),
-                    valid,
+                    gradable,
                 },
             );
             // Key and explanation stay server-side, never in the public DTO.
@@ -239,7 +246,6 @@ fn parse_inner(text: &str, required: bool) -> Result<Document> {
                 module: meta.module,
                 category: meta.category,
                 topics: meta.topics,
-                issues: meta.issues,
             });
         }
     }

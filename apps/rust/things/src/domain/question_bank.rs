@@ -1,6 +1,21 @@
 //! Browser-safe question-bank values. Answers and explanations are never in these DTOs.
 use serde::{Deserialize, Serialize};
 
+/// Only one-way, unambiguous mappings are allowed; don't infer from category/topics.
+pub fn primary_module(name: Option<&str>) -> Option<&'static str> {
+    match name?.trim() {
+        "政治理论" => Some("政治理论"),
+        "常识判断" => Some("常识判断"),
+        "言语理解与表达" | "言语理解" | "言语" => Some("言语理解与表达"),
+        "判断推理" | "图形推理" | "定义判断" | "类比推理" | "逻辑判断" | "形式推理" => {
+            Some("判断推理")
+        }
+        "数量关系" | "数量" => Some("数量关系"),
+        "资料分析" | "资料" => Some("资料分析"),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PaperSummary {
     pub id: String,
@@ -22,7 +37,6 @@ pub struct QuestionView {
     pub module: Option<String>,
     pub category: Option<String>,
     pub topics: Vec<String>,
-    pub issues: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

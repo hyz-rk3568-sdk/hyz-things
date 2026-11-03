@@ -779,6 +779,10 @@ fn app_with_assets(
             on(MethodFilter::POST, question_bank::practice_submit),
         )
         .route(
+            "/api/v1/question-bank/practice/sessions/{id}/repeat",
+            on(MethodFilter::POST, question_bank::practice_repeat),
+        )
+        .route(
             "/api/v1/question-bank/practice/sessions/{id}/review",
             on(MethodFilter::GET, question_bank::practice_review),
         )
@@ -2895,7 +2899,7 @@ fn is_question_bank_practice_post_path(path: &str) -> bool {
         && parts[..6] == ["", "api", "v1", "question-bank", "practice", "sessions"]
         && crate::application::question_bank::document::valid_id(parts[6])
     {
-        return parts.len() == 8 && matches!(parts[7], "submit" | "pause")
+        return parts.len() == 8 && matches!(parts[7], "submit" | "pause" | "repeat")
             || parts.len() == 9
                 && parts[7] == "answers"
                 && crate::application::question_bank::document::valid_id(parts[8]);
@@ -3102,6 +3106,9 @@ mod tests {
         )));
         assert!(is_post_path(&format!(
             "/api/v1/question-bank/practice/sessions/{id}/pause"
+        )));
+        assert!(is_post_path(&format!(
+            "/api/v1/question-bank/practice/sessions/{id}/repeat"
         )));
         assert!(is_post_path(&format!(
             "/api/v1/question-bank/practice/sessions/{id}/answers/{id}"

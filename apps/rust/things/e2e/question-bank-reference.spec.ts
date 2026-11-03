@@ -60,7 +60,7 @@ const questions = Array.from({ length: 130 }, (_, i) => ({ item: item(i), paper_
   question: { id: 'q-' + i, number: 1 + i,
     stem: '2025 年，文化新业态特征较为明显的 16 个行业小类营业收入占全国规模以上文化及相关产业企业营业收入的比重约为：',
     options_markdown: '- A. 31.6%\n- B. 37.0%\n- C. 42.4%\n- D. 48.1%',
-    materials: ['material-1'], module: '资料分析', category: '比重', topics: ['现期比重'], issues: [] },
+    materials: ['material-1'], module: '资料分析', category: '比重', topics: ['现期比重'] },
   materials: [material], content_changed: false }));
 questions[107].question.stem = '2025 年，东部地区文化企业营业收入约占全国规模以上文化企业营业收入的：';
 questions[107].question.options_markdown = '- A. 61.8%\n- B. 66.4%\n- C. 70.8%\n- D. 72.1%';
@@ -236,8 +236,17 @@ test.describe('question bank reference acceptance', () => {
   });
 
   test('collection counts retain semantic colors inside outline buttons', async ({ page }) => {
-    await expect(page.getByTestId('question-bank-collection-wrong').getByTestId('question-bank-collection-count')).toHaveCSS('color', 'rgb(153, 27, 27)');
-    await expect(page.getByTestId('question-bank-collection-favorite').getByTestId('question-bank-collection-count')).toHaveCSS('color', 'rgb(79, 53, 230)');
+    for (const [kind, token] of [['wrong', 'error'], ['favorite', 'primary']]) {
+      const color = await page.evaluate(token => {
+        const probe = document.createElement('span');
+        probe.style.color = `var(--color-${token})`;
+        document.body.append(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color;
+      }, token);
+      await expect(page.getByTestId('question-bank-collection-' + kind).getByTestId('question-bank-collection-count')).toHaveCSS('color', color);
+    }
   });
 
   test('resume card follows the question classification buttons', async ({ page }) => {
@@ -341,6 +350,11 @@ test.describe('question bank reference acceptance', () => {
   });
 
   test('whole-paper reading shares safe table alignment and preserves literal code', async ({ page }) => {
+    const legacyHash = 'd'.repeat(64);
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2n0sAAAAASUVORK5CYII=', 'base64');
+    await page.route(`**/api/v1/question-bank/assets/${legacyHash}.png`, route => route.fulfill({
+      contentType: 'image/png', body: png,
+    }));
     await page.route('**/api/v1/question-bank/sync/status', route => route.fulfill({ json: {
       task_id: null, stage: 'idle', running: false, summary: null, error_code: null,
     } }));
@@ -349,8 +363,8 @@ test.describe('question bank reference acceptance', () => {
       region: '国考', variant: '副省级', role: 'primary',
       materials: [{ id: 'safe-table', name: '对齐材料',
         markdown: '| Left | Center | Right |\n| :--- | :---: | ---: |\n| 甲 | 乙 | 丙 |\n\n`style="text-align: right"`' }],
-      questions: [{ id: 'reader-q', number: 1, stem: '阅读表格', options_markdown: '- A. 甲',
-        materials: ['safe-table'], module: '资料分析', category: '比重', topics: [], issues: [] }],
+      questions: [{ id: 'reader-q', number: 1, stem: `阅读表格\n\n![](../../../assets/${legacyHash}.png)`, options_markdown: '- A. 甲',
+        materials: ['safe-table'], module: '资料分析', category: '比重', topics: [] }],
     } }));
     await page.goto('/#/study');
     await page.getByTestId('question-bank-open').filter({ hasText: '2026 国考副省级' }).click();
@@ -361,6 +375,9 @@ test.describe('question bank reference acceptance', () => {
       await expect(table.getByRole('columnheader').nth(index)).toHaveCSS('text-align', align);
     }
     await expect(paper.locator('code')).toHaveText('style="text-align: right"');
+    const image = paper.locator('img');
+    await expect(image).toHaveAttribute('src', `/api/v1/question-bank/assets/${legacyHash}.png`);
+    await expect.poll(() => image.evaluate(node => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
     await page.getByRole('button', { name: '返回试卷列表', exact: true }).click();
     await expect(page.getByTestId('question-bank-papers')).toBeVisible();
   });
@@ -419,8 +436,8 @@ test.describe('question bank reference acceptance', () => {
     test('setup width and fixed action at ' + viewport.width, async ({ page }) => {
       await page.setViewportSize(viewport);
       const setup = await page.getByTestId('question-bank-practice-setup').locator('.training-setup-content').boundingBox();
-      expect(setup!.width).toBeGreaterThanOrEqual(viewport.width === 1194 ? 1000 : 750);
-      expect(setup!.width).toBeLessThanOrEqual(1080);
+      expect(setup!.width).toBeCloseTo(viewport.width - 48, 0);
+      expect(setup!.x).toBeCloseTo(24, 0);
       const action = page.getByTestId('training-setup-action');
       const before = await action.boundingBox();
       await page.getByTestId('training-setup-scroll').evaluate(node => { node.scrollTop = node.scrollHeight; });

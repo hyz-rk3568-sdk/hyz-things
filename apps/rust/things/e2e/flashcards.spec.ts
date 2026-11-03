@@ -481,7 +481,7 @@ test("syncs the question bank and loads one whole paper with shared material", a
     questions: [26, 27].map(number => ({
       id: `019a3d8e-1b32-7a60-9c83-f34217a6e2${number}`,
       number, stem: `原始题干${number}`, options_markdown: "- A. 甲\n- B. 乙\n- C. 丙\n- D. 丁",
-      materials: [material], module: "资料分析", category: null, topics: [], issues: [],
+      materials: [material], module: "资料分析", category: null, topics: [],
     })),
   } }));
   await loginAsAdmin(page);

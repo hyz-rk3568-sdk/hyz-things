@@ -399,6 +399,29 @@ pub(super) async fn practice_submit(
     }
 }
 
+pub(super) async fn practice_repeat(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+    Path(id): Path<String>,
+    payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
+        return response;
+    }
+    if let Err(e) = decode_control_json(payload) {
+        return e.response();
+    }
+    let app = match available(service) {
+        Ok(app) => app,
+        Err(e) => return bank_error(e),
+    };
+    match app.repeat_practice(&id).await {
+        Ok(value) => (StatusCode::CREATED, Json(value)).into_response(),
+        Err(e) => bank_error(e),
+    }
+}
+
 pub(super) async fn practice_review(
     State(state): State<AppState>,
     headers: HeaderMap,
