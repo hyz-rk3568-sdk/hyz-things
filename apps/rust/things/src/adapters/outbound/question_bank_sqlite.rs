@@ -296,9 +296,10 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         filters: &ModulePracticeFilters,
     ) -> Result<Vec<PracticeBrowseItem>, BankError> {
         let condition = match mode {
+            PracticeMode::Paper | PracticeMode::Module => "1=1",
             PracticeMode::Wrong => "COALESCE(progress.pending,0)=1",
             PracticeMode::Favorite => "COALESCE(saved.favorite,0)=1",
-            _ => return Err(BankError::Invalid),
+            PracticeMode::PaperModule => return Err(BankError::Invalid),
         };
         let regions = serde_json::to_string(&filters.regions).map_err(|_| BankError::Storage)?;
         let sql = format!(
