@@ -1,8 +1,10 @@
-//! Real-paper practice: one workspace for original paper, cross-paper module and review modes.
+//! Browse original papers and categories; share one workspace for practice and review.
+use super::material_scroll::{scroll_edges, MaterialScrollButton, ScrollEdges};
 use super::*;
 use hyz_things::domain::question_bank::{
-    CreatePracticeRequest, FavoriteState, ModulePracticeFilters, PaperModules, PaperSummary,
-    PracticeCatalog, PracticeMode, PracticeReview, PracticeSession, PracticeWorkspace,
+    CreatePracticeRequest, FavoriteState, MaterialView, ModulePracticeFilters, PaperModules,
+    PaperSummary, PaperView, PracticeBrowseItem, PracticeCatalog, PracticeMode, PracticeReview,
+    PracticeSession, PracticeWorkspace, QuestionView,
     SavePracticeAnswer, SetFavorite, SetPracticePaused,
 };
 
@@ -45,11 +47,39 @@ fn catalog_filter_url(filters: &ModulePracticeFilters) -> String {
     format!("{ROOT}/practice/catalog?{}", query.finish())
 }
 
+fn browse_filter_url(
+    scope: &PracticeMode, entry_mode: &PracticeMode, paper_id: &str,
+    module: &str, category: &str, filters: &ModulePracticeFilters,
+) -> String {
+    let mut query = url::form_urlencoded::Serializer::new(String::new());
+    query.append_pair("mode", match scope {
+        PracticeMode::Paper => "paper",
+        PracticeMode::Module => "module",
+        PracticeMode::Wrong => "wrong",
+        PracticeMode::Favorite => "favorite",
+        PracticeMode::PaperModule => "paper_module",
+    });
+    if *entry_mode == PracticeMode::Paper {
+        if !paper_id.is_empty() { query.append_pair("paper_id", paper_id); }
+    } else {
+        if !module.is_empty() { query.append_pair("module", module); }
+        if !category.is_empty() { query.append_pair("category", category); }
+        if let Some(year) = filters.year_min { query.append_pair("year_min", &year.to_string()); }
+        if let Some(year) = filters.year_max { query.append_pair("year_max", &year.to_string()); }
+        if !filters.regions.is_empty() {
+            query.append_pair("regions", &filters.regions.join(","));
+            if filters.exclude_regions { query.append_pair("exclude_regions", "true"); }
+        }
+    }
+    format!("{ROOT}/practice/questions?{}", query.finish())
+}
+
 const WORKSPACE: &str = "training-workspace fixed inset-0 z-[70] flex h-dvh w-screen flex-col overflow-hidden bg-base-200 px-3 py-2 sm:px-6 sm:py-3";
 
 #[derive(Properties, PartialEq)]
 pub(crate) struct QuestionBankTrainingProps {
     pub csrf: String,
+    pub entry_mode: PracticeMode,
     pub on_immersive_change: Callback<bool>,
     pub on_paper_pause_change: Callback<bool>,
     #[prop_or_default]
@@ -66,6 +96,7 @@ enum Action {
     Exit,
     Submit,
     Favorite(String),
+    Preview(String, String),
 }
 
 async fn load_workspace(id: &str) -> Result<PracticeWorkspace, String> {
@@ -98,8 +129,12 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let draft_filters = use_state(read_module_filters);
     let settings_open = use_state(|| false);
     let custom_years = use_state(|| false);
+    let collection = use_state(|| None::<PracticeMode>);
+    let browse = use_state(Vec::<PracticeBrowseItem>::new);
+    let browse_page = use_state(|| 0usize);
+    let preview = use_state(|| None::<(QuestionView, Vec<MaterialView>)>);
 
-    let mode = use_state(|| PracticeMode::Paper);
+    let mode = use_state(|| props.entry_mode.clone());
     let workspace = use_state(|| None::<PracticeWorkspace>);
     let review = use_state(|| None::<PracticeReview>);
     let index = use_state(|| 0usize);
@@ -111,6 +146,26 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let elapsed = use_state(|| 0u64);
     let seconds_ref = use_mut_ref(|| 0u64);
     let refresh = use_state(|| 0u64);
+    let material_scroll = use_node_ref();
+    let question_scroll = use_node_ref();
+    let material_edges = use_state(ScrollEdges::default);
+    let question_edges = use_state(ScrollEdges::default);
+    let refresh_edges = {
+        let material_scroll = material_scroll.clone();
+        let question_scroll = question_scroll.clone();
+        let material_edges = material_edges.clone();
+        let question_edges = question_edges.clone();
+        Callback::from(move |_: ()| {
+            if let Some(node) = material_scroll.cast::<web_sys::HtmlElement>() {
+                let value = scroll_edges(&node);
+                if *material_edges != value { material_edges.set(value); }
+            }
+            if let Some(node) = question_scroll.cast::<web_sys::HtmlElement>() {
+                let value = scroll_edges(&node);
+                if *question_edges != value { question_edges.set(value); }
+            }
+        })
+    };
 
     {
         let papers = papers.clone();
@@ -250,10 +305,48 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             || ()
         });
     }
+    {
+        let scope = collection.as_ref().cloned().unwrap_or_else(|| (*mode).clone());
+        let query = if (*mode == PracticeMode::Paper && selected_paper.is_empty())
+            || (*mode == PracticeMode::Module && selected_module.is_empty()) {
+            None
+        } else {
+            Some(browse_filter_url(&scope, &mode, &selected_paper,
+                &selected_module, &selected_category, &module_filters))
+        };
+        let browse = browse.clone();
+        let browse_page = browse_page.clone();
+        let preview = preview.clone();
+        let error = error.clone();
+        use_effect_with((query, *refresh), move |(query, _)| {
+            browse.set(Vec::new());
+            browse_page.set(0);
+            preview.set(None);
+            if let Some(url) = query.clone() {
+                spawn_local(async move {
+                    match fetch_json::<Vec<PracticeBrowseItem>>(&url, "真题分类浏览").await {
+                        Ok(items) => browse.set(items),
+                        Err(message) => error.set(Some(message)),
+                    }
+                });
+            }
+            || ()
+        });
+    }
+    {
+        let refresh_edges = refresh_edges.clone();
+        let selected = (*index, review.is_some());
+        use_effect_with(selected, move |_| {
+            refresh_edges.emit(());
+            || ()
+        });
+    }
     let invoke = {
         let csrf = props.csrf.clone();
         let papers = papers.clone();
         let mode = mode.clone();
+        let collection = collection.clone();
+        let preview = preview.clone();
         let selected_paper = selected_paper.clone();
         let selected_module = selected_module.clone();
         let selected_category = selected_category.clone();
@@ -277,6 +370,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             let csrf = csrf.clone();
             let papers = papers.clone();
             let mode = mode.clone();
+            let collection = collection.clone();
+            let preview = preview.clone();
             let selected_paper = selected_paper.clone();
             let selected_module = selected_module.clone();
             let selected_category = selected_category.clone();
@@ -295,9 +390,12 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 let result: Result<(), String> = async {
                     match action {
                         Action::Start => {
+                            let practice_mode = collection.as_ref().cloned()
+                                .unwrap_or_else(|| (*mode).clone());
+                            let collection_active = collection.is_some();
                             let request = CreatePracticeRequest {
-                                mode: (*mode).clone(),
-                                paper_id: match *mode {
+                                mode: practice_mode.clone(),
+                                paper_id: match practice_mode {
                                     PracticeMode::Paper | PracticeMode::PaperModule => {
                                         if selected_paper.is_empty()
                                             || !papers
@@ -308,31 +406,23 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                         }
                                         Some((*selected_paper).clone())
                                     }
+                                    PracticeMode::Wrong | PracticeMode::Favorite
+                                        if *mode == PracticeMode::Paper && !selected_paper.is_empty() =>
+                                            Some((*selected_paper).clone()),
                                     _ => None,
                                 },
-                                module: if matches!(
-                                    *mode,
-                                    PracticeMode::PaperModule | PracticeMode::Module
-                                ) {
-                                    if selected_module.is_empty() {
-                                        return Err("请先选择模块".into());
-                                    }
+                                module: if *mode == PracticeMode::Module {
+                                    if selected_module.is_empty() { return Err("请先选择模块".into()); }
                                     Some((*selected_module).clone())
-                                } else {
-                                    None
-                                },
-                                category: if *mode == PracticeMode::Module
-                                    && !selected_category.is_empty()
-                                {
+                                } else { None },
+                                category: if *mode == PracticeMode::Module && !selected_category.is_empty() {
                                     Some((*selected_category).clone())
-                                } else {
-                                    None
-                                },
+                                } else { None },
                                 filters: if *mode == PracticeMode::Module {
                                     (*module_filters).clone()
-                                } else {
-                                    ModulePracticeFilters::default()
-                                },
+                                } else if collection_active {
+                                    ModulePracticeFilters { count: Some(20), ..Default::default() }
+                                } else { ModulePracticeFilters::default() },
                             };
                             let session: PracticeSession = post_json_response(
                                 &format!("{ROOT}/practice/sessions"),
@@ -490,6 +580,16 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 submit_confirm.set(false);
                                 refresh.set(*refresh + 1);
                             }
+                        }
+                        Action::Preview(paper_id, id) => {
+                            let paper: PaperView = fetch_json(
+                                &format!("{ROOT}/papers/{paper_id}"), "真题预览"
+                            ).await?;
+                            let question = paper.questions.into_iter().find(|q| q.id == id)
+                                .ok_or("题目不存在")?;
+                            let materials = paper.materials.into_iter()
+                                .filter(|m| question.materials.contains(&m.id)).collect();
+                            preview.set(Some((question, materials)));
                         }
                         Action::Favorite(id) => {
                             let updated: FavoriteState = post_json_response(
