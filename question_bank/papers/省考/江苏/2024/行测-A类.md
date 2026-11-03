@@ -892,7 +892,7 @@ A
 <!-- hyz-question-id: 01a19c8a-297a-7c81-be2c-1ec084f4d0f8 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1085,7 +1085,7 @@ D项：“雨后空气质量会变差”偏离文段核心话题，文段意在�
 <!-- hyz-question-id: 01a19c8a-297a-7c81-be2c-1f0aee9cf71b -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-因果
 - 主题词
@@ -1231,7 +1231,7 @@ D项：未提及文段核心话题“文物”，偏离文段核心话题，排�
 <!-- hyz-question-id: 01a19c8a-297a-7c81-be2c-1f3df9109e86 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-其他
 - 分述句特征-引入铺垫
@@ -1529,7 +1529,7 @@ D项：文段重点强调中医药如何传承，“中医药创新”偏离文�
 <!-- hyz-question-id: 01a19c8a-297a-7c81-be2c-1f9363c12e2c -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -5173,7 +5173,7 @@ A
 <!-- hyz-question-id: 01a19c8a-297b-74d0-9c15-1796c1fbc644 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5281,7 +5281,7 @@ D项：钟先生听到表扬从不得意忘形，符合“冷静面对个人成�
 <!-- hyz-question-id: 01a19c8a-297b-74d0-9c15-17b37d8887db -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5457,7 +5457,7 @@ issues:
 <!-- hyz-question-id: 01a19c8a-297b-74d0-9c15-17f8a0638d5d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5566,7 +5566,7 @@ D项：毛先生因不能得到期待的回应而生气退群，儿子请回他�
 <!-- hyz-question-id: 01a19c8a-297b-74d0-9c15-1817d395713c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5620,7 +5620,7 @@ D项：厂家对菜刀质量问题的回应，目的是为了解释菜刀因拍�
 <!-- hyz-question-id: 01a19c8a-297b-74d0-9c15-1829093b565b -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials:
@@ -5723,7 +5723,7 @@ A
 <!-- hyz-question-id: 01a19c8a-297b-74d0-9c15-18452c651008 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -5762,7 +5762,7 @@ C
 <!-- hyz-question-id: 01a19c8a-297b-74d0-9c15-18566ac4d341 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -5801,7 +5801,7 @@ B
 <!-- hyz-question-id: 01a19c8a-297b-74d0-9c15-1861bd0c9ef4 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -6002,7 +6002,7 @@ A
 <!-- hyz-question-id: 01a19c8a-297b-74d0-9c15-18b8f1d7c74c -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6203,7 +6203,7 @@ D
 <!-- hyz-question-id: 01a19c8a-297b-74d0-9c15-1904b2e90b63 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -6365,7 +6365,7 @@ D
 <!-- hyz-question-id: 01a19c8a-297b-74d0-9c15-19416aebc56d -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7

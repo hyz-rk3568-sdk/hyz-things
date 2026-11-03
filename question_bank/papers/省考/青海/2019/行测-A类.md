@@ -1834,7 +1834,7 @@ C项存在语病，应将“仿造”改为“制造”或者将“伪劣产品�
 <!-- hyz-question-id: 01a19c8a-6057-77e2-8a6d-743d48eea28a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-并列
 - 主题词
@@ -1878,7 +1878,7 @@ A、B两项均未提及核心话题“美国”，且仅仅提到了某一个问
 <!-- hyz-question-id: 01a19c8a-6057-77e2-8a6d-744fd6cc50f5 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -1927,7 +1927,7 @@ D项，谈论中东未来无法自主而受制于美国俄罗斯，无中生有�
 <!-- hyz-question-id: 01a19c8a-6057-77e2-8a6d-745fbc2986f9 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -3447,7 +3447,7 @@ D
 <!-- hyz-question-id: 01a19c8a-6057-77e2-8a6d-76620f96d4da -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3606,7 +3606,7 @@ D项：创新即时通讯模式改变人们信息传递方式，符合“发展�
 <!-- hyz-question-id: 01a19c8a-6057-77e2-8a6d-769d733ce28c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3659,7 +3659,7 @@ D项：中央文件指导“三农”工作，是协调农业、农村和农民�
 <!-- hyz-question-id: 01a19c8a-6057-77e2-8a6d-76a095cea492 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -3765,7 +3765,7 @@ D项：企业支付给部门经理的1万元月薪，属于工资费用，也符
 <!-- hyz-question-id: 01a19c8a-6057-77e2-8a6d-76c3d4051880 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3875,7 +3875,7 @@ D项：我之所虑，人之所想的意思是“我所考虑的就是别人所�
 <!-- hyz-question-id: 01a19c8a-6057-77e2-8a6d-76e43aff75f3 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -3928,7 +3928,7 @@ D项：高考过后，小韩考得不错，不符合“学习成绩到一定程�
 <!-- hyz-question-id: 01a19c8a-6057-77e2-8a6d-76fb7992dcb7 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -3981,7 +3981,7 @@ D项：网络时代，符合“全球数字化进程中”，大城市和小城�
 <!-- hyz-question-id: 01a19c8a-6057-77e2-8a6d-770e69f59d6c -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -4040,7 +4040,7 @@ D项：独裁统治和社会主义制度都是“后来出现的”，“在本�
 <!-- hyz-question-id: 01a19c8a-6057-77e2-8a6d-771f649374ef -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -5199,7 +5199,7 @@ C
 <!-- hyz-question-id: 01a19c8a-6058-7371-8e78-ccf020476e57 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []
@@ -5786,7 +5786,7 @@ B
 <!-- hyz-question-id: 01a19c8a-6058-7371-8e78-cdbd550e0efa -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 直接找数
 - 综合资料

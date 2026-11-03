@@ -135,7 +135,7 @@ issues: []
 <!-- hyz-question-id: 01a19c8a-24b7-7420-b165-59667fa131bb -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -3008,7 +3008,7 @@ C项对别人请求题字一般不推托，仅为书法交流，是一种客观�
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-883d5ae65596 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []
@@ -3363,7 +3363,7 @@ D选项，人的脸色蜡黄与某种疾病是有必然的联系的，排除。
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-88aba2a9a8c7 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -3413,7 +3413,7 @@ B、C、D三项均涉及到“亲身参与产品试用、感受产品质量”�
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-88bebf7ad050 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -3467,7 +3467,7 @@ D项：未体现呈现出了“外形上的相似性”，不符合定义，排�
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-88c63318444c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -3569,7 +3569,7 @@ D项：将天柱山周围的三座山峰看做卧佛，即赋予了一个客观�
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-88ee5ecc02bc -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -3625,7 +3625,7 @@ D项：“周末加班”不符合“双休日过分消耗精力处理工作之�
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-88fcf20fabe1 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -3679,7 +3679,7 @@ D项：未体现出“对某种品牌认知度较高”，不符合定义，排�
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-890a3bc93f80 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials:
@@ -3731,7 +3731,7 @@ D项：“某市为确保城市公交畅通安全”对应“政府部门为了�
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-89133e333da0 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials:
@@ -3783,7 +3783,7 @@ C、D两项都涉及到了在线上支付线下消费的定义。
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-892a2a0847b8 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -3822,7 +3822,7 @@ D
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-893b01d2a591 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -3861,7 +3861,7 @@ B
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-894d7bfe8da4 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -3900,7 +3900,7 @@ A
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-895c50e54748 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -3943,7 +3943,7 @@ B
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-896dcc132782 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -4076,7 +4076,7 @@ C
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-899d6b57927a -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -4350,7 +4350,7 @@ B
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-89f0216a38d1 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -4391,7 +4391,7 @@ C
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-8a0d5ad5989b -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -4436,7 +4436,7 @@ D项：从文字材料“2014年1—2月产量为1932万吨”，可得1月和2�
 <!-- hyz-question-id: 01a19c8a-24b8-7ff2-a2b4-8a1822c54a76 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6

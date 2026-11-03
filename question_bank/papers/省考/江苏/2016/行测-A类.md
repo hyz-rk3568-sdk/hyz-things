@@ -1018,7 +1018,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2501-73b0-b72a-bf28e89dc4be -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -1063,7 +1063,7 @@ D项：文段已给出具体对策，“如何”表述不明确，排除。
 <!-- hyz-question-id: 01a19c8a-2501-73b0-b72a-bf3fccdaf16b -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: null
@@ -1152,7 +1152,7 @@ B、C 两项：重点强调的是“风”，而文段重点强调的核心话�
 <!-- hyz-question-id: 01a19c8a-2501-73b0-b72a-bf5e83ae6561 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1337,7 +1337,7 @@ D 项：根据“每天，体内的钙会从汗液、尿液等途径排出”可
 <!-- hyz-question-id: 01a19c8a-2501-73b0-b72a-bf92a0c7eac8 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-举例子
 - 关联词-对策
@@ -1576,7 +1576,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2501-73b0-b72a-bfef9e9d56be -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: null
@@ -1622,7 +1622,7 @@ D项：“促进外贸转型”对应文段首句介绍的跨境电子商务众�
 <!-- hyz-question-id: 01a19c8a-2501-73b0-b72a-bff79c4afb70 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -4788,7 +4788,7 @@ D项：如果乙参加了羽毛球组，己也参加了羽毛球组，同时己�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b3174ccf155d -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials: []
@@ -4947,7 +4947,7 @@ D项：工作之余阅读科幻小说不符合定义中的“只选择阅读那�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b34081d0b026 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5053,7 +5053,7 @@ D项：看到不认识的字下意识地去查字典，这正是因为遇到过�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b36b14d576ec -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5106,7 +5106,7 @@ D项：老孙卖掉大房买二手小房住并将卖房款存进银行获得利�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b37dcbea48db -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5212,7 +5212,7 @@ D项：自由撰稿人是一种新型的自由职业，符合定义中的“没�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b396860a3927 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5267,7 +5267,7 @@ D项：青年艺术家是“有创造能力但缺乏资金的发起人”，为�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b3a8db5fe012 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -5320,7 +5320,7 @@ D项：小王十分生气，猛按喇叭，嘴里骂个不停，符合定义中�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b3b6f2da180d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5373,7 +5373,7 @@ D项：巡警将伤员送到医院的行为未体现“避免因统一指挥造�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b3cb6adbc18b -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5426,7 +5426,7 @@ D项：赵总为玉器配置了红木底座，请他人为玉器写诗等行为�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b3df640be01b -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5479,7 +5479,7 @@ D项：出国旅游、买电脑还是买黄金首饰满足的是小李的不同�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b3e3c532fbe4 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -5532,7 +5532,7 @@ D项：小王在工会羽毛球循环赛中失手，不属于定义中的“工�
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b3f241e2bb71 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -5673,7 +5673,7 @@ D项（汽车）：(411/(1 − 4.5%)) × 4.5%亿元。
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b4292d24261d -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M2
@@ -5810,7 +5810,7 @@ D项：定位材料第一段可知，电器及电子产品出口额19373.1亿元
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b457ad4e04d1 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -5926,7 +5926,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b488567b0351 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -6045,7 +6045,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b4bc8347336f -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -6123,7 +6123,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2502-7382-961e-b4d12e231d70 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4

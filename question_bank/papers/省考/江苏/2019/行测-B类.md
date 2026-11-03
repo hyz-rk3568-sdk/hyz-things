@@ -850,7 +850,7 @@ D项错误，海洋沙漠化效应是指倾注到海洋中的废油，在海面�
 <!-- hyz-question-id: 01a19c8a-26ea-7213-b602-d51e9958f2eb -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -993,7 +993,7 @@ D项，根据“发达地区具有相对丰富的资本要素，从而在资本�
 <!-- hyz-question-id: 01a19c8a-26ea-7213-b602-d541ed6f5b8a -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -1085,7 +1085,7 @@ D项，“户籍制度改革是关键的一步”由文段“通过加快户籍�
 <!-- hyz-question-id: 01a19c8a-26ea-7213-b602-d56985c2696f -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 - 关联词-并列
@@ -1469,7 +1469,7 @@ D
 <!-- hyz-question-id: 01a19c8a-26ea-7213-b602-d5e2d3f6c0b7 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-多角度论述
 - 关联词-转折
@@ -4839,7 +4839,7 @@ D项：根据分析可知丁选东风路和南塘路，不可能选西河路或�
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1dd8fceeb9de -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -4893,7 +4893,7 @@ D项：在某县未来五年发展规划制定过程中，符合“在公共政�
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1de09cb2ce3a -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -4947,7 +4947,7 @@ D项：某商场管理层吸取毗邻商场因电路老化引起火灾、损失�
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1df0b7ca50c8 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5055,7 +5055,7 @@ D项：长江沿岸的一家化工企业，多次不顾禁令向长江偷偷排�
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1e1738cf9a28 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5109,7 +5109,7 @@ D项：小李提醒丈夫结婚纪念日，把丈夫手机屏保换成婚纱照�
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1e25f455c9f0 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5163,7 +5163,7 @@ D项：小秦耐心、细致了解只体现工作负责，未体现“个人感�
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1e3eeda61383 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5217,7 +5217,7 @@ D项：新用户买同样商品比老用户便宜符合“相同的产品或服�
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1e4a119e85dd -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5271,7 +5271,7 @@ D项：方老师询问学生日常生活符合“同一对话过程”、用英�
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1e52e22f90b3 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5325,7 +5325,7 @@ D项：小李查询资料，每输入一个关键词就跳出几十篇相关论�
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1e63d264ea64 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5379,7 +5379,7 @@ D项：小丁根据工作人员提示，在网上录完了办理房产证的申�
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1e7a8ac6d3c5 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5433,7 +5433,7 @@ D项：某少数民族的传统手工艺产品打不开销路，没有体现出�
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1e85e355f194 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5487,7 +5487,7 @@ D项：某老师的课堂座无虚席，挤满了从各个学院跑来蹭课的�
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1e9c49dc7505 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5653,7 +5653,7 @@ A
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1ecddb637b50 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -5692,7 +5692,7 @@ B
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1ed40f75f60c -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -5731,7 +5731,7 @@ C
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1eedf79e794f -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -6001,7 +6001,7 @@ A
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1f4a7ac4aa42 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -6134,7 +6134,7 @@ D
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1f7cdd05928c -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6222,7 +6222,7 @@ A
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1f9c2830a749 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6345,7 +6345,7 @@ C
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1fc2f005205a -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6
@@ -6386,7 +6386,7 @@ B
 <!-- hyz-question-id: 01a19c8a-26eb-7c81-bd66-1fd2cf0b6951 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6

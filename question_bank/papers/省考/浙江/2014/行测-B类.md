@@ -1020,7 +1020,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-bbc6bd57d78b -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-对策
 - 分述句特征-引入铺垫
@@ -1297,7 +1297,7 @@ D项：“ 市场前景”指产品未来在市场上的发展结果，对应尾
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-bc2fee2d9f94 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1344,7 +1344,7 @@ D项：文段并非忽略保护环境，而且由于生存问题，不得不暂�
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-bc3866aa633a -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -1389,7 +1389,7 @@ B项“敬而远之”，根据“许多人就因为讨厌这些小毛病而不�
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-bc42c95fdeef -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1434,7 +1434,7 @@ A项“必须做出调整”对策无中生有，文段重点在于从两个方�
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-bc57817df344 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -1481,7 +1481,7 @@ D项：“加拿大心理学家”是例子，非重点，排除。
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-bc6a1f52777a -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 - 关联词-转折
@@ -1623,7 +1623,7 @@ D项谈论的是“销售”的话题，原文强调的是产品设计，故应�
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-bc9f95284a19 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-举例子
 - 关联词-因果
@@ -1713,7 +1713,7 @@ D项，根据“长期悬浮在空气中，可直接通过呼吸进入肺部··
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-bcb6e9cd45fe -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1751,7 +1751,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-bcc7eecdbcc9 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1789,7 +1789,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-bcd70d3dcaec -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1865,7 +1865,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-bcf108eadd32 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2837,7 +2837,7 @@ D项中经理对小王的印象是个人对个人的看法，不是对一类人�
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-be561b5878f0 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -2943,7 +2943,7 @@ D项：是宋明两代“心学”的开山之祖陆九渊思想的主要内容�
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-be726a2873a7 -->
 ```yaml
 module: 判断推理
-category: 定义判断
+category: null
 topics:
 - 故事类
 materials: []
@@ -2996,7 +2996,7 @@ D项：小李是偶然的机会被赏识，不符合题意，排除。
 <!-- hyz-question-id: 01a19c8a-3838-72f1-a9fb-be871f7e464d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []

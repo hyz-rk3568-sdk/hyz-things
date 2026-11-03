@@ -205,7 +205,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2493-7353-b7f6-c6752dc4398b -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -246,7 +246,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2493-7353-b7f6-c68152a468a7 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -504,7 +504,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2493-7353-b7f6-c6ef5c6a41e2 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -2828,7 +2828,7 @@ D项：题干“一旦你心里打怵了，你就听他们的了”，即“一�
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-39a24f4249c1 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []
@@ -2930,7 +2930,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-39c2daac92be -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 排除法
 materials: []
@@ -3290,7 +3290,7 @@ D项：管中窥豹，比喻只见到事物的一小部分，指所见不全面�
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-3a32671a5e59 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -3338,7 +3338,7 @@ A、B、D三项均符合定义关键词，C项“敬老院”不是在家庭生�
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-3a4749f8df9a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -3446,7 +3446,7 @@ D项：将天柱山周围的三座山峰看做卧佛，即赋予了一个客观�
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-3a636f2b43db -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -3500,7 +3500,7 @@ D项：未体现出“对某种品牌认知度较高”，不符合定义，排�
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-3a7ed84e1130 -->
 ```yaml
 module: 判断推理
-category: 定义判断
+category: null
 topics:
 - 故事类
 materials:
@@ -3554,7 +3554,7 @@ D项：凭借超大屏幕受到广大用户青睐，销量连续数周排行第�
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-3a8d32d44131 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials:
@@ -3606,7 +3606,7 @@ D项：“某市为确保城市公交畅通安全”对应“政府部门为了�
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-3a919ac41153 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials:
@@ -3658,7 +3658,7 @@ C、D两项都涉及到了在线上支付线下消费的定义。
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-3aac086a92c8 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -3712,7 +3712,7 @@ D项：未体现呈现出了“外形上的相似性”，不符合定义，排�
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-3abf9abd7057 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -3815,7 +3815,7 @@ D：日用化妆品39.7％，装潢家居服务28.8％，错误。
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-3ad27299d1b5 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -3856,7 +3856,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-3ae88812ea76 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -3989,7 +3989,7 @@ D项：由材料第二段“文化程度为大学本科及以上学历和大专�
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-3b1a9fb25adb -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -4028,7 +4028,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-3b2d89812a08 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -4067,7 +4067,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-3b30d7122372 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -4106,7 +4106,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-3b4ca0b94bf5 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -4149,7 +4149,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-3b5d40f47ccc -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -4196,7 +4196,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-3b6c13dad7c5 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -4315,7 +4315,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-3b9bdd77f2f7 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -4399,7 +4399,7 @@ D项：来自会议（商务）的非洲人数是15万人，是非洲入境人�
 <!-- hyz-question-id: 01a19c8a-2494-7c70-87e6-3bbc04b2c5ec -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6

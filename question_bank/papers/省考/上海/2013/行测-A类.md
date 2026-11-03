@@ -310,7 +310,7 @@ D
 <!-- hyz-question-id: 01a19c89-efba-75d1-8e47-b22c66b62e36 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials: []
 passage_source: null
@@ -615,7 +615,7 @@ A、B、D三项，均表述正确，没有语病，排除。
 <!-- hyz-question-id: 01a19c89-efba-75d1-8e47-b294de3651a9 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -756,7 +756,7 @@ A、B、D选项均与主旨相悖。
 <!-- hyz-question-id: 01a19c89-efba-75d1-8e47-b2c22ee7a6e2 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -850,7 +850,7 @@ B、C、D选项均正确。
 <!-- hyz-question-id: 01a19c89-efba-75d1-8e47-b2ee5126f148 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1497,7 +1497,7 @@ B
 <!-- hyz-question-id: 01a19c89-efbb-74e1-b997-ff3eba4b5e4a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -1546,7 +1546,7 @@ D项考证出土农具的年代，有助于研究人类社会历史，属于考�
 <!-- hyz-question-id: 01a19c89-efbb-74e1-b997-ff4461c39525 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -2267,7 +2267,7 @@ D项，-不公开→—涉及机密，“-不公开”是否定题干推导关�
 <!-- hyz-question-id: 01a19c89-efbb-74e1-b998-0047012cfdd1 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials: []

@@ -4159,7 +4159,7 @@ D项：李老师让实验小学的学生每天读哲学家胡塞尔的巨著，�
 <!-- hyz-question-id: 01a19c89-f3bd-7900-b803-af913ee126ee -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []

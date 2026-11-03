@@ -818,7 +818,7 @@ D项，造成“空白期”“黑暗期”的核心原因是未见到明确属�
 <!-- hyz-question-id: 01a19c89-f3ed-7271-8fbd-d2e1c32e3986 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []

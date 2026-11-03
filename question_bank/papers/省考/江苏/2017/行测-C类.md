@@ -1121,7 +1121,7 @@ D项，仅提到“党内法规体系”，未涉及“法律规范体系”，�
 <!-- hyz-question-id: 01a19c8a-25f8-7ea2-9d4b-33e5e68e04b3 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -1268,7 +1268,7 @@ D项：“水平远高于”无中生有，文段并没有将宋锦和蜀锦进�
 <!-- hyz-question-id: 01a19c8a-25f8-7ea2-9d4b-341b5bb793ee -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1561,7 +1561,7 @@ D项是个人对于“分析风险”的态度，不属于原因，排除。
 <!-- hyz-question-id: 01a19c8a-25f8-7ea2-9d4b-347f8c7cccf1 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1610,7 +1610,7 @@ D项：“人类社会处于高级阶段”对应文段尾句结论词“从而�
 <!-- hyz-question-id: 01a19c8a-25f8-7ea2-9d4b-348096cb0a86 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-举例子
 - 分述句特征-多角度论述
@@ -5121,7 +5121,7 @@ D项：抛一枚硬币观察带有数字的一面朝上次数的实验，实验�
 <!-- hyz-question-id: 01a19c8a-25f9-71a0-9b36-42dcf5e7e54d -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials: []
@@ -5176,7 +5176,7 @@ D项：老赵因车祸失去左腿，体现了遭遇意外伤害等变故，但�
 <!-- hyz-question-id: 01a19c8a-25f9-71a0-9b36-42e5d8f62830 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -5229,7 +5229,7 @@ D项：某机构职工申请提前退休说明还没有到法定退休年龄，�
 <!-- hyz-question-id: 01a19c8a-25f9-71a0-9b36-42f85651b15b -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials: []
@@ -5282,7 +5282,7 @@ D项：王工程师赴灾区考察不是经历生活挫折，不符合定义，�
 <!-- hyz-question-id: 01a19c8a-25f9-71a0-9b36-430b015f9467 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -5388,7 +5388,7 @@ D项：程某之前在乡村小学当校长为村民服务，退休后挖掘家�
 <!-- hyz-question-id: 01a19c8a-25f9-71a0-9b36-4328f65e67fd -->
 ```yaml
 module: 判断推理
-category: 定义判断
+category: null
 topics:
 - 故事类
 materials: []
@@ -5597,7 +5597,7 @@ C
 <!-- hyz-question-id: 01a19c8a-25f9-71a0-9b36-43749036207c -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M2
@@ -5687,7 +5687,7 @@ A
 <!-- hyz-question-id: 01a19c8a-25f9-71a0-9b36-4398dd865387 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -5765,7 +5765,7 @@ D
 <!-- hyz-question-id: 01a19c8a-25f9-71a0-9b36-43bc0a5cce22 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -5898,7 +5898,7 @@ A
 <!-- hyz-question-id: 01a19c8a-25f9-71a0-9b36-43e86ff18a2f -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -5941,7 +5941,7 @@ D
 <!-- hyz-question-id: 01a19c8a-25f9-71a0-9b36-43fb6daca5c9 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -5980,7 +5980,7 @@ B
 <!-- hyz-question-id: 01a19c8a-25f9-71a0-9b36-44002e8905c1 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -6191,7 +6191,7 @@ B
 <!-- hyz-question-id: 01a19c8a-25f9-71a0-9b36-4454d036fc70 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M5

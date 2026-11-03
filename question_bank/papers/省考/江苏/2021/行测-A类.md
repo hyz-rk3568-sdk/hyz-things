@@ -908,7 +908,7 @@ D项，“助力又好又快发展”对应文段“高质量发展”，表述�
 <!-- hyz-question-id: 01a19c8a-27e3-7da3-a29f-5b660fc900ef -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1006,7 +1006,7 @@ D项，根据“刹那永恒，物我两忘”可知，“可使人纯净安详�
 <!-- hyz-question-id: 01a19c8a-27e3-7da3-a29f-5b84c7793858 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1055,7 +1055,7 @@ D项，“凸显商品社会意义”仅为例子内容，非文段论述重点�
 <!-- hyz-question-id: 01a19c8a-27e3-7da3-a29f-5b94dfe6e9c2 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1104,7 +1104,7 @@ C项，“光照强度”非文段强调核心话题，文段重点强调户外�
 <!-- hyz-question-id: 01a19c8a-27e3-7da3-a29f-5ba609c2445f -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -1294,7 +1294,7 @@ D项，“独特人才培养计划”表述不明确，且非文段重点，文�
 <!-- hyz-question-id: 01a19c8a-27e3-7da3-a29f-5beedce08650 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: 《不解决住房问题，就不会有成功的城市化》
@@ -1489,7 +1489,7 @@ D项，根据“接种疫苗能够增强机体的抵抗力，提高自身的免�
 <!-- hyz-question-id: 01a19c8a-27e3-7da3-a29f-5c2d0e8c9541 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -4904,7 +4904,7 @@ B
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-ce04a34a3182 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -4958,7 +4958,7 @@ D项：欧洲姑娘玛丽来华留学，不适应中国的无现金支付，不�
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-ce159b36dda6 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials:
@@ -5012,7 +5012,7 @@ D项：在成立之初重点培育信息和医药两大产业，并非两个实�
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-ce230d3b25a7 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5066,7 +5066,7 @@ D项：小李已经将计划书发给了经理，但是经理十几天之后问�
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-ce38cefb507c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5120,7 +5120,7 @@ D项：某企业在各个角落安装摄像头，不符合“引导、支持或�
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-ce402380aee9 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5174,7 +5174,7 @@ D项：关注公众号订购更便宜还能免费送货，不符合“在网络�
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-ce57c0288bb9 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5236,7 +5236,7 @@ D项：原句的意思是长安沦陷，国家破碎，只有山河依旧；春�
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-ce69938029e6 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5290,7 +5290,7 @@ D项：某高校不符合题干主体“企业”，不符合定义，排除。
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-ce7bc1c214b7 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5344,7 +5344,7 @@ D项：机场候机大厅，符合“城市的小型公共空间”，近年来�
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-ce89473d1864 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5398,7 +5398,7 @@ D项：村民全部搬出村子后，滑落的山体就摧毁了村民房屋，�
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-ce95e1acaf3a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5452,7 +5452,7 @@ D项：刘先生夫妇将租下的一栋小楼改造成了民宿，符合“凭�
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-cea702b203da -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5506,7 +5506,7 @@ D项：市民蒋先生受街道办委托把新医保政策编成快板，并录�
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-cebad4e9a825 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5560,7 +5560,7 @@ D项：王师傅擅长淮扬菜，到四川后学着做川菜，是做不擅长�
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-cec16216aaaa -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -5614,7 +5614,7 @@ D项：老钱不会上网，符合“老年人由于生活习惯、文化水平�
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-cedb53710d32 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5668,7 +5668,7 @@ D项：出自欧阳修的《踏莎行·候馆梅残》，意思是平坦的草�
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-cee1b75e912e -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5722,7 +5722,7 @@ D项：小张在描述自己家所处地理位置的特点，是对实际情况�
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-cefdcccc2da0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -5808,7 +5808,7 @@ A
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-cf11fd5dc6cc -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -5847,7 +5847,7 @@ C
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-cf25e65b0e61 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -5935,7 +5935,7 @@ D项：定位文字材料第四段可得，2019年，城镇居民人均住房建
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-cf4f506e89ad -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -6013,7 +6013,7 @@ B
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-cf61f2fee9f3 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -6379,7 +6379,7 @@ D项：定位表格材料，可知5类指数每年的增速，发现2018年转�
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-cfefb89a2e2c -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -6508,7 +6508,7 @@ B
 <!-- hyz-question-id: 01a19c8a-27e4-7c40-ad72-d01951666fc0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6

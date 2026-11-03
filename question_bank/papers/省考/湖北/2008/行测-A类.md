@@ -592,7 +592,7 @@ A项，生产成本下降不能和“一倍”搭配，倍数一般形容增长�
 <!-- hyz-question-id: 01a19c8a-42d7-7780-b1d7-1fe57e6676be -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -923,7 +923,7 @@ A项表述片面，文段涉及“读万卷书”和“行千里路”两个方�
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-56de23854f13 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1201,7 +1201,7 @@ B选项中，小排量和大排量不一定谁比谁更省油，等同于题干�
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-573714ae4922 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 特殊问法
 materials: []
@@ -1295,7 +1295,7 @@ C
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-575be06e2bb3 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -1485,7 +1485,7 @@ C、D项，原文未涉及相关内容，属于无中生有，故排除。
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-57900b93db59 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1525,7 +1525,7 @@ B
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-57ae56220fc5 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1565,7 +1565,7 @@ D
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-57b48ed2c4c1 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1643,7 +1643,7 @@ C
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-57d464965428 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1727,7 +1727,7 @@ C
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-57f4b18ed1ca -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1765,7 +1765,7 @@ D
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-5807ca0603f4 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1809,7 +1809,7 @@ A
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-58157ea3f894 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2966,7 +2966,7 @@ B、C两项都是通过求同求异并用法来推导因果关系，与题干的
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-59b687c3b039 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 排除法
 materials: []
@@ -3439,7 +3439,7 @@ A中测量“收入平等”与定义中的衡量“分配不平等程度”不�
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-5a4859f50371 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3492,7 +3492,7 @@ C
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-5a50d4d4b0ef -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -3598,7 +3598,7 @@ D
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-5a752cc192e4 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -3647,7 +3647,7 @@ B中的家庭企业从事小商品生产，是独立商品生产单位，符合�
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-5a898cfbfad9 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -3694,7 +3694,7 @@ D中商场中的名牌电视机是用来卖的，不是供整个社会共同享�
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-5a97bd4da6b1 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -3741,7 +3741,7 @@ D项中隐瞒身患癌症的事实明显不是诚实守信的行为，不符合�
 <!-- hyz-question-id: 01a19c8a-42d8-7693-aa42-5aa52ffe241e -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 常规问法
 materials: []
@@ -5662,7 +5662,7 @@ D选项正确，IT硬件、IT软件及计算机服务、汽车、生物制药研
 <!-- hyz-question-id: 01a19c8a-42d9-7312-afbc-98439f11180a -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics:
 - 直接找数
 - 统计表

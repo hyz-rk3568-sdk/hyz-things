@@ -2903,7 +2903,7 @@ D
 <!-- hyz-question-id: 01a19c89-f1d8-7fd0-a66d-857d9159388e -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []

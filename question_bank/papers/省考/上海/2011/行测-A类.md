@@ -252,7 +252,7 @@ C
 <!-- hyz-question-id: 01a19c89-ef30-78e0-98b7-7993faae20e9 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials: []
 passage_source: null
@@ -699,7 +699,7 @@ B项中，能够预防核战争是该地窖的一个特性，但并不是其建�
 <!-- hyz-question-id: 01a19c89-ef30-78e0-98b7-7a3f9d1dec20 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -924,7 +924,7 @@ C
 <!-- hyz-question-id: 01a19c89-ef30-78e0-98b7-7a87662f7f52 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -1464,7 +1464,7 @@ D项中，盛行风是从生活区吹向工业区的，且有卫生防护带隔�
 <!-- hyz-question-id: 01a19c89-ef30-78e0-98b7-7b5f48bb3284 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -1676,7 +1676,7 @@ D项：汉文化与少数民族文化是按照民族类型整合，不符合“�
 <!-- hyz-question-id: 01a19c89-ef30-78e0-98b7-7b9adda4f90b -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -2377,7 +2377,7 @@ D项没有说明象牙合法与非法的问题，属于无关选项。
 <!-- hyz-question-id: 01a19c89-ef30-78e0-98b7-7c8234576882 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []
@@ -2489,7 +2489,7 @@ D项说的是二氧化碳的历史数据，不能直接否定“目前释放到�
 <!-- hyz-question-id: 01a19c89-ef30-78e0-98b7-7ca3b2f02fe2 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 排除法
 materials: []
@@ -2655,7 +2655,7 @@ A、B、D三项均无法解决蛋白质药品口服被消化的问题，只有�
 <!-- hyz-question-id: 01a19c89-ef30-78e0-98b7-7cd048fda9fb -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 排除法
 materials: []

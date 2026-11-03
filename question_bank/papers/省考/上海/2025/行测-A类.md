@@ -1004,7 +1004,7 @@ C项错误，五四运动之后，中国无产阶级以独立的政治力量登�
 <!-- hyz-question-id: 01a19c89-f41d-70d3-9296-897a5ea5b856 -->
 ```yaml
 module: 政治理论
-category: null
+category: 马克思主义
 topics: []
 materials: []
 passage_source: null

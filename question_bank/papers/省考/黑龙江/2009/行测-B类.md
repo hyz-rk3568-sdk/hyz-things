@@ -184,7 +184,7 @@ C
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-075d022da4c9 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1010,7 +1010,7 @@ D项，文段并未论述“臣民”到“公民”的转变是我国劳动人�
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-089cfd7af174 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -1057,7 +1057,7 @@ B、D两项错误，题干中只是部分涉及，非重点，C项题干中并�
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-08a5396ab9cd -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -1517,7 +1517,7 @@ A项属于主观推测，不合文意；B项不是文段所讲的中心内容；
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-09443974adcf -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 主题词
 - 关联词-转折
@@ -1565,7 +1565,7 @@ B
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-09581d475d92 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: null
@@ -1609,7 +1609,7 @@ A、B、C项都是程度词之前的内容，非重点，排除。
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-096b7667ef71 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -3675,7 +3675,7 @@ AC中顶面的图形在纸盒的六个面中不存在，所以不可能出现，
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-0c37b0e3a13f -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -3722,7 +3722,7 @@ A中的柔性授权，C中的惰性授权，D中的模糊授权均是一般授�
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-0c4f281148de -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3771,7 +3771,7 @@ A中的“中国宋庆龄基金会”，B中的“上海‘希望工程’办公
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-0c599c60318f -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -3824,7 +3824,7 @@ D中的张警官不是在工作过程中受伤的，不属于“工伤”范畴�
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-0c690a7df0fe -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -3873,7 +3873,7 @@ A中小张的求爱行为不属于行政管理活动，不符合定义。
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-0c7df7802e92 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -3922,7 +3922,7 @@ C、D中的汽车均不属于能源。
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-0c8d6144b0fa -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3973,7 +3973,7 @@ C、D项显然均属于电子政务。
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-0c9105aff37a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -4026,7 +4026,7 @@ A、B、D均不符合定义。
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-0cabfe02261c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4130,7 +4130,7 @@ D项表述符合定义关键词。
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-0cc726144232 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -4232,7 +4232,7 @@ A、C、D均与销量无直接关系，为无关项，排除。
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-0ce8e20fb60a -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 排除法
 materials: []
@@ -4285,7 +4285,7 @@ C
 <!-- hyz-question-id: 01a19c8a-627a-71e2-8587-0cfc199a455c -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []

@@ -712,7 +712,7 @@ D项：对应尾句，属于解释说明部分，不是重点，排除。
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e578a0eb772e -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -759,7 +759,7 @@ D项为问题表述，非重点，排除。
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e58a244fb8fb -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 - 关联词-对策
@@ -905,7 +905,7 @@ D项，根据“用色单纯”可知“丰富”错误，排除。
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e5be67da7819 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -1231,7 +1231,7 @@ C
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e62863cb27f0 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -1352,7 +1352,7 @@ B
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e65dad855884 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1544,7 +1544,7 @@ B
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e6aa66e0b38f -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2704,7 +2704,7 @@ B
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e860aa3e5867 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -2757,7 +2757,7 @@ D项：意思是要问我的忧伤有多深多长。就像烟雨一川青草，�
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e87df8d25b07 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -2810,7 +2810,7 @@ D项：小张的玩伴建立了微信群体现的是亲密的人际关系，属�
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e8827fb47bfc -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -2916,7 +2916,7 @@ D项：“博物馆引进梵高画作后游客蜂拥而至”说明人们对欣�
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e8a24d94b60a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -3077,7 +3077,7 @@ D项：并未提到员工如何工作，是否干了本职工作之外的创新�
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e8d1a535b403 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -3130,7 +3130,7 @@ D项：注视夜空时会看到月亮在动，而云是静止的，之所以出�
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e8ed014cdc44 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -3183,7 +3183,7 @@ D项：海平面上涨是由于气候因素引起的，导致国民生存受到�
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-e8fa23360bed -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4851,7 +4851,7 @@ B
 <!-- hyz-question-id: 01a19c8a-38f3-73f1-9fd0-eb16197ecf04 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 直接找数
 - 统计图

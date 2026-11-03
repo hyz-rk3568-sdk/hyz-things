@@ -1033,7 +1033,7 @@ C、D两项是从“人们”的角度展开论述，文段谈论的是“敦煌
 <!-- hyz-question-id: 01a19c8a-2659-7481-80a7-9240dc76f5e7 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -1078,7 +1078,7 @@ A项“进展”与B项比较，未论述具体进展情况，表述不明确，
 <!-- hyz-question-id: 01a19c8a-2659-7481-80a7-92518b64b5c3 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-因果
 - 主题词
@@ -1361,7 +1361,7 @@ A项，文段仅强调海底砂矿床的蕴藏丰富，足足有20多种，但�
 <!-- hyz-question-id: 01a19c8a-2659-7481-80a7-92bbdd7abb1d -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-其他
 - 关联词-转折
@@ -1411,7 +1411,7 @@ C项，文段讨论的是“服务业”和“产业空心化”的关系，不�
 <!-- hyz-question-id: 01a19c8a-265a-7682-b36f-0ba369929e53 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-其他
 - 关联词-转折
@@ -1457,7 +1457,7 @@ A项，文段并没有强调如何避免孤独，故对策无中生有，排除�
 <!-- hyz-question-id: 01a19c8a-265a-7682-b36f-0bb0a14c20f5 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 - 关联词-并列
@@ -4679,7 +4679,7 @@ D项：只有在大量的人群中发现饮茶越多癌症发病率就越低这�
 <!-- hyz-question-id: 01a19c8a-265a-7682-b36f-100c1155226d -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 排除法
 materials: []
@@ -4840,7 +4840,7 @@ A
 <!-- hyz-question-id: 01a19c8a-265a-7682-b36f-103636a4a4a6 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -4948,7 +4948,7 @@ D项：义务献血不属于不良行为，不符合定义，排除。
 <!-- hyz-question-id: 01a19c8a-265a-7682-b36f-105fe81f903c -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5002,7 +5002,7 @@ D项：重阳节，属于传统节日，按摩椅、保健品有不同程度的�
 <!-- hyz-question-id: 01a19c8a-265a-7682-b36f-106012f164ed -->
 ```yaml
 module: 判断推理
-category: 定义判断
+category: null
 topics:
 - 故事类
 materials:
@@ -5218,7 +5218,7 @@ D项：形成了绿色食品生产经营、游客餐饮住宿、湿地公园观�
 <!-- hyz-question-id: 01a19c8a-265a-7682-b36f-10a169f743fc -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5272,7 +5272,7 @@ D项：小梁夫妇担心女儿上学买学区房的事情，小梁夫妇是否�
 <!-- hyz-question-id: 01a19c8a-265a-7682-b36f-10bae61e9398 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5326,7 +5326,7 @@ D项：小区受到骚扰后直接购买“呼死你”软件解决问题，未�
 <!-- hyz-question-id: 01a19c8a-265a-7682-b36f-10c88bfdf972 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials:
@@ -5434,7 +5434,7 @@ D项：学者长期驻守农村，并根据田野调查写成论文专著，但�
 <!-- hyz-question-id: 01a19c8a-265a-7682-b36f-10e15c118a0c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -5546,7 +5546,7 @@ D项：某新媒体公司，属于“互联网公司、媒体”，通过分析�
 <!-- hyz-question-id: 01a19c8a-265a-7682-b36f-1102d3473f00 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5600,7 +5600,7 @@ D项：张女士通过手机购买理财产品被骗，不属于“由于过度�
 <!-- hyz-question-id: 01a19c8a-265a-7682-b36f-11174fc4e1e6 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5693,7 +5693,7 @@ A
 <!-- hyz-question-id: 01a19c8a-265a-7682-b36f-1130e3c5b390 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -5900,7 +5900,7 @@ B
 <!-- hyz-question-id: 01a19c8a-265b-7d92-a83c-8acfd59d5c78 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -5988,7 +5988,7 @@ B
 <!-- hyz-question-id: 01a19c8a-265b-7d92-a83c-8aedf6248817 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -6121,7 +6121,7 @@ B
 <!-- hyz-question-id: 01a19c8a-265b-7d92-a83c-8b1e11cdc724 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6207,7 +6207,7 @@ A
 <!-- hyz-question-id: 01a19c8a-265b-7d92-a83c-8b3b1e5c1c2e -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6246,7 +6246,7 @@ D
 <!-- hyz-question-id: 01a19c8a-265b-7d92-a83c-8b4da2d3c8b0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -6330,7 +6330,7 @@ D
 <!-- hyz-question-id: 01a19c8a-265b-7d92-a83c-8b665c57e2a0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6
@@ -6408,7 +6408,7 @@ A
 <!-- hyz-question-id: 01a19c8a-265b-7d92-a83c-8b8660e5032b -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6

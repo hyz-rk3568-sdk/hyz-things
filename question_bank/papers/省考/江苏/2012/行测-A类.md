@@ -102,7 +102,7 @@ issues: []
 <!-- hyz-question-id: 01a19c8a-2334-7232-80b3-1fd35d76b54d -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -145,7 +145,7 @@ A项偷换了概念，文段侧重的是规范微博营销的监管制度离不�
 <!-- hyz-question-id: 01a19c8a-2334-7232-80b3-1fea79dec53d -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -282,7 +282,7 @@ D项无中生有，排除。
 <!-- hyz-question-id: 01a19c8a-2334-7232-80b3-201cc8652a9c -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -774,7 +774,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-300f35e31760 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -812,7 +812,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-3012c001b1c6 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -850,7 +850,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-30225452c03a -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -888,7 +888,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-303203a9a67a -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -926,7 +926,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-304bc979c1e1 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1080,7 +1080,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-30857906764a -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3080,7 +3080,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-3359439407af -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 排除法
 materials: []
@@ -3294,7 +3294,7 @@ D选项“白发”与“秋霜”颜色相似。
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-339f919d5d5a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -3347,7 +3347,7 @@ D选项中没有出现上级机关，只有相关人员，不符合“上级机�
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-33a19ae23da3 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -3447,7 +3447,7 @@ B、C、D三项都不符合“行动从一个人传向另一个人”的过程�
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-33c1cbe547eb -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -3502,7 +3502,7 @@ A、B、D三项都是一种思维定势。
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-33dfbea49ed5 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -3604,7 +3604,7 @@ C选项中白领小丹不是不会使用小汽车，而是对小汽车陷入泥�
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-33fd50b96d6c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -3653,7 +3653,7 @@ D选项中崔经理与员工交流是为了“判定公司是否正朝着既定�
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-340dcf656a5b -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -3700,7 +3700,7 @@ D选项中不同的价格对应的是不同内存的产品，不符合“同一�
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-34173a317b25 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M2
@@ -3782,7 +3782,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-3437ede18602 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M2
@@ -3868,7 +3868,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-345dc86852c2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M2
@@ -3919,7 +3919,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-346d559d9570 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -3968,7 +3968,7 @@ D项：乡村居民：(14.51−13.07)/13.07=1.44/13.07。
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-3477ee1a672a -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -4015,7 +4015,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-3486371d44c2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -4054,7 +4054,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-3496ead23c07 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -4142,7 +4142,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-34b83b6e13b8 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -4181,7 +4181,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-34c3f1942ee6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -4220,7 +4220,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-34dda0b1b2ad -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -4314,7 +4314,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2335-7681-84bb-34f9b85e5606 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4

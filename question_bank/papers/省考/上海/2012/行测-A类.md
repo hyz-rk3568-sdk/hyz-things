@@ -248,7 +248,7 @@ D
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-16e808a0d55e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials: []
 passage_source: null
@@ -1652,7 +1652,7 @@ A项表述错误，麦加利地震烈度是根据该地区所受到的影响，�
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-18de57022d8a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -1699,7 +1699,7 @@ B项没有涉及不同品牌的商品；C项只体现出了使用“同一营销
 <!-- hyz-question-id: 01a19c89-ef5d-7fd0-9829-18e7dc9b2c4f -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []

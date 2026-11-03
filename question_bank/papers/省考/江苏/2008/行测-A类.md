@@ -133,7 +133,7 @@ issues: []
 <!-- hyz-question-id: 01a19c8a-213d-7f81-8fc8-8873f6cd7c3f -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -173,7 +173,7 @@ C
 <!-- hyz-question-id: 01a19c8a-213d-7f81-8fc8-8885e6e63e6b -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -211,7 +211,7 @@ B
 <!-- hyz-question-id: 01a19c8a-213d-7f81-8fc8-889dd49f6b0a -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -303,7 +303,7 @@ B
 <!-- hyz-question-id: 01a19c8a-213d-7f81-8fc8-88beb5cfd5c7 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -385,7 +385,7 @@ C
 <!-- hyz-question-id: 01a19c8a-213d-7f81-8fc8-88d6223d5638 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2699,7 +2699,7 @@ D项：题干主要是在说交通事故的问题，并没有提到冰雪融化�
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8c6adb1e7c85 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []
@@ -2890,7 +2890,7 @@ C
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8c95fbe2d815 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -2939,7 +2939,7 @@ B项采用先进技术来降低售价的做法属于正当竞争行为，当选�
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8caf5c8a0e1e -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials: []
@@ -2990,7 +2990,7 @@ D项中的房屋为不动产，不符合定义。
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8cbaf1f56bc0 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -3037,7 +3037,7 @@ D
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8ccdb0e46c17 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials: []
@@ -3086,7 +3086,7 @@ C项“今年冬天”是一段较长的时期，不符合“某瞬时或某一�
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8cd872c84d58 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -4308,7 +4308,7 @@ A
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8e34b1172c11 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M2
@@ -4347,7 +4347,7 @@ B
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8e40d88c9784 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M2
@@ -4386,7 +4386,7 @@ D
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8e5d7c56b445 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M2
@@ -4503,7 +4503,7 @@ B
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8e85f4145a63 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -4542,7 +4542,7 @@ C
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8e9f5c767448 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -4938,7 +4938,7 @@ B
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8f370f6ece2a -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -4977,7 +4977,7 @@ D
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8f4b0d9822a0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -5016,7 +5016,7 @@ C
 <!-- hyz-question-id: 01a19c8a-213e-7f83-a5bb-8f5ac92e0ef3 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5

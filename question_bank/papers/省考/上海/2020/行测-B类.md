@@ -2841,7 +2841,7 @@ A
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-11fbf9cb649b -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []
@@ -2904,7 +2904,7 @@ D项：代入的话，即：最多购买3种，但根据题干条件，可以购
 <!-- hyz-question-id: 01a19c89-f2e2-7091-a2b7-12096e9580f7 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []

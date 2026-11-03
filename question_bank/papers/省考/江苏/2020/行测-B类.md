@@ -1059,7 +1059,7 @@ D项，文段强调的是接种人数达到阈值，群体免疫便可生效，�
 <!-- hyz-question-id: 01a19c8a-277c-7b41-ab99-3dcf25e4ac5a -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1302,7 +1302,7 @@ D项，根据文段“全世界有100多个国家在勘探海底石油”可知�
 <!-- hyz-question-id: 01a19c8a-277c-7b41-ab99-3e1ee403b43a -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -1550,7 +1550,7 @@ A
 <!-- hyz-question-id: 01a19c8a-277c-7b41-ab99-3e6e7f47d2bd -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -4565,7 +4565,7 @@ C
 <!-- hyz-question-id: 01a19c8a-277d-7893-a626-d6529726f7c5 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []
@@ -4683,7 +4683,7 @@ D项：可以利用的支持决策的信息量远超人类，说明获胜也可�
 <!-- hyz-question-id: 01a19c8a-277d-7893-a626-d6749440fcbc -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []
@@ -4937,7 +4937,7 @@ C
 <!-- hyz-question-id: 01a19c8a-277d-7893-a626-d6b7e061d5ab -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -4991,7 +4991,7 @@ D项：为了解决全村苹果严重滞销的问题，村里的几个年轻人�
 <!-- hyz-question-id: 01a19c8a-277d-7893-a626-d6cf12741a74 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5045,7 +5045,7 @@ D项：某区组织党员干部分系统观看专题纪录片《警钟长鸣》�
 <!-- hyz-question-id: 01a19c8a-277d-7893-a626-d6d9b239ac0f -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5099,7 +5099,7 @@ D项：患健忘症的陈奶奶多次走失，区民政部门了解情况后，�
 <!-- hyz-question-id: 01a19c8a-277d-7893-a626-d6e634289f94 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -5153,7 +5153,7 @@ D项：蔡先生办理营业执照注销手续，不符合“办理个体工商�
 <!-- hyz-question-id: 01a19c8a-277d-7893-a626-d6f2f8071580 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -5207,7 +5207,7 @@ D项：将厨余垃圾等有机物分离出来，制成肥料，将无机物分�
 <!-- hyz-question-id: 01a19c8a-277d-7893-a626-d70103b2b52d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5261,7 +5261,7 @@ D项：市场部蒋经理与生产部经理产生矛盾，公司开会协调建�
 <!-- hyz-question-id: 01a19c8a-277d-7893-a626-d714c3d59ff9 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials:
@@ -5315,7 +5315,7 @@ D项：老张和邻居老李因为家门口的路闹得不可开交，符合“�
 <!-- hyz-question-id: 01a19c8a-277d-7893-a626-d7211c38ac1b -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -5369,7 +5369,7 @@ D项：某火车站在候车室内放置了数台自动售卖机，供旅客自�
 <!-- hyz-question-id: 01a19c8a-277d-7893-a626-d739de6c90e8 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5423,7 +5423,7 @@ D项：李大妈在推销员的劝说下买了一台加湿器，加湿器本身�
 <!-- hyz-question-id: 01a19c8a-277d-7893-a626-d742834ddcb1 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5477,7 +5477,7 @@ D项：陈某在微博上转发某省森林火灾事故的新闻报道，符合�
 <!-- hyz-question-id: 01a19c8a-277d-7893-a626-d75fe2cbc706 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5531,7 +5531,7 @@ D项：窗帘安装人员传给部门经理的每个环节小视频，符合“�
 <!-- hyz-question-id: 01a19c8a-277d-7893-a626-d7604f39226c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5808,7 +5808,7 @@ A
 <!-- hyz-question-id: 01a19c8a-277d-7893-a626-d7b69314d0e2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -5847,7 +5847,7 @@ D
 <!-- hyz-question-id: 01a19c8a-277d-7893-a626-d7c8ec70cdf9 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -6056,7 +6056,7 @@ B
 <!-- hyz-question-id: 01a19c8a-277d-7893-a626-d814d0758d70 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -6095,7 +6095,7 @@ A
 <!-- hyz-question-id: 01a19c8a-277d-7893-a626-d826d8bef1a6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -6419,7 +6419,7 @@ B
 <!-- hyz-question-id: 01a19c8a-277d-7893-a626-d8a814a526b6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6

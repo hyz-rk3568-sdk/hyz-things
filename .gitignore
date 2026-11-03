@@ -23,3 +23,9 @@ tmp/
 /question_bank/*
 !/question_bank/papers/
 !/question_bank/assets/
+!/question_bank/classification_overrides.yaml
+!/question_bank/reports/
+/question_bank/reports/*
+!/question_bank/reports/classification_review.jsonl
+!/question_bank/reports/classification_queue.jsonl
+!/question_bank/reports/classification_summary.json

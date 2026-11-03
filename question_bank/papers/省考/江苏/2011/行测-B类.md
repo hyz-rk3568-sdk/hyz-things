@@ -3090,7 +3090,7 @@ B
 <!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4aa2570bde55 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials:
 - M3
@@ -3173,7 +3173,7 @@ C
 <!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4acc828f69bf -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3257,7 +3257,7 @@ C
 <!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ae0ba4018c7 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3385,7 +3385,7 @@ D
 <!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4b1a6fec2109 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -5308,7 +5308,7 @@ D
 <!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ddd0ccc3ab8 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5449,7 +5449,7 @@ A项中孩子喜欢与否是内在动机，家长要求孩子学习是外在动�
 <!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e01122b2520 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -5496,7 +5496,7 @@ A项中较亮的几颗星并未真实连接起来；B项中的经理并未在现
 <!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4e112953b47a -->
 ```yaml
 module: 判断推理
-category: 定义判断
+category: null
 topics:
 - 故事类
 materials: []
@@ -5969,7 +5969,7 @@ B
 <!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ea738e14efc -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -6108,7 +6108,7 @@ D
 <!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ed2fdf7b247 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -6147,7 +6147,7 @@ C
 <!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4ee16c8517e0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6227,7 +6227,7 @@ B
 <!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f0aa86a5447 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -6315,7 +6315,7 @@ C
 <!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f20f59fc98d -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -6360,7 +6360,7 @@ D项错误，确定货物运输的最主要方式不仅要考虑货物运输量�
 <!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f3321f26b58 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -6399,7 +6399,7 @@ A
 <!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f45490ac54b -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6
@@ -6438,7 +6438,7 @@ B
 <!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f582efd4846 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -6477,7 +6477,7 @@ B
 <!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f62fa936f00 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M7
@@ -6528,7 +6528,7 @@ C
 <!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f76a9c7839f -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M7
@@ -6606,7 +6606,7 @@ B
 <!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4f96049af3fa -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M7
@@ -6645,7 +6645,7 @@ A
 <!-- hyz-question-id: 01a19c8a-22e4-7fb3-8d80-4fa61e67d7ba -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M7

@@ -1248,7 +1248,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2563-7591-932f-3e74d37a64e6 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials:
@@ -1294,7 +1294,7 @@ A项，“吸金噱头”文中没有提到，错误；B项，“弊大于利”
 <!-- hyz-question-id: 01a19c8a-2563-7591-932f-3e84e29f5ecf -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials:
@@ -1477,7 +1477,7 @@ D 项：无中生有，文段并未讲述此意，排除。
 <!-- hyz-question-id: 01a19c8a-2563-7591-932f-3ec892988cdd -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials:
@@ -4519,7 +4519,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1ebc559e34ee -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []
@@ -4788,7 +4788,7 @@ D项：“旅客”是指临时客住在外的人或旅行者，这群人不符�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1f0222fa656e -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -4896,7 +4896,7 @@ D项：不涨价承诺并未体现“降幅”，与题干定义关键词不符�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1f2a2858e157 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5002,7 +5002,7 @@ D项：高校教务部门建立的学生选课、评课、成绩管理系统面�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1f4b2e24af18 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5055,7 +5055,7 @@ D项：老孙卖掉大房买二手小房住并将卖房款存进银行获得利�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1f54af9daa47 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5108,7 +5108,7 @@ D项：山坡上的植物长势是自然状态，并不是良种筛选的过程�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1f638aabb7a1 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -5161,7 +5161,7 @@ D项：小王十分生气，猛按喇叭，嘴里骂个不停，符合定义中�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1f7c7742b704 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials: []
@@ -5216,7 +5216,7 @@ D项：老张的妻子特意在他的行李箱里塞几件厚衣服，并不是�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1f846d2d8419 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5269,7 +5269,7 @@ D项：出国旅游、买电脑还是买黄金首饰满足的是小李的不同�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1f95667d1177 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -5322,7 +5322,7 @@ D项：小王在工会羽毛球循环赛中失手，不属于定义中的“工�
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1fa6944146c6 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -5453,7 +5453,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1fd5f10bf170 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M2
@@ -5492,7 +5492,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-1fe19ae3621f -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M2
@@ -5777,7 +5777,7 @@ D项：定位表格，2014年农民工住房公积金缴纳率除“交通运输
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-205c53611290 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -5904,7 +5904,7 @@ D项2015年3月的贸易顺差最大。
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-208012db0f57 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -6105,7 +6105,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2564-7572-9851-20d064b6bf7c -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5

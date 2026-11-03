@@ -2284,7 +2284,7 @@ D
 <!-- hyz-question-id: 01a19c8a-60ed-7d33-abf1-bcc6a6444cd8 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-其他
 - 关联词-因果
@@ -2382,7 +2382,7 @@ D项，根据“研究人员发现在大脑中存在着不同种类和巨大数�
 <!-- hyz-question-id: 01a19c8a-60ed-7d33-abf1-bcefa83c78cc -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -2478,7 +2478,7 @@ D项，根据文段可知“黑天鹅”是小概率事件，“灰犀牛”是�
 <!-- hyz-question-id: 01a19c8a-60ed-7d33-abf1-bd040dc56418 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -2527,7 +2527,7 @@ C项“火星自身具有杀菌自净的能力”属于结论前的内容，非�
 <!-- hyz-question-id: 01a19c8a-60ed-7d33-abf1-bd15200c290c -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: 《尊重哲学》
@@ -2624,7 +2624,7 @@ D项，“诗词创作者须有充沛的情感及较高的文学修养”无中�
 <!-- hyz-question-id: 01a19c8a-60ed-7d33-abf1-bd3c8d4c40da -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 - 关联词-转折
@@ -2866,7 +2866,7 @@ D项，根据“冰行星或冰卫星将直接进入极端炎热的温室逃逸�
 <!-- hyz-question-id: 01a19c8a-60ed-7d33-abf1-bd90291d7959 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-对策
 - 主题词
@@ -2966,7 +2966,7 @@ D项，根据“简而言之，隐身衣使用的超材料，可以让雷达波�
 <!-- hyz-question-id: 01a19c8a-60ed-7d33-abf1-bdbc33ea9888 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 - 关联词-对策
@@ -5168,7 +5168,7 @@ D项：看到写在纸上的手机号，小冯感到阵阵发麻，是视觉受�
 <!-- hyz-question-id: 01a19c8a-60ee-76c0-84ad-e9198465854e -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -5569,7 +5569,7 @@ D
 <!-- hyz-question-id: 01a19c8a-60ee-76c0-84ad-e9ca77077b9a -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 现期计算
 - 综合资料

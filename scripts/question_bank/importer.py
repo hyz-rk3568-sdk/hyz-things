@@ -132,8 +132,56 @@ def preflight_existing(output):
     return documents
 
 
+def _apply_approved_overrides(text, relative, source_hash, overrides):
+    if not overrides:
+        return text
+    from classification import RULE_VERSION
+    from classification_audit import _patch_metadata, paper_questions
+
+    questions = list(paper_questions(text, relative, source_hash))
+    by_uuid = {row["question_uuid"]: row for row in questions if row["question_uuid"]}
+    if len(by_uuid) != sum(bool(row["question_uuid"]) for row in questions):
+        raise InvalidPaper(
+            "duplicate question UUID while applying classification overrides"
+        )
+    paper_identity = questions[0]["paper_uuid"] if questions else None
+    edits = {}
+    for identifier, override in overrides.items():
+        if override.get("paper_uuid") != paper_identity:
+            continue
+        row = by_uuid.get(identifier)
+        if row is None:
+            raise InvalidPaper(f"approved classification UUID missing: {identifier}")
+        for key in (
+            "paper_uuid",
+            "question_hash",
+            "source_hash",
+            "classification_rule_version",
+        ):
+            actual = (
+                source_hash
+                if key == "source_hash"
+                else RULE_VERSION
+                if key == "classification_rule_version"
+                else row.get(key)
+            )
+            if override.get(key) != actual:
+                raise InvalidPaper(
+                    f"stale approved classification override {key}: {identifier}"
+                )
+        edits[row["question_number"]] = (override["module"], override["category"])
+    return _patch_metadata(text, edits) if edits else text
+
+
 def import_bank(source, output, *, update=False, dry_run=False):
     source, output = Path(source).resolve(), Path(output).resolve()
+    override_path = output / "classification_overrides.yaml"
+    if override_path.exists():
+        from classification_overrides import load_overrides
+
+        overrides = load_overrides(override_path)
+    else:
+        overrides = {}
     before_documents = preflight_existing(output)
     importer_hash = digest(
         b"".join(
@@ -273,16 +321,25 @@ def import_bank(source, output, *, update=False, dry_run=False):
             except InvalidPaper as error:
                 report["conflicts"].append({"path": relative, "reason": str(error)})
                 continue
+            local_question_ids = {
+                row["id"]
+                for key, row in unit_records(local).items()
+                if key != "paper" and row["id"]
+            }
+            has_approved_override = bool(local_question_ids & overrides.keys())
             if (
                 old
                 and old["source_sha256"] == source_hash
                 and old.get("importer_sha256") == importer_hash
                 and digest(without_ids(rendered)) == old["generated_sha256"]
+                and not has_approved_override
             ):
                 records[relative] = {**old, "known_ids": current_ids}
                 report["converted_papers"] += 1
                 continue
-            if not old or digest(without_ids(local)) != old["generated_sha256"]:
+            if not old or digest(without_ids(local)) != old.get(
+                "managed_sha256", old["generated_sha256"]
+            ):
                 report["conflicts"].append(
                     {
                         "path": relative,
@@ -290,6 +347,7 @@ def import_bank(source, output, *, update=False, dry_run=False):
                     }
                 )
                 continue
+        generated_hash = digest(without_ids(rendered))
         if target.exists():
             try:
                 metadata_only = preserve_classification_ids(
@@ -298,14 +356,28 @@ def import_bank(source, output, *, update=False, dry_run=False):
                 rendered = metadata_only or preserve_ids(
                     local, rendered, old.get("known_ids", [])
                 )
+                if digest(without_ids(local)) == digest(without_ids(rendered)):
+                    rendered = local
             except InvalidPaper as error:
                 report["conflicts"].append({"path": relative, "reason": str(error)})
                 continue
+        try:
+            rendered = _apply_approved_overrides(
+                rendered, target_relative, source_hash, overrides
+            )
+            if target.exists() and digest(without_ids(local)) == digest(
+                without_ids(rendered)
+            ):
+                rendered = local
+        except (InvalidPaper, ValueError) as error:
+            report["conflicts"].append({"path": relative, "reason": str(error)})
+            continue
         pending[target] = rendered
         expected[target] = digest(local) if target.exists() else None
         records[relative] = {
             "source_sha256": source_hash,
-            "generated_sha256": digest(without_ids(rendered)),
+            "generated_sha256": generated_hash,
+            "managed_sha256": digest(without_ids(rendered)),
             "known_ids": [v for k, v in markers(rendered)],
             "target": target_relative,
             "importer_sha256": importer_hash,

@@ -1154,7 +1154,7 @@ D项，“艺术化表现”仅对应文中对“再现”进行解释说明的�
 <!-- hyz-question-id: 01a19c8a-2945-79d0-b91f-577ec2675c83 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -5305,7 +5305,7 @@ D项：“何当共剪西窗烛，却话巴山夜雨时”的意思是：什么�
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0e7dfb68e874 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5359,7 +5359,7 @@ D项：某地依托城市洪涝数值模拟模型发布了市区积水地图，�
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0e8c9f0a6f6d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5413,7 +5413,7 @@ D项：赵先生一年后收到欠费通知才知道有每年消费12次才能�
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0e9ab02580e3 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5467,7 +5467,7 @@ D项：60岁的丁先生多年来一直保持着良好的运动习惯，说明�
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0ea4adab85fc -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5521,7 +5521,7 @@ D项：汪粤、徐少华、迟重瑞等演员先后在《西游记》中扮演�
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0ebf59444268 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5629,7 +5629,7 @@ D项：某小区多个角落增设小片绿地，只能供该小区居民使用�
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0edbf92ec797 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5683,7 +5683,7 @@ D项：张先生周末到湿地公园拍摄鸟类和游客的身影，周末不�
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0eed92bb79f1 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5776,7 +5776,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0f02e5fba197 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -5854,7 +5854,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0f20d8571465 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -6016,7 +6016,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0f6fb6b0c5fc -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6288,7 +6288,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0fc22d6d32d1 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6
@@ -6421,7 +6421,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-0ff0f1d20df2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M7
@@ -6460,7 +6460,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2946-7401-89fa-1005d847ef7d -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7

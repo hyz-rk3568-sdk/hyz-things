@@ -973,7 +973,7 @@ A项“热爱生活”、B项“人类的天性”、D项“现代人的生存�
 <!-- hyz-question-id: 01a19c8a-3714-72d2-a645-b88c4cb8f75d -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -1112,7 +1112,7 @@ B、C两项不全面，对读书人的影响只是“为渊驱鱼”的效果之
 <!-- hyz-question-id: 01a19c8a-3714-72d2-a645-b8bf058b0dbe -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1194,7 +1194,7 @@ A项，“理论基础”对应“康德拉吉耶夫经济长波理论或熊彼�
 <!-- hyz-question-id: 01a19c8a-3714-72d2-a645-b8da9b18b0dc -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1237,7 +1237,7 @@ A项“软实力”无中生有，排除；B、D两项，“文化力表现形�
 <!-- hyz-question-id: 01a19c8a-3714-72d2-a645-b8ef5378b95e -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -1496,7 +1496,7 @@ B、C、D三项均未包含文段主题词“保护富人”，排除。
 <!-- hyz-question-id: 01a19c8a-3714-72d2-a645-b94418421fdc -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1586,7 +1586,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3714-72d2-a645-b96ea6d7682f -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -2904,7 +2904,7 @@ D项“将家居饰品当作赠品免费送给购买者”，没有说明家居�
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-ed819fbe8d90 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -2957,7 +2957,7 @@ D项“李某不支付约定的报酬”符合“债务人不履行到期债务�
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-ed955fe1df52 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials: []
@@ -3114,7 +3114,7 @@ D项：“走私毒品”属于犯罪行为，但“以暴力方法抗拒检查�
 <!-- hyz-question-id: 01a19c8a-3715-7743-bfc2-edc8e77f34dc -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []

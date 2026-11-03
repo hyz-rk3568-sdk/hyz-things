@@ -892,7 +892,7 @@ C项，“体现新中国的法治化进程”强调《民法典》与法治化�
 <!-- hyz-question-id: 01a19c8a-28dd-7a02-9c22-c79ab3997d72 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 - 关联词-对策
@@ -989,7 +989,7 @@ D项，“节能减排”对应文段尾句解释说明的内容，非重点且�
 <!-- hyz-question-id: 01a19c8a-28dd-7a02-9c22-c7b80b4a50a6 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-对策
 - 主题词
@@ -1242,7 +1242,7 @@ D项，“今夜闻君琵琶语，如听仙乐耳暂明”意思是今晚听到�
 <!-- hyz-question-id: 01a19c8a-28dd-7a02-9c22-c8005bbdb85b -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-因果
 - 主题词
@@ -1486,7 +1486,7 @@ D项，根据“宋元时期，北方的磁州窑、定窑、耀州窑，南方�
 <!-- hyz-question-id: 01a19c8a-28dd-7a02-9c22-c85f2783f256 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-对策
 - 主题词
@@ -1534,7 +1534,7 @@ D项，“独特性”无中生有，文段重在强调乡村旅游的“原生�
 <!-- hyz-question-id: 01a19c8a-28dd-7a02-9c22-c86428dab75d -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -4933,7 +4933,7 @@ A
 <!-- hyz-question-id: 01a19c8a-28dd-7a02-9c22-ccd63692b1df -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -4997,7 +4997,7 @@ D项：在互联网公司工作的小何由于工作强度高，决定每年给�
 <!-- hyz-question-id: 01a19c8a-28dd-7a02-9c22-cce7f9f51cc3 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5051,7 +5051,7 @@ D项：市场监管、税务等职能部门联合办公，符合“部门联动�
 <!-- hyz-question-id: 01a19c8a-28dd-7a02-9c22-ccf53f8f1a7b -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5105,7 +5105,7 @@ D项：小孟依托网络平台更新写的小说，符合“作为独立个体�
 <!-- hyz-question-id: 01a19c8a-28dd-7a02-9c22-cd0bf03bf9b9 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5159,7 +5159,7 @@ D项：该项说的是老张回想起多年前的“三星堆起源”大辩论�
 <!-- hyz-question-id: 01a19c8a-28dd-7a02-9c22-cd157bbd771d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5213,7 +5213,7 @@ D项：某商家举办的“集福卡活动”既不是不同款式的商品也�
 <!-- hyz-question-id: 01a19c8a-28dd-7a02-9c22-cd22be506e19 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials:
@@ -5267,7 +5267,7 @@ D项：该项中某农业科技服务公司对于农民的土地来说只是起�
 <!-- hyz-question-id: 01a19c8a-28dd-7a02-9c22-cd32f32d1afc -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5375,7 +5375,7 @@ D项：说法听起来不可思议，但又有道理。不符合“既全部否�
 <!-- hyz-question-id: 01a19c8a-28dd-7a02-9c22-cd5f252aff80 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5483,7 +5483,7 @@ D项：该项图片显示为“海口骑楼老街”，图中的沿街建筑，�
 <!-- hyz-question-id: 01a19c8a-28dd-7a02-9c22-cd72ea2a4f35 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -5522,7 +5522,7 @@ D
 <!-- hyz-question-id: 01a19c8a-28dd-7a02-9c22-cd802dcc5846 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -5692,7 +5692,7 @@ D项：定位统计表，可知2018年、2019年全球主要国家或地区发�
 <!-- hyz-question-id: 01a19c8a-28de-7f30-94bf-b077048224f2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -5731,7 +5731,7 @@ A
 <!-- hyz-question-id: 01a19c8a-28de-7f30-94bf-b08da7e26e3f -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -5770,7 +5770,7 @@ B
 <!-- hyz-question-id: 01a19c8a-28de-7f30-94bf-b09cfa65d016 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -5932,7 +5932,7 @@ D
 <!-- hyz-question-id: 01a19c8a-28de-7f30-94bf-b0de5c4ff2b5 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -5971,7 +5971,7 @@ C
 <!-- hyz-question-id: 01a19c8a-28de-7f30-94bf-b0e56e999cec -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6106,7 +6106,7 @@ D项：定位统计表可得，2015-2020年我国住房公积金实缴额分别�
 <!-- hyz-question-id: 01a19c8a-28de-7f30-94bf-b113d0fba57e -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -6184,7 +6184,7 @@ B
 <!-- hyz-question-id: 01a19c8a-28de-7f30-94bf-b131ed28978c -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6

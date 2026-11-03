@@ -873,7 +873,7 @@ C项，“各类执法行为”范围扩大，文段仅围绕“依法行政”�
 <!-- hyz-question-id: 01a19c8a-2814-75b3-ac0e-a9597f79cc82 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -922,7 +922,7 @@ D项，“隐藏着弊端”表述不明确，未提及对“智慧”的影响�
 <!-- hyz-question-id: 01a19c8a-2814-75b3-ac0e-a9642c99490b -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 - 关联词-转折
@@ -1017,7 +1017,7 @@ A、C、D三项：A项“个体”、C项“风险究竟该如何掌控”、D�
 <!-- hyz-question-id: 01a19c8a-2814-75b3-ac0e-a98fb0579258 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -1064,7 +1064,7 @@ B、D两项，“日月食预测”“大量的成功案例”均对应文段举
 <!-- hyz-question-id: 01a19c8a-2814-75b3-ac0e-a99d21366322 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1166,7 +1166,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2814-75b3-ac0e-a9b40b46682b -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1215,7 +1215,7 @@ C项，“需多方协同合作发力”非重点，文段重点强调的是专�
 <!-- hyz-question-id: 01a19c8a-2814-75b3-ac0e-a9cc8dce032e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: 《不解决住房问题，就不会有成功的城市化》
@@ -1410,7 +1410,7 @@ D项，根据“积极宣传推广预防儿童青少年近视的视力健康科�
 <!-- hyz-question-id: 01a19c8a-2814-75b3-ac0e-aa0fd22a2ec0 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-数据资料
 - 关联词-对策
@@ -1460,7 +1460,7 @@ D项，“照顾少数人需求”对应文段“它已经不能用‘照顾少�
 <!-- hyz-question-id: 01a19c8a-2814-75b3-ac0e-aa166da09ede -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -4474,7 +4474,7 @@ D项：通过举例子说明“随手拍交通违法”小程序上线以来，�
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-53ed5d8cea16 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []
@@ -4907,7 +4907,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-54576be64b20 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5013,7 +5013,7 @@ D项：“涕”后来指鼻涕，也可以指泪水，鼻涕和泪水是两类�
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-547af6b3efe2 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials: []
@@ -5066,7 +5066,7 @@ D项：欧洲姑娘玛丽来华留学，不适应中国的无现金支付，不�
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-54807be6841f -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials: []
@@ -5119,7 +5119,7 @@ D项：王师傅擅长淮扬菜，到四川后学着做川菜，是做不擅长�
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-5496d9184d00 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -5172,7 +5172,7 @@ D项：在成立之初重点培育信息和医药两大产业，并非两个实�
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-54ad07adf761 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials: []
@@ -5225,7 +5225,7 @@ D项：某高校不符合题干主体“企业”，不符合定义，排除。
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-54b8834648c6 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5278,7 +5278,7 @@ D项：市民蒋先生受街道办委托把新医保政策编成快板，并录�
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-54c84fa01ef2 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials: []
@@ -5331,7 +5331,7 @@ D项：书城以前只销售图书，现在还为公众提供其他服务，不�
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-54d6b9db35dd -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5384,7 +5384,7 @@ D项：小李已经将计划书发给了经理，但是经理十几天之后问�
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-54e92c083653 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials: []
@@ -5437,7 +5437,7 @@ D项：村民全部搬出村子后，滑落的山体就摧毁了村民房屋，�
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-54fe14c4ec0a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5490,7 +5490,7 @@ D项：刘先生夫妇将租下的一栋小楼改造成了民宿，符合“凭�
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-5506bbe0bd45 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5543,7 +5543,7 @@ D项：小张在描述自己家所处地理位置的特点，是对实际情况�
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-551737ed2413 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5596,7 +5596,7 @@ D项：某企业在各个角落安装摄像头，不符合“引导、支持或�
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-55204db9ce78 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5649,7 +5649,7 @@ D项：关注公众号订购更便宜还能免费送货，不符合“在网络�
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-553a5268ea3a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5702,7 +5702,7 @@ D项：工人多次讨要拖欠工资无果，到政府信访部门反映，是�
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-5546df5f5c41 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M2
@@ -5788,7 +5788,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-5563dd3ced6f -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M2
@@ -5827,7 +5827,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-557e6951d694 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M2
@@ -5915,7 +5915,7 @@ D项：定位文字材料第四段可得，2019年，城镇居民人均住房建
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-559003b58728 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -5993,7 +5993,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-55b69c3c6c47 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -6165,7 +6165,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-55fcc7b2f143 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -6255,7 +6255,7 @@ B项：海洋船舶工业：(1182/(1 + 11.3%)) × 11.3%≈ 1182/(1+1/9) × 1/9= 
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-561147164c89 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -6460,7 +6460,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2815-7493-b2f2-566df683ac45 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5

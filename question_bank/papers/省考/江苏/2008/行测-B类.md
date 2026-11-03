@@ -2586,7 +2586,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a0fa1195d1a3 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2674,7 +2674,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a1150115a522 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -4476,7 +4476,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a3904589fe14 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 常规问法
 materials: []
@@ -4531,7 +4531,7 @@ D项：企业仓库库存量管理是有一定的管理方案和规则的，并�
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a3ae39279c92 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -4584,7 +4584,7 @@ D项甲厂和乙厂不属于国家或地区，不符合劳务输出的定义。
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a3bc1d16a7e3 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -4633,7 +4633,7 @@ A、B、D项都符合定义；
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a3cc06d3fe39 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials: []
@@ -4682,7 +4682,7 @@ B项中昨天南京下暴雨并不是一段时间内大量天气过程的综合�
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a3d364164929 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -4735,7 +4735,7 @@ D项木工按照甲的要求制作，符合定义。
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a3ee3f97bd98 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials: []
@@ -4841,7 +4841,7 @@ D项中测量人的智商是对社会现象的特征进行测量，且智商是�
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a40f30358da0 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -4945,7 +4945,7 @@ D项：由于Ei是绝对值，所以Ei不可能小于0，D项正确。
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a42b858eb502 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -6114,7 +6114,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a59def8ce2aa -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -6198,7 +6198,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a5b88260eec3 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -6247,7 +6247,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a5cd5cd0402f -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6364,7 +6364,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a5fc856941fd -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6610,7 +6610,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a65692da3c70 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -6766,7 +6766,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2168-78d0-8bad-a69bf07a887e -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M7

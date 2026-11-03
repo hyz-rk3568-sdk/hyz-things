@@ -1168,7 +1168,7 @@ C
 <!-- hyz-question-id: 01a19c8a-37d8-7e40-8cab-8e9590eff706 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1432,7 +1432,7 @@ D项“政府收入过高会成为企业的负担”文段未阐述两者关系�
 <!-- hyz-question-id: 01a19c8a-37d8-7e40-8cab-8ef4103a6ed2 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-举例子
 - 关联词-因果
@@ -1657,7 +1657,7 @@ C
 <!-- hyz-question-id: 01a19c8a-37d8-7e40-8cab-8f4ba45f31ec -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -1700,7 +1700,7 @@ B项“经济增长”只是后面诸多好处的其中一个，表述片面，�
 <!-- hyz-question-id: 01a19c8a-37d8-7e40-8cab-8f54e26998ab -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1738,7 +1738,7 @@ D
 <!-- hyz-question-id: 01a19c8a-37d8-7e40-8cab-8f69e59dba00 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1776,7 +1776,7 @@ A
 <!-- hyz-question-id: 01a19c8a-37d8-7e40-8cab-8f79c8c37eb4 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1852,7 +1852,7 @@ C
 <!-- hyz-question-id: 01a19c8a-37d8-7e40-8cab-8f9eb69b113d -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1890,7 +1890,7 @@ B
 <!-- hyz-question-id: 01a19c8a-37d8-7e40-8cab-8faf163570b9 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1928,7 +1928,7 @@ B
 <!-- hyz-question-id: 01a19c8a-37d8-7e40-8cab-8fb51bb766a4 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1968,7 +1968,7 @@ C
 <!-- hyz-question-id: 01a19c8a-37d8-7e40-8cab-8fcac3fffdec -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3209,7 +3209,7 @@ A项主要演员穿了不同的衣服而观众没发现；B项小李没有发现
 <!-- hyz-question-id: 01a19c8a-37d8-7e40-8cab-9192b9f60c1e -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -3311,7 +3311,7 @@ A项小刘因性别问题落聘，其就业平等权被侵犯；B项的招聘与
 <!-- hyz-question-id: 01a19c8a-37d9-79c0-ba99-00bb0b4c213d -->
 ```yaml
 module: 判断推理
-category: 定义判断
+category: null
 topics:
 - 故事类
 materials: []
@@ -3360,7 +3360,7 @@ A项墙上的涂鸦、B项地上的垃圾、D项教室学生讲话都是不良�
 <!-- hyz-question-id: 01a19c8a-37d9-79c0-ba99-00c46ba08337 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5426,7 +5426,7 @@ C
 <!-- hyz-question-id: 01a19c8a-37d9-79c0-ba99-038a3f68b84c -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 统计表
 - 简单加减计算

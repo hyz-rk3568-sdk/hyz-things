@@ -4206,7 +4206,7 @@ D
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-522516c97396 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4312,7 +4312,7 @@ D项：小李改变交流方式，属于方法的改变，不符合“生理适�
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-524093cf2395 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4365,7 +4365,7 @@ D项：有居民要求物业将绿地改为停车位，不属于共同行动，�
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-525543bfaa75 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 主客体
 materials: []
@@ -4471,7 +4471,7 @@ D项：病菌并未体现是具体哪种生物，也未体现生物规律，不�
 <!-- hyz-question-id: 01a19c89-f0fb-7ed1-9a38-527c17a5c31c -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []

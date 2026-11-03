@@ -3174,7 +3174,7 @@ D项，“引领未来变革”无中生有，文段未体现对未来变革的�
 <!-- hyz-question-id: 01a19c8a-3aeb-71e2-828b-d1cf44f51cc7 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 - 关联词-转折
@@ -3273,7 +3273,7 @@ D项，缺少主题词“肿瘤细胞”，偏离中心，排除。
 <!-- hyz-question-id: 01a19c8a-3aeb-71e2-828b-d1e09146aa5a -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -3322,7 +3322,7 @@ D项，“中国家庭结构的变化”仅对应“同时”之前内容，表�
 <!-- hyz-question-id: 01a19c8a-3aeb-71e2-828b-d1f3246fe553 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -3416,7 +3416,7 @@ A项“下架不适宜未成年人的网络游戏”、B项“控制游戏在线
 <!-- hyz-question-id: 01a19c8a-3aeb-71e2-828b-d215513bbc8b -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -3465,7 +3465,7 @@ D项，表述不明确，未明确指出文段的重点即应探索适合自身�
 <!-- hyz-question-id: 01a19c8a-3aeb-71e2-828b-d22f54bd0782 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -4685,7 +4685,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3aec-7941-bf4f-728689affc7c -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -4740,7 +4740,7 @@ D项：哥白尼根据在不同的时间和地点观察到的行星运行情况�
 <!-- hyz-question-id: 01a19c8a-3aec-7941-bf4f-729be9f9f8c0 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4846,7 +4846,7 @@ D项：“很抱歉，由于我不认真，给你带来了麻烦”属于接受�
 <!-- hyz-question-id: 01a19c8a-3aec-7941-bf4f-72bc64ac51cc -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -4901,7 +4901,7 @@ D项：甲公司向乙公司借款100万，后甲公司破产，乙将甲列为�
 <!-- hyz-question-id: 01a19c8a-3aec-7941-bf4f-72c7ca08895f -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5007,7 +5007,7 @@ D项：因为自己支持这个做法就认为反对者都是错误的，无意�
 <!-- hyz-question-id: 01a19c8a-3aec-7941-bf4f-72e8adfa5aef -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []

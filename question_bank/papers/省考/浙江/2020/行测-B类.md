@@ -1657,7 +1657,7 @@ B项和C项主要论述的是“殖民主义”、D项论述的是“文艺复�
 <!-- hyz-question-id: 01a19c8a-3a7b-7142-ad1f-4166fc951d23 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1706,7 +1706,7 @@ D项，“军事战略研究”偏离文段核心话题，排除。
 <!-- hyz-question-id: 01a19c8a-3a7b-7142-ad1f-4179d0491621 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -2000,7 +2000,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3a7b-7142-ad1f-41d10f43aab5 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 - 关联词-转折
@@ -2150,7 +2150,7 @@ D项解释错误，首句是对文段观点的论证，并非是对文段主旨�
 <!-- hyz-question-id: 01a19c8a-3a7b-7142-ad1f-420f4207cc4f -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -2513,7 +2513,7 @@ D项：小李在阅读一本推理小说时，发现作者的写法和自己之�
 <!-- hyz-question-id: 01a19c8a-3a7b-7142-ad1f-4282d7fbe21b -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -2619,7 +2619,7 @@ D项：甲和乙签订合同，甲有物品得到保管的权利，也有支付1
 <!-- hyz-question-id: 01a19c8a-3a7b-7142-ad1f-42a637e761ff -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []

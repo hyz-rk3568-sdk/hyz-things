@@ -1039,7 +1039,7 @@ D项，“回顾历史”非重点，文段在分析沪剧缺乏观众与后继�
 <!-- hyz-question-id: 01a19c89-f0a6-7512-8bdd-77fa3bbee246 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials:
 - M2
@@ -1260,7 +1260,7 @@ D项，为文段第一句的同义置换，表述正确，当选。
 <!-- hyz-question-id: 01a19c89-f0a6-7512-8bdd-784283affc38 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials:
@@ -1308,7 +1308,7 @@ D项，“信息不对称状况”无中生有，排除。
 <!-- hyz-question-id: 01a19c89-f0a6-7512-8bdd-785bbde2bca9 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -1361,7 +1361,7 @@ D项：英语国家的学习者受到母语的影响，而不是连在一起的�
 <!-- hyz-question-id: 01a19c89-f0a6-7512-8bdd-7869ba333de5 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3200,7 +3200,7 @@ D选项：点燃蚊香产生烟雾，烟雾不是一种成品，与题干逻辑�
 <!-- hyz-question-id: 01a19c89-f0a7-7f81-9db8-3ef221d5e031 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 主客体
 materials: []

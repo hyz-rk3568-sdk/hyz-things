@@ -886,7 +886,7 @@ D项，“法治研究”范围扩大，没有针对人格权受侵害的问题�
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b08a9f786e3b -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1038,7 +1038,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b0b92943fd5d -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -1366,7 +1366,7 @@ C项“事后追责”、D项“需要避免和防止”均无中生有，与前
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b1298e02d89a -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 - 关联词-并列
@@ -4689,7 +4689,7 @@ D项：母亲由于夜晚哺乳会影响睡眠，导致工作节奏被打乱，�
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b59af1b23f47 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 排除法
 materials: []
@@ -4848,7 +4848,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b5c86a53578b -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -4956,7 +4956,7 @@ D项：义务献血不属于不良行为，不符合定义，排除。
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b5e7db44fdba -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -5014,7 +5014,7 @@ D项：历史文化遗产及人文景观不断消失，旧城改造，体现了�
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b5f9d5cb6d04 -->
 ```yaml
 module: 判断推理
-category: 定义判断
+category: null
 topics:
 - 故事类
 materials:
@@ -5176,7 +5176,7 @@ D项：从金融机构到附近的保险公司不符合“由大城市到中小�
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b62a330febad -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5230,7 +5230,7 @@ D项：自动播报系统是人为设置的，未体现人机交流，也不符�
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b63af86ad9d8 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5284,7 +5284,7 @@ D项：小梁夫妇担心女儿上学买学区房的事情，小梁夫妇是否�
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b64310c26704 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5338,7 +5338,7 @@ D项：小区受到骚扰后直接购买“呼死你”软件解决问题，未�
 <!-- hyz-question-id: 01a19c8a-2628-7891-925f-b65ffb7c097c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials:
@@ -5446,7 +5446,7 @@ D项：学者长期驻守农村，并根据田野调查写成论文专著，但�
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e7a4e2b3ed5f -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5554,7 +5554,7 @@ D项：某新媒体公司，属于“互联网公司、媒体”，通过分析�
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e7cb48265f6d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5608,7 +5608,7 @@ D项：张女士通过手机购买理财产品被骗，不属于“由于过度�
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e7dff75f82ed -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5701,7 +5701,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e7f9c8fd0426 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -5902,7 +5902,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e84bd58f8341 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -5980,7 +5980,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e864ab6d1edf -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -6103,7 +6103,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e89978afdedf -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6189,7 +6189,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e8b240541fba -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6228,7 +6228,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2629-7403-b665-e8cde1536d33 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5

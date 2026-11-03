@@ -2639,7 +2639,7 @@ B
 <!-- hyz-question-id: 01a19c8a-24db-7571-90c5-dd471cf7c1dd -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []
@@ -3096,7 +3096,7 @@ D项：管中窥豹，比喻只见到事物的一小部分，指所见不全面�
 <!-- hyz-question-id: 01a19c8a-24db-7571-90c5-ddddab81dca8 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -3150,7 +3150,7 @@ D项：“小区大门、所住的大楼单元门及自家大门都有不同的�
 <!-- hyz-question-id: 01a19c8a-24db-7571-90c5-ddeef769b3de -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -3200,7 +3200,7 @@ B、C、D三项均涉及到“亲身参与产品试用、感受产品质量”�
 <!-- hyz-question-id: 01a19c8a-24db-7571-90c5-ddfeed8d4c6f -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -3254,7 +3254,7 @@ D项：不符合所有定义关键词，排除。
 <!-- hyz-question-id: 01a19c8a-24db-7571-90c5-de0d88c7dbbd -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -3356,7 +3356,7 @@ D选项，人的脸色蜡黄与某种疾病是有必然的联系的，排除。
 <!-- hyz-question-id: 01a19c8a-24db-7571-90c5-de276c7b7ad8 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -3410,7 +3410,7 @@ D项：未体现呈现出了“外形上的相似性”，不符合定义，排�
 <!-- hyz-question-id: 01a19c8a-24db-7571-90c5-de323f594c58 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials:
@@ -3462,7 +3462,7 @@ D项：“某市为确保城市公交畅通安全”对应“政府部门为了�
 <!-- hyz-question-id: 01a19c8a-24db-7571-90c5-de4422727f57 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -3516,7 +3516,7 @@ D项：未体现出“对某种品牌认知度较高”，不符合定义，排�
 <!-- hyz-question-id: 01a19c8a-24db-7571-90c5-de5025117109 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -3594,7 +3594,7 @@ C
 <!-- hyz-question-id: 01a19c8a-24db-7571-90c5-de797bd7e11f -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -3633,7 +3633,7 @@ D
 <!-- hyz-question-id: 01a19c8a-24db-7571-90c5-de88e74d3319 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -3672,7 +3672,7 @@ A
 <!-- hyz-question-id: 01a19c8a-24db-7571-90c5-de9000f31f8b -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M3
@@ -3717,7 +3717,7 @@ D项：材料中只提到江苏快递业务收入，而没有提到全国快递�
 <!-- hyz-question-id: 01a19c8a-24db-7571-90c5-dead6b1297f0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -3836,7 +3836,7 @@ C
 <!-- hyz-question-id: 01a19c8a-24db-7571-90c5-ded4d3524478 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -4057,7 +4057,7 @@ B
 <!-- hyz-question-id: 01a19c8a-24db-7571-90c5-df281047fa8a -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -4098,7 +4098,7 @@ C
 <!-- hyz-question-id: 01a19c8a-24db-7571-90c5-df36807a7c05 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5
@@ -4143,7 +4143,7 @@ D项：从文字材料“2014年1—2月产量为1932万吨”，可得1月和2�
 <!-- hyz-question-id: 01a19c8a-24db-7571-90c5-df4d4dc675ae -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6

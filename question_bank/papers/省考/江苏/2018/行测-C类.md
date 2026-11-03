@@ -829,7 +829,7 @@ D项错误，一个地区的烈度，不仅与这次地震的释放能量（即�
 <!-- hyz-question-id: 01a19c8a-268a-7d23-9352-4e539b905e36 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 - 关联词-并列
@@ -879,7 +879,7 @@ C项“优势互补”无中生有，且未提及文段围绕的核心话题“�
 <!-- hyz-question-id: 01a19c8a-268a-7d23-9352-4e6a6db4e26c -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -1018,7 +1018,7 @@ D项，由尾句“欧洲央行发表声明称······”可知，表述正�
 <!-- hyz-question-id: 01a19c8a-268a-7d23-9352-4e9906c590fb -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-其他
 - 关联词-转折
@@ -1211,7 +1211,7 @@ D
 <!-- hyz-question-id: 01a19c8a-268a-7d23-9352-4ed6ab7d8a99 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-其他
 - 关联词-转折
@@ -1261,7 +1261,7 @@ C项，“社交网络取代线下交往”无中生有，排除。
 <!-- hyz-question-id: 01a19c8a-268a-7d23-9352-4ee176218ce3 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1310,7 +1310,7 @@ D项“误区”为结论之前的问题性表述，非重点，排除。
 <!-- hyz-question-id: 01a19c8a-268a-7d23-9352-4ef7158dca43 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-其他
 - 关联词-转折
@@ -4684,7 +4684,7 @@ D项：老鼠和人的差异很大以及老鼠实验的结论对于人类只有�
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-26d57942b85b -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 排除法
 materials: []
@@ -4951,7 +4951,7 @@ D项：义务献血不属于不良行为，不符合定义，排除。
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-272fbcb6d3c3 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5113,7 +5113,7 @@ D项：从金融机构到附近的保险公司不符合“由大城市到中小�
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-275daeb5eaaf -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5167,7 +5167,7 @@ D项：小区受到骚扰后直接购买“呼死你”软件解决问题，未�
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-276dcd15805c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials:
@@ -5221,7 +5221,7 @@ D项：“老王在看过丁某推荐的名医后，病情未见好转，而老�
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-2770eccb418c -->
 ```yaml
 module: 判断推理
-category: 定义判断
+category: null
 topics:
 - 故事类
 materials:
@@ -5275,7 +5275,7 @@ D项：董事长在审阅后交待几句，对方案结果的评论，不符合�
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-27864d5eb4fa -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5329,7 +5329,7 @@ D项：小黄坚持学习和模仿播音员的发音，不属于“在完全不�
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-279e4466d807 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5422,7 +5422,7 @@ A
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-27b8879ca67a -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -5662,7 +5662,7 @@ C
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-2816872b76f8 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -5824,7 +5824,7 @@ D
 <!-- hyz-question-id: 01a19c8a-268b-7103-a0a4-28564e1e9237 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -5902,7 +5902,7 @@ A
 <!-- hyz-question-id: 01a19c8a-268c-7173-a922-221f56b70a71 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5

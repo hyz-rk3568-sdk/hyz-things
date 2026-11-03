@@ -561,7 +561,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f677429e591a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -723,7 +723,7 @@ D项：医疗事故发生后，家属谅解了医院，表明家属心目中对�
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f6af55c8acc1 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -777,7 +777,7 @@ D项：上届冠军老王发挥失常，不属于极端情况，不符合定义�
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f6ba1eba65a2 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -831,7 +831,7 @@ D项：W市新建了两条4车道柏油马路后，市内交通不再像以前�
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f6c03c7ad36d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -885,7 +885,7 @@ D项：小明原本就爱画画，妈妈每幅画给小明10元作为报酬，�
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f6d189873887 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -939,7 +939,7 @@ D项：部队处于被包围的情况，不符合有利的时机和态势，同�
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f6ec3537aed6 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -993,7 +993,7 @@ D项：小玲的男朋友送了一束花，她很开心，并专门买了漂亮�
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f6f5fe0b440d -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -1047,7 +1047,7 @@ D项：全部情况的结论为世界各国人民互相引进，其前提包括�
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f70253ac6799 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -2177,7 +2177,7 @@ D
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f85e4fa7ac0c -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2216,7 +2216,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f86471f29c27 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2294,7 +2294,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f884f23b384e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2333,7 +2333,7 @@ C
 <!-- hyz-question-id: 01a19c8a-3982-76c1-95a7-f89a91cd7444 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -5541,7 +5541,7 @@ D项，侧重表明“民族性”的必不可少，而文段重在论述“世�
 <!-- hyz-question-id: 01a19c8a-3983-7be2-9504-2738adbbbc76 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -5591,7 +5591,7 @@ D项，文段重点强调的是“大脑的加工方式”，而非“对视觉�
 <!-- hyz-question-id: 01a19c8a-3983-7be2-9504-2746d26cd575 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -5641,7 +5641,7 @@ D项，文段没有将今天和古代的“侠”进行对比，无中生有，�
 <!-- hyz-question-id: 01a19c8a-3983-7be2-9504-2756ecf67c4f -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -5741,7 +5741,7 @@ C项，根据文段中“并非儒家所倡‘仁’的本义”可知，表述�
 <!-- hyz-question-id: 01a19c8a-3983-7be2-9504-2770a6c5edcf -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -5841,7 +5841,7 @@ D项，未提及“土壤”，文段围绕蚯蚓对土壤的作用展开论述�
 <!-- hyz-question-id: 01a19c8a-3983-7be2-9504-279174896e67 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: 《要时刻审视互联网的隐喻》
@@ -5890,7 +5890,7 @@ D项，“关联愈发紧密”对应“我们会模糊线上线下的界限”�
 <!-- hyz-question-id: 01a19c8a-3983-7be2-9504-27a62c8a0488 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []

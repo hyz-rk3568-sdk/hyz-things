@@ -2880,7 +2880,7 @@ D项：根据题干只能推出李副主席或张副主席在本市过年，不�
 <!-- hyz-question-id: 01a19c89-f1a5-7340-828b-822a9fc97436 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []

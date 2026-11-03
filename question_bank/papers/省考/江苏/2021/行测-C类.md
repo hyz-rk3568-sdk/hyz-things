@@ -903,7 +903,7 @@ D项，“助力又好又快发展”对应文段“高质量发展”，表述�
 <!-- hyz-question-id: 01a19c8a-2845-7591-b6e6-7b4db82752a5 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -999,7 +999,7 @@ C项，只提及“法治”，前文“深化经济法的立法理论·····
 <!-- hyz-question-id: 01a19c8a-2845-7591-b6e6-7b6b41bd4c02 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1144,7 +1144,7 @@ A项和D项比较，A项的“医疗领域”和D项的“患者自决权”均�
 <!-- hyz-question-id: 01a19c8a-2845-7591-b6e6-7b966768b2a3 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 - 关联词-转折
@@ -1290,7 +1290,7 @@ D项，根据“积极宣传推广预防儿童青少年近视的视力健康科�
 <!-- hyz-question-id: 01a19c8a-2845-7591-b6e6-7bcab52dd705 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-举例子
 - 关联词-因果
@@ -1389,7 +1389,7 @@ D项，根据“‘DC/EP’不需要网络就能支付”及“‘DC/EP’的双
 <!-- hyz-question-id: 01a19c8a-2845-7591-b6e6-7be59973c9b5 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1540,7 +1540,7 @@ D项，根据“刹那永恒，物我两忘”可知，“可使人纯净安详�
 <!-- hyz-question-id: 01a19c8a-2845-7591-b6e6-7c14b94f0949 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -4939,7 +4939,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f437be3aede6 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -4992,7 +4992,7 @@ D项：市民蒋先生受街道办委托把新医保政策编成快板，并录�
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f44f86b209fe -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5045,7 +5045,7 @@ D项：牛牛勇敢地推开轮椅，不符合“获得科学活动实践体验�
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f45e2f701a7d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5098,7 +5098,7 @@ D项：刘先生夫妇将租下的一栋小楼改造成了民宿，符合“凭�
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f46a41f608d7 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials: []
@@ -5151,7 +5151,7 @@ D项：某高校不符合题干主体“企业”，不符合定义，排除。
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f4720a9ad2ff -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials: []
@@ -5204,7 +5204,7 @@ D项：王师傅擅长淮扬菜，到四川后学着做川菜，是做不擅长�
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f4899555fa2d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5257,7 +5257,7 @@ D项：小李已经将计划书发给了经理，但是经理十几天之后问�
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f49929e3d98a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -5310,7 +5310,7 @@ D项：老钱不会上网，符合“老年人由于生活习惯、文化水平�
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f4a6aa92957a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5416,7 +5416,7 @@ D项：“老师”“先生”是两种不同的称呼，不涉及同一个词�
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f4c08b461644 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials: []
@@ -5586,7 +5586,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f501cbdf619d -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M2
@@ -5952,7 +5952,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f588f3b8548d -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -6042,7 +6042,7 @@ B项：海洋船舶工业：(1182/(1 + 11.3%)) × 11.3%≈ 1182/(1+1/9) × 1/9= 
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f5a3e01da57b -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -6130,7 +6130,7 @@ D项：定位图形材料，2016—2019年，我国海洋第二产业增加值�
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f5cbb28a5003 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6259,7 +6259,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2846-7e61-b7e7-f5f3354c7f9d -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5

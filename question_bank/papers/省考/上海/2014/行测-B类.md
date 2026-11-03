@@ -803,7 +803,7 @@ D
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a8163d626a5c -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1026,7 +1026,7 @@ B
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a865e0899726 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1788,7 +1788,7 @@ D项错误，该实验是著名的奥斯特实验，该实验说明了通电导�
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a9808e0eba1c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -1835,7 +1835,7 @@ B、C、D三项均能减少一个人的碳足迹；而A项早睡早起锻炼身�
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a9960962149e -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -1943,7 +1943,7 @@ D选项周总理在两个“马路”之间偷换了概念。
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a9bbce343bed -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -1998,7 +1998,7 @@ D项：“骑马射箭”侧重于“怎么办”，属于程序性知识，归�
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-a9c48c771139 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -2255,7 +2255,7 @@ D项赤眼蜂对玉米螟虫不利，不符合要点②。
 <!-- hyz-question-id: 01a19c89-f043-7c72-82a1-aa1d30265767 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []

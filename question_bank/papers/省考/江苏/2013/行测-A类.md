@@ -143,7 +143,7 @@ issues: []
 <!-- hyz-question-id: 01a19c8a-23a8-7ef2-a05c-a4095a2a3738 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -955,7 +955,7 @@ C
 <!-- hyz-question-id: 01a19c8a-23a8-7ef2-a05c-a52780514e56 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1045,7 +1045,7 @@ D
 <!-- hyz-question-id: 01a19c8a-23a8-7ef2-a05c-a54f661db8bb -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1123,7 +1123,7 @@ A
 <!-- hyz-question-id: 01a19c8a-23a8-7ef2-a05c-a56ec6641394 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1203,7 +1203,7 @@ A
 <!-- hyz-question-id: 01a19c8a-23a8-7ef2-a05c-a58390aa1d0d -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3315,7 +3315,7 @@ C、D项由第二步推论可知，小张不入选，小金不入选，C项和D�
 <!-- hyz-question-id: 01a19c8a-23a9-76e2-a4e1-410038d42bc3 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -3368,7 +3368,7 @@ D项小顾每晚花数小时查阅相关文献，不满足关键词“通过一�
 <!-- hyz-question-id: 01a19c8a-23a9-76e2-a4e1-411a8fd9f91c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials: []
@@ -3419,7 +3419,7 @@ C项小吕口才好，反应快，知识面广，但赛前因紧张申请退出�
 <!-- hyz-question-id: 01a19c8a-23a9-76e2-a4e1-412f354e2d42 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -3472,7 +3472,7 @@ D项小赵采用先易后难的原则，没有对问题进行变形、转化，�
 <!-- hyz-question-id: 01a19c8a-23a9-76e2-a4e1-413b3404f4bf -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -3527,7 +3527,7 @@ D项：公车私用体现了“缺点”，监督员、抓拍、网络、解释�
 <!-- hyz-question-id: 01a19c8a-23a9-76e2-a4e1-414f35c146ba -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials: []
@@ -3580,7 +3580,7 @@ D项：并未体现出对工作人员的伤害或危害，只是对农业生产�
 <!-- hyz-question-id: 01a19c8a-23a9-76e2-a4e1-415a23badab2 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials: []
@@ -3682,7 +3682,7 @@ D项充分重视现有的市场空间竞争不满足“向改变市场结构本�
 <!-- hyz-question-id: 01a19c8a-23a9-76e2-a4e1-417cb490b8d2 -->
 ```yaml
 module: 判断推理
-category: 定义判断
+category: null
 topics:
 - 故事类
 materials: []
@@ -3735,7 +3735,7 @@ D项：现代服务业与便捷交通方式犹如某种“吸管”，人流、�
 <!-- hyz-question-id: 01a19c8a-23a9-76e2-a4e1-418b1241452a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -3788,7 +3788,7 @@ D项，行文风格充分体现出了“幽默情趣”，行文内容体现出�
 <!-- hyz-question-id: 01a19c8a-23a9-76e2-a4e1-4192de07bc92 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials: []
@@ -4101,7 +4101,7 @@ D
 <!-- hyz-question-id: 01a19c8a-23a9-76e2-a4e1-4201f71b5934 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -4179,7 +4179,7 @@ A
 <!-- hyz-question-id: 01a19c8a-23a9-76e2-a4e1-422d5df08d94 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -4226,7 +4226,7 @@ B
 <!-- hyz-question-id: 01a19c8a-23a9-76e2-a4e1-4239a40cdf06 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -4345,7 +4345,7 @@ B
 <!-- hyz-question-id: 01a19c8a-23a9-76e2-a4e1-426fb17b72d9 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -4744,7 +4744,7 @@ A
 <!-- hyz-question-id: 01a19c8a-23a9-76e2-a4e1-42f801e7464e -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -4822,7 +4822,7 @@ B
 <!-- hyz-question-id: 01a19c8a-23a9-76e2-a4e1-43119c2133c9 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -4861,7 +4861,7 @@ B
 <!-- hyz-question-id: 01a19c8a-23a9-76e2-a4e1-432c06350f02 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6

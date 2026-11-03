@@ -2425,7 +2425,7 @@ D项，“得到越来越多人的认可”文段并未提及，无中生有，�
 <!-- hyz-question-id: 01a19c8a-3c7e-7a30-aa90-1b3ede322bf6 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-因果
 - 主题词
@@ -2477,7 +2477,7 @@ D项，偏离文段核心话题“市场需求”，且根据“技术是经济�
 <!-- hyz-question-id: 01a19c8a-3c7e-7a30-aa90-1b4870d6eaaf -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-对策
 - 主题词
@@ -2528,7 +2528,7 @@ D项，“珊瑚礁对海洋环境和人类社会的影响”对应前文内容�
 <!-- hyz-question-id: 01a19c8a-3c7e-7a30-aa90-1b54e2f62cf2 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 主题词
 - 关联词-转折
@@ -3813,7 +3813,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3c7e-7a30-aa90-1d2a8d27165a -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -3868,7 +3868,7 @@ D项：69的因数包括1、3、23、69，不符合“除了1和它本身以外�
 <!-- hyz-question-id: 01a19c8a-3c7e-7a30-aa90-1d3f6f1dfbc2 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3921,7 +3921,7 @@ D项：有针对性地大规模部署军事进攻设施，这显示了武力或�
 <!-- hyz-question-id: 01a19c8a-3c7e-7a30-aa90-1d4c6fff11dd -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -3976,7 +3976,7 @@ D项：“大江东去”的前后两部分为“大江”和“东去”，“�
 <!-- hyz-question-id: 01a19c8a-3c7e-7a30-aa90-1d599b5dbf0c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4084,7 +4084,7 @@ D项：重工业国家丁国发现了大量矿藏资源，大批工人向采矿�
 <!-- hyz-question-id: 01a19c8a-3c7e-7a30-aa90-1d77f2278137 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -4141,7 +4141,7 @@ D项：甲对乙说如果敢动手就不退还押金，乙随后将甲打成重�
 <!-- hyz-question-id: 01a19c8a-3c7e-7a30-aa90-1d88533c3fdf -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -4320,7 +4320,7 @@ D项：某部门要求即使线下完成的审批事项，服务对象也要在�
 <!-- hyz-question-id: 01a19c8a-3c7e-7a30-aa90-1db97d16f11b -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []

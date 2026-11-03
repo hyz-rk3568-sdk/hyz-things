@@ -166,7 +166,7 @@ issues: []
 <!-- hyz-question-id: 01a19c8a-22b9-78d3-b1b6-323087dde2b8 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: null
@@ -211,7 +211,7 @@ A项、B项的叙述为原文“不是”后面的内容，不属于要强调的
 <!-- hyz-question-id: 01a19c8a-22b9-78d3-b1b6-3247ae4c25a5 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -847,7 +847,7 @@ D
 <!-- hyz-question-id: 01a19c8a-22b9-78d3-b1b6-33202cbd8022 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1195,7 +1195,7 @@ D
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-d6f882ad4880 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2951,7 +2951,7 @@ D
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-d97c1860bbb7 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials:
@@ -3321,7 +3321,7 @@ D项：“守株待兔”原比喻企图不经过努力而得到成功的侥幸�
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-d9e0e7c373d6 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -3369,7 +3369,7 @@ A项中钱某坚持清晨长跑，让知道的人都钦佩不已，不符合关�
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-d9fcd559b021 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -3417,7 +3417,7 @@ A项中秦某答应儿子如果能独自做好一道菜就带他去野炊；B项
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-da06ab35e294 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -3470,7 +3470,7 @@ D项：变废为宝，是废物回收利用，属于“废物转化为可重新�
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-da15440692e1 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials:
@@ -3812,7 +3812,7 @@ D项中从上面的分析可知只有例证（2）与定义③相符，因此D�
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-da7f1bb8b9ae -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -3858,7 +3858,7 @@ B
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-da8f85702162 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -3897,7 +3897,7 @@ C
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-da9ed12bbc57 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -3950,7 +3950,7 @@ A
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-daa9524fb9f0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -4034,7 +4034,7 @@ D项正确，由“六大高耗能行业增加值增长13.5%，比上半年和�
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-dacbf65916e5 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -4081,7 +4081,7 @@ C
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-dada939aba44 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -4126,7 +4126,7 @@ A
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-daead2146dfb -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6
@@ -4165,7 +4165,7 @@ D
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-dafcad87e6ca -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -4291,7 +4291,7 @@ D
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-db27d3b3b2bc -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7
@@ -4492,7 +4492,7 @@ C
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-db71e8aa7f07 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M8
@@ -4580,7 +4580,7 @@ B
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-db941ae70f7d -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M8
@@ -4619,7 +4619,7 @@ A
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-dba82fbc6c71 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M8
@@ -4707,7 +4707,7 @@ C
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-dbc510600268 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M9
@@ -4746,7 +4746,7 @@ D
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-dbd215d4bda2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M9
@@ -4785,7 +4785,7 @@ D
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-dbe5dc4addc1 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M9
@@ -4824,7 +4824,7 @@ A
 <!-- hyz-question-id: 01a19c8a-22ba-7f73-9125-dbfc08f45b12 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M9

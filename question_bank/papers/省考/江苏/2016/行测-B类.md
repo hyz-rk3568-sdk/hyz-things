@@ -1071,7 +1071,7 @@ D项错误，契约自由是指个人之间的契约关系，应根据契约当�
 <!-- hyz-question-id: 01a19c8a-2533-7f52-8683-7cf25fea167d -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1118,7 +1118,7 @@ D项，“发展文化产业学所面临的困难”文段未涉及，无中生�
 <!-- hyz-question-id: 01a19c8a-2533-7f52-8683-7d0ec8a451bd -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1532,7 +1532,7 @@ A、C、D三项，均与前文无法形成对应，排除。
 <!-- hyz-question-id: 01a19c8a-2533-7f52-8683-7d9ec6c44046 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -1579,7 +1579,7 @@ D项，“CPI”对应背景内容，非重点，排除。
 <!-- hyz-question-id: 01a19c8a-2533-7f52-8683-7da7f6dbbf00 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -1624,7 +1624,7 @@ A项，“吸金噱头”文中没有提到，错误；B项，“弊大于利”
 <!-- hyz-question-id: 01a19c8a-2533-7f52-8683-7dbe2cbe4f0b -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 - 关联词-转折
@@ -1728,7 +1728,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2533-7f52-8683-7ddc0caa3ea0 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -4919,7 +4919,7 @@ D项：“一片冰心在玉壶”指我的心就像盛在玉壶的冰那样洁�
 <!-- hyz-question-id: 01a19c8a-2534-77e3-ae4a-8e4b720537b3 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials:
@@ -5027,7 +5027,7 @@ D项：出自唐代诗人李白的《关山月》，仅仅是在描绘边塞的�
 <!-- hyz-question-id: 01a19c8a-2534-77e3-ae4a-8e6e4a4ef3ed -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5135,7 +5135,7 @@ D项：自由撰稿人是一种新型的自由职业，符合定义中的“没�
 <!-- hyz-question-id: 01a19c8a-2534-77e3-ae4a-8e89afd64036 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5297,7 +5297,7 @@ D项：在部队掌握了养牛技术说明有现代农业生产技能，建立�
 <!-- hyz-question-id: 01a19c8a-2534-77e3-ae4a-8eba2e7fe13c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials:
@@ -5351,7 +5351,7 @@ D项：不怕冷是南方人对北方人这一社会群体持有的比较固定�
 <!-- hyz-question-id: 01a19c8a-2534-77e3-ae4a-8ec06798b354 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5515,7 +5515,7 @@ D项：看到不认识的字下意识地去查字典，这正是因为遇到过�
 <!-- hyz-question-id: 01a19c8a-2534-77e3-ae4a-8ef1595d08fb -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5571,7 +5571,7 @@ D项：老张的妻子特意在他的行李箱里塞几件厚衣服，并不是�
 <!-- hyz-question-id: 01a19c8a-2534-77e3-ae4a-8f0669d580eb -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -5625,7 +5625,7 @@ D项：小丽是《舌尖上的中国》的忠实观众，看节目废寝忘食�
 <!-- hyz-question-id: 01a19c8a-2534-77e3-ae4a-8f1684d9c0c0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -5742,7 +5742,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2534-77e3-ae4a-8f4d001e86c2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -5943,7 +5943,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2534-77e3-ae4a-8f9555b0e12a -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -6074,7 +6074,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2534-77e3-ae4a-8fcc0c14019b -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6152,7 +6152,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2534-77e3-ae4a-8feb065fd191 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6353,7 +6353,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2534-77e3-ae4a-903c6b59df47 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6

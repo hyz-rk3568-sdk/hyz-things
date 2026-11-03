@@ -1026,7 +1026,7 @@ D项错误，材料中提到“一体化进程已进入了一个新的时期”�
 <!-- hyz-question-id: 01a19c8a-4307-7a50-a429-96eb5f6a2648 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 - 关联词-转折
@@ -1207,7 +1207,7 @@ A项不是材料主要表达的意思；B项“强势”在材料中没有体现
 <!-- hyz-question-id: 01a19c8a-4307-7a50-a429-972917161b3e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1283,7 +1283,7 @@ A
 <!-- hyz-question-id: 01a19c8a-4307-7a50-a429-974abe1ecaff -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1361,7 +1361,7 @@ B
 <!-- hyz-question-id: 01a19c8a-4307-7a50-a429-97646ce2b408 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1403,7 +1403,7 @@ D
 <!-- hyz-question-id: 01a19c8a-4307-7a50-a429-97791c98dbb9 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2535,7 +2535,7 @@ D项：根据题干“犯罪嫌疑人说的一定是真话”，可知犯罪嫌�
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a1f4f9aac4aa -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -2959,7 +2959,7 @@ D
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a27db9fa10fe -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -3006,7 +3006,7 @@ D项中受害者向歹徒求取的赔偿不是因社会义务而发生的收支�
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a28609f638f1 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -3053,7 +3053,7 @@ C项中的公平收入分配制度与定义无关。
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a294d0a97fd8 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -3147,7 +3147,7 @@ A项中下属工厂、B项中的学生食堂均不承担负债，C项中的某�
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a2b2f82a3217 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 常规问法
 materials: []
@@ -3200,7 +3200,7 @@ C项中选取的调查对象既没有极端标志也不是最一般单位的代�
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a2c858fbc461 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -3249,7 +3249,7 @@ B、C两项不是有规律的变动，D项不存在随着季节的变化，均�
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a2d6ef3ccf8c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -3349,7 +3349,7 @@ C项正确，是企业的固定资产，属于资本范畴。
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a2f4e3e0165b -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -4969,7 +4969,7 @@ A
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a549d61f3e7d -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 直接找数
 - 综合资料
@@ -5010,7 +5010,7 @@ C
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a55905b20061 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 直接找数
 - 综合资料
@@ -5051,7 +5051,7 @@ B
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a56f26a04d35 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 直接找数
 - 综合资料
@@ -5350,7 +5350,7 @@ D项：定位统计图可得：1998年香港对内地的出口额与进口额均
 <!-- hyz-question-id: 01a19c8a-4308-7c63-b354-a5dbf89ee382 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics:
 - 简单加减计算
 - 统计图

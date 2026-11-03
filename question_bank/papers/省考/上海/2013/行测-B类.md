@@ -170,7 +170,7 @@ A项“顺理成章”指写文章、做事情顺着条理就能做好，比喻�
 <!-- hyz-question-id: 01a19c89-efe8-7e42-8ef1-b3088e5d6b88 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 逻辑填空
 topics: []
 materials: []
 passage_source: null
@@ -670,7 +670,7 @@ D项，“反抗”与原文强调的“宽容”相悖，不符合文意，当�
 <!-- hyz-question-id: 01a19c89-efe8-7e42-8ef1-b3bdb311ba14 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1544,7 +1544,7 @@ D项说的是企业和企业之间的竞争，而不是与企业外部组织的�
 <!-- hyz-question-id: 01a19c89-efe8-7e42-8ef1-b4ffecc9dfec -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []

@@ -893,7 +893,7 @@ D项错误，创新思维是指以新颖独创的方法解决问题的思维过�
 <!-- hyz-question-id: 01a19c8a-2910-7260-9029-df91e238f5c1 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -989,7 +989,7 @@ D项，“艺术化表现”仅对应文中对“再现”进行解释说明的�
 <!-- hyz-question-id: 01a19c8a-2910-7260-9029-dfb27dbb989b -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1085,7 +1085,7 @@ D项，根据“在自然界中，形式对称性的生成，源自受到作用�
 <!-- hyz-question-id: 01a19c8a-2910-7260-9029-dfd5d0d340fd -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -1473,7 +1473,7 @@ D项，根据“从构成的材料和信号处理过程的方式来看，它们�
 <!-- hyz-question-id: 01a19c8a-2910-7260-9029-e059e178e854 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -5278,7 +5278,7 @@ D项：大学组织学生党员到市郊革命烈士陵园开展义务宣讲活�
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7d1f3f2b9f91 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -5332,7 +5332,7 @@ D项：某知名玩具公司利用的是世界杯的热度推出了足球玩具�
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7d2fcf463461 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5386,7 +5386,7 @@ D项：某地依托城市洪涝数值模拟模型发布了市区积水地图，�
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7d32dff1b393 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5440,7 +5440,7 @@ D项：小邓购买了心仪已久的手机，说明是因喜爱该手机而购�
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7d45eb1096ce -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5548,7 +5548,7 @@ D项：“何当共剪西窗烛，却话巴山夜雨时”的意思是：什么�
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7d6610a4a62e -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5658,7 +5658,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7d8f3d8fc3b5 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5805,7 +5805,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7db3b37a6142 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -5883,7 +5883,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7dd2fb370daa -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -6016,7 +6016,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7e0a86a444db -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -6055,7 +6055,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7e1e1e6aec5b -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6321,7 +6321,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7e7ae87f5d95 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6
@@ -6444,7 +6444,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7ea04b65f533 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7
@@ -6493,7 +6493,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2911-7621-9e0d-7ebe54df34b6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M7

@@ -507,7 +507,7 @@ A项“崛起的力量”、C项“飞速发展”、D项“市值泡沫”均�
 <!-- hyz-question-id: 01a19c8a-2296-71d2-99a5-b0d8ee355008 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -792,7 +792,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2296-71d2-99a5-b14b0a41c2ad -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -830,7 +830,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2296-71d2-99a5-b1521ba607d7 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -908,7 +908,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2296-71d2-99a5-b17803fbf6ca -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -946,7 +946,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2296-71d2-99a5-b18b3258fd9b -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -986,7 +986,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2296-71d2-99a5-b19b74bc96a6 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1100,7 +1100,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bb0d8466e852 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1138,7 +1138,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bb15900f9f04 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2896,7 +2896,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bda128e77687 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials: []
@@ -2978,7 +2978,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bdc07fa1b380 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -3019,7 +3019,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bdd5402a0c02 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -3060,7 +3060,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bde55f50f442 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials: []
@@ -3113,7 +3113,7 @@ D项：小俞餐饮店要食品卫生确认，说明餐饮店已经登记营业�
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bdf0e5e852fc -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -3166,7 +3166,7 @@ D项：尽管领导的目的是想得到大家的支持和拥护，但形式还�
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-be03a5e72561 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -3313,7 +3313,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-be372caaf3ad -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -3393,7 +3393,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-be53447bdb5e -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M2
@@ -3510,7 +3510,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-be8c7576a1f3 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M2
@@ -3678,7 +3678,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bec23c3c110c -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -3762,7 +3762,7 @@ D项：根据B、C两项可知，所有省辖市单位GDP能耗均有下降，�
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bee050ab5992 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -3809,7 +3809,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-befdafb26307 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -3946,7 +3946,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bf24170dc653 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -3997,7 +3997,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bf3e0f4b3135 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -4046,7 +4046,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bf485ec97676 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -4085,7 +4085,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bf58b75bc694 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -4126,7 +4126,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bf625676b47c -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -4165,7 +4165,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bf7973d25e12 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -4218,7 +4218,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bf8c716a286b -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -4257,7 +4257,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bf9d865d9ace -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -4296,7 +4296,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bfacb61c1266 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -4343,7 +4343,7 @@ D项：城镇和农村占总消费支出的比重差距从2003年到2008年依�
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bfb07a2e2d6e -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -4406,7 +4406,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2297-7630-a52f-bfc6c310c392 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6

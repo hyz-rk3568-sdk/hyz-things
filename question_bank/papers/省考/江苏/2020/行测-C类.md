@@ -894,7 +894,7 @@ C、D两项“社会主义制度对我国治理现代化产生重大影响” �
 <!-- hyz-question-id: 01a19c8a-27ad-7af0-983e-51c9181adf8a -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1140,7 +1140,7 @@ D项，“应该借鉴文学的手法”，对策无中生有，文段未提及�
 <!-- hyz-question-id: 01a19c8a-27ad-7af0-983e-521aedde7adf -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -4510,7 +4510,7 @@ D
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ee9824f57f67 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []
@@ -4876,7 +4876,7 @@ C
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-eefd86f90ac0 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -4930,7 +4930,7 @@ D项：为了解决全村苹果严重滞销的问题，村里的几个年轻人�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ef052f721eaf -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -4984,7 +4984,7 @@ D项：某区组织党员干部分系统观看专题纪录片《警钟长鸣》�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ef1d256ebdcf -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5038,7 +5038,7 @@ D项：患健忘症的陈奶奶多次走失，区民政部门了解情况后，�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ef24b664cd64 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -5092,7 +5092,7 @@ D项：将厨余垃圾等有机物分离出来，制成肥料，将无机物分�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ef35fdd610b5 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5146,7 +5146,7 @@ D项：某校多次聘请大学教授为参赛选手进行强化训练，符合�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ef40ba73eaf2 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -5200,7 +5200,7 @@ D项：博物馆并不是企业，主体不符合，并且它是为让大家了�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ef507ccd9ad2 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5254,7 +5254,7 @@ D项：李大妈在推销员的劝说下买了一台加湿器，加湿器本身�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ef6dcda3660b -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -5434,7 +5434,7 @@ D
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-ef9d09324c1e -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -5473,7 +5473,7 @@ B
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-efa31e16e270 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -5551,7 +5551,7 @@ C
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-efc1ec310440 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -5731,7 +5731,7 @@ D项：图中北京、江苏和山东三个省（市）的总和占东部地区�
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-f003415dd2d8 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -5770,7 +5770,7 @@ C
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-f0106efcac50 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -5854,7 +5854,7 @@ D项：定位表格资料可知2019年上半年东部地区各省（市）信息
 <!-- hyz-question-id: 01a19c8a-27ae-77a3-997d-f03a19b1c8fe -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -5893,7 +5893,7 @@ C
 <!-- hyz-question-id: 01a19c8a-27af-7a83-99ea-a5193e0964a6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -5971,7 +5971,7 @@ D
 <!-- hyz-question-id: 01a19c8a-27af-7a83-99ea-a53fd76eeaf3 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -6094,7 +6094,7 @@ B
 <!-- hyz-question-id: 01a19c8a-27af-7a83-99ea-a56ffef8e24a -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6

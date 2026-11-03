@@ -139,7 +139,7 @@ issues: []
 <!-- hyz-question-id: 01a19c8a-21bc-7fe3-a7e9-b7b5aaf51ab3 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -179,7 +179,7 @@ B
 <!-- hyz-question-id: 01a19c8a-21bc-7fe3-a7e9-b7c60179c7f0 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -265,7 +265,7 @@ C
 <!-- hyz-question-id: 01a19c8a-21bc-7fe3-a7e9-b7e051d4fa80 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -351,7 +351,7 @@ B
 <!-- hyz-question-id: 01a19c8a-21bc-7fe3-a7e9-b80308c08658 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -465,7 +465,7 @@ B
 <!-- hyz-question-id: 01a19c8a-21bc-7fe3-a7e9-b83481cbbc0c -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2485,7 +2485,7 @@ C
 <!-- hyz-question-id: 01a19c8a-21bc-7fe3-a7e9-baf6785c653f -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 排除法
 materials: []
@@ -2528,7 +2528,7 @@ C
 <!-- hyz-question-id: 01a19c8a-21bc-7fe3-a7e9-bb01be799df9 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 排除法
 materials: []
@@ -2691,7 +2691,7 @@ D项扑救自己家的火灾，是自助行为，也不符合定义。
 <!-- hyz-question-id: 01a19c8a-21bc-7fe3-a7e9-bb355f869e66 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials: []
@@ -2746,7 +2746,7 @@ B、C、D均不符合定义。
 <!-- hyz-question-id: 01a19c8a-21bc-7fe3-a7e9-bb4a571f9a1a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials: []
@@ -2799,7 +2799,7 @@ D项是由于技术人员没有积极地发挥设备的效率，也不符合定�
 <!-- hyz-question-id: 01a19c8a-21bc-7fe3-a7e9-bb5f615dac34 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials: []
@@ -2852,7 +2852,7 @@ D项：热电厂在特殊情况下一般不会出现人为事故，而在平常�
 <!-- hyz-question-id: 01a19c8a-21bc-7fe3-a7e9-bb67e4251070 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -3527,7 +3527,7 @@ C
 <!-- hyz-question-id: 01a19c8a-21bc-7fe3-a7e9-bc2b5efabaa8 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -3960,7 +3960,7 @@ D
 <!-- hyz-question-id: 01a19c8a-21bc-7fe3-a7e9-bcc97c5e5fe1 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M2
@@ -4083,7 +4083,7 @@ C
 <!-- hyz-question-id: 01a19c8a-21bd-7060-8593-178de2c3fa8a -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M2
@@ -4255,7 +4255,7 @@ D项：定位表格材料可得：2000~2006年B股上市股票数目分别为114
 <!-- hyz-question-id: 01a19c8a-21bd-7060-8593-17c1d95776e1 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -4294,7 +4294,7 @@ C
 <!-- hyz-question-id: 01a19c8a-21bd-7060-8593-17d308b08b9e -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -4333,7 +4333,7 @@ A
 <!-- hyz-question-id: 01a19c8a-21bd-7060-8593-17e0714e4141 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -4706,7 +4706,7 @@ A
 <!-- hyz-question-id: 01a19c8a-21bd-7060-8593-1875de5cdfce -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -4784,7 +4784,7 @@ B
 <!-- hyz-question-id: 01a19c8a-21bd-7060-8593-18968079c8b2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -4907,7 +4907,7 @@ C
 <!-- hyz-question-id: 01a19c8a-21bd-7060-8593-18c3157bb65d -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6

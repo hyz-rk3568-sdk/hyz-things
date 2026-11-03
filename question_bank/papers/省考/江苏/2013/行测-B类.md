@@ -3216,7 +3216,7 @@ A
 <!-- hyz-question-id: 01a19c8a-23d2-74b3-8964-ec4d8e1d122b -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3292,7 +3292,7 @@ A
 <!-- hyz-question-id: 01a19c8a-23d2-74b3-8964-ec651824ab75 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3330,7 +3330,7 @@ B
 <!-- hyz-question-id: 01a19c8a-23d2-74b3-8964-ec7fd73bb8a2 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3444,7 +3444,7 @@ A
 <!-- hyz-question-id: 01a19c8a-23d2-74b3-8964-eca76e8a3ffc -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3482,7 +3482,7 @@ C
 <!-- hyz-question-id: 01a19c8a-23d2-74b3-8964-ecbcf51dd3bf -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -5414,7 +5414,7 @@ C、D项由第二步推论可知，小张不入选，小金不入选，C项和D�
 <!-- hyz-question-id: 01a19c8a-23d3-7c00-9142-38f274f7d29b -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials: []
@@ -5463,7 +5463,7 @@ B项向日葵叶子变白是建化工厂之后发现的，C项白蛇不是植物
 <!-- hyz-question-id: 01a19c8a-23d3-7c00-9142-3908cf315f92 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5571,7 +5571,7 @@ D项晚上的时间基本都泡在天涯社区，满足“习惯性地”、“�
 <!-- hyz-question-id: 01a19c8a-23d3-7c00-9142-392dcbb23022 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5673,7 +5673,7 @@ B、C、D项都没有体现对不同社会团体的人的固定看法，不符�
 <!-- hyz-question-id: 01a19c8a-23d3-7c00-9142-394d053940ac -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials: []
@@ -5724,7 +5724,7 @@ D项不满足“好奇的兴趣持续不减”，排除。
 <!-- hyz-question-id: 01a19c8a-23d3-7c00-9142-3951a45173ed -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -5773,7 +5773,7 @@ A、B、C项的叙述结构均对应三个定义要件，符合定义。
 <!-- hyz-question-id: 01a19c8a-23d3-7c00-9142-396a9df199dd -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -5879,7 +5879,7 @@ D项：某市政府发挥区位优势，使本地区融入省会经济圈，满�
 <!-- hyz-question-id: 01a19c8a-23d3-7c00-9142-398dba2e5094 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials: []
@@ -6088,7 +6088,7 @@ B
 <!-- hyz-question-id: 01a19c8a-23d3-7c00-9142-39da56b5646c -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -6297,7 +6297,7 @@ C
 <!-- hyz-question-id: 01a19c8a-23d3-7c00-9142-3a2e4b04cb00 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6397,7 +6397,7 @@ D
 <!-- hyz-question-id: 01a19c8a-23d3-7c00-9142-3a41bb755dbb -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -6475,7 +6475,7 @@ A
 <!-- hyz-question-id: 01a19c8a-23d3-7c00-9142-3a61a94b6502 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -6522,7 +6522,7 @@ B
 <!-- hyz-question-id: 01a19c8a-23d3-7c00-9142-3a7e60533d1a -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -6602,7 +6602,7 @@ A
 <!-- hyz-question-id: 01a19c8a-23d3-7c00-9142-3a9d64224534 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M7
@@ -6641,7 +6641,7 @@ C
 <!-- hyz-question-id: 01a19c8a-23d3-7c00-9142-3aa91537ed23 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M7

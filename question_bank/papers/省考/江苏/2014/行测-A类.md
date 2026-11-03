@@ -156,7 +156,7 @@ issues: []
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fac8d4d80aee -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 - 关联词-并列
@@ -362,7 +362,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fb1983a72672 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 - 关联词-转折
@@ -527,7 +527,7 @@ A项，“孤独致死比例高”的说法错误，文段并未指出由于孤�
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fb5a4e608197 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -1277,7 +1277,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fc632a586f44 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1315,7 +1315,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fc725077f72b -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1355,7 +1355,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fc8b6cc17435 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3248,7 +3248,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-ff2802c8a23d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -3344,7 +3344,7 @@ A、B、C三项中的“禁止拍摄”“特地交代她千万不能打开”�
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-ff45523853e6 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -3452,7 +3452,7 @@ D项：消极因素是“违规搞集体土地承包”，积极的发展是“�
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-ff6f385a3ed7 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -3506,7 +3506,7 @@ D 项：没有体现出具有同等权限的单位或部门面临的共同问�
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-ff746c818b37 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -3610,7 +3610,7 @@ D项：王先生随时关注股票走势，没有体现出他是否“不需要�
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-ff91b01a57c1 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -3664,7 +3664,7 @@ D项：原因是民政部门把是智障的小明安排到残疾人康复中心�
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-ffa8f1648353 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -3811,7 +3811,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-ffd6a823465b -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -3850,7 +3850,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-ffe528ebbefb -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -3895,7 +3895,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2425-78a3-920c-fff2a2ce5cef -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -4109,7 +4109,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2426-72b0-93cc-e1301648ea38 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -4428,7 +4428,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2426-72b0-93cc-e1aeebc22d51 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -4545,7 +4545,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2426-72b0-93cc-e1d7f2b404e6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6
@@ -4584,7 +4584,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2426-72b0-93cc-e1e2678dc73f -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6
@@ -4723,7 +4723,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2426-72b0-93cc-e21892bb31e9 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7

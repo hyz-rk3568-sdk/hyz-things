@@ -1774,7 +1774,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3952-7331-9cd0-03fa0915cc44 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -2064,7 +2064,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3952-7331-9cd0-0456b5bfc02b -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -2203,7 +2203,7 @@ B项“任何”表述过于绝对，排除；C项仅涉及“植物”这一主
 <!-- hyz-question-id: 01a19c8a-3952-7331-9cd0-048af34a7f2b -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -3729,7 +3729,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3952-7331-9cd0-0695780d07c8 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3782,7 +3782,7 @@ D项：要求妻子照顾患病的母亲，但妻子是否想要照顾患病的�
 <!-- hyz-question-id: 01a19c8a-3952-7331-9cd0-06a68933c9d8 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -3835,7 +3835,7 @@ D项：该项研究的是作者和父亲两个个体之间的关系，没有体�
 <!-- hyz-question-id: 01a19c8a-3952-7331-9cd0-06bfc3668abc -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 常规问法
 materials: []
@@ -3943,7 +3943,7 @@ D项：搬入新书房是否属于舒服的状态不明确，不符合“坐不�
 <!-- hyz-question-id: 01a19c8a-3952-7331-9cd0-06d1cade7629 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 拆词
 materials: []
@@ -3996,7 +3996,7 @@ D项：游戏玩家戴高科技耳机通过精神控制小球飞越各种障碍�
 <!-- hyz-question-id: 01a19c8a-3952-7331-9cd0-06ec233b0217 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4049,7 +4049,7 @@ D项：“分析上一年度消费者购物行为”符合“对大量数据的�
 <!-- hyz-question-id: 01a19c8a-3952-7331-9cd0-06f476c8b8b6 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -4104,7 +4104,7 @@ D项：“千里莺啼绿映红”正面描写到处莺歌燕舞，桃红柳绿�
 <!-- hyz-question-id: 01a19c8a-3952-7331-9cd0-0706df3e50bc -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -5104,7 +5104,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3953-7090-a97d-7642bece7ad8 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics:
 - 比值计算
 - 文字资料
@@ -5356,7 +5356,7 @@ B
 <!-- hyz-question-id: 01a19c8a-3953-7090-a97d-76a619af7e71 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics:
 - 直接找数
 - 综合资料
@@ -5567,7 +5567,7 @@ A
 <!-- hyz-question-id: 01a19c8a-3953-7090-a97d-76f08dd74084 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics:
 - 比值比较
 - 综合资料

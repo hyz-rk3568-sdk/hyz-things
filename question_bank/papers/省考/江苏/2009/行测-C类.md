@@ -167,7 +167,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2217-7440-ab87-06403a991441 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -253,7 +253,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2217-7440-ab87-066d0bab7efc -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -329,7 +329,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2217-7440-ab87-0685009a9d12 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -407,7 +407,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2217-7440-ab87-06a36dfff6ba -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2284,7 +2284,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-5843413b42a9 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 排除法
 materials: []
@@ -2408,7 +2408,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-586e7e2bb893 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 常规问法
 materials: []
@@ -2459,7 +2459,7 @@ D项不是由公共部门提供的物品，错误。
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-587aafb41c0f -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials: []
@@ -2510,7 +2510,7 @@ C、D两项中不存在机器、设备“贬值”的问题。
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-588af503da90 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -2563,7 +2563,7 @@ D项中甲没有利用他人作案的行为存在，因为网友并非是被利�
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-5894491a18f5 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials: []
@@ -2610,7 +2610,7 @@ A、B、C三项均符合“合同诈骗罪”的三个要素；D项中“骗取�
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-58a0d4be46d3 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -2661,7 +2661,7 @@ C项中大家因同事患肺病去世而把自己的不适看作患了肺病，�
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-58bad6219a82 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -2710,7 +2710,7 @@ A项中“乐句的最后一个和弦”是作曲家“未完成的工作”，�
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-58cb862beb7f -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -2763,7 +2763,7 @@ D项中“使用网络”只是载体而不是原因，炒股才是造成精神�
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-58d3efd0cc8d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -2865,7 +2865,7 @@ D项中Vista系统并非无偿提供给XP系统用户使用，因此不是“附
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-58f5ce7a675c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -3147,7 +3147,7 @@ A、B、C三项都是论据的阐述，而不是论点概括。
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-595d271e44b6 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -3194,7 +3194,7 @@ A、B两项只是提到需求，未提及政策，与文意不符；D项“评�
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-5967b3f3c2e4 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: 《法律与文化》
@@ -3602,7 +3602,7 @@ A、C两项都不是文章所指的重点；D项文中有提及，但是作为�
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-59f4a1e6c091 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M2
@@ -3657,7 +3657,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-5a0ded7705a5 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M2
@@ -3696,7 +3696,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-5a14d92a01b8 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M2
@@ -3735,7 +3735,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-5a21cb6d286c -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M2
@@ -3774,7 +3774,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-5a32795b2547 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M2
@@ -3852,7 +3852,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-5a5fa9f2e648 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -4008,7 +4008,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-5a90d6d34383 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -4047,7 +4047,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-5aa3a52a3927 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -4086,7 +4086,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-5ab9e8ecd589 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -4125,7 +4125,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-5ac87eda0131 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -4164,7 +4164,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-5ad89531ad07 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -4303,7 +4303,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-5b02f50ad248 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -4383,7 +4383,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-5b2f7e503439 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -4483,7 +4483,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-5b4c212f561c -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -4552,7 +4552,7 @@ D项：由B项计算结果可知，2005～2008年出口总额增长率逐年下�
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-5b5712273f34 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -4601,7 +4601,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-5b6393b59a65 -->
 ```yaml
 module: 资料分析
-category: null
+category: 倍数
 topics: []
 materials:
 - M6
@@ -4640,7 +4640,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2218-71f2-b23a-5b704eedfcb2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6

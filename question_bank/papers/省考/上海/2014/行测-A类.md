@@ -938,7 +938,7 @@ D项，在段尾指出“俗滥是不善用之故，不是词藻本身的毛病�
 <!-- hyz-question-id: 01a19c89-f012-76e0-a41f-f4a8b6c2f69b -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1963,7 +1963,7 @@ D项：知识和财富的关系在定义中没有体现，错误。
 <!-- hyz-question-id: 01a19c89-f012-76e0-a41f-f611e74f36d6 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -2069,7 +2069,7 @@ D项赤眼蜂对玉米螟虫不利，不符合要点②。
 <!-- hyz-question-id: 01a19c89-f012-76e0-a41f-f63dc7019cd7 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -2124,7 +2124,7 @@ D项：“骑马射箭”侧重于“怎么办”，属于程序性知识，归�
 <!-- hyz-question-id: 01a19c89-f012-76e0-a41f-f6454603b33a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -2173,7 +2173,7 @@ D项符合定义，当选。
 <!-- hyz-question-id: 01a19c89-f012-76e0-a41f-f65b7d1f3b1c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []

@@ -1383,7 +1383,7 @@ D项：根据“近期入选试点的南京、无锡、苏州等20个城市，�
 <!-- hyz-question-id: 01a19c8a-2a40-7c82-83f1-3275afbef60a -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-并列
 - 主题词
@@ -1431,7 +1431,7 @@ B、D两项：均缺少文段核心话题“制造业”，排除。
 <!-- hyz-question-id: 01a19c8a-2a40-7c82-83f1-3280b18ee2b5 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1527,7 +1527,7 @@ C项：“你所不知道的‘蛭石’真面貌”侧重与普遍认知不相�
 <!-- hyz-question-id: 01a19c8a-2a40-7c82-83f1-32a3048c2a5d -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-多角度论述
 - 关联词-对策
@@ -5359,7 +5359,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2a41-7b43-8604-211068f12a61 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials:
@@ -5413,7 +5413,7 @@ D项：村民自发组织巡查队，检测上报森林火情，不涉及政府�
 <!-- hyz-question-id: 01a19c8a-2a41-7b43-8604-2121d2a4e91b -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5467,7 +5467,7 @@ D项：某电商平台公布了平台补贴及政府补贴的申领方案，但�
 <!-- hyz-question-id: 01a19c8a-2a41-7b43-8604-21369534e69b -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -5575,7 +5575,7 @@ D项：刘女士因想去游玩而关注了某景区推出的影视体验项目�
 <!-- hyz-question-id: 01a19c8a-2a41-7b43-8604-215bd34045f4 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5629,7 +5629,7 @@ D项：该供水公司利用在区域供水市场的支配地位，要求用水�
 <!-- hyz-question-id: 01a19c8a-2a41-7b43-8604-216747d76c10 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5683,7 +5683,7 @@ D项：独居的李奶奶每天都泡在“50后时光”直播间，符合“�
 <!-- hyz-question-id: 01a19c8a-2a41-7b43-8604-21708fa92b60 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -5737,7 +5737,7 @@ D项：赵先生在每次与同事的聚会中，都能让大家笑得前仰后�
 <!-- hyz-question-id: 01a19c8a-2a41-7b43-8604-21800f61a0b0 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5791,7 +5791,7 @@ D项：小赵因工作繁忙日常生活是“独行侠”，收到母校的校�
 <!-- hyz-question-id: 01a19c8a-2a41-7b43-8604-2198a259528c -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5845,7 +5845,7 @@ D项：某博物馆从古代名画中选取“意象”元素，实景搭建了�
 <!-- hyz-question-id: 01a19c8a-2a41-7b43-8604-21a26adb484e -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5899,7 +5899,7 @@ D项：小王打电话告诉女友，临时又要加班，没法一起去看电�
 <!-- hyz-question-id: 01a19c8a-2a41-7b43-8604-21bef25ae5de -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -5977,7 +5977,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2a41-7b43-8604-21dee2252fcf -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -6026,7 +6026,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2a41-7b43-8604-21e5927b59fb -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -6243,7 +6243,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2a41-7b43-8604-223e920cca06 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -6444,7 +6444,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2a41-7b43-8604-228a4d6ca323 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6528,7 +6528,7 @@ D项：定位文字材料可得，2024年8月末，国有企业资产负债率64
 <!-- hyz-question-id: 01a19c8a-2a41-7b43-8604-22a1cb23ab11 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6
@@ -6657,7 +6657,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2a41-7b43-8604-22dc450f45bf -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6

@@ -1277,7 +1277,7 @@ D项：“智能技术”范围扩大，文段的主题词为“自动驾驶”�
 <!-- hyz-question-id: 01a19c8a-2a72-7c21-b9eb-3c6efacd17c0 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-多角度论述
 - 关联词-对策
@@ -1423,7 +1423,7 @@ D项：根据“有效的司法建议不仅能······还能······彰�
 <!-- hyz-question-id: 01a19c8a-2a72-7c21-b9eb-3c9ad2e82bed -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-并列
 - 主题词
@@ -4912,7 +4912,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-11bcc7e5680e -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -4966,7 +4966,7 @@ D项：某电商平台公布了平台补贴及政府补贴的申领方案，但�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-11cbcbfa736a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5020,7 +5020,7 @@ D项：某博物馆从古代名画中选取“意象”元素，实景搭建了�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-11dfb46e35b5 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5074,7 +5074,7 @@ D项：清江社区对废旧电池回收问题进行讲解，居民表示再也�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-11e3fd3acf89 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials:
@@ -5128,7 +5128,7 @@ D项：村民自发组织巡查队，检测上报森林火情，不涉及政府�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-11fea6ad4f7e -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5182,7 +5182,7 @@ D项：某公司实行末位淘汰制，规模和影响力越来越大，符合�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-1200be13582f -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -5236,7 +5236,7 @@ D项：赵先生在每次与同事的聚会中，都能让大家笑得前仰后�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-121b9be19739 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5290,7 +5290,7 @@ D项：小王打电话告诉女友，临时又要加班，没法一起去看电�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-122c81c0c2cc -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -5344,7 +5344,7 @@ D项：带爸妈外出游玩时，胡女士会拍摄攻略短视频，并对当�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-123e72a0dc90 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5398,7 +5398,7 @@ D项：独居的李奶奶每天都泡在“50后时光”直播间，符合“�
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-124ef5e93c46 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5491,7 +5491,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-1269ef59fd2d -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -5770,7 +5770,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-12dcbb9eb0cb -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -5971,7 +5971,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2a73-7a22-810c-13293c665325 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5

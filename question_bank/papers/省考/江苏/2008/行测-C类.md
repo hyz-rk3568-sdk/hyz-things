@@ -107,7 +107,7 @@ issues: []
 <!-- hyz-question-id: 01a19c8a-2196-7dc3-9db9-723b130f6b79 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -145,7 +145,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2196-7dc3-9db9-724f7d16cd8c -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -183,7 +183,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2196-7dc3-9db9-72519a572301 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -259,7 +259,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2197-76e1-9d03-e8f84063b57e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -373,7 +373,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2197-76e1-9d03-e92cd9b5eae2 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -411,7 +411,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2197-76e1-9d03-e933ca2846d9 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2662,7 +2662,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2197-76e1-9d03-ec35e85aa995 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -2768,7 +2768,7 @@ D项，社会政策可以表现为“准则、法令和条例”等多种形式�
 <!-- hyz-question-id: 01a19c8a-2197-76e1-9d03-ec574da89ba4 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -2817,7 +2817,7 @@ B项，“妇女打扫卫生”既没有“价值增值”，也没有“提供�
 <!-- hyz-question-id: 01a19c8a-2197-76e1-9d03-ec63c7436d1b -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -2870,7 +2870,7 @@ D项，盐由于购销地区不同而形成的商品差价。
 <!-- hyz-question-id: 01a19c8a-2197-76e1-9d03-ec71be799ded -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -2923,7 +2923,7 @@ D项，从个别推出个别。
 <!-- hyz-question-id: 01a19c8a-2197-76e1-9d03-ec86727a8fe7 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -3029,7 +3029,7 @@ D项，不存在“出卖人”，故错误。
 <!-- hyz-question-id: 01a19c8a-2197-76e1-9d03-ecad519daec5 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials: []
@@ -3082,7 +3082,7 @@ D项，澳大利亚在南半球，不符合。
 <!-- hyz-question-id: 01a19c8a-2197-76e1-9d03-ecbd0d0b8c12 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -3405,7 +3405,7 @@ C项，“政策”，表述片面，且偏离文段核心话题“自主知识�
 <!-- hyz-question-id: 01a19c8a-2197-76e1-9d03-ed27aff3f8c2 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -3871,7 +3871,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2197-76e1-9d03-edc5768e252c -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M1
@@ -4183,7 +4183,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2197-76e1-9d03-ee4f66c768b3 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M2
@@ -4228,7 +4228,7 @@ D项：从材料中无法推出，说法错误，排除。
 <!-- hyz-question-id: 01a19c8a-2197-76e1-9d03-ee59f6e613a7 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3

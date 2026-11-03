@@ -263,6 +263,20 @@ material_boundary_category_modules:
   平均数: 资料分析
   综合: 资料分析
 
+# Source topic labels with observed counterexamples in other types. They are
+# audit hints only, including when they occur in the upstream heading.
+weak_topics:
+  判断推理:
+    - 方式目的
+    - 原因结果
+    - 主客体
+    - 拆词
+    - 大前提
+    - 常规问法
+    - 故事类
+    - 代入法
+    - 排除法
+
 # Exact and prefix matches only; no free-form substring classification.
 topic_rules:
   政治理论:

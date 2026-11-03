@@ -1911,7 +1911,7 @@ D项：根据第七段“科学家在雀形目候鸟的身体中发现了一种�
 <!-- hyz-question-id: 01a19c8a-29de-7c70-969f-c4e453ce20e7 -->
 ```yaml
 module: 数量关系
-category: 数学运算
+category: 数字推理
 topics: []
 materials: []
 passage_source: null

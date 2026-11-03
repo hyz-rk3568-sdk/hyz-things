@@ -853,7 +853,7 @@ C
 <!-- hyz-question-id: 01a19c8a-223c-7e70-8f7b-ca6b1057dbb7 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -891,7 +891,7 @@ D
 <!-- hyz-question-id: 01a19c8a-223c-7e70-8f7b-ca7d970441df -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -929,7 +929,7 @@ B
 <!-- hyz-question-id: 01a19c8a-223c-7e70-8f7b-ca80be246c89 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1047,7 +1047,7 @@ D
 <!-- hyz-question-id: 01a19c8a-223c-7e70-8f7b-cab9e3227825 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1085,7 +1085,7 @@ C
 <!-- hyz-question-id: 01a19c8a-223c-7e70-8f7b-cac7ad7087f8 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1163,7 +1163,7 @@ C
 <!-- hyz-question-id: 01a19c8a-223c-7e70-8f7b-caef3c076940 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3185,7 +3185,7 @@ D
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1a9726588175 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 排除法
 materials: []
@@ -3291,7 +3291,7 @@ D项：对中国社会发展中的种种问题畅所欲言，能在极短时间�
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1ab5b97cc472 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -3344,7 +3344,7 @@ D项政府相关部门依据法律，追认赵某为烈士，也是行政机关�
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1acdbec532d2 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -3397,7 +3397,7 @@ D项是安慰，而不是“替自己的行为提供解释”。
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1adafe91bffb -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -3450,7 +3450,7 @@ D项是将自己生产的酱油装入名牌酱油瓶中，属于假冒行为，�
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1ae880e52725 -->
 ```yaml
 module: 判断推理
-category: 定义判断
+category: null
 topics:
 - 故事类
 materials: []
@@ -3961,7 +3961,7 @@ A
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1b72af3b351b -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M2
@@ -4139,7 +4139,7 @@ C
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1bbd882977ba -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -4465,7 +4465,7 @@ D
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1c3221baa3f2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -4504,7 +4504,7 @@ C
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1c469c2c32c2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -4582,7 +4582,7 @@ A
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1c6038c0fe69 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -4621,7 +4621,7 @@ C
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1c7968b4acae -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -4672,7 +4672,7 @@ D
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1c83d7dd1c97 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6
@@ -4713,7 +4713,7 @@ A项，泰州市：98.8-65.5=33.3亿元；B项，扬州市：94.8-71.4=23.4亿�
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1c99aa868aff -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -4754,7 +4754,7 @@ A项，泰州市：(98.8 − 65.5)/65.5 = 33.3/65.5 ＞ 1/2；B项，南京市�
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1ca5ea16ae8b -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -4793,7 +4793,7 @@ D
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1cbc402bf982 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6
@@ -4832,7 +4832,7 @@ D
 <!-- hyz-question-id: 01a19c8a-223d-7d00-a692-1cce779e09ba -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6

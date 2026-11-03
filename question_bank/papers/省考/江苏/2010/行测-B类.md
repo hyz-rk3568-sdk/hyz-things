@@ -2907,7 +2907,7 @@ D项，根据“即使有了学历、有了户籍、有了事业的人，包括�
 <!-- hyz-question-id: 01a19c8a-2268-7a10-a2e5-1d830860681f -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: null
@@ -3261,7 +3261,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2268-7a10-a2e5-1e075985af46 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3299,7 +3299,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2268-7a10-a2e5-1e1d5cbeca93 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3375,7 +3375,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2268-7a10-a2e5-1e348c683df7 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3413,7 +3413,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2268-7a10-a2e5-1e4289a710e0 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3491,7 +3491,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2268-7a10-a2e5-1e699851289a -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3529,7 +3529,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2268-7a10-a2e5-1e7fd8b1c245 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3567,7 +3567,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2268-7a10-a2e5-1e8a38478b43 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -5604,7 +5604,7 @@ D项的小李、小王和小刘刚工作，属于“无能力购房的群体”�
 <!-- hyz-question-id: 01a19c8a-2268-7a10-a2e5-2136ee2c7196 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials: []
@@ -5710,7 +5710,7 @@ D项的广西具有便捷的交通，也属于区域优势。
 <!-- hyz-question-id: 01a19c8a-2269-7841-9bef-31f034c4407a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -6190,7 +6190,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2269-7841-9bef-327f9feaa811 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -6268,7 +6268,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2269-7841-9bef-329e5a49ac57 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M3
@@ -6362,7 +6362,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2269-7841-9bef-32b3db50729a -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -6403,7 +6403,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2269-7841-9bef-32c920d7560f -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -6442,7 +6442,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2269-7841-9bef-32d1e5027aa0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -6534,7 +6534,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2269-7841-9bef-32faf58637e3 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -6690,7 +6690,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2269-7841-9bef-3337fc20a1e8 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -6862,7 +6862,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2269-7841-9bef-337495196298 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -6901,7 +6901,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2269-7841-9bef-3388c1ea4cdd -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6

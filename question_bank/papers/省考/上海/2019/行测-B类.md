@@ -845,7 +845,7 @@ D项，“层层递进，帮助强化前文观点”表述错误，就语意来�
 <!-- hyz-question-id: 01a19c89-f25d-7741-84c8-3ed6374d84a1 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-并列
 - 主题词
@@ -2806,7 +2806,7 @@ D项：基因得分最居中的人也有40%的机会从大学毕业的，此时�
 <!-- hyz-question-id: 01a19c89-f25e-7ec1-8dd7-efb169012b3e -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []
@@ -2859,7 +2859,7 @@ D项：如果沈阳人是体育爱好者，则“2位是北方人，1位是广�
 <!-- hyz-question-id: 01a19c89-f25e-7ec1-8dd7-efc3ab8afed2 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []

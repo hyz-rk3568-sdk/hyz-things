@@ -154,7 +154,7 @@ issues: []
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b342de4b078a -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 - 关联词-并列
@@ -243,7 +243,7 @@ D项不能推出，文段指出“最快的废物循环方式往往是最简单�
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b368046b063d -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -327,7 +327,7 @@ C
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b38ce87fdd46 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -370,7 +370,7 @@ A项并非文段重点；B、D两项属于无中生有，文中并未提及。
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b398078065f1 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 - 关联词-转折
@@ -500,7 +500,7 @@ B
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b3cabc1ba380 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -541,7 +541,7 @@ B
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b3d508c34af9 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 materials: []
@@ -1247,7 +1247,7 @@ A
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b4d72945b5b4 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1323,7 +1323,7 @@ D
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b4f6b2e0a1a5 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1361,7 +1361,7 @@ B
 <!-- hyz-question-id: 01a19c8a-244a-77e3-a1fd-b50b1decf3f5 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3267,7 +3267,7 @@ D
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6f16d7fab345 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -3319,7 +3319,7 @@ C项为了要表达清楚教学方法的内涵，将“疏导”与“启发”�
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6f233182f65f -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -3373,7 +3373,7 @@ D项：《1965年××统计年鉴》符合“科学文献”，但是其数据�
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6f38f33f8505 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -3427,7 +3427,7 @@ D项：黄先生准备卖掉房子回老家养老不符合“市民经常到对�
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6f4f056d67e4 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -3481,7 +3481,7 @@ D项：原因是民政部门把是智障的小明安排到残疾人康复中心�
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6f5b25275205 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -3535,7 +3535,7 @@ D项：故宫“失窃门”被曝光，符合“某地或某人曝出某个丑�
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6f6efbdfdfec -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -3639,7 +3639,7 @@ D项：某酒店准备扩建自己的停车场不符合“公共设施”，与�
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6f83a1a519d1 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -3693,7 +3693,7 @@ D项：准备好开工的各项资金，“资金”与“原材料”相悖，�
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-6f9a2e2e6481 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -4024,7 +4024,7 @@ B
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-7003028f71af -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -4180,7 +4180,7 @@ B
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-704c6f4db66b -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M4
@@ -4303,7 +4303,7 @@ D
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-70764a2641bd -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -4381,7 +4381,7 @@ D
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-70986ebe6a4a -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -4434,7 +4434,7 @@ A
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-70add4ec1693 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -4473,7 +4473,7 @@ B
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-70b202a81100 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -4512,7 +4512,7 @@ A
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-70cc63b79c39 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M6
@@ -4590,7 +4590,7 @@ D
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-70e8baefb3a4 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M6
@@ -4674,7 +4674,7 @@ B
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-7107f81246e7 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7
@@ -4713,7 +4713,7 @@ C
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-7118bb033755 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7
@@ -4752,7 +4752,7 @@ C
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-7128d6f98962 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M7
@@ -4797,7 +4797,7 @@ D项错误，参照A项。
 <!-- hyz-question-id: 01a19c8a-244b-7b33-857d-713b1015b5dd -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7

@@ -4156,7 +4156,7 @@ A
 <!-- hyz-question-id: 01a19c89-f0d4-7ca3-8696-f732aedb9abc -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []

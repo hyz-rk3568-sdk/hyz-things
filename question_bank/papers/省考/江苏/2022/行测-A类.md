@@ -909,7 +909,7 @@ C项，“体现新中国的法治化进程”强调《民法典》与法治化�
 <!-- hyz-question-id: 01a19c8a-2876-7ad1-97d9-671fb45f7d5c -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 - 关联词-转折
@@ -1008,7 +1008,7 @@ D项，根据“有时，新的发现推翻了先前的共识。但绝大多数�
 <!-- hyz-question-id: 01a19c8a-2876-7ad1-97d9-673f0aaa92aa -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-对策
 - 主题词
@@ -1304,7 +1304,7 @@ D项，“节能减排”对应文段尾句解释说明的内容，非重点且�
 <!-- hyz-question-id: 01a19c8a-2876-7ad1-97d9-679081f33ed7 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -5282,7 +5282,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7a84c58900e5 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5346,7 +5346,7 @@ D项：在互联网公司工作的小何由于工作强度高，决定每年给�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7a9cb14f7ab1 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials:
@@ -5400,7 +5400,7 @@ D项：该项中某农业科技服务公司对于农民的土地来说只是起�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7aa82fa0f8fa -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5454,7 +5454,7 @@ D项：小孟依托网络平台更新写的小说，符合“作为独立个体�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7ab092aba55d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5508,7 +5508,7 @@ D项：小缪决定购买官网中按摩椅的依据是常用的视频网站经�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7ac563c3fcbe -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5562,7 +5562,7 @@ D项：市场监管、税务等职能部门联合办公，符合“部门联动�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7ad2b190d744 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5616,7 +5616,7 @@ D项：小佳将自己前些年穿过的厚衣物寄给平台，属于向灾区�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7ae445347102 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5670,7 +5670,7 @@ D项：该家具厂的办公椅意外地受到办公人士的喜爱，没有体�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7af0995cbde2 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5724,7 +5724,7 @@ D项：找出与朋友们的合影来掩盖脱落墙皮的地方，符合“表�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7b068a43ad1f -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5778,7 +5778,7 @@ D项：小青进入幼儿园后，与同学和老师都不认识，符合“在�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7b140b6af1d2 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5832,7 +5832,7 @@ D项：刘爷爷的子女到“医院”申请定期看护服务，不符合“�
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7b2bc0361b12 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -5871,7 +5871,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7b35edcd54bd -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -5910,7 +5910,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7b4e61acd2d4 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -6033,7 +6033,7 @@ D项：定位材料查找可知，材料只给出2020年江苏新能源汽车、
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7b713c038201 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6072,7 +6072,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7b849ad489b1 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6281,7 +6281,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7bdb042c50d1 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6
@@ -6320,7 +6320,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7be5b4ae5e42 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -6494,7 +6494,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7c29f20bd2c6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7
@@ -6586,7 +6586,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2877-7b31-bb09-7c429cb55d83 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7

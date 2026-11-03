@@ -160,7 +160,7 @@ A
 <!-- hyz-question-id: 01a19c8a-246f-73c2-8257-84af7ce59e9b -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 - 关联词-并列
@@ -1021,7 +1021,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2470-7ba1-8d01-d84207c887a4 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1137,7 +1137,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2470-7ba1-8d01-d8752b7e728d -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -3082,7 +3082,7 @@ A、B、C三项中的“禁止拍摄”“特地交代她千万不能打开”�
 <!-- hyz-question-id: 01a19c8a-2470-7ba1-8d01-db19f91759a5 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -3131,7 +3131,7 @@ B、C、D三项均未涉及歧视性认识，不符合定义，排除。
 <!-- hyz-question-id: 01a19c8a-2470-7ba1-8d01-db290edfd43a -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -3292,7 +3292,7 @@ D项：“希望儿子早日接班，让自己能亲近自然，享受生活”�
 <!-- hyz-question-id: 01a19c8a-2470-7ba1-8d01-db51e7948396 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials: []
@@ -3451,7 +3451,7 @@ D项：小梅唱歌跳舞全校知名，可以体现出她的能力和表现在�
 <!-- hyz-question-id: 01a19c8a-2470-7ba1-8d01-db8ada8e312d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials: []
@@ -3504,7 +3504,7 @@ D项：填海造岛是人类活动，但并没有体现引起了环境系统结�
 <!-- hyz-question-id: 01a19c8a-2470-7ba1-8d01-db9e9cdfd3ea -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials: []
@@ -3557,7 +3557,7 @@ D项：吴先生皮下组织开始萎缩，并没有说明是生活和工作压�
 <!-- hyz-question-id: 01a19c8a-2470-7ba1-8d01-dba214e596e3 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 推理形式
 materials: []
@@ -3764,7 +3764,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2470-7ba1-8d01-dbf6cfe000c4 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M2
@@ -4032,7 +4032,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2470-7ba1-8d01-dc5484ceaf3f -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -4071,7 +4071,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2470-7ba1-8d01-dc6c60b9cbbb -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -4284,7 +4284,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2470-7ba1-8d01-dcb8dd43a12c -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -4323,7 +4323,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2470-7ba1-8d01-dcc6df6e26d9 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -4401,7 +4401,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2470-7ba1-8d01-dce14bf5480e -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -4569,7 +4569,7 @@ B
 <!-- hyz-question-id: 01a19c8a-2470-7ba1-8d01-dd20fb551b3c -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6

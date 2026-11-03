@@ -1251,7 +1251,7 @@ D项，“节能减排”对应文段尾句解释说明的内容，非重点且�
 <!-- hyz-question-id: 01a19c8a-28a9-7de0-8ecc-8adbc680fce7 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 关联词-因果
 - 主题词
@@ -5259,7 +5259,7 @@ A
 <!-- hyz-question-id: 01a19c8a-28a9-7de0-8ecc-8ff196d1f883 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5313,7 +5313,7 @@ D项：小佳将自己前些年穿过的厚衣物寄给平台，属于向灾区�
 <!-- hyz-question-id: 01a19c8a-28aa-7201-93da-3333b4495134 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5367,7 +5367,7 @@ D项：市场监管、税务等职能部门联合办公，符合“部门联动�
 <!-- hyz-question-id: 01a19c8a-28aa-7201-93da-33478101bcf6 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5431,7 +5431,7 @@ D项：在互联网公司工作的小何由于工作强度高，决定每年给�
 <!-- hyz-question-id: 01a19c8a-28aa-7201-93da-33508b971649 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5485,7 +5485,7 @@ D项：讲座持续了两个多小时，主讲人已经口干舌燥，所以插�
 <!-- hyz-question-id: 01a19c8a-28aa-7201-93da-336af6f82727 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5539,7 +5539,7 @@ D项：刘爷爷的子女到“医院”申请定期看护服务，不符合“�
 <!-- hyz-question-id: 01a19c8a-28aa-7201-93da-337cfa083102 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5593,7 +5593,7 @@ D项：小孟依托网络平台更新写的小说，符合“作为独立个体�
 <!-- hyz-question-id: 01a19c8a-28aa-7201-93da-3388b772f831 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5647,7 +5647,7 @@ D项：小缪决定购买官网中按摩椅的依据是常用的视频网站经�
 <!-- hyz-question-id: 01a19c8a-28aa-7201-93da-33948f780957 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5701,7 +5701,7 @@ D项：该家具厂的办公椅意外地受到办公人士的喜爱，没有体�
 <!-- hyz-question-id: 01a19c8a-28aa-7201-93da-33ae8f1522b1 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials:
@@ -5755,7 +5755,7 @@ D项：某村形成孝敬老人的风气，符合“由众人行为自发形成�
 <!-- hyz-question-id: 01a19c8a-28aa-7201-93da-33b0cc97fbbd -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5809,7 +5809,7 @@ D项：该项说的是老张回想起多年前的“三星堆起源”大辩论�
 <!-- hyz-question-id: 01a19c8a-28aa-7201-93da-33c87de9b10e -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -5848,7 +5848,7 @@ A
 <!-- hyz-question-id: 01a19c8a-28aa-7201-93da-33d535c46f8b -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M4
@@ -5887,7 +5887,7 @@ B
 <!-- hyz-question-id: 01a19c8a-28aa-7201-93da-33e3dedf314a -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -6010,7 +6010,7 @@ D项：定位统计图可得：2021年6月，该市轨道交通客运量为8357�
 <!-- hyz-question-id: 01a19c8a-28aa-7201-93da-3411f947ef1e -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6049,7 +6049,7 @@ C
 <!-- hyz-question-id: 01a19c8a-28aa-7201-93da-342975f34937 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -6088,7 +6088,7 @@ D
 <!-- hyz-question-id: 01a19c8a-28aa-7201-93da-3431723c0883 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6211,7 +6211,7 @@ D项：定位材料查找可知，材料只给出2020年江苏新能源汽车、
 <!-- hyz-question-id: 01a19c8a-28aa-7201-93da-3460409fda3d -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -6289,7 +6289,7 @@ B
 <!-- hyz-question-id: 01a19c8a-28aa-7201-93da-348e1a2ed91d -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6
@@ -6461,7 +6461,7 @@ C
 <!-- hyz-question-id: 01a19c8a-28aa-7201-93da-34c68582c9a7 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7
@@ -6553,7 +6553,7 @@ A
 <!-- hyz-question-id: 01a19c8a-28aa-7201-93da-34e2fd999b5e -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7

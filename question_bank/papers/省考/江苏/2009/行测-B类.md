@@ -2475,7 +2475,7 @@ B
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f5de58c2246e -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2513,7 +2513,7 @@ B
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f5efff14343b -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2597,7 +2597,7 @@ D
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f60e73baae0b -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2673,7 +2673,7 @@ B
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f62f31d98ceb -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2791,7 +2791,7 @@ A
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f65c13cbcaf0 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -4669,7 +4669,7 @@ B
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f8de17393eca -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 排除法
 materials: []
@@ -4836,7 +4836,7 @@ D项中，张氏一家连续几代出现著名文学家，属于血缘型人才�
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f904f26ff47f -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -4889,7 +4889,7 @@ D项中，企业变化的是生产、服务系统，变化原因是技术进步�
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f91a8b5b0dac -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 拆词
 materials: []
@@ -4938,7 +4938,7 @@ B项，杜牧的《赤壁》是以赤壁之战为题材，抒发了诗人对历�
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f9224aa804e7 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -4991,7 +4991,7 @@ D项中“粉丝”对偶像言听计从，同样跟教育无关，不符合定�
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f93657b3337d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -5579,7 +5579,7 @@ A项“首次发现”题目中并未提及；B项“被激活”主体错误，
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-f9d547261f63 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -5716,7 +5716,7 @@ A项、B项劳动力的素质和才能题干并未涉及；C项自然资源题�
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fa08e141a140 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -6152,7 +6152,7 @@ C
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-faaed54de592 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M2
@@ -6191,7 +6191,7 @@ B
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fab072d7ef9b -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M2
@@ -6363,7 +6363,7 @@ C
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-faf9e627fce3 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -6701,7 +6701,7 @@ A
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fb754bfae2c6 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6859,7 +6859,7 @@ D
 <!-- hyz-question-id: 01a19c8a-21e8-7470-8f0f-fbbe524da598 -->
 ```yaml
 module: 资料分析
-category: null
+category: 综合分析
 topics: []
 materials:
 - M5

@@ -1699,7 +1699,7 @@ B
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cdcfdff2f49f -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -1752,7 +1752,7 @@ D项：英语国家的学习者受到母语的影响，而不是连在一起的�
 <!-- hyz-question-id: 01a19c89-f074-7021-9e34-cdd0a108afec -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []

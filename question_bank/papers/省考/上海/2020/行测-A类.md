@@ -2877,7 +2877,7 @@ D项：根据条件（4）可知，珍稀品种→玫瑰，有许多玫瑰是珍
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ea2c9ce0240e -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []
@@ -2940,7 +2940,7 @@ D项：代入芬兰、丹麦和冰岛，同B项，只能根据去冰岛得出去
 <!-- hyz-question-id: 01a19c89-f2b3-7882-bb16-ea3b0358a2f1 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []

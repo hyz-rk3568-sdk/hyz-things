@@ -285,7 +285,7 @@ D选项概括最准确、全面。
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-908cdbd9709b -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: null
@@ -791,7 +791,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-913571e8943b -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -983,7 +983,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-91812e0a37d6 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1109,7 +1109,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-91bde761737a -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -1149,7 +1149,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-91c3bc6945a6 -->
 ```yaml
 module: 数量关系
-category: null
+category: 数字推理
 topics: []
 materials: []
 passage_source: null
@@ -2958,7 +2958,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-944bdaa12535 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 主客体
 materials: []
@@ -3005,7 +3005,7 @@ A项中的“旅游景点票价”，B项中的“供电”，C项中的“52°�
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-9451e949bfd2 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -3052,7 +3052,7 @@ A项中的“敲缸沽酒的方法”不是医学领域的知识，符合关键�
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-946127785634 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -3099,7 +3099,7 @@ C项中“像音乐停止后空中袅袅的余音”一句将视觉“笑容”�
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-947b9be4a0a6 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -3199,7 +3199,7 @@ A、B、D三项都符合定义关键词强调的内容，属于绿色消费；C�
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-949e4f4d441e -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials: []
@@ -3465,7 +3465,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-94f0d14b7ad5 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M2
@@ -3696,7 +3696,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-9540947cdffe -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -3735,7 +3735,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-95581cbdac4d -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -3774,7 +3774,7 @@ C
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-956bfe85e360 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -3864,7 +3864,7 @@ A
 <!-- hyz-question-id: 01a19c8a-2388-7890-9dac-9585a7314322 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4

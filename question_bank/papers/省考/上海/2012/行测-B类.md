@@ -751,7 +751,7 @@ C
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-cee5b3bd8dd6 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: null
@@ -942,7 +942,7 @@ D项，根据文段“等到鼠类减少到一定程度，草原生态系统才�
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-cf29a304ed9e -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics: []
 materials: []
 passage_source: null
@@ -1714,7 +1714,7 @@ A、B、D三个学科均不研究“资源最优使用效果”。
 <!-- hyz-question-id: 01a19c89-ef8c-7f43-900d-d0326fe8cdc0 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []

@@ -1101,7 +1101,7 @@ D项错误：《中华人民共和国民法典》第四百六十五条规定：�
 <!-- hyz-question-id: 01a19c8a-29ad-76d0-8efb-d795c4488e58 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -1396,7 +1396,7 @@ D项：根据“冷湖所在的经度区域尚属世界大型光学望远镜的�
 <!-- hyz-question-id: 01a19c8a-29ad-76d0-8efb-d7f0f96b918c -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -4625,7 +4625,7 @@ D项：该项说的是许多大型商超提供限时配送服务，大型商超�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-76875656b2ff -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 代入法
 materials: []
@@ -5221,7 +5221,7 @@ A
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-77225bfd7c6a -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5275,7 +5275,7 @@ D项：卫生健康执法人员在查处无证行医过程中，符合“执法�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-773b85733fa9 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5329,7 +5329,7 @@ D项：某野生动物园分片区建了许多防护围栏，符合“人们做�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-774efd4eae57 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5383,7 +5383,7 @@ D项：多家公司推出各自的AI自然语言处理模型，有的只能简�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-77576862c86e -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5437,7 +5437,7 @@ D项：厂家对菜刀质量问题的回应，目的是为了解释菜刀因拍�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-77641d460294 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5491,7 +5491,7 @@ D项：某小区物业发布通知提醒居民，热身器材存在安全隐患�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-777344d28cdf -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5545,7 +5545,7 @@ D项：小秦下班后收到客户的投诉信息并回复，符合“网络对�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-77897bc21a5a -->
 ```yaml
 module: 判断推理
-category: 定义判断
+category: null
 topics:
 - 故事类
 materials:
@@ -5599,7 +5599,7 @@ D项：草莓种植户在销售期开放“自采自买”模式，顾客可以�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-779960a6b6fa -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5653,7 +5653,7 @@ D项：冯先生在住进民宿之前是否存在学习、工作和生活压力�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-77a447bf018e -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5707,7 +5707,7 @@ D项：电视剧中揭示了部分家庭遭遇的教育问题，展现了孩子�
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-77bc24284e2f -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials:
@@ -5810,7 +5810,7 @@ A
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-77daeeb0c4a0 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -5849,7 +5849,7 @@ C
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-77e61f804c81 -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M4
@@ -5888,7 +5888,7 @@ B
 <!-- hyz-question-id: 01a19c8a-29ae-7382-8f78-77ff8129f8af -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M4
@@ -6058,7 +6058,7 @@ C
 <!-- hyz-question-id: 01a19c8a-29af-7701-9dd5-847ea4bb24ea -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6097,7 +6097,7 @@ D
 <!-- hyz-question-id: 01a19c8a-29af-7701-9dd5-848ec697e13a -->
 ```yaml
 module: 资料分析
-category: null
+category: 比重
 topics: []
 materials:
 - M5
@@ -6300,7 +6300,7 @@ D
 <!-- hyz-question-id: 01a19c8a-29af-7701-9dd5-84d3b0c98700 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M6
@@ -6511,7 +6511,7 @@ A
 <!-- hyz-question-id: 01a19c8a-29af-7701-9dd5-8529b1b2cc8a -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7
@@ -6550,7 +6550,7 @@ C
 <!-- hyz-question-id: 01a19c8a-29af-7701-9dd5-8537ca1569ca -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M7

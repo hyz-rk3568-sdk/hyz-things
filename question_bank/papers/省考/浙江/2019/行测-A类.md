@@ -1869,7 +1869,7 @@ B
 <!-- hyz-question-id: 01a19c8a-39f2-7323-8bfa-379f3060f271 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -2127,7 +2127,7 @@ A
 <!-- hyz-question-id: 01a19c8a-39f2-7323-8bfa-37ee1e39302b -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -2366,7 +2366,7 @@ A项“导游”、B项“地方旅游管理部门”、C项“商家能实现�
 <!-- hyz-question-id: 01a19c8a-39f2-7323-8bfa-3832307af376 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -2415,7 +2415,7 @@ C项，“刺鼻味道对人体是无害的”无中生有，文段未提及，�
 <!-- hyz-question-id: 01a19c8a-39f2-7323-8bfa-384e58c811ab -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -2658,7 +2658,7 @@ D项，“识别枝蕨类植物”，文段没有提及如何识别，无中生�
 <!-- hyz-question-id: 01a19c8a-39f2-7323-8bfa-38927ba0ae49 -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-转折
 materials: []
@@ -2707,7 +2707,7 @@ D项，“科学原理”为具体解释说明“查重”弊端的内容，排�
 <!-- hyz-question-id: 01a19c8a-39f2-7323-8bfa-38aef36176ee -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-因果
 - 关联词-转折
@@ -4284,7 +4284,7 @@ A
 <!-- hyz-question-id: 01a19c8a-39f2-7323-8bfa-3ae77a573744 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -4390,7 +4390,7 @@ D项：商户交管理费会有经济压力，不符合“每人具有一种至�
 <!-- hyz-question-id: 01a19c8a-39f2-7323-8bfa-3b06d097bf0d -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []
@@ -4443,7 +4443,7 @@ D项：高中生小王为了在高考中不犯错而不断复习做错的试题�
 <!-- hyz-question-id: 01a19c8a-39f2-7323-8bfa-3b1ca50ef83c -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: 定义判断
 topics:
 - 大前提
 materials: []
@@ -4496,7 +4496,7 @@ D项：田某就买卖合同争议向法院起诉赵某时支付的费用，没�
 <!-- hyz-question-id: 01a19c8a-39f2-7323-8bfa-3b23f84c7674 -->
 ```yaml
 module: 判断推理
-category: null
+category: 定义判断
 topics:
 - 特殊问法
 materials: []
@@ -4549,7 +4549,7 @@ D项：参加公司员工聚餐，不符合“符合公正、平等、尊严等�
 <!-- hyz-question-id: 01a19c8a-39f2-7323-8bfa-3b346a8ab76e -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 原因结果
 materials: []
@@ -4602,7 +4602,7 @@ D项：“我在香港住了七天，有三天下雨，所以香港大约有一�
 <!-- hyz-question-id: 01a19c8a-39f3-79d1-badb-7b0256d52d86 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: 定义判断
 topics:
 - 方式目的
 materials: []

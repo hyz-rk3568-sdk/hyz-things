@@ -948,7 +948,7 @@ D
 <!-- hyz-question-id: 01a19c8a-2719-7382-b74e-09c12fc419ec -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-并列
 materials: []
@@ -1143,7 +1143,7 @@ D项，文段并未陈述古典文学作品是研究传统医学的基础，无�
 <!-- hyz-question-id: 01a19c8a-2719-7382-b74e-0a0f585dab91 -->
 ```yaml
 module: 言语理解与表达
-category: null
+category: 片段阅读
 topics:
 - 分述句特征-多角度论述
 - 关联词-转折
@@ -1465,7 +1465,7 @@ D项，根据“发达地区具有相对丰富的资本要素，从而在资本�
 <!-- hyz-question-id: 01a19c8a-2719-7382-b74e-0a785c51c68a -->
 ```yaml
 module: 言语理解与表达
-category: 逻辑填空
+category: 片段阅读
 topics:
 - 关联词-对策
 materials: []
@@ -4807,7 +4807,7 @@ D项：根据分析可知丁选东风路和南塘路，不可能选西河路或�
 <!-- hyz-question-id: 01a19c8a-271a-7b51-b454-7268f04a9d67 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -4915,7 +4915,7 @@ D项：长江沿岸的一家化工企业，多次不顾禁令向长江偷偷排�
 <!-- hyz-question-id: 01a19c8a-271a-7b51-b454-728107904bc6 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5023,7 +5023,7 @@ D项：通过网络平台捐资助学符合“通过网络平台”，但村委�
 <!-- hyz-question-id: 01a19c8a-271a-7b51-b454-72a2ca82f9d1 -->
 ```yaml
 module: 判断推理
-category: 逻辑判断
+category: null
 topics:
 - 大前提
 materials:
@@ -5077,7 +5077,7 @@ D项：小秦耐心、细致了解只体现工作负责，未体现“个人感�
 <!-- hyz-question-id: 01a19c8a-271a-7b51-b454-72bea6bc9140 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 原因结果
 materials:
@@ -5131,7 +5131,7 @@ D项：气候变暖符合“气候或自然环境恶化”，岛屿被淹没符�
 <!-- hyz-question-id: 01a19c8a-271a-7b51-b454-72c6cfd464fc -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5185,7 +5185,7 @@ D项：小李提醒丈夫结婚纪念日，把丈夫手机屏保换成婚纱照�
 <!-- hyz-question-id: 01a19c8a-271a-7b51-b454-72d90cab69fb -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5239,7 +5239,7 @@ D项：方老师询问学生日常生活符合“同一对话过程”、用英�
 <!-- hyz-question-id: 01a19c8a-271a-7b51-b454-72e68ee7cbf5 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5293,7 +5293,7 @@ D项：在电视台发布节日促销信息，雇退休的大爷大妈发放促�
 <!-- hyz-question-id: 01a19c8a-271a-7b51-b454-72f5cac1ba07 -->
 ```yaml
 module: 判断推理
-category: 类比推理
+category: null
 topics:
 - 方式目的
 materials:
@@ -5445,7 +5445,7 @@ C
 <!-- hyz-question-id: 01a19c8a-271a-7b51-b454-732dab88b67a -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M3
@@ -5484,7 +5484,7 @@ D
 <!-- hyz-question-id: 01a19c8a-271a-7b51-b454-7337c863b429 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M3
@@ -5816,7 +5816,7 @@ C
 <!-- hyz-question-id: 01a19c8a-271a-7b51-b454-73b1889134b2 -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M5
@@ -5857,7 +5857,7 @@ B
 <!-- hyz-question-id: 01a19c8a-271a-7b51-b454-73ca6600fbf8 -->
 ```yaml
 module: 资料分析
-category: null
+category: 增长
 topics: []
 materials:
 - M5
@@ -6137,7 +6137,7 @@ A
 <!-- hyz-question-id: 01a19c8a-271a-7b51-b454-742ff264525c -->
 ```yaml
 module: 资料分析
-category: null
+category: 平均数
 topics: []
 materials:
 - M6
