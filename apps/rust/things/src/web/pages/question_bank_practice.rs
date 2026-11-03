@@ -1074,7 +1074,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 </div>
                                 <button type="button"
                                     class={classes!("btn","btn-sm",if *custom_years {"btn-primary"} else {"btn-ghost"})}
-                                    aria-pressed={custom_years.to_string()}
+                                    aria-pressed={(*custom_years).to_string()}
                                     data-testid="module-filter-custom-year-toggle"
                                     onclick={Callback::from({let custom_years=custom_years.clone();move |_|custom_years.set(!*custom_years)})}>{"自定义年份范围 ▾"}</button>
                                 if *custom_years {
