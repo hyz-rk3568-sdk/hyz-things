@@ -1,7 +1,7 @@
 use super::*;
 use crate::application::question_bank::{BankError, QuestionBankApplication};
 use crate::domain::question_bank::{
-    CreatePracticeRequest, ModulePracticeFilters, SavePracticeAnswer, SetFavorite,
+    CreatePracticeRequest, ModulePracticeFilters, PracticeMode, SavePracticeAnswer, SetFavorite,
     SetPracticePaused,
 };
 use axum::Extension;
@@ -229,6 +229,46 @@ pub(super) async fn practice_catalog(
     match app.practice_catalog(&filters).await {
         Ok(value) => Json(value).into_response(),
         Err(e) => bank_error(e),
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub(super) struct PracticeBrowseQuery {
+    mode: PracticeMode,
+    paper_id: Option<String>,
+    module: Option<String>,
+    category: Option<String>,
+    year_min: Option<i32>,
+    year_max: Option<i32>,
+    regions: Option<String>,
+    exclude_regions: Option<bool>,
+}
+
+pub(super) async fn practice_browse(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+    axum::extract::Query(query): axum::extract::Query<PracticeBrowseQuery>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let app = match available(service) {
+        Ok(app) => app,
+        Err(e) => return bank_error(e),
+    };
+    let filters = ModulePracticeFilters {
+        year_min: query.year_min,
+        year_max: query.year_max,
+        regions: query.regions.unwrap_or_default().split(',')
+            .filter(|value| !value.is_empty()).map(str::to_owned).collect(),
+        exclude_regions: query.exclude_regions.unwrap_or(false),
+        count: None,
+    };
+    match app.practice_browse(query.mode, query.paper_id.as_deref(),
+        query.module.as_deref(), query.category.as_deref(), &filters).await {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => bank_error(error),
     }
 }
 
