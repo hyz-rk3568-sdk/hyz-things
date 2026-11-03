@@ -4,7 +4,7 @@ use super::{
 };
 use crate::domain::question_bank::{
     CreatePracticeRequest, FavoriteState, ModulePracticeFilters, PaperModule, PaperModules,
-    PracticeCatalog, PracticeItem, PracticeMode, PracticeQuestion, PracticeReview, PracticeScore,
+    PracticeBrowseItem, PracticeCatalog, PracticeItem, PracticeMode, PracticeQuestion, PracticeReview, PracticeScore,
     PracticeSession, PracticeWorkspace, ReviewQuestion,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -109,12 +109,34 @@ impl QuestionBankApplication {
         self.repository.practice_catalog(filters).await
     }
 
+    pub async fn practice_browse(
+        &self,
+        mode: PracticeMode,
+        paper_id: Option<&str>,
+        module: Option<&str>,
+        category: Option<&str>,
+        filters: &ModulePracticeFilters,
+    ) -> Result<Vec<PracticeBrowseItem>, BankError> {
+        validate_filters(filters)?;
+        if !matches!(mode, PracticeMode::Wrong | PracticeMode::Favorite)
+            || paper_id.is_some_and(|id| !valid_id(id))
+            || module.is_some_and(|m| primary_module(Some(m)) != Some(m))
+            || category.is_some_and(|c| {
+                module.is_none() || c.is_empty() || c.trim() != c
+                    || c.len() > 128 || c.chars().any(char::is_control)
+            })
+        {
+            return Err(BankError::Invalid);
+        }
+        self.repository.practice_browse(mode, paper_id, module, category, filters).await
+    }
+
     pub async fn create_practice(
         &self,
         request: CreatePracticeRequest,
     ) -> Result<PracticeSession, BankError> {
         validate_filters(&request.filters)?;
-        if request.mode != PracticeMode::Module
+        if matches!(request.mode, PracticeMode::Paper | PracticeMode::PaperModule)
             && request.filters != ModulePracticeFilters::default()
         {
             return Err(BankError::Invalid);
@@ -154,13 +176,20 @@ impl QuestionBankApplication {
                 Some(normalized.to_string())
             }
             PracticeMode::Wrong | PracticeMode::Favorite => {
-                if request.module.is_some()
-                    || request.paper_id.is_some()
-                    || request.category.is_some()
+                if request.paper_id.as_ref().is_some_and(|id| !valid_id(id))
+                    || request.category.as_ref().is_some_and(|category| {
+                        request.module.is_none()
+                            || category.trim() != category || category.is_empty()
+                            || category.len() > 128 || category.chars().any(char::is_control)
+                    })
                 {
                     return Err(BankError::Invalid);
                 }
-                None
+                match request.module.as_deref() {
+                    Some(raw) if primary_module(Some(raw)) == Some(raw) => Some(raw.to_string()),
+                    Some(_) => return Err(BankError::Invalid),
+                    None => None,
+                }
             }
         };
         let selected_order = match request.mode {
@@ -176,8 +205,18 @@ impl QuestionBankApplication {
             }
             PracticeMode::Wrong | PracticeMode::Favorite => {
                 self.repository
-                    .practice_candidates(request.mode.clone())
+                    .practice_browse(
+                        request.mode.clone(),
+                        request.paper_id.as_deref(),
+                        module.as_deref(),
+                        request.category.as_deref(),
+                        &request.filters,
+                    )
                     .await?
+                    .into_iter()
+                    .take(request.filters.count.unwrap_or(20))
+                    .map(|item| item.question_id)
+                    .collect()
             }
             _ => Vec::new(),
         };
@@ -235,8 +274,8 @@ impl QuestionBankApplication {
         if items.is_empty() {
             return Err(BankError::NotFound);
         }
-        if request.mode == PracticeMode::Module {
-            // Keep the repository's unpracticed-first, deterministic twenty-question order.
+        if matches!(request.mode, PracticeMode::Module | PracticeMode::Wrong | PracticeMode::Favorite) {
+            // Respect the repository's deterministic selection and filter order.
             items.sort_by_key(|item| {
                 selected_order
                     .iter()
