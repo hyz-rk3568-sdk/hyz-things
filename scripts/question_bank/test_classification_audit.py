@@ -99,6 +99,72 @@ class ClassificationAuditTests(unittest.TestCase):
         self.assertEqual(self.paper.read_bytes(), before)
         self.assertFalse((self.root / "reports").exists())
 
+    def test_reviewed_override_is_not_requeued_but_unreviewed_copy_is(self):
+        from classification import RULE_VERSION
+        from classification_overrides import _normalize_proposal, approve_proposals
+        from importer import digest
+        from identity import without_ids
+
+        second_paper_id = "019a3d8e-1b32-7a60-9c83-f34217a6e202"
+        second_question_id = "019a3d8e-1b32-7a60-9c83-f34217a6e222"
+        second = self.paper.with_name("行测-副本.md")
+        second_text = (
+            document(question_id=second_question_id, category="数字推理")
+            .replace(PAPER_ID, second_paper_id)
+            .replace("module: 判断推理", "module: 数量关系")
+        )
+        second.write_text(second_text)
+        manifest_path = self.root / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["papers"]["second-source"] = {
+            "target": second.relative_to(self.root).as_posix(),
+            "source_sha256": "b" * 64,
+            "generated_sha256": digest(without_ids(second_text)),
+        }
+        manifest_path.write_text(json.dumps(manifest))
+
+        first_row = next(
+            row
+            for row in audit_bank(self.root)["rows"]
+            if row["question_uuid"] == QUESTION_ID
+        )
+        proposal = _normalize_proposal(
+            {
+                "uuid": QUESTION_ID,
+                "paper_uuid": PAPER_ID,
+                "question_hash": first_row["question_hash"],
+                "source_hash": first_row["source_hash"],
+                "classification_rule_version": RULE_VERSION,
+                "module": "判断推理",
+                "category": "类比推理",
+                "reviewed_source": "ai",
+                "review_status": "reviewed",
+                "rationale": "Approved classification for audit queue test.",
+                "status": "suggested",
+            }
+        )
+        approve_proposals(
+            [proposal],
+            [
+                {
+                    "uuid": QUESTION_ID,
+                    "proposal_digest": proposal["proposal_digest"],
+                    "reviewer": "test-reviewer",
+                    "rationale": "Test approval.",
+                    "status": "approved",
+                }
+            ],
+            self.root / "classification_overrides.yaml",
+        )
+
+        rows = {row["question_uuid"]: row for row in audit_bank(self.root)["rows"]}
+        self.assertEqual(rows[QUESTION_ID]["status"], "reviewed")
+        self.assertIn(
+            "cross_paper_module_disagreement", rows[QUESTION_ID]["conflict_reasons"]
+        )
+        self.assertFalse(rows[QUESTION_ID]["needs_ai_review"])
+        self.assertTrue(rows[second_question_id]["needs_ai_review"])
+
     def test_missing_and_duplicate_uuid_are_reported_and_block_apply(self):
         self.paper.write_text(document(question_id=None))
         audit = audit_bank(self.root)

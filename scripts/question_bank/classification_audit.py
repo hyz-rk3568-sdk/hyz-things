@@ -283,7 +283,7 @@ def audit_bank(root):
             row["status"] = (
                 "verified" if row["current_category"] is not None else "unclassified"
             )
-        row["needs_ai_review"] = (
+        row["needs_ai_review"] = row["status"] != "reviewed" and (
             row["status"] == "unclassified"
             or stale
             or invalid_id
