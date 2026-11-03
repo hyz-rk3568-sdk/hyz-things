@@ -134,6 +134,20 @@ pub struct PracticeCatalog {
     pub unclassified: usize,
 }
 
+/// Browsable metadata for saved wrong and favorite Question Bank items.
+/// No answers or explanations are returned by this read-only index.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PracticeBrowseItem {
+    pub question_id: String,
+    pub paper_id: String,
+    pub paper_title: String,
+    pub year: i32,
+    pub region: String,
+    pub number: u32,
+    pub module: Option<String>,
+    pub category: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PracticeItem {
     pub question_id: String,
