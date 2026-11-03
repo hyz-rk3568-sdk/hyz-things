@@ -35,7 +35,7 @@ test("logic judgment persists answers, recovers deadline and reviews exact-paper
   await page.setViewportSize({width:834,height:1112});
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-logic-judgment').click();
-  await expect(page.getByTestId('training-mode-logic-judgment')).toHaveClass(/btn-primary/);
+  await expect(page.getByTestId('training-mode-logic-judgment')).toHaveAttribute('aria-pressed','true');
   await expect(page.getByTestId('logic-setup')).toContainText('24');
   await page.getByTestId('logic-resume').click();
   await expect(page.getByTestId('logic-clock')).toHaveText('10:00');
@@ -60,7 +60,8 @@ test("logic judgment persists answers, recovers deadline and reviews exact-paper
   const reviewAnswer=await page.getByTestId('logic-answer-pane').boundingBox();
   expect(reviewQuestion!.x+reviewQuestion!.width).toBeLessThanOrEqual(reviewAnswer!.x+2);
   await page.getByRole('button',{name:'← 返回训练',exact:true}).click();
-  await page.getByTestId('logic-history-toggle').click();
+  await page.getByTestId('training-mode-history').click();
+  await page.getByTestId('training-history-item').filter({hasText:'判断推理'}).first().click();
   await expect(page.getByTestId('logic-history')).toContainText('1/10题');
   await page.getByRole('button',{name:'查看原题与解析',exact:true}).click();
   await expect(page.getByTestId('logic-result')).toContainText('1 / 10');

@@ -12,6 +12,8 @@ pub(crate) struct ComprehensiveProps {
     pub on_immersive_change: Callback<bool>,
     pub on_paper_pause_change: Callback<bool>,
     pub on_exit: Callback<()>,
+    #[prop_or_default]
+    pub show_history: bool,
 }
 
 const COMPREHENSIVE_JOB_KEY: &str = "hyz_comprehensive_prepare_job";
@@ -253,7 +255,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     let error = use_state(|| None::<String>);
     let tick = use_state(|| 0_u64);
     let history = use_state(Vec::<ComprehensiveHistoryEntry>::new);
-    let history_open = use_state(|| false);
+    let history_open = use_state(|| props.show_history);
     let user_prompt = use_state(String::new);
     let prompt_settings = use_state(|| None::<UserPromptSettings>);
     let prompt_busy = use_state(|| false);
@@ -1124,9 +1126,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     </div>
                 </header>
                 <div class="min-h-0 flex-1">
-                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",review_id,index)} responsive={true} scroll_linked={true}>
+                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",review_id,index)} responsive={true} scroll_linked={true}><TrainingSwipeSurface current={current.clone()} total={score.questions.len()}>
                         <AnalysisPanes material={score.materials[group_index].clone()} question={review_question} question_index={index} right_title="答案与解析" />
-                    </InkOverlay>
+                    </TrainingSwipeSurface></InkOverlay>
                 </div>
                 if let Some(msg)=(*error).clone() {
                     <p class="shrink-0 text-error text-xs" role="alert">{msg}</p>
@@ -1217,7 +1219,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         if active.paused_remaining_ms.is_some() {
             return html! {
                 <section class="analysis-fullscreen analysis-paused fixed inset-0 z-[70] flex h-dvh w-screen items-center justify-center overflow-hidden bg-base-200" data-testid="analysis-paused">
-                    <div class="absolute right-4 top-2"><StudyTimeInline /></div>
+                    <div class="absolute right-4 top-2" style="top:calc(var(--app-safe-top) + 0.5rem);right:calc(var(--app-safe-right) + 1rem)"><StudyTimeInline /></div>
                     <div class="rounded-box bg-base-100 p-8 text-center">
                         <h2 class="text-2xl font-bold">{"训练已暂停"}</h2>
                         <p class="mt-3 text-base-content/60">{"已隐藏材料和题目，暂停期间不能答题。刷新页面仍保持暂停。"}</p>
@@ -1306,9 +1308,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     </div>
                 </header>
                 <div class="min-h-0 flex-1">
-                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",active.id,index)} responsive={true} scroll_linked={true}>
+                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",active.id,index)} responsive={true} scroll_linked={true}><TrainingSwipeSurface current={current.clone()} total={active.answers.len()}>
                         <AnalysisPanes material={group.material.clone()} question={question_content} question_index={index} />
-                    </InkOverlay>
+                    </TrainingSwipeSurface></InkOverlay>
                 </div>
                 if let Some(msg)=(*error).clone(){<div class="shrink-0 text-error text-xs" role="alert">{msg}</div>}
                 {analysis_navigation(current.clone(),index,&markers,false)}
@@ -1351,7 +1353,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                             })}
                         </div>
                     }
-                    <button class="btn btn-outline w-full" type="button" onclick={{let history_open=history_open.clone();Callback::from(move |_|history_open.set(true))}}>{"查看练习历史"}</button>
+
                     <div class="rounded-box border border-base-content/15 p-4 space-y-2">
                         <p class="font-semibold">{"智能选卡 · 综合训练"}</p>
                         <p class="text-sm text-base-content/60">{"错题与知识点统一入队；按卡片虚拟次数全局选择20张，同篇5个不同题型。不设置题型保底或配额。"}</p>

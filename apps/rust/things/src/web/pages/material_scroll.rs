@@ -208,7 +208,7 @@ pub(super) fn material_scroll_button(props: &MaterialScrollButtonProps) -> Html 
     );
     html! {
         // Disabled buttons ignore hit testing; keep their gesture shield interactive.
-        <span class="inline-flex touch-none select-none [-webkit-touch-callout:none]"
+        <span class="relative z-30 inline-flex touch-none select-none [-webkit-touch-callout:none]"
             onpointerdown={Callback::from(|event: PointerEvent| {
                 event.prevent_default();
                 event.stop_propagation();

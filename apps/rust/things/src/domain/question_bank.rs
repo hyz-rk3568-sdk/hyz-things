@@ -79,6 +79,22 @@ pub struct CreatePracticeRequest {
     pub module: Option<String>,
     #[serde(default)]
     pub category: Option<String>,
+    #[serde(default)]
+    pub filters: ModulePracticeFilters,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModulePracticeFilters {
+    #[serde(default)]
+    pub year_min: Option<i32>,
+    #[serde(default)]
+    pub year_max: Option<i32>,
+    #[serde(default)]
+    pub regions: Vec<String>,
+    #[serde(default)]
+    pub exclude_regions: bool,
+    #[serde(default)]
+    pub count: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -98,12 +114,16 @@ pub struct PaperModules {
 pub struct PracticeCategory {
     pub name: String,
     pub count: usize,
+    #[serde(default)]
+    pub done: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PracticeModule {
     pub name: String,
     pub count: usize,
+    #[serde(default)]
+    pub done: usize,
     pub uncategorized: usize,
     pub categories: Vec<PracticeCategory>,
 }

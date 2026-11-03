@@ -11,6 +11,8 @@ pub(crate) struct LogicJudgmentProps {
     pub on_paper_pause_change: Callback<bool>,
     #[prop_or_default]
     pub quantitative: bool,
+    #[prop_or_default]
+    pub show_history: bool,
 }
 
 #[derive(Clone)]
@@ -211,7 +213,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     let unfinished = use_state(Vec::<LogicRun>::new);
     let history = use_state(Vec::<LogicHistory>::new);
     let statistics = use_state(Vec::<LogicPerformance>::new);
-    let history_open = use_state(|| false);
+    let history_open = use_state(|| props.show_history);
     let opened_card = use_state(|| None::<String>);
     let prompt = use_state(String::new);
     let run = use_state(|| None::<LogicRun>);
@@ -621,7 +623,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 </header>
                 {alert}
                 <div class="relative min-h-0 flex-1 overflow-hidden">
-                    <InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("{prefix}-{}-{index}",active.id)}>
+                    <TrainingSwipeSurface current={current.clone()} total={active.questions.len()}><InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("{prefix}-{}-{index}",active.id)}>
                         <LogicScrollPane prefix={prefix} question_index={index} status="作答中" right_title="选项"
                             question={html! {
                                 <div class="study-markdown whitespace-pre-wrap break-words text-lg font-semibold leading-8" data-testid={format!("{prefix}-question")}>
@@ -642,7 +644,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                                 })}</div>
                             }}
                         />
-                    </InkOverlay>
+                    </InkOverlay></TrainingSwipeSurface>
                 </div>
                 {question_navigation(
                     current.clone(),
@@ -676,7 +678,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 </header>
                 {alert}
                 <div class="relative min-h-0 flex-1 overflow-hidden">
-                    <InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("{prefix}-{}-{index}",score.id)}>
+                    <TrainingSwipeSurface current={current.clone()} total={score.questions.len()}><InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("{prefix}-{}-{index}",score.id)}>
                         <LogicScrollPane prefix={prefix} question_index={index} status={grade} right_title="答案与解析"
                             question={html! {
                                 <div class="study-markdown whitespace-pre-wrap break-words text-lg font-semibold leading-8" data-testid={format!("{prefix}-question")}>
@@ -705,7 +707,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                                 </div>
                             }}
                         />
-                    </InkOverlay>
+                    </InkOverlay></TrainingSwipeSurface>
                 </div>
                 {question_navigation(
                     current.clone(),
@@ -778,7 +780,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                             })}
                         </div>
                     }
-                    <button class="btn btn-outline w-full" data-testid={format!("{prefix}-history-toggle")} onclick={{let history_open=history_open.clone();Callback::from(move |_|history_open.set(true))}}>{"查看练习历史"}</button>
+
                     <div class="rounded-box border border-base-content/15 p-4 space-y-2">
                         <p class="font-semibold">{format!("智能选卡 · {subject}")}</p>
                         <p class="text-sm text-base-content/60">{pool_description}</p>

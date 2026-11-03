@@ -3,9 +3,9 @@ use super::{
     document::valid_id, document::Document, BankError, IndexedPaper, QuestionBankApplication,
 };
 use crate::domain::question_bank::{
-    CreatePracticeRequest, FavoriteState, PaperModule, PaperModules, PracticeCatalog, PracticeItem,
-    PracticeMode, PracticeQuestion, PracticeReview, PracticeScore, PracticeSession,
-    PracticeWorkspace, ReviewQuestion,
+    CreatePracticeRequest, FavoriteState, ModulePracticeFilters, PaperModule, PaperModules,
+    PracticeCatalog, PracticeItem, PracticeMode, PracticeQuestion, PracticeReview, PracticeScore,
+    PracticeSession, PracticeWorkspace, ReviewQuestion,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -26,6 +26,29 @@ pub fn primary_module(name: Option<&str>) -> Option<&'static str> {
         "资料分析" | "资料" => Some("资料分析"),
         _ => None,
     }
+}
+
+fn validate_filters(filters: &ModulePracticeFilters) -> Result<(), BankError> {
+    if filters
+        .year_min
+        .is_some_and(|year| !(1900..=2100).contains(&year))
+        || filters
+            .year_max
+            .is_some_and(|year| !(1900..=2100).contains(&year))
+        || matches!((filters.year_min, filters.year_max), (Some(min), Some(max)) if min > max)
+        || filters.count.is_some_and(|count| count == 0 || count > 20)
+        || filters.regions.len() > 64
+        || filters.regions.iter().any(|region| {
+            region.trim() != region
+                || region.is_empty()
+                || region.len() > 100
+                || region.chars().any(char::is_control)
+        })
+        || filters.regions.iter().collect::<BTreeSet<_>>().len() != filters.regions.len()
+    {
+        return Err(BankError::Invalid);
+    }
+    Ok(())
 }
 
 impl QuestionBankApplication {
@@ -78,14 +101,24 @@ impl QuestionBankApplication {
         })
     }
 
-    pub async fn practice_catalog(&self) -> Result<PracticeCatalog, BankError> {
-        self.repository.practice_catalog().await
+    pub async fn practice_catalog(
+        &self,
+        filters: &ModulePracticeFilters,
+    ) -> Result<PracticeCatalog, BankError> {
+        validate_filters(filters)?;
+        self.repository.practice_catalog(filters).await
     }
 
     pub async fn create_practice(
         &self,
         request: CreatePracticeRequest,
     ) -> Result<PracticeSession, BankError> {
+        validate_filters(&request.filters)?;
+        if request.mode != PracticeMode::Module
+            && request.filters != ModulePracticeFilters::default()
+        {
+            return Err(BankError::Invalid);
+        }
         let module = match request.mode {
             PracticeMode::Paper => {
                 if request.module.is_some()
@@ -136,7 +169,8 @@ impl QuestionBankApplication {
                     .practice_module_candidates(
                         module.as_deref().ok_or(BankError::Invalid)?,
                         request.category.as_deref(),
-                        20,
+                        &request.filters,
+                        request.filters.count.unwrap_or(20),
                     )
                     .await?
             }

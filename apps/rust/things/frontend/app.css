@@ -67,6 +67,10 @@ nav.tabs > button.tab:not(.tab-active) {
   .analysis-fullscreen.analysis-paused {
     --analysis-gutter: 1.5rem;
   }
+  .analysis-fullscreen.analysis-paused > .rounded-box {
+    max-height: calc(100% - var(--app-safe-top) - var(--app-safe-bottom));
+    overflow-y: auto;
+  }
 
   .analysis-header,
   .analysis-header > div {
@@ -216,6 +220,25 @@ nav.tabs > button.tab:not(.tab-active) {
     flex-direction: column;
     overflow: hidden;
     background: var(--color-base-200);
+  }
+  /* One visual viewport for the entire exam shell: fixed bars, local scroll only. */
+  .training-shell .training-workspace {
+    top: 0;
+    left: 0;
+    right: auto;
+    bottom: auto;
+    width: var(--training-viewport-width, 100vw);
+    height: var(--training-viewport-height, 100dvh);
+    min-height: 0;
+    overscroll-behavior: none;
+    padding-bottom: max(.5rem, env(safe-area-inset-bottom));
+  }
+  .training-swipe-surface {
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+  }
+  .training-compact-footer {
+    padding-bottom: max(.5rem, env(safe-area-inset-bottom));
   }
   .training-topbar {
     flex-shrink: 0;
