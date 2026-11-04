@@ -783,13 +783,13 @@ mod tests {
         let writer: Arc<dyn FavoriteFlashcardWriterPort> = Arc::new(fixture.writer());
         let ai = card();
         let mut normal = ai.clone();
-        normal.target_deck = "数量关系/工程效率/错题".into();
+        normal.target_deck = "数量关系/默认/工程效率/错题".into();
         let ai_result = writer.append(ai.clone()).await.unwrap();
         let normal_result = writer.append(normal.clone()).await.unwrap();
         assert!(ai_result.appended);
         assert!(normal_result.appended);
         assert_eq!(ai_result.relative_path, "数量/工程效率/错题/cards.md");
-        assert_eq!(normal_result.relative_path, "数量关系/工程效率/错题/cards.md");
+        assert_eq!(normal_result.relative_path, "数量关系/默认/工程效率/错题/cards.md");
         assert!(!writer.append(ai).await.unwrap().appended);
         assert!(!writer.append(normal).await.unwrap().appended);
     }
