@@ -143,7 +143,7 @@ impl FilesystemFavoriteFlashcardWriter {
             .file_name()
             .ok_or_else(|| invalid("invalid registry path"))?;
         let original = read_source_optional(&parent, name, MAX_MARKDOWN)?;
-        if original.as_ref().map(|file| &file.version) != scan.files.get(target.relative_path) {
+        if original.as_ref().map(|file| &file.version) != scan.files.get(&target.relative_path) {
             return Err(unavailable("target changed after scan"));
         }
         let mut text = match &original {
@@ -186,7 +186,7 @@ impl FilesystemFavoriteFlashcardWriter {
             normalize_newlines(&card.front, newline),
             normalize_newlines(&card.back, newline)
         ));
-        parse_markdown_text(&text, target.relative_path)
+        parse_markdown_text(&text, &target.relative_path)
             .map_err(|e| unavailable(format!("invalid appended source: {}", e.message)))?;
         if text.len() as u64 > MAX_MARKDOWN {
             return Err(invalid("target exceeds Markdown size limit"));
@@ -806,7 +806,7 @@ mod tests {
         let fixture = Fixture::new();
         let target = resolve_target(&card().target_deck).unwrap();
         let original = "---\r\ntags: [custom]\r\nother: keep-me\r\n---\r\n## Card\r\n### Front\r\nOld front\r\n### Back\r\nOld back";
-        put(&fixture.root, target.relative_path, original);
+        put(&fixture.root, &target.relative_path, original);
         let writer: Arc<dyn FavoriteFlashcardWriterPort> = Arc::new(fixture.writer());
         let result = writer.append(card()).await.unwrap();
         let path = fixture.root.join(result.relative_path);
@@ -828,7 +828,7 @@ mod tests {
         assert_eq!(backups.len(), 1);
         assert_eq!(fs::read(backups[0].path()).unwrap(), original.as_bytes());
         let parsed =
-            parse_markdown_text(std::str::from_utf8(&bytes).unwrap(), target.relative_path)
+            parse_markdown_text(std::str::from_utf8(&bytes).unwrap(), &target.relative_path)
                 .unwrap();
         assert_eq!(parsed.cards.len(), 2);
         assert_eq!(parsed.cards[0].back_markdown, "Old back");
@@ -930,7 +930,7 @@ mod tests {
         let fixture = Fixture::new();
         let target = resolve_target(&card().target_deck).unwrap();
         let original = existing_card("0194f4e0-1234-7000-8000-000000000099", None);
-        put(&fixture.root, target.relative_path, &original);
+        put(&fixture.root, &target.relative_path, &original);
         let path = fixture.root.join(target.relative_path);
         let edit_path = path.clone();
         let edit_bytes = original.clone();
@@ -951,14 +951,14 @@ mod tests {
         let fixture = Fixture::new();
         let target = resolve_target(&card().target_deck).unwrap();
         let original = "## Card\n### Front\nOld front\n### Back\nOld back\n\n---\n\n";
-        put(&fixture.root, target.relative_path, original);
+        put(&fixture.root, &target.relative_path, original);
         let writer: Arc<dyn FavoriteFlashcardWriterPort> = Arc::new(fixture.writer());
         let result = writer.append(card()).await.unwrap();
         let text = fs::read_to_string(fixture.root.join(result.relative_path)).unwrap();
         assert!(text.starts_with(original));
         assert!(text.ends_with("---\n"));
         assert_eq!(text.matches("\n---\n").count(), 2);
-        let parsed = parse_markdown_text(&text, target.relative_path).unwrap();
+        let parsed = parse_markdown_text(&text, &target.relative_path).unwrap();
         assert_eq!(parsed.cards[0].back_markdown, "Old back");
     }
 
@@ -1021,7 +1021,7 @@ mod tests {
         let fixture = Fixture::new();
         let target = resolve_target(&card().target_deck).unwrap();
         let original = existing_card("0194f4e0-1234-7000-8000-000000000099", None);
-        put(&fixture.root, target.relative_path, &original);
+        put(&fixture.root, &target.relative_path, &original);
         let path = fixture.root.join(target.relative_path);
         let changed_path = path.clone();
         let changed = original.replace("Original answer", "External answer");
