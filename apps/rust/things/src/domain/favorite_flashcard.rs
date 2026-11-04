@@ -12,135 +12,135 @@ pub struct FavoriteTarget {
 pub const TARGETS: &[FavoriteTarget] = &[
     FavoriteTarget {
         module: "资料分析",
-        target_deck: "资料/乘除变化/错题",
-        relative_path: "资料/乘除变化/错题/cards.md",
-        tags: &["资料", "错题", "乘除变化"],
+        target_deck: "资料分析/乘除变化/错题",
+        relative_path: "资料分析/乘除变化/错题/cards.md",
+        tags: &["资料分析", "错题", "乘除变化"],
     },
     FavoriteTarget {
         module: "资料分析",
-        target_deck: "资料/假设代入思想/错题",
-        relative_path: "资料/假设代入思想/错题/cards.md",
-        tags: &["资料", "错题", "假设代入思想"],
+        target_deck: "资料分析/假设代入思想/错题",
+        relative_path: "资料分析/假设代入思想/错题/cards.md",
+        tags: &["资料分析", "错题", "假设代入思想"],
     },
     FavoriteTarget {
         module: "资料分析",
-        target_deck: "资料/分数比较大小/错题",
-        relative_path: "资料/分数比较大小/错题/cards.md",
-        tags: &["资料", "错题", "分数比较大小"],
+        target_deck: "资料分析/分数比较大小/错题",
+        relative_path: "资料分析/分数比较大小/错题/cards.md",
+        tags: &["资料分析", "错题", "分数比较大小"],
     },
     FavoriteTarget {
         module: "资料分析",
-        target_deck: "资料/增长贡献率和拉动增长率/错题",
-        relative_path: "资料/增长贡献率和拉动增长率/错题/cards.md",
-        tags: &["资料", "错题", "增长贡献率和拉动增长率"],
+        target_deck: "资料分析/增长贡献率和拉动增长率/错题",
+        relative_path: "资料分析/增长贡献率和拉动增长率/错题/cards.md",
+        tags: &["资料分析", "错题", "增长贡献率和拉动增长率"],
     },
     FavoriteTarget {
         module: "资料分析",
-        target_deck: "资料/年均变化/错题",
-        relative_path: "资料/年均变化/错题/cards.md",
-        tags: &["资料", "错题", "年均变化"],
+        target_deck: "资料分析/年均变化/错题",
+        relative_path: "资料分析/年均变化/错题/cards.md",
+        tags: &["资料分析", "错题", "年均变化"],
     },
     FavoriteTarget {
         module: "资料分析",
-        target_deck: "资料/线段混合/错题",
-        relative_path: "资料/线段混合/错题/cards.md",
-        tags: &["资料", "错题", "线段混合"],
+        target_deck: "资料分析/线段混合/错题",
+        relative_path: "资料分析/线段混合/错题/cards.md",
+        tags: &["资料分析", "错题", "线段混合"],
     },
     FavoriteTarget {
         module: "资料分析",
-        target_deck: "资料/计算方法及误差分析/错题",
-        relative_path: "资料/计算方法及误差分析/错题/cards.md",
-        tags: &["资料", "错题", "计算方法及误差分析"],
+        target_deck: "资料分析/计算方法及误差分析/错题",
+        relative_path: "资料分析/计算方法及误差分析/错题/cards.md",
+        tags: &["资料分析", "错题", "计算方法及误差分析"],
     },
     FavoriteTarget {
         module: "判断推理",
-        target_deck: "判断/形式推理/直言命题/错题",
-        relative_path: "判断/形式推理/直言命题/错题/cards.md",
-        tags: &["判断", "错题", "形式推理", "直言命题"],
+        target_deck: "判断推理/形式推理/直言命题/错题",
+        relative_path: "判断推理/形式推理/直言命题/错题/cards.md",
+        tags: &["判断推理", "错题", "形式推理", "直言命题"],
     },
     FavoriteTarget {
         module: "判断推理",
-        target_deck: "判断/形式推理/联言选言假言命题/错题",
-        relative_path: "判断/形式推理/联言选言假言命题/错题/cards.md",
-        tags: &["判断", "错题", "形式推理", "联言选言假言命题"],
+        target_deck: "判断推理/形式推理/联言选言假言命题/错题",
+        relative_path: "判断推理/形式推理/联言选言假言命题/错题/cards.md",
+        tags: &["判断推理", "错题", "形式推理", "联言选言假言命题"],
     },
     FavoriteTarget {
         module: "判断推理",
-        target_deck: "判断/形式推理/组合排列/错题",
-        relative_path: "判断/形式推理/组合排列/错题/cards.md",
-        tags: &["判断", "错题", "形式推理", "组合排列"],
+        target_deck: "判断推理/形式推理/组合排列/错题",
+        relative_path: "判断推理/形式推理/组合排列/错题/cards.md",
+        tags: &["判断推理", "错题", "形式推理", "组合排列"],
     },
     FavoriteTarget {
         module: "判断推理",
-        target_deck: "判断/形式推理/特殊题型/错题",
-        relative_path: "判断/形式推理/特殊题型/错题/cards.md",
-        tags: &["判断", "错题", "形式推理", "特殊题型"],
+        target_deck: "判断推理/形式推理/特殊题型/错题",
+        relative_path: "判断推理/形式推理/特殊题型/错题/cards.md",
+        tags: &["判断推理", "错题", "形式推理", "特殊题型"],
     },
     FavoriteTarget {
         module: "数量关系",
-        target_deck: "数量/经济利润/错题",
-        relative_path: "数量/经济利润/错题/cards.md",
-        tags: &["数量", "错题", "经济利润"],
+        target_deck: "数量关系/经济利润/错题",
+        relative_path: "数量关系/经济利润/错题/cards.md",
+        tags: &["数量关系", "错题", "经济利润"],
     },
     FavoriteTarget {
         module: "数量关系",
-        target_deck: "数量/工程效率/错题",
-        relative_path: "数量/工程效率/错题/cards.md",
-        tags: &["数量", "错题", "工程效率"],
+        target_deck: "数量关系/工程效率/错题",
+        relative_path: "数量关系/工程效率/错题/cards.md",
+        tags: &["数量关系", "错题", "工程效率"],
     },
     FavoriteTarget {
         module: "数量关系",
-        target_deck: "数量/行程/相对运动/错题",
-        relative_path: "数量/行程/相对运动/错题/cards.md",
-        tags: &["数量", "错题", "行程", "相对运动"],
+        target_deck: "数量关系/行程/相对运动/错题",
+        relative_path: "数量关系/行程/相对运动/错题/cards.md",
+        tags: &["数量关系", "错题", "行程", "相对运动"],
     },
     FavoriteTarget {
         module: "数量关系",
-        target_deck: "数量/行程/综合应用/错题",
-        relative_path: "数量/行程/综合应用/错题/cards.md",
-        tags: &["数量", "错题", "行程", "综合应用"],
+        target_deck: "数量关系/行程/综合应用/错题",
+        relative_path: "数量关系/行程/综合应用/错题/cards.md",
+        tags: &["数量关系", "错题", "行程", "综合应用"],
     },
     FavoriteTarget {
         module: "数量关系",
-        target_deck: "数量/溶液/错题",
-        relative_path: "数量/溶液/错题/cards.md",
-        tags: &["数量", "错题", "溶液"],
+        target_deck: "数量关系/溶液/错题",
+        relative_path: "数量关系/溶液/错题/cards.md",
+        tags: &["数量关系", "错题", "溶液"],
     },
     FavoriteTarget {
         module: "数量关系",
-        target_deck: "数量/最值/错题",
-        relative_path: "数量/最值/错题/cards.md",
-        tags: &["数量", "错题", "最值"],
+        target_deck: "数量关系/最值/错题",
+        relative_path: "数量关系/最值/错题/cards.md",
+        tags: &["数量关系", "错题", "最值"],
     },
     FavoriteTarget {
         module: "数量关系",
-        target_deck: "数量/排列组合/基础/错题",
-        relative_path: "数量/排列组合/基础/错题/cards.md",
-        tags: &["数量", "错题", "排列组合", "基础"],
+        target_deck: "数量关系/排列组合/基础/错题",
+        relative_path: "数量关系/排列组合/基础/错题/cards.md",
+        tags: &["数量关系", "错题", "排列组合", "基础"],
     },
     FavoriteTarget {
         module: "数量关系",
-        target_deck: "数量/排列组合/插空与同素分堆/错题",
-        relative_path: "数量/排列组合/插空与同素分堆/错题/cards.md",
-        tags: &["数量", "错题", "排列组合", "插空与同素分堆"],
+        target_deck: "数量关系/排列组合/插空与同素分堆/错题",
+        relative_path: "数量关系/排列组合/插空与同素分堆/错题/cards.md",
+        tags: &["数量关系", "错题", "排列组合", "插空与同素分堆"],
     },
     FavoriteTarget {
         module: "数量关系",
-        target_deck: "数量/排列组合/特殊套路/错题",
-        relative_path: "数量/排列组合/特殊套路/错题/cards.md",
-        tags: &["数量", "错题", "排列组合", "特殊套路"],
+        target_deck: "数量关系/排列组合/特殊套路/错题",
+        relative_path: "数量关系/排列组合/特殊套路/错题/cards.md",
+        tags: &["数量关系", "错题", "排列组合", "特殊套路"],
     },
     FavoriteTarget {
         module: "数量关系",
-        target_deck: "数量/概率/错题",
-        relative_path: "数量/概率/错题/cards.md",
-        tags: &["数量", "错题", "概率"],
+        target_deck: "数量关系/概率/错题",
+        relative_path: "数量关系/概率/错题/cards.md",
+        tags: &["数量关系", "错题", "概率"],
     },
     FavoriteTarget {
         module: "数量关系",
-        target_deck: "数量/周期/错题",
-        relative_path: "数量/周期/错题/cards.md",
-        tags: &["数量", "错题", "周期"],
+        target_deck: "数量关系/周期/错题",
+        relative_path: "数量关系/周期/错题/cards.md",
+        tags: &["数量关系", "错题", "周期"],
     },
 ];
 
@@ -157,10 +157,10 @@ pub struct ResolvedTarget {
 
 fn module_root(module: &str) -> Option<&'static str> {
     match module {
-        "资料分析" => Some("资料"),
-        "数量关系" => Some("数量"),
-        "判断推理" => Some("判断"),
-        "言语理解与表达" => Some("言语"),
+        "资料分析" => Some("资料分析"),
+        "数量关系" => Some("数量关系"),
+        "判断推理" => Some("判断推理"),
+        "言语理解与表达" => Some("言语理解与表达"),
         "常识判断" => Some("常识判断"),
         "政治理论" => Some("政治理论"),
         _ => None,
@@ -180,6 +180,20 @@ fn valid_category(category: &str) -> bool {
 }
 
 pub fn resolve_target(target: &str) -> Option<ResolvedTarget> {
+    // Accept historic abbreviations only for resolving legacy generators and imports.
+    // New creation and UI lists always use canonical full module names.
+    let normalized = if let Some(tail) = target.strip_prefix("资料/") {
+        format!("资料分析/{tail}")
+    } else if let Some(tail) = target.strip_prefix("判断/") {
+        format!("判断推理/{tail}")
+    } else if let Some(tail) = target.strip_prefix("数量/") {
+        format!("数量关系/{tail}")
+    } else if let Some(tail) = target.strip_prefix("言语/") {
+        format!("言语理解与表达/{tail}")
+    } else {
+        target.to_owned()
+    };
+    let target = normalized.as_str();
     if let Some(known) = TARGETS.iter().find(|entry| entry.target_deck == target) {
         return Some(ResolvedTarget {
             module: known.module,
@@ -249,9 +263,9 @@ pub fn eligibility(module: Option<&str>, category: Option<&str>) -> FavoriteElig
     } else if module_name == "判断推理" && matches!(category, "" | "逻辑判断" | "形式推理" | "判断推理" | "未分类") {
         candidates
     } else if module_name == "数量关系" && matches!(category, "行程" | "行程问题") {
-        candidates.into_iter().filter(|t| t.target_deck.starts_with("数量/行程/")).collect()
+        candidates.into_iter().filter(|t| t.target_deck.starts_with("数量关系/行程/")).collect()
     } else if module_name == "数量关系" && matches!(category, "排列组合" | "排列组合问题") {
-        candidates.into_iter().filter(|t| t.target_deck.starts_with("数量/排列组合/")).collect()
+        candidates.into_iter().filter(|t| t.target_deck.starts_with("数量关系/排列组合/")).collect()
     } else {
         Vec::new()
     };
@@ -305,15 +319,15 @@ mod tests {
     #[test]
     fn old_ai_decks_remain_selectable_and_can_coexist_with_non_ai_cards() {
         let e = eligibility(Some("判断推理"), Some("直言命题"));
-        assert!(e.allowed_targets.contains(&"判断/直言命题/错题".to_owned()));
-        assert!(e.allowed_targets.contains(&"判断/形式推理/直言命题/错题".to_owned()));
-        assert!(e.ai_targets.contains(&"判断/形式推理/直言命题/错题".to_owned()));
+        assert!(e.allowed_targets.contains(&"判断推理/直言命题/错题".to_owned()));
+        assert!(e.allowed_targets.contains(&"判断推理/形式推理/直言命题/错题".to_owned()));
+        assert!(e.ai_targets.contains(&"判断推理/形式推理/直言命题/错题".to_owned()));
     }
 
     #[test]
     fn rejects_untrusted_target_segments() {
-        for target in ["资料/../错题", "资料/a/b/错题", "资料/.hidden/错题",
-            "数量/hello\\world/错题", "数量/题目/方法", "数量/题目/错题/extra"] {
+        for target in ["资料分析/../错题", "资料分析/a/b/错题", "资料分析/.hidden/错题",
+            "数量关系/hello\\world/错题", "数量关系/题目/方法", "数量关系/题目/错题/extra"] {
             assert!(resolve_target(target).is_none(), "{target}");
         }
     }
