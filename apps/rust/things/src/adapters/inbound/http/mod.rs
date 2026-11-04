@@ -58,7 +58,7 @@ use crate::{
 mod data_analysis;
 mod flashcards;
 mod question_bank;
-pub use question_bank::with_question_bank;
+pub use question_bank::{with_question_bank, with_question_bank_ai};
 mod logic_judgment;
 mod quantitative_relations;
 mod tls;
