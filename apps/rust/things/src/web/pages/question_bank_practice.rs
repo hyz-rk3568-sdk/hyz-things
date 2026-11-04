@@ -781,20 +781,26 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             if has_answer && !running {
                 <div class="space-y-2">
                     <label class="text-sm font-semibold" for="question-ai-follow-up">{"继续追问"}</label>
-                    <textarea id="question-ai-follow-up" class="textarea textarea-bordered min-h-20 w-full"
-                        data-testid="question-bank-ai-input" maxlength="2000"
-                        value={(*follow_up).clone()}
-                        placeholder="例如：为什么不能选 B？有没有更快的解法？"
-                        oninput={Callback::from({
-                            let follow_up=follow_up.clone();
-                            move |event: InputEvent| {
-                                let input: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
-                                follow_up.set(input.value());
-                            }
-                        })}/>
-                    <button type="button" class="btn btn-primary btn-sm"
-                        data-testid="question-bank-ai-send" disabled={*submitting || follow_up.trim().is_empty()}
-                        onclick={on_follow_up}>{"发送追问"}</button>
+                    <div class="relative rounded-2xl border border-base-content/15 bg-base-100 transition focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15"
+                        data-testid="question-bank-ai-compose">
+                        <textarea id="question-ai-follow-up"
+                            class="block min-h-24 w-full resize-none border-0 bg-transparent px-3 pb-12 pt-3 text-sm leading-6 focus:outline-none focus:ring-0"
+                            data-testid="question-bank-ai-input" maxlength="2000"
+                            value={(*follow_up).clone()}
+                            placeholder="例如：为什么不能选 B？有没有更快的解法？"
+                            oninput={Callback::from({
+                                let follow_up=follow_up.clone();
+                                move |event: InputEvent| {
+                                    let input: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
+                                    follow_up.set(input.value());
+                                }
+                            })}/>
+                        <div class="absolute inset-x-2 bottom-2 flex items-center justify-end">
+                            <button type="button" class="btn btn-primary btn-sm rounded-full px-4"
+                                data-testid="question-bank-ai-send" disabled={*submitting || follow_up.trim().is_empty()}
+                                onclick={on_follow_up}>{"发送追问"}</button>
+                        </div>
+                    </div>
                 </div>
             }
         </section>

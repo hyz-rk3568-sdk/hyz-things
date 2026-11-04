@@ -475,6 +475,15 @@ test('AI review defaults to source, stays running across navigation and restores
   await page.getByTestId('question-bank-ai-tab').click();
   await expect(page.getByTestId('question-bank-ai-message')).toContainText('我的独立解法');
   await page.getByTestId('question-bank-ai-input').fill('为什么不选 A？');
+  const compose = page.getByTestId('question-bank-ai-compose');
+  const inputBox = await page.getByTestId('question-bank-ai-input').boundingBox();
+  const sendBox = await page.getByTestId('question-bank-ai-send').boundingBox();
+  const composeBox = await compose.boundingBox();
+  expect(inputBox!.width).toBeGreaterThan(composeBox!.width * 0.9);
+  expect(sendBox!.x).toBeGreaterThan(inputBox!.x + inputBox!.width / 2);
+  expect(sendBox!.y).toBeGreaterThan(inputBox!.y + inputBox!.height / 2);
+  expect(sendBox!.x + sendBox!.width).toBeLessThanOrEqual(composeBox!.x + composeBox!.width);
+  expect(sendBox!.y + sendBox!.height).toBeLessThanOrEqual(composeBox!.y + composeBox!.height);
   await page.getByTestId('question-bank-ai-send').click();
   await expect(page.getByTestId('question-bank-ai-status')).toHaveText('正在生成');
   await expect(page.getByTestId('question-bank-ai-message').last()).toContainText('为什么不选 A？');
