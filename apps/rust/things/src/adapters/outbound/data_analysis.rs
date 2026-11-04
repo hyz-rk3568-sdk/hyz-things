@@ -469,7 +469,7 @@ fn card_from_db(
     // trusted from an arbitrary source_file path.
     let card_path = match (kind, wrong_source) {
         (SourceKind::Wrong, Some((_, true)))
-            if deck.starts_with("资料分析/AI出题/") => {
+            if deck.starts_with("资料分析/") => {
                 format!("flashcards/{deck}/{leaf}")
             }
         (SourceKind::Wrong, Some((_, true))) => {
@@ -1917,7 +1917,8 @@ fn exam_theme_materials() -> Vec<Material> {
 fn knowledge_card_category(deck: &str) -> Option<&str> {
     let parts: Vec<_> = deck.split('/').filter(|s| !s.is_empty()).collect();
     let category = match parts.as_slice() {
-        [skill] | ["资料", skill] | ["flashcards", "资料", skill] => *skill,
+        [skill] | ["资料", skill] | ["flashcards", "资料", skill]
+        | ["资料分析", skill] | ["flashcards", "资料分析", skill] => *skill,
         _ => return None,
     };
     valid_wrong_category(category).then_some(category)
@@ -1943,7 +1944,8 @@ fn wrong_question_source(deck: &str) -> Option<(&str, bool)> {
     let prefix = &parts[..index];
     let (category, skill_precedes_wrong_folder) = match prefix {
         [] | ["资料"] | ["flashcards", "资料"] => (*parts.get(index + 1)?, false),
-        ["资料", category] | ["flashcards", "资料", category] => (*category, true),
+        ["资料", category] | ["flashcards", "资料", category]
+        | ["资料分析", category] | ["flashcards", "资料分析", category] => (*category, true),
         ["资料分析", "AI出题", category]
         | ["flashcards", "资料分析", "AI出题", category] => (*category, true),
         _ => return None,
@@ -2010,6 +2012,7 @@ mod tests {
             wrong_question_category("资料/错题/平均数增量"),
             Some("平均数增量")
         );
+        assert_eq!(wrong_question_category("资料分析/乘除变化/错题"), Some("乘除变化"));
         assert_eq!(wrong_question_category("资料分析/AI出题/乘除变化/错题"), Some("乘除变化"));
         assert_eq!(wrong_question_category("资料分析/默认/乘除变化/错题"), None);
         assert_eq!(wrong_question_category("资料/错题"), None);
