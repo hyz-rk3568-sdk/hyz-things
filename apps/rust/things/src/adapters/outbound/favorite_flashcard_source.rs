@@ -6,7 +6,7 @@ use crate::application::{
     },
     flashcards::FlashcardError,
 };
-use crate::domain::favorite_flashcard::resolve_target;
+use crate::domain::favorite_flashcard::{resolve_target, FlashcardCreationMode};
 use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 use std::{
@@ -128,7 +128,7 @@ impl FilesystemFavoriteFlashcardWriter {
         let identity = self.observer.observe(&self.root)?;
         let root = open_root(&self.root)?;
         self.verify_root(&root, &identity)?;
-        let scan = scan_source(&root, &card.question_id)?;
+        let scan = scan_source(&root, &card.question_id, target.mode)?;
         self.verify_root(&root, &identity)?;
         if let Some(existing) = scan.existing {
             return Ok(existing);
@@ -196,7 +196,7 @@ impl FilesystemFavoriteFlashcardWriter {
         }
         let temp = TemporaryFile::write(&parent, "favorite-tmp", text.as_bytes())?;
         self.verify_root(&root, &identity)?;
-        if scan_source(&root, &card.question_id)?.files != scan.files {
+        if scan_source(&root, &card.question_id, target.mode)?.files != scan.files {
             return Err(unavailable("source changed before commit"));
         }
         if read_source_optional(&parent, name, MAX_MARKDOWN)? != original {
@@ -473,12 +473,18 @@ struct SourceScan {
     files: BTreeMap<String, SourceVersion>,
     existing: Option<FavoriteWriteResult>,
 }
-fn scan_source(root: &File, question_id: &str) -> Result<SourceScan, FlashcardError> {
+fn scan_source(
+    root: &File,
+    question_id: &str,
+    requested_mode: FlashcardCreationMode,
+) -> Result<SourceScan, FlashcardError> {
     let mut result = SourceScan {
         files: BTreeMap::new(),
         existing: None,
     };
-    let mut questions: BTreeSet<String> = BTreeSet::new();
+    // A single original question may have one card in each parallel creation mode.
+    // Within a mode, the UUID remains unique, even if someone moved its Markdown.
+    let mut questions: BTreeMap<String, BTreeSet<Option<bool>>> = BTreeMap::new();
     let mut ids: BTreeSet<String> = BTreeSet::new();
     let mut queue = vec![(root.try_clone().map_err(source_io)?, PathBuf::new())];
     let mut entries_seen = 0;
@@ -516,16 +522,28 @@ fn scan_source(root: &File, question_id: &str) -> Result<SourceScan, FlashcardEr
             let parsed = parse_markdown_text(text, &path)
                 .map_err(|error| unavailable(format!("{}: {}", path, error.message)))?;
             result.files.insert(path.clone(), file.version);
+            let source_mode = path
+                .strip_suffix("/cards.md")
+                .and_then(resolve_target)
+                .map(|target| target.mode == FlashcardCreationMode::AiGeneration);
             for card in parsed.cards {
                 if !card.generated_id && !ids.insert(card.id.to_string()) {
                     return Err(unavailable("conflicting duplicate card UUID"));
                 }
                 if let Some(source_id) = &card.source_question_id {
                     let source_id = source_id.to_ascii_lowercase();
-                    if !questions.insert(source_id.clone()) {
+                    let seen = questions.entry(source_id.clone()).or_default();
+                    // Unknown/moved decks are conservatively treated as a conflict with
+                    // any second copy, so moving an existing card cannot silently clone it.
+                    if (!seen.is_empty() && (source_mode.is_none() || seen.contains(&None)))
+                        || !seen.insert(source_mode)
+                    {
                         return Err(unavailable("conflicting duplicate source question ID"));
                     }
-                    if source_id == question_id {
+                    if source_id == question_id
+                        && (source_mode.is_none()
+                            || source_mode == Some(requested_mode == FlashcardCreationMode::AiGeneration))
+                    {
                         result.existing = Some(FavoriteWriteResult {
                             relative_path: path.clone(),
                             card_id: (!card.generated_id).then_some(card.id),
@@ -757,6 +775,23 @@ mod tests {
         let text = fs::read_to_string(path).unwrap();
         assert!(text.contains("中心理解"));
         assert_eq!(parse_markdown_text(&text, "言语理解与表达/中心理解/错题/cards.md").unwrap().cards.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn same_question_can_be_saved_once_in_each_parallel_mode() {
+        let fixture = Fixture::new();
+        let writer: Arc<dyn FavoriteFlashcardWriterPort> = Arc::new(fixture.writer());
+        let ai = card();
+        let mut normal = ai.clone();
+        normal.target_deck = "数量关系/工程效率/错题".into();
+        let ai_result = writer.append(ai.clone()).await.unwrap();
+        let normal_result = writer.append(normal.clone()).await.unwrap();
+        assert!(ai_result.appended);
+        assert!(normal_result.appended);
+        assert_eq!(ai_result.relative_path, "数量/工程效率/错题/cards.md");
+        assert_eq!(normal_result.relative_path, "数量关系/工程效率/错题/cards.md");
+        assert!(!writer.append(ai).await.unwrap().appended);
+        assert!(!writer.append(normal).await.unwrap().appended);
     }
 
     #[tokio::test]
