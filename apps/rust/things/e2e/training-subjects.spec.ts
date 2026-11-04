@@ -52,7 +52,7 @@ test('training subjects reload their own prompts, cards, history and unfinished 
     await page.getByTestId(`${subject}-statistics`).locator('summary').click();
     await expect(page.getByTestId(`${subject}-card-item`)).toContainText(`${quantitative ? '数量' : '判断'}方法卡`);
     await page.getByTestId(`${subject}-history-open`).click();
-    await expect(page.getByTestId(`${subject}-history`)).toContainText(`${quantitative ? 8 : 3}/10题`);
+    await expect(page.getByTestId(`${subject}-history`)).toContainText(`${quantitative ? 8 : 3}/10 正确`);
     await page.getByRole('button', { name: '返回训练', exact: true }).click();
   }
   await page.getByTestId('quant-resume').click();

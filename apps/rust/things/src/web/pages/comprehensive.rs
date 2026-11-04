@@ -1120,7 +1120,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     <div class="flex shrink-0 items-center gap-2">
                         <StudyTimeInline />
                         <span class="text-sm font-bold">{format!("{} / {} 正确",score.correct,score.total)}</span>
-                        <button type="button" class="btn btn-outline btn-sm" onclick={show_history}>{"查看练习历史"}</button>
+                        <button type="button" class="btn btn-outline btn-sm" onclick={show_history}>{"查看练习记录"}</button>
                         <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-retry-result" disabled={*busy} onclick={redo_from_result}>{"重做原题"}</button>
                         <button type="button" class="btn btn-primary btn-sm" onclick={again}>{"再出一套"}</button>
                     </div>
@@ -1194,7 +1194,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     html!{
                         <article class="rounded-box bg-base-100 p-4" key={entry.id.clone()}>
                             <div class="flex flex-wrap items-center justify-between gap-3">
-                                <div><strong>{format!("{} · {}/{}题",date,entry.correct,entry.total)}</strong>
+                                <div><strong>{format!("{} · {}/{} 正确",date,entry.correct,entry.total)}</strong>
                                 if entry.attempt_no > 1 {
                                     <span class="ml-2 badge badge-outline">{format!("第{}次作答",entry.attempt_no)}</span>
                                 }
@@ -1216,31 +1216,20 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         if active.groups.len() != 4 || active.answers.len() != 20 {
             return html! {<p class="p-5 text-error">{"服务端返回的综合训练题量无效，请重新出题。"}</p>};
         }
-        if active.paused_remaining_ms.is_some() {
-            return html! {
-                <section class="analysis-fullscreen analysis-paused fixed inset-0 z-[70] flex h-dvh w-screen items-center justify-center overflow-hidden bg-base-200" data-testid="analysis-paused">
-                    <div class="absolute right-4 top-2" style="top:calc(var(--app-safe-top) + 0.5rem);right:calc(var(--app-safe-right) + 1rem)"><StudyTimeInline /></div>
-                    <div class="rounded-box bg-base-100 p-8 text-center">
-                        <h2 class="text-2xl font-bold">{"训练已暂停"}</h2>
-                        <p class="mt-3 text-base-content/60">{"已隐藏材料和题目，暂停期间不能答题。刷新页面仍保持暂停。"}</p>
-                        <p class="my-5 font-mono text-3xl">{format!("{:02}:{:02}",active.paused_remaining_ms.unwrap_or(0)/60000,(active.paused_remaining_ms.unwrap_or(0)/1000)%60)}</p>
-                        <div class="flex justify-center gap-3">
-                            <button type="button" class="btn btn-outline" data-testid="analysis-exit" onclick={pause_and_exit.clone()}>{"← 退出训练"}</button>
-                            <button class="btn btn-primary" disabled={*busy} onclick={toggle_pause}>{"继续计时"}</button>
-                        </div>
-                        {if let Some(msg)=(*error).clone(){html!{<p class="mt-4 text-error text-sm">{msg}</p>}}else{Html::default()}}
-                    </div>
-                </section>
-            };
-        }
+        let paused_remaining = active.paused_remaining_ms;
+        let paused = paused_remaining.is_some();
         let index = (*current).min(19);
         let group_index = index / 5;
         let local_index = index % 5;
         let group = &active.groups[group_index];
         let q = &group.questions[local_index];
-        let remaining = active
-            .deadline_at_ms
-            .map(|ms| remaining_with_clock_offset(ms, Date::now(), *clock_offset_ms))
+        let remaining = paused_remaining
+            .map(|ms| (ms.max(0) as u64).div_ceil(1000))
+            .or_else(|| {
+                active
+                    .deadline_at_ms
+                    .map(|ms| remaining_with_clock_offset(ms, Date::now(), *clock_offset_ms))
+            })
             .unwrap_or(1200);
         let clock = format!("{:02}:{:02}", remaining / 60, remaining % 60);
         let answers=(0..4).map(|i|{
@@ -1301,16 +1290,30 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     <div class="flex shrink-0 items-center gap-2">
                         <StudyTimeInline />
                         <button type="button" class={if remaining<=60 {"btn btn-ghost font-mono text-xl text-error"}else{"btn btn-ghost font-mono text-xl"}}
-                            data-testid="analysis-clock" title="点击暂停计时" disabled={*busy || remaining==0}
-                            onclick={toggle_pause}>{clock}</button>
-                        <button type="button" class="btn btn-sm btn-error btn-outline" disabled={*busy}
+                            data-testid="analysis-clock" title={if paused {"点击继续计时"} else {"点击暂停计时"}}
+                            disabled={*busy || (remaining==0 && !paused)} onclick={toggle_pause.clone()}>{clock.clone()}</button>
+                        <button type="button" class="btn btn-sm btn-error btn-outline" disabled={*busy || paused}
                             onclick={{let submit=submit.clone();Callback::from(move |_|submit.emit(()))}}>{"交卷"}</button>
                     </div>
                 </header>
-                <div class="min-h-0 flex-1">
-                    <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",active.id,index)} responsive={true} scroll_linked={true}><TrainingSwipeSurface current={current.clone()} total={active.answers.len()}>
-                        <AnalysisPanes material={group.material.clone()} question={question_content} question_index={index} />
-                    </TrainingSwipeSurface></InkOverlay>
+                <div class="relative min-h-0 flex-1 overflow-hidden">
+                    if paused {
+                        <div class="flex h-full items-center justify-center overflow-y-auto p-4" data-testid="analysis-paused">
+                            <div class="w-full max-w-md rounded-box bg-base-100 p-6 text-center sm:p-8">
+                                <h2 class="text-2xl font-bold">{"训练已暂停"}</h2>
+                                <p class="mt-3 text-base-content/60">{"已隐藏材料和题目，暂停期间不能答题。刷新页面仍保持暂停。"}</p>
+                                <p class="my-5 font-mono text-3xl">{clock}</p>
+                                <div class="flex flex-wrap justify-center gap-3">
+                                    <button type="button" class="btn btn-outline" data-testid="analysis-exit" onclick={pause_and_exit.clone()}>{"← 退出训练"}</button>
+                                    <button class="btn btn-primary" disabled={*busy} onclick={toggle_pause}>{"继续计时"}</button>
+                                </div>
+                            </div>
+                        </div>
+                    } else {
+                        <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",active.id,index)} responsive={true} scroll_linked={true}><TrainingSwipeSurface current={current.clone()} total={active.answers.len()}>
+                            <AnalysisPanes material={group.material.clone()} question={question_content} question_index={index} />
+                        </TrainingSwipeSurface></InkOverlay>
+                    }
                 </div>
                 if let Some(msg)=(*error).clone(){<div class="shrink-0 text-error text-xs" role="alert">{msg}</div>}
                 {analysis_navigation(current.clone(),index,&markers,false)}

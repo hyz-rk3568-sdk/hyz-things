@@ -49,8 +49,8 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
     let question_scroll = use_node_ref();
     let answer_scroll = use_node_ref();
     let scratchpad_open = use_context::<bool>().unwrap_or(false);
-    let question_edges = use_state(ScrollEdges::default);
-    let answer_edges = use_state(ScrollEdges::default);
+    let question_edges = use_state_eq(ScrollEdges::default);
+    let answer_edges = use_state_eq(ScrollEdges::default);
     let refresh_edges = {
         let question_scroll = question_scroll.clone();
         let answer_scroll = answer_scroll.clone();
@@ -58,16 +58,10 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
         let answer_edges = answer_edges.clone();
         Callback::from(move |_: ()| {
             if let Some(element) = question_scroll.cast::<web_sys::HtmlElement>() {
-                let next = scroll_edges(&element);
-                if *question_edges != next {
-                    question_edges.set(next);
-                }
+                question_edges.set(scroll_edges(&element));
             }
             if let Some(element) = answer_scroll.cast::<web_sys::HtmlElement>() {
-                let next = scroll_edges(&element);
-                if *answer_edges != next {
-                    answer_edges.set(next);
-                }
+                answer_edges.set(scroll_edges(&element));
             }
         })
     };
@@ -79,7 +73,7 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
         let question_scroll = question_scroll.clone();
         let answer_scroll = answer_scroll.clone();
         let refresh_edges = refresh_edges.clone();
-        use_effect_with(props.question_index, move |_| {
+        use_effect_with((props.question_index, props.status), move |_| {
             if let Some(element) = question_scroll.cast::<web_sys::HtmlElement>() {
                 element.set_scroll_top(0);
             }
@@ -122,7 +116,6 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
             }
         });
     }
-
     html! {
         <TrainingSplitWorkspace test_id={if props.prefix == "logic" {"logic-scroll-workspace"} else {"quant-scroll-workspace"}} split_at_md={true}
             left={html! {
@@ -214,6 +207,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     let history = use_state(Vec::<LogicHistory>::new);
     let statistics = use_state(Vec::<LogicPerformance>::new);
     let history_open = use_state(|| props.show_history);
+    let history_forced = use_state(|| false);
     let opened_card = use_state(|| None::<String>);
     let prompt = use_state(String::new);
     let run = use_state(|| None::<LogicRun>);
@@ -377,7 +371,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
         });
     }
     let action = {
-        let (run, result, job, error, busy, lock, current, reload, offset, prompt) = (
+        let (run, result, job, error, busy, lock, current, reload, offset, prompt, history_forced) = (
             run.clone(),
             result.clone(),
             job.clone(),
@@ -388,6 +382,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
             reload.clone(),
             offset.clone(),
             prompt.clone(),
+            history_forced.clone(),
         );
         let csrf = props.csrf.clone();
         Callback::from(move |command: LogicAction| {
@@ -397,7 +392,20 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
             *lock.borrow_mut() = true;
             busy.set(true);
             error.set(None);
-            let (run, result, job, error, busy, lock, current, reload, offset, prompt, csrf) = (
+            let (
+                run,
+                result,
+                job,
+                error,
+                busy,
+                lock,
+                current,
+                reload,
+                offset,
+                prompt,
+                csrf,
+                history_forced,
+            ) = (
                 run.clone(),
                 result.clone(),
                 job.clone(),
@@ -409,6 +417,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 offset.clone(),
                 prompt.clone(),
                 csrf.clone(),
+                history_forced.clone(),
             );
             spawn_local(async move {
                 let outcome = async {
@@ -424,6 +433,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                             job.set(Some(task.job_id));
                         }
                         LogicAction::Open(id) => {
+                            history_forced.set(false);
                             let active = enter_drill_run(root, seconds, &id, &csrf).await?;
                             if active.status == "submitted" {
                                 let score = read_drill_result(root, &id).await?;
@@ -485,11 +495,13 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                             }
                         }
                         LogicAction::Result(id) => {
+                            history_forced.set(false);
                             let score = read_drill_result(root, &id).await?;
                             result.set(Some(score));
                             run.set(None);
                         }
                         LogicAction::Retry(id) => {
+                            history_forced.set(false);
                             let retry: LogicRetry = post_json_response(
                                 &format!("{root}/runs/{id}/retry"),
                                 &csrf,
@@ -588,23 +600,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     };
     let alert = html! { if let Some(message) = error.as_ref() { <p class="text-error break-words" role="alert">{message}</p> } };
     if let Some(active) = run.as_ref() {
-        if let Some(remaining_ms) = active.paused_remaining_ms {
-            return html! {
-                <section class="analysis-fullscreen analysis-paused fixed inset-0 z-[70] flex h-dvh w-screen items-center justify-center overflow-hidden bg-base-200 p-4" data-testid={format!("{prefix}-paused")}>
-                    <div class="w-full max-w-md rounded-box bg-base-100 p-6 text-center sm:p-8">
-                        <h2 class="text-2xl font-bold">{"训练已暂停"}</h2>
-                        <p class="mt-3 text-sm text-base-content/60">{"题目已隐藏，暂停期间不能答题。刷新或退出后剩余时间保持不变。"}</p>
-                        <div class="absolute right-4 top-2"><StudyTimeInline /></div>
-                        <p class="my-6 font-mono text-3xl" role="timer" data-testid={format!("{prefix}-clock")}>{format!("{:02}:{:02}", remaining_ms.max(0)/60000, (remaining_ms.max(0)/1000)%60)}</p>
-                        <div class="flex flex-wrap justify-center gap-3">
-                            <button class="btn btn-outline" disabled={*busy} onclick={invoke(LogicAction::PauseAndExit)}>{"← 退出训练"}</button>
-                            <button class="btn btn-primary" data-testid={format!("{prefix}-continue")} disabled={*busy} onclick={invoke(LogicAction::Pause)}>{"继续计时"}</button>
-                        </div>
-                        {alert}
-                    </div>
-                </section>
-            };
-        }
+        let paused = active.paused_remaining_ms.is_some();
         let index = (*current).min(active.questions.len().saturating_sub(1));
         let question = &active.questions[index];
         return html! {
@@ -617,34 +613,48 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                     </div>
                     <div class="flex shrink-0 items-center gap-2">
                         <StudyTimeInline />
-                        <button type="button" role="timer" class={if remaining<=60 {"btn btn-ghost font-mono text-xl text-error"} else {"btn btn-ghost font-mono text-xl"}} data-testid={format!("{prefix}-clock")} title="点击暂停计时" disabled={*busy || remaining==0} onclick={invoke(LogicAction::Pause)}>{format!("{:02}:{:02}",remaining/60,remaining%60)}</button>
-                        <button class="btn btn-sm btn-error btn-outline" data-testid={format!("{prefix}-submit")} disabled={*busy} onclick={invoke(LogicAction::Submit)}>{"交卷"}</button>
+                        <button type="button" role="timer" class={if remaining<=60 {"btn btn-ghost font-mono text-xl text-error"} else {"btn btn-ghost font-mono text-xl"}} data-testid={format!("{prefix}-clock")} title={if paused {"点击继续计时"} else {"点击暂停计时"}} disabled={*busy || (remaining==0 && !paused)} onclick={invoke(LogicAction::Pause)}>{format!("{:02}:{:02}",remaining/60,remaining%60)}</button>
+                        <button class="btn btn-sm btn-error btn-outline" data-testid={format!("{prefix}-submit")} disabled={*busy || paused} onclick={invoke(LogicAction::Submit)}>{"交卷"}</button>
                     </div>
                 </header>
                 {alert}
                 <div class="relative min-h-0 flex-1 overflow-hidden">
-                    <TrainingSwipeSurface current={current.clone()} total={active.questions.len()}><InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("{prefix}-{}-{index}",active.id)}>
-                        <LogicScrollPane prefix={prefix} question_index={index} status="作答中" right_title="选项"
-                            question={html! {
-                                <div class="study-markdown whitespace-pre-wrap break-words text-lg font-semibold leading-8" data-testid={format!("{prefix}-question")}>
-                                    {render_markdown(&question.question, "")}
+                    if paused {
+                        <div class="flex h-full items-center justify-center overflow-y-auto p-4" data-testid={format!("{prefix}-paused")}>
+                            <div class="w-full max-w-md rounded-box bg-base-100 p-6 text-center sm:p-8">
+                                <h2 class="text-2xl font-bold">{"训练已暂停"}</h2>
+                                <p class="mt-3 text-sm text-base-content/60">{"题目已隐藏，暂停期间不能答题。刷新或退出后剩余时间保持不变。"}</p>
+                                <p class="my-6 font-mono text-3xl">{format!("{:02}:{:02}",remaining/60,remaining%60)}</p>
+                                <div class="flex flex-wrap justify-center gap-3">
+                                    <button class="btn btn-outline" disabled={*busy} onclick={invoke(LogicAction::PauseAndExit)}>{"← 退出训练"}</button>
+                                    <button class="btn btn-primary" data-testid={format!("{prefix}-continue")} disabled={*busy} onclick={invoke(LogicAction::Pause)}>{"继续计时"}</button>
                                 </div>
-                            }}
-                            answers={html! {
-                                <div class="grid gap-3">{for question.options.iter().enumerate().map(|(choice, text)| {
-                                    let selected = active.answers[index] == Some(choice);
-                                    html! {
-                                        <button class={classes!("btn", "h-auto", "min-h-14", "justify-start", "whitespace-normal", "py-3", "text-left", if selected { "btn-primary" } else { "btn-outline" })}
-                                            data-testid={format!("{prefix}-choice")} aria-pressed={selected.to_string()} disabled={*busy || remaining == 0}
-                                            onclick={invoke(LogicAction::Answer(index, choice))}>
-                                            <span class="mr-2 shrink-0">{format!("{} ·", (b'A' + choice as u8) as char)}</span>
-                                            <span class="study-markdown min-w-0">{render_markdown(text, "")}</span>
-                                        </button>
-                                    }
-                                })}</div>
-                            }}
-                        />
-                    </InkOverlay></TrainingSwipeSurface>
+                            </div>
+                        </div>
+                    } else {
+                        <TrainingSwipeSurface current={current.clone()} total={active.questions.len()}><InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("{prefix}-{}-{index}",active.id)}>
+                            <LogicScrollPane prefix={prefix} question_index={index} status="作答中" right_title="选项"
+                                question={html! {
+                                    <div class="study-markdown whitespace-pre-wrap break-words text-lg font-semibold leading-8" data-testid={format!("{prefix}-question")}>
+                                        {render_markdown(&question.question, "")}
+                                    </div>
+                                }}
+                                answers={html! {
+                                    <div class="grid gap-3">{for question.options.iter().enumerate().map(|(choice, text)| {
+                                        let selected = active.answers[index] == Some(choice);
+                                        html! {
+                                            <button class={classes!("btn", "h-auto", "min-h-14", "justify-start", "whitespace-normal", "py-3", "text-left", if selected { "btn-primary" } else { "btn-outline" })}
+                                                data-testid={format!("{prefix}-choice")} aria-pressed={selected.to_string()} disabled={*busy || remaining == 0}
+                                                onclick={invoke(LogicAction::Answer(index, choice))}>
+                                                <span class="mr-2 shrink-0">{format!("{} ·", (b'A' + choice as u8) as char)}</span>
+                                                <span class="study-markdown min-w-0">{render_markdown(text, "")}</span>
+                                            </button>
+                                        }
+                                    })}</div>
+                                }}
+                            />
+                        </InkOverlay></TrainingSwipeSurface>
+                    }
                 </div>
                 {question_navigation(
                     current.clone(),
@@ -658,7 +668,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
             </section>
         };
     }
-    if let Some(score) = result.as_ref() {
+    if let Some(score) = result.as_ref().filter(|_| !*history_forced) {
         let index = (*current).min(score.questions.len().saturating_sub(1));
         let q = &score.questions[index];
         let grade = if q.chosen == Some(q.correct_index) {
@@ -668,12 +678,17 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
         } else {
             "未答"
         };
+        let show_records = {
+            let history_forced = history_forced.clone();
+            Callback::from(move |_| history_forced.set(true))
+        };
         return html! {
             <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" data-testid={format!("{prefix}-result")}>
                 <header class="analysis-header flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2">
                     <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={invoke(LogicAction::Back)}>{"← 返回训练"}</button>
                     <StudyTimeInline />
-                    <strong class="text-sm">{format!("答卷结果 · {} / {}",score.correct,score.total)}</strong>
+                    <strong class="text-sm">{format!("{} / {} 正确",score.correct,score.total)}</strong>
+                    <button class="btn btn-outline btn-sm" data-testid={format!("{prefix}-records")} onclick={show_records}>{"查看练习记录"}</button>
                     <button class="btn btn-primary btn-sm" data-testid={format!("{prefix}-retry")} disabled={*busy} onclick={invoke(LogicAction::Retry(score.id.clone()))}>{"重做原题"}</button>
                 </header>
                 {alert}
@@ -721,11 +736,11 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
             </section>
         };
     }
-    if *history_open {
+    if *history_open || *history_forced {
         return html! {
             <TrainingSetupLayout test_id={format!("{prefix}-history")} heading={Some(html!{                <div class="flex items-center justify-between">
                     <h2 class="text-xl font-bold">{format!("{subject}练习历史")}</h2>
-                    <button class="btn btn-outline btn-sm" onclick={{let history_open=history_open.clone(); Callback::from(move |_|history_open.set(false))}}>{"返回训练"}</button>
+                    <button class="btn btn-outline btn-sm" onclick={{let history_open=history_open.clone();let history_forced=history_forced.clone(); Callback::from(move |_|{history_open.set(false);history_forced.set(false);})}}>{"返回训练"}</button>
                 </div>})}>
                 <div class="space-y-4">
                 if history.is_empty() { <p class="text-sm text-base-content/60">{format!("尚无已交卷的{subject}训练。")}</p> }
@@ -735,7 +750,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         <article class="rounded-box bg-base-100 p-4" key={h.id.clone()}>
                             <div class="flex flex-wrap items-center justify-between gap-3">
                                 <div>
-                                    <strong>{format!("{} · {}/{}题",finished,h.correct,h.total)}</strong>
+                                    <strong>{format!("{} · {}/{} 正确",finished,h.correct,h.total)}</strong>
                                     <p class="mt-1 text-xs text-base-content/60">{format!("作答 {} 题 · 可查看解析或重做",h.answered)}</p>
                                 </div>
                                 <div class="flex flex-wrap gap-2">

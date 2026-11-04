@@ -63,7 +63,13 @@ test('paper practice hides numbering and scroll tools until they are needed',asy
     {headers:{Cookie:(await page.context().cookies()).map(c=>`${c.name}=${c.value}`).join('; ')}})).status()).toBe(409);
   await page.getByTestId('question-bank-practice-choice').first().click();
   await expect(page.getByTestId('question-bank-practice-choice').first()).toHaveAttribute('aria-pressed','true');
-  await page.getByTestId('question-bank-practice-pause').click();
+  await expect(page.getByTestId('question-bank-practice-pause')).toHaveCount(0);
+  await expect(page.getByTestId('question-bank-practice-timer')).toBeEnabled();
+  await page.getByTestId('question-bank-practice-timer').click();
+  await expect(page.getByTestId('question-bank-practice-paused')).toBeVisible();
+  await page.getByTestId('question-bank-practice-timer').click();
+  await expect(page.getByTestId('question-bank-practice-paused')).toHaveCount(0);
+  await page.getByTestId('question-bank-practice-timer').click();
   await expect(page.getByTestId('question-bank-practice-paused')).toBeVisible();
   await page.reload();
   await page.getByTestId('training-mode-question-bank-paper').click();
@@ -102,9 +108,9 @@ test('paper practice hides numbering and scroll tools until they are needed',asy
   await expect(page.getByTestId('question-bank-practice-workspace')).not.toContainText('未核验');
   await expect(page.getByTestId('question-bank-practice-choice').first()).toHaveClass(/border-success/);
   await openSheet(page);
-  await expect(page.getByTestId('question-bank-practice-score')).toContainText('正确 1');
-  await expect(page.getByTestId('question-bank-practice-score')).toContainText('错误 1');
-  await expect(page.getByTestId('question-bank-practice-score')).toContainText('未答 1');
+  await expect(page.getByTestId('question-bank-practice-score')).toContainText('1 / 3 正确');
+  await expect(page.getByTestId('question-bank-practice-records')).toBeVisible();
+  await expect(page.getByTestId('question-bank-practice-repeat')).toBeVisible();
   await expect(page.getByTestId('question-bank-practice-ungradable')).toHaveCount(0);
   await expect(page.getByTestId('question-bank-practice-score')).not.toContainText('待核验');
   await expect(page.getByTestId('question-bank-practice-workspace')).not.toContainText('ungradable');

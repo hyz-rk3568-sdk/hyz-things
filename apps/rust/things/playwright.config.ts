@@ -13,6 +13,7 @@ const controlPort = parsePort(
   webPort + 1,
   'HYZ_THINGS_E2E_CONTROL_PORT',
 );
+const reuseExistingServer = process.env.HYZ_THINGS_E2E_REUSE_SERVER === '1';
 
 process.env.HYZ_THINGS_E2E_WEB_PORT = String(webPort);
 process.env.HYZ_THINGS_E2E_CONTROL_PORT = String(controlPort);
@@ -73,7 +74,13 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
-  webServer: {
+  webServer: reuseExistingServer ? {
+    command: 'bash tools/start-e2e-server.sh',
+    // URL detection lets Playwright attach to a server started for a shared test batch.
+    url: `http://127.0.0.1:${webPort}/`,
+    reuseExistingServer: true,
+    timeout: 180_000,
+  } : {
     command: 'bash tools/start-e2e-server.sh',
     // The harness flushes this record after both listeners and all fixtures are ready.
     // Stdout readiness avoids an unbounded pre-launch HTTP probe on WSL loopback.

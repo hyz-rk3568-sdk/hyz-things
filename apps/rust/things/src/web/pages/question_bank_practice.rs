@@ -812,6 +812,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let papers = use_state(Vec::<PaperSummary>::new);
     let history = use_state(Vec::<PracticeSession>::new);
     let history_open = use_state(|| props.show_history);
+    let history_forced = use_state(|| false);
     let history_filter = use_state(|| None::<PracticeMode>);
     let history_unfinished = use_state(|| false);
     let selected_paper = use_state(String::new);
@@ -1053,6 +1054,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let elapsed = elapsed.clone();
         let operation_lock = operation_lock.clone();
         let pending_answer = pending_answer.clone();
+        let history_forced = history_forced.clone();
         let invalidate_favorites = favorite_collection.invalidate.clone();
         let mounted = mounted.clone();
         Callback::from(move |action: Action| {
@@ -1098,6 +1100,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             let elapsed = elapsed.clone();
             let operation_lock = operation_lock.clone();
             let pending_answer = pending_answer.clone();
+            let history_forced = history_forced.clone();
             let invalidate_favorites = invalidate_favorites.clone();
             let mounted = mounted.clone();
             spawn_local(async move {
@@ -1183,6 +1186,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             if !*mounted.borrow() {
                                 return Ok(());
                             }
+                            history_forced.set(false);
                             elapsed.set(loaded.session.elapsed_seconds);
                             workspace.set(Some(loaded));
                             review.set(None);
@@ -1202,6 +1206,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             if !*mounted.borrow() {
                                 return Ok(());
                             }
+                            history_forced.set(false);
                             elapsed.set(loaded.session.elapsed_seconds);
                             workspace.set(Some(loaded));
                             review.set(None);
@@ -1219,6 +1224,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             if !*mounted.borrow() {
                                 return Ok(());
                             }
+                            history_forced.set(false);
                             workspace.set(Some(plain));
                             review.set(Some(loaded));
                             index.set(0);
@@ -1692,78 +1698,87 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 Some(scope) => format!("{subtitle_base} · {scope}"),
                 None => subtitle_base.to_string(),
             };
-            return html! {
-                <section class={WORKSPACE} data-testid="question-bank-practice-workspace">
-                    <header class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2">
-                        <div class="flex min-w-0 items-center gap-3">
-                            <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Exit)})}>
-                                {if completed {"← 返回训练"} else {"← 暂停并退出"}}
-                            </button>
-                            <div class="min-w-0">
-                                <strong class="block truncate text-sm">{item.paper_title.clone()}</strong>
-                                <span class="block truncate text-[11px] text-base-content/50" data-testid="question-bank-practice-scope">{subtitle.clone()}</span>
-                            </div>
-                        </div>
-                        <div class="flex shrink-0 items-center gap-2">
-                            <span class="hidden text-xs text-base-content/55 sm:inline">{"学习"}</span>
-                            <StudyTimeInline />
-                            <span class="font-mono text-xl font-semibold tabular-nums" role="timer" data-testid="question-bank-practice-timer">{format!("{:02}:{:02}:{:02}",display_seconds/3600,display_seconds/60%60,display_seconds%60)}</span>
-                            if !completed {
-                                <button class="btn btn-sm btn-outline" data-testid="question-bank-practice-pause"
-                                    disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Pause)})}>
-                                    {if paused {"继续"} else {"暂停"}}
+            if !*history_forced {
+                return html! {
+                    <section class={WORKSPACE} data-testid="question-bank-practice-workspace">
+                        <header class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2">
+                            <div class="flex min-w-0 items-center gap-3">
+                                <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Exit)})}>
+                                    {if completed {"← 返回训练"} else {"← 暂停并退出"}}
                                 </button>
-                                <button class="btn btn-sm btn-outline btn-error" data-testid="question-bank-practice-submit"
-                                    disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Submit)})}>{"交卷"}</button>
-                            } else if let Some(score) = &current.session.score {
-                                <span class="flex shrink-0 items-center gap-3 font-semibold" data-testid="question-bank-practice-score">
-                                    <span class="text-success">{format!("正确 {}",score.correct)}</span>
-                                    <span class="text-error">{format!("错误 {}",score.wrong)}</span>
-                                    if score.unanswered > 0 {
-                                        <span class="text-base-content/60">{format!("未答 {}",score.unanswered)}</span>
-                                    }
-                                </span>
-                            }
-                        </div>
-                    </header>
-                    {alert}
-                    if *submit_confirm && !completed {
-                        <div class="mb-2 flex flex-wrap items-center justify-center gap-2 rounded-box bg-warning/20 p-2" role="alert" data-testid="question-bank-submit-confirm">
-                            <span>{"还有未答题，确定交卷吗？"}</span>
-                            <button class="btn btn-sm btn-error" onclick={Callback::from({
-                                let invoke=invoke.clone();move |_|invoke.emit(Action::Submit)
-                            })}>{"确认交卷"}</button>
-                            <button class="btn btn-sm" onclick={Callback::from({
-                                let submit_confirm=submit_confirm.clone();move |_|submit_confirm.set(false)
-                            })}>{"继续答题"}</button>
-                        </div>
-                    }
-                    <div class="relative min-h-0 flex-1 overflow-hidden">
-                        if paused {
-                            <div class="flex h-full items-center justify-center rounded-box bg-base-100" data-testid="question-bank-practice-paused">
-                                <div class="text-center space-y-4">
-                                    <h2 class="text-xl font-bold">{"训练已暂停"}</h2>
-                                    <p>{"暂停期间不可查看或修改题目。"}</p>
-                                    <button class="btn btn-primary" onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Pause)})}>{"继续练习"}</button>
+                                <div class="min-w-0">
+                                    <strong class="block truncate text-sm">{item.paper_title.clone()}</strong>
+                                    <span class="block truncate text-[11px] text-base-content/50" data-testid="question-bank-practice-scope">{subtitle.clone()}</span>
                                 </div>
                             </div>
-                        } else {
-                            <InkOverlay question_index={item_index} responsive={true} scroll_linked={true}
-                                    persist_key={format!("question-bank-{}-{}",current.session.id,item.item.question_id)}>
-                                <TrainingSwipeSurface current={index.clone()} total={current.questions.len()}
-                                    navigation_allowed={Some(navigation_allowed)}>
-                                    {main}
-                                </TrainingSwipeSurface>
-                            </InkOverlay>
+                            <div class="flex shrink-0 items-center gap-2">
+                                <span class="hidden text-xs text-base-content/55 sm:inline">{"学习"}</span>
+                                <StudyTimeInline />
+                                <button type="button" class="btn btn-ghost px-2 font-mono text-xl font-semibold tabular-nums"
+                                    role="timer" data-testid="question-bank-practice-timer"
+                                    title={if completed {"训练已结束"} else if paused {"点击继续计时"} else {"点击暂停计时"}}
+                                    disabled={*busy || completed}
+                                    onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Pause)})}>
+                                    {format!("{:02}:{:02}:{:02}",display_seconds/3600,display_seconds/60%60,display_seconds%60)}
+                                </button>
+                                if !completed {
+                                    <button class="btn btn-sm btn-outline btn-error" data-testid="question-bank-practice-submit"
+                                        disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Submit)})}>{"交卷"}</button>
+                                } else if let Some(score) = &current.session.score {
+                                    <span class="flex shrink-0 items-center gap-2" data-testid="question-bank-practice-score">
+                                        <span class="font-semibold">{format!("{} / {} 正确",score.correct,score.total)}</span>
+                                        <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-practice-records"
+                                            onclick={Callback::from({
+                                                let history_forced=history_forced.clone(); move |_|history_forced.set(true)
+                                            })}>{"查看练习记录"}</button>
+                                        <button type="button" class="btn btn-primary btn-sm" data-testid="question-bank-practice-repeat"
+                                            disabled={*busy} onclick={Callback::from({
+                                                let invoke=invoke.clone(); let id=current.session.id.clone();
+                                                move |_|invoke.emit(Action::Repeat(id.clone()))
+                                            })}>{"重做原题"}</button>
+                                    </span>
+                                }
+                            </div>
+                        </header>
+                        {alert}
+                        if *submit_confirm && !completed {
+                            <div class="mb-2 flex flex-wrap items-center justify-center gap-2 rounded-box bg-warning/20 p-2" role="alert" data-testid="question-bank-submit-confirm">
+                                <span>{"还有未答题，确定交卷吗？"}</span>
+                                <button class="btn btn-sm btn-error" onclick={Callback::from({
+                                    let invoke=invoke.clone();move |_|invoke.emit(Action::Submit)
+                                })}>{"确认交卷"}</button>
+                                <button class="btn btn-sm" onclick={Callback::from({
+                                    let submit_confirm=submit_confirm.clone();move |_|submit_confirm.set(false)
+                                })}>{"继续答题"}</button>
+                            </div>
                         }
-                    </div>
-                    {nav}
-                </section>
-            };
+                        <div class="relative min-h-0 flex-1 overflow-hidden">
+                            if paused {
+                                <div class="flex h-full items-center justify-center rounded-box bg-base-100" data-testid="question-bank-practice-paused">
+                                    <div class="text-center space-y-4">
+                                        <h2 class="text-xl font-bold">{"训练已暂停"}</h2>
+                                        <p>{"暂停期间不可查看或修改题目。"}</p>
+                                        <button class="btn btn-primary" onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Pause)})}>{"继续练习"}</button>
+                                    </div>
+                                </div>
+                            } else {
+                                <InkOverlay question_index={item_index} responsive={true} scroll_linked={true}
+                                        persist_key={format!("question-bank-{}-{}",current.session.id,item.item.question_id)}>
+                                    <TrainingSwipeSurface current={index.clone()} total={current.questions.len()}
+                                        navigation_allowed={Some(navigation_allowed)}>
+                                        {main}
+                                    </TrainingSwipeSurface>
+                                </InkOverlay>
+                            }
+                        </div>
+                        {nav}
+                    </section>
+                };
+            }
         }
     }
 
-    if *history_open {
+    if *history_open || *history_forced {
         let filter = history_filter.as_ref();
         let only_unfinished = *history_unfinished;
         let visible = history
@@ -1787,7 +1802,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             <p class="mt-1 text-sm text-base-content/60">{"套卷、模块、错题与收藏共用同一份历史记录"}</p>
                         </div>
                         <button class="btn btn-outline btn-sm" onclick={Callback::from({
-                            let history_open=history_open.clone();move |_|history_open.set(false)
+                            let history_open=history_open.clone();let history_forced=history_forced.clone();
+                            move |_|{history_open.set(false);history_forced.set(false);}
                         })}>{back_label}</button>
                     </div>
                     {alert}
@@ -1847,7 +1863,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             if run.paused {("已暂停".to_string(),"badge-warning")} else {("进行中".to_string(),"badge-primary")}
                         } else {
                             run.score.as_ref()
-                                .map(|score|(format!("{}/{}",score.correct,score.total),"badge-success"))
+                                .map(|score|(format!("{}/{} 正确",score.correct,score.total),"badge-success"))
                                 .unwrap_or_else(||("已完成".to_string(),"badge-ghost"))
                         };
                         let detail=if active {
@@ -1866,7 +1882,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         } else {
                             mode_label.to_string()
                         };
-                        let can_repeat=matches!(run.mode,PracticeMode::Paper|PracticeMode::PaperModule|PracticeMode::Module);
+                        let can_repeat=!active;
                         html! {
                             <article class="rounded-box border border-base-content/10 bg-base-100 p-4" data-testid="question-bank-practice-history-item">
                                 <div class="flex flex-wrap items-center justify-between gap-3">
@@ -1898,7 +1914,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                                 <button type="button" class="btn btn-ghost btn-sm"
                                                     disabled={*busy}
                                                     onclick={Callback::from(move |_|invoke.emit(Action::Repeat(id.clone())))}>
-                                                    {"再做一遍"}
+                                                    {"重做原题"}
                                                 </button>
                                             }
                                         }
