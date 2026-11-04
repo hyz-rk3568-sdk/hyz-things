@@ -147,6 +147,7 @@ test("study opens an immersive four-choice calculation drill with all three type
   await expect(page.getByTestId("calculation-question")).not.toContainText("有效数字");
   await page.getByTestId("calculation-answer").first().click();
   await expect(page.getByTestId("calculation-feedback")).toBeVisible();
+  await expect(page.getByTestId("calculation-feedback").locator("p").last()).toHaveCSS("font-size", "16px");
   await expect(page.getByTestId("calculation-answer").first()).toBeDisabled();
   await page.getByTestId("calculation-next").click();
   await expect(page.getByTestId("calculation-question")).toBeVisible();

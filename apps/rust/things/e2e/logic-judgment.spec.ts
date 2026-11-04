@@ -54,6 +54,7 @@ test("logic judgment persists answers, recovers deadline and reviews exact-paper
   await page.getByTestId('logic-submit').click();
   await expect(page.getByTestId('logic-result')).toContainText('1 / 10');
   await expect(page.getByTestId('logic-result')).toContainText('仅交卷后可见的解析');
+  await expect(page.getByTestId('logic-review-content').locator('.study-markdown').filter({hasText:'仅交卷后可见的解析'})).toHaveCSS('font-size','16px');
   await expect(page.getByTestId('logic-records')).toBeVisible();
   await page.getByTestId('logic-records').click();
   await expect(page.getByTestId('logic-history')).toBeVisible();
@@ -299,7 +300,7 @@ test("mobile single-question ink is transparent and survives question navigation
     return false;
   });
   await toggle.click();
-  await expect(save).toHaveText('草稿已保存到本机');
+  await expect(save).toHaveCount(0);
   const blank=await snapshot();
   const box=await canvas.boundingBox();
   expect(box).not.toBeNull();
@@ -308,11 +309,11 @@ test("mobile single-question ink is transparent and survives question navigation
   }
   await expect.poll(snapshot).not.toEqual(blank);
   const marked=await snapshot();
-  await expect(save).toHaveText('草稿已保存到本机');
+  await expect(save).toHaveCount(0);
   await expect(page.getByTestId('logic-question')).toBeVisible();
   await page.getByRole('button',{name:'下一题',exact:true}).click();
   await toggle.click();
-  await expect(save).toHaveText('草稿已保存到本机');
+  await expect(save).toHaveCount(0);
   expect(await snapshot()).toEqual(blank);
   await page.getByRole('button',{name:'上一题',exact:true}).click();
   await toggle.click();
@@ -324,14 +325,14 @@ test("mobile single-question ink is transparent and survives question navigation
   await expect.poll(snapshot).toEqual(marked);
   await page.getByTestId('logic-submit').click();
   await expect(page.getByTestId('logic-result')).toBeVisible();
-  await expect(save).toHaveText('草稿已保存到本机');
+  await expect(save).toHaveCount(0);
   await toggle.click();
   await expect.poll(hasInk).toBe(true);
   // The review and live-paper canvas can have different pixel heights.
   // Verify actual drawn alpha instead of comparing size-dependent PNG data.
   await page.getByRole('button',{name:'下一题',exact:true}).click();
   await toggle.click();
-  await expect(save).toHaveText('草稿已保存到本机');
+  await expect(save).toHaveCount(0);
   await expect.poll(hasInk).toBe(false);
   await page.getByRole('button',{name:'上一题',exact:true}).click();
   await toggle.click();
@@ -425,7 +426,7 @@ test("quantitative scratch ink follows the quantitative question and answer pane
   const canvas=page.getByTestId('calculation-scratchpad-canvas');
   await expectInlineInkControls(page.getByTestId('quant-answer-pane').locator(':scope > div').first());
   await toggle.click();
-  await expect(page.getByTestId('calculation-scratchpad-save-status')).toHaveText('草稿已保存到本机');
+  await expect(page.getByTestId('calculation-scratchpad-save-status')).toHaveCount(0);
   const hasInk=()=>canvas.evaluate(element=>{
     const bitmap=element as HTMLCanvasElement;
     const data=bitmap.getContext('2d')!.getImageData(0,0,bitmap.width,bitmap.height).data;
@@ -443,17 +444,17 @@ test("quantitative scratch ink follows the quantitative question and answer pane
     await expect.poll(hasInk).toBe(true);
   };
   await drawInPane('quant-question-scroll',17);
-  await expect(page.getByTestId('calculation-scratchpad-save-status')).toHaveText('草稿已保存到本机');
+  await expect(page.getByTestId('calculation-scratchpad-save-status')).toHaveCount(0);
   const clear=page.getByTestId('calculation-scratchpad-clear');
   await expect(clear).toBeEnabled();
   await clear.click();
   await expect.poll(hasInk).toBe(false);
   await drawInPane('quant-answer-scroll',18);
-  await expect(page.getByTestId('calculation-scratchpad-save-status')).toHaveText('草稿已保存到本机');
+  await expect(page.getByTestId('calculation-scratchpad-save-status')).toHaveCount(0);
   await page.getByTestId('quant-submit').click();
   await expect(page.getByTestId('quant-result')).toBeVisible();
   await expectInlineInkControls(page.getByTestId('quant-answer-pane').locator(':scope > div').first());
-  await expect(page.getByTestId('calculation-scratchpad-save-status')).toHaveText('草稿已保存到本机');
+  await expect(page.getByTestId('calculation-scratchpad-save-status')).toHaveCount(0);
   await toggle.click();
   await expect.poll(hasInk).toBe(true);
 });

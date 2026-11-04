@@ -170,7 +170,7 @@ test("IndexedDB handwriting survives navigation and reload when localStorage is 
   await drawWorkspaceStroke(page);
   const first=await inkSnapshot(page);
   expect(first).not.toEqual(blank);
-  await expect(saveStatus).toHaveText("草稿已保存到本机");
+  await expect(saveStatus).toHaveCount(0);
   await page.getByRole("button",{name:"下一题",exact:true}).click();
   await expect(canvas).toBeHidden();
   await toggle.click();
@@ -178,7 +178,7 @@ test("IndexedDB handwriting survives navigation and reload when localStorage is 
   await drawWorkspaceStroke(page,180,260);
   const second=await inkSnapshot(page);
   expect(second).not.toEqual(first);
-  await expect(saveStatus).toHaveText("草稿已保存到本机");
+  await expect(saveStatus).toHaveCount(0);
   await page.getByRole("button",{name:"上一题",exact:true}).click();
   await toggle.click();
   await expect.poll(()=>inkSnapshot(page)).toEqual(first);
@@ -212,7 +212,7 @@ test("IndexedDB write failure retains question ink and retries without losing st
   await expect(status).toHaveText("保存失败，仅当前页面暂存");
   await page.evaluate(()=>{(window as any).failInkWrites=false;});
   await page.getByRole("button",{name:"重试保存",exact:true}).click();
-  await expect(status).toHaveText("草稿已保存到本机");
+  await expect(status).toHaveCount(0);
   await reopenWorkspace(page);
   await expect.poll(()=>inkSnapshot(page)).toEqual(marked);
 });
@@ -267,7 +267,7 @@ test("IndexedDB read failures block blank overwrites and allow retry", async ({p
   await page.getByRole("button",{name:"重试保存",exact:true}).click();
   await toggle.click();
   await drawWorkspaceStroke(page);
-  await expect(page.getByTestId("calculation-scratchpad-save-status")).toHaveText("草稿已保存到本机");
+  await expect(page.getByTestId("calculation-scratchpad-save-status")).toHaveCount(0);
 });
 
 test("returning to a still-saving question waits for commit without reporting failure", async ({page})=>{
@@ -292,7 +292,7 @@ test("returning to a still-saving question waits for commit without reporting fa
   await page.getByRole("button",{name:"上一题",exact:true}).click();
   await expect(page.getByTestId("calculation-scratchpad-save-status")).toHaveText("正在读取草稿…");
   await page.evaluate(()=>{for(const finish of (window as any).finishInkWrites) finish();});
-  await expect(page.getByTestId("calculation-scratchpad-save-status")).toHaveText("草稿已保存到本机");
+  await expect(page.getByTestId("calculation-scratchpad-save-status")).toHaveCount(0);
   await page.getByTestId("calculation-scratchpad-toggle").click();
   await expect(page.getByTestId("calculation-scratchpad-undo")).toBeEnabled();
 });
@@ -929,6 +929,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(page.getByTestId("analysis-shared-workspace")).toBeVisible();
   await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-state","correct");
   await expect(page.getByTestId("analysis-explanation")).toContainText("基期量");
+  await expect(page.getByTestId("analysis-explanation")).toHaveCSS("font-size", "16px");
   await page.getByRole("button",{name:"下一题"}).click();
   await expect(page.getByTestId("analysis-review-choice").nth(1)).toHaveAttribute("data-state","wrong");
   await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-state","correct");
@@ -1222,7 +1223,7 @@ test("foreground restore repaints stored ink after WebKit canvas buffer loss",as
   const canvas=page.getByTestId("calculation-scratchpad-canvas");
   await drawWorkspaceStroke(page);
   const original=await inkSnapshot(page);
-  await expect(page.getByTestId("calculation-scratchpad-save-status")).toHaveText("草稿已保存到本机");
+  await expect(page.getByTestId("calculation-scratchpad-save-status")).toHaveCount(0);
 
   await page.evaluate(()=>{
     Object.defineProperty(document,"hidden",{configurable:true,value:true});

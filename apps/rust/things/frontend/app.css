@@ -164,11 +164,11 @@ nav.tabs > button.tab:not(.tab-active) {
   }
 
   .study-markdown :where(pre) {
-    @apply overflow-x-auto rounded-box bg-base-300 p-3 text-sm;
+    @apply overflow-x-auto rounded-box bg-base-300 p-3 text-base;
   }
 
   .study-markdown :where(code) {
-    @apply rounded bg-base-300 px-1 py-0.5 font-mono text-[0.9em];
+    @apply rounded bg-base-300 px-1 py-0.5 font-mono text-[1em];
   }
 
   .study-markdown :where(pre code) {

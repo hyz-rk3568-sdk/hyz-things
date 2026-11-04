@@ -33,6 +33,8 @@ test('paper practice hides numbering and scroll tools until they are needed',asy
   await expect(page.getByTestId('question-bank-practice-heading')).toContainText('第 1/3 题');
   await expect(page.getByTestId('question-bank-practice-heading')).not.toContainText('原卷第');
   await expect(page.getByTestId('question-bank-practice-stem')).toContainText('材料中的正确选项');
+  await expect(page.getByTestId('question-bank-practice-stem')).toHaveCSS('font-size','16px');
+  await expect(page.getByTestId('question-bank-practice-choice').first()).toHaveCSS('font-size','16px');
   await expect(page.getByTestId('question-bank-practice-stem')).toHaveCSS('font-weight','400');
   await expect(page.getByTestId('question-bank-practice-material-pane')).toContainText('两道题共用材料');
   await expect(page.getByRole('button',{name:'题目向下滚动'})).toHaveCount(0);
@@ -90,6 +92,8 @@ test('paper practice hides numbering and scroll tools until they are needed',asy
   await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 27 题');
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('原始解析');
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('第二题解析');
+  await expect(page.getByTestId('question-bank-practice-question-pane').locator('.study-markdown').filter({hasText:'第二题解析'})).toHaveCSS('font-size','16px');
+  await expect(page.getByTestId('question-bank-practice-review-answer')).toHaveCSS('font-size','16px');
   await openSheet(page);
   await page.getByTestId('question-bank-practice-number').first().click();
   await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 26 题');
@@ -169,6 +173,8 @@ test('saved collections are classified by module and category before practicing'
   await expect(page.getByTestId('collection-review-scope')).toContainText('错题复盘 · 第 1/1 题');
   await expect(page.getByTestId('collection-review-favorite')).toHaveAttribute('aria-label','取消收藏');
   await expect(page.getByTestId('collection-review-material-pane')).toContainText('两道题共用材料');
+  await expect(page.getByTestId('collection-review-choice').first()).toHaveCSS('font-size','16px');
+  await expect(page.getByTestId('collection-review-explanation')).toHaveCSS('font-size','16px');
   await expect(page.getByTestId('collection-review-answer')).toContainText('B');
   await expect(page.getByTestId('collection-review-create-flashcard')).toHaveCount(0);
   await page.getByTestId('collection-review-back').click();
@@ -480,6 +486,7 @@ test('AI review defaults to source, stays running across navigation and restores
   await page.getByTestId('question-bank-original-tab').click();
   await page.getByTestId('question-bank-ai-tab').click();
   await expect(page.getByTestId('question-bank-ai-message')).toContainText('我的独立解法');
+  await expect(page.getByTestId('question-bank-ai-message').locator('.study-markdown')).toHaveCSS('font-size','16px');
   await page.getByTestId('question-bank-ai-input').fill('为什么不选 A？');
   const compose = page.getByTestId('question-bank-ai-compose');
   const inputBox = await page.getByTestId('question-bank-ai-input').boundingBox();

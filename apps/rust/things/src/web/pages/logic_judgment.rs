@@ -712,9 +712,9 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         </div>}
                     })}</div>
                     <div class="mt-5 border-t border-base-content/10 pt-4">
-                        <p class="text-sm font-semibold">{format!("你的答案：{}",q.chosen.map(|i|((b'A'+i as u8) as char).to_string()).unwrap_or("未答".into()))}</p>
+                        <p class="text-base font-semibold">{format!("你的答案：{}",q.chosen.map(|i|((b'A'+i as u8) as char).to_string()).unwrap_or("未答".into()))}</p>
                         <h3 class="mt-3 font-semibold">{"解题解析"}</h3>
-                        <div class="study-markdown mt-2 whitespace-pre-wrap text-sm leading-7">{render_markdown(&q.explanation, "")}</div>
+                        <div class="study-markdown mt-2 whitespace-pre-wrap text-base leading-7">{render_markdown(&q.explanation, "")}</div>
                         <RelatedMethodCard key={format!("{prefix}-{}-{index}", score.id)}
                             card={Some(RelatedCardSnapshot { front: q.front.clone(), back: q.back.clone() })}
                             source_file={q.card_path.clone()} test_id={format!("{prefix}-related-card")} />
