@@ -18,3 +18,4 @@ pub mod training_time;
 
 pub mod question_bank_source;
 pub mod question_bank_sqlite;
+pub mod question_bank_ai;
