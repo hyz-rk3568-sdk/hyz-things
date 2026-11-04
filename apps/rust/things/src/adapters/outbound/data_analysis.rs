@@ -476,6 +476,9 @@ fn card_from_db(
             format!("flashcards/资料/{category}/错题/{leaf}")
         }
         (SourceKind::Wrong, _) => format!("flashcards/资料/错题/{category}/{leaf}"),
+        (SourceKind::Knowledge, _) if deck.starts_with("资料分析/") => {
+            format!("flashcards/{deck}/{leaf}")
+        }
         (SourceKind::Knowledge, _) => format!("flashcards/资料/{category}/{leaf}"),
     };
     Some(CardCandidate {
