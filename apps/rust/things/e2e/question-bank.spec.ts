@@ -467,5 +467,9 @@ test('AI review defaults to source, stays running across navigation and restores
   await page.getByTestId('question-bank-original-tab').click();
   await page.getByTestId('question-bank-ai-tab').click();
   await expect(page.getByTestId('question-bank-ai-message')).toHaveCount(2);
+  await expect(page.getByTestId('question-bank-ai-restart')).toBeVisible();
+  await page.getByTestId('question-bank-ai-restart').click();
+  await expect(page.getByTestId('question-bank-ai-status')).toHaveText('正在生成');
+  expect(actions).toEqual(['start','/messages','/stop','start']);
 });
 
