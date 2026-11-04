@@ -65,6 +65,24 @@ impl CodexConfig {
         }
     }
 
+    pub(crate) async fn connect_review(
+        &self,
+        previous_thread: Option<&str>,
+    ) -> Result<CodexSession, String> {
+        #[cfg(test)]
+        if let Some(address) = self.test_server {
+            return CodexSession::connect_review_test_server(
+                address, &self.token, &self.cwd, previous_thread,
+            ).await;
+        }
+        tokio::time::timeout(
+            Duration::from_secs(12),
+            CodexSession::connect_review(&self.token, &self.cwd, previous_thread),
+        )
+        .await
+        .map_err(|_| "连接 Codex App Server 超时".to_owned())?
+    }
+
     pub(crate) async fn connect(&self) -> Result<CodexSession, String> {
         #[cfg(test)]
         if let Some(address) = self.test_server {
