@@ -472,4 +472,3 @@ test('AI review defaults to source, stays running across navigation and restores
   await expect(page.getByTestId('question-bank-ai-status')).toHaveText('正在生成');
   expect(actions).toEqual(['start','/messages','/stop','start']);
 });
-

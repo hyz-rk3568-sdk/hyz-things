@@ -664,7 +664,7 @@ mod tests {
         let id = id
             .map(|id| format!("<!-- hyz-card-id: {id} -->\n"))
             .unwrap_or_default();
-        format!("## Card\n{id}<!-- hyz-source-question-id: {question} -->\n<!-- hyz-correct-answer: [\"A\"] -->\n### Front\nOriginal question\n### Back\nOriginal answer\n", id=id)
+        format!("## Card\n{id}<!-- hyz-source-question-id: {question} -->\n<!-- hyz-correct-answer: [\"A\"] -->\n### Front\nOriginal question\n### Back\nOriginal answer\n")
     }
 
     #[tokio::test]
