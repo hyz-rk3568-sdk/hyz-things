@@ -952,6 +952,10 @@ mod tests {
             assert_eq!(eligible_path(&mistake), Some("formal"));
             assert_eq!(eligible_path(&method.replace("判断/", "判断推理/")), Some("formal"));
             assert_eq!(eligible_path(&mistake.replace("判断/", "判断推理/")), Some("formal"));
+            let ai = format!("判断推理/AI出题/形式推理/{directory}/错题/cards.md");
+            assert_eq!(eligible_path(&ai), Some("formal"));
+            let default = format!("判断推理/默认/{directory}/错题/cards.md");
+            assert_eq!(eligible_path(&default), None);
         }
         assert_eq!(eligible_path("判断/形式推理/card.md"), None);
         assert_eq!(eligible_path("判断/论证推理/card.md"), None);
