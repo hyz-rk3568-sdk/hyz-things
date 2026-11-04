@@ -1,5 +1,5 @@
 import {expect,test,type Page} from '@playwright/test';
-import {loginAsAdmin,resetHarness} from './fixtures';
+import {expectNoHorizontalOverflow,loginAsAdmin,resetHarness} from './fixtures';
 
 test.beforeEach(async({request})=>{await resetHarness(request)});
 
@@ -9,7 +9,7 @@ async function clockFixture(page:Page) {
   const base=Date.now();
   const days=Array.from({length:35},(_,i)=>{
     const date=new Date(base-(34-i)*86400000).toISOString().slice(0,10);
-    return {date,total_ms:i===34?3600000:i%7===0?1800000:0,
+    return {date,answered_count:i===34?12:i===33?3:0,answered_modules:i===34?{question_bank:10,logic:2}:i===33?{comprehensive:3}:{},total_ms:i===34?3600000:i%7===0?1800000:0,
       modules:i===34?{calculation:3600000}:{},phases:i===34?{answer:3600000}:{}};
   });
   await page.route('**/api/v1/study/training-time/**', async route=>{
@@ -25,6 +25,15 @@ async function clockFixture(page:Page) {
     await route.fulfill({json:{now_ms:Date.now(),today_ms:3600000,running,module}});
   });
   return events;
+}
+
+type PracticeDay={date:string,answered_count:number,answered_modules:Record<string,number>};
+async function readPracticeDays(page:Page,query=''):Promise<PracticeDay[]> {
+  return page.evaluate(async query=>{
+    const response=await fetch(`/api/v1/study/training-time/stats${query}`);
+    if(!response.ok) throw new Error(`statistics failed: ${response.status}`);
+    return (await response.json()).days;
+  },query);
 }
 
 async function chooseFixturePaper(page:Page) {
@@ -231,4 +240,135 @@ test("paper pause stops the study clock and resuming restarts it",async({page})=
   await page.getByRole('button',{name:'继续计时'}).click();
   await expect(page.getByTestId('analysis-paused')).toHaveCount(0);
   await expect.poll(()=>events.filter(action=>action==='enter').length).toBeGreaterThan(entersBefore);
+});
+
+
+test("daily practice statistics show submitted counts and date-specific module totals",async({page})=>{
+  await clockFixture(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-statistics').click();
+  await expect(page.getByTestId('study-practice-today')).toHaveText('12 题');
+  await expect(page.getByTestId('study-practice-week')).toHaveText('15 题');
+  await expect(page.getByTestId('study-practice-total')).toHaveText('15 题');
+  const detail=page.getByTestId('study-practice-detail');
+  await expect(detail).toContainText('真题训练');
+  await expect(detail).toContainText('10 题');
+  await page.getByTestId('study-heat-day').nth(33).click();
+  await expect(detail).toContainText('资料分析');
+  await expect(detail).toContainText('3 题');
+  await expect(detail).not.toContainText('真题训练');
+  await page.getByTestId('study-heat-day').nth(32).click();
+  await expect(detail).toContainText('当天暂无已交卷的作答记录');
+  for(const viewport of [{width:1280,height:800},{width:390,height:844}]){
+    await page.setViewportSize(viewport);
+    await expectNoHorizontalOverflow(page);
+    await page.getByTestId('study-heat-day').last().click();
+    await expect(detail).toContainText('10 题');
+  }
+});
+
+test("daily practice statistics count real submissions, exclude blanks and include repeats",async({page})=>{
+  await loginAsAdmin(page);
+  const readToday=async()=>(await readPracticeDays(page)).at(-1)!;
+  const before=await readToday();
+  expect(before.answered_count).toBeGreaterThanOrEqual(0);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await chooseFixturePaper(page);
+  await page.getByTestId('question-bank-practice-start').click();
+  const choices=page.getByTestId('question-bank-practice-choice');
+  await choices.first().click();
+  await expect(choices.first()).toHaveAttribute('aria-pressed','true');
+  expect((await readToday()).answered_count).toBe(before.answered_count);
+  const submitted=page.waitForRequest(request=>request.method()==='POST' && /\/practice\/sessions\/[^/]+\/submit$/.test(request.url()));
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button',{name:'确认交卷',exact:true}).click();
+  const submission=await submitted;
+  await expect(page.getByTestId('question-bank-practice-score')).toBeVisible();
+  expect((await readToday()).answered_count).toBe(before.answered_count+1);
+  expect((await readToday()).answered_modules.question_bank).toBe((before.answered_modules.question_bank??0)+1);
+  // Replaying the same authenticated submission must preserve the count.
+  await page.evaluate(async({url,headers})=>{
+    const response=await fetch(url,{method:'POST',headers,body:'{}'});
+    if(!response.ok) throw new Error(`duplicate submission failed: ${response.status}`);
+  },{url:submission.url(),headers:{'Content-Type':'application/json','X-HYZ-CSRF':submission.headers()['x-hyz-csrf']}});
+  expect((await readToday()).answered_count).toBe(before.answered_count+1);
+  await page.getByRole('button',{name:'← 返回训练',exact:true}).click();
+  await page.getByTestId('question-bank-history-open').click();
+  const id=submission.url().split('/').at(-2)!;
+  // The completed session is the newest record; its repeat keeps the same paper.
+  const repeatRequest=page.waitForRequest(request=>request.url().endsWith(`/sessions/${id}/repeat`));
+  await page.getByTestId('question-bank-practice-history-item').first().getByRole('button',{name:'再做一遍',exact:true}).click();
+  await repeatRequest;
+  await expect(choices.first()).toHaveAttribute('aria-pressed','false');
+  await choices.nth(1).click();
+  await expect(choices.nth(1)).toHaveAttribute('aria-pressed','true');
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button',{name:'确认交卷',exact:true}).click();
+  await expect(page.getByTestId('question-bank-practice-score')).toBeVisible();
+  expect((await readToday()).answered_count).toBe(before.answered_count+2);
+  await page.getByRole('button',{name:'← 返回训练',exact:true}).click();
+  await page.getByTestId('training-mode-statistics').click();
+  await expect(page.getByTestId('study-practice-today')).toHaveText(`${before.answered_count+2} 题`);
+  await page.reload();
+  await page.getByTestId('training-mode-statistics').click();
+  await expect(page.getByTestId('study-practice-today')).toHaveText(`${before.answered_count+2} 题`);
+});
+
+test("daily practice statistics preserve historical retries and Beijing submission dates",async({page})=>{
+  await loginAsAdmin(page);
+  const days=await readPracticeDays(page,'?from=2026-01-01&to=2026-01-03');
+  expect(days.map(({date,answered_count,answered_modules})=>({date,answered_count,answered_modules}))).toEqual([
+    {date:'2026-01-01',answered_count:6,answered_modules:{comprehensive:2,logic:1,quantitative:3}},
+    {date:'2026-01-02',answered_count:4,answered_modules:{comprehensive:1,logic:2,quantitative:1}},
+    {date:'2026-01-03',answered_count:0,answered_modules:{}},
+  ]);
+  const next=await readPracticeDays(page,'?from=2026-01-02&to=2026-01-02');
+  expect(next).toHaveLength(1);
+  expect(next[0].answered_count).toBe(4);
+});
+
+test("daily practice statistics exclude calculation and flashcard practice completions",async({page})=>{
+  await loginAsAdmin(page);
+  const before=(await readPracticeDays(page)).at(-1)!.answered_count;
+  await page.goto('/#/study/training');
+  await page.getByTestId('calculation-start').click();
+  await page.getByTestId('calculation-answer').first().click();
+  await page.getByTestId('calculation-finish').click();
+  await expect(page.getByTestId('calculation-summary')).toBeVisible();
+  expect((await readPracticeDays(page)).at(-1)!.answered_count).toBe(before);
+  await page.getByTestId('training-mode-flashcards').click();
+  await page.getByTestId('practice-start').click();
+  await page.getByTestId('practice-reveal').click();
+  await page.getByTestId('practice-correct').click();
+  await page.getByTestId('practice-finish').click();
+  await expect(page.getByTestId('practice-summary')).toBeVisible();
+  await page.getByTestId('training-mode-statistics').click();
+  await expect(page.getByTestId('study-practice-today')).toHaveText(`${before} 题`);
+});
+
+test("daily practice statistics show storage errors and recover on re-entry",async({page})=>{
+  let failed=true;
+  await page.route('**/api/v1/study/training-time/stats',route=>route.fulfill(failed?
+    {status:503,json:{error:{code:'question_bank_unavailable',message:'题库共享或索引暂不可用'}}}:
+    {json:{days:[]}}));
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-statistics').click();
+  await expect(page.getByRole('alert')).toContainText('题库共享或索引暂不可用');
+  await expect(page.getByTestId('study-practice-today')).toHaveCount(0);
+  failed=false;
+  await page.getByTestId('training-mode-calculation').click();
+  await page.getByTestId('training-mode-statistics').click();
+  await expect(page.getByTestId('study-practice-today')).toHaveText('0 题');
+  await expect(page.getByTestId('study-practice-detail')).toContainText('当天暂无已交卷的作答记录');
+});
+
+test("daily practice statistics require admin and validate the requested date range",async({page,request})=>{
+  expect((await request.get('/api/v1/study/training-time/stats')).status()).toBe(401);
+  await loginAsAdmin(page);
+  const statuses=await page.evaluate(async()=>Promise.all([
+    '?from=bad&to=2026-01-03','?from=2026-01-03&to=2026-01-01',
+    '?from=2025-01-01&to=2026-01-03',
+  ].map(async query=>(await fetch(`/api/v1/study/training-time/stats${query}`)).status)));
+  expect(statuses).toEqual([400,400,400]);
 });

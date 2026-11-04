@@ -59,6 +59,19 @@ pub(super) fn training_statistics() -> Html {
         .map(|d| d.total_ms)
         .sum::<i64>();
     let total = data.days.iter().map(|d| d.total_ms).sum::<i64>();
+    let today_count = data
+        .days
+        .last()
+        .map(|d| d.answered_count)
+        .unwrap_or_default();
+    let week_count: i64 = data
+        .days
+        .iter()
+        .rev()
+        .take(7)
+        .map(|d| d.answered_count)
+        .sum();
+    let total_count: i64 = data.days.iter().map(|d| d.answered_count).sum();
     let streak = data
         .days
         .iter()
@@ -85,6 +98,14 @@ pub(super) fn training_statistics() -> Html {
                     {for [("今日",hours(today)),("最近7天",hours(week)),("最近35天",hours(total)),("连续学习",format!("{streak} 天"))]
                         .into_iter().map(|(label,value)|html!{<div class="rounded-xl bg-base-100 p-3"><p class="text-xs opacity-60">{label}</p><strong class="text-lg">{value}</strong></div>})}
                 </div>
+                <section class="rounded-xl bg-base-100 p-4 space-y-3" aria-label="刷题量统计">
+                    <h3 class="font-semibold">{"刷题量"}</h3>
+                    <div class="grid grid-cols-3 gap-3">
+                        {for [("今日",today_count,"study-practice-today"),("最近7天",week_count,"study-practice-week"),("最近35天",total_count,"study-practice-total")]
+                            .into_iter().map(|(label,count,test_id)|html!{<div><p class="text-xs opacity-60">{label}</p><strong class="text-lg" data-testid={test_id}>{format!("{count} 题")}</strong></div>})}
+                    </div>
+                    <p class="text-xs opacity-60">{"按北京时间交卷日期累计已答题数，重做交卷继续计入。速算和错题 Flashcard 复练仅统计学习时长。"}</p>
+                </section>
                 <div class="rounded-xl bg-base-100 p-4 space-y-3">
                     <h3 class="font-semibold">{"每日学习热力图"}</h3>
                     <div class="grid grid-cols-7 gap-2" data-testid="training-heatmap">
@@ -96,12 +117,21 @@ pub(super) fn training_statistics() -> Html {
                             let color=["bg-base-300","bg-emerald-950","bg-emerald-800","bg-emerald-600","bg-emerald-400"][level];
                             let onselect={let selected=selected.clone();let date=date.clone();Callback::from(move |_|selected.set(Some(date.clone())))};
                             html!{<button type="button" class={classes!("aspect-square","min-h-7","rounded-md",color,active.then_some("ring-2 ring-primary"))}
-                                data-testid="study-heat-day" aria-label={format!("{}：{}",day.date,minutes(day.total_ms))}
-                                title={format!("{} · {}",day.date,minutes(day.total_ms))} onclick={onselect}/>}
+                                data-testid="study-heat-day" aria-label={format!("{}：{} · 已交卷 {} 题",day.date,minutes(day.total_ms),day.answered_count)}
+                                title={format!("{} · {} · 已交卷 {} 题",day.date,minutes(day.total_ms),day.answered_count)} onclick={onselect}/>}
                         })}
                     </div>
                     <p class="text-xs opacity-60">{"颜色越深，学习时间越长。点击日期查看明细。"}</p>
                 </div>
+                <section class="rounded-xl bg-base-100 p-4 space-y-3" data-testid="study-practice-detail">
+                    <h3 class="font-semibold">{format!("{} · 刷题明细",chosen.map(|d|d.date.as_str()).unwrap_or("今日"))}</h3>
+                    if let Some(day)=chosen.filter(|day|day.answered_count>0) {
+                        <p class="text-sm">{format!("已交卷作答 {} 题",day.answered_count)}</p>
+                        {for day.answered_modules.iter().map(|(id,count)|html!{<div class="flex justify-between gap-3 text-sm"><span>{module_name(id)}</span><span>{format!("{count} 题")}</span></div>})}
+                    }else {
+                        <p class="text-sm opacity-60">{"当天暂无已交卷的作答记录。"}</p>
+                    }
+                </section>
                 <div class="rounded-xl bg-base-100 p-4 space-y-3">
                     <h3 class="font-semibold">{format!("{} · 模块耗时",chosen.map(|d|d.date.as_str()).unwrap_or("今日"))}</h3>
                     if by_module.is_empty() {

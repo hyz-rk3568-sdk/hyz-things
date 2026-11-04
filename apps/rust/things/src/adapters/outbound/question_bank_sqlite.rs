@@ -108,6 +108,29 @@ impl SqliteQuestionBankRepository {
 }
 #[async_trait]
 impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
+    async fn daily_answered_counts(
+        &self,
+        start_ms: i64,
+        end_ms: i64,
+    ) -> Result<Vec<(String, i64)>, BankError> {
+        sqlx::query_as(
+            "SELECT date(a.submitted_at / 1000.0, 'unixepoch', '+8 hours') AS day, COUNT(*)
+             FROM practice_attempts a
+             JOIN practice_sessions s ON s.id=a.session_id
+             WHERE s.status='completed' AND a.submitted_at>=? AND a.submitted_at<?
+               AND json_type(a.answer)='array'
+               AND EXISTS (SELECT 1 FROM json_each(a.answer) choice
+                 WHERE choice.type='text'
+                   AND length(trim(choice.value, char(9)||char(10)||char(13)||' '))>0)
+             GROUP BY day ORDER BY day",
+        )
+        .bind(start_ms)
+        .bind(end_ms)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| BankError::Storage)
+    }
+
     async fn paper_summaries(&self) -> Result<Vec<PaperSummary>, BankError> {
         let rows: Vec<String> = sqlx::query_scalar("SELECT json_extract(metadata,'$.summary') FROM papers WHERE active=1 AND json_extract(metadata,'$.summary.role')='primary' ORDER BY id")
             .fetch_all(&self.pool).await.map_err(|_| BankError::Storage)?;

@@ -1,7 +1,11 @@
 //! SQLite-backed, server-authoritative effective learning time.
 //! One active lease for the portal's administrator, independent of exam clocks.
-use chrono::{Duration, NaiveDate};
-use serde::{Deserialize, Serialize};
+use crate::application::training_time::{
+    ClockSnapshot, DaySummary, StudyDateRange, StudyTimeEvent, TimeStatistics, TrainingTimePort,
+    DAY_MS, ZONE_OFFSET_MS,
+};
+use async_trait::async_trait;
+use chrono::Duration;
 use sqlx::{Row, Sqlite, SqlitePool, Transaction};
 use std::{
     collections::BTreeMap,
@@ -11,8 +15,6 @@ use std::{
 use tokio::sync::Mutex;
 
 const GRACE_MS: i64 = 45_000;
-const DAY_MS: i64 = 86_400_000;
-const ZONE_OFFSET_MS: i64 = 8 * 3_600_000;
 const MODULES: [&str; 6] = [
     "calculation",
     "flashcards",
@@ -31,37 +33,6 @@ fn now_ms() -> i64 {
 
 fn day_start(ms: i64) -> i64 {
     (ms + ZONE_OFFSET_MS).div_euclid(DAY_MS) * DAY_MS - ZONE_OFFSET_MS
-}
-
-#[derive(Clone, Serialize)]
-pub struct ClockSnapshot {
-    pub now_ms: i64,
-    pub today_ms: i64,
-    pub running: bool,
-    pub module: String,
-}
-
-#[derive(Clone, Serialize)]
-pub struct DaySummary {
-    pub date: String,
-    pub total_ms: i64,
-    pub modules: BTreeMap<String, i64>,
-    pub phases: BTreeMap<String, i64>,
-}
-#[derive(Serialize)]
-pub struct TimeStatistics {
-    pub days: Vec<DaySummary>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct StudyTimeEvent {
-    pub event_id: String,
-    pub action: String,
-    #[serde(default)]
-    pub module: Option<String>,
-    #[serde(default)]
-    pub phase: Option<String>,
 }
 
 struct ClockState {
@@ -293,27 +264,51 @@ impl TrainingTimeService {
         self.snapshot_at(now_ms()).await
     }
 
-    pub async fn statistics(&self, from: &str, to: &str) -> Result<TimeStatistics, String> {
-        let first = NaiveDate::parse_from_str(from, "%Y-%m-%d").map_err(|_| "invalid from date")?;
-        let last = NaiveDate::parse_from_str(to, "%Y-%m-%d").map_err(|_| "invalid to date")?;
-        let length = last.signed_duration_since(first).num_days();
-        if !(0..=366).contains(&length) {
-            return Err("invalid date range".into());
+    async fn daily_answered_counts(
+        &self,
+        start: i64,
+        end: i64,
+    ) -> Result<BTreeMap<String, BTreeMap<String, i64>>, String> {
+        let mut days: BTreeMap<String, BTreeMap<String, i64>> = BTreeMap::new();
+        // Read the immutable submitted answers, including historical runs without result flags.
+        for (table, module) in [
+            ("data_analysis_runs", "comprehensive"),
+            ("logic_judgment_runs", "logic"),
+            ("quantitative_relations_runs", "quantitative"),
+        ] {
+            let query = format!(
+                "SELECT date(run.ended_at_ms / 1000.0, 'unixepoch', '+8 hours') AS day,
+                        COUNT(*) AS answered
+                 FROM {table} run, json_each(run.answers_json) answer
+                 WHERE run.status='submitted' AND run.ended_at_ms>=? AND run.ended_at_ms<?
+                   AND json_type(run.answers_json)='array' AND answer.type='integer'
+                 GROUP BY day"
+            );
+            let rows = sqlx::query(&query)
+                .bind(start)
+                .bind(end)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| e.to_string())?;
+            for row in rows {
+                days.entry(row.get("day"))
+                    .or_default()
+                    .insert(module.to_owned(), row.get("answered"));
+            }
         }
-        let start = first
-            .and_hms_opt(0, 0, 0)
-            .ok_or("invalid date")?
-            .and_utc()
-            .timestamp_millis()
-            - ZONE_OFFSET_MS;
-        let end = (last + Duration::days(1))
-            .and_hms_opt(0, 0, 0)
-            .ok_or("invalid date")?
-            .and_utc()
-            .timestamp_millis()
-            - ZONE_OFFSET_MS;
+        Ok(days)
+    }
+
+    pub async fn statistics(&self, from: &str, to: &str) -> Result<TimeStatistics, String> {
+        let StudyDateRange {
+            first,
+            length,
+            start_ms: start,
+            end_ms: end,
+        } = StudyDateRange::parse(from, to)?;
         let now = now_ms();
         let rows = self.credited_segments(start, end, now).await?;
+        let answered = self.daily_answered_counts(start, end).await?;
         let mut days = Vec::with_capacity((length + 1) as usize);
         for i in 0..=length {
             let date = first + Duration::days(i);
@@ -324,6 +319,8 @@ impl TrainingTimeService {
                 total_ms: 0,
                 modules: BTreeMap::new(),
                 phases: BTreeMap::new(),
+                answered_count: 0,
+                answered_modules: BTreeMap::new(),
             };
             for (module, phase, s, e) in &rows {
                 let duration = (e.min(&de) - s.max(&ds)).max(0);
@@ -333,9 +330,26 @@ impl TrainingTimeService {
                     *day.phases.entry(phase.clone()).or_default() += duration;
                 }
             }
+            if let Some(modules) = answered.get(&day.date) {
+                day.answered_modules = modules.clone();
+                day.answered_count = modules.values().sum();
+            }
             days.push(day);
         }
         Ok(TimeStatistics { days })
+    }
+}
+
+#[async_trait]
+impl TrainingTimePort for TrainingTimeService {
+    async fn current(&self) -> Result<ClockSnapshot, String> {
+        TrainingTimeService::current(self).await
+    }
+    async fn event(&self, event: StudyTimeEvent) -> Result<ClockSnapshot, String> {
+        TrainingTimeService::event(self, event).await
+    }
+    async fn statistics(&self, from: &str, to: &str) -> Result<TimeStatistics, String> {
+        TrainingTimeService::statistics(self, from, to).await
     }
 }
 
@@ -364,6 +378,72 @@ mod tests {
         .await
         .unwrap();
         assert!(!table_sql.contains("paused"));
+    }
+
+    #[tokio::test]
+    async fn statistics_count_submitted_answers_by_beijing_day() {
+        use chrono::NaiveDate;
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let day = NaiveDate::from_ymd_opt(2026, 1, 2)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis()
+            - ZONE_OFFSET_MS;
+        for (id, answers, status, ended) in [
+            ("comprehensive", "[0,1,null,null]", "submitted", day + 1),
+            ("comprehensive-blank", "[null,null]", "submitted", day + 2),
+            ("logic", "[2,3,4]", "submitted", day + 3),
+            ("quantitative-prepared", "[0,1]", "prepared", day + 4),
+            ("comprehensive-active", "[0]", "active", day + 5),
+        ] {
+            let table = if id.starts_with("logic") {
+                "logic_judgment_runs"
+            } else if id.starts_with("quantitative") {
+                "quantitative_relations_runs"
+            } else {
+                "data_analysis_runs"
+            };
+            let questions_column = if table == "data_analysis_runs" {
+                "groups_json"
+            } else {
+                "questions_json"
+            };
+            let query = format!(
+                "INSERT INTO {table}
+                 (id,{questions_column},answers_json,status,created_at_ms,ended_at_ms)
+                 VALUES(?,?,?,?,?,?)"
+            );
+            sqlx::query(&query)
+                .bind(id)
+                .bind("[]")
+                .bind(answers)
+                .bind(status)
+                .bind(day - 600_000)
+                .bind(ended)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let service = TrainingTimeService::new(pool);
+        let statistics = service
+            .statistics("2026-01-02", "2026-01-02")
+            .await
+            .unwrap();
+        assert_eq!(statistics.days.len(), 1);
+        assert_eq!(statistics.days[0].answered_count, 5);
+        assert_eq!(
+            statistics.days[0].answered_modules,
+            BTreeMap::from([("comprehensive".to_owned(), 2), ("logic".to_owned(), 3)])
+        );
+        let empty = service
+            .statistics("2026-01-03", "2026-01-03")
+            .await
+            .unwrap();
+        assert_eq!(empty.days[0].answered_count, 0);
+        assert!(empty.days[0].answered_modules.is_empty());
     }
 
     #[tokio::test]

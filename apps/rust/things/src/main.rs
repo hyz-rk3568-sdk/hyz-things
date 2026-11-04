@@ -3,7 +3,7 @@ use hyz_things::{
         inbound::http::{
             app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_origins,
             bind_fixed_lan_with_retry, bind_ipv6_listener, with_favorite_flashcards,
-            with_question_bank, with_question_bank_ai, PortalTls, TlsListener,
+            with_question_bank, with_question_bank_ai, with_training_time, PortalTls, TlsListener,
             DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
         },
         outbound::{
@@ -22,6 +22,7 @@ use hyz_things::{
             registry::RegistryAdapter,
             router::RouterControlClient,
             tailscale::{fetch_tailscale_status, PortalListenerApp, TailscaleListenerManager},
+            training_time::TrainingTimeService,
         },
     },
     application::{
@@ -34,6 +35,7 @@ use hyz_things::{
         quantitative_relations::QuantitativeRelationsPort,
         question_bank::QuestionBankApplication,
         status::PortalStatus,
+        training_time::TrainingTimePort,
     },
     logging::{self, Level},
 };
@@ -119,60 +121,69 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     let camera = Arc::new(CameraApplication::new(Arc::new(
         CameraUnixAdapter::default(),
     )));
-    let (flashcards, flashcard_source, data_analysis, logic_judgment, quantitative_relations) =
-        match SqliteFlashcardRepository::connect(FLASHCARD_DB_PATH).await {
-            Ok(repository) => {
-                let source = Arc::new(FilesystemFlashcardSource::default());
-                let ai_config = load_codex_env().unwrap_or(None);
-                let data_analysis =
-                    DataAnalysisService::new(repository.pool().clone(), ai_config.clone())
+    let (
+        flashcards,
+        flashcard_source,
+        data_analysis,
+        logic_judgment,
+        quantitative_relations,
+        training_time,
+    ) = match SqliteFlashcardRepository::connect(FLASHCARD_DB_PATH).await {
+        Ok(repository) => {
+            let training_time = Arc::new(TrainingTimeService::new(repository.pool().clone()))
+                as Arc<dyn TrainingTimePort>;
+            let source = Arc::new(FilesystemFlashcardSource::default());
+            let ai_config = load_codex_env().unwrap_or(None);
+            let data_analysis =
+                DataAnalysisService::new(repository.pool().clone(), ai_config.clone())
+                    .ok()
+                    .map(Arc::new);
+            let logic_judgment =
+                match LogicJudgmentService::new(repository.pool().clone(), ai_config.clone()) {
+                    Ok(service) => service
+                        .recover_interrupted()
+                        .await
                         .ok()
-                        .map(Arc::new);
-                let logic_judgment =
-                    match LogicJudgmentService::new(repository.pool().clone(), ai_config.clone()) {
-                        Ok(service) => service
-                            .recover_interrupted()
-                            .await
-                            .ok()
-                            .map(|()| Arc::new(service) as Arc<dyn LogicJudgmentPort>),
-                        Err(_) => None,
-                    };
-                let quantitative_relations =
-                    QuantitativeRelationsService::new(repository.pool().clone(), ai_config)
-                        .ok()
-                        .map(Arc::new);
-                if let Some(service) = &quantitative_relations {
-                    let _ = service.recover_interrupted().await;
-                }
-                let quantitative_relations = quantitative_relations
-                    .map(|service| service as Arc<dyn QuantitativeRelationsPort>);
-                let application = Arc::new(FlashcardApplication::new(
-                    source.clone(),
-                    Arc::new(repository),
-                    clock.clone(),
-                ));
-                (
-                    Some(application),
-                    Some(source),
-                    data_analysis,
-                    logic_judgment,
-                    quantitative_relations,
-                )
+                        .map(|()| Arc::new(service) as Arc<dyn LogicJudgmentPort>),
+                    Err(_) => None,
+                };
+            let quantitative_relations =
+                QuantitativeRelationsService::new(repository.pool().clone(), ai_config)
+                    .ok()
+                    .map(Arc::new);
+            if let Some(service) = &quantitative_relations {
+                let _ = service.recover_interrupted().await;
             }
-            Err(_error) => {
-                logging::event(
-                    Level::Error,
-                    "flashcards",
-                    "storage",
-                    "initialization_failed",
-                    Some("study_storage_unavailable"),
-                    None,
-                    None,
-                    None,
-                );
-                (None, None, None, None, None)
-            }
-        };
+            let quantitative_relations =
+                quantitative_relations.map(|service| service as Arc<dyn QuantitativeRelationsPort>);
+            let application = Arc::new(FlashcardApplication::new(
+                source.clone(),
+                Arc::new(repository),
+                clock.clone(),
+            ));
+            (
+                Some(application),
+                Some(source),
+                data_analysis,
+                logic_judgment,
+                quantitative_relations,
+                Some(training_time),
+            )
+        }
+        Err(_error) => {
+            logging::event(
+                Level::Error,
+                "flashcards",
+                "storage",
+                "initialization_failed",
+                Some("study_storage_unavailable"),
+                None,
+                None,
+                None,
+            );
+            (None, None, None, None, None, None)
+        }
+    };
     let control: Arc<dyn PortalControlHandler> = Arc::new(RouterControlClient);
     let status = PortalStatus::new(control.clone());
     let csrf_token = csrf_token()?;
@@ -350,6 +361,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     let app = with_question_bank(app, question_bank);
     let app = with_favorite_flashcards(app, favorite_flashcards);
     let app = with_question_bank_ai(app, question_bank_ai);
+    let app = with_training_time(app, training_time);
     let ipv6_task = ipv6_listener.map(|listener| {
         let app = app.clone();
         let tls_acceptor = tls_acceptor.clone();
