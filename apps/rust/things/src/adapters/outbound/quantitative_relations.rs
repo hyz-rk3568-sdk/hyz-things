@@ -976,6 +976,11 @@ mod quantitative_tests {
             assert_eq!(eligible_path(path), Some("quantitative"));
             let favorite = path.replace("/cards.md", "/错题/cards.md");
             assert_eq!(eligible_path(&favorite), Some("quantitative"));
+            let category = path.strip_prefix("数量/").unwrap().strip_suffix("/cards.md").unwrap();
+            let ai = format!("数量关系/AI出题/{category}/错题/cards.md");
+            assert_eq!(eligible_path(&ai), Some("quantitative"));
+            let default = format!("数量关系/默认/{category}/错题/cards.md");
+            assert_eq!(eligible_path(&default), None);
             assert_eq!(
                 eligible_path(&format!("flashcards/{favorite}")),
                 Some("quantitative")
