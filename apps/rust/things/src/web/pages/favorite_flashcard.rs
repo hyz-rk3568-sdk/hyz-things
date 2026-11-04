@@ -14,14 +14,13 @@ struct FavoritePreview {
 }
 
 #[derive(Properties, PartialEq)]
-pub(crate) struct FavoriteQuestionDetailProps {
+pub(crate) struct FavoriteFlashcardActionProps {
     pub item: PracticeBrowseItem,
     pub csrf: String,
-    pub on_back: Callback<()>,
 }
 
-#[function_component(FavoriteQuestionDetail)]
-pub(crate) fn favorite_question_detail(props: &FavoriteQuestionDetailProps) -> Html {
+#[function_component(FavoriteFlashcardAction)]
+pub(crate) fn favorite_flashcard_action(props: &FavoriteFlashcardActionProps) -> Html {
     let preview = use_state(|| None::<FavoritePreview>);
     let error = use_state(|| None::<String>);
     let retry = use_state(|| 0u32);
@@ -51,43 +50,32 @@ pub(crate) fn favorite_question_detail(props: &FavoriteQuestionDetailProps) -> H
             move || active.set(false)
         });
     }
-    {
-        let content = (*preview).clone();
-        use_effect_with(content, |_| {
-            hydrate_math();
-            || ()
-        });
-    }
+    let supported = matches!(
+        primary_module(props.item.module.as_deref()),
+        Some("数量关系" | "判断推理" | "资料分析")
+    );
     html! {
-        <section class="fixed inset-0 z-[80] flex h-dvh flex-col overflow-hidden bg-base-200"
-            data-testid="favorite-question-detail" aria-label="收藏题目详情">
-            <header class="flex shrink-0 items-center gap-3 border-b border-base-content/10 p-3">
-                <button type="button" class="btn btn-ghost btn-sm" onclick={Callback::from({
-                    let on_back=props.on_back.clone(); move |_|on_back.emit(())
-                })}>{"返回收藏"}</button>
-                <h2 class="min-w-0 truncate font-bold">{format!("{} · 第 {} 题",props.item.paper_title,props.item.number)}</h2>
-            </header>
-            <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
-                <div class="mx-auto max-w-3xl space-y-5 break-words">
-                    if let Some(value) = &*preview {
-                        {favorite_content(value)}
-                        if value.eligible && !value.allowed_targets.is_empty() && matches!(primary_module(props.item.module.as_deref()), Some("数量关系" | "判断推理" | "资料分析")) {
-                            <button type="button" class="btn btn-primary" onclick={Callback::from({
-                                let modal_open=modal_open.clone();move |_|modal_open.set(true)
-                            })}>{"创建 Flashcard"}</button>
-                        } else {
-                            <p role="status">{value.reason.as_deref().unwrap_or("此题暂不支持创建闪卡")}</p>
-                        }
-                    } else if let Some(message) = &*error {
-                        <p role="alert">{message}</p>
-                        <button type="button" class="btn btn-outline btn-sm" onclick={Callback::from({
-                            let retry=retry.clone(); move |_|retry.set(*retry+1)
-                        })}>{"重试加载"}</button>
-                    } else {
-                        <p role="status">{"正在加载题目…"}</p>
-                    }
-                </div>
-            </div>
+        <>
+            if let Some(value) = &*preview {
+                if value.eligible && supported && !value.allowed_targets.is_empty() {
+                    <button type="button" class="btn btn-primary" data-testid="collection-review-create-flashcard"
+                        onclick={Callback::from({let modal_open=modal_open.clone();move |_|modal_open.set(true)})}>
+                        {"创建 Flashcard"}
+                    </button>
+                } else {
+                    <p class="text-xs opacity-60" role="status" data-testid="collection-review-flashcard-unavailable">
+                        {value.reason.as_deref().unwrap_or("此题暂不支持创建闪卡")}
+                    </p>
+                }
+            } else if let Some(message) = &*error {
+                <p role="alert" class="text-sm text-error">{message}</p>
+                <button type="button" class="btn btn-outline btn-sm" data-testid="collection-review-flashcard-retry"
+                    onclick={Callback::from({let retry=retry.clone(); move |_|retry.set(*retry+1)})}>
+                    {"重试加载"}
+                </button>
+            } else {
+                <p class="text-xs opacity-60" role="status">{"正在检查闪卡资格…"}</p>
+            }
             if *modal_open {
                 if let Some(value) = &*preview {
                     <FavoriteFlashcardModal question_id={props.item.question_id.clone()} preview={value.clone()}
@@ -96,7 +84,7 @@ pub(crate) fn favorite_question_detail(props: &FavoriteQuestionDetailProps) -> H
                         })}/>
                 }
             }
-        </section>
+        </>
     }
 }
 
@@ -241,7 +229,9 @@ fn favorite_flashcard_modal(props: &FavoriteFlashcardModalProps) -> Html {
         move |_| on_close.emit(())
     });
     html! {
-        <section class="fixed inset-0 z-[90] flex h-dvh flex-col overflow-hidden bg-base-200"
+        <div class="fixed inset-0 z-[90] flex items-center justify-center bg-base-content/40 p-3 sm:p-6"
+            data-testid="favorite-flashcard-overlay">
+        <section class="flex max-h-[90dvh] w-full max-w-xl flex-col overflow-hidden rounded-box bg-base-100 shadow-2xl"
             role="dialog" aria-modal="true" aria-label="创建 Flashcard" tabindex="-1" ref={dialog}
             onkeydown={Callback::from({let on_close=props.on_close.clone();move |event:KeyboardEvent| {
                 if event.key()=="Escape" {event.stop_propagation();on_close.emit(());}
@@ -251,7 +241,7 @@ fn favorite_flashcard_modal(props: &FavoriteFlashcardModalProps) -> Html {
                 <button type="button" class="btn btn-ghost btn-sm" onclick={close}>{"关闭"}</button>
             </header>
             <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
-                <div class="mx-auto max-w-3xl space-y-5 break-words">
+                <div class="space-y-5 break-words">
                     <section aria-label="正面（只读）">{favorite_content(&props.preview)}</section>
                     <label class="block space-y-2">
                         <span class="font-semibold">{"目标牌组"}</span>
@@ -304,5 +294,6 @@ fn favorite_flashcard_modal(props: &FavoriteFlashcardModalProps) -> Html {
                 </div>
             </div>
         </section>
+        </div>
     }
 }

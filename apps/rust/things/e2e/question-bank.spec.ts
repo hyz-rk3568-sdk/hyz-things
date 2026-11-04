@@ -158,6 +158,14 @@ test('saved collections are classified by module and category before practicing'
   await expect(page.getByTestId('question-bank-browse-count')).toContainText('1题');
   await expect(page.getByTestId('question-bank-collection-item')).toContainText(/2008\s+国考\s*·\s*第\s*26\s*题/);
   await expect(page.getByTestId('question-bank-browse-preview')).toHaveCount(0);
+  await page.getByTestId('question-bank-collection-item').first().click();
+  await expect(page.getByTestId('collection-review')).toBeVisible();
+  await expect(page.getByTestId('collection-review-scope')).toContainText('错题复盘 · 第 1/1 题');
+  await expect(page.getByTestId('collection-review-material-pane')).toContainText('两道题共用材料');
+  await expect(page.getByTestId('collection-review-answer')).toContainText('B');
+  await expect(page.getByTestId('collection-review-create-flashcard')).toHaveCount(0);
+  await page.getByTestId('collection-review-back').click();
+  await expect(page.getByTestId('question-bank-collection-item')).toBeVisible();
   await page.getByTestId('question-bank-practice-start').click();
   await openSheet(page);
   await expect(page.getByTestId('question-bank-practice-number')).toHaveCount(1);
@@ -172,6 +180,12 @@ test('saved collections are classified by module and category before practicing'
   await page.getByRole('button',{name:/返回训练/}).click();
   await page.getByTestId('question-bank-collection-favorite').click();
   await expect(page.getByTestId('question-bank-browse-count')).toContainText('1题');
+  await expect(page.getByTestId('question-bank-collection-item')).toBeVisible();
+  await page.getByTestId('question-bank-collection-item').first().click();
+  await expect(page.getByTestId('collection-review')).toBeVisible();
+  await expect(page.getByTestId('collection-review-scope')).toContainText('收藏复盘 · 第 1/1 题');
+  await expect(page.getByTestId('collection-review-answer')).toContainText('B');
+  await page.getByTestId('collection-review-back').click();
   await expect(page.getByTestId('question-bank-collection-item')).toBeVisible();
   await page.getByTestId('question-bank-practice-start').click();
   await openSheet(page);
@@ -194,6 +208,7 @@ test('question bank practice mutations enforce admin, origin and CSRF',async({re
   expect(invalidCsrf.status()).toBe(403);
   const read=await request.get('/api/v1/question-bank/practice/history');
   expect(read.status()).toBe(401);
+  expect((await request.get('/api/v1/question-bank/practice/questions/019a3d8e-1b32-7a60-9c83-f34217a6e210')).status()).toBe(401);
   expect((await request.get('/api/v1/question-bank/practice/questions?mode=favorite')).status()).toBe(401);
 });
 

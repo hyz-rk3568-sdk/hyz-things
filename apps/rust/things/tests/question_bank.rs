@@ -1084,3 +1084,52 @@ async fn paper_list_uses_only_the_summary_projection() {
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].title, "示例卷");
 }
+
+#[tokio::test]
+async fn practice_question_detail_reviews_any_question_without_a_session() {
+    use hyz_things::adapters::outbound::question_bank_sqlite::SqliteQuestionBankRepository;
+    let source = Arc::new(MemoryBank::default());
+    let repository = Arc::new(
+        SqliteQuestionBankRepository::connect("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    let app = QuestionBankApplication::new(source, repository);
+    app.sync().await.unwrap();
+    let detail = app
+        .practice_question_detail("019a3d8e-1b32-7a60-9c83-f34217a6e210")
+        .await
+        .unwrap();
+    assert_eq!(detail.item.paper_title, "示例卷");
+    assert_eq!(detail.item.year, 2001);
+    assert_eq!(detail.item.region, "国考");
+    assert_eq!(detail.item.number, 26);
+    assert_eq!(detail.item.module.as_deref(), Some("资料分析"));
+    assert_eq!(detail.question.stem, "题干。");
+    assert_eq!(detail.correct_answer, vec!["B"]);
+    assert_eq!(detail.explanation, "秘密解析。");
+    assert_eq!(detail.materials[0].markdown, "共享材料。");
+    assert!(detail.question.topics.contains(&"现期比重".to_string()));
+}
+
+#[tokio::test]
+async fn practice_question_detail_rejects_invalid_and_unknown_ids() {
+    use hyz_things::adapters::outbound::question_bank_sqlite::SqliteQuestionBankRepository;
+    let source = Arc::new(MemoryBank::default());
+    let repository = Arc::new(
+        SqliteQuestionBankRepository::connect("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    let app = QuestionBankApplication::new(source, repository);
+    app.sync().await.unwrap();
+    assert_eq!(
+        app.practice_question_detail("bad").await,
+        Err(BankError::Invalid)
+    );
+    assert_eq!(
+        app.practice_question_detail("019a3d8e-1b32-7a60-9c83-f34217a6e2ff")
+            .await,
+        Err(BankError::NotFound)
+    );
+}

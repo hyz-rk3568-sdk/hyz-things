@@ -437,6 +437,25 @@ pub(super) async fn practice_history(
     }
 }
 
+pub(super) async fn practice_question_detail(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+    Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let app = match available(service) {
+        Ok(app) => app,
+        Err(e) => return bank_error(e),
+    };
+    match app.practice_question_detail(&id).await {
+        Ok(value) => Json(value).into_response(),
+        Err(e) => bank_error(e),
+    }
+}
+
 pub(super) async fn practice_session(
     State(state): State<AppState>,
     headers: HeaderMap,

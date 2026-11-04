@@ -6,8 +6,8 @@ use super::{
 use crate::domain::question_bank::{
     primary_module, CreatePracticeRequest, FavoriteState, ModulePracticeFilters, PaperModule,
     PaperModules, PracticeBrowseItem, PracticeCatalog, PracticeItem, PracticeMode,
-    PracticeQuestion, PracticeReview, PracticeScore, PracticeSession, PracticeWorkspace,
-    ReviewQuestion,
+    PracticeQuestion, PracticeQuestionDetail, PracticeReview, PracticeScore, PracticeSession,
+    PracticeWorkspace, ReviewQuestion,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -319,6 +319,44 @@ impl QuestionBankApplication {
 
     pub async fn practice_history(&self) -> Result<Vec<PracticeSession>, BankError> {
         self.repository.practice_history().await
+    }
+
+    pub async fn practice_question_detail(
+        &self,
+        question_id: &str,
+    ) -> Result<PracticeQuestionDetail, BankError> {
+        if !valid_id(question_id) {
+            return Err(BankError::Invalid);
+        }
+        let content = self
+            .repository
+            .question_contents(&[question_id.into()])
+            .await?
+            .into_iter()
+            .find(|content| content.question.id == question_id && content.active)
+            .ok_or(BankError::NotFound)?;
+        let indexed = self.primary_indexed(&content.paper_id).await?;
+        if indexed.hash != content.source_hash {
+            return Err(BankError::Stale);
+        }
+        let question = content.question;
+        let item = PracticeBrowseItem {
+            question_id: question.id.clone(),
+            paper_title: content.paper_title,
+            paper_id: indexed.summary.id,
+            year: indexed.summary.year,
+            region: indexed.summary.region,
+            number: question.number,
+            module: question.module.clone(),
+            category: question.category.clone(),
+        };
+        Ok(PracticeQuestionDetail {
+            question: question.view(),
+            correct_answer: question.correct_answer,
+            explanation: question.explanation,
+            materials: content.materials,
+            item,
+        })
     }
 
     async fn session_contents(
