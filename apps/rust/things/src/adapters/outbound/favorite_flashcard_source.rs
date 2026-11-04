@@ -761,20 +761,20 @@ mod tests {
         let fixture = Fixture::new();
         let writer: Arc<dyn FavoriteFlashcardWriterPort> = Arc::new(fixture.writer());
         let mut first = card();
-        first.target_deck = "言语理解与表达/中心理解/错题".into();
+        first.target_deck = "言语理解与表达/默认/中心理解/错题".into();
         let result = writer.append(first.clone()).await.unwrap();
         assert!(result.appended);
-        assert_eq!(result.relative_path, "言语理解与表达/中心理解/错题/cards.md");
+        assert_eq!(result.relative_path, "言语理解与表达/默认/中心理解/错题/cards.md");
         assert_eq!(writer.append(first).await.unwrap().appended, false);
 
         let mut second = card();
         second.question_id = "0194f4e0-1234-7000-8000-000000000042".into();
-        second.target_deck = "言语理解与表达/中心理解/错题".into();
+        second.target_deck = "言语理解与表达/默认/中心理解/错题".into();
         assert!(writer.append(second).await.unwrap().appended);
-        let path = fixture.root.join("言语理解与表达/中心理解/错题/cards.md");
+        let path = fixture.root.join("言语理解与表达/默认/中心理解/错题/cards.md");
         let text = fs::read_to_string(path).unwrap();
         assert!(text.contains("中心理解"));
-        assert_eq!(parse_markdown_text(&text, "言语理解与表达/中心理解/错题/cards.md").unwrap().cards.len(), 2);
+        assert_eq!(parse_markdown_text(&text, "言语理解与表达/默认/中心理解/错题/cards.md").unwrap().cards.len(), 2);
     }
 
     #[tokio::test]
