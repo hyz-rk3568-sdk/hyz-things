@@ -9,12 +9,12 @@ description: hyz 的行测做题方法论总入口。适用于资料分析、判
 
 ## 文档导航
 
-- **资料分析**：读取 [references/资料分析.md](references/资料分析.md)。以 `flashcards/资料/` 当前八份源卡为准，包含扫材料→审题→看选项→定位→最低成本算法→确定就停→考场不回头，以及假设代入、分数比较、线段混合、年均变化、份数法、尾数/试商与误差控制。
+- **资料分析**：读取 [references/资料分析.md](references/资料分析.md)。以 `flashcards/资料分析/` 当前八份源卡为准，包含扫材料→审题→看选项→定位→最低成本算法→确定就停→考场不回头，以及假设代入、分数比较、线段混合、年均变化、份数法、尾数/试商与误差控制。
 - **判断推理 → 论证推理**：读取 [references/论证推理.md](references/论证推理.md)。涵盖论点与论据、横向/纵向对照、由果推因、削弱、加强、前提假设、否定代入。
 - **判断推理 → 形式推理解题方法**：读取 [references/逻辑判断.md](references/逻辑判断.md)，按直言、复合命题、组合排列、特殊题型识别适用技巧；可根据题干跨类组合。
-- **判断推理 → 形式推理错题卡**：当前形式推理 flashcard 仅有四类错题卡：`flashcards/判断/形式推理/{直言命题,联言选言假言命题,组合排列,特殊题型}/错题/cards.md`。按题型检索，用于查看个人错题和复盘；解题方法读取上面的 [references/逻辑判断.md](references/逻辑判断.md)，核对课程来源时读取 [references/小P-形式推理-原文.md](references/小P-形式推理-原文.md)。
+- **判断推理 → 形式推理错题卡**：当前形式推理 flashcard 仅有四类错题卡：`flashcards/判断推理/形式推理/{直言命题,联言选言假言命题,组合排列,特殊题型}/错题/cards.md`。按题型检索，用于查看个人错题和复盘；解题方法读取上面的 [references/逻辑判断.md](references/逻辑判断.md)，核对课程来源时读取 [references/小P-形式推理-原文.md](references/小P-形式推理-原文.md)。
 
-- **数量关系**：读取 [references/数量关系.md](references/数量关系.md) 和 `flashcards/数量/` 中适用的解题方法，结合 [references/小P-数量关系-解题方法.md](references/小P-数量关系-解题方法.md)；方程、和差倍比、份数等跨题型使用。
+- **数量关系**：读取 [references/数量关系.md](references/数量关系.md) 和 `flashcards/数量关系/` 中适用的解题方法，结合 [references/小P-数量关系-解题方法.md](references/小P-数量关系-解题方法.md)；方程、和差倍比、份数等跨题型使用。
 
 ## 使用规则
 
