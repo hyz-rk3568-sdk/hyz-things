@@ -463,8 +463,8 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                             html! {
                                 <article class="rounded-box border border-base-content/10 bg-base-100 p-4">
                                     <p class="font-semibold">{format!("第 {} 题 · {}", index + 1, question.expression)}</p>
-                                    <p class="mt-2 text-sm">{format!("你的选择：{}　正确选项：{}", question.options[answer.choice], question.exact_result)}</p>
-                                    <p class="mt-1 text-xs text-base-content/65">{question.tip}</p>
+                                    <p class="mt-2 text-base">{format!("你的选择：{}　正确选项：{}", question.options[answer.choice], question.exact_result)}</p>
+                                    <p class="mt-1 text-sm text-base-content/65">{question.tip}</p>
                                 </article>
                             }
                         })}
@@ -566,7 +566,7 @@ fn calculation_training(props: &CalculationTrainingProps) -> Html {
                                                 {if record.choice == question.correct_index { "回答正确" } else { "回答错误" }}
                                             </strong>
                                             <p class="mt-1">{format!("正确答案：{}；用时 {:.1} 秒", question.exact_result, record.elapsed_ms as f64 / 1000.0)}</p>
-                                            <p class="mt-1 text-sm text-base-content/65">{question.tip}</p>
+                                            <p class="mt-1 text-base text-base-content/65">{question.tip}</p>
                                         </div>
                                     }
                                 </div>

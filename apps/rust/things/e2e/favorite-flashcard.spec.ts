@@ -88,6 +88,8 @@ for (const width of [1180, 390]) {
     await expect(review.locator('strong').filter({ hasText: '1200' })).toBeVisible();
     await expect(review.locator('.katex').first()).toBeVisible();
     await expect(review.getByTestId('collection-review-answer')).toHaveText('B');
+    await expect(review.getByTestId('collection-review-choice').first()).toHaveCSS('font-size','16px');
+    await expect(review.getByTestId('collection-review-explanation')).toHaveCSS('font-size','16px');
     await expect(review.getByTestId('collection-review-explanation')).toContainText('先列方程');
     await review.getByTestId('collection-review-create-flashcard').click();
     const panel = page.getByTestId('favorite-flashcard-panel');

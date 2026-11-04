@@ -43,13 +43,13 @@ enum InkSaveStatus {
 }
 
 impl InkSaveStatus {
-    fn label(self) -> &'static str {
+    fn label(self) -> Option<&'static str> {
         match self {
-            Self::Loading => "正在读取草稿…",
-            Self::Saved => "草稿已保存到本机",
-            Self::Saving => "正在保存草稿…",
-            Self::Unsaved => "保存失败，仅当前页面暂存",
-            Self::LoadFailed => "草稿读取失败，请重试",
+            Self::Loading => Some("正在读取草稿…"),
+            Self::Saved => None,
+            Self::Saving => Some("正在保存草稿…"),
+            Self::Unsaved => Some("保存失败，仅当前页面暂存"),
+            Self::LoadFailed => Some("草稿读取失败，请重试"),
         }
     }
 }
@@ -921,12 +921,14 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
         <section class={if props.responsive { "calculation-scratchpad relative flex-1 min-h-0 min-w-0 h-full rounded-box" } else { "calculation-scratchpad relative min-h-80 min-w-0 rounded-box bg-base-100/60" }} data-testid="calculation-scratchpad" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
             <div class={if props.responsive { "h-full min-h-0 min-w-0" } else { "min-h-80 pt-12" }}>{for props.children.iter()}</div>
             if !props.persist_key.is_empty() {
-                <div class="absolute bottom-2 left-2 z-30 max-w-[calc(100%-1rem)] rounded bg-base-100/95 px-2 py-1 text-xs shadow-sm">
-                    <span role="status" data-testid="calculation-scratchpad-save-status">{save_status.label()}</span>
-                    if matches!(*save_status, InkSaveStatus::Unsaved | InkSaveStatus::LoadFailed) {
-                        <button type="button" class="btn btn-ghost btn-xs ml-1" onclick={retry}>{"重试保存"}</button>
-                    }
-                </div>
+                if let Some(label) = save_status.label() {
+                    <div class="absolute bottom-2 left-2 z-30 max-w-[calc(100%-1rem)] rounded bg-base-100/95 px-2 py-1 text-xs shadow-sm">
+                        <span role="status" data-testid="calculation-scratchpad-save-status">{label}</span>
+                        if matches!(*save_status, InkSaveStatus::Unsaved | InkSaveStatus::LoadFailed) {
+                            <button type="button" class="btn btn-ghost btn-xs ml-1" onclick={retry}>{"重试保存"}</button>
+                        }
+                    </div>
+                }
             }
             <canvas
                 ref={canvas_ref}

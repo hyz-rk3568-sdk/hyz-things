@@ -320,7 +320,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                     <div class="space-y-2">
                         {for options.iter().map(|(label,markdown)|{
                             let correct=current.correct_answer.contains(label);
-                            html!{<div class={classes!("flex","items-start","gap-2.5","rounded-xl","border","p-3","text-sm","leading-6",if correct {"border-success bg-success/10 text-success"} else {"border-base-content/20"})}
+                            html!{<div class={classes!("flex","items-start","gap-2.5","rounded-xl","border","p-3","text-base","leading-7",if correct {"border-success bg-success/10 text-success"} else {"border-base-content/20"})}
                                 data-testid="collection-review-choice">
                                 <span class="shrink-0 font-bold">{format!("{label}.")}</span>
                                 <span class="study-markdown min-w-0">{render_question_bank_markdown(markdown)}</span>
@@ -336,7 +336,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                     if !current.explanation.is_empty() {
                         <section class="border-t border-base-content/10 pt-3">
                             <h3 class="font-bold">{"原始解析"}</h3>
-                            <div class="study-markdown mt-2 text-sm leading-7 text-base-content/75" data-testid="collection-review-explanation">
+                            <div class="study-markdown mt-2 text-base leading-7 text-base-content/75" data-testid="collection-review-explanation">
                                 {render_question_bank_markdown(&current.explanation)}
                             </div>
                         </section>
