@@ -267,7 +267,40 @@ impl CodexSession {
         Self::connect_at(&address.to_string(), token, cwd).await
     }
 
+    /// Persistent, read-only study threads are separate from ephemeral generation threads.
+    pub async fn connect_review(
+        token: &str,
+        cwd: &str,
+        previous_thread: Option<&str>,
+    ) -> Result<Self, String> {
+        Self::connect_at_mode(SERVER, token, cwd, previous_thread, true).await
+    }
+
+    #[cfg(test)]
+    pub(super) async fn connect_review_test_server(
+        address: std::net::SocketAddr,
+        token: &str,
+        cwd: &str,
+        previous_thread: Option<&str>,
+    ) -> Result<Self, String> {
+        Self::connect_at_mode(&address.to_string(), token, cwd, previous_thread, true).await
+    }
+
+    pub fn thread_id(&self) -> &str {
+        &self.thread_id
+    }
+
     async fn connect_at(address: &str, token: &str, cwd: &str) -> Result<Self, String> {
+        Self::connect_at_mode(address, token, cwd, None, false).await
+    }
+
+    async fn connect_at_mode(
+        address: &str,
+        token: &str,
+        cwd: &str,
+        previous_thread: Option<&str>,
+        persistent: bool,
+    ) -> Result<Self, String> {
         validate_token(token)?;
         let mut socket = TcpStream::connect(address)
             .await
@@ -289,20 +322,25 @@ impl CodexSession {
             )
             .await?;
         client.notify("initialized", json!({})).await?;
-        let thread = client
-            .request(
+        let thread = if let Some(thread_id) = previous_thread {
+            client.request(
+                "thread/resume",
+                json!({"threadId":thread_id,"excludeTurns":true}),
+            ).await?
+        } else {
+            client.request(
                 "thread/start",
                 json!({
-                    "ephemeral":true,
+                    "ephemeral":!persistent,
                     "cwd":cwd,
                     "approvalPolicy":"never",
-                    "sandbox":"danger-full-access",
+                    "sandbox":if persistent {"read-only"} else {"danger-full-access"},
                     "config":{"shell_environment_policy.set":{
                         "TMPDIR":"/tmp","TMP":"/tmp","TEMP":"/tmp"
                     }}
                 }),
-            )
-            .await?;
+            ).await?
+        };
         client.thread_id = thread
             .pointer("/thread/id")
             .and_then(Value::as_str)
@@ -343,6 +381,28 @@ impl CodexSession {
                 .ok_or("Codex 响应缺少 result".into());
         }
         Err("Codex JSON-RPC 初始化事件过多".into())
+    }
+
+    /// Return one independently reasoned AI review message as Markdown.
+    /// The schema restricts only the output envelope, not model reasoning.
+    pub async fn turn_review(
+        &mut self,
+        prompt: &str,
+        cancellation: watch::Sender<bool>,
+    ) -> Result<String, String> {
+        let schema = json!({
+            "type":"object",
+            "properties":{"answer":{"type":"string"}},
+            "required":["answer"],
+            "additionalProperties":false
+        });
+        let raw = self.turn_cancellable_with_schema(prompt, cancellation, schema).await?;
+        let value: Value = serde_json::from_str(&raw)
+            .map_err(|_| "Codex AI 解析返回格式错误")?;
+        let text = value.get("answer").and_then(Value::as_str)
+            .filter(|text| !text.trim().is_empty() && text.len() <= MAX_PACKET)
+            .ok_or("Codex AI 解析内容为空或过长")?;
+        Ok(text.to_owned())
     }
 
     /// Run one generation or repair turn in the same ephemeral thread.
