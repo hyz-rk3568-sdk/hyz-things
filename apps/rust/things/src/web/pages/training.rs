@@ -1,9 +1,9 @@
 //! 专项训练：套卷与模块分别进入真题工作区，各学科保存自身练习记录。
 //! 复练自评只驻留本轮浏览器状态，绝不写入 FSRS review API。
 use super::*;
-use hyz_things::domain::flashcards::{DeckSummary, FlashcardSummary, TagSummary};
+use hyz_things::domain::flashcards::{DeckSummary, FlashcardSummary};
 use hyz_things::domain::question_bank::PracticeMode;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 #[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/training_viewport.js")]
 extern "C" {
@@ -266,7 +266,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                 <nav class="training-mode-tabs" data-testid="training-modes">
                     <div class="training-modes-inner" role="group" aria-label="训练模式">
                         <button type="button" class="training-mode" data-testid="training-mode-calculation" aria-pressed={(*mode == TrainingMode::Calculation).to_string()} onclick={choose_calculation}>{"速算训练"}</button>
-                        <button type="button" class="training-mode" data-testid="training-mode-flashcards" aria-pressed={(*mode == TrainingMode::Flashcards).to_string()} onclick={choose_flashcards}>{"错题复练"}</button>
+                        <button type="button" class="training-mode" data-testid="training-mode-flashcards" aria-pressed={(*mode == TrainingMode::Flashcards).to_string()} onclick={choose_flashcards}>{"闪卡回顾"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-question-bank-paper" aria-pressed={(*mode == TrainingMode::QuestionBankPaper).to_string()} onclick={choose_question_bank_paper}>{"套卷训练"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-question-bank-module" aria-pressed={(*mode == TrainingMode::QuestionBankModule).to_string()} onclick={choose_question_bank_module}>{"模块训练"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-comprehensive" aria-pressed={(*mode == TrainingMode::Comprehensive).to_string()} onclick={choose_comprehensive}>{"资料分析"}</button>
@@ -423,7 +423,7 @@ async fn fetch_practice_cards(
         );
         let response = fetch_json_typed::<StudyCardsResponse>(
             &format!("{STUDY_CARDS_ENDPOINT}{query}"),
-            "错题复练题库",
+            "闪卡回顾题库",
         )
         .await
         .map_err(|error| error.to_string())?;
@@ -446,13 +446,78 @@ async fn fetch_practice_cards(
     Ok(cards)
 }
 
+/// Card counts for every directory prefix; deeper cards stay in ancestor counts.
+fn deck_totals(decks: &[DeckSummary]) -> BTreeMap<String, u32> {
+    let mut totals = BTreeMap::<String, u32>::new();
+    for deck in decks {
+        let mut prefix = String::new();
+        for part in deck.path.split('/').filter(|part| !part.is_empty()) {
+            if !prefix.is_empty() {
+                prefix.push('/');
+            }
+            prefix.push_str(part);
+            *totals.entry(prefix.clone()).or_default() += deck.card_count;
+        }
+    }
+    totals
+}
+
+#[derive(Clone, PartialEq)]
+struct DeckNode {
+    path: String,
+    name: String,
+    count: u32,
+    children: Vec<DeckNode>,
+}
+
+fn deck_children(totals: &BTreeMap<String, u32>, parent: &str) -> Vec<DeckNode> {
+    let mut nodes = totals
+        .iter()
+        .filter_map(|(path, count)| {
+            let rest = if parent.is_empty() {
+                path.as_str()
+            } else {
+                path.strip_prefix(parent)?.strip_prefix('/')?
+            };
+            if rest.is_empty() || rest.contains('/') {
+                return None;
+            }
+            Some(DeckNode {
+                path: path.clone(),
+                name: rest.to_owned(),
+                count: *count,
+                children: deck_children(totals, path),
+            })
+        })
+        .collect::<Vec<_>>();
+    // Real-paper cards stay before user-organized ones; the rest read alphabetically.
+    nodes.sort_by_key(|node| {
+        let rank = match node.name.as_str() {
+            "真题练习" => 0,
+            "用户整理" => 1,
+            _ => 2,
+        };
+        (rank, node.name.clone())
+    });
+    nodes
+}
+
 #[function_component(FlashcardPractice)]
 fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
     let decks = use_state(Vec::<DeckSummary>::new);
-    let available_tags = use_state(Vec::<TagSummary>::new);
     let scope_error = use_state(|| None::<String>);
-    let deck = use_state(String::new);
-    let tags = use_state(|| vec!["错题".to_owned()]);
+    let first = use_state(String::new);
+    let second = use_state(String::new);
+    let third = use_state(String::new);
+    // Any selected level filters by its directory prefix. Deeper directories
+    // fold into the third level's count, so 用户整理 stays reachable in 3 steps.
+    let deck = if !third.is_empty() {
+        (*third).clone()
+    } else if !second.is_empty() {
+        (*second).clone()
+    } else {
+        (*first).clone()
+    };
     let requested_count = use_state(|| 20_usize);
     let candidates = use_state(|| None::<Vec<FlashcardSummary>>);
     let candidate_error = use_state(|| None::<String>);
@@ -460,24 +525,14 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
 
     {
         let decks = decks.clone();
-        let available_tags = available_tags.clone();
         let scope_error = scope_error.clone();
         use_effect_with((), move |_| {
             spawn_local(async move {
-                let mut problems = Vec::new();
                 match fetch_json_typed::<StudyDecksResponse>(STUDY_DECKS_ENDPOINT, "Deck 列表")
                     .await
                 {
                     Ok(response) => decks.set(response.decks),
-                    Err(error) => problems.push(error.to_string()),
-                }
-                match fetch_json_typed::<StudyTagsResponse>(STUDY_TAGS_ENDPOINT, "Tag 列表").await
-                {
-                    Ok(response) => available_tags.set(response.tags),
-                    Err(error) => problems.push(error.to_string()),
-                }
-                if !problems.is_empty() {
-                    scope_error.set(Some(problems.join("；")));
+                    Err(error) => scope_error.set(Some(error.to_string())),
                 }
             });
             || ()
@@ -487,15 +542,14 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
     {
         let candidates = candidates.clone();
         let candidate_error = candidate_error.clone();
-        use_effect_with(((*deck).clone(), (*tags).clone()), move |(deck, tags)| {
+        use_effect_with(deck.clone(), move |deck: &String| {
             let cancelled = std::rc::Rc::new(std::cell::Cell::new(false));
             let token = cancelled.clone();
             let selected_deck = deck.clone();
-            let selected_tags = tags.clone();
             candidates.set(None);
             candidate_error.set(None);
             spawn_local(async move {
-                let result = fetch_practice_cards(&selected_deck, &selected_tags).await;
+                let result = fetch_practice_cards(&selected_deck, &[]).await;
                 if token.get() {
                     return;
                 }
@@ -581,7 +635,7 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
             };
             html! {
                 <section class="mx-auto grid max-w-4xl gap-4 px-4 pb-8 pt-5" data-testid="practice-summary">
-                    <h2 class="text-xl font-bold">{"错题复练 · 本轮结果"}</h2>
+                    <h2 class="text-xl font-bold">{"闪卡回顾 · 本轮结果"}</h2>
                     <div class="grid grid-cols-2 gap-3 sm:grid-cols-6">
                         <div class="stat rounded-box bg-base-100"><div class="stat-title">{"已答"}</div><div class="stat-value text-2xl">{scored.len()}</div></div>
                         <div class="stat rounded-box bg-base-100"><div class="stat-title">{"做对"}</div><div class="stat-value text-2xl">{correct}</div></div>
@@ -733,7 +787,7 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
                                 <button type="button" class="btn btn-outline" data-testid="practice-skip" onclick={rate(PracticeGrade::Skipped)}>{"跳过"}</button>
                             </div>
                         }
-                        <nav class="flex shrink-0 items-center gap-2" aria-label="错题复练题号导航" data-testid="practice-navigation">
+                        <nav class="flex shrink-0 items-center gap-2" aria-label="闪卡回顾题号导航" data-testid="practice-navigation">
                             <button type="button" class="btn btn-sm btn-outline shrink-0" data-testid="practice-previous"
                                 disabled={live.index == 0} onclick={previous}>{"上一题"}</button>
                             <div class="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto px-1 py-1" data-testid="practice-tab-strip">
@@ -748,10 +802,29 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
             }
         }
     } else {
-        let pick_deck = {
-            let deck = deck.clone();
-            Callback::from(move |event: Event| {
-                deck.set(event.target_unchecked_into::<HtmlSelectElement>().value());
+        let totals = deck_totals(&decks);
+        let level1 = deck_children(&totals, "");
+        let level2 = if first.is_empty() {
+            Vec::new()
+        } else {
+            deck_children(&totals, &first)
+        };
+        let level3 = if second.is_empty() {
+            Vec::new()
+        } else {
+            deck_children(&totals, &second)
+        };
+        let level2_empty = level2.is_empty();
+        let level3_empty = level3.is_empty();
+        let total_cards = decks.iter().map(|deck| deck.card_count).sum::<u32>();
+        let select_all = {
+            let first = first.clone();
+            let second = second.clone();
+            let third = third.clone();
+            Callback::from(move |_| {
+                first.set(String::new());
+                second.set(String::new());
+                third.set(String::new());
             })
         };
         let count = *requested_count;
@@ -785,44 +858,96 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
             <TrainingSetupLayout test_id="practice-setup" summary={format!("本轮 {} 张",count.min(candidate_count))} detail={format!("{} 张候选卡片",candidate_count)}
                 action={Some(html!{<button type="button" class={TRAINING_PRIMARY_BUTTON} data-testid="practice-start" disabled={candidate_count==0 || candidate_error.is_some()} onclick={start}>{"开始复练 →"}</button>})}>
                 <div class="training-config">
-                    <h2 class="font-bold">{"Flashcard 错题复练"}</h2>
-                    <p class="mt-2 text-sm text-base-content/65">{"从已同步卡片读取 Front，手写后看 Back，自评不改变记忆复习计划。"}</p>
+                    <h2 class="font-bold">{"闪卡回顾"}</h2>
+                    <p class="mt-2 text-sm text-base-content/65">{"按卡片目录逐级选择；读取 Front，手写后看 Back，自评不改变记忆复习计划。"}</p>
                     <div class="mt-4 grid gap-3">
-                        <label class="grid gap-2">
-                            <span class="font-semibold">{"卡组"}</span>
-                            <select class="select select-bordered w-full text-base" data-testid="practice-deck-filter" value={(*deck).clone()} onchange={pick_deck}>
-                                <option value="">{"全部卡组"}</option>
-                                {for decks.iter().map(|item| html! {
-                                    <option value={item.path.clone()} selected={*deck == item.path}>{format!("{} ({})", item.path, item.card_count)}</option>
-                                })}
-                            </select>
-                        </label>
-                        <fieldset class="grid gap-2">
-                            <legend class="font-semibold">{"标签（多选取交集）"}</legend>
-                            <div class="flex flex-wrap gap-2" data-testid="practice-tag-filter">
-                                {for available_tags.iter().map(|tag| {
-                                    let tag_name = tag.tag.clone();
-                                    let selected = tags.contains(&tag_name);
-                                    let tags = tags.clone();
-                                    html! {
-                                        <label class="flex items-center gap-2 rounded-box border border-base-content/10 px-3 py-2">
-                                            <input type="checkbox" class="checkbox checkbox-sm" checked={selected} onchange={Callback::from(move |_| {
-                                                let mut next = (*tags).clone();
-                                                if let Some(index) = next.iter().position(|value| value == &tag_name) {
-                                                    next.remove(index);
-                                                } else {
-                                                    next.push(tag_name.clone());
-                                                }
-                                                next.sort();
-                                                tags.set(next);
-                                            })}/>
-                                            <span>{format!("{} ({})", tag.tag, tag.card_count)}</span>
-                                        </label>
-                                    }
-                                })}
+                        <div class="grid gap-3" data-testid="practice-deck-tree">
+                            <div class="grid gap-2">
+                                <span class="text-sm font-semibold">{"一级 · 来源"}</span>
+                                <div class="flex flex-wrap gap-2" role="group" aria-label="一级来源">
+                                    <button type="button" class="question-bank-category" data-testid="practice-deck-all"
+                                        aria-pressed={first.is_empty().to_string()} onclick={select_all}>
+                                        <span>{"全部闪卡"}</span><small>{total_cards.to_string()}</small>
+                                    </button>
+                                    {for level1.into_iter().map(|node| {
+                                        let first = first.clone();
+                                        let second = second.clone();
+                                        let third = third.clone();
+                                        let path = node.path.clone();
+                                        let selected = *first == node.path;
+                                        html! {
+                                            <button type="button" class="question-bank-category" data-testid="practice-deck-level1"
+                                                aria-pressed={selected.to_string()} onclick={Callback::from(move |_| {
+                                                    first.set(path.clone());
+                                                    second.set(String::new());
+                                                    third.set(String::new());
+                                                })}>
+                                                <span>{node.name.clone()}</span><small>{node.count.to_string()}</small>
+                                            </button>
+                                        }
+                                    })}
+                                </div>
                             </div>
-                            <p class="text-xs text-base-content/60">{"默认选中「错题」，可叠加其他标签或取消以练习全部卡片。"}</p>
-                        </fieldset>
+                            if !first.is_empty() {
+                                <div class="grid gap-2">
+                                    <span class="text-sm font-semibold">{"二级 · 模块"}</span>
+                                    if level2_empty {
+                                        <p class="text-sm text-base-content/60" data-testid="practice-deck-level2-empty">{"该来源没有下级模块，已选中整个来源。"}</p>
+                                    } else {
+                                        <div class="flex flex-wrap gap-2" role="group" aria-label="二级模块">
+                                            {for level2.into_iter().map(|node| {
+                                                let second = second.clone();
+                                                let third = third.clone();
+                                                let path = node.path.clone();
+                                                let selected = *second == node.path;
+                                                html! {
+                                                    <button type="button" class="question-bank-category" data-testid="practice-deck-level2"
+                                                        aria-pressed={selected.to_string()} onclick={Callback::from(move |_| {
+                                                            second.set(path.clone());
+                                                            third.set(String::new());
+                                                        })}>
+                                                        <span>{node.name.clone()}</span><small>{node.count.to_string()}</small>
+                                                    </button>
+                                                }
+                                            })}
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            if !second.is_empty() {
+                                <div class="grid gap-2">
+                                    <span class="text-sm font-semibold">{"三级 · 分类"}</span>
+                                    if level3_empty {
+                                        <p class="text-sm text-base-content/60" data-testid="practice-deck-leaf">{"该模块没有更细分类，已选中整个模块。"}</p>
+                                    } else {
+                                        <div class="flex flex-wrap gap-2" role="group" aria-label="三级分类">
+                                            <button type="button" class="question-bank-category" data-testid="practice-deck-level3-all"
+                                                aria-pressed={third.is_empty().to_string()} onclick={Callback::from({
+                                                    let third = third.clone();
+                                                    move |_| third.set(String::new())
+                                                })}>
+                                                <span>{"全部"}</span>
+                                            </button>
+                                            {for level3.into_iter().map(|node| {
+                                                let third = third.clone();
+                                                let path = node.path.clone();
+                                                let selected = *third == node.path;
+                                                let nested = !node.children.is_empty();
+                                                html! {
+                                                    <button type="button" class="question-bank-category" data-testid="practice-deck-level3"
+                                                        aria-pressed={selected.to_string()} onclick={Callback::from(move |_| {
+                                                            third.set(path.clone());
+                                                        })}>
+                                                        <span>{node.name.clone()}</span><small>{node.count.to_string()}</small>
+                                                        if nested { <small>{"含下级"}</small> }
+                                                    </button>
+                                                }
+                                            })}
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
                         <div class="training-count-row mt-3"><span class="font-semibold">{"本轮题数"}</span><TrainingQuestionCount value={count} unit="张" test_id="practice-count" on_change={{let count=requested_count.clone();Callback::from(move |value|count.set(value))}} /></div>
                     </div>
                     if let Some(error) = (*scope_error).clone() {
@@ -833,7 +958,7 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
                     } else if candidates.is_none() {
                         <p class="mt-3 text-sm text-base-content/60" data-testid="practice-loading">{"正在读取卡片…"}</p>
                     } else if candidate_count == 0 {
-                        <p class="mt-3 text-sm text-base-content/60" data-testid="practice-empty">{"没有符合条件的已同步卡片。请调整 Deck/Tag，或返回 Flashcard 同步。"}</p>
+                        <p class="mt-3 text-sm text-base-content/60" data-testid="practice-empty">{"没有符合条件的已同步卡片。请调整目录，或返回 Flashcard 同步。"}</p>
                     } else {
                         <p class="mt-3 text-sm" data-testid="practice-candidates">
                             {format!("共 {candidate_count} 张候选卡片，本轮将抽取 {} 张。", count.min(candidate_count))}
@@ -888,6 +1013,42 @@ mod tests {
             lapse_count: 0,
             is_new: true,
         }
+    }
+
+    #[test]
+    fn deck_tree_groups_nested_directories_with_subtree_counts() {
+        let decks = vec![
+            DeckSummary {
+                path: "真题练习/判断推理/逻辑判断/错题".into(),
+                card_count: 2,
+            },
+            DeckSummary {
+                path: "真题练习/判断推理".into(),
+                card_count: 1,
+            },
+            DeckSummary {
+                path: "用户整理/资料分析/增长率/错题".into(),
+                card_count: 3,
+            },
+        ];
+        let totals = deck_totals(&decks);
+        assert_eq!(totals["真题练习"], 3);
+        assert_eq!(totals["真题练习/判断推理"], 3);
+        let roots = deck_children(&totals, "");
+        assert_eq!(
+            roots
+                .iter()
+                .map(|node| node.name.as_str())
+                .collect::<Vec<_>>(),
+            ["真题练习", "用户整理"]
+        );
+        assert_eq!(roots[0].count, 3);
+        assert_eq!(roots[0].children[0].name, "判断推理");
+        assert_eq!(roots[0].children[0].count, 3);
+        assert_eq!(roots[0].children[0].children[0].name, "逻辑判断");
+        assert_eq!(roots[0].children[0].children[0].count, 2);
+        assert_eq!(roots[1].children[0].name, "资料分析");
+        assert_eq!(roots[1].children[0].children[0].name, "增长率");
     }
 
     #[test]

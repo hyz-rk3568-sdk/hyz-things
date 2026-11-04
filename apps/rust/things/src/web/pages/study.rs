@@ -277,7 +277,7 @@ fn study_workspace(props: &StudyWorkspaceProps) -> Html {
                             </div>
                             <span class="badge badge-outline">{"5种训练模式"}</span>
                         </div>
-                        <p class="text-sm leading-7 text-base-content/75">{"速算训练 / 错题复练 / 资料分析 / 判断推理 / 数量关系 · 学习统计"}</p>
+                        <p class="text-sm leading-7 text-base-content/75">{"速算训练 / 闪卡回顾 / 资料分析 / 判断推理 / 数量关系 · 学习统计"}</p>
                         <p class="text-xs text-base-content/60">{"综合训练支持原题重做、暂停及跨设备续答。"}</p>
                         <div class={BUTTON_ROW}>
                             <button class={BUTTON_PRIMARY} type="button" data-testid="study-open-calculation" onclick={open_calculation}>{"选择训练 →"}</button>

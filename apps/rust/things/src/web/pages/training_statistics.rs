@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 fn module_name(id: &str) -> &'static str {
     match id {
         "calculation" => "速算训练",
-        "flashcards" => "错题复练",
+        "flashcards" => "闪卡回顾",
         "comprehensive" => "资料分析",
         "logic" => "判断推理",
         "quantitative" => "数量关系",

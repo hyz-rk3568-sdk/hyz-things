@@ -186,7 +186,7 @@ test('empty practice pool retains a visible disabled action and exposes recovery
   await expect(page.getByTestId('training-setup-action').getByTestId('practice-start')).toBeDisabled();
   await page.getByTestId('practice-count-50').click();
   await expect(page.getByTestId('practice-count-50')).toHaveAttribute('aria-pressed','true');
-  await expect(page.getByTestId('practice-deck-filter')).toBeVisible();
+  await expect(page.getByTestId('practice-deck-tree')).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
 

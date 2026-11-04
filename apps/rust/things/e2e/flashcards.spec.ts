@@ -337,6 +337,39 @@ test("legacy calculation URL redirects to specialized training without losing th
   await expect(page.getByTestId("calculation-setup")).toBeVisible();
 });
 
+test("flashcard review selects card directories as three nested levels instead of tags", async ({ page }) => {
+  await page.goto("/#/study/training");
+  await page.getByTestId("training-mode-flashcards").click();
+  await expect(page.getByTestId("training-mode-flashcards")).toHaveText("闪卡回顾");
+  await expect(page.getByTestId("practice-tag-filter")).toHaveCount(0);
+  await expect(page.getByTestId("practice-deck-tree")).toBeVisible();
+  await expect(page.getByTestId("practice-candidates")).toContainText("共 3 张");
+
+  const level1 = page.getByTestId("practice-deck-level1");
+  await expect(level1).toHaveCount(2);
+  await level1.filter({ hasText: "资料分析" }).click();
+  await expect(page.getByTestId("practice-candidates")).toContainText("共 1 张");
+  await expect(page.getByTestId("practice-deck-level2-empty")).toBeVisible();
+  await expect(page.getByTestId("practice-deck-level2")).toHaveCount(0);
+
+  await page.getByTestId("practice-deck-all").click();
+  await expect(page.getByTestId("practice-candidates")).toContainText("共 3 张");
+  await level1.filter({ hasText: "判断推理" }).click();
+  await expect(page.getByTestId("practice-candidates")).toContainText("共 2 张");
+  const level2 = page.getByTestId("practice-deck-level2");
+  await expect(level2).toHaveCount(1);
+  await level2.filter({ hasText: "逻辑判断" }).click();
+  await expect(level2).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("practice-candidates")).toContainText("共 2 张");
+  await expect(page.getByTestId("practice-deck-leaf")).toBeVisible();
+
+  await page.getByTestId("practice-deck-level1").filter({ hasText: "判断推理" }).click();
+  await expect(page.getByTestId("practice-deck-level2")).toHaveCount(1);
+  await expect(page.getByTestId("practice-deck-level2")).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByTestId("practice-deck-level3")).toHaveCount(0);
+  await expect(page.getByTestId("practice-candidates")).toContainText("共 2 张");
+});
+
 test("wrong-card practice filters, reveals, self-grades and never writes FSRS", async ({ page }) => {
   const reviewWrites: string[] = [];
   page.on("request", (request) => {
@@ -347,10 +380,12 @@ test("wrong-card practice filters, reveals, self-grades and never writes FSRS", 
   await page.goto("/#/study/training");
   await page.getByTestId("training-mode-flashcards").click();
   await expect(page.getByTestId("practice-setup")).toBeVisible();
-  await expect(page.getByTestId("practice-candidates")).toContainText("共 2 张");
-  await page.getByTestId("practice-deck-filter").selectOption("资料分析");
-  await expect(page.getByTestId("practice-empty")).toBeVisible();
-  await page.getByTestId("practice-deck-filter").selectOption("判断推理/逻辑判断");
+  await expect(page.getByTestId("practice-candidates")).toContainText("共 3 张");
+  await page.getByTestId("practice-deck-level1").filter({ hasText: "资料分析" }).click();
+  await expect(page.getByTestId("practice-candidates")).toContainText("共 1 张");
+  await page.getByTestId("practice-deck-all").click();
+  await page.getByTestId("practice-deck-level1").filter({ hasText: "判断推理" }).click();
+  await page.getByTestId("practice-deck-level2").filter({ hasText: "逻辑判断" }).click();
   await expect(page.getByTestId("practice-candidates")).toContainText("共 2 张");
   await expect(page.getByTestId("practice-candidates")).toContainText("候选数量不足");
 
@@ -431,6 +466,8 @@ test("wrong-card practice filters, reveals, self-grades and never writes FSRS", 
 test("wrong-card navigation never grades unvisited cards or converts unanswered into skipped", async ({ page }) => {
   await page.goto("/#/study/training");
   await page.getByTestId("training-mode-flashcards").click();
+  await page.getByTestId("practice-deck-level1").filter({ hasText: "判断推理" }).click();
+  await page.getByTestId("practice-deck-level2").filter({ hasText: "逻辑判断" }).click();
   await expect(page.getByTestId("practice-candidates")).toContainText("共 2 张");
   await page.getByTestId("practice-start").click();
   const tabs=page.getByTestId("practice-question-tab");
