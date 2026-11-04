@@ -16,6 +16,7 @@ pub(crate) struct FavoritePreview {
 
 #[derive(Clone, serde::Serialize)]
 struct CreateFavoriteCard {
+    creation_mode: &'static str,
     target_deck: String,
     back: String,
     source_revision: String,
@@ -60,6 +61,7 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
     let back = use_state(String::new);
     // Never auto-select a destination: every new card needs a deliberate choice.
     let target = use_state(String::new);
+    let ai_mode = use_state(|| false);
     let confirmed = use_state(|| false);
     let busy = use_state(|| false);
     let locked = use_state(|| false);
@@ -83,6 +85,7 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
     let submit = {
         let back = back.clone();
         let target = target.clone();
+        let ai_mode = ai_mode.clone();
         let confirmed = confirmed.clone();
         let busy = busy.clone();
         let locked = locked.clone();
@@ -97,9 +100,13 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
                 return;
             }
             let request = frozen.borrow().clone().or_else(|| {
-                (props.preview.allowed_targets.contains(&target)
-                    && (!props.preview.requires_type_confirmation || *confirmed))
+                ((if *ai_mode {
+                    props.preview.ai_targets.contains(&*target)
+                } else {
+                    props.preview.recommended_target.as_ref() == Some(&*target)
+                }) && *confirmed)
                     .then(|| CreateFavoriteCard {
+                        creation_mode: if *ai_mode { "ai_generation" } else { "default" },
                         target_deck: (*target).clone(),
                         back: (*back).clone(),
                         source_revision: props.preview.source_revision.clone(),
@@ -139,11 +146,14 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
             });
         })
     };
+    let valid_target = if *ai_mode {
+        props.preview.ai_targets.contains(&*target)
+    } else {
+        props.preview.recommended_target.as_ref() == Some(&*target)
+    };
     let can_submit = !*busy
         && !props.csrf.is_empty()
-        && (*locked
-            || (props.preview.allowed_targets.contains(&target)
-                && (!props.preview.requires_type_confirmation || *confirmed)));
+        && (*locked || (valid_target && *confirmed));
     let close = Callback::from({
         let on_close = props.on_close.clone();
         move |_| on_close.emit(())
@@ -159,24 +169,57 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
             <header class="flex items-start justify-between gap-3">
                 <div>
                     <h2 class="text-xl font-bold">{"创建 Flashcard"}</h2>
-                    <p class="mt-1 text-sm opacity-60">{"确认写入目录；原 AI 出题卡与普通复盘卡都能保存，背面可留空。"}</p>
+                    <p class="mt-1 text-sm opacity-60">{"默认复盘和 AI 出题是两条独立的保存路径。先选择用途，再确认完整文件目录。背面可留空。"}</p>
                 </div>
                 <button type="button" class="btn btn-ghost btn-sm" onclick={close.clone()}>{"返回复盘"}</button>
             </header>
             <div class="space-y-5 break-words">
                 <section aria-label="正面（只读）">{favorite_content(&props.preview)}</section>
+                <div class="space-y-2">
+                    <span class="font-semibold">{"创建用途"}</span>
+                    <div class="join grid grid-cols-2" role="group" aria-label="创建用途" data-testid="favorite-flashcard-mode">
+                        <button type="button" class={classes!("join-item","btn",if !*ai_mode {"btn-primary"} else {"btn-outline"})}
+                            aria-pressed={(!*ai_mode).to_string()} disabled={*locked}
+                            data-testid="favorite-flashcard-default-mode"
+                            onclick={Callback::from({let ai_mode=ai_mode.clone();let target=target.clone();let confirmed=confirmed.clone();move |_| {
+                                ai_mode.set(false);target.set(String::new());confirmed.set(false);
+                            }})}>{"默认复盘"}</button>
+                        <button type="button" class={classes!("join-item","btn",if *ai_mode {"btn-primary"} else {"btn-outline"})}
+                            aria-pressed={(*ai_mode).to_string()} disabled={*locked || props.preview.ai_targets.is_empty()}
+                            data-testid="favorite-flashcard-ai-mode"
+                            onclick={Callback::from({let ai_mode=ai_mode.clone();let target=target.clone();let confirmed=confirmed.clone();move |_| {
+                                ai_mode.set(true);target.set(String::new());confirmed.set(false);
+                            }})}>{"AI 出题"}</button>
+                    </div>
+                    <p class="text-xs text-base-content/60">
+                        {if *ai_mode {
+                            "AI 出题路径：只提供当前命题器支持的题型目录，与默认复盘互不替代。"
+                        } else {
+                            "默认路径：一级模块完整名称 / 原题二级 category / 错题 / cards.md，适用于全部真题模块。"
+                        }}
+                    </p>
+                    if props.preview.ai_targets.is_empty() {
+                        <p class="text-xs text-base-content/50" data-testid="favorite-flashcard-ai-unavailable">
+                            {"这道题目前没有可用的 AI 出题目录，仍可保存到默认路径。"}
+                        </p>
+                    }
+                </div>
                 <label class="block space-y-2">
                     <span class="font-semibold">{"目标牌组"}</span>
                     <select class="select select-bordered w-full" value={(*target).clone()} disabled={*locked}
                         onchange={Callback::from({let target=target.clone();move |event:Event| {
                             target.set(event.target_unchecked_into::<HtmlSelectElement>().value());
                         }})}>
-                        <option value="" disabled={true}>{"请选择目标牌组"}</option>
-                        {for props.preview.allowed_targets.iter().map(|value|html! {
-                            <option value={value.clone()} selected={*target==*value}>
-                                {format!("flashcards/{value}/cards.md · {}", if props.preview.ai_targets.contains(value) {"兼容 AI 出题"} else {"普通复盘"})}
-                            </option>
-                        })}
+                        <option value="" disabled={true}>{"请选择写入目录"}</option>
+                        {if *ai_mode {
+                            html! {for props.preview.ai_targets.iter().map(|value|html! {
+                                <option value={value.clone()} selected={*target==*value}>{format!("flashcards/{value}/cards.md")}</option>
+                            })}
+                        } else {
+                            html! {for props.preview.recommended_target.iter().map(|value|html! {
+                                <option value={value.clone()} selected={*target==*value}>{format!("flashcards/{value}/cards.md")}</option>
+                            })}
+                        }}
                     </select>
                 </label>
                 if !target.is_empty() {
@@ -191,15 +234,13 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
                             back.set(event.target_unchecked_into::<web_sys::HtmlTextAreaElement>().value());
                         }})}/>
                 </label>
-                if props.preview.requires_type_confirmation {
-                    <label class="flex items-center gap-2">
-                        <input type="checkbox" class="checkbox checkbox-sm" checked={*confirmed} disabled={*locked}
-                            onchange={Callback::from({let confirmed=confirmed.clone();move |event:Event| {
-                                confirmed.set(event.target_unchecked_into::<HtmlInputElement>().checked());
-                            }})}/>
-                        <span>{"已核对题型与目标目录"}</span>
-                    </label>
-                }
+                <label class="flex items-center gap-2">
+                    <input type="checkbox" class="checkbox checkbox-sm" checked={*confirmed} disabled={*locked}
+                        onchange={Callback::from({let confirmed=confirmed.clone();move |event:Event| {
+                            confirmed.set(event.target_unchecked_into::<HtmlInputElement>().checked());
+                        }})}/>
+                    <span>{"确认写入所选目录"}</span>
+                </label>
                 if let Some(message) = &*error {
                     <p role="alert">{message}{"。重试会使用同一份请求，不会重复创建。"}</p>
                 }
