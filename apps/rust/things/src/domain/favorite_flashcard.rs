@@ -14,133 +14,133 @@ pub const TARGETS: &[FavoriteTarget] = &[
         module: "资料分析",
         target_deck: "资料/乘除变化/错题",
         relative_path: "资料/乘除变化/错题/cards.md",
-        tags: &["资料", "乘除变化"],
+        tags: &["资料", "错题", "乘除变化"],
     },
     FavoriteTarget {
         module: "资料分析",
         target_deck: "资料/假设代入思想/错题",
         relative_path: "资料/假设代入思想/错题/cards.md",
-        tags: &["资料", "假设代入思想"],
+        tags: &["资料", "错题", "假设代入思想"],
     },
     FavoriteTarget {
         module: "资料分析",
         target_deck: "资料/分数比较大小/错题",
         relative_path: "资料/分数比较大小/错题/cards.md",
-        tags: &["资料", "分数比较大小"],
+        tags: &["资料", "错题", "分数比较大小"],
     },
     FavoriteTarget {
         module: "资料分析",
         target_deck: "资料/增长贡献率和拉动增长率/错题",
         relative_path: "资料/增长贡献率和拉动增长率/错题/cards.md",
-        tags: &["资料", "增长贡献率和拉动增长率"],
+        tags: &["资料", "错题", "增长贡献率和拉动增长率"],
     },
     FavoriteTarget {
         module: "资料分析",
         target_deck: "资料/年均变化/错题",
         relative_path: "资料/年均变化/错题/cards.md",
-        tags: &["资料", "年均变化"],
+        tags: &["资料", "错题", "年均变化"],
     },
     FavoriteTarget {
         module: "资料分析",
         target_deck: "资料/线段混合/错题",
         relative_path: "资料/线段混合/错题/cards.md",
-        tags: &["资料", "线段混合"],
+        tags: &["资料", "错题", "线段混合"],
     },
     FavoriteTarget {
         module: "资料分析",
         target_deck: "资料/计算方法及误差分析/错题",
         relative_path: "资料/计算方法及误差分析/错题/cards.md",
-        tags: &["资料", "计算方法及误差分析"],
+        tags: &["资料", "错题", "计算方法及误差分析"],
     },
     FavoriteTarget {
         module: "判断推理",
         target_deck: "判断/形式推理/直言命题/错题",
         relative_path: "判断/形式推理/直言命题/错题/cards.md",
-        tags: &["判断", "形式推理", "直言命题"],
+        tags: &["判断", "错题", "形式推理", "直言命题"],
     },
     FavoriteTarget {
         module: "判断推理",
         target_deck: "判断/形式推理/联言选言假言命题/错题",
         relative_path: "判断/形式推理/联言选言假言命题/错题/cards.md",
-        tags: &["判断", "形式推理", "联言选言假言命题"],
+        tags: &["判断", "错题", "形式推理", "联言选言假言命题"],
     },
     FavoriteTarget {
         module: "判断推理",
         target_deck: "判断/形式推理/组合排列/错题",
         relative_path: "判断/形式推理/组合排列/错题/cards.md",
-        tags: &["判断", "形式推理", "组合排列"],
+        tags: &["判断", "错题", "形式推理", "组合排列"],
     },
     FavoriteTarget {
         module: "判断推理",
         target_deck: "判断/形式推理/特殊题型/错题",
         relative_path: "判断/形式推理/特殊题型/错题/cards.md",
-        tags: &["判断", "形式推理", "特殊题型"],
+        tags: &["判断", "错题", "形式推理", "特殊题型"],
     },
     FavoriteTarget {
         module: "数量关系",
         target_deck: "数量/经济利润/错题",
         relative_path: "数量/经济利润/错题/cards.md",
-        tags: &["数量", "经济利润"],
+        tags: &["数量", "错题", "经济利润"],
     },
     FavoriteTarget {
         module: "数量关系",
         target_deck: "数量/工程效率/错题",
         relative_path: "数量/工程效率/错题/cards.md",
-        tags: &["数量", "工程效率"],
+        tags: &["数量", "错题", "工程效率"],
     },
     FavoriteTarget {
         module: "数量关系",
         target_deck: "数量/行程/相对运动/错题",
         relative_path: "数量/行程/相对运动/错题/cards.md",
-        tags: &["数量", "行程", "相对运动"],
+        tags: &["数量", "错题", "行程", "相对运动"],
     },
     FavoriteTarget {
         module: "数量关系",
         target_deck: "数量/行程/综合应用/错题",
         relative_path: "数量/行程/综合应用/错题/cards.md",
-        tags: &["数量", "行程", "综合应用"],
+        tags: &["数量", "错题", "行程", "综合应用"],
     },
     FavoriteTarget {
         module: "数量关系",
         target_deck: "数量/溶液/错题",
         relative_path: "数量/溶液/错题/cards.md",
-        tags: &["数量", "溶液"],
+        tags: &["数量", "错题", "溶液"],
     },
     FavoriteTarget {
         module: "数量关系",
         target_deck: "数量/最值/错题",
         relative_path: "数量/最值/错题/cards.md",
-        tags: &["数量", "最值"],
+        tags: &["数量", "错题", "最值"],
     },
     FavoriteTarget {
         module: "数量关系",
         target_deck: "数量/排列组合/基础/错题",
         relative_path: "数量/排列组合/基础/错题/cards.md",
-        tags: &["数量", "排列组合", "基础"],
+        tags: &["数量", "错题", "排列组合", "基础"],
     },
     FavoriteTarget {
         module: "数量关系",
         target_deck: "数量/排列组合/插空与同素分堆/错题",
         relative_path: "数量/排列组合/插空与同素分堆/错题/cards.md",
-        tags: &["数量", "排列组合", "插空与同素分堆"],
+        tags: &["数量", "错题", "排列组合", "插空与同素分堆"],
     },
     FavoriteTarget {
         module: "数量关系",
         target_deck: "数量/排列组合/特殊套路/错题",
         relative_path: "数量/排列组合/特殊套路/错题/cards.md",
-        tags: &["数量", "排列组合", "特殊套路"],
+        tags: &["数量", "错题", "排列组合", "特殊套路"],
     },
     FavoriteTarget {
         module: "数量关系",
         target_deck: "数量/概率/错题",
         relative_path: "数量/概率/错题/cards.md",
-        tags: &["数量", "概率"],
+        tags: &["数量", "错题", "概率"],
     },
     FavoriteTarget {
         module: "数量关系",
         target_deck: "数量/周期/错题",
         relative_path: "数量/周期/错题/cards.md",
-        tags: &["数量", "周期"],
+        tags: &["数量", "错题", "周期"],
     },
 ];
 
@@ -234,6 +234,17 @@ fn rejected(reason: &str) -> FavoriteEligibility {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_target_is_tagged_for_the_wrong_answer_deck() {
+        for target in TARGETS {
+            assert!(
+                target.tags.contains(&"错题"),
+                "{} must carry the 错题 tag",
+                target.target_deck
+            );
+        }
+    }
 
     #[test]
     fn unsupported_precise_math_type_is_rejected_while_broad_math_needs_confirmation() {
