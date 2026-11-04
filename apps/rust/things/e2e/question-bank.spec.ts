@@ -295,3 +295,83 @@ test('swipe changes questions only for horizontal finger gesture and keeps docum
   const overflow=await page.evaluate(()=>document.documentElement.scrollHeight-document.documentElement.clientHeight);
   expect(overflow).toBeLessThanOrEqual(1);
 });
+
+test('AI review defaults to source, stays running across navigation and restores follow-ups', async ({page}) => {
+  type Msg = {role: string; content: string; created_at: number};
+  type State = {session_id: string; question_id: string; status: string; error: null; messages: Msg[]};
+  const records = new Map<string,State>();
+  const actions: string[] = [];
+  await page.route(/\\/api\\/v1\\/question-bank\\/practice\\/sessions\\/[^/]+\\/questions\\/[^/]+\\/ai(?:\\/(?:messages|stop))?$/,async route => {
+    const path = new URL(route.request().url()).pathname;
+    const match = path.match(/sessions\\/([^/]+)\\/questions\\/([^/]+)\\/ai(.*)$/)!;
+    const [session_id, question_id, suffix] = match.slice(1);
+    const key = session_id + ':' + question_id;
+    const record = records.get(key) ?? {session_id,question_id,status:'idle',error:null,messages:[]};
+    records.set(key,record);
+    if(route.request().method()==='POST'){
+      actions.push(suffix || 'start');
+      if(suffix==='/stop') record.status='stopped';
+      else if(suffix==='/messages'){
+        const body=route.request().postDataJSON() as {message:string};
+        record.messages.push({role:'user',content:body.message,created_at:1});
+        record.status='running';
+      } else record.status='running';
+    }
+    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(record)});
+  });
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await chooseFixturePaper(page);
+  await page.getByTestId('question-bank-practice-start').click();
+  await page.getByTestId('question-bank-practice-choice').first().click();
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button',{name:'确认交卷'}).click();
+
+  await expect(page.getByTestId('question-bank-original-tab')).toHaveAttribute('aria-pressed','true');
+  await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('原始解析');
+  await expect(page.getByTestId('question-bank-ai-review')).toHaveCount(0);
+  expect(records.size).toBe(0); // AI tab is lazy, original remains the default.
+
+  await page.getByTestId('question-bank-ai-tab').click();
+  await expect(page.getByTestId('question-bank-ai-start')).toBeVisible();
+  await page.getByTestId('question-bank-ai-start').click();
+  await expect(page.getByTestId('question-bank-ai-status')).toHaveText('正在生成');
+  expect(actions).toEqual(['start']);
+
+  await openSheet(page);
+  await page.getByTestId('question-bank-practice-number').nth(1).click();
+  await expect(page.getByTestId('question-bank-original-tab')).toHaveAttribute('aria-pressed','true');
+  await openSheet(page);
+  await page.getByTestId('question-bank-practice-number').first().click();
+  await page.getByTestId('question-bank-ai-tab').click();
+  await expect(page.getByTestId('question-bank-ai-status')).toHaveText('正在生成');
+  expect(actions).toEqual(['start']); // no implicit interrupt on question navigation
+
+  await page.getByRole('button',{name:/返回训练/}).click();
+  await page.getByTestId('question-bank-history-open').click();
+  await page.getByTestId('question-bank-practice-history-item').first()
+    .getByRole('button',{name:'查看原题与解析'}).click();
+  await expect(page.getByTestId('question-bank-original-tab')).toHaveAttribute('aria-pressed','true');
+  await page.getByTestId('question-bank-ai-tab').click();
+  await expect(page.getByTestId('question-bank-ai-status')).toHaveText('正在生成');
+  expect(actions).toEqual(['start']); // exiting review does not cancel
+
+  const persisted=Array.from(records.values()).find(v=>v.status==='running')!;
+  persisted.status='complete';
+  persisted.messages.push({role:'assistant',content:'我的独立解法：优先使用速算。',created_at:2});
+  await page.getByTestId('question-bank-original-tab').click();
+  await page.getByTestId('question-bank-ai-tab').click();
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('我的独立解法');
+  await page.getByTestId('question-bank-ai-input').fill('为什么不选 A？');
+  await page.getByTestId('question-bank-ai-send').click();
+  await expect(page.getByTestId('question-bank-ai-status')).toHaveText('正在生成');
+  await expect(page.getByTestId('question-bank-ai-message').last()).toContainText('为什么不选 A？');
+  await page.getByTestId('question-bank-ai-stop').click();
+  await expect(page.getByTestId('question-bank-ai-status')).toHaveText('已停止');
+  expect(actions).toEqual(['start','/messages','/stop']);
+  await page.getByTestId('question-bank-original-tab').click();
+  await page.getByTestId('question-bank-ai-tab').click();
+  await expect(page.getByTestId('question-bank-ai-message')).toHaveCount(2);
+});
+
