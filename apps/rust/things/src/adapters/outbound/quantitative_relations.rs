@@ -169,7 +169,7 @@ fn eligible_path(path: &str) -> Option<&'static str> {
         .unwrap_or(path)
         .strip_suffix("/cards.md")?;
     let target = resolve_target(deck).or_else(|| resolve_target(&format!("{deck}/错题")))?;
-    (target.ai_generation && target.module == "数量关系").then_some("quantitative")
+    (target.mode == crate::domain::favorite_flashcard::FlashcardCreationMode::AiGeneration && target.module == "数量关系").then_some("quantitative")
 }
 
 pub const DEFAULT_USER_PROMPT: &str = "题目接近国考、省考数量关系风格，难度中等偏上，条件与数字自然；干扰选项合理，优先考查方法迁移和快速计算，避免机械换数字，解析简洁。";
