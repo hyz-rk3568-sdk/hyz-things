@@ -2010,6 +2010,8 @@ mod tests {
             wrong_question_category("资料/错题/平均数增量"),
             Some("平均数增量")
         );
+        assert_eq!(wrong_question_category("资料分析/AI出题/乘除变化/错题"), Some("乘除变化"));
+        assert_eq!(wrong_question_category("资料分析/默认/乘除变化/错题"), None);
         assert_eq!(wrong_question_category("资料/错题"), None);
         assert_eq!(wrong_question_category("资料/线段混合"), None);
         assert_eq!(wrong_question_category("其他/错题/乘积增长率"), None);
