@@ -18,8 +18,7 @@ use socket2::{Domain, Protocol, Socket, Type};
 use crate::{
     adapters::inbound::http::{
         app_with_admin_camera_control_at_address_and_flashcards_and_analysis, with_question_bank,
-        with_question_bank_ai,
-        TlsListener,
+        with_question_bank_ai, TlsListener,
     },
     application::{
         admin::AdminApplication,
@@ -269,7 +268,8 @@ pub struct PortalListenerApp {
     pub admin: Arc<AdminApplication>,
     pub camera: Arc<CameraApplication>,
     pub question_bank: Option<Arc<crate::application::question_bank::QuestionBankApplication>>,
-    pub question_bank_ai: Option<Arc<crate::adapters::outbound::question_bank_ai::QuestionBankAiService>>,
+    pub question_bank_ai:
+        Option<Arc<crate::adapters::outbound::question_bank_ai::QuestionBankAiService>>,
     pub flashcards: Option<Arc<FlashcardApplication>>,
     pub logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
     pub quantitative_relations:

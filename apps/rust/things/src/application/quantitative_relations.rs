@@ -49,6 +49,7 @@ pub struct QuantitativeGenerationTarget {
     pub card_path: String,
     pub front: String,
     pub back: String,
+    pub correct_answer: Vec<String>,
     pub kind: String,
 }
 

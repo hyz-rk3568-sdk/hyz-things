@@ -91,6 +91,8 @@ impl FlashcardRepositoryPort for SqliteFlashcardRepository {
 
         for card in &snapshot.cards {
             validate_source_file(&card.source_file)?;
+            let correct_answer = serde_json::to_string(&card.correct_answer)
+                .map_err(|error| FlashcardError::StorageUnavailable(error.to_string()))?;
             let existing = sqlx::query(
                 "SELECT source_hash, source_file, source_order, deck_path, active, created_at_ms\n                 FROM flashcards WHERE id = ?",
             )
@@ -118,7 +120,7 @@ impl FlashcardRepositoryPort for SqliteFlashcardRepository {
                 .unwrap_or(now);
 
             sqlx::query(
-                "INSERT INTO flashcards\n                 (id, source_file, source_order, deck_path, front_markdown, back_markdown, source_hash, active, created_at_ms, updated_at_ms)\n                 VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)\n                 ON CONFLICT(id) DO UPDATE SET\n                   source_file = excluded.source_file,\n                   source_order = excluded.source_order,\n                   deck_path = excluded.deck_path,\n                   front_markdown = excluded.front_markdown,\n                   back_markdown = excluded.back_markdown,\n                   source_hash = excluded.source_hash,\n                   active = 1,\n                   updated_at_ms = excluded.updated_at_ms",
+                "INSERT INTO flashcards\n                 (id, source_file, source_order, deck_path, front_markdown, back_markdown, source_hash, source_question_id, correct_answer, active, created_at_ms, updated_at_ms)\n                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)\n                 ON CONFLICT(id) DO UPDATE SET\n                   source_file = excluded.source_file,\n                   source_order = excluded.source_order,\n                   deck_path = excluded.deck_path,\n                   front_markdown = excluded.front_markdown,\n                   back_markdown = excluded.back_markdown,\n                   source_hash = excluded.source_hash,\n                   source_question_id = excluded.source_question_id,\n                   correct_answer = excluded.correct_answer,\n                   active = 1,\n                   updated_at_ms = excluded.updated_at_ms",
             )
             .bind(card.id.as_str())
             .bind(&card.source_file)
@@ -127,6 +129,8 @@ impl FlashcardRepositoryPort for SqliteFlashcardRepository {
             .bind(&card.front_markdown)
             .bind(&card.back_markdown)
             .bind(&card.source_hash)
+            .bind(&card.source_question_id)
+            .bind(correct_answer)
             .bind(created_at)
             .bind(if existing.is_some() && !existing_changed && !was_inactive {
                 existing
@@ -585,6 +589,8 @@ mod tests {
     fn snapshot(front: &str) -> SourceSnapshot {
         SourceSnapshot {
             cards: vec![SourceCard {
+                source_question_id: None,
+                correct_answer: Vec::new(),
                 id: clock_id(),
                 source_file: "deck/cards.md".to_owned(),
                 source_order: 0,
@@ -609,6 +615,45 @@ mod tests {
             .await
             .unwrap();
         SqliteFlashcardRepository::from_pool(pool).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn sync_persists_and_clears_favorite_metadata_without_changing_identity() {
+        let repository = repository().await;
+        let mut favorite = snapshot("front");
+        let question_id = "550e8400-e29b-41d4-a716-446655440000";
+        favorite.cards[0].source_question_id = Some(question_id.into());
+        favorite.cards[0].correct_answer = vec!["B".into()];
+        repository.apply_sync(favorite.clone(), 100).await.unwrap();
+        let row = sqlx::query("SELECT id,source_question_id,correct_answer FROM flashcards")
+            .fetch_one(repository.pool())
+            .await
+            .unwrap();
+        assert_eq!(row.get::<String, _>("id"), clock_id().as_str());
+        assert_eq!(
+            row.get::<Option<String>, _>("source_question_id")
+                .as_deref(),
+            Some(question_id)
+        );
+        assert_eq!(row.get::<String, _>("correct_answer"), "[\"B\"]");
+        favorite.cards[0].source_hash = "changed-metadata".into();
+        favorite.cards[0].correct_answer = vec!["A".into(), "C".into()];
+        let updated = repository.apply_sync(favorite, 200).await.unwrap();
+        assert_eq!(updated.updated, 1);
+        assert_eq!(
+            sqlx::query_scalar::<_, String>("SELECT correct_answer FROM flashcards")
+                .fetch_one(repository.pool())
+                .await
+                .unwrap(),
+            "[\"A\",\"C\"]"
+        );
+        repository.apply_sync(snapshot("front"), 300).await.unwrap();
+        let row = sqlx::query("SELECT source_question_id,correct_answer FROM flashcards")
+            .fetch_one(repository.pool())
+            .await
+            .unwrap();
+        assert_eq!(row.get::<Option<String>, _>("source_question_id"), None);
+        assert_eq!(row.get::<String, _>("correct_answer"), "[]");
     }
 
     #[tokio::test]

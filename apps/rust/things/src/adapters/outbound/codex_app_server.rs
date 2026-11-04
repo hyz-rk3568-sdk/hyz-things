@@ -323,23 +323,27 @@ impl CodexSession {
             .await?;
         client.notify("initialized", json!({})).await?;
         let thread = if let Some(thread_id) = previous_thread {
-            client.request(
-                "thread/resume",
-                json!({"threadId":thread_id,"excludeTurns":true}),
-            ).await?
+            client
+                .request(
+                    "thread/resume",
+                    json!({"threadId":thread_id,"excludeTurns":true}),
+                )
+                .await?
         } else {
-            client.request(
-                "thread/start",
-                json!({
-                    "ephemeral":!persistent,
-                    "cwd":cwd,
-                    "approvalPolicy":"never",
-                    "sandbox":if persistent {"read-only"} else {"danger-full-access"},
-                    "config":{"shell_environment_policy.set":{
-                        "TMPDIR":"/tmp","TMP":"/tmp","TEMP":"/tmp"
-                    }}
-                }),
-            ).await?
+            client
+                .request(
+                    "thread/start",
+                    json!({
+                        "ephemeral":!persistent,
+                        "cwd":cwd,
+                        "approvalPolicy":"never",
+                        "sandbox":if persistent {"read-only"} else {"danger-full-access"},
+                        "config":{"shell_environment_policy.set":{
+                            "TMPDIR":"/tmp","TMP":"/tmp","TEMP":"/tmp"
+                        }}
+                    }),
+                )
+                .await?
         };
         client.thread_id = thread
             .pointer("/thread/id")
@@ -396,10 +400,13 @@ impl CodexSession {
             "required":["answer"],
             "additionalProperties":false
         });
-        let raw = self.turn_cancellable_with_schema(prompt, cancellation, schema).await?;
-        let value: Value = serde_json::from_str(&raw)
-            .map_err(|_| "Codex AI 解析返回格式错误")?;
-        let text = value.get("answer").and_then(Value::as_str)
+        let raw = self
+            .turn_cancellable_with_schema(prompt, cancellation, schema)
+            .await?;
+        let value: Value = serde_json::from_str(&raw).map_err(|_| "Codex AI 解析返回格式错误")?;
+        let text = value
+            .get("answer")
+            .and_then(Value::as_str)
             .filter(|text| !text.trim().is_empty() && text.len() <= MAX_PACKET)
             .ok_or("Codex AI 解析内容为空或过长")?;
         Ok(text.to_owned())
@@ -756,6 +763,7 @@ mod tests {
                     card_path: "数量/经济利润/cards.md".into(),
                     front: "利润率".into(),
                     back: "利润除以成本".into(),
+                    correct_answer: Vec::new(),
                     kind: "quantitative".into(),
                 })
                 .collect(),

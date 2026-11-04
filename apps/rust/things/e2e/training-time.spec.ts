@@ -1,5 +1,5 @@
 import {expect,test,type Page} from '@playwright/test';
-import {resetHarness} from './fixtures';
+import {loginAsAdmin,resetHarness} from './fixtures';
 
 test.beforeEach(async({request})=>{await resetHarness(request)});
 
@@ -27,6 +27,15 @@ async function clockFixture(page:Page) {
   return events;
 }
 
+async function chooseFixturePaper(page:Page) {
+  const region=page.getByTestId('question-bank-region').filter({hasText:'国考'});
+  if (!(await region.evaluate(node=>(node.closest('details') as HTMLDetailsElement | null)?.open))) {
+    await region.click();
+  }
+  const year=page.getByTestId('question-bank-year').filter({hasText:'2008'});
+  if (!(await year.evaluate(node=>(node.closest('details') as HTMLDetailsElement).open))) await year.click();
+  await page.getByTestId('question-bank-paper-option').filter({hasText:'行测真题训练端到端样卷'}).click();
+}
 async function openComprehensivePaper(page:Page) {
   const started=Date.now();
   const groups=Array.from({length:4},(_,group)=>({
@@ -187,6 +196,27 @@ test("foreground resume restores study time after the heartbeat grace expires",a
     window.dispatchEvent(new Event('focus'));
   });
   await expect.poll(enters).toBe(afterFirstReturn+1);
+});
+
+test("question bank review keeps counting effective study time",async({page})=>{
+  const events=await clockFixture(page);
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await chooseFixturePaper(page);
+  await page.getByTestId('question-bank-practice-start').click();
+  await expect(page.getByTestId('question-bank-practice-workspace')).toBeVisible();
+  await expect.poll(()=>events.filter(action=>action==='enter').length).toBeGreaterThan(0);
+
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByTestId('question-bank-submit-confirm').getByRole('button',{name:'确认交卷'}).click();
+  await expect(page.getByTestId('question-bank-practice-review-answer')).toBeVisible();
+  await expect.poll(()=>events.at(-1)).toBe('enter');
+
+  const clock=page.getByTestId('study-time-inline');
+  const before=await clock.innerText();
+  await page.waitForTimeout(1200);
+  await expect.poll(()=>clock.innerText()).not.toBe(before);
 });
 
 test("paper pause stops the study clock and resuming restarts it",async({page})=>{

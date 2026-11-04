@@ -1,5 +1,6 @@
 //! Shared question navigation for timed drills and post-submit review.
 use super::*;
+use gloo_timers::callback::Timeout;
 
 // A selected question keeps its grade during review. An active paper must
 // never expose correctness: Some(_) only means "already answered" there.
@@ -97,7 +98,20 @@ pub(super) fn question_navigation(
 
 #[cfg(test)]
 mod tests {
-    use super::question_tab_style;
+    use super::{page_turn_direction, question_tab_style, swipe_pointer};
+
+    #[test]
+    fn swipe_accepts_touch_and_pen_but_not_mouse() {
+        assert!(swipe_pointer("touch"));
+        assert!(swipe_pointer("pen"));
+        assert!(!swipe_pointer("mouse"));
+    }
+
+    #[test]
+    fn page_turn_slides_out_towards_the_requested_neighbour() {
+        assert_eq!(page_turn_direction(1, 2), "next");
+        assert_eq!(page_turn_direction(2, 1), "previous");
+    }
 
     #[test]
     fn review_selected_question_keeps_graded_colour() {
@@ -123,9 +137,9 @@ fn allows_navigation(guard: &Option<Callback<(), bool>>) -> bool {
     }
 }
 
-/// Shared swipe region for all question-based training screens. Only a primary
-/// finger gesture with a decisive horizontal displacement changes the item.
-/// Pen, mouse, interactive controls and active inking are deliberately ignored.
+/// Shared swipe region for all question-based training screens. Touch and pen
+/// swipes with a decisive horizontal displacement change the item. Mouse and
+/// interactive controls stay inert, and active inking keeps the pen for ink.
 #[derive(Properties, PartialEq)]
 pub(super) struct TrainingSwipeSurfaceProps {
     pub(super) current: UseStateHandle<usize>,
@@ -135,64 +149,389 @@ pub(super) struct TrainingSwipeSurfaceProps {
     pub(super) navigation_allowed: Option<Callback<(), bool>>,
 }
 
+fn swipe_pointer(pointer_type: &str) -> bool {
+    matches!(pointer_type, "touch" | "pen")
+}
+
+fn page_turn_direction(from: usize, to: usize) -> &'static str {
+    if to > from {
+        "next"
+    } else {
+        "previous"
+    }
+}
+
+fn copy_scroll_positions(source: &Element, clone: &Element) {
+    let (Ok(source_nodes), Ok(clone_nodes)) = (
+        source.query_selector_all("*"),
+        clone.query_selector_all("*"),
+    ) else {
+        return;
+    };
+    for index in 0..source_nodes.length().min(clone_nodes.length()) {
+        let (Some(source_node), Some(clone_node)) =
+            (source_nodes.item(index), clone_nodes.item(index))
+        else {
+            continue;
+        };
+        let (Ok(source_element), Ok(clone_element)) = (
+            source_node.dyn_into::<Element>(),
+            clone_node.dyn_into::<Element>(),
+        ) else {
+            continue;
+        };
+        let top = source_element.scroll_top();
+        let left = source_element.scroll_left();
+        if top != 0 {
+            clone_element.set_scroll_top(top);
+        }
+        if left != 0 {
+            clone_element.set_scroll_left(left);
+        }
+    }
+}
+
+const SWIPE_LOCK_PX: i32 = 8;
+const SWIPE_COMMIT_PX: i32 = 72;
+
+#[derive(Clone, Copy)]
+struct SwipeDrag {
+    from: usize,
+    direction: &'static str,
+    width: f64,
+    generation: u32,
+}
+
+/// Snapshot the live page into the overlay. The incoming page renders
+/// underneath, so the snapshot can follow the finger while both pages stay
+/// readable.
+fn clone_page_turn(
+    content: &HtmlElement,
+    overlay: &HtmlElement,
+    direction: &str,
+) -> Option<HtmlElement> {
+    while let Some(child) = overlay.first_child() {
+        let _ = overlay.remove_child(&child);
+    }
+    let clone = content.clone_node_with_deep(true).ok()?;
+    let element = clone.dyn_into::<HtmlElement>().ok()?;
+    // The snapshot must not duplicate ids or test ids that belong to the live
+    // page, otherwise locators become ambiguous while the page turn runs.
+    let _ = element.remove_attribute("id");
+    let _ = element.remove_attribute("data-testid");
+    if let Ok(nodes) = element.query_selector_all("[id], [data-testid]") {
+        for index in 0..nodes.length() {
+            let Some(node) = nodes.item(index) else {
+                continue;
+            };
+            let Ok(child) = node.dyn_into::<Element>() else {
+                continue;
+            };
+            let _ = child.remove_attribute("id");
+            let _ = child.remove_attribute("data-testid");
+        }
+    }
+    let _ = element.set_attribute("aria-hidden", "true");
+    let _ = element.set_attribute("inert", "");
+    let _ = element.set_attribute("data-page-turn", "out");
+    let _ = element.set_attribute("data-direction", direction);
+    element.set_class_name(format!("{} training-page-turn", element.class_name()).trim());
+    overlay.append_child(&element).ok()?;
+    // Scroll offsets only apply once the snapshot has a layout box.
+    copy_scroll_positions(content, &element);
+    Some(element)
+}
+
+fn activate_page_turn(element: &HtmlElement) {
+    element.set_class_name(format!("{} training-page-turn-active", element.class_name()).trim());
+}
+
+fn page_turn_offset(dx: i32, direction: &str) -> i32 {
+    if direction == "next" {
+        dx.min(0)
+    } else {
+        dx.max(0)
+    }
+}
+
+fn apply_page_turn_offset(element: &HtmlElement, dx: i32, width: f64, direction: &str) {
+    let offset = page_turn_offset(dx, direction);
+    let ratio = (offset as f64 / width.max(1.0)).clamp(-1.0, 1.0);
+    let angle = ratio * 8.0;
+    let scale = 1.0 - ratio.abs() * 0.015;
+    let style = element.style();
+    let _ = style.set_property("transition", "none");
+    let _ = style.set_property(
+        "transform",
+        &format!("perspective(1200px) translateX({offset}px) rotateY({angle}deg) scale({scale})"),
+    );
+}
+
+fn settle_page_turn(element: &HtmlElement, direction: &str, commit: bool) {
+    let target = if !commit {
+        "perspective(1200px) translateX(0) rotateY(0) scale(1)"
+    } else if direction == "next" {
+        "perspective(1200px) translateX(-100%) rotateY(-8deg) scale(.985)"
+    } else {
+        "perspective(1200px) translateX(100%) rotateY(8deg) scale(.985)"
+    };
+    let style = element.style();
+    let _ = style.set_property("transition", "transform 260ms cubic-bezier(.4,0,.2,1)");
+    // Flush the dragging transform so the transition starts from the finger.
+    let _ = element.offset_width();
+    let _ = style.set_property("transform", target);
+}
+
+fn advance_generation(state: &Rc<RefCell<u32>>) -> u32 {
+    let mut value = state.borrow_mut();
+    *value = value.wrapping_add(1);
+    *value
+}
+
+fn schedule_turn_cleanup(
+    overlay: HtmlElement,
+    generation_state: Rc<RefCell<u32>>,
+    expected: u32,
+    delay: u32,
+) {
+    Timeout::new(delay, move || {
+        if *generation_state.borrow() != expected {
+            return;
+        }
+        while let Some(child) = overlay.first_child() {
+            let _ = overlay.remove_child(&child);
+        }
+    })
+    .forget();
+}
+
 #[function_component(TrainingSwipeSurface)]
 pub(super) fn training_swipe_surface(props: &TrainingSwipeSurfaceProps) -> Html {
     let origin = use_mut_ref(|| None::<(i32, i32, i32)>);
+    let drag = use_mut_ref(|| None::<SwipeDrag>);
     let ink_active = use_context::<bool>().unwrap_or(false);
+    let surface_ref = use_node_ref();
+    let content_ref = use_node_ref();
+    let overlay_ref = use_node_ref();
+    // Older cleanup timers must not remove a newer page snapshot.
+    let turn_generation = use_mut_ref(|| 0_u32);
     let down = {
         let origin = origin.clone();
+        let drag = drag.clone();
+        let surface_ref = surface_ref.clone();
         let navigation_allowed = props.navigation_allowed.clone();
         Callback::from(move |event: PointerEvent| {
+            if !event.is_primary() || !swipe_pointer(&event.pointer_type()) {
+                return;
+            }
             *origin.borrow_mut() = None;
-            if !allows_navigation(&navigation_allowed)
-                || ink_active
-                || event.pointer_type() != "touch"
-                || !event.is_primary()
-                || !swipe_start_allowed(&event)
+            *drag.borrow_mut() = None;
+            if !allows_navigation(&navigation_allowed) || ink_active || !swipe_start_allowed(&event)
             {
                 return;
             }
             *origin.borrow_mut() = Some((event.pointer_id(), event.client_x(), event.client_y()));
+            if let Some(surface) = surface_ref.cast::<HtmlElement>() {
+                let _ = surface.set_pointer_capture(event.pointer_id());
+            }
         })
     };
-    let up = {
+    let on_move = {
         let origin = origin.clone();
+        let drag = drag.clone();
         let current = props.current.clone();
         let total = props.total;
         let navigation_allowed = props.navigation_allowed.clone();
+        let content_ref = content_ref.clone();
+        let overlay_ref = overlay_ref.clone();
+        let turn_generation = turn_generation.clone();
         Callback::from(move |event: PointerEvent| {
-            let start = origin.borrow_mut().take();
-            if !allows_navigation(&navigation_allowed) {
-                return;
-            }
-            let Some((pointer_id, start_x, start_y)) = start else {
+            let Some((pointer_id, start_x, start_y)) = *origin.borrow() else {
                 return;
             };
-            if event.pointer_type() != "touch" || event.pointer_id() != pointer_id {
+            if !swipe_pointer(&event.pointer_type()) || event.pointer_id() != pointer_id {
                 return;
             }
             let dx = event.client_x() - start_x;
             let dy = event.client_y() - start_y;
-            if dx.abs() < 72 || dx.abs() <= dy.abs() * 3 / 2 {
+            if let Some(active) = *drag.borrow() {
+                if let Some(element) = overlay_ref
+                    .cast::<HtmlElement>()
+                    .and_then(|overlay| overlay.first_child())
+                    .and_then(|node| node.dyn_into::<HtmlElement>().ok())
+                {
+                    apply_page_turn_offset(&element, dx, active.width, active.direction);
+                }
+                return;
+            }
+            // Lock horizontal once the finger clearly leaves the tap zone.
+            if !allows_navigation(&navigation_allowed)
+                || dx.abs() < SWIPE_LOCK_PX
+                || dx.abs() < dy.abs()
+            {
                 return;
             }
             let index = *current;
-            if dx < 0 && index + 1 < total {
-                current.set(index + 1);
-            } else if dx > 0 && index > 0 {
-                current.set(index - 1);
+            let target = if dx < 0 {
+                if index + 1 >= total {
+                    return;
+                }
+                index + 1
+            } else {
+                if index == 0 {
+                    return;
+                }
+                index - 1
+            };
+            let direction = page_turn_direction(index, target);
+            let (Some(content), Some(overlay)) = (
+                content_ref.cast::<HtmlElement>(),
+                overlay_ref.cast::<HtmlElement>(),
+            ) else {
+                return;
+            };
+            let width = content.client_width().max(1) as f64;
+            let Some(element) = clone_page_turn(&content, &overlay, direction) else {
+                return;
+            };
+            let generation = advance_generation(&turn_generation);
+            *drag.borrow_mut() = Some(SwipeDrag {
+                from: index,
+                direction,
+                width,
+                generation,
+            });
+            current.set(target);
+            apply_page_turn_offset(&element, dx, width, direction);
+        })
+    };
+    let up = {
+        let origin = origin.clone();
+        let drag = drag.clone();
+        let current = props.current.clone();
+        let total = props.total;
+        let navigation_allowed = props.navigation_allowed.clone();
+        let content_ref = content_ref.clone();
+        let overlay_ref = overlay_ref.clone();
+        let turn_generation = turn_generation.clone();
+        Callback::from(move |event: PointerEvent| {
+            let Some((pointer_id, start_x, start_y)) = *origin.borrow() else {
+                return;
+            };
+            if !swipe_pointer(&event.pointer_type()) || event.pointer_id() != pointer_id {
+                return;
             }
+            *origin.borrow_mut() = None;
+            let active = drag.borrow_mut().take();
+            let Some(overlay) = overlay_ref.cast::<HtmlElement>() else {
+                return;
+            };
+            if let Some(active) = active {
+                let offset = page_turn_offset(event.client_x() - start_x, active.direction);
+                let commit =
+                    offset.abs() >= SWIPE_COMMIT_PX && allows_navigation(&navigation_allowed);
+                if let Some(element) = overlay
+                    .first_child()
+                    .and_then(|node| node.dyn_into::<HtmlElement>().ok())
+                {
+                    settle_page_turn(&element, active.direction, commit);
+                }
+                if !commit {
+                    current.set(active.from);
+                }
+                schedule_turn_cleanup(overlay, turn_generation.clone(), active.generation, 340);
+                return;
+            }
+            if !allows_navigation(&navigation_allowed) {
+                return;
+            }
+            // Coalesced or synthetic flicks may have no pointermove at all.
+            let dx = event.client_x() - start_x;
+            let dy = event.client_y() - start_y;
+            if dx.abs() < SWIPE_COMMIT_PX || dx.abs() <= dy.abs() * 3 / 2 {
+                return;
+            }
+            let index = *current;
+            let target = if dx < 0 && index + 1 < total {
+                index + 1
+            } else if dx > 0 && index > 0 {
+                index - 1
+            } else {
+                return;
+            };
+            let direction = page_turn_direction(index, target);
+            if let Some(content) = content_ref.cast::<HtmlElement>() {
+                if let Some(element) = clone_page_turn(&content, &overlay, direction) {
+                    activate_page_turn(&element);
+                    let generation = advance_generation(&turn_generation);
+                    schedule_turn_cleanup(overlay, turn_generation.clone(), generation, 1_500);
+                }
+            }
+            current.set(target);
         })
     };
     let cancel = {
         let origin = origin.clone();
-        Callback::from(move |_: PointerEvent| *origin.borrow_mut() = None)
+        let drag = drag.clone();
+        let current = props.current.clone();
+        let overlay_ref = overlay_ref.clone();
+        let turn_generation = turn_generation.clone();
+        Callback::from(move |event: PointerEvent| {
+            let Some((pointer_id, _, _)) = *origin.borrow() else {
+                return;
+            };
+            if event.pointer_id() != pointer_id {
+                return;
+            }
+            *origin.borrow_mut() = None;
+            let Some(active) = drag.borrow_mut().take() else {
+                return;
+            };
+            if let Some(overlay) = overlay_ref.cast::<HtmlElement>() {
+                if let Some(element) = overlay
+                    .first_child()
+                    .and_then(|node| node.dyn_into::<HtmlElement>().ok())
+                {
+                    settle_page_turn(&element, active.direction, false);
+                }
+                schedule_turn_cleanup(overlay, turn_generation.clone(), active.generation, 340);
+            }
+            current.set(active.from);
+        })
     };
+    let turn_animation_end = Callback::from(move |event: web_sys::AnimationEvent| {
+        let Some(target) = event
+            .target()
+            .and_then(|target| target.dyn_into::<HtmlElement>().ok())
+        else {
+            return;
+        };
+        if target.get_attribute("data-page-turn").as_deref() != Some("out") {
+            return;
+        }
+        if let Some(overlay) = target.parent_element() {
+            let target = target.clone();
+            // Keep the settled snapshot briefly so a very fast next swipe
+            // starts from a stable layer instead of racing the teardown.
+            Timeout::new(120, move || {
+                let _ = overlay.remove_child(&target);
+            })
+            .forget();
+        }
+    });
     html! {
-        <div class="training-swipe-surface relative h-full min-h-0 min-w-0"
+        <div ref={surface_ref} class="training-swipe-surface relative h-full min-h-0 min-w-0"
             data-testid="training-swipe-surface"
-            onpointerdown={down} onpointerup={up} onpointercancel={cancel}>
-            {for props.children.iter()}
+            onpointerdown={down} onpointermove={on_move}
+            onpointerup={up} onpointercancel={cancel.clone()}
+            onlostpointercapture={cancel}>
+            <div ref={content_ref} class="training-swipe-content h-full min-h-0 min-w-0"
+                data-testid="training-swipe-content">
+                {for props.children.iter()}
+            </div>
+            <div ref={overlay_ref} class="pointer-events-none absolute inset-0 z-20"
+                data-testid="training-page-turn-overlay" aria-hidden="true"
+                onanimationend={turn_animation_end} />
         </div>
     }
 }

@@ -1286,7 +1286,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await
         .map_err(|error| std::io::Error::other(error.to_string()))?;
     let ai = Arc::new(QuestionBankAiService::new(
-        bank.clone(), bank_repository.pool().clone(), None,
+        bank.clone(),
+        bank_repository.pool().clone(),
+        None,
     ));
     let web_app = with_question_bank(web_app, Some(bank));
     let web_app = with_question_bank_ai(web_app, Some(ai));

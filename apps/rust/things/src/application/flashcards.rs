@@ -102,6 +102,7 @@ pub trait FlashcardRepositoryPort: Send + Sync {
     ) -> Result<(FlashcardSummary, ReviewLog), FlashcardError>;
 }
 
+#[derive(Clone)]
 pub struct FlashcardApplication {
     source: Arc<dyn FlashcardSourcePort>,
     repository: Arc<dyn FlashcardRepositoryPort>,
@@ -124,11 +125,28 @@ impl FlashcardApplication {
     }
 
     pub async fn sync(&self) -> Result<SyncSummary, FlashcardError> {
-        let _permit = self
-            .sync_gate
+        let permit = self.exclusive_write()?;
+        let application = self.clone();
+        tokio::spawn(async move {
+            let _permit = permit;
+            application.sync_locked().await.map(|(summary, _)| summary)
+        })
+        .await
+        .map_err(|_| FlashcardError::Storage("flashcard sync worker failed".into()))?
+    }
+
+    pub(crate) fn exclusive_write(
+        &self,
+    ) -> Result<tokio::sync::OwnedSemaphorePermit, FlashcardError> {
+        self.sync_gate
             .clone()
             .try_acquire_owned()
-            .map_err(|_| FlashcardError::Busy)?;
+            .map_err(|_| FlashcardError::Busy)
+    }
+
+    pub(crate) async fn sync_locked(
+        &self,
+    ) -> Result<(SyncSummary, SourceSnapshot), FlashcardError> {
         let snapshot = self.source.scan().await?;
         let generated_ids = snapshot
             .cards
@@ -140,8 +158,24 @@ impl FlashcardApplication {
             .apply_sync(snapshot.clone(), self.clock.unix_time_millis())
             .await?;
         summary.generated_ids = generated_ids;
-        summary.errors = snapshot.errors;
-        Ok(summary)
+        summary.errors = snapshot.errors.clone();
+        Ok((summary, snapshot))
+    }
+
+    pub(crate) async fn confirms_synced_card(
+        &self,
+        source: &crate::domain::flashcards::SourceCard,
+    ) -> Result<bool, FlashcardError> {
+        let target = self
+            .repository
+            .review_target(&source.id, self.clock.unix_time_millis())
+            .await?;
+        Ok(target.is_some_and(|target| {
+            target.card.active
+                && target.card.source_file == source.source_file
+                && target.card.front_markdown == source.front_markdown
+                && target.card.back_markdown == source.back_markdown
+        }))
     }
 
     pub async fn cards(
@@ -379,6 +413,8 @@ mod tests {
         let source = Arc::new(FakeSource {
             snapshot: Mutex::new(Some(SourceSnapshot {
                 cards: vec![SourceCard {
+                    source_question_id: None,
+                    correct_answer: Vec::new(),
                     id,
                     source_file: "deck/cards.md".to_owned(),
                     source_order: 0,

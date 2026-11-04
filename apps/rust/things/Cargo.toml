@@ -86,6 +86,7 @@ wasm-bindgen = { version = "0.2", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 web-sys = { version = "0.3", features = [
   "AddEventListenerOptions",
+  "AnimationEvent",
   "AudioContext",
   "CanvasRenderingContext2d",
   "Clipboard",
@@ -115,6 +116,8 @@ web-sys = { version = "0.3", features = [
   "MediaStreamTrack",
   "MediaTrackConstraints",
   "Navigator",
+  "Node",
+  "NodeList",
   "RequestCredentials",
   "Storage",
   "RtcIceGatheringState",

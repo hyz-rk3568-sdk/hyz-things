@@ -11,7 +11,6 @@ use crate::domain::question_bank::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AiReviewLocator {
     pub session_id: String,
@@ -553,7 +552,6 @@ impl QuestionBankApplication {
         self.repository.practice_create(session.clone()).await?;
         Ok(session)
     }
-
 
     /// Server-only Codex locator: never returns the source answer or explanation.
     pub async fn ai_review_locator(

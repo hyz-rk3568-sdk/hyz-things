@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod camera;
+pub mod favorite_flashcard_source;
 pub mod flashcard_source;
 pub mod flashcard_sqlite;
 pub mod portal_config;
@@ -16,6 +17,6 @@ pub mod codex_app_server;
 pub mod quantitative_relations;
 pub mod training_time;
 
+pub mod question_bank_ai;
 pub mod question_bank_source;
 pub mod question_bank_sqlite;
-pub mod question_bank_ai;

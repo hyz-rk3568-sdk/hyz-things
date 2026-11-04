@@ -1,10 +1,12 @@
 //! Browse original papers and categories; share one workspace for practice and review.
+use super::favorite_flashcard::FavoriteQuestionDetail;
 use super::material_scroll::{scroll_edges, MaterialScrollButton, ScrollEdges};
 use super::*;
 use hyz_things::domain::question_bank::{
-    primary_module, AiReviewFollowUp, AiReviewState, CreatePracticeRequest, FavoriteState, ModulePracticeFilters, PaperSummary,
-    PracticeBrowseItem, PracticeCatalog, PracticeMode, PracticeQuestion, PracticeReview,
-    PracticeSession, PracticeWorkspace, SavePracticeAnswer, SetFavorite, SetPracticePaused,
+    primary_module, AiReviewFollowUp, AiReviewState, CreatePracticeRequest, FavoriteState,
+    ModulePracticeFilters, PaperSummary, PracticeBrowseItem, PracticeCatalog, PracticeMode,
+    PracticeQuestion, PracticeReview, PracticeSession, PracticeWorkspace, SavePracticeAnswer,
+    SetFavorite, SetPracticePaused,
 };
 
 const ROOT: &str = "/api/v1/question-bank";
@@ -481,7 +483,6 @@ fn collection_modules(
     modules
 }
 
-
 #[derive(Properties, PartialEq)]
 struct QuestionAiReviewProps {
     csrf: String,
@@ -528,18 +529,22 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let key = (
             props.session_id.clone(),
             props.question_id.clone(),
-            state.as_ref().as_ref().is_some_and(|v| v.status == "running"),
+            state
+                .as_ref()
+                .as_ref()
+                .is_some_and(|v| v.status == "running"),
         );
         use_effect_with(key, move |(session_id, question_id, running)| {
             let timer = if *running {
-                let endpoint = format!(
-                    "{ROOT}/practice/sessions/{session_id}/questions/{question_id}/ai"
-                );
+                let endpoint =
+                    format!("{ROOT}/practice/sessions/{session_id}/questions/{question_id}/ai");
                 Some(gloo_timers::callback::Interval::new(1500, move || {
                     let state = state.clone();
                     let endpoint = endpoint.clone();
                     spawn_local(async move {
-                        if let Ok(value) = fetch_json::<AiReviewState>(&endpoint, "AI 复盘进度").await {
+                        if let Ok(value) =
+                            fetch_json::<AiReviewState>(&endpoint, "AI 复盘进度").await
+                        {
                             state.set(Some(value));
                         }
                     });
@@ -569,8 +574,13 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             let csrf = csrf.clone();
             spawn_local(async move {
                 match post_json_response::<_, AiReviewState>(
-                    &endpoint, &csrf, &EmptyRequest {}, "开始 AI 解析",
-                ).await {
+                    &endpoint,
+                    &csrf,
+                    &EmptyRequest {},
+                    "开始 AI 解析",
+                )
+                .await
+                {
                     Ok(result) => state.set(Some(result)),
                     Err(error) => failure.set(Some(error)),
                 }
@@ -585,7 +595,9 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let endpoint = format!("{endpoint}/stop");
         let csrf = props.csrf.clone();
         Callback::from(move |_| {
-            if *submitting { return; }
+            if *submitting {
+                return;
+            }
             submitting.set(true);
             let state = state.clone();
             let failure = failure.clone();
@@ -594,8 +606,13 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             let csrf = csrf.clone();
             spawn_local(async move {
                 match post_json_response::<_, AiReviewState>(
-                    &endpoint, &csrf, &EmptyRequest {}, "停止 AI 解析",
-                ).await {
+                    &endpoint,
+                    &csrf,
+                    &EmptyRequest {},
+                    "停止 AI 解析",
+                )
+                .await
+                {
                     Ok(result) => state.set(Some(result)),
                     Err(error) => failure.set(Some(error)),
                 }
@@ -611,9 +628,13 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let endpoint = format!("{endpoint}/messages");
         let csrf = props.csrf.clone();
         Callback::from(move |_| {
-            if *submitting { return; }
+            if *submitting {
+                return;
+            }
             let message = follow_up.trim().to_owned();
-            if message.is_empty() || message.len() > 2000 { return; }
+            if message.is_empty() || message.len() > 2000 {
+                return;
+            }
             submitting.set(true);
             failure.set(None);
             let state = state.clone();
@@ -624,9 +645,9 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             let csrf = csrf.clone();
             spawn_local(async move {
                 let payload = AiReviewFollowUp { message };
-                match post_json_response::<_, AiReviewState>(
-                    &endpoint, &csrf, &payload, "AI 追问",
-                ).await {
+                match post_json_response::<_, AiReviewState>(&endpoint, &csrf, &payload, "AI 追问")
+                    .await
+                {
                     Ok(result) => {
                         state.set(Some(result));
                         follow_up.set(String::new());
@@ -639,10 +660,10 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     };
     let current = state.as_ref().as_ref();
     let running = current.is_some_and(|value| value.status == "running");
-    let has_answer = current.is_some_and(|value| value.messages.iter().any(|msg| msg.role == "assistant"));
-    let can_start = current.is_some_and(|value| {
-        value.messages.is_empty() && value.status != "running"
-    });
+    let has_answer =
+        current.is_some_and(|value| value.messages.iter().any(|msg| msg.role == "assistant"));
+    let can_start =
+        current.is_some_and(|value| value.messages.is_empty() && value.status != "running");
     html! {
         <section class="space-y-3" data-testid="question-bank-ai-review">
             <div class="flex items-center justify-between gap-2">
@@ -731,6 +752,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let settings_open = use_state(|| false);
     let custom_years = use_state(|| false);
     let collection = use_state(|| None::<PracticeMode>);
+    let favorite_detail = use_state(|| None::<PracticeBrowseItem>);
 
     let mode = use_state(|| props.entry_mode.clone());
     let workspace = use_state(|| None::<PracticeWorkspace>);
@@ -861,12 +883,16 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     }
     {
         let current = workspace.as_ref().as_ref().map(|w| w.session.clone());
+        let reviewing = review.is_some();
         let immersive = props.on_immersive_change.clone();
         let paused = props.on_paper_pause_change.clone();
-        use_effect_with(current, move |value| {
+        use_effect_with((current, reviewing), move |(value, reviewing)| {
             let active = value.as_ref().is_some_and(|s| s.status == "active");
-            immersive.emit(active);
-            paused.emit(value.as_ref().is_some_and(|s| s.paused));
+            // Submitted papers keep the workspace open for review. Review is
+            // still effective study time even though the session is completed
+            // and its pause flag remains set.
+            immersive.emit(active || *reviewing);
+            paused.emit(active && value.as_ref().is_some_and(|s| s.paused));
             || ()
         });
     }
@@ -2215,14 +2241,28 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 <p class="p-4 text-sm text-base-content/60">{"这个分类还没有题目。"}</p>
                             } else {
                                 <div class="question-bank-results-list" data-testid="question-bank-browse-list">
-                                    {for collection_filtered.iter().take(100).map(|item|html! {
-                                        <div class="question-bank-result-row" data-testid="question-bank-collection-item" title={item.paper_title.clone()}>
-                                            <div class="min-w-0">
-                                                <strong class="block truncate text-sm">{format!("{} {} · 第 {} 题",item.year,item.region,item.number)}</strong>
-                                                <p class="mt-0.5 truncate text-xs text-base-content/50">{format!("{} / {}",item.module.as_deref().unwrap_or("未分类"),item.category.as_deref().unwrap_or("未分类"))}</p>
-                                            </div>
-                                            <span class="question-bank-result-year">{item.year}</span>
-                                        </div>
+                                    {for collection_filtered.iter().take(100).map(|item| {
+                                        let content = html! {
+                                            <>
+                                                <div class="min-w-0">
+                                                    <strong class="block truncate text-sm">{format!("{} {} · 第 {} 题",item.year,item.region,item.number)}</strong>
+                                                    <p class="mt-0.5 truncate text-xs text-base-content/50">{format!("{} / {}",item.module.as_deref().unwrap_or("未分类"),item.category.as_deref().unwrap_or("未分类"))}</p>
+                                                </div>
+                                                <span class="question-bank-result-year">{item.year}</span>
+                                            </>
+                                        };
+                                        if *collection == Some(PracticeMode::Favorite) {
+                                            html! {
+                                                <button type="button" class="question-bank-result-row w-full text-left"
+                                                    data-testid="question-bank-collection-item" title={item.paper_title.clone()}
+                                                    onclick={Callback::from({
+                                                        let favorite_detail=favorite_detail.clone();let item=(*item).clone();
+                                                        move |_|favorite_detail.set(Some(item.clone()))
+                                                    })}>{content}</button>
+                                            }
+                                        } else {
+                                            html! {<div class="question-bank-result-row" data-testid="question-bank-collection-item" title={item.paper_title.clone()}>{content}</div>}
+                                        }
                                     })}
                                 </div>
                             }
@@ -2230,6 +2270,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         </div>
                     </div>
                 </section>
+            }
+            if let Some(item) = &*favorite_detail {
+                <FavoriteQuestionDetail key={item.question_id.clone()} item={item.clone()} csrf={props.csrf.clone()}
+                    on_back={Callback::from({let favorite_detail=favorite_detail.clone();move |_|favorite_detail.set(None)})}/>
             }
             if *settings_open && *mode == PracticeMode::Module {
                 <section class="training-workspace fixed inset-0 z-[85] flex h-dvh flex-col overflow-hidden bg-base-200"

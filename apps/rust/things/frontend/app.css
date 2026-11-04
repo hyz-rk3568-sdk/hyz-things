@@ -237,6 +237,52 @@ nav.tabs > button.tab:not(.tab-active) {
   .training-swipe-surface {
     touch-action: pan-y;
     overscroll-behavior: contain;
+    overflow: hidden;
+    overflow: clip;
+  }
+  /* The outgoing page is a snapshot layered above the incoming page. It stays
+     opaque while it slides, so both pages are readable and the seam moves like
+     a real page turn. Keep transforms off the live wrapper: a persistent
+     stacking context would put the ink canvas above the scratchpad toolbar. */
+  .training-page-turn {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    pointer-events: none;
+    overflow: hidden;
+    background: var(--color-base-200, transparent);
+    transform-origin: left center;
+    will-change: transform;
+  }
+  .training-page-turn[data-direction="previous"] {
+    transform-origin: right center;
+  }
+  .training-page-turn-active[data-direction="next"] {
+    animation: training-page-turn-next 320ms cubic-bezier(.4,0,.2,1) forwards;
+  }
+  .training-page-turn-active[data-direction="previous"] {
+    animation: training-page-turn-previous 320ms cubic-bezier(.4,0,.2,1) forwards;
+  }
+  @keyframes training-page-turn-next {
+    from {
+      transform: perspective(1200px) translateX(0) rotateY(0) scale(1);
+    }
+    to {
+      transform: perspective(1200px) translateX(-100%) rotateY(-8deg) scale(.985);
+    }
+  }
+  @keyframes training-page-turn-previous {
+    from {
+      transform: perspective(1200px) translateX(0) rotateY(0) scale(1);
+    }
+    to {
+      transform: perspective(1200px) translateX(100%) rotateY(8deg) scale(.985);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .training-page-turn {
+      display: none;
+    }
   }
   .training-compact-footer {
     padding-bottom: max(.5rem, env(safe-area-inset-bottom));

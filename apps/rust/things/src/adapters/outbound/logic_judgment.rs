@@ -24,6 +24,8 @@ struct Card {
     card_path: String,
     front: String,
     back: String,
+    #[serde(default)]
+    correct_answer: Vec<String>,
     source_hash: String,
     kind: String,
 }
@@ -100,7 +102,7 @@ impl LogicJudgmentService {
 
     async fn candidates(&self) -> Result<Vec<Target>, String> {
         let mut tx = self.pool.begin().await.map_err(error)?;
-        let rows = sqlx::query("SELECT f.id,f.source_file,f.front_markdown,f.back_markdown,f.source_hash,u.vcnt,u.selected_count,COALESCE(s.n,0) AS answered,COALESCE(s.c,0) AS correct FROM flashcards f LEFT JOIN logic_judgment_card_usage u ON u.card_id=f.id LEFT JOIN (SELECT r.card_id,COUNT(*) AS n,SUM(r.is_correct) AS c FROM logic_judgment_results r JOIN logic_judgment_runs run ON run.id=r.run_id WHERE run.status='submitted' AND r.was_answered=1 GROUP BY r.card_id) s ON s.card_id=f.id WHERE f.active=1")
+        let rows = sqlx::query("SELECT f.id,f.source_file,f.front_markdown,f.back_markdown,f.correct_answer,f.source_hash,u.vcnt,u.selected_count,COALESCE(s.n,0) AS answered,COALESCE(s.c,0) AS correct FROM flashcards f LEFT JOIN logic_judgment_card_usage u ON u.card_id=f.id LEFT JOIN (SELECT r.card_id,COUNT(*) AS n,SUM(r.is_correct) AS c FROM logic_judgment_results r JOIN logic_judgment_runs run ON run.id=r.run_id WHERE run.status='submitted' AND r.was_answered=1 GROUP BY r.card_id) s ON s.card_id=f.id WHERE f.active=1")
             .fetch_all(&mut *tx).await.map_err(error)?;
         let mut targets = Vec::new();
         for row in rows {
@@ -111,6 +113,10 @@ impl LogicJudgmentService {
             };
             let front: String = row.try_get("front_markdown").map_err(error)?;
             let back: String = row.try_get("back_markdown").map_err(error)?;
+            let answer: String = row.try_get("correct_answer").map_err(error)?;
+            let Ok(correct_answer) = serde_json::from_str::<Vec<String>>(&answer) else {
+                continue;
+            };
             let source_hash: String = row.try_get("source_hash").map_err(error)?;
             if crate::domain::flashcards::FlashcardId::new(id.clone()).is_err()
                 || source_hash.is_empty()
@@ -130,6 +136,7 @@ impl LogicJudgmentService {
                     card_path: path,
                     front,
                     back,
+                    correct_answer,
                     source_hash,
                     kind: kind.into(),
                 },
@@ -525,7 +532,10 @@ impl LogicJudgmentService {
                     card_id: t.card.id.clone(),
                     card_path: t.card.card_path.clone(),
                     front: t.card.front.clone(),
-                    back: t.card.back.clone(),
+                    back: crate::domain::flashcards::personal_solution(&t.card.back)
+                        .unwrap_or_default()
+                        .to_owned(),
+                    correct_answer: t.card.correct_answer.clone(),
                     kind: t.card.kind.clone(),
                 })
                 .collect(),
@@ -838,6 +848,8 @@ Codex 自行检查逻辑、答案唯一性、平行结构等价、选项歧义�
 
 【本轮动态上下文】
 后端 SQLite 已按本模块 VCNT 选定10张已同步卡片，禁止自行换卡。每张卡片恰好生成一道题，原有方法优先；可跨知识点调用满足题干条件的技巧，不得硬套或伪造用户方法。
+
+correct_answer 是原卡片的正确答案；back 为空表示未提供个人解法，不得编造或声称用户使用了某种解法。
 
 【本轮固定 Flashcard】
 {}
@@ -1666,5 +1678,60 @@ mod service_tests {
             .await
             .unwrap();
         assert_eq!(jobs, 0);
+    }
+}
+
+#[cfg(test)]
+mod favorite_metadata_tests {
+    use super::*;
+
+    struct AnswerContext;
+
+    #[async_trait::async_trait]
+    impl LogicGenerationPort for AnswerContext {
+        async fn generate(
+            &self,
+            request: LogicGenerationRequest,
+            _cancellation: watch::Sender<bool>,
+        ) -> Result<Vec<GeneratedQuestion>, String> {
+            assert_eq!(request.targets.len(), QUIZ_QUESTIONS);
+            Ok(request
+                .targets
+                .into_iter()
+                .map(|target| {
+                    assert_eq!(target.correct_answer, vec!["B"]);
+                    assert!(target.back.is_empty(), "'-' is not a personal solution");
+                    GeneratedQuestion {
+                        target_id: target.target_id,
+                        kind: target.kind,
+                        question: "New question".into(),
+                        options: ["A".into(), "B".into(), "C".into(), "D".into()],
+                        correct_index: 1,
+                        explanation: "New explanation".into(),
+                    }
+                })
+                .collect())
+        }
+    }
+
+    #[tokio::test]
+    async fn favorite_metadata_reaches_generator_without_inventing_personal_solution() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        for i in 0..QUIZ_QUESTIONS {
+            sqlx::query("INSERT INTO flashcards(id,source_file,source_order,deck_path,front_markdown,back_markdown,source_hash,correct_answer,active,created_at_ms,updated_at_ms) VALUES(?,?,0,'deck','Question','-','hash','[\"B\"]',1,0,0)")
+                .bind(format!("00000000-0000-7000-8000-{i:012}"))
+                .bind("判断/形式推理/直言命题/错题/cards.md").execute(&pool).await.unwrap();
+        }
+        let service = LogicJudgmentService::with_generator(pool, Some(Arc::new(AnswerContext)));
+        let plan = service.plan(1).await.unwrap();
+        assert_eq!(
+            service.generate(&plan, "").await.unwrap().len(),
+            QUIZ_QUESTIONS
+        );
     }
 }

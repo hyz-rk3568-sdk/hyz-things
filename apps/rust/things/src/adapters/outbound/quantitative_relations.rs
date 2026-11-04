@@ -24,6 +24,8 @@ struct Card {
     card_path: String,
     front: String,
     back: String,
+    #[serde(default)]
+    correct_answer: Vec<String>,
     source_hash: String,
     kind: String,
 }
@@ -100,7 +102,7 @@ impl QuantitativeRelationsService {
 
     async fn candidates(&self) -> Result<Vec<Target>, String> {
         let mut tx = self.pool.begin().await.map_err(error)?;
-        let rows = sqlx::query("SELECT f.id,f.source_file,f.front_markdown,f.back_markdown,f.source_hash,u.vcnt,u.selected_count,COALESCE(s.n,0) AS answered,COALESCE(s.c,0) AS correct FROM flashcards f LEFT JOIN quantitative_relations_card_usage u ON u.card_id=f.id LEFT JOIN (SELECT r.card_id,COUNT(*) AS n,SUM(r.is_correct) AS c FROM quantitative_relations_results r JOIN quantitative_relations_runs run ON run.id=r.run_id WHERE run.status='submitted' AND r.was_answered=1 GROUP BY r.card_id) s ON s.card_id=f.id WHERE f.active=1")
+        let rows = sqlx::query("SELECT f.id,f.source_file,f.front_markdown,f.back_markdown,f.correct_answer,f.source_hash,u.vcnt,u.selected_count,COALESCE(s.n,0) AS answered,COALESCE(s.c,0) AS correct FROM flashcards f LEFT JOIN quantitative_relations_card_usage u ON u.card_id=f.id LEFT JOIN (SELECT r.card_id,COUNT(*) AS n,SUM(r.is_correct) AS c FROM quantitative_relations_results r JOIN quantitative_relations_runs run ON run.id=r.run_id WHERE run.status='submitted' AND r.was_answered=1 GROUP BY r.card_id) s ON s.card_id=f.id WHERE f.active=1")
             .fetch_all(&mut *tx).await.map_err(error)?;
         let mut targets = Vec::new();
         for row in rows {
@@ -111,6 +113,10 @@ impl QuantitativeRelationsService {
             };
             let front: String = row.try_get("front_markdown").map_err(error)?;
             let back: String = row.try_get("back_markdown").map_err(error)?;
+            let answer: String = row.try_get("correct_answer").map_err(error)?;
+            let Ok(correct_answer) = serde_json::from_str::<Vec<String>>(&answer) else {
+                continue;
+            };
             let source_hash: String = row.try_get("source_hash").map_err(error)?;
             if crate::domain::flashcards::FlashcardId::new(id.clone()).is_err()
                 || source_hash.is_empty()
@@ -130,6 +136,7 @@ impl QuantitativeRelationsService {
                     card_path: path,
                     front,
                     back,
+                    correct_answer,
                     source_hash,
                     kind: kind.into(),
                 },
@@ -156,20 +163,13 @@ impl QuantitativeRelationsService {
 }
 
 fn eligible_path(path: &str) -> Option<&'static str> {
-    match path.strip_prefix("flashcards/").unwrap_or(path) {
-        "数量/经济利润/cards.md"
-        | "数量/工程效率/cards.md"
-        | "数量/行程/相对运动/cards.md"
-        | "数量/行程/综合应用/cards.md"
-        | "数量/溶液/cards.md"
-        | "数量/最值/cards.md"
-        | "数量/排列组合/基础/cards.md"
-        | "数量/排列组合/插空与同素分堆/cards.md"
-        | "数量/排列组合/特殊套路/cards.md"
-        | "数量/概率/cards.md"
-        | "数量/周期/cards.md" => Some("quantitative"),
-        _ => None,
-    }
+    use crate::domain::favorite_flashcard::resolve_target;
+    let deck = path
+        .strip_prefix("flashcards/")
+        .unwrap_or(path)
+        .strip_suffix("/cards.md")?;
+    let target = resolve_target(deck).or_else(|| resolve_target(&format!("{deck}/错题")))?;
+    (target.module == "数量关系").then_some("quantitative")
 }
 
 pub const DEFAULT_USER_PROMPT: &str = "题目接近国考、省考数量关系风格，难度中等偏上，条件与数字自然；干扰选项合理，优先考查方法迁移和快速计算，避免机械换数字，解析简洁。";
@@ -531,7 +531,10 @@ impl QuantitativeRelationsService {
                     card_id: t.card.id.clone(),
                     card_path: t.card.card_path.clone(),
                     front: t.card.front.clone(),
-                    back: t.card.back.clone(),
+                    back: crate::domain::flashcards::personal_solution(&t.card.back)
+                        .unwrap_or_default()
+                        .to_owned(),
+                    correct_answer: t.card.correct_answer.clone(),
                     kind: t.card.kind.clone(),
                 })
                 .collect(),
@@ -846,13 +849,15 @@ impl QuantitativeGenerationPort for CodexConfig {
             .targets
             .iter()
             .map(|target| format!(
-                "【目标 {id}】\n题型：{kind}\n卡片ID：{card_id}\n路径：{path}\n### Front\n{front}\n### Back\n{back}",
+                "【目标 {id}】\n题型：{kind}\n卡片ID：{card_id}\n路径：{path}\n### Front\n{front}\n正确答案：{correct_answer}\n个人解法：{back}",
                 id = target.target_id,
                 kind = target.kind,
                 card_id = target.card_id,
                 path = target.card_path,
                 front = target.front,
-                back = target.back,
+                correct_answer = json!(target.correct_answer),
+                back = crate::domain::flashcards::personal_solution(&target.back)
+                    .unwrap_or("未提供"),
             ))
             .collect::<Vec<_>>()
             .join("\n\n");
@@ -866,6 +871,8 @@ impl QuantitativeGenerationPort for CodexConfig {
 【本轮动态上下文】
 所选10张卡由 SQLite 依据本模块 VCNT 排序产生，有方法卡也可有真实错题卡。每张必须生成一题；先识别相关方法再构思不同的完整题目，避免简单替换旧题数字。
 Codex 自行验算每题数值、边界、单位、正确选项唯一性、解析与 correct_index 一致性；发现不确定必须先修正后输出。
+
+原卡片正确答案不是新题答案；个人解法标记为未提供时，不得编造或声称用户使用了某种解法。
 
 【本轮固定 Flashcard】
 {targets_text}
@@ -952,7 +959,7 @@ impl crate::application::quantitative_relations::QuantitativeRelationsPort
 mod quantitative_tests {
     use super::*;
     #[test]
-    fn quantitative_pool_is_exactly_eleven_method_decks() {
+    fn quantitative_pool_is_exactly_eleven_method_and_favorite_decks() {
         for path in [
             "数量/经济利润/cards.md",
             "数量/工程效率/cards.md",
@@ -967,13 +974,82 @@ mod quantitative_tests {
             "数量/周期/cards.md",
         ] {
             assert_eq!(eligible_path(path), Some("quantitative"));
+            let favorite = path.replace("/cards.md", "/错题/cards.md");
+            assert_eq!(eligible_path(&favorite), Some("quantitative"));
+            assert_eq!(
+                eligible_path(&format!("flashcards/{favorite}")),
+                Some("quantitative")
+            );
+            assert_eq!(
+                eligible_path(&favorite.replace("/cards.md", "/extra/cards.md")),
+                None
+            );
         }
         for path in [
             "判断/形式推理/直言命题/cards.md",
             "数量/几何/cards.md",
             "数量/错题/cards.md",
+            "数量/几何/错题/cards.md",
+            "数量/概率/错题/card.md",
+            "数量/概率/错题/错题/cards.md",
         ] {
             assert_eq!(eligible_path(path), None);
         }
+    }
+}
+
+#[cfg(test)]
+mod favorite_metadata_tests {
+    use super::*;
+
+    struct AnswerContext;
+
+    #[async_trait::async_trait]
+    impl QuantitativeGenerationPort for AnswerContext {
+        async fn generate(
+            &self,
+            request: QuantitativeGenerationRequest,
+            _cancellation: watch::Sender<bool>,
+        ) -> Result<Vec<GeneratedQuestion>, String> {
+            assert_eq!(request.targets.len(), QUIZ_QUESTIONS);
+            Ok(request
+                .targets
+                .into_iter()
+                .map(|target| {
+                    assert_eq!(target.correct_answer, vec!["B"]);
+                    assert!(target.back.is_empty(), "'-' is not a personal solution");
+                    GeneratedQuestion {
+                        target_id: target.target_id,
+                        kind: target.kind,
+                        question: "New question".into(),
+                        options: ["A".into(), "B".into(), "C".into(), "D".into()],
+                        correct_index: 1,
+                        explanation: "New explanation".into(),
+                    }
+                })
+                .collect())
+        }
+    }
+
+    #[tokio::test]
+    async fn favorite_metadata_reaches_generator_without_inventing_personal_solution() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        for i in 0..QUIZ_QUESTIONS {
+            sqlx::query("INSERT INTO flashcards(id,source_file,source_order,deck_path,front_markdown,back_markdown,source_hash,correct_answer,active,created_at_ms,updated_at_ms) VALUES(?,?,0,'deck','Question','-','hash','[\"B\"]',1,0,0)")
+                .bind(format!("00000000-0000-7000-8000-{i:012}"))
+                .bind("数量/工程效率/错题/cards.md").execute(&pool).await.unwrap();
+        }
+        let service =
+            QuantitativeRelationsService::with_generator(pool, Some(Arc::new(AnswerContext)));
+        let plan = service.plan(1).await.unwrap();
+        assert_eq!(
+            service.generate(&plan, "").await.unwrap().len(),
+            QUIZ_QUESTIONS
+        );
     }
 }

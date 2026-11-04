@@ -2,7 +2,9 @@
 //! Only validated UUIDs and answer choices enter the initial prompt; Codex reads
 //! the original Markdown and images on the configured PC in a read-only sandbox.
 use super::data_analysis::CodexConfig;
-use crate::application::question_bank::{practice::AiReviewLocator, BankError, QuestionBankApplication};
+use crate::application::question_bank::{
+    practice::AiReviewLocator, BankError, QuestionBankApplication,
+};
 use crate::domain::question_bank::{AiReviewMessage, AiReviewState};
 use sqlx::{Row, SqlitePool};
 use std::{collections::HashMap, sync::Arc};
@@ -21,7 +23,9 @@ pub enum AiReviewError {
 }
 
 impl From<BankError> for AiReviewError {
-    fn from(error: BankError) -> Self { Self::Bank(error) }
+    fn from(error: BankError) -> Self {
+        Self::Bank(error)
+    }
 }
 
 #[derive(Clone)]
@@ -91,35 +95,59 @@ impl QuestionBankAiService {
         Ok(())
     }
 
-    async fn assert_review_item(&self, session_id: &str, question_id: &str) -> Result<(), AiReviewError> {
+    async fn assert_review_item(
+        &self,
+        session_id: &str,
+        question_id: &str,
+    ) -> Result<(), AiReviewError> {
         if !crate::application::question_bank::document::valid_id(session_id)
-            || !crate::application::question_bank::document::valid_id(question_id) {
+            || !crate::application::question_bank::document::valid_id(question_id)
+        {
             return Err(AiReviewError::Invalid);
         }
         let review = self.bank.practice_review(session_id).await?;
-        if review.questions.iter().all(|r| r.question.item.question_id != question_id) {
+        if review
+            .questions
+            .iter()
+            .all(|r| r.question.item.question_id != question_id)
+        {
             return Err(AiReviewError::Bank(BankError::NotFound));
         }
         Ok(())
     }
 
-    pub async fn state(&self, session_id: &str, question_id: &str) -> Result<AiReviewState, AiReviewError> {
+    pub async fn state(
+        &self,
+        session_id: &str,
+        question_id: &str,
+    ) -> Result<AiReviewState, AiReviewError> {
         self.assert_review_item(session_id, question_id).await?;
-        let row = sqlx::query("SELECT status,error FROM question_ai_reviews WHERE session_id=? AND question_id=?")
-            .bind(session_id).bind(question_id)
-            .fetch_optional(&self.pool).await.map_err(|_| AiReviewError::Storage)?;
+        let row = sqlx::query(
+            "SELECT status,error FROM question_ai_reviews WHERE session_id=? AND question_id=?",
+        )
+        .bind(session_id)
+        .bind(question_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| AiReviewError::Storage)?;
         let (status, error) = match row {
-            Some(row) => (row.get::<String, _>("status"), row.get::<Option<String>, _>("error")),
+            Some(row) => (
+                row.get::<String, _>("status"),
+                row.get::<Option<String>, _>("error"),
+            ),
             None => ("idle".to_owned(), None),
         };
         let rows = sqlx::query("SELECT role,content,created_at FROM question_ai_messages WHERE session_id=? AND question_id=? ORDER BY id")
             .bind(session_id).bind(question_id)
             .fetch_all(&self.pool).await.map_err(|_| AiReviewError::Storage)?;
-        let messages = rows.into_iter().map(|row| AiReviewMessage {
-            role: row.get("role"),
-            content: row.get("content"),
-            created_at: row.get("created_at"),
-        }).collect();
+        let messages = rows
+            .into_iter()
+            .map(|row| AiReviewMessage {
+                role: row.get("role"),
+                content: row.get("content"),
+                created_at: row.get("created_at"),
+            })
+            .collect();
         Ok(AiReviewState {
             session_id: session_id.into(),
             question_id: question_id.into(),
@@ -130,8 +158,14 @@ impl QuestionBankAiService {
     }
 
     /// An idempotent first analysis. Existing completed answers are never overwritten.
-    pub async fn start(self: &Arc<Self>, session_id: &str, question_id: &str) -> Result<AiReviewState, AiReviewError> {
-        if self.config.is_none() { return Err(AiReviewError::Unavailable); }
+    pub async fn start(
+        self: &Arc<Self>,
+        session_id: &str,
+        question_id: &str,
+    ) -> Result<AiReviewState, AiReviewError> {
+        if self.config.is_none() {
+            return Err(AiReviewError::Unavailable);
+        }
         let locator = self.bank.ai_review_locator(session_id, question_id).await?;
         let key = task_key(session_id, question_id);
         let mut active = self.active.lock().await;
@@ -139,8 +173,14 @@ impl QuestionBankAiService {
             drop(active);
             return self.state(session_id, question_id).await;
         }
-        let row = sqlx::query("SELECT status,thread_id FROM question_ai_reviews WHERE session_id=? AND question_id=?")
-            .bind(session_id).bind(question_id).fetch_optional(&self.pool).await.map_err(|_| AiReviewError::Storage)?;
+        let row = sqlx::query(
+            "SELECT status,thread_id FROM question_ai_reviews WHERE session_id=? AND question_id=?",
+        )
+        .bind(session_id)
+        .bind(question_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|_| AiReviewError::Storage)?;
         let existing_thread = if let Some(row) = row {
             let status: String = row.get("status");
             if status == "complete" || status == "running" {
@@ -160,34 +200,52 @@ impl QuestionBankAiService {
         let service = Arc::clone(self);
         tokio::spawn(async move {
             let prompt = initial_prompt(&locator);
-            service.generate(
-                locator.session_id, locator.question_id, key,
-                existing_thread, prompt, cancellation,
-            ).await;
+            service
+                .generate(
+                    locator.session_id,
+                    locator.question_id,
+                    key,
+                    existing_thread,
+                    prompt,
+                    cancellation,
+                )
+                .await;
         });
         self.state(session_id, question_id).await
     }
 
-    pub async fn follow_up(self: &Arc<Self>, session_id: &str, question_id: &str, message: String) -> Result<AiReviewState, AiReviewError> {
+    pub async fn follow_up(
+        self: &Arc<Self>,
+        session_id: &str,
+        question_id: &str,
+        message: String,
+    ) -> Result<AiReviewState, AiReviewError> {
         if message.trim().is_empty()
             || message != message.trim()
             || message.len() > MAX_FOLLOW_UP
-            || message.chars().any(|c| c.is_control() && c != '\n') {
+            || message.chars().any(|c| c.is_control() && c != '\n')
+        {
             return Err(AiReviewError::Invalid);
         }
-        if self.config.is_none() { return Err(AiReviewError::Unavailable); }
+        if self.config.is_none() {
+            return Err(AiReviewError::Unavailable);
+        }
         // A follow-up may never re-bind old history to an edited source.
         let locator = self.bank.ai_review_locator(session_id, question_id).await?;
         let key = task_key(session_id, question_id);
         let mut active = self.active.lock().await;
-        if active.contains_key(&key) { return Err(AiReviewError::Busy); }
+        if active.contains_key(&key) {
+            return Err(AiReviewError::Busy);
+        }
         let row = sqlx::query("SELECT thread_id,status,source_hash FROM question_ai_reviews WHERE session_id=? AND question_id=?")
             .bind(session_id).bind(question_id).fetch_optional(&self.pool).await.map_err(|_| AiReviewError::Storage)?
             .ok_or(AiReviewError::Invalid)?;
         let previous_thread: Option<String> = row.get("thread_id");
         let status: String = row.get("status");
-        if previous_thread.is_none() || !matches!(status.as_str(), "complete" | "stopped" | "failed")
-            || row.get::<String, _>("source_hash") != locator.source_hash {
+        if previous_thread.is_none()
+            || !matches!(status.as_str(), "complete" | "stopped" | "failed")
+            || row.get::<String, _>("source_hash") != locator.source_hash
+        {
             return Err(AiReviewError::Busy);
         }
         sqlx::query("INSERT INTO question_ai_messages(session_id,question_id,role,content,created_at) VALUES(?,?,'user',?,?)")
@@ -203,12 +261,18 @@ impl QuestionBankAiService {
         let sid = session_id.to_owned();
         let qid = question_id.to_owned();
         tokio::spawn(async move {
-            service.generate(sid, qid, key, previous_thread, message, cancellation).await;
+            service
+                .generate(sid, qid, key, previous_thread, message, cancellation)
+                .await;
         });
         self.state(session_id, question_id).await
     }
 
-    pub async fn stop(&self, session_id: &str, question_id: &str) -> Result<AiReviewState, AiReviewError> {
+    pub async fn stop(
+        &self,
+        session_id: &str,
+        question_id: &str,
+    ) -> Result<AiReviewState, AiReviewError> {
         self.assert_review_item(session_id, question_id).await?;
         let active = self.active.lock().await;
         if let Some(cancellation) = active.get(&task_key(session_id, question_id)) {
@@ -270,12 +334,22 @@ mod tests {
     #[test]
     fn prompt_uses_only_identifiers_and_reference_only_answer_policy() {
         let locator = AiReviewLocator {
-            session_id:"sid".into(), question_id:"qid".into(), paper_id:"pid".into(),
-            material_ids:vec!["mid".into()], source_hash:"hash".into(),
-            user_answer:vec!["B".into()],
+            session_id: "sid".into(),
+            question_id: "qid".into(),
+            paper_id: "pid".into(),
+            material_ids: vec!["mid".into()],
+            source_hash: "hash".into(),
+            user_answer: vec!["B".into()],
         };
         let prompt = initial_prompt(&locator);
-        for field in ["paper_id: pid", "question_id: qid", "mid", "hash", "flashcards/", "仅供参考"] {
+        for field in [
+            "paper_id: pid",
+            "question_id: qid",
+            "mid",
+            "hash",
+            "flashcards/",
+            "仅供参考",
+        ] {
             assert!(prompt.contains(field), "missing {field}");
         }
         assert!(!prompt.contains("题干正文"));
