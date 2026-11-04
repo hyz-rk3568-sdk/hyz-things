@@ -176,7 +176,7 @@ test('saved collections are classified by module and category before practicing'
   await expect(page.getByTestId('collection-review-choice').first()).toHaveCSS('font-size','16px');
   await expect(page.getByTestId('collection-review-explanation')).toHaveCSS('font-size','16px');
   await expect(page.getByTestId('collection-review-answer')).toContainText('B');
-  await expect(page.getByTestId('collection-review-create-flashcard')).toHaveCount(0);
+  await expect(page.getByTestId('collection-review-create-flashcard')).toBeVisible();
   await page.getByTestId('collection-review-back').click();
   await expect(page.getByTestId('question-bank-collection-item')).toBeVisible();
   await page.getByTestId('question-bank-practice-start').click();
@@ -510,4 +510,30 @@ test('AI review defaults to source, stays running across navigation and restores
   await page.getByTestId('question-bank-ai-restart').click();
   await expect(page.getByTestId('question-bank-ai-status')).toHaveText('正在生成');
   expect(actions).toEqual(['start','/messages','/stop','start']);
+});
+
+
+test('any original-paper review can create a category flashcard without first favoriting',async({page})=>{
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await chooseFixturePaper(page);
+  await page.getByTestId('question-bank-practice-start').click();
+  await expect(page.getByTestId('question-bank-practice-create-flashcard')).toHaveCount(0);
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button',{name:'确认交卷'}).click();
+  const create=page.getByTestId('question-bank-practice-create-flashcard');
+  await expect(create).toBeVisible();
+  await create.click();
+  const dialog=page.getByTestId('question-bank-practice-flashcard-dialog');
+  await expect(dialog).toBeVisible();
+  const card=dialog.getByTestId('favorite-flashcard-card');
+  await expect(card.getByRole('button',{name:'创建并同步'})).toBeDisabled();
+  await expect(card.getByTestId('favorite-flashcard-path')).toHaveText('将追加或创建：flashcards/真题练习/资料分析/比重/错题/cards.md');
+  await card.getByLabel('确认写入所选目录').check();
+  await card.getByRole('button',{name:'创建并同步'}).click();
+  await expect(card.getByRole('status')).toContainText('已创建并同步');
+  await dialog.getByRole('button',{name:'返回复盘'}).first().click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第');
 });

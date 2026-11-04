@@ -1,4 +1,4 @@
-//! Read-only review of a saved wrong or favorite question. The timed training
+//! Review of a saved wrong or favorite question. The timed training
 //! sessions stay separate; this view only reads one question at a time and
 //! lets the reader swipe through the filtered collection.
 use super::favorite_flashcard::{FavoriteFlashcardPanel, FavoritePreview};
@@ -8,8 +8,7 @@ use super::question_bank_practice::{
 };
 use super::*;
 use hyz_things::domain::question_bank::{
-    primary_module, FavoriteState, PracticeBrowseItem, PracticeMode, PracticeQuestionDetail,
-    SetFavorite,
+    FavoriteState, PracticeBrowseItem, PracticeMode, PracticeQuestionDetail, SetFavorite,
 };
 
 const ROOT: &str = "/api/v1/question-bank";
@@ -104,34 +103,28 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
     {
         let preview = preview.clone();
         let preview_error = preview_error.clone();
-        let scope = props.scope.clone();
-        use_effect_with(
-            (question_id.clone(), scope, *preview_retry),
-            move |(id, scope, _)| {
-                let active = Rc::new(Cell::new(true));
-                let current = active.clone();
-                preview.set(None);
-                preview_error.set(None);
-                if *scope == PracticeMode::Favorite {
-                    if let Some(id) = id.clone() {
-                        spawn_local(async move {
-                            let result = fetch_json::<FavoritePreview>(
-                                &format!("{ROOT}/practice/favorites/{id}/flashcard-preview"),
-                                "闪卡预览",
-                            )
-                            .await;
-                            if current.get() {
-                                match result {
-                                    Ok(value) => preview.set(Some(value)),
-                                    Err(message) => preview_error.set(Some(message)),
-                                }
-                            }
-                        });
+        use_effect_with((question_id.clone(), *preview_retry), move |(id, _)| {
+            let active = Rc::new(Cell::new(true));
+            let current = active.clone();
+            preview.set(None);
+            preview_error.set(None);
+            if let Some(id) = id.clone() {
+                spawn_local(async move {
+                    let result = fetch_json::<FavoritePreview>(
+                        &format!("{ROOT}/practice/questions/{id}/flashcard-preview"),
+                        "闪卡预览",
+                    )
+                    .await;
+                    if current.get() {
+                        match result {
+                            Ok(value) => preview.set(Some(value)),
+                            Err(message) => preview_error.set(Some(message)),
+                        }
                     }
-                }
-                move || active.set(false)
-            },
-        );
+                });
+            }
+            move || active.set(false)
+        });
     }
     {
         let material_scroll = material_scroll.clone();
@@ -219,15 +212,9 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
             });
         })
     };
-    let supported = matches!(
-        primary_module(item.module.as_deref()),
-        Some("数量关系" | "判断推理" | "资料分析")
-    );
-    let can_create = props.scope == PracticeMode::Favorite
-        && favorite_active
-        && preview
-            .as_ref()
-            .is_some_and(|value| value.eligible && supported && !value.allowed_targets.is_empty());
+    let can_create = preview
+        .as_ref()
+        .is_some_and(|value| value.eligible && !value.allowed_targets.is_empty());
     let back = {
         let on_back = props.on_back.clone();
         Callback::from(move |_| on_back.emit(()))
@@ -360,8 +347,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                             <p class="text-sm text-base-content/60">{current.question.topics.join("、")}</p>
                         </section>
                     }
-                    if props.scope == PracticeMode::Favorite && favorite_active {
-                        if let Some(value) = &*preview {
+                    if let Some(value) = &*preview {
                             if can_create {
                                 <button type="button" class="btn btn-primary" data-testid="collection-review-create-flashcard"
                                     onclick={Callback::from({let creating=creating.clone();move |_|creating.set(true)})}>
@@ -381,7 +367,6 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                         } else {
                             <p class="text-xs opacity-60" role="status">{"正在检查闪卡资格…"}</p>
                         }
-                    }
                 </div>
             </section>
         };

@@ -4,7 +4,7 @@ use crate::{
         flashcards::{FlashcardApplication, FlashcardError},
         question_bank::BankError,
     },
-    domain::favorite_flashcard::FavoriteEligibility,
+    domain::favorite_flashcard::{FavoriteEligibility, FlashcardCreationMode},
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -40,6 +40,9 @@ pub struct FavoriteFlashcardPreview {
 #[serde(deny_unknown_fields)]
 pub struct CreateFavoriteFlashcard {
     pub target_deck: String,
+    /// The source root must match this mode. Old payloads can only be retried with valid new paths.
+    #[serde(default)]
+    pub creation_mode: Option<FlashcardCreationMode>,
     pub back: String,
     pub source_revision: String,
     #[serde(default)]
@@ -123,10 +126,10 @@ impl FavoriteFlashcardApplication {
         let question = self.source.load(question_id).await?;
         let preview = make_preview(question.clone());
         validate_create_request(&preview, &request)?;
-        let target = crate::domain::favorite_flashcard::resolve_target(&request.target_deck)
+        let target = crate::domain::favorite_flashcard::resolve_web_target(&request.target_deck)
             .ok_or(BankError::Invalid)?;
         let (front, assets) = self
-            .prepare_assets(&question.front, target.target_deck)
+            .prepare_assets(&question.front, &target.target_deck)
             .await?;
         let written = self
             .writer
@@ -160,7 +163,10 @@ impl FavoriteFlashcardApplication {
             let cards = snapshot
                 .cards
                 .iter()
-                .filter(|card| card.source_question_id.as_deref() == Some(question_id))
+                .filter(|card| {
+                    card.source_question_id.as_deref() == Some(question_id)
+                        && card.source_file == written.relative_path
+                })
                 .collect::<Vec<_>>();
             if cards.len() == 1 {
                 let card = cards[0];
@@ -247,14 +253,16 @@ fn validate_create_request(
     if request.source_revision != preview.source_revision {
         return Err(BankError::Stale.into());
     }
-    if !preview.eligibility.eligible
-        || !preview
-            .eligibility
-            .allowed_targets
-            .contains(&request.target_deck)
-        || preview.eligibility.requires_type_confirmation && !request.type_confirmed
-        || request.back.len() > 32 * 1024
-    {
+    let target = crate::domain::favorite_flashcard::resolve_web_target(&request.target_deck)
+        .ok_or(BankError::Invalid)?;
+    let selected = request.creation_mode.unwrap_or(target.mode);
+    let allowed = preview
+        .eligibility
+        .allowed_targets
+        .contains(&request.target_deck)
+        && selected == target.mode
+        && request.type_confirmed;
+    if !preview.eligibility.eligible || !allowed || request.back.len() > 32 * 1024 {
         return Err(BankError::Invalid.into());
     }
     Ok(())

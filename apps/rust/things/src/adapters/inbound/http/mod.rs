@@ -790,6 +790,16 @@ fn app_with_assets(
             on(MethodFilter::GET, question_bank::favorite_get)
                 .on(MethodFilter::POST, question_bank::favorite_set),
         )
+        // Shared by every indexed original-question review, not only favorites.
+        .route(
+            "/api/v1/question-bank/practice/questions/{id}/flashcard-preview",
+            on(MethodFilter::GET, favorite_flashcards::preview),
+        )
+        .route(
+            "/api/v1/question-bank/practice/questions/{id}/flashcard",
+            on(MethodFilter::POST, favorite_flashcards::create)
+                .layer(DefaultBodyLimit::max(40 * 1024)),
+        )
         .route(
             "/api/v1/question-bank/practice/favorites/{id}/flashcard-preview",
             on(MethodFilter::GET, favorite_flashcards::preview),
@@ -2932,8 +2942,11 @@ fn is_question_bank_practice_post_path(path: &str) -> bool {
                 && parts[9] == "ai"
                 && (parts.len() == 10 || matches!(parts[10], "messages" | "stop"));
     }
-    (parts.len() == 7 || parts.len() == 8 && parts[7] == "flashcard")
+    ((parts.len() == 7 || parts.len() == 8 && parts[7] == "flashcard")
         && parts[..6] == ["", "api", "v1", "question-bank", "practice", "favorites"]
+        || parts.len() == 8
+            && parts[..6] == ["", "api", "v1", "question-bank", "practice", "questions"]
+            && parts[7] == "flashcard")
         && crate::application::question_bank::document::valid_id(parts[6])
 }
 

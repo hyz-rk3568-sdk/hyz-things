@@ -6,7 +6,9 @@ use crate::application::{
     },
     flashcards::FlashcardError,
 };
-use crate::domain::favorite_flashcard::resolve_target;
+use crate::domain::favorite_flashcard::{
+    resolve_target, resolve_web_target, FlashcardCreationMode,
+};
 use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 use std::{
@@ -98,8 +100,8 @@ impl Default for FilesystemFavoriteFlashcardWriter {
     }
 }
 impl FilesystemFavoriteFlashcardWriter {
-    #[cfg(test)]
-    fn with_observer(root: PathBuf, observer: Arc<dyn FavoriteMountObservationPort>) -> Self {
+    #[cfg(any(test, feature = "e2e"))]
+    pub fn with_observer(root: PathBuf, observer: Arc<dyn FavoriteMountObservationPort>) -> Self {
         Self { root, observer }
     }
 
@@ -123,18 +125,18 @@ impl FilesystemFavoriteFlashcardWriter {
         card: NewFavoriteCard,
     ) -> Result<FavoriteWriteResult, FlashcardError> {
         validate_card(&card)?;
-        let target = resolve_target(&card.target_deck)
+        let target = resolve_web_target(&card.target_deck)
             .ok_or_else(|| invalid("unsupported favorite target"))?;
         let identity = self.observer.observe(&self.root)?;
         let root = open_root(&self.root)?;
         self.verify_root(&root, &identity)?;
-        let scan = scan_source(&root, &card.question_id)?;
+        let scan = scan_source(&root, &card.question_id, target.mode)?;
         self.verify_root(&root, &identity)?;
         if let Some(existing) = scan.existing {
             return Ok(existing);
         }
 
-        let target_path = Path::new(target.relative_path);
+        let target_path = Path::new(&target.relative_path);
         let parent_path = target_path
             .parent()
             .ok_or_else(|| invalid("invalid registry path"))?;
@@ -143,7 +145,7 @@ impl FilesystemFavoriteFlashcardWriter {
             .file_name()
             .ok_or_else(|| invalid("invalid registry path"))?;
         let original = read_source_optional(&parent, name, MAX_MARKDOWN)?;
-        if original.as_ref().map(|file| &file.version) != scan.files.get(target.relative_path) {
+        if original.as_ref().map(|file| &file.version) != scan.files.get(&target.relative_path) {
             return Err(unavailable("target changed after scan"));
         }
         let mut text = match &original {
@@ -186,7 +188,7 @@ impl FilesystemFavoriteFlashcardWriter {
             normalize_newlines(&card.front, newline),
             normalize_newlines(&card.back, newline)
         ));
-        parse_markdown_text(&text, target.relative_path)
+        parse_markdown_text(&text, &target.relative_path)
             .map_err(|e| unavailable(format!("invalid appended source: {}", e.message)))?;
         if text.len() as u64 > MAX_MARKDOWN {
             return Err(invalid("target exceeds Markdown size limit"));
@@ -196,7 +198,7 @@ impl FilesystemFavoriteFlashcardWriter {
         }
         let temp = TemporaryFile::write(&parent, "favorite-tmp", text.as_bytes())?;
         self.verify_root(&root, &identity)?;
-        if scan_source(&root, &card.question_id)?.files != scan.files {
+        if scan_source(&root, &card.question_id, target.mode)?.files != scan.files {
             return Err(unavailable("source changed before commit"));
         }
         if read_source_optional(&parent, name, MAX_MARKDOWN)? != original {
@@ -473,12 +475,18 @@ struct SourceScan {
     files: BTreeMap<String, SourceVersion>,
     existing: Option<FavoriteWriteResult>,
 }
-fn scan_source(root: &File, question_id: &str) -> Result<SourceScan, FlashcardError> {
+fn scan_source(
+    root: &File,
+    question_id: &str,
+    requested_mode: FlashcardCreationMode,
+) -> Result<SourceScan, FlashcardError> {
     let mut result = SourceScan {
         files: BTreeMap::new(),
         existing: None,
     };
-    let mut questions: BTreeSet<String> = BTreeSet::new();
+    // A single original question may have one card in each parallel creation mode.
+    // Within a mode, the UUID remains unique, even if someone moved its Markdown.
+    let mut questions: BTreeMap<String, BTreeSet<Option<bool>>> = BTreeMap::new();
     let mut ids: BTreeSet<String> = BTreeSet::new();
     let mut queue = vec![(root.try_clone().map_err(source_io)?, PathBuf::new())];
     let mut entries_seen = 0;
@@ -516,16 +524,29 @@ fn scan_source(root: &File, question_id: &str) -> Result<SourceScan, FlashcardEr
             let parsed = parse_markdown_text(text, &path)
                 .map_err(|error| unavailable(format!("{}: {}", path, error.message)))?;
             result.files.insert(path.clone(), file.version);
+            let source_mode = path
+                .strip_suffix("/cards.md")
+                .and_then(resolve_target)
+                .map(|target| target.mode == FlashcardCreationMode::UserOrganized);
             for card in parsed.cards {
                 if !card.generated_id && !ids.insert(card.id.to_string()) {
                     return Err(unavailable("conflicting duplicate card UUID"));
                 }
                 if let Some(source_id) = &card.source_question_id {
                     let source_id = source_id.to_ascii_lowercase();
-                    if !questions.insert(source_id.clone()) {
+                    let seen = questions.entry(source_id.clone()).or_default();
+                    // Unknown/moved decks are conservatively treated as a conflict with
+                    // any second copy, so moving an existing card cannot silently clone it.
+                    if (!seen.is_empty() && (source_mode.is_none() || seen.contains(&None)))
+                        || !seen.insert(source_mode)
+                    {
                         return Err(unavailable("conflicting duplicate source question ID"));
                     }
-                    if source_id == question_id {
+                    if source_id == question_id
+                        && (source_mode.is_none()
+                            || source_mode
+                                == Some(requested_mode == FlashcardCreationMode::UserOrganized))
+                    {
                         result.existing = Some(FavoriteWriteResult {
                             relative_path: path.clone(),
                             card_id: (!card.generated_id).then_some(card.id),
@@ -625,7 +646,7 @@ mod tests {
     fn card() -> NewFavoriteCard {
         NewFavoriteCard {
             question_id: "0194f4e0-1234-7000-8000-000000000001".into(),
-            target_deck: "数量/工程效率/错题".into(),
+            target_deck: "真题练习/数量关系/工程效率/错题".into(),
             front: "Question".into(),
             back: "-".into(),
             correct_answer: vec!["B".into()],
@@ -684,7 +705,7 @@ mod tests {
             fs::read_to_string(fixture.root.join("moved/deck/cards.md")).unwrap(),
             original
         );
-        assert!(!fixture.root.join("数量").exists());
+        assert!(!fixture.root.join("真题练习").exists());
     }
 
     #[tokio::test]
@@ -739,6 +760,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ordinary_review_deck_is_created_then_appended_without_duplication() {
+        let fixture = Fixture::new();
+        let writer: Arc<dyn FavoriteFlashcardWriterPort> = Arc::new(fixture.writer());
+        let mut first = card();
+        first.target_deck = "真题练习/言语理解与表达/中心理解/错题".into();
+        let result = writer.append(first.clone()).await.unwrap();
+        assert!(result.appended);
+        assert_eq!(
+            result.relative_path,
+            "真题练习/言语理解与表达/中心理解/错题/cards.md"
+        );
+        assert!(!writer.append(first).await.unwrap().appended);
+
+        let mut second = card();
+        second.question_id = "0194f4e0-1234-7000-8000-000000000042".into();
+        second.target_deck = "真题练习/言语理解与表达/中心理解/错题".into();
+        assert!(writer.append(second).await.unwrap().appended);
+        let path = fixture
+            .root
+            .join("真题练习/言语理解与表达/中心理解/错题/cards.md");
+        let text = fs::read_to_string(path).unwrap();
+        assert!(text.contains("中心理解"));
+        assert_eq!(
+            parse_markdown_text(&text, "真题练习/言语理解与表达/中心理解/错题/cards.md")
+                .unwrap()
+                .cards
+                .len(),
+            2
+        );
+    }
+
+    #[tokio::test]
+    async fn same_question_can_be_saved_once_in_each_parallel_mode() {
+        let fixture = Fixture::new();
+        let writer: Arc<dyn FavoriteFlashcardWriterPort> = Arc::new(fixture.writer());
+        let ai = card();
+        let mut normal = ai.clone();
+        normal.target_deck = "用户整理/数量关系/工程效率/错题".into();
+        let ai_result = writer.append(ai.clone()).await.unwrap();
+        let normal_result = writer.append(normal.clone()).await.unwrap();
+        assert!(ai_result.appended);
+        assert!(normal_result.appended);
+        assert_eq!(
+            ai_result.relative_path,
+            "真题练习/数量关系/工程效率/错题/cards.md"
+        );
+        assert_eq!(
+            normal_result.relative_path,
+            "用户整理/数量关系/工程效率/错题/cards.md"
+        );
+        assert!(!writer.append(ai).await.unwrap().appended);
+        assert!(!writer.append(normal).await.unwrap().appended);
+    }
+
+    #[tokio::test]
     async fn missing_mount_never_creates_a_local_fallback() {
         let fixture = Fixture::new();
         fixture.mount.0.store(false, Ordering::SeqCst);
@@ -754,7 +830,7 @@ mod tests {
     async fn symlinked_source_entries_are_rejected() {
         let fixture = Fixture::new();
         let outside = Fixture::new();
-        std::os::unix::fs::symlink(&outside.root, fixture.root.join("数量")).unwrap();
+        std::os::unix::fs::symlink(&outside.root, fixture.root.join("真题练习")).unwrap();
         let writer: Arc<dyn FavoriteFlashcardWriterPort> = Arc::new(fixture.writer());
         assert!(matches!(
             writer.append(card()).await,
@@ -806,7 +882,7 @@ mod tests {
         let fixture = Fixture::new();
         let target = resolve_target(&card().target_deck).unwrap();
         let original = "---\r\ntags: [custom]\r\nother: keep-me\r\n---\r\n## Card\r\n### Front\r\nOld front\r\n### Back\r\nOld back";
-        put(&fixture.root, target.relative_path, original);
+        put(&fixture.root, &target.relative_path, original);
         let writer: Arc<dyn FavoriteFlashcardWriterPort> = Arc::new(fixture.writer());
         let result = writer.append(card()).await.unwrap();
         let path = fixture.root.join(result.relative_path);
@@ -828,7 +904,7 @@ mod tests {
         assert_eq!(backups.len(), 1);
         assert_eq!(fs::read(backups[0].path()).unwrap(), original.as_bytes());
         let parsed =
-            parse_markdown_text(std::str::from_utf8(&bytes).unwrap(), target.relative_path)
+            parse_markdown_text(std::str::from_utf8(&bytes).unwrap(), &target.relative_path)
                 .unwrap();
         assert_eq!(parsed.cards.len(), 2);
         assert_eq!(parsed.cards[0].back_markdown, "Old back");
@@ -930,7 +1006,7 @@ mod tests {
         let fixture = Fixture::new();
         let target = resolve_target(&card().target_deck).unwrap();
         let original = existing_card("0194f4e0-1234-7000-8000-000000000099", None);
-        put(&fixture.root, target.relative_path, &original);
+        put(&fixture.root, &target.relative_path, &original);
         let path = fixture.root.join(target.relative_path);
         let edit_path = path.clone();
         let edit_bytes = original.clone();
@@ -951,14 +1027,14 @@ mod tests {
         let fixture = Fixture::new();
         let target = resolve_target(&card().target_deck).unwrap();
         let original = "## Card\n### Front\nOld front\n### Back\nOld back\n\n---\n\n";
-        put(&fixture.root, target.relative_path, original);
+        put(&fixture.root, &target.relative_path, original);
         let writer: Arc<dyn FavoriteFlashcardWriterPort> = Arc::new(fixture.writer());
         let result = writer.append(card()).await.unwrap();
         let text = fs::read_to_string(fixture.root.join(result.relative_path)).unwrap();
         assert!(text.starts_with(original));
         assert!(text.ends_with("---\n"));
         assert_eq!(text.matches("\n---\n").count(), 2);
-        let parsed = parse_markdown_text(&text, target.relative_path).unwrap();
+        let parsed = parse_markdown_text(&text, &target.relative_path).unwrap();
         assert_eq!(parsed.cards[0].back_markdown, "Old back");
     }
 
@@ -1012,7 +1088,7 @@ mod tests {
         ));
         assert_eq!(fs::read_dir(&fixture.root).unwrap().count(), 0);
         let target = resolve_target(&card().target_deck).unwrap();
-        let old_parent = old_root.join(Path::new(target.relative_path).parent().unwrap());
+        let old_parent = old_root.join(Path::new(&target.relative_path).parent().unwrap());
         assert_eq!(fs::read_dir(old_parent).unwrap().count(), 0);
     }
 
@@ -1021,7 +1097,7 @@ mod tests {
         let fixture = Fixture::new();
         let target = resolve_target(&card().target_deck).unwrap();
         let original = existing_card("0194f4e0-1234-7000-8000-000000000099", None);
-        put(&fixture.root, target.relative_path, &original);
+        put(&fixture.root, &target.relative_path, &original);
         let path = fixture.root.join(target.relative_path);
         let changed_path = path.clone();
         let changed = original.replace("Original answer", "External answer");

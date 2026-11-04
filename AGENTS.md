@@ -136,7 +136,7 @@ composition root in its own Cargo package:
 - 先运行静态检查再构建。除非用户明确要求，不启动 Rust、前端、SDK、
   Buildroot、kernel、rootfs 或 firmware 构建。
 
-### E2E 构建产物与服务复用（本地）
+### E2E 构建产物与服务复用（本地测试优先使用）
 
 - 相关 Playwright spec 优先放在同一条 `playwright test <spec...>` 命令中运行；一次 invocation 只构建 bundle、启动 harness 一次，所有 spec 共用该服务。不要为同一批 spec 逐个启动 runner。
 - 需要跨多轮调试复用时，先构建一次 verified frontend bundle：

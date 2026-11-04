@@ -163,15 +163,27 @@ impl LogicJudgmentService {
 }
 
 fn eligible_path(path: &str) -> Option<&'static str> {
-    match path.strip_prefix("flashcards/").unwrap_or(path) {
-        "判断/形式推理/直言命题/cards.md"
-        | "判断/形式推理/直言命题/错题/cards.md"
-        | "判断/形式推理/联言选言假言命题/cards.md"
-        | "判断/形式推理/联言选言假言命题/错题/cards.md"
-        | "判断/形式推理/组合排列/cards.md"
-        | "判断/形式推理/组合排列/错题/cards.md"
-        | "判断/形式推理/特殊题型/cards.md"
-        | "判断/形式推理/特殊题型/错题/cards.md" => Some("formal"),
+    // The AI generator only reads the 用户整理 source root (plus legacy decks).
+    let relative = path.strip_prefix("flashcards/").unwrap_or(path);
+    if relative.starts_with("真题练习/") {
+        return None;
+    }
+    let relative = relative.strip_prefix("用户整理/").unwrap_or(relative);
+    let normalized = if let Some(tail) = relative.strip_prefix("判断/") {
+        format!("判断推理/{tail}")
+    } else {
+        relative.to_owned()
+    };
+    let normalized = normalized.replacen("判断推理/AI出题/", "判断推理/", 1);
+    match normalized.as_str() {
+        "判断推理/形式推理/直言命题/cards.md"
+        | "判断推理/形式推理/直言命题/错题/cards.md"
+        | "判断推理/形式推理/联言选言假言命题/cards.md"
+        | "判断推理/形式推理/联言选言假言命题/错题/cards.md"
+        | "判断推理/形式推理/组合排列/cards.md"
+        | "判断推理/形式推理/组合排列/错题/cards.md"
+        | "判断推理/形式推理/特殊题型/cards.md"
+        | "判断推理/形式推理/特殊题型/错题/cards.md" => Some("formal"),
         _ => None,
     }
 }
@@ -941,6 +953,19 @@ mod tests {
             let mistake = format!("判断/形式推理/{directory}/错题/cards.md");
             assert_eq!(eligible_path(&method), Some("formal"));
             assert_eq!(eligible_path(&mistake), Some("formal"));
+            assert_eq!(
+                eligible_path(&method.replace("判断/", "判断推理/")),
+                Some("formal")
+            );
+            assert_eq!(
+                eligible_path(&mistake.replace("判断/", "判断推理/")),
+                Some("formal")
+            );
+            let ai = format!("用户整理/判断推理/形式推理/{directory}/错题/cards.md");
+            assert_eq!(eligible_path(&ai), Some("formal"));
+            assert_eq!(eligible_path(&format!("用户整理/{method}")), Some("formal"));
+            let default = format!("真题练习/判断推理/{directory}/错题/cards.md");
+            assert_eq!(eligible_path(&default), None);
         }
         assert_eq!(eligible_path("判断/形式推理/card.md"), None);
         assert_eq!(eligible_path("判断/论证推理/card.md"), None);

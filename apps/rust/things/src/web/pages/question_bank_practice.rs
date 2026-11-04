@@ -1,4 +1,5 @@
 //! Browse original papers and categories; share one workspace for practice and review.
+use super::favorite_flashcard::{FavoriteFlashcardPanel, FavoritePreview};
 use super::material_scroll::{scroll_edges, MaterialScrollButton, ScrollEdges};
 use super::*;
 use hyz_things::domain::question_bank::{
@@ -837,7 +838,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         .as_ref()
         .and_then(|w| w.questions.get(*index))
         .map(|q| q.item.question_id.clone());
-    let favorite = use_practice_favorite(current_favorite_source);
+    let favorite = use_practice_favorite(current_favorite_source.clone());
+    let flashcard_preview = use_state(|| None::<(String, FavoritePreview)>);
+    let flashcard_error = use_state(|| None::<String>);
+    let flashcard_retry = use_state(|| 0u32);
+    let flashcard_open = use_state(|| false);
     let mounted = use_mut_ref(|| true);
     {
         let mounted = mounted.clone();
@@ -1032,6 +1037,43 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             refresh_edges.emit(());
             || ()
         });
+    }
+    {
+        let flashcard_preview = flashcard_preview.clone();
+        let flashcard_error = flashcard_error.clone();
+        let flashcard_open = flashcard_open.clone();
+        use_effect_with(
+            (
+                current_favorite_source.clone(),
+                review.is_some(),
+                *flashcard_retry,
+            ),
+            move |(question_id, is_review, _)| {
+                let active = Rc::new(Cell::new(true));
+                let current = active.clone();
+                flashcard_preview.set(None);
+                flashcard_error.set(None);
+                flashcard_open.set(false);
+                if *is_review {
+                    if let Some(id) = question_id.clone() {
+                        spawn_local(async move {
+                            let result = fetch_json::<FavoritePreview>(
+                                &format!("{ROOT}/practice/questions/{id}/flashcard-preview"),
+                                "真题 Flashcard 预览",
+                            )
+                            .await;
+                            if current.get() {
+                                match result {
+                                    Ok(value) => flashcard_preview.set(Some((id, value))),
+                                    Err(message) => flashcard_error.set(Some(message)),
+                                }
+                            }
+                        });
+                    }
+                }
+                move || active.set(false)
+            },
+        );
     }
     let invoke = {
         let csrf = props.csrf.clone();
@@ -1429,6 +1471,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         if let Some(item) = current.questions.get(item_index) {
             let completed = current.session.status == "completed";
             let selected_review = review.as_ref().and_then(|r| r.questions.get(item_index));
+            let card_preview = flashcard_preview
+                .as_ref()
+                .as_ref()
+                .filter(|(id, _)| id == &item.item.question_id)
+                .map(|(_, preview)| preview.clone());
             let question = item.question.as_ref();
             let options = question
                 .map(|q| answer_options(&q.options_markdown))
@@ -1628,6 +1675,28 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     </p>
                                 }
                             </div>
+                            if !item.content_changed {
+                                if let Some(preview) = &card_preview {
+                                    if preview.eligible && !preview.allowed_targets.is_empty() {
+                                        <button type="button" class="btn btn-primary btn-sm"
+                                            data-testid="question-bank-practice-create-flashcard"
+                                            onclick={Callback::from({let flashcard_open=flashcard_open.clone();move |_|flashcard_open.set(true)})}>
+                                            {"创建 Flashcard"}
+                                        </button>
+                                    } else {
+                                        <p class="text-xs opacity-60" role="status">
+                                            {preview.reason.as_deref().unwrap_or("此题暂不支持创建闪卡")}
+                                        </p>
+                                    }
+                                } else if let Some(message) = &*flashcard_error {
+                                    <p role="alert" class="text-xs text-error">{message.clone()}</p>
+                                    <button type="button" class="btn btn-outline btn-sm"
+                                        data-testid="question-bank-practice-flashcard-retry"
+                                        onclick={Callback::from({let flashcard_retry=flashcard_retry.clone();move |_|flashcard_retry.set(*flashcard_retry+1)})}>
+                                        {"重试加载闪卡"}
+                                    </button>
+                                }
+                            }
                         }
                     }
                     </div>
@@ -1772,6 +1841,18 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             }
                         </div>
                         {nav}
+                        if *flashcard_open {
+                            if let Some(preview) = &card_preview {
+                                <div class="fixed inset-0 z-[100] bg-black/60 p-3 sm:p-6"
+                                    data-testid="question-bank-practice-flashcard-dialog"
+                                    role="dialog" aria-modal="true" aria-label="创建 Flashcard">
+                                    <FavoriteFlashcardPanel key={item.item.question_id.clone()}
+                                        question_id={item.item.question_id.clone()}
+                                        preview={preview.clone()} csrf={props.csrf.clone()}
+                                        on_close={Callback::from({let flashcard_open=flashcard_open.clone();move |_|flashcard_open.set(false)})}/>
+                                </div>
+                            }
+                        }
                     </section>
                 };
             }
