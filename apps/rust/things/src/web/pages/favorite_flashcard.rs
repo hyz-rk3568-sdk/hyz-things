@@ -8,6 +8,8 @@ pub(crate) struct FavoritePreview {
     pub(crate) correct_answer: Vec<String>,
     pub(crate) recommended_target: Option<String>,
     pub(crate) allowed_targets: Vec<String>,
+    #[serde(default)]
+    pub(crate) ai_targets: Vec<String>,
     pub(crate) requires_type_confirmation: bool,
     pub(crate) source_revision: String,
 }
@@ -30,7 +32,7 @@ struct FavoriteCardResult {
 }
 
 fn favorite_endpoint(id: &str, action: &str) -> String {
-    format!("/api/v1/question-bank/practice/favorites/{id}/{action}")
+    format!("/api/v1/question-bank/practice/questions/{id}/{action}")
 }
 
 fn favorite_content(value: &FavoritePreview) -> Html {
@@ -56,14 +58,8 @@ pub(crate) struct FavoriteFlashcardPanelProps {
 #[function_component(FavoriteFlashcardPanel)]
 pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> Html {
     let back = use_state(String::new);
-    let target = use_state(|| {
-        props
-            .preview
-            .recommended_target
-            .clone()
-            .filter(|target| props.preview.allowed_targets.contains(target))
-            .unwrap_or_default()
-    });
+    // Never auto-select a destination: every new card needs a deliberate choice.
+    let target = use_state(String::new);
     let confirmed = use_state(|| false);
     let busy = use_state(|| false);
     let locked = use_state(|| false);
@@ -163,7 +159,7 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
             <header class="flex items-start justify-between gap-3">
                 <div>
                     <h2 class="text-xl font-bold">{"创建 Flashcard"}</h2>
-                    <p class="mt-1 text-sm opacity-60">{"确认正面与目标牌组，背面可留空。"}</p>
+                    <p class="mt-1 text-sm opacity-60">{"确认写入目录；原 AI 出题卡与普通复盘卡都能保存，背面可留空。"}</p>
                 </div>
                 <button type="button" class="btn btn-ghost btn-sm" onclick={close.clone()}>{"返回复盘"}</button>
             </header>
@@ -177,10 +173,17 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
                         }})}>
                         <option value="" disabled={true}>{"请选择目标牌组"}</option>
                         {for props.preview.allowed_targets.iter().map(|value|html! {
-                            <option value={value.clone()} selected={*target==*value}>{value}</option>
+                            <option value={value.clone()} selected={*target==*value}>
+                                {format!("flashcards/{value}/cards.md · {}", if props.preview.ai_targets.contains(value) {"兼容 AI 出题"} else {"普通复盘"})}
+                            </option>
                         })}
                     </select>
                 </label>
+                if !target.is_empty() {
+                    <p class="break-all text-xs text-base-content/70" data-testid="favorite-flashcard-path">
+                        {format!("将追加或创建：flashcards/{}/cards.md",*target)}
+                    </p>
+                }
                 <label class="block space-y-2">
                     <span class="font-semibold">{"背面"}</span>
                     <textarea class="textarea textarea-bordered min-h-40 w-full" value={(*back).clone()} disabled={*locked}
@@ -194,7 +197,7 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
                             onchange={Callback::from({let confirmed=confirmed.clone();move |event:Event| {
                                 confirmed.set(event.target_unchecked_into::<HtmlInputElement>().checked());
                             }})}/>
-                        <span>{"确认题型"}</span>
+                        <span>{"已核对题型与目标目录"}</span>
                     </label>
                 }
                 if let Some(message) = &*error {
