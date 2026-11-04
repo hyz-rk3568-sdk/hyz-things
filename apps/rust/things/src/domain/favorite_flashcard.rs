@@ -173,7 +173,7 @@ fn valid_category(category: &str) -> bool {
         && category != "."
         && category != ".."
         && !category.starts_with('.')
-        && !category.ends_with([' ', '.'])
+        && !category.ends_with(' ') && !category.ends_with('.')
         && !category.chars().any(|ch| {
             ch.is_control() || matches!(ch, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')
         })
