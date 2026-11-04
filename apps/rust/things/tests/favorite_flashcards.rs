@@ -72,7 +72,7 @@ impl FavoriteFlashcardWriterPort for Fake {
             cards.push(card);
         }
         Ok(FavoriteWriteResult {
-            relative_path: "数量/工程效率/错题/cards.md".into(),
+            relative_path: "数量关系/工程效率/错题/cards.md".into(),
             card_id: None,
             appended,
         })
@@ -97,7 +97,7 @@ impl FlashcardSourcePort for Fake {
                 id: FlashcardId::new(CARD).unwrap(),
                 source_question_id: Some(card.question_id.clone()),
                 correct_answer: card.correct_answer.clone(),
-                source_file: "数量/工程效率/错题/cards.md".into(),
+                source_file: "数量关系/工程效率/错题/cards.md".into(),
                 source_order: 0,
                 deck_path: card.target_deck.clone(),
                 front_markdown: card.front.clone(),
@@ -110,7 +110,7 @@ impl FlashcardSourcePort for Fake {
         Ok(SourceSnapshot {
             cards,
             complete: true,
-            successful_markdown_files: ["数量/工程效率/错题/cards.md".into()].into(),
+            successful_markdown_files: ["数量关系/工程效率/错题/cards.md".into()].into(),
             ..Default::default()
         })
     }
@@ -212,7 +212,7 @@ fn setup() -> (
 }
 fn request() -> CreateFavoriteFlashcard {
     CreateFavoriteFlashcard {
-        target_deck: "数量/工程效率/错题".into(),
+        target_deck: "数量关系/工程效率/错题".into(),
         back: "".into(),
         source_revision: "v1".into(),
         type_confirmed: false,
@@ -522,7 +522,7 @@ async fn stale_preview_and_cross_module_target_do_not_write() {
     stale.source_revision = "old".into();
     assert!(app.create(QUESTION, stale).await.is_err());
     let mut foreign = request();
-    foreign.target_deck = "判断/形式推理/直言命题/错题".into();
+    foreign.target_deck = "判断推理/形式推理/直言命题/错题".into();
     assert!(app.create(QUESTION, foreign).await.is_err());
     assert!(fake.written.lock().unwrap().is_empty());
     fake.deny_favorite.store(true, Ordering::SeqCst);
