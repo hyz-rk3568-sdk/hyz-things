@@ -522,8 +522,8 @@ test('any original-paper review can create a category flashcard without first fa
   await expect(dialog).toBeVisible();
   const card=dialog.getByTestId('favorite-flashcard-card');
   await expect(card.getByRole('button',{name:'创建并同步'})).toBeDisabled();
-  await card.getByLabel('目标牌组').selectOption('资料/比重/错题');
-  await expect(card.getByTestId('favorite-flashcard-path')).toHaveText('将追加或创建：flashcards/资料/比重/错题/cards.md');
+  await card.getByLabel('目标牌组').selectOption('资料分析/比重/错题');
+  await expect(card.getByTestId('favorite-flashcard-path')).toHaveText('将追加或创建：flashcards/资料分析/比重/错题/cards.md');
   await expect(card.getByRole('button',{name:'创建并同步'})).toBeEnabled();
   await dialog.getByRole('button',{name:'返回复盘'}).first().click();
   await expect(dialog).toHaveCount(0);
