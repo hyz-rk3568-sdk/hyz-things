@@ -93,6 +93,10 @@ pub struct SqliteQuestionBankRepository {
     pool: SqlitePool,
 }
 impl SqliteQuestionBankRepository {
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
+
     pub async fn connect(path: &str) -> Result<Self, BankError> {
         let options = SqliteConnectOptions::from_str(path)
             .map_err(|_| BankError::Storage)?
