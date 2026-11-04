@@ -126,7 +126,7 @@ impl FavoriteFlashcardApplication {
         let target = crate::domain::favorite_flashcard::resolve_target(&request.target_deck)
             .ok_or(BankError::Invalid)?;
         let (front, assets) = self
-            .prepare_assets(&question.front, target.target_deck)
+            .prepare_assets(&question.front, &target.target_deck)
             .await?;
         let written = self
             .writer
