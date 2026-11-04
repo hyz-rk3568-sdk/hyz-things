@@ -300,17 +300,17 @@ fn use_practice_collection(scope: PracticeMode, refresh: u64) -> PracticeCollect
 }
 
 #[derive(Clone)]
-struct PracticeFavorite {
-    value: UseStateHandle<Option<FavoriteState>>,
-    failure: UseStateHandle<Option<(String, String)>>,
-    ready: Rc<RefCell<Option<FavoriteState>>>,
-    source: Rc<RefCell<Option<String>>>,
-    generation: Rc<RefCell<u64>>,
-    retry: Callback<()>,
+pub(super) struct PracticeFavorite {
+    pub(super) value: UseStateHandle<Option<FavoriteState>>,
+    pub(super) failure: UseStateHandle<Option<(String, String)>>,
+    pub(super) ready: Rc<RefCell<Option<FavoriteState>>>,
+    pub(super) source: Rc<RefCell<Option<String>>>,
+    pub(super) generation: Rc<RefCell<u64>>,
+    pub(super) retry: Callback<()>,
 }
 
 #[hook]
-fn use_practice_favorite(question_id: Option<String>) -> PracticeFavorite {
+pub(super) fn use_practice_favorite(question_id: Option<String>) -> PracticeFavorite {
     let value = use_state(|| None::<FavoriteState>);
     let failure = use_state(|| None::<(String, String)>);
     let ready = use_mut_ref(|| None::<FavoriteState>);
@@ -2301,6 +2301,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     on_back={Callback::from({
                         let collection_review=collection_review.clone();
                         move |_|collection_review.set(None)
+                    })}
+                    on_favorite_change={Callback::from({
+                        let invalidate=favorite_collection.invalidate.clone();
+                        move |_|invalidate.emit(())
                     })}/>
             }
             if *settings_open && *mode == PracticeMode::Module {

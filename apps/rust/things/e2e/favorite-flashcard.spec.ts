@@ -6,6 +6,7 @@ const rows = [
   { question_id: 'supported', module: '数量关系', category: '数学运算' },
   { question_id: 'unsupported', module: '常识判断', category: '法律' },
 ].map((row, index) => ({ ...row, paper_id: 'paper', paper_title: '收藏测试卷', year: 2026, region: '国考', number: index + 1 }));
+const favoriteState = new Map<string, boolean>();
 const material = '## 完整材料\n\n材料中的数量为 **1200**。\n\n求结果 $A=B$';
 const preview = (eligible = true) => ({
   eligible, reason: eligible ? null : '此模块暂不支持创建闪卡',
@@ -24,6 +25,8 @@ const detail = (row: (typeof rows)[number]) => ({
 });
 
 async function install(page: Page, collection: 'favorite' | 'wrong' = 'favorite') {
+  favoriteState.clear();
+  for (const row of rows) favoriteState.set(row.question_id, true);
   await loginAsAdmin(page);
   await page.route(`**${root}/**`, async route => {
     const url = new URL(route.request().url());
@@ -31,10 +34,22 @@ async function install(page: Page, collection: 'favorite' | 'wrong' = 'favorite'
     if (path === '/papers') await route.fulfill({ json: [] });
     else if (path === '/practice/catalog') await route.fulfill({ json: { unclassified: 0, modules: rows.map(row => ({ name: row.module, count: 1, done: 0, uncategorized: 0, categories: [{ name: row.category, count: 1, done: 0 }] })) } });
     else if (path === '/practice/history') await route.fulfill({ json: [] });
-    else if (path === '/practice/questions') await route.fulfill({ json: url.searchParams.get('mode') === collection ? rows : [] });
+    else if (path === '/practice/questions') {
+      const mode = url.searchParams.get('mode');
+      const list = mode === 'favorite' ? rows.filter(row => favoriteState.get(row.question_id)) : mode === collection ? rows : [];
+      await route.fulfill({ json: list });
+    }
     else if (/^\/practice\/questions\/[^/]+$/.test(path)) {
       const row = rows.find(value => value.question_id === decodeURIComponent(path.split('/').pop()!));
       await route.fulfill(row ? { json: detail(row) } : { status: 404, json: { error: 'question-not-found' } });
+    }
+    else if (/^\/practice\/favorites\/[^/]+$/.test(path)) {
+      const id = decodeURIComponent(path.split('/').pop()!);
+      const favorite = route.request().method() === 'POST'
+        ? (route.request().postDataJSON() as { favorite: boolean }).favorite
+        : favoriteState.get(id) ?? false;
+      favoriteState.set(id, favorite);
+      await route.fulfill({ json: { question_id: id, favorite } });
     }
     else if (path.endsWith('/flashcard-preview')) await route.fulfill({ json: preview(!path.includes('/unsupported/')) });
     else await route.continue();
@@ -54,9 +69,9 @@ async function openReview(page: Page, number = 1) {
 async function openCreate(page: Page) {
   const review = await openReview(page);
   await review.getByTestId('collection-review-create-flashcard').click();
-  const modal = page.getByRole('dialog', { name: '创建 Flashcard', exact: true });
-  await expect(modal).toBeVisible();
-  return modal;
+  const panel = page.getByTestId('favorite-flashcard-panel');
+  await expect(panel).toBeVisible();
+  return panel;
 }
 
 test.beforeEach(async ({ request }) => { await resetHarness(request); });
@@ -75,13 +90,16 @@ for (const width of [1180, 390]) {
     await expect(review.getByTestId('collection-review-answer')).toHaveText('B');
     await expect(review.getByTestId('collection-review-explanation')).toContainText('先列方程');
     await review.getByTestId('collection-review-create-flashcard').click();
-    const modal = page.getByRole('dialog', { name: '创建 Flashcard', exact: true });
-    await expect(modal.getByLabel('背面')).toHaveValue('');
-    await modal.getByLabel('目标牌组').selectOption('数量/概率/错题');
-    await expect(modal.getByRole('button', { name: '创建并同步', exact: true })).toBeDisabled();
-    await modal.getByLabel('背面').fill('先列方程，再代入。');
-    await modal.getByLabel('确认题型').check();
-    const box = await modal.boundingBox();
+    const panel = page.getByTestId('favorite-flashcard-panel');
+    await expect(panel).toBeVisible();
+    await expect(review.getByTestId('collection-review-split')).toHaveCount(0);
+    const card = panel.getByTestId('favorite-flashcard-card');
+    await expect(card.getByLabel('背面')).toHaveValue('');
+    await card.getByLabel('目标牌组').selectOption('数量/概率/错题');
+    await expect(card.getByRole('button', { name: '创建并同步', exact: true })).toBeDisabled();
+    await card.getByLabel('背面').fill('先列方程，再代入。');
+    await card.getByLabel('确认题型').check();
+    const box = await card.boundingBox();
     expect(box!.width).toBeLessThanOrEqual(576);
     expect(box!.x).toBeGreaterThan(0);
     expect(box!.x + box!.width).toBeLessThan(width);
@@ -92,11 +110,12 @@ for (const width of [1180, 390]) {
       csrf = route.request().headers()['x-hyz-csrf'];
       await route.fulfill({ json: { status: 'created_synced', target_deck: '数量/概率/错题', source_file: '数量/概率/错题/cards.md', card_id: 'new-card', retryable: false } });
     });
-    await modal.getByRole('button', { name: '创建并同步', exact: true }).click();
-    await expect(modal).toContainText('已创建');
+    await card.getByRole('button', { name: '创建并同步', exact: true }).click();
+    await expect(card).toContainText('已创建');
     expect(body).toEqual({ target_deck: '数量/概率/错题', back: '先列方程，再代入。', source_revision: 'source-v1', type_confirmed: true });
     expect(csrf).toBeTruthy();
-    await modal.getByRole('button', { name: '关闭', exact: true }).click();
+    await panel.getByRole('button', { name: '返回复盘', exact: true }).first().click();
+    await expect(review.getByTestId('collection-review-split')).toBeVisible();
     await review.getByTestId('collection-review-back').click();
     await expect(page.getByTestId('question-bank-collection-item')).toHaveCount(1);
     await expect(page.getByTestId('question-bank-collection-category').filter({ hasText: '数学运算' })).toHaveAttribute('aria-pressed', 'true');
@@ -127,6 +146,25 @@ test('wrong review opens the same split view without any flashcard action', asyn
   await expect(review.getByTestId('collection-review-scope')).toContainText('第 2/2 题');
   await expect(review.getByTestId('collection-review-heading')).toContainText('第 2 题');
   await expectNoHorizontalOverflow(page);
+});
+
+test('review cancels a saved favorite and refreshes the collection', async ({ page }) => {
+  await install(page);
+  const review = await openReview(page);
+  const star = review.getByTestId('collection-review-favorite');
+  await expect(star).toHaveAttribute('aria-label', '取消收藏');
+  let body: unknown;
+  await page.route(`**${root}/practice/favorites/supported`, async route => {
+    body = route.request().postDataJSON();
+    favoriteState.set('supported', false);
+    await route.fulfill({ json: { question_id: 'supported', favorite: false } });
+  });
+  await star.click();
+  await expect(star).toHaveAttribute('aria-label', '收藏题目');
+  expect(body).toEqual({ favorite: false });
+  await review.getByTestId('collection-review-back').click();
+  await expect(page.getByTestId('question-bank-collection-item')).toHaveCount(1);
+  await expect(page.getByTestId('question-bank-collection-item')).toContainText('第 2 题');
 });
 
 test('review swipe moves to the neighbouring saved question', async ({ page }) => {

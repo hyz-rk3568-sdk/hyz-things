@@ -1,10 +1,13 @@
 //! Read-only review of a saved wrong or favorite question. The timed training
 //! sessions stay separate; this view only reads one question at a time and
 //! lets the reader swipe through the filtered collection.
-use super::favorite_flashcard::FavoriteFlashcardAction;
-use super::question_bank_practice::answer_options;
+use super::favorite_flashcard::{FavoriteFlashcardPanel, FavoritePreview};
+use super::question_bank_practice::{answer_options, use_practice_favorite};
 use super::*;
-use hyz_things::domain::question_bank::{PracticeBrowseItem, PracticeMode, PracticeQuestionDetail};
+use hyz_things::domain::question_bank::{
+    primary_module, FavoriteState, PracticeBrowseItem, PracticeMode, PracticeQuestionDetail,
+    SetFavorite,
+};
 
 const ROOT: &str = "/api/v1/question-bank";
 
@@ -15,6 +18,7 @@ pub(crate) struct CollectionQuestionReviewProps {
     pub scope: PracticeMode,
     pub csrf: String,
     pub on_back: Callback<()>,
+    pub on_favorite_change: Callback<()>,
 }
 
 #[function_component(CollectionQuestionReview)]
@@ -25,7 +29,15 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
     let retry = use_state(|| 0u32);
     let material_scroll = use_node_ref();
     let question_scroll = use_node_ref();
-    let question_id = props.items.get(*index).map(|item| item.question_id.clone());
+    let current_item = props.items.get(*index).cloned();
+    let question_id = current_item.as_ref().map(|item| item.question_id.clone());
+    let favorite = use_practice_favorite(question_id.clone());
+    let favorite_busy = use_state(|| false);
+    let favorite_error = use_state(|| None::<String>);
+    let preview = use_state(|| None::<FavoritePreview>);
+    let preview_error = use_state(|| None::<String>);
+    let preview_retry = use_state(|| 0u32);
+    let creating = use_state(|| false);
     {
         let detail = detail.clone();
         let error = error.clone();
@@ -63,9 +75,43 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
         });
     }
     {
+        let preview = preview.clone();
+        let preview_error = preview_error.clone();
+        let scope = props.scope.clone();
+        use_effect_with(
+            (question_id.clone(), scope, *preview_retry),
+            move |(id, scope, _)| {
+                let active = Rc::new(Cell::new(true));
+                let current = active.clone();
+                preview.set(None);
+                preview_error.set(None);
+                if *scope == PracticeMode::Favorite {
+                    if let Some(id) = id.clone() {
+                        spawn_local(async move {
+                            let result = fetch_json::<FavoritePreview>(
+                                &format!("{ROOT}/practice/favorites/{id}/flashcard-preview"),
+                                "闪卡预览",
+                            )
+                            .await;
+                            if current.get() {
+                                match result {
+                                    Ok(value) => preview.set(Some(value)),
+                                    Err(message) => preview_error.set(Some(message)),
+                                }
+                            }
+                        });
+                    }
+                }
+                move || active.set(false)
+            },
+        );
+    }
+    {
         let material_scroll = material_scroll.clone();
         let question_scroll = question_scroll.clone();
+        let creating = creating.clone();
         use_effect_with(*index, move |_| {
+            creating.set(false);
             for target in [&material_scroll, &question_scroll] {
                 if let Some(element) = target.cast::<HtmlElement>() {
                     element.set_scroll_top(0);
@@ -74,7 +120,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
             || ()
         });
     }
-    let Some(item) = props.items.get(*index).cloned() else {
+    let Some(item) = current_item else {
         return Html::default();
     };
     let scope_label = if props.scope == PracticeMode::Favorite {
@@ -82,6 +128,79 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
     } else {
         "错题"
     };
+    let favorite_state = (*favorite.value).as_ref();
+    let favorite_active = favorite_state.is_some_and(|state| state.favorite);
+    let favorite_symbol = if favorite_state.is_none() {
+        "…"
+    } else if favorite_active {
+        "★"
+    } else {
+        "☆"
+    };
+    let favorite_label = if favorite_active {
+        "取消收藏"
+    } else {
+        "收藏题目"
+    };
+    let toggle_favorite = {
+        let favorite_busy = favorite_busy.clone();
+        let favorite_error = favorite_error.clone();
+        let source = favorite.source.clone();
+        let ready = favorite.ready.clone();
+        let value = favorite.value.clone();
+        let question_id = item.question_id.clone();
+        let csrf = props.csrf.clone();
+        let on_favorite_change = props.on_favorite_change.clone();
+        Callback::from(move |_| {
+            if *favorite_busy {
+                return;
+            }
+            let Some(state) = (*value).as_ref() else {
+                return;
+            };
+            let target = !state.favorite;
+            favorite_busy.set(true);
+            favorite_error.set(None);
+            let source = source.clone();
+            let ready = ready.clone();
+            let value = value.clone();
+            let favorite_busy = favorite_busy.clone();
+            let favorite_error = favorite_error.clone();
+            let on_favorite_change = on_favorite_change.clone();
+            let question_id = question_id.clone();
+            let csrf = csrf.clone();
+            spawn_local(async move {
+                let result = post_json_response::<_, FavoriteState>(
+                    &format!("{ROOT}/practice/favorites/{question_id}"),
+                    &csrf,
+                    &SetFavorite { favorite: target },
+                    "收藏真题",
+                )
+                .await;
+                favorite_busy.set(false);
+                match result {
+                    Ok(updated) if updated.question_id == question_id => {
+                        if source.borrow().as_ref() == Some(&question_id) {
+                            *ready.borrow_mut() = Some(updated.clone());
+                            value.set(Some(updated));
+                        }
+                        on_favorite_change.emit(());
+                    }
+                    Ok(_) => favorite_error.set(Some("收藏状态响应不匹配，请重试".into())),
+                    Err(message) => favorite_error.set(Some(message)),
+                }
+            });
+        })
+    };
+    let supported = matches!(
+        primary_module(item.module.as_deref()),
+        Some("数量关系" | "判断推理" | "资料分析")
+    );
+    let can_create = props.scope == PracticeMode::Favorite
+        && favorite_active
+        && preview
+            .as_ref()
+            .is_some_and(|value| value.eligible && supported && !value.allowed_targets.is_empty());
     let back = {
         let on_back = props.on_back.clone();
         Callback::from(move |_| on_back.emit(()))
@@ -95,7 +214,22 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
         let total = props.items.len();
         Callback::from(move |_| index.set((*index + 1).min(total.saturating_sub(1))))
     };
-    let main = if let Some(current) = &*detail {
+    let main = if *creating {
+        if let Some(value) = &*preview {
+            html! {
+                <FavoriteFlashcardPanel question_id={item.question_id.clone()} preview={value.clone()}
+                    csrf={props.csrf.clone()} on_close={Callback::from({
+                        let creating=creating.clone(); move |_|creating.set(false)
+                    })}/>
+            }
+        } else {
+            html! {
+                <div class="flex h-full items-center justify-center rounded-box bg-base-100" data-testid="collection-review-loading">
+                    <p class="opacity-60" role="status">{"正在准备闪卡…"}</p>
+                </div>
+            }
+        }
+    } else if let Some(current) = &*detail {
         let shared = !current.materials.is_empty();
         let options = answer_options(&current.question.options_markdown);
         let material_pane = html! {
@@ -183,8 +317,27 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                             <p class="text-sm text-base-content/60">{current.question.topics.join("、")}</p>
                         </section>
                     }
-                    if props.scope == PracticeMode::Favorite {
-                        <FavoriteFlashcardAction item={current.item.clone()} csrf={props.csrf.clone()}/>
+                    if props.scope == PracticeMode::Favorite && favorite_active {
+                        if let Some(value) = &*preview {
+                            if can_create {
+                                <button type="button" class="btn btn-primary" data-testid="collection-review-create-flashcard"
+                                    onclick={Callback::from({let creating=creating.clone();move |_|creating.set(true)})}>
+                                    {"创建 Flashcard"}
+                                </button>
+                            } else {
+                                <p class="text-xs opacity-60" role="status" data-testid="collection-review-flashcard-unavailable">
+                                    {value.reason.as_deref().unwrap_or("此题暂不支持创建闪卡")}
+                                </p>
+                            }
+                        } else if let Some(message) = &*preview_error {
+                            <p role="alert" class="text-sm text-error">{message.clone()}</p>
+                            <button type="button" class="btn btn-outline btn-sm" data-testid="collection-review-flashcard-retry"
+                                onclick={Callback::from({let preview_retry=preview_retry.clone();move |_|preview_retry.set(*preview_retry+1)})}>
+                                {"重试加载"}
+                            </button>
+                        } else {
+                            <p class="text-xs opacity-60" role="status">{"正在检查闪卡资格…"}</p>
+                        }
                     }
                 </div>
             </section>
@@ -225,22 +378,44 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                         </span>
                     </div>
                 </div>
-                <span class="badge badge-outline">{"复盘"}</span>
+                <div class="flex shrink-0 items-center gap-2">
+                    if let Some((_, message)) = (*favorite.failure).as_ref() {
+                        <span class="max-w-48 truncate text-xs text-error" role="alert">{message.clone()}</span>
+                        <button type="button" class="btn btn-ghost btn-sm" data-testid="collection-review-favorite-retry"
+                            onclick={Callback::from({let retry=favorite.retry.clone();move |_|retry.emit(())})}>
+                            {"重试收藏"}
+                        </button>
+                    } else {
+                        <button type="button" class="btn btn-ghost btn-sm text-lg" data-testid="collection-review-favorite"
+                            aria-label={if *favorite_busy {"正在更新收藏"} else {favorite_label}}
+                            disabled={*favorite_busy || favorite_state.is_none()}
+                            onclick={toggle_favorite}>{if *favorite_busy {"…"} else {favorite_symbol}}</button>
+                    }
+                    <span class="badge badge-outline">{"复盘"}</span>
+                </div>
             </header>
+            if let Some(message) = (*favorite_error).as_ref() {
+                <p class="shrink-0 pb-2 text-sm text-error" role="alert" data-testid="collection-review-favorite-error">
+                    {message.clone()}
+                </p>
+            }
             <div class="relative min-h-0 flex-1 overflow-hidden">
-                <TrainingSwipeSurface current={index.clone()} total={props.items.len()}>
+                <TrainingSwipeSurface current={index.clone()} total={props.items.len()}
+                    navigation_allowed={Some(Callback::from({
+                        let creating=creating.clone(); move |()| !*creating
+                    }))}>
                     {main}
                 </TrainingSwipeSurface>
             </div>
             <nav class="flex shrink-0 items-center justify-center gap-3 border-t border-base-content/10 pt-2"
                 aria-label="复盘题目导航">
                 <button type="button" class="btn btn-outline btn-sm" data-testid="collection-review-previous"
-                    disabled={*index==0} onclick={previous}>{"上一题"}</button>
+                    disabled={*creating || *index==0} onclick={previous}>{"上一题"}</button>
                 <span class="min-w-16 text-center text-sm tabular-nums" data-testid="collection-review-position">
                     {format!("{} / {}",*index+1,props.items.len())}
                 </span>
                 <button type="button" class="btn btn-outline btn-sm" data-testid="collection-review-next"
-                    disabled={*index+1>=props.items.len()} onclick={next}>{"下一题"}</button>
+                    disabled={*creating || *index+1>=props.items.len()} onclick={next}>{"下一题"}</button>
             </nav>
         </section>
     }

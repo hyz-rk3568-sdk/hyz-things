@@ -161,6 +161,7 @@ test('saved collections are classified by module and category before practicing'
   await page.getByTestId('question-bank-collection-item').first().click();
   await expect(page.getByTestId('collection-review')).toBeVisible();
   await expect(page.getByTestId('collection-review-scope')).toContainText('错题复盘 · 第 1/1 题');
+  await expect(page.getByTestId('collection-review-favorite')).toHaveAttribute('aria-label','取消收藏');
   await expect(page.getByTestId('collection-review-material-pane')).toContainText('两道题共用材料');
   await expect(page.getByTestId('collection-review-answer')).toContainText('B');
   await expect(page.getByTestId('collection-review-create-flashcard')).toHaveCount(0);
@@ -184,6 +185,7 @@ test('saved collections are classified by module and category before practicing'
   await page.getByTestId('question-bank-collection-item').first().click();
   await expect(page.getByTestId('collection-review')).toBeVisible();
   await expect(page.getByTestId('collection-review-scope')).toContainText('收藏复盘 · 第 1/1 题');
+  await expect(page.getByTestId('collection-review-favorite')).toHaveAttribute('aria-label','取消收藏');
   await expect(page.getByTestId('collection-review-answer')).toContainText('B');
   await page.getByTestId('collection-review-back').click();
   await expect(page.getByTestId('question-bank-collection-item')).toBeVisible();
