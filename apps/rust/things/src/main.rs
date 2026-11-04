@@ -3,7 +3,8 @@ use hyz_things::{
         inbound::http::{
             app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_origins,
             bind_fixed_lan_with_retry, bind_ipv6_listener, with_favorite_flashcards,
-            with_question_bank, PortalTls, TlsListener, DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
+            with_question_bank, with_question_bank_ai, PortalTls, TlsListener,
+            DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
         },
         outbound::{
             admin::AdminFileAdapter,
@@ -15,6 +16,7 @@ use hyz_things::{
             logic_judgment::LogicJudgmentService,
             portal_config::load_allowed_origins,
             quantitative_relations::QuantitativeRelationsService,
+            question_bank_ai::QuestionBankAiService,
             question_bank_source::FilesystemQuestionBankSource,
             question_bank_sqlite::SqliteQuestionBankRepository,
             registry::RegistryAdapter,
@@ -203,18 +205,30 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     std::fs::create_dir_all(PORTAL_READY_DIRECTORY)?;
     let _ = std::fs::remove_file(PORTAL_READY_MARKER);
 
-    let question_bank = match SqliteQuestionBankRepository::connect(
+    let (question_bank, question_bank_ai) = match SqliteQuestionBankRepository::connect(
         "/userdata/hyz-things/question-bank.db",
     )
     .await
     {
-        Ok(repository) => Some(Arc::new(QuestionBankApplication::new(
-            Arc::new(FilesystemQuestionBankSource::default()),
-            Arc::new(repository),
-        ))),
+        Ok(repository) => {
+            let pool = repository.pool().clone();
+            let bank = Arc::new(QuestionBankApplication::new(
+                Arc::new(FilesystemQuestionBankSource::default()),
+                Arc::new(repository),
+            ));
+            let ai = Arc::new(QuestionBankAiService::new(
+                bank.clone(),
+                pool,
+                load_codex_env().unwrap_or(None),
+            ));
+            if let Err(error) = ai.recover_interrupted().await {
+                tracing::warn!(?error, "question bank AI recovery failed");
+            }
+            (Some(bank), Some(ai))
+        }
         Err(_) => {
             tracing::warn!("question bank index unavailable");
-            None
+            (None, None)
         }
     };
     let tailscale = TailscaleListenerManager::new();
@@ -228,6 +242,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         clock: clock.clone(),
         tls: tls_acceptor.clone(),
         question_bank: question_bank.clone(),
+        question_bank_ai: question_bank_ai.clone(),
         flashcards: flashcards.clone(),
         flashcard_source: flashcard_source.clone(),
         data_analysis: data_analysis.clone(),
@@ -334,6 +349,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     );
     let app = with_question_bank(app, question_bank);
     let app = with_favorite_flashcards(app, favorite_flashcards);
+    let app = with_question_bank_ai(app, question_bank_ai);
     let ipv6_task = ipv6_listener.map(|listener| {
         let app = app.clone();
         let tls_acceptor = tls_acceptor.clone();

@@ -3,9 +3,10 @@ use super::favorite_flashcard::FavoriteQuestionDetail;
 use super::material_scroll::{scroll_edges, MaterialScrollButton, ScrollEdges};
 use super::*;
 use hyz_things::domain::question_bank::{
-    primary_module, CreatePracticeRequest, FavoriteState, ModulePracticeFilters, PaperSummary,
-    PracticeBrowseItem, PracticeCatalog, PracticeMode, PracticeQuestion, PracticeReview,
-    PracticeSession, PracticeWorkspace, SavePracticeAnswer, SetFavorite, SetPracticePaused,
+    primary_module, AiReviewFollowUp, AiReviewState, CreatePracticeRequest, FavoriteState,
+    ModulePracticeFilters, PaperSummary, PracticeBrowseItem, PracticeCatalog, PracticeMode,
+    PracticeQuestion, PracticeReview, PracticeSession, PracticeWorkspace, SavePracticeAnswer,
+    SetFavorite, SetPracticePaused,
 };
 
 const ROOT: &str = "/api/v1/question-bank";
@@ -482,6 +483,270 @@ fn collection_modules(
     modules
 }
 
+#[derive(Properties, PartialEq)]
+struct QuestionAiReviewProps {
+    csrf: String,
+    session_id: String,
+    question_id: String,
+}
+
+/// The component is mounted only while the AI tab is visible; the native
+/// backend owns its turns and never cancels on unmount or question navigation.
+#[function_component(QuestionAiReview)]
+fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
+    let state = use_state(|| None::<AiReviewState>);
+    let failure = use_state(|| None::<String>);
+    let submitting = use_state(|| false);
+    let follow_up = use_state(String::new);
+    let endpoint = format!(
+        "{ROOT}/practice/sessions/{}/questions/{}/ai",
+        props.session_id, props.question_id
+    );
+    {
+        let state = state.clone();
+        let failure = failure.clone();
+        let endpoint = endpoint.clone();
+        let key = (props.session_id.clone(), props.question_id.clone());
+        use_effect_with(key, move |_| {
+            state.set(None);
+            failure.set(None);
+            let alive = std::rc::Rc::new(std::cell::Cell::new(true));
+            let request_alive = alive.clone();
+            spawn_local(async move {
+                let response = fetch_json::<AiReviewState>(&endpoint, "AI 复盘记录").await;
+                if request_alive.get() {
+                    match response {
+                        Ok(value) => state.set(Some(value)),
+                        Err(error) => failure.set(Some(error)),
+                    }
+                }
+            });
+            move || alive.set(false)
+        });
+    }
+    {
+        let state = state.clone();
+        let key = (
+            props.session_id.clone(),
+            props.question_id.clone(),
+            state
+                .as_ref()
+                .as_ref()
+                .is_some_and(|v| v.status == "running"),
+        );
+        use_effect_with(key, move |(session_id, question_id, running)| {
+            let timer = if *running {
+                let endpoint =
+                    format!("{ROOT}/practice/sessions/{session_id}/questions/{question_id}/ai");
+                Some(gloo_timers::callback::Interval::new(1500, move || {
+                    let state = state.clone();
+                    let endpoint = endpoint.clone();
+                    spawn_local(async move {
+                        if let Ok(value) =
+                            fetch_json::<AiReviewState>(&endpoint, "AI 复盘进度").await
+                        {
+                            state.set(Some(value));
+                        }
+                    });
+                }))
+            } else {
+                None
+            };
+            move || drop(timer)
+        });
+    }
+    let on_start = {
+        let state = state.clone();
+        let failure = failure.clone();
+        let submitting = submitting.clone();
+        let endpoint = endpoint.clone();
+        let csrf = props.csrf.clone();
+        Callback::from(move |_| {
+            if *submitting {
+                return;
+            }
+            submitting.set(true);
+            failure.set(None);
+            let state = state.clone();
+            let failure = failure.clone();
+            let submitting = submitting.clone();
+            let endpoint = endpoint.clone();
+            let csrf = csrf.clone();
+            spawn_local(async move {
+                match post_json_response::<_, AiReviewState>(
+                    &endpoint,
+                    &csrf,
+                    &EmptyRequest {},
+                    "开始 AI 解析",
+                )
+                .await
+                {
+                    Ok(result) => state.set(Some(result)),
+                    Err(error) => failure.set(Some(error)),
+                }
+                submitting.set(false);
+            });
+        })
+    };
+    let on_stop = {
+        let state = state.clone();
+        let failure = failure.clone();
+        let submitting = submitting.clone();
+        let endpoint = format!("{endpoint}/stop");
+        let csrf = props.csrf.clone();
+        Callback::from(move |_| {
+            if *submitting {
+                return;
+            }
+            submitting.set(true);
+            let state = state.clone();
+            let failure = failure.clone();
+            let submitting = submitting.clone();
+            let endpoint = endpoint.clone();
+            let csrf = csrf.clone();
+            spawn_local(async move {
+                match post_json_response::<_, AiReviewState>(
+                    &endpoint,
+                    &csrf,
+                    &EmptyRequest {},
+                    "停止 AI 解析",
+                )
+                .await
+                {
+                    Ok(result) => state.set(Some(result)),
+                    Err(error) => failure.set(Some(error)),
+                }
+                submitting.set(false);
+            });
+        })
+    };
+    let on_follow_up = {
+        let state = state.clone();
+        let failure = failure.clone();
+        let submitting = submitting.clone();
+        let follow_up = follow_up.clone();
+        let endpoint = format!("{endpoint}/messages");
+        let csrf = props.csrf.clone();
+        Callback::from(move |_| {
+            if *submitting {
+                return;
+            }
+            let message = follow_up.trim().to_owned();
+            if message.is_empty() || message.chars().count() > 2000 {
+                return;
+            }
+            submitting.set(true);
+            failure.set(None);
+            let state = state.clone();
+            let failure = failure.clone();
+            let submitting = submitting.clone();
+            let follow_up = follow_up.clone();
+            let endpoint = endpoint.clone();
+            let csrf = csrf.clone();
+            spawn_local(async move {
+                let payload = AiReviewFollowUp { message };
+                match post_json_response::<_, AiReviewState>(&endpoint, &csrf, &payload, "AI 追问")
+                    .await
+                {
+                    Ok(result) => {
+                        state.set(Some(result));
+                        follow_up.set(String::new());
+                    }
+                    Err(error) => failure.set(Some(error)),
+                }
+                submitting.set(false);
+            });
+        })
+    };
+    let current: Option<AiReviewState> = (*state).clone();
+    let running = current
+        .as_ref()
+        .is_some_and(|value| value.status == "running");
+    let has_answer = current
+        .as_ref()
+        .is_some_and(|value| value.messages.iter().any(|msg| msg.role == "assistant"));
+    let can_start = current
+        .as_ref()
+        .is_some_and(|value| value.messages.is_empty() && value.status != "running");
+    let can_restart = current.as_ref().is_some_and(|value| {
+        !value.messages.is_empty() && matches!(value.status.as_str(), "failed" | "stopped")
+    });
+    html! {
+        <section class="space-y-3" data-testid="question-bank-ai-review">
+            <div class="flex items-center justify-between gap-2">
+                <strong>{"AI 解析与追问"}</strong>
+                <span class="text-xs text-base-content/60" data-testid="question-bank-ai-status">
+                    {match current.as_ref().map(|v| v.status.as_str()) {
+                        Some("running") => "正在生成",
+                        Some("complete") => "已完成",
+                        Some("stopped") => "已停止",
+                        Some("failed") => "生成失败",
+                        Some(_) => "未生成",
+                        None => "正在加载",
+                    }}
+                </span>
+            </div>
+            if let Some(error) = failure.as_ref() {
+                <p class="text-sm text-error" role="alert">{error.clone()}</p>
+            }
+            if let Some(value) = current.as_ref() {
+                if let Some(error) = &value.error {
+                    <p class="text-sm text-error" role="alert">{error.clone()}</p>
+                }
+                {for value.messages.iter().enumerate().map(|(i, msg)| html! {
+                    <div key={i} class={if msg.role == "user" {
+                        "rounded-xl bg-primary/10 p-3"
+                    } else {
+                        "rounded-xl bg-base-200 p-3"
+                    }} data-testid="question-bank-ai-message">
+                        <div class="mb-2 text-xs font-semibold text-base-content/60">
+                            {if msg.role == "user" { "你的追问" } else { "AI 解析" }}
+                        </div>
+                        <div class="study-markdown text-sm leading-7">
+                            {render_question_bank_markdown(&msg.content)}
+                        </div>
+                    </div>
+                })}
+            }
+            if can_start {
+                <p class="text-sm text-base-content/60">{"Codex 将根据题目 UUID 从电脑本地题库读取原题、共用材料及图片，独立解析；参考答案仅供参考。"}</p>
+                <button type="button" class="btn btn-primary w-full" data-testid="question-bank-ai-start"
+                    disabled={*submitting} onclick={on_start.clone()}>{"开始 AI 解析"}</button>
+            }
+            if can_restart {
+                <button type="button" class="btn btn-outline w-full" data-testid="question-bank-ai-restart"
+                    disabled={*submitting} onclick={on_start}>{"重新分析"}</button>
+            }
+            if running {
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <span class="text-sm text-base-content/60">{"后台生成中，切换题目或退出复盘不会中断。"}</span>
+                    <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-ai-stop"
+                        disabled={*submitting} onclick={on_stop}>{"停止生成"}</button>
+                </div>
+            }
+            if has_answer && !running {
+                <div class="space-y-2">
+                    <label class="text-sm font-semibold" for="question-ai-follow-up">{"继续追问"}</label>
+                    <textarea id="question-ai-follow-up" class="textarea textarea-bordered min-h-20 w-full"
+                        data-testid="question-bank-ai-input" maxlength="2000"
+                        value={(*follow_up).clone()}
+                        placeholder="例如：为什么不能选 B？有没有更快的解法？"
+                        oninput={Callback::from({
+                            let follow_up=follow_up.clone();
+                            move |event: InputEvent| {
+                                let input: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
+                                follow_up.set(input.value());
+                            }
+                        })}/>
+                    <button type="button" class="btn btn-primary btn-sm"
+                        data-testid="question-bank-ai-send" disabled={*submitting || follow_up.trim().is_empty()}
+                        onclick={on_follow_up}>{"发送追问"}</button>
+                </div>
+            }
+        </section>
+    }
+}
+
 #[function_component(QuestionBankTraining)]
 pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html {
     let papers = use_state(Vec::<PaperSummary>::new);
@@ -503,6 +768,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let mode = use_state(|| props.entry_mode.clone());
     let workspace = use_state(|| None::<PracticeWorkspace>);
     let review = use_state(|| None::<PracticeReview>);
+    let ai_tab = use_state(|| false);
     let index = use_state(|| 0usize);
     let multi_select = use_state(|| false);
     let current_favorite_source = workspace
@@ -679,6 +945,18 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             .map(|q| q.item.question_id.clone());
         use_effect_with((current, review.is_some()), move |_| {
             hydrate_math();
+            || ()
+        });
+    }
+    {
+        let ai_tab = ai_tab.clone();
+        let selected = (
+            workspace.as_ref().as_ref().map(|w| w.session.id.clone()),
+            *index,
+            review.is_some(),
+        );
+        use_effect_with(selected, move |_| {
+            ai_tab.set(false);
             || ()
         });
     }
@@ -1255,11 +1533,37 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     if item.item.answer.is_empty() {"未答".into()} else {item.item.answer.join("、")},
                                     if r.correct_answer.is_empty() {"暂无可靠答案".into()} else {r.correct_answer.join("、")})}
                             </p>
-                            <div class="border-t border-base-content/10 pt-3">
-                                <h3 class="font-bold">{"原始解析"}</h3>
-                                <div class="study-markdown mt-2 text-sm leading-7 text-base-content/75">{if r.explanation.is_empty() {html!{"暂无解析"}} else {render_question_bank_markdown(&r.explanation)}}</div>
-                                <h3 class="mt-3 font-bold">{"考点"}</h3>
-                                <p class="text-sm text-base-content/60">{if q.topics.is_empty() {"暂无考点".into()} else {q.topics.join("、")}}</p>
+                            <div class="border-t border-base-content/10 pt-3 space-y-3">
+                                <div class="join grid grid-cols-2" data-testid="question-bank-review-tabs">
+                                    <button type="button" class={classes!("join-item","btn","btn-sm",if !*ai_tab {"btn-active"} else {"btn-ghost"})}
+                                        data-testid="question-bank-original-tab"
+                                        aria-pressed={(!*ai_tab).to_string()}
+                                        onclick={Callback::from({let ai_tab=ai_tab.clone();move |_|ai_tab.set(false)})}>
+                                        {"原始解析"}
+                                    </button>
+                                    <button type="button" class={classes!("join-item","btn","btn-sm",if *ai_tab {"btn-active"} else {"btn-ghost"})}
+                                        data-testid="question-bank-ai-tab"
+                                        aria-pressed={(*ai_tab).to_string()}
+                                        onclick={Callback::from({let ai_tab=ai_tab.clone();move |_|ai_tab.set(true)})}>
+                                        {"AI 解析"}
+                                    </button>
+                                </div>
+                                if *ai_tab {
+                                    <QuestionAiReview
+                                        key={format!("{}:{}", current.session.id, item.item.question_id)}
+                                        csrf={props.csrf.clone()}
+                                        session_id={current.session.id.clone()}
+                                        question_id={item.item.question_id.clone()}/>
+                                } else {
+                                    <h3 class="font-bold">{"原始解析"}</h3>
+                                    <div class="study-markdown mt-2 text-sm leading-7 text-base-content/75">
+                                        {if r.explanation.is_empty() {html!{"暂无解析"}} else {render_question_bank_markdown(&r.explanation)}}
+                                    </div>
+                                    <h3 class="mt-3 font-bold">{"考点"}</h3>
+                                    <p class="text-sm text-base-content/60">
+                                        {if q.topics.is_empty() {"暂无考点".into()} else {q.topics.join("、")}}
+                                    </p>
+                                }
                             </div>
                         }
                     }

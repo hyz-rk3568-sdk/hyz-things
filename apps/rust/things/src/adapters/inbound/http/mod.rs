@@ -60,7 +60,7 @@ mod favorite_flashcards;
 mod flashcards;
 pub use favorite_flashcards::with_favorite_flashcards;
 mod question_bank;
-pub use question_bank::with_question_bank;
+pub use question_bank::{with_question_bank, with_question_bank_ai};
 mod logic_judgment;
 mod quantitative_relations;
 mod tls;
@@ -801,6 +801,21 @@ fn app_with_assets(
             "/api/v1/question-bank/practice/favorites/{id}/flashcard",
             on(MethodFilter::POST, favorite_flashcards::create)
                 .layer(DefaultBodyLimit::max(40 * 1024)),
+        )
+        .route(
+            "/api/v1/question-bank/practice/sessions/{id}/questions/{question_id}/ai",
+            on(MethodFilter::GET, question_bank::ai_read)
+                .on(MethodFilter::POST, question_bank::ai_start)
+                .layer(DefaultBodyLimit::max(8 * 1024)),
+        )
+        .route(
+            "/api/v1/question-bank/practice/sessions/{id}/questions/{question_id}/ai/messages",
+            on(MethodFilter::POST, question_bank::ai_follow_up)
+                .layer(DefaultBodyLimit::max(8 * 1024)),
+        )
+        .route(
+            "/api/v1/question-bank/practice/sessions/{id}/questions/{question_id}/ai/stop",
+            on(MethodFilter::POST, question_bank::ai_stop).layer(DefaultBodyLimit::max(8 * 1024)),
         )
         .route(
             "/api/v1/question-bank/assets/{name}",
@@ -2913,7 +2928,13 @@ fn is_question_bank_practice_post_path(path: &str) -> bool {
         return parts.len() == 8 && matches!(parts[7], "submit" | "pause" | "repeat")
             || parts.len() == 9
                 && parts[7] == "answers"
-                && crate::application::question_bank::document::valid_id(parts[8]);
+                && crate::application::question_bank::document::valid_id(parts[8])
+            || parts.len() >= 10
+                && parts.len() <= 11
+                && parts[7] == "questions"
+                && crate::application::question_bank::document::valid_id(parts[8])
+                && parts[9] == "ai"
+                && (parts.len() == 10 || matches!(parts[10], "messages" | "stop"));
     }
     (parts.len() == 7 || parts.len() == 8 && parts[7] == "flashcard")
         && parts[..6] == ["", "api", "v1", "question-bank", "practice", "favorites"]

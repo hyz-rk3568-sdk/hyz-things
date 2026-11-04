@@ -267,7 +267,40 @@ impl CodexSession {
         Self::connect_at(&address.to_string(), token, cwd).await
     }
 
+    /// Persistent, read-only study threads are separate from ephemeral generation threads.
+    pub async fn connect_review(
+        token: &str,
+        cwd: &str,
+        previous_thread: Option<&str>,
+    ) -> Result<Self, String> {
+        Self::connect_at_mode(SERVER, token, cwd, previous_thread, true).await
+    }
+
+    #[cfg(test)]
+    pub(super) async fn connect_review_test_server(
+        address: std::net::SocketAddr,
+        token: &str,
+        cwd: &str,
+        previous_thread: Option<&str>,
+    ) -> Result<Self, String> {
+        Self::connect_at_mode(&address.to_string(), token, cwd, previous_thread, true).await
+    }
+
+    pub fn thread_id(&self) -> &str {
+        &self.thread_id
+    }
+
     async fn connect_at(address: &str, token: &str, cwd: &str) -> Result<Self, String> {
+        Self::connect_at_mode(address, token, cwd, None, false).await
+    }
+
+    async fn connect_at_mode(
+        address: &str,
+        token: &str,
+        cwd: &str,
+        previous_thread: Option<&str>,
+        persistent: bool,
+    ) -> Result<Self, String> {
         validate_token(token)?;
         let mut socket = TcpStream::connect(address)
             .await
@@ -289,20 +322,29 @@ impl CodexSession {
             )
             .await?;
         client.notify("initialized", json!({})).await?;
-        let thread = client
-            .request(
-                "thread/start",
-                json!({
-                    "ephemeral":true,
-                    "cwd":cwd,
-                    "approvalPolicy":"never",
-                    "sandbox":"danger-full-access",
-                    "config":{"shell_environment_policy.set":{
-                        "TMPDIR":"/tmp","TMP":"/tmp","TEMP":"/tmp"
-                    }}
-                }),
-            )
-            .await?;
+        let thread = if let Some(thread_id) = previous_thread {
+            client
+                .request(
+                    "thread/resume",
+                    json!({"threadId":thread_id,"excludeTurns":true}),
+                )
+                .await?
+        } else {
+            client
+                .request(
+                    "thread/start",
+                    json!({
+                        "ephemeral":!persistent,
+                        "cwd":cwd,
+                        "approvalPolicy":"never",
+                        "sandbox":if persistent {"read-only"} else {"danger-full-access"},
+                        "config":{"shell_environment_policy.set":{
+                            "TMPDIR":"/tmp","TMP":"/tmp","TEMP":"/tmp"
+                        }}
+                    }),
+                )
+                .await?
+        };
         client.thread_id = thread
             .pointer("/thread/id")
             .and_then(Value::as_str)
@@ -343,6 +385,31 @@ impl CodexSession {
                 .ok_or("Codex 响应缺少 result".into());
         }
         Err("Codex JSON-RPC 初始化事件过多".into())
+    }
+
+    /// Return one independently reasoned AI review message as Markdown.
+    /// The schema restricts only the output envelope, not model reasoning.
+    pub async fn turn_review(
+        &mut self,
+        prompt: &str,
+        cancellation: watch::Sender<bool>,
+    ) -> Result<String, String> {
+        let schema = json!({
+            "type":"object",
+            "properties":{"answer":{"type":"string"}},
+            "required":["answer"],
+            "additionalProperties":false
+        });
+        let raw = self
+            .turn_cancellable_with_schema(prompt, cancellation, schema)
+            .await?;
+        let value: Value = serde_json::from_str(&raw).map_err(|_| "Codex AI 解析返回格式错误")?;
+        let text = value
+            .get("answer")
+            .and_then(Value::as_str)
+            .filter(|text| !text.trim().is_empty() && text.len() <= MAX_PACKET)
+            .ok_or("Codex AI 解析内容为空或过长")?;
+        Ok(text.to_owned())
     }
 
     /// Run one generation or repair turn in the same ephemeral thread.
@@ -604,6 +671,23 @@ mod tests {
     }
 
     async fn accept_session(listener: &TcpListener) -> TcpStream {
+        let (socket, thread) = accept_session_expecting(listener, None).await;
+        assert_eq!(thread["method"], "thread/start");
+        assert_eq!(thread["params"]["ephemeral"], true);
+        assert_eq!(thread["params"]["cwd"], "/home/hyz/hyz_things");
+        assert_eq!(thread["params"]["sandbox"], "danger-full-access");
+        assert_eq!(
+            thread["params"]["config"]["shell_environment_policy.set"],
+            json!({"TMPDIR":"/tmp","TMP":"/tmp","TEMP":"/tmp"})
+        );
+        assert_eq!(thread["params"]["approvalPolicy"], "never");
+        socket
+    }
+
+    async fn accept_session_expecting(
+        listener: &TcpListener,
+        previous_thread: Option<&str>,
+    ) -> (TcpStream, Value) {
         let (mut socket, _) = listener.accept().await.unwrap();
         let mut handshake = Vec::new();
         while !handshake.ends_with(b"\r\n\r\n") {
@@ -626,21 +710,32 @@ mod tests {
         let initialized = client_message(&mut socket).await;
         assert_eq!(initialized["method"], "initialized");
         let thread = client_message(&mut socket).await;
-        assert_eq!(thread["method"], "thread/start");
-        assert_eq!(thread["params"]["ephemeral"], true);
-        assert_eq!(thread["params"]["cwd"], "/home/hyz/hyz_things");
-        assert_eq!(thread["params"]["sandbox"], "danger-full-access");
-        assert_eq!(
-            thread["params"]["config"]["shell_environment_policy.set"],
-            json!({"TMPDIR":"/tmp","TMP":"/tmp","TEMP":"/tmp"})
-        );
-        assert_eq!(thread["params"]["approvalPolicy"], "never");
+        let thread_id = previous_thread.unwrap_or("test-thread");
         server_message(
             &mut socket,
-            json!({"id":2,"result":{"thread":{"id":"test-thread"}}}),
+            json!({"id":2,"result":{"thread":{"id":thread_id}}}),
         )
         .await;
-        socket
+        (socket, thread)
+    }
+
+    async fn accept_review(
+        listener: &TcpListener,
+        previous_thread: Option<&str>,
+    ) -> (CodexSession, TcpStream, Value) {
+        let address = listener.local_addr().unwrap();
+        let token = "a".repeat(64);
+        let (session, server) = tokio::join!(
+            CodexSession::connect_review_test_server(
+                address,
+                &token,
+                "/home/hyz/hyz_things",
+                previous_thread,
+            ),
+            accept_session_expecting(listener, previous_thread),
+        );
+        let (socket, thread) = server;
+        (session.unwrap(), socket, thread)
     }
 
     async fn test_connection() -> (CodexSession, TcpStream) {
@@ -652,6 +747,29 @@ mod tests {
             accept_session(&listener)
         );
         (session.unwrap(), socket)
+    }
+
+    #[tokio::test]
+    async fn review_thread_is_persistent_read_only_and_reports_its_id() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let (session, _socket, thread) = accept_review(&listener, None).await;
+        assert_eq!(thread["method"], "thread/start");
+        assert_eq!(thread["params"]["ephemeral"], false);
+        assert_eq!(thread["params"]["sandbox"], "read-only");
+        assert_eq!(thread["params"]["approvalPolicy"], "never");
+        assert_eq!(thread["params"]["cwd"], "/home/hyz/hyz_things");
+        assert_eq!(session.thread_id(), "test-thread");
+    }
+
+    #[tokio::test]
+    async fn review_follow_up_resumes_the_existing_thread_without_replaying_turns() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let (session, _socket, thread) = accept_review(&listener, Some("previous-thread")).await;
+        assert_eq!(thread["method"], "thread/resume");
+        assert_eq!(thread["params"]["threadId"], "previous-thread");
+        assert_eq!(thread["params"]["excludeTurns"], true);
+        assert!(thread["params"].get("sandbox").is_none());
+        assert_eq!(session.thread_id(), "previous-thread");
     }
 
     #[tokio::test]

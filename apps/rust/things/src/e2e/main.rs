@@ -10,10 +10,12 @@ use hyz_contract::router::{ControlOperation, ControlProxyMode, ControlResult};
 use hyz_things::{
     adapters::inbound::http::{
         app_with_loopback_runtime_frontend_and_flashcards, with_question_bank,
+        with_question_bank_ai,
     },
     adapters::outbound::{
         flashcard_source::FilesystemFlashcardSource, flashcard_sqlite::SqliteFlashcardRepository,
-        logic_judgment::LogicJudgmentService, question_bank_sqlite::SqliteQuestionBankRepository,
+        logic_judgment::LogicJudgmentService, question_bank_ai::QuestionBankAiService,
+        question_bank_sqlite::SqliteQuestionBankRepository,
     },
     application::{
         admin::AdminApplication,
@@ -1278,12 +1280,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let source = Arc::new(QuestionBankFixture);
     let bank = Arc::new(QuestionBankApplication::new(
         source.clone(),
-        bank_repository,
+        bank_repository.clone(),
     ));
     bank.sync()
         .await
         .map_err(|error| std::io::Error::other(error.to_string()))?;
+    let ai = Arc::new(QuestionBankAiService::new(
+        bank.clone(),
+        bank_repository.pool().clone(),
+        None,
+    ));
     let web_app = with_question_bank(web_app, Some(bank));
+    let web_app = with_question_bank_ai(web_app, Some(ai));
     let harness_app = harness_control_app(backend, admin, camera);
 
     println!(

@@ -11,6 +11,16 @@ use crate::domain::question_bank::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AiReviewLocator {
+    pub session_id: String,
+    pub question_id: String,
+    pub paper_id: String,
+    pub material_ids: Vec<String>,
+    pub source_hash: String,
+    pub user_answer: Vec<String>,
+}
+
 fn now() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
@@ -541,6 +551,40 @@ impl QuestionBankApplication {
         };
         self.repository.practice_create(session.clone()).await?;
         Ok(session)
+    }
+
+    /// Server-only Codex locator: never returns the source answer or explanation.
+    pub async fn ai_review_locator(
+        &self,
+        session_id: &str,
+        question_id: &str,
+    ) -> Result<AiReviewLocator, BankError> {
+        if !valid_id(question_id) {
+            return Err(BankError::Invalid);
+        }
+        let review = self.practice_review(session_id).await?;
+        let entry = review
+            .questions
+            .iter()
+            .find(|entry| entry.question.item.question_id == question_id)
+            .ok_or(BankError::NotFound)?;
+        if entry.question.content_changed {
+            return Err(BankError::Stale);
+        }
+        let item = &entry.question.item;
+        let indexed = self.primary_indexed(&item.paper_id).await?;
+        if indexed.hash != item.source_hash {
+            return Err(BankError::Stale);
+        }
+        let question = entry.question.question.as_ref().ok_or(BankError::Stale)?;
+        Ok(AiReviewLocator {
+            session_id: session_id.to_owned(),
+            question_id: question_id.to_owned(),
+            paper_id: item.paper_id.clone(),
+            material_ids: question.materials.clone(),
+            source_hash: item.source_hash.clone(),
+            user_answer: item.answer.clone(),
+        })
     }
 
     pub async fn practice_review(&self, id: &str) -> Result<PracticeReview, BankError> {

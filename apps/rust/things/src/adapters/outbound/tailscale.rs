@@ -18,7 +18,7 @@ use socket2::{Domain, Protocol, Socket, Type};
 use crate::{
     adapters::inbound::http::{
         app_with_admin_camera_control_at_address_and_flashcards_and_analysis, with_question_bank,
-        TlsListener,
+        with_question_bank_ai, TlsListener,
     },
     application::{
         admin::AdminApplication,
@@ -148,6 +148,7 @@ impl TailscaleListenerManager {
             app.quantitative_relations,
         );
         let http_app = with_question_bank(http_app, app.question_bank);
+        let http_app = with_question_bank_ai(http_app, app.question_bank_ai);
         let tls_listener = TlsListener::new(listener, app.tls.clone());
         let runtime = app.runtime.clone();
         let task = runtime.spawn(async move {
@@ -267,6 +268,8 @@ pub struct PortalListenerApp {
     pub admin: Arc<AdminApplication>,
     pub camera: Arc<CameraApplication>,
     pub question_bank: Option<Arc<crate::application::question_bank::QuestionBankApplication>>,
+    pub question_bank_ai:
+        Option<Arc<crate::adapters::outbound::question_bank_ai::QuestionBankAiService>>,
     pub flashcards: Option<Arc<FlashcardApplication>>,
     pub logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
     pub quantitative_relations:

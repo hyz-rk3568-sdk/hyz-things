@@ -1,8 +1,9 @@
 use super::*;
+use crate::adapters::outbound::question_bank_ai::{AiReviewError, QuestionBankAiService};
 use crate::application::question_bank::{BankError, QuestionBankApplication};
 use crate::domain::question_bank::{
-    CreatePracticeRequest, ModulePracticeFilters, PracticeMode, SavePracticeAnswer, SetFavorite,
-    SetPracticePaused,
+    AiReviewFollowUp, CreatePracticeRequest, ModulePracticeFilters, PracticeMode,
+    SavePracticeAnswer, SetFavorite, SetPracticePaused,
 };
 use axum::Extension;
 
@@ -15,6 +16,139 @@ pub fn with_question_bank(
         None => router,
     }
 }
+pub fn with_question_bank_ai(router: Router, ai: Option<Arc<QuestionBankAiService>>) -> Router {
+    match ai {
+        Some(ai) => router.layer(Extension(ai)),
+        None => router,
+    }
+}
+type AiService = Option<Extension<Arc<QuestionBankAiService>>>;
+
+#[expect(
+    clippy::result_large_err,
+    reason = "Axum response errors are returned directly"
+)]
+fn ai_service(service: AiService) -> Result<Arc<QuestionBankAiService>, Response> {
+    service.map(|Extension(service)| service).ok_or_else(|| {
+        error_json(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "question_bank_ai_unavailable",
+            "AI 解析服务未配置",
+        )
+    })
+}
+fn ai_error(error: AiReviewError) -> Response {
+    match error {
+        AiReviewError::Bank(error) => bank_error(error),
+        AiReviewError::Unavailable => error_json(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "question_bank_ai_unavailable",
+            "电脑 Codex App Server 未配置或不可用",
+        ),
+        AiReviewError::Invalid => error_json(
+            StatusCode::BAD_REQUEST,
+            "question_bank_ai_invalid",
+            "AI 解析请求无效",
+        ),
+        AiReviewError::Busy => error_json(
+            StatusCode::CONFLICT,
+            "question_bank_ai_busy",
+            "当前题目正在生成或无法追问",
+        ),
+        AiReviewError::Storage => error_json(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "question_bank_ai_storage",
+            "AI 解析存储不可用",
+        ),
+    }
+}
+
+pub(super) async fn ai_read(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: AiService,
+    Path((id, question_id)): Path<(String, String)>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let service = match ai_service(service) {
+        Ok(service) => service,
+        Err(e) => return e,
+    };
+    match service.state(&id, &question_id).await {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => ai_error(error),
+    }
+}
+pub(super) async fn ai_start(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: AiService,
+    Path((id, question_id)): Path<(String, String)>,
+    payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
+        return response;
+    }
+    if let Err(error) = decode_control_json(payload) {
+        return error.response();
+    }
+    let service = match ai_service(service) {
+        Ok(service) => service,
+        Err(e) => return e,
+    };
+    match service.start(&id, &question_id).await {
+        Ok(value) => (StatusCode::ACCEPTED, Json(value)).into_response(),
+        Err(error) => ai_error(error),
+    }
+}
+pub(super) async fn ai_follow_up(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: AiService,
+    Path((id, question_id)): Path<(String, String)>,
+    payload: Result<Json<AiReviewFollowUp>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
+        return response;
+    }
+    let payload = match decode_control_json(payload) {
+        Ok(value) => value,
+        Err(error) => return error.response(),
+    };
+    let service = match ai_service(service) {
+        Ok(service) => service,
+        Err(e) => return e,
+    };
+    match service.follow_up(&id, &question_id, payload.message).await {
+        Ok(value) => (StatusCode::ACCEPTED, Json(value)).into_response(),
+        Err(error) => ai_error(error),
+    }
+}
+pub(super) async fn ai_stop(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: AiService,
+    Path((id, question_id)): Path<(String, String)>,
+    payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
+        return response;
+    }
+    if let Err(error) = decode_control_json(payload) {
+        return error.response();
+    }
+    let service = match ai_service(service) {
+        Ok(service) => service,
+        Err(e) => return e,
+    };
+    match service.stop(&id, &question_id).await {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => ai_error(error),
+    }
+}
+
 type Service = Option<Extension<Arc<QuestionBankApplication>>>;
 fn available(service: Service) -> Result<Arc<QuestionBankApplication>, BankError> {
     service

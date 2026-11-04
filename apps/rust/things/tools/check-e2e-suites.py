@@ -11,8 +11,17 @@ SUPPORT = E2E / "support.ts"
 PORTAL = E2E / "portal.spec.ts"
 PLAYWRIGHT_CONFIG = ROOT / "apps/rust/things/playwright.config.ts"
 
-# The PWA suite has a separate browser lifecycle and does not use the harness reset fixture.
-AUXILIARY_SPECS = ("pwa.spec.ts", "related-method-card.spec.ts", "training-subjects.spec.ts", "question-bank.spec.ts")
+# These suites have their own browser lifecycle, nested describe blocks, or an
+# in-test reset, so they are not counted in the shared harness baseline.
+AUXILIARY_SPECS = (
+    "pwa.spec.ts",
+    "related-method-card.spec.ts",
+    "training-subjects.spec.ts",
+    "question-bank.spec.ts",
+    "question-bank-reference.spec.ts",
+    "question-bank-theme.spec.ts",
+    "training-width.spec.ts",
+)
 REQUIRED_SPECS = (
     "shell.spec.ts",
     "countdown.spec.ts",
@@ -26,8 +35,12 @@ REQUIRED_SPECS = (
     "network.spec.ts",
     "tailscale.spec.ts",
     "training-time.spec.ts",
+    "favorite-flashcard.spec.ts",
+    "question-bank-history.spec.ts",
+    "question-bank-performance.spec.ts",
+    "question-bank-resume.spec.ts",
 )
-TEST_TITLE = re.compile(r'(?m)^test\("([^"]+)"')
+TEST_TITLE = re.compile(r"""(?m)^test\(\s*(?:"([^"\n]+)"|'([^'\n]+)')""")
 EXPECTED_MARKER = re.compile(r"(?m)^// expected-tests: (\d+)$")
 EXPECTED_RUNNABLE_MARKER = re.compile(r"(?m)^// expected-runnable-tests: (\d+)$")
 EXCLUDED_TITLE = "switches portal pages from browser touch input"
@@ -66,7 +79,7 @@ def main() -> None:
     counts: dict[str, int] = {}
     for name in REQUIRED_SPECS:
         text = (E2E / name).read_text()
-        suite_titles = TEST_TITLE.findall(text)
+        suite_titles = [double or single for double, single in TEST_TITLE.findall(text)]
         if not suite_titles:
             fail(f"{name} contains no top-level Playwright tests")
         if "test.beforeEach" not in text or "resetHarness(request)" not in text:
