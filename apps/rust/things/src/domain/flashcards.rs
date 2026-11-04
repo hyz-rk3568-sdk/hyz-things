@@ -245,6 +245,8 @@ pub struct TagSummary {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SourceCard {
+    pub source_question_id: Option<String>,
+    pub correct_answer: Vec<String>,
     pub id: FlashcardId,
     pub source_file: String,
     pub source_order: u32,
@@ -254,6 +256,13 @@ pub struct SourceCard {
     pub tags: Vec<String>,
     pub source_hash: String,
     pub generated_id: bool,
+}
+
+pub fn personal_solution(back_markdown: &str) -> Option<&str> {
+    match back_markdown.trim() {
+        "" | "-" => None,
+        _ => Some(back_markdown),
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

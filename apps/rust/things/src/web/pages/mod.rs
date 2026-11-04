@@ -5,6 +5,7 @@ mod camera;
 mod comprehensive;
 mod deployments;
 mod devices;
+mod favorite_flashcard;
 mod logic_judgment;
 mod material_scroll;
 mod network;

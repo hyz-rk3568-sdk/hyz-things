@@ -1,4 +1,5 @@
 pub mod document;
+mod favorite_flashcards;
 pub mod images;
 pub mod practice;
 

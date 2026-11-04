@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod camera;
+pub mod favorite_flashcard_source;
 pub mod flashcard_source;
 pub mod flashcard_sqlite;
 pub mod portal_config;
