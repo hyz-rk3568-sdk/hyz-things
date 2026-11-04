@@ -632,7 +632,7 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 return;
             }
             let message = follow_up.trim().to_owned();
-            if message.is_empty() || message.len() > 2000 {
+            if message.is_empty() || message.chars().count() > 2000 {
                 return;
             }
             submitting.set(true);
@@ -658,18 +658,25 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             });
         })
     };
-    let current = state.as_ref().as_ref();
-    let running = current.is_some_and(|value| value.status == "running");
-    let has_answer =
-        current.is_some_and(|value| value.messages.iter().any(|msg| msg.role == "assistant"));
-    let can_start =
-        current.is_some_and(|value| value.messages.is_empty() && value.status != "running");
+    let current: Option<AiReviewState> = (*state).clone();
+    let running = current
+        .as_ref()
+        .is_some_and(|value| value.status == "running");
+    let has_answer = current
+        .as_ref()
+        .is_some_and(|value| value.messages.iter().any(|msg| msg.role == "assistant"));
+    let can_start = current
+        .as_ref()
+        .is_some_and(|value| value.messages.is_empty() && value.status != "running");
+    let can_restart = current.as_ref().is_some_and(|value| {
+        !value.messages.is_empty() && matches!(value.status.as_str(), "failed" | "stopped")
+    });
     html! {
         <section class="space-y-3" data-testid="question-bank-ai-review">
             <div class="flex items-center justify-between gap-2">
                 <strong>{"AI 解析与追问"}</strong>
                 <span class="text-xs text-base-content/60" data-testid="question-bank-ai-status">
-                    {match current.map(|v| v.status.as_str()) {
+                    {match current.as_ref().map(|v| v.status.as_str()) {
                         Some("running") => "正在生成",
                         Some("complete") => "已完成",
                         Some("stopped") => "已停止",
@@ -682,7 +689,7 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             if let Some(error) = failure.as_ref() {
                 <p class="text-sm text-error" role="alert">{error.clone()}</p>
             }
-            if let Some(value) = current {
+            if let Some(value) = current.as_ref() {
                 if let Some(error) = &value.error {
                     <p class="text-sm text-error" role="alert">{error.clone()}</p>
                 }
@@ -704,7 +711,11 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             if can_start {
                 <p class="text-sm text-base-content/60">{"Codex 将根据题目 UUID 从电脑本地题库读取原题、共用材料及图片，独立解析；参考答案仅供参考。"}</p>
                 <button type="button" class="btn btn-primary w-full" data-testid="question-bank-ai-start"
-                    disabled={*submitting} onclick={on_start}>{"开始 AI 解析"}</button>
+                    disabled={*submitting} onclick={on_start.clone()}>{"开始 AI 解析"}</button>
+            }
+            if can_restart {
+                <button type="button" class="btn btn-outline w-full" data-testid="question-bank-ai-restart"
+                    disabled={*submitting} onclick={on_start}>{"重新分析"}</button>
             }
             if running {
                 <div class="flex flex-wrap items-center justify-between gap-2">

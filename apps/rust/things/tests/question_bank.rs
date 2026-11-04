@@ -251,7 +251,11 @@ impl PortalControlHandler for AuthPorts {
 }
 async fn bank_server() -> (tokio::task::JoinHandle<()>, String, String, Arc<MemoryBank>) {
     use hyz_things::{
-        adapters::inbound::http::{app_with_admin_control_at_address, with_question_bank},
+        adapters::inbound::http::{
+            app_with_admin_control_at_address, with_question_bank, with_question_bank_ai,
+        },
+        adapters::outbound::question_bank_ai::QuestionBankAiService,
+        adapters::outbound::question_bank_sqlite::SqliteQuestionBankRepository,
         application::{admin::AdminApplication, status::PortalStatus},
     };
     let auth = Arc::new(AuthPorts::default());
@@ -274,6 +278,14 @@ async fn bank_server() -> (tokio::task::JoinHandle<()>, String, String, Arc<Memo
         .unwrap();
     let ports = Arc::new(MemoryBank::default());
     let app = Arc::new(QuestionBankApplication::new(ports.clone(), ports.clone()));
+    let ai_repository = SqliteQuestionBankRepository::connect("sqlite::memory:")
+        .await
+        .unwrap();
+    let ai = Arc::new(QuestionBankAiService::new(
+        app.clone(),
+        ai_repository.pool().clone(),
+        None,
+    ));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let router = with_question_bank(
@@ -287,6 +299,7 @@ async fn bank_server() -> (tokio::task::JoinHandle<()>, String, String, Arc<Memo
         ),
         Some(app),
     );
+    let router = with_question_bank_ai(router, Some(ai));
     let server = tokio::spawn(async move {
         axum::serve(listener, router).await.unwrap();
     });
@@ -314,6 +327,69 @@ async fn question_bank_requires_admin_for_reads() {
         assert_eq!(response.status(), 401);
         assert_eq!(response.headers()["cache-control"], "no-store");
     }
+    server.abort();
+}
+
+#[tokio::test]
+async fn ai_review_routes_require_admin_origin_csrf_and_typed_bounded_bodies() {
+    let (server, base, cookie, _ports) = bank_server().await;
+    let client = reqwest::Client::new();
+    let session = "019a3d8c-7f23-7b6e-927d-3c951851d3a2";
+    let question = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
+    let endpoint =
+        format!("{base}/api/v1/question-bank/practice/sessions/{session}/questions/{question}/ai");
+
+    let response = client.get(&endpoint).send().await.unwrap();
+    assert_eq!(response.status(), 401);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+
+    for (origin, csrf, body, expected) in [
+        (Some(base.as_str()), Some("qb-csrf"), "{}", 401),
+        (Some(base.as_str()), None, "{}", 403),
+        (Some("https://other.example"), Some("qb-csrf"), "{}", 403),
+        (Some("http://127.0.0.1"), Some("qb-csrf"), "{}", 403),
+        (
+            Some(base.as_str()),
+            Some("qb-csrf"),
+            "{\"unexpected\":true}",
+            400,
+        ),
+        (Some(base.as_str()), Some("qb-csrf"), "{}", 503),
+    ] {
+        let mut request = client
+            .post(&endpoint)
+            .header("content-type", "application/json");
+        if expected != 401 {
+            request = request.header("cookie", &cookie);
+        }
+        if let Some(origin) = origin {
+            request = request.header("origin", origin);
+        }
+        if let Some(csrf) = csrf {
+            request = request.header("x-hyz-csrf", csrf);
+        }
+        assert_eq!(request.body(body).send().await.unwrap().status(), expected);
+    }
+
+    let response = client
+        .post(format!("{endpoint}/messages"))
+        .header("cookie", &cookie)
+        .header("origin", &base)
+        .header("x-hyz-csrf", "qb-csrf")
+        .header("content-type", "application/json")
+        .body(" ".repeat(9000) + "{\"message\":\"x\"}")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 413);
+
+    let response = client
+        .get(&endpoint)
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 503);
     server.abort();
 }
 

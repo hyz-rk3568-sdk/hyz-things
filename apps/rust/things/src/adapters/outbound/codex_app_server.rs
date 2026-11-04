@@ -671,6 +671,23 @@ mod tests {
     }
 
     async fn accept_session(listener: &TcpListener) -> TcpStream {
+        let (socket, thread) = accept_session_expecting(listener, None).await;
+        assert_eq!(thread["method"], "thread/start");
+        assert_eq!(thread["params"]["ephemeral"], true);
+        assert_eq!(thread["params"]["cwd"], "/home/hyz/hyz_things");
+        assert_eq!(thread["params"]["sandbox"], "danger-full-access");
+        assert_eq!(
+            thread["params"]["config"]["shell_environment_policy.set"],
+            json!({"TMPDIR":"/tmp","TMP":"/tmp","TEMP":"/tmp"})
+        );
+        assert_eq!(thread["params"]["approvalPolicy"], "never");
+        socket
+    }
+
+    async fn accept_session_expecting(
+        listener: &TcpListener,
+        previous_thread: Option<&str>,
+    ) -> (TcpStream, Value) {
         let (mut socket, _) = listener.accept().await.unwrap();
         let mut handshake = Vec::new();
         while !handshake.ends_with(b"\r\n\r\n") {
@@ -693,21 +710,32 @@ mod tests {
         let initialized = client_message(&mut socket).await;
         assert_eq!(initialized["method"], "initialized");
         let thread = client_message(&mut socket).await;
-        assert_eq!(thread["method"], "thread/start");
-        assert_eq!(thread["params"]["ephemeral"], true);
-        assert_eq!(thread["params"]["cwd"], "/home/hyz/hyz_things");
-        assert_eq!(thread["params"]["sandbox"], "danger-full-access");
-        assert_eq!(
-            thread["params"]["config"]["shell_environment_policy.set"],
-            json!({"TMPDIR":"/tmp","TMP":"/tmp","TEMP":"/tmp"})
-        );
-        assert_eq!(thread["params"]["approvalPolicy"], "never");
+        let thread_id = previous_thread.unwrap_or("test-thread");
         server_message(
             &mut socket,
-            json!({"id":2,"result":{"thread":{"id":"test-thread"}}}),
+            json!({"id":2,"result":{"thread":{"id":thread_id}}}),
         )
         .await;
-        socket
+        (socket, thread)
+    }
+
+    async fn accept_review(
+        listener: &TcpListener,
+        previous_thread: Option<&str>,
+    ) -> (CodexSession, TcpStream, Value) {
+        let address = listener.local_addr().unwrap();
+        let token = "a".repeat(64);
+        let (session, server) = tokio::join!(
+            CodexSession::connect_review_test_server(
+                address,
+                &token,
+                "/home/hyz/hyz_things",
+                previous_thread,
+            ),
+            accept_session_expecting(listener, previous_thread),
+        );
+        let (socket, thread) = server;
+        (session.unwrap(), socket, thread)
     }
 
     async fn test_connection() -> (CodexSession, TcpStream) {
@@ -719,6 +747,29 @@ mod tests {
             accept_session(&listener)
         );
         (session.unwrap(), socket)
+    }
+
+    #[tokio::test]
+    async fn review_thread_is_persistent_read_only_and_reports_its_id() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let (session, _socket, thread) = accept_review(&listener, None).await;
+        assert_eq!(thread["method"], "thread/start");
+        assert_eq!(thread["params"]["ephemeral"], false);
+        assert_eq!(thread["params"]["sandbox"], "read-only");
+        assert_eq!(thread["params"]["approvalPolicy"], "never");
+        assert_eq!(thread["params"]["cwd"], "/home/hyz/hyz_things");
+        assert_eq!(session.thread_id(), "test-thread");
+    }
+
+    #[tokio::test]
+    async fn review_follow_up_resumes_the_existing_thread_without_replaying_turns() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let (session, _socket, thread) = accept_review(&listener, Some("previous-thread")).await;
+        assert_eq!(thread["method"], "thread/resume");
+        assert_eq!(thread["params"]["threadId"], "previous-thread");
+        assert_eq!(thread["params"]["excludeTurns"], true);
+        assert!(thread["params"].get("sandbox").is_none());
+        assert_eq!(session.thread_id(), "previous-thread");
     }
 
     #[tokio::test]

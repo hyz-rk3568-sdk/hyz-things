@@ -7,11 +7,12 @@ use crate::application::question_bank::{
 };
 use crate::domain::question_bank::{AiReviewMessage, AiReviewState};
 use sqlx::{Row, SqlitePool};
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::{watch, Mutex, Semaphore};
 
 const MAX_FOLLOW_UP: usize = 2000;
 const MAX_ACTIVE: usize = 2;
+const STOP_CONFIRM_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Debug)]
 pub enum AiReviewError {
@@ -29,11 +30,17 @@ impl From<BankError> for AiReviewError {
 }
 
 #[derive(Clone)]
+struct ActiveTask {
+    cancellation: watch::Sender<bool>,
+    finished: watch::Receiver<bool>,
+}
+
+#[derive(Clone)]
 pub struct QuestionBankAiService {
     bank: Arc<QuestionBankApplication>,
     pool: SqlitePool,
     config: Option<CodexConfig>,
-    active: Arc<Mutex<HashMap<String, watch::Sender<bool>>>>,
+    active: Arc<Mutex<HashMap<String, ActiveTask>>>,
     limit: Arc<Semaphore>,
 }
 
@@ -183,7 +190,10 @@ impl QuestionBankAiService {
         .map_err(|_| AiReviewError::Storage)?;
         let existing_thread = if let Some(row) = row {
             let status: String = row.get("status");
-            if status == "complete" || status == "running" {
+            // No live task owns this key (checked above), so a persisted
+            // "running" row is stale and may be retried instead of blocking
+            // the question forever after a failed status write.
+            if status == "complete" {
                 drop(active);
                 return self.state(session_id, question_id).await;
             }
@@ -195,7 +205,14 @@ impl QuestionBankAiService {
             .bind(session_id).bind(question_id).bind(&locator.source_hash).bind(&existing_thread).bind(now())
             .execute(&self.pool).await.map_err(|_| AiReviewError::Storage)?;
         let (cancellation, _) = watch::channel(false);
-        active.insert(key.clone(), cancellation.clone());
+        let (done, finished) = watch::channel(false);
+        active.insert(
+            key.clone(),
+            ActiveTask {
+                cancellation: cancellation.clone(),
+                finished,
+            },
+        );
         drop(active);
         let service = Arc::clone(self);
         tokio::spawn(async move {
@@ -208,6 +225,7 @@ impl QuestionBankAiService {
                     existing_thread,
                     prompt,
                     cancellation,
+                    done,
                 )
                 .await;
         });
@@ -222,7 +240,7 @@ impl QuestionBankAiService {
     ) -> Result<AiReviewState, AiReviewError> {
         if message.trim().is_empty()
             || message != message.trim()
-            || message.len() > MAX_FOLLOW_UP
+            || message.chars().count() > MAX_FOLLOW_UP
             || message.chars().any(|c| c.is_control() && c != '\n')
         {
             return Err(AiReviewError::Invalid);
@@ -255,14 +273,21 @@ impl QuestionBankAiService {
             .bind(now()).bind(session_id).bind(question_id)
             .execute(&self.pool).await.map_err(|_| AiReviewError::Storage)?;
         let (cancellation, _) = watch::channel(false);
-        active.insert(key.clone(), cancellation.clone());
+        let (done, finished) = watch::channel(false);
+        active.insert(
+            key.clone(),
+            ActiveTask {
+                cancellation: cancellation.clone(),
+                finished,
+            },
+        );
         drop(active);
         let service = Arc::clone(self);
         let sid = session_id.to_owned();
         let qid = question_id.to_owned();
         tokio::spawn(async move {
             service
-                .generate(sid, qid, key, previous_thread, message, cancellation)
+                .generate(sid, qid, key, previous_thread, message, cancellation, done)
                 .await;
         });
         self.state(session_id, question_id).await
@@ -274,11 +299,17 @@ impl QuestionBankAiService {
         question_id: &str,
     ) -> Result<AiReviewState, AiReviewError> {
         self.assert_review_item(session_id, question_id).await?;
-        let active = self.active.lock().await;
-        if let Some(cancellation) = active.get(&task_key(session_id, question_id)) {
+        let task = {
+            let active = self.active.lock().await;
+            active
+                .get(&task_key(session_id, question_id))
+                .map(|task| (task.cancellation.clone(), task.finished.clone()))
+        };
+        if let Some((cancellation, mut finished)) = task {
             cancellation.send_replace(true);
+            let _ =
+                tokio::time::timeout(STOP_CONFIRM_TIMEOUT, finished.wait_for(|value| *value)).await;
         }
-        drop(active);
         self.state(session_id, question_id).await
     }
 
@@ -290,12 +321,25 @@ impl QuestionBankAiService {
         previous_thread: Option<String>,
         prompt: String,
         cancellation: watch::Sender<bool>,
+        done: watch::Sender<bool>,
     ) {
         let result: Result<String, String> = async {
             let _permit = self.limit.acquire().await.map_err(|_| "AI 服务不可用")?;
             if *cancellation.borrow() { return Err("用户已停止".into()); }
             let config = self.config.as_ref().ok_or("Codex 未配置")?;
-            let mut codex = config.connect_review(previous_thread.as_deref()).await?;
+            let mut codex = match config.connect_review(previous_thread.as_deref()).await {
+                Ok(codex) => codex,
+                Err(resume_error) if previous_thread.is_some() => {
+                    // Keep the historical messages, but allow a fresh Thread when
+                    // the PC no longer has the old one. The new ID is persisted below.
+                    config.connect_review(None).await.map_err(|new_error| {
+                        format!(
+                            "无法恢复原 Codex Thread（{resume_error}）；新 Thread 也无法创建（{new_error}）"
+                        )
+                    })?
+                }
+                Err(error) => return Err(error),
+            };
             // Persist the thread before the first turn, so a crash doesn't
             // discard already-created Codex history.
             sqlx::query("UPDATE question_ai_reviews SET thread_id=?,updated_at=? WHERE session_id=? AND question_id=?")
@@ -325,6 +369,7 @@ impl QuestionBankAiService {
             tracing::error!(session_id=%session_id, question_id=%question_id, "failed to persist AI review status");
         }
         self.active.lock().await.remove(&key);
+        done.send_replace(true);
     }
 }
 

@@ -36,6 +36,10 @@ async fn initialize_schema(pool: &SqlitePool) -> Result<(), BankError> {
         .execute(pool)
         .await
         .map_err(|_| BankError::Storage)?;
+    sqlx::query(include_str!("question_bank_ai_review.sql"))
+        .execute(pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
     repair_gradable(pool).await
 }
 
@@ -1067,6 +1071,8 @@ B
             "practice_attempts",
             "question_progress",
             "favorites",
+            "question_ai_reviews",
+            "question_ai_messages",
         ] {
             let exists: i64 = sqlx::query_scalar(
                 "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?",

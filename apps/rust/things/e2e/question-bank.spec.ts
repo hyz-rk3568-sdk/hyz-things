@@ -392,7 +392,7 @@ test('AI review defaults to source, stays running across navigation and restores
   type State = {session_id: string; question_id: string; status: string; error: null; messages: Msg[]};
   const records = new Map<string,State>();
   const actions: string[] = [];
-  await page.route('**/api/v1/question-bank/practice/sessions/*/questions/*/ai*',async route => {
+  await page.route('**/api/v1/question-bank/practice/sessions/*/questions/*/ai**',async route => {
     const path = new URL(route.request().url()).pathname;
     const parts = path.split('/');
     const offset = parts.indexOf('sessions');
