@@ -416,7 +416,107 @@ test('swipe follows the finger before release and reveals the neighbouring page'
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
-test('AI review defaults to source, stays running across navigation and restores follow-ups', async ({page}) => {
+test('a delayed AI lookup respects a manually selected original explanation', async ({page}) => {
+  let requested = false;
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/v1/question-bank/practice/sessions/*/questions/*/ai', async route => {
+    const parts = new URL(route.request().url()).pathname.split('/');
+    const offset = parts.indexOf('sessions');
+    requested = true;
+    await pending;
+    await route.fulfill({json: {
+      session_id: parts[offset + 1], question_id: parts[offset + 3], status:'complete', error:null,
+      messages:[{role:'assistant',content:'已保存的解析',created_at:1}],
+    }});
+  });
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await chooseFixturePaper(page);
+  await page.getByTestId('question-bank-practice-start').click();
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button',{name:'确认交卷'}).click();
+  await expect.poll(() => requested).toBe(true);
+  await page.getByTestId('question-bank-original-tab').click();
+  const response = page.waitForResponse(response => response.url().endsWith('/ai'));
+  release();
+  await response;
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page.getByTestId('question-bank-original-tab')).toHaveAttribute('aria-pressed','true');
+});
+
+test('a delayed AI lookup cannot switch a different question', async ({page}) => {
+  let firstQuestion = '';
+  let secondRequested = false;
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/v1/question-bank/practice/sessions/*/questions/*/ai', async route => {
+    const parts = new URL(route.request().url()).pathname.split('/');
+    const offset = parts.indexOf('sessions');
+    const question_id = parts[offset + 3];
+    if (!firstQuestion) firstQuestion = question_id;
+    const first = question_id === firstQuestion;
+    if (first) await pending;
+    else secondRequested = true;
+    await route.fulfill({json: {
+      session_id: parts[offset + 1], question_id, status:first ? 'complete' : 'idle', error:null,
+      messages:first ? [{role:'assistant',content:'上一题的解析',created_at:1}] : [],
+    }});
+  });
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await chooseFixturePaper(page);
+  await page.getByTestId('question-bank-practice-start').click();
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button',{name:'确认交卷'}).click();
+  await expect.poll(() => firstQuestion.length > 0).toBe(true);
+  await openSheet(page);
+  await page.getByTestId('question-bank-practice-number').nth(1).click();
+  await expect.poll(() => secondRequested).toBe(true);
+  const response = page.waitForResponse(response => response.url().includes(firstQuestion) && response.url().endsWith('/ai'));
+  release();
+  await response;
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page.getByTestId('question-bank-original-tab')).toHaveAttribute('aria-pressed','true');
+});
+
+test('saved AI analysis opens by default and remains scoped to its question', async ({page}) => {
+  let savedQuestion = '';
+  await page.route('**/api/v1/question-bank/practice/sessions/*/questions/*/ai', async route => {
+    const parts = new URL(route.request().url()).pathname.split('/');
+    const offset = parts.indexOf('sessions');
+    const session_id = parts[offset + 1];
+    const question_id = parts[offset + 3];
+    if (!savedQuestion) savedQuestion = question_id;
+    const saved = question_id === savedQuestion;
+    await route.fulfill({json: {
+      session_id, question_id, status: saved ? 'complete' : 'idle', error: null,
+      messages: saved ? [{role:'assistant', content:'已经保存的 AI 解析', created_at:1}] : [],
+    }});
+  });
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await chooseFixturePaper(page);
+  await page.getByTestId('question-bank-practice-start').click();
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button',{name:'确认交卷'}).click();
+  await expect(page.getByTestId('question-bank-ai-tab')).toHaveAttribute('aria-pressed','true');
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('已经保存的 AI 解析');
+  await page.getByTestId('question-bank-original-tab').click();
+  await expect(page.getByTestId('question-bank-original-tab')).toHaveAttribute('aria-pressed','true');
+  await openSheet(page);
+  await page.getByTestId('question-bank-practice-number').nth(1).click();
+  await expect(page.getByTestId('question-bank-original-tab')).toHaveAttribute('aria-pressed','true');
+  await openSheet(page);
+  await page.getByTestId('question-bank-practice-number').first().click();
+  await expect(page.getByTestId('question-bank-ai-tab')).toHaveAttribute('aria-pressed','true');
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('已经保存的 AI 解析');
+});
+
+test('AI review keeps running across navigation and restores follow-ups', async ({page}) => {
   type Msg = {role: string; content: string; created_at: number};
   type State = {session_id: string; question_id: string; status: string; error: null; messages: Msg[]};
   const records = new Map<string,State>();
@@ -454,7 +554,7 @@ test('AI review defaults to source, stays running across navigation and restores
   await expect(page.getByTestId('question-bank-original-tab')).toHaveAttribute('aria-pressed','true');
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('原始解析');
   await expect(page.getByTestId('question-bank-ai-review')).toHaveCount(0);
-  expect(records.size).toBe(0); // AI tab is lazy, original remains the default.
+  await expect.poll(() => records.size).toBe(1); // Check for an existing analysis without starting one.
 
   await page.getByTestId('question-bank-ai-tab').click();
   await expect(page.getByTestId('question-bank-ai-start')).toBeVisible();
@@ -467,7 +567,7 @@ test('AI review defaults to source, stays running across navigation and restores
   await expect(page.getByTestId('question-bank-original-tab')).toHaveAttribute('aria-pressed','true');
   await openSheet(page);
   await page.getByTestId('question-bank-practice-number').first().click();
-  await page.getByTestId('question-bank-ai-tab').click();
+  await expect(page.getByTestId('question-bank-ai-tab')).toHaveAttribute('aria-pressed','true');
   await expect(page.getByTestId('question-bank-ai-status')).toHaveText('正在生成');
   expect(actions).toEqual(['start']); // no implicit interrupt on question navigation
 
@@ -475,8 +575,7 @@ test('AI review defaults to source, stays running across navigation and restores
   await page.getByTestId('question-bank-history-open').click();
   await page.getByTestId('question-bank-practice-history-item').first()
     .getByRole('button',{name:'查看原题与解析'}).click();
-  await expect(page.getByTestId('question-bank-original-tab')).toHaveAttribute('aria-pressed','true');
-  await page.getByTestId('question-bank-ai-tab').click();
+  await expect(page.getByTestId('question-bank-ai-tab')).toHaveAttribute('aria-pressed','true');
   await expect(page.getByTestId('question-bank-ai-status')).toHaveText('正在生成');
   expect(actions).toEqual(['start']); // exiting review does not cancel
 

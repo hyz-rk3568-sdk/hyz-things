@@ -538,6 +538,14 @@ fn collection_modules(
     modules
 }
 
+fn has_existing_ai_analysis(state: &AiReviewState) -> bool {
+    state.status == "running"
+        || state
+            .messages
+            .iter()
+            .any(|message| message.role == "assistant" && !message.content.trim().is_empty())
+}
+
 #[derive(Properties, PartialEq)]
 struct QuestionAiReviewProps {
     csrf: String,
@@ -831,6 +839,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let workspace = use_state(|| None::<PracticeWorkspace>);
     let review = use_state(|| None::<PracticeReview>);
     let ai_tab = use_state(|| false);
+    let ai_tab_chosen = use_mut_ref(|| false);
     let index = use_state(|| 0usize);
     let multi_select = use_state(|| false);
     let current_favorite_source = workspace
@@ -1016,14 +1025,44 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     }
     {
         let ai_tab = ai_tab.clone();
-        let selected = (
-            workspace.as_ref().as_ref().map(|w| w.session.id.clone()),
-            *index,
-            review.is_some(),
-        );
-        use_effect_with(selected, move |_| {
+        let ai_tab_chosen = ai_tab_chosen.clone();
+        let review_snapshot = review.as_ref();
+        let selected = workspace.as_ref().as_ref().and_then(|workspace| {
+            let question = workspace.questions.get(*index)?;
+            let review = review_snapshot.as_ref()?;
+            let reviewed = review.questions.get(*index)?;
+            (review.session.id == workspace.session.id
+                && reviewed.question.item.question_id == question.item.question_id)
+                .then(|| {
+                    (
+                        workspace.session.id.clone(),
+                        question.item.question_id.clone(),
+                    )
+                })
+        });
+        use_effect_with(selected, move |selected| {
             ai_tab.set(false);
-            || ()
+            *ai_tab_chosen.borrow_mut() = false;
+            let alive = std::rc::Rc::new(std::cell::Cell::new(true));
+            if let Some((session_id, question_id)) = selected.clone() {
+                let request_alive = alive.clone();
+                spawn_local(async move {
+                    let endpoint =
+                        format!("{ROOT}/practice/sessions/{session_id}/questions/{question_id}/ai");
+                    if let Ok(state) = fetch_json::<AiReviewState>(&endpoint, "AI 复盘记录").await
+                    {
+                        if request_alive.get()
+                            && !*ai_tab_chosen.borrow()
+                            && state.session_id == session_id
+                            && state.question_id == question_id
+                            && has_existing_ai_analysis(&state)
+                        {
+                            ai_tab.set(true);
+                        }
+                    }
+                });
+            }
+            move || alive.set(false)
         });
     }
     {
@@ -1648,13 +1687,13 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     <button type="button" class={classes!("join-item","btn","btn-sm",if !*ai_tab {"btn-active"} else {"btn-ghost"})}
                                         data-testid="question-bank-original-tab"
                                         aria-pressed={(!*ai_tab).to_string()}
-                                        onclick={Callback::from({let ai_tab=ai_tab.clone();move |_|ai_tab.set(false)})}>
+                                        onclick={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(false);}})}>
                                         {"原始解析"}
                                     </button>
                                     <button type="button" class={classes!("join-item","btn","btn-sm",if *ai_tab {"btn-active"} else {"btn-ghost"})}
                                         data-testid="question-bank-ai-tab"
                                         aria-pressed={(*ai_tab).to_string()}
-                                        onclick={Callback::from({let ai_tab=ai_tab.clone();move |_|ai_tab.set(true)})}>
+                                        onclick={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(true);}})}>
                                         {"AI 解析"}
                                     </button>
                                 </div>
