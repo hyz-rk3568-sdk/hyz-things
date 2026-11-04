@@ -9,10 +9,11 @@ const rows = [
 const favoriteState = new Map<string, boolean>();
 const material = '## 完整材料\n\n材料中的数量为 **1200**。\n\n求结果 $A=B$';
 const preview = (eligible = true) => ({
-  eligible, reason: eligible ? null : '此模块暂不支持创建闪卡',
-  front: `${material}\n\n- A. 100\n- B. 200`, correct_answer: ['B'], recommended_target: null,
-  allowed_targets: eligible ? ['数量/工程效率/错题', '数量/概率/错题'] : [],
-  requires_type_confirmation: true, source_revision: 'source-v1',
+  eligible: true, reason: null,
+  front: `${material}\n\n- A. 100\n- B. 200`, correct_answer: ['B'], recommended_target: eligible ? '数量/数学运算/错题' : '常识判断/法律/错题',
+  allowed_targets: eligible ? ['数量/数学运算/错题', '数量/工程效率/错题', '数量/概率/错题'] : ['常识判断/法律/错题'],
+  ai_targets: eligible ? ['数量/工程效率/错题', '数量/概率/错题'] : [],
+  requires_type_confirmation: eligible, source_revision: 'source-v1',
 });
 const detail = (row: (typeof rows)[number]) => ({
   item: row,
@@ -98,14 +99,14 @@ for (const width of [1180, 390]) {
     await card.getByLabel('目标牌组').selectOption('数量/概率/错题');
     await expect(card.getByRole('button', { name: '创建并同步', exact: true })).toBeDisabled();
     await card.getByLabel('背面').fill('先列方程，再代入。');
-    await card.getByLabel('确认题型').check();
+    await card.getByLabel('已核对题型与目标目录').check();
     const box = await card.boundingBox();
     expect(box!.width).toBeLessThanOrEqual(576);
     expect(box!.x).toBeGreaterThan(0);
     expect(box!.x + box!.width).toBeLessThan(width);
     let body: unknown;
     let csrf: string | undefined;
-    await page.route(`**${root}/practice/favorites/supported/flashcard`, async route => {
+    await page.route(`**${root}/practice/questions/supported/flashcard`, async route => {
       body = route.request().postDataJSON();
       csrf = route.request().headers()['x-hyz-csrf'];
       await route.fulfill({ json: { status: 'created_synced', target_deck: '数量/概率/错题', source_file: '数量/概率/错题/cards.md', card_id: 'new-card', retryable: false } });
@@ -123,16 +124,20 @@ for (const width of [1180, 390]) {
   });
 }
 
-test('unsupported favorite still shows the reviewed question and answer without a create action', async ({ page }) => {
+test('non-AI knowledge category creates an ordinary review flashcard', async ({ page }) => {
   await install(page);
   const review = await openReview(page, 2);
-  await expect(review).toContainText('完整材料');
   await expect(review.getByTestId('collection-review-answer')).toHaveText('B');
-  await expect(review.getByTestId('collection-review-flashcard-unavailable')).toContainText('此模块暂不支持创建闪卡');
-  await expect(review.getByTestId('collection-review-create-flashcard')).toHaveCount(0);
+  await review.getByTestId('collection-review-create-flashcard').click();
+  const card = page.getByTestId('favorite-flashcard-card');
+  const submit = card.getByRole('button', { name: '创建并同步', exact: true });
+  await expect(submit).toBeDisabled();
+  await card.getByLabel('目标牌组').selectOption('常识判断/法律/错题');
+  await expect(card.getByTestId('favorite-flashcard-path')).toHaveText('将追加或创建：flashcards/常识判断/法律/错题/cards.md');
+  await expect(submit).toBeEnabled();
 });
 
-test('wrong review opens the same split view without any flashcard action', async ({ page }) => {
+test('wrong review opens the same split view with flashcard creation', async ({ page }) => {
   await page.setViewportSize({ width: 1180, height: 844 });
   await install(page, 'wrong');
   const review = await openReview(page);
@@ -140,7 +145,7 @@ test('wrong review opens the same split view without any flashcard action', asyn
   await expect(review.getByTestId('collection-review-material-pane')).toContainText('完整材料');
   await expect(review.getByTestId('collection-review-answer')).toHaveText('B');
   await expect(review.getByTestId('collection-review-scope')).toContainText('错题复盘 · 第 1/2 题');
-  await expect(review.getByTestId('collection-review-create-flashcard')).toHaveCount(0);
+  await expect(review.getByTestId('collection-review-create-flashcard')).toBeVisible();
   await expect(review.getByTestId('collection-review-flashcard-unavailable')).toHaveCount(0);
   await review.getByTestId('collection-review-next').click();
   await expect(review.getByTestId('collection-review-scope')).toContainText('第 2/2 题');
@@ -222,7 +227,7 @@ test('review swipe moves to the neighbouring saved question', async ({ page }) =
 test('favorite review retries failed flashcard loading and ignores a closed question response', async ({ page }) => {
   await install(page);
   let reads = 0;
-  await page.route(`**${root}/practice/favorites/supported/flashcard-preview`, async route => {
+  await page.route(`**${root}/practice/questions/supported/flashcard-preview`, async route => {
     reads += 1;
     await route.fulfill(reads === 1 ? { status: 503, json: { error: 'temporary-unavailable' } } : { json: preview() });
   });
@@ -233,7 +238,7 @@ test('favorite review retries failed flashcard loading and ignores a closed ques
   await review.getByTestId('collection-review-back').click();
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
-  await page.route(`**${root}/practice/favorites/supported/flashcard-preview`, async route => {
+  await page.route(`**${root}/practice/questions/supported/flashcard-preview`, async route => {
     await gate;
     await route.fulfill({ json: { ...preview(), front: '过期响应不得显示' } });
   });
@@ -241,7 +246,7 @@ test('favorite review retries failed flashcard loading and ignores a closed ques
   await review.getByTestId('collection-review-back').click();
   await openReview(page, 2);
   release();
-  await expect(review.getByTestId('collection-review-flashcard-unavailable')).toContainText('此模块暂不支持创建闪卡');
+  await expect(review.getByTestId('collection-review-create-flashcard')).toBeVisible();
   await expect(review).not.toContainText('过期响应不得显示');
 });
 
@@ -250,11 +255,11 @@ test('favorite flashcard sync recovery retries the identical request and blocks 
   const modal = await openCreate(page);
   await modal.getByLabel('背面').fill('恢复同步的背面');
   await modal.getByLabel('目标牌组').selectOption('数量/工程效率/错题');
-  await modal.getByLabel('确认题型').check();
+  await modal.getByLabel('已核对题型与目标目录').check();
   const requests: unknown[] = [];
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
-  await page.route(`**${root}/practice/favorites/supported/flashcard`, async route => {
+  await page.route(`**${root}/practice/questions/supported/flashcard`, async route => {
     requests.push(route.request().postDataJSON());
     if (requests.length === 1) await gate;
     await route.fulfill({ json: { status: requests.length === 1 ? 'created_sync_pending' : 'already_exists', target_deck: '数量/工程效率/错题', source_file: '数量/工程效率/错题/cards.md', card_id: 'existing-card', retryable: requests.length === 1 } });
@@ -279,11 +284,11 @@ for (const width of [1180, 390]) {
     const modal = await openCreate(page);
     await expect(modal.getByLabel('背面')).toHaveValue('');
     await modal.getByLabel('目标牌组').selectOption('数量/工程效率/错题');
-    await modal.getByLabel('确认题型').check();
+    await modal.getByLabel('已核对题型与目标目录').check();
     const submit = modal.getByRole('button', { name: '创建并同步', exact: true });
     await expect(submit).toBeEnabled();
     let body: unknown;
-    await page.route(`**${root}/practice/favorites/supported/flashcard`, async route => {
+    await page.route(`**${root}/practice/questions/supported/flashcard`, async route => {
       body = route.request().postDataJSON();
       await route.fulfill({ json: { status: 'created_synced', target_deck: '数量/工程效率/错题', source_file: '数量/工程效率/错题/cards.md', card_id: 'blank-back', retryable: false } });
     });
