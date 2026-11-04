@@ -31,15 +31,6 @@ async fn initialize_schema(pool: &SqlitePool) -> Result<(), BankError> {
         .run(pool)
         .await
         .map_err(|_| BankError::Storage)?;
-    // Additive indexes keep migration versions unchanged for previous-ELF rollback.
-    sqlx::query(include_str!("question_bank_catalog_index.sql"))
-        .execute(pool)
-        .await
-        .map_err(|_| BankError::Storage)?;
-    sqlx::query(include_str!("question_bank_ai_review.sql"))
-        .execute(pool)
-        .await
-        .map_err(|_| BankError::Storage)?;
     repair_gradable(pool).await
 }
 
@@ -210,9 +201,7 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                         .module
                         .as_deref()
                         .and_then(|value| primary_module(Some(value)));
-                    // `issues` is a legacy column kept empty so a rollback to a
-                    // binary that still reads it remains compatible.
-                    sqlx::query("INSERT INTO questions(id,paper_id,number,source_hash,module,category,stem,options_markdown,topics,materials,issues,gradable,correct_answer,explanation) VALUES(?,?,?,?,?,?,?,?,?,?,'[]',?,?,?) ON CONFLICT(id) DO UPDATE SET paper_id=excluded.paper_id,number=excluded.number,source_hash=excluded.source_hash,module=excluded.module,category=excluded.category,stem=excluded.stem,options_markdown=excluded.options_markdown,topics=excluded.topics,materials=excluded.materials,gradable=excluded.gradable,correct_answer=excluded.correct_answer,explanation=excluded.explanation")
+                    sqlx::query("INSERT INTO questions(id,paper_id,number,source_hash,module,category,stem,options_markdown,topics,materials,gradable,correct_answer,explanation) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET paper_id=excluded.paper_id,number=excluded.number,source_hash=excluded.source_hash,module=excluded.module,category=excluded.category,stem=excluded.stem,options_markdown=excluded.options_markdown,topics=excluded.topics,materials=excluded.materials,gradable=excluded.gradable,correct_answer=excluded.correct_answer,explanation=excluded.explanation")
                         .bind(&question.id).bind(&paper.summary.id).bind(question.number as i64)
                         .bind(&paper.hash).bind(module).bind(&question.category)
                         .bind(&question.stem).bind(&question.options_markdown)
@@ -1021,26 +1010,6 @@ B
     }
 
     #[tokio::test]
-    async fn catalog_index_keeps_the_previous_binary_migration_set_compatible() {
-        let pool = memory_pool().await;
-        initialize_schema(&pool).await.unwrap();
-        let legacy = sqlx::migrate::Migrator {
-            migrations: std::borrow::Cow::Owned(
-                QUESTION_BANK_MIGRATOR
-                    .iter()
-                    .filter(|migration| migration.version <= 4)
-                    .cloned()
-                    .collect(),
-            ),
-            ..sqlx::migrate::Migrator::DEFAULT
-        };
-        assert!(
-            legacy.run(&pool).await.is_ok(),
-            "an index-only optimization must preserve ELF rollback"
-        );
-    }
-
-    #[tokio::test]
     async fn catalog_projection_uses_a_covering_index() {
         let pool = memory_pool().await;
         initialize_schema(&pool).await.unwrap();
@@ -1132,6 +1101,6 @@ B
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        assert_eq!(applied, 4, "each version is applied exactly once");
+        assert_eq!(applied, 5, "each version is applied exactly once");
     }
 }
