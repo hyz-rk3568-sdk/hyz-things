@@ -57,7 +57,6 @@ pub(crate) struct FavoriteFlashcardPanelProps {
 #[function_component(FavoriteFlashcardPanel)]
 pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> Html {
     let back = use_state(String::new);
-    // Never auto-select a destination: every new card needs a deliberate choice.
     let target = use_state(|| props.preview.recommended_target.clone().unwrap_or_default());
     let user_mode = use_state(|| false);
     let confirmed = use_state(|| false);
@@ -160,68 +159,79 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
         move |_| on_close.emit(())
     });
     html! {
-        <div class="flex h-full w-full justify-center overflow-y-auto rounded-box bg-base-100 p-4 sm:p-6"
+        <div class="h-full w-full overflow-y-auto bg-base-100"
             data-testid="favorite-flashcard-panel">
-        <section class="my-auto w-full max-w-xl space-y-5" role="region" aria-label="创建 Flashcard" tabindex="-1" ref={dialog}
+        <section class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-4 pb-5 sm:px-6" role="region" aria-label="创建 Flashcard" tabindex="-1" ref={dialog}
             data-testid="favorite-flashcard-card"
             onkeydown={Callback::from({let on_close=props.on_close.clone();move |event:KeyboardEvent| {
                 if event.key()=="Escape" {event.stop_propagation();on_close.emit(());}
             }})}>
-            <header class="flex items-start justify-between gap-3">
-                <div>
-                    <h2 class="text-xl font-bold">{"创建 Flashcard"}</h2>
-                    <p class="mt-1 text-sm opacity-60">{"默认保存到真题练习；可切换到用户整理，作为后续 AI 出题的来源。确认完整路径后保存；背面可留空。"}</p>
+            <header class="flex shrink-0 items-center gap-3 border-b border-base-content/10 py-3">
+                <button type="button" class="btn btn-ghost btn-sm -ml-2" aria-label="返回复盘" onclick={close.clone()}>
+                    <span aria-hidden="true">{"←"}</span>{"返回复盘"}
+                </button>
+                <div class="min-w-0">
+                    <h2 class="truncate text-base font-semibold">{"创建 Flashcard"}</h2>
+                    <p class="text-xs text-base-content/55">{"题目与正确答案将保存到正面"}</p>
                 </div>
-                <button type="button" class="btn btn-ghost btn-sm" onclick={close.clone()}>{"返回复盘"}</button>
             </header>
-            <div class="space-y-5 break-words">
-                <section aria-label="正面（只读）">{favorite_content(&props.preview)}</section>
+            <div class="mx-auto w-full max-w-xl space-y-5 break-words py-5">
+                <details class="group rounded-xl bg-base-200/60 px-4 py-3">
+                    <summary class="cursor-pointer text-sm font-medium">{"查看卡片正面与答案"}</summary>
+                    <section class="mt-3" aria-label="正面（只读）">{favorite_content(&props.preview)}</section>
+                </details>
                 <div class="space-y-2">
                     <span class="font-semibold">{"存放位置"}</span>
-                    <div class="join grid grid-cols-2" role="group" aria-label="存放位置" data-testid="favorite-flashcard-mode">
-                        <button type="button" class={classes!("join-item","btn",if !*user_mode {"btn-primary"} else {"btn-outline"})}
+                    <div class="grid grid-cols-2 gap-1 rounded-xl bg-base-200/70 p-1" role="group" aria-label="存放位置" data-testid="favorite-flashcard-mode">
+                        <button type="button" class={classes!("rounded-lg", "px-3", "py-2", "text-sm", "font-medium", if !*user_mode {"bg-base-100 shadow-sm"} else {"text-base-content/60"})}
                             aria-pressed={(!*user_mode).to_string()} disabled={*locked}
                             data-testid="favorite-flashcard-practice-mode"
                             onclick={Callback::from({let user_mode=user_mode.clone();let target=target.clone();let confirmed=confirmed.clone();let practice=props.preview.recommended_target.clone();move |_| {
-                                user_mode.set(false);target.set(practice.clone().unwrap_or_default());confirmed.set(false);
+                                if *user_mode {user_mode.set(false);target.set(practice.clone().unwrap_or_default());confirmed.set(false);}
                             }})}>{"真题练习（默认）"}</button>
-                        <button type="button" class={classes!("join-item","btn",if *user_mode {"btn-primary"} else {"btn-outline"})}
+                        <button type="button" class={classes!("rounded-lg", "px-3", "py-2", "text-sm", "font-medium", if *user_mode {"bg-base-100 shadow-sm"} else {"text-base-content/60"})}
                             aria-pressed={(*user_mode).to_string()} disabled={*locked}
                             data-testid="favorite-flashcard-user-mode"
-                            onclick={Callback::from({let user_mode=user_mode.clone();let target=target.clone();let confirmed=confirmed.clone();let organized=props.preview.allowed_targets.iter().find(|x| x.starts_with("用户整理/")).cloned();move |_| {
-                                user_mode.set(true);target.set(organized.clone().unwrap_or_default());confirmed.set(false);
+                            onclick={Callback::from({let user_mode=user_mode.clone();let target=target.clone();let confirmed=confirmed.clone();move |_| {
+                                if !*user_mode {user_mode.set(true);target.set(String::new());confirmed.set(false);}
                             }})}>{"用户整理"}</button>
                     </div>
                     <p class="text-xs text-base-content/60">
                         {if *user_mode {
-                            "用户整理：flashcards/用户整理 / 一级模块 / 二级 category / 错题 / cards.md（可作为 AI 出题来源）"
+                            "选择已有分类目录，卡片会保存到该目录的错题文件夹。"
                         } else {
-                            "真题练习（默认）：flashcards/真题练习 / 一级模块 / 二级 category / 错题 / cards.md"
+                            "按原题的模块和分类保存，可切换到用户整理。"
                         }}
                     </p>
                 </div>
                 <label class="block space-y-2">
                     <span class="font-semibold">{"目标牌组"}</span>
-                    <select class="select select-bordered w-full" value={(*target).clone()} disabled={*locked}
-                        onchange={Callback::from({let target=target.clone();move |event:Event| {
+                    <select key={if *user_mode {"user"} else {"practice"}} class="select w-full bg-base-200/60" value={(*target).clone()} disabled={*locked}
+                        onchange={Callback::from({let target=target.clone();let confirmed=confirmed.clone();move |event:Event| {
                             target.set(event.target_unchecked_into::<HtmlSelectElement>().value());
+                            confirmed.set(false);
                         }})}>
-                        <option value="" disabled={true}>{"请选择写入目录"}</option>
+                        <option value="" disabled={true} selected={target.is_empty()}>{"请选择写入目录"}</option>
                         {for props.preview.allowed_targets.iter().filter(|value| {
                             value.starts_with(if *user_mode {"用户整理/"} else {"真题练习/"})
                         }).map(|value|html! {
-                            <option value={value.clone()} selected={*target==*value}>{format!("flashcards/{value}/cards.md")}</option>
+                            <option value={value.clone()} selected={*target==*value}>{if *user_mode {
+                                value.strip_suffix("/错题").unwrap_or(value).to_owned()
+                            } else { value.clone() }}</option>
                         })}
                     </select>
                 </label>
+                if *user_mode && !props.preview.allowed_targets.iter().any(|value| value.starts_with("用户整理/")) {
+                    <p class="text-sm text-base-content/60" data-testid="favorite-flashcard-empty-directories">{"当前模块还没有用户整理目录，请先创建分类目录。"}</p>
+                }
                 if !target.is_empty() {
                     <p class="break-all text-xs text-base-content/70" data-testid="favorite-flashcard-path">
                         {format!("将追加或创建：flashcards/{}/cards.md",*target)}
                     </p>
                 }
                 <label class="block space-y-2">
-                    <span class="font-semibold">{"背面"}</span>
-                    <textarea class="textarea textarea-bordered min-h-40 w-full" value={(*back).clone()} disabled={*locked}
+                    <span class="font-semibold">{"背面"}<span class="ml-2 text-xs font-normal text-base-content/50">{"可选"}</span></span>
+                    <textarea class="textarea min-h-28 w-full bg-base-200/60" placeholder="写下解题思路或复习提示" value={(*back).clone()} disabled={*locked}
                         oninput={Callback::from({let back=back.clone();move |event:InputEvent| {
                             back.set(event.target_unchecked_into::<web_sys::HtmlTextAreaElement>().value());
                         }})}/>
@@ -248,13 +258,12 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
                         if let Some(id) = &value.card_id {<p class="text-sm">{format!("卡片 ID：{id}")}</p>}
                     </div>
                 }
-                <div class="flex flex-wrap gap-2">
+                <div class="flex justify-end">
                     if result.as_ref().as_ref().is_none_or(|value|value.retryable) {
-                        <button type="button" class="btn btn-primary" disabled={!can_submit} onclick={submit}>
+                        <button type="button" class="btn btn-primary w-full sm:w-auto" disabled={!can_submit} onclick={submit}>
                             {if *busy {"正在保存…"} else if result.is_some() {"重试同步"} else {"创建并同步"}}
                         </button>
                     }
-                    <button type="button" class="btn btn-ghost" onclick={close.clone()}>{"返回复盘"}</button>
                 </div>
             </div>
         </section>

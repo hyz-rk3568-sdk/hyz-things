@@ -1822,7 +1822,16 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             </div>
                         }
                         <div class="relative min-h-0 flex-1 overflow-hidden">
-                            if paused {
+                            if *flashcard_open {
+                                if let Some(preview) = &card_preview {
+                                    <div class="h-full" data-testid="question-bank-practice-flashcard-dialog">
+                                        <FavoriteFlashcardPanel key={item.item.question_id.clone()}
+                                            question_id={item.item.question_id.clone()}
+                                            preview={preview.clone()} csrf={props.csrf.clone()}
+                                            on_close={Callback::from({let flashcard_open=flashcard_open.clone();move |_|flashcard_open.set(false)})}/>
+                                    </div>
+                                }
+                            } else if paused {
                                 <div class="flex h-full items-center justify-center rounded-box bg-base-100" data-testid="question-bank-practice-paused">
                                     <div class="text-center space-y-4">
                                         <h2 class="text-xl font-bold">{"训练已暂停"}</h2>
@@ -1840,18 +1849,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 </InkOverlay>
                             }
                         </div>
-                        {nav}
-                        if *flashcard_open {
-                            if let Some(preview) = &card_preview {
-                                <div class="fixed inset-0 z-[100] bg-black/60 p-3 sm:p-6"
-                                    data-testid="question-bank-practice-flashcard-dialog"
-                                    role="dialog" aria-modal="true" aria-label="创建 Flashcard">
-                                    <FavoriteFlashcardPanel key={item.item.question_id.clone()}
-                                        question_id={item.item.question_id.clone()}
-                                        preview={preview.clone()} csrf={props.csrf.clone()}
-                                        on_close={Callback::from({let flashcard_open=flashcard_open.clone();move |_|flashcard_open.set(false)})}/>
-                                </div>
-                            }
+                        if !*flashcard_open {
+                            {nav}
                         }
                     </section>
                 };

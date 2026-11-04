@@ -120,6 +120,64 @@ impl FilesystemFavoriteFlashcardWriter {
         Ok(())
     }
 
+    fn existing_user_targets_blocking(&self, module: &str) -> Result<Vec<String>, FlashcardError> {
+        let probe = format!("真题练习/{module}/未分类/错题");
+        if resolve_web_target(&probe).is_none_or(|target| target.module != module) {
+            return Err(invalid("unsupported module"));
+        }
+        let identity = self.observer.observe(&self.root)?;
+        let root = open_root(&self.root)?;
+        self.verify_root(&root, &identity)?;
+        let Some(user_root) = optional_directory(&root, OsStr::new("用户整理"))? else {
+            self.verify_root(&root, &identity)?;
+            return Ok(Vec::new());
+        };
+        let Some(module_root) = optional_directory(&user_root, OsStr::new(module))? else {
+            self.verify_root(&root, &identity)?;
+            return Ok(Vec::new());
+        };
+        let mut queue = vec![(module_root, format!("用户整理/{module}"), 0usize)];
+        let mut targets = Vec::new();
+        let mut entries_seen = 0usize;
+        while let Some((directory, path, depth)) = queue.pop() {
+            for entry in fs::read_dir(format!("/proc/self/fd/{}", directory.as_raw_fd()))
+                .map_err(source_io)?
+            {
+                let entry = entry.map_err(source_io)?;
+                entries_seen += 1;
+                if entries_seen > MAX_SOURCE_FILES {
+                    return Err(unavailable("source scan limit exceeded"));
+                }
+                let name = entry.file_name();
+                let Some(name_str) = name.to_str() else {
+                    continue;
+                };
+                if name_str.starts_with('.')
+                    || name_str == "错题"
+                    || !entry.file_type().map_err(source_io)?.is_dir()
+                {
+                    continue;
+                }
+                let target = format!("{path}/{name_str}/错题");
+                if resolve_web_target(&target).is_none() {
+                    continue;
+                }
+                let child = open_child(&directory, &name, libc::O_RDONLY | libc::O_DIRECTORY)
+                    .map_err(source_io)?;
+                targets.push(target);
+                if targets.len() > 1024 {
+                    return Err(unavailable("too many source directories"));
+                }
+                if depth < 5 {
+                    queue.push((child, format!("{path}/{name_str}"), depth + 1));
+                }
+            }
+        }
+        self.verify_root(&root, &identity)?;
+        targets.sort();
+        Ok(targets)
+    }
+
     fn append_blocking(
         &self,
         card: NewFavoriteCard,
@@ -140,7 +198,15 @@ impl FilesystemFavoriteFlashcardWriter {
         let parent_path = target_path
             .parent()
             .ok_or_else(|| invalid("invalid registry path"))?;
-        let parent = walk_directory(&root, parent_path, true)?;
+        let parent = if target.mode == FlashcardCreationMode::UserOrganized {
+            let base_path = parent_path
+                .parent()
+                .ok_or_else(|| invalid("invalid category path"))?;
+            let base = walk_directory(&root, base_path, false)?;
+            walk_directory(&base, Path::new("错题"), true)?
+        } else {
+            walk_directory(&root, parent_path, true)?
+        };
         let name = target_path
             .file_name()
             .ok_or_else(|| invalid("invalid registry path"))?;
@@ -254,6 +320,14 @@ impl FilesystemFavoriteFlashcardWriter {
 
 #[async_trait]
 impl FavoriteFlashcardWriterPort for FilesystemFavoriteFlashcardWriter {
+    async fn existing_user_targets(&self, module: &str) -> Result<Vec<String>, FlashcardError> {
+        let writer = self.clone();
+        let module = module.to_owned();
+        tokio::task::spawn_blocking(move || writer.existing_user_targets_blocking(&module))
+            .await
+            .map_err(|_| unavailable("directory scan task failed"))?
+    }
+
     async fn append(&self, card: NewFavoriteCard) -> Result<FavoriteWriteResult, FlashcardError> {
         let writer = self.clone();
         tokio::task::spawn_blocking(move || writer.append_blocking(card))
@@ -372,6 +446,14 @@ fn open_child(parent: &File, name: &OsStr, flags: i32) -> io::Result<File> {
         Ok(unsafe { File::from_raw_fd(fd) })
     }
 }
+fn optional_directory(parent: &File, name: &OsStr) -> Result<Option<File>, FlashcardError> {
+    match open_child(parent, name, libc::O_RDONLY | libc::O_DIRECTORY) {
+        Ok(directory) => Ok(Some(directory)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(source_io(error)),
+    }
+}
+
 fn walk_directory(root: &File, path: &Path, create: bool) -> Result<File, FlashcardError> {
     let mut directory = root.try_clone().map_err(source_io)?;
     for component in path.components() {
@@ -526,7 +608,7 @@ fn scan_source(
             result.files.insert(path.clone(), file.version);
             let source_mode = path
                 .strip_suffix("/cards.md")
-                .and_then(resolve_target)
+                .and_then(|deck| resolve_web_target(deck).or_else(|| resolve_target(deck)))
                 .map(|target| target.mode == FlashcardCreationMode::UserOrganized);
             for card in parsed.cards {
                 if !card.generated_id && !ids.insert(card.id.to_string()) {
@@ -794,6 +876,7 @@ mod tests {
     #[tokio::test]
     async fn same_question_can_be_saved_once_in_each_parallel_mode() {
         let fixture = Fixture::new();
+        fs::create_dir_all(fixture.root.join("用户整理/数量关系/工程效率")).unwrap();
         let writer: Arc<dyn FavoriteFlashcardWriterPort> = Arc::new(fixture.writer());
         let ai = card();
         let mut normal = ai.clone();

@@ -27,6 +27,7 @@ const CARD: &str = "019a31b7-8c42-7c16-a6d1-0c1f0f34c821";
 struct Fake {
     written: Mutex<Vec<NewFavoriteCard>>,
     indexed: Mutex<Vec<SourceCard>>,
+    targets: Mutex<Vec<String>>,
     fail_sync: AtomicBool,
     deny_favorite: AtomicBool,
     coarse_category: AtomicBool,
@@ -63,6 +64,10 @@ impl FavoriteQuestionPort for Fake {
 }
 #[async_trait]
 impl FavoriteFlashcardWriterPort for Fake {
+    async fn existing_user_targets(&self, _: &str) -> Result<Vec<String>, FlashcardError> {
+        Ok(self.targets.lock().unwrap().clone())
+    }
+
     async fn append(&self, card: NewFavoriteCard) -> Result<FavoriteWriteResult, FlashcardError> {
         let mut cards = self.written.lock().unwrap();
         let appended = !cards.iter().any(|existing| {
@@ -201,6 +206,10 @@ fn setup() -> (
     Arc<FlashcardApplication>,
 ) {
     let fake = Arc::new(Fake::default());
+    fake.targets
+        .lock()
+        .unwrap()
+        .push("用户整理/数量关系/工程效率/错题".into());
     let cards = Arc::new(FlashcardApplication::new(
         fake.clone(),
         fake.clone(),
@@ -221,6 +230,48 @@ fn request() -> CreateFavoriteFlashcard {
         type_confirmed: true,
     }
 }
+#[tokio::test]
+async fn preview_lists_actual_user_organized_directories() {
+    let (app, fake, _) = setup();
+    *fake.targets.lock().unwrap() = vec!["用户整理/数量关系/排列组合/基础/错题".into()];
+    let preview = app.preview(QUESTION).await.unwrap();
+    assert_eq!(
+        preview.eligibility.allowed_targets,
+        [
+            "真题练习/数量关系/工程效率/错题",
+            "用户整理/数量关系/排列组合/基础/错题",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn preview_excludes_foreign_and_unsafe_directories() {
+    let (app, fake, _) = setup();
+    fake.targets.lock().unwrap().extend([
+        "用户整理/资料分析/增长率/错题".into(),
+        "用户整理/数量关系/../错题".into(),
+    ]);
+    let preview = app.preview(QUESTION).await.unwrap();
+    assert_eq!(
+        preview.eligibility.allowed_targets,
+        [
+            "真题练习/数量关系/工程效率/错题",
+            "用户整理/数量关系/工程效率/错题",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn removed_user_directory_is_rejected_before_writing() {
+    let (app, fake, _) = setup();
+    let mut create = request();
+    create.creation_mode = Some(FlashcardCreationMode::UserOrganized);
+    create.target_deck = "用户整理/数量关系/工程效率/错题".into();
+    fake.targets.lock().unwrap().clear();
+    assert!(app.create(QUESTION, create).await.is_err());
+    assert!(fake.written.lock().unwrap().is_empty());
+}
+
 #[tokio::test]
 async fn creates_blank_back_as_dash_and_syncs_source_generated_id() {
     let (app, fake, _) = setup();

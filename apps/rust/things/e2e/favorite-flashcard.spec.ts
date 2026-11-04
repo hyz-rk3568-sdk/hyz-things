@@ -11,7 +11,7 @@ const material = '## 完整材料\n\n材料中的数量为 **1200**。\n\n求结
 const preview = (eligible = true) => ({
   eligible: true, reason: null,
   front: `${material}\n\n- A. 100\n- B. 200`, correct_answer: ['B'], recommended_target: eligible ? '真题练习/数量关系/数学运算/错题' : '真题练习/常识判断/法律/错题',
-  allowed_targets: eligible ? ['真题练习/数量关系/数学运算/错题', '用户整理/数量关系/数学运算/错题'] : ['真题练习/常识判断/法律/错题', '用户整理/常识判断/法律/错题'],
+  allowed_targets: eligible ? ['真题练习/数量关系/数学运算/错题', '用户整理/数量关系/数学运算/错题', '用户整理/数量关系/工程效率/错题'] : ['真题练习/常识判断/法律/错题', '用户整理/常识判断/法律/错题'],
   requires_type_confirmation: false, source_revision: 'source-v1',
 });
 const detail = (row: (typeof rows)[number]) => ({
@@ -76,6 +76,38 @@ async function openCreate(page: Page) {
 
 test.beforeEach(async ({ request }) => { await resetHarness(request); });
 
+test('user-organized destination requires an explicit choice', async ({ page }) => {
+  await install(page);
+  const card = (await openCreate(page)).getByTestId('favorite-flashcard-card');
+  const target = card.getByLabel('目标牌组');
+  await expect(target).toHaveValue('真题练习/数量关系/数学运算/错题');
+  await card.getByTestId('favorite-flashcard-user-mode').click();
+  await expect(target).toHaveValue('');
+  await expect(card.getByRole('button', { name: '创建并同步', exact: true })).toBeDisabled();
+});
+
+test('changing the chosen directory requires a new confirmation', async ({ page }) => {
+  await install(page);
+  const card = (await openCreate(page)).getByTestId('favorite-flashcard-card');
+  await card.getByTestId('favorite-flashcard-user-mode').click();
+  await card.getByLabel('目标牌组').selectOption('用户整理/数量关系/数学运算/错题');
+  await card.getByLabel('确认写入所选目录').check();
+  await card.getByLabel('目标牌组').selectOption('用户整理/数量关系/工程效率/错题');
+  await expect(card.getByLabel('确认写入所选目录')).not.toBeChecked();
+  await expect(card.getByRole('button', { name: '创建并同步', exact: true })).toBeDisabled();
+});
+
+test('user-organized mode explains when no directories exist', async ({ page }) => {
+  await install(page);
+  await page.route('**/flashcard-preview', route => route.fulfill({ json: {
+    ...preview(), allowed_targets: ['真题练习/数量关系/数学运算/错题'],
+  } }));
+  const card = (await openCreate(page)).getByTestId('favorite-flashcard-card');
+  await card.getByTestId('favorite-flashcard-user-mode').click();
+  await expect(card.getByTestId('favorite-flashcard-empty-directories')).toBeVisible();
+  await expect(card.getByRole('button', { name: '创建并同步', exact: true })).toBeDisabled();
+});
+
 for (const width of [1180, 390]) {
   test(`favorite review creates a flashcard in a centered card and preserves filters at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
@@ -103,9 +135,9 @@ for (const width of [1180, 390]) {
     await card.getByLabel('背面').fill('先列方程，再代入。');
     await card.getByLabel('确认写入所选目录').check();
     const box = await card.boundingBox();
-    expect(box!.width).toBeLessThanOrEqual(576);
-    expect(box!.x).toBeGreaterThan(0);
-    expect(box!.x + box!.width).toBeLessThan(width);
+    expect(box!.width).toBeLessThanOrEqual(768);
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(width);
     let body: unknown;
     let csrf: string | undefined;
     await page.route(`**${root}/practice/questions/supported/flashcard`, async route => {
@@ -153,7 +185,7 @@ test('practice default and user-organized AI source remain independently selecta
   await expect(submit).toBeEnabled();
   await card.getByTestId('favorite-flashcard-user-mode').click();
   await expect(submit).toBeDisabled();
-  await expect(card.getByLabel('目标牌组')).toHaveValue('用户整理/数量关系/数学运算/错题');
+  await expect(card.getByLabel('目标牌组')).toHaveValue('');
   await card.getByLabel('目标牌组').selectOption('用户整理/数量关系/数学运算/错题');
   await card.getByLabel('确认写入所选目录').check();
   await expect(card.getByTestId('favorite-flashcard-path')).toContainText('flashcards/用户整理/数量关系/数学运算/错题/cards.md');

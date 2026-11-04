@@ -98,7 +98,31 @@ impl FavoriteFlashcardApplication {
         &self,
         question_id: &str,
     ) -> Result<FavoriteFlashcardPreview, FavoriteFlashcardError> {
-        Ok(make_preview(self.source.load(question_id).await?))
+        self.available_preview(self.source.load(question_id).await?)
+            .await
+    }
+
+    async fn available_preview(
+        &self,
+        question: FavoriteQuestion,
+    ) -> Result<FavoriteFlashcardPreview, FavoriteFlashcardError> {
+        let mut preview = make_preview(question);
+        if let Some(practice) = preview.eligibility.recommended_target.clone() {
+            let module = crate::domain::favorite_flashcard::resolve_web_target(&practice)
+                .ok_or(BankError::Invalid)?
+                .module;
+            let mut existing = self.writer.existing_user_targets(module).await?;
+            existing.retain(|path| {
+                crate::domain::favorite_flashcard::resolve_web_target(path).is_some_and(|target| {
+                    target.mode == FlashcardCreationMode::UserOrganized && target.module == module
+                })
+            });
+            existing.sort();
+            existing.dedup();
+            preview.eligibility.allowed_targets =
+                std::iter::once(practice).chain(existing).collect();
+        }
+        Ok(preview)
     }
 
     pub async fn create(
@@ -124,7 +148,7 @@ impl FavoriteFlashcardApplication {
         request: CreateFavoriteFlashcard,
     ) -> Result<FavoriteFlashcardResult, FavoriteFlashcardError> {
         let question = self.source.load(question_id).await?;
-        let preview = make_preview(question.clone());
+        let preview = self.available_preview(question.clone()).await?;
         validate_create_request(&preview, &request)?;
         let target = crate::domain::favorite_flashcard::resolve_web_target(&request.target_deck)
             .ok_or(BankError::Invalid)?;

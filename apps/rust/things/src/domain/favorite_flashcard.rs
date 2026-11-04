@@ -200,26 +200,33 @@ fn canonical_root(path: &str) -> String {
     path.to_owned()
 }
 
-/// Exact destinations accepted for new Web writes. Never resolve arbitrary paths.
+/// Parse a bounded destination. The application also checks observed directories.
 pub fn resolve_web_target(path: &str) -> Option<ResolvedTarget> {
     let parts = path.split('/').collect::<Vec<_>>();
-    let [source, root, category, "错题"] = parts.as_slice() else {
-        return None;
-    };
-    let module = module_root(root)?;
-    if !valid_category(category) {
+    if !(4..=9).contains(&parts.len()) || parts.last() != Some(&"错题") {
         return None;
     }
-    let mode = match *source {
-        "真题练习" => FlashcardCreationMode::Practice,
-        "用户整理" => FlashcardCreationMode::UserOrganized,
+    let module = module_root(parts[1])?;
+    let categories = &parts[2..parts.len() - 1];
+    if categories
+        .iter()
+        .any(|part| !valid_category(part) || *part == "错题")
+    {
+        return None;
+    }
+    let (mode, filename) = match parts[0] {
+        "真题练习" if categories.len() == 1 => (FlashcardCreationMode::Practice, "cards.md"),
+        "用户整理" => (FlashcardCreationMode::UserOrganized, "cards.md"),
         _ => return None,
     };
+    let mut tags = vec![parts[1].to_owned()];
+    tags.extend(categories.iter().map(|part| (*part).to_owned()));
+    tags.push("错题".into());
     Some(ResolvedTarget {
         module,
         target_deck: path.to_owned(),
-        relative_path: format!("{path}/cards.md"),
-        tags: vec![(*root).into(), (*category).into(), "错题".into()],
+        relative_path: format!("{path}/{filename}"),
+        tags,
         mode,
     })
 }
@@ -227,8 +234,10 @@ pub fn resolve_web_target(path: &str) -> Option<ResolvedTarget> {
 /// Resolve current source files plus known pre-migration AI decks for reading.
 /// Only resolve_web_target authorizes writes.
 pub fn resolve_target(path: &str) -> Option<ResolvedTarget> {
-    if let Some(target) = resolve_web_target(path) {
-        return Some(target);
+    if path.split('/').count() == 4 {
+        if let Some(target) = resolve_web_target(path) {
+            return Some(target);
+        }
     }
     // Migrated, nested method decks are registered AI source directories.
     if let Some(known) = AI_TARGETS.iter().find(|entry| entry.target_deck == path) {

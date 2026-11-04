@@ -28,6 +28,8 @@ pub struct FavoriteWriteResult {
 
 #[async_trait]
 pub trait FavoriteFlashcardWriterPort: Send + Sync {
+    async fn existing_user_targets(&self, module: &str) -> Result<Vec<String>, FlashcardError>;
+
     /// Checks the complete source for question identity before changing any files.
     async fn append(&self, card: NewFavoriteCard) -> Result<FavoriteWriteResult, FlashcardError>;
 }

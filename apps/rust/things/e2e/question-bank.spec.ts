@@ -527,6 +527,8 @@ test('any original-paper review can create a category flashcard without first fa
   await create.click();
   const dialog=page.getByTestId('question-bank-practice-flashcard-dialog');
   await expect(dialog).toBeVisible();
+  await expect(dialog).not.toHaveAttribute('role', 'dialog');
+  await expect(dialog).not.toHaveCSS('position', 'fixed');
   const card=dialog.getByTestId('favorite-flashcard-card');
   await expect(card.getByRole('button',{name:'创建并同步'})).toBeDisabled();
   await expect(card.getByTestId('favorite-flashcard-path')).toHaveText('将追加或创建：flashcards/真题练习/资料分析/比重/错题/cards.md');
@@ -536,4 +538,17 @@ test('any original-paper review can create a category flashcard without first fa
   await dialog.getByRole('button',{name:'返回复盘'}).first().click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第');
+
+  await create.click();
+  await card.getByTestId('favorite-flashcard-user-mode').click();
+  const target = card.getByLabel('目标牌组');
+  await expect(target).toHaveValue('');
+  await expect(target.locator('option[value="用户整理/资料分析/增长率/错题"]')).toHaveCount(1);
+  await expect(target.locator('option[value="用户整理/数量关系/工程效率/错题"]')).toHaveCount(0);
+  await target.selectOption('用户整理/资料分析/增长率/错题');
+  await expect(card.getByTestId('favorite-flashcard-path')).toHaveText('将追加或创建：flashcards/用户整理/资料分析/增长率/错题/cards.md');
+  await card.getByLabel('确认写入所选目录').check();
+  await card.getByRole('button',{name:'创建并同步'}).click();
+  await expect(card.getByRole('status')).toContainText('已创建并同步');
+  await expect(card.getByRole('status')).toContainText('用户整理/资料分析/增长率/错题/cards.md');
 });
