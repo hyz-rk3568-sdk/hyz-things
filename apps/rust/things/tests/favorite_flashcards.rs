@@ -212,7 +212,7 @@ fn setup() -> (
 }
 fn request() -> CreateFavoriteFlashcard {
     CreateFavoriteFlashcard {
-        target_deck: "数量/工程效率/错题".into(),
+        target_deck: "数量关系/AI出题/工程效率/错题".into(),
         creation_mode: Some(FlashcardCreationMode::AiGeneration),
         back: "".into(),
         source_revision: "v1".into(),
