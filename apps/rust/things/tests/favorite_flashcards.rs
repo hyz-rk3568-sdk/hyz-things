@@ -326,7 +326,7 @@ async fn server() -> (tokio::task::JoinHandle<()>, String, String, Arc<Fake>) {
 async fn favorite_flashcard_http_requires_admin_origin_csrf_and_typed_body() {
     let (task, base, cookie, fake) = server().await;
     let client = reqwest::Client::new();
-    let root = format!("{base}/api/v1/question-bank/practice/favorites/{QUESTION}");
+    let root = format!("{base}/api/v1/question-bank/practice/questions/{QUESTION}");
     let response = client
         .get(format!("{root}/flashcard-preview"))
         .send()
@@ -490,11 +490,8 @@ async fn favorite_content_loads_material_options_and_server_answer_without_submi
     assert!(!q.front.contains("秘密解析"));
     assert_eq!(q.correct_answer, vec!["B"]);
     fake.favorite.store(false, Ordering::SeqCst);
-    assert!(matches!(
-        FavoriteQuestionPort::load(&bank, QUESTION).await,
-        Err(BankError::NotFound)
-    ));
-    fake.favorite.store(true, Ordering::SeqCst);
+    // Cards can be created from any indexed question without first favoriting it.
+    assert!(FavoriteQuestionPort::load(&bank, QUESTION).await.is_ok());
     fake.stale.store(true, Ordering::SeqCst);
     assert!(matches!(
         FavoriteQuestionPort::load(&bank, QUESTION).await,
@@ -539,7 +536,7 @@ async fn coarse_category_requires_explicit_supported_type_confirmation() {
     fake.coarse_category.store(true, Ordering::SeqCst);
     let preview = app.preview(QUESTION).await.unwrap();
     assert!(preview.eligibility.requires_type_confirmation);
-    assert_eq!(preview.eligibility.allowed_targets.len(), 11);
+    assert_eq!(preview.eligibility.allowed_targets.len(), 12);
     assert!(app.create(QUESTION, request()).await.is_err());
     assert!(fake.written.lock().unwrap().is_empty());
     let mut confirmed = request();
