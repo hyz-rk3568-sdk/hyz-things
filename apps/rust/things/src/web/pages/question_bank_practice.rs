@@ -1,5 +1,6 @@
 //! Browse original papers and categories; share one workspace for practice and review.
 use super::favorite_flashcard::{FavoriteFlashcardPanel, FavoritePreview};
+use super::favorite_flashcard::{FavoriteFlashcardPanel, FavoritePreview};
 use super::material_scroll::{scroll_edges, MaterialScrollButton, ScrollEdges};
 use super::*;
 use hyz_things::domain::question_bank::{
@@ -831,6 +832,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let workspace = use_state(|| None::<PracticeWorkspace>);
     let review = use_state(|| None::<PracticeReview>);
     let ai_tab = use_state(|| false);
+    let flashcard_preview = use_state(|| None::<FavoritePreview>);
+    let flashcard_error = use_state(|| None::<String>);
+    let flashcard_retry = use_state(|| 0u32);
+    let creating_flashcard = use_state(|| false);
     let index = use_state(|| 0usize);
     let multi_select = use_state(|| false);
     let current_favorite_source = workspace
@@ -1069,6 +1074,42 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 move || active.set(false)
             },
         );
+    }
+    {
+        let preview = flashcard_preview.clone();
+        let error = flashcard_error.clone();
+        let selected = workspace.as_ref().as_ref().and_then(|w| w.questions.get(*index))
+            .map(|question| question.item.question_id.clone());
+        let completed = workspace.as_ref().as_ref().is_some_and(|w| w.session.status == "completed")
+            && review.is_some();
+        use_effect_with((selected, completed, *flashcard_retry), move |(id, completed, _)| {
+            let active = Rc::new(Cell::new(true));
+            let guard = active.clone();
+            preview.set(None);
+            error.set(None);
+            if *completed {
+                if let Some(id) = id.clone() {
+                    spawn_local(async move {
+                        let response = fetch_json::<FavoritePreview>(
+                            &format!("{ROOT}/practice/questions/{id}/flashcard-preview"),
+                            "Flashcard 目标目录",
+                        ).await;
+                        if guard.get() {
+                            match response {
+                                Ok(value) => preview.set(Some(value)),
+                                Err(message) => error.set(Some(message)),
+                            }
+                        }
+                    });
+                }
+            }
+            move || active.set(false)
+        });
+    }
+    {
+        let creating = creating_flashcard.clone();
+        use_effect_with((*index, workspace.as_ref().as_ref().map(|w| w.session.id.clone())),
+            move |_| { creating.set(false); || () });
     }
     let invoke = {
         let csrf = props.csrf.clone();
@@ -1690,6 +1731,27 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     </button>
                                 }
                             }
+                            if !item.content_changed {
+                                if let Some(value) = &*flashcard_preview {
+                                    if value.eligible && !value.allowed_targets.is_empty() {
+                                        <button type="button" class="btn btn-primary btn-sm"
+                                            data-testid="question-bank-practice-create-flashcard"
+                                            onclick={Callback::from({let creating=creating_flashcard.clone();move |_|creating.set(true)})}>
+                                            {"创建 Flashcard"}
+                                        </button>
+                                    } else {
+                                        <p class="text-xs opacity-60" data-testid="question-bank-practice-flashcard-unavailable">
+                                            {value.reason.as_deref().unwrap_or("当前题目无法创建 Flashcard")}
+                                        </p>
+                                    }
+                                } else if let Some(message) = &*flashcard_error {
+                                    <p class="text-sm text-error" role="alert">{message.clone()}</p>
+                                    <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-practice-flashcard-retry"
+                                        onclick={Callback::from({let retry=flashcard_retry.clone();move |_|retry.set(*retry+1)})}>
+                                        {"重试加载 Flashcard"}
+                                    </button>
+                                }
+                            }
                         }
                     }
                     </div>
@@ -1815,7 +1877,16 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             </div>
                         }
                         <div class="relative min-h-0 flex-1 overflow-hidden">
-                            if paused {
+                            if *creating_flashcard {
+                                if let Some(value) = &*flashcard_preview {
+                                    <FavoriteFlashcardPanel
+                                        key={item.item.question_id.clone()}
+                                        question_id={item.item.question_id.clone()}
+                                        preview={value.clone()}
+                                        csrf={props.csrf.clone()}
+                                        on_close={Callback::from({let creating=creating_flashcard.clone(); move |_|creating.set(false)})}/>
+                                }
+                            } else if paused {
                                 <div class="flex h-full items-center justify-center rounded-box bg-base-100" data-testid="question-bank-practice-paused">
                                     <div class="text-center space-y-4">
                                         <h2 class="text-xl font-bold">{"训练已暂停"}</h2>
