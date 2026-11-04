@@ -790,6 +790,16 @@ fn app_with_assets(
             on(MethodFilter::GET, question_bank::favorite_get)
                 .on(MethodFilter::POST, question_bank::favorite_set),
         )
+        // Shared by every indexed original-question review, not only favorites.
+        .route(
+            "/api/v1/question-bank/practice/questions/{id}/flashcard-preview",
+            on(MethodFilter::GET, favorite_flashcards::preview),
+        )
+        .route(
+            "/api/v1/question-bank/practice/questions/{id}/flashcard",
+            on(MethodFilter::POST, favorite_flashcards::create)
+                .layer(DefaultBodyLimit::max(40 * 1024)),
+        )
         .route(
             "/api/v1/question-bank/practice/favorites/{id}/flashcard-preview",
             on(MethodFilter::GET, favorite_flashcards::preview),
