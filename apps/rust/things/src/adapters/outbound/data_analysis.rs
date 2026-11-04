@@ -468,6 +468,10 @@ fn card_from_db(
     // The canonical display path is reconstructed from a verified deck, not
     // trusted from an arbitrary source_file path.
     let card_path = match (kind, wrong_source) {
+        (SourceKind::Wrong, Some((_, true)))
+            if deck.starts_with("资料分析/AI出题/") => {
+                format!("flashcards/{deck}/{leaf}")
+            }
         (SourceKind::Wrong, Some((_, true))) => {
             format!("flashcards/资料/{category}/错题/{leaf}")
         }
@@ -1940,6 +1944,8 @@ fn wrong_question_source(deck: &str) -> Option<(&str, bool)> {
     let (category, skill_precedes_wrong_folder) = match prefix {
         [] | ["资料"] | ["flashcards", "资料"] => (*parts.get(index + 1)?, false),
         ["资料", category] | ["flashcards", "资料", category] => (*category, true),
+        ["资料分析", "AI出题", category]
+        | ["flashcards", "资料分析", "AI出题", category] => (*category, true),
         _ => return None,
     };
     valid_wrong_category(category).then_some((category, skill_precedes_wrong_folder))
