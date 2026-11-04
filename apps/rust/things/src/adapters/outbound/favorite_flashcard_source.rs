@@ -100,8 +100,8 @@ impl Default for FilesystemFavoriteFlashcardWriter {
     }
 }
 impl FilesystemFavoriteFlashcardWriter {
-    #[cfg(test)]
-    fn with_observer(root: PathBuf, observer: Arc<dyn FavoriteMountObservationPort>) -> Self {
+    #[cfg(any(test, feature = "e2e"))]
+    pub fn with_observer(root: PathBuf, observer: Arc<dyn FavoriteMountObservationPort>) -> Self {
         Self { root, observer }
     }
 

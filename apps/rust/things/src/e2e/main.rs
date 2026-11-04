@@ -9,10 +9,11 @@ use axum::{
 use hyz_contract::router::{ControlOperation, ControlProxyMode, ControlResult};
 use hyz_things::{
     adapters::inbound::http::{
-        app_with_loopback_runtime_frontend_and_flashcards, with_question_bank,
-        with_question_bank_ai, with_training_time,
+        app_with_loopback_runtime_frontend_and_flashcards, with_favorite_flashcards,
+        with_question_bank, with_question_bank_ai, with_training_time,
     },
     adapters::outbound::{
+        favorite_flashcard_source::FilesystemFavoriteFlashcardWriter,
         flashcard_source::FilesystemFlashcardSource, flashcard_sqlite::SqliteFlashcardRepository,
         logic_judgment::LogicJudgmentService, question_bank_ai::QuestionBankAiService,
         question_bank_sqlite::SqliteQuestionBankRepository, training_time::TrainingTimeService,
@@ -20,7 +21,9 @@ use hyz_things::{
     application::{
         admin::AdminApplication,
         camera::{CameraApplication, CameraControlPort, CameraError, CameraSession},
-        flashcards::FlashcardApplication,
+        favorite_flashcard_ports::{FavoriteMountIdentity, FavoriteMountObservationPort},
+        favorite_flashcards::FavoriteFlashcardApplication,
+        flashcards::{FlashcardApplication, FlashcardError},
         logic_judgment::LogicJudgmentPort,
         ports::{
             AdminCredentialStorePort, AdminRandomPort, ClockPort, InstalledAppsPort, PlatformError,
@@ -71,7 +74,7 @@ use std::{
     fs,
     io::Write,
     net::{Ipv4Addr, SocketAddr},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex, MutexGuard,
@@ -1328,6 +1331,17 @@ async fn seed_training_statistics(pool: &sqlx::SqlitePool) -> Result<(), Box<dyn
     Ok(())
 }
 
+struct FixtureMount;
+
+impl FavoriteMountObservationPort for FixtureMount {
+    fn observe(&self, _root: &Path) -> Result<FavoriteMountIdentity, FlashcardError> {
+        Ok(FavoriteMountIdentity {
+            mount_id: "e2e-fixture".into(),
+            source: "fixture/hyz-cards".into(),
+        })
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let config = Config::parse().map_err(std::io::Error::other)?;
@@ -1409,7 +1423,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         web_origin.clone(),
         &frontend_tar,
         Some(backend.clone()),
-        Some(flashcards),
+        Some(flashcards.clone()),
         Some(flashcard_source),
         logic_judgment,
     )?;
@@ -1434,7 +1448,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
         bank_repository.pool().clone(),
         None,
     ));
+    let favorite_flashcards = Arc::new(FavoriteFlashcardApplication::new(
+        bank.clone(),
+        flashcards,
+        Arc::new(FilesystemFavoriteFlashcardWriter::with_observer(
+            cards_root,
+            Arc::new(FixtureMount),
+        )),
+    ));
     let web_app = with_question_bank(web_app, Some(bank));
+    let web_app = with_favorite_flashcards(web_app, Some(favorite_flashcards));
     let web_app = with_question_bank_ai(web_app, Some(ai));
     let web_app = with_training_time(web_app, Some(training_time));
     let harness_app = harness_control_app(backend, admin, camera);
