@@ -178,7 +178,9 @@ impl FilesystemFavoriteFlashcardWriter {
             "{newline}## Card{newline}\
              <!-- hyz-source-question-id: {} -->{newline}\
              <!-- hyz-correct-answer: {} -->{newline}\
-             ### Front{newline}{}{newline}### Back{newline}{}{newline}",
+             ### Front{newline}{newline}{}{newline}{newline}\
+             ### Back{newline}{newline}{}{newline}{newline}\
+             ---{newline}",
             card.question_id,
             serde_json::to_string(&card.correct_answer).map_err(|e| invalid(e.to_string()))?,
             normalize_newlines(&card.front, newline),
@@ -954,6 +956,8 @@ mod tests {
         let result = writer.append(card()).await.unwrap();
         let text = fs::read_to_string(fixture.root.join(result.relative_path)).unwrap();
         assert!(text.starts_with(original));
+        assert!(text.ends_with("---\n"));
+        assert_eq!(text.matches("\n---\n").count(), 2);
         let parsed = parse_markdown_text(&text, target.relative_path).unwrap();
         assert_eq!(parsed.cards[0].back_markdown, "Old back");
     }
@@ -1086,6 +1090,9 @@ mod tests {
             text.contains("<!-- hyz-source-question-id: 0194f4e0-1234-7000-8000-000000000001 -->")
         );
         assert!(text.contains("<!-- hyz-correct-answer: [\"B\"] -->\n### Front"));
+        assert!(text.contains("  - 错题\n"));
+        assert!(text.contains("### Front\n\nQuestion\n\n### Back\n\n-\n\n---\n"));
+        assert!(text.ends_with("---\n"));
         assert!(!text.contains("hyz-card-id:"));
     }
 }
