@@ -347,10 +347,10 @@ test("flashcard review selects card directories as three nested levels instead o
 
   const level1 = page.getByTestId("practice-deck-level1");
   await expect(level1).toHaveCount(2);
-  await level1.filter({ hasText: "资料分析" }).click();
+  const dataCard = page.getByTestId("practice-deck-group").filter({ hasText: "资料分析" });
+  await dataCard.getByTestId("practice-deck-level1").click();
   await expect(page.getByTestId("practice-candidates")).toContainText("共 1 张");
-  await expect(page.getByTestId("practice-deck-level2-empty")).toBeVisible();
-  await expect(page.getByTestId("practice-deck-level2")).toHaveCount(0);
+  await expect(dataCard.getByTestId("practice-deck-level2-empty")).toBeVisible();
 
   await page.getByTestId("practice-deck-all").click();
   await expect(page.getByTestId("practice-candidates")).toContainText("共 3 张");

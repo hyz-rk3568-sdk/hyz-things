@@ -804,18 +804,6 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
     } else {
         let totals = deck_totals(&decks);
         let level1 = deck_children(&totals, "");
-        let level2 = if first.is_empty() {
-            Vec::new()
-        } else {
-            deck_children(&totals, &first)
-        };
-        let level3 = if second.is_empty() {
-            Vec::new()
-        } else {
-            deck_children(&totals, &second)
-        };
-        let level2_empty = level2.is_empty();
-        let level3_empty = level3.is_empty();
         let total_cards = decks.iter().map(|deck| deck.card_count).sum::<u32>();
         let select_all = {
             let first = first.clone();
@@ -861,92 +849,99 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
                     <h2 class="font-bold">{"闪卡回顾"}</h2>
                     <p class="mt-2 text-sm text-base-content/65">{"按卡片目录逐级选择；读取 Front，手写后看 Back，自评不改变记忆复习计划。"}</p>
                     <div class="mt-4 grid gap-3">
-                        <div class="grid gap-3" data-testid="practice-deck-tree">
-                            <div class="grid gap-2">
-                                <span class="text-sm font-semibold">{"一级 · 来源"}</span>
-                                <div class="flex flex-wrap gap-2" role="group" aria-label="一级来源">
-                                    <button type="button" class="question-bank-category" data-testid="practice-deck-all"
-                                        aria-pressed={first.is_empty().to_string()} onclick={select_all}>
-                                        <span>{"全部闪卡"}</span><small>{total_cards.to_string()}</small>
-                                    </button>
-                                    {for level1.into_iter().map(|node| {
-                                        let first = first.clone();
-                                        let second = second.clone();
-                                        let third = third.clone();
-                                        let path = node.path.clone();
-                                        let selected = *first == node.path;
-                                        html! {
-                                            <button type="button" class="question-bank-category" data-testid="practice-deck-level1"
-                                                aria-pressed={selected.to_string()} onclick={Callback::from(move |_| {
-                                                    first.set(path.clone());
-                                                    second.set(String::new());
-                                                    third.set(String::new());
-                                                })}>
-                                                <span>{node.name.clone()}</span><small>{node.count.to_string()}</small>
-                                            </button>
-                                        }
-                                    })}
-                                </div>
-                            </div>
-                            if !first.is_empty() {
-                                <div class="grid gap-2">
-                                    <span class="text-sm font-semibold">{"二级 · 模块"}</span>
-                                    if level2_empty {
-                                        <p class="text-sm text-base-content/60" data-testid="practice-deck-level2-empty">{"该来源没有下级模块，已选中整个来源。"}</p>
-                                    } else {
-                                        <div class="flex flex-wrap gap-2" role="group" aria-label="二级模块">
-                                            {for level2.into_iter().map(|node| {
-                                                let second = second.clone();
-                                                let third = third.clone();
-                                                let path = node.path.clone();
-                                                let selected = *second == node.path;
-                                                html! {
-                                                    <button type="button" class="question-bank-category" data-testid="practice-deck-level2"
-                                                        aria-pressed={selected.to_string()} onclick={Callback::from(move |_| {
-                                                            second.set(path.clone());
+                        <div class="grid gap-2" data-testid="practice-deck-tree">
+                            <button type="button" class="question-bank-category justify-self-start" data-testid="practice-deck-all"
+                                aria-pressed={first.is_empty().to_string()} onclick={select_all}>
+                                <span>{"全部闪卡"}</span><small>{total_cards.to_string()}</small>
+                            </button>
+                            <div class="question-bank-module-grid">
+                                {for level1.into_iter().map(|node| {
+                                    let first = first.clone();
+                                    let second = second.clone();
+                                    let third = third.clone();
+                                    let path = node.path.clone();
+                                    let selected = *first == node.path;
+                                    let modules = node.children;
+                                    html! {
+                                        <article class="question-bank-module-card" data-selected={selected.to_string()} data-testid="practice-deck-group">
+                                            <div class="question-bank-module-heading">
+                                                <button type="button" data-testid="practice-deck-level1" aria-pressed={selected.to_string()}
+                                                    onclick={Callback::from({
+                                                        let first = first.clone();
+                                                        let second = second.clone();
+                                                        let third = third.clone();
+                                                        move |_| {
+                                                            first.set(path.clone());
+                                                            second.set(String::new());
                                                             third.set(String::new());
-                                                        })}>
-                                                        <span>{node.name.clone()}</span><small>{node.count.to_string()}</small>
-                                                    </button>
-                                                }
-                                            })}
-                                        </div>
+                                                        }
+                                                    })}>
+                                                    <strong>{node.name.clone()}</strong>
+                                                    <span>{format!("{} 张", node.count)}</span>
+                                                </button>
+                                            </div>
+                                            if modules.is_empty() {
+                                                <p class="px-4 pb-3 text-xs text-base-content/50" data-testid="practice-deck-level2-empty">{"该来源没有下级模块，已选中整个来源。"}</p>
+                                            } else {
+                                                <div class="grid gap-2 p-2">
+                                                    {for modules.into_iter().map(|module| {
+                                                        let second = second.clone();
+                                                        let third = third.clone();
+                                                        let path = module.path.clone();
+                                                        let selected = *second == module.path;
+                                                        let categories = module.children;
+                                                        html! {
+                                                            <div class="rounded-lg border border-base-content/10 bg-base-200/40 p-2" data-selected={selected.to_string()}>
+                                                                <button type="button" class="flex w-full items-center justify-between gap-2 px-1 py-1 text-left text-sm font-medium"
+                                                                    data-testid="practice-deck-level2" aria-pressed={selected.to_string()}
+                                                                    onclick={Callback::from({
+                                                                        let second = second.clone();
+                                                                        let third = third.clone();
+                                                                        move |_| {
+                                                                            second.set(path.clone());
+                                                                            third.set(String::new());
+                                                                        }
+                                                                    })}>
+                                                                    <span class="truncate">{module.name.clone()}</span>
+                                                                    <small class="shrink-0 text-xs opacity-60">{format!("{} 张", module.count)}</small>
+                                                                </button>
+                                                                if categories.is_empty() {
+                                                                    <p class="px-1 pt-1 text-xs text-base-content/50" data-testid="practice-deck-leaf">{"无更细分类"}</p>
+                                                                } else {
+                                                                    <div class="mt-1.5 flex flex-wrap gap-1.5" role="group" aria-label={format!("{}分类", module.name)}>
+                                                                        <button type="button" class="question-bank-category" data-testid="practice-deck-level3-all"
+                                                                            aria-pressed={third.is_empty().to_string()} onclick={Callback::from({
+                                                                                let third = third.clone();
+                                                                                move |_| third.set(String::new())
+                                                                            })}>
+                                                                            <span>{"全部"}</span>
+                                                                        </button>
+                                                                        {for categories.into_iter().map(|category| {
+                                                                            let third = third.clone();
+                                                                            let path = category.path.clone();
+                                                                            let selected = *third == category.path;
+                                                                            let nested = !category.children.is_empty();
+                                                                            html! {
+                                                                                <button type="button" class="question-bank-category" data-testid="practice-deck-level3"
+                                                                                    aria-pressed={selected.to_string()} onclick={Callback::from(move |_| {
+                                                                                        third.set(path.clone());
+                                                                                    })}>
+                                                                                    <span>{category.name.clone()}</span><small>{category.count.to_string()}</small>
+                                                                                    if nested { <small>{"含下级"}</small> }
+                                                                                </button>
+                                                                            }
+                                                                        })}
+                                                                    </div>
+                                                                }
+                                                            </div>
+                                                        }
+                                                    })}
+                                                </div>
+                                            }
+                                        </article>
                                     }
-                                </div>
-                            }
-                            if !second.is_empty() {
-                                <div class="grid gap-2">
-                                    <span class="text-sm font-semibold">{"三级 · 分类"}</span>
-                                    if level3_empty {
-                                        <p class="text-sm text-base-content/60" data-testid="practice-deck-leaf">{"该模块没有更细分类，已选中整个模块。"}</p>
-                                    } else {
-                                        <div class="flex flex-wrap gap-2" role="group" aria-label="三级分类">
-                                            <button type="button" class="question-bank-category" data-testid="practice-deck-level3-all"
-                                                aria-pressed={third.is_empty().to_string()} onclick={Callback::from({
-                                                    let third = third.clone();
-                                                    move |_| third.set(String::new())
-                                                })}>
-                                                <span>{"全部"}</span>
-                                            </button>
-                                            {for level3.into_iter().map(|node| {
-                                                let third = third.clone();
-                                                let path = node.path.clone();
-                                                let selected = *third == node.path;
-                                                let nested = !node.children.is_empty();
-                                                html! {
-                                                    <button type="button" class="question-bank-category" data-testid="practice-deck-level3"
-                                                        aria-pressed={selected.to_string()} onclick={Callback::from(move |_| {
-                                                            third.set(path.clone());
-                                                        })}>
-                                                        <span>{node.name.clone()}</span><small>{node.count.to_string()}</small>
-                                                        if nested { <small>{"含下级"}</small> }
-                                                    </button>
-                                                }
-                                            })}
-                                        </div>
-                                    }
-                                </div>
-                            }
+                                })}
+                            </div>
                         </div>
                         <div class="training-count-row mt-3"><span class="font-semibold">{"本轮题数"}</span><TrainingQuestionCount value={count} unit="张" test_id="practice-count" on_change={{let count=requested_count.clone();Callback::from(move |value|count.set(value))}} /></div>
                     </div>

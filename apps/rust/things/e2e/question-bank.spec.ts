@@ -482,6 +482,28 @@ test('a delayed AI lookup cannot switch a different question', async ({page}) =>
   await expect(page.getByTestId('question-bank-original-tab')).toHaveAttribute('aria-pressed','true');
 });
 
+test('completed practice header actions stay inside a phone viewport', async ({page}) => {
+  await page.setViewportSize({width:390,height:844});
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await chooseFixturePaper(page);
+  await page.getByTestId('question-bank-practice-start').click();
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button',{name:'确认交卷'}).click();
+  const records = page.getByTestId('question-bank-practice-records');
+  await expect(records).toBeVisible();
+  const repeat = page.getByTestId('question-bank-practice-repeat');
+  await expect(repeat).toBeVisible();
+  for (const control of [records, repeat]) {
+    const box = await control.boundingBox();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+  }
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+});
+
 test('saved AI analysis opens by default and remains scoped to its question', async ({page}) => {
   let savedQuestion = '';
   await page.route('**/api/v1/question-bank/practice/sessions/*/questions/*/ai', async route => {

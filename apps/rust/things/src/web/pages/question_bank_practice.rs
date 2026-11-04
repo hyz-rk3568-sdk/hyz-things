@@ -1809,7 +1809,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             if !*history_forced {
                 return html! {
                     <section class={WORKSPACE} data-testid="question-bank-practice-workspace">
-                        <header class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2">
+                        <header class="flex shrink-0 flex-col gap-1 border-b border-base-content/10 pb-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-2">
                             <div class="flex min-w-0 items-center gap-3">
                                 <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Exit)})}>
                                     {if completed {"← 返回训练"} else {"← 暂停并退出"}}
@@ -1819,7 +1819,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     <span class="block truncate text-[11px] text-base-content/50" data-testid="question-bank-practice-scope">{subtitle.clone()}</span>
                                 </div>
                             </div>
-                            <div class="flex shrink-0 items-center gap-2">
+                            <div class="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
                                 <span class="hidden text-xs text-base-content/55 sm:inline">{"学习"}</span>
                                 <StudyTimeInline />
                                 <button type="button" class="btn btn-ghost px-2 font-mono text-xl font-semibold tabular-nums"
@@ -1833,7 +1833,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     <button class="btn btn-sm btn-outline btn-error" data-testid="question-bank-practice-submit"
                                         disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Submit)})}>{"交卷"}</button>
                                 } else if let Some(score) = &current.session.score {
-                                    <span class="flex shrink-0 items-center gap-2" data-testid="question-bank-practice-score">
+                                    <span class="flex min-w-0 flex-wrap items-center gap-2" data-testid="question-bank-practice-score">
                                         <span class="font-semibold">{format!("{} / {} 正确",score.correct,score.total)}</span>
                                         <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-practice-records"
                                             onclick={Callback::from({
