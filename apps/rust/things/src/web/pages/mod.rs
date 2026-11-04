@@ -2,6 +2,7 @@ use super::*;
 
 mod calculation;
 mod camera;
+mod collection_review;
 mod comprehensive;
 mod deployments;
 mod devices;
@@ -32,6 +33,7 @@ mod training_time;
 
 pub(crate) use calculation::*;
 pub(crate) use camera::*;
+pub(crate) use collection_review::*;
 pub(crate) use comprehensive::*;
 pub(crate) use deployments::*;
 pub(crate) use devices::*;

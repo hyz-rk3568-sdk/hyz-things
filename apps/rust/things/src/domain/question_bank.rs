@@ -215,6 +215,17 @@ pub struct PracticeWorkspace {
     pub questions: Vec<PracticeQuestion>,
 }
 
+/// Read-only review of one saved question. It never depends on a practice
+/// session, so wrong and favorite items can be reviewed without re-answering.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PracticeQuestionDetail {
+    pub item: PracticeBrowseItem,
+    pub question: QuestionView,
+    pub materials: Vec<MaterialView>,
+    pub correct_answer: Vec<String>,
+    pub explanation: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReviewQuestion {
     pub question: PracticeQuestion,

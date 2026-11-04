@@ -1,5 +1,4 @@
 //! Browse original papers and categories; share one workspace for practice and review.
-use super::favorite_flashcard::FavoriteQuestionDetail;
 use super::material_scroll::{scroll_edges, MaterialScrollButton, ScrollEdges};
 use super::*;
 use hyz_things::domain::question_bank::{
@@ -222,6 +221,13 @@ enum Action {
 }
 
 #[derive(Clone, PartialEq)]
+struct CollectionReviewTarget {
+    scope: PracticeMode,
+    items: Vec<PracticeBrowseItem>,
+    index: usize,
+}
+
+#[derive(Clone, PartialEq)]
 struct PendingAnswer {
     session_id: String,
     question_id: String,
@@ -397,7 +403,7 @@ async fn load_workspace(id: &str) -> Result<PracticeWorkspace, String> {
     fetch_json(&format!("{ROOT}/practice/sessions/{id}"), "真题练习").await
 }
 
-fn answer_options(markdown: &str) -> Vec<(String, String)> {
+pub(super) fn answer_options(markdown: &str) -> Vec<(String, String)> {
     markdown
         .lines()
         .filter_map(|line| {
@@ -763,7 +769,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let settings_open = use_state(|| false);
     let custom_years = use_state(|| false);
     let collection = use_state(|| None::<PracticeMode>);
-    let favorite_detail = use_state(|| None::<PracticeBrowseItem>);
+    let collection_review = use_state(|| None::<CollectionReviewTarget>);
 
     let mode = use_state(|| props.entry_mode.clone());
     let workspace = use_state(|| None::<PracticeWorkspace>);
@@ -1889,6 +1895,12 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     || item.category.as_deref() == Some(selected_category.as_str()))
         })
         .collect::<Vec<_>>();
+    let review_scope = (*collection).clone().unwrap_or(PracticeMode::Wrong);
+    let review_items = collection_filtered
+        .iter()
+        .take(100)
+        .map(|item| (*item).clone())
+        .collect::<Vec<_>>();
     let filter_labels = module_filter_labels(&module_filters);
     let selection_scope = [selected_module.as_str(), selected_category.as_str()]
         .into_iter()
@@ -2252,7 +2264,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 <p class="p-4 text-sm text-base-content/60">{"这个分类还没有题目。"}</p>
                             } else {
                                 <div class="question-bank-results-list" data-testid="question-bank-browse-list">
-                                    {for collection_filtered.iter().take(100).map(|item| {
+                                    {for collection_filtered.iter().take(100).enumerate().map(|(position,item)| {
                                         let content = html! {
                                             <>
                                                 <div class="min-w-0">
@@ -2262,17 +2274,18 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                                 <span class="question-bank-result-year">{item.year}</span>
                                             </>
                                         };
-                                        if *collection == Some(PracticeMode::Favorite) {
-                                            html! {
-                                                <button type="button" class="question-bank-result-row w-full text-left"
-                                                    data-testid="question-bank-collection-item" title={item.paper_title.clone()}
-                                                    onclick={Callback::from({
-                                                        let favorite_detail=favorite_detail.clone();let item=(*item).clone();
-                                                        move |_|favorite_detail.set(Some(item.clone()))
-                                                    })}>{content}</button>
-                                            }
-                                        } else {
-                                            html! {<div class="question-bank-result-row" data-testid="question-bank-collection-item" title={item.paper_title.clone()}>{content}</div>}
+                                        let on_open = {
+                                            let collection_review=collection_review.clone();
+                                            let items=review_items.clone();
+                                            let scope=review_scope.clone();
+                                            move |_| collection_review.set(Some(CollectionReviewTarget{
+                                                scope:scope.clone(),items:items.clone(),index:position
+                                            }))
+                                        };
+                                        html! {
+                                            <button type="button" class="question-bank-result-row w-full text-left"
+                                                data-testid="question-bank-collection-item" title={item.paper_title.clone()}
+                                                onclick={Callback::from(on_open)}>{content}</button>
                                         }
                                     })}
                                 </div>
@@ -2282,9 +2295,13 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     </div>
                 </section>
             }
-            if let Some(item) = &*favorite_detail {
-                <FavoriteQuestionDetail key={item.question_id.clone()} item={item.clone()} csrf={props.csrf.clone()}
-                    on_back={Callback::from({let favorite_detail=favorite_detail.clone();move |_|favorite_detail.set(None)})}/>
+            if let Some(target) = &*collection_review {
+                <CollectionQuestionReview items={target.items.clone()} initial_index={target.index}
+                    scope={target.scope.clone()} csrf={props.csrf.clone()}
+                    on_back={Callback::from({
+                        let collection_review=collection_review.clone();
+                        move |_|collection_review.set(None)
+                    })}/>
             }
             if *settings_open && *mode == PracticeMode::Module {
                 <section class="training-workspace fixed inset-0 z-[85] flex h-dvh flex-col overflow-hidden bg-base-200"

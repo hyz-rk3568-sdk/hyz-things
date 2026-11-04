@@ -98,11 +98,11 @@ pub(super) fn training_statistics() -> Html {
                     {for [("今日",hours(today)),("最近7天",hours(week)),("最近35天",hours(total)),("连续学习",format!("{streak} 天"))]
                         .into_iter().map(|(label,value)|html!{<div class="rounded-xl bg-base-100 p-3"><p class="text-xs opacity-60">{label}</p><strong class="text-lg">{value}</strong></div>})}
                 </div>
-                <section class="rounded-xl bg-base-100 p-4 space-y-3" aria-label="刷题量统计">
+                <section class="space-y-2" aria-label="刷题量统计">
                     <h3 class="font-semibold">{"刷题量"}</h3>
                     <div class="grid grid-cols-3 gap-3">
                         {for [("今日",today_count,"study-practice-today"),("最近7天",week_count,"study-practice-week"),("最近35天",total_count,"study-practice-total")]
-                            .into_iter().map(|(label,count,test_id)|html!{<div><p class="text-xs opacity-60">{label}</p><strong class="text-lg" data-testid={test_id}>{format!("{count} 题")}</strong></div>})}
+                            .into_iter().map(|(label,count,test_id)|html!{<div class="rounded-xl bg-base-100 p-3"><p class="text-xs opacity-60">{label}</p><strong class="text-lg" data-testid={test_id}>{format!("{count} 题")}</strong></div>})}
                     </div>
                     <p class="text-xs opacity-60">{"按北京时间交卷日期累计已答题数，重做交卷继续计入。速算和错题 Flashcard 复练仅统计学习时长。"}</p>
                 </section>
