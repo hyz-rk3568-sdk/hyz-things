@@ -351,8 +351,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                             <p class="text-sm text-base-content/60">{current.question.topics.join("、")}</p>
                         </section>
                     }
-                    {
-                        if let Some(value) = &*preview {
+                    if let Some(value) = &*preview {
                             if can_create {
                                 <button type="button" class="btn btn-primary" data-testid="collection-review-create-flashcard"
                                     onclick={Callback::from({let creating=creating.clone();move |_|creating.set(true)})}>
@@ -372,7 +371,6 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                         } else {
                             <p class="text-xs opacity-60" role="status">{"正在检查闪卡资格…"}</p>
                         }
-                    }
                 </div>
             </section>
         };
