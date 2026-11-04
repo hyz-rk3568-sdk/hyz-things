@@ -16,6 +16,10 @@ pub fn with_favorite_flashcards(
     }
 }
 
+#[expect(
+    clippy::result_large_err,
+    reason = "Axum response errors are returned directly"
+)]
 fn service(service: Service) -> Result<Arc<FavoriteFlashcardApplication>, Response> {
     service.map(|Extension(app)| app).ok_or_else(|| {
         error_json(

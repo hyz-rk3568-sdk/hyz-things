@@ -313,6 +313,10 @@ impl QuestionBankAiService {
         self.state(session_id, question_id).await
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "background task state is passed explicitly"
+    )]
     async fn generate(
         self: Arc<Self>,
         session_id: String,

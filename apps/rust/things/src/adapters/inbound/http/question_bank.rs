@@ -24,6 +24,10 @@ pub fn with_question_bank_ai(router: Router, ai: Option<Arc<QuestionBankAiServic
 }
 type AiService = Option<Extension<Arc<QuestionBankAiService>>>;
 
+#[expect(
+    clippy::result_large_err,
+    reason = "Axum response errors are returned directly"
+)]
 fn ai_service(service: AiService) -> Result<Arc<QuestionBankAiService>, Response> {
     service.map(|Extension(service)| service).ok_or_else(|| {
         error_json(
