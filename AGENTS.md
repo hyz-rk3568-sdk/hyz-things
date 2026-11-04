@@ -136,6 +136,32 @@ composition root in its own Cargo package:
 - 先运行静态检查再构建。除非用户明确要求，不启动 Rust、前端、SDK、
   Buildroot、kernel、rootfs 或 firmware 构建。
 
+### E2E 构建产物与服务复用（本地）
+
+- 相关 Playwright spec 优先放在同一条 `playwright test <spec...>` 命令中运行；一次 invocation 只构建 bundle、启动 harness 一次，所有 spec 共用该服务。不要为同一批 spec 逐个启动 runner。
+- 需要跨多轮调试复用时，先构建一次 verified frontend bundle：
+  ```sh
+  PATH="$(dirname "$(command -v node)"):$PATH" bash apps/rust/things/tools/build-frontend-bundle.sh
+  ```
+- 在一个终端启动固定端口的 harness，并校验 bundle 缓存：
+  ```sh
+  cd apps/rust/things
+  HYZ_THINGS_E2E_WEB_PORT=3190 \
+  HYZ_THINGS_E2E_CONTROL_PORT=3191 \
+  HYZ_THINGS_E2E_REUSE_FRONTEND_BUNDLE=1 \
+  bash tools/start-e2e-server.sh
+  ```
+- 在另一个终端用相同端口批量运行相关 spec：
+  ```sh
+  cd apps/rust/things
+  HYZ_THINGS_E2E_WEB_PORT=3190 \
+  HYZ_THINGS_E2E_CONTROL_PORT=3191 \
+  HYZ_THINGS_E2E_REUSE_FRONTEND_BUNDLE=1 \
+  HYZ_THINGS_E2E_REUSE_SERVER=1 \
+  ./node_modules/.bin/playwright test e2e/logic-judgment.spec.ts e2e/comprehensive.spec.ts --reporter=line
+  ```
+- `HYZ_THINGS_E2E_REUSE_FRONTEND_BUNDLE=1` 会校验当前输入、toolchain 与 archive hash；缓存不匹配时先重建一次。`HYZ_THINGS_E2E_REUSE_SERVER=1` 仅供本地显式附着到已启动的 harness。CI 不设置这两个变量，保持独立构建与服务。
+
 ## 构建，验证以及测试入口
 
 @./Makefile

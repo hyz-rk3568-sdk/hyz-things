@@ -17,7 +17,7 @@ async function loginWithIsolatedHistory(page: Page) {
   });
 }
 
-async function completeFixturePaper(page: Page) {
+async function startFixturePaper(page: Page) {
   await loginWithIsolatedHistory(page);
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-question-bank-paper').click();
@@ -27,13 +27,34 @@ async function completeFixturePaper(page: Page) {
   }
   await page.getByTestId('question-bank-paper-option').filter({ hasText: '行测真题训练端到端样卷' }).click();
   await page.getByTestId('question-bank-practice-start').click();
+}
+
+async function completeFixturePaper(page: Page) {
+  await startFixturePaper(page);
   await page.getByTestId('question-bank-practice-choice').first().click();
   await expect(page.getByTestId('question-bank-practice-choice').first()).toHaveAttribute('aria-pressed', 'true');
   await page.getByTestId('question-bank-practice-submit').click();
   await page.getByRole('button', { name: '确认交卷', exact: true }).click();
-  await expect(page.getByTestId('question-bank-practice-score')).toContainText('错误 1');
+  await expect(page.getByTestId('question-bank-practice-score')).toContainText('/ 3 正确');
+  await expect(page.getByTestId('question-bank-practice-records')).toBeVisible();
+  await expect(page.getByTestId('question-bank-practice-repeat')).toBeVisible();
   await page.getByRole('button', { name: '← 返回训练', exact: true }).click();
 }
+
+test('completed practice opens its records and redoes the same questions in place', async ({ page }) => {
+  await startFixturePaper(page);
+  await page.getByTestId('question-bank-practice-choice').first().click();
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button', { name: '确认交卷', exact: true }).click();
+  await expect(page.getByTestId('question-bank-practice-score')).toContainText('/ 3 正确');
+  await page.getByTestId('question-bank-practice-records').click();
+  await expect(page.getByTestId('question-bank-practice-history')).toBeVisible();
+  await page.getByRole('button', { name: '返回套卷', exact: true }).click();
+  await page.getByTestId('question-bank-practice-repeat').click();
+  await expect(page.getByTestId('question-bank-practice-workspace')).toBeVisible();
+  await expect(page.getByTestId('question-bank-practice-score')).toHaveCount(0);
+  await expect(page.getByTestId('question-bank-practice-choice').first()).toHaveAttribute('aria-pressed', 'false');
+});
 
 test('question bank history shares paper and module records, filters unfinished work, and repeats a completed paper', async ({ page }) => {
   await completeFixturePaper(page);
@@ -62,7 +83,7 @@ test('question bank history shares paper and module records, filters unfinished 
   await records.getByRole('button', { name: '查看原题与解析', exact: true }).click();
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('原始解析');
   await page.getByRole('button', { name: '← 返回训练', exact: true }).click();
-  await records.getByRole('button', { name: '再做一遍', exact: true }).click();
+  await records.getByRole('button', { name: '重做原题', exact: true }).click();
   await expect(page.getByTestId('question-bank-practice-workspace')).toBeVisible();
   await expect(page.getByTestId('question-bank-practice-choice').first()).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByTestId('question-bank-practice-score')).toHaveCount(0);
@@ -98,7 +119,7 @@ test('question bank repeat keeps the recorded question set instead of resampling
   await page.getByTestId('question-bank-history-filter-module').click();
   const repeated = page.waitForRequest(request =>
     request.method() === 'POST' && request.url().endsWith(`/practice/sessions/${completed.id}/repeat`));
-  await page.getByRole('button', { name: '再做一遍', exact: true }).click();
+  await page.getByRole('button', { name: '重做原题', exact: true }).click();
   await repeated;
   await expect(page.getByTestId('question-bank-practice-workspace')).toBeVisible();
   const copied = await page.evaluate(async () => {
@@ -121,7 +142,7 @@ test('question bank history shows a failed repeat and allows retrying the same r
   await page.route(endpoint, route => route.fulfill({
     status: 503, json: { error: 'temporary-unavailable' },
   }));
-  const repeat = page.getByRole('button', { name: '再做一遍', exact: true });
+  const repeat = page.getByRole('button', { name: '重做原题', exact: true });
   await repeat.click();
   await expect(page.getByTestId('question-bank-error')).toBeVisible();
   await expect(repeat).toBeEnabled();

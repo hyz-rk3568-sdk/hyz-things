@@ -54,6 +54,12 @@ test("logic judgment persists answers, recovers deadline and reviews exact-paper
   await page.getByTestId('logic-submit').click();
   await expect(page.getByTestId('logic-result')).toContainText('1 / 10');
   await expect(page.getByTestId('logic-result')).toContainText('仅交卷后可见的解析');
+  await expect(page.getByTestId('logic-records')).toBeVisible();
+  await page.getByTestId('logic-records').click();
+  await expect(page.getByTestId('logic-history')).toBeVisible();
+  await expect(page.getByTestId('logic-history')).toContainText('1/10 正确');
+  await page.getByRole('button',{name:'返回训练',exact:true}).click();
+  await expect(page.getByTestId('logic-result')).toBeVisible();
   await expect(page.getByTestId('logic-question-pane')).toBeVisible();
   await expect(page.getByTestId('logic-answer-pane')).toBeVisible();
   const reviewQuestion=await page.getByTestId('logic-question-pane').boundingBox();
@@ -61,7 +67,7 @@ test("logic judgment persists answers, recovers deadline and reviews exact-paper
   expect(reviewQuestion!.x+reviewQuestion!.width).toBeLessThanOrEqual(reviewAnswer!.x+2);
   await page.getByRole('button',{name:'← 返回训练',exact:true}).click();
   await page.getByTestId('logic-history-open').click();
-  await expect(page.getByTestId('logic-history')).toContainText('1/10题');
+  await expect(page.getByTestId('logic-history')).toContainText('1/10 正确');
   await page.getByRole('button',{name:'查看原题与解析',exact:true}).click();
   await expect(page.getByTestId('logic-result')).toContainText('1 / 10');
   await page.getByTestId('logic-retry').click();
@@ -237,6 +243,12 @@ test("server clock compensates a slow device and pause survives exit and resume"
   await page.getByTestId('training-mode-logic-judgment').click();
   await page.getByTestId('logic-resume').click();
   await expect(page.getByTestId('logic-paused')).toBeVisible();
+  await expect(page.getByTestId('logic-run')).toBeVisible();
+  const pausedHeader=await page.getByTestId('logic-run').locator('header').boundingBox();
+  const pausedNav=await page.getByTestId('logic-navigation').boundingBox();
+  const pausedCard=await page.getByTestId('logic-paused').locator('.rounded-box').first().boundingBox();
+  expect(pausedCard!.y).toBeGreaterThanOrEqual(pausedHeader!.y+pausedHeader!.height);
+  expect(pausedCard!.y+pausedCard!.height).toBeLessThanOrEqual(pausedNav!.y);
   await expect(page.getByTestId('logic-clock')).toHaveText('02:07');
   await expect(page.getByTestId('logic-choice')).toHaveCount(0);
   await page.getByTestId('logic-continue').click();
@@ -388,6 +400,7 @@ test("disabled logic scroll buttons shield text in practice and review", async (
     if (!(await first.isVisible())) await page.getByTestId('calculation-scratchpad-toggle').click();
     for (const viewport of [{width:1180,height:820},{width:834,height:1112},{width:390,height:844}]) {
       await page.setViewportSize(viewport);
+      await page.clock.runFor(100);
       for (const [paneId,target] of [['logic-question-scroll','题目'],['logic-answer-scroll','选项']]) {
         const pane=page.getByTestId(paneId);
         for (const direction of ['上','下']) {

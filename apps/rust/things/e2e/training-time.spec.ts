@@ -298,7 +298,7 @@ test("daily practice statistics count real submissions, exclude blanks and inclu
   const id=submission.url().split('/').at(-2)!;
   // The completed session is the newest record; its repeat keeps the same paper.
   const repeatRequest=page.waitForRequest(request=>request.url().endsWith(`/sessions/${id}/repeat`));
-  await page.getByTestId('question-bank-practice-history-item').first().getByRole('button',{name:'再做一遍',exact:true}).click();
+  await page.getByTestId('question-bank-practice-history-item').first().getByRole('button',{name:'重做原题',exact:true}).click();
   await repeatRequest;
   await expect(choices.first()).toHaveAttribute('aria-pressed','false');
   await choices.nth(1).click();

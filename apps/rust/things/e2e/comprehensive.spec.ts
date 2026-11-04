@@ -740,6 +740,13 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(page.getByTestId("analysis-clock")).toContainText("19:");
   await page.getByTestId("analysis-clock").click();
   await expect(page.getByTestId("analysis-paused")).toBeVisible();
+  await expect(page.getByTestId("analysis-run")).toBeVisible();
+  const pausedHeader=await page.getByTestId("analysis-run").locator("header").boundingBox();
+  const pausedNav=await page.getByTestId("analysis-navigation").boundingBox();
+  const pausedCard=await page.getByTestId("analysis-paused").locator(".rounded-box").first().boundingBox();
+  expect(pausedCard!.y).toBeGreaterThanOrEqual(pausedHeader!.y+pausedHeader!.height);
+  expect(pausedCard!.y+pausedCard!.height).toBeLessThanOrEqual(pausedNav!.y);
+  await expect(page.getByTestId("analysis-clock")).toBeVisible();
   await expect(page.getByTestId("analysis-material")).toHaveCount(0);
   await page.getByRole("button",{name:"继续计时"}).click();
   await expect(page.getByTestId("analysis-run")).toBeVisible();
@@ -929,7 +936,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(page.getByTestId("analysis-review-status")).toContainText("未答");
   await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-state","correct");
   await expect(page.getByTestId("analysis-review-choice").nth(1)).toHaveAttribute("data-state","neutral");
-  await page.getByRole("button",{name:"查看练习历史"}).click();
+  await page.getByRole("button",{name:"查看练习记录"}).click();
   await expect(page.getByTestId("analysis-history")).toBeVisible();
   await page.getByRole("button",{name:"查看原题与解析"}).first().click();
   await expect(page.getByTestId("analysis-result")).toContainText("1 / 20");
@@ -949,7 +956,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(page.getByTestId("analysis-choice").nth(1)).toHaveClass(/btn-primary/);
   await page.getByRole("button",{name:"交卷"}).click();
   await expect(page.getByTestId("analysis-result")).toContainText("0 / 20");
-  await page.getByRole("button",{name:"查看练习历史"}).click();
+  await page.getByRole("button",{name:"查看练习记录"}).click();
   await expect(page.getByTestId("analysis-history")).toBeVisible();
   await page.getByRole("button",{name:"查看原题与解析"}).first().click();
   await expect(page.getByTestId("analysis-result")).toContainText("1 / 20");
