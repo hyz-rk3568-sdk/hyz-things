@@ -1043,16 +1043,16 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 <h2 class="text-lg font-semibold leading-relaxed">{q.question.clone()}</h2>
                 <div class="grid gap-2">{for review_options}</div>
                 <div class="border-t border-base-content/10 pt-4">
-                    <p class="text-sm font-semibold">{format!("你的答案：{}",
+                    <p class="text-base font-semibold">{format!("你的答案：{}",
                         q.chosen.and_then(|i| ["A","B","C","D"].get(i).copied()).unwrap_or("未答"))}</p>
-                    <h3 class="mt-3 text-sm font-semibold">{"解题解析"}</h3>
-                    <p class="mt-2 whitespace-pre-wrap text-sm leading-7" data-testid="analysis-explanation">{q.explanation.clone()}</p>
+                    <h3 class="mt-3 text-base font-semibold">{"解题解析"}</h3>
+                    <p class="mt-2 whitespace-pre-wrap text-base leading-7" data-testid="analysis-explanation">{q.explanation.clone()}</p>
                     <RelatedMethodCard key={format!("analysis-{}-{index}", score.id)}
                         card={q.related_card.clone()} source_file={q.card_path.clone().unwrap_or_default()}
                         test_id="analysis-related-card" />
                     <details class="mt-3 text-xs">
                         <summary class="cursor-pointer">{"查看原始数据证据"}</summary>
-                        <p class="mt-2 whitespace-pre-wrap leading-6">{q.evidence.clone()}</p>
+                        <p class="mt-2 whitespace-pre-wrap text-sm leading-6">{q.evidence.clone()}</p>
                         {if let Some(path) = q.card_path.as_ref() {
                             html! {
                                 <p class="mt-2 break-all leading-6">

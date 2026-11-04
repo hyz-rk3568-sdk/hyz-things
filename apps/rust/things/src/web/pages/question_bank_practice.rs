@@ -756,7 +756,7 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         <div class="mb-2 text-xs font-semibold text-base-content/60">
                             {if msg.role == "user" { "你的追问" } else { "AI 解析" }}
                         </div>
-                        <div class="study-markdown text-sm leading-7">
+                        <div class="study-markdown text-base leading-7">
                             {render_question_bank_markdown(&msg.content)}
                         </div>
                     </div>
@@ -1546,13 +1546,13 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 let grade = item.item.grade.as_deref();
                                 if completed {
                                     let style = if correct && grade != Some("ungradable") {
-                                        "flex items-start gap-2.5 rounded-xl border border-success bg-success/10 p-3 text-sm leading-6 text-success"
+                                        "flex items-start gap-2.5 rounded-xl border border-success bg-success/10 p-3 text-base leading-7 text-success"
                                     } else if chosen && grade == Some("wrong") {
-                                        "flex items-start gap-2.5 rounded-xl border border-error bg-error/10 p-3 text-sm leading-6 text-error"
+                                        "flex items-start gap-2.5 rounded-xl border border-error bg-error/10 p-3 text-base leading-7 text-error"
                                     } else if chosen && grade == Some("correct") {
-                                        "flex items-start gap-2.5 rounded-xl border border-success bg-success/10 p-3 text-sm leading-6 text-success"
+                                        "flex items-start gap-2.5 rounded-xl border border-success bg-success/10 p-3 text-base leading-7 text-success"
                                     } else {
-                                        "flex items-start gap-2.5 rounded-xl border border-base-content/20 p-3 text-sm leading-6"
+                                        "flex items-start gap-2.5 rounded-xl border border-base-content/20 p-3 text-base leading-7"
                                     };
                                     html! {<div class={style} data-testid="question-bank-practice-choice">
                                         <span class="shrink-0 font-bold">{format!("{label}.")}</span>
@@ -1565,7 +1565,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                         "border-base-content/20 bg-base-100 hover:border-primary/50"
                                     };
                                     let action = invoke.clone(); let choice = label.clone();
-                                    html! {<button type="button" class={classes!("flex","w-full","items-start","gap-2.5","rounded-xl","border","p-3","text-left","text-sm","leading-6","transition-colors","disabled:opacity-60",style)}
+                                    html! {<button type="button" class={classes!("flex","w-full","items-start","gap-2.5","rounded-xl","border","p-3","text-left","text-base","leading-7","transition-colors","disabled:opacity-60",style)}
                                         aria-pressed={chosen.to_string()} aria-busy={(pending.is_some() && chosen).to_string()}
                                         data-testid="question-bank-practice-choice"
                                         disabled={current.session.paused || *busy}
@@ -1591,7 +1591,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             </label>
                         }
                         if let Some(r) = selected_review {
-                            <p class="text-sm font-semibold" data-testid="question-bank-practice-review-answer">
+                            <p class="text-base font-semibold" data-testid="question-bank-practice-review-answer">
                                 {format!("你的答案：{} · 正确答案：{}",
                                     if item.item.answer.is_empty() {"未答".into()} else {item.item.answer.join("、")},
                                     if r.correct_answer.is_empty() {"暂无可靠答案".into()} else {r.correct_answer.join("、")})}
@@ -1619,7 +1619,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                         question_id={item.item.question_id.clone()}/>
                                 } else {
                                     <h3 class="font-bold">{"原始解析"}</h3>
-                                    <div class="study-markdown mt-2 text-sm leading-7 text-base-content/75">
+                                    <div class="study-markdown mt-2 text-base leading-7 text-base-content/75">
                                         {if r.explanation.is_empty() {html!{"暂无解析"}} else {render_question_bank_markdown(&r.explanation)}}
                                     </div>
                                     <h3 class="mt-3 font-bold">{"考点"}</h3>
