@@ -301,10 +301,13 @@ test('AI review defaults to source, stays running across navigation and restores
   type State = {session_id: string; question_id: string; status: string; error: null; messages: Msg[]};
   const records = new Map<string,State>();
   const actions: string[] = [];
-  await page.route(/\\/api\\/v1\\/question-bank\\/practice\\/sessions\\/[^/]+\\/questions\\/[^/]+\\/ai(?:\\/(?:messages|stop))?$/,async route => {
+  await page.route('**/api/v1/question-bank/practice/sessions/*/questions/*/ai*',async route => {
     const path = new URL(route.request().url()).pathname;
-    const match = path.match(/sessions\\/([^/]+)\\/questions\\/([^/]+)\\/ai(.*)$/)!;
-    const [session_id, question_id, suffix] = match.slice(1);
+    const parts = path.split('/');
+    const offset = parts.indexOf('sessions');
+    const session_id = parts[offset+1];
+    const question_id = parts[offset+3];
+    const suffix = path.endsWith('/messages') ? '/messages' : path.endsWith('/stop') ? '/stop' : '';
     const key = session_id + ':' + question_id;
     const record = records.get(key) ?? {session_id,question_id,status:'idle',error:null,messages:[]};
     records.set(key,record);
