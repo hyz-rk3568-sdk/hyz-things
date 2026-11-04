@@ -188,8 +188,10 @@ fn valid_category(category: &str) -> bool {
 
 fn canonical_root(path: &str) -> String {
     for (short, full) in [
-        ("资料/", "资料分析/"), ("判断/", "判断推理/"),
-        ("数量/", "数量关系/"), ("言语/", "言语理解与表达/"),
+        ("资料/", "资料分析/"),
+        ("判断/", "判断推理/"),
+        ("数量/", "数量关系/"),
+        ("言语/", "言语理解与表达/"),
     ] {
         if let Some(rest) = path.strip_prefix(short) {
             return format!("{full}{rest}");
@@ -201,9 +203,13 @@ fn canonical_root(path: &str) -> String {
 /// Exact destinations accepted for new Web writes. Never resolve arbitrary paths.
 pub fn resolve_web_target(path: &str) -> Option<ResolvedTarget> {
     let parts = path.split('/').collect::<Vec<_>>();
-    let [source, root, category, "错题"] = parts.as_slice() else { return None };
+    let [source, root, category, "错题"] = parts.as_slice() else {
+        return None;
+    };
     let module = module_root(root)?;
-    if !valid_category(category) { return None; }
+    if !valid_category(category) {
+        return None;
+    }
     let mode = match *source {
         "真题练习" => FlashcardCreationMode::Practice,
         "用户整理" => FlashcardCreationMode::UserOrganized,
@@ -221,12 +227,30 @@ pub fn resolve_web_target(path: &str) -> Option<ResolvedTarget> {
 /// Resolve current source files plus known pre-migration AI decks for reading.
 /// Only resolve_web_target authorizes writes.
 pub fn resolve_target(path: &str) -> Option<ResolvedTarget> {
-    if let Some(target) = resolve_web_target(path) { return Some(target); }
+    if let Some(target) = resolve_web_target(path) {
+        return Some(target);
+    }
+    // Migrated, nested method decks are registered AI source directories.
+    if let Some(known) = AI_TARGETS.iter().find(|entry| entry.target_deck == path) {
+        return Some(ResolvedTarget {
+            module: known.module,
+            target_deck: path.to_owned(),
+            relative_path: format!("{path}/cards.md"),
+            tags: known.tags.iter().map(|tag| (*tag).into()).collect(),
+            mode: FlashcardCreationMode::UserOrganized,
+        });
+    }
     let canonical = canonical_root(path);
     let legacy = canonical.replace("/AI出题/", "/");
     let candidate = format!("用户整理/{legacy}");
-    let candidate = if candidate.ends_with("/错题") { candidate } else { format!("{candidate}/错题") };
-    let known = AI_TARGETS.iter().find(|entry| entry.target_deck == candidate)?;
+    let candidate = if candidate.ends_with("/错题") {
+        candidate
+    } else {
+        format!("{candidate}/错题")
+    };
+    let known = AI_TARGETS
+        .iter()
+        .find(|entry| entry.target_deck == candidate)?;
     Some(ResolvedTarget {
         module: known.module,
         target_deck: canonical,
@@ -252,8 +276,14 @@ pub fn eligibility(module: Option<&str>, category: Option<&str>) -> FavoriteElig
         return rejected("原题没有可识别的一级模块");
     };
     let category = category.unwrap_or("").trim();
-    let category = if category.is_empty() { "未分类" } else { category };
-    if !valid_category(category) { return rejected("原题二级 category 含有不安全的目录字符"); }
+    let category = if category.is_empty() {
+        "未分类"
+    } else {
+        category
+    };
+    if !valid_category(category) {
+        return rejected("原题二级 category 含有不安全的目录字符");
+    }
     let practice = format!("真题练习/{module_name}/{category}/错题");
     let organized = format!("用户整理/{module_name}/{category}/错题");
     FavoriteEligibility {
@@ -268,8 +298,11 @@ pub fn eligibility(module: Option<&str>, category: Option<&str>) -> FavoriteElig
 
 fn rejected(reason: &str) -> FavoriteEligibility {
     FavoriteEligibility {
-        eligible: false, reason: Some(reason.into()), recommended_target: None,
-        allowed_targets: Vec::new(), requires_type_confirmation: false,
+        eligible: false,
+        reason: Some(reason.into()),
+        recommended_target: None,
+        allowed_targets: Vec::new(),
+        requires_type_confirmation: false,
         ai_targets: Vec::new(),
     }
 }
@@ -280,31 +313,75 @@ mod tests {
 
     #[test]
     fn web_destination_defaults_to_practice_and_allows_user_organized_for_every_module() {
-        for module in ["政治理论", "常识判断", "言语理解与表达", "判断推理", "数量关系", "资料分析"] {
+        for module in [
+            "政治理论",
+            "常识判断",
+            "言语理解与表达",
+            "判断推理",
+            "数量关系",
+            "资料分析",
+        ] {
             let preview = eligibility(Some(module), Some("综合分析与审题"));
             let practice = format!("真题练习/{module}/综合分析与审题/错题");
             let organized = format!("用户整理/{module}/综合分析与审题/错题");
-            assert_eq!(preview.recommended_target.as_deref(), Some(practice.as_str()));
-            assert_eq!(preview.allowed_targets, [practice.clone(), organized.clone()]);
-            assert_eq!(resolve_web_target(&practice).unwrap().mode, FlashcardCreationMode::Practice);
-            assert_eq!(resolve_web_target(&organized).unwrap().mode, FlashcardCreationMode::UserOrganized);
+            assert_eq!(
+                preview.recommended_target.as_deref(),
+                Some(practice.as_str())
+            );
+            assert_eq!(
+                preview.allowed_targets,
+                [practice.clone(), organized.clone()]
+            );
+            assert_eq!(
+                resolve_web_target(&practice).unwrap().mode,
+                FlashcardCreationMode::Practice
+            );
+            assert_eq!(
+                resolve_web_target(&organized).unwrap().mode,
+                FlashcardCreationMode::UserOrganized
+            );
         }
     }
 
     #[test]
     fn known_ai_sources_remain_readable_after_migration() {
-        assert_eq!(resolve_target("数量/经济利润/错题").unwrap().module, "数量关系");
-        assert_eq!(resolve_target("判断推理/AI出题/形式推理/直言命题/错题").unwrap().module, "判断推理");
-        assert_eq!(resolve_target("用户整理/数量关系/经济利润/错题").unwrap().module, "数量关系");
+        assert_eq!(
+            resolve_target("数量/经济利润/错题").unwrap().module,
+            "数量关系"
+        );
+        assert_eq!(
+            resolve_target("判断推理/AI出题/形式推理/直言命题/错题")
+                .unwrap()
+                .module,
+            "判断推理"
+        );
+        assert_eq!(
+            resolve_target("用户整理/数量关系/经济利润/错题")
+                .unwrap()
+                .module,
+            "数量关系"
+        );
+        assert_eq!(
+            resolve_target("用户整理/判断推理/形式推理/直言命题/错题")
+                .unwrap()
+                .mode,
+            FlashcardCreationMode::UserOrganized
+        );
     }
 
     #[test]
     fn rejects_traversal_old_creation_modes_and_unregistered_destinations() {
         for path in [
-            "真题练习/资料分析/../错题", "真题练习/资料分析/a/b/错题",
-            "用户整理/判断推理/.secret/错题", "用户整理/数量关系/a\\\\b/错题",
-            "真题收录/数量关系/工程效率/错题", "用户整理/数量关系/工程效率",
-            "数量关系/默认/工程效率/错题", "数量关系/AI出题/未知/错题",
-        ] { assert!(resolve_web_target(path).is_none(), "{path}"); }
+            "真题练习/资料分析/../错题",
+            "真题练习/资料分析/a/b/错题",
+            "用户整理/判断推理/.secret/错题",
+            "用户整理/数量关系/a\\\\b/错题",
+            "真题收录/数量关系/工程效率/错题",
+            "用户整理/数量关系/工程效率",
+            "数量关系/默认/工程效率/错题",
+            "数量关系/AI出题/未知/错题",
+        ] {
+            assert!(resolve_web_target(path).is_none(), "{path}");
+        }
     }
 }

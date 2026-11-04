@@ -469,14 +469,17 @@ fn card_from_db(
     // trusted from an arbitrary source_file path.
     let card_path = match (kind, wrong_source) {
         (SourceKind::Wrong, Some((_, true)))
-            if deck.starts_with("资料分析/") || deck.starts_with("用户整理/") => {
-                format!("flashcards/{deck}/{leaf}")
-            }
+            if deck.starts_with("资料分析/") || deck.starts_with("用户整理/") =>
+        {
+            format!("flashcards/{deck}/{leaf}")
+        }
         (SourceKind::Wrong, Some((_, true))) => {
             format!("flashcards/资料/{category}/错题/{leaf}")
         }
         (SourceKind::Wrong, _) => format!("flashcards/资料/错题/{category}/{leaf}"),
-        (SourceKind::Knowledge, _) if deck.starts_with("资料分析/") || deck.starts_with("用户整理/") => {
+        (SourceKind::Knowledge, _)
+            if deck.starts_with("资料分析/") || deck.starts_with("用户整理/") =>
+        {
             format!("flashcards/{deck}/{leaf}")
         }
         (SourceKind::Knowledge, _) => format!("flashcards/资料/{category}/{leaf}"),
@@ -1920,8 +1923,11 @@ fn exam_theme_materials() -> Vec<Material> {
 fn knowledge_card_category(deck: &str) -> Option<&str> {
     let parts: Vec<_> = deck.split('/').filter(|s| !s.is_empty()).collect();
     let category = match parts.as_slice() {
-        [skill] | ["资料", skill] | ["flashcards", "资料", skill]
-        | ["资料分析", skill] | ["flashcards", "资料分析", skill]
+        [skill]
+        | ["资料", skill]
+        | ["flashcards", "资料", skill]
+        | ["资料分析", skill]
+        | ["flashcards", "资料分析", skill]
         | ["用户整理", "资料分析", skill]
         | ["flashcards", "用户整理", "资料分析", skill] => *skill,
         _ => return None,
@@ -1949,8 +1955,10 @@ fn wrong_question_source(deck: &str) -> Option<(&str, bool)> {
     let prefix = &parts[..index];
     let (category, skill_precedes_wrong_folder) = match prefix {
         [] | ["资料"] | ["flashcards", "资料"] => (*parts.get(index + 1)?, false),
-        ["资料", category] | ["flashcards", "资料", category]
-        | ["资料分析", category] | ["flashcards", "资料分析", category] => (*category, true),
+        ["资料", category]
+        | ["flashcards", "资料", category]
+        | ["资料分析", category]
+        | ["flashcards", "资料分析", category] => (*category, true),
         ["资料分析", "AI出题", category]
         | ["flashcards", "资料分析", "AI出题", category]
         | ["用户整理", "资料分析", category]
@@ -2019,11 +2027,26 @@ mod tests {
             wrong_question_category("资料/错题/平均数增量"),
             Some("平均数增量")
         );
-        assert_eq!(wrong_question_category("资料分析/乘除变化/错题"), Some("乘除变化"));
-        assert_eq!(wrong_question_category("资料分析/AI出题/乘除变化/错题"), Some("乘除变化"));
-        assert_eq!(wrong_question_category("真题练习/资料分析/乘除变化/错题"), None);
-        assert_eq!(wrong_question_category("用户整理/资料分析/乘除变化/错题"), Some("乘除变化"));
-        assert_eq!(knowledge_card_category("用户整理/资料分析/乘除变化"), Some("乘除变化"));
+        assert_eq!(
+            wrong_question_category("资料分析/乘除变化/错题"),
+            Some("乘除变化")
+        );
+        assert_eq!(
+            wrong_question_category("资料分析/AI出题/乘除变化/错题"),
+            Some("乘除变化")
+        );
+        assert_eq!(
+            wrong_question_category("真题练习/资料分析/乘除变化/错题"),
+            None
+        );
+        assert_eq!(
+            wrong_question_category("用户整理/资料分析/乘除变化/错题"),
+            Some("乘除变化")
+        );
+        assert_eq!(
+            knowledge_card_category("用户整理/资料分析/乘除变化"),
+            Some("乘除变化")
+        );
         assert_eq!(wrong_question_category("资料/错题"), None);
         assert_eq!(wrong_question_category("资料/线段混合"), None);
         assert_eq!(wrong_question_category("其他/错题/乘积增长率"), None);
@@ -2046,9 +2069,15 @@ mod tests {
             "00000000-0000-7000-8000-000000000003".into(),
             "/import/用户整理/资料分析/乘除变化/错题/cards.md".into(),
             "用户整理/资料分析/乘除变化/错题".into(),
-            "Front".into(), "Back".into(), "hash".into(),
-        ).unwrap();
-        assert_eq!(curated.card_path, "flashcards/用户整理/资料分析/乘除变化/错题/cards.md");
+            "Front".into(),
+            "Back".into(),
+            "hash".into(),
+        )
+        .unwrap();
+        assert_eq!(
+            curated.card_path,
+            "flashcards/用户整理/资料分析/乘除变化/错题/cards.md"
+        );
         let legacy = card_from_db(
             "00000000-0000-7000-8000-000000000002".into(),
             "/import/资料/错题/乘除变化/cards.md".into(),

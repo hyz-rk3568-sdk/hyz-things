@@ -163,8 +163,10 @@ impl FavoriteFlashcardApplication {
             let cards = snapshot
                 .cards
                 .iter()
-                .filter(|card| card.source_question_id.as_deref() == Some(question_id)
-                    && card.source_file == written.relative_path)
+                .filter(|card| {
+                    card.source_question_id.as_deref() == Some(question_id)
+                        && card.source_file == written.relative_path
+                })
                 .collect::<Vec<_>>();
             if cards.len() == 1 {
                 let card = cards[0];
@@ -254,11 +256,13 @@ fn validate_create_request(
     let target = crate::domain::favorite_flashcard::resolve_web_target(&request.target_deck)
         .ok_or(BankError::Invalid)?;
     let selected = request.creation_mode.unwrap_or(target.mode);
-    let allowed = preview.eligibility.allowed_targets.contains(&request.target_deck)
+    let allowed = preview
+        .eligibility
+        .allowed_targets
+        .contains(&request.target_deck)
         && selected == target.mode
         && request.type_confirmed;
-    if !preview.eligibility.eligible || !allowed || request.back.len() > 32 * 1024
-    {
+    if !preview.eligibility.eligible || !allowed || request.back.len() > 32 * 1024 {
         return Err(BankError::Invalid.into());
     }
     Ok(())

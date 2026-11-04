@@ -65,11 +65,13 @@ impl FavoriteQuestionPort for Fake {
 impl FavoriteFlashcardWriterPort for Fake {
     async fn append(&self, card: NewFavoriteCard) -> Result<FavoriteWriteResult, FlashcardError> {
         let mut cards = self.written.lock().unwrap();
-        let appended = !cards
-            .iter()
-            .any(|existing| existing.question_id == card.question_id && existing.target_deck == card.target_deck);
+        let appended = !cards.iter().any(|existing| {
+            existing.question_id == card.question_id && existing.target_deck == card.target_deck
+        });
         let relative_path = format!("{}/cards.md", card.target_deck);
-        if appended { cards.push(card); }
+        if appended {
+            cards.push(card);
+        }
         Ok(FavoriteWriteResult {
             relative_path,
             card_id: None,
@@ -87,7 +89,7 @@ impl FlashcardSourcePort for Fake {
         if self.fail_sync.load(Ordering::SeqCst) {
             return Err(FlashcardError::SourceUnavailable("offline".into()));
         }
-        let cards = self
+        let cards: Vec<_> = self
             .written
             .lock()
             .unwrap()
@@ -523,7 +525,10 @@ async fn web_can_save_directly_to_user_organized_as_an_ai_source() {
     request.creation_mode = Some(FlashcardCreationMode::UserOrganized);
     let result = app.create(QUESTION, request).await.unwrap();
     assert_eq!(result.status, "created_synced");
-    assert_eq!(fake.written.lock().unwrap()[0].target_deck, "用户整理/数量关系/工程效率/错题");
+    assert_eq!(
+        fake.written.lock().unwrap()[0].target_deck,
+        "用户整理/数量关系/工程效率/错题"
+    );
 }
 
 #[tokio::test]
@@ -564,7 +569,10 @@ async fn coarse_category_preserves_question_category_in_both_destinations() {
     let preview = app.preview(QUESTION).await.unwrap();
     assert!(!preview.eligibility.requires_type_confirmation);
     assert_eq!(preview.eligibility.allowed_targets.len(), 2);
-    assert_eq!(preview.eligibility.recommended_target.as_deref(), Some("真题练习/数量关系/数学运算/错题"));
+    assert_eq!(
+        preview.eligibility.recommended_target.as_deref(),
+        Some("真题练习/数量关系/数学运算/错题")
+    );
     assert!(app.create(QUESTION, request()).await.is_err());
     assert!(fake.written.lock().unwrap().is_empty());
     let mut confirmed = request();

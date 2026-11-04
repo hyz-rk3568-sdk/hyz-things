@@ -8,8 +8,7 @@ use super::question_bank_practice::{
 };
 use super::*;
 use hyz_things::domain::question_bank::{
-    FavoriteState, PracticeBrowseItem, PracticeMode, PracticeQuestionDetail,
-    SetFavorite,
+    FavoriteState, PracticeBrowseItem, PracticeMode, PracticeQuestionDetail, SetFavorite,
 };
 
 const ROOT: &str = "/api/v1/question-bank";
@@ -104,31 +103,28 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
     {
         let preview = preview.clone();
         let preview_error = preview_error.clone();
-        use_effect_with(
-            (question_id.clone(), *preview_retry),
-            move |(id, _)| {
-                let active = Rc::new(Cell::new(true));
-                let current = active.clone();
-                preview.set(None);
-                preview_error.set(None);
-                if let Some(id) = id.clone() {
-                    spawn_local(async move {
-                        let result = fetch_json::<FavoritePreview>(
-                            &format!("{ROOT}/practice/questions/{id}/flashcard-preview"),
-                            "闪卡预览",
-                        )
-                        .await;
-                        if current.get() {
-                            match result {
-                                Ok(value) => preview.set(Some(value)),
-                                Err(message) => preview_error.set(Some(message)),
-                            }
+        use_effect_with((question_id.clone(), *preview_retry), move |(id, _)| {
+            let active = Rc::new(Cell::new(true));
+            let current = active.clone();
+            preview.set(None);
+            preview_error.set(None);
+            if let Some(id) = id.clone() {
+                spawn_local(async move {
+                    let result = fetch_json::<FavoritePreview>(
+                        &format!("{ROOT}/practice/questions/{id}/flashcard-preview"),
+                        "闪卡预览",
+                    )
+                    .await;
+                    if current.get() {
+                        match result {
+                            Ok(value) => preview.set(Some(value)),
+                            Err(message) => preview_error.set(Some(message)),
                         }
-                    });
-                }
-                move || active.set(false)
-            },
-        );
+                    }
+                });
+            }
+            move || active.set(false)
+        });
     }
     {
         let material_scroll = material_scroll.clone();

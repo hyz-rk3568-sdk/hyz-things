@@ -99,12 +99,17 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
             }
             let request = frozen.borrow().clone().or_else(|| {
                 ((if *user_mode {
-                    props.preview.allowed_targets.contains(&*target) && target.starts_with("用户整理/")
+                    props.preview.allowed_targets.contains(&*target)
+                        && target.starts_with("用户整理/")
                 } else {
                     props.preview.recommended_target.as_ref() == Some(&*target)
                 }) && *confirmed)
                     .then(|| CreateFavoriteCard {
-                        creation_mode: if *user_mode { "user_organized" } else { "practice" },
+                        creation_mode: if *user_mode {
+                            "user_organized"
+                        } else {
+                            "practice"
+                        },
                         target_deck: (*target).clone(),
                         back: (*back).clone(),
                         source_revision: props.preview.source_revision.clone(),
@@ -149,9 +154,7 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
     } else {
         props.preview.recommended_target.as_ref() == Some(&*target)
     };
-    let can_submit = !*busy
-        && !props.csrf.is_empty()
-        && (*locked || (valid_target && *confirmed));
+    let can_submit = !*busy && !props.csrf.is_empty() && (*locked || (valid_target && *confirmed));
     let close = Callback::from({
         let on_close = props.on_close.clone();
         move |_| on_close.emit(())

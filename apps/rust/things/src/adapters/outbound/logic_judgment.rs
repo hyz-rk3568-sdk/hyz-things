@@ -165,7 +165,9 @@ impl LogicJudgmentService {
 fn eligible_path(path: &str) -> Option<&'static str> {
     // The AI generator only reads the 用户整理 source root (plus legacy decks).
     let relative = path.strip_prefix("flashcards/").unwrap_or(path);
-    if relative.starts_with("真题练习/") { return None; }
+    if relative.starts_with("真题练习/") {
+        return None;
+    }
     let relative = relative.strip_prefix("用户整理/").unwrap_or(relative);
     let normalized = if let Some(tail) = relative.strip_prefix("判断/") {
         format!("判断推理/{tail}")
@@ -951,8 +953,14 @@ mod tests {
             let mistake = format!("判断/形式推理/{directory}/错题/cards.md");
             assert_eq!(eligible_path(&method), Some("formal"));
             assert_eq!(eligible_path(&mistake), Some("formal"));
-            assert_eq!(eligible_path(&method.replace("判断/", "判断推理/")), Some("formal"));
-            assert_eq!(eligible_path(&mistake.replace("判断/", "判断推理/")), Some("formal"));
+            assert_eq!(
+                eligible_path(&method.replace("判断/", "判断推理/")),
+                Some("formal")
+            );
+            assert_eq!(
+                eligible_path(&mistake.replace("判断/", "判断推理/")),
+                Some("formal")
+            );
             let ai = format!("用户整理/判断推理/形式推理/{directory}/错题/cards.md");
             assert_eq!(eligible_path(&ai), Some("formal"));
             assert_eq!(eligible_path(&format!("用户整理/{method}")), Some("formal"));

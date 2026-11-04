@@ -166,7 +166,9 @@ fn eligible_path(path: &str) -> Option<&'static str> {
     use crate::domain::favorite_flashcard::{resolve_target, FlashcardCreationMode};
     let relative = path.strip_prefix("flashcards/").unwrap_or(path);
     // AI question generation reads curated 用户整理 cards, never 真题练习.
-    if relative.starts_with("真题练习/") { return None; }
+    if relative.starts_with("真题练习/") {
+        return None;
+    }
     let relative = relative.strip_prefix("用户整理/").unwrap_or(relative);
     let deck = relative.strip_suffix("/cards.md")?;
     let target = resolve_target(deck).or_else(|| resolve_target(&format!("{deck}/错题")))?;
@@ -978,10 +980,17 @@ mod quantitative_tests {
             assert_eq!(eligible_path(path), Some("quantitative"));
             let favorite = path.replace("/cards.md", "/错题/cards.md");
             assert_eq!(eligible_path(&favorite), Some("quantitative"));
-            let category = path.strip_prefix("数量/").unwrap().strip_suffix("/cards.md").unwrap();
+            let category = path
+                .strip_prefix("数量/")
+                .unwrap()
+                .strip_suffix("/cards.md")
+                .unwrap();
             let ai = format!("用户整理/数量关系/{category}/错题/cards.md");
             assert_eq!(eligible_path(&ai), Some("quantitative"));
-            assert_eq!(eligible_path(&format!("用户整理/{path}")), Some("quantitative"));
+            assert_eq!(
+                eligible_path(&format!("用户整理/{path}")),
+                Some("quantitative")
+            );
             let default = format!("真题练习/数量关系/{category}/错题/cards.md");
             assert_eq!(eligible_path(&default), None);
             assert_eq!(

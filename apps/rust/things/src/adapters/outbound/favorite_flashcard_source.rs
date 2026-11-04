@@ -6,7 +6,9 @@ use crate::application::{
     },
     flashcards::FlashcardError,
 };
-use crate::domain::favorite_flashcard::{resolve_web_target, resolve_target, FlashcardCreationMode};
+use crate::domain::favorite_flashcard::{
+    resolve_target, resolve_web_target, FlashcardCreationMode,
+};
 use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 use std::{
@@ -542,7 +544,8 @@ fn scan_source(
                     }
                     if source_id == question_id
                         && (source_mode.is_none()
-                            || source_mode == Some(requested_mode == FlashcardCreationMode::UserOrganized))
+                            || source_mode
+                                == Some(requested_mode == FlashcardCreationMode::UserOrganized))
                     {
                         result.existing = Some(FavoriteWriteResult {
                             relative_path: path.clone(),
@@ -764,17 +767,28 @@ mod tests {
         first.target_deck = "真题练习/言语理解与表达/中心理解/错题".into();
         let result = writer.append(first.clone()).await.unwrap();
         assert!(result.appended);
-        assert_eq!(result.relative_path, "真题练习/言语理解与表达/中心理解/错题/cards.md");
-        assert_eq!(writer.append(first).await.unwrap().appended, false);
+        assert_eq!(
+            result.relative_path,
+            "真题练习/言语理解与表达/中心理解/错题/cards.md"
+        );
+        assert!(!writer.append(first).await.unwrap().appended);
 
         let mut second = card();
         second.question_id = "0194f4e0-1234-7000-8000-000000000042".into();
         second.target_deck = "真题练习/言语理解与表达/中心理解/错题".into();
         assert!(writer.append(second).await.unwrap().appended);
-        let path = fixture.root.join("真题练习/言语理解与表达/中心理解/错题/cards.md");
+        let path = fixture
+            .root
+            .join("真题练习/言语理解与表达/中心理解/错题/cards.md");
         let text = fs::read_to_string(path).unwrap();
         assert!(text.contains("中心理解"));
-        assert_eq!(parse_markdown_text(&text, "真题练习/言语理解与表达/中心理解/错题/cards.md").unwrap().cards.len(), 2);
+        assert_eq!(
+            parse_markdown_text(&text, "真题练习/言语理解与表达/中心理解/错题/cards.md")
+                .unwrap()
+                .cards
+                .len(),
+            2
+        );
     }
 
     #[tokio::test]
@@ -788,8 +802,14 @@ mod tests {
         let normal_result = writer.append(normal.clone()).await.unwrap();
         assert!(ai_result.appended);
         assert!(normal_result.appended);
-        assert_eq!(ai_result.relative_path, "真题练习/数量关系/工程效率/错题/cards.md");
-        assert_eq!(normal_result.relative_path, "用户整理/数量关系/工程效率/错题/cards.md");
+        assert_eq!(
+            ai_result.relative_path,
+            "真题练习/数量关系/工程效率/错题/cards.md"
+        );
+        assert_eq!(
+            normal_result.relative_path,
+            "用户整理/数量关系/工程效率/错题/cards.md"
+        );
         assert!(!writer.append(ai).await.unwrap().appended);
         assert!(!writer.append(normal).await.unwrap().appended);
     }
