@@ -4,7 +4,7 @@ use crate::{
         flashcards::{FlashcardApplication, FlashcardError},
         question_bank::BankError,
     },
-    domain::favorite_flashcard::FavoriteEligibility,
+    domain::favorite_flashcard::{FavoriteEligibility, FlashcardCreationMode},
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -40,6 +40,10 @@ pub struct FavoriteFlashcardPreview {
 #[serde(deny_unknown_fields)]
 pub struct CreateFavoriteFlashcard {
     pub target_deck: String,
+    /// New clients explicitly select one parallel creation mode. Legacy clients
+    /// are interpreted by their registered target rather than silently migrated.
+    #[serde(default)]
+    pub creation_mode: Option<FlashcardCreationMode>,
     pub back: String,
     pub source_revision: String,
     #[serde(default)]
@@ -160,7 +164,8 @@ impl FavoriteFlashcardApplication {
             let cards = snapshot
                 .cards
                 .iter()
-                .filter(|card| card.source_question_id.as_deref() == Some(question_id))
+                .filter(|card| card.source_question_id.as_deref() == Some(question_id)
+                    && card.source_file == written.relative_path)
                 .collect::<Vec<_>>();
             if cards.len() == 1 {
                 let card = cards[0];
@@ -247,13 +252,23 @@ fn validate_create_request(
     if request.source_revision != preview.source_revision {
         return Err(BankError::Stale.into());
     }
-    if !preview.eligibility.eligible
-        || !preview
-            .eligibility
-            .allowed_targets
-            .contains(&request.target_deck)
-        || preview.eligibility.requires_type_confirmation && !request.type_confirmed
-        || request.back.len() > 32 * 1024
+    let inferred = if preview.eligibility.ai_targets.contains(&request.target_deck) {
+        FlashcardCreationMode::AiGeneration
+    } else {
+        FlashcardCreationMode::Default
+    };
+    let selected = request.creation_mode.unwrap_or(inferred);
+    let allowed = match selected {
+        FlashcardCreationMode::Default => {
+            preview.eligibility.recommended_target.as_deref()
+                == Some(request.target_deck.as_str())
+        }
+        FlashcardCreationMode::AiGeneration => {
+            preview.eligibility.ai_targets.contains(&request.target_deck)
+                && (!preview.eligibility.requires_type_confirmation || request.type_confirmed)
+        }
+    };
+    if !preview.eligibility.eligible || !allowed || request.back.len() > 32 * 1024
     {
         return Err(BankError::Invalid.into());
     }
