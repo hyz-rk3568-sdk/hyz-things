@@ -378,6 +378,7 @@ struct CardCandidate {
     source_kind: SourceKind,
     front_markdown: String,
     back_markdown: String,
+    correct_answer: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -459,7 +460,23 @@ fn card_from_db(
         source_kind: kind,
         front_markdown: front,
         back_markdown: back,
+        correct_answer: Vec::new(),
     })
+}
+
+fn card_generation_context(target: &CardTarget) -> String {
+    let solution = crate::domain::flashcards::personal_solution(&target.card.back_markdown)
+        .unwrap_or("未提供");
+    format!(
+        "【目标 {target_id}】\n来源：{kind}\n分类：{category}\n卡片ID：{id}\n卡片路径：{path}\n### Front\n{front}\n正确答案：{correct_answer}\n个人解法：{solution}\n",
+        target_id = target.target_id,
+        kind = target.card.source_kind.as_str(),
+        category = target.card.category,
+        id = target.card.id,
+        path = target.card.card_path,
+        front = target.card.front_markdown,
+        correct_answer = serde_json::json!(target.card.correct_answer),
+    )
 }
 
 // Integral min-cost flow. Category -> passage edges enforce one question per
@@ -971,7 +988,7 @@ impl DataAnalysisService {
 
     async fn card_candidates(&self) -> Result<Vec<CardCandidate>, String> {
         let rows = sqlx::query(
-            "SELECT id,source_file,deck_path,front_markdown,back_markdown,source_hash \
+            "SELECT id,source_file,deck_path,front_markdown,back_markdown,source_hash,correct_answer \
              FROM flashcards WHERE active=1 ORDER BY id",
         )
         .fetch_all(&self.pool)
@@ -980,14 +997,17 @@ impl DataAnalysisService {
         let cards: Vec<_> = rows
             .into_iter()
             .filter_map(|row| {
-                card_from_db(
+                let mut card = card_from_db(
                     row.try_get("id").ok()?,
                     row.try_get("source_file").ok()?,
                     row.try_get("deck_path").ok()?,
                     row.try_get("front_markdown").ok()?,
                     row.try_get("back_markdown").ok()?,
                     row.try_get("source_hash").ok()?,
-                )
+                )?;
+                card.correct_answer =
+                    serde_json::from_str(&row.try_get::<String, _>("correct_answer").ok()?).ok()?;
+                Some(card)
             })
             .collect();
         if cards.is_empty() {
@@ -1263,16 +1283,11 @@ impl DataAnalysisService {
         // application-side boundaries, NOT an actual privileged system role.
         // Output schema and source quotas are enforced outside the model.
         let targets = &plan.groups[ordinal];
-        let targets_text = targets.iter().map(|target| format!(
-            "【目标 {target_id}】\n来源：{kind}\n分类：{category}\n卡片ID：{id}\n卡片路径：{path}\n### Front\n{front}\n### Back\n{back}\n",
-            target_id = target.target_id,
-            kind = target.card.source_kind.as_str(),
-            category = target.card.category,
-            id = target.card.id,
-            path = target.card.card_path,
-            front = target.card.front_markdown,
-            back = target.card.back_markdown,
-        )).collect::<Vec<_>>().join("\n");
+        let targets_text = targets
+            .iter()
+            .map(card_generation_context)
+            .collect::<Vec<_>>()
+            .join("\n");
         let prompt = format!(
             r#"【固定规则 / 应用端约束】
 你是 hyz 的公务员行测资料分析命题 Agent。先读取仓库 .agents/skills/行测做题/SKILL.md 及其资料分析参考，再严格使用下方五张已指定的 Flashcard 内容。
@@ -1285,6 +1300,8 @@ impl DataAnalysisService {
 材料应围绕此主题展开；参考指标只限定选材方向，无须全部涵盖，不得拼凑无关指标。
 这5张卡片已由后端从 SQLite 选定，其中可能同时包含错题卡与普通卡。每张卡片恰好出1道题，允许调整题目顺序。
 先根据这5个目标构造共享统计材料，再设计题目；自己核对计算、正确答案和干扰项。
+
+原卡片正确答案不是新题答案；个人解法标记为未提供时，不得编造或声称用户使用了某种解法。
 
 【本篇固定 Flashcard】
 {targets_text}
@@ -1914,6 +1931,31 @@ fn wrong_question_category(deck: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn favorite_metadata_reaches_data_generation_without_inventing_personal_solution() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        sqlx::query("INSERT INTO flashcards(id,source_file,source_order,deck_path,front_markdown,back_markdown,source_hash,correct_answer,active,created_at_ms,updated_at_ms) VALUES('00000000-0000-7000-8000-000000000001','资料/乘除变化/错题/cards.md',0,'资料/乘除变化/错题','Question','-','hash','[\"B\"]',1,0,0)")
+            .execute(&pool).await.unwrap();
+        let service = DataAnalysisService::new(pool, None).unwrap();
+        let card = service.card_candidates().await.unwrap().remove(0);
+        assert_eq!(card.correct_answer, vec!["B"]);
+        let target = CardTarget {
+            target_id: card.id.clone(),
+            card,
+            vcnt_increment: 1024,
+            expected_vcnt: 0,
+        };
+        let context = card_generation_context(&target);
+        assert!(context.contains("正确答案：[\"B\"]"));
+        assert!(context.contains("个人解法：未提供"));
+        assert!(!context.contains("### Back\n-"));
+    }
+
     #[test]
     fn uses_exact_wrong_question_subdirectories_as_skills() {
         assert_eq!(
@@ -2029,6 +2071,7 @@ mod tests {
             source_kind,
             front_markdown: "Question".into(),
             back_markdown: "Answer".into(),
+            correct_answer: Vec::new(),
         }
     }
     fn ample_pool() -> Vec<CardCandidate> {

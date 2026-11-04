@@ -2,13 +2,14 @@ use hyz_things::{
     adapters::{
         inbound::http::{
             app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_origins,
-            bind_fixed_lan_with_retry, bind_ipv6_listener, with_question_bank, PortalTls,
-            TlsListener, DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
+            bind_fixed_lan_with_retry, bind_ipv6_listener, with_favorite_flashcards,
+            with_question_bank, PortalTls, TlsListener, DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
         },
         outbound::{
             admin::AdminFileAdapter,
             camera::CameraUnixAdapter,
             data_analysis::{load_codex_env, DataAnalysisService},
+            favorite_flashcard_source::FilesystemFavoriteFlashcardWriter,
             flashcard_source::FilesystemFlashcardSource,
             flashcard_sqlite::SqliteFlashcardRepository,
             logic_judgment::LogicJudgmentService,
@@ -24,6 +25,7 @@ use hyz_things::{
     application::{
         admin::AdminApplication,
         camera::CameraApplication,
+        favorite_flashcards::FavoriteFlashcardApplication,
         flashcards::FlashcardApplication,
         logic_judgment::LogicJudgmentPort,
         ports::{ClockPort, PlatformError, PortalControlHandler},
@@ -306,6 +308,14 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     };
     let logic_judgment_shutdown = logic_judgment.clone();
     let quantitative_relations_shutdown = quantitative_relations.clone();
+    let favorite_flashcards = match (&question_bank, &flashcards) {
+        (Some(bank), Some(cards)) => Some(Arc::new(FavoriteFlashcardApplication::new(
+            bank.clone(),
+            cards.clone(),
+            Arc::new(FilesystemFavoriteFlashcardWriter::default()),
+        ))),
+        _ => None,
+    };
     let app = app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_origins(
         status,
         control,
@@ -323,6 +333,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         additional_allowed_origins,
     );
     let app = with_question_bank(app, question_bank);
+    let app = with_favorite_flashcards(app, favorite_flashcards);
     let ipv6_task = ipv6_listener.map(|listener| {
         let app = app.clone();
         let tls_acceptor = tls_acceptor.clone();

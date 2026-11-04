@@ -2,6 +2,7 @@ pub mod admin;
 pub mod apps;
 pub mod camera;
 pub mod device_policy;
+pub mod favorite_flashcard;
 pub mod flashcards;
 pub mod network_config;
 pub mod panel;

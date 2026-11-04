@@ -21,7 +21,7 @@ fn available(service: Service) -> Result<Arc<QuestionBankApplication>, BankError
         .map(|Extension(app)| app)
         .ok_or(BankError::Unavailable)
 }
-fn bank_error(error: BankError) -> Response {
+pub(super) fn bank_error(error: BankError) -> Response {
     let (status, code, message) = match error {
         BankError::Invalid => (
             StatusCode::BAD_REQUEST,

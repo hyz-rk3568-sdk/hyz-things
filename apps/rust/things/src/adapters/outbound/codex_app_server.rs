@@ -696,6 +696,7 @@ mod tests {
                     card_path: "数量/经济利润/cards.md".into(),
                     front: "利润率".into(),
                     back: "利润除以成本".into(),
+                    correct_answer: Vec::new(),
                     kind: "quantitative".into(),
                 })
                 .collect(),

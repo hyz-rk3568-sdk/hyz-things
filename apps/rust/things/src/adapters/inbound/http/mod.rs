@@ -56,7 +56,9 @@ use crate::{
 };
 
 mod data_analysis;
+mod favorite_flashcards;
 mod flashcards;
+pub use favorite_flashcards::with_favorite_flashcards;
 mod question_bank;
 pub use question_bank::with_question_bank;
 mod logic_judgment;
@@ -790,6 +792,15 @@ fn app_with_assets(
             "/api/v1/question-bank/practice/favorites/{id}",
             on(MethodFilter::GET, question_bank::favorite_get)
                 .on(MethodFilter::POST, question_bank::favorite_set),
+        )
+        .route(
+            "/api/v1/question-bank/practice/favorites/{id}/flashcard-preview",
+            on(MethodFilter::GET, favorite_flashcards::preview),
+        )
+        .route(
+            "/api/v1/question-bank/practice/favorites/{id}/flashcard",
+            on(MethodFilter::POST, favorite_flashcards::create)
+                .layer(DefaultBodyLimit::max(40 * 1024)),
         )
         .route(
             "/api/v1/question-bank/assets/{name}",
@@ -2904,7 +2915,7 @@ fn is_question_bank_practice_post_path(path: &str) -> bool {
                 && parts[7] == "answers"
                 && crate::application::question_bank::document::valid_id(parts[8]);
     }
-    parts.len() == 7
+    (parts.len() == 7 || parts.len() == 8 && parts[7] == "flashcard")
         && parts[..6] == ["", "api", "v1", "question-bank", "practice", "favorites"]
         && crate::application::question_bank::document::valid_id(parts[6])
 }

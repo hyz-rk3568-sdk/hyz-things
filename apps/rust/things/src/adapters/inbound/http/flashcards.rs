@@ -275,7 +275,7 @@ fn asset_error_json(error: FlashcardAssetError) -> Response {
     }
 }
 
-fn flashcard_error_json(error: FlashcardError) -> Response {
+pub(super) fn flashcard_error_json(error: FlashcardError) -> Response {
     let status = match error {
         FlashcardError::Busy => StatusCode::CONFLICT,
         FlashcardError::InvalidRequest(_) => StatusCode::BAD_REQUEST,

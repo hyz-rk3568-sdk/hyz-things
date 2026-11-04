@@ -1,4 +1,5 @@
 //! Browse original papers and categories; share one workspace for practice and review.
+use super::favorite_flashcard::FavoriteQuestionDetail;
 use super::material_scroll::{scroll_edges, MaterialScrollButton, ScrollEdges};
 use super::*;
 use hyz_things::domain::question_bank::{
@@ -497,6 +498,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let settings_open = use_state(|| false);
     let custom_years = use_state(|| false);
     let collection = use_state(|| None::<PracticeMode>);
+    let favorite_detail = use_state(|| None::<PracticeBrowseItem>);
 
     let mode = use_state(|| props.entry_mode.clone());
     let workspace = use_state(|| None::<PracticeWorkspace>);
@@ -1946,14 +1948,28 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 <p class="p-4 text-sm text-base-content/60">{"这个分类还没有题目。"}</p>
                             } else {
                                 <div class="question-bank-results-list" data-testid="question-bank-browse-list">
-                                    {for collection_filtered.iter().take(100).map(|item|html! {
-                                        <div class="question-bank-result-row" data-testid="question-bank-collection-item" title={item.paper_title.clone()}>
-                                            <div class="min-w-0">
-                                                <strong class="block truncate text-sm">{format!("{} {} · 第 {} 题",item.year,item.region,item.number)}</strong>
-                                                <p class="mt-0.5 truncate text-xs text-base-content/50">{format!("{} / {}",item.module.as_deref().unwrap_or("未分类"),item.category.as_deref().unwrap_or("未分类"))}</p>
-                                            </div>
-                                            <span class="question-bank-result-year">{item.year}</span>
-                                        </div>
+                                    {for collection_filtered.iter().take(100).map(|item| {
+                                        let content = html! {
+                                            <>
+                                                <div class="min-w-0">
+                                                    <strong class="block truncate text-sm">{format!("{} {} · 第 {} 题",item.year,item.region,item.number)}</strong>
+                                                    <p class="mt-0.5 truncate text-xs text-base-content/50">{format!("{} / {}",item.module.as_deref().unwrap_or("未分类"),item.category.as_deref().unwrap_or("未分类"))}</p>
+                                                </div>
+                                                <span class="question-bank-result-year">{item.year}</span>
+                                            </>
+                                        };
+                                        if *collection == Some(PracticeMode::Favorite) {
+                                            html! {
+                                                <button type="button" class="question-bank-result-row w-full text-left"
+                                                    data-testid="question-bank-collection-item" title={item.paper_title.clone()}
+                                                    onclick={Callback::from({
+                                                        let favorite_detail=favorite_detail.clone();let item=(*item).clone();
+                                                        move |_|favorite_detail.set(Some(item.clone()))
+                                                    })}>{content}</button>
+                                            }
+                                        } else {
+                                            html! {<div class="question-bank-result-row" data-testid="question-bank-collection-item" title={item.paper_title.clone()}>{content}</div>}
+                                        }
                                     })}
                                 </div>
                             }
@@ -1961,6 +1977,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         </div>
                     </div>
                 </section>
+            }
+            if let Some(item) = &*favorite_detail {
+                <FavoriteQuestionDetail key={item.question_id.clone()} item={item.clone()} csrf={props.csrf.clone()}
+                    on_back={Callback::from({let favorite_detail=favorite_detail.clone();move |_|favorite_detail.set(None)})}/>
             }
             if *settings_open && *mode == PracticeMode::Module {
                 <section class="training-workspace fixed inset-0 z-[85] flex h-dvh flex-col overflow-hidden bg-base-200"
