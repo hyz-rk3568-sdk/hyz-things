@@ -163,13 +163,15 @@ impl QuantitativeRelationsService {
 }
 
 fn eligible_path(path: &str) -> Option<&'static str> {
-    use crate::domain::favorite_flashcard::resolve_target;
-    let deck = path
-        .strip_prefix("flashcards/")
-        .unwrap_or(path)
-        .strip_suffix("/cards.md")?;
+    use crate::domain::favorite_flashcard::{resolve_target, FlashcardCreationMode};
+    let relative = path.strip_prefix("flashcards/").unwrap_or(path);
+    // AI question generation reads curated 用户整理 cards, never 真题练习.
+    if relative.starts_with("真题练习/") { return None; }
+    let relative = relative.strip_prefix("用户整理/").unwrap_or(relative);
+    let deck = relative.strip_suffix("/cards.md")?;
     let target = resolve_target(deck).or_else(|| resolve_target(&format!("{deck}/错题")))?;
-    (target.mode == crate::domain::favorite_flashcard::FlashcardCreationMode::AiGeneration && target.module == "数量关系").then_some("quantitative")
+    (target.mode == FlashcardCreationMode::UserOrganized && target.module == "数量关系")
+        .then_some("quantitative")
 }
 
 pub const DEFAULT_USER_PROMPT: &str = "题目接近国考、省考数量关系风格，难度中等偏上，条件与数字自然；干扰选项合理，优先考查方法迁移和快速计算，避免机械换数字，解析简洁。";
@@ -977,9 +979,10 @@ mod quantitative_tests {
             let favorite = path.replace("/cards.md", "/错题/cards.md");
             assert_eq!(eligible_path(&favorite), Some("quantitative"));
             let category = path.strip_prefix("数量/").unwrap().strip_suffix("/cards.md").unwrap();
-            let ai = format!("数量关系/AI出题/{category}/错题/cards.md");
+            let ai = format!("用户整理/数量关系/{category}/错题/cards.md");
             assert_eq!(eligible_path(&ai), Some("quantitative"));
-            let default = format!("数量关系/默认/{category}/错题/cards.md");
+            assert_eq!(eligible_path(&format!("用户整理/{path}")), Some("quantitative"));
+            let default = format!("真题练习/数量关系/{category}/错题/cards.md");
             assert_eq!(eligible_path(&default), None);
             assert_eq!(
                 eligible_path(&format!("flashcards/{favorite}")),
@@ -997,6 +1000,7 @@ mod quantitative_tests {
             "数量/几何/错题/cards.md",
             "数量/概率/错题/card.md",
             "数量/概率/错题/错题/cards.md",
+            "真题练习/数量关系/概率/错题/cards.md",
         ] {
             assert_eq!(eligible_path(path), None);
         }

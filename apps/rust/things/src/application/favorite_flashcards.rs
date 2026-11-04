@@ -40,8 +40,7 @@ pub struct FavoriteFlashcardPreview {
 #[serde(deny_unknown_fields)]
 pub struct CreateFavoriteFlashcard {
     pub target_deck: String,
-    /// New clients explicitly select one parallel creation mode. Legacy clients
-    /// are interpreted by their registered target rather than silently migrated.
+    /// The source root must match this mode. Old payloads can only be retried with valid new paths.
     #[serde(default)]
     pub creation_mode: Option<FlashcardCreationMode>,
     pub back: String,
@@ -127,7 +126,7 @@ impl FavoriteFlashcardApplication {
         let question = self.source.load(question_id).await?;
         let preview = make_preview(question.clone());
         validate_create_request(&preview, &request)?;
-        let target = crate::domain::favorite_flashcard::resolve_target(&request.target_deck)
+        let target = crate::domain::favorite_flashcard::resolve_web_target(&request.target_deck)
             .ok_or(BankError::Invalid)?;
         let (front, assets) = self
             .prepare_assets(&question.front, &target.target_deck)
@@ -252,22 +251,12 @@ fn validate_create_request(
     if request.source_revision != preview.source_revision {
         return Err(BankError::Stale.into());
     }
-    let inferred = if preview.eligibility.ai_targets.contains(&request.target_deck) {
-        FlashcardCreationMode::AiGeneration
-    } else {
-        FlashcardCreationMode::Default
-    };
-    let selected = request.creation_mode.unwrap_or(inferred);
-    let allowed = match selected {
-        FlashcardCreationMode::Default => {
-            preview.eligibility.recommended_target.as_deref()
-                == Some(request.target_deck.as_str())
-        }
-        FlashcardCreationMode::AiGeneration => {
-            preview.eligibility.ai_targets.contains(&request.target_deck)
-                && (!preview.eligibility.requires_type_confirmation || request.type_confirmed)
-        }
-    };
+    let target = crate::domain::favorite_flashcard::resolve_web_target(&request.target_deck)
+        .ok_or(BankError::Invalid)?;
+    let selected = request.creation_mode.unwrap_or(target.mode);
+    let allowed = preview.eligibility.allowed_targets.contains(&request.target_deck)
+        && selected == target.mode
+        && request.type_confirmed;
     if !preview.eligibility.eligible || !allowed || request.back.len() > 32 * 1024
     {
         return Err(BankError::Invalid.into());

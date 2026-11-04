@@ -6,7 +6,7 @@ use crate::application::{
     },
     flashcards::FlashcardError,
 };
-use crate::domain::favorite_flashcard::{resolve_target, FlashcardCreationMode};
+use crate::domain::favorite_flashcard::{resolve_web_target, resolve_target, FlashcardCreationMode};
 use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 use std::{
@@ -123,7 +123,7 @@ impl FilesystemFavoriteFlashcardWriter {
         card: NewFavoriteCard,
     ) -> Result<FavoriteWriteResult, FlashcardError> {
         validate_card(&card)?;
-        let target = resolve_target(&card.target_deck)
+        let target = resolve_web_target(&card.target_deck)
             .ok_or_else(|| invalid("unsupported favorite target"))?;
         let identity = self.observer.observe(&self.root)?;
         let root = open_root(&self.root)?;
@@ -525,7 +525,7 @@ fn scan_source(
             let source_mode = path
                 .strip_suffix("/cards.md")
                 .and_then(resolve_target)
-                .map(|target| target.mode == FlashcardCreationMode::AiGeneration);
+                .map(|target| target.mode == FlashcardCreationMode::UserOrganized);
             for card in parsed.cards {
                 if !card.generated_id && !ids.insert(card.id.to_string()) {
                     return Err(unavailable("conflicting duplicate card UUID"));
@@ -542,7 +542,7 @@ fn scan_source(
                     }
                     if source_id == question_id
                         && (source_mode.is_none()
-                            || source_mode == Some(requested_mode == FlashcardCreationMode::AiGeneration))
+                            || source_mode == Some(requested_mode == FlashcardCreationMode::UserOrganized))
                     {
                         result.existing = Some(FavoriteWriteResult {
                             relative_path: path.clone(),
@@ -643,7 +643,7 @@ mod tests {
     fn card() -> NewFavoriteCard {
         NewFavoriteCard {
             question_id: "0194f4e0-1234-7000-8000-000000000001".into(),
-            target_deck: "数量/工程效率/错题".into(),
+            target_deck: "真题练习/数量关系/工程效率/错题".into(),
             front: "Question".into(),
             back: "-".into(),
             correct_answer: vec!["B".into()],
@@ -702,7 +702,7 @@ mod tests {
             fs::read_to_string(fixture.root.join("moved/deck/cards.md")).unwrap(),
             original
         );
-        assert!(!fixture.root.join("数量").exists());
+        assert!(!fixture.root.join("真题练习").exists());
     }
 
     #[tokio::test]
@@ -761,20 +761,20 @@ mod tests {
         let fixture = Fixture::new();
         let writer: Arc<dyn FavoriteFlashcardWriterPort> = Arc::new(fixture.writer());
         let mut first = card();
-        first.target_deck = "言语理解与表达/默认/中心理解/错题".into();
+        first.target_deck = "真题练习/言语理解与表达/中心理解/错题".into();
         let result = writer.append(first.clone()).await.unwrap();
         assert!(result.appended);
-        assert_eq!(result.relative_path, "言语理解与表达/默认/中心理解/错题/cards.md");
+        assert_eq!(result.relative_path, "真题练习/言语理解与表达/中心理解/错题/cards.md");
         assert_eq!(writer.append(first).await.unwrap().appended, false);
 
         let mut second = card();
         second.question_id = "0194f4e0-1234-7000-8000-000000000042".into();
-        second.target_deck = "言语理解与表达/默认/中心理解/错题".into();
+        second.target_deck = "真题练习/言语理解与表达/中心理解/错题".into();
         assert!(writer.append(second).await.unwrap().appended);
-        let path = fixture.root.join("言语理解与表达/默认/中心理解/错题/cards.md");
+        let path = fixture.root.join("真题练习/言语理解与表达/中心理解/错题/cards.md");
         let text = fs::read_to_string(path).unwrap();
         assert!(text.contains("中心理解"));
-        assert_eq!(parse_markdown_text(&text, "言语理解与表达/默认/中心理解/错题/cards.md").unwrap().cards.len(), 2);
+        assert_eq!(parse_markdown_text(&text, "真题练习/言语理解与表达/中心理解/错题/cards.md").unwrap().cards.len(), 2);
     }
 
     #[tokio::test]
@@ -783,13 +783,13 @@ mod tests {
         let writer: Arc<dyn FavoriteFlashcardWriterPort> = Arc::new(fixture.writer());
         let ai = card();
         let mut normal = ai.clone();
-        normal.target_deck = "数量关系/默认/工程效率/错题".into();
+        normal.target_deck = "用户整理/数量关系/工程效率/错题".into();
         let ai_result = writer.append(ai.clone()).await.unwrap();
         let normal_result = writer.append(normal.clone()).await.unwrap();
         assert!(ai_result.appended);
         assert!(normal_result.appended);
-        assert_eq!(ai_result.relative_path, "数量/工程效率/错题/cards.md");
-        assert_eq!(normal_result.relative_path, "数量关系/默认/工程效率/错题/cards.md");
+        assert_eq!(ai_result.relative_path, "真题练习/数量关系/工程效率/错题/cards.md");
+        assert_eq!(normal_result.relative_path, "用户整理/数量关系/工程效率/错题/cards.md");
         assert!(!writer.append(ai).await.unwrap().appended);
         assert!(!writer.append(normal).await.unwrap().appended);
     }
@@ -810,7 +810,7 @@ mod tests {
     async fn symlinked_source_entries_are_rejected() {
         let fixture = Fixture::new();
         let outside = Fixture::new();
-        std::os::unix::fs::symlink(&outside.root, fixture.root.join("数量")).unwrap();
+        std::os::unix::fs::symlink(&outside.root, fixture.root.join("真题练习")).unwrap();
         let writer: Arc<dyn FavoriteFlashcardWriterPort> = Arc::new(fixture.writer());
         assert!(matches!(
             writer.append(card()).await,

@@ -67,12 +67,11 @@ impl FavoriteFlashcardWriterPort for Fake {
         let mut cards = self.written.lock().unwrap();
         let appended = !cards
             .iter()
-            .any(|existing| existing.question_id == card.question_id);
-        if appended {
-            cards.push(card);
-        }
+            .any(|existing| existing.question_id == card.question_id && existing.target_deck == card.target_deck);
+        let relative_path = format!("{}/cards.md", card.target_deck);
+        if appended { cards.push(card); }
         Ok(FavoriteWriteResult {
-            relative_path: "数量关系/工程效率/错题/cards.md".into(),
+            relative_path,
             card_id: None,
             appended,
         })
@@ -97,7 +96,7 @@ impl FlashcardSourcePort for Fake {
                 id: FlashcardId::new(CARD).unwrap(),
                 source_question_id: Some(card.question_id.clone()),
                 correct_answer: card.correct_answer.clone(),
-                source_file: "数量关系/工程效率/错题/cards.md".into(),
+                source_file: format!("{}/cards.md", card.target_deck),
                 source_order: 0,
                 deck_path: card.target_deck.clone(),
                 front_markdown: card.front.clone(),
@@ -107,10 +106,11 @@ impl FlashcardSourcePort for Fake {
                 generated_id: true,
             })
             .collect();
+        let successful_markdown_files = cards.iter().map(|card| card.source_file.clone()).collect();
         Ok(SourceSnapshot {
             cards,
             complete: true,
-            successful_markdown_files: ["数量关系/工程效率/错题/cards.md".into()].into(),
+            successful_markdown_files,
             ..Default::default()
         })
     }
@@ -212,11 +212,11 @@ fn setup() -> (
 }
 fn request() -> CreateFavoriteFlashcard {
     CreateFavoriteFlashcard {
-        target_deck: "数量关系/AI出题/工程效率/错题".into(),
-        creation_mode: Some(FlashcardCreationMode::AiGeneration),
+        target_deck: "真题练习/数量关系/工程效率/错题".into(),
+        creation_mode: Some(FlashcardCreationMode::Practice),
         back: "".into(),
         source_revision: "v1".into(),
-        type_confirmed: false,
+        type_confirmed: true,
     }
 }
 #[tokio::test]
@@ -504,15 +504,26 @@ async fn favorite_content_loads_material_options_and_server_answer_without_submi
 async fn ai_and_default_requests_validate_against_their_own_target_sets() {
     let (app, fake, _) = setup();
     let mut default = request();
-    default.target_deck = "数量关系/工程效率/错题".into();
-    default.creation_mode = Some(FlashcardCreationMode::Default);
+    default.target_deck = "真题练习/数量关系/工程效率/错题".into();
+    default.creation_mode = Some(FlashcardCreationMode::Practice);
     let result = app.create(QUESTION, default).await.unwrap();
     assert_eq!(result.status, "created_synced");
     let mut wrong_mode = request();
-    wrong_mode.target_deck = "数量关系/工程效率/错题".into();
-    wrong_mode.creation_mode = Some(FlashcardCreationMode::AiGeneration);
+    wrong_mode.target_deck = "真题练习/数量关系/工程效率/错题".into();
+    wrong_mode.creation_mode = Some(FlashcardCreationMode::UserOrganized);
     assert!(app.create(QUESTION, wrong_mode).await.is_err());
     assert_eq!(fake.written.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn web_can_save_directly_to_user_organized_as_an_ai_source() {
+    let (app, fake, _) = setup();
+    let mut request = request();
+    request.target_deck = "用户整理/数量关系/工程效率/错题".into();
+    request.creation_mode = Some(FlashcardCreationMode::UserOrganized);
+    let result = app.create(QUESTION, request).await.unwrap();
+    assert_eq!(result.status, "created_synced");
+    assert_eq!(fake.written.lock().unwrap()[0].target_deck, "用户整理/数量关系/工程效率/错题");
 }
 
 #[tokio::test]
@@ -538,7 +549,7 @@ async fn stale_preview_and_cross_module_target_do_not_write() {
     stale.source_revision = "old".into();
     assert!(app.create(QUESTION, stale).await.is_err());
     let mut foreign = request();
-    foreign.target_deck = "判断推理/形式推理/直言命题/错题".into();
+    foreign.target_deck = "用户整理/判断推理/形式推理/直言命题/错题".into();
     assert!(app.create(QUESTION, foreign).await.is_err());
     assert!(fake.written.lock().unwrap().is_empty());
     fake.deny_favorite.store(true, Ordering::SeqCst);
@@ -547,16 +558,17 @@ async fn stale_preview_and_cross_module_target_do_not_write() {
 }
 
 #[tokio::test]
-async fn coarse_category_requires_explicit_supported_type_confirmation() {
+async fn coarse_category_preserves_question_category_in_both_destinations() {
     let (app, fake, _) = setup();
     fake.coarse_category.store(true, Ordering::SeqCst);
     let preview = app.preview(QUESTION).await.unwrap();
-    assert!(preview.eligibility.requires_type_confirmation);
-    assert_eq!(preview.eligibility.allowed_targets.len(), 12);
+    assert!(!preview.eligibility.requires_type_confirmation);
+    assert_eq!(preview.eligibility.allowed_targets.len(), 2);
+    assert_eq!(preview.eligibility.recommended_target.as_deref(), Some("真题练习/数量关系/数学运算/错题"));
     assert!(app.create(QUESTION, request()).await.is_err());
     assert!(fake.written.lock().unwrap().is_empty());
     let mut confirmed = request();
-    confirmed.type_confirmed = true;
+    confirmed.target_deck = "真题练习/数量关系/数学运算/错题".into();
     assert_eq!(
         app.create(QUESTION, confirmed).await.unwrap().status,
         "created_synced"
