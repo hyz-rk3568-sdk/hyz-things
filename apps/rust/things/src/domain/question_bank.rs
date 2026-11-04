@@ -252,3 +252,26 @@ pub struct FavoriteState {
     pub question_id: String,
     pub favorite: bool,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiReviewMessage {
+    pub role: String,
+    pub content: String,
+    pub created_at: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiReviewState {
+    pub session_id: String,
+    pub question_id: String,
+    /// idle, running, complete, stopped or failed
+    pub status: String,
+    pub error: Option<String>,
+    pub messages: Vec<AiReviewMessage>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AiReviewFollowUp {
+    pub message: String,
+}
