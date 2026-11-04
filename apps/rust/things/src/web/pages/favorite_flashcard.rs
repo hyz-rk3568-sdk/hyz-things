@@ -193,9 +193,9 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
                     </div>
                     <p class="text-xs text-base-content/60">
                         {if *ai_mode {
-                            "AI 出题路径：只提供当前命题器支持的题型目录，与默认复盘互不替代。"
+                            "AI 出题路径：一级模块 / AI出题 / 对应题型 / 错题 / cards.md，仅开放当前命题器支持的分类。"
                         } else {
-                            "默认路径：一级模块完整名称 / 原题二级 category / 错题 / cards.md，适用于全部真题模块。"
+                            "默认路径：一级模块 / 默认 / 二级 category / 错题 / cards.md，适用于全部真题模块。"
                         }}
                     </p>
                     if props.preview.ai_targets.is_empty() {
