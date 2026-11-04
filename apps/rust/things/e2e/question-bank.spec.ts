@@ -504,3 +504,28 @@ test('AI review defaults to source, stays running across navigation and restores
   await expect(page.getByTestId('question-bank-ai-status')).toHaveText('正在生成');
   expect(actions).toEqual(['start','/messages','/stop','start']);
 });
+
+
+test('any original-paper review can create a category flashcard without first favoriting',async({page})=>{
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await chooseFixturePaper(page);
+  await page.getByTestId('question-bank-practice-start').click();
+  await expect(page.getByTestId('question-bank-practice-create-flashcard')).toHaveCount(0);
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button',{name:'确认交卷'}).click();
+  const create=page.getByTestId('question-bank-practice-create-flashcard');
+  await expect(create).toBeVisible();
+  await create.click();
+  const dialog=page.getByTestId('question-bank-practice-flashcard-dialog');
+  await expect(dialog).toBeVisible();
+  const card=dialog.getByTestId('favorite-flashcard-card');
+  await expect(card.getByRole('button',{name:'创建并同步'})).toBeDisabled();
+  await card.getByLabel('目标牌组').selectOption('资料/比重/错题');
+  await expect(card.getByTestId('favorite-flashcard-path')).toHaveText('将追加或创建：flashcards/资料/比重/错题/cards.md');
+  await expect(card.getByRole('button',{name:'创建并同步'})).toBeEnabled();
+  await dialog.getByRole('button',{name:'返回复盘'}).first().click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第');
+});
