@@ -15,7 +15,7 @@ use hyz_things::{
         ports::ClockPort,
         question_bank::BankError,
     },
-    domain::flashcards::*,
+    domain::{favorite_flashcard::FlashcardCreationMode, flashcards::*},
 };
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -212,7 +212,8 @@ fn setup() -> (
 }
 fn request() -> CreateFavoriteFlashcard {
     CreateFavoriteFlashcard {
-        target_deck: "数量关系/工程效率/错题".into(),
+        target_deck: "数量/工程效率/错题".into(),
+        creation_mode: Some(FlashcardCreationMode::AiGeneration),
         back: "".into(),
         source_revision: "v1".into(),
         type_confirmed: false,
@@ -497,6 +498,21 @@ async fn favorite_content_loads_material_options_and_server_answer_without_submi
         FavoriteQuestionPort::load(&bank, QUESTION).await,
         Err(BankError::Stale)
     ));
+}
+
+#[tokio::test]
+async fn ai_and_default_requests_validate_against_their_own_target_sets() {
+    let (app, fake, _) = setup();
+    let mut default = request();
+    default.target_deck = "数量关系/工程效率/错题".into();
+    default.creation_mode = Some(FlashcardCreationMode::Default);
+    let result = app.create(QUESTION, default).await.unwrap();
+    assert_eq!(result.status, "created_synced");
+    let mut wrong_mode = request();
+    wrong_mode.target_deck = "数量关系/工程效率/错题".into();
+    wrong_mode.creation_mode = Some(FlashcardCreationMode::AiGeneration);
+    assert!(app.create(QUESTION, wrong_mode).await.is_err());
+    assert_eq!(fake.written.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]
