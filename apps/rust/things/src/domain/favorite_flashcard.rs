@@ -177,33 +177,64 @@ fn valid_category(category: &str) -> bool {
 
 /// Resolve a destination to a bounded category directory or a registered AI deck.
 pub fn resolve_target(target: &str) -> Option<ResolvedTarget> {
-    if let Some(known) = AI_TARGETS.iter().find(|entry| entry.target_deck == target) {
+    // Legacy source files can still be read and classified by the generators,
+    // but new UI choices always contain an explicit 默认 or AI出题 segment.
+    let normalized = if let Some(tail) = target.strip_prefix("资料/") {
+        format!("资料分析/{tail}")
+    } else if let Some(tail) = target.strip_prefix("判断/") {
+        format!("判断推理/{tail}")
+    } else if let Some(tail) = target.strip_prefix("数量/") {
+        format!("数量关系/{tail}")
+    } else if let Some(tail) = target.strip_prefix("言语/") {
+        format!("言语理解与表达/{tail}")
+    } else {
+        target.to_owned()
+    };
+    let target = normalized.as_str();
+    if let Some(known) = TARGETS.iter().find(|entry| entry.target_deck == target) {
         return Some(ResolvedTarget {
             module: known.module,
             target_deck: target.to_owned(),
             relative_path: known.relative_path.to_owned(),
             tags: known.tags.iter().map(|tag| (*tag).to_owned()).collect(),
-            mode: FlashcardCreationMode::AiGeneration,
+            ai_generation: true,
         });
     }
-    let parts = target.split('/').collect::<Vec<_>>();
-    let [module, category, "错题"] = parts.as_slice() else {
-        return None;
-    };
-    let module = [
-        "资料分析", "判断推理", "数量关系", "言语理解与表达",
-        "常识判断", "政治理论",
-    ].into_iter().find(|candidate| candidate == module)?;
-    if !valid_category(category) {
-        return None;
+    let parts: Vec<_> = target.split('/').collect();
+    if let [root, "默认", category, "错题"] = parts.as_slice() {
+        let module = [
+            "资料分析", "判断推理", "数量关系",
+            "言语理解与表达", "常识判断", "政治理论",
+        ]
+        .into_iter()
+        .find(|module| module_root(module) == Some(*root))?;
+        if !valid_category(category) {
+            return None;
+        }
+        return Some(ResolvedTarget {
+            module,
+            target_deck: target.to_owned(),
+            relative_path: format!("{target}/cards.md"),
+            tags: vec![(*root).to_owned(), (*category).to_owned(), "错题".into()],
+            ai_generation: false,
+        });
     }
-    Some(ResolvedTarget {
-        module,
-        target_deck: target.to_owned(),
-        relative_path: format!("{target}/cards.md"),
-        tags: vec![module.into(), (*category).into(), "错题".into()],
-        mode: FlashcardCreationMode::Default,
-    })
+    // Existing cards from before the two-track structure are AI card sources.
+    // Keep their on-disk location untouched; do not offer these paths for new creation.
+    if parts.len() >= 3 {
+        let root = parts[0];
+        let legacy = format!("{root}/AI出题/{}", parts[1..].join("/"));
+        if let Some(known) = TARGETS.iter().find(|entry| entry.target_deck == legacy) {
+            return Some(ResolvedTarget {
+                module: known.module,
+                target_deck: target.to_owned(),
+                relative_path: format!("{target}/cards.md"),
+                tags: known.tags.iter().map(|tag| (*tag).to_owned()).collect(),
+                ai_generation: true,
+            });
+        }
+    }
+    None
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -316,9 +347,9 @@ mod tests {
     #[test]
     fn rejects_untrusted_target_segments() {
         for target in [
-            "资料分析/../错题", "资料分析/a/b/错题", "资料分析/.hidden/错题",
-            "数量关系/hello\\world/错题", "数量关系/题目/方法",
-            "数量关系/题目/错题/extra", "资料/非法分类/错题",
+            "资料分析/默认/../错题", "资料分析/默认/a/b/错题", "资料分析/默认/.hidden/错题",
+            "数量关系/默认/hello\\world/错题", "数量关系/默认/题目/方法",
+            "数量关系/默认/题目/错题/extra", "资料/非法分类/错题",
         ] {
             assert!(resolve_target(target).is_none(), "{target}");
         }
