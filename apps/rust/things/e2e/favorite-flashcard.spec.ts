@@ -10,9 +10,9 @@ const favoriteState = new Map<string, boolean>();
 const material = '## 完整材料\n\n材料中的数量为 **1200**。\n\n求结果 $A=B$';
 const preview = (eligible = true) => ({
   eligible: true, reason: null,
-  front: `${material}\n\n- A. 100\n- B. 200`, correct_answer: ['B'], recommended_target: eligible ? '数量关系/数学运算/错题' : '常识判断/法律/错题',
-  allowed_targets: eligible ? ['数量关系/数学运算/错题', '数量/工程效率/错题', '数量/概率/错题'] : ['常识判断/法律/错题'],
-  ai_targets: eligible ? ['数量/工程效率/错题', '数量/概率/错题'] : [],
+  front: `${material}\n\n- A. 100\n- B. 200`, correct_answer: ['B'], recommended_target: eligible ? '数量关系/默认/数学运算/错题' : '常识判断/默认/法律/错题',
+  allowed_targets: eligible ? ['数量关系/默认/数学运算/错题', '数量关系/AI出题/工程效率/错题', '数量关系/AI出题/概率/错题'] : ['常识判断/默认/法律/错题'],
+  ai_targets: eligible ? ['数量关系/AI出题/工程效率/错题', '数量关系/AI出题/概率/错题'] : [],
   requires_type_confirmation: eligible, source_revision: 'source-v1',
 });
 const detail = (row: (typeof rows)[number]) => ({
@@ -97,7 +97,7 @@ for (const width of [1180, 390]) {
     const card = panel.getByTestId('favorite-flashcard-card');
     await expect(card.getByLabel('背面')).toHaveValue('');
     await card.getByTestId('favorite-flashcard-ai-mode').click();
-    await card.getByLabel('目标牌组').selectOption('数量/概率/错题');
+    await card.getByLabel('目标牌组').selectOption('数量关系/AI出题/概率/错题');
     await expect(card.getByRole('button', { name: '创建并同步', exact: true })).toBeDisabled();
     await card.getByLabel('背面').fill('先列方程，再代入。');
     await card.getByLabel('确认写入所选目录').check();
@@ -110,11 +110,11 @@ for (const width of [1180, 390]) {
     await page.route(`**${root}/practice/questions/supported/flashcard`, async route => {
       body = route.request().postDataJSON();
       csrf = route.request().headers()['x-hyz-csrf'];
-      await route.fulfill({ json: { status: 'created_synced', target_deck: '数量/概率/错题', source_file: '数量/概率/错题/cards.md', card_id: 'new-card', retryable: false } });
+      await route.fulfill({ json: { status: 'created_synced', target_deck: '数量关系/AI出题/概率/错题', source_file: '数量关系/AI出题/概率/错题/cards.md', card_id: 'new-card', retryable: false } });
     });
     await card.getByRole('button', { name: '创建并同步', exact: true }).click();
     await expect(card).toContainText('已创建');
-    expect(body).toEqual({ creation_mode: 'ai_generation', target_deck: '数量/概率/错题', back: '先列方程，再代入。', source_revision: 'source-v1', type_confirmed: true });
+    expect(body).toEqual({ creation_mode: 'ai_generation', target_deck: '数量关系/AI出题/概率/错题', back: '先列方程，再代入。', source_revision: 'source-v1', type_confirmed: true });
     expect(csrf).toBeTruthy();
     await panel.getByRole('button', { name: '返回复盘', exact: true }).first().click();
     await expect(review.getByTestId('collection-review-split')).toBeVisible();
@@ -133,8 +133,8 @@ test('non-AI knowledge category creates an ordinary review flashcard', async ({ 
   const card = page.getByTestId('favorite-flashcard-card');
   const submit = card.getByRole('button', { name: '创建并同步', exact: true });
   await expect(submit).toBeDisabled();
-  await card.getByLabel('目标牌组').selectOption('常识判断/法律/错题');
-  await expect(card.getByTestId('favorite-flashcard-path')).toHaveText('将追加或创建：flashcards/常识判断/法律/错题/cards.md');
+  await card.getByLabel('目标牌组').selectOption('常识判断/默认/法律/错题');
+  await expect(card.getByTestId('favorite-flashcard-path')).toHaveText('将追加或创建：flashcards/常识判断/默认/法律/错题/cards.md');
   await expect(submit).toBeDisabled();
   await card.getByLabel('确认写入所选目录').check();
   await expect(submit).toBeEnabled();
@@ -144,16 +144,16 @@ test('default and AI paths remain independently selectable', async ({ page }) =>
   await install(page);
   const card = await openCreate(page);
   const submit = card.getByRole('button', {name:'创建并同步',exact:true});
-  await card.getByLabel('目标牌组').selectOption('数量关系/数学运算/错题');
-  await expect(card.getByTestId('favorite-flashcard-path')).toContainText('flashcards/数量关系/数学运算/错题/cards.md');
+  await card.getByLabel('目标牌组').selectOption('数量关系/默认/数学运算/错题');
+  await expect(card.getByTestId('favorite-flashcard-path')).toContainText('flashcards/数量关系/默认/数学运算/错题/cards.md');
   await card.getByLabel('确认写入所选目录').check();
   await expect(submit).toBeEnabled();
   await card.getByTestId('favorite-flashcard-ai-mode').click();
   await expect(submit).toBeDisabled();
   await expect(card.getByLabel('目标牌组')).toHaveValue('');
-  await card.getByLabel('目标牌组').selectOption('数量/工程效率/错题');
+  await card.getByLabel('目标牌组').selectOption('数量关系/AI出题/工程效率/错题');
   await card.getByLabel('确认写入所选目录').check();
-  await expect(card.getByTestId('favorite-flashcard-path')).toContainText('flashcards/数量/工程效率/错题/cards.md');
+  await expect(card.getByTestId('favorite-flashcard-path')).toContainText('flashcards/数量关系/AI出题/工程效率/错题/cards.md');
   await expect(submit).toBeEnabled();
   await card.getByTestId('favorite-flashcard-default-mode').click();
   await expect(card.getByLabel('目标牌组')).toHaveValue('');
@@ -278,7 +278,7 @@ test('favorite flashcard sync recovery retries the identical request and blocks 
   const modal = await openCreate(page);
   await modal.getByLabel('背面').fill('恢复同步的背面');
   await modal.getByTestId('favorite-flashcard-ai-mode').click();
-  await modal.getByLabel('目标牌组').selectOption('数量/工程效率/错题');
+  await modal.getByLabel('目标牌组').selectOption('数量关系/AI出题/工程效率/错题');
   await modal.getByLabel('确认写入所选目录').check();
   const requests: unknown[] = [];
   let release!: () => void;
@@ -286,7 +286,7 @@ test('favorite flashcard sync recovery retries the identical request and blocks 
   await page.route(`**${root}/practice/questions/supported/flashcard`, async route => {
     requests.push(route.request().postDataJSON());
     if (requests.length === 1) await gate;
-    await route.fulfill({ json: { status: requests.length === 1 ? 'created_sync_pending' : 'already_exists', target_deck: '数量/工程效率/错题', source_file: '数量/工程效率/错题/cards.md', card_id: 'existing-card', retryable: requests.length === 1 } });
+    await route.fulfill({ json: { status: requests.length === 1 ? 'created_sync_pending' : 'already_exists', target_deck: '数量关系/AI出题/工程效率/错题', source_file: '数量关系/AI出题/工程效率/错题/cards.md', card_id: 'existing-card', retryable: requests.length === 1 } });
   });
   const submit = modal.getByRole('button', { name: '创建并同步', exact: true });
   await submit.click();
@@ -308,18 +308,18 @@ for (const width of [1180, 390]) {
     const modal = await openCreate(page);
     await expect(modal.getByLabel('背面')).toHaveValue('');
     await modal.getByTestId('favorite-flashcard-ai-mode').click();
-  await modal.getByLabel('目标牌组').selectOption('数量/工程效率/错题');
+  await modal.getByLabel('目标牌组').selectOption('数量关系/AI出题/工程效率/错题');
     await modal.getByLabel('确认写入所选目录').check();
     const submit = modal.getByRole('button', { name: '创建并同步', exact: true });
     await expect(submit).toBeEnabled();
     let body: unknown;
     await page.route(`**${root}/practice/questions/supported/flashcard`, async route => {
       body = route.request().postDataJSON();
-      await route.fulfill({ json: { status: 'created_synced', target_deck: '数量/工程效率/错题', source_file: '数量/工程效率/错题/cards.md', card_id: 'blank-back', retryable: false } });
+      await route.fulfill({ json: { status: 'created_synced', target_deck: '数量关系/AI出题/工程效率/错题', source_file: '数量关系/AI出题/工程效率/错题/cards.md', card_id: 'blank-back', retryable: false } });
     });
     await submit.click();
     await expect(modal).toContainText('已创建并同步');
-    expect(body).toEqual({ creation_mode: 'ai_generation', target_deck: '数量/工程效率/错题', back: '', source_revision: 'source-v1', type_confirmed: true });
+    expect(body).toEqual({ creation_mode: 'ai_generation', target_deck: '数量关系/AI出题/工程效率/错题', back: '', source_revision: 'source-v1', type_confirmed: true });
     await expectNoHorizontalOverflow(page);
   });
 }
