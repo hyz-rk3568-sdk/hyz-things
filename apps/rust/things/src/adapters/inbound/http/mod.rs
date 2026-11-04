@@ -65,6 +65,7 @@ mod logic_judgment;
 mod quantitative_relations;
 mod tls;
 mod training_time;
+pub use training_time::with_training_time;
 
 pub use tls::{PortalTls, TlsListener};
 
@@ -97,7 +98,6 @@ struct AppState {
     flashcard_source:
         Option<Arc<crate::adapters::outbound::flashcard_source::FilesystemFlashcardSource>>,
     data_analysis: Option<Arc<crate::adapters::outbound::data_analysis::DataAnalysisService>>,
-    training_time: Option<Arc<crate::adapters::outbound::training_time::TrainingTimeService>>,
     logic_judgment: Option<Arc<dyn crate::application::logic_judgment::LogicJudgmentPort>>,
     quantitative_relations:
         Option<Arc<dyn crate::application::quantitative_relations::QuantitativeRelationsPort>>,
@@ -728,13 +728,6 @@ fn app_with_assets(
         allow_tailscale_self_stop,
         installed_apps,
     } = configuration;
-    let training_time = data_analysis.as_ref().map(|service| {
-        Arc::new(
-            crate::adapters::outbound::training_time::TrainingTimeService::new(
-                service.pool().clone(),
-            ),
-        )
-    });
     Router::new()
         .route(
             "/api/v1/question-bank/papers",
@@ -1200,7 +1193,6 @@ fn app_with_assets(
             flashcards,
             flashcard_source,
             data_analysis,
-            training_time,
             logic_judgment,
             quantitative_relations,
             csrf_token: Arc::from(csrf_token),

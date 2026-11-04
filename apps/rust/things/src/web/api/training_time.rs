@@ -20,6 +20,10 @@ pub(crate) struct TrainingTimeEventRequest {
 pub(crate) struct TrainingDay {
     pub date: String,
     pub total_ms: i64,
+    #[serde(default)]
+    pub answered_count: i64,
+    #[serde(default)]
+    pub answered_modules: BTreeMap<String, i64>,
     pub modules: BTreeMap<String, i64>,
     pub phases: BTreeMap<String, i64>,
 }

@@ -180,6 +180,14 @@ pub trait QuestionBankSourcePort: Send + Sync {
 }
 #[async_trait]
 pub trait QuestionBankRepositoryPort: Send + Sync {
+    /// Counts nonempty answers in completed submissions within UTC millisecond bounds.
+    async fn daily_answered_counts(
+        &self,
+        _start_ms: i64,
+        _end_ms: i64,
+    ) -> Result<Vec<(String, i64)>, BankError> {
+        Err(BankError::Unavailable)
+    }
     async fn list(&self) -> Result<Vec<IndexedPaper>, BankError>;
     async fn paper_summaries(&self) -> Result<Vec<PaperSummary>, BankError> {
         Ok(self
@@ -305,6 +313,16 @@ pub struct QuestionBankApplication {
     sync_status: Arc<Mutex<BankSyncStatus>>,
 }
 impl QuestionBankApplication {
+    pub async fn daily_answered_counts(
+        &self,
+        start_ms: i64,
+        end_ms: i64,
+    ) -> Result<Vec<(String, i64)>, BankError> {
+        self.repository
+            .daily_answered_counts(start_ms, end_ms)
+            .await
+    }
+
     pub fn new(
         source: Arc<dyn QuestionBankSourcePort>,
         repository: Arc<dyn QuestionBankRepositoryPort>,

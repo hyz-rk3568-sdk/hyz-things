@@ -10,12 +10,12 @@ use hyz_contract::router::{ControlOperation, ControlProxyMode, ControlResult};
 use hyz_things::{
     adapters::inbound::http::{
         app_with_loopback_runtime_frontend_and_flashcards, with_question_bank,
-        with_question_bank_ai,
+        with_question_bank_ai, with_training_time,
     },
     adapters::outbound::{
         flashcard_source::FilesystemFlashcardSource, flashcard_sqlite::SqliteFlashcardRepository,
         logic_judgment::LogicJudgmentService, question_bank_ai::QuestionBankAiService,
-        question_bank_sqlite::SqliteQuestionBankRepository,
+        question_bank_sqlite::SqliteQuestionBankRepository, training_time::TrainingTimeService,
     },
     application::{
         admin::AdminApplication,
@@ -1188,6 +1188,146 @@ impl Config {
     }
 }
 
+async fn seed_training_statistics(pool: &sqlx::SqlitePool) -> Result<(), Box<dyn Error>> {
+    let midnight = chrono::DateTime::parse_from_rfc3339("2026-01-01T16:00:00Z")?.timestamp_millis();
+    let answers = |answered: usize, total: usize| {
+        serde_json::to_string(
+            &(0..total)
+                .map(|index| (index < answered).then_some(index % 4))
+                .collect::<Vec<_>>(),
+        )
+    };
+    let question = serde_json::json!({
+        "question": "历史统计样题", "options": ["甲", "乙", "丙", "丁"],
+        "correct_index": 0, "answer": "甲", "explanation": "历史统计解析",
+        "skill": "统计", "evidence": "历史统计材料"
+    });
+    let groups = serde_json::to_string(&vec![
+        serde_json::json!({
+            "version": 1,
+            "material": {"topic": "历史统计", "text": "历史统计材料"},
+            "questions": vec![question; 5]
+        });
+        4
+    ])?;
+    let mut tx = pool.begin().await?;
+    // Only immutable run answers are seeded; legacy result rows/flags are deliberately absent.
+    for (id, status, answered, ended, origin, attempt) in [
+        (
+            "e2e-stats-comprehensive-original",
+            "submitted",
+            2,
+            midnight - 1,
+            None,
+            1,
+        ),
+        (
+            "e2e-stats-comprehensive-retry",
+            "submitted",
+            1,
+            midnight,
+            Some("e2e-stats-comprehensive-original"),
+            2,
+        ),
+        (
+            "e2e-stats-comprehensive-blank",
+            "submitted",
+            0,
+            midnight,
+            None,
+            1,
+        ),
+        (
+            "e2e-stats-comprehensive-ready",
+            "ready",
+            4,
+            midnight,
+            None,
+            1,
+        ),
+        (
+            "e2e-stats-comprehensive-active",
+            "active",
+            4,
+            midnight,
+            None,
+            1,
+        ),
+    ] {
+        sqlx::query(
+            "INSERT INTO data_analysis_runs
+             (id,groups_json,answers_json,status,created_at_ms,started_at_ms,ended_at_ms,origin_run_id,attempt_no)
+             VALUES(?,?,?,?,?,?,?,?,?)",
+        )
+        .bind(id)
+        .bind(&groups)
+        .bind(answers(answered, 20)?)
+        .bind(status)
+        .bind(midnight - 600_000)
+        .bind((status != "ready").then_some(midnight - 600_000))
+        .bind(ended)
+        .bind(origin)
+        .bind(attempt)
+        .execute(&mut *tx)
+        .await?;
+    }
+    for (table, before, after) in [
+        ("logic_judgment_runs", 1, 2),
+        ("quantitative_relations_runs", 3, 1),
+    ] {
+        let questions = serde_json::to_string(
+            &(0..10).map(|index| {
+                let card_id = format!("e2e-stats-{table}-card-{index}");
+                serde_json::json!({
+                    "generated": {
+                        "target_id": card_id, "kind": "formal", "question": "历史统计样题",
+                        "options": ["甲", "乙", "丙", "丁"], "correct_index": 0,
+                        "explanation": "历史统计解析"
+                    },
+                    "card": {
+                        "id": card_id, "card_path": "统计样题/cards.md", "front": "历史统计方法",
+                        "back": "历史统计解析", "source_hash": "e2e-stats", "kind": "formal"
+                    }
+                })
+            }).collect::<Vec<_>>()
+        )?;
+        for (suffix, answered, ended, status) in [
+            ("before", before, midnight - 1, "submitted"),
+            ("after", after, midnight, "submitted"),
+            ("blank", 0, midnight, "submitted"),
+        ]
+        .into_iter()
+        .chain(
+            (table == "quantitative_relations_runs")
+                .then_some([
+                    ("prepared", 4, midnight, "prepared"),
+                    ("active", 4, midnight, "active"),
+                ])
+                .into_iter()
+                .flatten(),
+        ) {
+            let query = format!(
+                "INSERT INTO {table}
+                 (id,questions_json,answers_json,status,created_at_ms,started_at_ms,ended_at_ms,paused_at_ms)
+                 VALUES(?,?,?,?,?,?,?,?)"
+            );
+            sqlx::query(&query)
+                .bind(format!("e2e-stats-{table}-{suffix}"))
+                .bind(&questions)
+                .bind(answers(answered, 10)?)
+                .bind(status)
+                .bind(midnight - 600_000)
+                .bind((status != "prepared").then_some(midnight - 600_000))
+                .bind(ended)
+                .bind((status == "active").then_some(midnight))
+                .execute(&mut *tx)
+                .await?;
+        }
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let config = Config::parse().map_err(std::io::Error::other)?;
@@ -1240,6 +1380,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         SqliteFlashcardRepository::connect(fixture_root.join("flashcards.db"))
             .await
             .map_err(|error| std::io::Error::other(error.to_string()))?;
+    let training_time = Arc::new(TrainingTimeService::new(
+        flashcard_repository.pool().clone(),
+    ));
+    seed_training_statistics(flashcard_repository.pool()).await?;
     let logic_service = LogicJudgmentService::new(flashcard_repository.pool().clone(), None)
         .map_err(std::io::Error::other)?;
     logic_service
@@ -1292,6 +1436,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     ));
     let web_app = with_question_bank(web_app, Some(bank));
     let web_app = with_question_bank_ai(web_app, Some(ai));
+    let web_app = with_training_time(web_app, Some(training_time));
     let harness_app = harness_control_app(backend, admin, camera);
 
     println!(
