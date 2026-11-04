@@ -144,8 +144,75 @@ pub const TARGETS: &[FavoriteTarget] = &[
     },
 ];
 
-pub fn resolve_target(target: &str) -> Option<&'static FavoriteTarget> {
-    TARGETS.iter().find(|entry| entry.target_deck == target)
+/// A validated deck path. Historic generator decks keep their existing paths,
+/// while ordinary review cards use <module>/<category>/错题/cards.md.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResolvedTarget {
+    pub module: &'static str,
+    pub target_deck: String,
+    pub relative_path: String,
+    pub tags: Vec<String>,
+    pub ai_generation: bool,
+}
+
+fn module_root(module: &str) -> Option<&'static str> {
+    match module {
+        "资料分析" => Some("资料"),
+        "数量关系" => Some("数量"),
+        "判断推理" => Some("判断"),
+        "言语理解与表达" => Some("言语"),
+        "常识判断" => Some("常识判断"),
+        "政治理论" => Some("政治理论"),
+        _ => None,
+    }
+}
+
+fn valid_category(category: &str) -> bool {
+    !category.is_empty()
+        && category.len() <= 180
+        && category != "."
+        && category != ".."
+        && !category.starts_with('.')
+        && !category.ends_with([' ', '.'])
+        && !category.chars().any(|ch| {
+            ch.is_control() || matches!(ch, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')
+        })
+}
+
+pub fn resolve_target(target: &str) -> Option<ResolvedTarget> {
+    if let Some(known) = TARGETS.iter().find(|entry| entry.target_deck == target) {
+        return Some(ResolvedTarget {
+            module: known.module,
+            target_deck: target.to_owned(),
+            relative_path: known.relative_path.to_owned(),
+            tags: known.tags.iter().map(|tag| (*tag).to_owned()).collect(),
+            ai_generation: true,
+        });
+    }
+    let parts: Vec<_> = target.split('/').collect();
+    let [root, category, "错题"] = parts.as_slice() else {
+        return None;
+    };
+    let module = [
+        "资料分析",
+        "判断推理",
+        "数量关系",
+        "言语理解与表达",
+        "常识判断",
+        "政治理论",
+    ]
+    .into_iter()
+    .find(|module| module_root(module) == Some(*root))?;
+    if !valid_category(category) {
+        return None;
+    }
+    Some(ResolvedTarget {
+        module,
+        target_deck: target.to_owned(),
+        relative_path: format!("{target}/cards.md"),
+        tags: vec![(*root).to_owned(), (*category).to_owned(), "错题".into()],
+        ai_generation: false,
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -155,69 +222,54 @@ pub struct FavoriteEligibility {
     pub recommended_target: Option<String>,
     pub allowed_targets: Vec<String>,
     pub requires_type_confirmation: bool,
+    #[serde(default)]
+    pub ai_targets: Vec<String>,
 }
 
 pub fn eligibility(module: Option<&str>, category: Option<&str>) -> FavoriteEligibility {
     let Some(module_name) = super::question_bank::primary_module(module) else {
-        return rejected("当前模块暂不支持创建 Flashcard");
+        return rejected("原题没有可识别的一级模块");
     };
-    let targets = TARGETS
-        .iter()
-        .filter(|target| target.module == module_name)
-        .collect::<Vec<_>>();
-    if targets.is_empty() {
-        return rejected("当前模块暂不支持创建 Flashcard");
-    }
+    let root = module_root(module_name).expect("all recognized question-bank modules have a deck root");
     let category = category.unwrap_or("").trim();
-    if module_name == "判断推理"
-        && [module.unwrap_or(""), category].iter().any(|value| {
-            ["图形推理", "定义判断", "类比推理", "论证推理", "逻辑论证"]
-                .iter()
-                .any(|unsupported| value.split('/').any(|part| part == *unsupported))
-        })
-    {
-        return rejected("当前仅支持四类形式推理，暂不支持该题型");
+    let fallback = if category.is_empty() { "未分类" } else { category };
+    if !valid_category(fallback) {
+        return rejected("原题二级 category 含有不安全的目录字符");
     }
-    if module_name == "数量关系" && category == "数字推理" {
-        return rejected("当前数量关系生成器暂不支持数字推理");
-    }
-    let exact = targets.iter().find(|target| {
+    let normal = format!("{root}/{fallback}/错题");
+    let candidates = TARGETS.iter().filter(|target| target.module == module_name).collect::<Vec<_>>();
+    let exact = candidates.iter().filter(|target| {
         let parts = target.target_deck.split('/').collect::<Vec<_>>();
-        category == parts[1..parts.len() - 1].join("/") || category == parts[parts.len() - 2]
-    });
-    if let Some(target) = exact {
-        return FavoriteEligibility {
-            eligible: true,
-            reason: None,
-            recommended_target: Some(target.target_deck.into()),
-            allowed_targets: vec![target.target_deck.into()],
-            requires_type_confirmation: false,
-        };
-    }
-    let prefix = match (module_name, category) {
-        ("数量关系", "行程" | "行程问题") => Some("数量/行程/"),
-        ("数量关系", "排列组合" | "排列组合问题") => Some("数量/排列组合/"),
-        ("数量关系", "" | "数学运算" | "数量关系" | "数量" | "未分类") => None,
-        ("数量关系", _) => return rejected("当前数量关系生成器暂不支持该具体题型"),
-        ("判断推理", "" | "逻辑判断" | "形式推理" | "判断推理" | "未分类") => {
-            None
-        }
-        ("判断推理", _) => return rejected("当前仅支持四类形式推理，请检查原题分类"),
-        _ => None,
+        category == parts[1..parts.len()-1].join("/") || category == parts[parts.len()-2]
+    }).copied().collect::<Vec<_>>();
+    let likely = if !exact.is_empty() {
+        exact
+    } else if module_name == "数量关系" && matches!(category, "" | "数学运算" | "数量关系" | "未分类") {
+        candidates
+    } else if module_name == "判断推理" && matches!(category, "" | "逻辑判断" | "形式推理" | "判断推理" | "未分类") {
+        candidates
+    } else if module_name == "数量关系" && matches!(category, "行程" | "行程问题") {
+        candidates.into_iter().filter(|t| t.target_deck.starts_with("数量/行程/")).collect()
+    } else if module_name == "数量关系" && matches!(category, "排列组合" | "排列组合问题") {
+        candidates.into_iter().filter(|t| t.target_deck.starts_with("数量/排列组合/")).collect()
+    } else {
+        Vec::new()
     };
-    let targets = targets
-        .into_iter()
-        .filter(|target| prefix.is_none_or(|prefix| target.target_deck.starts_with(prefix)))
-        .collect::<Vec<_>>();
+    let mut targets = vec![normal.clone()];
+    let mut ai_targets = Vec::new();
+    for known in likely {
+        if !targets.iter().any(|value| value == known.target_deck) {
+            targets.push(known.target_deck.into());
+        }
+        ai_targets.push(known.target_deck.into());
+    }
     FavoriteEligibility {
         eligible: true,
         reason: None,
-        recommended_target: None,
-        allowed_targets: targets
-            .iter()
-            .map(|target| target.target_deck.into())
-            .collect(),
-        requires_type_confirmation: true,
+        recommended_target: Some(normal),
+        allowed_targets: targets,
+        requires_type_confirmation: ai_targets.len() > 1,
+        ai_targets,
     }
 }
 
@@ -228,6 +280,7 @@ fn rejected(reason: &str) -> FavoriteEligibility {
         recommended_target: None,
         allowed_targets: Vec::new(),
         requires_type_confirmation: false,
+        ai_targets: Vec::new(),
     }
 }
 
@@ -236,39 +289,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_target_is_tagged_for_the_wrong_answer_deck() {
-        for target in TARGETS {
-            assert!(
-                target.tags.contains(&"错题"),
-                "{} must carry the 错题 tag",
-                target.target_deck
-            );
+    fn generic_category_supports_every_question_bank_module_without_ai() {
+        for (module, root) in [
+            ("资料分析", "资料"), ("数量关系", "数量"),
+            ("判断推理", "判断"), ("言语理解与表达", "言语"),
+            ("常识判断", "常识判断"), ("政治理论", "政治理论"),
+        ] {
+            let e = eligibility(Some(module), Some("综合分析与审题"));
+            assert!(e.eligible);
+            assert!(e.allowed_targets.contains(&format!("{root}/综合分析与审题/错题")));
+            assert!(resolve_target(&format!("{root}/综合分析与审题/错题")).is_some());
         }
     }
 
     #[test]
-    fn unsupported_precise_math_type_is_rejected_while_broad_math_needs_confirmation() {
-        assert!(!eligibility(Some("数量关系"), Some("几何问题")).eligible);
-        let broad = eligibility(Some("数量关系"), Some("数学运算"));
-        assert!(broad.eligible && broad.requires_type_confirmation);
-        assert_eq!(broad.allowed_targets.len(), 11);
+    fn old_ai_decks_remain_selectable_and_can_coexist_with_non_ai_cards() {
+        let e = eligibility(Some("判断推理"), Some("直言命题"));
+        assert!(e.allowed_targets.contains(&"判断/直言命题/错题".to_owned()));
+        assert!(e.allowed_targets.contains(&"判断/形式推理/直言命题/错题".to_owned()));
+        assert!(e.ai_targets.contains(&"判断/形式推理/直言命题/错题".to_owned()));
     }
 
     #[test]
-    fn rejects_known_unsupported_secondary_categories() {
-        assert!(!eligibility(Some("数量关系"), Some("数字推理")).eligible);
-        assert!(!eligibility(Some("判断推理"), Some("论证推理")).eligible);
-        assert!(!eligibility(Some("言语"), None).eligible);
+    fn rejects_untrusted_target_segments() {
+        for target in ["资料/../错题", "资料/a/b/错题", "资料/.hidden/错题",
+            "数量/hello\\world/错题", "数量/题目/方法", "数量/题目/错题/extra"] {
+            assert!(resolve_target(target).is_none(), "{target}");
+        }
     }
 
     #[test]
-    fn exact_supported_category_recommends_its_fixed_target() {
-        let eligibility = eligibility(Some("数量关系"), Some("工程效率"));
-        assert_eq!(
-            eligibility.recommended_target.as_deref(),
-            Some("数量/工程效率/错题")
-        );
-        assert_eq!(eligibility.allowed_targets, vec!["数量/工程效率/错题"]);
-        assert!(!eligibility.requires_type_confirmation);
+    fn broad_math_can_explicitly_select_old_generator_decks() {
+        let e = eligibility(Some("数量关系"), Some("数学运算"));
+        assert_eq!(e.ai_targets.len(), 11);
+        assert!(e.requires_type_confirmation);
     }
 }
