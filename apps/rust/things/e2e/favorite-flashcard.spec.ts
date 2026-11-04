@@ -167,6 +167,36 @@ test('review cancels a saved favorite and refreshes the collection', async ({ pa
   await expect(page.getByTestId('question-bank-collection-item')).toContainText('第 2 题');
 });
 
+test('review reuses the training header with the favorite on the left and the scratchpad pen on the right', async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 844 });
+  await install(page);
+  const review = await openReview(page);
+  const star = review.getByTestId('collection-review-favorite');
+  const heading = review.getByTestId('collection-review-heading');
+  const toggle = review.getByTestId('calculation-scratchpad-toggle');
+  await expect(toggle).toHaveAttribute('aria-label', '开启草稿');
+  const starBox = await star.boundingBox();
+  const headingBox = await heading.boundingBox();
+  const penBox = await toggle.boundingBox();
+  expect(starBox!.x).toBeLessThan(headingBox!.x);
+  expect(penBox!.x).toBeGreaterThanOrEqual(headingBox!.x + headingBox!.width);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-label', '关闭草稿');
+  await expect(review.getByRole('group', { name: '题目与解析滚动' })).toBeVisible();
+  const canvas = review.getByTestId('calculation-scratchpad-canvas');
+  await expect(canvas).toBeVisible();
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + 80, box!.y + 120);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + 180, box!.y + 160, { steps: 6 });
+  await page.mouse.up();
+  await expect(review.getByTestId('calculation-scratchpad-undo')).toBeEnabled();
+  await toggle.click();
+  await expect(canvas).toBeHidden();
+  await expectNoHorizontalOverflow(page);
+});
+
 test('review swipe moves to the neighbouring saved question', async ({ page }) => {
   await page.setViewportSize({ width: 1180, height: 844 });
   await install(page, 'wrong');

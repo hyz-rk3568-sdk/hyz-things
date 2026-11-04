@@ -177,13 +177,15 @@ fn pane_selector(pane: InkPane) -> &'static str {
             "[data-testid='analysis-material-scroll'], ",
             "[data-testid='logic-question-scroll'], ",
             "[data-testid='quant-question-scroll'], ",
-            "[data-testid='question-bank-practice-material-scroll']",
+            "[data-testid='question-bank-practice-material-scroll'], ",
+            "[data-testid='collection-review-material-scroll']",
         ),
         InkPane::Question => concat!(
             "[data-testid='analysis-question'], ",
             "[data-testid='logic-answer-scroll'], ",
             "[data-testid='quant-answer-scroll'], ",
-            "[data-testid='question-bank-practice-question-scroll']",
+            "[data-testid='question-bank-practice-question-scroll'], ",
+            "[data-testid='collection-review-question-scroll']",
         ),
     }
 }

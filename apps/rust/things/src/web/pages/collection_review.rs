@@ -2,7 +2,10 @@
 //! sessions stay separate; this view only reads one question at a time and
 //! lets the reader swipe through the filtered collection.
 use super::favorite_flashcard::{FavoriteFlashcardPanel, FavoritePreview};
-use super::question_bank_practice::{answer_options, use_practice_favorite};
+use super::material_scroll::{scroll_edges, ScrollEdges};
+use super::question_bank_practice::{
+    answer_options, use_practice_favorite, QuestionBankQuestionHeader,
+};
 use super::*;
 use hyz_things::domain::question_bank::{
     primary_module, FavoriteState, PracticeBrowseItem, PracticeMode, PracticeQuestionDetail,
@@ -29,6 +32,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
     let retry = use_state(|| 0u32);
     let material_scroll = use_node_ref();
     let question_scroll = use_node_ref();
+    let question_edges = use_state(ScrollEdges::default);
     let current_item = props.items.get(*index).cloned();
     let question_id = current_item.as_ref().map(|item| item.question_id.clone());
     let favorite = use_practice_favorite(question_id.clone());
@@ -71,6 +75,29 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
             .map(|detail| detail.question.id.clone());
         use_effect_with(question, |_| {
             hydrate_math();
+            || ()
+        });
+    }
+    let refresh_question_edges = {
+        let question_scroll = question_scroll.clone();
+        let question_edges = question_edges.clone();
+        Callback::from(move |_: ()| {
+            if let Some(node) = question_scroll.cast::<web_sys::HtmlElement>() {
+                let value = scroll_edges(&node);
+                if *question_edges != value {
+                    question_edges.set(value);
+                }
+            }
+        })
+    };
+    {
+        let refresh_question_edges = refresh_question_edges.clone();
+        let question = detail
+            .as_ref()
+            .as_ref()
+            .map(|detail| detail.question.id.clone());
+        use_effect_with((*index, question), move |_| {
+            refresh_question_edges.emit(());
             || ()
         });
     }
@@ -271,15 +298,31 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
         let right = html! {
             <section class="flex h-full min-h-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100"
                 data-testid="collection-review-question-pane">
-                <div class={classes!(TRAINING_PANE_HEADER,"question-bank-pane-header")}>
-                    <strong class="min-w-0 truncate text-sm" data-testid="collection-review-heading">
-                        {format!("第 {} 题", current.item.number)}
-                    </strong>
-                    <span class="shrink-0 text-[11px] text-base-content/45">
-                        {[current.item.module.as_deref(),current.item.category.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" · ")}
-                    </span>
-                </div>
+                <QuestionBankQuestionHeader
+                    title_test_id="collection-review-heading"
+                    title={format!("第 {} 题", current.item.number)}
+                    subtitle={Some([current.item.module.as_deref(),current.item.category.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" · "))}
+                    leading={html!{
+                        if let Some((_, message)) = (*favorite.failure).as_ref() {
+                            <button type="button" class="btn btn-ghost btn-sm shrink-0 text-error" data-testid="collection-review-favorite-retry"
+                                title={message.clone()} onclick={Callback::from({
+                                    let retry=favorite.retry.clone(); move |_|retry.emit(())
+                                })}>
+                                {"重试收藏"}
+                            </button>
+                        } else {
+                            <button type="button" class="btn btn-ghost btn-sm shrink-0 text-lg" data-testid="collection-review-favorite"
+                                aria-label={if *favorite_busy {"正在更新收藏"} else {favorite_label}}
+                                disabled={*favorite_busy || favorite_state.is_none()}
+                                onclick={toggle_favorite}>{if *favorite_busy {"…"} else {favorite_symbol}}</button>
+                        }
+                    }}
+                    passage={Some(question_scroll.clone())}
+                    can_scroll_up={question_edges.can_scroll_up}
+                    can_scroll_down={question_edges.can_scroll_down}
+                    question_index={*index} target="题目" label="题目与解析滚动" />
                 <div ref={question_scroll.clone()}
+                    onscroll={Callback::from({let refresh=refresh_question_edges.clone();move |_|refresh.emit(())})}
                     class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4 space-y-4"
                     data-testid="collection-review-question-scroll">
                     if shared {
@@ -379,18 +422,6 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                     </div>
                 </div>
                 <div class="flex shrink-0 items-center gap-2">
-                    if let Some((_, message)) = (*favorite.failure).as_ref() {
-                        <span class="max-w-48 truncate text-xs text-error" role="alert">{message.clone()}</span>
-                        <button type="button" class="btn btn-ghost btn-sm" data-testid="collection-review-favorite-retry"
-                            onclick={Callback::from({let retry=favorite.retry.clone();move |_|retry.emit(())})}>
-                            {"重试收藏"}
-                        </button>
-                    } else {
-                        <button type="button" class="btn btn-ghost btn-sm text-lg" data-testid="collection-review-favorite"
-                            aria-label={if *favorite_busy {"正在更新收藏"} else {favorite_label}}
-                            disabled={*favorite_busy || favorite_state.is_none()}
-                            onclick={toggle_favorite}>{if *favorite_busy {"…"} else {favorite_symbol}}</button>
-                    }
                     <span class="badge badge-outline">{"复盘"}</span>
                 </div>
             </header>
@@ -400,12 +431,19 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                 </p>
             }
             <div class="relative min-h-0 flex-1 overflow-hidden">
-                <TrainingSwipeSurface current={index.clone()} total={props.items.len()}
-                    navigation_allowed={Some(Callback::from({
-                        let creating=creating.clone(); move |()| !*creating
-                    }))}>
+                if *creating {
                     {main}
-                </TrainingSwipeSurface>
+                } else {
+                    <InkOverlay question_index={*index} responsive={true} scroll_linked={true}
+                        persist_key={format!("collection-review-{}-{}", scope_label, item.question_id)}>
+                        <TrainingSwipeSurface current={index.clone()} total={props.items.len()}
+                            navigation_allowed={Some(Callback::from({
+                                let creating=creating.clone(); move |()| !*creating
+                            }))}>
+                            {main}
+                        </TrainingSwipeSurface>
+                    </InkOverlay>
+                }
             </div>
             <nav class="flex shrink-0 items-center justify-center gap-3 border-t border-base-content/10 pt-2"
                 aria-label="复盘题目导航">

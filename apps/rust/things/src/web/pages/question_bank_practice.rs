@@ -442,6 +442,54 @@ fn question_bank_scroll_buttons(props: &QuestionBankScrollButtonsProps) -> Html 
     }
 }
 
+#[derive(Properties, PartialEq)]
+pub(super) struct QuestionBankQuestionHeaderProps {
+    /// Left-side action such as the favorite star.
+    #[prop_or_default]
+    pub(super) leading: Html,
+    pub(super) title: String,
+    #[prop_or_default]
+    pub(super) subtitle: Option<String>,
+    pub(super) title_test_id: &'static str,
+    #[prop_or_default]
+    pub(super) passage: Option<NodeRef>,
+    #[prop_or_default]
+    pub(super) can_scroll_up: bool,
+    #[prop_or_default]
+    pub(super) can_scroll_down: bool,
+    pub(super) question_index: usize,
+    pub(super) target: &'static str,
+    pub(super) label: &'static str,
+}
+
+/// Shared question-pane header: the favorite star leads, the title follows,
+/// and the scroll arrows and scratchpad pen stay anchored on the right.
+#[function_component(QuestionBankQuestionHeader)]
+pub(super) fn question_bank_question_header(props: &QuestionBankQuestionHeaderProps) -> Html {
+    html! {
+        <div class={classes!(TRAINING_PANE_HEADER,"question-bank-pane-header")}>
+            {props.leading.clone()}
+            <div class="min-w-0 flex-1">
+                <strong class="block truncate text-sm" data-testid={props.title_test_id}>
+                    {props.title.clone()}
+                </strong>
+                if let Some(subtitle) = props.subtitle.as_ref().filter(|value| !value.is_empty()) {
+                    <span class="block truncate text-[11px] text-base-content/45">{subtitle.clone()}</span>
+                }
+            </div>
+            <div class="ml-auto flex shrink-0 items-center gap-1">
+                if let Some(passage) = &props.passage {
+                    <QuestionBankScrollButtons passage={passage.clone()}
+                        can_scroll_up={props.can_scroll_up}
+                        can_scroll_down={props.can_scroll_down}
+                        question_index={props.question_index} target={props.target} label={props.label} />
+                }
+                <InkToolbarSlot />
+            </div>
+        </div>
+    }
+}
+
 #[derive(Clone, PartialEq)]
 struct CollectionModule {
     name: String,
@@ -1443,7 +1491,14 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             let shared = !item.materials.is_empty();
             let body = html! {
                 <section class="flex h-full min-h-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100" data-testid="question-bank-practice-question-pane">
-                    <div class={classes!(TRAINING_PANE_HEADER,"question-bank-pane-header")}>
+                <QuestionBankQuestionHeader
+                    title_test_id="question-bank-practice-heading"
+                    title={if completed {
+                        format!("原卷第 {} 题 · {}/{}", item.item.number, item_index + 1, current.questions.len())
+                    } else {
+                        format!("第 {}/{} 题", item_index + 1, current.questions.len())
+                    }}
+                    leading={html!{
                         <button type="button" class="btn btn-ghost btn-sm shrink-0" data-testid="question-bank-favorite"
                             onclick={Callback::from(move |_| on_favorite.emit(Action::Favorite(qid.clone())))}
                             disabled={favorite_value.is_none() || *busy}
@@ -1451,21 +1506,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             aria-label={if favorite_pending {"正在加载收藏状态"} else if favorite_failure.is_some() {"收藏状态加载失败"} else if starred {"取消收藏"} else {"收藏题目"}}>
                             {if favorite_pending {"…"} else if starred {"★"} else {"☆"}}
                         </button>
-                        <strong class="min-w-0 truncate text-sm" data-testid="question-bank-practice-heading">
-                            {if completed {
-                                format!("原卷第 {} 题 · {}/{}", item.item.number, item_index + 1, current.questions.len())
-                            } else {
-                                format!("第 {}/{} 题", item_index + 1, current.questions.len())
-                            }}
-                        </strong>
-                        <div class="ml-auto flex shrink-0 items-center gap-1">
-                            <QuestionBankScrollButtons passage={question_scroll.clone()}
-                                can_scroll_up={question_edges.can_scroll_up}
-                                can_scroll_down={question_edges.can_scroll_down}
-                                question_index={item_index} target="题目" label="题目与解析滚动" />
-                            <InkToolbarSlot />
-                        </div>
-                    </div>
+                    }}
+                    passage={Some(question_scroll.clone())}
+                    can_scroll_up={question_edges.can_scroll_up}
+                    can_scroll_down={question_edges.can_scroll_down}
+                    question_index={item_index} target="题目" label="题目与解析滚动" />
                     <div ref={question_scroll.clone()} onscroll={on_scrolling.clone()}
                         class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4 space-y-4"
                         data-testid="question-bank-practice-question-scroll">
