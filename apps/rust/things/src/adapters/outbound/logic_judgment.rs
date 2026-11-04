@@ -163,9 +163,16 @@ impl LogicJudgmentService {
 }
 
 fn eligible_path(path: &str) -> Option<&'static str> {
+    // Existing source cards and new AI出题 cards are eligible. 默认 cards
+    // are intentionally excluded from the question generator.
     let relative = path.strip_prefix("flashcards/").unwrap_or(path);
-    let normalized = relative.strip_prefix("判断推理/").map(|tail| format!("判断推理/{tail}"));
-    match normalized.as_deref().unwrap_or(relative) {
+    let normalized = if let Some(tail) = relative.strip_prefix("判断/") {
+        format!("判断推理/{tail}")
+    } else {
+        relative.to_owned()
+    };
+    let normalized = normalized.replacen("判断推理/AI出题/", "判断推理/", 1);
+    match normalized.as_str() {
         "判断推理/形式推理/直言命题/cards.md"
         | "判断推理/形式推理/直言命题/错题/cards.md"
         | "判断推理/形式推理/联言选言假言命题/cards.md"
