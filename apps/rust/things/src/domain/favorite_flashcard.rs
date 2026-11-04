@@ -186,7 +186,8 @@ pub fn resolve_target(target: &str) -> Option<ResolvedTarget> {
             mode: FlashcardCreationMode::AiGeneration,
         });
     }
-    let [module, category, "错题"] = target.split('/').collect::<Vec<_>>().as_slice() else {
+    let parts = target.split('/').collect::<Vec<_>>();
+    let [module, category, "错题"] = parts.as_slice() else {
         return None;
     };
     let module = [
