@@ -134,7 +134,7 @@ impl FilesystemFavoriteFlashcardWriter {
             return Ok(existing);
         }
 
-        let target_path = Path::new(target.relative_path);
+        let target_path = Path::new(&target.relative_path);
         let parent_path = target_path
             .parent()
             .ok_or_else(|| invalid("invalid registry path"))?;
@@ -1012,7 +1012,7 @@ mod tests {
         ));
         assert_eq!(fs::read_dir(&fixture.root).unwrap().count(), 0);
         let target = resolve_target(&card().target_deck).unwrap();
-        let old_parent = old_root.join(Path::new(target.relative_path).parent().unwrap());
+        let old_parent = old_root.join(Path::new(&target.relative_path).parent().unwrap());
         assert_eq!(fs::read_dir(old_parent).unwrap().count(), 0);
     }
 
