@@ -1,4 +1,4 @@
-//! Favorite question content for the Flashcard creation use case.
+//! Indexed original-question content for Flashcard creation, independent of favorites.
 use super::{document::valid_id, BankError, PaperContent, QuestionBankApplication};
 use crate::application::favorite_flashcards::{FavoriteQuestion, FavoriteQuestionPort};
 use async_trait::async_trait;
@@ -8,9 +8,6 @@ impl FavoriteQuestionPort for QuestionBankApplication {
     async fn load(&self, question_id: &str) -> Result<FavoriteQuestion, BankError> {
         if !valid_id(question_id) {
             return Err(BankError::Invalid);
-        }
-        if !self.repository.practice_is_favorite(question_id).await? {
-            return Err(BankError::NotFound);
         }
         let contents = self
             .repository
