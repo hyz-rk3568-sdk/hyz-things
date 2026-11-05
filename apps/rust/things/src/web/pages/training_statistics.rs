@@ -266,7 +266,9 @@ pub(crate) fn study_statistics_body(props: &StudyStatisticsProps) -> Html {
                         let goal_ms=goal.daily_study_ms.max(1);
                         let ratio=day.total_ms as f64/goal_ms as f64;
                         let level=if day.total_ms==0 {0}else if ratio<0.25{1}else if ratio<0.5{2}else if ratio<0.75{3}else{4};
-                        let color=["bg-base-300","bg-emerald-950","bg-emerald-800","bg-emerald-600","bg-emerald-400"][level];
+                        // Opacity ramps read the same in light and dark themes;
+                        // fixed green shades invert on a light background.
+                        let color=["bg-base-content/10","bg-primary/20","bg-primary/40","bg-primary/65","bg-primary"][level];
                         let onselect={let selected=selected.clone();let date=date.clone();Callback::from(move |_|selected.set(Some(date.clone())))};
                         html!{<button type="button" class={classes!("aspect-square","min-h-7","rounded-md",color,active.then_some("ring-2 ring-primary"))}
                             data-testid="study-heat-day" aria-label={format!("{}：{} · 已交卷 {} 题",day.date,minutes(day.total_ms),day.answered_count)}
