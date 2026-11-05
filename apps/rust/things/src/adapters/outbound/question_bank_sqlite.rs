@@ -730,15 +730,17 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
              AND (?=0 OR (EXISTS (SELECT 1 FROM json_each(?) \
                   WHERE value=json_extract(p.metadata,'$.summary.region'))) != (?)) \
              LIMIT -1) \
-             , candidates AS (\
+             , answered_ids AS MATERIALIZED (\
+             SELECT DISTINCT COALESCE('fp:'||q.content_fingerprint,'id:'||q.id) AS identity \
+             FROM practice_attempts a JOIN questions q ON q.id=a.question_id \
+             WHERE a.answer NOT IN ('[]','')), \
+             candidates AS MATERIALIZED (\
              SELECT q.module,q.category,\
                COALESCE('fp:'||q.content_fingerprint,'id:'||q.id) AS identity,\
-               EXISTS(SELECT 1 FROM questions equivalent \
-                 JOIN practice_attempts a ON a.question_id=equivalent.id \
-                 WHERE (equivalent.id=q.id OR (q.content_fingerprint IS NOT NULL \
-                   AND equivalent.content_fingerprint=q.content_fingerprint)) \
-                   AND a.answer NOT IN ('[]','')) AS answered \
+               (answered.identity IS NOT NULL) AS answered \
              FROM eligible_papers p JOIN questions q ON q.paper_id=p.id \
+             LEFT JOIN answered_ids answered ON answered.identity=\
+               COALESCE('fp:'||q.content_fingerprint,'id:'||q.id) \
              WHERE q.gradable=1), \
              unique_modules AS (SELECT module,identity,MAX(answered) AS answered \
                FROM candidates GROUP BY module,identity), \
@@ -945,24 +947,8 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         // a section-level material to them.
         let sql = format!(
             "{papers}, filtered AS (\
-             SELECT q.id,q.paper_id,q.number,\
+             SELECT q.id,q.paper_id,q.number,q.content_fingerprint,\
              COALESCE('fp:'||q.content_fingerprint,'id:'||q.id) AS identity,\
-             EXISTS(SELECT 1 FROM questions equivalent \
-               JOIN practice_attempts a ON a.question_id=equivalent.id \
-               WHERE (equivalent.id=q.id OR (q.content_fingerprint IS NOT NULL \
-                 AND equivalent.content_fingerprint=q.content_fingerprint)) \
-               AND a.answer NOT IN ('[]','')) AS answered,\
-             (SELECT COUNT(*) FROM questions equivalent JOIN practice_items i ON i.question_id=equivalent.id \
-               WHERE equivalent.id=q.id OR (q.content_fingerprint IS NOT NULL \
-                 AND equivalent.content_fingerprint=q.content_fingerprint)) AS served,\
-             (SELECT COUNT(*) FROM questions equivalent JOIN practice_attempts a ON a.question_id=equivalent.id \
-               WHERE (equivalent.id=q.id OR (q.content_fingerprint IS NOT NULL \
-                 AND equivalent.content_fingerprint=q.content_fingerprint)) \
-               AND a.grade='wrong') AS wrong_count,\
-             (SELECT COUNT(*) FROM questions equivalent JOIN practice_attempts a ON a.question_id=equivalent.id \
-               WHERE (equivalent.id=q.id OR (q.content_fingerprint IS NOT NULL \
-                 AND equivalent.content_fingerprint=q.content_fingerprint)) \
-               AND a.grade='correct') AS correct_count,\
              (? IS NULL OR q.category=?) AS matches,\
              CASE \
                WHEN q.materials IS NULL OR q.materials IN ('[]','') THEN 'solo:'||q.id \
@@ -972,11 +958,26 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
              END AS group_key \
              FROM eligible_papers p JOIN questions q ON q.paper_id=p.id \
              WHERE q.module=? AND q.gradable=1),\
+             attempt_history AS MATERIALIZED (\
+               SELECT COALESCE('fp:'||q.content_fingerprint,'id:'||q.id) AS identity,\
+                      MAX(a.answer NOT IN ('[]','')) AS answered,\
+                      SUM(a.grade='wrong') AS wrong_count,\
+                      SUM(a.grade='correct') AS correct_count \
+               FROM practice_attempts a JOIN questions q ON q.id=a.question_id \
+               GROUP BY identity),\
+             served_history AS MATERIALIZED (\
+               SELECT COALESCE('fp:'||q.content_fingerprint,'id:'||q.id) AS identity,\
+                      COUNT(*) AS served \
+               FROM practice_items i JOIN questions q ON q.id=i.question_id \
+               GROUP BY identity),\
              blocks AS (\
                SELECT group_key,paper_id,MIN(number) AS first_number,\
-                      MIN(answered) AS answered,MIN(served) AS served,MAX(matches) AS matched,\
-                      SUM(MAX(wrong_count-correct_count,0)) AS net_errors \
-               FROM filtered GROUP BY group_key,paper_id),\
+                      MIN(COALESCE(attempt_history.answered,0)) AS answered,MIN(COALESCE(served_history.served,0)) AS served,MAX(matches) AS matched,\
+                      SUM(MAX(COALESCE(wrong_count,0)-COALESCE(correct_count,0),0)) AS net_errors \
+               FROM filtered \
+               LEFT JOIN attempt_history ON attempt_history.identity=filtered.identity \
+               LEFT JOIN served_history ON served_history.identity=filtered.identity \
+               GROUP BY group_key,paper_id),\
              eligible_blocks AS (SELECT * FROM blocks WHERE matched=1),\
              ranked AS (\
                SELECT group_key,ROW_NUMBER() OVER (\
