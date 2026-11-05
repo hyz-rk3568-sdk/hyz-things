@@ -27,6 +27,26 @@ pub(crate) struct TrainingDay {
     pub modules: BTreeMap<String, i64>,
     pub phases: BTreeMap<String, i64>,
 }
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub(crate) struct StudyGoals {
+    pub daily_questions: u32,
+    pub daily_study_ms: i64,
+}
+
+impl Default for StudyGoals {
+    fn default() -> Self {
+        Self {
+            daily_questions: 400,
+            daily_study_ms: 12 * 3_600_000,
+        }
+    }
+}
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub(crate) struct StudyGoalStatus {
+    pub goals: StudyGoals,
+    pub today_questions: i64,
+    pub today_ms: i64,
+}
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub(crate) struct TrainingTimeStats {
     pub days: Vec<TrainingDay>,

@@ -14,6 +14,7 @@ pub(super) struct StudyClockContext {
     value: UseStateHandle<Option<StudyClockValue>>,
     pub(super) event: Callback<(String, Option<String>, Option<String>)>,
     tick: u64,
+    csrf: String,
 }
 #[derive(Properties, PartialEq)]
 pub(super) struct StudyClockProviderProps {
@@ -162,12 +163,108 @@ pub(super) fn study_clock_provider(props: &StudyClockProviderProps) -> Html {
     }
     let tick_value = *tick;
     html! {
-        <ContextProvider<StudyClockContext> context={StudyClockContext{value,event,tick:tick_value}}>
+        <ContextProvider<StudyClockContext> context={StudyClockContext{value,event,tick:tick_value,csrf:props.csrf.clone()}}>
             {for props.children.iter()}
             if let Some(message) = (*warning).clone() {
                 <div class="pointer-events-none fixed bottom-2 right-2 z-[99] max-w-xs rounded bg-base-100 p-2 text-xs text-error shadow" role="status" data-testid="study-time-error">{message}</div>
             }
         </ContextProvider<StudyClockContext>>
+    }
+}
+
+fn paid_today_ms(ctx: &StudyClockContext) -> Option<i64> {
+    (*ctx.value).as_ref().map(|value| {
+        let delta = if value.snapshot.running {
+            ((Date::now() - value.received_ms).max(0.0) as i64).min(45_000)
+        } else {
+            0
+        };
+        value.snapshot.today_ms.saturating_add(delta)
+    })
+}
+
+/// Two compact bars shared by every study/review page header: today's answered
+/// questions and today's effective study time against the administrator goal.
+#[function_component(StudyGoalBars)]
+pub(super) fn study_goal_bars() -> Html {
+    let status = use_state(|| None::<StudyGoalStatus>);
+    {
+        let status = status.clone();
+        use_effect_with((), move |_| {
+            let refresh: std::rc::Rc<dyn Fn()> = std::rc::Rc::new({
+                let status = status.clone();
+                move || {
+                    let status = status.clone();
+                    spawn_local(async move {
+                        if let Ok(value) = fetch_json_typed::<StudyGoalStatus>(
+                            &format!("{TRAINING_TIME_ROOT}/goals"),
+                            "学习目标",
+                        )
+                        .await
+                        {
+                            status.set(Some(value));
+                        }
+                    });
+                }
+            });
+            refresh();
+            let timer_refresh = refresh.clone();
+            let timer = Interval::new(60_000, move || timer_refresh());
+            move || drop(timer)
+        });
+    }
+    let goals = status.as_ref().map(|s| s.goals.clone()).unwrap_or_default();
+    let live = use_context::<StudyClockContext>();
+    let today_ms = live
+        .as_ref()
+        .and_then(|ctx| {
+            let _ = ctx.tick;
+            paid_today_ms(ctx)
+        })
+        .or_else(|| status.as_ref().map(|s| s.today_ms))
+        .unwrap_or(0);
+    let today_questions = status.as_ref().map(|s| s.today_questions).unwrap_or(0);
+    let hours = |ms: i64| format!("{:.1}", ms as f64 / 3_600_000.0);
+    let open = use_state(|| false);
+    let csrf = use_context::<StudyClockContext>()
+        .map(|ctx| ctx.csrf)
+        .unwrap_or_default();
+    html! {
+        <div class="grid w-36 shrink-0 gap-1 sm:w-48">
+            <button type="button" class="grid gap-1 rounded-lg text-left" data-testid="study-goal-bars"
+                data-today-ms={today_ms.to_string()} aria-label="查看学习统计"
+                onclick={Callback::from({let open=open.clone();move |_|open.set(true)})}>
+            <div data-testid="study-goal-questions">
+                <div class="flex items-baseline justify-between gap-2 text-[10px] leading-none text-base-content/60">
+                    <span>{"今日刷题"}</span>
+                    <span class="tabular-nums" data-testid="study-goal-questions-value">{format!("{today_questions}/{}", goals.daily_questions)}</span>
+                </div>
+                <progress class="progress progress-primary study-goal-bar mt-0.5 block w-full" max={goals.daily_questions.max(1).to_string()}
+                    value={today_questions.max(0).to_string()} aria-label="今日刷题进度"/>
+            </div>
+            <div data-testid="study-goal-time">
+                <div class="flex items-baseline justify-between gap-2 text-[10px] leading-none text-base-content/60">
+                    <span>{"今日时长"}</span>
+                    <span class="tabular-nums" data-testid="study-goal-time-value">{format!("{}/{}h", hours(today_ms), hours(goals.daily_study_ms))}</span>
+                </div>
+                <progress class="progress progress-primary study-goal-bar mt-0.5 block w-full" max={goals.daily_study_ms.max(1).to_string()}
+                    value={today_ms.max(0).to_string()} aria-label="今日学习时长进度"/>
+            </div>
+            </button>
+            <div class="sr-only" aria-hidden="true"><StudyTimeInline /></div>
+            if *open {
+                <div class="fixed inset-0 z-[120] overflow-y-auto bg-base-200/95 p-3 sm:p-6" role="dialog" aria-modal="true" aria-label="学习统计" data-testid="study-goal-sheet">
+                    <div class="mx-auto w-full max-w-3xl space-y-3">
+                        <div class="flex items-center justify-between gap-3">
+                            <h2 class="text-lg font-semibold">{"学习统计"}</h2>
+                            <button type="button" class="btn btn-ghost btn-sm" data-testid="study-goal-sheet-close"
+                                onclick={Callback::from({let open=open.clone();move |_|open.set(false)})}>{"关闭"}</button>
+                        </div>
+                        <StudyStatisticsBody csrf={csrf.clone()} embedded={true}/>
+                    </div>
+                </div>
+            }
+        </div>
     }
 }
 

@@ -1,8 +1,8 @@
 //! SQLite-backed, server-authoritative effective learning time.
 //! One active lease for the portal's administrator, independent of exam clocks.
 use crate::application::training_time::{
-    ClockSnapshot, DaySummary, StudyDateRange, StudyTimeEvent, TimeStatistics, TrainingTimePort,
-    DAY_MS, ZONE_OFFSET_MS,
+    ClockSnapshot, DaySummary, StudyDateRange, StudyGoals, StudyTimeEvent, TimeStatistics,
+    TrainingTimePort, DAY_MS, ZONE_OFFSET_MS,
 };
 use async_trait::async_trait;
 use chrono::Duration;
@@ -299,6 +299,34 @@ impl TrainingTimeService {
         Ok(days)
     }
 
+    pub async fn goals(&self) -> Result<StudyGoals, String> {
+        let row = sqlx::query("SELECT daily_questions,daily_study_ms FROM study_goals WHERE id=1")
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(row
+            .map(|row| StudyGoals {
+                daily_questions: row.get::<i64, _>("daily_questions").clamp(1, 2_000) as u32,
+                daily_study_ms: row.get("daily_study_ms"),
+            })
+            .unwrap_or_default())
+    }
+
+    pub async fn save_goals(&self, goals: StudyGoals) -> Result<StudyGoals, String> {
+        goals.validate()?;
+        sqlx::query(
+            "INSERT INTO study_goals(id,daily_questions,daily_study_ms) VALUES(1,?,?) \
+             ON CONFLICT(id) DO UPDATE SET daily_questions=excluded.daily_questions, \
+             daily_study_ms=excluded.daily_study_ms",
+        )
+        .bind(i64::from(goals.daily_questions))
+        .bind(goals.daily_study_ms)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+        Ok(goals)
+    }
+
     pub async fn statistics(&self, from: &str, to: &str) -> Result<TimeStatistics, String> {
         let StudyDateRange {
             first,
@@ -351,6 +379,12 @@ impl TrainingTimePort for TrainingTimeService {
     async fn statistics(&self, from: &str, to: &str) -> Result<TimeStatistics, String> {
         TrainingTimeService::statistics(self, from, to).await
     }
+    async fn goals(&self) -> Result<StudyGoals, String> {
+        TrainingTimeService::goals(self).await
+    }
+    async fn save_goals(&self, goals: StudyGoals) -> Result<StudyGoals, String> {
+        TrainingTimeService::save_goals(self, goals).await
+    }
 }
 
 #[cfg(test)]
@@ -378,6 +412,38 @@ mod tests {
         .await
         .unwrap();
         assert!(!table_sql.contains("paused"));
+    }
+
+    #[tokio::test]
+    async fn daily_goals_default_persist_and_reject_out_of_range_values() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let service = TrainingTimeService::new(pool.clone());
+        assert_eq!(service.goals().await.unwrap(), StudyGoals::default());
+        let custom = StudyGoals {
+            daily_questions: 250,
+            daily_study_ms: 10 * 3_600_000,
+        };
+        assert_eq!(service.save_goals(custom.clone()).await.unwrap(), custom);
+        assert_eq!(
+            TrainingTimeService::new(pool).goals().await.unwrap(),
+            custom
+        );
+        assert!(service
+            .save_goals(StudyGoals {
+                daily_questions: 0,
+                ..custom.clone()
+            })
+            .await
+            .is_err());
+        assert!(service
+            .save_goals(StudyGoals {
+                daily_study_ms: 25 * 3_600_000,
+                ..custom.clone()
+            })
+            .await
+            .is_err());
+        assert_eq!(service.goals().await.unwrap(), custom);
     }
 
     #[tokio::test]

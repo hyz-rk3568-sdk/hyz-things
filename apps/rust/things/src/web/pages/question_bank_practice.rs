@@ -1821,7 +1821,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             </div>
                             <div class="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
                                 <span class="hidden text-xs text-base-content/55 sm:inline">{"学习"}</span>
-                                <StudyTimeInline />
+                                <StudyGoalBars />
                                 <button type="button" class="btn btn-ghost px-2 font-mono text-xl font-semibold tabular-nums"
                                     role="timer" data-testid="question-bank-practice-timer"
                                     title={if completed {"训练已结束"} else if paused {"点击继续计时"} else {"点击暂停计时"}}

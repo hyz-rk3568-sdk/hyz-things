@@ -14,6 +14,7 @@ async function clockFixture(page:Page) {
   });
   await page.route('**/api/v1/study/training-time/**', async route=>{
     const url=new URL(route.request().url());
+    if(url.pathname.endsWith('/goals')) {await route.continue();return;}
     if(url.pathname.endsWith('/stats')) {await route.fulfill({json:{days}});return;}
     if(url.pathname.endsWith('/events')) {
       const body=route.request().postDataJSON();
@@ -97,17 +98,46 @@ test("sixth statistics text tab shows stored durations and heatmap",async({page}
   await expect(page.getByTestId('training-header')).toBeVisible();
 });
 
-test("pink study clock is display only and keeps its compact layout",async({page})=>{
+test("goal bars open embedded statistics without leaving the page",async({page})=>{
   const events=await clockFixture(page);
   await page.goto('/#/study/training');
-  const clock=page.getByTestId('study-time-inline');
-  await expect(clock).toHaveText('01:00:00');
-  await expect(clock).toHaveClass(/text-primary/);
-  await expect(clock).toHaveJSProperty('tagName','SPAN');
-  await expect(clock).toHaveAttribute('aria-label','今日有效学习时长');
-  await clock.click();
-  await page.waitForTimeout(200);
+  const bars=page.getByTestId('study-goal-bars');
+  await expect(bars).toBeVisible();
+  await expect(page.getByTestId('study-goal-questions')).toContainText('今日刷题');
+  await expect(page.getByTestId('study-goal-time')).toContainText('今日时长');
+  await bars.click();
+  await expect(page.getByTestId('study-goal-sheet')).toBeVisible();
+  await expect(page.getByTestId('study-goal-sheet').getByTestId('study-goals')).toBeVisible();
+  await expect(page.getByTestId('study-goal-sheet').getByTestId('training-heatmap')).toBeVisible();
+  await page.getByTestId('study-goal-sheet-close').click();
+  await expect(page.getByTestId('study-goal-sheet')).toHaveCount(0);
   expect(events.filter(action=>action==='toggle')).toHaveLength(0);
+  await expect(page).toHaveURL(/#\/study\/training/);
+});
+
+test("daily goals persist on the server and drive daily, weekly and 35-day bars",async({page})=>{
+  await clockFixture(page);
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-statistics').click();
+  await expect(page.getByTestId('study-goal-card')).toHaveCount(3);
+  await expect(page.getByTestId('study-goals')).toContainText('/ 400 题');
+  await page.getByTestId('study-goals-edit').click();
+  await page.getByTestId('study-goal-questions-input').fill('500');
+  await page.getByTestId('study-goal-hours-input').fill('10');
+  await page.getByTestId('study-goals-save').click();
+  await expect(page.getByTestId('study-goals-form')).toHaveCount(0);
+  await expect(page.getByTestId('study-goals')).toContainText('/ 500 题');
+  await expect(page.getByTestId('study-goals')).toContainText('/ 3500 题');
+  await expect(page.getByTestId('study-goals')).toContainText('/ 10.0 小时');
+  await page.reload();
+  await page.getByTestId('training-mode-statistics').click();
+  await expect(page.getByTestId('study-goals')).toContainText('/ 500 题');
+  await page.getByTestId('study-goals-edit').click();
+  await page.getByTestId('study-goal-questions-input').fill('400');
+  await page.getByTestId('study-goal-hours-input').fill('12');
+  await page.getByTestId('study-goals-save').click();
+  await expect(page.getByTestId('study-goals')).toContainText('/ 400 题');
 });
 
 test("refresh waits for the CSRF token before syncing study time",async({page})=>{
@@ -130,7 +160,7 @@ test("refresh waits for the CSRF token before syncing study time",async({page})=
     await route.fulfill({json:{now_ms:Date.now(),today_ms:0,running:false,module:''}});
   });
   await page.goto('/#/study/training');
-  await expect(page.getByTestId('study-time-inline')).toBeVisible();
+  await expect(page.getByTestId('study-goal-bars')).toBeVisible();
   await expect.poll(()=>tokens.length,{timeout:5_000}).toBeGreaterThan(0);
   await expect(page.getByTestId('study-time-error')).toHaveCount(0);
 });
@@ -143,7 +173,7 @@ test("returning after a long background soft-refreshes without reloading",async(
   await page.clock.install();
   const events=await clockFixture(page);
   await page.goto('/#/study/training');
-  await expect(page.getByTestId('study-time-inline')).toBeVisible();
+  await expect(page.getByTestId('study-goal-bars')).toBeVisible();
   await page.waitForTimeout(500);
   const leaves=()=>events.filter(action=>action==='leave').length;
   const leavesBefore=leaves();
@@ -169,8 +199,8 @@ test("foreground resume restores study time after the heartbeat grace expires",a
   await page.clock.install();
   const events=await clockFixture(page);
   await openComprehensivePaper(page);
+  await expect(page.getByTestId('study-goal-bars')).toBeVisible();
   const clock=page.getByTestId('study-time-inline');
-  await expect(clock).toBeVisible();
   await expect.poll(()=>events.filter(action=>action==='enter').length).toBeGreaterThan(0);
   const enters=()=>events.filter(action=>action==='enter').length;
   const initialEnters=enters();

@@ -849,6 +849,10 @@ fn app_with_assets(
             on(MethodFilter::GET, training_time::stats),
         )
         .route(
+            "/api/v1/study/training-time/goals",
+            get(training_time::goals).post(training_time::save_goals),
+        )
+        .route(
             "/api/v1/study/logic-judgment/status",
             on(MethodFilter::GET, logic_judgment::status),
         )
@@ -2909,6 +2913,7 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/control/proxy/delays"
             | "/api/v1/study/review"
             | "/api/v1/study/training-time/events"
+            | "/api/v1/study/training-time/goals"
             | "/api/v1/control/study/sync"
             | "/api/v1/control/question-bank/sync"
             | "/api/v1/question-bank/practice/sessions"
@@ -3451,6 +3456,9 @@ mod tests {
 
     #[test]
     fn post_allowlist_keeps_auth_sensitive_and_lan_control_boundaries_exact() {
+        assert!(is_post_path("/api/v1/study/training-time/goals"));
+        assert!(!is_post_path("/api/v1/study/training-time/goals/extra"));
+        assert!(!is_post_path("/api/v1/study/training-time/stats"));
         assert!(is_post_path("/api/v1/auth/login"));
         assert!(is_post_path("/api/v1/auth/logout"));
         assert!(is_post_path("/api/v1/auth/password"));

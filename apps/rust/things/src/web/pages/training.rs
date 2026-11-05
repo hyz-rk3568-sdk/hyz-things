@@ -256,7 +256,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                     <div class="training-topbar-inner">
                         <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="返回学习中心" data-testid="training-back" onclick={back_to_study}>{"‹"}</button>
                         <h1 class="text-lg font-bold">{"专项训练"}</h1>
-                        <div class="ml-auto"><StudyTimeInline /></div>
+                        <div class="ml-auto"><StudyGoalBars /></div>
                         <details class="training-more">
                             <summary class="btn btn-ghost btn-sm btn-square" aria-label="应用选项">{"⋯"}</summary>
                             <div class="training-more-panel"><PwaControls /></div>
@@ -279,7 +279,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
             }
             <main class="min-h-0 flex-1 overflow-hidden" data-testid="training-mode-content">
             if *mode == TrainingMode::Statistics {
-                <TrainingStatistics />
+                <TrainingStatistics csrf={props.csrf.clone()} />
             } else if *mode == TrainingMode::Calculation {
                 {render_calculation_training(props.route_state.clone(),on_immersive_change.clone())}
             } else if matches!(*mode, TrainingMode::QuestionBankPaper | TrainingMode::QuestionBankModule) {
@@ -972,7 +972,7 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
             if is_training_immersive {
             <div class="mx-auto flex w-full shrink-0 justify-end pb-2">
                 <button type="button" class="btn btn-ghost btn-sm" data-testid="practice-back-to-study" onclick={go_back}>{"← 返回专项训练"}</button>
-                <StudyTimeInline />
+                <StudyGoalBars />
             </div>
             }
             if is_training_immersive {

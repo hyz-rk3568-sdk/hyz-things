@@ -547,3 +547,9 @@ nav.tabs > button.tab:not(.tab-active) {
     }
   }
 }
+
+  /* Compact goal bars inside fixed-height study headers. */
+  .progress.study-goal-bar {
+    height: 0.375rem;
+    min-height: 0;
+  }

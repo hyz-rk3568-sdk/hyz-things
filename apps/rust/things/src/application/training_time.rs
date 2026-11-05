@@ -74,11 +74,56 @@ impl StudyDateRange {
     }
 }
 
+pub const DEFAULT_DAILY_QUESTIONS: u32 = 400;
+pub const DEFAULT_DAILY_STUDY_MS: i64 = 12 * 3_600_000;
+pub const MAX_DAILY_QUESTIONS: u32 = 2_000;
+pub const MIN_DAILY_STUDY_MS: i64 = 30 * 60_000;
+pub const MAX_DAILY_STUDY_MS: i64 = 24 * 3_600_000;
+
+/// Administrator-owned daily goal. Weekly and 35-day targets are multiples of
+/// this value so a heavy day carries into the period progress.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StudyGoals {
+    pub daily_questions: u32,
+    pub daily_study_ms: i64,
+}
+
+impl Default for StudyGoals {
+    fn default() -> Self {
+        Self {
+            daily_questions: DEFAULT_DAILY_QUESTIONS,
+            daily_study_ms: DEFAULT_DAILY_STUDY_MS,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct StudyGoalStatus {
+    pub goals: StudyGoals,
+    pub today_questions: i64,
+    pub today_ms: i64,
+}
+
+impl StudyGoals {
+    pub fn validate(&self) -> Result<(), String> {
+        if !(1..=MAX_DAILY_QUESTIONS).contains(&self.daily_questions) {
+            return Err("invalid daily question goal".into());
+        }
+        if !(MIN_DAILY_STUDY_MS..=MAX_DAILY_STUDY_MS).contains(&self.daily_study_ms) {
+            return Err("invalid daily study goal".into());
+        }
+        Ok(())
+    }
+}
+
 #[async_trait]
 pub trait TrainingTimePort: Send + Sync {
     async fn current(&self) -> Result<ClockSnapshot, String>;
     async fn event(&self, event: StudyTimeEvent) -> Result<ClockSnapshot, String>;
     async fn statistics(&self, from: &str, to: &str) -> Result<TimeStatistics, String>;
+    async fn goals(&self) -> Result<StudyGoals, String>;
+    async fn save_goals(&self, goals: StudyGoals) -> Result<StudyGoals, String>;
 }
 
 #[derive(Debug)]
@@ -132,6 +177,13 @@ mod tests {
         }
         async fn event(&self, _event: StudyTimeEvent) -> Result<ClockSnapshot, String> {
             Err("unused".into())
+        }
+        async fn goals(&self) -> Result<StudyGoals, String> {
+            Ok(StudyGoals::default())
+        }
+        async fn save_goals(&self, goals: StudyGoals) -> Result<StudyGoals, String> {
+            goals.validate()?;
+            Ok(goals)
         }
         async fn statistics(&self, _from: &str, _to: &str) -> Result<TimeStatistics, String> {
             Ok(TimeStatistics {

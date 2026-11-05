@@ -1118,7 +1118,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         <span class="hidden text-xs text-base-content/60 sm:inline">{format!("第 {}/20 题 · 材料 {}/4",index+1,group_index+1)}</span>
                     </div>
                     <div class="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
-                        <StudyTimeInline />
+                        <StudyGoalBars />
                         <span class="text-sm font-bold">{format!("{} / {} 正确",score.correct,score.total)}</span>
                         <button type="button" class="btn btn-outline btn-sm" onclick={show_history}>{"查看练习记录"}</button>
                         <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-retry-result" disabled={*busy} onclick={redo_from_result}>{"重做原题"}</button>
@@ -1288,7 +1288,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         <span class="hidden text-xs text-base-content/60 sm:inline">{format!("第 {}/20 题 · 材料 {}/4",index+1,group_index+1)}</span>
                     </div>
                     <div class="flex shrink-0 items-center gap-2">
-                        <StudyTimeInline />
+                        <StudyGoalBars />
                         <button type="button" class={if remaining<=60 {"btn btn-ghost font-mono text-xl text-error"}else{"btn btn-ghost font-mono text-xl"}}
                             data-testid="analysis-clock" title={if paused {"点击继续计时"} else {"点击暂停计时"}}
                             disabled={*busy || (remaining==0 && !paused)} onclick={toggle_pause.clone()}>{clock.clone()}</button>

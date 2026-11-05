@@ -2,7 +2,10 @@
 use super::*;
 use crate::application::{
     question_bank::QuestionBankApplication,
-    training_time::{self as application, StatisticsError, StudyTimeEvent, TrainingTimePort},
+    training_time::{
+        self as application, StatisticsError, StudyGoalStatus, StudyGoals, StudyTimeEvent,
+        TrainingTimePort,
+    },
 };
 use axum::extract::Query;
 use axum::Extension;
@@ -92,6 +95,101 @@ pub(super) async fn events(
         Err(err) => failure(err),
     }
 }
+pub(super) async fn goals(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    bank: Option<Extension<Arc<QuestionBankApplication>>>,
+    application: Service,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let Ok(s) = service(application) else {
+        return error_json(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "study_time_unavailable",
+            "学习时间数据库不可用",
+        );
+    };
+    let Some(Extension(bank)) = bank else {
+        return error_json(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "question_bank_unavailable",
+            "题库共享或索引暂不可用",
+        );
+    };
+    let goals = match s.goals().await {
+        Ok(goals) => goals,
+        Err(err) => {
+            return error_json(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "study_goals_read_failed",
+                &err,
+            )
+        }
+    };
+    let today = Utc::now()
+        .with_timezone(&chrono::FixedOffset::east_opt(8 * 3600).unwrap())
+        .date_naive();
+    let range = match application::StudyDateRange::parse(&today.to_string(), &today.to_string()) {
+        Ok(range) => range,
+        Err(err) => return failure(err),
+    };
+    let today_questions = match bank
+        .daily_answered_counts(range.start_ms, range.end_ms)
+        .await
+    {
+        Ok(counts) => counts
+            .iter()
+            .filter(|(date, _)| date == &today.to_string())
+            .map(|(_, count)| *count)
+            .sum(),
+        Err(_) => {
+            return error_json(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "question_bank_unavailable",
+                "题库共享或索引暂不可用",
+            )
+        }
+    };
+    let today_ms = match s.current().await {
+        Ok(snapshot) => snapshot.today_ms,
+        Err(err) => return failure(err),
+    };
+    Json(StudyGoalStatus {
+        goals,
+        today_questions,
+        today_ms,
+    })
+    .into_response()
+}
+
+pub(super) async fn save_goals(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    application: Service,
+    body: Result<Json<StudyGoals>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control(&state, &headers).await {
+        return response;
+    }
+    let Json(goals) = match body {
+        Ok(value) => value,
+        Err(_) => return failure("无效的学习目标".into()),
+    };
+    let Ok(s) = service(application) else {
+        return error_json(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "study_time_unavailable",
+            "学习时间数据库不可用",
+        );
+    };
+    match s.save_goals(goals).await {
+        Ok(result) => Json(result).into_response(),
+        Err(err) => failure(err),
+    }
+}
+
 pub(super) async fn stats(
     State(state): State<AppState>,
     headers: HeaderMap,
