@@ -1060,6 +1060,7 @@ mod tests {
             question_modules: Vec::new(),
             question_categories: Vec::new(),
             content: PaperContent::default(),
+            content_fingerprints: Default::default(),
         };
         let app = QuestionBankApplication::new(Arc::new(NoSource), Arc::new(CountsOnly(paper)));
         let modules = app

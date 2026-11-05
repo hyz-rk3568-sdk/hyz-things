@@ -17,6 +17,7 @@ native = [
   "dep:async-trait",
   "dep:axum",
   "dep:chrono",
+  "dep:futures-util",
   "dep:hyz-logging",
   "dep:rs-fsrs",
   "dep:sqlx",
@@ -62,6 +63,7 @@ base64 = { version = "0.22", optional = true }
 async-trait = { version = "0.1", optional = true }
 axum = { version = "0.8", optional = true }
 chrono = { version = "0.4", features = ["clock"], optional = true }
+futures-util = { version = "0.3", optional = true }
 getrandom = { version = "0.3", optional = true }
 libc = { version = "0.2", optional = true }
 mime_guess = { version = "2", optional = true }

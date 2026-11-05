@@ -282,6 +282,19 @@ test('question bank module drill filters real categories across original papers'
   await expect(page.getByTestId('question-bank-practice-material-pane')).toContainText('两道题共用材料');
 });
 
+test('module training counts and selects cross-paper duplicates once',async({page})=>{
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-module').click();
+  const module=page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'});
+  await expect(module).toContainText('/3');
+  await module.click();
+  await page.getByTestId('question-bank-practice-start').click();
+  await expect(page.getByTestId('training-answer-sheet-toggle')).toContainText('1/3');
+  await openSheet(page);
+  await expect(page.getByTestId('question-bank-practice-number')).toHaveCount(3);
+});
+
 test('module filter settings are shared across browser contexts',async({page,browser})=>{
   await loginAsAdmin(page);
   await page.goto('/#/study/training');

@@ -1332,6 +1332,7 @@ dependencies = [
  "axum",
  "base64",
  "chrono",
+ "futures-util",
  "getrandom 0.3.4",
  "gloo-net 0.6.0",
  "gloo-timers 0.3.0",

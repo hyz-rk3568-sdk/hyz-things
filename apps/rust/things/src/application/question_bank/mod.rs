@@ -164,6 +164,8 @@ pub struct IndexedPaper {
     /// Indexed content is written to SQLite and skipped in the metadata JSON.
     #[serde(skip)]
     pub content: PaperContent,
+    #[serde(skip)]
+    pub content_fingerprints: BTreeMap<String, String>,
 }
 impl IndexedPaper {
     pub fn new(path: String, hash: String, doc: Document) -> Self {
@@ -189,6 +191,7 @@ impl IndexedPaper {
                 .map(|q| q.category.clone())
                 .collect(),
             content,
+            content_fingerprints: BTreeMap::new(),
         }
     }
 }
@@ -502,7 +505,7 @@ impl QuestionBankApplication {
     async fn run_sync(&self) -> Result<BankSyncSummary, BankError> {
         self.stage("scanning");
         let known = self.repository.known().await?;
-        let snapshot = self.source.scan(known).await?;
+        let mut snapshot = self.source.scan(known).await?;
         self.stage("validating");
         if snapshot.papers.is_empty() {
             return Err(BankError::Unavailable);
@@ -513,6 +516,7 @@ impl QuestionBankApplication {
                 return Err(BankError::Conflict);
             }
         }
+        populate_fingerprints(&*self.source, &mut snapshot.papers).await?;
         let questions = snapshot.papers.iter().map(|p| p.summary.questions).sum();
         let materials = snapshot
             .papers
@@ -628,6 +632,143 @@ pub fn prepare_sync(
             generated_ids,
         },
     })
+}
+
+async fn populate_fingerprints(
+    source: &dyn QuestionBankSourcePort,
+    papers: &mut [IndexedPaper],
+) -> Result<(), BankError> {
+    let mut verified_assets = BTreeMap::new();
+    for paper in papers {
+        paper.content_fingerprints.clear();
+        for question in &paper.content.questions {
+            if question.stem.trim().is_empty() {
+                continue;
+            }
+            let mut parts = vec![question.stem.as_str()];
+            for id in &question.materials {
+                let Some(material) = paper.content.materials.iter().find(|item| &item.id == id)
+                else {
+                    parts.clear();
+                    break;
+                };
+                parts.push(&material.markdown);
+            }
+            if parts.is_empty() {
+                continue;
+            }
+            let mut canonical = Vec::new();
+            let mut valid = true;
+            for part in parts {
+                let Ok((mut text, references)) = images::rewrite_assets(part, &paper.path) else {
+                    valid = false;
+                    break;
+                };
+                for name in references {
+                    let expected = name.split('.').next().unwrap_or("");
+                    let verified = if let Some(verified) = verified_assets.get(&name) {
+                        *verified
+                    } else {
+                        let verified = match source.asset(name.clone()).await {
+                            Ok(asset) => source_hash(&asset.contents) == expected,
+                            Err(BankError::NotFound) => false,
+                            Err(error) => return Err(error),
+                        };
+                        verified_assets.insert(name.clone(), verified);
+                        verified
+                    };
+                    if !verified {
+                        valid = false;
+                        break;
+                    }
+                    text = text.replace(
+                        &format!("hyz-bank-asset:{name}"),
+                        &format!("hyz-bank-asset:{expected}"),
+                    );
+                }
+                if !valid {
+                    break;
+                }
+                canonical.push(normalize_fingerprint_text(&text));
+            }
+            if valid {
+                if let Ok(encoded) = serde_json::to_vec(&("question-stem-v1", canonical)) {
+                    paper
+                        .content_fingerprints
+                        .insert(question.id.clone(), source_hash(&encoded));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn normalize_fingerprint_text(text: &str) -> String {
+    let text = text.replace("\r\n", "\n");
+    let mut lines = Vec::new();
+    let mut fence: Option<(char, usize)> = None;
+    let mut math = false;
+    for line in text.split('\n') {
+        let unindented = line.trim_start_matches(' ');
+        let marker = unindented.chars().next().filter(|c| *c == '`' || *c == '~');
+        let marker_len = marker.map_or(0, |c| unindented.chars().take_while(|v| *v == c).count());
+        let fence_line = line.len() - unindented.len() <= 3 && marker_len >= 3;
+        let special = fence.is_some()
+            || fence_line
+            || math
+            || line.contains('$')
+            || line.contains("\\[")
+            || line.contains("\\]")
+            || line.contains("\\(")
+            || line.contains("\\)")
+            || line.contains("\\begin{")
+            || line.contains("\\end{")
+            || line.contains('|')
+            || line.starts_with("    ")
+            || line.starts_with('\t')
+            || line.ends_with("  ")
+            || line.ends_with("\\ ")
+            || line.ends_with('\t');
+        lines.push(if special {
+            line
+        } else {
+            line.trim_end_matches(' ')
+        });
+        if fence_line {
+            if let Some((ch, count)) = fence {
+                if marker == Some(ch)
+                    && marker_len >= count
+                    && unindented[marker_len..].trim().is_empty()
+                {
+                    fence = None;
+                }
+            } else if let Some(ch) = marker {
+                fence = Some((ch, marker_len));
+            }
+        } else if fence.is_none() {
+            if line.matches("$$").count() % 2 == 1
+                || line.contains("\\[")
+                || line.contains("\\]")
+                || line.contains("\\begin{")
+                || line.contains("\\end{")
+            {
+                math = !math;
+            }
+        }
+    }
+    let first = lines
+        .iter()
+        .position(|line| !line.trim().is_empty())
+        .unwrap_or(lines.len());
+    let last = if fence.is_some() || math {
+        lines.len()
+    } else {
+        lines
+            .iter()
+            .rposition(|line| !line.trim().is_empty())
+            .map_or(first, |i| i + 1)
+    };
+    lines[first..last].join("\n")
 }
 
 pub fn source_hash(bytes: &[u8]) -> String {

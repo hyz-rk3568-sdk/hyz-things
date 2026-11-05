@@ -11,6 +11,7 @@ use crate::domain::question_bank::{
 };
 use crate::domain::question_bank::{StudyPlan, StudyPlanItem};
 use async_trait::async_trait;
+use futures_util::TryStreamExt;
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
     Row, SqlitePool,
@@ -321,6 +322,12 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                         .bind(module).bind(category)
                         .execute(&mut *tx).await.map_err(|_| BankError::Storage)?;
                 }
+            }
+            for id in &paper.question_ids {
+                let fingerprint = paper.content_fingerprints.get(id);
+                sqlx::query("UPDATE questions SET content_fingerprint=? WHERE paper_id=? AND id=? AND content_fingerprint IS NOT ?")
+                    .bind(fingerprint).bind(&paper.summary.id).bind(id).bind(fingerprint)
+                    .execute(&mut *tx).await.map_err(|_| BankError::Storage)?;
             }
             for id in paper.ids {
                 let owner: Option<String> =
@@ -723,12 +730,26 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
              AND (?=0 OR (EXISTS (SELECT 1 FROM json_each(?) \
                   WHERE value=json_extract(p.metadata,'$.summary.region'))) != (?)) \
              LIMIT -1) \
-             SELECT q.module,q.category,COUNT(*) AS total, \
-             SUM(CASE WHEN EXISTS (SELECT 1 FROM practice_attempts i \
-                 WHERE i.question_id=q.id AND i.answer NOT IN ('[]','')) THEN 1 ELSE 0 END) AS done \
+             , candidates AS (\
+             SELECT q.module,q.category,\
+               COALESCE('fp:'||q.content_fingerprint,'id:'||q.id) AS identity,\
+               EXISTS(SELECT 1 FROM questions equivalent \
+                 JOIN practice_attempts a ON a.question_id=equivalent.id \
+                 WHERE (equivalent.id=q.id OR (q.content_fingerprint IS NOT NULL \
+                   AND equivalent.content_fingerprint=q.content_fingerprint)) \
+                   AND a.answer NOT IN ('[]','')) AS answered \
              FROM eligible_papers p JOIN questions q ON q.paper_id=p.id \
-             WHERE q.gradable=1 \
-             GROUP BY q.module,q.category ORDER BY q.module,q.category",
+             WHERE q.gradable=1), \
+             unique_modules AS (SELECT module,identity,MAX(answered) AS answered \
+               FROM candidates GROUP BY module,identity), \
+             unique_categories AS (SELECT module,category,identity,MAX(answered) AS answered \
+               FROM candidates WHERE module IS NOT NULL GROUP BY module,category,identity) \
+             SELECT module,NULL AS category,COUNT(*) AS total,SUM(answered) AS done,0 AS scope \
+               FROM unique_modules GROUP BY module \
+             UNION ALL \
+             SELECT module,category,COUNT(*) AS total,SUM(answered) AS done,1 AS scope \
+               FROM unique_categories GROUP BY module,category \
+             ORDER BY module,scope,category",
         )
         .bind(filters.year_min)
         .bind(filters.year_min)
@@ -750,12 +771,11 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             let done = row.get::<i64, _>(3) as usize;
             if let Some(module) = module {
                 let entry = modules.entry(module).or_default();
-                entry.0 += count;
-                entry.1 += done;
-                if let Some(category) = category.filter(|c| !c.trim().is_empty()) {
-                    let item = entry.3.entry(category).or_default();
-                    item.0 += count;
-                    item.1 += done;
+                if row.get::<i64, _>(4) == 0 {
+                    entry.0 = count;
+                    entry.1 = done;
+                } else if let Some(category) = category.filter(|c| !c.trim().is_empty()) {
+                    entry.3.insert(category, (count, done));
                 } else {
                     entry.2 += count;
                 }
@@ -926,12 +946,22 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         let sql = format!(
             "{papers}, filtered AS (\
              SELECT q.id,q.paper_id,q.number,\
-             EXISTS(SELECT 1 FROM practice_attempts a WHERE a.question_id=q.id \
+             COALESCE('fp:'||q.content_fingerprint,'id:'||q.id) AS identity,\
+             EXISTS(SELECT 1 FROM questions equivalent \
+               JOIN practice_attempts a ON a.question_id=equivalent.id \
+               WHERE (equivalent.id=q.id OR (q.content_fingerprint IS NOT NULL \
+                 AND equivalent.content_fingerprint=q.content_fingerprint)) \
                AND a.answer NOT IN ('[]','')) AS answered,\
-             (SELECT COUNT(*) FROM practice_items i WHERE i.question_id=q.id) AS served,\
-             (SELECT COUNT(*) FROM practice_attempts a WHERE a.question_id=q.id \
+             (SELECT COUNT(*) FROM questions equivalent JOIN practice_items i ON i.question_id=equivalent.id \
+               WHERE equivalent.id=q.id OR (q.content_fingerprint IS NOT NULL \
+                 AND equivalent.content_fingerprint=q.content_fingerprint)) AS served,\
+             (SELECT COUNT(*) FROM questions equivalent JOIN practice_attempts a ON a.question_id=equivalent.id \
+               WHERE (equivalent.id=q.id OR (q.content_fingerprint IS NOT NULL \
+                 AND equivalent.content_fingerprint=q.content_fingerprint)) \
                AND a.grade='wrong') AS wrong_count,\
-             (SELECT COUNT(*) FROM practice_attempts a WHERE a.question_id=q.id \
+             (SELECT COUNT(*) FROM questions equivalent JOIN practice_attempts a ON a.question_id=equivalent.id \
+               WHERE (equivalent.id=q.id OR (q.content_fingerprint IS NOT NULL \
+                 AND equivalent.content_fingerprint=q.content_fingerprint)) \
                AND a.grade='correct') AS correct_count,\
              (? IS NULL OR q.category=?) AS matches,\
              CASE \
@@ -954,12 +984,12 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                FROM (SELECT group_key,answered,net_errors,served,\
                      ROW_NUMBER() OVER (PARTITION BY paper_id ORDER BY first_number) AS position \
                      FROM eligible_blocks)),\
-             selected AS (SELECT group_key,rn FROM ranked ORDER BY rn LIMIT ?) \
-             SELECT selected.rn,filtered.id FROM selected \
+             selected AS (SELECT group_key,rn FROM ranked) \
+             SELECT selected.rn,filtered.id,filtered.identity FROM selected \
              JOIN filtered ON filtered.group_key=selected.group_key \
              ORDER BY selected.rn,filtered.number"
         );
-        let rows = sqlx::query_as::<_, (i64, String)>(&sql)
+        let mut rows = sqlx::query_as::<_, (i64, String, String)>(&sql)
             .bind(filters.year_min)
             .bind(filters.year_min)
             .bind(filters.year_max)
@@ -970,20 +1000,29 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             .bind(category)
             .bind(category)
             .bind(module)
-            .bind(group_limit as i64)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|_| BankError::Storage)?;
-        let mut groups: Vec<Vec<String>> = Vec::new();
+            .fetch(&self.pool);
+        let mut groups = Vec::new();
+        let mut group = Vec::new();
         let mut current = i64::MIN;
-        for (rank, id) in rows {
+        let mut seen = std::collections::HashSet::new();
+        while let Some((rank, id, identity)) =
+            rows.try_next().await.map_err(|_| BankError::Storage)?
+        {
             if rank != current {
-                groups.push(Vec::new());
+                if !group.is_empty() {
+                    groups.push(std::mem::take(&mut group));
+                    if groups.len() == group_limit {
+                        return Ok(groups);
+                    }
+                }
                 current = rank;
             }
-            if let Some(group) = groups.last_mut() {
+            if seen.insert(identity) {
                 group.push(id);
             }
+        }
+        if !group.is_empty() && groups.len() < group_limit {
+            groups.push(group);
         }
         Ok(groups)
     }
@@ -1340,6 +1379,10 @@ B
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        assert_eq!(applied, 6, "each version is applied exactly once");
+        assert_eq!(
+            applied,
+            QUESTION_BANK_MIGRATOR.iter().count() as i64,
+            "each version is applied exactly once"
+        );
     }
 }

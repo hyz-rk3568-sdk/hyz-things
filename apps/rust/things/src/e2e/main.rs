@@ -180,6 +180,33 @@ D
 跨卷第二题解析。
 "#;
 
+fn duplicate_fixture() -> String {
+    QUESTION_BANK_FIXTURE
+        .replace("year: 2008", "year: 2019")
+        .replace("region: 国考", "region: 湖南")
+        .replace("行测真题训练端到端样卷", "湖南跨省同题卷")
+        .replace(
+            "019a3d8c-7f23-7b6e-927d-3c951851d3a2",
+            "019a3d8c-7f23-7b6e-927d-3c951851d3a4",
+        )
+        .replace(
+            "019a3d8d-4a21-739a-8b15-7c54e259b610",
+            "019a3d8d-4a21-739a-8b15-7c54e259b611",
+        )
+        .replace(
+            "019a3d8e-1b32-7a60-9c83-f34217a6e210",
+            "019a3d8e-1b32-7a60-9c83-f34217a6e220",
+        )
+        .replace(
+            "019a3d8e-1b32-7a60-9c83-f34217a6e211",
+            "019a3d8e-1b32-7a60-9c83-f34217a6e221",
+        )
+        .replace(
+            "019a3d8e-1b32-7a60-9c83-f34217a6e212",
+            "019a3d8e-1b32-7a60-9c83-f34217a6e222",
+        )
+}
+
 struct QuestionBankFixture;
 
 #[async_trait]
@@ -198,11 +225,19 @@ impl QuestionBankSourcePort for QuestionBankFixture {
                     document::parse(QUESTION_BANK_SECOND_FIXTURE)
                         .map_err(|_| BankError::Invalid)?,
                 ),
+                IndexedPaper::new(
+                    "papers/duplicate.md".into(),
+                    "e2e-duplicate-hash".into(),
+                    document::parse(&duplicate_fixture()).map_err(|_| BankError::Invalid)?,
+                ),
             ],
             generated_ids: 0,
         })
     }
     async fn load(&self, paper: IndexedPaper) -> Result<Document, BankError> {
+        if paper.summary.id == "019a3d8c-7f23-7b6e-927d-3c951851d3a4" {
+            return document::parse(&duplicate_fixture()).map_err(|_| BankError::Invalid);
+        }
         let markdown = if paper.summary.id == "019a3d8c-7f23-7b6e-927d-3c951851d3a3" {
             QUESTION_BANK_SECOND_FIXTURE
         } else {
