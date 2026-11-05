@@ -318,6 +318,19 @@ impl QuestionBankApplication {
         self.repository.practice_catalog(filters).await
     }
 
+    pub async fn module_settings(&self) -> Result<ModulePracticeFilters, BankError> {
+        self.repository.module_settings().await
+    }
+
+    pub async fn save_module_settings(
+        &self,
+        filters: ModulePracticeFilters,
+    ) -> Result<ModulePracticeFilters, BankError> {
+        validate_filters(&filters)?;
+        self.repository.save_module_settings(&filters).await?;
+        Ok(filters)
+    }
+
     pub async fn study_plan(&self) -> Result<StudyPlan, BankError> {
         self.repository.study_plan().await
     }

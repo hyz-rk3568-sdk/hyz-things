@@ -366,6 +366,47 @@ pub(super) async fn practice_catalog(
     }
 }
 
+pub(super) async fn module_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let app = match available(service) {
+        Ok(app) => app,
+        Err(e) => return bank_error(e),
+    };
+    match app.module_settings().await {
+        Ok(value) => Json(value).into_response(),
+        Err(e) => bank_error(e),
+    }
+}
+
+pub(super) async fn save_module_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+    payload: Result<Json<ModulePracticeFilters>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
+        return response;
+    }
+    let payload = match decode_control_json(payload) {
+        Ok(value) => value,
+        Err(error) => return error.response(),
+    };
+    let app = match available(service) {
+        Ok(app) => app,
+        Err(e) => return bank_error(e),
+    };
+    match app.save_module_settings(payload).await {
+        Ok(value) => Json(value).into_response(),
+        Err(e) => bank_error(e),
+    }
+}
+
 pub(super) async fn study_plan(
     State(state): State<AppState>,
     headers: HeaderMap,

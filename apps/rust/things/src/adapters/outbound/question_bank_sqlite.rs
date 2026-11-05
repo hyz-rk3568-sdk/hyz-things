@@ -783,6 +783,25 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         })
     }
 
+    async fn module_settings(&self) -> Result<ModulePracticeFilters, BankError> {
+        let value: Option<String> =
+            sqlx::query_scalar("SELECT filters FROM module_practice_settings WHERE id=1")
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|_| BankError::Storage)?;
+        match value {
+            Some(value) => serde_json::from_str(&value).map_err(|_| BankError::Storage),
+            None => Ok(ModulePracticeFilters::default()),
+        }
+    }
+
+    async fn save_module_settings(&self, filters: &ModulePracticeFilters) -> Result<(), BankError> {
+        let value = serde_json::to_string(filters).map_err(|_| BankError::Storage)?;
+        sqlx::query("INSERT INTO module_practice_settings(id, filters) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET filters=excluded.filters")
+            .bind(value).execute(&self.pool).await.map_err(|_| BankError::Storage)?;
+        Ok(())
+    }
+
     async fn study_plan(&self) -> Result<StudyPlan, BankError> {
         let enabled: Option<i64> =
             sqlx::query_scalar("SELECT prediction_enabled FROM study_plan_settings WHERE id=1")

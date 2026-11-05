@@ -282,6 +282,40 @@ test('question bank module drill filters real categories across original papers'
   await expect(page.getByTestId('question-bank-practice-material-pane')).toContainText('两道题共用材料');
 });
 
+test('module filter settings are shared across browser contexts',async({page,browser})=>{
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-module').click();
+  await page.getByTestId('module-drill-settings-open').click();
+  await page.getByTestId('module-filter-count').filter({hasText:'10题'}).click();
+  await page.getByTestId('module-filter-save').click();
+  await expect(page.getByTestId('module-drill-settings')).toBeHidden();
+  const context=await browser.newContext();
+  try {
+    await context.addCookies(await page.context().cookies());
+    const other=await context.newPage();
+    await other.goto(`${webOrigin}/#/study/training`);
+    await other.getByTestId('training-mode-question-bank-module').click();
+    await expect(other.getByTestId('module-drill-filter-summary')).toContainText('10 题');
+  } finally {
+    await context.close();
+  }
+});
+
+test('module filter save errors remain visible in the settings dialog',async({page})=>{
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-module').click();
+  await page.getByTestId('module-drill-settings-open').click();
+  await page.route('**/api/v1/question-bank/module-settings',async route=>{
+    if (route.request().method()==='POST') await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{code:'unavailable',message:'保存失败'}})});
+    else await route.continue();
+  });
+  await page.getByTestId('module-filter-save').click();
+  await expect(page.getByTestId('module-drill-settings').getByRole('alert')).toBeVisible();
+  await expect(page.getByTestId('module-drill-settings')).toBeVisible();
+});
+
 test('module filter settings persist, apply server-side, and reflect answered/total progress',async({page})=>{
   await loginAsAdmin(page);
   await page.goto('/#/study/training');

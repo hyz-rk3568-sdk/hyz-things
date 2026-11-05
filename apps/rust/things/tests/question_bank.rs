@@ -87,6 +87,7 @@ use hyz_things::application::question_bank::{
 use std::sync::{Arc, Mutex};
 #[derive(Default)]
 struct MemoryBank {
+    settings: Mutex<hyz_things::domain::question_bank::ModulePracticeFilters>,
     papers: Mutex<Vec<IndexedPaper>>,
     fail_source: std::sync::atomic::AtomicBool,
     loads: std::sync::atomic::AtomicUsize,
@@ -118,6 +119,18 @@ impl QuestionBankSourcePort for MemoryBank {
 }
 #[async_trait]
 impl QuestionBankRepositoryPort for MemoryBank {
+    async fn module_settings(
+        &self,
+    ) -> Result<hyz_things::domain::question_bank::ModulePracticeFilters, BankError> {
+        Ok(self.settings.lock().unwrap().clone())
+    }
+    async fn save_module_settings(
+        &self,
+        filters: &hyz_things::domain::question_bank::ModulePracticeFilters,
+    ) -> Result<(), BankError> {
+        *self.settings.lock().unwrap() = filters.clone();
+        Ok(())
+    }
     async fn list(&self) -> Result<Vec<IndexedPaper>, BankError> {
         if let Some(error) = self.list_error.lock().unwrap().clone() {
             return Err(error);
@@ -1134,4 +1147,108 @@ async fn practice_question_detail_rejects_invalid_and_unknown_ids() {
             .await,
         Err(BankError::NotFound)
     );
+}
+
+#[tokio::test]
+async fn module_settings_persist_and_reject_invalid_filters() {
+    use hyz_things::adapters::outbound::question_bank_sqlite::SqliteQuestionBankRepository;
+    use hyz_things::domain::question_bank::ModulePracticeFilters;
+
+    let path =
+        std::env::temp_dir().join(format!("hyz-module-settings-{}.sqlite", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    let url = format!("sqlite://{}", path.display());
+    let source = Arc::new(MemoryBank::default());
+    let repository = Arc::new(SqliteQuestionBankRepository::connect(&url).await.unwrap());
+    let app = QuestionBankApplication::new(source.clone(), repository.clone());
+    assert_eq!(
+        app.module_settings().await.unwrap(),
+        ModulePracticeFilters::default()
+    );
+    let settings = ModulePracticeFilters {
+        year_min: Some(2020),
+        regions: vec!["国考".into()],
+        count: Some(10),
+        ..Default::default()
+    };
+    assert_eq!(
+        app.save_module_settings(settings.clone()).await.unwrap(),
+        settings
+    );
+    drop(app);
+    repository.pool().close().await;
+    drop(repository);
+    let repository = Arc::new(SqliteQuestionBankRepository::connect(&url).await.unwrap());
+    let reopened = QuestionBankApplication::new(source, repository.clone());
+    assert_eq!(reopened.module_settings().await.unwrap(), settings);
+    let invalid = ModulePracticeFilters {
+        count: Some(21),
+        ..settings.clone()
+    };
+    assert_eq!(
+        reopened.save_module_settings(invalid).await,
+        Err(BankError::Invalid)
+    );
+    assert_eq!(reopened.module_settings().await.unwrap(), settings);
+    drop(reopened);
+    repository.pool().close().await;
+    std::fs::remove_file(path).unwrap();
+}
+
+#[tokio::test]
+async fn module_settings_http_security_and_round_trip() {
+    let (server, base, cookie, _) = bank_server().await;
+    let client = reqwest::Client::new();
+    let url = format!("{base}/api/v1/question-bank/module-settings");
+    assert_eq!(client.get(&url).send().await.unwrap().status(), 401);
+    for (authenticated, origin, csrf, body, expected) in [
+        (false, base.as_str(), Some("qb-csrf"), "{}", 401),
+        (true, base.as_str(), None, "{}", 403),
+        (true, "https://other.example", Some("qb-csrf"), "{}", 403),
+        (true, base.as_str(), Some("qb-csrf"), "{", 400),
+        (true, base.as_str(), Some("qb-csrf"), "{\"count\":21}", 400),
+        (
+            true,
+            base.as_str(),
+            Some("qb-csrf"),
+            "{\"count\":10,\"regions\":[\"国考\"]}",
+            200,
+        ),
+    ] {
+        let mut req = client
+            .post(&url)
+            .header("origin", origin)
+            .header("content-type", "application/json")
+            .body(body);
+        if authenticated {
+            req = req.header("cookie", &cookie);
+        }
+        if let Some(csrf) = csrf {
+            req = req.header("x-hyz-csrf", csrf);
+        }
+        assert_eq!(req.send().await.unwrap().status(), expected);
+    }
+    let value: serde_json::Value = client
+        .get(&url)
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(value["count"], 10);
+    assert_eq!(value["regions"][0], "国考");
+    let response = client
+        .post(&url)
+        .header("cookie", &cookie)
+        .header("origin", &base)
+        .header("x-hyz-csrf", "qb-csrf")
+        .header("content-type", "application/json")
+        .body(" ".repeat(9000) + "{}")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 413);
+    server.abort();
 }

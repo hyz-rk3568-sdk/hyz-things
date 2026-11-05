@@ -112,26 +112,7 @@ fn history_matches_entry(entry: &PracticeMode, run: &PracticeSession) -> bool {
         !paper_run
     }
 }
-const MODULE_FILTERS_STORAGE: &str = "hyz-question-bank-module-settings-v1";
-
-pub(super) fn read_module_filters() -> ModulePracticeFilters {
-    web_sys::window()
-        .and_then(|window| window.local_storage().ok().flatten())
-        .and_then(|storage| storage.get_item(MODULE_FILTERS_STORAGE).ok().flatten())
-        .and_then(|json| serde_json::from_str(&json).ok())
-        .unwrap_or_default()
-}
-
-fn persist_module_filters(filters: &ModulePracticeFilters) -> bool {
-    let Some(storage) = web_sys::window().and_then(|window| window.local_storage().ok().flatten())
-    else {
-        return false;
-    };
-    let Ok(json) = serde_json::to_string(filters) else {
-        return false;
-    };
-    storage.set_item(MODULE_FILTERS_STORAGE, &json).is_ok()
-}
+pub(super) const MODULE_SETTINGS_URL: &str = "/api/v1/question-bank/module-settings";
 
 pub(super) fn module_filter_query(filters: &ModulePracticeFilters) -> String {
     let mut query = url::form_urlencoded::Serializer::new(String::new());
@@ -834,8 +815,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let selected_module = use_state(String::new);
     let catalog = use_state(|| None::<PracticeCatalog>);
     let selected_category = use_state(String::new);
-    let module_filters = use_state(read_module_filters);
-    let draft_filters = use_state(read_module_filters);
+    let module_filters = use_state(ModulePracticeFilters::default);
+    let draft_filters = use_state(ModulePracticeFilters::default);
+    let filters_loaded = use_state(|| false);
+    let saving_filters = use_state(|| false);
+    let settings_error = use_state(|| None::<String>);
     let settings_open = use_state(|| false);
     let custom_years = use_state(|| false);
     let collection = use_state(|| None::<PracticeMode>);
@@ -867,6 +851,24 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let operation_lock = use_mut_ref(|| false);
     let pending_answer = use_state(|| None::<PendingAnswer>);
     let error = use_state(|| None::<String>);
+    {
+        let module_filters = module_filters.clone();
+        let filters_loaded = filters_loaded.clone();
+        let error = error.clone();
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                match fetch_json::<ModulePracticeFilters>(MODULE_SETTINGS_URL, "刷题设置").await
+                {
+                    Ok(filters) => {
+                        module_filters.set(filters);
+                        filters_loaded.set(true);
+                    }
+                    Err(message) => error.set(Some(message)),
+                }
+            });
+            || ()
+        });
+    }
     let submit_confirm = use_state(|| false);
     let elapsed = use_state(|| 0u64);
     let seconds_ref = use_mut_ref(|| 0u64);
@@ -954,13 +956,18 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     }
     {
         let filters = (*module_filters).clone();
+        let loaded = *filters_loaded;
         let catalog = catalog.clone();
         let error = error.clone();
-        use_effect_with((filters, *refresh), move |(filters, _)| {
+        use_effect_with((filters, *refresh, loaded), move |(filters, _, loaded)| {
             let url = catalog_filter_url(filters);
+            let loaded = *loaded;
             let current = std::rc::Rc::new(std::cell::Cell::new(true));
             let response_current = current.clone();
             spawn_local(async move {
+                if !loaded {
+                    return;
+                }
                 let result = fetch_json::<PracticeCatalog>(&url, "模块题型进度").await;
                 if !response_current.get() {
                     return;
@@ -2083,7 +2090,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 disabled={*busy || props.csrf.is_empty() ||
                     (collection.is_some() && browse.is_empty()) ||
                     (collection.is_none() && *mode == PracticeMode::Paper && selected_paper.is_empty()) ||
-                    (collection.is_none() && *mode == PracticeMode::Module && selected_module.is_empty())}
+                    (collection.is_none() && *mode == PracticeMode::Module && (!*filters_loaded || selected_module.is_empty()))}
                 onclick={Callback::from(move |_| invoke.emit(Action::Start))}>
                 {if *collection == Some(PracticeMode::Wrong) {"开始错题复练"}
                     else if *collection == Some(PracticeMode::Favorite) {"开始收藏题练习"}
@@ -2334,13 +2341,15 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             <h3 class="font-semibold">{"专项模块"}</h3>
                             <p class="text-xs text-base-content/65">{"选择一级模块，再点二级题型精准刷题。"}</p>
                         </div>
-                        <button type="button" class="btn btn-outline btn-sm" data-testid="module-drill-settings-open"
+                        <button type="button" class="btn btn-outline btn-sm" data-testid="module-drill-settings-open" disabled={!*filters_loaded || *saving_filters}
                             onclick={Callback::from({
                                 let draft_filters=draft_filters.clone();
                                 let module_filters=module_filters.clone();
                                 let custom_years=custom_years.clone();
                                 let settings_open=settings_open.clone();
+                                let settings_error=settings_error.clone();
                                 move |_| {
+                                    settings_error.set(None);
                                     let now=js_sys::Date::new_0().get_full_year() as i32;
                                     let current=&*module_filters;
                                     let is_quick = current.year_min.is_none() && current.year_max.is_none()
@@ -2529,6 +2538,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     </header>
                     <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
                         <div class="mx-auto max-w-2xl space-y-7">
+                            if let Some(message) = &*settings_error {
+                                <p class="rounded-box bg-error/10 px-3 py-2 text-sm text-error" role="alert">{message.clone()}</p>
+                            }
                             <div class="space-y-2">
                                 <h4 class="font-semibold">{"出题年份"}</h4>
                                 <div class="grid grid-cols-4 gap-2">
@@ -2640,20 +2652,33 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     draft_filters.set(ModulePracticeFilters::default());custom_years.set(false);
                                 }})}>{"恢复默认"}</button>
                             <button type="button" class="btn btn-primary flex-1" data-testid="module-filter-save"
-                                disabled={matches!((draft_filters.year_min,draft_filters.year_max),(Some(a),Some(b)) if a>b)}
+                                disabled={*saving_filters || matches!((draft_filters.year_min,draft_filters.year_max),(Some(a),Some(b)) if a>b)}
                                 onclick={Callback::from({
                                     let draft_filters=draft_filters.clone();
                                     let module_filters=module_filters.clone();
                                     let settings_open=settings_open.clone();
-                                    let error=error.clone();
+                                    let settings_error=settings_error.clone();
+                                    let csrf=props.csrf.clone();
+                                    let saving_filters=saving_filters.clone();
                                     move |_|{
                                         let next=(*draft_filters).clone();
-                                        if persist_module_filters(&next) {
-                                            module_filters.set(next);
-                                            settings_open.set(false);
-                                        } else {
-                                            error.set(Some("设置保存失败，请检查浏览器存储权限。".into()));
-                                        }
+                                        let module_filters=module_filters.clone();
+                                        let settings_open=settings_open.clone();
+                                        let settings_error=settings_error.clone();
+                                        let csrf=csrf.clone();
+                                        let saving_filters=saving_filters.clone();
+                                        settings_error.set(None);
+                                        saving_filters.set(true);
+                                        spawn_local(async move {
+                                            match post_json_response::<_, ModulePracticeFilters>(MODULE_SETTINGS_URL, &csrf, &next, "刷题设置").await {
+                                                Ok(saved) => {
+                                                    module_filters.set(saved);
+                                                    settings_open.set(false);
+                                                }
+                                                Err(message) => settings_error.set(Some(message)),
+                                            }
+                                            saving_filters.set(false);
+                                        });
                                     }
                                 })}>{"保存设置"}</button>
                         </div>

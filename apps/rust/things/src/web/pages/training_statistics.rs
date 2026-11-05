@@ -1,7 +1,7 @@
 //! Real stored learning durations, not quiz elapsed-time estimates.
-use super::question_bank_practice::{module_filter_query, read_module_filters};
+use super::question_bank_practice::{module_filter_query, MODULE_SETTINGS_URL};
 use super::*;
-use hyz_things::domain::question_bank::{PracticeCatalog, PracticeCategory};
+use hyz_things::domain::question_bank::{ModulePracticeFilters, PracticeCatalog, PracticeCategory};
 use std::collections::BTreeMap;
 
 fn module_name(id: &str) -> &'static str {
@@ -432,8 +432,25 @@ pub(super) fn study_plan_card(props: &StudyPlanCardProps) -> Html {
     let managing = use_state(|| false);
     let saving = use_state(|| false);
     let draft = use_state(StudyPlan::default);
-    let filters = use_state(read_module_filters);
-    let query = module_filter_query(&filters);
+    let filters = use_state(|| None::<ModulePracticeFilters>);
+    {
+        let filters = filters.clone();
+        let error = error.clone();
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                match fetch_json::<ModulePracticeFilters>(MODULE_SETTINGS_URL, "刷题设置").await
+                {
+                    Ok(value) => filters.set(Some(value)),
+                    Err(message) => error.set(Some(message)),
+                }
+            });
+            || ()
+        });
+    }
+    let query = filters
+        .as_ref()
+        .as_ref()
+        .map(|value| module_filter_query(value));
     {
         let data = data.clone();
         let catalog = catalog.clone();
@@ -441,6 +458,9 @@ pub(super) fn study_plan_card(props: &StudyPlanCardProps) -> Html {
         let query = query.clone();
         use_effect_with((*refresh, query.clone()), move |_| {
             spawn_local(async move {
+                let Some(query) = query else {
+                    return;
+                };
                 match fetch_json_typed::<StudyPlanForecast>(
                     &format!("{STUDY_PLAN_ROOT}/forecast?{query}"),
                     "备考计划",

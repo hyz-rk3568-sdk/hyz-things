@@ -325,6 +325,17 @@ pub trait QuestionBankRepositoryPort: Send + Sync {
     ) -> Result<PracticeCatalog, BankError> {
         Err(BankError::Unavailable)
     }
+    async fn module_settings(
+        &self,
+    ) -> Result<crate::domain::question_bank::ModulePracticeFilters, BankError> {
+        Err(BankError::Unavailable)
+    }
+    async fn save_module_settings(
+        &self,
+        _filters: &crate::domain::question_bank::ModulePracticeFilters,
+    ) -> Result<(), BankError> {
+        Err(BankError::Unavailable)
+    }
     async fn study_plan(&self) -> Result<StudyPlan, BankError> {
         Ok(StudyPlan::default())
     }

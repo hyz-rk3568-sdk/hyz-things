@@ -853,6 +853,12 @@ fn app_with_assets(
             get(training_time::goals).post(training_time::save_goals),
         )
         .route(
+            "/api/v1/question-bank/module-settings",
+            get(question_bank::module_settings)
+                .post(question_bank::save_module_settings)
+                .layer(DefaultBodyLimit::max(8 * 1024)),
+        )
+        .route(
             "/api/v1/study/plan",
             get(question_bank::study_plan)
                 .post(question_bank::save_study_plan)
@@ -2924,6 +2930,7 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/study/review"
             | "/api/v1/study/training-time/events"
             | "/api/v1/study/training-time/goals"
+            | "/api/v1/question-bank/module-settings"
             | "/api/v1/study/plan"
             | "/api/v1/control/study/sync"
             | "/api/v1/control/question-bank/sync"
