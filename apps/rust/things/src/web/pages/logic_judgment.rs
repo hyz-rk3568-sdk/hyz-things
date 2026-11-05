@@ -605,13 +605,13 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
         let question = &active.questions[index];
         return html! {
             <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" data-testid={format!("{prefix}-run")}>
-                <header class="analysis-header flex shrink-0 items-center justify-between gap-2 border-b border-base-content/10 pb-2">
-                    <div class="flex min-w-0 items-center gap-2">
+                <header class="analysis-header flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2">
+                    <div class="flex min-w-0 flex-1 items-center gap-2">
                         <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={invoke(LogicAction::PauseAndExit)}>{"← 暂停并退出"}</button>
                         <strong class="truncate text-sm">{title}</strong>
                         <span class="hidden text-xs text-base-content/60 sm:inline">{format!("第 {}/10 题",index+1)}</span>
                     </div>
-                    <div class="flex shrink-0 items-center gap-2">
+                    <div class="ml-auto flex shrink-0 items-center gap-2">
                         <StudyGoalBars />
                         <button type="button" role="timer" class={if remaining<=60 {"btn btn-ghost font-mono text-xl text-error"} else {"btn btn-ghost font-mono text-xl"}} data-testid={format!("{prefix}-clock")} title={if paused {"点击继续计时"} else {"点击暂停计时"}} disabled={*busy || (remaining==0 && !paused)} onclick={invoke(LogicAction::Pause)}>{format!("{:02}:{:02}",remaining/60,remaining%60)}</button>
                         <button class="btn btn-sm btn-error btn-outline" data-testid={format!("{prefix}-submit")} disabled={*busy || paused} onclick={invoke(LogicAction::Submit)}>{"交卷"}</button>
@@ -686,10 +686,12 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
             <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" data-testid={format!("{prefix}-result")}>
                 <header class="analysis-header flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2">
                     <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={invoke(LogicAction::Back)}>{"← 返回训练"}</button>
-                    <StudyGoalBars />
-                    <strong class="text-sm">{format!("{} / {} 正确",score.correct,score.total)}</strong>
-                    <button class="btn btn-outline btn-sm" data-testid={format!("{prefix}-records")} onclick={show_records}>{"查看练习记录"}</button>
-                    <button class="btn btn-primary btn-sm" data-testid={format!("{prefix}-retry")} disabled={*busy} onclick={invoke(LogicAction::Retry(score.id.clone()))}>{"重做原题"}</button>
+                    <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
+                        <StudyGoalBars />
+                        <strong class="text-sm">{format!("{} / {} 正确",score.correct,score.total)}</strong>
+                        <button class="btn btn-outline btn-sm" data-testid={format!("{prefix}-records")} onclick={show_records}>{"查看练习记录"}</button>
+                        <button class="btn btn-primary btn-sm" data-testid={format!("{prefix}-retry")} disabled={*busy} onclick={invoke(LogicAction::Retry(score.id.clone()))}>{"重做原题"}</button>
+                    </div>
                 </header>
                 {alert}
                 <div class="relative min-h-0 flex-1 overflow-hidden">

@@ -482,6 +482,30 @@ test('a delayed AI lookup cannot switch a different question', async ({page}) =>
   await expect(page.getByTestId('question-bank-original-tab')).toHaveAttribute('aria-pressed','true');
 });
 
+test('practice header keeps one row on tablets and reveals the full title on tap', async ({page}) => {
+  await page.setViewportSize({width:1024,height:768});
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await chooseFixturePaper(page);
+  await page.getByTestId('question-bank-practice-start').click();
+  const header = page.getByTestId('question-bank-practice-workspace').locator('header');
+  const title = page.getByTestId('question-bank-practice-title');
+  const bars = page.getByTestId('study-goal-bars');
+  await expect(title).toHaveAttribute('aria-expanded','false');
+  const before = (await header.boundingBox())!.height;
+  const titleBox = (await title.boundingBox())!;
+  const barsBox = (await bars.boundingBox())!;
+  expect(Math.abs((titleBox.y + titleBox.height/2) - (barsBox.y + barsBox.height/2))).toBeLessThan(24);
+  await title.click();
+  await expect(page.getByTestId('question-bank-practice-title-popover')).toContainText('行测真题训练端到端样卷');
+  expect(Math.abs((await header.boundingBox())!.height - before)).toBeLessThanOrEqual(1);
+  await title.click();
+  await expect(page.getByTestId('question-bank-practice-title-popover')).toHaveCount(0);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+});
+
 test('completed practice header actions stay inside a phone viewport', async ({page}) => {
   await page.setViewportSize({width:390,height:844});
   await loginAsAdmin(page);

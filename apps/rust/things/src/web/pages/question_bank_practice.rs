@@ -822,6 +822,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let history = use_state(Vec::<PracticeSession>::new);
     let history_open = use_state(|| props.show_history);
     let history_forced = use_state(|| false);
+    let title_open = use_state(|| false);
     let history_filter = use_state(|| None::<PracticeMode>);
     let history_unfinished = use_state(|| false);
     let selected_paper = use_state(String::new);
@@ -1809,18 +1810,28 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             if !*history_forced {
                 return html! {
                     <section class={WORKSPACE} data-testid="question-bank-practice-workspace">
-                        <header class="flex shrink-0 flex-col gap-1 border-b border-base-content/10 pb-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-2">
-                            <div class="flex min-w-0 items-center gap-3">
+                        <header class="flex shrink-0 flex-col gap-1 border-b border-base-content/10 pb-2 sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-2">
+                            <div class="flex min-w-0 flex-1 items-center gap-3">
                                 <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Exit)})}>
                                     {if completed {"← 返回训练"} else {"← 暂停并退出"}}
                                 </button>
-                                <div class="min-w-0">
-                                    <strong class="block truncate text-sm">{item.paper_title.clone()}</strong>
-                                    <span class="block truncate text-[11px] text-base-content/50" data-testid="question-bank-practice-scope">{subtitle.clone()}</span>
+                                <div class="relative min-w-0 flex-1">
+                                    <button type="button" class="w-full min-w-0 text-left" data-testid="question-bank-practice-title"
+                                        aria-expanded={title_open.to_string()} title={item.paper_title.clone()}
+                                        onclick={Callback::from({let title_open=title_open.clone();move |_|title_open.set(!*title_open)})}>
+                                        <strong class="block truncate text-sm">{item.paper_title.clone()}</strong>
+                                        <span class="block truncate text-[11px] text-base-content/50" data-testid="question-bank-practice-scope">{subtitle.clone()}</span>
+                                    </button>
+                                    if *title_open {
+                                        <div class="absolute left-0 top-full z-30 mt-1 max-w-[min(36rem,80vw)] rounded-lg bg-base-100 p-3 text-sm shadow-lg ring-1 ring-base-content/10"
+                                            role="dialog" aria-label="完整试卷名称" data-testid="question-bank-practice-title-popover">
+                                            <strong class="block whitespace-normal">{item.paper_title.clone()}</strong>
+                                            <span class="mt-1 block whitespace-normal text-xs text-base-content/60">{subtitle.clone()}</span>
+                                        </div>
+                                    }
                                 </div>
                             </div>
-                            <div class="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
-                                <span class="hidden text-xs text-base-content/55 sm:inline">{"学习"}</span>
+                            <div class="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap sm:justify-end">
                                 <StudyGoalBars />
                                 <button type="button" class="btn btn-ghost px-2 font-mono text-xl font-semibold tabular-nums"
                                     role="timer" data-testid="question-bank-practice-timer"

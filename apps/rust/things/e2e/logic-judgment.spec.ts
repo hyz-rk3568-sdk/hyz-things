@@ -514,6 +514,12 @@ test("logic judgment keeps controls inside PWA safe areas across viewports", asy
     expect(box.y+box.height).toBeLessThanOrEqual(viewport.height-24);
     expect(viewport.height-24-box.y-box.height).toBeLessThanOrEqual(9);
     await expectNoHorizontalOverflow(page);
+    const headerBox=(await screen.locator('header').boundingBox())!;
+    const submitBox=(await page.getByTestId('logic-submit').boundingBox())!;
+    const barsBox=(await page.getByTestId('study-goal-bars').boundingBox())!;
+    // Everything except the title stays right-aligned, even after wrapping.
+    expect(headerBox.x+headerBox.width-submitBox.x-submitBox.width).toBeLessThanOrEqual(20);
+    expect(barsBox.x).toBeLessThan(submitBox.x);
     const leftPane=await page.getByTestId('logic-question-pane').boundingBox();
     const rightPane=await page.getByTestId('logic-answer-pane').boundingBox();
     if(viewport.width>=768) expect(leftPane!.x+leftPane!.width).toBeLessThanOrEqual(rightPane!.x+2);
