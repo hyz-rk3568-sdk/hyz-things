@@ -177,7 +177,7 @@ test("study plan selects a parent module, toggles predictions and keeps the plan
   await expect(plan).toContainText('预测已关闭');
   await expect(item).not.toContainText('完整日');
   await plan.getByTestId('study-plan-toggle').check();
-  await expect(item).toContainText('近 7 个完整日');
+  await expect(item).toContainText('近 7 个完整日 · 样本不足');
 
   await plan.getByTestId('study-plan-manage').click();
   await plan.getByTestId('study-plan-module').filter({hasText:'资料分析'}).getByLabel('资料分析 全部').uncheck();

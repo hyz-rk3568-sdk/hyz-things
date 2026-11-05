@@ -619,42 +619,48 @@ pub(super) fn study_plan_card(props: &StudyPlanCardProps) -> Html {
                 if value.items.is_empty() {
                     <button type="button" class="btn btn-outline btn-sm" data-testid="study-plan-add" onclick={open_manage}>{"添加计划模块"}</button>
                 } else {
-                    <div class="space-y-2">
+                    <div class="grid gap-2 sm:grid-cols-2">
                         {for value.items.iter().map(|item|{
-                            let pace = if !value.prediction_enabled {
-                                Html::default()
+                            let status = if item.total == 0 {
+                                "当前筛选无题目".to_string()
                             } else if item.remaining == 0 {
-                                html!{<p class="text-xs text-success">{"计划内已完成"}</p>}
+                                "已完成".to_string()
+                            } else {
+                                format!("还剩 {} 题", item.remaining)
+                            };
+                            let pace = if !value.prediction_enabled || item.remaining == 0 {
+                                Html::default()
                             } else {
                                 let yesterday = if item.answered_yesterday == 0 {
                                     "昨日未刷".to_string()
                                 } else if let Some(days) = item.days_yesterday {
-                                    format!("昨日 {} 题 · 按昨日速度约 {} 天{}", item.answered_yesterday, days,
-                                        item.finish_yesterday.as_ref().map(|date| format!("（预计 {date}）")).unwrap_or_default())
+                                    format!("昨日 {} 题 · 约 {} 天{}", item.answered_yesterday, days,
+                                        item.finish_yesterday.as_ref().map(|date| format!("（{date}）")).unwrap_or_default())
                                 } else {
                                     "昨日数据不足".to_string()
                                 };
-                                let seven = if item.answered_7 == 0 {
+                                let seven = if item.low_confidence {
+                                    "近 7 个完整日 · 样本不足".to_string()
+                                } else if item.answered_7 == 0 {
                                     "近 7 个完整日无作答".to_string()
                                 } else if let Some(days) = item.days_7 {
                                     format!("近 7 个完整日日均 {:.1} 题 · 约 {} 天{}", item.answered_7 as f64 / 7.0, days,
-                                        item.finish_7.as_ref().map(|date| format!("（预计 {date}）")).unwrap_or_default())
+                                        item.finish_7.as_ref().map(|date| format!("（{date}）")).unwrap_or_default())
                                 } else {
                                     "近 7 个完整日数据不足".to_string()
                                 };
-                                html!{<div class="space-y-0.5 text-xs"><p>{yesterday}</p><p>{seven}</p></div>}
+                                html!{<p class="text-[11px] leading-5 opacity-70">{format!("{yesterday} · {seven}")}</p>}
                             };
-                            html!{<div class="space-y-1.5 rounded-lg bg-base-200/40 p-3" data-testid="study-plan-item"
+                            html!{<div class="space-y-1.5 rounded-lg bg-base-200/40 p-2.5" data-testid="study-plan-item"
                                 data-module={item.module.clone()} data-category={item.category.clone().unwrap_or_default()}>
                                 <div class="flex items-start justify-between gap-3">
-                                    <span class="min-w-0 text-sm font-medium">{plan_item_label(item)}</span>
-                                    <span class="shrink-0 text-sm tabular-nums">{format!("还剩 {} 题", item.remaining)}</span>
+                                    <span class="min-w-0 truncate text-sm font-medium">{plan_item_label(item)}</span>
+                                    <span class="shrink-0 text-sm tabular-nums">{status}</span>
                                 </div>
-                                <progress class="progress progress-primary block h-2 w-full" max={item.total.max(1).to_string()}
-                                    value={item.done.max(0).to_string()} aria-label={format!("{} 完成进度", plan_item_label(item))}/>
-                                <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] opacity-60">
-                                    <span>{format!("已做 {}/{} 题", item.done, item.total)}</span>
-                                    if value.prediction_enabled && item.low_confidence {<span class="badge badge-ghost badge-sm">{"样本不足"}</span>}
+                                <div class="flex items-center gap-2">
+                                    <progress class="progress progress-primary block h-2 flex-1" max={item.total.max(1).to_string()}
+                                        value={item.done.max(0).to_string()} aria-label={format!("{} 完成进度", plan_item_label(item))}/>
+                                    <span class="shrink-0 text-[10px] tabular-nums opacity-60">{format!("{}/{}", item.done, item.total)}</span>
                                 </div>
                                 {pace}
                             </div>}
