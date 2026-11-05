@@ -890,14 +890,16 @@ async fn indexed_module_and_category_drills_keep_original_sources() {
     assert_eq!(session.items.len(), 1);
     assert_eq!(session.items[0].number, 26);
     assert_eq!(session.category.as_deref(), Some("比重"));
-    // A saved answer is counted once even when revised; an empty/new session
-    // does not advance module progress.
+    // A draft answer does not advance progress; only a submitted answer counts.
     app.save_practice_answer(&session.id, &session.items[0].question_id, vec!["A".into()])
         .await
         .unwrap();
     app.save_practice_answer(&session.id, &session.items[0].question_id, vec!["B".into()])
         .await
         .unwrap();
+    let draft = app.practice_catalog(&Default::default()).await.unwrap();
+    assert_eq!(draft.modules[0].done, 0);
+    app.submit_practice(&session.id).await.unwrap();
     let updated = app.practice_catalog(&Default::default()).await.unwrap();
     assert_eq!(updated.modules[0].done, 1);
     assert_eq!(updated.modules[0].categories[0].done, 1);

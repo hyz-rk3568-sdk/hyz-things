@@ -590,6 +590,11 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         }
         if session.status == "completed" {
             for item in &session.items {
+                // Only chosen answers count as done; skipped questions stay
+                // ahead for the next module drill.
+                if item.answer.is_empty() {
+                    continue;
+                }
                 let grade = item.grade.as_deref().unwrap_or("ungradable");
                 sqlx::query("INSERT OR IGNORE INTO practice_attempts(session_id,question_id,answer,grade,submitted_at) VALUES(?,?,?,?,?)")
                     .bind(&session.id).bind(&item.question_id)
@@ -631,8 +636,8 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                   WHERE value=json_extract(p.metadata,'$.summary.region'))) != (?)) \
              LIMIT -1) \
              SELECT q.module,q.category,COUNT(*) AS total, \
-             SUM(CASE WHEN EXISTS (SELECT 1 FROM practice_items i \
-                 WHERE i.question_id=q.id AND i.answer!='[]') THEN 1 ELSE 0 END) AS done \
+             SUM(CASE WHEN EXISTS (SELECT 1 FROM practice_attempts i \
+                 WHERE i.question_id=q.id AND i.answer NOT IN ('[]','')) THEN 1 ELSE 0 END) AS done \
              FROM eligible_papers p JOIN questions q ON q.paper_id=p.id \
              WHERE q.gradable=1 \
              GROUP BY q.module,q.category ORDER BY q.module,q.category",
@@ -717,7 +722,9 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         let sql = format!(
             "{papers}, filtered AS (\
              SELECT q.id,q.paper_id,q.number,\
-             EXISTS(SELECT 1 FROM practice_attempts a WHERE a.question_id=q.id) AS seen,\
+             EXISTS(SELECT 1 FROM practice_attempts a WHERE a.question_id=q.id \
+               AND a.answer NOT IN ('[]','')) AS answered,\
+             (SELECT COUNT(*) FROM practice_items i WHERE i.question_id=q.id) AS served,\
              (? IS NULL OR q.category=?) AS matches,\
              CASE \
                WHEN q.materials IS NULL OR q.materials IN ('[]','') THEN 'solo:'||q.id \
@@ -729,13 +736,13 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
              WHERE q.module=? AND q.gradable=1),\
              blocks AS (\
                SELECT group_key,paper_id,MIN(number) AS first_number,\
-                      MIN(seen) AS unseen,MAX(matches) AS matched \
+                      MIN(answered) AS answered,MIN(served) AS served,MAX(matches) AS matched \
                FROM filtered GROUP BY group_key,paper_id),\
              eligible_blocks AS (SELECT * FROM blocks WHERE matched=1),\
              ranked AS (\
                SELECT group_key,ROW_NUMBER() OVER (\
-                 ORDER BY unseen,position,RANDOM(),group_key) AS rn \
-               FROM (SELECT group_key,unseen,\
+                 ORDER BY answered,served,position,RANDOM(),group_key) AS rn \
+               FROM (SELECT group_key,answered,served,\
                      ROW_NUMBER() OVER (PARTITION BY paper_id ORDER BY first_number) AS position \
                      FROM eligible_blocks)),\
              selected AS (SELECT group_key,rn FROM ranked ORDER BY rn LIMIT ?) \

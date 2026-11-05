@@ -8,7 +8,7 @@ use hyz_things::application::question_bank::{
     QuestionBankSourcePort,
 };
 use hyz_things::domain::question_bank::{
-    CreatePracticeRequest, ModulePracticeFilters, PracticeMode,
+    CreatePracticeRequest, ModulePracticeFilters, PracticeMode, PracticeSession,
 };
 use std::sync::Arc;
 
@@ -329,6 +329,160 @@ async fn grouped_application() -> QuestionBankApplication {
     let app = QuestionBankApplication::new(Arc::new(GroupedBank), repository);
     app.sync().await.unwrap();
     app
+}
+
+const ORDER_PAPER: &str = r#"---
+schema: hyz-paper/v1
+title: 排序练习卷
+year: 2022
+region: 国考
+variant: 统考
+---
+<!-- hyz-paper-id: 019a3d8c-7f23-7b6e-927d-3c951851d3b0 -->
+# 排序
+## Question 1
+<!-- hyz-question-id: 019a3d8e-1b32-7a60-9c83-f34217a6e230 -->
+```yaml
+module: 资料分析
+category: 比重
+```
+### Stem
+排序题一。
+### Options
+- A. 甲
+- B. 乙
+### Answer
+A
+### Explanation
+解析。
+## Question 2
+<!-- hyz-question-id: 019a3d8e-1b32-7a60-9c83-f34217a6e231 -->
+```yaml
+module: 资料分析
+category: 比重
+```
+### Stem
+排序题二。
+### Options
+- A. 甲
+- B. 乙
+### Answer
+B
+### Explanation
+解析。
+## Question 3
+<!-- hyz-question-id: 019a3d8e-1b32-7a60-9c83-f34217a6e232 -->
+```yaml
+module: 资料分析
+category: 比重
+```
+### Stem
+排序题三。
+### Options
+- A. 甲
+- B. 乙
+### Answer
+A
+### Explanation
+解析。
+"#;
+
+struct OrderingBank;
+
+#[async_trait]
+impl QuestionBankSourcePort for OrderingBank {
+    async fn scan(&self, _known: Vec<IndexedPaper>) -> Result<BankSnapshot, BankError> {
+        Ok(BankSnapshot {
+            papers: vec![paper(ORDER_PAPER, "papers/order.md", "hash-order")],
+            generated_ids: 0,
+        })
+    }
+    async fn load(&self, _paper: IndexedPaper) -> Result<Document, BankError> {
+        parse(ORDER_PAPER).map_err(|_| BankError::Invalid)
+    }
+    async fn asset(&self, _name: String) -> Result<BankAsset, BankError> {
+        Err(BankError::NotFound)
+    }
+}
+
+async fn ordering_application() -> QuestionBankApplication {
+    let repository = Arc::new(
+        SqliteQuestionBankRepository::connect("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    let app = QuestionBankApplication::new(Arc::new(OrderingBank), repository);
+    app.sync().await.unwrap();
+    app
+}
+
+async fn next_module_session(app: &QuestionBankApplication, count: usize) -> PracticeSession {
+    app.create_practice(CreatePracticeRequest {
+        mode: PracticeMode::Module,
+        paper_id: None,
+        module: Some("资料分析".into()),
+        category: None,
+        filters: ModulePracticeFilters {
+            count: Some(count),
+            ..Default::default()
+        },
+    })
+    .await
+    .unwrap()
+}
+
+fn practice_ids(session: &PracticeSession) -> Vec<String> {
+    session
+        .items
+        .iter()
+        .map(|item| item.question_id.clone())
+        .collect()
+}
+
+#[tokio::test]
+async fn module_drill_prioritizes_skipped_questions_then_least_served() {
+    const Q1: &str = "019a3d8e-1b32-7a60-9c83-f34217a6e230";
+    const Q2: &str = "019a3d8e-1b32-7a60-9c83-f34217a6e231";
+    const Q3: &str = "019a3d8e-1b32-7a60-9c83-f34217a6e232";
+    let app = ordering_application().await;
+    let next = |count| next_module_session(&app, count);
+    let ids = |session: &PracticeSession| practice_ids(session);
+
+    // Round 1 serves the first two questions; only Q1 is answered before submit.
+    let first = next(2).await;
+    assert_eq!(ids(&first), [Q1, Q2]);
+    app.save_practice_answer(&first.id, Q1, vec!["A".into()])
+        .await
+        .unwrap();
+    app.submit_practice(&first.id).await.unwrap();
+
+    // Q3 was never served, so it outranks the skipped Q2 among unanswered questions.
+    let second = next(1).await;
+    assert_eq!(ids(&second), [Q3]);
+    app.save_practice_answer(&second.id, Q3, vec!["A".into()])
+        .await
+        .unwrap();
+    app.submit_practice(&second.id).await.unwrap();
+
+    // The skipped Q2 stays ahead of answered questions even at a later position.
+    let third = next(1).await;
+    assert_eq!(ids(&third), [Q2]);
+    app.save_practice_answer(&third.id, Q2, vec!["B".into()])
+        .await
+        .unwrap();
+    app.submit_practice(&third.id).await.unwrap();
+
+    // All answered: Q1 and Q3 were served once, so the earlier position wins.
+    let fourth = next(1).await;
+    assert_eq!(ids(&fourth), [Q1]);
+    app.save_practice_answer(&fourth.id, Q1, vec!["A".into()])
+        .await
+        .unwrap();
+    app.submit_practice(&fourth.id).await.unwrap();
+
+    // Q1 is now served twice; fewest serves beats paper position.
+    let fifth = next(1).await;
+    assert_eq!(ids(&fifth), [Q3]);
 }
 
 #[tokio::test]
