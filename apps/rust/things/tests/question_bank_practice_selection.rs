@@ -486,6 +486,105 @@ async fn module_drill_prioritizes_skipped_questions_then_least_served() {
 }
 
 #[tokio::test]
+async fn module_drill_prioritizes_net_errors_and_correct_answers_reduce_them() {
+    const Q1: &str = "019a3d8e-1b32-7a60-9c83-f34217a6e230";
+    const Q2: &str = "019a3d8e-1b32-7a60-9c83-f34217a6e231";
+    const Q3: &str = "019a3d8e-1b32-7a60-9c83-f34217a6e232";
+    let app = ordering_application().await;
+
+    // Round 1 answers every question: Q1 wrong, Q2 and Q3 correct.
+    let first = next_module_session(&app, 3).await;
+    assert_eq!(practice_ids(&first), [Q1, Q2, Q3]);
+    app.save_practice_answer(&first.id, Q1, vec!["B".into()])
+        .await
+        .unwrap();
+    app.save_practice_answer(&first.id, Q2, vec!["B".into()])
+        .await
+        .unwrap();
+    app.save_practice_answer(&first.id, Q3, vec!["A".into()])
+        .await
+        .unwrap();
+    app.submit_practice(&first.id).await.unwrap();
+    let review = app.practice_review(&first.id).await.unwrap();
+    let counts = |review: &hyz_things::domain::question_bank::PracticeReview, id: &str| {
+        review
+            .questions
+            .iter()
+            .find(|question| question.question.item.question_id == id)
+            .map(|question| (question.correct_count, question.wrong_count))
+            .unwrap()
+    };
+    assert_eq!(counts(&review, Q1), (0, 1));
+    assert_eq!(counts(&review, Q2), (1, 0));
+    assert_eq!(counts(&review, Q3), (1, 0));
+    let detail = app.practice_question_detail(Q1).await.unwrap();
+    assert_eq!((detail.correct_count, detail.wrong_count), (0, 1));
+
+    // Round 2: the wrong answer outranks equal serve counts.
+    let second = next_module_session(&app, 1).await;
+    assert_eq!(practice_ids(&second), [Q1]);
+    app.save_practice_answer(&second.id, Q1, vec!["B".into()])
+        .await
+        .unwrap();
+    app.submit_practice(&second.id).await.unwrap();
+
+    // Round 3: two net errors beat Q2/Q3 even though Q1 was served more often.
+    let third = next_module_session(&app, 1).await;
+    assert_eq!(practice_ids(&third), [Q1]);
+    app.save_practice_answer(&third.id, Q1, vec!["A".into()])
+        .await
+        .unwrap();
+    app.submit_practice(&third.id).await.unwrap();
+
+    // Round 4: one net error still outranks questions with none.
+    let fourth = next_module_session(&app, 1).await;
+    assert_eq!(practice_ids(&fourth), [Q1]);
+    app.save_practice_answer(&fourth.id, Q1, vec!["A".into()])
+        .await
+        .unwrap();
+    app.submit_practice(&fourth.id).await.unwrap();
+
+    // Round 5: the second correct answer clears the net error, so the least
+    // served question returns first.
+    let fifth = next_module_session(&app, 1).await;
+    assert_eq!(practice_ids(&fifth), [Q2]);
+
+    // Counts are cumulative across sessions, including the latest answers.
+    let review = app.practice_review(&third.id).await.unwrap();
+    assert_eq!(counts(&review, Q1), (2, 2));
+
+    // Statistics split module drills by primary/secondary module.
+    let breakdown = app.daily_answered_breakdown(0, i64::MAX).await.unwrap();
+    let day = breakdown
+        .values()
+        .find(|day| !day.modules.is_empty())
+        .unwrap();
+    assert_eq!(day.modules["资料分析"]["比重"], 6);
+
+    // A full-paper drill is grouped by its original paper title.
+    let paper = app
+        .create_practice(CreatePracticeRequest {
+            mode: PracticeMode::Paper,
+            paper_id: Some("019a3d8c-7f23-7b6e-927d-3c951851d3b0".into()),
+            module: None,
+            category: None,
+            filters: ModulePracticeFilters::default(),
+        })
+        .await
+        .unwrap();
+    app.save_practice_answer(&paper.id, Q1, vec!["A".into()])
+        .await
+        .unwrap();
+    app.submit_practice(&paper.id).await.unwrap();
+    let breakdown = app.daily_answered_breakdown(0, i64::MAX).await.unwrap();
+    let day = breakdown
+        .values()
+        .find(|day| !day.papers.is_empty())
+        .unwrap();
+    assert_eq!(day.papers["排序练习卷"], 1);
+}
+
+#[tokio::test]
 async fn module_selection_interleaves_papers_and_randomizes_within_each_position() {
     let app = application().await;
     let session = app

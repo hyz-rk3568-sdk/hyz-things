@@ -16,6 +16,14 @@ pub(crate) struct TrainingTimeEventRequest {
     pub module: Option<String>,
     pub phase: Option<String>,
 }
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+pub(crate) struct QuestionBankDayBreakdown {
+    #[serde(default)]
+    pub modules: BTreeMap<String, BTreeMap<String, i64>>,
+    #[serde(default)]
+    pub papers: BTreeMap<String, i64>,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub(crate) struct TrainingDay {
     pub date: String,
@@ -24,6 +32,8 @@ pub(crate) struct TrainingDay {
     pub answered_count: i64,
     #[serde(default)]
     pub answered_modules: BTreeMap<String, i64>,
+    #[serde(default)]
+    pub question_bank: QuestionBankDayBreakdown,
     pub modules: BTreeMap<String, i64>,
     pub phases: BTreeMap<String, i64>,
 }

@@ -10,8 +10,27 @@ use crate::domain::question_bank::{
 use async_trait::async_trait;
 use document::{valid_id, Document};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::Semaphore;
+
+/// One submitted-answer group for the study statistics screen.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DailyAnsweredBreakdownRow {
+    pub day: String,
+    pub is_module: bool,
+    pub module: Option<String>,
+    pub category: Option<String>,
+    pub paper_title: Option<String>,
+    pub answered: i64,
+}
+
+/// Submitted answers split by module drill scope or original paper.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuestionBankDayBreakdown {
+    pub modules: BTreeMap<String, BTreeMap<String, i64>>,
+    pub papers: BTreeMap<String, i64>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BankError {
@@ -188,6 +207,14 @@ pub trait QuestionBankRepositoryPort: Send + Sync {
     ) -> Result<Vec<(String, i64)>, BankError> {
         Err(BankError::Unavailable)
     }
+    /// Groups submitted answers by practice scope for the same UTC bounds.
+    async fn daily_answered_breakdown(
+        &self,
+        _start_ms: i64,
+        _end_ms: i64,
+    ) -> Result<Vec<DailyAnsweredBreakdownRow>, BankError> {
+        Ok(Vec::new())
+    }
     async fn list(&self) -> Result<Vec<IndexedPaper>, BankError>;
     async fn paper_summaries(&self) -> Result<Vec<PaperSummary>, BankError> {
         Ok(self
@@ -263,6 +290,13 @@ pub trait QuestionBankRepositoryPort: Send + Sync {
     async fn practice_history(&self) -> Result<Vec<PracticeSession>, BankError> {
         Err(BankError::Unavailable)
     }
+    /// Returns `(question_id, correct, wrong)` for completed submissions.
+    async fn practice_attempt_counts(
+        &self,
+        _ids: &[String],
+    ) -> Result<Vec<(String, usize, usize)>, BankError> {
+        Ok(Vec::new())
+    }
     async fn practice_browse(
         &self,
         _mode: PracticeMode,
@@ -321,6 +355,45 @@ impl QuestionBankApplication {
         self.repository
             .daily_answered_counts(start_ms, end_ms)
             .await
+    }
+
+    pub async fn daily_answered_breakdown(
+        &self,
+        start_ms: i64,
+        end_ms: i64,
+    ) -> Result<BTreeMap<String, QuestionBankDayBreakdown>, BankError> {
+        let rows = self
+            .repository
+            .daily_answered_breakdown(start_ms, end_ms)
+            .await?;
+        let mut days = BTreeMap::new();
+        for row in rows {
+            let day = days
+                .entry(row.day)
+                .or_insert_with(QuestionBankDayBreakdown::default);
+            if row.is_module {
+                let module = row
+                    .module
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or_else(|| "未分类".into());
+                let category = row
+                    .category
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or_else(|| "未分类".into());
+                *day.modules
+                    .entry(module)
+                    .or_default()
+                    .entry(category)
+                    .or_default() += row.answered;
+            } else {
+                let paper = row
+                    .paper_title
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or_else(|| "未知试卷".into());
+                *day.papers.entry(paper).or_default() += row.answered;
+            }
+        }
+        Ok(days)
     }
 
     pub fn new(

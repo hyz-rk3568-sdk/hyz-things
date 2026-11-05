@@ -281,7 +281,38 @@ pub(crate) fn study_statistics_body(props: &StudyStatisticsProps) -> Html {
                 <h3 class="font-semibold">{format!("{} · 刷题明细",chosen.map(|d|d.date.as_str()).unwrap_or("今日"))}</h3>
                 if let Some(day)=chosen.filter(|day|day.answered_count>0) {
                     <p class="text-sm">{format!("已交卷作答 {} 题",day.answered_count)}</p>
-                    {for day.answered_modules.iter().map(|(id,count)|html!{<div class="flex justify-between gap-3 text-sm"><span>{module_name(id)}</span><span>{format!("{count} 题")}</span></div>})}
+                    {for day.answered_modules.iter().filter(|(id,_)|id.as_str()!="question_bank").map(|(id,count)|html!{<div class="flex justify-between gap-3 text-sm"><span>{module_name(id)}</span><span>{format!("{count} 题")}</span></div>})}
+                    if let Some(total)=day.answered_modules.get("question_bank") {
+                        <div class="space-y-2 rounded-lg bg-base-200/50 p-3" data-testid="study-question-bank-breakdown">
+                            <div class="flex justify-between gap-3 text-sm font-medium"><span>{"真题训练"}</span><span>{format!("{total} 题")}</span></div>
+                            if !day.question_bank.modules.is_empty() {
+                                <div class="space-y-1.5" data-testid="study-question-bank-modules">
+                                    <p class="text-xs opacity-60">{"模块刷题"}</p>
+                                    {for day.question_bank.modules.iter().map(|(module,categories)|{
+                                        let count:i64=categories.values().sum();
+                                        html!{<div class="space-y-0.5 pl-2">
+                                            <div class="flex justify-between gap-3 text-xs"><span class="font-medium">{module}</span><span>{format!("{count} 题")}</span></div>
+                                            {for categories.iter().map(|(category,count)|html!{
+                                                <div class="flex justify-between gap-3 pl-3 text-[11px] opacity-70">
+                                                    <span>{category}</span><span>{format!("{count} 题")}</span>
+                                                </div>
+                                            })}
+                                        </div>}
+                                    })}
+                                </div>
+                            }
+                            if !day.question_bank.papers.is_empty() {
+                                <div class="space-y-1" data-testid="study-question-bank-papers">
+                                    <p class="text-xs opacity-60">{"套卷"}</p>
+                                    {for day.question_bank.papers.iter().map(|(paper,count)|html!{
+                                        <div class="flex justify-between gap-3 pl-2 text-xs">
+                                            <span class="min-w-0 truncate" title={paper.clone()}>{paper}</span><span class="shrink-0">{format!("{count} 题")}</span>
+                                        </div>
+                                    })}
+                                </div>
+                            }
+                        </div>
+                    }
                 }else {
                     <p class="text-sm opacity-60">{"当天暂无已交卷的作答记录。"}</p>
                 }

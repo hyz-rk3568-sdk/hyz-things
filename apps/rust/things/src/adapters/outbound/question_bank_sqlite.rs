@@ -1,8 +1,8 @@
 //! Runtime question content in SQLite, populated by explicit Markdown import.
 use crate::application::question_bank::document::structural_gradable;
 use crate::application::question_bank::{
-    BankError, IndexedPaper, PaperContent, PracticeContent, QuestionBankRepositoryPort,
-    StoredQuestion,
+    BankError, DailyAnsweredBreakdownRow, IndexedPaper, PaperContent, PracticeContent,
+    QuestionBankRepositoryPort, StoredQuestion,
 };
 use crate::domain::question_bank::primary_module;
 use crate::domain::question_bank::{
@@ -129,6 +129,67 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         .fetch_all(&self.pool)
         .await
         .map_err(|_| BankError::Storage)
+    }
+
+    async fn daily_answered_breakdown(
+        &self,
+        start_ms: i64,
+        end_ms: i64,
+    ) -> Result<Vec<DailyAnsweredBreakdownRow>, BankError> {
+        let rows = sqlx::query_as::<
+            _,
+            (
+                String,
+                i64,
+                Option<String>,
+                Option<String>,
+                Option<String>,
+                i64,
+            ),
+        >(
+            "SELECT date(a.submitted_at / 1000.0, 'unixepoch', '+8 hours') AS day, \
+             CASE \
+               WHEN json_extract(s.data,'$.mode')='module' THEN 1 \
+               WHEN json_extract(s.data,'$.paper_id') IS NOT NULL THEN 0 \
+               WHEN json_extract(s.data,'$.module') IS NOT NULL THEN 1 \
+               ELSE 0 \
+             END AS is_module, \
+             q.module AS module, \
+             q.category AS category, \
+             json_extract(p.metadata,'$.summary.title') AS paper_title, \
+             COUNT(*) AS answered \
+             FROM practice_attempts a \
+             JOIN practice_sessions s ON s.id=a.session_id \
+             LEFT JOIN questions q ON q.id=a.question_id \
+             LEFT JOIN papers p ON p.id=json_extract(s.data,'$.paper_id') \
+             WHERE s.status='completed' AND a.submitted_at>=? AND a.submitted_at<? \
+               AND json_type(a.answer)='array' \
+               AND EXISTS (SELECT 1 FROM json_each(a.answer) choice \
+                 WHERE choice.type='text' \
+                   AND length(trim(choice.value, char(9)||char(10)||char(13)||' '))>0) \
+             GROUP BY day,is_module,module,category,paper_title \
+             ORDER BY day",
+        )
+        .bind(start_ms)
+        .bind(end_ms)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(day, is_module, module, category, paper_title, answered)| {
+                    DailyAnsweredBreakdownRow {
+                        day,
+                        is_module: is_module != 0,
+                        module,
+                        category,
+                        paper_title,
+                        answered,
+                    }
+                },
+            )
+            .collect())
     }
 
     async fn paper_summaries(&self) -> Result<Vec<PaperSummary>, BankError> {
@@ -620,6 +681,32 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             .collect()
     }
 
+    async fn practice_attempt_counts(
+        &self,
+        ids: &[String],
+    ) -> Result<Vec<(String, usize, usize)>, BankError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let requested = serde_json::to_string(ids).map_err(|_| BankError::Storage)?;
+        let rows = sqlx::query_as::<_, (String, i64, i64)>(
+            "SELECT question_id, \
+             SUM(CASE WHEN grade='correct' THEN 1 ELSE 0 END), \
+             SUM(CASE WHEN grade='wrong' THEN 1 ELSE 0 END) \
+             FROM practice_attempts \
+             WHERE question_id IN (SELECT value FROM json_each(?)) \
+             GROUP BY question_id",
+        )
+        .bind(requested)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
+        Ok(rows
+            .into_iter()
+            .map(|(id, correct, wrong)| (id, correct.max(0) as usize, wrong.max(0) as usize))
+            .collect())
+    }
+
     async fn practice_catalog(
         &self,
         filters: &ModulePracticeFilters,
@@ -725,6 +812,10 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
              EXISTS(SELECT 1 FROM practice_attempts a WHERE a.question_id=q.id \
                AND a.answer NOT IN ('[]','')) AS answered,\
              (SELECT COUNT(*) FROM practice_items i WHERE i.question_id=q.id) AS served,\
+             (SELECT COUNT(*) FROM practice_attempts a WHERE a.question_id=q.id \
+               AND a.grade='wrong') AS wrong_count,\
+             (SELECT COUNT(*) FROM practice_attempts a WHERE a.question_id=q.id \
+               AND a.grade='correct') AS correct_count,\
              (? IS NULL OR q.category=?) AS matches,\
              CASE \
                WHEN q.materials IS NULL OR q.materials IN ('[]','') THEN 'solo:'||q.id \
@@ -736,13 +827,14 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
              WHERE q.module=? AND q.gradable=1),\
              blocks AS (\
                SELECT group_key,paper_id,MIN(number) AS first_number,\
-                      MIN(answered) AS answered,MIN(served) AS served,MAX(matches) AS matched \
+                      MIN(answered) AS answered,MIN(served) AS served,MAX(matches) AS matched,\
+                      SUM(MAX(wrong_count-correct_count,0)) AS net_errors \
                FROM filtered GROUP BY group_key,paper_id),\
              eligible_blocks AS (SELECT * FROM blocks WHERE matched=1),\
              ranked AS (\
                SELECT group_key,ROW_NUMBER() OVER (\
-                 ORDER BY answered,served,position,RANDOM(),group_key) AS rn \
-               FROM (SELECT group_key,answered,served,\
+                 ORDER BY answered,net_errors DESC,served,position,RANDOM(),group_key) AS rn \
+               FROM (SELECT group_key,answered,net_errors,served,\
                      ROW_NUMBER() OVER (PARTITION BY paper_id ORDER BY first_number) AS position \
                      FROM eligible_blocks)),\
              selected AS (SELECT group_key,rn FROM ranked ORDER BY rn LIMIT ?) \

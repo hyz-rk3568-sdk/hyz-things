@@ -350,12 +350,22 @@ impl QuestionBankApplication {
             module: question.module.clone(),
             category: question.category.clone(),
         };
+        let (correct_count, wrong_count) = self
+            .repository
+            .practice_attempt_counts(&[question_id.to_owned()])
+            .await?
+            .into_iter()
+            .find(|(id, _, _)| id == question_id)
+            .map(|(_, correct, wrong)| (correct, wrong))
+            .unwrap_or((0, 0));
         Ok(PracticeQuestionDetail {
             question: question.view(),
             correct_answer: question.correct_answer,
             explanation: question.explanation,
             materials: content.materials,
             item,
+            correct_count,
+            wrong_count,
         })
     }
 
@@ -634,18 +644,34 @@ impl QuestionBankApplication {
             return Err(BankError::Conflict);
         }
         let contents = self.session_contents(&session).await?;
+        let ids = session
+            .items
+            .iter()
+            .map(|item| item.question_id.clone())
+            .collect::<Vec<_>>();
+        let counts = self
+            .repository
+            .practice_attempt_counts(&ids)
+            .await?
+            .into_iter()
+            .map(|(id, correct, wrong)| (id, (correct, wrong)))
+            .collect::<BTreeMap<_, _>>();
         let questions = session
             .items
             .iter()
             .map(|item| {
                 let content = contents.get(&item.question_id);
                 let key = matching_content(item, content).map(|content| &content.question);
+                let (correct_count, wrong_count) =
+                    counts.get(&item.question_id).copied().unwrap_or((0, 0));
                 ReviewQuestion {
                     question: practice_question(item, content),
                     correct_answer: key
                         .map(|key| key.correct_answer.clone())
                         .unwrap_or_default(),
                     explanation: key.map(|key| key.explanation.clone()).unwrap_or_default(),
+                    correct_count,
+                    wrong_count,
                 }
             })
             .collect();

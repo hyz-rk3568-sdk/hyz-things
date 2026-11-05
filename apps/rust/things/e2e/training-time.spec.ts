@@ -9,7 +9,9 @@ async function clockFixture(page:Page) {
   const base=Date.now();
   const days=Array.from({length:35},(_,i)=>{
     const date=new Date(base-(34-i)*86400000).toISOString().slice(0,10);
-    return {date,answered_count:i===34?12:i===33?3:0,answered_modules:i===34?{question_bank:10,logic:2}:i===33?{comprehensive:3}:{},total_ms:i===34?3600000:i%7===0?1800000:0,
+    return {date,answered_count:i===34?12:i===33?3:0,answered_modules:i===34?{question_bank:10,logic:2}:i===33?{comprehensive:3}:{},
+      question_bank:i===34?{modules:{'资料分析':{'比重':6,'增长':2}},papers:{'2024 国考行测':2}}:{},
+      total_ms:i===34?3600000:i%7===0?1800000:0,
       modules:i===34?{calculation:3600000}:{},phases:i===34?{answer:3600000}:{}};
   });
   await page.route('**/api/v1/study/training-time/**', async route=>{
@@ -28,7 +30,8 @@ async function clockFixture(page:Page) {
   return events;
 }
 
-type PracticeDay={date:string,answered_count:number,answered_modules:Record<string,number>};
+type QuestionBankBreakdown={modules:Record<string,Record<string,number>>,papers:Record<string,number>};
+type PracticeDay={date:string,answered_count:number,answered_modules:Record<string,number>,question_bank:QuestionBankBreakdown};
 async function readPracticeDays(page:Page,query=''):Promise<PracticeDay[]> {
   return page.evaluate(async query=>{
     const response=await fetch(`/api/v1/study/training-time/stats${query}`);
@@ -283,6 +286,13 @@ test("daily practice statistics show submitted counts and date-specific module t
   const detail=page.getByTestId('study-practice-detail');
   await expect(detail).toContainText('真题训练');
   await expect(detail).toContainText('10 题');
+  const bankBreakdown=page.getByTestId('study-question-bank-breakdown');
+  await expect(bankBreakdown).toContainText('模块刷题');
+  await expect(page.getByTestId('study-question-bank-modules')).toContainText('资料分析');
+  await expect(page.getByTestId('study-question-bank-modules')).toContainText('比重');
+  await expect(page.getByTestId('study-question-bank-modules')).toContainText('6 题');
+  await expect(page.getByTestId('study-question-bank-papers')).toContainText('2024 国考行测');
+  await expect(page.getByTestId('study-question-bank-papers')).toContainText('2 题');
   await page.getByTestId('study-heat-day').nth(33).click();
   await expect(detail).toContainText('资料分析');
   await expect(detail).toContainText('3 题');
@@ -317,6 +327,7 @@ test("daily practice statistics count real submissions, exclude blanks and inclu
   await expect(page.getByTestId('question-bank-practice-score')).toBeVisible();
   expect((await readToday()).answered_count).toBe(before.answered_count+1);
   expect((await readToday()).answered_modules.question_bank).toBe((before.answered_modules.question_bank??0)+1);
+  expect((await readToday()).question_bank.papers['行测真题训练端到端样卷']).toBeGreaterThanOrEqual(1);
   // Replaying the same authenticated submission must preserve the count.
   await page.evaluate(async({url,headers})=>{
     const response=await fetch(url,{method:'POST',headers,body:'{}'});

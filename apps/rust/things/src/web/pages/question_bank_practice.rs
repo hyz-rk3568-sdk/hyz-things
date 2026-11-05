@@ -1683,6 +1683,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     if item.item.answer.is_empty() {"未答".into()} else {item.item.answer.join("、")},
                                     if r.correct_answer.is_empty() {"暂无可靠答案".into()} else {r.correct_answer.join("、")})}
                             </p>
+                            <p class="text-sm text-base-content/60" data-testid="question-bank-practice-attempt-counts"
+                                data-correct={r.correct_count.to_string()} data-wrong={r.wrong_count.to_string()}>
+                                {format!("本题累计：做对 {} 次 · 做错 {} 次", r.correct_count, r.wrong_count)}
+                            </p>
                             <div class="border-t border-base-content/10 pt-3 space-y-3">
                                 <div class="join grid grid-cols-2" data-testid="question-bank-review-tabs">
                                     <button type="button" class={classes!("join-item","btn","btn-sm",if !*ai_tab {"btn-active"} else {"btn-ghost"})}

@@ -332,6 +332,10 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                         <p class="font-semibold" data-testid="collection-review-answer">
                             {if current.correct_answer.is_empty() {"暂无可靠答案".into()} else {current.correct_answer.join("、")}}
                         </p>
+                        <p class="mt-2 text-sm text-base-content/60" data-testid="collection-review-attempt-counts"
+                            data-correct={current.correct_count.to_string()} data-wrong={current.wrong_count.to_string()}>
+                            {format!("本题累计：做对 {} 次 · 做错 {} 次", current.correct_count, current.wrong_count)}
+                        </p>
                     </section>
                     if !current.explanation.is_empty() {
                         <section class="border-t border-base-content/10 pt-3">

@@ -1,5 +1,5 @@
 //! Study time and submitted-answer statistics across independent repositories.
-use super::question_bank::{BankError, QuestionBankApplication};
+use super::question_bank::{BankError, QuestionBankApplication, QuestionBankDayBreakdown};
 use async_trait::async_trait;
 use chrono::{Duration, NaiveDate};
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,8 @@ pub struct DaySummary {
     pub phases: BTreeMap<String, i64>,
     pub answered_count: i64,
     pub answered_modules: BTreeMap<String, i64>,
+    #[serde(default)]
+    pub question_bank: QuestionBankDayBreakdown,
 }
 
 #[derive(Serialize)]
@@ -149,12 +151,19 @@ pub async fn statistics(
         .map_err(StatisticsError::QuestionBank)?
         .into_iter()
         .collect();
+    let breakdown = bank
+        .daily_answered_breakdown(range.start_ms, range.end_ms)
+        .await
+        .map_err(StatisticsError::QuestionBank)?;
     for day in &mut result.days {
         if let Some(&count) = counts.get(&day.date).filter(|&&count| count > 0) {
             day.answered_count += count;
             *day.answered_modules
                 .entry("question_bank".into())
                 .or_default() += count;
+        }
+        if let Some(parts) = breakdown.get(&day.date) {
+            day.question_bank = parts.clone();
         }
     }
     Ok(result)
@@ -164,8 +173,8 @@ pub async fn statistics(
 mod tests {
     use super::*;
     use crate::application::question_bank::{
-        document::Document, BankAsset, BankSnapshot, IndexedPaper, QuestionBankRepositoryPort,
-        QuestionBankSourcePort,
+        document::Document, BankAsset, BankSnapshot, DailyAnsweredBreakdownRow, IndexedPaper,
+        QuestionBankRepositoryPort, QuestionBankSourcePort,
     };
     use std::sync::Arc;
 
@@ -194,6 +203,7 @@ mod tests {
                     phases: BTreeMap::new(),
                     answered_count: 2,
                     answered_modules: BTreeMap::from([("logic".to_owned(), 2)]),
+                    question_bank: QuestionBankDayBreakdown::default(),
                 }],
             })
         }
@@ -223,6 +233,30 @@ mod tests {
         ) -> Result<Vec<(String, i64)>, BankError> {
             Ok(vec![("2026-01-02".into(), 3)])
         }
+        async fn daily_answered_breakdown(
+            &self,
+            _start_ms: i64,
+            _end_ms: i64,
+        ) -> Result<Vec<DailyAnsweredBreakdownRow>, BankError> {
+            Ok(vec![
+                DailyAnsweredBreakdownRow {
+                    day: "2026-01-02".into(),
+                    is_module: true,
+                    module: Some("资料分析".into()),
+                    category: Some("比重".into()),
+                    paper_title: None,
+                    answered: 2,
+                },
+                DailyAnsweredBreakdownRow {
+                    day: "2026-01-02".into(),
+                    is_module: false,
+                    module: None,
+                    category: None,
+                    paper_title: Some("样卷".into()),
+                    answered: 1,
+                },
+            ])
+        }
         async fn list(&self) -> Result<Vec<IndexedPaper>, BankError> {
             Ok(Vec::new())
         }
@@ -240,5 +274,7 @@ mod tests {
         assert_eq!(result.days[0].answered_count, 5);
         assert_eq!(result.days[0].answered_modules["logic"], 2);
         assert_eq!(result.days[0].answered_modules["question_bank"], 3);
+        assert_eq!(result.days[0].question_bank.modules["资料分析"]["比重"], 2);
+        assert_eq!(result.days[0].question_bank.papers["样卷"], 1);
     }
 }

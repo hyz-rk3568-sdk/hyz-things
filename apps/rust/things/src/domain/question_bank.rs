@@ -224,6 +224,11 @@ pub struct PracticeQuestionDetail {
     pub materials: Vec<MaterialView>,
     pub correct_answer: Vec<String>,
     pub explanation: String,
+    /// Cumulative completed submissions for this question across all sessions.
+    #[serde(default)]
+    pub correct_count: usize,
+    #[serde(default)]
+    pub wrong_count: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -231,6 +236,11 @@ pub struct ReviewQuestion {
     pub question: PracticeQuestion,
     pub correct_answer: Vec<String>,
     pub explanation: String,
+    /// Cumulative completed submissions for this question across all sessions.
+    #[serde(default)]
+    pub correct_count: usize,
+    #[serde(default)]
+    pub wrong_count: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

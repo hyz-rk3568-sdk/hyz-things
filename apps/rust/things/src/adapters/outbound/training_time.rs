@@ -349,6 +349,7 @@ impl TrainingTimeService {
                 phases: BTreeMap::new(),
                 answered_count: 0,
                 answered_modules: BTreeMap::new(),
+                question_bank: Default::default(),
             };
             for (module, phase, s, e) in &rows {
                 let duration = (e.min(&de) - s.max(&ds)).max(0);

@@ -94,11 +94,25 @@ test('paper practice hides numbering and scroll tools until they are needed',asy
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('第二题解析');
   await expect(page.getByTestId('question-bank-practice-question-pane').locator('.study-markdown').filter({hasText:'第二题解析'})).toHaveCSS('font-size','16px');
   await expect(page.getByTestId('question-bank-practice-review-answer')).toHaveCSS('font-size','16px');
+  const reviewResponse=await request.get(`/api/v1/question-bank/practice/sessions/${sessionId}/review`,
+    {headers:{Cookie:(await page.context().cookies()).map(c=>`${c.name}=${c.value}`).join('; ')}});
+  expect(reviewResponse.status()).toBe(200);
+  const reviewBody:{questions:{question:{item:{number:number}},correct_count:number,wrong_count:number}[]}=await reviewResponse.json();
+  const reviewCounts=(number:number)=>reviewBody.questions.find(q=>q.question.item.number===number)!;
+  const attemptCounts=page.getByTestId('question-bank-practice-attempt-counts');
+  await expect(attemptCounts).toHaveAttribute('data-correct',String(reviewCounts(27).correct_count));
+  await expect(attemptCounts).toHaveAttribute('data-wrong',String(reviewCounts(27).wrong_count));
+  await expect(attemptCounts).toContainText(`做对 ${reviewCounts(27).correct_count} 次`);
+  await expect(attemptCounts).toContainText(`做错 ${reviewCounts(27).wrong_count} 次`);
   await openSheet(page);
   await page.getByTestId('question-bank-practice-number').first().click();
   await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 26 题');
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('B 是正确项');
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('现期比重');
+  await expect(attemptCounts).toHaveAttribute('data-correct',String(reviewCounts(26).correct_count));
+  await expect(attemptCounts).toHaveAttribute('data-wrong',String(reviewCounts(26).wrong_count));
+  await expect(attemptCounts).toContainText(`做对 ${reviewCounts(26).correct_count} 次`);
+  await expect(attemptCounts).toContainText(`做错 ${reviewCounts(26).wrong_count} 次`);
   await expect(page.getByTestId('question-bank-practice-choice').first()).toHaveClass(/border-error/);
   await expect(page.getByTestId('question-bank-practice-choice').nth(1)).toHaveClass(/border-success/);
   await expect(page.getByTestId('question-bank-practice-choice').first()).not.toContainText('正确答案');
@@ -176,6 +190,9 @@ test('saved collections are classified by module and category before practicing'
   await expect(page.getByTestId('collection-review-choice').first()).toHaveCSS('font-size','16px');
   await expect(page.getByTestId('collection-review-explanation')).toHaveCSS('font-size','16px');
   await expect(page.getByTestId('collection-review-answer')).toContainText('B');
+  const collectionCounts=page.getByTestId('collection-review-attempt-counts');
+  await expect(collectionCounts).toContainText('本题累计');
+  await expect(collectionCounts).toHaveAttribute('data-wrong',/^[1-9]\d*$/);
   await expect(page.getByTestId('collection-review-create-flashcard')).toBeVisible();
   await page.getByTestId('collection-review-back').click();
   await expect(page.getByTestId('question-bank-collection-item')).toBeVisible();
@@ -199,6 +216,7 @@ test('saved collections are classified by module and category before practicing'
   await expect(page.getByTestId('collection-review-scope')).toContainText('收藏复盘 · 第 1/1 题');
   await expect(page.getByTestId('collection-review-favorite')).toHaveAttribute('aria-label','取消收藏');
   await expect(page.getByTestId('collection-review-answer')).toContainText('B');
+  await expect(collectionCounts).toHaveAttribute('data-correct',/^[1-9]\d*$/);
   await page.getByTestId('collection-review-back').click();
   await expect(page.getByTestId('question-bank-collection-item')).toBeVisible();
   await page.getByTestId('question-bank-practice-start').click();
@@ -294,8 +312,18 @@ test('module filter settings persist, apply server-side, and reflect answered/to
   await expect(page.getByTestId('question-bank-practice-workspace')).toBeVisible();
   await expect(page.getByTestId('question-bank-practice-workspace')).toContainText('第二份跨卷模块练习卷');
   await expect(page.getByTestId('training-answer-sheet-toggle')).toContainText('1/1');
+  const answerSaved=page.waitForResponse(response=>response.url().includes('/answers/')&&response.request().method()==='POST');
   await page.getByTestId('question-bank-practice-choice').first().click();
-  await page.getByRole('button',{name:/暂停并退出/}).click();
+  await answerSaved;
+  await page.getByTestId('question-bank-practice-submit').click();
+  await expect(page.getByTestId('question-bank-practice-score')).toBeVisible();
+  const today=await page.evaluate(async()=>{
+    const response=await fetch('/api/v1/study/training-time/stats');
+    if(!response.ok) throw new Error(`statistics failed: ${response.status}`);
+    return (await response.json()).days.at(-1);
+  });
+  expect(today.question_bank.modules['资料分析']['比重']).toBeGreaterThanOrEqual(1);
+  await page.getByRole('button',{name:/← 返回训练/}).click();
   await expect(page.getByTestId('question-bank-practice-setup')).toBeVisible();
   await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toContainText('1/1');
 });
