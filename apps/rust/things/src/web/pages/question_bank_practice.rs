@@ -818,6 +818,7 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
 
 #[function_component(QuestionBankTraining)]
 pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html {
+    let clock = use_context::<StudyClockContext>();
     let papers = use_state(Vec::<PaperSummary>::new);
     let history = use_state(Vec::<PracticeSession>::new);
     let history_open = use_state(|| props.show_history);
@@ -1139,6 +1140,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let history_forced = history_forced.clone();
         let invalidate_favorites = favorite_collection.invalidate.clone();
         let mounted = mounted.clone();
+        let clock = clock.clone();
         Callback::from(move |action: Action| {
             if !*mounted.borrow() || *operation_lock.borrow() {
                 return;
@@ -1185,6 +1187,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             let history_forced = history_forced.clone();
             let invalidate_favorites = invalidate_favorites.clone();
             let mounted = mounted.clone();
+            let clock = clock.clone();
             spawn_local(async move {
                 let result: Result<(), String> = async {
                     if !*mounted.borrow() {
@@ -1456,6 +1459,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 review.set(Some(detail));
                                 submit_confirm.set(false);
                                 refresh.set(*refresh + 1);
+                                if let Some(context) = clock.clone() {
+                                    context.refresh_goals.emit(());
+                                }
                             }
                         }
                         Action::Favorite(id) => {

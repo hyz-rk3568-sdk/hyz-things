@@ -172,6 +172,7 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
 
 #[function_component(LogicJudgmentTraining)]
 pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
+    let study_clock = use_context::<StudyClockContext>();
     // The same independent-question UI serves formal reasoning and quantitative relations.
     // Data analysis separately uses the same split workspace, navigation, ink and metrics.
     let root: &'static str = if props.quantitative {
@@ -385,6 +386,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
             history_forced.clone(),
         );
         let csrf = props.csrf.clone();
+        let study_clock = study_clock.clone();
         Callback::from(move |command: LogicAction| {
             if *lock.borrow() {
                 return;
@@ -419,6 +421,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 csrf.clone(),
                 history_forced.clone(),
             );
+            let study_clock = study_clock.clone();
             spawn_local(async move {
                 let outcome = async {
                     match command {
@@ -492,6 +495,9 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                                 result.set(Some(score));
                                 run.set(None);
                                 reload.set(*reload + 1);
+                                if let Some(context) = study_clock.clone() {
+                                    context.refresh_goals.emit(());
+                                }
                             }
                         }
                         LogicAction::Result(id) => {

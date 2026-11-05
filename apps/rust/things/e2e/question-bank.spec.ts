@@ -1,5 +1,5 @@
 import {expect,test} from '@playwright/test';
-import {loginAsAdmin,resetHarness,webOrigin} from './fixtures';
+import {expectNoHorizontalOverflow,loginAsAdmin,resetHarness,webOrigin} from './fixtures';
 
 test.beforeEach(async ({request})=>{await resetHarness(request)});
 
@@ -703,6 +703,13 @@ test('any original-paper review can create a category flashcard without first fa
   await expect(dialog).not.toHaveAttribute('role', 'dialog');
   await expect(dialog).not.toHaveCSS('position', 'fixed');
   const card=dialog.getByTestId('favorite-flashcard-card');
+  const form=card.getByTestId('favorite-flashcard-form');
+  const borderBefore=await form.evaluate(node=>getComputedStyle(node).borderColor);
+  await card.getByPlaceholder('写下解题思路或复习提示').focus();
+  await expect.poll(()=>form.evaluate(node=>getComputedStyle(node).borderColor)).not.toBe(borderBefore);
+  await page.setViewportSize({width:390,height:844});
+  await expectNoHorizontalOverflow(page);
+  await page.setViewportSize({width:1280,height:720});
   await expect(card.getByRole('button',{name:'创建并同步'})).toBeDisabled();
   await expect(card.getByTestId('favorite-flashcard-path')).toHaveText('将追加或创建：flashcards/真题练习/资料分析/比重/错题/cards.md');
   await card.getByLabel('确认写入所选目录').check();

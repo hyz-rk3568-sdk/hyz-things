@@ -54,6 +54,7 @@ pub(crate) fn study_statistics_body(props: &StudyStatisticsProps) -> Html {
     let save_error = use_state(|| None::<String>);
     let saving = use_state(|| false);
     let refresh = use_state(|| 0_u32);
+    let clock = use_context::<StudyClockContext>();
     {
         let stats = stats.clone();
         let goals = goals.clone();
@@ -150,6 +151,7 @@ pub(crate) fn study_statistics_body(props: &StudyStatisticsProps) -> Html {
         let refresh = refresh.clone();
         let questions = draft_questions.clone();
         let hours = draft_hours.clone();
+        let clock = clock.clone();
         Callback::from(move |_| {
             let Ok(questions_value) = questions.trim().parse::<u32>() else {
                 save_error.set(Some("请输入 1–2000 之间的题数".into()));
@@ -176,6 +178,7 @@ pub(crate) fn study_statistics_body(props: &StudyStatisticsProps) -> Html {
             let refresh = refresh.clone();
             saving.set(true);
             save_error.set(None);
+            let clock = clock.clone();
             spawn_local(async move {
                 let body = StudyGoals {
                     daily_questions: questions_value,
@@ -194,6 +197,9 @@ pub(crate) fn study_statistics_body(props: &StudyStatisticsProps) -> Html {
                         goals.set(Some(saved));
                         editing.set(false);
                         refresh.set(*refresh + 1);
+                        if let Some(context) = clock.clone() {
+                            context.refresh_goals.emit(());
+                        }
                     }
                     Err(error) => save_error.set(Some(error.to_string())),
                 }

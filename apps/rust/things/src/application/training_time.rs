@@ -134,6 +134,26 @@ pub enum StatisticsError {
     QuestionBank(BankError),
 }
 
+pub async fn goal_status(
+    time: &dyn TrainingTimePort,
+    bank: &QuestionBankApplication,
+    today: &str,
+) -> Result<StudyGoalStatus, StatisticsError> {
+    let goals = time.goals().await.map_err(StatisticsError::Time)?;
+    let statistics = statistics(time, bank, today, today).await?;
+    let today_questions = statistics.days.iter().map(|day| day.answered_count).sum();
+    let today_ms = time
+        .current()
+        .await
+        .map_err(StatisticsError::Time)?
+        .today_ms;
+    Ok(StudyGoalStatus {
+        goals,
+        today_questions,
+        today_ms,
+    })
+}
+
 pub async fn statistics(
     time: &dyn TrainingTimePort,
     bank: &QuestionBankApplication,
@@ -182,7 +202,12 @@ mod tests {
     #[async_trait]
     impl TrainingTimePort for FixedTime {
         async fn current(&self) -> Result<ClockSnapshot, String> {
-            Err("unused".into())
+            Ok(ClockSnapshot {
+                now_ms: 0,
+                today_ms: 1_000,
+                running: false,
+                module: String::new(),
+            })
         }
         async fn event(&self, _event: StudyTimeEvent) -> Result<ClockSnapshot, String> {
             Err("unused".into())
@@ -263,6 +288,15 @@ mod tests {
         async fn apply(&self, _papers: Vec<IndexedPaper>) -> Result<(), BankError> {
             Ok(())
         }
+    }
+
+    #[tokio::test]
+    async fn goal_status_counts_question_bank_and_ai_modules() {
+        let bank = QuestionBankApplication::new(Arc::new(EmptySource), Arc::new(FixedBank));
+        let status = goal_status(&FixedTime, &bank, "2026-01-02").await.unwrap();
+        assert_eq!(status.goals, StudyGoals::default());
+        assert_eq!(status.today_questions, 5);
+        assert_eq!(status.today_ms, 1_000);
     }
 
     #[tokio::test]

@@ -175,7 +175,8 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
                     <p class="text-xs text-base-content/55">{"题目与正确答案将保存到正面"}</p>
                 </div>
             </header>
-            <div class="mx-auto w-full max-w-xl space-y-5 break-words py-5">
+            <div class="mx-auto my-5 w-full max-w-xl space-y-5 break-words rounded-2xl border border-base-content/15 bg-base-100 p-4 transition focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15 sm:p-5"
+                data-testid="favorite-flashcard-form">
                 <details class="group rounded-xl bg-base-200/60 px-4 py-3">
                     <summary class="cursor-pointer text-sm font-medium">{"查看卡片正面与答案"}</summary>
                     <section class="mt-3" aria-label="正面（只读）">{favorite_content(&props.preview)}</section>
@@ -231,7 +232,7 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
                 }
                 <label class="block space-y-2">
                     <span class="font-semibold">{"背面"}<span class="ml-2 text-xs font-normal text-base-content/50">{"可选"}</span></span>
-                    <textarea class="textarea min-h-28 w-full bg-base-200/60" placeholder="写下解题思路或复习提示" value={(*back).clone()} disabled={*locked}
+                    <textarea class="block min-h-28 w-full resize-none border-0 bg-transparent px-3 py-2 text-sm leading-6 focus:outline-none focus:ring-0" placeholder="写下解题思路或复习提示" value={(*back).clone()} disabled={*locked}
                         oninput={Callback::from({let back=back.clone();move |event:InputEvent| {
                             back.set(event.target_unchecked_into::<web_sys::HtmlTextAreaElement>().value());
                         }})}/>

@@ -243,6 +243,7 @@ fn clock_offset_for_server(server_now_ms: Option<i64>) -> f64 {
 }
 #[function_component(ComprehensiveTraining)]
 pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
+    let clock = use_context::<StudyClockContext>();
     let status = use_state(|| None::<AnalysisStatus>);
     let progress = use_state(|| None::<PrepareProgress>);
     let run = use_state(|| None::<AnalysisRun>);
@@ -489,6 +490,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let history = history.clone();
         let reviewing_history = reviewing_history.clone();
         let review_run_id = review_run_id.clone();
+        let clock = clock.clone();
         Callback::from(move |_| {
             if *busy {
                 return;
@@ -505,6 +507,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let history = history.clone();
             let reviewing_history = reviewing_history.clone();
             let review_run_id = review_run_id.clone();
+            let clock = clock.clone();
             spawn_local(async move {
                 let Some(token) = token else {
                     error.set(Some("无法确认当前设备的答题权限，请重新进入训练".into()));
@@ -528,6 +531,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         controller.set(None);
                         run.set(None);
                         result.set(Some(out));
+                        if let Some(context) = clock.clone() {
+                            context.refresh_goals.emit(());
+                        }
                         if let Ok(items) = fetch_json_typed::<Vec<ComprehensiveHistoryEntry>>(
                             &format!("{ANALYSIS_ROOT}/history"),
                             "刷新练习历史",

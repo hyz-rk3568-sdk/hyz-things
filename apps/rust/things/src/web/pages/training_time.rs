@@ -15,6 +15,8 @@ pub(super) struct StudyClockContext {
     pub(super) event: Callback<(String, Option<String>, Option<String>)>,
     tick: u64,
     csrf: String,
+    pub(super) goals_revision: u64,
+    pub(super) refresh_goals: Callback<()>,
 }
 #[derive(Properties, PartialEq)]
 pub(super) struct StudyClockProviderProps {
@@ -27,6 +29,7 @@ pub(super) fn study_clock_provider(props: &StudyClockProviderProps) -> Html {
     let value = use_state(|| None::<StudyClockValue>);
     let tick = use_state(|| 0_u64);
     let warning = use_state(|| None::<String>);
+    let goals_revision = use_state(|| 0_u64);
     let sequence = use_mut_ref(|| 0_u64);
     let queue = use_mut_ref(VecDeque::<TrainingTimeEventRequest>::new);
     let processing = use_mut_ref(|| false);
@@ -161,9 +164,13 @@ pub(super) fn study_clock_provider(props: &StudyClockProviderProps) -> Html {
             move || drop(timer)
         });
     }
+    let refresh_goals = {
+        let goals_revision = goals_revision.clone();
+        Callback::from(move |_| goals_revision.set(*goals_revision + 1))
+    };
     let tick_value = *tick;
     html! {
-        <ContextProvider<StudyClockContext> context={StudyClockContext{value,event,tick:tick_value,csrf:props.csrf.clone()}}>
+        <ContextProvider<StudyClockContext> context={StudyClockContext{value,event,tick:tick_value,csrf:props.csrf.clone(),goals_revision:*goals_revision,refresh_goals}}>
             {for props.children.iter()}
             if let Some(message) = (*warning).clone() {
                 <div class="pointer-events-none fixed bottom-2 right-2 z-[99] max-w-xs rounded bg-base-100 p-2 text-xs text-error shadow" role="status" data-testid="study-time-error">{message}</div>
@@ -195,9 +202,14 @@ pub(super) struct StudyGoalBarsProps {
 #[function_component(StudyGoalBars)]
 pub(super) fn study_goal_bars(props: &StudyGoalBarsProps) -> Html {
     let status = use_state(|| None::<StudyGoalStatus>);
+    let clock = use_context::<StudyClockContext>();
+    let goals_revision = clock
+        .as_ref()
+        .map(|context| context.goals_revision)
+        .unwrap_or(0);
     {
         let status = status.clone();
-        use_effect_with((), move |_| {
+        use_effect_with(goals_revision, move |_| {
             let refresh: std::rc::Rc<dyn Fn()> = std::rc::Rc::new({
                 let status = status.clone();
                 move || {
@@ -221,8 +233,7 @@ pub(super) fn study_goal_bars(props: &StudyGoalBarsProps) -> Html {
         });
     }
     let goals = status.as_ref().map(|s| s.goals.clone()).unwrap_or_default();
-    let live = use_context::<StudyClockContext>();
-    let today_ms = live
+    let today_ms = clock
         .as_ref()
         .and_then(|ctx| {
             let _ = ctx.tick;
@@ -233,8 +244,9 @@ pub(super) fn study_goal_bars(props: &StudyGoalBarsProps) -> Html {
     let today_questions = status.as_ref().map(|s| s.today_questions).unwrap_or(0);
     let hours = |ms: i64| format!("{:.1}", ms as f64 / 3_600_000.0);
     let open = use_state(|| false);
-    let csrf = use_context::<StudyClockContext>()
-        .map(|ctx| ctx.csrf)
+    let csrf = clock
+        .as_ref()
+        .map(|ctx| ctx.csrf.clone())
         .unwrap_or_default();
     html! {
         <div class={classes!("grid", "gap-1", if props.wide {"w-full"} else {"w-32 shrink-0 sm:w-44"})}>

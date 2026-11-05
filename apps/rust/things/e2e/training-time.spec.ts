@@ -133,6 +133,7 @@ test("daily goals persist on the server and drive daily, weekly and 35-day bars"
   await expect(page.getByTestId('study-goals')).toContainText('/ 500 题');
   await expect(page.getByTestId('study-goals')).toContainText('/ 3500 题');
   await expect(page.getByTestId('study-goals')).toContainText('/ 10.0 小时');
+  await expect(page.getByTestId('study-goal-questions-value')).toHaveText(/\d+\/500/);
   await page.reload();
   await page.getByTestId('training-mode-statistics').click();
   await expect(page.getByTestId('study-goals')).toContainText('/ 500 题');
@@ -141,6 +142,7 @@ test("daily goals persist on the server and drive daily, weekly and 35-day bars"
   await page.getByTestId('study-goal-hours-input').fill('12');
   await page.getByTestId('study-goals-save').click();
   await expect(page.getByTestId('study-goals')).toContainText('/ 400 题');
+  await expect(page.getByTestId('study-goal-questions-value')).toHaveText(/\d+\/400/);
 });
 
 test("refresh waits for the CSRF token before syncing study time",async({page})=>{
@@ -328,6 +330,7 @@ test("daily practice statistics count real submissions, exclude blanks and inclu
   expect((await readToday()).answered_count).toBe(before.answered_count+1);
   expect((await readToday()).answered_modules.question_bank).toBe((before.answered_modules.question_bank??0)+1);
   expect((await readToday()).question_bank.papers['行测真题训练端到端样卷']).toBeGreaterThanOrEqual(1);
+  await expect(page.getByTestId('study-goal-questions-value')).toContainText(`${before.answered_count+1}/`);
   // Replaying the same authenticated submission must preserve the count.
   await page.evaluate(async({url,headers})=>{
     const response=await fetch(url,{method:'POST',headers,body:'{}'});
