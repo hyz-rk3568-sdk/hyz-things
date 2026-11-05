@@ -730,6 +730,10 @@ fn app_with_assets(
     } = configuration;
     Router::new()
         .route(
+            "/api/v1/question-bank/data-version",
+            on(MethodFilter::GET, question_bank::data_version),
+        )
+        .route(
             "/api/v1/question-bank/papers",
             on(MethodFilter::GET, question_bank::papers),
         )

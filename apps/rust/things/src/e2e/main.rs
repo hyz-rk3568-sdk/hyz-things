@@ -634,6 +634,7 @@ struct HarnessControlState {
     backend: Arc<HarnessBackend>,
     admin: Arc<AdminApplication>,
     camera: Arc<CameraApplication>,
+    question_bank: sqlx::SqlitePool,
 }
 
 impl Default for HarnessBackend {
@@ -1498,7 +1499,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let web_app = with_favorite_flashcards(web_app, Some(favorite_flashcards));
     let web_app = with_question_bank_ai(web_app, Some(ai));
     let web_app = with_training_time(web_app, Some(training_time));
-    let harness_app = harness_control_app(backend, admin, camera);
+    let harness_app = harness_control_app(backend, admin, camera, bank_repository.pool().clone());
 
     println!(
         "{}",
@@ -1523,17 +1524,50 @@ fn harness_control_app(
     backend: Arc<HarnessBackend>,
     admin: Arc<AdminApplication>,
     camera: Arc<CameraApplication>,
+    question_bank: sqlx::SqlitePool,
 ) -> Router {
     Router::new()
         .route("/health", get(harness_health))
         .route("/state", get(harness_state).put(replace_harness_state))
         .route("/reset", put(reset_harness_state))
+        .route("/reset-question-bank", put(reset_question_bank))
         .layer(DefaultBodyLimit::max(MAX_HARNESS_JSON_BYTES))
         .with_state(HarnessControlState {
             backend,
             admin,
             camera,
+            question_bank,
         })
+}
+
+async fn reset_question_bank(
+    State(control): State<HarnessControlState>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    let mut transaction = control
+        .question_bank
+        .begin()
+        .await
+        .map_err(|e| harness_internal_error(e.to_string()))?;
+    for statement in [
+        "DELETE FROM question_ai_messages",
+        "DELETE FROM question_ai_reviews",
+        "DELETE FROM practice_attempts",
+        "DELETE FROM question_progress",
+        "DELETE FROM favorites",
+        "DELETE FROM practice_items",
+        "DELETE FROM practice_sessions",
+        "DELETE FROM module_practice_settings",
+    ] {
+        sqlx::query(statement)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|e| harness_internal_error(e.to_string()))?;
+    }
+    transaction
+        .commit()
+        .await
+        .map_err(|e| harness_internal_error(e.to_string()))?;
+    Ok(Json(serde_json::json!({"status": "ok"})))
 }
 
 async fn harness_health() -> Json<serde_json::Value> {

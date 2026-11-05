@@ -122,6 +122,8 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
         });
     }
     let mode = use_state(|| TrainingMode::Calculation);
+    let paper_visited = use_state(|| false);
+    let module_visited = use_state(|| false);
     let study_clock = use_context::<StudyClockContext>();
     let training_immersive = use_state(|| false);
     // A paused paper hides the questions, so the effective-study clock stops too.
@@ -192,18 +194,22 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
         })
     };
     let choose_question_bank_paper = {
+        let visited = paper_visited.clone();
         let mode = mode.clone();
         let training_immersive = training_immersive.clone();
         Callback::from(move |_| {
             training_immersive.set(false);
+            visited.set(true);
             mode.set(TrainingMode::QuestionBankPaper);
         })
     };
     let choose_question_bank_module = {
+        let visited = module_visited.clone();
         let mode = mode.clone();
         let training_immersive = training_immersive.clone();
         Callback::from(move |_| {
             training_immersive.set(false);
+            visited.set(true);
             mode.set(TrainingMode::QuestionBankModule);
         })
     };
@@ -278,17 +284,22 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                 </nav>
             }
             <main class="min-h-0 flex-1 overflow-hidden" data-testid="training-mode-content">
+            if *paper_visited {
+                <QuestionBankTraining key="paper" active={*mode == TrainingMode::QuestionBankPaper}
+                    entry_mode={PracticeMode::Paper} csrf={props.csrf.clone()}
+                    on_immersive_change={on_immersive_change.clone()}
+                    on_paper_pause_change={on_paper_pause_change.clone()} />
+            }
+            if *module_visited {
+                <QuestionBankTraining key="module" active={*mode == TrainingMode::QuestionBankModule}
+                    entry_mode={PracticeMode::Module} csrf={props.csrf.clone()}
+                    on_immersive_change={on_immersive_change.clone()}
+                    on_paper_pause_change={on_paper_pause_change.clone()} />
+            }
             if *mode == TrainingMode::Statistics {
                 <TrainingStatistics csrf={props.csrf.clone()} />
             } else if *mode == TrainingMode::Calculation {
                 {render_calculation_training(props.route_state.clone(),on_immersive_change.clone())}
-            } else if matches!(*mode, TrainingMode::QuestionBankPaper | TrainingMode::QuestionBankModule) {
-                <QuestionBankTraining
-                    key={if *mode == TrainingMode::QuestionBankPaper { "paper" } else { "module" }}
-                    entry_mode={if *mode == TrainingMode::QuestionBankPaper { PracticeMode::Paper } else { PracticeMode::Module }}
-                    csrf={props.csrf.clone()}
-                    on_immersive_change={on_immersive_change.clone()}
-                    on_paper_pause_change={on_paper_pause_change.clone()} />
             } else if *mode == TrainingMode::Flashcards {
                 <FlashcardPractice route_state={props.route_state.clone()} on_immersive_change={on_immersive_change.clone()} />
             } else if matches!(*mode, TrainingMode::LogicJudgment | TrainingMode::QuantitativeRelations) {
@@ -298,7 +309,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                     on_paper_pause_change={on_paper_pause_change.clone()}
                     quantitative={*mode == TrainingMode::QuantitativeRelations}
                     show_history={false} />
-            } else {
+            } else if *mode == TrainingMode::Comprehensive {
                 <ComprehensiveTraining csrf={props.csrf.clone()} show_history={false} on_immersive_change={on_immersive_change} on_paper_pause_change={on_paper_pause_change} on_exit={exit_comprehensive} />
             }
             </main>

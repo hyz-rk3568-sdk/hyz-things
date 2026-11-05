@@ -119,6 +119,10 @@ impl QuestionBankSourcePort for MemoryBank {
 }
 #[async_trait]
 impl QuestionBankRepositoryPort for MemoryBank {
+    async fn data_revision(&self) -> Result<i64, BankError> {
+        Ok(0)
+    }
+
     async fn module_settings(
         &self,
     ) -> Result<hyz_things::domain::question_bank::ModulePracticeFilters, BankError> {
@@ -263,6 +267,12 @@ impl PortalControlHandler for AuthPorts {
     }
 }
 async fn bank_server() -> (tokio::task::JoinHandle<()>, String, String, Arc<MemoryBank>) {
+    bank_server_with_sqlite(false).await
+}
+
+async fn bank_server_with_sqlite(
+    sqlite: bool,
+) -> (tokio::task::JoinHandle<()>, String, String, Arc<MemoryBank>) {
     use hyz_things::{
         adapters::inbound::http::{
             app_with_admin_control_at_address, with_question_bank, with_question_bank_ai,
@@ -290,7 +300,16 @@ async fn bank_server() -> (tokio::task::JoinHandle<()>, String, String, Arc<Memo
         )
         .unwrap();
     let ports = Arc::new(MemoryBank::default());
-    let app = Arc::new(QuestionBankApplication::new(ports.clone(), ports.clone()));
+    let repository: Arc<dyn QuestionBankRepositoryPort> = if sqlite {
+        Arc::new(
+            SqliteQuestionBankRepository::connect("sqlite::memory:")
+                .await
+                .unwrap(),
+        )
+    } else {
+        ports.clone()
+    };
+    let app = Arc::new(QuestionBankApplication::new(ports.clone(), repository));
     let ai_repository = SqliteQuestionBankRepository::connect("sqlite::memory:")
         .await
         .unwrap();
@@ -1250,5 +1269,170 @@ async fn module_settings_http_security_and_round_trip() {
         .await
         .unwrap();
     assert_eq!(response.status(), 413);
+    server.abort();
+}
+
+#[tokio::test]
+async fn data_version_changes_after_sync_and_not_after_failed_sync() {
+    use hyz_things::adapters::outbound::question_bank_sqlite::SqliteQuestionBankRepository;
+    let source = Arc::new(MemoryBank::default());
+    let repository = Arc::new(
+        SqliteQuestionBankRepository::connect("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    let app = QuestionBankApplication::new(source.clone(), repository);
+    let initial = app.data_version().await.unwrap();
+    assert_eq!(initial, app.data_version().await.unwrap());
+    app.sync().await.unwrap();
+    let synced = app.data_version().await.unwrap();
+    assert_ne!(initial, synced);
+    source
+        .fail_source
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    assert!(app.sync().await.is_err());
+    assert_eq!(synced, app.data_version().await.unwrap());
+}
+
+#[tokio::test]
+async fn data_version_http_requires_admin_and_same_origin() {
+    let (server, base, cookie, _) = bank_server().await;
+    let client = reqwest::Client::new();
+    let url = format!("{base}/api/v1/question-bank/data-version");
+    assert_eq!(client.get(&url).send().await.unwrap().status(), 401);
+    assert_eq!(
+        client
+            .get(&url)
+            .header("cookie", &cookie)
+            .header("sec-fetch-site", "cross-site")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    let response = client
+        .get(&url)
+        .header("cookie", &cookie)
+        .header("sec-fetch-site", "same-origin")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    let value: serde_json::Value = response.json().await.unwrap();
+    assert!(!value["version"].as_str().unwrap().is_empty());
+    assert_eq!(value.as_object().unwrap().len(), 1);
+    server.abort();
+}
+
+#[tokio::test]
+async fn data_version_tracks_training_writes_and_new_application_epoch() {
+    use hyz_things::adapters::outbound::question_bank_sqlite::SqliteQuestionBankRepository;
+    use hyz_things::domain::question_bank::{
+        CreatePracticeRequest, ModulePracticeFilters, PracticeMode,
+    };
+    let source = Arc::new(MemoryBank::default());
+    let repository = Arc::new(
+        SqliteQuestionBankRepository::connect("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    let app = QuestionBankApplication::new(source.clone(), repository.clone());
+    app.sync().await.unwrap();
+    let mut version = app.data_version().await.unwrap();
+    let session = app
+        .create_practice(CreatePracticeRequest {
+            mode: PracticeMode::Paper,
+            paper_id: Some("019a3d8c-7f23-7b6e-927d-3c951851d3a2".into()),
+            module: None,
+            category: None,
+            filters: Default::default(),
+        })
+        .await
+        .unwrap();
+    macro_rules! changed {
+        () => {{
+            let next = app.data_version().await.unwrap();
+            assert_ne!(version, next);
+            version = next;
+        }};
+    }
+    changed!();
+    let question = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
+    app.save_practice_answer(&session.id, question, vec!["A".into()])
+        .await
+        .unwrap();
+    changed!();
+    app.pause_practice(&session.id, true, 12).await.unwrap();
+    changed!();
+    app.pause_practice(&session.id, false, 12).await.unwrap();
+    changed!();
+    app.submit_practice(&session.id).await.unwrap();
+    changed!();
+    app.repeat_practice(&session.id).await.unwrap();
+    changed!();
+    app.set_favorite(question, true).await.unwrap();
+    changed!();
+    app.save_module_settings(ModulePracticeFilters {
+        count: Some(10),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    changed!();
+    assert!(app
+        .save_module_settings(ModulePracticeFilters {
+            count: Some(21),
+            ..Default::default()
+        })
+        .await
+        .is_err());
+    assert_eq!(version, app.data_version().await.unwrap());
+    let restarted = QuestionBankApplication::new(source, repository);
+    assert_ne!(version, restarted.data_version().await.unwrap());
+}
+
+#[tokio::test]
+async fn data_version_http_is_shared_and_tracks_committed_writes() {
+    let (server, base, cookie, _) = bank_server_with_sqlite(true).await;
+    let a = reqwest::Client::new();
+    let b = reqwest::Client::new();
+    let url = format!("{base}/api/v1/question-bank/data-version");
+    let read = |client: reqwest::Client| {
+        let url = url.clone();
+        let cookie = cookie.clone();
+        async move {
+            client
+                .get(url)
+                .header("cookie", cookie)
+                .send()
+                .await
+                .unwrap()
+                .json::<serde_json::Value>()
+                .await
+                .unwrap()["version"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        }
+    };
+    let initial = read(a.clone()).await;
+    assert_eq!(initial, read(b.clone()).await);
+    let settings = format!("{base}/api/v1/question-bank/module-settings");
+    let write = |body: &'static str| {
+        a.post(&settings)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .header("content-type", "application/json")
+            .body(body)
+    };
+    assert_eq!(write(r#"{"count":10}"#).send().await.unwrap().status(), 200);
+    let updated = read(b.clone()).await;
+    assert_ne!(initial, updated);
+    assert_eq!(updated, read(a.clone()).await);
+    assert_eq!(write(r#"{"count":21}"#).send().await.unwrap().status(), 400);
+    assert_eq!(updated, read(b).await);
     server.abort();
 }

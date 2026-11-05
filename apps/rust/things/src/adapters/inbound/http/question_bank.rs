@@ -186,6 +186,24 @@ pub(super) fn bank_error(error: BankError) -> Response {
     };
     error_json(status, code, message)
 }
+pub(super) async fn data_version(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let app = match available(service) {
+        Ok(app) => app,
+        Err(error) => return bank_error(error),
+    };
+    match app.data_version().await {
+        Ok(version) => Json(serde_json::json!({"version": version})).into_response(),
+        Err(error) => bank_error(error),
+    }
+}
+
 pub(super) async fn papers(
     State(state): State<AppState>,
     headers: HeaderMap,

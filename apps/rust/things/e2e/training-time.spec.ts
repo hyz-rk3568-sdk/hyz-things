@@ -1,5 +1,5 @@
 import {expect,test,type Page} from '@playwright/test';
-import {expectNoHorizontalOverflow,loginAsAdmin,resetHarness} from './fixtures';
+import {expectNoHorizontalOverflow,harnessOrigin,loginAsAdmin,resetHarness} from './fixtures';
 
 test.beforeEach(async({request})=>{await resetHarness(request)});
 
@@ -155,7 +155,8 @@ test("daily goals persist on the server and drive daily, weekly and 35-day bars"
   await expect(page.getByTestId('study-goal-questions-value')).toHaveText(/\d+\/400/);
 });
 
-test("study plan selects a parent module, toggles predictions and keeps the plan",async({page})=>{
+test("study plan selects a parent module, toggles predictions and keeps the plan",async({page,request})=>{
+  expect((await request.put(`${harnessOrigin}/reset-question-bank`)).ok()).toBeTruthy();
   await loginAsAdmin(page);
   await page.goto('/#/study/training');
   await resetStudyPlan(page);

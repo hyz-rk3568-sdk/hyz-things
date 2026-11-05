@@ -110,6 +110,13 @@ impl SqliteQuestionBankRepository {
 }
 #[async_trait]
 impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
+    async fn data_revision(&self) -> Result<i64, BankError> {
+        sqlx::query_scalar("SELECT revision FROM data_revision WHERE id = 1")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|_| BankError::Storage)
+    }
+
     async fn daily_answered_counts(
         &self,
         start_ms: i64,

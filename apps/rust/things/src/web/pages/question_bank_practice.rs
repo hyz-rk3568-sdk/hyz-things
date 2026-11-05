@@ -11,6 +11,11 @@ use hyz_things::domain::question_bank::{
 
 const ROOT: &str = "/api/v1/question-bank";
 
+#[derive(serde::Deserialize)]
+struct DataVersion {
+    version: String,
+}
+
 fn module_filter_labels(filters: &ModulePracticeFilters) -> [String; 3] {
     let years = match (filters.year_min, filters.year_max) {
         (None, None) => "全部年份".into(),
@@ -187,6 +192,8 @@ const WORKSPACE: &str = "question-bank-workspace training-workspace fixed inset-
 pub(crate) struct QuestionBankTrainingProps {
     pub csrf: String,
     pub entry_mode: PracticeMode,
+    #[prop_or(true)]
+    pub active: bool,
     pub on_immersive_change: Callback<bool>,
     pub on_paper_pause_change: Callback<bool>,
     #[prop_or_default]
@@ -228,7 +235,11 @@ struct PracticeCollectionCache {
 }
 
 #[hook]
-fn use_practice_collection(scope: PracticeMode, refresh: u64) -> PracticeCollectionCache {
+fn use_practice_collection(
+    scope: PracticeMode,
+    refresh: u64,
+    ready: bool,
+) -> PracticeCollectionCache {
     let items = use_state(|| None::<Vec<PracticeBrowseItem>>);
     let loading = use_state(|| true);
     let failure = use_state(|| None::<String>);
@@ -239,33 +250,40 @@ fn use_practice_collection(scope: PracticeMode, refresh: u64) -> PracticeCollect
         let loading = loading.clone();
         let failure = failure.clone();
         let generation = generation.clone();
-        use_effect_with((scope, refresh, *revision), move |(scope, _, _)| {
-            *generation.borrow_mut() += 1;
-            let request_generation = *generation.borrow();
-            let response_generation = generation.clone();
-            let url = browse_filter_url(
-                scope,
-                &PracticeMode::Paper,
-                "",
-                "",
-                "",
-                &ModulePracticeFilters::default(),
-            );
-            loading.set(true);
-            failure.set(None);
-            spawn_local(async move {
-                let result = fetch_json::<Vec<PracticeBrowseItem>>(&url, "真题分类浏览").await;
-                if *response_generation.borrow() != request_generation {
-                    return;
-                }
-                match result {
-                    Ok(result) => items.set(Some(result)),
-                    Err(message) => failure.set(Some(message)),
-                }
-                loading.set(false);
-            });
-            move || *generation.borrow_mut() += 1
-        });
+        use_effect_with(
+            (scope, refresh, *revision, ready),
+            move |(scope, _, _, ready)| {
+                *generation.borrow_mut() += 1;
+                let request_generation = *generation.borrow();
+                let response_generation = generation.clone();
+                let ready = *ready;
+                let url = browse_filter_url(
+                    scope,
+                    &PracticeMode::Paper,
+                    "",
+                    "",
+                    "",
+                    &ModulePracticeFilters::default(),
+                );
+                loading.set(true);
+                failure.set(None);
+                spawn_local(async move {
+                    if !ready {
+                        return;
+                    }
+                    let result = fetch_json::<Vec<PracticeBrowseItem>>(&url, "真题分类浏览").await;
+                    if *response_generation.borrow() != request_generation {
+                        return;
+                    }
+                    match result {
+                        Ok(result) => items.set(Some(result)),
+                        Err(message) => failure.set(Some(message)),
+                    }
+                    loading.set(false);
+                });
+                move || *generation.borrow_mut() += 1
+            },
+        );
     }
     let invalidate = {
         let loading = loading.clone();
@@ -851,34 +869,92 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let operation_lock = use_mut_ref(|| false);
     let pending_answer = use_state(|| None::<PendingAnswer>);
     let error = use_state(|| None::<String>);
+    let refresh = use_state(|| 0u64);
+    let version_ready = use_state(|| false);
+    let version_checking = use_state(|| true);
+    let version_error = use_state(|| None::<String>);
+    let last_version = use_mut_ref(|| None::<String>);
+    {
+        let active = props.active;
+        let version_ready = version_ready.clone();
+        let version_checking = version_checking.clone();
+        let version_error = version_error.clone();
+        let last_version = last_version.clone();
+        let refresh = refresh.clone();
+        let filters_loaded = filters_loaded.clone();
+        let had_data = *version_ready;
+        use_effect_with(active, move |active| {
+            let current = Rc::new(Cell::new(true));
+            if *active {
+                version_checking.set(true);
+                let current = current.clone();
+                spawn_local(async move {
+                    let result =
+                        fetch_json::<DataVersion>(&format!("{ROOT}/data-version"), "题库数据版本")
+                            .await;
+                    if !current.get() {
+                        return;
+                    }
+                    let changed = match result {
+                        Ok(value) => {
+                            version_error.set(None);
+                            let changed = last_version.borrow().as_ref() != Some(&value.version);
+                            *last_version.borrow_mut() = Some(value.version);
+                            changed
+                        }
+                        Err(message) => {
+                            *last_version.borrow_mut() = None;
+                            version_error.set(Some(message));
+                            true
+                        }
+                    };
+                    if changed && had_data {
+                        filters_loaded.set(false);
+                        refresh.set((*refresh).saturating_add(1));
+                    }
+                    version_ready.set(true);
+                    version_checking.set(false);
+                });
+            }
+            move || current.set(false)
+        });
+    }
     {
         let module_filters = module_filters.clone();
         let filters_loaded = filters_loaded.clone();
         let error = error.clone();
-        use_effect_with((), move |_| {
-            spawn_local(async move {
-                match fetch_json::<ModulePracticeFilters>(MODULE_SETTINGS_URL, "刷题设置").await
-                {
-                    Ok(filters) => {
-                        module_filters.set(filters);
-                        filters_loaded.set(true);
+        use_effect_with((*version_ready, *refresh), move |(ready, _)| {
+            let current = Rc::new(Cell::new(true));
+            if *ready {
+                let current = current.clone();
+                spawn_local(async move {
+                    let result =
+                        fetch_json::<ModulePracticeFilters>(MODULE_SETTINGS_URL, "刷题设置").await;
+                    if !current.get() {
+                        return;
                     }
-                    Err(message) => error.set(Some(message)),
-                }
-            });
-            || ()
+                    match result {
+                        Ok(filters) => {
+                            module_filters.set(filters);
+                            filters_loaded.set(true);
+                        }
+                        Err(message) => error.set(Some(message)),
+                    }
+                });
+            }
+            move || current.set(false)
         });
     }
     let submit_confirm = use_state(|| false);
     let elapsed = use_state(|| 0u64);
     let seconds_ref = use_mut_ref(|| 0u64);
-    let refresh = use_state(|| 0u64);
     let material_scroll = use_node_ref();
     let question_scroll = use_node_ref();
     let material_edges = use_state(ScrollEdges::default);
     let question_edges = use_state(ScrollEdges::default);
-    let wrong_collection = use_practice_collection(PracticeMode::Wrong, *refresh);
-    let favorite_collection = use_practice_collection(PracticeMode::Favorite, *refresh);
+    let wrong_collection = use_practice_collection(PracticeMode::Wrong, *refresh, *version_ready);
+    let favorite_collection =
+        use_practice_collection(PracticeMode::Favorite, *refresh, *version_ready);
     let wrong_total = wrong_collection
         .items
         .as_ref()
@@ -925,10 +1001,14 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let papers = papers.clone();
         let history = history.clone();
         let error = error.clone();
-        use_effect_with(*refresh, move |_| {
+        use_effect_with((*version_ready, *refresh), move |(ready, _)| {
+            let ready = *ready;
             let current = std::rc::Rc::new(std::cell::Cell::new(true));
             let response_current = current.clone();
             spawn_local(async move {
+                if !ready {
+                    return;
+                }
                 let result =
                     fetch_json::<Vec<PaperSummary>>(&format!("{ROOT}/papers"), "真题试卷列表")
                         .await;
@@ -1512,8 +1592,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             });
         })
     };
-    let visible_error = error
+    let visible_error = version_error
         .as_ref()
+        .or_else(|| error.as_ref())
         .or_else(|| selected_collection.and_then(|cache| cache.failure.as_ref()))
         .or_else(|| wrong_collection.failure.as_ref())
         .or_else(|| favorite_collection.failure.as_ref());
@@ -1522,6 +1603,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     } else {
         Html::default()
     };
+
+    if !props.active {
+        return Html::default();
+    }
 
     if let Some(current) = workspace.as_ref() {
         let item_index = (*index).min(current.questions.len().saturating_sub(1));
@@ -2087,7 +2172,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let invoke = invoke.clone();
         html! {
             <button class={TRAINING_PRIMARY_BUTTON} data-testid="question-bank-practice-start"
-                disabled={*busy || props.csrf.is_empty() ||
+                disabled={*busy || *version_checking || props.csrf.is_empty() ||
                     (collection.is_some() && browse.is_empty()) ||
                     (collection.is_none() && *mode == PracticeMode::Paper && selected_paper.is_empty()) ||
                     (collection.is_none() && *mode == PracticeMode::Module && (!*filters_loaded || selected_module.is_empty()))}
@@ -2341,7 +2426,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             <h3 class="font-semibold">{"专项模块"}</h3>
                             <p class="text-xs text-base-content/65">{"选择一级模块，再点二级题型精准刷题。"}</p>
                         </div>
-                        <button type="button" class="btn btn-outline btn-sm" data-testid="module-drill-settings-open" disabled={!*filters_loaded || *saving_filters}
+                        <button type="button" class="btn btn-outline btn-sm" data-testid="module-drill-settings-open" disabled={!*filters_loaded || *saving_filters || *version_checking}
                             onclick={Callback::from({
                                 let draft_filters=draft_filters.clone();
                                 let module_filters=module_filters.clone();

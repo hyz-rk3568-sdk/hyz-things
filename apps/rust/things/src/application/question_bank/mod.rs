@@ -227,6 +227,9 @@ pub trait QuestionBankRepositoryPort: Send + Sync {
     ) -> Result<Vec<DailyAnsweredBreakdownRow>, BankError> {
         Ok(Vec::new())
     }
+    async fn data_revision(&self) -> Result<i64, BankError> {
+        Err(BankError::Unavailable)
+    }
     async fn list(&self) -> Result<Vec<IndexedPaper>, BankError>;
     async fn paper_summaries(&self) -> Result<Vec<PaperSummary>, BankError> {
         Ok(self
@@ -382,6 +385,7 @@ pub struct QuestionBankApplication {
     repository: Arc<dyn QuestionBankRepositoryPort>,
     gate: Arc<Semaphore>,
     sync_status: Arc<Mutex<BankSyncStatus>>,
+    data_epoch: uuid::Uuid,
 }
 impl QuestionBankApplication {
     pub async fn daily_answered_counts(
@@ -442,8 +446,14 @@ impl QuestionBankApplication {
             repository,
             gate: Arc::new(Semaphore::new(1)),
             sync_status: Arc::new(Mutex::new(BankSyncStatus::default())),
+            data_epoch: uuid::Uuid::now_v7(),
         }
     }
+    pub async fn data_version(&self) -> Result<String, BankError> {
+        let revision = self.repository.data_revision().await?;
+        Ok(format!("{}-{revision}", self.data_epoch))
+    }
+
     pub fn sync_status(&self) -> BankSyncStatus {
         self.sync_status.lock().unwrap().clone()
     }
