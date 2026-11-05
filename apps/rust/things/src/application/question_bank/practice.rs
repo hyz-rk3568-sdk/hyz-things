@@ -1,14 +1,15 @@
 //! Question Bank practice use cases. Never return answer keys before submission.
 use super::{
     document::valid_id, BankError, IndexedPaper, PaperContent, PracticeContent,
-    QuestionBankApplication,
+    QuestionBankApplication, StudyAnswerDay,
 };
 use crate::domain::question_bank::{
     primary_module, CreatePracticeRequest, FavoriteState, ModulePracticeFilters, PaperModule,
     PaperModules, PracticeBrowseItem, PracticeCatalog, PracticeItem, PracticeMode,
     PracticeQuestion, PracticeQuestionDetail, PracticeReview, PracticeScore, PracticeSession,
-    PracticeWorkspace, ReviewQuestion,
+    PracticeWorkspace, ReviewQuestion, StudyPlan, StudyPlanForecast, StudyPlanForecastItem,
 };
+use chrono::{Datelike, Duration, NaiveDate};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,6 +47,206 @@ fn validate_filters(filters: &ModulePracticeFilters) -> Result<(), BankError> {
         return Err(BankError::Invalid);
     }
     Ok(())
+}
+
+fn normalize_study_plan(mut plan: StudyPlan) -> Result<StudyPlan, BankError> {
+    if plan.items.len() > 100 {
+        return Err(BankError::Invalid);
+    }
+    let mut seen = BTreeSet::new();
+    let mut normalized = Vec::new();
+    for item in plan.items {
+        if primary_module(Some(&item.module)) != Some(item.module.as_str()) {
+            return Err(BankError::Invalid);
+        }
+        if let Some(category) = &item.category {
+            if category.is_empty()
+                || category.trim() != category
+                || category.len() > 128
+                || category.chars().any(char::is_control)
+            {
+                return Err(BankError::Invalid);
+            }
+        }
+        if seen.insert((item.module.clone(), item.category.clone())) {
+            normalized.push(item);
+        }
+    }
+    let parents: BTreeSet<String> = normalized
+        .iter()
+        .filter(|item| item.category.is_none())
+        .map(|item| item.module.clone())
+        .collect();
+    normalized.retain(|item| item.category.is_none() || !parents.contains(&item.module));
+    normalized.sort_by(|a, b| {
+        a.module
+            .cmp(&b.module)
+            .then_with(|| a.category.cmp(&b.category))
+    });
+    plan.items = normalized;
+    Ok(plan)
+}
+
+fn beijing_day_start_ms(date: NaiveDate) -> i64 {
+    let offset = chrono::FixedOffset::east_opt(8 * 3600).unwrap();
+    date.and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_local_timezone(offset)
+        .single()
+        .unwrap()
+        .timestamp_millis()
+}
+
+fn estimate_days(remaining: i64, answered: i64, window: i64) -> Option<i64> {
+    if remaining <= 0 {
+        return Some(0);
+    }
+    if answered <= 0 {
+        return None;
+    }
+    Some((remaining.saturating_mul(window) + answered - 1) / answered)
+}
+
+fn finish_date(today: NaiveDate, days: Option<i64>) -> Option<String> {
+    days.map(|days| {
+        let date = today + Duration::days(days);
+        format!("{}/{}", date.month(), date.day())
+    })
+}
+
+fn study_filter_label(filters: &ModulePracticeFilters) -> String {
+    let years = match (filters.year_min, filters.year_max) {
+        (Some(min), Some(max)) if min == max => format!("{min} 年"),
+        (Some(min), Some(max)) => format!("{min}–{max} 年"),
+        (Some(min), None) => format!("{min} 年及以后"),
+        (None, Some(max)) => format!("{max} 年及以前"),
+        (None, None) => "不限年份".into(),
+    };
+    let regions = if filters.regions.is_empty() {
+        "不限地区".into()
+    } else {
+        format!(
+            "{}：{}",
+            if filters.exclude_regions {
+                "排除"
+            } else {
+                "仅限"
+            },
+            filters.regions.join("、")
+        )
+    };
+    format!("{years} · {regions}")
+}
+
+fn build_study_plan_forecast(
+    plan: &StudyPlan,
+    catalog: &PracticeCatalog,
+    answers: &[StudyAnswerDay],
+    filters: &ModulePracticeFilters,
+    today: NaiveDate,
+) -> StudyPlanForecast {
+    let day_today = today.format("%Y-%m-%d").to_string();
+    let day_yesterday = (today - Duration::days(1)).format("%Y-%m-%d").to_string();
+    let day_7 = (today - Duration::days(7)).format("%Y-%m-%d").to_string();
+    let mut items = Vec::new();
+    for planned in &plan.items {
+        let module = catalog
+            .modules
+            .iter()
+            .find(|module| module.name == planned.module);
+        let (total, done) = match (&planned.category, module) {
+            (Some(category), Some(module)) => module
+                .categories
+                .iter()
+                .find(|entry| &entry.name == category)
+                .map(|entry| (entry.count as i64, entry.done as i64))
+                .unwrap_or((0, 0)),
+            (None, Some(module)) => (module.count as i64, module.done as i64),
+            _ => (0, 0),
+        };
+        let remaining = (total - done).max(0);
+        let mut answered_today = 0;
+        let mut answered_yesterday = 0;
+        let mut answered_7 = 0;
+        let mut active_days = BTreeSet::new();
+        for row in answers {
+            if row.module != planned.module {
+                continue;
+            }
+            if planned
+                .category
+                .as_ref()
+                .is_some_and(|category| &row.category != category)
+            {
+                continue;
+            }
+            // The averages use complete days, so today never dilutes them.
+            if row.day >= day_7 && row.day < day_today {
+                answered_7 += row.answered;
+                if row.answered > 0 {
+                    active_days.insert(row.day.clone());
+                }
+            }
+            if row.day == day_yesterday {
+                answered_yesterday += row.answered;
+            }
+            if row.day == day_today {
+                answered_today += row.answered;
+            }
+        }
+        let low_confidence = answered_7 < 20 || active_days.len() < 3;
+        let days_yesterday = estimate_days(remaining, answered_yesterday, 1);
+        let days_7 = estimate_days(remaining, answered_7, 7);
+        items.push(StudyPlanForecastItem {
+            module: planned.module.clone(),
+            category: planned.category.clone(),
+            total,
+            done,
+            remaining,
+            answered_today,
+            answered_yesterday,
+            answered_7,
+            days_yesterday,
+            finish_yesterday: finish_date(today, days_yesterday),
+            days_7,
+            finish_7: finish_date(today, days_7),
+            low_confidence,
+        });
+    }
+    let total_remaining: i64 = items.iter().map(|item| item.remaining).sum();
+    let answered_yesterday: i64 = items.iter().map(|item| item.answered_yesterday).sum();
+    let answered_7: i64 = items.iter().map(|item| item.answered_7).sum();
+    let stalled_yesterday = items
+        .iter()
+        .any(|item| item.remaining > 0 && item.answered_yesterday == 0);
+    let stalled_7 = items
+        .iter()
+        .any(|item| item.remaining > 0 && item.answered_7 == 0);
+    let days_yesterday = if total_remaining == 0 {
+        Some(0)
+    } else if stalled_yesterday {
+        None
+    } else {
+        estimate_days(total_remaining, answered_yesterday, 1)
+    };
+    let days_7 = if total_remaining == 0 {
+        Some(0)
+    } else if stalled_7 {
+        None
+    } else {
+        estimate_days(total_remaining, answered_7, 7)
+    };
+    StudyPlanForecast {
+        prediction_enabled: plan.prediction_enabled,
+        filter_label: study_filter_label(filters),
+        low_confidence: items.iter().any(|item| item.low_confidence),
+        finish_yesterday: finish_date(today, days_yesterday),
+        finish_7: finish_date(today, days_7),
+        items,
+        total_remaining,
+        days_yesterday,
+        days_7,
+    }
 }
 
 impl QuestionBankApplication {
@@ -115,6 +316,36 @@ impl QuestionBankApplication {
     ) -> Result<PracticeCatalog, BankError> {
         validate_filters(filters)?;
         self.repository.practice_catalog(filters).await
+    }
+
+    pub async fn study_plan(&self) -> Result<StudyPlan, BankError> {
+        self.repository.study_plan().await
+    }
+
+    pub async fn save_study_plan(&self, plan: StudyPlan) -> Result<StudyPlan, BankError> {
+        let plan = normalize_study_plan(plan)?;
+        self.repository.save_study_plan(&plan).await?;
+        Ok(plan)
+    }
+
+    pub async fn study_plan_forecast(
+        &self,
+        filters: &ModulePracticeFilters,
+    ) -> Result<StudyPlanForecast, BankError> {
+        validate_filters(filters)?;
+        let plan = self.repository.study_plan().await?;
+        let catalog = self.repository.practice_catalog(filters).await?;
+        let offset = chrono::FixedOffset::east_opt(8 * 3600).unwrap();
+        let today = chrono::Utc::now().with_timezone(&offset).date_naive();
+        let start = beijing_day_start_ms(today - Duration::days(7));
+        let end = beijing_day_start_ms(today + Duration::days(1));
+        let answers = self
+            .repository
+            .study_answered_days(filters, start, end)
+            .await?;
+        Ok(build_study_plan_forecast(
+            &plan, &catalog, &answers, filters, today,
+        ))
     }
 
     pub async fn practice_browse(
@@ -749,7 +980,9 @@ mod tests {
     use crate::application::question_bank::{
         BankAsset, BankSnapshot, QuestionBankRepositoryPort, QuestionBankSourcePort,
     };
-    use crate::domain::question_bank::PaperSummary;
+    use crate::domain::question_bank::{
+        PaperSummary, PracticeCategory, PracticeModule, StudyPlanItem,
+    };
     use async_trait::async_trait;
     use std::sync::Arc;
 
@@ -824,5 +1057,194 @@ mod tests {
         assert_eq!(modules.modules[0].name, "资料分析");
         assert_eq!(modules.modules[0].count, 2);
         assert_eq!(modules.modules[0].ungradable, 1);
+    }
+
+    fn plan_catalog() -> PracticeCatalog {
+        PracticeCatalog {
+            modules: vec![PracticeModule {
+                name: "资料分析".into(),
+                count: 100,
+                done: 40,
+                uncategorized: 0,
+                categories: vec![
+                    PracticeCategory {
+                        name: "比重".into(),
+                        count: 60,
+                        done: 30,
+                    },
+                    PracticeCategory {
+                        name: "增长".into(),
+                        count: 40,
+                        done: 10,
+                    },
+                ],
+            }],
+            unclassified: 0,
+        }
+    }
+
+    fn plan_answers(today: NaiveDate) -> Vec<StudyAnswerDay> {
+        let day = |offset| {
+            (today + Duration::days(offset))
+                .format("%Y-%m-%d")
+                .to_string()
+        };
+        vec![
+            StudyAnswerDay {
+                day: day(-3),
+                module: "资料分析".into(),
+                category: "比重".into(),
+                answered: 10,
+            },
+            StudyAnswerDay {
+                day: day(-3),
+                module: "资料分析".into(),
+                category: "增长".into(),
+                answered: 5,
+            },
+            StudyAnswerDay {
+                day: day(-2),
+                module: "资料分析".into(),
+                category: "比重".into(),
+                answered: 10,
+            },
+            StudyAnswerDay {
+                day: day(-1),
+                module: "资料分析".into(),
+                category: "比重".into(),
+                answered: 10,
+            },
+            StudyAnswerDay {
+                day: day(0),
+                module: "资料分析".into(),
+                category: "比重".into(),
+                answered: 10,
+            },
+            StudyAnswerDay {
+                day: day(-2),
+                module: "资料分析".into(),
+                category: "增长".into(),
+                answered: 5,
+            },
+            StudyAnswerDay {
+                day: day(-1),
+                module: "资料分析".into(),
+                category: "增长".into(),
+                answered: 5,
+            },
+            StudyAnswerDay {
+                day: day(0),
+                module: "资料分析".into(),
+                category: "增长".into(),
+                answered: 5,
+            },
+        ]
+    }
+
+    #[test]
+    fn parent_plan_aggregates_categories_and_estimates_days() {
+        let today = NaiveDate::from_ymd_opt(2026, 1, 10).unwrap();
+        let plan = StudyPlan {
+            prediction_enabled: true,
+            items: vec![StudyPlanItem {
+                module: "资料分析".into(),
+                category: None,
+            }],
+        };
+        let forecast = build_study_plan_forecast(
+            &plan,
+            &plan_catalog(),
+            &plan_answers(today),
+            &ModulePracticeFilters::default(),
+            today,
+        );
+        let item = &forecast.items[0];
+        assert_eq!((item.total, item.done, item.remaining), (100, 40, 60));
+        assert_eq!((item.answered_today, item.answered_yesterday), (15, 15));
+        assert_eq!(item.answered_7, 45);
+        assert_eq!(item.days_yesterday, Some(4));
+        assert_eq!(item.days_7, Some(10));
+        assert_eq!(item.finish_yesterday.as_deref(), Some("1/14"));
+        assert_eq!(item.finish_7.as_deref(), Some("1/20"));
+        assert!(!item.low_confidence);
+        assert_eq!(forecast.total_remaining, 60);
+        assert_eq!(forecast.days_yesterday, Some(4));
+        assert_eq!(forecast.days_7, Some(10));
+    }
+
+    #[test]
+    fn child_plan_marks_small_samples_as_low_confidence() {
+        let today = NaiveDate::from_ymd_opt(2026, 1, 10).unwrap();
+        let plan = StudyPlan {
+            prediction_enabled: true,
+            items: vec![StudyPlanItem {
+                module: "资料分析".into(),
+                category: Some("比重".into()),
+            }],
+        };
+        let answers = vec![
+            StudyAnswerDay {
+                day: (today - Duration::days(1)).format("%Y-%m-%d").to_string(),
+                module: "资料分析".into(),
+                category: "比重".into(),
+                answered: 10,
+            },
+            StudyAnswerDay {
+                day: today.format("%Y-%m-%d").to_string(),
+                module: "资料分析".into(),
+                category: "比重".into(),
+                answered: 10,
+            },
+        ];
+        let forecast = build_study_plan_forecast(
+            &plan,
+            &plan_catalog(),
+            &answers,
+            &ModulePracticeFilters::default(),
+            today,
+        );
+        let item = &forecast.items[0];
+        assert_eq!((item.remaining, item.days_7), (30, Some(21)));
+        assert_eq!((item.answered_today, item.answered_yesterday), (10, 10));
+        assert_eq!(item.days_yesterday, Some(3));
+        assert!(item.low_confidence);
+        assert!(forecast.low_confidence);
+    }
+
+    #[test]
+    fn parent_plan_supersedes_child_items_and_keeps_toggle() {
+        let plan = StudyPlan {
+            prediction_enabled: false,
+            items: vec![
+                StudyPlanItem {
+                    module: "资料分析".into(),
+                    category: Some("比重".into()),
+                },
+                StudyPlanItem {
+                    module: "资料分析".into(),
+                    category: None,
+                },
+                StudyPlanItem {
+                    module: "资料分析".into(),
+                    category: Some("增长".into()),
+                },
+            ],
+        };
+        let normalized = normalize_study_plan(plan).unwrap();
+        assert_eq!(normalized.items.len(), 1);
+        assert!(normalized.items[0].category.is_none());
+        assert!(!normalized.prediction_enabled);
+    }
+
+    #[test]
+    fn filter_label_names_years_and_regions() {
+        let filters = ModulePracticeFilters {
+            year_min: Some(2017),
+            year_max: Some(2026),
+            regions: vec!["国考".into()],
+            exclude_regions: false,
+            count: None,
+        };
+        assert_eq!(study_filter_label(&filters), "2017–2026 年 · 仅限：国考");
     }
 }

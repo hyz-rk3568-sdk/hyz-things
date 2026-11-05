@@ -853,6 +853,16 @@ fn app_with_assets(
             get(training_time::goals).post(training_time::save_goals),
         )
         .route(
+            "/api/v1/study/plan",
+            get(question_bank::study_plan)
+                .post(question_bank::save_study_plan)
+                .layer(DefaultBodyLimit::max(8 * 1024)),
+        )
+        .route(
+            "/api/v1/study/plan/forecast",
+            on(MethodFilter::GET, question_bank::study_plan_forecast),
+        )
+        .route(
             "/api/v1/study/logic-judgment/status",
             on(MethodFilter::GET, logic_judgment::status),
         )
@@ -2914,6 +2924,7 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/study/review"
             | "/api/v1/study/training-time/events"
             | "/api/v1/study/training-time/goals"
+            | "/api/v1/study/plan"
             | "/api/v1/control/study/sync"
             | "/api/v1/control/question-bank/sync"
             | "/api/v1/question-bank/practice/sessions"
@@ -3459,6 +3470,9 @@ mod tests {
         assert!(is_post_path("/api/v1/study/training-time/goals"));
         assert!(!is_post_path("/api/v1/study/training-time/goals/extra"));
         assert!(!is_post_path("/api/v1/study/training-time/stats"));
+        assert!(is_post_path("/api/v1/study/plan"));
+        assert!(!is_post_path("/api/v1/study/plan/forecast"));
+        assert!(!is_post_path("/api/v1/study/plan/extra"));
         assert!(is_post_path("/api/v1/auth/login"));
         assert!(is_post_path("/api/v1/auth/logout"));
         assert!(is_post_path("/api/v1/auth/password"));

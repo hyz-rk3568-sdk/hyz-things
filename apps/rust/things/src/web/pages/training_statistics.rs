@@ -1,5 +1,7 @@
 //! Real stored learning durations, not quiz elapsed-time estimates.
+use super::question_bank_practice::{module_filter_query, read_module_filters};
 use super::*;
+use hyz_things::domain::question_bank::{PracticeCatalog, PracticeCategory};
 use std::collections::BTreeMap;
 
 fn module_name(id: &str) -> &'static str {
@@ -262,6 +264,7 @@ pub(crate) fn study_statistics_body(props: &StudyStatisticsProps) -> Html {
                 </div>
                 <p class="text-xs opacity-60">{"每日目标存于服务端；最近 7 天与最近 35 天目标按 7 倍、35 倍自动计算，某天超额可补足其他天。速算与闪卡回顾只计入学习时长。"}</p>
             </section>
+            <StudyPlanCard csrf={props.csrf.clone()}/>
             <div class="rounded-xl bg-base-100 p-4 space-y-3">
                 <h3 class="font-semibold">{"每日学习热力图"}</h3>
                 <div class="grid grid-cols-7 gap-2" data-testid="training-heatmap">
@@ -336,5 +339,422 @@ pub(crate) fn study_statistics_body(props: &StudyStatisticsProps) -> Html {
                 }
             </div>
         </div>
+    }
+}
+
+fn plan_parent_selected(plan: &StudyPlan, module: &str) -> bool {
+    plan.items
+        .iter()
+        .any(|item| item.module == module && item.category.is_none())
+}
+
+fn plan_category_selected(plan: &StudyPlan, module: &str, category: &str) -> bool {
+    plan_parent_selected(plan, module)
+        || plan
+            .items
+            .iter()
+            .any(|item| item.module == module && item.category.as_deref() == Some(category))
+}
+
+fn toggle_plan_parent(plan: &mut StudyPlan, module: &str) {
+    let selected = plan_parent_selected(plan, module);
+    plan.items.retain(|item| item.module != module);
+    if !selected {
+        plan.items.push(StudyPlanItem {
+            module: module.to_owned(),
+            category: None,
+        });
+    }
+}
+
+fn toggle_plan_category(
+    plan: &mut StudyPlan,
+    module: &str,
+    category: &str,
+    categories: &[PracticeCategory],
+) {
+    if plan_parent_selected(plan, module) {
+        return;
+    }
+    let exists = plan
+        .items
+        .iter()
+        .any(|item| item.module == module && item.category.as_deref() == Some(category));
+    if exists {
+        plan.items
+            .retain(|item| !(item.module == module && item.category.as_deref() == Some(category)));
+    } else {
+        plan.items.push(StudyPlanItem {
+            module: module.to_owned(),
+            category: Some(category.to_owned()),
+        });
+    }
+    let all_selected = categories.iter().all(|category| {
+        plan.items.iter().any(|item| {
+            item.module == module && item.category.as_deref() == Some(category.name.as_str())
+        })
+    });
+    if all_selected {
+        plan.items.retain(|item| item.module != module);
+        plan.items.push(StudyPlanItem {
+            module: module.to_owned(),
+            category: None,
+        });
+    }
+}
+
+fn plan_item_label(item: &StudyPlanForecastItem) -> String {
+    match &item.category {
+        Some(category) => format!("{} · {}", item.module, category),
+        None => format!("{} · 全部", item.module),
+    }
+}
+
+fn plan_days_range(forecast: &StudyPlanForecast) -> Option<String> {
+    forecast
+        .days_7
+        .or(forecast.days_yesterday)
+        .map(|days| days.to_string())
+}
+
+#[derive(Properties, PartialEq)]
+pub(super) struct StudyPlanCardProps {
+    pub csrf: String,
+}
+
+#[function_component(StudyPlanCard)]
+pub(super) fn study_plan_card(props: &StudyPlanCardProps) -> Html {
+    let data = use_state(|| None::<StudyPlanForecast>);
+    let catalog = use_state(|| None::<PracticeCatalog>);
+    let error = use_state(|| None::<String>);
+    let save_error = use_state(|| None::<String>);
+    let refresh = use_state(|| 0_u32);
+    let managing = use_state(|| false);
+    let saving = use_state(|| false);
+    let draft = use_state(StudyPlan::default);
+    let filters = use_state(read_module_filters);
+    let query = module_filter_query(&filters);
+    {
+        let data = data.clone();
+        let catalog = catalog.clone();
+        let error = error.clone();
+        let query = query.clone();
+        use_effect_with((*refresh, query.clone()), move |_| {
+            spawn_local(async move {
+                match fetch_json_typed::<StudyPlanForecast>(
+                    &format!("{STUDY_PLAN_ROOT}/forecast?{query}"),
+                    "备考计划",
+                )
+                .await
+                {
+                    Ok(value) => data.set(Some(value)),
+                    Err(message) => error.set(Some(message.to_string())),
+                }
+                if let Ok(value) = fetch_json_typed::<PracticeCatalog>(
+                    &format!("/api/v1/question-bank/practice/catalog?{query}"),
+                    "题库目录",
+                )
+                .await
+                {
+                    catalog.set(Some(value));
+                }
+            });
+            || ()
+        });
+    }
+    let open_manage = {
+        let managing = managing.clone();
+        let draft = draft.clone();
+        let data = data.clone();
+        let save_error = save_error.clone();
+        Callback::from(move |_| {
+            if let Some(value) = data.as_ref() {
+                draft.set(StudyPlan {
+                    prediction_enabled: value.prediction_enabled,
+                    items: value
+                        .items
+                        .iter()
+                        .map(|item| StudyPlanItem {
+                            module: item.module.clone(),
+                            category: item.category.clone(),
+                        })
+                        .collect(),
+                });
+            }
+            save_error.set(None);
+            managing.set(true);
+        })
+    };
+    let close_manage = {
+        let managing = managing.clone();
+        let save_error = save_error.clone();
+        Callback::from(move |_| {
+            save_error.set(None);
+            managing.set(false);
+        })
+    };
+    let toggle_prediction = {
+        let csrf = props.csrf.clone();
+        let data = data.clone();
+        let saving = saving.clone();
+        let refresh = refresh.clone();
+        let error = error.clone();
+        Callback::from(move |event: web_sys::Event| {
+            if *saving {
+                return;
+            }
+            let Some(current) = data.as_ref().cloned() else {
+                return;
+            };
+            let input: web_sys::HtmlInputElement = event.target_unchecked_into();
+            let enabled = input.checked();
+            let plan = StudyPlan {
+                prediction_enabled: enabled,
+                items: current
+                    .items
+                    .iter()
+                    .map(|item| StudyPlanItem {
+                        module: item.module.clone(),
+                        category: item.category.clone(),
+                    })
+                    .collect(),
+            };
+            let mut optimistic = current;
+            optimistic.prediction_enabled = enabled;
+            data.set(Some(optimistic));
+            saving.set(true);
+            error.set(None);
+            let csrf = csrf.clone();
+            let saving = saving.clone();
+            let refresh = refresh.clone();
+            let error = error.clone();
+            spawn_local(async move {
+                match post_json_response_typed::<_, StudyPlan>(
+                    STUDY_PLAN_ROOT,
+                    &csrf,
+                    &plan,
+                    "保存备考预测",
+                )
+                .await
+                {
+                    Ok(_) => refresh.set(*refresh + 1),
+                    Err(message) => {
+                        error.set(Some(message.to_string()));
+                        refresh.set(*refresh + 1);
+                    }
+                }
+                saving.set(false);
+            });
+        })
+    };
+    let set_draft_enabled = {
+        let draft = draft.clone();
+        Callback::from(move |event: web_sys::Event| {
+            let input: web_sys::HtmlInputElement = event.target_unchecked_into();
+            let mut next = (*draft).clone();
+            next.prediction_enabled = input.checked();
+            draft.set(next);
+        })
+    };
+    let save_plan = {
+        let csrf = props.csrf.clone();
+        let draft = draft.clone();
+        let saving = saving.clone();
+        let refresh = refresh.clone();
+        let managing = managing.clone();
+        let save_error = save_error.clone();
+        Callback::from(move |_| {
+            if *saving {
+                return;
+            }
+            let plan = (*draft).clone();
+            saving.set(true);
+            save_error.set(None);
+            let csrf = csrf.clone();
+            let saving = saving.clone();
+            let refresh = refresh.clone();
+            let managing = managing.clone();
+            let save_error = save_error.clone();
+            spawn_local(async move {
+                match post_json_response_typed::<_, StudyPlan>(
+                    STUDY_PLAN_ROOT,
+                    &csrf,
+                    &plan,
+                    "保存备考计划",
+                )
+                .await
+                {
+                    Ok(_) => {
+                        managing.set(false);
+                        refresh.set(*refresh + 1);
+                    }
+                    Err(message) => save_error.set(Some(message.to_string())),
+                }
+                saving.set(false);
+            });
+        })
+    };
+    let forecast = data.as_ref();
+    html! {
+        <section class="space-y-3 rounded-xl bg-base-100 p-4" aria-label="备考计划" data-testid="study-plan">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <h3 class="font-semibold">{"备考计划"}</h3>
+                <div class="flex items-center gap-2">
+                    <label class="flex items-center gap-2 text-xs">
+                        <span>{"预测"}</span>
+                        <input type="checkbox" class="toggle toggle-primary toggle-sm" data-testid="study-plan-toggle"
+                            checked={forecast.map(|value| value.prediction_enabled).unwrap_or(false)}
+                            disabled={*saving || forecast.is_none()} onchange={toggle_prediction}/>
+                    </label>
+                    <button type="button" class="btn btn-ghost btn-xs" data-testid="study-plan-manage" onclick={open_manage.clone()}>{"管理"}</button>
+                </div>
+            </div>
+            if let Some(message) = error.as_ref() {
+                <p role="alert" class="text-xs text-error">{message.clone()}</p>
+            }
+            if let Some(value) = forecast {
+                if !value.prediction_enabled {
+                    <p class="text-sm opacity-60">{"预测已关闭。计划会保留，开启后恢复预计天数和日期。"}</p>
+                }
+                if value.items.is_empty() {
+                    <button type="button" class="btn btn-outline btn-sm" data-testid="study-plan-add" onclick={open_manage}>{"添加计划模块"}</button>
+                } else {
+                    <div class="space-y-2">
+                        {for value.items.iter().map(|item|{
+                            let pace = if !value.prediction_enabled {
+                                Html::default()
+                            } else if item.remaining == 0 {
+                                html!{<p class="text-xs text-success">{"计划内已完成"}</p>}
+                            } else {
+                                let yesterday = if item.answered_yesterday == 0 {
+                                    "昨日未刷".to_string()
+                                } else if let Some(days) = item.days_yesterday {
+                                    format!("昨日 {} 题 · 按昨日速度约 {} 天{}", item.answered_yesterday, days,
+                                        item.finish_yesterday.as_ref().map(|date| format!("（预计 {date}）")).unwrap_or_default())
+                                } else {
+                                    "昨日数据不足".to_string()
+                                };
+                                let seven = if item.answered_7 == 0 {
+                                    "近 7 个完整日无作答".to_string()
+                                } else if let Some(days) = item.days_7 {
+                                    format!("近 7 个完整日日均 {:.1} 题 · 约 {} 天{}", item.answered_7 as f64 / 7.0, days,
+                                        item.finish_7.as_ref().map(|date| format!("（预计 {date}）")).unwrap_or_default())
+                                } else {
+                                    "近 7 个完整日数据不足".to_string()
+                                };
+                                html!{<div class="space-y-0.5 text-xs"><p>{yesterday}</p><p>{seven}</p></div>}
+                            };
+                            html!{<div class="space-y-1.5 rounded-lg bg-base-200/40 p-3" data-testid="study-plan-item"
+                                data-module={item.module.clone()} data-category={item.category.clone().unwrap_or_default()}>
+                                <div class="flex items-start justify-between gap-3">
+                                    <span class="min-w-0 text-sm font-medium">{plan_item_label(item)}</span>
+                                    <span class="shrink-0 text-sm tabular-nums">{format!("还剩 {} 题", item.remaining)}</span>
+                                </div>
+                                <progress class="progress progress-primary block h-2 w-full" max={item.total.max(1).to_string()}
+                                    value={item.done.max(0).to_string()} aria-label={format!("{} 完成进度", plan_item_label(item))}/>
+                                <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] opacity-60">
+                                    <span>{format!("已做 {}/{} 题", item.done, item.total)}</span>
+                                    if value.prediction_enabled && item.low_confidence {<span class="badge badge-ghost badge-sm">{"样本不足"}</span>}
+                                </div>
+                                {pace}
+                            </div>}
+                        })}
+                    </div>
+                    <div class="space-y-1 rounded-lg bg-base-200/60 p-3" data-testid="study-plan-summary">
+                        if value.total_remaining == 0 {
+                            <p class="text-sm font-medium">{"计划内题目已完成"}</p>
+                        } else {
+                            <p class="text-sm font-medium">{format!("合计：{} 个计划 · 剩 {} 题{}",
+                                value.items.len(), value.total_remaining,
+                                plan_days_range(value).map(|range| format!(" · 约 {range} 天")).unwrap_or_default())}</p>
+                        }
+                        <p class="text-[11px] opacity-60">{format!("当前筛选：{}", value.filter_label)}</p>
+                    </div>
+                }
+            } else if error.is_none() {
+                <p class="text-sm opacity-60">{"正在读取备考计划…"}</p>
+            }
+            if *managing {
+                <div class="fixed inset-0 z-[130] overflow-y-auto bg-base-200/95 p-3 sm:p-6" role="dialog" aria-modal="true"
+                    aria-label="管理备考计划" data-testid="study-plan-sheet">
+                    <div class="mx-auto w-full max-w-2xl space-y-4 rounded-2xl bg-base-100 p-4 sm:p-5">
+                        <div class="flex items-center justify-between gap-3">
+                            <h2 class="text-lg font-semibold">{"管理备考计划"}</h2>
+                            <button type="button" class="btn btn-ghost btn-sm" data-testid="study-plan-sheet-close" onclick={close_manage.clone()}>{"关闭"}</button>
+                        </div>
+                        <label class="flex items-center justify-between gap-3 rounded-xl bg-base-200/50 p-3">
+                            <span><strong>{"显示预测"}</strong><span class="block text-xs opacity-60">{"关闭后保留计划，只隐藏预计天数和日期。"}</span></span>
+                            <input type="checkbox" class="toggle toggle-primary toggle-sm" data-testid="study-plan-sheet-toggle"
+                                checked={draft.prediction_enabled} disabled={*saving} onchange={set_draft_enabled}/>
+                        </label>
+                        if let Some(catalog) = catalog.as_ref() {
+                            <div class="space-y-2">
+                                {for catalog.modules.iter().map(|module|{
+                                    let module_name = module.name.clone();
+                                    let parent_selected = plan_parent_selected(&draft, &module_name);
+                                    let on_parent = {
+                                        let draft = draft.clone();
+                                        let module_name = module_name.clone();
+                                        Callback::from(move |_|{
+                                            let mut next = (*draft).clone();
+                                            toggle_plan_parent(&mut next, &module_name);
+                                            draft.set(next);
+                                        })
+                                    };
+                                    html!{<div class="rounded-xl border border-base-content/10 p-3" data-testid="study-plan-module">
+                                        <label class="flex items-center justify-between gap-3">
+                                            <span class="flex min-w-0 items-center gap-2">
+                                                <input type="checkbox" class="checkbox checkbox-primary checkbox-sm"
+                                                    checked={parent_selected} disabled={*saving} onchange={on_parent}
+                                                    aria-label={format!("{} 全部", module_name)}/>
+                                                <strong class="truncate">{&module.name}</strong>
+                                            </span>
+                                            <span class="shrink-0 text-xs opacity-60">{format!("{} / {} 题", module.done, module.count)}</span>
+                                        </label>
+                                        if !module.categories.is_empty() {
+                                            <div class="mt-2 flex flex-wrap gap-1.5 pl-6">
+                                                {for module.categories.iter().map(|category|{
+                                                    let category_name = category.name.clone();
+                                                    let selected = plan_category_selected(&draft, &module_name, &category_name);
+                                                    let locked = parent_selected || *saving;
+                                                    let categories = module.categories.clone();
+                                                    let on_category = {
+                                                        let draft = draft.clone();
+                                                        let module_name = module_name.clone();
+                                                        let category_name = category_name.clone();
+                                                        Callback::from(move |_|{
+                                                            let mut next = (*draft).clone();
+                                                            toggle_plan_category(&mut next, &module_name, &category_name, &categories);
+                                                            draft.set(next);
+                                                        })
+                                                    };
+                                                    html!{<label class={classes!("flex", "items-center", "gap-1.5", "rounded-full", "border", "border-base-content/15", "px-2", "py-1", "text-xs", locked.then_some("opacity-60"))}>
+                                                        <input type="checkbox" class="checkbox checkbox-xs checkbox-primary"
+                                                            checked={selected} disabled={locked} onchange={on_category}
+                                                            aria-label={format!("{} {}", module_name, category_name)}/>
+                                                        <span>{&category.name}</span>
+                                                        <span class="opacity-60">{format!("{}/{}", category.done, category.count)}</span>
+                                                    </label>}
+                                                })}
+                                            </div>
+                                        }
+                                    </div>}
+                                })}
+                            </div>
+                        } else {
+                            <p class="text-sm opacity-60">{"正在读取题库目录…"}</p>
+                        }
+                        if let Some(message) = save_error.as_ref() {
+                            <p role="alert" class="text-xs text-error">{message.clone()}</p>
+                        }
+                        <div class="flex justify-end gap-2">
+                            <button type="button" class="btn btn-ghost" data-testid="study-plan-sheet-cancel" onclick={close_manage}>{"取消"}</button>
+                            <button type="button" class="btn btn-primary" data-testid="study-plan-save"
+                                disabled={*saving} onclick={save_plan}>{if *saving {"保存中…"} else {"保存计划"}}</button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </section>
     }
 }

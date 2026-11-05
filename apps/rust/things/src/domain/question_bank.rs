@@ -148,6 +148,65 @@ pub struct PracticeCatalog {
     pub unclassified: usize,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StudyPlanItem {
+    pub module: String,
+    /// `None` plans the whole primary module; `Some` plans one secondary category.
+    #[serde(default)]
+    pub category: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StudyPlan {
+    #[serde(default = "prediction_enabled_default")]
+    pub prediction_enabled: bool,
+    #[serde(default)]
+    pub items: Vec<StudyPlanItem>,
+}
+
+fn prediction_enabled_default() -> bool {
+    true
+}
+
+impl Default for StudyPlan {
+    fn default() -> Self {
+        Self {
+            prediction_enabled: true,
+            items: Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StudyPlanForecastItem {
+    pub module: String,
+    pub category: Option<String>,
+    pub total: i64,
+    pub done: i64,
+    pub remaining: i64,
+    pub answered_today: i64,
+    pub answered_yesterday: i64,
+    pub answered_7: i64,
+    pub days_yesterday: Option<i64>,
+    pub days_7: Option<i64>,
+    pub finish_yesterday: Option<String>,
+    pub finish_7: Option<String>,
+    pub low_confidence: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StudyPlanForecast {
+    pub prediction_enabled: bool,
+    pub items: Vec<StudyPlanForecastItem>,
+    pub total_remaining: i64,
+    pub days_yesterday: Option<i64>,
+    pub days_7: Option<i64>,
+    pub finish_yesterday: Option<String>,
+    pub finish_7: Option<String>,
+    pub filter_label: String,
+    pub low_confidence: bool,
+}
+
 /// Browsable metadata for saved wrong and favorite Question Bank items.
 /// No answers or explanations are returned by this read-only index.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -40,6 +40,16 @@ async function readPracticeDays(page:Page,query=''):Promise<PracticeDay[]> {
   },query);
 }
 
+async function resetStudyPlan(page:Page) {
+  await page.evaluate(async()=>{
+    const panel=await (await fetch('/api/v1/panel')).json();
+    const response=await fetch('/api/v1/study/plan',{method:'POST',
+      headers:{'Content-Type':'application/json','X-HYZ-CSRF':panel.csrf_token},
+      body:JSON.stringify({prediction_enabled:true,items:[]})});
+    if(!response.ok) throw new Error(`reset plan failed: ${response.status}`);
+  });
+}
+
 async function chooseFixturePaper(page:Page) {
   const region=page.getByTestId('question-bank-region').filter({hasText:'国考'});
   if (!(await region.evaluate(node=>(node.closest('details') as HTMLDetailsElement | null)?.open))) {
@@ -143,6 +153,46 @@ test("daily goals persist on the server and drive daily, weekly and 35-day bars"
   await page.getByTestId('study-goals-save').click();
   await expect(page.getByTestId('study-goals')).toContainText('/ 400 题');
   await expect(page.getByTestId('study-goal-questions-value')).toHaveText(/\d+\/400/);
+});
+
+test("study plan selects a parent module, toggles predictions and keeps the plan",async({page})=>{
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await resetStudyPlan(page);
+  await page.getByTestId('training-mode-statistics').click();
+  const plan=page.getByTestId('study-plan');
+  await expect(plan).toContainText('备考计划');
+  await plan.getByTestId('study-plan-add').click();
+  await expect(plan.getByTestId('study-plan-sheet')).toBeVisible();
+  const module=plan.getByTestId('study-plan-module').filter({hasText:'资料分析'});
+  await module.getByLabel('资料分析 全部').check();
+  const sheetToggle=plan.getByTestId('study-plan-sheet-toggle');
+  if(await sheetToggle.isChecked()) await sheetToggle.uncheck();
+  await plan.getByTestId('study-plan-save').click();
+  await expect(plan.getByTestId('study-plan-sheet')).toHaveCount(0);
+  const item=plan.getByTestId('study-plan-item');
+  await expect(item).toContainText('资料分析 · 全部');
+  await expect(item).toContainText('还剩');
+  await expect(plan.getByTestId('study-plan-summary')).toContainText('当前筛选');
+  await expect(plan).toContainText('预测已关闭');
+  await expect(item).not.toContainText('完整日');
+  await plan.getByTestId('study-plan-toggle').check();
+  await expect(item).toContainText('近 7 个完整日');
+
+  await plan.getByTestId('study-plan-manage').click();
+  await plan.getByTestId('study-plan-module').filter({hasText:'资料分析'}).getByLabel('资料分析 全部').uncheck();
+  await plan.getByTestId('study-plan-module').filter({hasText:'资料分析'}).getByLabel('资料分析 比重').check();
+  await plan.getByTestId('study-plan-save').click();
+  await expect(plan.getByTestId('study-plan-sheet')).toHaveCount(0);
+  await expect(plan.getByTestId('study-plan-item')).toContainText('资料分析 · 比重');
+
+  await page.setViewportSize({width:390,height:844});
+  await expectNoHorizontalOverflow(page);
+  await page.setViewportSize({width:1280,height:720});
+  await resetStudyPlan(page);
+  await page.reload();
+  await page.getByTestId('training-mode-statistics').click();
+  await expect(page.getByTestId('study-plan-add')).toBeVisible();
 });
 
 test("refresh waits for the CSRF token before syncing study time",async({page})=>{

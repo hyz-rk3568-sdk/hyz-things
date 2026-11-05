@@ -114,7 +114,7 @@ fn history_matches_entry(entry: &PracticeMode, run: &PracticeSession) -> bool {
 }
 const MODULE_FILTERS_STORAGE: &str = "hyz-question-bank-module-settings-v1";
 
-fn read_module_filters() -> ModulePracticeFilters {
+pub(super) fn read_module_filters() -> ModulePracticeFilters {
     web_sys::window()
         .and_then(|window| window.local_storage().ok().flatten())
         .and_then(|storage| storage.get_item(MODULE_FILTERS_STORAGE).ok().flatten())
@@ -133,7 +133,7 @@ fn persist_module_filters(filters: &ModulePracticeFilters) -> bool {
     storage.set_item(MODULE_FILTERS_STORAGE, &json).is_ok()
 }
 
-fn catalog_filter_url(filters: &ModulePracticeFilters) -> String {
+pub(super) fn module_filter_query(filters: &ModulePracticeFilters) -> String {
     let mut query = url::form_urlencoded::Serializer::new(String::new());
     if let Some(year) = filters.year_min {
         query.append_pair("year_min", &year.to_string());
@@ -147,7 +147,11 @@ fn catalog_filter_url(filters: &ModulePracticeFilters) -> String {
             query.append_pair("exclude_regions", "true");
         }
     }
-    format!("{ROOT}/practice/catalog?{}", query.finish())
+    query.finish()
+}
+
+fn catalog_filter_url(filters: &ModulePracticeFilters) -> String {
+    format!("{ROOT}/practice/catalog?{}", module_filter_query(filters))
 }
 
 fn browse_filter_url(

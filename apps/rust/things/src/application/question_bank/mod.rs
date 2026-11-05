@@ -5,7 +5,7 @@ pub mod practice;
 
 use crate::domain::question_bank::{
     BankSyncStatus, BankSyncSummary, PaperSummary, PaperView, PracticeCatalog, PracticeMode,
-    PracticeSession,
+    PracticeSession, StudyPlan,
 };
 use async_trait::async_trait;
 use document::{valid_id, Document};
@@ -30,6 +30,15 @@ pub struct DailyAnsweredBreakdownRow {
 pub struct QuestionBankDayBreakdown {
     pub modules: BTreeMap<String, BTreeMap<String, i64>>,
     pub papers: BTreeMap<String, i64>,
+}
+
+/// One Beijing calendar day of submitted answers for a module category.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StudyAnswerDay {
+    pub day: String,
+    pub module: String,
+    pub category: String,
+    pub answered: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -315,6 +324,20 @@ pub trait QuestionBankRepositoryPort: Send + Sync {
         _filters: &crate::domain::question_bank::ModulePracticeFilters,
     ) -> Result<PracticeCatalog, BankError> {
         Err(BankError::Unavailable)
+    }
+    async fn study_plan(&self) -> Result<StudyPlan, BankError> {
+        Ok(StudyPlan::default())
+    }
+    async fn save_study_plan(&self, _plan: &StudyPlan) -> Result<(), BankError> {
+        Err(BankError::Unavailable)
+    }
+    async fn study_answered_days(
+        &self,
+        _filters: &crate::domain::question_bank::ModulePracticeFilters,
+        _start_ms: i64,
+        _end_ms: i64,
+    ) -> Result<Vec<StudyAnswerDay>, BankError> {
+        Ok(Vec::new())
     }
     /// Returns complete practice groups in draw order. A group contains every
     /// question that shares one source material, so callers never split a

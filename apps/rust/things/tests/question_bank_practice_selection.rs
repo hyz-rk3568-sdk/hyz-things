@@ -8,7 +8,8 @@ use hyz_things::application::question_bank::{
     QuestionBankSourcePort,
 };
 use hyz_things::domain::question_bank::{
-    CreatePracticeRequest, ModulePracticeFilters, PracticeMode, PracticeSession,
+    CreatePracticeRequest, ModulePracticeFilters, PracticeMode, PracticeSession, StudyPlan,
+    StudyPlanItem,
 };
 use std::sync::Arc;
 
@@ -582,6 +583,53 @@ async fn module_drill_prioritizes_net_errors_and_correct_answers_reduce_them() {
         .find(|day| !day.papers.is_empty())
         .unwrap();
     assert_eq!(day.papers["排序练习卷"], 1);
+}
+
+#[tokio::test]
+async fn study_plan_round_trips_and_forecasts_module_progress() {
+    const Q1: &str = "019a3d8e-1b32-7a60-9c83-f34217a6e230";
+    const Q2: &str = "019a3d8e-1b32-7a60-9c83-f34217a6e231";
+    const Q3: &str = "019a3d8e-1b32-7a60-9c83-f34217a6e232";
+    let app = ordering_application().await;
+    let default = app.study_plan().await.unwrap();
+    assert!(default.prediction_enabled);
+    assert!(default.items.is_empty());
+
+    let plan = StudyPlan {
+        prediction_enabled: false,
+        items: vec![StudyPlanItem {
+            module: "资料分析".into(),
+            category: None,
+        }],
+    };
+    assert_eq!(app.save_study_plan(plan.clone()).await.unwrap(), plan);
+    assert_eq!(app.study_plan().await.unwrap(), plan);
+    let forecast = app
+        .study_plan_forecast(&ModulePracticeFilters::default())
+        .await
+        .unwrap();
+    assert!(!forecast.prediction_enabled);
+    assert_eq!(forecast.items.len(), 1);
+    assert_eq!((forecast.items[0].total, forecast.items[0].done), (3, 0));
+    assert_eq!(forecast.items[0].remaining, 3);
+    assert_eq!(forecast.items[0].days_7, None);
+
+    let session = next_module_session(&app, 3).await;
+    for (id, answer) in [(Q1, "A"), (Q2, "B"), (Q3, "A")] {
+        app.save_practice_answer(&session.id, id, vec![answer.into()])
+            .await
+            .unwrap();
+    }
+    app.submit_practice(&session.id).await.unwrap();
+    let forecast = app
+        .study_plan_forecast(&ModulePracticeFilters::default())
+        .await
+        .unwrap();
+    assert_eq!(forecast.items[0].remaining, 0);
+    assert_eq!(forecast.items[0].answered_today, 3);
+    assert_eq!(forecast.items[0].answered_7, 0);
+    assert_eq!(forecast.items[0].days_7, Some(0));
+    assert!(forecast.items[0].low_confidence);
 }
 
 #[tokio::test]

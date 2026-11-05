@@ -3,7 +3,7 @@ use crate::adapters::outbound::question_bank_ai::{AiReviewError, QuestionBankAiS
 use crate::application::question_bank::{BankError, QuestionBankApplication};
 use crate::domain::question_bank::{
     AiReviewFollowUp, CreatePracticeRequest, ModulePracticeFilters, PracticeMode,
-    SavePracticeAnswer, SetFavorite, SetPracticePaused,
+    SavePracticeAnswer, SetFavorite, SetPracticePaused, StudyPlan,
 };
 use axum::Extension;
 
@@ -361,6 +361,79 @@ pub(super) async fn practice_catalog(
         count: None,
     };
     match app.practice_catalog(&filters).await {
+        Ok(value) => Json(value).into_response(),
+        Err(e) => bank_error(e),
+    }
+}
+
+pub(super) async fn study_plan(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let app = match available(service) {
+        Ok(app) => app,
+        Err(e) => return bank_error(e),
+    };
+    match app.study_plan().await {
+        Ok(value) => Json(value).into_response(),
+        Err(e) => bank_error(e),
+    }
+}
+
+pub(super) async fn save_study_plan(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+    payload: Result<Json<StudyPlan>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
+        return response;
+    }
+    let payload = match decode_control_json(payload) {
+        Ok(value) => value,
+        Err(error) => return error.response(),
+    };
+    let app = match available(service) {
+        Ok(app) => app,
+        Err(e) => return bank_error(e),
+    };
+    match app.save_study_plan(payload).await {
+        Ok(value) => Json(value).into_response(),
+        Err(e) => bank_error(e),
+    }
+}
+
+pub(super) async fn study_plan_forecast(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+    axum::extract::Query(query): axum::extract::Query<PracticeCatalogQuery>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let app = match available(service) {
+        Ok(app) => app,
+        Err(e) => return bank_error(e),
+    };
+    let filters = ModulePracticeFilters {
+        year_min: query.year_min,
+        year_max: query.year_max,
+        regions: query
+            .regions
+            .unwrap_or_default()
+            .split(',')
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .collect(),
+        exclude_regions: query.exclude_regions.unwrap_or(false),
+        count: None,
+    };
+    match app.study_plan_forecast(&filters).await {
         Ok(value) => Json(value).into_response(),
         Err(e) => bank_error(e),
     }

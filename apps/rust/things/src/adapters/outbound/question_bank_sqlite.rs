@@ -2,13 +2,14 @@
 use crate::application::question_bank::document::structural_gradable;
 use crate::application::question_bank::{
     BankError, DailyAnsweredBreakdownRow, IndexedPaper, PaperContent, PracticeContent,
-    QuestionBankRepositoryPort, StoredQuestion,
+    QuestionBankRepositoryPort, StoredQuestion, StudyAnswerDay,
 };
 use crate::domain::question_bank::primary_module;
 use crate::domain::question_bank::{
     MaterialView, ModulePracticeFilters, PaperSummary, PracticeBrowseItem, PracticeCatalog,
     PracticeCategory, PracticeMode, PracticeModule, PracticeSession,
 };
+use crate::domain::question_bank::{StudyPlan, StudyPlanItem};
 use async_trait::async_trait;
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
@@ -782,6 +783,103 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         })
     }
 
+    async fn study_plan(&self) -> Result<StudyPlan, BankError> {
+        let enabled: Option<i64> =
+            sqlx::query_scalar("SELECT prediction_enabled FROM study_plan_settings WHERE id=1")
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|_| BankError::Storage)?;
+        let rows: Vec<(String, String)> =
+            sqlx::query_as("SELECT module,category FROM study_plan_items ORDER BY module,category")
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|_| BankError::Storage)?;
+        Ok(StudyPlan {
+            prediction_enabled: enabled.unwrap_or(1) != 0,
+            items: rows
+                .into_iter()
+                .map(|(module, category)| StudyPlanItem {
+                    module,
+                    category: (!category.is_empty()).then_some(category),
+                })
+                .collect(),
+        })
+    }
+
+    async fn save_study_plan(&self, plan: &StudyPlan) -> Result<(), BankError> {
+        let mut transaction = self.pool.begin().await.map_err(|_| BankError::Storage)?;
+        sqlx::query("UPDATE study_plan_settings SET prediction_enabled=? WHERE id=1")
+            .bind(i64::from(plan.prediction_enabled))
+            .execute(&mut *transaction)
+            .await
+            .map_err(|_| BankError::Storage)?;
+        sqlx::query("DELETE FROM study_plan_items")
+            .execute(&mut *transaction)
+            .await
+            .map_err(|_| BankError::Storage)?;
+        for item in &plan.items {
+            sqlx::query("INSERT INTO study_plan_items(module,category) VALUES(?,?)")
+                .bind(&item.module)
+                .bind(item.category.as_deref().unwrap_or(""))
+                .execute(&mut *transaction)
+                .await
+                .map_err(|_| BankError::Storage)?;
+        }
+        transaction.commit().await.map_err(|_| BankError::Storage)
+    }
+
+    async fn study_answered_days(
+        &self,
+        filters: &ModulePracticeFilters,
+        start_ms: i64,
+        end_ms: i64,
+    ) -> Result<Vec<StudyAnswerDay>, BankError> {
+        let regions = serde_json::to_string(&filters.regions).map_err(|_| BankError::Storage)?;
+        let rows = sqlx::query_as::<_, (String, String, String, i64)>(
+            "WITH eligible_papers AS MATERIALIZED (\
+             SELECT p.id FROM papers p \
+             WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' \
+             AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)>=?) \
+             AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)<=?) \
+             AND (?=0 OR (EXISTS (SELECT 1 FROM json_each(?) \
+                  WHERE value=json_extract(p.metadata,'$.summary.region'))) != (?)) \
+             LIMIT -1) \
+             SELECT date(a.submitted_at/1000.0,'unixepoch','+8 hours') AS day, \
+                    q.module, COALESCE(q.category,'') AS category, COUNT(*) AS answered \
+             FROM eligible_papers p \
+             JOIN questions q ON q.paper_id=p.id \
+             JOIN practice_attempts a ON a.question_id=q.id \
+             WHERE q.gradable=1 AND q.module IS NOT NULL \
+               AND a.submitted_at>=? AND a.submitted_at<? \
+               AND json_type(a.answer)='array' \
+               AND EXISTS (SELECT 1 FROM json_each(a.answer) choice \
+                 WHERE choice.type='text' \
+                   AND length(trim(choice.value, char(9)||char(10)||char(13)||' '))>0) \
+             GROUP BY day,q.module,category ORDER BY day",
+        )
+        .bind(filters.year_min)
+        .bind(filters.year_min)
+        .bind(filters.year_max)
+        .bind(filters.year_max)
+        .bind(i64::from(!filters.regions.is_empty()))
+        .bind(regions)
+        .bind(i64::from(filters.exclude_regions))
+        .bind(start_ms)
+        .bind(end_ms)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
+        Ok(rows
+            .into_iter()
+            .map(|(day, module, category, answered)| StudyAnswerDay {
+                day,
+                module,
+                category,
+                answered,
+            })
+            .collect())
+    }
+
     async fn practice_module_groups(
         &self,
         module: &str,
@@ -1223,6 +1321,6 @@ B
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        assert_eq!(applied, 5, "each version is applied exactly once");
+        assert_eq!(applied, 6, "each version is applied exactly once");
     }
 }
