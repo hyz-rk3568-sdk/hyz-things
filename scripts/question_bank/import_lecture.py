@@ -74,6 +74,7 @@ def parse_questions(lines):
             (index for index, line in enumerate(body) if re.match(r"^[A-F][.．]", line)),
             None,
         )
+        trailing = []
         if first_option is None:
             stem, options = body, []
         else:
@@ -84,9 +85,14 @@ def parse_questions(lines):
             if not line:
                 continue
             match = re.match(r"^([A-F])[.．]\s*(.*)$", line)
-            option_lines.append(
-                f"- {match.group(1)}. {match.group(2)}" if match else line
-            )
+            if match:
+                option_lines.append(f"- {match.group(1)}. {match.group(2)}")
+            else:
+                # Figures and figure captions that follow the options belong
+                # before the choices so the reader sees the diagram first.
+                trailing.append(line)
+        if trailing:
+            stem = stem + [""] + trailing
         paper["questions"].append(
             {
                 "number": question["number"],

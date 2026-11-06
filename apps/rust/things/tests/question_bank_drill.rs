@@ -192,6 +192,15 @@ fn lecture_collection_parses_with_all_522_questions_and_images() {
             "empty stem in {}",
             path.display()
         );
+        assert!(
+            document
+                .view()
+                .questions
+                .iter()
+                .all(|question| !question.options_markdown.contains("assets/")),
+            "figure left in options in {}",
+            path.display()
+        );
         total += document.view().questions.len();
         for reference in text.lines().filter_map(|line| {
             line.split("](../../assets/")
