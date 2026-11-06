@@ -13,6 +13,7 @@ test('drill collection practice keeps ungradable questions and reports separate 
   const collection=page.getByTestId('question-bank-drill-collection').filter({hasText:'小P 2026 数量关系讲义'});
   await expect(collection).toContainText('2 题');
   await collection.click();
+  await expect(page.getByTestId('question-bank-drill-estimate')).toHaveCount(0);
   await page.getByTestId('question-bank-drill-paper').filter({hasText:'方程关系'}).click();
   await page.getByTestId('question-bank-practice-start').click();
 
@@ -31,6 +32,9 @@ test('drill collection practice keeps ungradable questions and reports separate 
   }
   await page.getByTestId('question-bank-practice-number').nth(1).click();
   await expect(page.getByTestId('question-bank-practice-review-answer')).toContainText('暂无可靠答案');
+  const image=page.getByTestId('question-bank-practice-stem').locator('img');
+  await expect(image).toHaveAttribute('src','/api/v1/question-bank/assets/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png');
+  expect(await image.evaluate((node:HTMLImageElement)=>node.naturalWidth)).toBeGreaterThan(0);
   await page.getByTestId('training-answer-sheet-toggle').click();
 
   await page.getByTestId('question-bank-practice-records').click();
@@ -42,6 +46,7 @@ test('drill collection practice keeps ungradable questions and reports separate 
   await page.getByTestId('training-mode-statistics').click();
   await expect(page.getByTestId('drill-progress-card')).toContainText('小P 2026 数量关系讲义');
   await expect(page.getByTestId('drill-progress-card')).toContainText('已做 1/2 题');
+  await expect(page.getByTestId('drill-progress-card')).not.toContainText('预计');
 });
 
 test('exam paper list does not include drill collections',async({page})=>{

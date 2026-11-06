@@ -488,13 +488,8 @@ fn drill_progress_card() -> Html {
                                     {format!("已做 {}/{} 题 · 剩余 {} 题",collection.done,collection.questions,remaining)}
                                 </p>
                                 <p class="mt-1 text-xs opacity-55">
-                                    {if remaining==0 {
-                                        "合集已完成".to_string()
-                                    } else if let Some(date)=collection.finish_7.as_ref() {
-                                        format!("近 7 天 {} 题，按此速度预计 {} 完成",collection.answered_7,date)
-                                    } else {
-                                        "近 7 天暂无作答".to_string()
-                                    }}
+                                    {if remaining==0 { "合集已完成".to_string() }
+                                        else { format!("还剩 {remaining} 题") }}
                                 </p>
                             </div>
                         }

@@ -833,23 +833,10 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         })
     }
 
-    async fn drill_paper_stats(&self, since_ms: i64) -> Result<Vec<DrillPaperRow>, BankError> {
-        let rows = sqlx::query_as::<
-            _,
-            (
-                String,
-                String,
-                String,
-                String,
-                String,
-                i64,
-                i64,
-                i64,
-                i64,
-                i64,
-            ),
-        >(
-            "SELECT p.id, \
+    async fn drill_paper_stats(&self) -> Result<Vec<DrillPaperRow>, BankError> {
+        let rows =
+            sqlx::query_as::<_, (String, String, String, String, String, i64, i64, i64, i64)>(
+                "SELECT p.id, \
              json_extract(p.metadata,'$.summary.title'), \
              p.collection_id, p.collection_title, \
              COALESCE(MAX(q.module),''), \
@@ -861,23 +848,16 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                  AND EXISTS (SELECT 1 FROM json_each(a.answer) choice \
                    WHERE choice.type='text' \
                      AND length(trim(choice.value, char(9)||char(10)||char(13)||' '))>0)) \
-               THEN 1 ELSE 0 END),0), \
-             COALESCE(SUM((SELECT COUNT(*) FROM practice_attempts a \
-               WHERE a.question_id=q.id AND a.submitted_at>=? \
-                 AND json_type(a.answer)='array' \
-                 AND EXISTS (SELECT 1 FROM json_each(a.answer) choice \
-                   WHERE choice.type='text' \
-                     AND length(trim(choice.value, char(9)||char(10)||char(13)||' '))>0))),0) \
+               THEN 1 ELSE 0 END),0) \
              FROM papers p LEFT JOIN questions q ON q.paper_id=p.id \
              WHERE p.active=1 AND COALESCE(p.kind,'exam')='drill' \
                AND p.collection_id IS NOT NULL AND p.collection_title IS NOT NULL \
              GROUP BY p.id \
              ORDER BY p.collection_title, p.id",
-        )
-        .bind(since_ms)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|_| BankError::Storage)?;
+            )
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| BankError::Storage)?;
         Ok(rows
             .into_iter()
             .map(
@@ -891,7 +871,6 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                     questions,
                     gradable,
                     done,
-                    answered_7,
                 )| DrillPaperRow {
                     paper_id,
                     title,
@@ -902,7 +881,6 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                     questions: questions.max(0) as usize,
                     gradable: gradable.max(0) as usize,
                     done: done.max(0) as usize,
-                    answered_7: answered_7.max(0),
                 },
             )
             .collect())

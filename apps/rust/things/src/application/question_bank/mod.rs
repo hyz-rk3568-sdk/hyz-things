@@ -48,7 +48,6 @@ pub struct DrillPaperRow {
     pub questions: usize,
     pub gradable: usize,
     pub done: usize,
-    pub answered_7: i64,
 }
 
 /// One Beijing calendar day of submitted answers for a module category.
@@ -352,7 +351,7 @@ pub trait QuestionBankRepositoryPort: Send + Sync {
     }
     /// Drill collections grouped from indexed `kind=drill` papers. Each row is
     /// one topic paper; the application aggregates rows into collections.
-    async fn drill_paper_stats(&self, _since_ms: i64) -> Result<Vec<DrillPaperRow>, BankError> {
+    async fn drill_paper_stats(&self) -> Result<Vec<DrillPaperRow>, BankError> {
         Err(BankError::Unavailable)
     }
     async fn drill_question_ids(
@@ -658,6 +657,18 @@ pub struct SyncPlan {
     pub snapshot: BankSnapshot,
 }
 
+fn rewrite_content_assets(paper: &mut IndexedPaper) -> Result<(), BankError> {
+    let path = paper.path.clone();
+    for question in &mut paper.content.questions {
+        question.stem = images::rewrite_assets(&question.stem, &path)?.0;
+        question.options_markdown = images::rewrite_assets(&question.options_markdown, &path)?.0;
+    }
+    for material in &mut paper.content.materials {
+        material.markdown = images::rewrite_assets(&material.markdown, &path)?.0;
+    }
+    Ok(())
+}
+
 pub fn prepare_sync(
     files: Vec<SourceFile>,
     known: Vec<IndexedPaper>,
@@ -671,7 +682,8 @@ pub fn prepare_sync(
         let (after, count) =
             document::complete_ids(&file.text, &mut next).map_err(|_| BankError::Invalid)?;
         let doc = document::parse(&after).map_err(|_| BankError::Invalid)?;
-        let indexed = IndexedPaper::new(file.path.clone(), source_hash(after.as_bytes()), doc);
+        let mut indexed = IndexedPaper::new(file.path.clone(), source_hash(after.as_bytes()), doc);
+        rewrite_content_assets(&mut indexed)?;
         if let Some(old) = known
             .iter()
             .find(|old| old.path == file.path || old.summary.id == indexed.summary.id)

@@ -158,6 +158,9 @@ mod question_bank_markdown_tests {
         let legacy = question_bank_markdown_html(&format!("![](../../../assets/{hash}.png)"));
         assert!(legacy.contains(&format!("/api/v1/question-bank/assets/{hash}.png")));
         assert!(!legacy.contains("../../../assets"));
+        let nested = question_bank_markdown_html(&format!("![](../../assets/{hash}.jpg)"));
+        assert!(nested.contains(&format!("/api/v1/question-bank/assets/{hash}.jpg")));
+        assert!(!nested.contains("../../assets"));
         assert!(!question_bank_markdown_html(&format!(
             "![](https://example.com/assets/{hash}.png)"
         ))

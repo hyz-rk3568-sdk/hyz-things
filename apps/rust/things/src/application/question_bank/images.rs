@@ -19,6 +19,10 @@ pub fn asset_type(name: &str) -> Result<&'static str, BankError> {
     }
 }
 fn resolve_image(file: &str, reference: &str) -> Result<String, BankError> {
+    if let Some(name) = reference.strip_prefix("hyz-bank-asset:") {
+        asset_type(name)?;
+        return Ok(name.into());
+    }
     if reference.contains([':', '\\', '\0', '?', '#']) || reference.starts_with('/') {
         return Err(BankError::Invalid);
     }

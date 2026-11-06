@@ -177,7 +177,6 @@ pub struct DrillPaper {
     pub questions: usize,
     pub gradable: usize,
     pub done: usize,
-    pub answered_7: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -190,11 +189,6 @@ pub struct DrillCollection {
     pub questions: usize,
     pub gradable: usize,
     pub done: usize,
-    pub answered_7: i64,
-    #[serde(default)]
-    pub days_7: Option<i64>,
-    #[serde(default)]
-    pub finish_7: Option<String>,
     pub papers: Vec<DrillPaper>,
 }
 

@@ -345,10 +345,7 @@ impl QuestionBankApplication {
     /// reported independently from the exam forecast so lecture questions
     /// never change the remaining exam workload.
     pub async fn drill_collections(&self) -> Result<Vec<DrillCollection>, BankError> {
-        let offset = chrono::FixedOffset::east_opt(8 * 3600).unwrap();
-        let today = chrono::Utc::now().with_timezone(&offset).date_naive();
-        let since = beijing_day_start_ms(today - Duration::days(6));
-        let rows = self.repository.drill_paper_stats(since).await?;
+        let rows = self.repository.drill_paper_stats().await?;
         let mut grouped = BTreeMap::<String, Vec<DrillPaperRow>>::new();
         for row in rows {
             grouped
@@ -365,8 +362,6 @@ impl QuestionBankApplication {
                 let questions = rows.iter().map(|row| row.questions).sum::<usize>();
                 let gradable = rows.iter().map(|row| row.gradable).sum::<usize>();
                 let done = rows.iter().map(|row| row.done).sum::<usize>();
-                let answered_7 = rows.iter().map(|row| row.answered_7).sum::<i64>();
-                let days_7 = estimate_days(questions.saturating_sub(done) as i64, answered_7, 7);
                 let module = rows.iter().find_map(|row| row.module.clone());
                 Some(DrillCollection {
                     id,
@@ -376,9 +371,6 @@ impl QuestionBankApplication {
                     questions,
                     gradable,
                     done,
-                    answered_7,
-                    days_7,
-                    finish_7: finish_date(today, days_7),
                     papers: rows
                         .into_iter()
                         .map(|row| DrillPaper {
@@ -387,7 +379,6 @@ impl QuestionBankApplication {
                             questions: row.questions,
                             gradable: row.gradable,
                             done: row.done,
-                            answered_7: row.answered_7,
                         })
                         .collect(),
                 })
@@ -646,7 +637,7 @@ impl QuestionBankApplication {
         let (collection_id, collection_title, drill_module) = if request.mode == PracticeMode::Drill
         {
             let collection = request.collection_id.clone();
-            let rows = self.repository.drill_paper_stats(0).await?;
+            let rows = self.repository.drill_paper_stats().await?;
             let row = rows
                 .iter()
                 .find(|row| {

@@ -245,6 +245,9 @@ category: 方程关系
 ```
 ### Stem
 专项样卷第二题，暂无答案。
+
+![配图](../../assets/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png)
+
 ### Options
 - A. 甲
 - B. 乙
@@ -253,6 +256,13 @@ category: 方程关系
 ### Answer
 
 "#;
+
+const E2E_IMAGE_NAME: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png";
+const E2E_IMAGE: &[u8] = &[
+    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 4, 0,
+    0, 0, 181, 28, 12, 2, 0, 0, 0, 11, 73, 68, 65, 84, 120, 218, 99, 100, 248, 15, 0, 1, 5, 1, 1,
+    39, 24, 227, 102, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+];
 
 struct QuestionBankFixture;
 
@@ -300,7 +310,13 @@ impl QuestionBankSourcePort for QuestionBankFixture {
         };
         document::parse(markdown).map_err(|_| BankError::Invalid)
     }
-    async fn asset(&self, _name: String) -> Result<BankAsset, BankError> {
+    async fn asset(&self, name: String) -> Result<BankAsset, BankError> {
+        if name == E2E_IMAGE_NAME {
+            return Ok(BankAsset {
+                contents: E2E_IMAGE.to_vec(),
+                content_type: "image/png",
+            });
+        }
         Err(BankError::NotFound)
     }
 }

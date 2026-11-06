@@ -2626,26 +2626,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                                 })}/>
                                         }
                                     })}
-                                    if selected {
-                                        <p class="mt-2 text-xs text-base-content/55" data-testid="question-bank-drill-estimate">
-                                            {if collection.questions == 0 {
-                                                "这个合集还没有题目".to_string()
-                                            } else if collection.done >= collection.questions {
-                                                "合集已完成".to_string()
-                                            } else {
-                                                match collection.finish_7.as_ref() {
-                                                    Some(date) => format!(
-                                                        "近 7 天 {} 题，按此速度预计 {} 完成",
-                                                        collection.answered_7, date
-                                                    ),
-                                                    None => format!(
-                                                        "还剩 {} 题，近 7 天暂无作答",
-                                                        collection.questions.saturating_sub(collection.done)
-                                                    ),
-                                                }
-                                            }}
-                                        </p>
-                                    }
                                 </QuestionBankModuleCard>
                             }
                         })}

@@ -202,6 +202,48 @@ fn lecture_collection_parses_with_all_522_questions_and_images() {
 }
 
 #[test]
+fn prepared_sync_stores_canonical_asset_tokens() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../question_bank/collections/xiaop-2026-shuliang");
+    let path = "collections/xiaop-2026-shuliang/06-行程问题（二）.md";
+    let text = std::fs::read_to_string(root.join("06-行程问题（二）.md")).unwrap();
+    let plan = hyz_things::application::question_bank::prepare_sync(
+        vec![hyz_things::application::question_bank::SourceFile {
+            path: path.into(),
+            text,
+        }],
+        Vec::new(),
+        || unreachable!("all ids are present"),
+    )
+    .unwrap();
+    let stem = &plan.snapshot.papers[0]
+        .content
+        .questions
+        .iter()
+        .find(|question| question.number == 146)
+        .unwrap()
+        .stem;
+    assert!(stem.contains("hyz-bank-asset:"));
+    assert!(!stem.contains("../../assets/"));
+}
+
+#[test]
+fn lecture_image_references_rewrite_from_the_nested_collection_path() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../question_bank/collections/xiaop-2026-shuliang");
+    let path = root.join("06-行程问题（二）.md");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let (rewritten, references) = hyz_things::application::question_bank::images::rewrite_assets(
+        &text,
+        "collections/xiaop-2026-shuliang/06-行程问题（二）.md",
+    )
+    .unwrap();
+    assert_eq!(references.len(), 1);
+    assert!(references[0].ends_with(".jpg"));
+    assert!(rewritten.contains(&format!("hyz-bank-asset:{}", references[0])));
+}
+
+#[test]
 fn drill_header_requires_a_collection() {
     let invalid = DRILL.replace("collection_id: xiaop-2026-shuliang\n", "");
     assert!(parse(&invalid).is_err());
