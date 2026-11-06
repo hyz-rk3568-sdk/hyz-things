@@ -71,7 +71,7 @@ def parse_questions(lines):
         while body and not body[-1].strip():
             body.pop()
         first_option = next(
-            (index for index, line in enumerate(body) if re.match(r"^[A-F][.．、]", line)),
+            (index for index, line in enumerate(body) if re.match(r"^[A-F][.．]", line)),
             None,
         )
         if first_option is None:
@@ -83,7 +83,7 @@ def parse_questions(lines):
             line = line.strip()
             if not line:
                 continue
-            match = re.match(r"^([A-F])[.．、]\s*(.*)$", line)
+            match = re.match(r"^([A-F])[.．]\s*(.*)$", line)
             option_lines.append(
                 f"- {match.group(1)}. {match.group(2)}" if match else line
             )

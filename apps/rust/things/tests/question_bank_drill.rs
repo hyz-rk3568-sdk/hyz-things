@@ -183,6 +183,15 @@ fn lecture_collection_parses_with_all_522_questions_and_images() {
             document.view().collection_id.as_deref(),
             Some("xiaop-2026-shuliang")
         );
+        assert!(
+            document
+                .view()
+                .questions
+                .iter()
+                .all(|question| !question.stem.trim().is_empty()),
+            "empty stem in {}",
+            path.display()
+        );
         total += document.view().questions.len();
         for reference in text.lines().filter_map(|line| {
             line.split("](../../assets/")
