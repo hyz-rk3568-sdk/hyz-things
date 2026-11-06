@@ -163,17 +163,13 @@ impl QuantitativeRelationsService {
 }
 
 fn eligible_path(path: &str) -> Option<&'static str> {
-    use crate::domain::favorite_flashcard::{resolve_target, FlashcardCreationMode};
+    // Only these 3 curated 用户整理 source decks (and their 错题 decks) feed AI generation.
+    // Legacy 11 decks, unregistered subcategories and 真题练习 are excluded.
     let relative = path.strip_prefix("flashcards/").unwrap_or(path);
-    // AI question generation reads curated 用户整理 cards, never 真题练习.
-    if relative.starts_with("真题练习/") {
-        return None;
-    }
-    let relative = relative.strip_prefix("用户整理/").unwrap_or(relative);
-    let deck = relative.strip_suffix("/cards.md")?;
-    let target = resolve_target(deck).or_else(|| resolve_target(&format!("{deck}/错题")))?;
-    (target.mode == FlashcardCreationMode::UserOrganized && target.module == "数量关系")
-        .then_some("quantitative")
+    let deck = relative.strip_prefix("用户整理/数量关系/")?.strip_suffix("/cards.md")?;
+    let group = deck.strip_suffix("/错题").unwrap_or(deck);
+    const GROUPS: [&str; 3] = ["方程比例与应用", "计数概率与最值", "几何数推与特殊题"];
+    GROUPS.contains(&group).then_some("quantitative")
 }
 
 pub const DEFAULT_USER_PROMPT: &str = "题目接近国考、省考数量关系风格，难度中等偏上，条件与数字自然；干扰选项合理，优先考查方法迁移和快速计算，避免机械换数字，解析简洁。";
@@ -867,9 +863,9 @@ impl QuantitativeGenerationPort for CodexConfig {
             .join("\n\n");
         let prompt = format!(
             r#"【固定规则 / 应用端约束】
-你是 hyz 行测数量关系命题 Agent。先阅读仓库 .agents/skills/行测做题/SKILL.md 和 .agents/skills/行测做题/references/数量关系.md；按目标题型查阅同目录的数量关系-方程比例与应用.md、数量关系-计数概率与最值.md 和 数量关系-实战验题与输出.md，并优先结合真实存在的个人 Flashcard 方法卡。
+你是 hyz 行测数量关系命题 Agent。先阅读仓库 .agents/skills/行测做题/SKILL.md 和 .agents/skills/行测做题/references/数量关系.md；根据目标题型阅读同目录中的 数量关系-方程比例与应用.md、数量关系-计数概率与最值.md、数量关系-几何数推与特殊题.md，必要时阅读 数量关系-实战验题与输出.md。只有来自 用户整理/数量关系/方程比例与应用、计数概率与最值、几何数推与特殊题 下的已同步 cards.md 或 错题/cards.md 可作为本轮命题目标。
 根据后端指定的已同步 Flashcard 命题，生成恰好10道原创四选一独立题，每张卡片恰好对应一道，target_id 不可更换和复用，kind 固定 quantitative。
-只涵盖经济利润、工程效率、行程、溶液、最值、排列组合、概率、周期；排除几何、特殊题型、数字推理与共享材料题。题干只陈述独立完整的已知条件，不泄露思路、公式、答案。
+覆盖三类方法对应的方程、比例、利润、工程、行程、溶液、计数、概率、最值、周期、几何、数字推理及特殊题型，但每题必须紧扣对应卡片的实际考点。只出文字条件充分、无需附图或共享材料的四选一独立题；几何题不能依赖未提供的图形。题干只陈述已知条件，不泄露思路、公式、答案。
 遵循资料分析已验证的命题责任分工：应用只检验结构、题量、选项、目标唯一性，数学正确性和语义唯一性由 Codex 自检。
 
 【本轮动态上下文】
@@ -963,57 +959,32 @@ impl crate::application::quantitative_relations::QuantitativeRelationsPort
 mod quantitative_tests {
     use super::*;
     #[test]
-    fn quantitative_pool_is_exactly_eleven_method_and_favorite_decks() {
+    fn quantitative_pool_uses_only_three_canonical_method_decks() {
+        for group in ["方程比例与应用", "计数概率与最值", "几何数推与特殊题"] {
+            for prefix in ["", "flashcards/"] {
+                let source = format!("{prefix}用户整理/数量关系/{group}/cards.md");
+                let wrong = format!("{prefix}用户整理/数量关系/{group}/错题/cards.md");
+                assert_eq!(eligible_path(&source), Some("quantitative"));
+                assert_eq!(eligible_path(&wrong), Some("quantitative"));
+            }
+        }
         for path in [
             "数量/经济利润/cards.md",
-            "数量/工程效率/cards.md",
-            "数量/行程/相对运动/cards.md",
-            "数量/行程/综合应用/cards.md",
-            "数量/溶液/cards.md",
-            "数量/最值/cards.md",
-            "数量/排列组合/基础/cards.md",
-            "数量/排列组合/插空与同素分堆/cards.md",
-            "数量/排列组合/特殊套路/cards.md",
-            "数量/概率/cards.md",
-            "数量/周期/cards.md",
-        ] {
-            assert_eq!(eligible_path(path), Some("quantitative"));
-            let favorite = path.replace("/cards.md", "/错题/cards.md");
-            assert_eq!(eligible_path(&favorite), Some("quantitative"));
-            let category = path
-                .strip_prefix("数量/")
-                .unwrap()
-                .strip_suffix("/cards.md")
-                .unwrap();
-            let ai = format!("用户整理/数量关系/{category}/错题/cards.md");
-            assert_eq!(eligible_path(&ai), Some("quantitative"));
-            assert_eq!(
-                eligible_path(&format!("用户整理/{path}")),
-                Some("quantitative")
-            );
-            let default = format!("真题练习/数量关系/{category}/错题/cards.md");
-            assert_eq!(eligible_path(&default), None);
-            assert_eq!(
-                eligible_path(&format!("flashcards/{favorite}")),
-                Some("quantitative")
-            );
-            assert_eq!(
-                eligible_path(&favorite.replace("/cards.md", "/extra/cards.md")),
-                None
-            );
-        }
-        for path in [
+            "用户整理/数量关系/经济利润/cards.md",
+            "用户整理/数量关系/工程效率/错题/cards.md",
+            "用户整理/数量关系/排列组合/特殊套路/错题/cards.md",
+            "用户整理/数量关系/概率/cards.md",
+            "用户整理/数量关系/几何数推与特殊题/额外/cards.md",
+            "用户整理/数量关系/方程比例与应用/错题/错题/cards.md",
+            "真题练习/数量关系/方程比例与应用/错题/cards.md",
             "判断/形式推理/直言命题/cards.md",
-            "数量/几何/cards.md",
-            "数量/错题/cards.md",
-            "数量/几何/错题/cards.md",
-            "数量/概率/错题/card.md",
-            "数量/概率/错题/错题/cards.md",
-            "真题练习/数量关系/概率/错题/cards.md",
+            "用户整理/资料分析/方程比例与应用/cards.md",
+            "用户整理/数量关系/几何数推与特殊题/card.md",
         ] {
-            assert_eq!(eligible_path(path), None);
+            assert_eq!(eligible_path(path), None, "{path}");
         }
     }
+
 }
 
 #[cfg(test)]
@@ -1060,7 +1031,7 @@ mod favorite_metadata_tests {
         for i in 0..QUIZ_QUESTIONS {
             sqlx::query("INSERT INTO flashcards(id,source_file,source_order,deck_path,front_markdown,back_markdown,source_hash,correct_answer,active,created_at_ms,updated_at_ms) VALUES(?,?,0,'deck','Question','-','hash','[\"B\"]',1,0,0)")
                 .bind(format!("00000000-0000-7000-8000-{i:012}"))
-                .bind("数量/工程效率/错题/cards.md").execute(&pool).await.unwrap();
+                .bind(format!("用户整理/数量关系/{}/cards.md", ["方程比例与应用", "计数概率与最值", "几何数推与特殊题"][i % 3])).execute(&pool).await.unwrap();
         }
         let service =
             QuantitativeRelationsService::with_generator(pool, Some(Arc::new(AnswerContext)));
