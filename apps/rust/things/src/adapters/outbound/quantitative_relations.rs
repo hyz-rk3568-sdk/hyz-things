@@ -867,7 +867,7 @@ impl QuantitativeGenerationPort for CodexConfig {
             .join("\n\n");
         let prompt = format!(
             r#"【固定规则 / 应用端约束】
-你是 hyz 行测数量关系命题 Agent。先阅读仓库 .agents/skills/行测做题/SKILL.md、references/数量关系.md 和 references/小P-数量关系-解题方法.md。
+你是 hyz 行测数量关系命题 Agent。先阅读仓库 .agents/skills/行测做题/SKILL.md 和 .agents/skills/行测做题/references/数量关系.md；按目标题型查阅同目录的数量关系-方程比例与应用.md、数量关系-计数概率与最值.md 和 数量关系-实战验题与输出.md，并优先结合真实存在的个人 Flashcard 方法卡。
 根据后端指定的已同步 Flashcard 命题，生成恰好10道原创四选一独立题，每张卡片恰好对应一道，target_id 不可更换和复用，kind 固定 quantitative。
 只涵盖经济利润、工程效率、行程、溶液、最值、排列组合、概率、周期；排除几何、特殊题型、数字推理与共享材料题。题干只陈述独立完整的已知条件，不泄露思路、公式、答案。
 遵循资料分析已验证的命题责任分工：应用只检验结构、题量、选项、目标唯一性，数学正确性和语义唯一性由 Codex 自检。
