@@ -1474,7 +1474,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(cards_root.join("资料分析"))?;
     fs::create_dir_all(cards_root.join("用户整理/资料分析/增长率"))?;
     fs::create_dir_all(cards_root.join("用户整理/资料分析/分数比较大小"))?;
-    fs::create_dir_all(cards_root.join("用户整理/数量关系/工程效率"))?;
+    fs::create_dir_all(cards_root.join("用户整理/数量关系/方程比例与应用"))?;
     fs::write(
         cards_root.join("判断推理/逻辑判断/cards.md"),
         "---\ntags:\n  - 基础\n---\n\n## Card\n<!-- hyz-card-id: 019a31b7-8c42-7c16-a6d1-0c1f0f34c821 -->\n<!-- tags: 错题, 高频 -->\n\n### Front\n\n因果倒置是什么？\n\n### Back\n\n把原因和结果的方向混淆。\n\n---\n\n## Card\n<!-- hyz-card-id: 019a31b7-8c42-7c16-a6d1-0c1f0f34c822 -->\n<!-- tags: 错题 -->\n\n### Front\n\n另有他因如何削弱？\n\n### Back\n\n结果可能由第三因素产生。\n",

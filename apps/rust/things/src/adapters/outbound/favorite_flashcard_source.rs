@@ -876,11 +876,11 @@ mod tests {
     #[tokio::test]
     async fn same_question_can_be_saved_once_in_each_parallel_mode() {
         let fixture = Fixture::new();
-        fs::create_dir_all(fixture.root.join("用户整理/数量关系/工程效率")).unwrap();
+        fs::create_dir_all(fixture.root.join("用户整理/数量关系/方程比例与应用")).unwrap();
         let writer: Arc<dyn FavoriteFlashcardWriterPort> = Arc::new(fixture.writer());
         let ai = card();
         let mut normal = ai.clone();
-        normal.target_deck = "用户整理/数量关系/工程效率/错题".into();
+        normal.target_deck = "用户整理/数量关系/方程比例与应用/错题".into();
         let ai_result = writer.append(ai.clone()).await.unwrap();
         let normal_result = writer.append(normal.clone()).await.unwrap();
         assert!(ai_result.appended);
@@ -891,7 +891,7 @@ mod tests {
         );
         assert_eq!(
             normal_result.relative_path,
-            "用户整理/数量关系/工程效率/错题/cards.md"
+            "用户整理/数量关系/方程比例与应用/错题/cards.md"
         );
         assert!(!writer.append(ai).await.unwrap().appended);
         assert!(!writer.append(normal).await.unwrap().appended);
