@@ -63,6 +63,7 @@ fn module_request(region: &str, count: usize) -> CreatePracticeRequest {
         paper_id: None,
         module: Some("常识判断".into()),
         category: None,
+        collection_id: None,
         filters: ModulePracticeFilters {
             regions: vec![region.into()],
             count: Some(count),

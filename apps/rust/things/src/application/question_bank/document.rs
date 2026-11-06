@@ -14,10 +14,26 @@ struct Header {
     variant: String,
     #[serde(default = "primary")]
     role: String,
+    #[serde(default = "exam_kind")]
+    kind: String,
+    #[serde(default)]
+    collection_id: Option<String>,
+    #[serde(default)]
+    collection_title: Option<String>,
 }
 // This parser never treats source numbering as a stable identity.
 fn primary() -> String {
     "primary".into()
+}
+fn exam_kind() -> String {
+    crate::domain::question_bank::PAPER_KIND_EXAM.into()
+}
+fn valid_collection_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
 }
 
 #[derive(Default, Deserialize)]
@@ -102,6 +118,9 @@ impl Document {
             region: v.region.clone(),
             variant: v.variant.clone(),
             role: v.role.clone(),
+            kind: v.kind.clone(),
+            collection_id: v.collection_id.clone(),
+            collection_title: v.collection_title.clone(),
             questions: v.questions.len(),
         }
     }
@@ -166,6 +185,33 @@ fn parse_inner(text: &str, required: bool) -> Result<Document> {
     let header: Header = serde_yaml::from_str(header).map_err(|_| "invalid paper YAML")?;
     if header.schema != "hyz-paper/v1" || !["primary", "evidence"].contains(&header.role.as_str()) {
         return Err("unsupported paper schema/role".into());
+    }
+    match header.kind.as_str() {
+        crate::domain::question_bank::PAPER_KIND_EXAM => {
+            if header.collection_id.is_some() || header.collection_title.is_some() {
+                return Err("exam paper cannot declare a collection".into());
+            }
+        }
+        crate::domain::question_bank::PAPER_KIND_DRILL => {
+            let id = header
+                .collection_id
+                .as_deref()
+                .ok_or("missing collection id")?;
+            if !valid_collection_id(id) {
+                return Err("invalid collection id".into());
+            }
+            if header
+                .collection_title
+                .as_deref()
+                .is_none_or(|title| title.trim().is_empty() || title.len() > 128)
+            {
+                return Err("invalid collection title".into());
+            }
+            if header.role != "primary" {
+                return Err("drill paper must be primary".into());
+            }
+        }
+        _ => return Err("unsupported paper kind".into()),
     }
     let mut blocks: Vec<(String, String)> = vec![(String::new(), String::new())];
     let mut fenced = false;
@@ -280,6 +326,9 @@ fn parse_inner(text: &str, required: bool) -> Result<Document> {
             region: header.region,
             variant: header.variant,
             role: header.role,
+            kind: header.kind,
+            collection_id: header.collection_id,
+            collection_title: header.collection_title,
             questions,
             materials,
         },

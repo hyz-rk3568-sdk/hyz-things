@@ -118,6 +118,7 @@ async fn module_progress_shares_answers_across_filtered_paper_versions() {
             paper_id: Some("019a3d8c-7f23-7b6e-927d-3c951851d3a3".into()),
             module: None,
             category: None,
+            collection_id: None,
             filters: Default::default(),
         })
         .await
@@ -149,6 +150,7 @@ async fn module_practice_selects_one_version_of_identical_questions() {
             paper_id: None,
             module: Some("常识判断".into()),
             category: None,
+            collection_id: None,
             filters: ModulePracticeFilters {
                 count: Some(10),
                 ..Default::default()
@@ -232,6 +234,7 @@ async fn duplicate_material_blocks_keep_one_complete_paper_group() {
             paper_id: None,
             module: Some("资料分析".into()),
             category: None,
+            collection_id: None,
             filters: ModulePracticeFilters {
                 count: Some(10),
                 ..Default::default()
@@ -260,6 +263,7 @@ async fn repeated_questions_within_material_group_are_not_all_discarded() {
             paper_id: None,
             module: Some("资料分析".into()),
             category: None,
+            collection_id: None,
             filters: ModulePracticeFilters {
                 count: Some(10),
                 ..Default::default()
@@ -285,6 +289,7 @@ async fn resync_keeps_progress_and_paper_history() {
             paper_id: Some("019a3d8c-7f23-7b6e-927d-3c951851d3a2".into()),
             module: None,
             category: None,
+            collection_id: None,
             filters: Default::default(),
         })
         .await
@@ -353,6 +358,7 @@ async fn partially_overlapping_material_groups_keep_unique_questions() {
             paper_id: None,
             module: Some("资料分析".into()),
             category: None,
+            collection_id: None,
             filters: ModulePracticeFilters {
                 count: Some(10),
                 ..Default::default()
@@ -395,6 +401,7 @@ async fn module_progress_includes_history_from_inactive_equivalent_papers() {
             paper_id: Some("019a3d8c-7f23-7b6e-927d-3c951851d3a3".into()),
             module: None,
             category: None,
+            collection_id: None,
             filters: Default::default(),
         })
         .await

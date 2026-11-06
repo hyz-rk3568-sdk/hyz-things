@@ -1,13 +1,14 @@
 //! Question Bank practice use cases. Never return answer keys before submission.
 use super::{
-    document::valid_id, BankError, IndexedPaper, PaperContent, PracticeContent,
+    document::valid_id, BankError, DrillPaperRow, IndexedPaper, PaperContent, PracticeContent,
     QuestionBankApplication, StudyAnswerDay,
 };
 use crate::domain::question_bank::{
-    primary_module, CreatePracticeRequest, FavoriteState, ModulePracticeFilters, PaperModule,
-    PaperModules, PracticeBrowseItem, PracticeCatalog, PracticeItem, PracticeMode,
-    PracticeQuestion, PracticeQuestionDetail, PracticeReview, PracticeScore, PracticeSession,
-    PracticeWorkspace, ReviewQuestion, StudyPlan, StudyPlanForecast, StudyPlanForecastItem,
+    primary_module, CreatePracticeRequest, DrillCollection, DrillPaper, FavoriteState,
+    ModulePracticeFilters, PaperModule, PaperModules, PracticeBrowseItem, PracticeCatalog,
+    PracticeItem, PracticeMode, PracticeQuestion, PracticeQuestionDetail, PracticeReview,
+    PracticeScore, PracticeSession, PracticeWorkspace, ReviewQuestion, StudyPlan,
+    StudyPlanForecast, StudyPlanForecastItem,
 };
 use chrono::{Datelike, Duration, NaiveDate};
 use std::collections::{BTreeMap, BTreeSet};
@@ -99,6 +100,14 @@ fn normalize_study_plan(mut plan: StudyPlan) -> Result<StudyPlan, BankError> {
     });
     plan.items = normalized;
     Ok(plan)
+}
+
+fn valid_collection_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
 }
 
 fn beijing_day_start_ms(date: NaiveDate) -> i64 {
@@ -332,6 +341,60 @@ impl QuestionBankApplication {
         self.repository.practice_catalog(filters).await
     }
 
+    /// Drill collections are separate source libraries. Their progress is
+    /// reported independently from the exam forecast so lecture questions
+    /// never change the remaining exam workload.
+    pub async fn drill_collections(&self) -> Result<Vec<DrillCollection>, BankError> {
+        let offset = chrono::FixedOffset::east_opt(8 * 3600).unwrap();
+        let today = chrono::Utc::now().with_timezone(&offset).date_naive();
+        let since = beijing_day_start_ms(today - Duration::days(6));
+        let rows = self.repository.drill_paper_stats(since).await?;
+        let mut grouped = BTreeMap::<String, Vec<DrillPaperRow>>::new();
+        for row in rows {
+            grouped
+                .entry(row.collection_id.clone())
+                .or_default()
+                .push(row);
+        }
+        Ok(grouped
+            .into_iter()
+            .filter_map(|(id, rows)| {
+                let first = rows.first()?;
+                let title = first.collection_title.clone();
+                let year = first.year;
+                let questions = rows.iter().map(|row| row.questions).sum::<usize>();
+                let gradable = rows.iter().map(|row| row.gradable).sum::<usize>();
+                let done = rows.iter().map(|row| row.done).sum::<usize>();
+                let answered_7 = rows.iter().map(|row| row.answered_7).sum::<i64>();
+                let days_7 = estimate_days(questions.saturating_sub(done) as i64, answered_7, 7);
+                let module = rows.iter().find_map(|row| row.module.clone());
+                Some(DrillCollection {
+                    id,
+                    title,
+                    module,
+                    year,
+                    questions,
+                    gradable,
+                    done,
+                    answered_7,
+                    days_7,
+                    finish_7: finish_date(today, days_7),
+                    papers: rows
+                        .into_iter()
+                        .map(|row| DrillPaper {
+                            paper_id: row.paper_id,
+                            title: row.title,
+                            questions: row.questions,
+                            gradable: row.gradable,
+                            done: row.done,
+                            answered_7: row.answered_7,
+                        })
+                        .collect(),
+                })
+            })
+            .collect())
+    }
+
     pub async fn module_settings(&self) -> Result<ModulePracticeFilters, BankError> {
         self.repository.module_settings().await
     }
@@ -384,7 +447,7 @@ impl QuestionBankApplication {
         filters: &ModulePracticeFilters,
     ) -> Result<Vec<PracticeBrowseItem>, BankError> {
         validate_filters(filters)?;
-        if matches!(mode, PracticeMode::PaperModule)
+        if matches!(mode, PracticeMode::PaperModule | PracticeMode::Drill)
             || matches!(mode, PracticeMode::Paper)
                 && (paper_id.is_none() || module.is_some() || category.is_some())
             || matches!(mode, PracticeMode::Module) && (paper_id.is_some() || module.is_none())
@@ -469,6 +532,18 @@ impl QuestionBankApplication {
                     None => None,
                 }
             }
+            PracticeMode::Drill => {
+                let collection = request.collection_id.as_deref().ok_or(BankError::Invalid)?;
+                if !valid_collection_id(collection)
+                    || request.paper_id.as_ref().is_some_and(|id| !valid_id(id))
+                    || request.module.is_some()
+                    || request.category.is_some()
+                    || request.filters != ModulePracticeFilters::default()
+                {
+                    return Err(BankError::Invalid);
+                }
+                None
+            }
         };
         let selected_order = match request.mode {
             PracticeMode::Module => {
@@ -507,12 +582,23 @@ impl QuestionBankApplication {
                 .take(request.filters.count.unwrap_or(20))
                 .map(|item| item.question_id)
                 .collect(),
+            PracticeMode::Drill => {
+                self.repository
+                    .drill_question_ids(
+                        request.collection_id.as_deref().ok_or(BankError::Invalid)?,
+                        request.paper_id.as_deref(),
+                    )
+                    .await?
+            }
             _ => Vec::new(),
         };
         let mut items = Vec::new();
         if matches!(
             request.mode,
-            PracticeMode::Module | PracticeMode::Wrong | PracticeMode::Favorite
+            PracticeMode::Module
+                | PracticeMode::Wrong
+                | PracticeMode::Favorite
+                | PracticeMode::Drill
         ) {
             let contents = self
                 .repository
@@ -526,7 +612,9 @@ impl QuestionBankApplication {
                     .get(id)
                     .filter(|content| content.active)
                     .ok_or(BankError::Unavailable)?;
-                if !content.question.gradable {
+                if !content.question.gradable
+                    && !matches!(request.mode, PracticeMode::Drill | PracticeMode::Favorite)
+                {
                     continue;
                 }
                 items.push(practice_item(
@@ -555,13 +643,37 @@ impl QuestionBankApplication {
         if items.is_empty() {
             return Err(BankError::NotFound);
         }
+        let (collection_id, collection_title, drill_module) = if request.mode == PracticeMode::Drill
+        {
+            let collection = request.collection_id.clone();
+            let rows = self.repository.drill_paper_stats(0).await?;
+            let row = rows
+                .iter()
+                .find(|row| {
+                    Some(row.collection_id.as_str()) == collection.as_deref()
+                        && request
+                            .paper_id
+                            .as_deref()
+                            .is_none_or(|paper_id| row.paper_id == paper_id)
+                })
+                .ok_or(BankError::NotFound)?;
+            (
+                collection,
+                Some(row.collection_title.clone()),
+                row.module.clone(),
+            )
+        } else {
+            (None, None, None)
+        };
         let timestamp = now();
         let session = PracticeSession {
             id: uuid::Uuid::now_v7().to_string(),
             mode: request.mode,
             paper_id: request.paper_id,
-            module,
+            module: module.or(drill_module),
             category: request.category,
+            collection_id,
+            collection_title,
             status: "active".into(),
             created_at: timestamp,
             updated_at: timestamp,
@@ -854,6 +966,8 @@ impl QuestionBankApplication {
             paper_id: source.paper_id,
             module: source.module,
             category: source.category,
+            collection_id: source.collection_id,
+            collection_title: source.collection_title,
             status: "active".into(),
             created_at: timestamp,
             updated_at: timestamp,
@@ -1055,6 +1169,9 @@ mod tests {
                 region: "国考".into(),
                 variant: "统考".into(),
                 role: "primary".into(),
+                kind: "exam".into(),
+                collection_id: None,
+                collection_title: None,
                 questions: 3,
             },
             path: "papers/a.md".into(),

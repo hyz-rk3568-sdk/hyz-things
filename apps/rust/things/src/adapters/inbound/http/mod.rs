@@ -750,6 +750,10 @@ fn app_with_assets(
             on(MethodFilter::GET, question_bank::practice_catalog),
         )
         .route(
+            "/api/v1/question-bank/collections",
+            on(MethodFilter::GET, question_bank::drill_collections),
+        )
+        .route(
             "/api/v1/question-bank/practice/questions",
             on(MethodFilter::GET, question_bank::practice_browse),
         )

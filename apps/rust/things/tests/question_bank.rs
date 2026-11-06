@@ -727,6 +727,7 @@ async fn practice_from_original_paper_is_persistent_private_and_idempotent() {
             paper_id: Some(paper_id.into()),
             module: Some("资料分析".into()),
             category: None,
+            collection_id: None,
             filters: Default::default(),
         })
         .await
@@ -767,6 +768,7 @@ async fn practice_from_original_paper_is_persistent_private_and_idempotent() {
             paper_id: None,
             module: None,
             category: None,
+            collection_id: None,
             filters: Default::default(),
         })
         .await
@@ -790,6 +792,7 @@ async fn practice_from_original_paper_is_persistent_private_and_idempotent() {
             paper_id: None,
             module: None,
             category: None,
+            collection_id: None,
             filters: Default::default(),
         })
         .await,
@@ -804,6 +807,7 @@ async fn practice_from_original_paper_is_persistent_private_and_idempotent() {
             paper_id: None,
             module: None,
             category: None,
+            collection_id: None,
             filters: Default::default(),
         })
         .await
@@ -941,6 +945,7 @@ async fn indexed_module_and_category_drills_keep_original_sources() {
             paper_id: None,
             module: Some("资料分析".into()),
             category: Some("比重".into()),
+            collection_id: None,
             filters: Default::default(),
         })
         .await
@@ -980,6 +985,7 @@ async fn indexed_module_and_category_drills_keep_original_sources() {
             paper_id: None,
             module: Some("资料分析".into()),
             category: None,
+            collection_id: None,
             filters: Default::default(),
         })
         .await,
@@ -991,6 +997,7 @@ async fn indexed_module_and_category_drills_keep_original_sources() {
             paper_id: None,
             module: Some("资料分析".into()),
             category: Some("不存在的题型".into()),
+            collection_id: None,
             filters: Default::default(),
         })
         .await,
@@ -1002,6 +1009,7 @@ async fn indexed_module_and_category_drills_keep_original_sources() {
             paper_id: Some("019a3d8c-7f23-7b6e-927d-3c951851d3a2".into()),
             module: Some("资料分析".into()),
             category: None,
+            collection_id: None,
             filters: Default::default(),
         })
         .await,
@@ -1054,6 +1062,7 @@ async fn synced_question_content_is_served_from_sqlite_without_markdown_reloads(
             paper_id: Some("019a3d8c-7f23-7b6e-927d-3c951851d3a2".into()),
             module: None,
             category: None,
+            collection_id: None,
             filters: Default::default(),
         })
         .await
@@ -1373,6 +1382,7 @@ async fn data_version_tracks_training_writes_and_new_application_epoch() {
             paper_id: Some("019a3d8c-7f23-7b6e-927d-3c951851d3a2".into()),
             module: None,
             category: None,
+            collection_id: None,
             filters: Default::default(),
         })
         .await

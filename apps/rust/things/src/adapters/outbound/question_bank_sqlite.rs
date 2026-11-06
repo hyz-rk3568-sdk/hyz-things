@@ -1,8 +1,8 @@
 //! Runtime question content in SQLite, populated by explicit Markdown import.
 use crate::application::question_bank::document::structural_gradable;
 use crate::application::question_bank::{
-    BankError, DailyAnsweredBreakdownRow, IndexedPaper, PaperContent, PracticeContent,
-    QuestionBankRepositoryPort, StoredQuestion, StudyAnswerDay,
+    BankError, DailyAnsweredBreakdownRow, DrillPaperRow, IndexedPaper, PaperContent,
+    PracticeContent, QuestionBankRepositoryPort, StoredQuestion, StudyAnswerDay,
 };
 use crate::domain::question_bank::primary_module;
 use crate::domain::question_bank::{
@@ -150,6 +150,8 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             (
                 String,
                 i64,
+                String,
+                Option<String>,
                 Option<String>,
                 Option<String>,
                 Option<String>,
@@ -163,6 +165,8 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                WHEN json_extract(s.data,'$.module') IS NOT NULL THEN 1 \
                ELSE 0 \
              END AS is_module, \
+             COALESCE(p.kind,'exam') AS kind, \
+             p.collection_title AS collection_title, \
              q.module AS module, \
              q.category AS category, \
              json_extract(p.metadata,'$.summary.title') AS paper_title, \
@@ -170,13 +174,13 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
              FROM practice_attempts a \
              JOIN practice_sessions s ON s.id=a.session_id \
              LEFT JOIN questions q ON q.id=a.question_id \
-             LEFT JOIN papers p ON p.id=json_extract(s.data,'$.paper_id') \
+             LEFT JOIN papers p ON p.id=q.paper_id \
              WHERE s.status='completed' AND a.submitted_at>=? AND a.submitted_at<? \
                AND json_type(a.answer)='array' \
                AND EXISTS (SELECT 1 FROM json_each(a.answer) choice \
                  WHERE choice.type='text' \
                    AND length(trim(choice.value, char(9)||char(10)||char(13)||' '))>0) \
-             GROUP BY day,is_module,module,category,paper_title \
+             GROUP BY day,is_module,kind,collection_title,module,category,paper_title \
              ORDER BY day",
         )
         .bind(start_ms)
@@ -187,22 +191,31 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         Ok(rows
             .into_iter()
             .map(
-                |(day, is_module, module, category, paper_title, answered)| {
-                    DailyAnsweredBreakdownRow {
-                        day,
-                        is_module: is_module != 0,
-                        module,
-                        category,
-                        paper_title,
-                        answered,
-                    }
+                |(
+                    day,
+                    is_module,
+                    kind,
+                    collection_title,
+                    module,
+                    category,
+                    paper_title,
+                    answered,
+                )| DailyAnsweredBreakdownRow {
+                    day,
+                    is_module: is_module != 0,
+                    kind,
+                    collection_title,
+                    module,
+                    category,
+                    paper_title,
+                    answered,
                 },
             )
             .collect())
     }
 
     async fn paper_summaries(&self) -> Result<Vec<PaperSummary>, BankError> {
-        let rows: Vec<String> = sqlx::query_scalar("SELECT json_extract(metadata,'$.summary') FROM papers WHERE active=1 AND json_extract(metadata,'$.summary.role')='primary' ORDER BY id")
+        let rows: Vec<String> = sqlx::query_scalar("SELECT json_extract(metadata,'$.summary') FROM papers WHERE active=1 AND COALESCE(kind,'exam')='exam' AND json_extract(metadata,'$.summary.role')='primary' ORDER BY id")
             .fetch_all(&self.pool).await.map_err(|_| BankError::Storage)?;
         rows.into_iter()
             .map(|summary| serde_json::from_str(&summary).map_err(|_| BankError::Storage))
@@ -266,7 +279,15 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                     .await
                     .map_err(|_| BankError::Storage)?;
             let metadata = serde_json::to_string(&paper).map_err(|_| BankError::Storage)?;
-            sqlx::query("INSERT INTO papers(id,metadata,active) VALUES(?,?,1) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,active=1").bind(&paper.summary.id).bind(metadata).execute(&mut *tx).await.map_err(|_| BankError::Storage)?;
+            sqlx::query("INSERT INTO papers(id,metadata,active,kind,collection_id,collection_title) VALUES(?,?,1,?,?,?) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,active=1,kind=excluded.kind,collection_id=excluded.collection_id,collection_title=excluded.collection_title")
+                .bind(&paper.summary.id)
+                .bind(metadata)
+                .bind(&paper.summary.kind)
+                .bind(&paper.summary.collection_id)
+                .bind(&paper.summary.collection_title)
+                .execute(&mut *tx)
+                .await
+                .map_err(|_| BankError::Storage)?;
             // Rewrite parsed content only when the source hash changed or the
             // cache is incomplete. Re-running sync keeps complete unchanged rows.
             let content_changed = previous_hash.as_deref() != Some(paper.hash.as_str())
@@ -731,7 +752,7 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         let rows = sqlx::query(
             "WITH eligible_papers AS MATERIALIZED (\
              SELECT p.id FROM papers p \
-             WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' \
+             WHERE p.active=1 AND COALESCE(p.kind,'exam')='exam' AND json_extract(p.metadata,'$.summary.role')='primary' \
              AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)>=?) \
              AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)<=?) \
              AND (?=0 OR (EXISTS (SELECT 1 FROM json_each(?) \
@@ -812,6 +833,100 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         })
     }
 
+    async fn drill_paper_stats(&self, since_ms: i64) -> Result<Vec<DrillPaperRow>, BankError> {
+        let rows = sqlx::query_as::<
+            _,
+            (
+                String,
+                String,
+                String,
+                String,
+                String,
+                i64,
+                i64,
+                i64,
+                i64,
+                i64,
+            ),
+        >(
+            "SELECT p.id, \
+             json_extract(p.metadata,'$.summary.title'), \
+             p.collection_id, p.collection_title, \
+             COALESCE(MAX(q.module),''), \
+             CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER), \
+             COUNT(q.id), COALESCE(SUM(q.gradable),0), \
+             COALESCE(SUM(CASE WHEN EXISTS (\
+               SELECT 1 FROM practice_attempts a WHERE a.question_id=q.id \
+                 AND json_type(a.answer)='array' \
+                 AND EXISTS (SELECT 1 FROM json_each(a.answer) choice \
+                   WHERE choice.type='text' \
+                     AND length(trim(choice.value, char(9)||char(10)||char(13)||' '))>0)) \
+               THEN 1 ELSE 0 END),0), \
+             COALESCE(SUM((SELECT COUNT(*) FROM practice_attempts a \
+               WHERE a.question_id=q.id AND a.submitted_at>=? \
+                 AND json_type(a.answer)='array' \
+                 AND EXISTS (SELECT 1 FROM json_each(a.answer) choice \
+                   WHERE choice.type='text' \
+                     AND length(trim(choice.value, char(9)||char(10)||char(13)||' '))>0))),0) \
+             FROM papers p LEFT JOIN questions q ON q.paper_id=p.id \
+             WHERE p.active=1 AND COALESCE(p.kind,'exam')='drill' \
+               AND p.collection_id IS NOT NULL AND p.collection_title IS NOT NULL \
+             GROUP BY p.id \
+             ORDER BY p.collection_title, p.id",
+        )
+        .bind(since_ms)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(
+                    paper_id,
+                    title,
+                    collection_id,
+                    collection_title,
+                    module,
+                    year,
+                    questions,
+                    gradable,
+                    done,
+                    answered_7,
+                )| DrillPaperRow {
+                    paper_id,
+                    title,
+                    collection_id,
+                    collection_title,
+                    module: (!module.trim().is_empty()).then_some(module),
+                    year: year as i32,
+                    questions: questions.max(0) as usize,
+                    gradable: gradable.max(0) as usize,
+                    done: done.max(0) as usize,
+                    answered_7: answered_7.max(0),
+                },
+            )
+            .collect())
+    }
+
+    async fn drill_question_ids(
+        &self,
+        collection_id: &str,
+        paper_id: Option<&str>,
+    ) -> Result<Vec<String>, BankError> {
+        sqlx::query_scalar(
+            "SELECT q.id FROM questions q JOIN papers p ON p.id=q.paper_id \
+             WHERE p.active=1 AND COALESCE(p.kind,'exam')='drill' \
+               AND p.collection_id=? AND (? IS NULL OR p.id=?) \
+             ORDER BY p.id,q.number",
+        )
+        .bind(collection_id)
+        .bind(paper_id)
+        .bind(paper_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| BankError::Storage)
+    }
+
     async fn module_settings(&self) -> Result<ModulePracticeFilters, BankError> {
         let value: Option<String> =
             sqlx::query_scalar("SELECT filters FROM module_practice_settings WHERE id=1")
@@ -886,7 +1001,7 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         let rows = sqlx::query_as::<_, (String, String, String, i64)>(
             "WITH eligible_papers AS MATERIALIZED (\
              SELECT p.id FROM papers p \
-             WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' \
+             WHERE p.active=1 AND COALESCE(p.kind,'exam')='exam' AND json_extract(p.metadata,'$.summary.role')='primary' \
              AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)>=?) \
              AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)<=?) \
              AND (?=0 OR (EXISTS (SELECT 1 FROM json_each(?) \
@@ -943,7 +1058,7 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         let papers = "WITH eligible_papers AS MATERIALIZED (\
             SELECT p.id,CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER) AS year \
             FROM papers p \
-            WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' \
+            WHERE p.active=1 AND COALESCE(p.kind,'exam')='exam' AND json_extract(p.metadata,'$.summary.role')='primary' \
             AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)>=?) \
             AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)<=?) \
             AND (?=0 OR (EXISTS (SELECT 1 FROM json_each(?) \
@@ -1053,7 +1168,15 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                 "favorites saved JOIN questions q ON q.id=saved.question_id",
                 "saved.favorite=1",
             ),
-            PracticeMode::PaperModule => return Err(BankError::Invalid),
+            PracticeMode::PaperModule | PracticeMode::Drill => return Err(BankError::Invalid),
+        };
+        let kind_scope = match mode {
+            PracticeMode::Paper | PracticeMode::Module => "COALESCE(p.kind,'exam')='exam'",
+            _ => "COALESCE(p.kind,'exam') IN ('exam','drill')",
+        };
+        let gradable_scope = match mode {
+            PracticeMode::Paper | PracticeMode::Module => "q.gradable=1",
+            _ => "1=1",
         };
         let regions = serde_json::to_string(&filters.regions).map_err(|_| BankError::Storage)?;
         let sql = format!(
@@ -1061,8 +1184,8 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
              CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER),\
              json_extract(p.metadata,'$.summary.region'),q.number,q.module,q.category \
              FROM {source} JOIN papers p ON p.id=q.paper_id \
-             WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' \
-             AND q.gradable=1 \
+             WHERE p.active=1 AND {kind_scope} AND json_extract(p.metadata,'$.summary.role')='primary' \
+             AND {gradable_scope} \
              AND {condition} \
              AND (? IS NULL OR q.paper_id=?) \
              AND (? IS NULL OR q.module=?) \
@@ -1107,8 +1230,8 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
 
     async fn practice_candidates(&self, mode: PracticeMode) -> Result<Vec<String>, BankError> {
         let sql = match mode {
-            PracticeMode::Wrong => "SELECT q.id FROM questions q JOIN papers p ON p.id=q.paper_id JOIN question_progress s ON s.question_id=q.id WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' AND q.gradable=1 AND s.pending=1 ORDER BY p.id,q.number",
-            PracticeMode::Favorite => "SELECT q.id FROM questions q JOIN papers p ON p.id=q.paper_id JOIN favorites s ON s.question_id=q.id WHERE p.active=1 AND json_extract(p.metadata,'$.summary.role')='primary' AND q.gradable=1 AND s.favorite=1 ORDER BY p.id,q.number",
+            PracticeMode::Wrong => "SELECT q.id FROM questions q JOIN papers p ON p.id=q.paper_id JOIN question_progress s ON s.question_id=q.id WHERE p.active=1 AND COALESCE(p.kind,'exam') IN ('exam','drill') AND json_extract(p.metadata,'$.summary.role')='primary' AND q.gradable=1 AND s.pending=1 ORDER BY p.id,q.number",
+            PracticeMode::Favorite => "SELECT q.id FROM questions q JOIN papers p ON p.id=q.paper_id JOIN favorites s ON s.question_id=q.id WHERE p.active=1 AND COALESCE(p.kind,'exam') IN ('exam','drill') AND json_extract(p.metadata,'$.summary.role')='primary' AND s.favorite=1 ORDER BY p.id,q.number",
             _ => return Err(BankError::Invalid),
         };
         sqlx::query_scalar(sql)

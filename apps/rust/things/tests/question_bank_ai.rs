@@ -88,6 +88,7 @@ async fn submitted_practice() -> (Arc<QuestionBankAiService>, String, sqlx::Sqli
             paper_id: Some(PAPER_ID.into()),
             module: Some("资料分析".into()),
             category: None,
+            collection_id: None,
             filters: Default::default(),
         })
         .await

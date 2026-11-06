@@ -19,17 +19,36 @@ use tokio::sync::Semaphore;
 pub struct DailyAnsweredBreakdownRow {
     pub day: String,
     pub is_module: bool,
+    pub kind: String,
+    pub collection_title: Option<String>,
     pub module: Option<String>,
     pub category: Option<String>,
     pub paper_title: Option<String>,
     pub answered: i64,
 }
 
-/// Submitted answers split by module drill scope or original paper.
+/// Submitted answers split by module drill, original paper or drill collection.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QuestionBankDayBreakdown {
     pub modules: BTreeMap<String, BTreeMap<String, i64>>,
     pub papers: BTreeMap<String, i64>,
+    #[serde(default)]
+    pub collections: BTreeMap<String, BTreeMap<String, i64>>,
+}
+
+/// One indexed drill topic paper; the application groups these by collection.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DrillPaperRow {
+    pub paper_id: String,
+    pub title: String,
+    pub collection_id: String,
+    pub collection_title: String,
+    pub module: Option<String>,
+    pub year: i32,
+    pub questions: usize,
+    pub gradable: usize,
+    pub done: usize,
+    pub answered_7: i64,
 }
 
 /// One Beijing calendar day of submitted answers for a module category.
@@ -331,6 +350,18 @@ pub trait QuestionBankRepositoryPort: Send + Sync {
     ) -> Result<PracticeCatalog, BankError> {
         Err(BankError::Unavailable)
     }
+    /// Drill collections grouped from indexed `kind=drill` papers. Each row is
+    /// one topic paper; the application aggregates rows into collections.
+    async fn drill_paper_stats(&self, _since_ms: i64) -> Result<Vec<DrillPaperRow>, BankError> {
+        Err(BankError::Unavailable)
+    }
+    async fn drill_question_ids(
+        &self,
+        _collection_id: &str,
+        _paper_id: Option<&str>,
+    ) -> Result<Vec<String>, BankError> {
+        Err(BankError::Unavailable)
+    }
     async fn module_settings(
         &self,
     ) -> Result<crate::domain::question_bank::ModulePracticeFilters, BankError> {
@@ -425,7 +456,21 @@ impl QuestionBankApplication {
             let day = days
                 .entry(row.day)
                 .or_insert_with(QuestionBankDayBreakdown::default);
-            if row.is_module {
+            if row.kind == "drill" {
+                let collection = row
+                    .collection_title
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or_else(|| "专项合集".into());
+                let paper = row
+                    .paper_title
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or_else(|| "未知专题".into());
+                *day.collections
+                    .entry(collection)
+                    .or_default()
+                    .entry(paper)
+                    .or_default() += row.answered;
+            } else if row.is_module {
                 let module = row
                     .module
                     .filter(|value| !value.trim().is_empty())
@@ -573,6 +618,9 @@ impl QuestionBankApplication {
             region: summary.region,
             variant: summary.variant,
             role: summary.role,
+            kind: summary.kind,
+            collection_id: summary.collection_id,
+            collection_title: summary.collection_title,
             questions: content.questions.iter().map(StoredQuestion::view).collect(),
             materials: content.materials,
         })
@@ -773,15 +821,14 @@ fn normalize_fingerprint_text(text: &str) -> String {
             } else if let Some(ch) = marker {
                 fence = Some((ch, marker_len));
             }
-        } else if fence.is_none() {
-            if line.matches("$$").count() % 2 == 1
+        } else if fence.is_none()
+            && (line.matches("$$").count() % 2 == 1
                 || line.contains("\\[")
                 || line.contains("\\]")
                 || line.contains("\\begin{")
-                || line.contains("\\end{")
-            {
-                math = !math;
-            }
+                || line.contains("\\end{"))
+        {
+            math = !math;
         }
     }
     let first = lines

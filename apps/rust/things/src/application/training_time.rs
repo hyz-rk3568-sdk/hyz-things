@@ -267,6 +267,8 @@ mod tests {
                 DailyAnsweredBreakdownRow {
                     day: "2026-01-02".into(),
                     is_module: true,
+                    kind: "exam".into(),
+                    collection_title: None,
                     module: Some("资料分析".into()),
                     category: Some("比重".into()),
                     paper_title: None,
@@ -275,6 +277,8 @@ mod tests {
                 DailyAnsweredBreakdownRow {
                     day: "2026-01-02".into(),
                     is_module: false,
+                    kind: "exam".into(),
+                    collection_title: None,
                     module: None,
                     category: None,
                     paper_title: Some("样卷".into()),

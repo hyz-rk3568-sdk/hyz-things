@@ -757,6 +757,37 @@ test('saved AI analysis opens by default and remains scoped to its question', as
   await expect(page.getByTestId('question-bank-ai-message')).toContainText('已经保存的 AI 解析');
 });
 
+test('deleting saved AI analysis sends a same-origin JSON request', async ({page}) => {
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai', async route => {
+    if (route.request().method() !== 'GET') {
+      await route.continue();
+      return;
+    }
+    const parts = new URL(route.request().url()).pathname.split('/');
+    const question_id = parts[parts.indexOf('questions') + 1];
+    await route.fulfill({json: {
+      question_id, status: 'complete', error: null,
+      messages: [{role:'assistant', content:'待删除的 AI 解析', created_at:1}],
+    }});
+  });
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await chooseFixturePaper(page);
+  await page.getByTestId('question-bank-practice-start').click();
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button',{name:'确认交卷'}).click();
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('待删除的 AI 解析');
+  await page.getByTestId('question-bank-ai-delete').click();
+  const deleted = page.waitForResponse(response =>
+    response.request().method() === 'DELETE' &&
+    new URL(response.url()).pathname.endsWith('/ai'));
+  await page.getByTestId('question-bank-ai-delete-confirm').click();
+  expect((await deleted).status()).toBe(200);
+  await expect(page.getByTestId('question-bank-ai-status')).toContainText('未生成');
+  await expect(page.getByTestId('question-bank-ai-message')).toHaveCount(0);
+});
+
 test('AI review keeps running across navigation and restores follow-ups', async ({page}) => {
   type Msg = {role: string; content: string; created_at: number};
   type State = {question_id: string; status: string; error: null; messages: Msg[]};

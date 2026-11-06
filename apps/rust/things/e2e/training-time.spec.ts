@@ -337,7 +337,7 @@ test("daily practice statistics show submitted counts and date-specific module t
   await expect(page.getByTestId('study-practice-week')).toHaveText('15 题');
   await expect(page.getByTestId('study-practice-total')).toHaveText('15 题');
   const detail=page.getByTestId('study-practice-detail');
-  await expect(detail).toContainText('真题训练');
+  await expect(detail).toContainText('题库训练');
   await expect(detail).toContainText('10 题');
   const bankBreakdown=page.getByTestId('study-question-bank-breakdown');
   await expect(bankBreakdown).toContainText('模块刷题');
@@ -349,7 +349,7 @@ test("daily practice statistics show submitted counts and date-specific module t
   await page.getByTestId('study-heat-day').nth(33).click();
   await expect(detail).toContainText('资料分析');
   await expect(detail).toContainText('3 题');
-  await expect(detail).not.toContainText('真题训练');
+  await expect(detail).not.toContainText('题库训练');
   await page.getByTestId('study-heat-day').nth(32).click();
   await expect(detail).toContainText('当天暂无已交卷的作答记录');
   for(const viewport of [{width:1280,height:800},{width:390,height:844}]){
