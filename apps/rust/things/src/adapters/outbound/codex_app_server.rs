@@ -14,7 +14,7 @@ use tokio::{
 };
 
 pub const SERVER: &str = "192.168.8.202:1457";
-const MAX_PACKET: usize = 256 * 1024;
+const MAX_PACKET: usize = 512 * 1024;
 const MAX_INIT_EVENTS: usize = 2048; // Only the initialization RPC; generation is time-bounded.
 pub const TURN_TIMEOUT: Duration = Duration::from_secs(600);
 const INTERRUPT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -184,9 +184,32 @@ async fn write_frame(
         .map_err(|_| "Codex WebSocket 写入失败".into())
 }
 
+async fn read_payload(socket: &mut OwnedReadHalf, length: usize) -> Result<Vec<u8>, String> {
+    let mut payload = vec![0u8; length];
+    socket
+        .read_exact(&mut payload)
+        .await
+        .map_err(|_| "Codex 帧读取失败".to_owned())?;
+    Ok(payload)
+}
+
+async fn discard_payload(socket: &mut OwnedReadHalf, mut length: usize) -> Result<(), String> {
+    let mut buffer = [0u8; 8 * 1024];
+    while length > 0 {
+        let chunk = length.min(buffer.len());
+        socket
+            .read_exact(&mut buffer[..chunk])
+            .await
+            .map_err(|_| "Codex 帧读取失败".to_owned())?;
+        length -= chunk;
+    }
+    Ok(())
+}
+
 async fn read_text(socket: &mut OwnedReadHalf, writer: &SharedWriter) -> Result<String, String> {
     let mut message = Vec::new();
     let mut fragmented = false;
+    let mut discarding = false;
     loop {
         let mut head = [0u8; 2];
         socket
@@ -214,33 +237,51 @@ async fn read_text(socket: &mut OwnedReadHalf, writer: &SharedWriter) -> Result<
                 .map_err(|_| "Codex 帧长度截断")?;
             length = u64::from_be_bytes(bytes);
         }
-        if length > MAX_PACKET as u64 || message.len().saturating_add(length as usize) > MAX_PACKET
-        {
-            return Err("Codex 响应超过大小限制".into());
+        let length = usize::try_from(length).map_err(|_| "Codex 帧长度无效")?;
+        if opcode >= 8 {
+            if !final_frame || length > 125 {
+                return Err("Codex WebSocket 控制帧无效".into());
+            }
+            let payload = read_payload(socket, length).await?;
+            match opcode {
+                0x8 => return Err("Codex App Server 已关闭连接".into()),
+                0x9 => write_frame(&mut *writer.lock().await, 0xA, &payload).await?,
+                0xA => {}
+                _ => return Err("Codex WebSocket 收到不支持的数据帧".into()),
+            }
+            continue;
         }
-        if opcode >= 8 && (!final_frame || length > 125) {
-            return Err("Codex WebSocket 控制帧无效".into());
-        }
-        let mut payload = vec![0u8; length as usize];
-        socket
-            .read_exact(&mut payload)
-            .await
-            .map_err(|_| "Codex 帧读取失败")?;
         match opcode {
-            0x8 => return Err("Codex App Server 已关闭连接".into()),
-            0x9 => write_frame(&mut *writer.lock().await, 0xA, &payload).await?,
-            0xA => {}
-            0x1 if !fragmented => {
-                message.extend_from_slice(&payload);
-                fragmented = !final_frame;
-                if final_frame {
-                    return String::from_utf8(message).map_err(|_| "Codex 响应不是 UTF-8".into());
+            0x1 if !fragmented && !discarding => {
+                if length > MAX_PACKET {
+                    discard_payload(socket, length).await?;
+                    discarding = !final_frame;
+                } else {
+                    message = read_payload(socket, length).await?;
+                    if final_frame {
+                        return String::from_utf8(message)
+                            .map_err(|_| "Codex 响应不是 UTF-8".into());
+                    }
+                    fragmented = true;
                 }
             }
-            0x0 if fragmented => {
-                message.extend_from_slice(&payload);
-                if final_frame {
-                    return String::from_utf8(message).map_err(|_| "Codex 响应不是 UTF-8".into());
+            0x0 if fragmented || discarding => {
+                if discarding {
+                    discard_payload(socket, length).await?;
+                    if final_frame {
+                        discarding = false;
+                    }
+                } else if message.len().saturating_add(length) > MAX_PACKET {
+                    message.clear();
+                    fragmented = false;
+                    discard_payload(socket, length).await?;
+                    discarding = !final_frame;
+                } else {
+                    message.extend_from_slice(&read_payload(socket, length).await?);
+                    if final_frame {
+                        return String::from_utf8(message)
+                            .map_err(|_| "Codex 响应不是 UTF-8".into());
+                    }
                 }
             }
             _ => return Err("Codex WebSocket 收到不支持的数据帧".into()),
@@ -645,6 +686,32 @@ mod tests {
                 .unwrap();
         }
         socket.write_all(&bytes).await.unwrap();
+    }
+
+    async fn server_frame(socket: &mut TcpStream, fin: bool, opcode: u8, payload: &[u8]) {
+        let first = (if fin { 0x80 } else { 0 }) | opcode;
+        let length = payload.len();
+        if length < 126 {
+            socket.write_all(&[first, length as u8]).await.unwrap();
+        } else if length <= u16::MAX as usize {
+            socket.write_all(&[first, 126]).await.unwrap();
+            socket
+                .write_all(&(length as u16).to_be_bytes())
+                .await
+                .unwrap();
+        } else {
+            socket.write_all(&[first, 127]).await.unwrap();
+            socket
+                .write_all(&(length as u64).to_be_bytes())
+                .await
+                .unwrap();
+        }
+        socket.write_all(payload).await.unwrap();
+    }
+
+    async fn server_large_message(socket: &mut TcpStream, msg: &Value) {
+        let bytes = serde_json::to_vec(msg).unwrap();
+        server_frame(socket, true, 0x1, &bytes).await;
     }
 
     async fn client_message(socket: &mut TcpStream) -> Value {
@@ -1084,6 +1151,86 @@ mod tests {
         .await;
         complete_test_turn(&mut socket, "completed").await;
         assert_eq!(worker.await.unwrap().unwrap(), "{\"questions\":[]}");
+    }
+
+    #[tokio::test]
+    async fn notification_between_old_and_new_limit_is_not_rejected() {
+        let (mut session, mut socket) = test_connection().await;
+        let worker = tokio::spawn(async move { session.turn("generate").await });
+        start_test_turn(&mut socket).await;
+        server_large_message(
+            &mut socket,
+            &json!({"method":"item/completed","params":{
+                "threadId":"test-thread","turnId":"turn-1",
+                "item":{"type":"commandExecution","aggregatedOutput":"x".repeat(400 * 1024)}
+            }}),
+        )
+        .await;
+        server_message(
+            &mut socket,
+            json!({"method":"item/completed","params":{
+                "threadId":"test-thread","turnId":"turn-1",
+                "item":{"type":"agentMessage","text":"{\"questions\":[]}"}
+            }}),
+        )
+        .await;
+        complete_test_turn(&mut socket, "completed").await;
+        assert_eq!(worker.await.unwrap().unwrap(), "{\"questions\":[]}");
+    }
+
+    #[tokio::test]
+    async fn oversized_notification_is_discarded_and_turn_completes() {
+        let (mut session, mut socket) = test_connection().await;
+        let worker = tokio::spawn(async move { session.turn("generate").await });
+        start_test_turn(&mut socket).await;
+        server_large_message(
+            &mut socket,
+            &json!({"method":"item/completed","params":{
+                "threadId":"test-thread","turnId":"turn-1",
+                "item":{"type":"commandExecution","aggregatedOutput":"x".repeat(600 * 1024)}
+            }}),
+        )
+        .await;
+        server_message(
+            &mut socket,
+            json!({"method":"item/completed","params":{
+                "threadId":"test-thread","turnId":"turn-1",
+                "item":{"type":"agentMessage","text":"{\"questions\":[]}"}
+            }}),
+        )
+        .await;
+        complete_test_turn(&mut socket, "completed").await;
+        assert_eq!(worker.await.unwrap().unwrap(), "{\"questions\":[]}");
+    }
+
+    #[tokio::test]
+    async fn oversized_fragmented_notification_is_discarded() {
+        let (mut session, mut socket) = test_connection().await;
+        let worker = tokio::spawn(async move { session.turn("generate").await });
+        start_test_turn(&mut socket).await;
+        let message = json!({"method":"item/completed","params":{
+            "threadId":"test-thread","turnId":"turn-1",
+            "item":{"type":"commandExecution","aggregatedOutput":"x".repeat(600 * 1024)}
+        }});
+        let bytes = serde_json::to_vec(&message).unwrap();
+        let split = bytes.len() / 2;
+        server_frame(&mut socket, false, 0x1, &bytes[..split]).await;
+        server_frame(&mut socket, true, 0x0, &bytes[split..]).await;
+        server_message(
+            &mut socket,
+            json!({"method":"item/completed","params":{
+                "threadId":"test-thread","turnId":"turn-1",
+                "item":{"type":"agentMessage","text":"{\"questions\":[]}"}
+            }}),
+        )
+        .await;
+        complete_test_turn(&mut socket, "completed").await;
+        assert_eq!(worker.await.unwrap().unwrap(), "{\"questions\":[]}");
+    }
+
+    #[test]
+    fn packet_limit_is_double_the_previous_limit() {
+        assert_eq!(MAX_PACKET, 512 * 1024);
     }
 
     #[tokio::test]
