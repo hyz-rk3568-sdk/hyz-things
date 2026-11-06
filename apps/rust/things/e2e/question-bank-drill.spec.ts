@@ -19,6 +19,12 @@ test('drill collection practice keeps ungradable questions and reports separate 
 
   await expect(page.getByTestId('question-bank-practice-workspace')).toBeVisible();
   await expect(page.getByTestId('question-bank-practice-heading')).toContainText('第 1/2 题');
+  await page.getByTestId('training-answer-sheet-toggle').click();
+  const group=page.getByTestId('question-bank-practice-group');
+  await expect(group).toHaveCount(1);
+  await expect(group).toHaveAttribute('data-group-label','方程关系');
+  await expect(group.getByTestId('question-bank-practice-group-module')).toHaveText('数量关系');
+  await page.getByTestId('training-answer-sheet-toggle').click();
   await expect(page.getByTestId('question-bank-practice-choice').nth(1)).toBeVisible();
   await page.getByTestId('question-bank-practice-choice').nth(1).click();
   await page.getByTestId('question-bank-practice-submit').click();
@@ -43,6 +49,7 @@ test('drill collection practice keeps ungradable questions and reports separate 
   await expect(page.getByTestId('question-bank-practice-history-item').first()).toContainText('小P 2026 数量关系讲义');
 
   await page.goto('/#/study/training');
+  await page.reload();
   await page.getByTestId('training-mode-statistics').click();
   await expect(page.getByTestId('drill-progress-card')).toHaveCount(0);
 });

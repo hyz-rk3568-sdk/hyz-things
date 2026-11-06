@@ -88,21 +88,25 @@ fn question_scope(question: Option<&PracticeQuestion>) -> Option<String> {
     )
 }
 
-fn navigation_groups(questions: &[PracticeQuestion]) -> Vec<NavigationGroup> {
+fn navigation_groups(questions: &[PracticeQuestion], mode: &PracticeMode) -> Vec<NavigationGroup> {
     let mut groups: Vec<NavigationGroup> = Vec::new();
     for (index, question) in questions.iter().enumerate() {
-        let label = primary_module(
+        let module = primary_module(
             question
                 .question
                 .as_ref()
                 .and_then(|view| view.module.as_deref()),
-        )
-        .unwrap_or("未分类")
-        .to_owned();
+        );
+        let (label, subtitle) = if *mode == PracticeMode::Drill {
+            (question.paper_title.clone(), module.map(str::to_owned))
+        } else {
+            (module.unwrap_or("未分类").to_owned(), None)
+        };
         match groups.last_mut() {
             Some(group) if group.label == label => group.end = index + 1,
             _ => groups.push(NavigationGroup {
                 label,
+                subtitle,
                 start: index,
                 end: index + 1,
             }),
@@ -2049,7 +2053,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     navigation_allowed={Some(navigation_allowed.clone())}
                     numbers={current.questions.iter().map(|q|q.item.number).collect::<Vec<_>>()}
                     answered={current.questions.iter().map(|q|!q.item.answer.is_empty()).collect::<Vec<_>>()}
-                    groups={navigation_groups(&current.questions)}
+                    groups={navigation_groups(&current.questions, &current.session.mode)}
                     grades={if completed {Some(current.questions.iter().map(|q| match q.item.grade.as_deref() {
                         Some("correct") => Some(true), Some("wrong") => Some(false), _ => None
                     }).collect::<Vec<_>>())} else {None}}/>

@@ -536,10 +536,11 @@ pub(super) fn training_swipe_surface(props: &TrainingSwipeSurfaceProps) -> Html 
     }
 }
 
-/// One contiguous module section in the compact answer sheet.
+/// One contiguous section in the compact answer sheet.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct NavigationGroup {
     pub(super) label: String,
+    pub(super) subtitle: Option<String>,
     pub(super) start: usize,
     pub(super) end: usize,
 }
@@ -612,7 +613,12 @@ pub(super) fn compact_question_navigation(props: &CompactQuestionNavigationProps
                             <section class="mb-3 last:mb-0" data-testid="question-bank-practice-group"
                                 data-group-label={group.label.clone()}>
                                 <div class="mb-1.5 flex items-baseline justify-between gap-2">
-                                    <strong class="text-xs text-base-content/70">{group.label.clone()}</strong>
+                                    <div class="min-w-0">
+                                        if let Some(subtitle) = &group.subtitle {
+                                            <span class="block text-[10px] text-base-content/45" data-testid="question-bank-practice-group-module">{subtitle.clone()}</span>
+                                        }
+                                        <strong class="text-xs text-base-content/70">{group.label.clone()}</strong>
+                                    </div>
                                     <span class="text-[11px] text-base-content/45">{format!("第 {}—{} 题 · {} 题", start + 1, end, end.saturating_sub(start))}</span>
                                 </div>
                                 <div class="grid grid-cols-6 gap-2 sm:grid-cols-10" data-testid="question-bank-practice-group-grid">
