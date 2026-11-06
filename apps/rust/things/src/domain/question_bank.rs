@@ -342,7 +342,6 @@ pub struct AiReviewMessage {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AiReviewState {
-    pub session_id: String,
     pub question_id: String,
     /// idle, running, complete, stopped or failed
     pub status: String,

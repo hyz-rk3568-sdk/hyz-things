@@ -388,6 +388,19 @@ pub struct QuestionBankApplication {
     data_epoch: uuid::Uuid,
 }
 impl QuestionBankApplication {
+    /// Fingerprint only the stem, including verified image contents. Invalid or missing
+    /// images and empty stems have no fingerprint; source failures are propagated.
+    pub async fn stem_fingerprint(
+        &self,
+        paper_path: &str,
+        stem: &str,
+    ) -> Result<Option<String>, BankError> {
+        if stem.trim().is_empty() {
+            return Ok(None);
+        }
+        fingerprint_parts(&*self.source, paper_path, &[stem], &mut BTreeMap::new()).await
+    }
+
     pub async fn daily_answered_counts(
         &self,
         start_ms: i64,
@@ -667,50 +680,55 @@ async fn populate_fingerprints(
             if parts.is_empty() {
                 continue;
             }
-            let mut canonical = Vec::new();
-            let mut valid = true;
-            for part in parts {
-                let Ok((mut text, references)) = images::rewrite_assets(part, &paper.path) else {
-                    valid = false;
-                    break;
-                };
-                for name in references {
-                    let expected = name.split('.').next().unwrap_or("");
-                    let verified = if let Some(verified) = verified_assets.get(&name) {
-                        *verified
-                    } else {
-                        let verified = match source.asset(name.clone()).await {
-                            Ok(asset) => source_hash(&asset.contents) == expected,
-                            Err(BankError::NotFound) => false,
-                            Err(error) => return Err(error),
-                        };
-                        verified_assets.insert(name.clone(), verified);
-                        verified
-                    };
-                    if !verified {
-                        valid = false;
-                        break;
-                    }
-                    text = text.replace(
-                        &format!("hyz-bank-asset:{name}"),
-                        &format!("hyz-bank-asset:{expected}"),
-                    );
-                }
-                if !valid {
-                    break;
-                }
-                canonical.push(normalize_fingerprint_text(&text));
-            }
-            if valid {
-                if let Ok(encoded) = serde_json::to_vec(&("question-stem-v1", canonical)) {
-                    paper
-                        .content_fingerprints
-                        .insert(question.id.clone(), source_hash(&encoded));
-                }
+            if let Some(fingerprint) =
+                fingerprint_parts(source, &paper.path, &parts, &mut verified_assets).await?
+            {
+                paper
+                    .content_fingerprints
+                    .insert(question.id.clone(), fingerprint);
             }
         }
     }
     Ok(())
+}
+
+async fn fingerprint_parts(
+    source: &dyn QuestionBankSourcePort,
+    paper_path: &str,
+    parts: &[&str],
+    verified_assets: &mut BTreeMap<String, bool>,
+) -> Result<Option<String>, BankError> {
+    let mut canonical = Vec::new();
+    for part in parts {
+        let Ok((mut text, references)) = images::rewrite_assets(part, paper_path) else {
+            return Ok(None);
+        };
+        for name in references {
+            let expected = name.split('.').next().unwrap_or("");
+            let verified = if let Some(verified) = verified_assets.get(&name) {
+                *verified
+            } else {
+                let verified = match source.asset(name.clone()).await {
+                    Ok(asset) => source_hash(&asset.contents) == expected,
+                    Err(BankError::NotFound) => false,
+                    Err(error) => return Err(error),
+                };
+                verified_assets.insert(name.clone(), verified);
+                verified
+            };
+            if !verified {
+                return Ok(None);
+            }
+            text = text.replace(
+                &format!("hyz-bank-asset:{name}"),
+                &format!("hyz-bank-asset:{expected}"),
+            );
+        }
+        canonical.push(normalize_fingerprint_text(&text));
+    }
+    Ok(serde_json::to_vec(&("question-stem-v1", canonical))
+        .ok()
+        .map(|encoded| source_hash(&encoded)))
 }
 
 fn normalize_fingerprint_text(text: &str) -> String {

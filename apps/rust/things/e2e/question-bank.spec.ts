@@ -94,6 +94,8 @@ test('paper practice hides numbering and scroll tools until they are needed',asy
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('第二题解析');
   await expect(page.getByTestId('question-bank-practice-question-pane').locator('.study-markdown').filter({hasText:'第二题解析'})).toHaveCSS('font-size','16px');
   await expect(page.getByTestId('question-bank-practice-review-answer')).toHaveCSS('font-size','16px');
+  await expect(page.getByRole('region', {name:'答案统计'})).toHaveClass(/rounded-box/);
+  await expect(page.getByRole('region', {name:'答案统计'})).toContainText('你的答案');
   const reviewResponse=await request.get(`/api/v1/question-bank/practice/sessions/${sessionId}/review`,
     {headers:{Cookie:(await page.context().cookies()).map(c=>`${c.name}=${c.value}`).join('; ')}});
   expect(reviewResponse.status()).toBe(200);
@@ -614,13 +616,13 @@ test('a delayed AI lookup respects a manually selected original explanation', as
   let requested = false;
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });
-  await page.route('**/api/v1/question-bank/practice/sessions/*/questions/*/ai', async route => {
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai', async route => {
     const parts = new URL(route.request().url()).pathname.split('/');
-    const offset = parts.indexOf('sessions');
+    const offset = parts.indexOf('questions');
     requested = true;
     await pending;
     await route.fulfill({json: {
-      session_id: parts[offset + 1], question_id: parts[offset + 3], status:'complete', error:null,
+      question_id: parts[offset + 1], status:'complete', error:null,
       messages:[{role:'assistant',content:'已保存的解析',created_at:1}],
     }});
   });
@@ -645,16 +647,16 @@ test('a delayed AI lookup cannot switch a different question', async ({page}) =>
   let secondRequested = false;
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });
-  await page.route('**/api/v1/question-bank/practice/sessions/*/questions/*/ai', async route => {
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai', async route => {
     const parts = new URL(route.request().url()).pathname.split('/');
-    const offset = parts.indexOf('sessions');
-    const question_id = parts[offset + 3];
+    const offset = parts.indexOf('questions');
+    const question_id = parts[offset + 1];
     if (!firstQuestion) firstQuestion = question_id;
     const first = question_id === firstQuestion;
     if (first) await pending;
     else secondRequested = true;
     await route.fulfill({json: {
-      session_id: parts[offset + 1], question_id, status:first ? 'complete' : 'idle', error:null,
+      question_id, status:first ? 'complete' : 'idle', error:null,
       messages:first ? [{role:'assistant',content:'上一题的解析',created_at:1}] : [],
     }});
   });
@@ -724,15 +726,14 @@ test('completed practice header actions stay inside a phone viewport', async ({p
 
 test('saved AI analysis opens by default and remains scoped to its question', async ({page}) => {
   let savedQuestion = '';
-  await page.route('**/api/v1/question-bank/practice/sessions/*/questions/*/ai', async route => {
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai', async route => {
     const parts = new URL(route.request().url()).pathname.split('/');
-    const offset = parts.indexOf('sessions');
-    const session_id = parts[offset + 1];
-    const question_id = parts[offset + 3];
+    const offset = parts.indexOf('questions');
+    const question_id = parts[offset + 1];
     if (!savedQuestion) savedQuestion = question_id;
     const saved = question_id === savedQuestion;
     await route.fulfill({json: {
-      session_id, question_id, status: saved ? 'complete' : 'idle', error: null,
+      question_id, status: saved ? 'complete' : 'idle', error: null,
       messages: saved ? [{role:'assistant', content:'已经保存的 AI 解析', created_at:1}] : [],
     }});
   });
@@ -758,18 +759,17 @@ test('saved AI analysis opens by default and remains scoped to its question', as
 
 test('AI review keeps running across navigation and restores follow-ups', async ({page}) => {
   type Msg = {role: string; content: string; created_at: number};
-  type State = {session_id: string; question_id: string; status: string; error: null; messages: Msg[]};
+  type State = {question_id: string; status: string; error: null; messages: Msg[]};
   const records = new Map<string,State>();
   const actions: string[] = [];
-  await page.route('**/api/v1/question-bank/practice/sessions/*/questions/*/ai**',async route => {
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai**',async route => {
     const path = new URL(route.request().url()).pathname;
     const parts = path.split('/');
-    const offset = parts.indexOf('sessions');
-    const session_id = parts[offset+1];
-    const question_id = parts[offset+3];
+    const offset = parts.indexOf('questions');
+    const question_id = parts[offset+1];
     const suffix = path.endsWith('/messages') ? '/messages' : path.endsWith('/stop') ? '/stop' : '';
-    const key = session_id + ':' + question_id;
-    const record = records.get(key) ?? {session_id,question_id,status:'idle',error:null,messages:[]};
+    const key = question_id;
+    const record = records.get(key) ?? {question_id,status:'idle',error:null,messages:[]};
     records.set(key,record);
     if(route.request().method()==='POST'){
       actions.push(suffix || 'start');

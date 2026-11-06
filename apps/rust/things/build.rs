@@ -20,6 +20,7 @@ fn main() -> io::Result<()> {
         PathBuf::from(env::var_os("OUT_DIR").expect("output directory")).join("frontend.tar");
 
     println!("cargo:rerun-if-env-changed=HYZ_THINGS_FRONTEND_ARCHIVE");
+    println!("cargo:rerun-if-changed=migrations/question_bank");
     println!("cargo:rerun-if-changed={}", source.display());
     if source.is_file() {
         validate_archive(&source)?;

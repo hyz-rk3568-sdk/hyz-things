@@ -550,29 +550,91 @@ fn has_existing_ai_analysis(state: &AiReviewState) -> bool {
 }
 
 #[derive(Properties, PartialEq)]
-struct QuestionAiReviewProps {
-    csrf: String,
-    session_id: String,
-    question_id: String,
+pub(crate) struct ReviewAnswerStatsProps {
+    pub correct_answer: Vec<String>,
+    pub answer: Option<Vec<String>>,
+    pub correct_count: usize,
+    pub wrong_count: usize,
+    pub answer_test_id: &'static str,
+    pub counts_test_id: &'static str,
+}
+
+#[function_component(ReviewAnswerStats)]
+pub(crate) fn review_answer_stats(props: &ReviewAnswerStatsProps) -> Html {
+    html! {
+        <section class="rounded-box border border-base-content/15 p-3" aria-label="答案统计">
+            if let Some(answer) = &props.answer {
+                <p class="text-sm text-base-content/60">{format!("你的答案：{}", if answer.is_empty() {"未答".into()} else {answer.join("、")})}</p>
+            }
+            <p class="text-xs opacity-60">{"正确答案"}</p>
+            <p class="font-semibold" data-testid={props.answer_test_id}>
+                {if props.correct_answer.is_empty() {"暂无可靠答案".into()} else {props.correct_answer.join("、")}}
+            </p>
+            <p class="mt-2 text-sm text-base-content/60" data-testid={props.counts_test_id}
+                data-correct={props.correct_count.to_string()} data-wrong={props.wrong_count.to_string()}>
+                {format!("本题累计：做对 {} 次 · 做错 {} 次", props.correct_count, props.wrong_count)}
+            </p>
+        </section>
+    }
+}
+
+#[hook]
+pub(crate) fn use_question_ai_tab(
+    question_id: Option<String>,
+) -> (UseStateHandle<bool>, Rc<RefCell<bool>>) {
+    let ai_tab = use_state(|| false);
+    let chosen = use_mut_ref(|| false);
+    {
+        let ai_tab = ai_tab.clone();
+        let chosen = chosen.clone();
+        use_effect_with(question_id, move |id| {
+            ai_tab.set(false);
+            *chosen.borrow_mut() = false;
+            let alive = Rc::new(Cell::new(true));
+            if let Some(question_id) = id.clone() {
+                let active = alive.clone();
+                spawn_local(async move {
+                    let endpoint = format!("{ROOT}/practice/questions/{question_id}/ai");
+                    if let Ok(state) = fetch_json::<AiReviewState>(&endpoint, "AI 复盘记录").await
+                    {
+                        if active.get()
+                            && !*chosen.borrow()
+                            && state.question_id == question_id
+                            && has_existing_ai_analysis(&state)
+                        {
+                            ai_tab.set(true);
+                        }
+                    }
+                });
+            }
+            move || alive.set(false)
+        });
+    }
+    (ai_tab, chosen)
+}
+
+#[derive(Properties, PartialEq)]
+pub(crate) struct QuestionAiReviewProps {
+    pub csrf: String,
+    pub question_id: String,
 }
 
 /// The component is mounted only while the AI tab is visible; the native
 /// backend owns its turns and never cancels on unmount or question navigation.
 #[function_component(QuestionAiReview)]
-fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
+pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     let state = use_state(|| None::<AiReviewState>);
     let failure = use_state(|| None::<String>);
     let submitting = use_state(|| false);
     let follow_up = use_state(String::new);
-    let endpoint = format!(
-        "{ROOT}/practice/sessions/{}/questions/{}/ai",
-        props.session_id, props.question_id
-    );
+    let deleting = use_state(|| false);
+    let revision = use_mut_ref(|| 0u64);
+    let endpoint = format!("{ROOT}/practice/questions/{}/ai", props.question_id);
     {
         let state = state.clone();
         let failure = failure.clone();
         let endpoint = endpoint.clone();
-        let key = (props.session_id.clone(), props.question_id.clone());
+        let key = props.question_id.clone();
         use_effect_with(key, move |_| {
             state.set(None);
             failure.set(None);
@@ -592,26 +654,29 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     }
     {
         let state = state.clone();
+        let revision = revision.clone();
         let key = (
-            props.session_id.clone(),
             props.question_id.clone(),
             state
                 .as_ref()
                 .as_ref()
                 .is_some_and(|v| v.status == "running"),
         );
-        use_effect_with(key, move |(session_id, question_id, running)| {
+        use_effect_with(key, move |(question_id, running)| {
             let timer = if *running {
-                let endpoint =
-                    format!("{ROOT}/practice/sessions/{session_id}/questions/{question_id}/ai");
+                let endpoint = format!("{ROOT}/practice/questions/{question_id}/ai");
                 Some(gloo_timers::callback::Interval::new(1500, move || {
                     let state = state.clone();
                     let endpoint = endpoint.clone();
+                    let revision = revision.clone();
+                    let request_revision = *revision.borrow();
                     spawn_local(async move {
                         if let Ok(value) =
                             fetch_json::<AiReviewState>(&endpoint, "AI 复盘进度").await
                         {
-                            state.set(Some(value));
+                            if *revision.borrow() == request_revision {
+                                state.set(Some(value));
+                            }
                         }
                     });
                 }))
@@ -623,6 +688,7 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     }
     let on_start = {
         let state = state.clone();
+        let revision = revision.clone();
         let failure = failure.clone();
         let submitting = submitting.clone();
         let endpoint = endpoint.clone();
@@ -634,19 +700,21 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             submitting.set(true);
             failure.set(None);
             let state = state.clone();
+            let revision = revision.clone();
             let failure = failure.clone();
             let submitting = submitting.clone();
             let endpoint = endpoint.clone();
             let csrf = csrf.clone();
             spawn_local(async move {
-                match post_json_response::<_, AiReviewState>(
+                let result = post_json_response::<_, AiReviewState>(
                     &endpoint,
                     &csrf,
                     &EmptyRequest {},
                     "开始 AI 解析",
                 )
-                .await
-                {
+                .await;
+                *revision.borrow_mut() += 1;
+                match result {
                     Ok(result) => state.set(Some(result)),
                     Err(error) => failure.set(Some(error)),
                 }
@@ -656,6 +724,7 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     };
     let on_stop = {
         let state = state.clone();
+        let revision = revision.clone();
         let failure = failure.clone();
         let submitting = submitting.clone();
         let endpoint = format!("{endpoint}/stop");
@@ -666,19 +735,21 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             }
             submitting.set(true);
             let state = state.clone();
+            let revision = revision.clone();
             let failure = failure.clone();
             let submitting = submitting.clone();
             let endpoint = endpoint.clone();
             let csrf = csrf.clone();
             spawn_local(async move {
-                match post_json_response::<_, AiReviewState>(
+                let result = post_json_response::<_, AiReviewState>(
                     &endpoint,
                     &csrf,
                     &EmptyRequest {},
                     "停止 AI 解析",
                 )
-                .await
-                {
+                .await;
+                *revision.borrow_mut() += 1;
+                match result {
                     Ok(result) => state.set(Some(result)),
                     Err(error) => failure.set(Some(error)),
                 }
@@ -688,6 +759,7 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     };
     let on_follow_up = {
         let state = state.clone();
+        let revision = revision.clone();
         let failure = failure.clone();
         let submitting = submitting.clone();
         let follow_up = follow_up.clone();
@@ -704,6 +776,7 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             submitting.set(true);
             failure.set(None);
             let state = state.clone();
+            let revision = revision.clone();
             let failure = failure.clone();
             let submitting = submitting.clone();
             let follow_up = follow_up.clone();
@@ -711,12 +784,65 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             let csrf = csrf.clone();
             spawn_local(async move {
                 let payload = AiReviewFollowUp { message };
-                match post_json_response::<_, AiReviewState>(&endpoint, &csrf, &payload, "AI 追问")
-                    .await
-                {
+                let result =
+                    post_json_response::<_, AiReviewState>(&endpoint, &csrf, &payload, "AI 追问")
+                        .await;
+                *revision.borrow_mut() += 1;
+                match result {
                     Ok(result) => {
                         state.set(Some(result));
                         follow_up.set(String::new());
+                    }
+                    Err(error) => failure.set(Some(error)),
+                }
+                submitting.set(false);
+            });
+        })
+    };
+    let on_delete = {
+        let state = state.clone();
+        let revision = revision.clone();
+        let failure = failure.clone();
+        let submitting = submitting.clone();
+        let deleting = deleting.clone();
+        let endpoint = endpoint.clone();
+        let csrf = props.csrf.clone();
+        Callback::from(move |_| {
+            if *submitting {
+                return;
+            }
+            submitting.set(true);
+            failure.set(None);
+            let state = state.clone();
+            let revision = revision.clone();
+            let failure = failure.clone();
+            let submitting = submitting.clone();
+            let deleting = deleting.clone();
+            let endpoint = endpoint.clone();
+            let csrf = csrf.clone();
+            spawn_local(async move {
+                let result = async {
+                    let response = Request::delete(&endpoint)
+                        .credentials(RequestCredentials::SameOrigin)
+                        .header("Accept", "application/json")
+                        .header("X-HYZ-CSRF", &csrf)
+                        .send()
+                        .await
+                        .map_err(|e| format!("无法连接删除 AI 解析接口：{e}"))?;
+                    if !response.ok() {
+                        return Err(format!("删除 AI 解析失败（HTTP {}）", response.status()));
+                    }
+                    response
+                        .json::<AiReviewState>()
+                        .await
+                        .map_err(|e| format!("删除 AI 解析响应无效：{e}"))
+                }
+                .await;
+                *revision.borrow_mut() += 1;
+                match result {
+                    Ok(value) => {
+                        state.set(Some(value));
+                        deleting.set(false);
                     }
                     Err(error) => failure.set(Some(error)),
                 }
@@ -773,6 +899,20 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         </div>
                     </div>
                 })}
+            }
+            if current.as_ref().is_some_and(|value| !value.messages.is_empty() || value.status == "running") {
+                if *deleting {
+                    <div class="space-y-2" role="alert">
+                        <p>{"确定删除这道题的 AI 解析和全部追问吗？"}</p>
+                        <button type="button" class="btn btn-error btn-sm" data-testid="question-bank-ai-delete-confirm"
+                            disabled={*submitting} onclick={on_delete}>{"确认删除"}</button>
+                        <button type="button" class="btn btn-ghost btn-sm" data-testid="question-bank-ai-delete-cancel"
+                            disabled={*submitting} onclick={Callback::from({let deleting=deleting.clone(); move |_|deleting.set(false)})}>{"取消"}</button>
+                    </div>
+                } else {
+                    <button type="button" class="btn btn-ghost btn-sm text-error" data-testid="question-bank-ai-delete"
+                        disabled={*submitting} onclick={Callback::from({let deleting=deleting.clone(); move |_|deleting.set(true)})}>{"删除 AI 解析"}</button>
+                }
             }
             if can_start {
                 <p class="text-sm text-base-content/60">{"Codex 将根据题目 UUID 从电脑本地题库读取原题、共用材料及图片，独立解析；参考答案仅供参考。"}</p>
@@ -846,9 +986,16 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let mode = use_state(|| props.entry_mode.clone());
     let workspace = use_state(|| None::<PracticeWorkspace>);
     let review = use_state(|| None::<PracticeReview>);
-    let ai_tab = use_state(|| false);
-    let ai_tab_chosen = use_mut_ref(|| false);
     let index = use_state(|| 0usize);
+    let selected_ai_question = workspace.as_ref().as_ref().and_then(|workspace| {
+        let question = workspace.questions.get(*index)?;
+        let review = (*review).as_ref()?;
+        let reviewed = review.questions.get(*index)?;
+        (review.session.id == workspace.session.id
+            && reviewed.question.item.question_id == question.item.question_id)
+            .then(|| question.item.question_id.clone())
+    });
+    let (ai_tab, ai_tab_chosen) = use_question_ai_tab(selected_ai_question);
     let multi_select = use_state(|| false);
     let current_favorite_source = workspace
         .as_ref()
@@ -1114,48 +1261,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         use_effect_with((current, review.is_some()), move |_| {
             hydrate_math();
             || ()
-        });
-    }
-    {
-        let ai_tab = ai_tab.clone();
-        let ai_tab_chosen = ai_tab_chosen.clone();
-        let review_snapshot = review.as_ref();
-        let selected = workspace.as_ref().as_ref().and_then(|workspace| {
-            let question = workspace.questions.get(*index)?;
-            let review = review_snapshot.as_ref()?;
-            let reviewed = review.questions.get(*index)?;
-            (review.session.id == workspace.session.id
-                && reviewed.question.item.question_id == question.item.question_id)
-                .then(|| {
-                    (
-                        workspace.session.id.clone(),
-                        question.item.question_id.clone(),
-                    )
-                })
-        });
-        use_effect_with(selected, move |selected| {
-            ai_tab.set(false);
-            *ai_tab_chosen.borrow_mut() = false;
-            let alive = std::rc::Rc::new(std::cell::Cell::new(true));
-            if let Some((session_id, question_id)) = selected.clone() {
-                let request_alive = alive.clone();
-                spawn_local(async move {
-                    let endpoint =
-                        format!("{ROOT}/practice/sessions/{session_id}/questions/{question_id}/ai");
-                    if let Ok(state) = fetch_json::<AiReviewState>(&endpoint, "AI 复盘记录").await
-                    {
-                        if request_alive.get()
-                            && !*ai_tab_chosen.borrow()
-                            && state.session_id == session_id
-                            && state.question_id == question_id
-                            && has_existing_ai_analysis(&state)
-                        {
-                            ai_tab.set(true);
-                        }
-                    }
-                });
-            }
-            move || alive.set(false)
         });
     }
     {
@@ -1780,15 +1885,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             </label>
                         }
                         if let Some(r) = selected_review {
-                            <p class="text-base font-semibold" data-testid="question-bank-practice-review-answer">
-                                {format!("你的答案：{} · 正确答案：{}",
-                                    if item.item.answer.is_empty() {"未答".into()} else {item.item.answer.join("、")},
-                                    if r.correct_answer.is_empty() {"暂无可靠答案".into()} else {r.correct_answer.join("、")})}
-                            </p>
-                            <p class="text-sm text-base-content/60" data-testid="question-bank-practice-attempt-counts"
-                                data-correct={r.correct_count.to_string()} data-wrong={r.wrong_count.to_string()}>
-                                {format!("本题累计：做对 {} 次 · 做错 {} 次", r.correct_count, r.wrong_count)}
-                            </p>
+                            <ReviewAnswerStats correct_answer={r.correct_answer.clone()} answer={Some(item.item.answer.clone())}
+                                correct_count={r.correct_count} wrong_count={r.wrong_count}
+                                answer_test_id="question-bank-practice-review-answer" counts_test_id="question-bank-practice-attempt-counts"/>
                             <div class="border-t border-base-content/10 pt-3 space-y-3">
                                 <div class="join grid grid-cols-2" data-testid="question-bank-review-tabs">
                                     <button type="button" class={classes!("join-item","btn","btn-sm",if !*ai_tab {"btn-active"} else {"btn-ghost"})}
@@ -1808,7 +1907,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     <QuestionAiReview
                                         key={format!("{}:{}", current.session.id, item.item.question_id)}
                                         csrf={props.csrf.clone()}
-                                        session_id={current.session.id.clone()}
                                         question_id={item.item.question_id.clone()}/>
                                 } else {
                                     <h3 class="font-bold">{"原始解析"}</h3>

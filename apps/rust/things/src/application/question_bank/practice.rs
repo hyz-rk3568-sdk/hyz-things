@@ -12,14 +12,28 @@ use crate::domain::question_bank::{
 use chrono::{Datelike, Duration, NaiveDate};
 use std::collections::{BTreeMap, BTreeSet};
 
+#[async_trait::async_trait]
+pub trait AiReviewBackend: Send + Sync {
+    async fn connect(&self, previous_thread: Option<&str>)
+        -> Result<Box<dyn AiReviewTurn>, String>;
+}
+
+#[async_trait::async_trait]
+pub trait AiReviewTurn: Send {
+    fn thread_id(&self) -> &str;
+    async fn turn(
+        &mut self,
+        prompt: &str,
+        cancellation: tokio::sync::watch::Sender<bool>,
+    ) -> Result<String, String>;
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct AiReviewLocator {
-    pub session_id: String,
+pub struct QuestionAiLocator {
     pub question_id: String,
     pub paper_id: String,
     pub material_ids: Vec<String>,
-    pub source_hash: String,
-    pub user_answer: Vec<String>,
+    pub stem_fingerprint: String,
 }
 
 fn now() -> i64 {
@@ -565,10 +579,10 @@ impl QuestionBankApplication {
         self.repository.practice_history().await
     }
 
-    pub async fn practice_question_detail(
+    async fn active_question_content(
         &self,
         question_id: &str,
-    ) -> Result<PracticeQuestionDetail, BankError> {
+    ) -> Result<(PracticeContent, IndexedPaper), BankError> {
         if !valid_id(question_id) {
             return Err(BankError::Invalid);
         }
@@ -583,6 +597,14 @@ impl QuestionBankApplication {
         if indexed.hash != content.source_hash {
             return Err(BankError::Stale);
         }
+        Ok((content, indexed))
+    }
+
+    pub async fn practice_question_detail(
+        &self,
+        question_id: &str,
+    ) -> Result<PracticeQuestionDetail, BankError> {
+        let (content, indexed) = self.active_question_content(question_id).await?;
         let question = content.question;
         let item = PracticeBrowseItem {
             question_id: question.id.clone(),
@@ -846,36 +868,20 @@ impl QuestionBankApplication {
     }
 
     /// Server-only Codex locator: never returns the source answer or explanation.
-    pub async fn ai_review_locator(
+    pub async fn question_ai_locator(
         &self,
-        session_id: &str,
         question_id: &str,
-    ) -> Result<AiReviewLocator, BankError> {
-        if !valid_id(question_id) {
-            return Err(BankError::Invalid);
-        }
-        let review = self.practice_review(session_id).await?;
-        let entry = review
-            .questions
-            .iter()
-            .find(|entry| entry.question.item.question_id == question_id)
-            .ok_or(BankError::NotFound)?;
-        if entry.question.content_changed {
-            return Err(BankError::Stale);
-        }
-        let item = &entry.question.item;
-        let indexed = self.primary_indexed(&item.paper_id).await?;
-        if indexed.hash != item.source_hash {
-            return Err(BankError::Stale);
-        }
-        let question = entry.question.question.as_ref().ok_or(BankError::Stale)?;
-        Ok(AiReviewLocator {
-            session_id: session_id.to_owned(),
+    ) -> Result<QuestionAiLocator, BankError> {
+        let (content, indexed) = self.active_question_content(question_id).await?;
+        let stem_fingerprint = self
+            .stem_fingerprint(&indexed.path, &content.question.stem)
+            .await?
+            .ok_or(BankError::Stale)?;
+        Ok(QuestionAiLocator {
             question_id: question_id.to_owned(),
-            paper_id: item.paper_id.clone(),
-            material_ids: question.materials.clone(),
-            source_hash: item.source_hash.clone(),
-            user_answer: item.answer.clone(),
+            paper_id: content.paper_id,
+            material_ids: content.question.materials,
+            stem_fingerprint,
         })
     }
 

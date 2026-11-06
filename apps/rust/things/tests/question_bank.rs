@@ -273,6 +273,34 @@ async fn bank_server() -> (tokio::task::JoinHandle<()>, String, String, Arc<Memo
 async fn bank_server_with_sqlite(
     sqlite: bool,
 ) -> (tokio::task::JoinHandle<()>, String, String, Arc<MemoryBank>) {
+    let (server, base, cookie, ports, _, _) = bank_server_fixture(sqlite).await;
+    (server, base, cookie, ports)
+}
+
+async fn bank_server_fixture(
+    sqlite: bool,
+) -> (
+    tokio::task::JoinHandle<()>,
+    String,
+    String,
+    Arc<MemoryBank>,
+    Arc<QuestionBankApplication>,
+    sqlx::SqlitePool,
+) {
+    bank_server_fixture_with_ai(sqlite, None).await
+}
+
+async fn bank_server_fixture_with_ai(
+    sqlite: bool,
+    generator: Option<Arc<dyn hyz_things::application::question_bank::practice::AiReviewBackend>>,
+) -> (
+    tokio::task::JoinHandle<()>,
+    String,
+    String,
+    Arc<MemoryBank>,
+    Arc<QuestionBankApplication>,
+    sqlx::SqlitePool,
+) {
     use hyz_things::{
         adapters::inbound::http::{
             app_with_admin_control_at_address, with_question_bank, with_question_bank_ai,
@@ -300,23 +328,21 @@ async fn bank_server_with_sqlite(
         )
         .unwrap();
     let ports = Arc::new(MemoryBank::default());
+    let ai_repository = Arc::new(
+        SqliteQuestionBankRepository::connect("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
     let repository: Arc<dyn QuestionBankRepositoryPort> = if sqlite {
-        Arc::new(
-            SqliteQuestionBankRepository::connect("sqlite::memory:")
-                .await
-                .unwrap(),
-        )
+        ai_repository.clone()
     } else {
         ports.clone()
     };
     let app = Arc::new(QuestionBankApplication::new(ports.clone(), repository));
-    let ai_repository = SqliteQuestionBankRepository::connect("sqlite::memory:")
-        .await
-        .unwrap();
-    let ai = Arc::new(QuestionBankAiService::new(
+    let ai = Arc::new(QuestionBankAiService::with_backend(
         app.clone(),
         ai_repository.pool().clone(),
-        None,
+        generator,
     ));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -329,7 +355,7 @@ async fn bank_server_with_sqlite(
             addr.ip().to_string().parse().unwrap(),
             addr.port(),
         ),
-        Some(app),
+        Some(app.clone()),
     );
     let router = with_question_bank_ai(router, Some(ai));
     let server = tokio::spawn(async move {
@@ -340,6 +366,8 @@ async fn bank_server_with_sqlite(
         format!("http://{addr}"),
         format!("hyz_admin_session={}", session.expose()),
         ports,
+        app,
+        ai_repository.pool().clone(),
     )
 }
 #[tokio::test]
@@ -366,10 +394,8 @@ async fn question_bank_requires_admin_for_reads() {
 async fn ai_review_routes_require_admin_origin_csrf_and_typed_bounded_bodies() {
     let (server, base, cookie, _ports) = bank_server().await;
     let client = reqwest::Client::new();
-    let session = "019a3d8c-7f23-7b6e-927d-3c951851d3a2";
     let question = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
-    let endpoint =
-        format!("{base}/api/v1/question-bank/practice/sessions/{session}/questions/{question}/ai");
+    let endpoint = format!("{base}/api/v1/question-bank/practice/questions/{question}/ai");
 
     let response = client.get(&endpoint).send().await.unwrap();
     assert_eq!(response.status(), 401);
@@ -1434,5 +1460,475 @@ async fn data_version_http_is_shared_and_tracks_committed_writes() {
     assert_eq!(updated, read(a.clone()).await);
     assert_eq!(write(r#"{"count":21}"#).send().await.unwrap().status(), 400);
     assert_eq!(updated, read(b).await);
+    server.abort();
+}
+
+#[tokio::test]
+async fn question_ai_delete_is_authenticated_and_only_removes_current_stem() {
+    let (server, base, cookie, _ports, bank, pool) = bank_server_fixture(true).await;
+    bank.sync().await.unwrap();
+    let question = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
+    let fingerprint = bank
+        .question_ai_locator(question)
+        .await
+        .unwrap()
+        .stem_fingerprint;
+    for stem in [&fingerprint[..], "different-stem"] {
+        sqlx::query("INSERT INTO question_ai_reviews(question_id,stem_fingerprint,status,updated_at) VALUES(?,?,'complete',1)")
+            .bind(question).bind(stem).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO question_ai_messages(question_id,stem_fingerprint,role,content,created_at) VALUES(?,?,'assistant','解析',1)")
+            .bind(question).bind(stem).execute(&pool).await.unwrap();
+    }
+    let client = reqwest::Client::new();
+    let endpoint = format!("{base}/api/v1/question-bank/practice/questions/{question}/ai");
+    let read = client
+        .get(&endpoint)
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(read.status(), 200);
+    let value: serde_json::Value = read.json().await.unwrap();
+    assert_eq!(value["status"], "complete");
+    assert_eq!(value["messages"].as_array().unwrap().len(), 1);
+    assert!(value.get("session_id").is_none());
+    assert_eq!(
+        client
+            .delete(&endpoint)
+            .header("content-type", "application/json")
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    assert_eq!(
+        client
+            .delete(&endpoint)
+            .header("content-type", "application/json")
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    assert_eq!(
+        client
+            .delete(&endpoint)
+            .header("content-type", "application/json")
+            .header("cookie", &cookie)
+            .header("origin", "https://other.example")
+            .header("x-hyz-csrf", "qb-csrf")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    assert_eq!(
+        client
+            .delete(&endpoint)
+            .header("content-type", "application/json")
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .json(&serde_json::json!({"unexpected": true}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        400
+    );
+    let deleted = client
+        .delete(&endpoint)
+        .header("content-type", "application/json")
+        .header("cookie", &cookie)
+        .header("origin", &base)
+        .header("x-hyz-csrf", "qb-csrf")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), 200);
+    let value: serde_json::Value = deleted.json().await.unwrap();
+    assert_eq!(value["status"], "idle");
+    assert!(value["messages"].as_array().unwrap().is_empty());
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM question_ai_reviews WHERE question_id=?")
+            .bind(question)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 1);
+    let old =
+        format!("{base}/api/v1/question-bank/practice/sessions/{question}/questions/{question}/ai");
+    assert_eq!(
+        client
+            .get(old)
+            .header("cookie", &cookie)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404
+    );
+    assert_eq!(
+        client
+            .delete(format!("{endpoint}/messages"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        405
+    );
+    server.abort();
+}
+
+struct BlockingAi {
+    started: tokio::sync::mpsc::UnboundedSender<tokio::sync::oneshot::Sender<String>>,
+}
+
+#[async_trait]
+impl hyz_things::application::question_bank::practice::AiReviewBackend for BlockingAi {
+    async fn connect(
+        &self,
+        _previous: Option<&str>,
+    ) -> Result<Box<dyn hyz_things::application::question_bank::practice::AiReviewTurn>, String>
+    {
+        Ok(Box::new(BlockingTurn {
+            started: self.started.clone(),
+        }))
+    }
+}
+struct BlockingTurn {
+    started: tokio::sync::mpsc::UnboundedSender<tokio::sync::oneshot::Sender<String>>,
+}
+#[async_trait]
+impl hyz_things::application::question_bank::practice::AiReviewTurn for BlockingTurn {
+    fn thread_id(&self) -> &str {
+        "test-thread"
+    }
+    async fn turn(
+        &mut self,
+        _prompt: &str,
+        _cancel: tokio::sync::watch::Sender<bool>,
+    ) -> Result<String, String> {
+        let (release, result) = tokio::sync::oneshot::channel();
+        self.started
+            .send(release)
+            .map_err(|_| "test closed".to_owned())?;
+        result.await.map_err(|_| "test closed".to_owned())
+    }
+}
+
+#[tokio::test]
+async fn deleting_running_ai_prevents_old_completion_from_overwriting_new_task() {
+    let (started, mut turns) = tokio::sync::mpsc::unbounded_channel();
+    let generator = Arc::new(BlockingAi { started });
+    let (server, base, cookie, _, bank, _) =
+        bank_server_fixture_with_ai(true, Some(generator)).await;
+    bank.sync().await.unwrap();
+    let question = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
+    let endpoint = format!("{base}/api/v1/question-bank/practice/questions/{question}/ai");
+    let client = reqwest::Client::new();
+    let post = |url: &str| {
+        client
+            .post(url)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .json(&serde_json::json!({}))
+    };
+    assert_eq!(post(&endpoint).send().await.unwrap().status(), 202);
+    let first = turns.recv().await.unwrap();
+    assert_eq!(
+        client
+            .delete(&endpoint)
+            .header("content-type", "application/json")
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert_eq!(post(&endpoint).send().await.unwrap().status(), 202);
+    let second = turns.recv().await.unwrap();
+    first.send("旧回答".into()).unwrap();
+    second.send("新回答".into()).unwrap();
+    let value = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let value: serde_json::Value = client
+                .get(&endpoint)
+                .header("cookie", &cookie)
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            if value["status"] == "complete" {
+                break value;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(value["messages"].as_array().unwrap().len(), 1);
+    assert_eq!(value["messages"][0]["content"], "新回答");
+    server.abort();
+}
+
+struct CancellableAi {
+    started: tokio::sync::mpsc::UnboundedSender<()>,
+}
+#[async_trait]
+impl hyz_things::application::question_bank::practice::AiReviewBackend for CancellableAi {
+    async fn connect(
+        &self,
+        _previous: Option<&str>,
+    ) -> Result<Box<dyn hyz_things::application::question_bank::practice::AiReviewTurn>, String>
+    {
+        Ok(Box::new(CancellableTurn {
+            started: self.started.clone(),
+        }))
+    }
+}
+struct CancellableTurn {
+    started: tokio::sync::mpsc::UnboundedSender<()>,
+}
+#[async_trait]
+impl hyz_things::application::question_bank::practice::AiReviewTurn for CancellableTurn {
+    fn thread_id(&self) -> &str {
+        "test-thread"
+    }
+    async fn turn(
+        &mut self,
+        _prompt: &str,
+        cancellation: tokio::sync::watch::Sender<bool>,
+    ) -> Result<String, String> {
+        self.started
+            .send(())
+            .map_err(|_| "test closed".to_owned())?;
+        cancellation
+            .subscribe()
+            .wait_for(|cancelled| *cancelled)
+            .await
+            .map_err(|_| "test closed".to_owned())?;
+        Err("stopped".into())
+    }
+}
+
+#[tokio::test]
+async fn stopping_question_ai_persists_stopped_state() {
+    let (started, mut turns) = tokio::sync::mpsc::unbounded_channel();
+    let (server, base, cookie, _, bank, _) =
+        bank_server_fixture_with_ai(true, Some(Arc::new(CancellableAi { started }))).await;
+    bank.sync().await.unwrap();
+    let question = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
+    let endpoint = format!("{base}/api/v1/question-bank/practice/questions/{question}/ai");
+    let client = reqwest::Client::new();
+    let post = |url: &str| {
+        client
+            .post(url)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .json(&serde_json::json!({}))
+    };
+    assert_eq!(post(&endpoint).send().await.unwrap().status(), 202);
+    turns.recv().await.unwrap();
+    let duplicate: serde_json::Value = post(&endpoint).send().await.unwrap().json().await.unwrap();
+    assert_eq!(duplicate["status"], "running");
+    assert!(turns.try_recv().is_err());
+    let stopped: serde_json::Value = post(&format!("{endpoint}/stop"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(stopped["status"], "stopped");
+    assert!(stopped["messages"].as_array().unwrap().is_empty());
+    server.abort();
+}
+
+#[tokio::test]
+async fn question_ai_followup_reuses_history_without_a_practice_session() {
+    let (started, mut turns) = tokio::sync::mpsc::unbounded_channel();
+    let (server, base, cookie, _, bank, _) =
+        bank_server_fixture_with_ai(true, Some(Arc::new(BlockingAi { started }))).await;
+    bank.sync().await.unwrap();
+    let endpoint = format!(
+        "{base}/api/v1/question-bank/practice/questions/019a3d8e-1b32-7a60-9c83-f34217a6e210/ai"
+    );
+    let client = reqwest::Client::new();
+    let post = |url: &str, body: serde_json::Value| {
+        client
+            .post(url)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .json(&body)
+    };
+    assert_eq!(
+        post(&endpoint, serde_json::json!({}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        202
+    );
+    turns.recv().await.unwrap().send("首次解析".into()).unwrap();
+    async fn wait_complete(
+        client: &reqwest::Client,
+        endpoint: &str,
+        cookie: &str,
+    ) -> serde_json::Value {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let value: serde_json::Value = client
+                    .get(endpoint)
+                    .header("cookie", cookie)
+                    .send()
+                    .await
+                    .unwrap()
+                    .json()
+                    .await
+                    .unwrap();
+                if value["status"] == "complete" {
+                    break value;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap()
+    }
+    let first = wait_complete(&client, &endpoint, &cookie).await;
+    assert_eq!(first["messages"][0]["content"], "首次解析");
+    assert_eq!(
+        post(
+            &format!("{endpoint}/messages"),
+            serde_json::json!({"message":"为什么？"})
+        )
+        .send()
+        .await
+        .unwrap()
+        .status(),
+        202
+    );
+    turns.recv().await.unwrap().send("追问回答".into()).unwrap();
+    let followup = wait_complete(&client, &endpoint, &cookie).await;
+    assert_eq!(followup["messages"].as_array().unwrap().len(), 3);
+    assert_eq!(followup["messages"][1]["content"], "为什么？");
+    assert_eq!(followup["messages"][2]["content"], "追问回答");
+    server.abort();
+}
+
+#[tokio::test]
+async fn stopping_a_queued_question_ai_does_not_wait_for_a_permit() {
+    let (started, mut turns) = tokio::sync::mpsc::unbounded_channel();
+    let (server, base, cookie, _, bank, pool) =
+        bank_server_fixture_with_ai(true, Some(Arc::new(BlockingAi { started }))).await;
+    bank.sync().await.unwrap();
+    let question = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
+    let endpoint = format!("{base}/api/v1/question-bank/practice/questions/{question}/ai");
+    let client = reqwest::Client::new();
+    let post = |url: &str| {
+        client
+            .post(url)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .json(&serde_json::json!({}))
+    };
+    assert_eq!(post(&endpoint).send().await.unwrap().status(), 202);
+    let first = turns.recv().await.unwrap();
+    sqlx::query("UPDATE questions SET stem='第二题干' WHERE id=?")
+        .bind(question)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(post(&endpoint).send().await.unwrap().status(), 202);
+    let second = turns.recv().await.unwrap();
+    sqlx::query("UPDATE questions SET stem='第三题干' WHERE id=?")
+        .bind(question)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(post(&endpoint).send().await.unwrap().status(), 202);
+    let stopped = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        post(&format!("{endpoint}/stop")).send(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(stopped.status(), 200);
+    let value: serde_json::Value = stopped.json().await.unwrap();
+    assert_eq!(value["status"], "stopped");
+    drop(first);
+    drop(second);
+    server.abort();
+}
+
+#[tokio::test]
+async fn changed_question_stem_does_not_reuse_an_old_ai_conversation() {
+    let (server, base, cookie, _, bank, pool) = bank_server_fixture(true).await;
+    bank.sync().await.unwrap();
+    let question = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
+    let original = bank
+        .question_ai_locator(question)
+        .await
+        .unwrap()
+        .stem_fingerprint;
+    sqlx::query("INSERT INTO question_ai_reviews(question_id,stem_fingerprint,status,updated_at) VALUES(?,?,'complete',1)")
+        .bind(question).bind(&original).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO question_ai_messages(question_id,stem_fingerprint,role,content,created_at) VALUES(?,?,'assistant','旧解析',1)")
+        .bind(question).bind(&original).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE questions SET stem='修改后的题干' WHERE id=?")
+        .bind(question)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let endpoint = format!("{base}/api/v1/question-bank/practice/questions/{question}/ai");
+    let response = reqwest::Client::new()
+        .get(endpoint)
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let state: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(state["status"], "idle");
+    assert!(state["messages"].as_array().unwrap().is_empty());
+    server.abort();
+}
+
+#[tokio::test]
+async fn question_ai_delete_rejects_oversized_body() {
+    let (server, base, cookie, _, bank, _) = bank_server_fixture(true).await;
+    bank.sync().await.unwrap();
+    let endpoint = format!(
+        "{base}/api/v1/question-bank/practice/questions/019a3d8e-1b32-7a60-9c83-f34217a6e210/ai"
+    );
+    let response = reqwest::Client::new()
+        .delete(endpoint)
+        .header("cookie", cookie)
+        .header("origin", base)
+        .header("x-hyz-csrf", "qb-csrf")
+        .header("content-type", "application/json")
+        .body(" ".repeat(9000))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 413);
     server.abort();
 }
