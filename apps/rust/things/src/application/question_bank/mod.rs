@@ -19,17 +19,36 @@ use tokio::sync::Semaphore;
 pub struct DailyAnsweredBreakdownRow {
     pub day: String,
     pub is_module: bool,
+    pub kind: String,
+    pub collection_title: Option<String>,
     pub module: Option<String>,
     pub category: Option<String>,
     pub paper_title: Option<String>,
     pub answered: i64,
 }
 
-/// Submitted answers split by module drill scope or original paper.
+/// Submitted answers split by module drill, original paper or drill collection.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QuestionBankDayBreakdown {
     pub modules: BTreeMap<String, BTreeMap<String, i64>>,
     pub papers: BTreeMap<String, i64>,
+    #[serde(default)]
+    pub collections: BTreeMap<String, BTreeMap<String, i64>>,
+}
+
+/// One indexed drill topic paper; the application groups these by collection.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DrillPaperRow {
+    pub paper_id: String,
+    pub title: String,
+    pub collection_id: String,
+    pub collection_title: String,
+    pub module: Option<String>,
+    pub year: i32,
+    pub questions: usize,
+    pub gradable: usize,
+    pub done: usize,
+    pub answered_7: i64,
 }
 
 /// One Beijing calendar day of submitted answers for a module category.
@@ -227,6 +246,9 @@ pub trait QuestionBankRepositoryPort: Send + Sync {
     ) -> Result<Vec<DailyAnsweredBreakdownRow>, BankError> {
         Ok(Vec::new())
     }
+    async fn data_revision(&self) -> Result<i64, BankError> {
+        Err(BankError::Unavailable)
+    }
     async fn list(&self) -> Result<Vec<IndexedPaper>, BankError>;
     async fn paper_summaries(&self) -> Result<Vec<PaperSummary>, BankError> {
         Ok(self
@@ -328,6 +350,18 @@ pub trait QuestionBankRepositoryPort: Send + Sync {
     ) -> Result<PracticeCatalog, BankError> {
         Err(BankError::Unavailable)
     }
+    /// Drill collections grouped from indexed `kind=drill` papers. Each row is
+    /// one topic paper; the application aggregates rows into collections.
+    async fn drill_paper_stats(&self, _since_ms: i64) -> Result<Vec<DrillPaperRow>, BankError> {
+        Err(BankError::Unavailable)
+    }
+    async fn drill_question_ids(
+        &self,
+        _collection_id: &str,
+        _paper_id: Option<&str>,
+    ) -> Result<Vec<String>, BankError> {
+        Err(BankError::Unavailable)
+    }
     async fn module_settings(
         &self,
     ) -> Result<crate::domain::question_bank::ModulePracticeFilters, BankError> {
@@ -382,8 +416,22 @@ pub struct QuestionBankApplication {
     repository: Arc<dyn QuestionBankRepositoryPort>,
     gate: Arc<Semaphore>,
     sync_status: Arc<Mutex<BankSyncStatus>>,
+    data_epoch: uuid::Uuid,
 }
 impl QuestionBankApplication {
+    /// Fingerprint only the stem, including verified image contents. Invalid or missing
+    /// images and empty stems have no fingerprint; source failures are propagated.
+    pub async fn stem_fingerprint(
+        &self,
+        paper_path: &str,
+        stem: &str,
+    ) -> Result<Option<String>, BankError> {
+        if stem.trim().is_empty() {
+            return Ok(None);
+        }
+        fingerprint_parts(&*self.source, paper_path, &[stem], &mut BTreeMap::new()).await
+    }
+
     pub async fn daily_answered_counts(
         &self,
         start_ms: i64,
@@ -408,7 +456,21 @@ impl QuestionBankApplication {
             let day = days
                 .entry(row.day)
                 .or_insert_with(QuestionBankDayBreakdown::default);
-            if row.is_module {
+            if row.kind == "drill" {
+                let collection = row
+                    .collection_title
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or_else(|| "专项合集".into());
+                let paper = row
+                    .paper_title
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or_else(|| "未知专题".into());
+                *day.collections
+                    .entry(collection)
+                    .or_default()
+                    .entry(paper)
+                    .or_default() += row.answered;
+            } else if row.is_module {
                 let module = row
                     .module
                     .filter(|value| !value.trim().is_empty())
@@ -442,8 +504,14 @@ impl QuestionBankApplication {
             repository,
             gate: Arc::new(Semaphore::new(1)),
             sync_status: Arc::new(Mutex::new(BankSyncStatus::default())),
+            data_epoch: uuid::Uuid::now_v7(),
         }
     }
+    pub async fn data_version(&self) -> Result<String, BankError> {
+        let revision = self.repository.data_revision().await?;
+        Ok(format!("{}-{revision}", self.data_epoch))
+    }
+
     pub fn sync_status(&self) -> BankSyncStatus {
         self.sync_status.lock().unwrap().clone()
     }
@@ -550,6 +618,9 @@ impl QuestionBankApplication {
             region: summary.region,
             variant: summary.variant,
             role: summary.role,
+            kind: summary.kind,
+            collection_id: summary.collection_id,
+            collection_title: summary.collection_title,
             questions: content.questions.iter().map(StoredQuestion::view).collect(),
             materials: content.materials,
         })
@@ -657,50 +728,55 @@ async fn populate_fingerprints(
             if parts.is_empty() {
                 continue;
             }
-            let mut canonical = Vec::new();
-            let mut valid = true;
-            for part in parts {
-                let Ok((mut text, references)) = images::rewrite_assets(part, &paper.path) else {
-                    valid = false;
-                    break;
-                };
-                for name in references {
-                    let expected = name.split('.').next().unwrap_or("");
-                    let verified = if let Some(verified) = verified_assets.get(&name) {
-                        *verified
-                    } else {
-                        let verified = match source.asset(name.clone()).await {
-                            Ok(asset) => source_hash(&asset.contents) == expected,
-                            Err(BankError::NotFound) => false,
-                            Err(error) => return Err(error),
-                        };
-                        verified_assets.insert(name.clone(), verified);
-                        verified
-                    };
-                    if !verified {
-                        valid = false;
-                        break;
-                    }
-                    text = text.replace(
-                        &format!("hyz-bank-asset:{name}"),
-                        &format!("hyz-bank-asset:{expected}"),
-                    );
-                }
-                if !valid {
-                    break;
-                }
-                canonical.push(normalize_fingerprint_text(&text));
-            }
-            if valid {
-                if let Ok(encoded) = serde_json::to_vec(&("question-stem-v1", canonical)) {
-                    paper
-                        .content_fingerprints
-                        .insert(question.id.clone(), source_hash(&encoded));
-                }
+            if let Some(fingerprint) =
+                fingerprint_parts(source, &paper.path, &parts, &mut verified_assets).await?
+            {
+                paper
+                    .content_fingerprints
+                    .insert(question.id.clone(), fingerprint);
             }
         }
     }
     Ok(())
+}
+
+async fn fingerprint_parts(
+    source: &dyn QuestionBankSourcePort,
+    paper_path: &str,
+    parts: &[&str],
+    verified_assets: &mut BTreeMap<String, bool>,
+) -> Result<Option<String>, BankError> {
+    let mut canonical = Vec::new();
+    for part in parts {
+        let Ok((mut text, references)) = images::rewrite_assets(part, paper_path) else {
+            return Ok(None);
+        };
+        for name in references {
+            let expected = name.split('.').next().unwrap_or("");
+            let verified = if let Some(verified) = verified_assets.get(&name) {
+                *verified
+            } else {
+                let verified = match source.asset(name.clone()).await {
+                    Ok(asset) => source_hash(&asset.contents) == expected,
+                    Err(BankError::NotFound) => false,
+                    Err(error) => return Err(error),
+                };
+                verified_assets.insert(name.clone(), verified);
+                verified
+            };
+            if !verified {
+                return Ok(None);
+            }
+            text = text.replace(
+                &format!("hyz-bank-asset:{name}"),
+                &format!("hyz-bank-asset:{expected}"),
+            );
+        }
+        canonical.push(normalize_fingerprint_text(&text));
+    }
+    Ok(serde_json::to_vec(&("question-stem-v1", canonical))
+        .ok()
+        .map(|encoded| source_hash(&encoded)))
 }
 
 fn normalize_fingerprint_text(text: &str) -> String {
@@ -745,15 +821,14 @@ fn normalize_fingerprint_text(text: &str) -> String {
             } else if let Some(ch) = marker {
                 fence = Some((ch, marker_len));
             }
-        } else if fence.is_none() {
-            if line.matches("$$").count() % 2 == 1
+        } else if fence.is_none()
+            && (line.matches("$$").count() % 2 == 1
                 || line.contains("\\[")
                 || line.contains("\\]")
                 || line.contains("\\begin{")
-                || line.contains("\\end{")
-            {
-                math = !math;
-            }
+                || line.contains("\\end{"))
+        {
+            math = !math;
         }
     }
     let first = lines

@@ -1,5 +1,5 @@
 import {expect,test} from '@playwright/test';
-import {expectNoHorizontalOverflow,loginAsAdmin,resetHarness,webOrigin} from './fixtures';
+import {expectNoHorizontalOverflow,harnessOrigin,loginAsAdmin,resetHarness,webOrigin} from './fixtures';
 
 test.beforeEach(async ({request})=>{await resetHarness(request)});
 
@@ -94,6 +94,8 @@ test('paper practice hides numbering and scroll tools until they are needed',asy
   await expect(page.getByTestId('question-bank-practice-question-pane')).toContainText('第二题解析');
   await expect(page.getByTestId('question-bank-practice-question-pane').locator('.study-markdown').filter({hasText:'第二题解析'})).toHaveCSS('font-size','16px');
   await expect(page.getByTestId('question-bank-practice-review-answer')).toHaveCSS('font-size','16px');
+  await expect(page.getByRole('region', {name:'答案统计'})).toHaveClass(/rounded-box/);
+  await expect(page.getByRole('region', {name:'答案统计'})).toContainText('你的答案');
   const reviewResponse=await request.get(`/api/v1/question-bank/practice/sessions/${sessionId}/review`,
     {headers:{Cookie:(await page.context().cookies()).map(c=>`${c.name}=${c.value}`).join('; ')}});
   expect(reviewResponse.status()).toBe(200);
@@ -273,13 +275,132 @@ test('question bank module drill filters real categories across original papers'
   await openSheet(page);
   await numbers.filter({hasText:'26'}).click();
   await expect(page.getByTestId('question-bank-practice-heading')).not.toContainText('原卷第');
-  await expect(page.getByTestId('question-bank-practice-workspace')).toContainText('行测真题训练端到端样卷');
   await expect(page.getByTestId('question-bank-practice-stem')).toContainText('材料中的正确选项');
   await expect(page.getByTestId('question-bank-practice-material-pane')).toContainText('两道题共用材料');
   await openSheet(page);
   await numbers.filter({hasText:'27'}).click();
   await expect(page.getByTestId('question-bank-practice-scope')).toContainText('资料分析 · 增长');
   await expect(page.getByTestId('question-bank-practice-material-pane')).toContainText('两道题共用材料');
+});
+
+test('switching training modes preserves the module selection',async({page})=>{
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-module').click();
+  await page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'}).click();
+  await expect(page.getByTestId('question-bank-practice-start')).toBeEnabled();
+  await page.getByTestId('training-mode-calculation').click();
+  const requests:string[]=[];
+  const record=(request:import('@playwright/test').Request)=>requests.push(new URL(request.url()).pathname);
+  page.on('request',record);
+  const version=page.waitForResponse(response=>response.url().includes('/question-bank/data-version'));
+  await page.getByTestId('training-mode-question-bank-module').click();
+  await version;
+  await expect(page.getByTestId('question-bank-practice-start')).toBeEnabled();
+  await page.evaluate(()=>new Promise(requestAnimationFrame));
+  page.off('request',record);
+  expect(requests.filter(path=>path.endsWith('/papers')||path.endsWith('/practice/catalog')||path.endsWith('/practice/history'))).toEqual([]);
+});
+
+test('starting a cached drill waits for the current version check',async({page})=>{
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-module').click();
+  await page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'}).click();
+  await expect(page.getByTestId('question-bank-practice-start')).toBeEnabled();
+  await page.getByTestId('training-mode-calculation').click();
+  let release!:()=>void;
+  const gate=new Promise<void>(resolve=>{release=resolve});
+  let arrived!:()=>void;
+  const requested=new Promise<void>(resolve=>{arrived=resolve});
+  await page.route('**/api/v1/question-bank/data-version',async route=>{arrived();await gate;await route.continue()});
+  await page.getByTestId('training-mode-question-bank-module').click();
+  await requested;
+  await expect(page.getByTestId('question-bank-practice-start')).toBeDisabled();
+  release();
+  await expect(page.getByTestId('question-bank-practice-start')).toBeEnabled();
+});
+
+test('version check failures refresh data and clear after recovery',async({page})=>{
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-module').click();
+  await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toBeVisible();
+  await page.getByTestId('training-mode-calculation').click();
+  await page.route('**/api/v1/question-bank/data-version',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{code:'unavailable',message:'版本不可用'}})}));
+  await page.getByTestId('training-mode-question-bank-module').click();
+  await expect(page.getByTestId('question-bank-error')).toBeVisible();
+  await page.unroute('**/api/v1/question-bank/data-version');
+  await page.getByTestId('training-mode-calculation').click();
+  const version=page.waitForResponse(response=>response.url().includes('/question-bank/data-version')&&response.ok());
+  await page.getByTestId('training-mode-question-bank-module').click();
+  await version;
+  await expect(page.getByTestId('question-bank-error')).toHaveCount(0);
+});
+
+test('switching between module and paper retains both selections',async({page})=>{
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-module').click();
+  await page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'}).click();
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await chooseFixturePaper(page);
+  await expect(page.getByTestId('question-bank-practice-start')).toBeEnabled();
+  await page.getByTestId('training-mode-question-bank-module').click();
+  await expect(page.getByTestId('question-bank-practice-start')).toBeEnabled();
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await expect(page.getByTestId('question-bank-practice-start')).toBeEnabled();
+});
+
+test('returning to module training updates progress from another device',async({page,browser,request})=>{
+  expect((await request.put(`${harnessOrigin}/reset-question-bank`)).ok()).toBeTruthy();
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-module').click();
+  await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toContainText('0/3');
+  await page.getByTestId('training-mode-calculation').click();
+  const other=await browser.newContext();
+  try {
+    await other.addCookies(await page.context().cookies());
+    const second=await other.newPage();
+    await second.goto(`${webOrigin}/#/study/training`);
+    await second.getByTestId('training-mode-question-bank-module').click();
+    await second.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'}).click();
+    await second.getByTestId('question-bank-practice-start').click();
+    await expect(second.getByTestId('question-bank-practice-workspace')).toBeVisible();
+    const saved=second.waitForResponse(response=>response.url().includes('/answers/')&&response.request().method()==='POST');
+    await second.getByTestId('question-bank-practice-choice').first().click();
+    await saved;
+    await second.getByTestId('question-bank-practice-submit').click();
+    if(await second.getByTestId('question-bank-submit-confirm').isVisible()) await second.getByRole('button',{name:'确认交卷'}).click();
+    await expect(second.getByTestId('question-bank-practice-score')).toBeVisible();
+    await page.getByTestId('training-mode-question-bank-module').click();
+    await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toContainText('1/3');
+  } finally { await other.close(); }
+});
+
+test('returning to module training picks up settings changed on another device',async({page,browser})=>{
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-module').click();
+  await page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'}).click();
+  await page.getByTestId('training-mode-calculation').click();
+  const other=await browser.newContext();
+  try {
+    await other.addCookies(await page.context().cookies());
+    const second=await other.newPage();
+    await second.goto(`${webOrigin}/#/study/training`);
+    await second.getByTestId('training-mode-question-bank-module').click();
+    await second.getByTestId('module-drill-settings-open').click();
+    await second.getByTestId('module-filter-count').filter({hasText:'10题'}).click();
+    await second.getByTestId('module-filter-save').click();
+    await expect(second.getByTestId('module-drill-settings')).toBeHidden();
+    await page.getByTestId('training-mode-question-bank-module').click();
+    await expect(page.getByTestId('module-drill-filter-summary')).toContainText('10 题');
+    await expect(page.getByTestId('question-bank-practice-start')).toBeEnabled();
+  } finally {
+    await other.close();
+  }
 });
 
 test('module training counts and selects cross-paper duplicates once',async({page})=>{
@@ -495,13 +616,13 @@ test('a delayed AI lookup respects a manually selected original explanation', as
   let requested = false;
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });
-  await page.route('**/api/v1/question-bank/practice/sessions/*/questions/*/ai', async route => {
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai', async route => {
     const parts = new URL(route.request().url()).pathname.split('/');
-    const offset = parts.indexOf('sessions');
+    const offset = parts.indexOf('questions');
     requested = true;
     await pending;
     await route.fulfill({json: {
-      session_id: parts[offset + 1], question_id: parts[offset + 3], status:'complete', error:null,
+      question_id: parts[offset + 1], status:'complete', error:null,
       messages:[{role:'assistant',content:'已保存的解析',created_at:1}],
     }});
   });
@@ -526,16 +647,16 @@ test('a delayed AI lookup cannot switch a different question', async ({page}) =>
   let secondRequested = false;
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });
-  await page.route('**/api/v1/question-bank/practice/sessions/*/questions/*/ai', async route => {
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai', async route => {
     const parts = new URL(route.request().url()).pathname.split('/');
-    const offset = parts.indexOf('sessions');
-    const question_id = parts[offset + 3];
+    const offset = parts.indexOf('questions');
+    const question_id = parts[offset + 1];
     if (!firstQuestion) firstQuestion = question_id;
     const first = question_id === firstQuestion;
     if (first) await pending;
     else secondRequested = true;
     await route.fulfill({json: {
-      session_id: parts[offset + 1], question_id, status:first ? 'complete' : 'idle', error:null,
+      question_id, status:first ? 'complete' : 'idle', error:null,
       messages:first ? [{role:'assistant',content:'上一题的解析',created_at:1}] : [],
     }});
   });
@@ -605,15 +726,14 @@ test('completed practice header actions stay inside a phone viewport', async ({p
 
 test('saved AI analysis opens by default and remains scoped to its question', async ({page}) => {
   let savedQuestion = '';
-  await page.route('**/api/v1/question-bank/practice/sessions/*/questions/*/ai', async route => {
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai', async route => {
     const parts = new URL(route.request().url()).pathname.split('/');
-    const offset = parts.indexOf('sessions');
-    const session_id = parts[offset + 1];
-    const question_id = parts[offset + 3];
+    const offset = parts.indexOf('questions');
+    const question_id = parts[offset + 1];
     if (!savedQuestion) savedQuestion = question_id;
     const saved = question_id === savedQuestion;
     await route.fulfill({json: {
-      session_id, question_id, status: saved ? 'complete' : 'idle', error: null,
+      question_id, status: saved ? 'complete' : 'idle', error: null,
       messages: saved ? [{role:'assistant', content:'已经保存的 AI 解析', created_at:1}] : [],
     }});
   });
@@ -637,20 +757,50 @@ test('saved AI analysis opens by default and remains scoped to its question', as
   await expect(page.getByTestId('question-bank-ai-message')).toContainText('已经保存的 AI 解析');
 });
 
+test('deleting saved AI analysis sends a same-origin JSON request', async ({page}) => {
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai', async route => {
+    if (route.request().method() !== 'GET') {
+      await route.continue();
+      return;
+    }
+    const parts = new URL(route.request().url()).pathname.split('/');
+    const question_id = parts[parts.indexOf('questions') + 1];
+    await route.fulfill({json: {
+      question_id, status: 'complete', error: null,
+      messages: [{role:'assistant', content:'待删除的 AI 解析', created_at:1}],
+    }});
+  });
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await chooseFixturePaper(page);
+  await page.getByTestId('question-bank-practice-start').click();
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button',{name:'确认交卷'}).click();
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('待删除的 AI 解析');
+  await page.getByTestId('question-bank-ai-delete').click();
+  const deleted = page.waitForResponse(response =>
+    response.request().method() === 'DELETE' &&
+    new URL(response.url()).pathname.endsWith('/ai'));
+  await page.getByTestId('question-bank-ai-delete-confirm').click();
+  expect((await deleted).status()).toBe(200);
+  await expect(page.getByTestId('question-bank-ai-status')).toContainText('未生成');
+  await expect(page.getByTestId('question-bank-ai-message')).toHaveCount(0);
+});
+
 test('AI review keeps running across navigation and restores follow-ups', async ({page}) => {
   type Msg = {role: string; content: string; created_at: number};
-  type State = {session_id: string; question_id: string; status: string; error: null; messages: Msg[]};
+  type State = {question_id: string; status: string; error: null; messages: Msg[]};
   const records = new Map<string,State>();
   const actions: string[] = [];
-  await page.route('**/api/v1/question-bank/practice/sessions/*/questions/*/ai**',async route => {
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai**',async route => {
     const path = new URL(route.request().url()).pathname;
     const parts = path.split('/');
-    const offset = parts.indexOf('sessions');
-    const session_id = parts[offset+1];
-    const question_id = parts[offset+3];
+    const offset = parts.indexOf('questions');
+    const question_id = parts[offset+1];
     const suffix = path.endsWith('/messages') ? '/messages' : path.endsWith('/stop') ? '/stop' : '';
-    const key = session_id + ':' + question_id;
-    const record = records.get(key) ?? {session_id,question_id,status:'idle',error:null,messages:[]};
+    const key = question_id;
+    const record = records.get(key) ?? {question_id,status:'idle',error:null,messages:[]};
     records.set(key,record);
     if(route.request().method()==='POST'){
       actions.push(suffix || 'start');

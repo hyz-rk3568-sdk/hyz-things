@@ -29,6 +29,8 @@ impl Default for ReadPorts {
                 paper_id: None,
                 module: Some("资料分析".into()),
                 category: None,
+                collection_id: None,
+                collection_title: None,
                 status: "active".into(),
                 created_at: 1,
                 updated_at: 1,
@@ -166,6 +168,7 @@ async fn module_start_reads_only_selected_question_ids() {
             paper_id: None,
             module: Some("资料分析".into()),
             category: None,
+            collection_id: None,
             filters: Default::default(),
         })
         .await

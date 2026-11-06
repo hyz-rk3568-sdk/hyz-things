@@ -4,7 +4,8 @@
 use super::favorite_flashcard::{FavoriteFlashcardPanel, FavoritePreview};
 use super::material_scroll::{scroll_edges, ScrollEdges};
 use super::question_bank_practice::{
-    answer_options, use_practice_favorite, QuestionBankQuestionHeader,
+    answer_options, use_practice_favorite, use_question_ai_tab, QuestionAiReview,
+    QuestionBankQuestionHeader,
 };
 use super::*;
 use hyz_things::domain::question_bank::{
@@ -34,6 +35,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
     let question_edges = use_state(ScrollEdges::default);
     let current_item = props.items.get(*index).cloned();
     let question_id = current_item.as_ref().map(|item| item.question_id.clone());
+    let (ai_tab, ai_tab_chosen) = use_question_ai_tab(question_id.clone());
     let favorite = use_practice_favorite(question_id.clone());
     let favorite_busy = use_state(|| false);
     let favorite_error = use_state(|| None::<String>);
@@ -327,30 +329,29 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                             </div>}
                         })}
                     </div>
-                    <section class="rounded-box border border-base-content/15 p-3" aria-label="正确答案">
-                        <p class="text-xs opacity-60">{"正确答案"}</p>
-                        <p class="font-semibold" data-testid="collection-review-answer">
-                            {if current.correct_answer.is_empty() {"暂无可靠答案".into()} else {current.correct_answer.join("、")}}
-                        </p>
-                        <p class="mt-2 text-sm text-base-content/60" data-testid="collection-review-attempt-counts"
-                            data-correct={current.correct_count.to_string()} data-wrong={current.wrong_count.to_string()}>
-                            {format!("本题累计：做对 {} 次 · 做错 {} 次", current.correct_count, current.wrong_count)}
-                        </p>
-                    </section>
-                    if !current.explanation.is_empty() {
-                        <section class="border-t border-base-content/10 pt-3">
+                    <ReviewAnswerStats correct_answer={current.correct_answer.clone()} answer={None::<Vec<String>>}
+                        correct_count={current.correct_count} wrong_count={current.wrong_count}
+                        answer_test_id="collection-review-answer" counts_test_id="collection-review-attempt-counts"/>
+                    <section class="border-t border-base-content/10 pt-3 space-y-3">
+                        <div class="join grid grid-cols-2" data-testid="question-bank-review-tabs">
+                            <button type="button" class={classes!("join-item", "btn", "btn-sm", if !*ai_tab {"btn-active"} else {"btn-ghost"})}
+                                data-testid="question-bank-original-tab" aria-pressed={(!*ai_tab).to_string()}
+                                onclick={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(false);}})}>{"原始解析"}</button>
+                            <button type="button" class={classes!("join-item", "btn", "btn-sm", if *ai_tab {"btn-active"} else {"btn-ghost"})}
+                                data-testid="question-bank-ai-tab" aria-pressed={(*ai_tab).to_string()}
+                                onclick={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(true);}})}>{"AI 解析"}</button>
+                        </div>
+                        if *ai_tab {
+                            <QuestionAiReview key={item.question_id.clone()} question_id={item.question_id.clone()} csrf={props.csrf.clone()}/>
+                        } else {
                             <h3 class="font-bold">{"原始解析"}</h3>
                             <div class="study-markdown mt-2 text-base leading-7 text-base-content/75" data-testid="collection-review-explanation">
-                                {render_question_bank_markdown(&current.explanation)}
+                                {if current.explanation.is_empty() {html!{"暂无解析"}} else {render_question_bank_markdown(&current.explanation)}}
                             </div>
-                        </section>
-                    }
-                    if !current.question.topics.is_empty() {
-                        <section>
-                            <h3 class="font-bold">{"考点"}</h3>
-                            <p class="text-sm text-base-content/60">{current.question.topics.join("、")}</p>
-                        </section>
-                    }
+                            <h3 class="mt-3 font-bold">{"考点"}</h3>
+                            <p class="text-sm text-base-content/60">{if current.question.topics.is_empty() {"暂无考点".into()} else {current.question.topics.join("、")}}</p>
+                        }
+                    </section>
                     if let Some(value) = &*preview {
                             if can_create {
                                 <button type="button" class="btn btn-primary" data-testid="collection-review-create-flashcard"

@@ -88,6 +88,7 @@ async fn submitted_practice() -> (Arc<QuestionBankAiService>, String, sqlx::Sqli
             paper_id: Some(PAPER_ID.into()),
             module: Some("资料分析".into()),
             category: None,
+            collection_id: None,
             filters: Default::default(),
         })
         .await
@@ -97,41 +98,43 @@ async fn submitted_practice() -> (Arc<QuestionBankAiService>, String, sqlx::Sqli
         .unwrap();
     bank.submit_practice(&session.id).await.unwrap();
     (
-        Arc::new(QuestionBankAiService::new(bank, pool.clone(), None)),
-        session.id,
+        Arc::new(QuestionBankAiService::new(bank.clone(), pool.clone(), None)),
+        bank.question_ai_locator(QUESTION_ID)
+            .await
+            .unwrap()
+            .stem_fingerprint,
         pool,
     )
 }
 
 #[tokio::test]
-async fn idle_state_is_private_to_a_completed_practice_question() {
-    let (service, session, _pool) = submitted_practice().await;
-    let state = service.state(&session, QUESTION_ID).await.unwrap();
+async fn idle_state_is_accessible_for_a_question() {
+    let (service, _fingerprint, _pool) = submitted_practice().await;
+    let state = service.state(QUESTION_ID).await.unwrap();
     assert_eq!(state.status, "idle");
     assert!(state.messages.is_empty());
-    assert_eq!(state.session_id, session);
     assert_eq!(state.question_id, QUESTION_ID);
     assert!(matches!(
-        service.state(&session, OTHER_QUESTION_ID).await,
+        service.state(OTHER_QUESTION_ID).await,
         Err(AiReviewError::Bank(BankError::NotFound))
     ));
 }
 
 #[tokio::test]
 async fn start_without_codex_configuration_never_writes_or_consumes_quota() {
-    let (service, session, _pool) = submitted_practice().await;
+    let (service, _fingerprint, _pool) = submitted_practice().await;
     assert!(matches!(
-        service.start(&session, QUESTION_ID).await,
+        service.start(QUESTION_ID).await,
         Err(AiReviewError::Unavailable)
     ));
-    let state = service.state(&session, QUESTION_ID).await.unwrap();
+    let state = service.state(QUESTION_ID).await.unwrap();
     assert_eq!(state.status, "idle");
     assert!(state.messages.is_empty());
 }
 
 #[tokio::test]
 async fn follow_up_rejects_blank_control_and_oversized_messages_before_any_task() {
-    let (service, session, _pool) = submitted_practice().await;
+    let (service, _fingerprint, _pool) = submitted_practice().await;
     for message in [
         String::new(),
         "   ".into(),
@@ -140,41 +143,38 @@ async fn follow_up_rejects_blank_control_and_oversized_messages_before_any_task(
         "好".repeat(2001),
     ] {
         assert!(matches!(
-            service.follow_up(&session, QUESTION_ID, message).await,
+            service.follow_up(QUESTION_ID, message).await,
             Err(AiReviewError::Invalid)
         ));
     }
     // 700 Chinese characters exceed 2000 bytes but remain within the character limit.
     assert!(matches!(
-        service
-            .follow_up(&session, QUESTION_ID, "好".repeat(700))
-            .await,
+        service.follow_up(QUESTION_ID, "好".repeat(700)).await,
         Err(AiReviewError::Unavailable)
     ));
-    let state = service.state(&session, QUESTION_ID).await.unwrap();
+    let state = service.state(QUESTION_ID).await.unwrap();
     assert_eq!(state.status, "idle");
     assert!(state.messages.is_empty());
 }
 
 #[tokio::test]
 async fn restart_marks_running_review_failed_and_keeps_history() {
-    let (service, session, pool) = submitted_practice().await;
-    sqlx::query("INSERT INTO question_ai_reviews(session_id,question_id,source_hash,thread_id,status,error,updated_at) VALUES(?,?,?,?, 'running',NULL,1)")
-        .bind(&session)
+    let (service, fingerprint, pool) = submitted_practice().await;
+    sqlx::query("INSERT INTO question_ai_reviews(question_id,stem_fingerprint,thread_id,status,error,updated_at) VALUES(?,?,?, 'running',NULL,1)")
         .bind(QUESTION_ID)
-        .bind("hash-ai")
+        .bind(&fingerprint)
         .bind("thread-before-restart")
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("INSERT INTO question_ai_messages(session_id,question_id,role,content,created_at) VALUES(?,?,'assistant','已有解析',2)")
-        .bind(&session)
+    sqlx::query("INSERT INTO question_ai_messages(question_id,stem_fingerprint,role,content,created_at) VALUES(?,?,'assistant','已有解析',2)")
         .bind(QUESTION_ID)
+        .bind(&fingerprint)
         .execute(&pool)
         .await
         .unwrap();
     service.recover_interrupted().await.unwrap();
-    let state = service.state(&session, QUESTION_ID).await.unwrap();
+    let state = service.state(QUESTION_ID).await.unwrap();
     assert_eq!(state.status, "failed");
     assert!(state
         .error
@@ -182,4 +182,78 @@ async fn restart_marks_running_review_failed_and_keeps_history() {
         .is_some_and(|error| error.contains("设备服务重启")));
     assert_eq!(state.messages.len(), 1);
     assert_eq!(state.messages[0].content, "已有解析");
+}
+
+#[tokio::test]
+async fn ai_locator_accepts_question_without_practice_attempt() {
+    let repository = Arc::new(
+        SqliteQuestionBankRepository::connect("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    let bank = QuestionBankApplication::new(Arc::new(FixtureBank), repository);
+    bank.sync().await.unwrap();
+    let locator = bank.question_ai_locator(QUESTION_ID).await.unwrap();
+    assert_eq!(locator.question_id, QUESTION_ID);
+    assert!(!locator.stem_fingerprint.is_empty());
+}
+
+#[tokio::test]
+async fn ai_schema_is_keyed_by_question_and_stem_fingerprint() {
+    let repository = SqliteQuestionBankRepository::connect("sqlite::memory:")
+        .await
+        .unwrap();
+    let columns: Vec<String> =
+        sqlx::query_scalar("SELECT name FROM pragma_table_info('question_ai_reviews')")
+            .fetch_all(repository.pool())
+            .await
+            .unwrap();
+    assert!(columns.iter().any(|name| name == "stem_fingerprint"));
+    assert!(!columns.iter().any(|name| name == "session_id"));
+}
+
+#[tokio::test]
+async fn migration_discards_legacy_ai_without_losing_other_data() {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    sqlx::raw_sql(r#"
+        PRAGMA foreign_keys=ON;
+        CREATE TABLE data_revision(id INTEGER PRIMARY KEY,revision INTEGER NOT NULL);
+        INSERT INTO data_revision VALUES(1,10);
+        CREATE TABLE practice_sessions(id TEXT PRIMARY KEY);
+        INSERT INTO practice_sessions VALUES('attempt');
+        CREATE TABLE question_ai_reviews(session_id TEXT NOT NULL REFERENCES practice_sessions(id),question_id TEXT NOT NULL,source_hash TEXT NOT NULL,thread_id TEXT,status TEXT,error TEXT,updated_at INTEGER NOT NULL,PRIMARY KEY(session_id,question_id));
+        CREATE TABLE question_ai_messages(id INTEGER PRIMARY KEY,session_id TEXT NOT NULL,question_id TEXT NOT NULL,role TEXT NOT NULL,content TEXT NOT NULL,created_at INTEGER NOT NULL,FOREIGN KEY(session_id,question_id) REFERENCES question_ai_reviews(session_id,question_id));
+        INSERT INTO question_ai_reviews VALUES('attempt','q','old','thread','complete',NULL,1);
+        INSERT INTO question_ai_messages VALUES(1,'attempt','q','assistant','old',1);
+    "#).execute(&pool).await.unwrap();
+    sqlx::raw_sql(include_str!(
+        "../migrations/question_bank/20261106100000_question_ai.sql"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let reviews: i64 = sqlx::query_scalar("SELECT count(*) FROM question_ai_reviews")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let attempts: i64 = sqlx::query_scalar("SELECT count(*) FROM practice_sessions")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(reviews, 0);
+    assert_eq!(attempts, 1);
+    let revision: i64 = sqlx::query_scalar("SELECT revision FROM data_revision WHERE id=1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO question_ai_reviews(question_id,stem_fingerprint,status,updated_at) VALUES('q','fingerprint','idle',1)").execute(&pool).await.unwrap();
+    let next: i64 = sqlx::query_scalar("SELECT revision FROM data_revision WHERE id=1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(next, revision + 1);
 }

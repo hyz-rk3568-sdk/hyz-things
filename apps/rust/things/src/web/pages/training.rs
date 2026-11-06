@@ -25,6 +25,7 @@ enum TrainingMode {
     Flashcards,
     QuestionBankPaper,
     QuestionBankModule,
+    QuestionBankDrill,
     Comprehensive,
     LogicJudgment,
     QuantitativeRelations,
@@ -122,6 +123,9 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
         });
     }
     let mode = use_state(|| TrainingMode::Calculation);
+    let paper_visited = use_state(|| false);
+    let module_visited = use_state(|| false);
+    let drill_visited = use_state(|| false);
     let study_clock = use_context::<StudyClockContext>();
     let training_immersive = use_state(|| false);
     // A paused paper hides the questions, so the effective-study clock stops too.
@@ -129,7 +133,9 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
     let module = match *mode {
         TrainingMode::Calculation => "calculation",
         TrainingMode::Flashcards => "flashcards",
-        TrainingMode::QuestionBankPaper | TrainingMode::QuestionBankModule => "question_bank",
+        TrainingMode::QuestionBankPaper
+        | TrainingMode::QuestionBankModule
+        | TrainingMode::QuestionBankDrill => "question_bank",
         TrainingMode::Comprehensive => "comprehensive",
         TrainingMode::LogicJudgment => "logic",
         TrainingMode::QuantitativeRelations => "quantitative",
@@ -192,19 +198,33 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
         })
     };
     let choose_question_bank_paper = {
+        let visited = paper_visited.clone();
         let mode = mode.clone();
         let training_immersive = training_immersive.clone();
         Callback::from(move |_| {
             training_immersive.set(false);
+            visited.set(true);
             mode.set(TrainingMode::QuestionBankPaper);
         })
     };
     let choose_question_bank_module = {
+        let visited = module_visited.clone();
         let mode = mode.clone();
         let training_immersive = training_immersive.clone();
         Callback::from(move |_| {
             training_immersive.set(false);
+            visited.set(true);
             mode.set(TrainingMode::QuestionBankModule);
+        })
+    };
+    let choose_question_bank_drill = {
+        let visited = drill_visited.clone();
+        let mode = mode.clone();
+        let training_immersive = training_immersive.clone();
+        Callback::from(move |_| {
+            training_immersive.set(false);
+            visited.set(true);
+            mode.set(TrainingMode::QuestionBankDrill);
         })
     };
     let choose_comprehensive = {
@@ -250,7 +270,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
         })
     };
     html! {
-        <div ref={shell} class={classes!("training-shell",matches!(*mode,TrainingMode::QuestionBankPaper|TrainingMode::QuestionBankModule).then_some("question-bank-shell"))} data-testid="training-layout">
+        <div ref={shell} class={classes!("training-shell",matches!(*mode,TrainingMode::QuestionBankPaper|TrainingMode::QuestionBankModule|TrainingMode::QuestionBankDrill).then_some("question-bank-shell"))} data-testid="training-layout">
             if !*training_immersive {
                 <header class="training-topbar" data-testid="training-header">
                     <div class="training-topbar-inner">
@@ -269,6 +289,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                         <button type="button" class="training-mode" data-testid="training-mode-flashcards" aria-pressed={(*mode == TrainingMode::Flashcards).to_string()} onclick={choose_flashcards}>{"闪卡回顾"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-question-bank-paper" aria-pressed={(*mode == TrainingMode::QuestionBankPaper).to_string()} onclick={choose_question_bank_paper}>{"套卷训练"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-question-bank-module" aria-pressed={(*mode == TrainingMode::QuestionBankModule).to_string()} onclick={choose_question_bank_module}>{"模块训练"}</button>
+                        <button type="button" class="training-mode" data-testid="training-mode-question-bank-drill" aria-pressed={(*mode == TrainingMode::QuestionBankDrill).to_string()} onclick={choose_question_bank_drill}>{"专项练习"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-comprehensive" aria-pressed={(*mode == TrainingMode::Comprehensive).to_string()} onclick={choose_comprehensive}>{"资料分析"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-logic-judgment" aria-pressed={(*mode == TrainingMode::LogicJudgment).to_string()} onclick={choose_logic}>{"判断推理"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-quantitative" aria-pressed={(*mode == TrainingMode::QuantitativeRelations).to_string()} onclick={choose_quantitative}>{"数量关系"}</button>
@@ -278,17 +299,28 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                 </nav>
             }
             <main class="min-h-0 flex-1 overflow-hidden" data-testid="training-mode-content">
+            if *paper_visited {
+                <QuestionBankTraining key="paper" active={*mode == TrainingMode::QuestionBankPaper}
+                    entry_mode={PracticeMode::Paper} csrf={props.csrf.clone()}
+                    on_immersive_change={on_immersive_change.clone()}
+                    on_paper_pause_change={on_paper_pause_change.clone()} />
+            }
+            if *module_visited {
+                <QuestionBankTraining key="module" active={*mode == TrainingMode::QuestionBankModule}
+                    entry_mode={PracticeMode::Module} csrf={props.csrf.clone()}
+                    on_immersive_change={on_immersive_change.clone()}
+                    on_paper_pause_change={on_paper_pause_change.clone()} />
+            }
+            if *drill_visited {
+                <QuestionBankTraining key="drill" active={*mode == TrainingMode::QuestionBankDrill}
+                    entry_mode={PracticeMode::Drill} csrf={props.csrf.clone()}
+                    on_immersive_change={on_immersive_change.clone()}
+                    on_paper_pause_change={on_paper_pause_change.clone()} />
+            }
             if *mode == TrainingMode::Statistics {
                 <TrainingStatistics csrf={props.csrf.clone()} />
             } else if *mode == TrainingMode::Calculation {
                 {render_calculation_training(props.route_state.clone(),on_immersive_change.clone())}
-            } else if matches!(*mode, TrainingMode::QuestionBankPaper | TrainingMode::QuestionBankModule) {
-                <QuestionBankTraining
-                    key={if *mode == TrainingMode::QuestionBankPaper { "paper" } else { "module" }}
-                    entry_mode={if *mode == TrainingMode::QuestionBankPaper { PracticeMode::Paper } else { PracticeMode::Module }}
-                    csrf={props.csrf.clone()}
-                    on_immersive_change={on_immersive_change.clone()}
-                    on_paper_pause_change={on_paper_pause_change.clone()} />
             } else if *mode == TrainingMode::Flashcards {
                 <FlashcardPractice route_state={props.route_state.clone()} on_immersive_change={on_immersive_change.clone()} />
             } else if matches!(*mode, TrainingMode::LogicJudgment | TrainingMode::QuantitativeRelations) {
@@ -298,7 +330,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                     on_paper_pause_change={on_paper_pause_change.clone()}
                     quantitative={*mode == TrainingMode::QuantitativeRelations}
                     show_history={false} />
-            } else {
+            } else if *mode == TrainingMode::Comprehensive {
                 <ComprehensiveTraining csrf={props.csrf.clone()} show_history={false} on_immersive_change={on_immersive_change} on_paper_pause_change={on_paper_pause_change} on_exit={exit_comprehensive} />
             }
             </main>

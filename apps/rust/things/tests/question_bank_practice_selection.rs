@@ -423,6 +423,7 @@ async fn next_module_session(app: &QuestionBankApplication, count: usize) -> Pra
         paper_id: None,
         module: Some("资料分析".into()),
         category: None,
+        collection_id: None,
         filters: ModulePracticeFilters {
             count: Some(count),
             ..Default::default()
@@ -569,6 +570,7 @@ async fn module_drill_prioritizes_net_errors_and_correct_answers_reduce_them() {
             paper_id: Some("019a3d8c-7f23-7b6e-927d-3c951851d3b0".into()),
             module: None,
             category: None,
+            collection_id: None,
             filters: ModulePracticeFilters::default(),
         })
         .await
@@ -641,6 +643,7 @@ async fn module_selection_interleaves_papers_and_randomizes_within_each_position
             paper_id: None,
             module: Some("资料分析".into()),
             category: None,
+            collection_id: None,
             filters: ModulePracticeFilters::default(),
         })
         .await
@@ -671,6 +674,7 @@ async fn module_groups_keep_shared_material_questions_together_and_skip_missing_
             paper_id: None,
             module: Some("资料分析".into()),
             category: None,
+            collection_id: None,
             filters: ModulePracticeFilters {
                 count: Some(2),
                 ..Default::default()
@@ -701,6 +705,7 @@ async fn module_category_drill_keeps_the_whole_material_group() {
             paper_id: None,
             module: Some("资料分析".into()),
             category: Some("比重".into()),
+            collection_id: None,
             filters: ModulePracticeFilters {
                 count: Some(2),
                 ..Default::default()
@@ -731,6 +736,7 @@ async fn paper_practice_skips_questions_without_an_answer() {
             paper_id: Some("019a3d8c-7f23-7b6e-927d-3c951851d3a4".into()),
             module: None,
             category: None,
+            collection_id: None,
             filters: ModulePracticeFilters::default(),
         })
         .await
@@ -759,6 +765,7 @@ async fn passage_groups_exclude_non_passage_questions_sharing_section_material()
             paper_id: None,
             module: Some("言语理解与表达".into()),
             category: None,
+            collection_id: None,
             filters: ModulePracticeFilters {
                 count: Some(2),
                 ..Default::default()
@@ -816,6 +823,7 @@ async fn repeat_practice_copies_the_same_question_set_and_clears_answers() {
             paper_id: None,
             module: Some("资料分析".into()),
             category: None,
+            collection_id: None,
             filters: ModulePracticeFilters::default(),
         })
         .await

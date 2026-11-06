@@ -4,7 +4,7 @@
 
 ## 电脑端独立共享
 
-设备题库在本仓库 `question_bank/papers/` 和 `question_bank/assets/`，作为普通文件随公开主仓库版本管理；导入器清单、审计报告及备份保留在本机，不纳入公开提交。维护方式见 [导入工具](../scripts/question_bank/README.md)。
+设备题库在本仓库 `question_bank/papers/`、`question_bank/collections/` 和 `question_bank/assets/`，作为普通文件随公开主仓库版本管理；导入器清单、审计报告及备份保留在本机，不纳入公开提交。`collections/` 存放 `kind: drill` 的专项合集，与真题共用练习引擎，但不进入真题试卷列表和真题预测。维护方式见 [导入工具](../scripts/question_bank/README.md)。
 
 先保留现有 `hyz-cards` 共享，然后运行：
 
@@ -57,6 +57,7 @@ Buildroot overlay 新增 `/etc/init.d/S83hyz-question-bank`，固定挂载：
 - `POST /api/v1/control/question-bank/sync`
 - `GET /api/v1/question-bank/papers`
 - `GET /api/v1/question-bank/papers/{UUIDv7}`
+- `GET /api/v1/question-bank/collections`
 - `GET /api/v1/question-bank/assets/{SHA-256}.{extension}`
 
 整卷 DTO 不包含 Answer、Explanation 或可能附有答案校核内容的 Notes；当前也没有答案读取接口。共享 Markdown 中原始答案与解析仍完整保留。

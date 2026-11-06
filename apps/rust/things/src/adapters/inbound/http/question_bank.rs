@@ -67,7 +67,7 @@ pub(super) async fn ai_read(
     State(state): State<AppState>,
     headers: HeaderMap,
     service: AiService,
-    Path((id, question_id)): Path<(String, String)>,
+    Path(question_id): Path<String>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_read(&state, &headers).await {
         return response;
@@ -76,7 +76,7 @@ pub(super) async fn ai_read(
         Ok(service) => service,
         Err(e) => return e,
     };
-    match service.state(&id, &question_id).await {
+    match service.state(&question_id).await {
         Ok(value) => Json(value).into_response(),
         Err(error) => ai_error(error),
     }
@@ -85,7 +85,7 @@ pub(super) async fn ai_start(
     State(state): State<AppState>,
     headers: HeaderMap,
     service: AiService,
-    Path((id, question_id)): Path<(String, String)>,
+    Path(question_id): Path<String>,
     payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
@@ -98,7 +98,7 @@ pub(super) async fn ai_start(
         Ok(service) => service,
         Err(e) => return e,
     };
-    match service.start(&id, &question_id).await {
+    match service.start(&question_id).await {
         Ok(value) => (StatusCode::ACCEPTED, Json(value)).into_response(),
         Err(error) => ai_error(error),
     }
@@ -107,7 +107,7 @@ pub(super) async fn ai_follow_up(
     State(state): State<AppState>,
     headers: HeaderMap,
     service: AiService,
-    Path((id, question_id)): Path<(String, String)>,
+    Path(question_id): Path<String>,
     payload: Result<Json<AiReviewFollowUp>, JsonRejection>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
@@ -121,7 +121,7 @@ pub(super) async fn ai_follow_up(
         Ok(service) => service,
         Err(e) => return e,
     };
-    match service.follow_up(&id, &question_id, payload.message).await {
+    match service.follow_up(&question_id, payload.message).await {
         Ok(value) => (StatusCode::ACCEPTED, Json(value)).into_response(),
         Err(error) => ai_error(error),
     }
@@ -130,7 +130,7 @@ pub(super) async fn ai_stop(
     State(state): State<AppState>,
     headers: HeaderMap,
     service: AiService,
-    Path((id, question_id)): Path<(String, String)>,
+    Path(question_id): Path<String>,
     payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
@@ -143,7 +143,7 @@ pub(super) async fn ai_stop(
         Ok(service) => service,
         Err(e) => return e,
     };
-    match service.stop(&id, &question_id).await {
+    match service.stop(&question_id).await {
         Ok(value) => Json(value).into_response(),
         Err(error) => ai_error(error),
     }
@@ -155,6 +155,36 @@ fn available(service: Service) -> Result<Arc<QuestionBankApplication>, BankError
         .map(|Extension(app)| app)
         .ok_or(BankError::Unavailable)
 }
+pub(super) async fn ai_delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: AiService,
+    Path(question_id): Path<String>,
+    payload: Result<axum::body::Bytes, axum::extract::rejection::BytesRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
+        return response;
+    }
+    let body = match payload {
+        Ok(body) => body,
+        Err(error) if error.status() == StatusCode::PAYLOAD_TOO_LARGE => {
+            return ControlJsonError::PayloadTooLarge.response();
+        }
+        Err(_) => return ControlJsonError::InvalidRequest.response(),
+    };
+    if !body.is_empty() && serde_json::from_slice::<EmptyJsonRequest>(&body).is_err() {
+        return ControlJsonError::InvalidRequest.response();
+    }
+    let service = match ai_service(service) {
+        Ok(service) => service,
+        Err(error) => return error,
+    };
+    match service.delete(&question_id).await {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => ai_error(error),
+    }
+}
+
 pub(super) fn bank_error(error: BankError) -> Response {
     let (status, code, message) = match error {
         BankError::Invalid => (
@@ -186,6 +216,24 @@ pub(super) fn bank_error(error: BankError) -> Response {
     };
     error_json(status, code, message)
 }
+pub(super) async fn data_version(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let app = match available(service) {
+        Ok(app) => app,
+        Err(error) => return bank_error(error),
+    };
+    match app.data_version().await {
+        Ok(version) => Json(serde_json::json!({"version": version})).into_response(),
+        Err(error) => bank_error(error),
+    }
+}
+
 pub(super) async fn papers(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -200,6 +248,23 @@ pub(super) async fn papers(
     };
     match app.papers().await {
         Ok(papers) => Json(papers).into_response(),
+        Err(error) => bank_error(error),
+    }
+}
+pub(super) async fn drill_collections(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let app = match available(service) {
+        Ok(app) => app,
+        Err(error) => return bank_error(error),
+    };
+    match app.drill_collections().await {
+        Ok(collections) => Json(collections).into_response(),
         Err(error) => bank_error(error),
     }
 }

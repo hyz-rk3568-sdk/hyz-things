@@ -62,6 +62,8 @@ impl AnswerBank {
             paper_id: Some(Self::paper().summary.id),
             module: None,
             category: None,
+            collection_id: None,
+            collection_title: None,
             status: "active".into(),
             created_at: 1,
             updated_at: 1,

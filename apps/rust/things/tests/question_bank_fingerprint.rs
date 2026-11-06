@@ -94,6 +94,72 @@ async fn catalog_count(papers: Vec<IndexedPaper>, assets: BTreeMap<String, Vec<u
 }
 
 #[tokio::test]
+async fn stem_fingerprint_ignores_materials_and_options() {
+    let first = paper(1, "stem\nnext", "material one", "one");
+    let second = paper(2, "stem \r\nnext", "material two", "two");
+    let app = QuestionBankApplication::new(
+        Arc::new(Source {
+            papers: vec![],
+            assets: BTreeMap::new(),
+        }),
+        Arc::new(RecordingRepository::default()),
+    );
+    let a = app
+        .stem_fingerprint(&first.path, &first.content.questions[0].stem)
+        .await
+        .unwrap();
+    let b = app
+        .stem_fingerprint(&second.path, &second.content.questions[0].stem)
+        .await
+        .unwrap();
+    assert_eq!(a, b);
+    assert!(a.is_some());
+}
+
+#[tokio::test]
+async fn stem_fingerprint_verifies_and_includes_image_contents() {
+    use hyz_things::application::question_bank::source_hash;
+    let one = source_hash(b"one");
+    let two = source_hash(b"two");
+    let mut assets = BTreeMap::new();
+    assets.insert(format!("{one}.png"), b"one".to_vec());
+    assets.insert(format!("{one}.jpg"), b"one".to_vec());
+    assets.insert(format!("{two}.png"), b"two".to_vec());
+    let app = QuestionBankApplication::new(
+        Arc::new(Source {
+            papers: vec![],
+            assets,
+        }),
+        Arc::new(RecordingRepository::default()),
+    );
+    let stem = |name: &str| format!("stem ![](../assets/{name})");
+    let app_ref = &app;
+    let fingerprint = |name: String| async move {
+        app_ref
+            .stem_fingerprint("papers/1.md", &stem(&name))
+            .await
+            .unwrap()
+    };
+    let first = fingerprint(format!("{one}.png")).await.unwrap();
+    assert_eq!(Some(first.clone()), fingerprint(format!("{one}.jpg")).await);
+    assert_ne!(Some(first), fingerprint(format!("{two}.png")).await);
+    assert_eq!(
+        None,
+        fingerprint(format!("{}.png", source_hash(b"missing"))).await
+    );
+    assert_eq!(
+        None,
+        app.stem_fingerprint("papers/1.md", " ").await.unwrap()
+    );
+    assert_eq!(
+        None,
+        app.stem_fingerprint("papers/1.md", "![](https://example.com/a.png)")
+            .await
+            .unwrap()
+    );
+}
+
+#[tokio::test]
 async fn insignificant_line_whitespace_does_not_split_catalog_identity() {
     let count = catalog_count(
         vec![

@@ -120,6 +120,8 @@ for (const width of [1180, 390]) {
     await expect(review.locator('strong').filter({ hasText: '1200' })).toBeVisible();
     await expect(review.locator('.katex').first()).toBeVisible();
     await expect(review.getByTestId('collection-review-answer')).toHaveText('B');
+    await expect(review.getByRole('region', { name: '答案统计' })).toHaveClass(/rounded-box/);
+    await expect(review.getByRole('region', { name: '答案统计' })).toContainText('本题累计');
     await expect(review.getByTestId('collection-review-choice').first()).toHaveCSS('font-size','16px');
     await expect(review.getByTestId('collection-review-explanation')).toHaveCSS('font-size','16px');
     await expect(review.getByTestId('collection-review-explanation')).toContainText('先列方程');
@@ -356,5 +358,94 @@ for (const width of [1180, 390]) {
     await expect(modal).toContainText('已创建并同步');
     expect(body).toEqual({ creation_mode: 'user_organized', target_deck: '用户整理/数量关系/数学运算/错题', back: '', source_revision: 'source-v1', type_confirmed: true });
     await expectNoHorizontalOverflow(page);
+  });
+}
+
+test('collection review prefers existing question AI analysis', async ({ page }) => {
+  await install(page);
+  await page.route(`**${root}/practice/questions/*/ai`, async route => {
+    const question_id = new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({ json: { question_id, status: 'complete', error: null,
+      messages: [{ role: 'assistant', content: '收藏题已有 AI 解析', created_at: 1 }] } });
+  });
+  const review = await openReview(page);
+  await expect(review.getByTestId('question-bank-ai-tab')).toHaveAttribute('aria-pressed', 'true');
+  await expect(review.getByTestId('question-bank-ai-message')).toContainText('收藏题已有 AI 解析');
+});
+
+test('wrong review can delete saved question AI only after confirmation', async ({ page }) => {
+  await install(page, 'wrong');
+  let deleted = false;
+  let deleteCsrf = '';
+  await page.route(`**${root}/practice/questions/*/ai`, async route => {
+    const question_id = new URL(route.request().url()).pathname.split('/').at(-2)!;
+    if (route.request().method() === 'DELETE') {
+      deleted = true;
+      deleteCsrf = route.request().headers()['x-hyz-csrf'];
+    }
+    await route.fulfill({ json: { question_id, status: deleted ? 'idle' : 'complete', error: null,
+      messages: deleted ? [] : [{ role: 'assistant', content: '错题已有解析', created_at: 1 }] } });
+  });
+  const review = await openReview(page);
+  await expect(review.getByTestId('question-bank-ai-message')).toContainText('错题已有解析');
+  await review.getByTestId('question-bank-ai-delete').click();
+  await review.getByTestId('question-bank-ai-delete-cancel').click();
+  expect(deleted).toBe(false);
+  await review.getByTestId('question-bank-ai-delete').click();
+  await review.getByTestId('question-bank-ai-delete-confirm').click();
+  await expect(review.getByTestId('question-bank-ai-start')).toBeVisible();
+  expect(deleted).toBe(true);
+  expect(deleteCsrf).toBeTruthy();
+});
+
+for (const action of ['stop', 'delete'] as const) {
+  test(`a delayed AI poll cannot overwrite ${action} result`, async ({ page }) => {
+    await install(page);
+    let gets = 0;
+    let pollPending = false;
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    const runningMessage = { role: 'assistant', content: '旧的生成内容', created_at: 1 };
+    await page.route(`**${root}/practice/questions/*/ai**`, async route => {
+      const path = new URL(route.request().url()).pathname;
+      const question_id = path.split('/').at(path.endsWith('/stop') ? -3 : -2)!;
+      const method = route.request().method();
+      if (method === 'GET') {
+        gets += 1;
+        if (gets === 3) {
+          pollPending = true;
+          await pending;
+        }
+        await route.fulfill({ json: { question_id, status: 'running', error: null, messages: [runningMessage] } });
+      } else if (method === 'DELETE') {
+        await route.fulfill({ json: { question_id, status: 'idle', error: null, messages: [] } });
+      } else {
+        await route.fulfill({ json: { question_id, status: 'stopped', error: null, messages: [runningMessage] } });
+      }
+    });
+    const review = await openReview(page);
+    await expect(review.getByTestId('question-bank-ai-status')).toHaveText('正在生成');
+    await expect.poll(() => pollPending).toBe(true);
+    const expectFinalState = async () => {
+      if (action === 'stop') {
+        await expect(review.getByTestId('question-bank-ai-status')).toHaveText('已停止');
+        await expect(review.getByTestId('question-bank-ai-stop')).toHaveCount(0);
+      } else {
+        await expect(review.getByTestId('question-bank-ai-start')).toBeVisible();
+        await expect(review.getByTestId('question-bank-ai-message')).toHaveCount(0);
+      }
+    };
+    if (action === 'stop') {
+      await review.getByTestId('question-bank-ai-stop').click();
+    } else {
+      await review.getByTestId('question-bank-ai-delete').click();
+      await review.getByTestId('question-bank-ai-delete-confirm').click();
+    }
+    await expectFinalState();
+    const oldResponse = page.waitForResponse(response => response.url().endsWith('/ai') && response.request().method() === 'GET');
+    release();
+    await oldResponse;
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await expectFinalState();
   });
 }

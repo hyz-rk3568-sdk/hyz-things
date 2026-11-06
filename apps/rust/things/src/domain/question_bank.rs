@@ -16,6 +16,13 @@ pub fn primary_module(name: Option<&str>) -> Option<&'static str> {
     }
 }
 
+pub const PAPER_KIND_EXAM: &str = "exam";
+pub const PAPER_KIND_DRILL: &str = "drill";
+
+pub fn exam_kind() -> String {
+    PAPER_KIND_EXAM.into()
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PaperSummary {
     pub id: String,
@@ -24,6 +31,12 @@ pub struct PaperSummary {
     pub region: String,
     pub variant: String,
     pub role: String,
+    #[serde(default = "exam_kind")]
+    pub kind: String,
+    #[serde(default)]
+    pub collection_id: Option<String>,
+    #[serde(default)]
+    pub collection_title: Option<String>,
     pub questions: usize,
 }
 
@@ -54,6 +67,12 @@ pub struct PaperView {
     pub region: String,
     pub variant: String,
     pub role: String,
+    #[serde(default = "exam_kind")]
+    pub kind: String,
+    #[serde(default)]
+    pub collection_id: Option<String>,
+    #[serde(default)]
+    pub collection_title: Option<String>,
     pub questions: Vec<QuestionView>,
     pub materials: Vec<MaterialView>,
 }
@@ -83,6 +102,7 @@ pub enum PracticeMode {
     Module,
     Wrong,
     Favorite,
+    Drill,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,6 +113,8 @@ pub struct CreatePracticeRequest {
     pub module: Option<String>,
     #[serde(default)]
     pub category: Option<String>,
+    #[serde(default)]
+    pub collection_id: Option<String>,
     #[serde(default)]
     pub filters: ModulePracticeFilters,
 }
@@ -146,6 +168,34 @@ pub struct PracticeModule {
 pub struct PracticeCatalog {
     pub modules: Vec<PracticeModule>,
     pub unclassified: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DrillPaper {
+    pub paper_id: String,
+    pub title: String,
+    pub questions: usize,
+    pub gradable: usize,
+    pub done: usize,
+    pub answered_7: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DrillCollection {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub module: Option<String>,
+    pub year: i32,
+    pub questions: usize,
+    pub gradable: usize,
+    pub done: usize,
+    pub answered_7: i64,
+    #[serde(default)]
+    pub days_7: Option<i64>,
+    #[serde(default)]
+    pub finish_7: Option<String>,
+    pub papers: Vec<DrillPaper>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -249,6 +299,10 @@ pub struct PracticeSession {
     pub module: Option<String>,
     #[serde(default)]
     pub category: Option<String>,
+    #[serde(default)]
+    pub collection_id: Option<String>,
+    #[serde(default)]
+    pub collection_title: Option<String>,
     pub status: String,
     pub created_at: i64,
     pub updated_at: i64,
@@ -342,7 +396,6 @@ pub struct AiReviewMessage {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AiReviewState {
-    pub session_id: String,
     pub question_id: String,
     /// idle, running, complete, stopped or failed
     pub status: String,

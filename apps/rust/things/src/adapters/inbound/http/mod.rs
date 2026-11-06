@@ -730,6 +730,10 @@ fn app_with_assets(
     } = configuration;
     Router::new()
         .route(
+            "/api/v1/question-bank/data-version",
+            on(MethodFilter::GET, question_bank::data_version),
+        )
+        .route(
             "/api/v1/question-bank/papers",
             on(MethodFilter::GET, question_bank::papers),
         )
@@ -744,6 +748,10 @@ fn app_with_assets(
         .route(
             "/api/v1/question-bank/practice/catalog",
             on(MethodFilter::GET, question_bank::practice_catalog),
+        )
+        .route(
+            "/api/v1/question-bank/collections",
+            on(MethodFilter::GET, question_bank::drill_collections),
         )
         .route(
             "/api/v1/question-bank/practice/questions",
@@ -810,18 +818,19 @@ fn app_with_assets(
                 .layer(DefaultBodyLimit::max(40 * 1024)),
         )
         .route(
-            "/api/v1/question-bank/practice/sessions/{id}/questions/{question_id}/ai",
+            "/api/v1/question-bank/practice/questions/{id}/ai",
             on(MethodFilter::GET, question_bank::ai_read)
                 .on(MethodFilter::POST, question_bank::ai_start)
+                .on(MethodFilter::DELETE, question_bank::ai_delete)
                 .layer(DefaultBodyLimit::max(8 * 1024)),
         )
         .route(
-            "/api/v1/question-bank/practice/sessions/{id}/questions/{question_id}/ai/messages",
+            "/api/v1/question-bank/practice/questions/{id}/ai/messages",
             on(MethodFilter::POST, question_bank::ai_follow_up)
                 .layer(DefaultBodyLimit::max(8 * 1024)),
         )
         .route(
-            "/api/v1/question-bank/practice/sessions/{id}/questions/{question_id}/ai/stop",
+            "/api/v1/question-bank/practice/questions/{id}/ai/stop",
             on(MethodFilter::POST, question_bank::ai_stop).layer(DefaultBodyLimit::max(8 * 1024)),
         )
         .route(
@@ -2957,13 +2966,10 @@ fn is_question_bank_practice_post_path(path: &str) -> bool {
         return parts.len() == 8 && matches!(parts[7], "submit" | "pause" | "repeat")
             || parts.len() == 9
                 && parts[7] == "answers"
-                && crate::application::question_bank::document::valid_id(parts[8])
-            || parts.len() >= 10
-                && parts.len() <= 11
-                && parts[7] == "questions"
-                && crate::application::question_bank::document::valid_id(parts[8])
-                && parts[9] == "ai"
-                && (parts.len() == 10 || matches!(parts[10], "messages" | "stop"));
+                && crate::application::question_bank::document::valid_id(parts[8]);
+    }
+    if is_question_bank_ai_path(path, true) {
+        return true;
     }
     ((parts.len() == 7 || parts.len() == 8 && parts[7] == "flashcard")
         && parts[..6] == ["", "api", "v1", "question-bank", "practice", "favorites"]
@@ -2971,6 +2977,15 @@ fn is_question_bank_practice_post_path(path: &str) -> bool {
             && parts[..6] == ["", "api", "v1", "question-bank", "practice", "questions"]
             && parts[7] == "flashcard")
         && crate::application::question_bank::document::valid_id(parts[6])
+}
+
+fn is_question_bank_ai_path(path: &str, allow_action: bool) -> bool {
+    let parts: Vec<&str> = path.split('/').collect();
+    (parts.len() == 8
+        || allow_action && parts.len() == 9 && matches!(parts[8], "messages" | "stop"))
+        && parts[..6] == ["", "api", "v1", "question-bank", "practice", "questions"]
+        && crate::application::question_bank::document::valid_id(parts[6])
+        && parts[7] == "ai"
 }
 
 fn is_logic_judgment_run_post_path(path: &str) -> bool {
@@ -3030,10 +3045,11 @@ fn is_data_analysis_run_post_path(path: &str) -> bool {
 async fn security_headers(request: Request, next: Next) -> Response {
     // GET remains globally allowed so exact routes and the API fallback can distinguish 404 from
     // 405. Sensitive GET handlers still enforce normal administrator session and JSON Origin/CSRF.
-    // Only exact POST mutation paths are allowed; each handler enforces its own policy.
+    // Only exact mutation paths are allowed; each handler enforces its own policy.
     let path = request.uri().path();
-    let allowed =
-        request.method() == Method::GET || request.method() == Method::POST && is_post_path(path);
+    let allowed = request.method() == Method::GET
+        || request.method() == Method::POST && is_post_path(path)
+        || request.method() == Method::DELETE && is_question_bank_ai_path(path, false);
     let reject_api_method = !allowed && path.starts_with("/api/");
     let mut response = if reject_api_method {
         method_not_allowed_json()

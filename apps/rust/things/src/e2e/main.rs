@@ -207,6 +207,53 @@ fn duplicate_fixture() -> String {
         )
 }
 
+const QUESTION_BANK_DRILL_FIXTURE: &str = r#"---
+schema: hyz-paper/v1
+title: 方程关系
+year: 2026
+region: 专项
+variant: 数量关系
+role: primary
+kind: drill
+collection_id: xiaop-2026-shuliang
+collection_title: 小P 2026 数量关系讲义
+---
+<!-- hyz-paper-id: 019a3d8c-7f23-7b6e-927d-3c951851d3a5 -->
+# 方程关系
+## Question 1
+<!-- hyz-question-id: 019a3d8e-1b32-7a60-9c83-f34217a6e230 -->
+```yaml
+module: 数量关系
+category: 方程关系
+```
+### Stem
+专项样卷第一题。
+### Options
+- A. 甲
+- B. 乙
+- C. 丙
+- D. 丁
+### Answer
+B
+### Explanation
+专项解析。
+## Question 2
+<!-- hyz-question-id: 019a3d8e-1b32-7a60-9c83-f34217a6e231 -->
+```yaml
+module: 数量关系
+category: 方程关系
+```
+### Stem
+专项样卷第二题，暂无答案。
+### Options
+- A. 甲
+- B. 乙
+- C. 丙
+- D. 丁
+### Answer
+
+"#;
+
 struct QuestionBankFixture;
 
 #[async_trait]
@@ -230,6 +277,11 @@ impl QuestionBankSourcePort for QuestionBankFixture {
                     "e2e-duplicate-hash".into(),
                     document::parse(&duplicate_fixture()).map_err(|_| BankError::Invalid)?,
                 ),
+                IndexedPaper::new(
+                    "collections/xiaop-2026-shuliang/01.md".into(),
+                    "e2e-drill-hash".into(),
+                    document::parse(QUESTION_BANK_DRILL_FIXTURE).map_err(|_| BankError::Invalid)?,
+                ),
             ],
             generated_ids: 0,
         })
@@ -237,6 +289,9 @@ impl QuestionBankSourcePort for QuestionBankFixture {
     async fn load(&self, paper: IndexedPaper) -> Result<Document, BankError> {
         if paper.summary.id == "019a3d8c-7f23-7b6e-927d-3c951851d3a4" {
             return document::parse(&duplicate_fixture()).map_err(|_| BankError::Invalid);
+        }
+        if paper.summary.id == "019a3d8c-7f23-7b6e-927d-3c951851d3a5" {
+            return document::parse(QUESTION_BANK_DRILL_FIXTURE).map_err(|_| BankError::Invalid);
         }
         let markdown = if paper.summary.id == "019a3d8c-7f23-7b6e-927d-3c951851d3a3" {
             QUESTION_BANK_SECOND_FIXTURE
@@ -634,6 +689,7 @@ struct HarnessControlState {
     backend: Arc<HarnessBackend>,
     admin: Arc<AdminApplication>,
     camera: Arc<CameraApplication>,
+    question_bank: sqlx::SqlitePool,
 }
 
 impl Default for HarnessBackend {
@@ -1498,7 +1554,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let web_app = with_favorite_flashcards(web_app, Some(favorite_flashcards));
     let web_app = with_question_bank_ai(web_app, Some(ai));
     let web_app = with_training_time(web_app, Some(training_time));
-    let harness_app = harness_control_app(backend, admin, camera);
+    let harness_app = harness_control_app(backend, admin, camera, bank_repository.pool().clone());
 
     println!(
         "{}",
@@ -1523,17 +1579,50 @@ fn harness_control_app(
     backend: Arc<HarnessBackend>,
     admin: Arc<AdminApplication>,
     camera: Arc<CameraApplication>,
+    question_bank: sqlx::SqlitePool,
 ) -> Router {
     Router::new()
         .route("/health", get(harness_health))
         .route("/state", get(harness_state).put(replace_harness_state))
         .route("/reset", put(reset_harness_state))
+        .route("/reset-question-bank", put(reset_question_bank))
         .layer(DefaultBodyLimit::max(MAX_HARNESS_JSON_BYTES))
         .with_state(HarnessControlState {
             backend,
             admin,
             camera,
+            question_bank,
         })
+}
+
+async fn reset_question_bank(
+    State(control): State<HarnessControlState>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    let mut transaction = control
+        .question_bank
+        .begin()
+        .await
+        .map_err(|e| harness_internal_error(e.to_string()))?;
+    for statement in [
+        "DELETE FROM question_ai_messages",
+        "DELETE FROM question_ai_reviews",
+        "DELETE FROM practice_attempts",
+        "DELETE FROM question_progress",
+        "DELETE FROM favorites",
+        "DELETE FROM practice_items",
+        "DELETE FROM practice_sessions",
+        "DELETE FROM module_practice_settings",
+    ] {
+        sqlx::query(statement)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|e| harness_internal_error(e.to_string()))?;
+    }
+    transaction
+        .commit()
+        .await
+        .map_err(|e| harness_internal_error(e.to_string()))?;
+    Ok(Json(serde_json::json!({"status": "ok"})))
 }
 
 async fn harness_health() -> Json<serde_json::Value> {

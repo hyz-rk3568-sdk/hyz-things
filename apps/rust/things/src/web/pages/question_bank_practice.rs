@@ -3,13 +3,18 @@ use super::favorite_flashcard::{FavoriteFlashcardPanel, FavoritePreview};
 use super::material_scroll::{scroll_edges, MaterialScrollButton, ScrollEdges};
 use super::*;
 use hyz_things::domain::question_bank::{
-    primary_module, AiReviewFollowUp, AiReviewState, CreatePracticeRequest, FavoriteState,
-    ModulePracticeFilters, PaperSummary, PracticeBrowseItem, PracticeCatalog, PracticeMode,
-    PracticeQuestion, PracticeReview, PracticeSession, PracticeWorkspace, SavePracticeAnswer,
-    SetFavorite, SetPracticePaused,
+    primary_module, AiReviewFollowUp, AiReviewState, CreatePracticeRequest, DrillCollection,
+    FavoriteState, ModulePracticeFilters, PaperSummary, PracticeBrowseItem, PracticeCatalog,
+    PracticeMode, PracticeQuestion, PracticeReview, PracticeSession, PracticeWorkspace,
+    SavePracticeAnswer, SetFavorite, SetPracticePaused,
 };
 
 const ROOT: &str = "/api/v1/question-bank";
+
+#[derive(serde::Deserialize)]
+struct DataVersion {
+    version: String,
+}
 
 fn module_filter_labels(filters: &ModulePracticeFilters) -> [String; 3] {
     let years = match (filters.year_min, filters.year_max) {
@@ -46,12 +51,27 @@ fn paper_catalog_label(papers: &[PaperSummary]) -> String {
     format!("{min}—{max} · {count} 份原卷")
 }
 
+fn score_summary(score: &hyz_things::domain::question_bank::PracticeScore) -> String {
+    let gradable = score.total.saturating_sub(score.ungradable);
+    if gradable == 0 {
+        format!("共 {} 题 · 暂不判分", score.total)
+    } else if score.ungradable > 0 {
+        format!(
+            "{} / {} 正确 · {} 题暂不可判分",
+            score.correct, gradable, score.ungradable
+        )
+    } else {
+        format!("{} / {} 正确", score.correct, score.total)
+    }
+}
+
 fn history_mode_label(mode: &PracticeMode) -> &'static str {
     match mode {
         PracticeMode::Paper | PracticeMode::PaperModule => "套卷训练",
         PracticeMode::Module => "模块训练",
         PracticeMode::Wrong => "错题复练",
         PracticeMode::Favorite => "收藏练习",
+        PracticeMode::Drill => "专项练习",
     }
 }
 
@@ -98,6 +118,7 @@ fn history_filter_matches(run: &PracticeSession, filter: Option<&PracticeMode>) 
             matches!(run.mode, PracticeMode::Paper | PracticeMode::PaperModule)
         }
         Some(PracticeMode::Module) => run.mode == PracticeMode::Module,
+        Some(PracticeMode::Drill) => run.mode == PracticeMode::Drill,
         Some(mode) => run.mode == *mode,
     }
 }
@@ -105,11 +126,12 @@ fn history_filter_matches(run: &PracticeSession, filter: Option<&PracticeMode>) 
 fn history_matches_entry(entry: &PracticeMode, run: &PracticeSession) -> bool {
     let paper_run = matches!(run.mode, PracticeMode::Paper | PracticeMode::PaperModule)
         || matches!(run.mode, PracticeMode::Wrong | PracticeMode::Favorite)
-            && run.paper_id.is_some();
-    if *entry == PracticeMode::Paper {
-        paper_run
-    } else {
-        !paper_run
+            && run.paper_id.is_some()
+            && run.collection_id.is_none();
+    match entry {
+        PracticeMode::Paper => paper_run,
+        PracticeMode::Drill => run.mode == PracticeMode::Drill,
+        _ => !paper_run && run.mode != PracticeMode::Drill,
     }
 }
 pub(super) const MODULE_SETTINGS_URL: &str = "/api/v1/question-bank/module-settings";
@@ -152,6 +174,7 @@ fn browse_filter_url(
             PracticeMode::Wrong => "wrong",
             PracticeMode::Favorite => "favorite",
             PracticeMode::PaperModule => "paper_module",
+            PracticeMode::Drill => "drill",
         },
     );
     if *entry_mode == PracticeMode::Paper {
@@ -187,6 +210,8 @@ const WORKSPACE: &str = "question-bank-workspace training-workspace fixed inset-
 pub(crate) struct QuestionBankTrainingProps {
     pub csrf: String,
     pub entry_mode: PracticeMode,
+    #[prop_or(true)]
+    pub active: bool,
     pub on_immersive_change: Callback<bool>,
     pub on_paper_pause_change: Callback<bool>,
     #[prop_or_default]
@@ -228,7 +253,11 @@ struct PracticeCollectionCache {
 }
 
 #[hook]
-fn use_practice_collection(scope: PracticeMode, refresh: u64) -> PracticeCollectionCache {
+fn use_practice_collection(
+    scope: PracticeMode,
+    refresh: u64,
+    ready: bool,
+) -> PracticeCollectionCache {
     let items = use_state(|| None::<Vec<PracticeBrowseItem>>);
     let loading = use_state(|| true);
     let failure = use_state(|| None::<String>);
@@ -239,33 +268,40 @@ fn use_practice_collection(scope: PracticeMode, refresh: u64) -> PracticeCollect
         let loading = loading.clone();
         let failure = failure.clone();
         let generation = generation.clone();
-        use_effect_with((scope, refresh, *revision), move |(scope, _, _)| {
-            *generation.borrow_mut() += 1;
-            let request_generation = *generation.borrow();
-            let response_generation = generation.clone();
-            let url = browse_filter_url(
-                scope,
-                &PracticeMode::Paper,
-                "",
-                "",
-                "",
-                &ModulePracticeFilters::default(),
-            );
-            loading.set(true);
-            failure.set(None);
-            spawn_local(async move {
-                let result = fetch_json::<Vec<PracticeBrowseItem>>(&url, "真题分类浏览").await;
-                if *response_generation.borrow() != request_generation {
-                    return;
-                }
-                match result {
-                    Ok(result) => items.set(Some(result)),
-                    Err(message) => failure.set(Some(message)),
-                }
-                loading.set(false);
-            });
-            move || *generation.borrow_mut() += 1
-        });
+        use_effect_with(
+            (scope, refresh, *revision, ready),
+            move |(scope, _, _, ready)| {
+                *generation.borrow_mut() += 1;
+                let request_generation = *generation.borrow();
+                let response_generation = generation.clone();
+                let ready = *ready;
+                let url = browse_filter_url(
+                    scope,
+                    &PracticeMode::Paper,
+                    "",
+                    "",
+                    "",
+                    &ModulePracticeFilters::default(),
+                );
+                loading.set(true);
+                failure.set(None);
+                spawn_local(async move {
+                    if !ready {
+                        return;
+                    }
+                    let result = fetch_json::<Vec<PracticeBrowseItem>>(&url, "真题分类浏览").await;
+                    if *response_generation.borrow() != request_generation {
+                        return;
+                    }
+                    match result {
+                        Ok(result) => items.set(Some(result)),
+                        Err(message) => failure.set(Some(message)),
+                    }
+                    loading.set(false);
+                });
+                move || *generation.borrow_mut() += 1
+            },
+        );
     }
     let invalidate = {
         let loading = loading.clone();
@@ -532,29 +568,91 @@ fn has_existing_ai_analysis(state: &AiReviewState) -> bool {
 }
 
 #[derive(Properties, PartialEq)]
-struct QuestionAiReviewProps {
-    csrf: String,
-    session_id: String,
-    question_id: String,
+pub(crate) struct ReviewAnswerStatsProps {
+    pub correct_answer: Vec<String>,
+    pub answer: Option<Vec<String>>,
+    pub correct_count: usize,
+    pub wrong_count: usize,
+    pub answer_test_id: &'static str,
+    pub counts_test_id: &'static str,
+}
+
+#[function_component(ReviewAnswerStats)]
+pub(crate) fn review_answer_stats(props: &ReviewAnswerStatsProps) -> Html {
+    html! {
+        <section class="rounded-box border border-base-content/15 p-3" aria-label="答案统计">
+            if let Some(answer) = &props.answer {
+                <p class="text-sm text-base-content/60">{format!("你的答案：{}", if answer.is_empty() {"未答".into()} else {answer.join("、")})}</p>
+            }
+            <p class="text-xs opacity-60">{"正确答案"}</p>
+            <p class="font-semibold" data-testid={props.answer_test_id}>
+                {if props.correct_answer.is_empty() {"暂无可靠答案".into()} else {props.correct_answer.join("、")}}
+            </p>
+            <p class="mt-2 text-sm text-base-content/60" data-testid={props.counts_test_id}
+                data-correct={props.correct_count.to_string()} data-wrong={props.wrong_count.to_string()}>
+                {format!("本题累计：做对 {} 次 · 做错 {} 次", props.correct_count, props.wrong_count)}
+            </p>
+        </section>
+    }
+}
+
+#[hook]
+pub(crate) fn use_question_ai_tab(
+    question_id: Option<String>,
+) -> (UseStateHandle<bool>, Rc<RefCell<bool>>) {
+    let ai_tab = use_state(|| false);
+    let chosen = use_mut_ref(|| false);
+    {
+        let ai_tab = ai_tab.clone();
+        let chosen = chosen.clone();
+        use_effect_with(question_id, move |id| {
+            ai_tab.set(false);
+            *chosen.borrow_mut() = false;
+            let alive = Rc::new(Cell::new(true));
+            if let Some(question_id) = id.clone() {
+                let active = alive.clone();
+                spawn_local(async move {
+                    let endpoint = format!("{ROOT}/practice/questions/{question_id}/ai");
+                    if let Ok(state) = fetch_json::<AiReviewState>(&endpoint, "AI 复盘记录").await
+                    {
+                        if active.get()
+                            && !*chosen.borrow()
+                            && state.question_id == question_id
+                            && has_existing_ai_analysis(&state)
+                        {
+                            ai_tab.set(true);
+                        }
+                    }
+                });
+            }
+            move || alive.set(false)
+        });
+    }
+    (ai_tab, chosen)
+}
+
+#[derive(Properties, PartialEq)]
+pub(crate) struct QuestionAiReviewProps {
+    pub csrf: String,
+    pub question_id: String,
 }
 
 /// The component is mounted only while the AI tab is visible; the native
 /// backend owns its turns and never cancels on unmount or question navigation.
 #[function_component(QuestionAiReview)]
-fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
+pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     let state = use_state(|| None::<AiReviewState>);
     let failure = use_state(|| None::<String>);
     let submitting = use_state(|| false);
     let follow_up = use_state(String::new);
-    let endpoint = format!(
-        "{ROOT}/practice/sessions/{}/questions/{}/ai",
-        props.session_id, props.question_id
-    );
+    let deleting = use_state(|| false);
+    let revision = use_mut_ref(|| 0u64);
+    let endpoint = format!("{ROOT}/practice/questions/{}/ai", props.question_id);
     {
         let state = state.clone();
         let failure = failure.clone();
         let endpoint = endpoint.clone();
-        let key = (props.session_id.clone(), props.question_id.clone());
+        let key = props.question_id.clone();
         use_effect_with(key, move |_| {
             state.set(None);
             failure.set(None);
@@ -574,26 +672,29 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     }
     {
         let state = state.clone();
+        let revision = revision.clone();
         let key = (
-            props.session_id.clone(),
             props.question_id.clone(),
             state
                 .as_ref()
                 .as_ref()
                 .is_some_and(|v| v.status == "running"),
         );
-        use_effect_with(key, move |(session_id, question_id, running)| {
+        use_effect_with(key, move |(question_id, running)| {
             let timer = if *running {
-                let endpoint =
-                    format!("{ROOT}/practice/sessions/{session_id}/questions/{question_id}/ai");
+                let endpoint = format!("{ROOT}/practice/questions/{question_id}/ai");
                 Some(gloo_timers::callback::Interval::new(1500, move || {
                     let state = state.clone();
                     let endpoint = endpoint.clone();
+                    let revision = revision.clone();
+                    let request_revision = *revision.borrow();
                     spawn_local(async move {
                         if let Ok(value) =
                             fetch_json::<AiReviewState>(&endpoint, "AI 复盘进度").await
                         {
-                            state.set(Some(value));
+                            if *revision.borrow() == request_revision {
+                                state.set(Some(value));
+                            }
                         }
                     });
                 }))
@@ -605,6 +706,7 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     }
     let on_start = {
         let state = state.clone();
+        let revision = revision.clone();
         let failure = failure.clone();
         let submitting = submitting.clone();
         let endpoint = endpoint.clone();
@@ -616,19 +718,21 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             submitting.set(true);
             failure.set(None);
             let state = state.clone();
+            let revision = revision.clone();
             let failure = failure.clone();
             let submitting = submitting.clone();
             let endpoint = endpoint.clone();
             let csrf = csrf.clone();
             spawn_local(async move {
-                match post_json_response::<_, AiReviewState>(
+                let result = post_json_response::<_, AiReviewState>(
                     &endpoint,
                     &csrf,
                     &EmptyRequest {},
                     "开始 AI 解析",
                 )
-                .await
-                {
+                .await;
+                *revision.borrow_mut() += 1;
+                match result {
                     Ok(result) => state.set(Some(result)),
                     Err(error) => failure.set(Some(error)),
                 }
@@ -638,6 +742,7 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     };
     let on_stop = {
         let state = state.clone();
+        let revision = revision.clone();
         let failure = failure.clone();
         let submitting = submitting.clone();
         let endpoint = format!("{endpoint}/stop");
@@ -648,19 +753,21 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             }
             submitting.set(true);
             let state = state.clone();
+            let revision = revision.clone();
             let failure = failure.clone();
             let submitting = submitting.clone();
             let endpoint = endpoint.clone();
             let csrf = csrf.clone();
             spawn_local(async move {
-                match post_json_response::<_, AiReviewState>(
+                let result = post_json_response::<_, AiReviewState>(
                     &endpoint,
                     &csrf,
                     &EmptyRequest {},
                     "停止 AI 解析",
                 )
-                .await
-                {
+                .await;
+                *revision.borrow_mut() += 1;
+                match result {
                     Ok(result) => state.set(Some(result)),
                     Err(error) => failure.set(Some(error)),
                 }
@@ -670,6 +777,7 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     };
     let on_follow_up = {
         let state = state.clone();
+        let revision = revision.clone();
         let failure = failure.clone();
         let submitting = submitting.clone();
         let follow_up = follow_up.clone();
@@ -686,6 +794,7 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             submitting.set(true);
             failure.set(None);
             let state = state.clone();
+            let revision = revision.clone();
             let failure = failure.clone();
             let submitting = submitting.clone();
             let follow_up = follow_up.clone();
@@ -693,12 +802,66 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             let csrf = csrf.clone();
             spawn_local(async move {
                 let payload = AiReviewFollowUp { message };
-                match post_json_response::<_, AiReviewState>(&endpoint, &csrf, &payload, "AI 追问")
-                    .await
-                {
+                let result =
+                    post_json_response::<_, AiReviewState>(&endpoint, &csrf, &payload, "AI 追问")
+                        .await;
+                *revision.borrow_mut() += 1;
+                match result {
                     Ok(result) => {
                         state.set(Some(result));
                         follow_up.set(String::new());
+                    }
+                    Err(error) => failure.set(Some(error)),
+                }
+                submitting.set(false);
+            });
+        })
+    };
+    let on_delete = {
+        let state = state.clone();
+        let revision = revision.clone();
+        let failure = failure.clone();
+        let submitting = submitting.clone();
+        let deleting = deleting.clone();
+        let endpoint = endpoint.clone();
+        let csrf = props.csrf.clone();
+        Callback::from(move |_| {
+            if *submitting {
+                return;
+            }
+            submitting.set(true);
+            failure.set(None);
+            let state = state.clone();
+            let revision = revision.clone();
+            let failure = failure.clone();
+            let submitting = submitting.clone();
+            let deleting = deleting.clone();
+            let endpoint = endpoint.clone();
+            let csrf = csrf.clone();
+            spawn_local(async move {
+                let result = async {
+                    let response = Request::delete(&endpoint)
+                        .credentials(RequestCredentials::SameOrigin)
+                        .header("Accept", "application/json")
+                        .header("Content-Type", "application/json")
+                        .header("X-HYZ-CSRF", &csrf)
+                        .send()
+                        .await
+                        .map_err(|e| format!("无法连接删除 AI 解析接口：{e}"))?;
+                    if !response.ok() {
+                        return Err(format!("删除 AI 解析失败（HTTP {}）", response.status()));
+                    }
+                    response
+                        .json::<AiReviewState>()
+                        .await
+                        .map_err(|e| format!("删除 AI 解析响应无效：{e}"))
+                }
+                .await;
+                *revision.borrow_mut() += 1;
+                match result {
+                    Ok(value) => {
+                        state.set(Some(value));
+                        deleting.set(false);
                     }
                     Err(error) => failure.set(Some(error)),
                 }
@@ -756,6 +919,20 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                     </div>
                 })}
             }
+            if current.as_ref().is_some_and(|value| !value.messages.is_empty() || value.status == "running") {
+                if *deleting {
+                    <div class="space-y-2" role="alert">
+                        <p>{"确定删除这道题的 AI 解析和全部追问吗？"}</p>
+                        <button type="button" class="btn btn-error btn-sm" data-testid="question-bank-ai-delete-confirm"
+                            disabled={*submitting} onclick={on_delete}>{"确认删除"}</button>
+                        <button type="button" class="btn btn-ghost btn-sm" data-testid="question-bank-ai-delete-cancel"
+                            disabled={*submitting} onclick={Callback::from({let deleting=deleting.clone(); move |_|deleting.set(false)})}>{"取消"}</button>
+                    </div>
+                } else {
+                    <button type="button" class="btn btn-ghost btn-sm text-error" data-testid="question-bank-ai-delete"
+                        disabled={*submitting} onclick={Callback::from({let deleting=deleting.clone(); move |_|deleting.set(true)})}>{"删除 AI 解析"}</button>
+                }
+            }
             if can_start {
                 <p class="text-sm text-base-content/60">{"Codex 将根据题目 UUID 从电脑本地题库读取原题、共用材料及图片，独立解析；参考答案仅供参考。"}</p>
                 <button type="button" class="btn btn-primary w-full" data-testid="question-bank-ai-start"
@@ -805,6 +982,9 @@ fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
 pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html {
     let clock = use_context::<StudyClockContext>();
     let papers = use_state(Vec::<PaperSummary>::new);
+    let drill_collections = use_state(|| None::<Vec<DrillCollection>>);
+    let selected_drill_collection = use_state(String::new);
+    let selected_drill_paper = use_state(String::new);
     let history = use_state(Vec::<PracticeSession>::new);
     let history_open = use_state(|| props.show_history);
     let history_forced = use_state(|| false);
@@ -828,9 +1008,16 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let mode = use_state(|| props.entry_mode.clone());
     let workspace = use_state(|| None::<PracticeWorkspace>);
     let review = use_state(|| None::<PracticeReview>);
-    let ai_tab = use_state(|| false);
-    let ai_tab_chosen = use_mut_ref(|| false);
     let index = use_state(|| 0usize);
+    let selected_ai_question = workspace.as_ref().as_ref().and_then(|workspace| {
+        let question = workspace.questions.get(*index)?;
+        let review = (*review).as_ref()?;
+        let reviewed = review.questions.get(*index)?;
+        (review.session.id == workspace.session.id
+            && reviewed.question.item.question_id == question.item.question_id)
+            .then(|| question.item.question_id.clone())
+    });
+    let (ai_tab, ai_tab_chosen) = use_question_ai_tab(selected_ai_question);
     let multi_select = use_state(|| false);
     let current_favorite_source = workspace
         .as_ref()
@@ -851,34 +1038,92 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let operation_lock = use_mut_ref(|| false);
     let pending_answer = use_state(|| None::<PendingAnswer>);
     let error = use_state(|| None::<String>);
+    let refresh = use_state(|| 0u64);
+    let version_ready = use_state(|| false);
+    let version_checking = use_state(|| true);
+    let version_error = use_state(|| None::<String>);
+    let last_version = use_mut_ref(|| None::<String>);
+    {
+        let active = props.active;
+        let version_ready = version_ready.clone();
+        let version_checking = version_checking.clone();
+        let version_error = version_error.clone();
+        let last_version = last_version.clone();
+        let refresh = refresh.clone();
+        let filters_loaded = filters_loaded.clone();
+        let had_data = *version_ready;
+        use_effect_with(active, move |active| {
+            let current = Rc::new(Cell::new(true));
+            if *active {
+                version_checking.set(true);
+                let current = current.clone();
+                spawn_local(async move {
+                    let result =
+                        fetch_json::<DataVersion>(&format!("{ROOT}/data-version"), "题库数据版本")
+                            .await;
+                    if !current.get() {
+                        return;
+                    }
+                    let changed = match result {
+                        Ok(value) => {
+                            version_error.set(None);
+                            let changed = last_version.borrow().as_ref() != Some(&value.version);
+                            *last_version.borrow_mut() = Some(value.version);
+                            changed
+                        }
+                        Err(message) => {
+                            *last_version.borrow_mut() = None;
+                            version_error.set(Some(message));
+                            true
+                        }
+                    };
+                    if changed && had_data {
+                        filters_loaded.set(false);
+                        refresh.set((*refresh).saturating_add(1));
+                    }
+                    version_ready.set(true);
+                    version_checking.set(false);
+                });
+            }
+            move || current.set(false)
+        });
+    }
     {
         let module_filters = module_filters.clone();
         let filters_loaded = filters_loaded.clone();
         let error = error.clone();
-        use_effect_with((), move |_| {
-            spawn_local(async move {
-                match fetch_json::<ModulePracticeFilters>(MODULE_SETTINGS_URL, "刷题设置").await
-                {
-                    Ok(filters) => {
-                        module_filters.set(filters);
-                        filters_loaded.set(true);
+        use_effect_with((*version_ready, *refresh), move |(ready, _)| {
+            let current = Rc::new(Cell::new(true));
+            if *ready {
+                let current = current.clone();
+                spawn_local(async move {
+                    let result =
+                        fetch_json::<ModulePracticeFilters>(MODULE_SETTINGS_URL, "刷题设置").await;
+                    if !current.get() {
+                        return;
                     }
-                    Err(message) => error.set(Some(message)),
-                }
-            });
-            || ()
+                    match result {
+                        Ok(filters) => {
+                            module_filters.set(filters);
+                            filters_loaded.set(true);
+                        }
+                        Err(message) => error.set(Some(message)),
+                    }
+                });
+            }
+            move || current.set(false)
         });
     }
     let submit_confirm = use_state(|| false);
     let elapsed = use_state(|| 0u64);
     let seconds_ref = use_mut_ref(|| 0u64);
-    let refresh = use_state(|| 0u64);
     let material_scroll = use_node_ref();
     let question_scroll = use_node_ref();
     let material_edges = use_state(ScrollEdges::default);
     let question_edges = use_state(ScrollEdges::default);
-    let wrong_collection = use_practice_collection(PracticeMode::Wrong, *refresh);
-    let favorite_collection = use_practice_collection(PracticeMode::Favorite, *refresh);
+    let wrong_collection = use_practice_collection(PracticeMode::Wrong, *refresh, *version_ready);
+    let favorite_collection =
+        use_practice_collection(PracticeMode::Favorite, *refresh, *version_ready);
     let wrong_total = wrong_collection
         .items
         .as_ref()
@@ -923,12 +1168,17 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
 
     {
         let papers = papers.clone();
+        let drill_collections = drill_collections.clone();
         let history = history.clone();
         let error = error.clone();
-        use_effect_with(*refresh, move |_| {
+        use_effect_with((*version_ready, *refresh), move |(ready, _)| {
+            let ready = *ready;
             let current = std::rc::Rc::new(std::cell::Cell::new(true));
             let response_current = current.clone();
             spawn_local(async move {
+                if !ready {
+                    return;
+                }
                 let result =
                     fetch_json::<Vec<PaperSummary>>(&format!("{ROOT}/papers"), "真题试卷列表")
                         .await;
@@ -937,6 +1187,18 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 }
                 match result {
                     Ok(list) => papers.set(list),
+                    Err(e) => error.set(Some(e)),
+                }
+                let result = fetch_json::<Vec<DrillCollection>>(
+                    &format!("{ROOT}/collections"),
+                    "专项合集列表",
+                )
+                .await;
+                if !response_current.get() {
+                    return;
+                }
+                match result {
+                    Ok(list) => drill_collections.set(Some(list)),
                     Err(e) => error.set(Some(e)),
                 }
                 let result = fetch_json::<Vec<PracticeSession>>(
@@ -1037,48 +1299,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         });
     }
     {
-        let ai_tab = ai_tab.clone();
-        let ai_tab_chosen = ai_tab_chosen.clone();
-        let review_snapshot = review.as_ref();
-        let selected = workspace.as_ref().as_ref().and_then(|workspace| {
-            let question = workspace.questions.get(*index)?;
-            let review = review_snapshot.as_ref()?;
-            let reviewed = review.questions.get(*index)?;
-            (review.session.id == workspace.session.id
-                && reviewed.question.item.question_id == question.item.question_id)
-                .then(|| {
-                    (
-                        workspace.session.id.clone(),
-                        question.item.question_id.clone(),
-                    )
-                })
-        });
-        use_effect_with(selected, move |selected| {
-            ai_tab.set(false);
-            *ai_tab_chosen.borrow_mut() = false;
-            let alive = std::rc::Rc::new(std::cell::Cell::new(true));
-            if let Some((session_id, question_id)) = selected.clone() {
-                let request_alive = alive.clone();
-                spawn_local(async move {
-                    let endpoint =
-                        format!("{ROOT}/practice/sessions/{session_id}/questions/{question_id}/ai");
-                    if let Ok(state) = fetch_json::<AiReviewState>(&endpoint, "AI 复盘记录").await
-                    {
-                        if request_alive.get()
-                            && !*ai_tab_chosen.borrow()
-                            && state.session_id == session_id
-                            && state.question_id == question_id
-                            && has_existing_ai_analysis(&state)
-                        {
-                            ai_tab.set(true);
-                        }
-                    }
-                });
-            }
-            move || alive.set(false)
-        });
-    }
-    {
         let refresh_edges = refresh_edges.clone();
         let selected = (
             *index,
@@ -1135,6 +1355,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let selected_paper = selected_paper.clone();
         let selected_module = selected_module.clone();
         let selected_category = selected_category.clone();
+        let selected_drill_collection = selected_drill_collection.clone();
+        let selected_drill_paper = selected_drill_paper.clone();
         let module_filters = module_filters.clone();
         let workspace = workspace.clone();
         let review = review.clone();
@@ -1182,6 +1404,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             let selected_paper = selected_paper.clone();
             let selected_module = selected_module.clone();
             let selected_category = selected_category.clone();
+            let selected_drill_collection = selected_drill_collection.clone();
+            let selected_drill_paper = selected_drill_paper.clone();
             let module_filters = module_filters.clone();
             let workspace = workspace.clone();
             let review = review.clone();
@@ -1226,6 +1450,13 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                         }
                                         Some((*selected_paper).clone())
                                     }
+                                    PracticeMode::Drill => {
+                                        if selected_drill_collection.is_empty() {
+                                            return Err("请先选择专项合集".into());
+                                        }
+                                        (!selected_drill_paper.is_empty())
+                                            .then(|| (*selected_drill_paper).clone())
+                                    }
                                     _ => None,
                                 },
                                 module: if *mode == PracticeMode::Module || collection_active {
@@ -1245,6 +1476,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     && !selected_category.is_empty()
                                 {
                                     Some((*selected_category).clone())
+                                } else {
+                                    None
+                                },
+                                collection_id: if practice_mode == PracticeMode::Drill {
+                                    Some((*selected_drill_collection).clone())
                                 } else {
                                     None
                                 },
@@ -1512,8 +1748,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             });
         })
     };
-    let visible_error = error
+    let visible_error = version_error
         .as_ref()
+        .or_else(|| error.as_ref())
         .or_else(|| selected_collection.and_then(|cache| cache.failure.as_ref()))
         .or_else(|| wrong_collection.failure.as_ref())
         .or_else(|| favorite_collection.failure.as_ref());
@@ -1522,6 +1759,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     } else {
         Html::default()
     };
+
+    if !props.active {
+        return Html::default();
+    }
 
     if let Some(current) = workspace.as_ref() {
         let item_index = (*index).min(current.questions.len().saturating_sub(1));
@@ -1695,15 +1936,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             </label>
                         }
                         if let Some(r) = selected_review {
-                            <p class="text-base font-semibold" data-testid="question-bank-practice-review-answer">
-                                {format!("你的答案：{} · 正确答案：{}",
-                                    if item.item.answer.is_empty() {"未答".into()} else {item.item.answer.join("、")},
-                                    if r.correct_answer.is_empty() {"暂无可靠答案".into()} else {r.correct_answer.join("、")})}
-                            </p>
-                            <p class="text-sm text-base-content/60" data-testid="question-bank-practice-attempt-counts"
-                                data-correct={r.correct_count.to_string()} data-wrong={r.wrong_count.to_string()}>
-                                {format!("本题累计：做对 {} 次 · 做错 {} 次", r.correct_count, r.wrong_count)}
-                            </p>
+                            <ReviewAnswerStats correct_answer={r.correct_answer.clone()} answer={Some(item.item.answer.clone())}
+                                correct_count={r.correct_count} wrong_count={r.wrong_count}
+                                answer_test_id="question-bank-practice-review-answer" counts_test_id="question-bank-practice-attempt-counts"/>
                             <div class="border-t border-base-content/10 pt-3 space-y-3">
                                 <div class="join grid grid-cols-2" data-testid="question-bank-review-tabs">
                                     <button type="button" class={classes!("join-item","btn","btn-sm",if !*ai_tab {"btn-active"} else {"btn-ghost"})}
@@ -1723,7 +1958,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     <QuestionAiReview
                                         key={format!("{}:{}", current.session.id, item.item.question_id)}
                                         csrf={props.csrf.clone()}
-                                        session_id={current.session.id.clone()}
                                         question_id={item.item.question_id.clone()}/>
                                 } else {
                                     <h3 class="font-bold">{"原始解析"}</h3>
@@ -1823,6 +2057,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 PracticeMode::Module => "模块训练",
                 PracticeMode::Wrong => "错题复练",
                 PracticeMode::Favorite => "收藏练习",
+                PracticeMode::Drill => "专项练习",
             };
             let subtitle = match scope {
                 Some(scope) => format!("{subtitle_base} · {scope}"),
@@ -1866,7 +2101,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                         disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Submit)})}>{"交卷"}</button>
                                 } else if let Some(score) = &current.session.score {
                                     <span class="flex min-w-0 flex-wrap items-center gap-2" data-testid="question-bank-practice-score">
-                                        <span class="font-semibold">{format!("{} / {} 正确",score.correct,score.total)}</span>
+                                        <span class="font-semibold">{score_summary(score)}</span>
                                         <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-practice-records"
                                             onclick={Callback::from({
                                                 let history_forced=history_forced.clone(); move |_|history_forced.set(true)
@@ -1950,7 +2185,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     <div class="flex items-center justify-between gap-3">
                         <div>
                             <h2 class="text-2xl font-black tracking-tight">{"练习记录"}</h2>
-                            <p class="mt-1 text-sm text-base-content/60">{"套卷、模块、错题与收藏共用同一份历史记录"}</p>
+                            <p class="mt-1 text-sm text-base-content/60">{"套卷、模块、专项、错题与收藏共用同一份历史记录"}</p>
                         </div>
                         <button class="btn btn-outline btn-sm" onclick={Callback::from({
                             let history_open=history_open.clone();let history_forced=history_forced.clone();
@@ -1963,6 +2198,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             (None,"全部","question-bank-history-filter-all"),
                             (Some(PracticeMode::Paper),"套卷","question-bank-history-filter-paper"),
                             (Some(PracticeMode::Module),"模块","question-bank-history-filter-module"),
+                            (Some(PracticeMode::Drill),"专项","question-bank-history-filter-drill"),
                             (Some(PracticeMode::Wrong),"错题","question-bank-history-filter-wrong"),
                             (Some(PracticeMode::Favorite),"收藏","question-bank-history-filter-favorite"),
                         ].into_iter().map(|(target,label,id)| {
@@ -1997,6 +2233,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 .and_then(|id|papers.iter().find(|paper|paper.id==*id))
                                 .map(|paper|paper.title.clone())
                                 .unwrap_or_else(||"真题训练".into()),
+                            PracticeMode::Drill => run.collection_title.clone()
+                                .unwrap_or_else(||"专项合集".into()),
                             _ => {
                                 let module=run.module.clone().unwrap_or_else(||"真题训练".into());
                                 match run.category.as_ref().filter(|category|!category.is_empty()) {
@@ -2014,7 +2252,14 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             if run.paused {("已暂停".to_string(),"badge-warning")} else {("进行中".to_string(),"badge-primary")}
                         } else {
                             run.score.as_ref()
-                                .map(|score|(format!("{}/{} 正确",score.correct,score.total),"badge-success"))
+                                .map(|score| {
+                                    let gradable=score.total.saturating_sub(score.ungradable);
+                                    if gradable==0 {
+                                        ("已完成".to_string(),"badge-success")
+                                    } else {
+                                        (format!("{}/{} 正确",score.correct,gradable),"badge-success")
+                                    }
+                                })
                                 .unwrap_or_else(||("已完成".to_string(),"badge-ghost"))
                         };
                         let detail=if active {
@@ -2026,6 +2271,12 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 PracticeMode::Paper | PracticeMode::PaperModule=>format!(
                                     "{mode_label} · 用时 {time} · 正确 {} · 错误 {} · 未答 {}",
                                     score.correct,score.wrong,score.unanswered),
+                                PracticeMode::Drill if score.ungradable==score.total=>format!(
+                                    "{mode_label} · 用时 {time} · 共 {} 题 · 暂不判分",
+                                    score.total),
+                                PracticeMode::Drill=>format!(
+                                    "{mode_label} · 用时 {time} · 可判分 {} 题 · 暂不可判分 {} 题",
+                                    score.total.saturating_sub(score.ungradable),score.ungradable),
                                 _=>format!(
                                     "{mode_label} · 用时 {time} · 正确率 {}%",
                                     score.correct.saturating_mul(100)/score.total.max(1)),
@@ -2087,14 +2338,17 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let invoke = invoke.clone();
         html! {
             <button class={TRAINING_PRIMARY_BUTTON} data-testid="question-bank-practice-start"
-                disabled={*busy || props.csrf.is_empty() ||
+                disabled={*busy || *version_checking || props.csrf.is_empty() ||
                     (collection.is_some() && browse.is_empty()) ||
                     (collection.is_none() && *mode == PracticeMode::Paper && selected_paper.is_empty()) ||
+                    (collection.is_none() && *mode == PracticeMode::Drill && selected_drill_collection.is_empty()) ||
                     (collection.is_none() && *mode == PracticeMode::Module && (!*filters_loaded || selected_module.is_empty()))}
                 onclick={Callback::from(move |_| invoke.emit(Action::Start))}>
                 {if *collection == Some(PracticeMode::Wrong) {"开始错题复练"}
                     else if *collection == Some(PracticeMode::Favorite) {"开始收藏题练习"}
-                    else if *mode == PracticeMode::Paper {"开始套卷训练"} else {"开始模块训练"}}
+                    else if *mode == PracticeMode::Paper {"开始套卷训练"}
+                    else if *mode == PracticeMode::Drill {"开始专项练习"}
+                    else {"开始模块训练"}}
             </button>
         }
     };
@@ -2129,6 +2383,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         Some(PracticeMode::Wrong) => "我的错题",
         Some(PracticeMode::Favorite) => "我的收藏",
         _ if *mode == PracticeMode::Paper => "套卷训练",
+        _ if *mode == PracticeMode::Drill => "专项练习",
         _ => "模块训练",
     };
     let setup_explanation = match collection.as_ref() {
@@ -2139,6 +2394,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             format!("收藏按现有模块与二级题型分类，共 {} 题", favorite_total)
         }
         _ if *mode == PracticeMode::Paper => "选择完整原卷，按原始题号顺序作答".to_string(),
+        _ if *mode == PracticeMode::Drill => {
+            "选择合集与专题，按原始顺序作答；没有可靠答案的题只记录完成情况".to_string()
+        }
         _ => format!(
             "按一级模块与二级题型逐层筛选，每轮最多 {} 题",
             module_filters.count.unwrap_or(20)
@@ -2148,6 +2406,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         Some(PracticeMode::Wrong) => "错题复练",
         Some(PracticeMode::Favorite) => "收藏题练习",
         _ if *mode == PracticeMode::Paper => "套卷训练",
+        _ if *mode == PracticeMode::Drill => "专项练习",
         _ => "模块训练",
     };
     let action_detail = match collection.as_ref() {
@@ -2162,6 +2421,29 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             collection_filtered.len(),
             module_filters.count.unwrap_or(20)
         ),
+        None if *mode == PracticeMode::Drill => {
+            let selected = drill_collections
+                .as_ref()
+                .and_then(|list| list.iter().find(|c| c.id == *selected_drill_collection));
+            match selected {
+                Some(collection) if !selected_drill_paper.is_empty() => collection
+                    .papers
+                    .iter()
+                    .find(|paper| paper.paper_id == *selected_drill_paper)
+                    .map(|paper| {
+                        format!(
+                            "{} · {} · {} 题",
+                            collection.title, paper.title, paper.questions
+                        )
+                    })
+                    .unwrap_or_else(|| "请选择专题".into()),
+                Some(collection) => format!(
+                    "{} · 全部专题 · {} 题 · 可判分 {} 题",
+                    collection.title, collection.questions, collection.gradable
+                ),
+                None => "选择合集与专题".into(),
+            }
+        }
         None if *mode == PracticeMode::Paper => papers
             .iter()
             .find(|paper| paper.id == *selected_paper)
@@ -2197,6 +2479,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             .as_ref()
             .and_then(|id| papers.iter().find(|paper| paper.id == *id))
             .map(|paper| paper.title.clone())
+            .or_else(|| active.collection_title.clone())
             .unwrap_or_else(|| match (&active.module, &active.category) {
                 (Some(module), Some(category)) => format!(
                     "{module} · {category} · {}",
@@ -2247,6 +2530,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 </button>
             </div>
             {alert}
+            if *mode != PracticeMode::Drill {
             <div class="flex flex-wrap gap-2" role="group" aria-label="题目浏览分类">
                 {for [
                     (None,"全部题目","question-bank-collection-all",None),
@@ -2272,7 +2556,103 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     </button>}
                 })}
             </div>
+            }
             if collection.is_none() { {resume_card} }
+            if collection.is_none() && *mode == PracticeMode::Drill {
+                <section class="space-y-3" data-testid="question-bank-drill-setup">
+                    <div class="flex items-end justify-between gap-3">
+                        <div>
+                            <h3 class="font-semibold">{"专项合集"}</h3>
+                            <p class="text-xs text-base-content/60">{"先选合集，再选专题或全部专题；练习记录与真题分开统计。"}</p>
+                        </div>
+                        <span class="text-xs text-base-content/50" data-testid="question-bank-drill-total">
+                            {drill_collections.as_ref().map(|list| format!("{} 个合集", list.len())).unwrap_or_else(|| "加载中…".into())}
+                        </span>
+                    </div>
+                    if drill_collections.is_none() {
+                        <p class="rounded-box bg-base-200 p-4 text-sm" data-testid="question-bank-drill-loading">{"正在加载专项合集…"}</p>
+                    } else if drill_collections.as_ref().is_some_and(Vec::is_empty) {
+                        <p class="rounded-box bg-base-200 p-4 text-sm" data-testid="question-bank-drill-empty">{"暂无专项合集，请先在题库管理同步合集目录。"}</p>
+                    }
+                    if let Some(list) = drill_collections.as_ref() {
+                        <div class="question-bank-module-grid" role="group" aria-label="专项合集">
+                        {for list.iter().map(|collection| {
+                            let selected=*selected_drill_collection==collection.id;
+                            let selected_collection=selected_drill_collection.clone();
+                            let selected_paper=selected_drill_paper.clone();
+                            let collection_id=collection.id.clone();
+                            let summary=format!("已做 {}/{} 题 · 可判分 {}", collection.done, collection.questions, collection.gradable);
+                            html! {
+                                <QuestionBankModuleCard name={collection.title.clone()}
+                                    summary={summary}
+                                    value={collection.done} max={collection.questions} selected={selected}
+                                    test_id="question-bank-drill-collection"
+                                    on_select={Callback::from({
+                                        let selected_collection=selected_collection.clone();
+                                        let selected_paper=selected_paper.clone();
+                                        let collection_id=collection_id.clone();
+                                        move |_| {
+                                            selected_collection.set(collection_id.clone());
+                                            selected_paper.set(String::new());
+                                        }
+                                    })}>
+                                    <QuestionBankCategoryButton label="全部专题"
+                                        count={format!("{}/{}",collection.done,collection.questions)}
+                                        selected={selected && selected_drill_paper.is_empty()}
+                                        test_id="question-bank-drill-paper"
+                                        on_select={Callback::from({
+                                            let selected_collection=selected_collection.clone();
+                                            let selected_paper=selected_paper.clone();
+                                            let collection_id=collection_id.clone();
+                                            move |_| {
+                                                selected_collection.set(collection_id.clone());
+                                                selected_paper.set(String::new());
+                                            }
+                                        })}/>
+                                    {for collection.papers.iter().map(|paper| {
+                                        let paper_selected=selected && *selected_drill_paper==paper.paper_id;
+                                        let selected_collection=selected_collection.clone();
+                                        let selected_paper=selected_paper.clone();
+                                        let collection_id=collection_id.clone();
+                                        let paper_id=paper.paper_id.clone();
+                                        html! {
+                                            <QuestionBankCategoryButton label={paper.title.clone()}
+                                                count={format!("{}/{}",paper.done,paper.questions)}
+                                                selected={paper_selected}
+                                                test_id="question-bank-drill-paper"
+                                                on_select={Callback::from(move |_| {
+                                                    selected_collection.set(collection_id.clone());
+                                                    selected_paper.set(paper_id.clone());
+                                                })}/>
+                                        }
+                                    })}
+                                    if selected {
+                                        <p class="mt-2 text-xs text-base-content/55" data-testid="question-bank-drill-estimate">
+                                            {if collection.questions == 0 {
+                                                "这个合集还没有题目".to_string()
+                                            } else if collection.done >= collection.questions {
+                                                "合集已完成".to_string()
+                                            } else {
+                                                match collection.finish_7.as_ref() {
+                                                    Some(date) => format!(
+                                                        "近 7 天 {} 题，按此速度预计 {} 完成",
+                                                        collection.answered_7, date
+                                                    ),
+                                                    None => format!(
+                                                        "还剩 {} 题，近 7 天暂无作答",
+                                                        collection.questions.saturating_sub(collection.done)
+                                                    ),
+                                                }
+                                            }}
+                                        </p>
+                                    }
+                                </QuestionBankModuleCard>
+                            }
+                        })}
+                        </div>
+                    }
+                </section>
+            }
             if collection.is_none() && *mode == PracticeMode::Paper {
                 <section class="space-y-3" aria-label="选择原卷">
                     <div class="flex items-end justify-between gap-3">
@@ -2341,7 +2721,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             <h3 class="font-semibold">{"专项模块"}</h3>
                             <p class="text-xs text-base-content/65">{"选择一级模块，再点二级题型精准刷题。"}</p>
                         </div>
-                        <button type="button" class="btn btn-outline btn-sm" data-testid="module-drill-settings-open" disabled={!*filters_loaded || *saving_filters}
+                        <button type="button" class="btn btn-outline btn-sm" data-testid="module-drill-settings-open" disabled={!*filters_loaded || *saving_filters || *version_checking}
                             onclick={Callback::from({
                                 let draft_filters=draft_filters.clone();
                                 let module_filters=module_filters.clone();

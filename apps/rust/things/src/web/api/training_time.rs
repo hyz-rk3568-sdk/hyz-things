@@ -23,6 +23,8 @@ pub(crate) struct QuestionBankDayBreakdown {
     pub modules: BTreeMap<String, BTreeMap<String, i64>>,
     #[serde(default)]
     pub papers: BTreeMap<String, i64>,
+    #[serde(default)]
+    pub collections: BTreeMap<String, BTreeMap<String, i64>>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]

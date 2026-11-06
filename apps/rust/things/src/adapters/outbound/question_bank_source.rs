@@ -128,6 +128,10 @@ impl FilesystemQuestionBankSource {
     fn scan_blocking(&self, known: Vec<IndexedPaper>) -> Result<BankSnapshot, BankError> {
         self.mounted()?;
         let mut queue = VecDeque::from([self.root.join("papers")]);
+        let collections = self.root.join("collections");
+        if collections.is_dir() {
+            queue.push_back(collections);
+        }
         let mut files = Vec::new();
         let mut total_bytes = 0usize;
         let mut directories = 0usize;

@@ -26,6 +26,34 @@ git -C /home/hyz/.cache/question-bank/gwy-zhenti rev-parse HEAD
 
 退出码：0 表示结构转换/校验成功；1 表示有冲突、解析失败或图片异常；2 表示输入、已有题库或文件操作不能安全处理。缺题占位等上游内容问题写入逐题 issues，不编造内容，不因此丢弃整卷。
 
+## 专项合集
+
+讲义等非真题题库放在 `question_bank/collections/<collection_id>/`，仍使用
+`hyz-paper/v1`，卷头增加：
+
+```yaml
+kind: drill
+collection_id: xiaop-2026-shuliang
+collection_title: 小P 2026 数量关系讲义
+```
+
+题目可以没有 `Answer`，此时只能记录作答，不计入正确率。图片按内容
+SHA-256 命名并放入共享 `question_bank/assets/`，合集 Markdown 引用
+`../../assets/<sha256>.<ext>`。设备端同步会扫描 `papers/` 与
+`collections/` 两个根目录，合集不会出现在真题试卷列表或真题预测中。
+
+讲义转换示例：
+
+```sh
+python3 scripts/question_bank/import_lecture.py \
+  --source /path/to/lecture.md \
+  --image-dir /path/to/images \
+  --output question_bank/collections/xiaop-2026-shuliang \
+  --assets question_bank/assets \
+  --collection-id xiaop-2026-shuliang \
+  --collection-title '小P 2026 数量关系讲义'
+```
+
 ## 内容与本地报告
 
 - `papers/`：一卷一 Markdown，`hyz-paper/v1`；题目保留来源题号，三种 UUID 由未来设备首次同步分配，导入器不生成或替换已有 UUID。
