@@ -78,69 +78,21 @@ pub const AI_TARGETS: &[FavoriteTarget] = &[
     },
     FavoriteTarget {
         module: "数量关系",
-        target_deck: "用户整理/数量关系/经济利润/错题",
-        relative_path: "用户整理/数量关系/经济利润/错题/cards.md",
-        tags: &["数量关系", "错题", "经济利润"],
+        target_deck: "用户整理/数量关系/方程比例与应用/错题",
+        relative_path: "用户整理/数量关系/方程比例与应用/错题/cards.md",
+        tags: &["数量关系", "错题", "方程比例与应用"],
     },
     FavoriteTarget {
         module: "数量关系",
-        target_deck: "用户整理/数量关系/工程效率/错题",
-        relative_path: "用户整理/数量关系/工程效率/错题/cards.md",
-        tags: &["数量关系", "错题", "工程效率"],
+        target_deck: "用户整理/数量关系/计数概率与最值/错题",
+        relative_path: "用户整理/数量关系/计数概率与最值/错题/cards.md",
+        tags: &["数量关系", "错题", "计数概率与最值"],
     },
     FavoriteTarget {
         module: "数量关系",
-        target_deck: "用户整理/数量关系/行程/相对运动/错题",
-        relative_path: "用户整理/数量关系/行程/相对运动/错题/cards.md",
-        tags: &["数量关系", "错题", "行程", "相对运动"],
-    },
-    FavoriteTarget {
-        module: "数量关系",
-        target_deck: "用户整理/数量关系/行程/综合应用/错题",
-        relative_path: "用户整理/数量关系/行程/综合应用/错题/cards.md",
-        tags: &["数量关系", "错题", "行程", "综合应用"],
-    },
-    FavoriteTarget {
-        module: "数量关系",
-        target_deck: "用户整理/数量关系/溶液/错题",
-        relative_path: "用户整理/数量关系/溶液/错题/cards.md",
-        tags: &["数量关系", "错题", "溶液"],
-    },
-    FavoriteTarget {
-        module: "数量关系",
-        target_deck: "用户整理/数量关系/最值/错题",
-        relative_path: "用户整理/数量关系/最值/错题/cards.md",
-        tags: &["数量关系", "错题", "最值"],
-    },
-    FavoriteTarget {
-        module: "数量关系",
-        target_deck: "用户整理/数量关系/排列组合/基础/错题",
-        relative_path: "用户整理/数量关系/排列组合/基础/错题/cards.md",
-        tags: &["数量关系", "错题", "排列组合", "基础"],
-    },
-    FavoriteTarget {
-        module: "数量关系",
-        target_deck: "用户整理/数量关系/排列组合/插空与同素分堆/错题",
-        relative_path: "用户整理/数量关系/排列组合/插空与同素分堆/错题/cards.md",
-        tags: &["数量关系", "错题", "排列组合", "插空与同素分堆"],
-    },
-    FavoriteTarget {
-        module: "数量关系",
-        target_deck: "用户整理/数量关系/排列组合/特殊套路/错题",
-        relative_path: "用户整理/数量关系/排列组合/特殊套路/错题/cards.md",
-        tags: &["数量关系", "错题", "排列组合", "特殊套路"],
-    },
-    FavoriteTarget {
-        module: "数量关系",
-        target_deck: "用户整理/数量关系/概率/错题",
-        relative_path: "用户整理/数量关系/概率/错题/cards.md",
-        tags: &["数量关系", "错题", "概率"],
-    },
-    FavoriteTarget {
-        module: "数量关系",
-        target_deck: "用户整理/数量关系/周期/错题",
-        relative_path: "用户整理/数量关系/周期/错题/cards.md",
-        tags: &["数量关系", "错题", "周期"],
+        target_deck: "用户整理/数量关系/几何数推与特殊题/错题",
+        relative_path: "用户整理/数量关系/几何数推与特殊题/错题/cards.md",
+        tags: &["数量关系", "错题", "几何数推与特殊题"],
     },
 ];
 
@@ -353,9 +305,9 @@ mod tests {
     }
 
     #[test]
-    fn known_ai_sources_remain_readable_after_migration() {
+    fn current_three_quantitative_destinations_are_resolvable() {
         assert_eq!(
-            resolve_target("数量/经济利润/错题").unwrap().module,
+            resolve_target("用户整理/数量关系/方程比例与应用/错题").unwrap().module,
             "数量关系"
         );
         assert_eq!(
@@ -365,7 +317,7 @@ mod tests {
             "判断推理"
         );
         assert_eq!(
-            resolve_target("用户整理/数量关系/经济利润/错题")
+            resolve_target("用户整理/数量关系/几何数推与特殊题/错题")
                 .unwrap()
                 .module,
             "数量关系"
