@@ -2185,14 +2185,16 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let visible = history
             .iter()
             .filter(|run| {
-                history_filter_matches(run, filter) && (!only_unfinished || run.status == "active")
+                (run.mode == PracticeMode::Drill) == (props.entry_mode == PracticeMode::Drill)
+                    && history_filter_matches(run, filter)
+                    && (!only_unfinished || run.status == "active")
             })
             .cloned()
             .collect::<Vec<_>>();
-        let back_label = if *mode == PracticeMode::Paper {
-            "返回套卷"
-        } else {
-            "返回模块"
+        let back_label = match props.entry_mode {
+            PracticeMode::Paper => "返回套卷",
+            PracticeMode::Drill => "返回专项",
+            _ => "返回模块",
         };
         return html! {
             <TrainingSetupLayout test_id="question-bank-practice-history">
@@ -2200,7 +2202,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     <div class="flex items-center justify-between gap-3">
                         <div>
                             <h2 class="text-2xl font-black tracking-tight">{"练习记录"}</h2>
-                            <p class="mt-1 text-sm text-base-content/60">{"套卷、模块、专项、错题与收藏共用同一份历史记录"}</p>
+                            <p class="mt-1 text-sm text-base-content/60">{if props.entry_mode == PracticeMode::Drill {"专项练习记录"} else {"套卷、模块、错题与收藏练习记录"}}</p>
                         </div>
                         <button class="btn btn-outline btn-sm" onclick={Callback::from({
                             let history_open=history_open.clone();let history_forced=history_forced.clone();
@@ -2216,7 +2218,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             (Some(PracticeMode::Drill),"专项","question-bank-history-filter-drill"),
                             (Some(PracticeMode::Wrong),"错题","question-bank-history-filter-wrong"),
                             (Some(PracticeMode::Favorite),"收藏","question-bank-history-filter-favorite"),
-                        ].into_iter().map(|(target,label,id)| {
+                        ].into_iter().filter(|(target,_,_)| {
+                            if props.entry_mode == PracticeMode::Drill { target.is_none() }
+                            else { *target != Some(PracticeMode::Drill) }
+                        }).map(|(target,label,id)| {
                             let history_filter=history_filter.clone();
                             let selected=*history_filter==target;
                             html! {<button type="button"

@@ -40,7 +40,7 @@ fn favorite_content(value: &FavoritePreview) -> Html {
             <div class="study-markdown question-bank-passage">{render_question_bank_markdown(&value.front)}</div>
             <section class="rounded-box border border-base-content/15 p-4" aria-label="正确答案">
                 <h3 class="font-semibold">{"正确答案"}</h3>
-                <p data-testid="favorite-question-answer">{value.correct_answer.join("、")}</p>
+                <p data-testid="favorite-question-answer">{if value.correct_answer.is_empty() {"原题暂无标准答案".to_owned()} else {value.correct_answer.join("、")}}</p>
             </section>
         </>
     }
@@ -102,18 +102,19 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
                         && target.starts_with("用户整理/")
                 } else {
                     props.preview.recommended_target.as_ref() == Some(&*target)
-                }) && *confirmed)
-                    .then(|| CreateFavoriteCard {
-                        creation_mode: if *user_mode {
-                            "user_organized"
-                        } else {
-                            "practice"
-                        },
-                        target_deck: (*target).clone(),
-                        back: (*back).clone(),
-                        source_revision: props.preview.source_revision.clone(),
-                        type_confirmed: *confirmed,
-                    })
+                }) && *confirmed
+                    && (!props.preview.correct_answer.is_empty() || !back.trim().is_empty()))
+                .then(|| CreateFavoriteCard {
+                    creation_mode: if *user_mode {
+                        "user_organized"
+                    } else {
+                        "practice"
+                    },
+                    target_deck: (*target).clone(),
+                    back: (*back).clone(),
+                    source_revision: props.preview.source_revision.clone(),
+                    type_confirmed: *confirmed,
+                })
             });
             let Some(request) = request else { return };
             *in_flight.borrow_mut() = true;
@@ -153,7 +154,12 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
     } else {
         props.preview.recommended_target.as_ref() == Some(&*target)
     };
-    let can_submit = !*busy && !props.csrf.is_empty() && (*locked || (valid_target && *confirmed));
+    let can_submit = !*busy
+        && !props.csrf.is_empty()
+        && (*locked
+            || (valid_target
+                && *confirmed
+                && (!props.preview.correct_answer.is_empty() || !back.trim().is_empty())));
     let close = Callback::from({
         let on_close = props.on_close.clone();
         move |_| on_close.emit(())
@@ -172,7 +178,7 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
                 </button>
                 <div class="min-w-0">
                     <h2 class="truncate text-base font-semibold">{"创建 Flashcard"}</h2>
-                    <p class="text-xs text-base-content/55">{"题目与正确答案将保存到正面"}</p>
+                    <p class="text-xs text-base-content/55">{if props.preview.correct_answer.is_empty() {"原题暂无标准答案，请在背面填写答案或解题思路"} else {"题目与正确答案将保存到正面"}}</p>
                 </div>
             </header>
             <div class="mx-auto my-5 w-full max-w-xl space-y-5 break-words rounded-2xl border border-base-content/15 bg-base-100 p-4 transition focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15 sm:p-5"
@@ -231,7 +237,7 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
                     </p>
                 }
                 <label class="block space-y-2">
-                    <span class="font-semibold">{"背面"}<span class="ml-2 text-xs font-normal text-base-content/50">{"可选"}</span></span>
+                    <span class="font-semibold">{"背面"}<span class="ml-2 text-xs font-normal text-base-content/50">{if props.preview.correct_answer.is_empty() {"必填"} else {"可选"}}</span></span>
                     <textarea class="block min-h-28 w-full resize-none border-0 bg-transparent px-3 py-2 text-sm leading-6 focus:outline-none focus:ring-0" placeholder="写下解题思路或复习提示" value={(*back).clone()} disabled={*locked}
                         oninput={Callback::from({let back=back.clone();move |event:InputEvent| {
                             back.set(event.target_unchecked_into::<web_sys::HtmlTextAreaElement>().value());

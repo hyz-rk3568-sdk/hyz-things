@@ -49,6 +49,9 @@ impl FavoriteQuestionPort for QuestionBankApplication {
             correct_answer: question.correct_answer.clone(),
             source_revision: indexed.hash,
             gradable: question.gradable,
+            allow_manual_answer: indexed.summary.kind == "drill"
+                && question.correct_answer.is_empty()
+                && !question.stem.trim().is_empty(),
         })
     }
 

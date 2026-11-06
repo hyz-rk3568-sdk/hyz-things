@@ -31,6 +31,7 @@ struct Fake {
     fail_sync: AtomicBool,
     deny_favorite: AtomicBool,
     coarse_category: AtomicBool,
+    answerless_drill: AtomicBool,
     block_scan: AtomicBool,
     scan_entered: tokio::sync::Notify,
     scan_release: tokio::sync::Notify,
@@ -53,9 +54,14 @@ impl FavoriteQuestionPort for Fake {
                 .into(),
             ),
             front: "材料\n\n题干\n- A. 甲\n- B. 乙".into(),
-            correct_answer: vec!["B".into()],
+            correct_answer: if self.answerless_drill.load(Ordering::SeqCst) {
+                vec![]
+            } else {
+                vec!["B".into()]
+            },
             source_revision: "v1".into(),
-            gradable: true,
+            gradable: !self.answerless_drill.load(Ordering::SeqCst),
+            allow_manual_answer: self.answerless_drill.load(Ordering::SeqCst),
         })
     }
     async fn asset(&self, _: String) -> Result<Vec<u8>, BankError> {
@@ -230,6 +236,25 @@ fn request() -> CreateFavoriteFlashcard {
         type_confirmed: true,
     }
 }
+#[tokio::test]
+async fn answerless_drill_requires_a_manual_back_and_can_create_a_card() {
+    let (app, fake, _) = setup();
+    fake.answerless_drill.store(true, Ordering::SeqCst);
+    let preview = app.preview(QUESTION).await.unwrap();
+    assert!(preview.eligibility.eligible);
+    assert!(preview.correct_answer.is_empty());
+    assert!(app.create(QUESTION, request()).await.is_err());
+    let mut create = request();
+    create.back = "自行整理的答案".into();
+    assert_eq!(
+        app.create(QUESTION, create).await.unwrap().status,
+        "created_synced"
+    );
+    let cards = fake.written.lock().unwrap();
+    assert_eq!(cards[0].back, "自行整理的答案");
+    assert!(cards[0].correct_answer.is_empty());
+}
+
 #[tokio::test]
 async fn preview_lists_actual_user_organized_directories() {
     let (app, fake, _) = setup();

@@ -342,8 +342,7 @@ fn validate_card(card: &NewFavoriteCard) -> Result<(), FlashcardError> {
     if id.to_string() != card.question_id {
         return Err(invalid("source question UUID must be canonical"));
     }
-    if card.correct_answer.is_empty()
-        || card.correct_answer.len() > 26
+    if card.correct_answer.len() > 26
         || card
             .correct_answer
             .iter()

@@ -19,6 +19,7 @@ pub struct FavoriteQuestion {
     pub correct_answer: Vec<String>,
     pub source_revision: String,
     pub gradable: bool,
+    pub allow_manual_answer: bool,
 }
 
 #[async_trait]
@@ -286,7 +287,11 @@ fn validate_create_request(
         .contains(&request.target_deck)
         && selected == target.mode
         && request.type_confirmed;
-    if !preview.eligibility.eligible || !allowed || request.back.len() > 32 * 1024 {
+    if !preview.eligibility.eligible
+        || !allowed
+        || request.back.len() > 32 * 1024
+        || (preview.correct_answer.is_empty() && request.back.trim().is_empty())
+    {
         return Err(BankError::Invalid.into());
     }
     Ok(())
@@ -297,7 +302,7 @@ fn make_preview(question: FavoriteQuestion) -> FavoriteFlashcardPreview {
         question.module.as_deref(),
         question.category.as_deref(),
     );
-    if !question.gradable {
+    if !question.gradable && !question.allow_manual_answer {
         eligibility.eligible = false;
         eligibility.reason = Some("原题缺少完整题干、选项或有效答案".into());
         eligibility.allowed_targets.clear();
@@ -325,6 +330,7 @@ mod tests {
             correct_answer: vec!["B".into()],
             source_revision: "revision".into(),
             gradable: true,
+            allow_manual_answer: false,
         };
         let preview = make_preview(question);
         assert!(preview.eligibility.eligible);

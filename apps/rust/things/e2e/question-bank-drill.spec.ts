@@ -38,14 +38,25 @@ test('drill collection practice keeps ungradable questions and reports separate 
   }
   await page.getByTestId('question-bank-practice-number').nth(1).click();
   await expect(page.getByTestId('question-bank-practice-review-answer')).toContainText('暂无可靠答案');
+  const create=page.getByTestId('question-bank-practice-create-flashcard');
+  await expect(create).toBeVisible();
+  await create.click();
+  const card=page.getByTestId('favorite-flashcard-card');
+  await expect(card).toContainText('原题暂无标准答案');
+  await card.getByLabel('确认写入所选目录').check();
+  await expect(card.getByRole('button',{name:'创建并同步'})).toBeDisabled();
+  await card.getByPlaceholder('写下解题思路或复习提示').fill('自行整理的答案');
+  await card.getByRole('button',{name:'创建并同步'}).click();
+  await expect(card.getByRole('status')).toContainText('已创建并同步');
+  await card.getByRole('button',{name:'返回复盘'}).first().click();
   const image=page.getByTestId('question-bank-practice-stem').locator('img');
-  await expect(image).toHaveAttribute('src','/api/v1/question-bank/assets/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png');
+  await expect(image).toHaveAttribute('src','/api/v1/question-bank/assets/431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460.png');
   expect(await image.evaluate((node:HTMLImageElement)=>node.naturalWidth)).toBeGreaterThan(0);
   await page.getByTestId('training-answer-sheet-toggle').click();
 
   await page.getByTestId('question-bank-practice-records').click();
   await expect(page.getByTestId('question-bank-practice-history')).toContainText('专项练习');
-  await page.getByTestId('question-bank-history-filter-drill').click();
+  await expect(page.getByTestId('question-bank-history-filter-paper')).toHaveCount(0);
   await expect(page.getByTestId('question-bank-practice-history-item').first()).toContainText('小P 2026 数量关系讲义');
 
   await page.goto('/#/study/training');
