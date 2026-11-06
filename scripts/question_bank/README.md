@@ -42,6 +42,15 @@ SHA-256 命名并放入共享 `question_bank/assets/`，合集 Markdown 引用
 `../../assets/<sha256>.<ext>`。设备端同步会扫描 `papers/` 与
 `collections/` 两个根目录，合集不会出现在真题试卷列表或真题预测中。
 
+如果讲义截图里带着重复题干，可在转换后执行一次图形裁剪（需要
+`opencv-python-headless` 和 `numpy`）：
+
+```sh
+python3 scripts/question_bank/crop_lecture_figures.py \
+  --collection question_bank/collections/xiaop-2026-shuliang \
+  --assets question_bank/assets
+```
+
 讲义转换示例：
 
 ```sh
