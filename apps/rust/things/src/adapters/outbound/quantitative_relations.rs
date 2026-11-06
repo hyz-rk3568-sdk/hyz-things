@@ -166,7 +166,9 @@ fn eligible_path(path: &str) -> Option<&'static str> {
     // Only these 3 curated 用户整理 source decks (and their 错题 decks) feed AI generation.
     // Legacy 11 decks, unregistered subcategories and 真题练习 are excluded.
     let relative = path.strip_prefix("flashcards/").unwrap_or(path);
-    let deck = relative.strip_prefix("用户整理/数量关系/")?.strip_suffix("/cards.md")?;
+    let deck = relative
+        .strip_prefix("用户整理/数量关系/")?
+        .strip_suffix("/cards.md")?;
     let group = deck.strip_suffix("/错题").unwrap_or(deck);
     const GROUPS: [&str; 3] = ["方程比例与应用", "计数概率与最值", "几何数推与特殊题"];
     GROUPS.contains(&group).then_some("quantitative")
@@ -960,7 +962,8 @@ mod quantitative_tests {
     use super::*;
     #[test]
     fn quantitative_pool_uses_only_three_canonical_method_decks() {
-        for group in ["方程比例与应用", "计数概率与最值", "几何数推与特殊题"] {
+        for group in ["方程比例与应用", "计数概率与最值", "几何数推与特殊题"]
+        {
             for prefix in ["", "flashcards/"] {
                 let source = format!("{prefix}用户整理/数量关系/{group}/cards.md");
                 let wrong = format!("{prefix}用户整理/数量关系/{group}/错题/cards.md");
@@ -984,7 +987,6 @@ mod quantitative_tests {
             assert_eq!(eligible_path(path), None, "{path}");
         }
     }
-
 }
 
 #[cfg(test)]

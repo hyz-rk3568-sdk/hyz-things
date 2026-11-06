@@ -307,7 +307,9 @@ mod tests {
     #[test]
     fn current_three_quantitative_destinations_are_resolvable() {
         assert_eq!(
-            resolve_target("用户整理/数量关系/方程比例与应用/错题").unwrap().module,
+            resolve_target("用户整理/数量关系/方程比例与应用/错题")
+                .unwrap()
+                .module,
             "数量关系"
         );
         assert_eq!(
