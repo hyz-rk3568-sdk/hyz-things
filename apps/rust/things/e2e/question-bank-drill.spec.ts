@@ -75,3 +75,59 @@ test('exam paper list does not include drill collections',async({page})=>{
   const papers=await response.json() as {title:string}[];
   expect(papers.some(paper=>paper.title==='小P 2026 数量关系讲义')).toBe(false);
 });
+
+for (const scenario of [
+  {width:1280,height:900,cancel:false},
+  {width:390,height:844,cancel:false},
+  {width:1280,height:900,cancel:true},
+]) {
+test(`drill history restores scroll after saved AI analysis loads at ${scenario.width}px cancel=${scenario.cancel}`,async({page})=>{
+  await page.setViewportSize({width:scenario.width,height:scenario.height});
+  let firstQuestion='';
+  let armed=false;
+  let releaseReload:()=>void=()=>{};
+  let reloadArrived:()=>void=()=>{};
+  const reloadGate=new Promise<void>(resolve=>{releaseReload=resolve});
+  const reloadStarted=new Promise<void>(resolve=>{reloadArrived=resolve});
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    if (!firstQuestion) firstQuestion=id;
+    if (armed && id===firstQuestion) {armed=false;reloadArrived();await reloadGate;}
+    await route.fulfill({json:{question_id:id,status:'complete',error:null,
+      messages:[{role:'assistant',content:Array.from({length:80},(_,i)=>`第 ${i+1} 段：专项训练 AI 解析。`).join('\n\n'),created_at:1}]}});
+  });
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-drill').click();
+  await page.getByTestId('question-bank-drill-collection').filter({hasText:'小P 2026 数量关系讲义'}).click();
+  await page.getByTestId('question-bank-drill-paper').filter({hasText:'方程关系'}).click();
+  await page.getByTestId('question-bank-practice-start').click();
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button',{name:'确认交卷'}).click();
+  await page.getByTestId('question-bank-practice-records').click();
+  await page.getByTestId('question-bank-practice-history-item').first().getByRole('button',{name:'查看原题与解析'}).click();
+  await expect(page.getByTestId('question-bank-ai-tab')).toHaveAttribute('aria-pressed','true');
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('第 80 段');
+  armed=true;
+  const question=page.getByTestId('question-bank-practice-question-scroll');
+  await question.evaluate(node=>{node.scrollTop=450});
+  await expect.poll(()=>question.evaluate(node=>node.scrollTop)).toBe(450);
+  const swipe=async(direction:'next'|'previous')=>{
+    await page.getByTestId('training-swipe-surface').evaluate((node,direction)=>{
+      const [start,end]=direction==='next'?[500,250]:[250,500];
+      const emit=(type:string,x:number)=>node.dispatchEvent(new PointerEvent(type,{bubbles:true,pointerType:'touch',pointerId:17,isPrimary:true,clientX:x,clientY:230}));
+      emit('pointerdown',start);emit('pointermove',end);emit('pointerup',end);
+    },direction);
+  };
+  await swipe('next');
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 2 题');
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('第 80 段');
+  await swipe('previous');
+  await reloadStarted;
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 1 题');
+  if (scenario.cancel) await question.dispatchEvent('wheel',{deltaY:40});
+  releaseReload();
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('第 80 段');
+  await expect.poll(()=>question.evaluate(node=>node.scrollTop)).toBe(scenario.cancel?0:450);
+});
+}

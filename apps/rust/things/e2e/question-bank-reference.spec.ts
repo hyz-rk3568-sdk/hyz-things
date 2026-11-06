@@ -113,7 +113,19 @@ async function install(page) {
     const path = url.pathname.replace('/api/v1/question-bank', '');
     const method = request.method();
     let json;
-    if (method === 'GET' && path === '/papers') json = papers;
+    if (method === 'GET' && path === '/data-version') json = { version: 'reference-v1' };
+    else if (method === 'GET' && path === '/module-settings') json = { year_min: null, year_max: null, regions: [], exclude_regions: false, count: null };
+    else if (method === 'GET' && path === '/collections') json = [];
+    else if (method === 'GET' && /^\/practice\/questions\/[^/]+\/ai$/.test(path)) {
+      json = { question_id: path.split('/')[3], status: 'idle', error: null, messages: [] };
+    } else if (method === 'GET' && /^\/practice\/questions\/[^/]+\/flashcard-preview$/.test(path)) {
+      const questionId = path.split('/')[3];
+      const question = questions[Number(questionId.slice(2))];
+      const target = '真题练习/资料分析/比重/错题';
+      json = { eligible: true, reason: null, front: question.question.stem,
+        correct_answer: [correctAnswer(questionId)], recommended_target: target,
+        allowed_targets: [target], requires_type_confirmation: false, source_revision: 'reference-v1' };
+    } else if (method === 'GET' && path === '/papers') json = papers;
     else if (method === 'GET' && path === '/practice/catalog') json = catalog;
     else if (method === 'GET' && path === '/practice/history') json = [...runs].sort((a, b) => b.created_at - a.created_at);
     else if (method === 'GET' && path === '/practice/questions') {

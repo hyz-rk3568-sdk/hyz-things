@@ -9,7 +9,20 @@ use hyz_things::domain::question_bank::{
     SavePracticeAnswer, SetFavorite, SetPracticePaused,
 };
 
+#[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/review_scroll.js")]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = restoreReviewScroll)]
+    fn restore_review_scroll(element: &HtmlElement, offset: i32) -> js_sys::Function;
+}
+
 const ROOT: &str = "/api/v1/question-bank";
+
+#[derive(Default)]
+struct ReviewScrollMemory {
+    session: Option<String>,
+    question: Option<String>,
+    positions: std::collections::BTreeMap<String, (i32, i32)>,
+}
 
 #[derive(serde::Deserialize)]
 struct DataVersion {
@@ -1134,6 +1147,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let seconds_ref = use_mut_ref(|| 0u64);
     let material_scroll = use_node_ref();
     let question_scroll = use_node_ref();
+    let review_scrolls = use_mut_ref(ReviewScrollMemory::default);
     let material_edges = use_state(ScrollEdges::default);
     let question_edges = use_state(ScrollEdges::default);
     let wrong_collection = use_practice_collection(PracticeMode::Wrong, *refresh, *version_ready);
@@ -1312,6 +1326,52 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             hydrate_math();
             || ()
         });
+    }
+    {
+        let review_scrolls = review_scrolls.clone();
+        let material_scroll = material_scroll.clone();
+        let question_scroll = question_scroll.clone();
+        let session = workspace.as_ref().as_ref().and_then(|workspace| {
+            let review = (*review).as_ref()?;
+            (props.active && !*history_forced && review.session.id == workspace.session.id)
+                .then(|| workspace.session.id.clone())
+        });
+        let question = workspace
+            .as_ref()
+            .as_ref()
+            .and_then(|workspace| workspace.questions.get(*index))
+            .map(|question| question.item.question_id.clone());
+        use_effect_with(
+            (session, question, *flashcard_open),
+            move |(session, question, panel_open)| {
+                let mut memory = review_scrolls.borrow_mut();
+                if memory.session != *session {
+                    memory.session = session.clone();
+                    memory.positions.clear();
+                }
+                memory.question = question
+                    .clone()
+                    .filter(|_| session.is_some() && !*panel_open);
+                let mut cleanup = Vec::new();
+                if session.is_some() && !*panel_open {
+                    if let Some(question) = question {
+                        let (material, question) =
+                            memory.positions.get(question).copied().unwrap_or_default();
+                        if let Some(node) = material_scroll.cast::<HtmlElement>() {
+                            cleanup.push(restore_review_scroll(&node, material));
+                        }
+                        if let Some(node) = question_scroll.cast::<HtmlElement>() {
+                            cleanup.push(restore_review_scroll(&node, question));
+                        }
+                    }
+                }
+                move || {
+                    for cancel in cleanup {
+                        let _ = cancel.call0(&JsValue::NULL);
+                    }
+                }
+            },
+        );
     }
     {
         let refresh_edges = refresh_edges.clone();
@@ -1821,10 +1881,34 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     }
                 })
             };
-            let on_scrolling = {
+            let on_scrolling = |is_material: bool| {
                 let refresh_edges = refresh_edges.clone();
-                Callback::from(move |_: web_sys::Event| refresh_edges.emit(()))
+                let review_scrolls = review_scrolls.clone();
+                let question_id = item.item.question_id.clone();
+                let session_id = current.session.id.clone();
+                Callback::from(move |event: web_sys::Event| {
+                    let mut memory = review_scrolls.borrow_mut();
+                    if memory.session.as_ref() == Some(&session_id)
+                        && memory.question.as_ref() == Some(&question_id)
+                    {
+                        let node = event.target_unchecked_into::<HtmlElement>();
+                        if node.has_attribute("data-review-scroll-restoring") {
+                            return;
+                        }
+                        let position = node.scroll_top();
+                        let saved = memory.positions.entry(question_id.clone()).or_default();
+                        if is_material {
+                            saved.0 = position;
+                        } else {
+                            saved.1 = position;
+                        }
+                    }
+                    drop(memory);
+                    refresh_edges.emit(());
+                })
             };
+            let on_material_scrolling = on_scrolling(true);
+            let on_question_scrolling = on_scrolling(false);
             let material_meta = if item.materials.len() == 1 {
                 item.materials[0].name.clone()
             } else {
@@ -1848,7 +1932,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 question_index={item_index} target="材料" label="材料滚动" />
                         </div>
                     </div>
-                    <div ref={material_scroll.clone()} onscroll={on_scrolling.clone()}
+                    <div ref={material_scroll.clone()} onscroll={on_material_scrolling.clone()}
                         class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4"
                         data-testid="question-bank-practice-material-scroll">
                         {for item.materials.iter().map(|m| html!{
@@ -1883,7 +1967,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     can_scroll_up={question_edges.can_scroll_up}
                     can_scroll_down={question_edges.can_scroll_down}
                     question_index={item_index} target="题目" label="题目与解析滚动" />
-                    <div ref={question_scroll.clone()} onscroll={on_scrolling.clone()}
+                    <div ref={question_scroll.clone()} onscroll={on_question_scrolling.clone()}
                         class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4 space-y-4"
                         data-testid="question-bank-practice-question-scroll">
                     if let Some((_, message)) = favorite_failure {
@@ -2027,7 +2111,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     question_index={item_index} target="题干" label="题干滚动" />
                             </div>
                         </div>
-                        <div ref={material_scroll.clone()} onscroll={on_scrolling.clone()}
+                        <div ref={material_scroll.clone()} onscroll={on_material_scrolling.clone()}
                             class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4"
                             data-testid="question-bank-practice-material-scroll">
                             if let Some(q) = question {
@@ -2045,7 +2129,33 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             };
             let navigation_allowed = {
                 let operation_lock = operation_lock.clone();
-                Callback::from(move |()| !*operation_lock.borrow())
+                let review_scrolls = review_scrolls.clone();
+                let material_scroll = material_scroll.clone();
+                let question_scroll = question_scroll.clone();
+                let question_id = item.item.question_id.clone();
+                let session_id = current.session.id.clone();
+                Callback::from(move |()| {
+                    if *operation_lock.borrow() {
+                        return false;
+                    }
+                    let mut memory = review_scrolls.borrow_mut();
+                    if memory.session.as_ref() == Some(&session_id)
+                        && memory.question.as_ref() == Some(&question_id)
+                    {
+                        let saved = memory.positions.entry(question_id.clone()).or_default();
+                        if let Some(node) = material_scroll.cast::<HtmlElement>() {
+                            if !node.has_attribute("data-review-scroll-restoring") {
+                                saved.0 = node.scroll_top();
+                            }
+                        }
+                        if let Some(node) = question_scroll.cast::<HtmlElement>() {
+                            if !node.has_attribute("data-review-scroll-restoring") {
+                                saved.1 = node.scroll_top();
+                            }
+                        }
+                    }
+                    true
+                })
             };
             let nav = html! {
                 <fieldset disabled={*busy} class="min-w-0 shrink-0 border-0 p-0">

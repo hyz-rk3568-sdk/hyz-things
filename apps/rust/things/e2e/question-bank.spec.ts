@@ -954,3 +954,53 @@ test('any original-paper review can create a category flashcard without first fa
   await expect(card.getByRole('status')).toContainText('已创建并同步');
   await expect(card.getByRole('status')).toContainText('用户整理/资料分析/增长率/错题/cards.md');
 });
+
+for (const viewport of [{width:1280,height:720},{width:390,height:844}]) {
+test(`review remembers each question and material scroll position at ${viewport.width}px`,async({page})=>{
+  await page.setViewportSize(viewport);
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await chooseFixturePaper(page);
+  await page.getByTestId('question-bank-practice-start').click();
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button',{name:'确认交卷'}).click();
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 26 题');
+  await page.evaluate(()=>document.styleSheets[0].insertRule('[data-testid="question-bank-practice-material-scroll"]::after, [data-testid="question-bank-practice-question-scroll"]::after { content: ""; display: block; height: 1600px; }'));
+  const material=page.getByTestId('question-bank-practice-material-scroll');
+  const question=page.getByTestId('question-bank-practice-question-scroll');
+  await material.evaluate(node=>{node.scrollTop=180});
+  await question.evaluate(node=>{node.scrollTop=270});
+  await expect.poll(()=>material.evaluate(node=>node.scrollTop)).toBe(180);
+  await expect.poll(()=>question.evaluate(node=>node.scrollTop)).toBe(270);
+  const swipe=async(direction:'next'|'previous')=>{
+    await page.getByTestId('training-swipe-surface').evaluate((node,direction)=>{
+      const [start,end]=direction==='next'?[500,250]:[250,500];
+      const emit=(type:string,x:number)=>node.dispatchEvent(new PointerEvent(type,{bubbles:true,pointerType:'touch',pointerId:17,isPrimary:true,clientX:x,clientY:230}));
+      emit('pointerdown',start);emit('pointermove',end);emit('pointerup',end);
+    },direction);
+  };
+  await swipe('next');
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 27 题');
+  await expect.poll(()=>material.evaluate(node=>node.scrollTop)).toBe(0);
+  await expect.poll(()=>question.evaluate(node=>node.scrollTop)).toBe(0);
+  await material.evaluate(node=>{node.scrollTop=90});
+  await question.evaluate(node=>{node.scrollTop=130});
+  await swipe('previous');
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 26 题');
+  await expect.poll(()=>material.evaluate(node=>node.scrollTop)).toBe(180);
+  await expect.poll(()=>question.evaluate(node=>node.scrollTop)).toBe(270);
+  await swipe('next');
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 27 题');
+  await expect.poll(()=>material.evaluate(node=>node.scrollTop)).toBe(90);
+  await expect.poll(()=>question.evaluate(node=>node.scrollTop)).toBe(130);
+  await openSheet(page);
+  await page.getByTestId('question-bank-practice-number').first().click();
+  await expect.poll(()=>material.evaluate(node=>node.scrollTop)).toBe(180);
+  await expect.poll(()=>question.evaluate(node=>node.scrollTop)).toBe(270);
+  await page.getByTestId('question-bank-practice-records').click();
+  await page.getByRole('button',{name:'返回套卷'}).click();
+  await expect.poll(()=>material.evaluate(node=>node.scrollTop)).toBe(0);
+  await expect.poll(()=>question.evaluate(node=>node.scrollTop)).toBe(0);
+});
+}
