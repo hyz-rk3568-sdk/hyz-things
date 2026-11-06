@@ -75,12 +75,103 @@ fn question_bank_markdown_html(markdown: &str) -> String {
     html
 }
 
+fn normalize_latex_delimiters(markdown: &str) -> String {
+    let mut output = String::with_capacity(markdown.len());
+    let mut fence: Option<(char, usize)> = None;
+    for line in markdown.split_inclusive('\n') {
+        let indent = line.chars().take_while(|c| *c == ' ').count();
+        let trimmed = line.trim_start_matches(' ');
+        if let Some((marker, length)) = fence {
+            output.push_str(line);
+            if closes_fence(trimmed, marker, length) {
+                fence = None;
+            }
+            continue;
+        }
+        if indent <= 3 {
+            if let Some((marker, length)) = opens_fence(trimmed) {
+                fence = Some((marker, length));
+                output.push_str(line);
+                continue;
+            }
+        }
+        if line.starts_with("    ") || line.starts_with('\t') {
+            output.push_str(line);
+        } else {
+            output.push_str(&normalize_inline_latex(line));
+        }
+    }
+    output
+}
+
+fn opens_fence(line: &str) -> Option<(char, usize)> {
+    let marker = line.chars().next()?;
+    if marker != '`' && marker != '~' {
+        return None;
+    }
+    let length = line.chars().take_while(|c| *c == marker).count();
+    (length >= 3).then_some((marker, length))
+}
+
+fn closes_fence(line: &str, marker: char, length: usize) -> bool {
+    let run = line.chars().take_while(|c| *c == marker).count();
+    run >= length && line.chars().skip(run).all(|c| c.is_whitespace())
+}
+
+fn normalize_inline_latex(line: &str) -> String {
+    let chars = line.chars().collect::<Vec<_>>();
+    let mut output = String::with_capacity(line.len());
+    let mut code_ticks = 0usize;
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index] == '`' {
+            let mut end = index;
+            while end < chars.len() && chars[end] == '`' {
+                end += 1;
+            }
+            let run = end - index;
+            if code_ticks == 0 {
+                code_ticks = run;
+            } else if code_ticks == run {
+                code_ticks = 0;
+            }
+            output.extend(chars[index..end].iter());
+            index = end;
+            continue;
+        }
+        if chars[index] == '\\' && code_ticks == 0 {
+            let mut end = index;
+            while end < chars.len() && chars[end] == '\\' {
+                end += 1;
+            }
+            let count = end - index;
+            if count % 2 == 1 && end < chars.len() && matches!(chars[end], '(' | ')' | '[' | ']') {
+                output.extend(std::iter::repeat_n('\\', count - 1));
+                output.push_str(if matches!(chars[end], '(' | ')') {
+                    "$"
+                } else {
+                    "$$"
+                });
+                index = end + 1;
+                continue;
+            }
+            output.extend(std::iter::repeat_n('\\', count));
+            index = end;
+            continue;
+        }
+        output.push(chars[index]);
+        index += 1;
+    }
+    output
+}
+
 fn markdown_with_assets(markdown: &str, mut resolve: impl FnMut(&str) -> Option<String>) -> String {
+    let markdown = normalize_latex_delimiters(markdown);
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_MATH);
-    let events = Parser::new_ext(markdown, options).map(|event| match event {
+    let events = Parser::new_ext(&markdown, options).map(|event| match event {
         MarkdownEvent::Start(Tag::Image {
             link_type,
             dest_url,
@@ -165,5 +256,24 @@ mod question_bank_markdown_tests {
             "![](https://example.com/assets/{hash}.png)"
         ))
         .contains("/api/v1/question-bank/assets/"));
+    }
+
+    #[test]
+    fn backslash_latex_delimiters_become_math_spans() {
+        let html = question_bank_markdown_html(
+            "设 \\(x\\) 元。\n\n\\[\n0.7x-25=48.5\n\\]\n\n\\(x=105\\div0.7\\)",
+        );
+        assert!(html.contains("math-inline"), "{html}");
+        assert!(html.contains("math-display"), "{html}");
+        assert!(html.contains("0.7x-25=48.5"), "{html}");
+        assert!(html.contains("\\div"), "{html}");
+        assert!(!html.contains("\\(x\\)"), "{html}");
+    }
+
+    #[test]
+    fn backslash_latex_inside_code_is_not_math() {
+        let html = question_bank_markdown_html("`\\(x\\)`\n\n```\n\\(y\\)\n```");
+        assert!(!html.contains("math-inline"), "{html}");
+        assert!(!html.contains("math-display"), "{html}");
     }
 }

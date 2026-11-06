@@ -724,6 +724,31 @@ test('completed practice header actions stay inside a phone viewport', async ({p
   expect(overflow).toBeLessThanOrEqual(0);
 });
 
+test('AI analysis renders LaTeX delimiters with KaTeX', async ({page}) => {
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai', async route => {
+    const parts = new URL(route.request().url()).pathname.split('/');
+    const question_id = parts[parts.indexOf('questions') + 1];
+    await route.fulfill({json: {
+      question_id, status: 'complete', error: null,
+      messages: [{
+        role: 'assistant',
+        content: '设 \\(x\\) 元。\n\n\\[\n0.7x-25=48.5\n\\]\n\n\\(x=105\\)',
+        created_at: 1,
+      }],
+    }});
+  });
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await chooseFixturePaper(page);
+  await page.getByTestId('question-bank-practice-start').click();
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button',{name:'确认交卷'}).click();
+  const message = page.getByTestId('question-bank-ai-message');
+  await expect(message.locator('.katex').first()).toBeVisible();
+  await expect(message.locator('.katex-display')).toHaveCount(1);
+});
+
 test('saved AI analysis opens by default and remains scoped to its question', async ({page}) => {
   let savedQuestion = '';
   await page.route('**/api/v1/question-bank/practice/questions/*/ai', async route => {

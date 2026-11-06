@@ -704,6 +704,17 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             move || drop(timer)
         });
     }
+    {
+        let state = state.clone();
+        let key = (*state)
+            .as_ref()
+            .map(|value| (value.status.clone(), value.messages.len()))
+            .unwrap_or_default();
+        use_effect_with(key, move |_| {
+            hydrate_math();
+            || ()
+        });
+    }
     let on_start = {
         let state = state.clone();
         let revision = revision.clone();
