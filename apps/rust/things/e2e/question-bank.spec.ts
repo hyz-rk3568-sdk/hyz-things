@@ -20,6 +20,17 @@ async function openSheet(page:import('@playwright/test').Page) {
 }
 
 
+
+async function openFixtureReview(page:Page) {
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await chooseFixturePaper(page);
+  await page.getByTestId('question-bank-practice-start').click();
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button',{name:'确认交卷'}).click();
+}
+
 test('paper practice hides numbering and scroll tools until they are needed',async({page,request})=>{
   await loginAsAdmin(page);
   await page.goto('/#/study/training');
@@ -1004,3 +1015,86 @@ test(`review remembers each question and material scroll position at ${viewport.
   await expect.poll(()=>question.evaluate(node=>node.scrollTop)).toBe(0);
 });
 }
+
+test('long unbroken AI explanation wraps inside the review pane',async({page})=>{
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:'complete',error:null,
+      messages:[{role:'assistant',content:'解析：'+('A'.repeat(400)),created_at:1}]}});
+  });
+  await page.setViewportSize({width:1280,height:720});
+  await openFixtureReview(page);
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('A'.repeat(400));
+  const pane=page.getByTestId('question-bank-practice-question-scroll');
+  await expect.poll(()=>pane.evaluate(node=>node.scrollWidth-node.clientWidth)).toBeLessThanOrEqual(1);
+});
+
+test('long inline and display equations stay readable within the review pane',async({page,context,browserName})=>{
+  const inline='A'.repeat(120), display='B'.repeat(120);
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:'complete',error:null,
+      messages:[{role:'assistant',content:`行内：\\(\\text{${inline}}\\) 结束。\n\n\\[\\text{${display}}\\]`,created_at:1}]}});
+  });
+  await page.setViewportSize({width:390,height:844});
+  await openFixtureReview(page);
+  const message=page.getByTestId('question-bank-ai-message');
+  const inlineMath=message.locator('.math-inline');
+  const displayMath=message.locator('.math-display');
+  await expect(inlineMath.locator('.katex')).toBeVisible();
+  await expect(displayMath.locator('.katex')).toBeVisible();
+  const pane=page.getByTestId('question-bank-practice-question-scroll');
+  await expect.poll(()=>pane.evaluate(node=>node.scrollWidth-node.clientWidth)).toBeLessThanOrEqual(1);
+  for(const formula of [inlineMath,displayMath]) {
+    await expect.poll(()=>formula.evaluate(node=>node.scrollWidth-node.clientWidth)).toBeGreaterThan(10);
+    await formula.evaluate(node=>{node.scrollLeft=node.scrollWidth});
+    await expect.poll(()=>formula.evaluate(node=>node.scrollLeft)).toBeGreaterThan(10);
+  }
+  if (browserName==='chromium') {
+    await displayMath.scrollIntoViewIfNeeded();
+    await displayMath.evaluate(node=>{node.scrollLeft=0});
+    const box=await displayMath.boundingBox();
+    if (!box) throw new Error('display formula not visible');
+    const x=Math.round(box.x+box.width*0.8),y=Math.round(box.y+box.height*0.5);
+    const cdp=await context.newCDPSession(page);
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y,id:1}]});
+    for(let i=1;i<=8;i++) {
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x-i*15,y,id:1}]});
+    }
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    await expect.poll(()=>displayMath.evaluate(node=>node.scrollLeft)).toBeGreaterThan(10);
+    await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 26 题');
+  }
+});
+
+test('wide explanation tables scroll locally without turning the page',async({page,context,browserName})=>{
+  const row='|'+Array.from({length:20},(_,i)=>` 列${i+1} `).join('|')+'|';
+  const separator='|'+Array.from({length:20},()=> ' --- ').join('|')+'|';
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:'complete',error:null,
+      messages:[{role:'assistant',content:`表格解析\n\n${row}\n${separator}\n${row}`,created_at:1}]}});
+  });
+  await page.setViewportSize({width:390,height:844});
+  await openFixtureReview(page);
+  const pane=page.getByTestId('question-bank-practice-question-scroll');
+  const table=page.getByTestId('question-bank-ai-message').locator('table');
+  await expect(table).toBeVisible();
+  await expect.poll(()=>pane.evaluate(node=>node.scrollWidth-node.clientWidth)).toBeLessThanOrEqual(1);
+  await expect.poll(()=>table.evaluate(node=>node.scrollWidth-node.clientWidth)).toBeGreaterThan(10);
+  await table.evaluate(node=>{node.scrollLeft=node.scrollWidth});
+  await expect.poll(()=>table.evaluate(node=>node.scrollLeft)).toBeGreaterThan(10);
+  await table.evaluate(node=>{node.scrollLeft=0});
+  await table.scrollIntoViewIfNeeded();
+  if(browserName==='chromium') {
+    const box=await table.boundingBox();
+    if(!box) throw new Error('table not visible');
+    const x=Math.round(box.x+box.width*0.8),y=Math.round(box.y+box.height*0.5);
+    const cdp=await context.newCDPSession(page);
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y,id:1}]});
+    for(let i=1;i<=8;i++) await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x-i*15,y,id:1}]});
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    await expect.poll(()=>table.evaluate(node=>node.scrollLeft)).toBeGreaterThan(10);
+    await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 26 题');
+  }
+});

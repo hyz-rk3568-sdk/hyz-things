@@ -234,6 +234,22 @@ nav.tabs > button.tab:not(.tab-active) {
     overscroll-behavior: none;
     padding-bottom: max(.5rem, env(safe-area-inset-bottom));
   }
+  .training-swipe-surface .study-markdown {
+    overflow-wrap: anywhere;
+  }
+  .training-swipe-surface .study-markdown .math-inline {
+    display: inline-block;
+    max-width: 100%;
+    overflow-x: auto;
+    vertical-align: middle;
+  }
+  .training-swipe-surface .study-markdown .math-display {
+    max-width: 100%;
+  }
+  .training-swipe-surface .study-markdown .math-display > .katex-display {
+    width: max-content;
+    min-width: 100%;
+  }
   .training-swipe-surface {
     touch-action: pan-y;
     overscroll-behavior: contain;
