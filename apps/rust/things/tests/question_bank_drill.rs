@@ -201,6 +201,15 @@ fn lecture_collection_parses_with_all_522_questions_and_images() {
             "figure left in options in {}",
             path.display()
         );
+        assert!(
+            document.view().questions.iter().all(|question| {
+                !question.options_markdown.contains('$')
+                    && !question.options_markdown.contains("\\frac")
+                    && !question.options_markdown.contains("\\sqrt")
+            }),
+            "LaTeX left in options in {}",
+            path.display()
+        );
         total += document.view().questions.len();
         for reference in text.lines().filter_map(|line| {
             line.split("](../../assets/")
