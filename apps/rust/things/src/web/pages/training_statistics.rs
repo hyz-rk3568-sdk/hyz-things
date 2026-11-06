@@ -2,7 +2,7 @@
 use super::question_bank_practice::{module_filter_query, MODULE_SETTINGS_URL};
 use super::*;
 use hyz_things::domain::question_bank::{
-    DrillCollection, ModulePracticeFilters, PracticeCatalog, PracticeCategory,
+    ModulePracticeFilters, PracticeCatalog, PracticeCategory,
 };
 use std::collections::BTreeMap;
 
@@ -267,7 +267,6 @@ pub(crate) fn study_statistics_body(props: &StudyStatisticsProps) -> Html {
                 <p class="text-xs opacity-60">{"每日目标存于服务端；最近 7 天与最近 35 天目标按 7 倍、35 倍自动计算，某天超额可补足其他天。速算与闪卡回顾只计入学习时长。"}</p>
             </section>
             <StudyPlanCard csrf={props.csrf.clone()}/>
-            <DrillProgressCard/>
             <div class="rounded-xl bg-base-100 p-4 space-y-3">
                 <h3 class="font-semibold">{"每日学习热力图"}</h3>
                 <div class="grid grid-cols-7 gap-2" data-testid="training-heatmap">
@@ -434,72 +433,6 @@ fn plan_days_range(forecast: &StudyPlanForecast) -> Option<String> {
         .days_7
         .or(forecast.days_yesterday)
         .map(|days| days.to_string())
-}
-
-#[function_component(DrillProgressCard)]
-fn drill_progress_card() -> Html {
-    let collections = use_state(|| None::<Vec<DrillCollection>>);
-    let failure = use_state(|| None::<String>);
-    {
-        let collections = collections.clone();
-        let failure = failure.clone();
-        use_effect_with((), move |_| {
-            spawn_local(async move {
-                match fetch_json::<Vec<DrillCollection>>(
-                    "/api/v1/question-bank/collections",
-                    "专项合集进度",
-                )
-                .await
-                {
-                    Ok(value) => collections.set(Some(value)),
-                    Err(message) => failure.set(Some(message)),
-                }
-            });
-            || ()
-        });
-    }
-    html! {
-        <section class="space-y-3 rounded-xl bg-base-100 p-4" data-testid="drill-progress-card">
-            <div class="flex items-center justify-between gap-3">
-                <div>
-                    <h3 class="font-semibold">{"专项合集进度"}</h3>
-                    <p class="mt-1 text-xs opacity-60">{"合集独立统计，不计入真题完成日期。"}</p>
-                </div>
-            </div>
-            if let Some(message) = failure.as_ref() {
-                <p class="text-sm text-error" role="alert">{message.clone()}</p>
-            } else if collections.as_ref().is_some_and(|value| value.is_empty()) {
-                <p class="text-sm opacity-60">{"还没有专项合集。"}</p>
-            } else if let Some(value) = collections.as_ref() {
-                <div class="grid gap-3 sm:grid-cols-2">
-                    {for value.iter().map(|collection| {
-                        let remaining=collection.questions.saturating_sub(collection.done);
-                        let percent=if collection.questions==0 {0}
-                            else {collection.done.saturating_mul(100)/collection.questions};
-                        html! {
-                            <div class="rounded-lg border border-base-content/10 p-3" data-testid="drill-progress-item">
-                                <div class="flex items-start justify-between gap-2">
-                                    <strong class="min-w-0 truncate">{collection.title.clone()}</strong>
-                                    <span class="badge badge-ghost badge-sm shrink-0">{format!("{percent}%")}</span>
-                                </div>
-                                <progress class="progress progress-primary mt-2 h-2 w-full" max={collection.questions.max(1).to_string()}
-                                    value={collection.done.to_string()} aria-label={format!("{}专项进度",collection.title)}/>
-                                <p class="mt-2 text-xs opacity-70">
-                                    {format!("已做 {}/{} 题 · 剩余 {} 题",collection.done,collection.questions,remaining)}
-                                </p>
-                                <p class="mt-1 text-xs opacity-55">
-                                    {if remaining==0 { "合集已完成".to_string() }
-                                        else { format!("还剩 {remaining} 题") }}
-                                </p>
-                            </div>
-                        }
-                    })}
-                </div>
-            } else {
-                <p class="text-sm opacity-60">{"正在读取合集进度…"}</p>
-            }
-        </section>
-    }
 }
 
 #[derive(Properties, PartialEq)]

@@ -44,9 +44,7 @@ test('drill collection practice keeps ungradable questions and reports separate 
 
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-statistics').click();
-  await expect(page.getByTestId('drill-progress-card')).toContainText('小P 2026 数量关系讲义');
-  await expect(page.getByTestId('drill-progress-card')).toContainText('已做 1/2 题');
-  await expect(page.getByTestId('drill-progress-card')).not.toContainText('预计');
+  await expect(page.getByTestId('drill-progress-card')).toHaveCount(0);
 });
 
 test('exam paper list does not include drill collections',async({page})=>{
