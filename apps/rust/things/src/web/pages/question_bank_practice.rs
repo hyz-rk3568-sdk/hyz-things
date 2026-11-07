@@ -15,6 +15,12 @@ extern "C" {
     fn restore_review_scroll(element: &HtmlElement, offset: i32) -> js_sys::Function;
 }
 
+#[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/ai_diagram.js")]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = renderAiDiagrams)]
+    fn render_ai_diagrams(root: &HtmlElement);
+}
+
 const ROOT: &str = "/api/v1/question-bank";
 
 #[derive(Default)]
@@ -659,6 +665,7 @@ pub(crate) struct QuestionAiReviewProps {
 #[function_component(QuestionAiReview)]
 pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     let state = use_state(|| None::<AiReviewState>);
+    let diagram_root = use_node_ref();
     let failure = use_state(|| None::<String>);
     let submitting = use_state(|| false);
     let follow_up = use_state(String::new);
@@ -722,13 +729,13 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         });
     }
     {
-        let state = state.clone();
-        let key = (*state)
-            .as_ref()
-            .map(|value| (value.status.clone(), value.messages.len()))
-            .unwrap_or_default();
+        let diagram_root = diagram_root.clone();
+        let key = (props.question_id.clone(), (*state).clone());
         use_effect_with(key, move |_| {
             hydrate_math();
+            if let Some(root) = diagram_root.cast::<HtmlElement>() {
+                render_ai_diagrams(&root);
+            }
             || ()
         });
     }
@@ -911,7 +918,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         !value.messages.is_empty() && matches!(value.status.as_str(), "failed" | "stopped")
     });
     html! {
-        <section class="space-y-3" data-testid="question-bank-ai-review">
+        <section class="space-y-3" data-testid="question-bank-ai-review" ref={diagram_root}>
             <div class="flex items-center justify-between gap-2">
                 <strong>{"AI 解析与追问"}</strong>
                 <span class="text-xs text-base-content/60" data-testid="question-bank-ai-status">
@@ -941,7 +948,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         <div class="mb-2 text-xs font-semibold text-base-content/60">
                             {if msg.role == "user" { "你的追问" } else { "AI 解析" }}
                         </div>
-                        <div class="study-markdown text-base leading-7">
+                        <div class="study-markdown text-base leading-7" data-ai-diagram-source={(msg.role == "assistant").to_string()}>
                             {render_question_bank_markdown(&msg.content)}
                         </div>
                     </div>

@@ -449,3 +449,17 @@ for (const action of ['stop', 'delete'] as const) {
     await expectFinalState();
   });
 }
+
+test('collection review displays a safe AI SVG diagram', async ({ page }) => {
+  await install(page);
+  await page.route(`**${root}/practice/questions/*/ai`, async route => {
+    const question_id = new URL(route.request().url()).pathname.split('/').at(-2)!;
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 80"><line x1="10" y1="40" x2="150" y2="40" stroke="#333"/><text x="10" y="60">收藏题线段图</text></svg>';
+    await route.fulfill({ json: { question_id, status: 'complete', error: null,
+      messages: [{ role: 'assistant', content: '```svg\n'+svg+'\n```', created_at: 1 }] } });
+  });
+  const review = await openReview(page);
+  const image = review.getByTestId('question-bank-ai-diagram');
+  await expect(image).toBeVisible();
+  await expect.poll(()=>image.evaluate((node:HTMLImageElement)=>node.complete && node.naturalWidth>0)).toBe(true);
+});

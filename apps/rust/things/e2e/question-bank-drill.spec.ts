@@ -92,7 +92,7 @@ test(`drill history restores scroll after saved AI analysis loads at ${scenario.
   await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
     const id=new URL(route.request().url()).pathname.split('/').at(-2)!;
     if (!firstQuestion) firstQuestion=id;
-    if (armed && id===firstQuestion) {armed=false;reloadArrived();await reloadGate;}
+    if (armed && id===firstQuestion) {reloadArrived();await reloadGate;}
     await route.fulfill({json:{question_id:id,status:'complete',error:null,
       messages:[{role:'assistant',content:Array.from({length:80},(_,i)=>`第 ${i+1} 段：专项训练 AI 解析。`).join('\n\n'),created_at:1}]}});
   });
@@ -125,9 +125,38 @@ test(`drill history restores scroll after saved AI analysis loads at ${scenario.
   await swipe('previous');
   await reloadStarted;
   await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 1 题');
-  if (scenario.cancel) await question.dispatchEvent('wheel',{deltaY:40});
+  if (scenario.cancel) {
+    await expect(question).toHaveAttribute('data-review-scroll-restoring','');
+    await question.dispatchEvent('wheel',{deltaY:40});
+  }
+  armed=false;
   releaseReload();
   await expect(page.getByTestId('question-bank-ai-message')).toContainText('第 80 段');
   await expect.poll(()=>question.evaluate(node=>node.scrollTop)).toBe(scenario.cancel?0:450);
+  if (!scenario.cancel) {
+    await question.dispatchEvent('wheel',{deltaY:30});
+    await question.evaluate(node=>{node.scrollTop=220;node.append(document.createElement('span'))});
+    await expect.poll(()=>question.evaluate(node=>node.scrollTop)).toBe(220);
+  }
 });
 }
+
+test('drill review displays a safe AI SVG diagram',async({page})=>{
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 80"><rect x="10" y="10" width="100" height="30" fill="#ddd"/><text x="15" y="30">专项示意图</text></svg>';
+    await route.fulfill({json:{question_id,status:'complete',error:null,
+      messages:[{role:'assistant',content:'```svg\n'+svg+'\n```',created_at:1}]}});
+  });
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-drill').click();
+  await page.getByTestId('question-bank-drill-collection').filter({hasText:'小P 2026 数量关系讲义'}).click();
+  await page.getByTestId('question-bank-drill-paper').filter({hasText:'方程关系'}).click();
+  await page.getByTestId('question-bank-practice-start').click();
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button',{name:'确认交卷'}).click();
+  const image=page.getByTestId('question-bank-ai-diagram');
+  await expect(image).toBeVisible();
+  await expect.poll(()=>image.evaluate((node:HTMLImageElement)=>node.complete&&node.naturalWidth>0)).toBe(true);
+});

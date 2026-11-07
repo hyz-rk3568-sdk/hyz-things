@@ -51,6 +51,18 @@ fn key(locator: &QuestionAiLocator) -> Key {
     )
 }
 
+const AI_SVG_INSTRUCTIONS: &str = concat!(
+    "当图形有助理解时，用独立的 ```svg 代码块绘制线段图、数轴、对比图或流程图；\n",
+    "图形应简洁并有中文文字标注。根元素示例：<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 600 240\">。\n",
+    "只使用 svg、g、path、line、polyline、polygon、rect、circle、ellipse、text、tspan、title、desc；\n",
+    "使用纯数字坐标，颜色用颜色名或十六进制。允许的属性是 viewBox、x、y、x1、y1、x2、y2、cx、cy、r、rx、ry、width、height、\n",
+    "stroke-width、fill、stroke、opacity、fill-opacity、stroke-opacity、d、points、text-anchor、dominant-baseline、\n",
+    "stroke-linecap、stroke-linejoin、font-weight、font-family；字体只用 sans-serif、serif 或 monospace。\n",
+    "禁止 script、style、class、id、transform、href、外部资源、动画、foreignObject、DOCTYPE 和 XML 声明；\n",
+    "不要使用渐变、滤镜或箭头 marker，箭头可用 line 和 polygon 绘制。每图最多 256 个元素、源码不超过 32768 字符。\n",
+    "图形显示在白色背景上，请使用深色文字和线条。无需画图时直接使用文字、表格或公式，不必强制绘图。\n",
+);
+
 fn initial_prompt(locator: &QuestionAiLocator) -> String {
     let materials = serde_json::to_string(&locator.material_ids).unwrap_or_else(|_| "[]".into());
     let paper_path = format!("question_bank/{}", locator.paper_path);
@@ -70,6 +82,7 @@ fn initial_prompt(locator: &QuestionAiLocator) -> String {
          定位原题后，根据实际题目按需读取 .agents/skills/行测做题/SKILL.md 和 flashcards/ 下\
          与本题有关的 hyz 做题套路，不需要盲目读取整个卡片库。\
          资料分析保留 hyz 的近似速算，不随意改为繁琐的严格计算。\n\
+         {AI_SVG_INSTRUCTIONS}\
          输出中文 Markdown：你的答案、关键条件、解题步骤、排除干扰项、复盘提醒。\
          正文直接给出答案与解析，不要汇报 UUID、hash 或检索过程；\
          只有无法定位原题或无法读取图片时才说明检索问题。\
@@ -241,7 +254,8 @@ impl QuestionBankAiService {
         sqlx::query("UPDATE question_ai_reviews SET status='running',error=NULL,updated_at=? WHERE question_id=? AND stem_fingerprint=?")
             .bind(now()).bind(&key.0).bind(&key.1).execute(&mut *tx).await.map_err(|_| AiReviewError::Storage)?;
         tx.commit().await.map_err(|_| AiReviewError::Storage)?;
-        self.spawn_task(&mut active, key.clone(), thread, message);
+        let prompt = format!("{AI_SVG_INSTRUCTIONS}\n用户追问：\n{message}");
+        self.spawn_task(&mut active, key.clone(), thread, prompt);
         self.state_for_key(&key).await
     }
 
@@ -376,6 +390,21 @@ impl QuestionBankAiService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn initial_prompt_describes_safe_svg_diagrams() {
+        let locator = QuestionAiLocator {
+            question_id: "question-id".into(),
+            paper_id: "paper-id".into(),
+            paper_path: "papers/example.md".into(),
+            material_ids: Vec::new(),
+            stem_fingerprint: "fingerprint".into(),
+        };
+        let prompt = initial_prompt(&locator);
+        assert!(prompt.contains("```svg"), "{prompt}");
+        assert!(prompt.contains("viewBox"), "{prompt}");
+        assert!(prompt.contains("foreignObject"), "{prompt}");
+    }
 
     #[test]
     fn initial_prompt_uses_the_question_paper_path() {

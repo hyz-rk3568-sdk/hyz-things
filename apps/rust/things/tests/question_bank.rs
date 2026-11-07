@@ -1942,3 +1942,91 @@ async fn question_ai_delete_rejects_oversized_body() {
     assert_eq!(response.status(), 413);
     server.abort();
 }
+
+struct CaptureSvgPrompt {
+    prompts: tokio::sync::mpsc::UnboundedSender<(Option<String>, String)>,
+}
+
+struct CaptureSvgTurn {
+    prompts: tokio::sync::mpsc::UnboundedSender<(Option<String>, String)>,
+    previous: Option<String>,
+}
+
+#[async_trait]
+impl hyz_things::application::question_bank::practice::AiReviewBackend for CaptureSvgPrompt {
+    async fn connect(
+        &self,
+        previous: Option<&str>,
+    ) -> Result<Box<dyn hyz_things::application::question_bank::practice::AiReviewTurn>, String>
+    {
+        Ok(Box::new(CaptureSvgTurn {
+            prompts: self.prompts.clone(),
+            previous: previous.map(str::to_owned),
+        }))
+    }
+}
+
+#[async_trait]
+impl hyz_things::application::question_bank::practice::AiReviewTurn for CaptureSvgTurn {
+    fn thread_id(&self) -> &str {
+        "test-existing-thread"
+    }
+
+    async fn turn(
+        &mut self,
+        prompt: &str,
+        _cancel: tokio::sync::watch::Sender<bool>,
+    ) -> Result<String, String> {
+        self.prompts
+            .send((self.previous.clone(), prompt.to_owned()))
+            .map_err(|_| "test closed".to_owned())?;
+        Ok("解析完成".into())
+    }
+}
+
+#[tokio::test]
+async fn ai_follow_up_teaches_existing_threads_safe_svg_without_changing_user_message() {
+    let (prompts, mut received) = tokio::sync::mpsc::unbounded_channel();
+    let (server, base, cookie, _, bank, pool) =
+        bank_server_fixture_with_ai(true, Some(Arc::new(CaptureSvgPrompt { prompts }))).await;
+    bank.sync().await.unwrap();
+    let question = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
+    let locator = bank.question_ai_locator(question).await.unwrap();
+    sqlx::query("INSERT INTO question_ai_reviews(question_id,stem_fingerprint,thread_id,status,updated_at) VALUES(?,?,?,'complete',1)")
+        .bind(question)
+        .bind(&locator.stem_fingerprint)
+        .bind("test-existing-thread")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let endpoint = format!("{base}/api/v1/question-bank/practice/questions/{question}/ai");
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("{endpoint}/messages"))
+        .header("cookie", &cookie)
+        .header("origin", &base)
+        .header("x-hyz-csrf", "qb-csrf")
+        .json(&serde_json::json!({"message":"请画一张线段图"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 202);
+    let (previous, prompt) =
+        tokio::time::timeout(std::time::Duration::from_secs(5), received.recv())
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(previous.as_deref(), Some("test-existing-thread"));
+    assert!(prompt.contains("请画一张线段图"));
+    assert!(prompt.contains("```svg"));
+    assert!(prompt.contains("foreignObject"));
+    let messages: Vec<String> = sqlx::query_scalar(
+        "SELECT content FROM question_ai_messages WHERE question_id=? AND role='user'",
+    )
+    .bind(question)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(messages, ["请画一张线段图"]);
+    server.abort();
+}

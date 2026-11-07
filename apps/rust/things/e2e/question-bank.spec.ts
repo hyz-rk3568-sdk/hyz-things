@@ -1098,3 +1098,84 @@ test('wide explanation tables scroll locally without turning the page',async({pa
     await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 26 题');
   }
 });
+
+for (const viewport of [{width:1280,height:720},{width:390,height:844}]) {
+test(`AI analysis displays a safe SVG diagram at ${viewport.width}px`,async({page})=>{
+  await page.setViewportSize(viewport);
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 90"><line x1="20" y1="45" x2="220" y2="45" stroke="#333333" stroke-width="2"/><circle cx="90" cy="45" r="4" fill="#ff0080"/><text x="90" y="70" text-anchor="middle">已知数量</text></svg>';
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:'complete',error:null,
+      messages:[{role:'assistant',content:`先画线段图。\n\n\`\`\`svg\n${svg}\n\`\`\`\n\n再求结果。`,created_at:1}]}});
+  });
+  await openFixtureReview(page);
+  const diagram=page.getByTestId('question-bank-ai-diagram');
+  await expect(diagram).toBeVisible();
+  await expect(diagram).toHaveAttribute('alt','AI 解析示意图');
+  await expect.poll(()=>diagram.evaluate((img:HTMLImageElement)=>img.complete&&img.naturalWidth>0)).toBe(true);
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('再求结果');
+  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth)).toBeLessThanOrEqual(0);
+  await page.getByRole('button',{name:'下一题'}).click();
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 27 题');
+  await expect(diagram).toHaveCount(1);
+  await page.getByRole('button',{name:'上一题'}).click();
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 26 题');
+  await expect(diagram).toHaveCount(1);
+});
+}
+
+test('AI SVG diagrams reject unsafe or oversized markup and preserve its source',async({page})=>{
+  const open='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">';
+  const unsafe=[
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100" onload="alert(1)"><circle cx="20" cy="20" r="5"/></svg>`,
+    `${open}<script>alert(1)</script></svg>`,
+    `${open}<foreignObject><div xmlns="http://www.w3.org/1999/xhtml">bad</div></foreignObject></svg>`,
+    `${open}<image href="https://example.invalid/private"/></svg>`,
+    `${open}<rect x="0" y="0" width="20" height="20" fill="url(https://example.invalid/a)"/></svg>`,
+    `<!DOCTYPE svg [<!ENTITY x "bad">]>${open}<text x="1" y="10">&x;</text></svg>`,
+    `${open}<rect constructor="bad"/></svg>`,
+    `${open}${'<circle cx="1" cy="1" r="1"/>'.repeat(257)}</svg>`,
+    `${open}<path d="${'M1 1 '.repeat(7000)}"/></svg>`,
+  ];
+  const code=(value:string)=>'```svg\n'+value+'\n```';
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:'complete',error:null,messages:[
+      ...unsafe.map(content=>({role:'assistant',content:code(content),created_at:1})),
+      {role:'user',content:code(`${open}<circle cx="10" cy="10" r="5"/></svg>`),created_at:1},
+    ]}});
+  });
+  const external:string[]=[];
+  page.on('request',request=>{if(request.url().startsWith('https://example.invalid/')) external.push(request.url())});
+  await openFixtureReview(page);
+  await expect(page.getByTestId('question-bank-ai-diagram-error')).toHaveCount(unsafe.length);
+  await expect(page.getByTestId('question-bank-ai-diagram')).toHaveCount(0);
+  await expect(page.getByTestId('question-bank-ai-message').locator('pre code.language-svg')).toHaveCount(unsafe.length+1);
+  await expect(page.getByTestId('question-bank-ai-message').locator('svg,script,foreignObject')).toHaveCount(0);
+  expect(external).toEqual([]);
+});
+
+test('an existing AI review can draw a diagram in response to a follow-up',async({page})=>{
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 90"><line x1="20" y1="45" x2="220" y2="45" stroke="#333"/><text x="40" y="70">线段图</text></svg>';
+  const messages=[{role:'assistant',content:'已有文字解析',created_at:1}];
+  let received='';
+  const state=(question_id:string)=>({question_id,status:'complete',error:null,messages});
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:state(question_id)});
+  });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/messages',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-3)!;
+    received=route.request().postDataJSON().message;
+    messages.push({role:'user',content:received,created_at:2},
+      {role:'assistant',content:'线段图如下：\n\n```svg\n'+svg+'\n```',created_at:3});
+    await route.fulfill({status:202,json:state(question_id)});
+  });
+  await openFixtureReview(page);
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('已有文字解析');
+  await page.getByTestId('question-bank-ai-input').fill('请画一张线段图');
+  await page.getByTestId('question-bank-ai-send').click();
+  await expect(page.getByTestId('question-bank-ai-diagram')).toBeVisible();
+  await expect(page.getByTestId('question-bank-ai-message').filter({hasText:'请画一张线段图'})).toBeVisible();
+  expect(received).toBe('请画一张线段图');
+});
