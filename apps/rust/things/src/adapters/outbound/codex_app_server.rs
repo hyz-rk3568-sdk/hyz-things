@@ -64,6 +64,28 @@ pub(super) fn validate_token(token: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Accept the JSON envelope, a fenced JSON envelope, or plain Markdown.
+/// Models occasionally skip the envelope even though it is requested.
+fn review_answer(raw: &str) -> Option<String> {
+    fn envelope(text: &str) -> Option<String> {
+        serde_json::from_str::<Value>(text)
+            .ok()?
+            .get("answer")?
+            .as_str()
+            .map(str::to_owned)
+    }
+    fn without_fence(text: &str) -> Option<&str> {
+        let body = text.strip_prefix("```")?.trim_start();
+        let body = body.split_once('\n')?.1;
+        body.trim_end().strip_suffix("```").map(str::trim)
+    }
+    let text = raw.trim();
+    let answer = envelope(text)
+        .or_else(|| without_fence(text).and_then(envelope))
+        .unwrap_or_else(|| text.to_owned());
+    (!answer.trim().is_empty() && answer.len() <= MAX_PACKET).then_some(answer)
+}
+
 fn output_schema() -> Value {
     // Codex is responsible for creating, checking and selecting the answers.
     // The App Server schema checks only the shape needed by the UI.
@@ -444,13 +466,7 @@ impl CodexSession {
         let raw = self
             .turn_cancellable_with_schema(prompt, cancellation, schema)
             .await?;
-        let value: Value = serde_json::from_str(&raw).map_err(|_| "Codex AI 解析返回格式错误")?;
-        let text = value
-            .get("answer")
-            .and_then(Value::as_str)
-            .filter(|text| !text.trim().is_empty() && text.len() <= MAX_PACKET)
-            .ok_or("Codex AI 解析内容为空或过长")?;
-        Ok(text.to_owned())
+        review_answer(&raw).ok_or_else(|| "Codex AI 解析内容为空或过长".to_owned())
     }
 
     /// Run one generation or repair turn in the same ephemeral thread.
@@ -837,6 +853,55 @@ mod tests {
         assert_eq!(thread["params"]["excludeTurns"], true);
         assert!(thread["params"].get("sandbox").is_none());
         assert_eq!(session.thread_id(), "previous-thread");
+    }
+
+    #[tokio::test]
+    async fn review_accepts_an_answer_wrapped_in_a_json_code_fence() {
+        let (mut session, mut socket) = test_connection().await;
+        let task =
+            tokio::spawn(
+                async move { session.turn_review("review", watch::channel(false).0).await },
+            );
+        let request = client_message(&mut socket).await;
+        server_message(
+            &mut socket,
+            json!({"id":request["id"],"result":{"turn":{"id":"turn-1"}}}),
+        )
+        .await;
+        server_message(
+            &mut socket,
+            json!({"method":"item/completed","params":{"threadId":"test-thread","turnId":"turn-1",
+                "item":{"type":"agentMessage","text":"```json\n{\"answer\":\"## 解析\\n\\n正文\"}\n```"}}}),
+        )
+        .await;
+        complete_test_turn(&mut socket, "completed").await;
+        assert_eq!(task.await.unwrap().unwrap(), "## 解析\n\n正文");
+    }
+
+    #[tokio::test]
+    async fn review_accepts_plain_markdown_when_the_model_skips_the_envelope() {
+        let (mut session, mut socket) = test_connection().await;
+        let task =
+            tokio::spawn(
+                async move { session.turn_review("review", watch::channel(false).0).await },
+            );
+        let request = client_message(&mut socket).await;
+        server_message(
+            &mut socket,
+            json!({"id":request["id"],"result":{"turn":{"id":"turn-1"}}}),
+        )
+        .await;
+        server_message(
+            &mut socket,
+            json!({"method":"item/completed","params":{"threadId":"test-thread","turnId":"turn-1",
+                "item":{"type":"agentMessage","text":"## 直接输出的解析\n\n```svg\n<svg viewBox=\"0 0 10 10\"/>\n```"}}}),
+        )
+        .await;
+        complete_test_turn(&mut socket, "completed").await;
+        assert_eq!(
+            task.await.unwrap().unwrap(),
+            "## 直接输出的解析\n\n```svg\n<svg viewBox=\"0 0 10 10\"/>\n```"
+        );
     }
 
     #[tokio::test]

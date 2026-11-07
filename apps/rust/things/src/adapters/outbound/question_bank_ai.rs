@@ -51,6 +51,11 @@ fn key(locator: &QuestionAiLocator) -> Key {
     )
 }
 
+const AI_REVIEW_ENVELOPE: &str = concat!(
+    "输出格式：只输出一个符合 outputSchema 的 JSON 对象，把全部 Markdown 放进 answer 字符串；\n",
+    "不要在 JSON 之外写任何说明，也不要用代码围栏包裹整个 JSON。\n",
+);
+
 const AI_SVG_INSTRUCTIONS: &str = concat!(
     "当图形有助理解时，用独立的 ```svg 代码块绘制线段图、数轴、对比图或流程图；\n",
     "图形应简洁并有中文文字标注。根元素示例：<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 600 240\">。\n",
@@ -82,7 +87,7 @@ fn initial_prompt(locator: &QuestionAiLocator) -> String {
          定位原题后，根据实际题目按需读取 .agents/skills/行测做题/SKILL.md 和 flashcards/ 下\
          与本题有关的 hyz 做题套路，不需要盲目读取整个卡片库。\
          资料分析保留 hyz 的近似速算，不随意改为繁琐的严格计算。\n\
-         {AI_SVG_INSTRUCTIONS}\
+         {AI_REVIEW_ENVELOPE}{AI_SVG_INSTRUCTIONS}\
          输出中文 Markdown：你的答案、关键条件、解题步骤、排除干扰项、复盘提醒。\
          正文直接给出答案与解析，不要汇报 UUID、hash 或检索过程；\
          只有无法定位原题或无法读取图片时才说明检索问题。\
@@ -254,7 +259,7 @@ impl QuestionBankAiService {
         sqlx::query("UPDATE question_ai_reviews SET status='running',error=NULL,updated_at=? WHERE question_id=? AND stem_fingerprint=?")
             .bind(now()).bind(&key.0).bind(&key.1).execute(&mut *tx).await.map_err(|_| AiReviewError::Storage)?;
         tx.commit().await.map_err(|_| AiReviewError::Storage)?;
-        let prompt = format!("{AI_SVG_INSTRUCTIONS}\n用户追问：\n{message}");
+        let prompt = format!("{AI_REVIEW_ENVELOPE}{AI_SVG_INSTRUCTIONS}\n用户追问：\n{message}");
         self.spawn_task(&mut active, key.clone(), thread, prompt);
         self.state_for_key(&key).await
     }
@@ -404,6 +409,7 @@ mod tests {
         assert!(prompt.contains("```svg"), "{prompt}");
         assert!(prompt.contains("viewBox"), "{prompt}");
         assert!(prompt.contains("foreignObject"), "{prompt}");
+        assert!(prompt.contains("outputSchema"), "{prompt}");
     }
 
     #[test]
