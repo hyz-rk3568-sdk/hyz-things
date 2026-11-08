@@ -124,7 +124,7 @@ async fn idle_state_is_accessible_for_a_question() {
 async fn start_without_codex_configuration_never_writes_or_consumes_quota() {
     let (service, _fingerprint, _pool) = submitted_practice().await;
     assert!(matches!(
-        service.start(QUESTION_ID).await,
+        service.start(QUESTION_ID, None).await,
         Err(AiReviewError::Unavailable)
     ));
     let state = service.state(QUESTION_ID).await.unwrap();

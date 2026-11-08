@@ -1207,3 +1207,28 @@ test('sends an AI follow-up with Ctrl+Enter but not plain Enter',async({page})=>
   await input.press('Meta+Enter');
   await expect.poll(()=>received).toEqual(['第一行','第二行']);
 });
+
+for (const viewport of [{width:1280,height:720},{width:390,height:844}]) {
+test(`starts an AI review with the optional requirements text at ${viewport.width}px`,async({page})=>{
+  await page.setViewportSize(viewport);
+  let startBody:unknown=null;
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    if(route.request().method()==='POST') {
+      startBody=route.request().postDataJSON();
+      await route.fulfill({status:202,json:{question_id,status:'running',error:null,messages:[]}});
+    } else {
+      await route.fulfill({json:{question_id,status:'idle',error:null,messages:[]}});
+    }
+  });
+  await openFixtureReview(page);
+  await page.getByTestId('question-bank-ai-tab').click();
+  const box=page.getByTestId('question-bank-ai-instruction');
+  await expect(box).toBeVisible();
+  await box.fill('用线段图讲解，只讲速算');
+  await page.getByTestId('question-bank-ai-start').click();
+  await expect.poll(()=>startBody).toEqual({instruction:'用线段图讲解，只讲速算'});
+  await expect(page.getByTestId('question-bank-ai-status')).toContainText('正在生成');
+  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth)).toBeLessThanOrEqual(0);
+});
+}

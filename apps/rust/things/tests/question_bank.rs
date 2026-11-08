@@ -1985,6 +1985,35 @@ impl hyz_things::application::question_bank::practice::AiReviewTurn for CaptureS
 }
 
 #[tokio::test]
+async fn ai_start_sends_the_user_requirements_in_the_first_prompt() {
+    let (prompts, mut received) = tokio::sync::mpsc::unbounded_channel();
+    let (server, base, cookie, _, bank, _) =
+        bank_server_fixture_with_ai(true, Some(Arc::new(CaptureSvgPrompt { prompts }))).await;
+    bank.sync().await.unwrap();
+    let question = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
+    let endpoint = format!("{base}/api/v1/question-bank/practice/questions/{question}/ai");
+    let response = reqwest::Client::new()
+        .post(&endpoint)
+        .header("cookie", &cookie)
+        .header("origin", &base)
+        .header("x-hyz-csrf", "qb-csrf")
+        .json(&serde_json::json!({"instruction": "用线段图讲解，只讲速算"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 202);
+    let (previous, prompt) =
+        tokio::time::timeout(std::time::Duration::from_secs(5), received.recv())
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(previous, None);
+    assert!(prompt.contains("【用户要求】"), "{prompt}");
+    assert!(prompt.contains("用线段图讲解，只讲速算"), "{prompt}");
+    server.abort();
+}
+
+#[tokio::test]
 async fn ai_follow_up_resumes_the_thread_with_only_the_user_message() {
     let (prompts, mut received) = tokio::sync::mpsc::unbounded_channel();
     let (server, base, cookie, _, bank, pool) =

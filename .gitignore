@@ -30,3 +30,7 @@ tmp/
 !/question_bank/reports/classification_review.jsonl
 !/question_bank/reports/classification_queue.jsonl
 !/question_bank/reports/classification_summary.json
+
+# Flashcard editor backups
+flashcards/**/.favorite-backup-*
+flashcards/**/.hyz-card-*.bak

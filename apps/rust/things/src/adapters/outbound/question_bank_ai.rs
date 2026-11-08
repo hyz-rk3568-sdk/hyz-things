@@ -68,7 +68,7 @@ const AI_SVG_INSTRUCTIONS: &str = concat!(
     "图形显示在白色背景上，请使用深色文字和线条。无需画图时直接使用文字、表格或公式，不必强制绘图。\n",
 );
 
-fn initial_prompt(locator: &QuestionAiLocator) -> String {
+fn initial_prompt(locator: &QuestionAiLocator, instruction: Option<&str>) -> String {
     let materials = serde_json::to_string(&locator.material_ids).unwrap_or_else(|_| "[]".into());
     let paper_path = format!("question_bank/{}", locator.paper_path);
     format!(
@@ -91,6 +91,7 @@ fn initial_prompt(locator: &QuestionAiLocator) -> String {
          原卷 Answer、Explanation 只作为参考观点，不是标准答案；原卷没有答案时直接注明。\
          如果结论与参考不同，明确说出自己的结论、依据和分歧。\n\
          {AI_REVIEW_ENVELOPE}{AI_SVG_INSTRUCTIONS}\
+         {instruction_section}\
          【输出顺序】\n\
          用中文 Markdown，按以下顺序：答案；判型与所用套路；关键条件；按套路分步求解；\
          快速验算与排除干扰项；与原卷参考对照；复盘提醒。\n\
@@ -100,7 +101,10 @@ fn initial_prompt(locator: &QuestionAiLocator) -> String {
          只读检索，不修改文件、不运行写入命令，不访问无关目录。\n",
         paper_path = paper_path,
         paper_id = locator.paper_id,
-        question_id = locator.question_id
+        question_id = locator.question_id,
+        instruction_section = instruction.map_or_else(String::new, |value| format!(
+            "【用户要求】\n{value}\n在不违反事实与格式要求的前提下优先满足。\n\n"
+        ))
     )
 }
 
@@ -199,7 +203,17 @@ impl QuestionBankAiService {
     pub async fn start(
         self: &Arc<Self>,
         question_id: &str,
+        instruction: Option<String>,
     ) -> Result<AiReviewState, AiReviewError> {
+        let instruction = instruction
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty());
+        if instruction.as_ref().is_some_and(|value| {
+            value.chars().count() > MAX_FOLLOW_UP
+                || value.chars().any(|c| c.is_control() && c != '\n')
+        }) {
+            return Err(AiReviewError::Invalid);
+        }
         if self.backend.is_none() {
             return Err(AiReviewError::Unavailable);
         }
@@ -221,7 +235,7 @@ impl QuestionBankAiService {
         };
         sqlx::query("INSERT INTO question_ai_reviews(question_id,stem_fingerprint,thread_id,status,updated_at) VALUES(?,?,?,'running',?) ON CONFLICT(question_id,stem_fingerprint) DO UPDATE SET status='running',error=NULL,updated_at=excluded.updated_at")
             .bind(&key.0).bind(&key.1).bind(&thread).bind(now()).execute(&self.pool).await.map_err(|_| AiReviewError::Storage)?;
-        let prompt = initial_prompt(&locator);
+        let prompt = initial_prompt(&locator, instruction.as_deref());
         self.spawn_task(&mut active, key.clone(), thread, prompt);
         self.state_for_key(&key).await
     }
@@ -409,11 +423,25 @@ mod tests {
             material_ids: Vec::new(),
             stem_fingerprint: "fingerprint".into(),
         };
-        let prompt = initial_prompt(&locator);
+        let prompt = initial_prompt(&locator, None);
         assert!(prompt.contains("```svg"), "{prompt}");
         assert!(prompt.contains("viewBox"), "{prompt}");
         assert!(prompt.contains("foreignObject"), "{prompt}");
         assert!(prompt.contains("outputSchema"), "{prompt}");
+    }
+
+    #[test]
+    fn initial_prompt_includes_the_user_requirements() {
+        let locator = QuestionAiLocator {
+            question_id: "question-id".into(),
+            paper_id: "paper-id".into(),
+            paper_path: "papers/example.md".into(),
+            material_ids: Vec::new(),
+            stem_fingerprint: "fingerprint".into(),
+        };
+        let prompt = initial_prompt(&locator, Some("用线段图讲解，只讲速算"));
+        assert!(prompt.contains("【用户要求】"), "{prompt}");
+        assert!(prompt.contains("用线段图讲解，只讲速算"), "{prompt}");
     }
 
     #[test]
@@ -426,7 +454,7 @@ mod tests {
             stem_fingerprint: "fingerprint".into(),
         };
 
-        let prompt = initial_prompt(&locator);
+        let prompt = initial_prompt(&locator, None);
 
         assert!(
             prompt.contains("question_bank/collections/xiaop-2026-shuliang/01-方程关系.md"),

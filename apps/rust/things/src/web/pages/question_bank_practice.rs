@@ -21,6 +21,11 @@ extern "C" {
     fn render_ai_diagrams(root: &HtmlElement);
 }
 
+#[derive(serde::Serialize)]
+struct AiReviewStartRequest {
+    instruction: String,
+}
+
 const ROOT: &str = "/api/v1/question-bank";
 
 #[derive(Default)]
@@ -669,6 +674,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     let failure = use_state(|| None::<String>);
     let submitting = use_state(|| false);
     let follow_up = use_state(String::new);
+    let start_instruction = use_state(String::new);
     let deleting = use_state(|| false);
     let revision = use_mut_ref(|| 0u64);
     let endpoint = format!("{ROOT}/practice/questions/{}/ai", props.question_id);
@@ -746,6 +752,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let submitting = submitting.clone();
         let endpoint = endpoint.clone();
         let csrf = props.csrf.clone();
+        let start_instruction = start_instruction.clone();
         Callback::from(move |_| {
             if *submitting {
                 return;
@@ -758,17 +765,22 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             let submitting = submitting.clone();
             let endpoint = endpoint.clone();
             let csrf = csrf.clone();
+            let instruction = start_instruction.trim().to_owned();
+            let start_instruction = start_instruction.clone();
             spawn_local(async move {
                 let result = post_json_response::<_, AiReviewState>(
                     &endpoint,
                     &csrf,
-                    &EmptyRequest {},
+                    &AiReviewStartRequest { instruction },
                     "开始 AI 解析",
                 )
                 .await;
                 *revision.borrow_mut() += 1;
                 match result {
-                    Ok(result) => state.set(Some(result)),
+                    Ok(result) => {
+                        state.set(Some(result));
+                        start_instruction.set(String::new());
+                    }
                     Err(error) => failure.set(Some(error)),
                 }
                 submitting.set(false);
@@ -980,6 +992,24 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                     <button type="button" class="btn btn-ghost btn-sm text-error" data-testid="question-bank-ai-delete"
                         disabled={*submitting} onclick={Callback::from({let deleting=deleting.clone(); move |_|deleting.set(true)})}>{"删除 AI 解析"}</button>
                 }
+            }
+            if can_start || can_restart {
+                <div class="space-y-1">
+                    <label class="text-sm font-semibold" for="question-ai-instruction">{"可选要求"}</label>
+                    <textarea id="question-ai-instruction"
+                        class="textarea textarea-bordered min-h-20 w-full text-sm leading-6"
+                        data-testid="question-bank-ai-instruction" maxlength="2000"
+                        value={(*start_instruction).clone()}
+                        placeholder="例如：用线段图讲清数量关系；只讲速算，不要列方程；重点说明排除干扰项。"
+                        oninput={Callback::from({
+                            let start_instruction=start_instruction.clone();
+                            move |event: InputEvent| {
+                                let input: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
+                                start_instruction.set(input.value());
+                            }
+                        })}/>
+                    <p class="text-xs text-base-content/60">{"这些要求会随本次解析一起发给 Codex。"}</p>
+                </div>
             }
             if can_start {
                 <p class="text-sm text-base-content/60">{"Codex 将根据题目 UUID 从电脑本地题库读取原题、共用材料及图片，独立解析；参考答案仅供参考。"}</p>

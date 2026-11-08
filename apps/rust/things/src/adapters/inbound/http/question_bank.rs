@@ -24,6 +24,13 @@ pub fn with_question_bank_ai(router: Router, ai: Option<Arc<QuestionBankAiServic
 }
 type AiService = Option<Extension<Arc<QuestionBankAiService>>>;
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct AiStartRequest {
+    #[serde(default)]
+    instruction: Option<String>,
+}
+
 #[expect(
     clippy::result_large_err,
     reason = "Axum response errors are returned directly"
@@ -86,19 +93,20 @@ pub(super) async fn ai_start(
     headers: HeaderMap,
     service: AiService,
     Path(question_id): Path<String>,
-    payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
+    payload: Result<Json<AiStartRequest>, JsonRejection>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
         return response;
     }
-    if let Err(error) = decode_control_json(payload) {
-        return error.response();
-    }
+    let request = match decode_control_json(payload) {
+        Ok(request) => request,
+        Err(error) => return error.response(),
+    };
     let service = match ai_service(service) {
         Ok(service) => service,
         Err(e) => return e,
     };
-    match service.start(&question_id).await {
+    match service.start(&question_id, request.instruction).await {
         Ok(value) => (StatusCode::ACCEPTED, Json(value)).into_response(),
         Err(error) => ai_error(error),
     }
