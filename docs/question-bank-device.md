@@ -1,6 +1,6 @@
 # 题库共享、同步与整卷加载
 
-当前实现提供电脑端独立共享脚本、设备端挂载脚本，以及学习中心的「同步题库」和整卷题面/材料加载。作答判分、答案解析、专项练习、收藏错题和套装尚未接入。
+当前实现提供电脑端独立共享脚本、设备端挂载脚本，以及学习中心的「同步题库」和整卷题面/材料加载。~~作答判分、答案解析、专项练习、收藏错题和套装尚未接入。~~ 现已提供套卷/模块/专项练习、交卷判分、原题解析、错题及收藏练习、历史和恢复；运行时题库正文采用 SQLite。参见 [题库 SQLite 读取与性能边界](question-bank-sqlite.md)。
 
 ## 电脑端独立共享
 
@@ -44,7 +44,7 @@ Buildroot overlay 新增 `/etc/init.d/S83hyz-question-bank`，固定挂载：
 5. 全批复核成功后，事务性更新 `/userdata/hyz-things/question-bank.db` 的索引。
 6. 点击试卷，按来源题号加载整卷题面、选项、共享材料与图片。材料在首次引用处展示一次。
 
-普通列表排除 `role: evidence` 的同卷佐证副本。题库数据库只存索引与稳定身份，不存整题正文，也不接触 `flashcards.db`。源文件变化后旧索引拒绝加载该卷并提示重新同步；源不可用或扫描失败时保留上次索引，不把断连视作删除。归档身份仍保留，以检测旧文件恢复后 UUID 丢失。
+普通列表排除 `role: evidence` 的同卷佐证副本。~~题库数据库只存索引与稳定身份，不存整题正文，也不接触 `flashcards.db`。源文件变化后旧索引拒绝加载该卷并提示重新同步；源不可用或扫描失败时保留上次索引，不把断连视作删除。~~ 当前 `question-bank.db` 保存已同步的题目正文、选项、材料、索引及独立练习状态；运行时从 SQLite 读取内容，源 Markdown 通过显式同步导入，不混入 `flashcards.db`。归档身份仍保留，以检测旧文件恢复后 UUID 丢失。详见 [SQLite 设计](question-bank-sqlite.md)。
 
 同步在同一个 application 实例内串行，LAN 与 Tailscale 共用它。CIFS 不提供跨编辑器的原子比较后交换；同步期间应暂停电脑端保存/导入，也不要让多个设备同时补写同一题库的 UUID。部分文件写回成功但整批失败时，索引不提交；重试会复用已写回 ID。之后在电脑端审查 Git diff 并保存 ID 变更。
 
@@ -60,7 +60,7 @@ Buildroot overlay 新增 `/etc/init.d/S83hyz-question-bank`，固定挂载：
 - `GET /api/v1/question-bank/collections`
 - `GET /api/v1/question-bank/assets/{SHA-256}.{extension}`
 
-整卷 DTO 不包含 Answer、Explanation 或可能附有答案校核内容的 Notes；当前也没有答案读取接口。共享 Markdown 中原始答案与解析仍完整保留。
+作答前的题目 DTO 不包含 Answer、Explanation 或可能附有答案校核内容的 Notes；~~当前也没有答案读取接口。~~ 已交卷后可通过受授权保护的复盘接口读取标准答案与解析。共享 Markdown 中原始答案与解析仍完整保留。
 
 主机验证入口：
 
@@ -81,6 +81,8 @@ HYZ_THINGS_E2E_BROWSER=chromium npm run test:e2e -- e2e/flashcards.spec.ts --gre
 浏览器用例以固定 API fixture 验证同步按钮、试卷加载、来源题号和材料只展示一次；HTTP/application 测试通过 fake ports 验证真实服务器安全边界。真实 SMB 断连、写回恢复、设备挂载、LAN/Tailscale 和设备页面仍需部署后板端验收，不能用主机测试替代。
 
 ## 本次验收记录（2026-11-02）
+
+> 以下是 2026-11-02 当天的历史现场记录，不应被当作当前功能缺失清单或最新设备验收状态。
 
 - 题库专项 Rust 测试 10 项、前端主机测试 42 项、电脑端导入测试 21 项通过；既有原生应用测试也已通过。
 - 使用当前设备端纯解析器对实际题库做只读验收：739 份文件、86,545 题位、16,449 处图片引用及 90,314 个 UUID 的内存写回计划通过；没有改写电脑题库 Markdown。记录保存在题库内 `reports/device-format-audit.json`。
