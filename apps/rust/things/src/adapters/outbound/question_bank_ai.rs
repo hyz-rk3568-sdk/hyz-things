@@ -264,11 +264,7 @@ impl QuestionBankAiService {
         sqlx::query("UPDATE question_ai_reviews SET status='running',error=NULL,updated_at=? WHERE question_id=? AND stem_fingerprint=?")
             .bind(now()).bind(&key.0).bind(&key.1).execute(&mut *tx).await.map_err(|_| AiReviewError::Storage)?;
         tx.commit().await.map_err(|_| AiReviewError::Storage)?;
-        let prompt = format!(
-            "{AI_REVIEW_ENVELOPE}{AI_SVG_INSTRUCTIONS}\n\
-             继续本题复盘：沿用本题已选定的做题套路；如需更换，说明原因。\n用户追问：\n{message}"
-        );
-        self.spawn_task(&mut active, key.clone(), thread, prompt);
+        self.spawn_task(&mut active, key.clone(), thread, message);
         self.state_for_key(&key).await
     }
 

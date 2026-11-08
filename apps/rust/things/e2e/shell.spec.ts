@@ -156,7 +156,7 @@ test("opens countdown video picture-in-picture", async ({ page }) => {
   await page.goto("/");
   await goToAppPage(page, "学习");
   await page.getByTestId("study-exam-expanded").click();
-  await page.getByRole("region", { name: "考试冲刺倒计时" }).locator('[data-exam-id="guangdong-exam"]').dblclick();
+  await page.getByRole("region", { name: "考试冲刺倒计时" }).locator('[data-exam-id="hunan-civil-service"]').dblclick();
   await expect.poll(async () => page.evaluate(() => (window as any).__hyzCountdownVideoPipCalls.length)).toBe(1);
   const pixel = await page.evaluate(() => {
     const canvas = document.querySelector("canvas[data-countdown-canvas]") as HTMLCanvasElement;

@@ -32,44 +32,15 @@ pub(crate) struct ExamCountdownTarget {
 }
 
 // 2027 年度考试公告尚未全部发布；未确认日期统一标注“预计”，并按预计首个笔试日排序。
-pub(crate) const EXAM_COUNTDOWN_TARGETS: [ExamCountdownTarget; 4] = [
-    ExamCountdownTarget {
-        id: "national-exam",
-        title: "下一次国考",
-        eyebrow: "2027 年度 · 预计",
-        target_iso: "2026-11-29T00:00:00+08:00",
-        target_label: "预计 2026.11.29",
-        target_note: "预计公共科目笔试日",
-        start_iso: "2025-11-29T00:00:00+08:00",
-    },
-    ExamCountdownTarget {
-        id: "guangdong-exam",
-        title: "广东省考",
-        eyebrow: "2027 年度 · 预计",
-        target_iso: "2026-12-06T00:00:00+08:00",
-        target_label: "预计 2026.12.06",
-        target_note: "预计首个笔试日",
-        start_iso: "2025-12-06T00:00:00+08:00",
-    },
-    ExamCountdownTarget {
-        id: "hunan-civil-service",
-        title: "湖南省考",
-        eyebrow: "2027 年 · 预计",
-        target_iso: "2027-03-14T00:00:00+08:00",
-        target_label: "预计 2027.03.14",
-        target_note: "预计首个笔试日",
-        start_iso: "2026-03-14T00:00:00+08:00",
-    },
-    ExamCountdownTarget {
-        id: "hunan-public-institution",
-        title: "湖南事业编",
-        eyebrow: "2027 年第一次 · 预计",
-        target_iso: "2027-03-27T00:00:00+08:00",
-        target_label: "预计 2027.03.27",
-        target_note: "参考 2026 年第一次首个笔试日",
-        start_iso: "2026-03-27T00:00:00+08:00",
-    },
-];
+pub(crate) const EXAM_COUNTDOWN_TARGETS: [ExamCountdownTarget; 1] = [ExamCountdownTarget {
+    id: "hunan-civil-service",
+    title: "湖南省考",
+    eyebrow: "2027 年 · 预计",
+    target_iso: "2027-03-14T00:00:00+08:00",
+    target_label: "预计 2027.03.14",
+    target_note: "预计首个笔试日",
+    start_iso: "2026-03-14T00:00:00+08:00",
+}];
 
 pub(crate) fn is_custom_countdown_target(target: &ExamCountdownTarget) -> bool {
     target.id.starts_with("custom-")
@@ -1354,37 +1325,41 @@ pub(crate) fn exam_countdown_panel(props: &ExamCountdownPanelProps) -> Html {
                     <progress class="progress progress-primary mt-3 w-full" max="100" value={nearest_snapshot.progress_percent.to_string()}></progress>
                 </div>
             </div>
-            <div class="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                    <h3 class="text-lg font-bold">{"其他考试"}</h3>
-                    <p class="text-xs text-base-content/60">{"按当前配置的预计日期排序"}</p>
+            if EXAM_COUNTDOWN_TARGETS.len() > 1 {
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                        <h3 class="text-lg font-bold">{"其他考试"}</h3>
+                        <p class="text-xs text-base-content/60">{"按当前配置的预计日期排序"}</p>
+                    </div>
+                    <span class="text-xs text-base-content/60">
+                        {format!("共{}场 · 日期均为预计", EXAM_COUNTDOWN_TARGETS.len())}
+                    </span>
                 </div>
-                <span class="text-xs text-base-content/60">{"共4场 · 日期均为预计"}</span>
-            </div>
-            <div class="grid gap-3 sm:grid-cols-3" data-testid="study-other-exams">
-                {for EXAM_COUNTDOWN_TARGETS.iter().skip(1).map(|target| {
-                    let snapshot = countdown_snapshot(
-                        *now_ms,
-                        exam_timestamp(target.start_iso),
-                        exam_timestamp(target.target_iso),
-                    );
-                    html! {
-                        <article class="flex items-center justify-between gap-4 rounded-xl border border-base-content/10 bg-base-100/70 p-4">
-                            <div class="min-w-0">
-                                <h4 class="truncate font-semibold">{target.title}</h4>
-                                <p class="mt-1 text-xs text-base-content/60">{target.target_label}</p>
-                            </div>
-                            <div class="shrink-0 text-right">
-                                <strong class="font-mono text-2xl font-bold tabular-nums">{snapshot.days}</strong>
-                                <span class="ml-1 text-xs">{"天"}</span>
-                            </div>
-                        </article>
-                    }
-                })}
-            </div>
+                <div class="grid gap-3 sm:grid-cols-3" data-testid="study-other-exams">
+                    {for EXAM_COUNTDOWN_TARGETS.iter().skip(1).map(|target| {
+                        let snapshot = countdown_snapshot(
+                            *now_ms,
+                            exam_timestamp(target.start_iso),
+                            exam_timestamp(target.target_iso),
+                        );
+                        html! {
+                            <article class="flex items-center justify-between gap-4 rounded-xl border border-base-content/10 bg-base-100/70 p-4">
+                                <div class="min-w-0">
+                                    <h4 class="truncate font-semibold">{target.title}</h4>
+                                    <p class="mt-1 text-xs text-base-content/60">{target.target_label}</p>
+                                </div>
+                                <div class="shrink-0 text-right">
+                                    <strong class="font-mono text-2xl font-bold tabular-nums">{snapshot.days}</strong>
+                                    <span class="ml-1 text-xs">{"天"}</span>
+                                </div>
+                            </article>
+                        }
+                    })}
+                </div>
+            }
             <details class="rounded-xl border border-base-content/10 bg-base-100/40 p-3">
                 <summary class="cursor-pointer text-sm font-medium" data-testid="study-exam-expanded">{"完整考试倒计时 · 画中画"}</summary>
-                <p class="my-3 text-xs text-base-content/60">{"原来的四张考试倒计时卡片和双击开启画中画功能保留在这里。"}</p>
+                <p class="my-3 text-xs text-base-content/60">{"双击卡片可开启画中画；倒计时按预计日期计算。"}</p>
                 if let Some(message) = *pip_notice {
                     <p class={EXAM_PIP_NOTICE} data-exam-countdown-notice="" role="status">{message}</p>
                 }

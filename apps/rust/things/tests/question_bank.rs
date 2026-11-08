@@ -1985,7 +1985,7 @@ impl hyz_things::application::question_bank::practice::AiReviewTurn for CaptureS
 }
 
 #[tokio::test]
-async fn ai_follow_up_teaches_existing_threads_safe_svg_without_changing_user_message() {
+async fn ai_follow_up_resumes_the_thread_with_only_the_user_message() {
     let (prompts, mut received) = tokio::sync::mpsc::unbounded_channel();
     let (server, base, cookie, _, bank, pool) =
         bank_server_fixture_with_ai(true, Some(Arc::new(CaptureSvgPrompt { prompts }))).await;
@@ -2017,9 +2017,7 @@ async fn ai_follow_up_teaches_existing_threads_safe_svg_without_changing_user_me
             .unwrap()
             .unwrap();
     assert_eq!(previous.as_deref(), Some("test-existing-thread"));
-    assert!(prompt.contains("请画一张线段图"));
-    assert!(prompt.contains("```svg"));
-    assert!(prompt.contains("foreignObject"));
+    assert_eq!(prompt, "请画一张线段图");
     let messages: Vec<String> = sqlx::query_scalar(
         "SELECT content FROM question_ai_messages WHERE question_id=? AND role='user'",
     )

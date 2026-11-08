@@ -38,24 +38,15 @@ test("renders the upcoming exam countdown in chronological order", async ({
   const countdown = page.getByRole("region", { name: "考试冲刺倒计时" });
   await expect(countdown).toBeVisible();
   const cards = countdown.locator("[data-exam-id]");
-  await expect(cards).toHaveCount(4);
+  await expect(cards).toHaveCount(1);
   const cardIds = await cards.evaluateAll((elements) =>
     elements.map((element) => element.getAttribute("data-exam-id")),
   );
-  expect(cardIds).toEqual([
-    "national-exam",
-    "guangdong-exam",
-    "hunan-civil-service",
-    "hunan-public-institution",
-  ]);
-  await expect(page.getByTestId("study-exam-hero")).toContainText("下一次国考");
-  await expect(page.getByTestId("study-other-exams")).toContainText("广东省考");
-  await expect(countdown.getByText("广东省考", { exact: true }).first()).toBeVisible();
+  expect(cardIds).toEqual(["hunan-civil-service"]);
+  await expect(page.getByTestId("study-exam-hero")).toContainText("湖南省考");
+  await expect(page.getByTestId("study-other-exams")).toHaveCount(0);
   await expect(countdown.getByText("湖南省考", { exact: true }).first()).toBeVisible();
-  await expect(
-    countdown.getByText("湖南事业编", { exact: true }).first(),
-  ).toBeVisible();
-  await expect(countdown.locator("[data-exam-id] progress")).toHaveCount(4);
+  await expect(countdown.locator("[data-exam-id] progress")).toHaveCount(1);
   await expect(countdown.locator("[data-exam-id] progress").first()).toHaveAttribute(
     "aria-label",
     /冲刺进度/,
@@ -93,11 +84,11 @@ test("opens an exam countdown in a Document PiP window with a double click", asy
   const pipPagePromise = context.waitForEvent("page");
   await page
     .getByRole("region", { name: "考试冲刺倒计时" })
-    .locator('[data-exam-id="national-exam"]')
+    .locator('[data-exam-id="hunan-civil-service"]')
     .dblclick();
   const pipPage = await pipPagePromise;
 
-  const pipCard = pipPage.locator('[data-exam-id="national-exam"]');
+  const pipCard = pipPage.locator('[data-exam-id="hunan-civil-service"]');
   await expect(pipCard).toBeVisible();
   await expect(
     pipPage.getByRole("button", { name: "关闭画中画" }),
@@ -110,7 +101,7 @@ test("opens an exam countdown in a Document PiP window with a double click", asy
   const mainBackground = await page.evaluate(
     () =>
       getComputedStyle(
-        document.querySelector('[data-exam-id="national-exam"]'),
+        document.querySelector('[data-exam-id="hunan-civil-service"]'),
       ).backgroundColor,
   );
   await expect
@@ -118,15 +109,15 @@ test("opens an exam countdown in a Document PiP window with a double click", asy
       pipPage.evaluate(
         () =>
           getComputedStyle(
-            document.querySelector('[data-exam-id="national-exam"]'),
+            document.querySelector('[data-exam-id="hunan-civil-service"]'),
           ).backgroundColor,
       ),
     )
     .toBe(mainBackground);
 
   // 数值与主页面一致（画中画刚打开，允许 1 秒的展示偏差）。
-  const pipTotal = await readCountdownTotal(pipPage, "national-exam");
-  const mainTotal = await readCountdownTotal(page, "national-exam");
+  const pipTotal = await readCountdownTotal(pipPage, "hunan-civil-service");
+  const mainTotal = await readCountdownTotal(page, "hunan-civil-service");
   expect(Math.abs(mainTotal - pipTotal)).toBeLessThanOrEqual(1);
   await expectNoHorizontalOverflow(page);
 });
@@ -164,7 +155,7 @@ test("closes the Document PiP window with Escape and reopens it", async ({
   const firstPipPromise = context.waitForEvent("page");
   await page
     .getByRole("region", { name: "考试冲刺倒计时" })
-    .locator('[data-exam-id="national-exam"]')
+    .locator('[data-exam-id="hunan-civil-service"]')
     .dblclick();
   const pipPage = await firstPipPromise;
   await expect(
@@ -179,7 +170,7 @@ test("closes the Document PiP window with Escape and reopens it", async ({
   const secondPipPromise = context.waitForEvent("page");
   await page
     .getByRole("region", { name: "考试冲刺倒计时" })
-    .locator('[data-exam-id="national-exam"]')
+    .locator('[data-exam-id="hunan-civil-service"]')
     .dblclick();
   const secondPip = await secondPipPromise;
   await expect(
@@ -198,12 +189,12 @@ test("opens a countdown Document PiP window on mobile", async ({
   const pipPagePromise = context.waitForEvent("page");
   await page
     .getByRole("region", { name: "考试冲刺倒计时" })
-    .locator('[data-exam-id="hunan-public-institution"]')
+    .locator('[data-exam-id="hunan-civil-service"]')
     .dblclick();
   const pipPage = await pipPagePromise;
 
   await expect(
-    pipPage.locator('[data-exam-id="hunan-public-institution"]'),
+    pipPage.locator('[data-exam-id="hunan-civil-service"]'),
   ).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
@@ -287,7 +278,7 @@ test("pumps WebCodecs frames into a WebKit-style picture-in-picture stream", asy
 
   await page
     .getByRole("region", { name: "考试冲刺倒计时" })
-    .locator('[data-exam-id="guangdong-exam"]')
+    .locator('[data-exam-id="hunan-civil-service"]')
     .dblclick();
 
   await expect
@@ -334,7 +325,7 @@ test("shows an activation-failure notice when the picture-in-picture request is 
 
   await page
     .getByRole("region", { name: "考试冲刺倒计时" })
-    .locator('[data-exam-id="guangdong-exam"]')
+    .locator('[data-exam-id="hunan-civil-service"]')
     .dblclick();
 
   await expect(page.locator("[data-exam-countdown-notice]")).toContainText(
@@ -366,7 +357,7 @@ test("shows a notice when no picture-in-picture API is available", async ({
 
   await page
     .getByRole("region", { name: "考试冲刺倒计时" })
-    .locator('[data-exam-id="national-exam"]')
+    .locator('[data-exam-id="hunan-civil-service"]')
     .dblclick();
 
   await expect(page.locator("[data-exam-countdown-notice]")).toContainText(
@@ -383,9 +374,9 @@ test("keeps the exam countdown usable on mobile", async ({ page }) => {
 
   const countdown = page.getByRole("region", { name: "考试冲刺倒计时" });
   await expect(countdown).toBeVisible();
-  await expect(countdown.locator("[data-exam-id]")).toHaveCount(4);
+  await expect(countdown.locator("[data-exam-id]")).toHaveCount(1);
   await expect(
-    countdown.getByText("湖南事业编", { exact: true }).first(),
+    countdown.getByText("湖南省考", { exact: true }).first(),
   ).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
