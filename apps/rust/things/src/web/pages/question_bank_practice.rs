@@ -810,7 +810,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             });
         })
     };
-    let on_follow_up = {
+    let send_follow_up = {
         let state = state.clone();
         let revision = revision.clone();
         let failure = failure.clone();
@@ -818,7 +818,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let follow_up = follow_up.clone();
         let endpoint = format!("{endpoint}/messages");
         let csrf = props.csrf.clone();
-        Callback::from(move |_| {
+        Callback::from(move |_: ()| {
             if *submitting {
                 return;
             }
@@ -850,6 +850,19 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 }
                 submitting.set(false);
             });
+        })
+    };
+    let on_follow_up = {
+        let send = send_follow_up.clone();
+        Callback::from(move |_: MouseEvent| send.emit(()))
+    };
+    let on_follow_up_key = {
+        let send = send_follow_up.clone();
+        Callback::from(move |event: KeyboardEvent| {
+            if event.key() == "Enter" && (event.ctrl_key() || event.meta_key()) {
+                event.prevent_default();
+                send.emit(());
+            }
         })
     };
     let on_delete = {
@@ -993,7 +1006,8 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                             class="block min-h-24 w-full resize-none border-0 bg-transparent px-3 pb-12 pt-3 text-sm leading-6 focus:outline-none focus:ring-0"
                             data-testid="question-bank-ai-input" maxlength="2000"
                             value={(*follow_up).clone()}
-                            placeholder="例如：为什么不能选 B？有没有更快的解法？"
+                            placeholder="例如：为什么不能选 B？有没有更快的解法？（Ctrl/⌘ + Enter 发送）"
+                            onkeydown={on_follow_up_key.clone()}
                             oninput={Callback::from({
                                 let follow_up=follow_up.clone();
                                 move |event: InputEvent| {

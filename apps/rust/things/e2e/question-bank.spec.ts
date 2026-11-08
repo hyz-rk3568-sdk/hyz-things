@@ -1179,3 +1179,31 @@ test('an existing AI review can draw a diagram in response to a follow-up',async
   await expect(page.getByTestId('question-bank-ai-message').filter({hasText:'请画一张线段图'})).toBeVisible();
   expect(received).toBe('请画一张线段图');
 });
+
+test('sends an AI follow-up with Ctrl+Enter but not plain Enter',async({page})=>{
+  const messages=[{role:'assistant',content:'已有文字解析',created_at:1}];
+  const received:string[]=[];
+  const state=(question_id:string)=>({question_id,status:'complete',error:null,messages});
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:state(question_id)});
+  });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/messages',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-3)!;
+    const message=route.request().postDataJSON().message;
+    received.push(message);
+    messages.push({role:'user',content:message,created_at:2});
+    await route.fulfill({status:202,json:state(question_id)});
+  });
+  await openFixtureReview(page);
+  const input=page.getByTestId('question-bank-ai-input');
+  await input.fill('第一行');
+  await input.press('Enter');
+  await expect.poll(()=>received.length).toBe(0);
+  await input.press('Control+Enter');
+  await expect.poll(()=>received).toEqual(['第一行']);
+  await expect(input).toHaveValue('');
+  await input.fill('第二行');
+  await input.press('Meta+Enter');
+  await expect.poll(()=>received).toEqual(['第一行','第二行']);
+});
