@@ -1,8 +1,10 @@
 # Ethernet DHCP 双上游与下游无扰动引入计划
 
+> **历史基线说明：** 本文记录双上游改造启动前的旧源码约束。以下删除线表示旧限制已经被后来的 typed Ethernet/Wi-Fi 双上游设计取代；不能据此推断最新板端验收结果。以当前 [`README.md`](../../README.md)、[`hyz-router`](../../apps/rust/router/README.md) 和实际板端结果为准。
+
 ## 1. 结论与产品边界
 
-当前源码**不能直接在运行中插入 `eth0` 并自动切换到有线**。当前生产实现仍是 Wi-Fi-only：
+~~当前源码**不能直接在运行中插入 `eth0` 并自动切换到有线**。当前生产实现仍是 Wi-Fi-only：~~（这是改造前的状态）
 
 ```text
 WAN = wlan0 STA DHCP，metric 600
@@ -11,12 +13,12 @@ LAN = br-lan = p2p0
 
 具体限制包括：
 
-- domain 固定 `WAN_INTERFACE=wlan0`、`LAN_MEMBER=p2p0`；
-- management readiness 只观察 AP member，没有 `eth1`；
-- 只有一套 `udhcpc`、DHCP generation、lease ownership 和 resolver record；
-- 默认路由 readiness 只识别 `wlan0` metric `600`；
-- NAT/FORWARD、Mihomo direct gateway probe、status 和流量统计均固定使用 `wlan0`；
-- 没有 `eth0` carrier watcher、Ethernet DHCP client 或 active uplink 状态机。
+- ~~domain 固定 `WAN_INTERFACE=wlan0`、`LAN_MEMBER=p2p0`；~~
+- ~~management readiness 只观察 AP member，没有 `eth1`；~~
+- ~~只有一套 `udhcpc`、DHCP generation、lease ownership 和 resolver record；~~
+- ~~默认路由 readiness 只识别 `wlan0` metric `600`；~~
+- ~~NAT/FORWARD、Mihomo direct gateway probe、status 和流量统计均固定使用 `wlan0`；~~
+- ~~没有 `eth0` carrier watcher、Ethernet DHCP client 或 active uplink 状态机。~~
 
 因此，直接增加第二个 `udhcpc` 或仅添加 metric `100` 路由会破坏现有单 uplink ownership 假设，可能错误覆盖 Wi-Fi 地址、路由、DNS、进程记录或 readiness。
 
