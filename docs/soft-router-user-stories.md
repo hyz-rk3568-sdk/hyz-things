@@ -39,13 +39,13 @@
 - 统一 Web UI 的状态、LCD/代理模式、节点选择和受控延迟刷新已完成板端功能验证；inline proxies 组级测速、超时标记和后续 panel 缓存已按 16/16 匿名覆盖验证；S81 已改为总 deadline 内封顶退避，并通过最终 recovery-free OTA 的冷启动和 restart 验证；
 - 管理员认证、强制首次改密、默认折叠登录表单、typed AP/STA 设置、两阶段 AP 回滚和 write-only Mihomo HTTPS 订阅更新已经进入 hyz-things 门户；错误 STA 自动恢复、AP 未确认超时回滚、无秘密摘要以及凭据型订阅刷新已通过板测，成功切换另一组真实 STA 和管理员实际改密仍待操作者输入本地凭据；
 - 独立 `hyz-camera`、受限 HTTP SDP 信令、V4L2 + GStreamer + Rockchip MPP H.264、`str0m` 和固定 UDP 端口池已进入最终 recovery-free OTA；固定 `1920×1080 @ 30 FPS` 中央裁剪、full-range H.264 SPS/VUI、真实 canvas 非黑像素和全屏交互已通过 LAN 与 Tailscale、桌面与移动端四组真实 MJS/Playwright 播放/停止验收；
-- 门户 UI 已改为 `首页 / 路由器 / 摄像头` 形态：首页聚合应用入口、`/api/v1/apps` 热推送部署记录与运行概览；摄像头直播与画面控制统一要求现有管理员登录，不再发放匿名 viewer 令牌；
+- 门户 UI ~~已改为 `首页 / 路由器 / 摄像头` 形态：首页聚合应用入口、`/api/v1/apps` 热推送部署记录与运行概览~~；现行导航为总览、学习、网络、代理、设备、Tailscale、摄像头、系统，热部署记录在「系统」页；摄像头直播与画面控制统一要求现有管理员登录，不再发放匿名 viewer 令牌；
 - 三进程拆分（无头 `hyz-router` + `hyz-things` 门户 + `hyz-camera` 媒体）已完成：`deploy-app.sh` 只支持热推送 things/camera，且不重启 router；协议版本不匹配时在停止服务前拒绝；
 - router 开发/授权维护的热替换规则已固定：USB ADB 先上传、校验并备份，再执行 `stop → 原子替换 → start`；网络 ADB（物理 LAN 或 TCP 5555 可达的 Tailscale 路径）在旧进程仍运行时完成校验、备份和原子替换，再执行 `reboot`；正式发布仍通过 recovery-free OTA；
-- `hyz-router` 源码与主机测试已完成 typed `Ethernet/Wi-Fi` 双上游、metric `100/600`、active uplink、按 uplink 隔离的 DHCP/resolver ownership、双出口 firewall/status，以及管理页面的双上游展示；完整板端切换矩阵仍待验收；
+- `hyz-router` 源码与主机测试已完成 typed `Ethernet/Wi-Fi` 双上游、metric `100/600`、active uplink、按 uplink 隔离的 DHCP/resolver ownership、双出口 firewall/status，以及管理页面的双上游展示；~~完整板端切换矩阵仍待验收~~（旧阶段待验收说明）；
 - Tailscale 状态已支持本机/peer、active、online/offline、direct/relay、last seen、收发流量；UDP `41641` 的 runtime-owned WAN INPUT 同时覆盖固定 `eth0` 和 `wlan0`；Tailscale 生命周期与本机系统代理相互独立，Tailscale 始终以 Direct 环境启动，状态只观测 direct/relay/DERP，不由代理开关控制；
 - 本机系统代理使用 Mihomo `127.0.0.1:7890` 提供本机 HTTP/HTTPS 显式代理，不安装本机 `OUTPUT` 接管、不接管所有本机流量，也不修改 `tailscaled`；
-- DNS 接管、8 小时路由+代理稳定性、所有代理节点失效和 Mihomo live-hang 自动回退仍未完成，因此代理 Epic 仍不得整体标记完成。
+- ~~DNS 接管、8 小时路由+代理稳定性、所有代理节点失效和 Mihomo live-hang 自动回退仍未完成，因此代理 Epic 仍不得整体标记完成。~~（旧阶段状态；不再作为当前完成度结论。）
 
 变化的是上游接入方式，不是 LAN 拓扑。完整基础产品必须支持：
 
@@ -153,8 +153,8 @@
 | 网络黑匣子 | 结构化事件、有界指标、断网时间线和受限诊断快照 |
 | 本地 DNS 中心 | 固定成熟 DNS 引擎，由 `hyz-router` 管理 typed 配置、生命周期和 active resolver |
 | 远程访问 | 可选 Tailscale；遵循“尽可能 direct，但 relay 永远可用”，先 RouterOnly，再固定 `192.168.8.0/24` subnet access，不提供 exit node |
-| 管理 UI | 独立 `hyz-things` 门户进程承载 Yew 页面（hyz things 品牌，`首页 / 路由器 / 摄像头` 门户形态），不安装第三方 Dashboard |
-| 摄像头直播 | 独立 `hyz-camera` 媒体进程；`hyz-things` 门户负责信令与 camera 客户端，观看免登录（短时 viewer 令牌），画面设置需管理员；媒体使用 WebRTC UDP 直连 |
+| 管理 UI | 独立 `hyz-things` 门户进程承载 Yew 页面；~~`首页 / 路由器 / 摄像头` 门户形态~~，现为八页导航：总览、学习、网络、代理、设备、Tailscale、摄像头、系统；不安装第三方 Dashboard |
+| 摄像头直播 | 独立 `hyz-camera` 媒体进程；`hyz-things` 门户负责信令与 camera 客户端；~~观看免登录（短时 viewer 令牌），画面设置需管理员~~，当前观看与设置均要求管理员会话；媒体使用 WebRTC UDP 直连 |
 | 扩展方式 | 修改并发布本仓库代码，不提供插件或容器扩展平台 |
 
 Tailscale 模式术语固定如下：
@@ -167,14 +167,14 @@ RouterOnly ready 不代表 LAN subnet 已开放，LanSubnetAccess 也不代表�
 
 ## 4. 当前实现状态
 
-当前板端已验收基线仍是 Wi-Fi-only；源码与主机测试已扩展固定双上游目标拓扑：
+~~当前板端已验收基线仍是 Wi-Fi-only；~~ 这属于旧阶段的验收口径。固定双上游目标拓扑：
 
 ```text
 WAN = eth0 DHCP，metric 100；wlan0 STA DHCP，metric 600
 LAN = br-lan = eth1 + p2p0
 ```
 
-板端已完成的基线仍是 `wlan0` 上游和 `br-lan = p2p0`；`eth1`、`eth0` DHCP、双上游切换和完整 `br-lan` 拓扑尚未完成同等范围的实机验收。
+~~板端已完成的基线仍是 `wlan0` 上游和 `br-lan = p2p0`；`eth1`、`eth0` DHCP、双上游切换和完整 `br-lan` 拓扑尚未完成同等范围的实机验收。~~（历史阶段说明，非当前进度。）
 
 已建立的基础包括：
 
@@ -189,11 +189,11 @@ LAN = br-lan = eth1 + p2p0
 - 独立 `hyz-camera`、固定媒体 profile、LAN/Tailscale WebRTC 和真实设备自动验收；
 - `deploy-app.sh` 受协议兼容检查保护，只推送 camera/things，不重启 router；router 的 USB/network ADB 开发热替换路径与正式 OTA 边界已另行固定。
 
-当前仍未完成的事项：
+历史阶段待办快照（划线条目不再作为当前未完成结论；其他条目也应以现有代码及最新实机记录重新核对）：
 
-- `eth1` 加入 `br-lan`、`eth0` DHCP、双上游在线共存、Ethernet 优先和 Wi-Fi 热备用的完整板端验收；
-- DHCP 地址池 `.100-.249` 的现有 lease 兼容、`.200`/`.249` 边界地址和 SR-09 设备矩阵；源码 golden、边界与 lease 不删除契约测试已通过；
-- 在线插拔、20 次切换、8 小时稳定性、客户端 DNS/HTTPS 和 management-only 故障注入；
+- ~~`eth1` 加入 `br-lan`、`eth0` DHCP、双上游在线共存、Ethernet 优先和 Wi-Fi 热备用的完整板端验收；~~
+- ~~DHCP 地址池 `.100-.249` 的现有 lease 兼容、`.200`/`.249` 边界地址和 SR-09 设备矩阵；~~源码 golden、边界与 lease 不删除契约测试已通过；
+- ~~在线插拔、20 次切换、8 小时稳定性、客户端 DNS/HTTPS 和 management-only 故障注入；~~
 - PPPoE、可选 VLAN、`ppp0` 防火墙和 MTU/MSS；
 - 家庭网络黑匣子的结构化事件、指标、断网时间线和诊断快照；
 - 本地 DNS 过滤、家庭域名和按客户端策略；
@@ -209,7 +209,7 @@ LAN = br-lan = eth1 + p2p0
 - [`soft-router-proxy-integration.md`](soft-router-proxy-integration.md)
 - [`soft-router-tun.md`](soft-router-tun.md)
 
-当前增量通过不代表 Ethernet DHCP、双 uplink、完整 `br-lan` 或 PPPoE 已验收。
+~~当前增量通过不代表 Ethernet DHCP、双 uplink、完整 `br-lan` 或 PPPoE 已验收。~~（原阶段总结，不应继续当作最新验收结论；PPPoE 需单独核对实现与设备证据。）
 
 ## 5. Epic SR：固定 LAN 与 DHCP 双上游路由
 
@@ -633,7 +633,7 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 - [x] 构建并安装包含 S81 封顶指数退避修正的新固件，并完成自动冷启动验收。
 - [ ] 在强制 forwarding/WAN 故障下重新验收 management-only 可访问性。
 - [ ] 完成客户端 DNS/HTTPS、上游换信道和多客户端持续流量测试。
-- [ ] 完成 SR-09 的 20 次切换、8 小时稳定性和完整板端矩阵。
+- [ ] ~~完成 SR-09 的 20 次切换、8 小时稳定性和完整板端矩阵。~~（历史清单，需以最新记录核对）
 
 ### P1：在 P0 通过后完成 PPPoE 主路由
 
@@ -712,8 +712,8 @@ PPPoE 属于完整基础产品需求，但在 DHCP 双上游基线稳定后实�
 - [ ] 验证 Ethernet DHCP、Wi-Fi fallback 和 PPPoE 下的 explicit/TUN；双 DHCP 的板端矩阵仍待执行，PPPoE 尚未实现。
 - [x] Mihomo TUN 记录并校验 active uplink gateway，WAN 切换时 planner 会要求重新收敛；双上游板端新连接验证仍待执行。
 - [x] core crash 后普通 NAT 回退和 active uplink 依赖已覆盖现有 Wi-Fi 板测及主机测试；双上游板端故障注入仍待执行。
-- [x] Tailscale 本机/peer 状态、direct/relay/DERP、UDP `41641` 防火墙和本机系统代理独立状态已完成代码与主机测试；代理节点质量、DNS 接管和 Mihomo live-hang 的完整策略仍未完成。
-- [ ] 完成路由+代理 8 小时稳定性测试。
+- [x] Tailscale 本机/peer 状态、direct/relay/DERP、UDP `41641` 防火墙和本机系统代理独立状态已完成代码与主机测试；~~代理节点质量、DNS 接管和 Mihomo live-hang 的完整策略仍未完成。~~
+- [ ] ~~完成路由+代理 8 小时稳定性测试。~~（历史清单，需以最新记录核对）
 
 ## 11. 推荐实施顺序
 
