@@ -1,6 +1,6 @@
 # hyz-things
 
-`hyz-things` 是一个面向 ATK RK3568 的个人软路由、家庭设备管理与学习训练项目。板端将路由控制、HTTPS 管理门户和摄像头媒体拆成三个独立 Linux 进程；门户还集成 Flashcards 复习、速算、资料分析和逻辑判断训练。进程间通过类型化、root-only 的 Unix socket 协议协作。
+`hyz-things` 是一个面向 ATK RK3568 的个人软路由、家庭设备管理与学习训练项目。板端将路由控制、HTTPS 管理门户和摄像头媒体拆成三个独立 Linux 进程；门户内置面向个人定制的行测刷题 Web App（产品体验参考粉笔等刷题应用），并整合 Flashcards 复习和各类专项训练。进程间通过类型化、root-only 的 Unix socket 协议协作。
 
 项目不是通用 OpenWrt 后台，也不提供运行时插件 ABI 或任意 Linux 网络配置器。网络、进程、防火墙和固件操作都由产品代码中的固定用例和受限 adapter 驱动。
 
@@ -37,7 +37,7 @@ apps/rust/camera    媒体进程，板端 /usr/bin/hyz-camera，S82
 - LAN 固定入口 `https://192.168.8.1:8080`（自签证书）；精确 Tailscale IPv4 监听及可选 IPv6-only HTTPS 监听；
 - Argon2id 管理员认证、首次强制改密、会话与 CSRF；受保护的配置与控制 API；
 - 八个导航页：**总览、学习、网络、代理、设备、Tailscale、摄像头、系统**；
-- 学习中心：本地 SQLite 卡片及复习状态、`/mnt/hyz-cards` 文件源、专项训练记录；可选与 PC 上的 Codex App Server 协作出题；
+- 学习中心：个人定制的行测刷题 Web App、真题题库与套卷/模块/专项训练、错题及收藏复练、学习目标与统计，以及 Flashcards 复习；可选与 PC 上的 Codex App Server 协作出题和解析；
 - 系统健康、网络拓扑、设备活动、代理状态、LCD 背光/喇叭音量及当前热部署版本展示；
 - 通过 `hyz-contract` 访问 `/run/hyz-router/control.sock`，通过 camera control socket 发起媒体控制和 WebRTC 信令。
 
@@ -63,7 +63,7 @@ apps/rust/camera    媒体进程，板端 /usr/bin/hyz-camera，S82
 | 页面 | 当前功能 |
 | --- | --- |
 | 总览 `#/overview` | 核心健康、网络拓扑、系统/代理状态、故障与只读信息 |
-| 学习 `#/study` | 学习概览、Flashcards 卡片库与间隔复习、专项训练 |
+| 学习 `#/study` | 个人刷题 Web App：行测真题题库、套卷/模块/专项训练、错题与收藏、学习统计、Flashcards 复习及 AI 辅助学习 |
 | 网络 `#/network` | Wi-Fi STA 扫描和配置、AP 设置及受控确认/回滚 |
 | 代理 `#/proxy` | Mihomo 订阅、节点/延迟、LAN 透明代理、本机系统显式代理 |
 | 设备 `#/devices` | LAN 设备列表、搜索、活动流量/连接信息、按设备管理策略 |
@@ -75,7 +75,13 @@ apps/rust/camera    媒体进程，板端 /usr/bin/hyz-camera，S82
 
 ### 学习中心
 
-学习模块属于门户的一部分，而不是单独的板端服务；相关页面见 `apps/rust/things/src/web/pages/`，持久数据由门户的 SQLite repository 管理。
+学习模块属于门户的一部分，而不是单独的板端服务或需要安装的原生 App；相关页面见 `apps/rust/things/src/web/pages/`。当前形态是为个人学习流程定制、在 iPad/浏览器中使用的**类粉笔刷题 Web App**，与粉笔产品没有官方关联；题库与 Flashcards 分别维护各自的数据及训练记录。
+
+- **行测真题题库**：`question_bank/papers/` 存放 Markdown 真题，`question_bank/assets/` 存放题目素材，`question_bank/collections/` 存放专项合集；支持设备端同步、按来源浏览试卷与题目。题库索引及个人练习状态位于独立的 `/userdata/hyz-things/question-bank.db`。
+- **套卷与模块刷题**：支持选择原卷进行整卷或原卷模块训练，以及按一级模块/二级题型进行跨卷模块刷题；提供年份、地区、题量等筛选设置。专项合集、错题复练与收藏练习使用统一的真题答题工作区。
+- **练习闭环**：保存与恢复作答、计时/暂停、交卷判分、答案解析、练习历史、真题收藏和错题管理；材料题支持共享材料、图片/公式与 iPad 触控、Apple Pencil 草稿。具体可用性仍以实际题库同步、有效题目和板端验收为准。
+- **学习目标与统计**：查看刷题数量、学习时长及分模块学习记录，并设置个人学习目标。
+- **可选 AI 辅助**：在现有训练出题之外，真题复盘提供按需触发的 Codex AI 解析/追问能力；需要 PC 侧 Codex App Server 与对应题库工作目录，未配置时不可视为开箱可用。
 
 - **Flashcards**：从板端 `/mnt/hyz-cards` 卡片目录同步 Markdown，按 Deck/Tag 查看、筛选和复习；复习进度存入 `/userdata/hyz-things/flashcards.db`。主机可通过 `scripts/share-flashcards.sh` 提供受控 Samba 共享，需另外完成目标板挂载。
 - **速算训练**：在固定全屏答题区练习计算，支持草稿操作。
@@ -93,7 +99,8 @@ iPad 训练界面使用分区滚动与 Apple Pencil/触控草稿适配。浏览�
                                ├── root-only versioned UDS --> hyz-router --> LAN/WAN/Mihomo/Tailscale/OTA
                                ├── root-only camera UDS  --> hyz-camera --> WebRTC 媒体直连浏览器
                                ├── SQLite --> /userdata/hyz-things/flashcards.db
-                               └── 可选：/mnt/hyz-cards / PC Codex App Server
+                               ├── SQLite --> /userdata/hyz-things/question-bank.db
+                               └── 可选：/mnt/hyz-cards /mnt/hyz-question-bank / PC Codex App Server
 ```
 
 三进程各自拥有独立的 composition root 和板端 ELF。共享协议位于 `apps/rust/contract`；router/camera 的系统权限及网络变更不授予浏览器或 Web 层。媒体码流不经门户/路由进程转发。
@@ -107,7 +114,7 @@ iPad 训练界面使用分区滚动与 Apple Pencil/触控草稿适配。浏览�
 - Tailscale RouterOnly / 固定 LAN subnet access、peer 状态、direct/relay/DERP 观测及独立管理入口；
 - HTTPS 管理门户、管理员会话、网络/AP 设置、设备策略与活动视图、系统和显示/喇叭控制；
 - WebRTC 摄像头直播、H.264 画面预设、旋转、画中画及音频对讲；板端媒体链路另有真实硬件验收脚本；
-- 学习中心的 Flashcards、资料分析综合训练、速算、错题复练、逻辑判断和持久化训练历史；
+- 学习中心的个人刷题 Web App：行测真题题库、套卷/模块/专项练习、真题错题与收藏、学习目标/统计、Flashcards、资料分析、速算、判断推理、数量关系及持久化练习历史；
 - things/camera 热推送只重启对应进程，router 继续运行；router 开发热替换与正式 OTA 分离；
 - 前端确定性 bundle、主机单元/静态检查，以及默认 WebKit iPad 横屏的 Playwright E2E。
 
@@ -115,9 +122,20 @@ iPad 训练界面使用分区滚动与 Apple Pencil/触控草稿适配。浏览�
 
 - Ethernet/`eth1`/双上游的完整切换矩阵、长时间稳定性及 SR-09 反复切换；
 - DNS 接管、所有代理节点失效、Mihomo live-hang 及更全面的故障注入；
-- PPPoE、DNS 中心、网络黑匣子等规划功能；AI 出题还受外部服务和实际卡片数据可用性约束。
+- PPPoE、DNS 中心、网络黑匣子等规划功能；真题题库在真实设备上的完整同步、学习体验和 AI 能力仍受题库质量、外部服务与板端验证约束。
 
 实际产品验收仍以 [`docs/soft-router-user-stories.md`](docs/soft-router-user-stories.md)、板端测试与 CI 结果为准；`docs/plan/` 中的历史方案不必然代表当前代码行为。
+
+## 后续规划：Matter 智能家居接入
+
+**Matter 目前属于未来规划，尚未接入当前产品，也没有可用的 Matter 配网、设备控制或摄像头 Matter 接口。** 计划在保持现有软路由、门户与摄像头进程隔离的前提下，逐步评估并引入 Matter 智能家居能力：
+
+- 研究 Matter Controller / Bridge 的产品角色与底层依赖，确定适用于 RK3568 的集成方案；
+- 探索兼容设备的发现、配网、状态读取和受控操作，并考虑整合到 `hyz-things` 的设备管理体验；
+- 评估现有 `hyz-camera` 与 Matter 摄像头能力的集成可行性；当前 WebRTC 直播不等于已经支持 Matter Camera；
+- 为 Matter 接入设计独立的权限、协议与故障隔离边界，避免影响 `hyz-router` 的 LAN/WAN/NAT 管理职责。
+
+具体支持的设备类型、网络角色、功能范围和实施顺序以未来设计及真实硬件验收为准。
 
 ## 开发环境
 
@@ -235,6 +253,7 @@ apps/rust/router/    无头路由核心
 apps/rust/things/    HTTPS 管理门户、学习业务、Yew SPA、E2E 与部署工具
 apps/rust/camera/    V4L2/GStreamer/MPP/WebRTC 媒体进程
 flashcards/          主机侧 Markdown 学习卡片与错题材料
+question_bank/       行测真题、专项合集与题目素材（Markdown 源）
 .agents/skills/      供本地 Agent / Codex 出题使用的技能与参考
 scripts/             主机卡片共享等辅助脚本
 product/             Buildroot rootfs overlay 和 init 脚本
@@ -255,6 +274,7 @@ docs/camera-hardware-e2e.md
 更多文档入口：
 
 - [`apps/rust/things/README.md`](apps/rust/things/README.md)：门户进程、页面模块、学习数据、HTTPS 安全边界及前端测试；
+- [`docs/question-bank-sqlite.md`](docs/question-bank-sqlite.md)：题库 SQLite 的运行时读取与性能边界；
 - [`apps/rust/router/README.md`](apps/rust/router/README.md)：router 用例、CLI、持久化配置和 OTA；
 - [`docs/architecture.md`](docs/architecture.md)：完整架构和启动时序；
 - [`docs/soft-router-user-stories.md`](docs/soft-router-user-stories.md)：当前产品状态和未完成验收；
