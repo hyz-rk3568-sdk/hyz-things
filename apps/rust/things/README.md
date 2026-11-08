@@ -27,10 +27,10 @@
 
 ### 学习与出题
 
-`src/web/pages/training.rs` 当前包含 **速算训练、错题复练、资料分析综合训练、逻辑判断** 四种模式；学习中心首页仍可能保留较旧的“三种模式”提示文案，不能据此忽略已接入的逻辑判断页面。
+~~`src/web/pages/training.rs` 当前包含 **速算训练、错题复练、资料分析综合训练、逻辑判断** 四种模式；学习中心首页仍可能保留较旧的“三种模式”提示文案，不能据此忽略已接入的逻辑判断页面。~~ 目前专项训练还包含真题套卷、原卷/全库模块、专项合集、错题与收藏练习、资料分析、判断推理、数量关系、速算及学习统计；实际入口以 `src/web/pages/training.rs` 为准。
 
 - 卡片源：设备端 `/mnt/hyz-cards`，经 `FilesystemFlashcardSource` 读取 Markdown；主机可运行仓库根目录的 `scripts/share-flashcards.sh` 配置 Samba 共享（默认 TCP 1445），还需独立处理板端挂载。
-- 持久化：`/userdata/hyz-things/flashcards.db`（SQLite），承载卡片索引、间隔复习及资料分析/逻辑判断训练记录。复习与“错题复练”的本轮自评并非同一写入路径。
+- 持久化：`/userdata/hyz-things/flashcards.db`（SQLite）承载卡片与相关训练状态；`/userdata/hyz-things/question-bank.db` 保存同步后的真题内容、独立作答、错题、收藏、历史及 AI 复盘记录。复习与 Flashcard “错题复练”的本轮自评并非同一写入路径；真题练习也不与 Flashcard 复习状态混存。
 - 资料分析：4 份模拟统计材料 × 各 5 题，20 分钟；支持生成、暂停、跨设备续答、历史解析、原题重做和卡片统计。
 - 逻辑判断：形式推理相关卡片生成 10 道独立题，10 分钟；支持答题、暂停/恢复、成绩、解析和重做。
 - 出题配置：需要 PC 侧 Codex App Server、卡片与 Skill 所在工作目录；参见 [`.env.example`](.env.example) 中的 `HYZ_THINGS_CODEX_WS_TOKEN` 和 `HYZ_THINGS_CODEX_CWD`。这些配置不是源码里可公开复用的令牌。
