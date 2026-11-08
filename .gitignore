@@ -34,3 +34,5 @@ tmp/
 # Flashcard editor backups
 flashcards/**/.favorite-backup-*
 flashcards/**/.hyz-card-*.bak
+
+__pycache__/
