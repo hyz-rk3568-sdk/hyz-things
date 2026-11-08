@@ -36,12 +36,15 @@ def walk_error(error: OSError) -> None:
     raise error
 
 
-def source_files(relative: Path):
+def source_files(relative: Path, excluded: frozenset[Path] = frozenset()):
     for current, directories, names in os.walk(WORKSPACE / relative, onerror=walk_error):
         directory = Path(current)
-        directories[:] = sorted(name for name in directories if name not in {
-            "target", "node_modules", "playwright-report", "test-results", "__pycache__", ".git",
-        })
+        directories[:] = sorted(
+            name for name in directories
+            if name not in {
+                "target", "node_modules", "playwright-report", "test-results", "__pycache__", ".git",
+            } and (directory / name).relative_to(WORKSPACE) not in excluded
+        )
         for name in directories:
             if (directory / name).is_symlink():
                 raise ValueError(f"unsupported frontend input directory symlink: {directory / name}")
@@ -66,10 +69,11 @@ def input_paths() -> list[Path]:
     for relative in (PACKAGE / "src", PACKAGE / "frontend", Path("apps/rust/contract/src")):
         if not (WORKSPACE / relative).is_dir():
             raise ValueError(f"missing frontend input directory: {relative}")
-    for relative in (PACKAGE, Path("apps/rust/contract/src")):
-        files.update(source_files(relative))
+    files.update(source_files(PACKAGE / "src", {PACKAGE / "src" / "e2e"}))
+    files.update(source_files(PACKAGE / "frontend"))
+    files.update(source_files(Path("apps/rust/contract/src")))
     for directory in (Path("."), Path("apps"), Path("apps/rust"), PACKAGE):
-        for name in (".cargo/config", ".cargo/config.toml", "rust-toolchain", "rust-toolchain.toml", ".gitignore"):
+        for name in (".cargo/config", ".cargo/config.toml", "rust-toolchain", "rust-toolchain.toml"):
             relative = directory / name
             if (WORKSPACE / relative).is_file():
                 files.add(relative)
