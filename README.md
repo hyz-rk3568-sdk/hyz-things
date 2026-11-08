@@ -118,12 +118,6 @@ iPad 训练界面使用分区滚动与 Apple Pencil/触控草稿适配。浏览�
 - things/camera 热推送只重启对应进程，router 继续运行；router 开发热替换与正式 OTA 分离；
 - 前端确定性 bundle、主机单元/静态检查，以及默认 WebKit iPad 横屏的 Playwright E2E。
 
-**尚不能视作全部验收完成：**
-
-- Ethernet/`eth1`/双上游的完整切换矩阵、长时间稳定性及 SR-09 反复切换；
-- DNS 接管、所有代理节点失效、Mihomo live-hang 及更全面的故障注入；
-- PPPoE、DNS 中心、网络黑匣子等规划功能；真题题库在真实设备上的完整同步、学习体验和 AI 能力仍受题库质量、外部服务与板端验证约束。
-
 实际产品验收仍以 [`docs/soft-router-user-stories.md`](docs/soft-router-user-stories.md)、板端测试与 CI 结果为准；`docs/plan/` 中的历史方案不必然代表当前代码行为。
 
 ## 后续规划：Matter 智能家居接入
