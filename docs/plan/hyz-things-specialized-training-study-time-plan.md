@@ -1,6 +1,6 @@
 # hyz-things 专项训练学习计时与统计 — 实施 Plan
 
-> 状态：实施中（PR #88，尚待 CI 验证和合并）
+> ~~状态：实施中（PR #88，尚待 CI 验证和合并）~~ PR #88 已合并；此文件是 2026-10 月的设计快照，当前学习统计与入口以主分支代码为准。
 > 后续变更：手工暂停学习计时已移除；学习计时为只读显示，试卷暂停/继续会同步暂停/继续学习计时。
 > 目标仓库：`hyz-rk3568-sdk/hyz-things`
 > 涉及应用：`apps/rust/things`（Rust + Yew + Axum + SQLite）
@@ -8,7 +8,7 @@
 
 ## 1. 目标
 
-在现有「专项训练」内新增全局**每日有效学习正计时**和第六个**「学习统计」**标签，统计五种专项训练的学习时长，支持每日/周统计及学习热力图。只移除旧的「上午 / 下午 / 晚上」自定义倒计时（含其画中画入口），不得移除考试日期倒计时及其共享画中画能力。保留试卷自身的限时倒计时及既有暂停、继续、交卷逻辑。
+在现有「专项训练」内新增全局**每日有效学习正计时**和~~第六个**「学习统计」**标签，统计五种专项训练的学习时长~~「学习统计」功能（“五种训练 / 第六个入口”是当时快照，现有真题套卷、模块与专项练习等新增入口），支持每日/周统计及学习热力图。只移除旧的「上午 / 下午 / 晚上」自定义倒计时（含其画中画入口），不得移除考试日期倒计时及其共享画中画能力。保留试卷自身的限时倒计时及既有暂停、继续、交卷逻辑。
 
 ### 交互验收红线（必须先写测试）
 
@@ -27,7 +27,7 @@
 - `src/web/pages/calculation.rs`：速算训练和已有本题耗时。
 - `src/web/pages/training.rs` 内 `FlashcardPractice`：错题复练及已有卡片思考用时。
 - `src/web/pages/training_metrics.rs`：现有训练成绩样式，可参考但不混淆成绩与学习计时。
-- `src/web/pages/study.rs`：Dashboard/Cards 存在旧的 `<CustomCountdownPanel />`，首页「专项训练」说明仍写“3种模式”。
+- ~~`src/web/pages/study.rs`：Dashboard/Cards 存在旧的 `<CustomCountdownPanel />`，首页「专项训练」说明仍写“3种模式”。~~（实施前现状说明，当前不再适用。）
 - `src/web/hooks/countdown.rs`：旧三个自定义倒计时、localStorage 编解码和 PiP；同时包含考试日期倒计时与共享 PiP，**删除前必须逐个核查引用。**
 - `frontend/app.css`：`.training-topbar-inner`、`.training-modes-inner`、沉浸式 `.analysis-header` 布局。
 - `migrations/`、`src/adapters/inbound/http/`、`src/application/`、`src/adapters/outbound/`：既有 SQLite / HTTP 分层与校验惯例。
