@@ -659,6 +659,41 @@ pub(crate) fn use_question_ai_tab(
     (ai_tab, chosen)
 }
 
+struct AiComposer<'a> {
+    id: &'a str,
+    compose_testid: &'a str,
+    input_testid: &'a str,
+    button_testid: &'a str,
+    value: &'a str,
+    placeholder: &'a str,
+    button_label: &'a str,
+    disabled: bool,
+    oninput: Callback<InputEvent>,
+    onkeydown: Callback<KeyboardEvent>,
+    onclick: Callback<MouseEvent>,
+}
+
+/// One shape for both asking Codex to start a review and sending a follow-up.
+fn ai_composer(props: AiComposer<'_>) -> Html {
+    html! {
+        <div class="relative rounded-2xl border border-base-content/15 bg-base-100 transition focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15"
+            data-testid={props.compose_testid.to_owned()}>
+            <textarea id={props.id.to_owned()}
+                class="block min-h-24 w-full resize-none border-0 bg-transparent px-3 pb-12 pt-3 text-sm leading-6 focus:outline-none focus:ring-0"
+                data-testid={props.input_testid.to_owned()} maxlength="2000"
+                value={props.value.to_owned()}
+                placeholder={props.placeholder.to_owned()}
+                onkeydown={props.onkeydown}
+                oninput={props.oninput}/>
+            <div class="absolute inset-x-2 bottom-2 flex items-center justify-end">
+                <button type="button" class="btn btn-primary btn-sm rounded-full px-4"
+                    data-testid={props.button_testid.to_owned()} disabled={props.disabled}
+                    onclick={props.onclick}>{props.button_label.to_owned()}</button>
+            </div>
+        </div>
+    }
+}
+
 #[derive(Properties, PartialEq)]
 pub(crate) struct QuestionAiReviewProps {
     pub csrf: String,
@@ -745,7 +780,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             || ()
         });
     }
-    let on_start = {
+    let start_review = {
         let state = state.clone();
         let revision = revision.clone();
         let failure = failure.clone();
@@ -753,7 +788,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let endpoint = endpoint.clone();
         let csrf = props.csrf.clone();
         let start_instruction = start_instruction.clone();
-        Callback::from(move |_| {
+        Callback::from(move |_: ()| {
             if *submitting {
                 return;
             }
@@ -785,6 +820,19 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 }
                 submitting.set(false);
             });
+        })
+    };
+    let on_start = {
+        let start = start_review.clone();
+        Callback::from(move |_: MouseEvent| start.emit(()))
+    };
+    let on_start_key = {
+        let start = start_review.clone();
+        Callback::from(move |event: KeyboardEvent| {
+            if event.key() == "Enter" && (event.ctrl_key() || event.meta_key()) {
+                event.prevent_default();
+                start.emit(());
+            }
         })
     };
     let on_stop = {
@@ -996,29 +1044,30 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             if can_start || can_restart {
                 <div class="space-y-1">
                     <label class="text-sm font-semibold" for="question-ai-instruction">{"可选要求"}</label>
-                    <textarea id="question-ai-instruction"
-                        class="textarea textarea-bordered min-h-20 w-full text-sm leading-6"
-                        data-testid="question-bank-ai-instruction" maxlength="2000"
-                        value={(*start_instruction).clone()}
-                        placeholder="例如：用线段图讲清数量关系；只讲速算，不要列方程；重点说明排除干扰项。"
-                        oninput={Callback::from({
+                    {ai_composer(AiComposer {
+                        id: "question-ai-instruction",
+                        compose_testid: "question-bank-ai-requirements-compose",
+                        input_testid: "question-bank-ai-instruction",
+                        button_testid: if can_start { "question-bank-ai-start" } else { "question-bank-ai-restart" },
+                        value: start_instruction.as_str(),
+                        placeholder: "例如：用线段图讲清数量关系；只讲速算，不要列方程。（Ctrl/⌘ + Enter 开始）",
+                        button_label: if can_start { "开始 AI 解析" } else { "重新分析" },
+                        disabled: *submitting,
+                        oninput: Callback::from({
                             let start_instruction=start_instruction.clone();
                             move |event: InputEvent| {
                                 let input: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
                                 start_instruction.set(input.value());
                             }
-                        })}/>
+                        }),
+                        onkeydown: on_start_key.clone(),
+                        onclick: on_start.clone(),
+                    })}
                     <p class="text-xs text-base-content/60">{"这些要求会随本次解析一起发给 Codex。"}</p>
                 </div>
             }
             if can_start {
                 <p class="text-sm text-base-content/60">{"Codex 将根据题目 UUID 从电脑本地题库读取原题、共用材料及图片，独立解析；参考答案仅供参考。"}</p>
-                <button type="button" class="btn btn-primary w-full" data-testid="question-bank-ai-start"
-                    disabled={*submitting} onclick={on_start.clone()}>{"开始 AI 解析"}</button>
-            }
-            if can_restart {
-                <button type="button" class="btn btn-outline w-full" data-testid="question-bank-ai-restart"
-                    disabled={*submitting} onclick={on_start}>{"重新分析"}</button>
             }
             if running {
                 <div class="flex flex-wrap items-center justify-between gap-2">
@@ -1030,27 +1079,25 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             if has_answer && !running {
                 <div class="space-y-2">
                     <label class="text-sm font-semibold" for="question-ai-follow-up">{"继续追问"}</label>
-                    <div class="relative rounded-2xl border border-base-content/15 bg-base-100 transition focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15"
-                        data-testid="question-bank-ai-compose">
-                        <textarea id="question-ai-follow-up"
-                            class="block min-h-24 w-full resize-none border-0 bg-transparent px-3 pb-12 pt-3 text-sm leading-6 focus:outline-none focus:ring-0"
-                            data-testid="question-bank-ai-input" maxlength="2000"
-                            value={(*follow_up).clone()}
-                            placeholder="例如：为什么不能选 B？有没有更快的解法？（Ctrl/⌘ + Enter 发送）"
-                            onkeydown={on_follow_up_key.clone()}
-                            oninput={Callback::from({
-                                let follow_up=follow_up.clone();
-                                move |event: InputEvent| {
-                                    let input: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
-                                    follow_up.set(input.value());
-                                }
-                            })}/>
-                        <div class="absolute inset-x-2 bottom-2 flex items-center justify-end">
-                            <button type="button" class="btn btn-primary btn-sm rounded-full px-4"
-                                data-testid="question-bank-ai-send" disabled={*submitting || follow_up.trim().is_empty()}
-                                onclick={on_follow_up}>{"发送追问"}</button>
-                        </div>
-                    </div>
+                    {ai_composer(AiComposer {
+                        id: "question-ai-follow-up",
+                        compose_testid: "question-bank-ai-compose",
+                        input_testid: "question-bank-ai-input",
+                        button_testid: "question-bank-ai-send",
+                        value: follow_up.as_str(),
+                        placeholder: "例如：为什么不能选 B？有没有更快的解法？（Ctrl/⌘ + Enter 发送）",
+                        button_label: "发送追问",
+                        disabled: *submitting || follow_up.trim().is_empty(),
+                        oninput: Callback::from({
+                            let follow_up=follow_up.clone();
+                            move |event: InputEvent| {
+                                let input: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
+                                follow_up.set(input.value());
+                            }
+                        }),
+                        onkeydown: on_follow_up_key.clone(),
+                        onclick: on_follow_up.clone(),
+                    })}
                 </div>
             }
         </section>

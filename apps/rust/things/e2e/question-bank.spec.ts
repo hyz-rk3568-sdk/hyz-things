@@ -1232,3 +1232,25 @@ test(`starts an AI review with the optional requirements text at ${viewport.widt
   await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth)).toBeLessThanOrEqual(0);
 });
 }
+
+test('starts an AI review with Ctrl+Enter but not plain Enter',async({page})=>{
+  const starts:unknown[]=[];
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    if(route.request().method()==='POST') {
+      starts.push(route.request().postDataJSON());
+      await route.fulfill({status:202,json:{question_id,status:'running',error:null,messages:[]}});
+    } else {
+      await route.fulfill({json:{question_id,status:'idle',error:null,messages:[]}});
+    }
+  });
+  await openFixtureReview(page);
+  await page.getByTestId('question-bank-ai-tab').click();
+  const box=page.getByTestId('question-bank-ai-instruction');
+  await box.fill('用线段图讲解');
+  await box.press('Enter');
+  await expect.poll(()=>starts.length).toBe(0);
+  await box.press('Control+Enter');
+  await expect.poll(()=>starts).toEqual([{instruction:'用线段图讲解'}]);
+  await expect(page.getByTestId('question-bank-ai-status')).toContainText('正在生成');
+});
