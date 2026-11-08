@@ -147,6 +147,21 @@ pub(super) struct TrainingSwipeSurfaceProps {
     pub(super) children: Children,
     #[prop_or_default]
     pub(super) navigation_allowed: Option<Callback<(), bool>>,
+    /// Notified whenever a page turn commits or rolls back, so callers can
+    /// drive a session instead of a plain index.
+    #[prop_or_default]
+    pub(super) on_change: Option<Callback<usize>>,
+}
+
+fn navigate_to(
+    current: &UseStateHandle<usize>,
+    on_change: &Option<Callback<usize>>,
+    target: usize,
+) {
+    current.set(target);
+    if let Some(callback) = on_change {
+        callback.emit(target);
+    }
 }
 
 fn swipe_pointer(pointer_type: &str) -> bool {
@@ -342,6 +357,7 @@ pub(super) fn training_swipe_surface(props: &TrainingSwipeSurfaceProps) -> Html 
         let current = props.current.clone();
         let total = props.total;
         let navigation_allowed = props.navigation_allowed.clone();
+        let on_change = props.on_change.clone();
         let content_ref = content_ref.clone();
         let overlay_ref = overlay_ref.clone();
         let turn_generation = turn_generation.clone();
@@ -401,7 +417,7 @@ pub(super) fn training_swipe_surface(props: &TrainingSwipeSurfaceProps) -> Html 
                 width,
                 generation,
             });
-            current.set(target);
+            navigate_to(&current, &on_change, target);
             apply_page_turn_offset(&element, dx, width, direction);
         })
     };
@@ -411,6 +427,7 @@ pub(super) fn training_swipe_surface(props: &TrainingSwipeSurfaceProps) -> Html 
         let current = props.current.clone();
         let total = props.total;
         let navigation_allowed = props.navigation_allowed.clone();
+        let on_change = props.on_change.clone();
         let content_ref = content_ref.clone();
         let overlay_ref = overlay_ref.clone();
         let turn_generation = turn_generation.clone();
@@ -437,7 +454,7 @@ pub(super) fn training_swipe_surface(props: &TrainingSwipeSurfaceProps) -> Html 
                     settle_page_turn(&element, active.direction, commit);
                 }
                 if !commit {
-                    current.set(active.from);
+                    navigate_to(&current, &on_change, active.from);
                 }
                 schedule_turn_cleanup(overlay, turn_generation.clone(), active.generation, 340);
                 return;
@@ -467,13 +484,14 @@ pub(super) fn training_swipe_surface(props: &TrainingSwipeSurfaceProps) -> Html 
                     schedule_turn_cleanup(overlay, turn_generation.clone(), generation, 1_500);
                 }
             }
-            current.set(target);
+            navigate_to(&current, &on_change, target);
         })
     };
     let cancel = {
         let origin = origin.clone();
         let drag = drag.clone();
         let current = props.current.clone();
+        let on_change = props.on_change.clone();
         let overlay_ref = overlay_ref.clone();
         let turn_generation = turn_generation.clone();
         Callback::from(move |event: PointerEvent| {
@@ -496,7 +514,7 @@ pub(super) fn training_swipe_surface(props: &TrainingSwipeSurfaceProps) -> Html 
                 }
                 schedule_turn_cleanup(overlay, turn_generation.clone(), active.generation, 340);
             }
-            current.set(active.from);
+            navigate_to(&current, &on_change, active.from);
         })
     };
     let turn_animation_end = Callback::from(move |event: web_sys::AnimationEvent| {

@@ -435,7 +435,7 @@ test("daily practice statistics exclude calculation and flashcard practice compl
   await page.getByTestId('training-mode-flashcards').click();
   await page.getByTestId('practice-start').click();
   await page.getByTestId('practice-reveal').click();
-  await page.getByTestId('practice-correct').click();
+  await page.getByTestId('practice-good').click();
   await page.getByTestId('practice-finish').click();
   await expect(page.getByTestId('practice-summary')).toBeVisible();
   await page.getByTestId('training-mode-statistics').click();

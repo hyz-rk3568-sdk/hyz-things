@@ -12,7 +12,7 @@ test("shows Flashcards on Study alongside the exam countdown", async ({
   await page.goto("/#/study");
   await expect(page.getByTestId("study-summary")).toBeVisible();
   await expect(page.getByTestId("study-open-cards")).toBeVisible();
-  await expect(page.getByTestId("study-start-review")).toBeVisible();
+  await expect(page.getByTestId("study-start-review")).toHaveCount(0);
   await expect(page.getByRole("region", { name: "自定义倒计时" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "考试冲刺倒计时" })).toBeVisible();
 });
@@ -33,46 +33,11 @@ test("filters the card library by Deck, Tag, and their combination", async ({ pa
   await expect(page).toHaveURL(/#\/study\/cards\?deck=.*tag=/);
 });
 
-test("opens an immersive review route, reveals the answer, and records Good", async ({ page }) => {
-  await page.goto("/#/study/review?deck=%E5%88%A4%E6%96%AD%E6%8E%A8%E7%90%86%2F%E9%80%BB%E8%BE%91%E5%88%A4%E6%96%AD&tag=%E9%AB%98%E9%A2%91");
-  await expect(page.getByTestId("study-review-layout")).toBeVisible();
-  await expect(page.locator("nav[aria-label='主导航']")).toHaveCount(0);
-  await expect(page.getByTestId("study-review-card")).toHaveAttribute("data-answer-shown", "false");
-  await expect(page.getByTestId("study-review-front")).toBeVisible();
-
-  await page.getByTestId("study-show-answer").click();
-  await expect(page.getByTestId("study-review-card")).toHaveAttribute("data-answer-shown", "true");
-  await expect(page.getByTestId("study-review-front")).toBeVisible();
-  await expect(page.getByTestId("study-review-answer")).toBeVisible();
-  await page.getByTestId("study-rate-good").click();
-  await expect(page.getByTestId("study-review-complete")).toBeVisible();
-});
-
-test("lets review choose its own Deck and Tag scope", async ({ page }) => {
-  await page.goto("/#/study/review");
-  await expect(page.getByTestId("study-review-scope")).toBeVisible();
-  await expect(page.getByTestId("study-review-deck-filter")).toBeVisible();
-
-  await page.getByTestId("study-review-deck-filter").selectOption("资料分析");
-  await expect(page).toHaveURL(/#\/study\/review\?deck=/);
-  const reviewCard = page.getByTestId("study-review-card");
-  await expect(reviewCard).toContainText("资料分析");
-
-  const cardBeforeTagPanel = await reviewCard.boundingBox();
-  await page.getByTestId("study-review-tag-toggle").click();
-  await expect(page.getByTestId("study-review-tag-toggle")).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByTestId("study-review-tag-panel")).toBeVisible();
-  const cardAfterTagPanel = await reviewCard.boundingBox();
-  expect(cardBeforeTagPanel).not.toBeNull();
-  expect(cardAfterTagPanel).not.toBeNull();
-  expect(Math.abs(cardAfterTagPanel!.y - cardBeforeTagPanel!.y)).toBeLessThan(1);
-
-  await page
-    .getByTestId("study-review-tag-filter")
-    .getByRole("button", { name: /高频 \(2\)/ })
-    .click();
-  await expect(page).toHaveURL(/#\/study\/review\?deck=.*tag=/);
-  await expect(page.getByTestId("study-review-card")).toContainText("基期量公式？");
+test("legacy review route redirects into specialized training", async ({ page }) => {
+  await page.goto("/#/study/review?deck=%E5%88%A4%E6%96%AD%E6%8E%A8%E7%90%86");
+  await expect(page).toHaveURL(/#\/study\/training/);
+  await expect(page.getByTestId("training-layout")).toBeVisible();
+  await expect(page.getByTestId("training-mode-flashcards")).toBeVisible();
 });
 test("protects sync while keeping card reads and invalid anonymous review public", async ({
   request,
@@ -370,16 +335,17 @@ test("flashcard review selects card directories as three nested levels instead o
   await expect(page.getByTestId("practice-candidates")).toContainText("共 2 张");
 });
 
-test("wrong-card practice filters, reveals, self-grades and never writes FSRS", async ({ page }) => {
-  const reviewWrites: string[] = [];
+test("flashcard review loads every card and records FSRS ratings", async ({ page }) => {
+  const reviews: Array<{card_id: string; rating: string}> = [];
   page.on("request", (request) => {
     if (request.method() === "POST" && request.url().endsWith("/api/v1/study/review")) {
-      reviewWrites.push(request.url());
+      reviews.push(request.postDataJSON());
     }
   });
   await page.goto("/#/study/training");
   await page.getByTestId("training-mode-flashcards").click();
   await expect(page.getByTestId("practice-setup")).toBeVisible();
+  await expect(page.getByTestId("practice-count")).toHaveCount(0);
   await expect(page.getByTestId("practice-candidates")).toContainText("共 3 张");
   await page.getByTestId("practice-deck-level1").filter({ hasText: "资料分析" }).click();
   await expect(page.getByTestId("practice-candidates")).toContainText("共 1 张");
@@ -387,7 +353,7 @@ test("wrong-card practice filters, reveals, self-grades and never writes FSRS", 
   await page.getByTestId("practice-deck-level1").filter({ hasText: "判断推理" }).click();
   await page.getByTestId("practice-deck-level2").filter({ hasText: "逻辑判断" }).click();
   await expect(page.getByTestId("practice-candidates")).toContainText("共 2 张");
-  await expect(page.getByTestId("practice-candidates")).toContainText("候选数量不足");
+  await expect(page.getByTestId("practice-start")).toContainText("开始复习");
 
   await page.getByTestId("practice-start").click();
   await expect(page.getByTestId("practice-question")).toBeVisible();
@@ -439,31 +405,74 @@ test("wrong-card practice filters, reveals, self-grades and never writes FSRS", 
   await expect(page.getByTestId("practice-grading")).toBeVisible();
   await expect(page.getByTestId("practice-controls")).toBeVisible();
   expect(await page.getByTestId("practice-layout").evaluate(el=>el.getBoundingClientRect().top)).toBe(0);
-  await page.getByTestId("practice-wrong").click();
-  await expect(page.getByTestId("practice-question")).toBeVisible();
-  await expect(tabs.nth(0)).toHaveAttribute("data-grade","wrong");
+  await page.getByTestId("practice-good").click();
+  await expect.poll(() => reviews.map((value) => value.rating)).toEqual(["good"]);
+  await expect(tabs.nth(0)).toHaveAttribute("data-grade","good");
   await expect(tabs.nth(1)).toHaveAttribute("data-grade","unanswered");
-  // Revisit the graded first card; its explanation and grade remain visible.
-  await tabs.nth(0).click();
+  await expect(page.getByTestId("practice-question")).toContainText("第 2 / 2 题");
+
+  await page.keyboard.press(" ");
   await expect(page.getByTestId("practice-back")).toBeVisible();
-  await expect(page.getByTestId("practice-graded")).toContainText("做错");
-  await expect(tabs.nth(0)).toHaveAttribute("aria-current","step");
-  await tabs.nth(1).click();
-  await expect(page.getByTestId("practice-back")).toHaveCount(0);
-  await expect(canvas).toBeHidden();
-  await page.getByTestId("calculation-scratchpad-toggle").click();
-  const reset = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
-  expect(reset).toEqual(blank);
-  await page.getByTestId("practice-reveal").click();
-  await page.getByTestId("practice-skip").click();
+  await page.keyboard.press("1");
+  await expect.poll(() => reviews.map((value) => value.rating)).toEqual(["good", "again"]);
   await expect(page.getByTestId("practice-summary")).toBeVisible();
-  await expect(page.getByTestId("practice-summary")).toContainText("做错");
-  await expect(page.getByTestId("practice-summary")).toContainText("跳过");
-  await expect(page.getByTestId("practice-summary")).toContainText("未答");
-  expect(reviewWrites).toEqual([]);
+  await expect(page.getByTestId("practice-summary")).toContainText("已复习");
+  await expect(page.getByTestId("practice-summary")).toContainText("不会");
+  await expect(page.getByTestId("practice-summary")).toContainText("会了");
 });
 
-test("wrong-card navigation never grades unvisited cards or converts unanswered into skipped", async ({ page }) => {
+test("flashcard review swipes between cards and keeps each card's draft", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/#/study/training");
+  await page.getByTestId("training-mode-flashcards").click();
+  await page.getByTestId("practice-deck-level1").filter({ hasText: "判断推理" }).click();
+  await page.getByTestId("practice-deck-level2").filter({ hasText: "逻辑判断" }).click();
+  await page.getByTestId("practice-start").click();
+  await expect(page.getByTestId("practice-question")).toContainText("第 1 / 2 题");
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+
+  const canvas = page.getByTestId("calculation-scratchpad-canvas");
+  await page.getByTestId("calculation-scratchpad-toggle").click();
+  await expect(canvas).toBeVisible();
+  const blank = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
+  const bounds = await page.getByTestId("practice-card-scroll").boundingBox();
+  if (!bounds) throw new Error("missing practice content bounds");
+  await page.mouse.move(bounds.x + 25, bounds.y + 30);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + 90, bounds.y + 80, { steps: 6 });
+  await page.mouse.up();
+  const drawn = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
+  expect(drawn).not.toEqual(blank);
+
+  const swipe = async (direction: "next" | "previous") => {
+    await page.getByTestId("training-swipe-surface").evaluate((node, direction) => {
+      const [start, end] = direction === "next" ? [500, 250] : [250, 500];
+      const emit = (type: string, x: number) =>
+        node.dispatchEvent(new PointerEvent(type, {
+          bubbles: true,
+          pointerType: "touch",
+          pointerId: 17,
+          isPrimary: true,
+          clientX: x,
+          clientY: 230,
+        }));
+      emit("pointerdown", start);
+      emit("pointermove", end);
+      emit("pointerup", end);
+    }, direction);
+  };
+  await swipe("next");
+  await expect(page.getByTestId("practice-question")).toContainText("第 2 / 2 题");
+  await swipe("previous");
+  await expect(page.getByTestId("practice-question")).toContainText("第 1 / 2 题");
+
+  await page.getByTestId("calculation-scratchpad-toggle").click();
+  await expect(canvas).toBeVisible();
+  await expect.poll(() => canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL()))
+    .toEqual(drawn);
+});
+
+test("flashcard navigation never rates unvisited cards", async ({ page }) => {
   await page.goto("/#/study/training");
   await page.getByTestId("training-mode-flashcards").click();
   await page.getByTestId("practice-deck-level1").filter({ hasText: "判断推理" }).click();
@@ -477,15 +486,15 @@ test("wrong-card navigation never grades unvisited cards or converts unanswered 
   await expect(tabs.nth(0)).toHaveAttribute("data-grade","unanswered");
   await expect(tabs.nth(1)).toHaveAttribute("data-grade","unanswered");
   await page.getByTestId("practice-reveal").click();
-  await page.getByTestId("practice-correct").click();
-  // One graded, one unanswered: the session stays open on the ungraded card.
+  await page.getByTestId("practice-good").click();
+  // One rated, one unanswered: the session stays open on the ungraded card.
   await expect(page.getByTestId("practice-question")).toContainText("第 1 / 2 题");
-  await expect(tabs.nth(1)).toHaveAttribute("data-grade","correct");
+  await expect(tabs.nth(1)).toHaveAttribute("data-grade","good");
   await expect(tabs.nth(0)).toHaveAttribute("data-grade","unanswered");
   await page.getByTestId("practice-finish").click();
-  await expect(page.getByTestId("practice-summary")).toContainText("未答");
+  await expect(page.getByTestId("practice-summary")).toContainText("未评");
   await expect(page.getByTestId("practice-summary")).toContainText("1");
-  await expect(page.getByTestId("practice-summary")).toContainText("做对");
+  await expect(page.getByTestId("practice-summary")).toContainText("会了");
 });
 
 

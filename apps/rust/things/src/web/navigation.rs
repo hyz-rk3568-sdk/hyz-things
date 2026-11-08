@@ -5,7 +5,6 @@ use hyz_things::domain::device_policy::LanDeviceMac;
 pub(crate) enum StudyView {
     Dashboard,
     Cards,
-    Review,
     Training,
 }
 
@@ -14,7 +13,6 @@ impl StudyView {
         match self {
             Self::Dashboard => "study",
             Self::Cards => "study/cards",
-            Self::Review => "study/review",
             Self::Training => "study/training",
         }
     }
@@ -229,7 +227,8 @@ impl PortalRoute {
             [] | ["overview"] => Self::for_page(AppPage::Overview),
             ["study"] => Self::study(StudyView::Dashboard, None, Vec::new()),
             ["study", "cards"] => Self::study(StudyView::Cards, None, Vec::new()),
-            ["study", "review"] => Self::study(StudyView::Review, None, Vec::new()),
+            // Review moved into the training page; keep old bookmarks working.
+            ["study", "review"] => Self::study(StudyView::Training, None, Vec::new()),
             ["study", "training"] | ["study", "calculation"] => {
                 Self::study(StudyView::Training, None, Vec::new())
             }
@@ -415,15 +414,13 @@ mod tests {
     }
 
     #[test]
-    fn study_routes_preserve_review_scope_in_query() {
+    fn legacy_review_route_redirects_to_training() {
         let (route, canonical) = PortalRoute::parse(
             "#/study/review?deck=%E5%88%A4%E6%96%AD%E6%8E%A8%E7%90%86&tag=%E9%AB%98%E9%A2%91&tag=%E9%94%99%E9%A2%98",
         );
         assert!(!canonical);
-        assert_eq!(route.study_view, StudyView::Review);
-        assert_eq!(route.study_deck.as_deref(), Some("判断推理"));
-        assert_eq!(route.study_tags, vec!["错题", "高频"]);
-        assert!(route.hash().starts_with("#/study/review?deck="));
+        assert_eq!(route.study_view, StudyView::Training);
+        assert!(route.hash().starts_with("#/study/training?deck="));
     }
 
     #[test]

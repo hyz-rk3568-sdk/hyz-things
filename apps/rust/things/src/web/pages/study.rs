@@ -1,7 +1,5 @@
 use super::*;
-use hyz_things::domain::flashcards::{
-    DeckSummary, FlashcardSummary, ReviewRating, StudySummary, TagSummary,
-};
+use hyz_things::domain::flashcards::{DeckSummary, FlashcardSummary, StudySummary, TagSummary};
 
 #[derive(Properties, PartialEq)]
 struct StudyWorkspaceProps {
@@ -31,13 +29,6 @@ struct StudyScopePickerProps {
     test_prefix: String,
 }
 
-#[derive(Properties, PartialEq)]
-struct StudyReviewProps {
-    state: UseReducerHandle<AppState>,
-    route: PortalRoute,
-    route_state: UseStateHandle<PortalRoute>,
-}
-
 pub(crate) fn render_study(
     state: UseReducerHandle<AppState>,
     route: PortalRoute,
@@ -47,14 +38,6 @@ pub(crate) fn render_study(
     html! {
         <StudyWorkspace state={state} route={route} route_state={route_state} is_admin={is_admin} />
     }
-}
-
-pub(crate) fn render_study_review(
-    state: UseReducerHandle<AppState>,
-    route: PortalRoute,
-    route_state: UseStateHandle<PortalRoute>,
-) -> Html {
-    html! { <StudyReview state={state} route={route} route_state={route_state} /> }
 }
 
 #[function_component(StudyWorkspace)]
@@ -210,19 +193,6 @@ fn study_workspace(props: &StudyWorkspaceProps) -> Html {
             )
         })
     };
-    let open_review = {
-        let route_state = props.route_state.clone();
-        let deck = props.route.study_deck.clone();
-        let tags = props.route.study_tags.clone();
-        Callback::from(move |_| {
-            navigate_route(
-                &route_state,
-                PortalRoute::study(StudyView::Review, deck.clone(), tags.clone()),
-                false,
-            )
-        })
-    };
-
     match props.route.study_view {
         StudyView::Dashboard => html! {
             <>
@@ -261,12 +231,9 @@ fn study_workspace(props: &StudyWorkspaceProps) -> Html {
                                 <StudyMetric label="活跃卡片" value={summary.active_cards.to_string()} />
                                 <StudyMetric label="Deck / Tag" value={format!("{} / {}", summary.deck_count, summary.tag_count)} />
                             </div>
-                            <div class={BUTTON_ROW}>
-                                <button class={BUTTON_PRIMARY} type="button" data-testid="study-start-review" onclick={open_review} disabled={summary.due_cards == 0}>{"开始复习 →"}</button>
-                                if !props.is_admin {
-                                    <span class={HELP_TEXT}>{"阅读与复习开放；同步需要管理员权限。"}</span>
-                                }
-                            </div>
+                            if !props.is_admin {
+                                <p class={HELP_TEXT}>{"阅读开放；同步需要管理员权限。复习请前往专项训练。"}</p>
+                            }
                         }
                     </SectionCard>
                     <SectionCard title_id="study-calculation-title">
@@ -294,7 +261,6 @@ fn study_workspace(props: &StudyWorkspaceProps) -> Html {
                         <p class={EYEBROW}>{"STUDY / CARDS"}</p>
                         <h2 id="study-cards-title" class={SECTION_TITLE}>{"卡片库"}</h2>
                     </div>
-                    <button class={BUTTON_GHOST} type="button" onclick={open_review}>{"开始复习"}</button>
                 </div>
                 <CardsLibrary
                     cards={(*cards).clone()}
@@ -307,7 +273,7 @@ fn study_workspace(props: &StudyWorkspaceProps) -> Html {
                 <ExamCountdownPanel />
             </>
         },
-        StudyView::Review | StudyView::Training => Html::default(),
+        StudyView::Training => Html::default(),
     }
 }
 
@@ -507,331 +473,6 @@ fn card_library_item(card: &FlashcardSummary) -> Html {
     }
 }
 
-#[function_component(StudyReview)]
-fn study_review(props: &StudyReviewProps) -> Html {
-    let queue = use_state(|| None::<Vec<FlashcardSummary>>);
-    let total_count = use_state(|| 0_usize);
-    let loading = use_state(|| true);
-    let error = use_state(|| None::<String>);
-    let notice = use_state(|| None::<String>);
-    let current_index = use_state(|| 0_usize);
-    let answer_shown = use_state(|| false);
-    let review_busy = use_state(|| false);
-    let decks = use_state(Vec::<DeckSummary>::new);
-    let tags = use_state(Vec::<TagSummary>::new);
-    let scope_error = use_state(|| None::<String>);
-
-    {
-        let decks = decks.clone();
-        let tags = tags.clone();
-        let scope_error = scope_error.clone();
-        use_effect_with((), move |_| {
-            spawn_local(async move {
-                let mut errors = Vec::new();
-                match fetch_json_typed::<StudyDecksResponse>(STUDY_DECKS_ENDPOINT, "Deck 列表")
-                    .await
-                {
-                    Ok(response) => decks.set(response.decks),
-                    Err(error) => errors.push(error.to_string()),
-                }
-                match fetch_json_typed::<StudyTagsResponse>(STUDY_TAGS_ENDPOINT, "Tag 列表").await
-                {
-                    Ok(response) => tags.set(response.tags),
-                    Err(error) => errors.push(error.to_string()),
-                }
-                if !errors.is_empty() {
-                    scope_error.set(Some(format!("复习范围读取失败：{}", errors.join("；"))));
-                }
-            });
-            || ()
-        });
-    }
-
-    let filter_dependencies = (
-        props.route.study_deck.clone(),
-        props.route.study_tags.clone(),
-    );
-    {
-        let queue = queue.clone();
-        let total_count = total_count.clone();
-        let loading = loading.clone();
-        let error = error.clone();
-        let notice = notice.clone();
-        let current_index = current_index.clone();
-        let answer_shown = answer_shown.clone();
-        use_effect_with(filter_dependencies, move |dependencies| {
-            loading.set(true);
-            error.set(None);
-            notice.set(None);
-            current_index.set(0);
-            answer_shown.set(false);
-            let query = study_query(
-                dependencies.0.as_deref(),
-                &dependencies.1,
-                Some(200),
-                Some(0),
-            );
-            spawn_local(async move {
-                match fetch_json_typed::<StudyCardsResponse>(
-                    &format!("{STUDY_REVIEW_QUEUE_ENDPOINT}{query}"),
-                    "复习队列",
-                )
-                .await
-                {
-                    Ok(response) => {
-                        total_count.set(response.cards.len());
-                        queue.set(Some(response.cards));
-                    }
-                    Err(fetch_error) => {
-                        queue.set(Some(Vec::new()));
-                        error.set(Some(fetch_error.to_string()));
-                    }
-                }
-                loading.set(false);
-            });
-            || ()
-        });
-    }
-
-    let csrf = props
-        .state
-        .panel
-        .as_ref()
-        .map(|panel| panel.csrf_token.clone())
-        .unwrap_or_default();
-    let submit_rating = {
-        let queue = queue.clone();
-        let current_index = current_index.clone();
-        let answer_shown = answer_shown.clone();
-        let review_busy = review_busy.clone();
-        let notice = notice.clone();
-        let csrf = csrf.clone();
-        Callback::from(move |rating: ReviewRating| {
-            if *review_busy || !*answer_shown {
-                return;
-            }
-            let Some(items) = (*queue).as_ref() else {
-                return;
-            };
-            let index = *current_index;
-            let Some(card) = items.get(index) else {
-                return;
-            };
-            if csrf.is_empty() {
-                notice.set(Some("安全令牌尚未准备好，请稍后重试".to_owned()));
-                return;
-            }
-            review_busy.set(true);
-            notice.set(None);
-            let card_id = card.id.clone();
-            let queue = queue.clone();
-            let current_index = current_index.clone();
-            let answer_shown = answer_shown.clone();
-            let review_busy = review_busy.clone();
-            let notice = notice.clone();
-            let csrf = csrf.clone();
-            spawn_local(async move {
-                let result = post_json_response_typed::<_, StudyReviewResponse>(
-                    STUDY_REVIEW_ENDPOINT,
-                    &csrf,
-                    &StudyReviewRequest { card_id, rating },
-                    "记录复习",
-                )
-                .await;
-                match result {
-                    Ok(_) => {
-                        let mut next = (*queue).clone().unwrap_or_default();
-                        if index < next.len() {
-                            next.remove(index);
-                        }
-                        queue.set(Some(next.clone()));
-                        current_index.set(index.min(next.len().saturating_sub(1)));
-                        answer_shown.set(false);
-                        notice.set(Some(format!("已记录：{}", rating_label(rating))));
-                    }
-                    Err(error) => notice.set(Some(error.to_string())),
-                }
-                review_busy.set(false);
-            });
-        })
-    };
-
-    {
-        let answer_shown = answer_shown.clone();
-        let submit_rating = submit_rating.clone();
-        let review_busy = review_busy.clone();
-        use_effect_with(csrf.clone(), move |_| {
-            let window = web_sys::window().expect("browser window");
-            let listener = Closure::<dyn FnMut(KeyboardEvent)>::new(move |event: KeyboardEvent| {
-                if *review_busy {
-                    return;
-                }
-                match event.key().as_str() {
-                    " " | "Spacebar" => {
-                        event.prevent_default();
-                        answer_shown.set(true);
-                    }
-                    "1" => submit_rating.emit(ReviewRating::Again),
-                    "2" => submit_rating.emit(ReviewRating::Hard),
-                    "3" => submit_rating.emit(ReviewRating::Good),
-                    _ => {}
-                }
-            });
-            let _ = window
-                .add_event_listener_with_callback("keydown", listener.as_ref().unchecked_ref());
-            move || {
-                let _ = window.remove_event_listener_with_callback(
-                    "keydown",
-                    listener.as_ref().unchecked_ref(),
-                );
-            }
-        });
-    }
-
-    let exit = {
-        let route_state = props.route_state.clone();
-        Callback::from(move |_| {
-            navigate_route(
-                &route_state,
-                PortalRoute::study(StudyView::Dashboard, None, Vec::new()),
-                false,
-            )
-        })
-    };
-    let current_card = queue
-        .as_ref()
-        .and_then(|items| items.get(*current_index))
-        .cloned();
-    let remaining = queue.as_ref().map_or(0, Vec::len);
-    {
-        let dependencies = (*loading, *answer_shown, remaining);
-        use_effect_with(dependencies, move |_| {
-            hydrate_math();
-            || ()
-        });
-    }
-    let position = if remaining == 0 {
-        0
-    } else {
-        total_count.saturating_sub(remaining).saturating_add(1)
-    };
-    let scope = props
-        .route
-        .study_deck
-        .clone()
-        .unwrap_or_else(|| "全部 Deck".to_owned());
-    let scope = if props.route.study_tags.is_empty() {
-        scope
-    } else {
-        format!("{scope} · {}", props.route.study_tags.join(" · "))
-    };
-    let review_card_classes = classes!(
-        "study-review-card",
-        "grid",
-        "min-w-0",
-        "min-h-[22rem]",
-        "gap-6",
-        "rounded-box",
-        "border",
-        "border-base-content/10",
-        "bg-base-100",
-        "p-6",
-        "shadow-xl",
-        "sm:p-10",
-        (*answer_shown).then_some("study-review-card-answer-shown")
-    );
-    let front_classes = if *answer_shown {
-        classes!(
-            "study-markdown",
-            "study-review-front",
-            "study-review-front-compact"
-        )
-    } else {
-        classes!(
-            "study-markdown",
-            "study-review-front",
-            "text-lg",
-            "leading-relaxed",
-            "sm:text-xl"
-        )
-    };
-
-    html! {
-        <div class="study-review-shell min-h-screen bg-base-300 px-4 py-4 sm:px-8 sm:py-8" data-testid="study-review-layout">
-            <header class="mx-auto flex w-full max-w-5xl items-center justify-between gap-4">
-                <button class="btn btn-ghost btn-sm" type="button" data-testid="study-review-exit" onclick={exit.clone()}>{"← 退出复习"}</button>
-                <div class="text-right">
-                    <p class="text-xs font-bold uppercase tracking-[0.2em] text-primary">{"FLASHCARDS"}</p>
-                    <p class="text-sm text-base-content/65">{scope}</p>
-                </div>
-            </header>
-            <main class="mx-auto grid w-full max-w-5xl gap-5 py-8">
-                <section class="relative z-20 grid gap-3 rounded-box border border-base-content/10 bg-base-100/60 p-3 shadow-sm sm:p-4">
-                    <div>
-                        <h2 class={SECTION_TITLE}>{"复习范围"}</h2>
-                        <p class={SECTION_META}>{"选择 Deck 或 Tag 后立即更新复习队列。"}</p>
-                    </div>
-                    <StudyScopePicker
-                        decks={(*decks).clone()}
-                        tags={(*tags).clone()}
-                        route={props.route.clone()}
-                        route_state={props.route_state.clone()}
-                        view={StudyView::Review}
-                        test_prefix={"study-review".to_owned()}
-                    />
-                    if let Some(error) = (*scope_error).clone() {
-                        <p class={HELP_TEXT} role="alert">{error}</p>
-                    }
-                </section>
-                <div class="flex items-center justify-between gap-3 text-sm text-base-content/65">
-                    <span>{if position == 0 { "复习队列".to_owned() } else { format!("{position} / {}", *total_count) }}</span>
-                    <span>{"Space 显示答案 · 1 / 2 / 3 评分"}</span>
-                </div>
-                if *loading {
-                    <div class="skeleton h-96 w-full rounded-box bg-base-200"></div>
-                } else if let Some(error) = (*error).clone() {
-                    <div class={EMPTY_STATE} role="alert"><strong class={EMPTY_TITLE}>{"复习队列不可用"}</strong><p class={EMPTY_COPY}>{error}</p></div>
-                } else if let Some(card) = current_card {
-                    <article class={review_card_classes} data-testid="study-review-card" data-answer-shown={answer_shown.to_string()}>
-                        <div class="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                                <p class="text-xs font-bold uppercase tracking-wider text-primary">{"Front"}</p>
-                                <p class="mt-1 text-xs text-base-content/55">{card.deck_path.clone()}</p>
-                            </div>
-                            <div class="flex max-w-[60%] flex-wrap justify-end gap-1.5">{for card.tags.iter().map(|tag| html! { <span class="badge badge-outline text-[0.65rem]">{tag}</span> })}</div>
-                        </div>
-                        <div class={front_classes} data-testid="study-review-front">{render_markdown(&card.front_markdown, &card.source_file)}</div>
-                        if *answer_shown {
-                            <div class="study-review-answer border-t border-base-content/10 pt-6" data-testid="study-review-answer">
-                                <p class="text-xs font-bold uppercase tracking-wider text-secondary">{"Back"}</p>
-                                <div class="study-markdown mt-3 text-base leading-relaxed">{render_markdown(&card.back_markdown, &card.source_file)}</div>
-                            </div>
-                        } else {
-                            <button class={BUTTON_PRIMARY} type="button" data-testid="study-show-answer" onclick={Callback::from({ let answer_shown = answer_shown.clone(); move |_| answer_shown.set(true) })}>{"显示答案"}</button>
-                        }
-                    </article>
-                    <div class="study-review-ratings sticky bottom-2 z-10 grid grid-cols-3 gap-3 rounded-box bg-base-300/90 p-2 backdrop-blur sm:mx-auto sm:w-full sm:max-w-2xl" data-testid="study-review-ratings">
-                        <button class="btn btn-error min-h-14 text-base" type="button" data-testid="study-rate-again" disabled={!*answer_shown || *review_busy} onclick={Callback::from({ let submit_rating = submit_rating.clone(); move |_| submit_rating.emit(ReviewRating::Again) })}>{"不会"}</button>
-                        <button class="btn btn-warning min-h-14 text-base" type="button" data-testid="study-rate-hard" disabled={!*answer_shown || *review_busy} onclick={Callback::from({ let submit_rating = submit_rating.clone(); move |_| submit_rating.emit(ReviewRating::Hard) })}>{"模糊"}</button>
-                        <button class="btn btn-success min-h-14 text-base" type="button" data-testid="study-rate-good" disabled={!*answer_shown || *review_busy} onclick={Callback::from({ let submit_rating = submit_rating.clone(); move |_| submit_rating.emit(ReviewRating::Good) })}>{"会了"}</button>
-                    </div>
-                } else {
-                    <div class={EMPTY_STATE} data-testid="study-review-complete"><strong class={EMPTY_TITLE}>{"复习完成"}</strong><p class={EMPTY_COPY}>{"当前筛选范围没有更多待复习卡片。"}</p><button class={BUTTON_PRIMARY} type="button" onclick={exit.clone()}>{"返回学习"}</button></div>
-                }
-                if let Some(notice) = (*notice).clone() { <div class={FEEDBACK} role="status">{notice}</div> }
-            </main>
-        </div>
-    }
-}
-
-fn rating_label(rating: ReviewRating) -> &'static str {
-    match rating {
-        ReviewRating::Again => "不会",
-        ReviewRating::Hard => "模糊",
-        ReviewRating::Good => "会了",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -857,12 +498,5 @@ mod tests {
             resolve_asset_url("deck/cards.md", "./images/a.png").as_deref(),
             Some("/api/v1/study/assets/deck/images/a.png")
         );
-    }
-
-    #[test]
-    fn ratings_keep_the_three_user_facing_labels() {
-        assert_eq!(rating_label(ReviewRating::Again), "不会");
-        assert_eq!(rating_label(ReviewRating::Hard), "模糊");
-        assert_eq!(rating_label(ReviewRating::Good), "会了");
     }
 }

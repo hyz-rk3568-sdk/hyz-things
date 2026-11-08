@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 pub(crate) const STUDY_CARDS_ENDPOINT: &str = "/api/v1/study/cards";
 pub(crate) const STUDY_DECKS_ENDPOINT: &str = "/api/v1/study/decks";
 pub(crate) const STUDY_TAGS_ENDPOINT: &str = "/api/v1/study/tags";
-pub(crate) const STUDY_REVIEW_QUEUE_ENDPOINT: &str = "/api/v1/study/review";
 pub(crate) const STUDY_SUMMARY_ENDPOINT: &str = "/api/v1/study/summary";
 pub(crate) const STUDY_REVIEW_ENDPOINT: &str = "/api/v1/study/review";
 pub(crate) const STUDY_SYNC_ENDPOINT: &str = "/api/v1/control/study/sync";
