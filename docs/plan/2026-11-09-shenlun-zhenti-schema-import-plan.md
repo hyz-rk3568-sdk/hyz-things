@@ -211,7 +211,7 @@ CREATE INDEX IF NOT EXISTS idx_bank_papers_subject
 
 ~~~text
 浏览器 JPG/PNG + 文字
-  → RK3568 things API（管理员认证 / CSRF / 文件头、尺寸、大小、数量校验）
+  → RK3568 things API（管理员认证 / CSRF / 流式校验并转发；仅内存缓冲、不写磁盘）
   → PC 上的受控临时图片接收端（RK → PC 的授权 HTTP 请求）
   → PC /tmp/hyz-ai-uploads-<uid>/<server-generated-uuid>.png
          ├─ Codex App Server turn/start: text + localImage
@@ -219,7 +219,7 @@ CREATE INDEX IF NOT EXISTS idx_bank_papers_subject
   → 生成完成或超时后清理临时文件
 ~~~
 
-- **不使用** `/mnt/hyz-question-bank`、Samba、`question_bank/assets/`、`papers/` 或 `collections/` 保存用户图片；不修改现有题库共享配置、UUID 或同步规则。RK3568 可直接按流转发图片，无需永久落盘；如 HTTP 层必须缓冲，只在设备 `/tmp` 使用受限临时文件并及时删除。
+- **严格只在 PC `/tmp` 落盘一次。** RK3568 的 HTTP 后端只鉴权、执行流式校验与转发，最多使用受限内存缓冲，**不得写入 RK3568 的 `/tmp`、其他磁盘目录、SMB 或题库目录**。如果 HTTP 框架需要落盘缓冲，应改为流式接收/转发实现，而不是用设备临时文件代替；超限或断流立即终止。
 - 由于 RK3568 和 Codex App Server 位于两台设备，**只在 RK3568 的 `/tmp` 保存文件，PC 上的 `localImage` 与 PaddleOCR Skill 仍无法直接读取**。因此需要一个轻量的 **PC 临时附件接收端**：通过独立认证令牌、LAN 防火墙白名单、严格请求体和速率限制，仅接受 RK 的已认证后端上传；接收端生成文件 ID 并写入 PC 的私有临时目录，不接受客户端指定路径。此端口不同于只监听 `127.0.0.1:8080` 的 PaddleOCR 本身。
 - PC 接收端使用 `systemd --user` 托管，和 PaddleOCR 服务独立；`/tmp/hyz-ai-uploads-<uid>/` 权限 `0700`，文件权限 `0600`，执行用户与 Codex 一致且非 root。临时文件均有 UUID、最大占用和生命周期限制；以运行任务引用计数保护在用图片，任务完成后删除，另设开机/周期性过期清理处理崩溃或断线。**`/tmp` 会被系统清理，不保证重启后的持久性。**
 - 由后端通过类型化附件 ID 记录当前请求中的图片，PC 端返回经过验证的本机绝对路径，后端再生成 `localImage` 项。前端不得传入路径或自定义 Codex 输入类型；需要确保输入图片在 Codex 消费完数据且任何按需 OCR 完成前不会被删除。
@@ -295,7 +295,7 @@ curl -fsS http://127.0.0.1:8080/health
 
 - [ ] 上传 JPG/PNG，原有文本追问、历史消息与答案结构保持兼容。
 - [ ] 文件校验、管理员权限、CSRF、数量/大小限制、PC /tmp 文件权限及到期清理通过；任何用户图片都不进入 SMB/题库。
-- [ ] RK 经受控 PC 临时接收端上传文件，PC `/tmp` 中的原图可同时供 Codex `localImage` 和 OCR Skill 读取；不依赖 CIFS/SMB。
+- [ ] RK 只进行内存级流式转发、不在设备磁盘或 `/tmp` 落盘；PC 接收端只在 PC `/tmp` 落盘一次，同一原图供 Codex `localImage` 和 OCR Skill 读取；不依赖 CIFS/SMB。
 - [ ] 在用临时文件不提前删除；重试、取消、超时和进程重启后按 TTL 清理，无孤儿临时文件和数据库 Base64 膨胀；旧文本历史不受影响。
 - [ ] 新建与恢复的真题 AI 解析 Thread 均正确使用 danger-full-access；其他 Thread 权限不变。
 - [ ] 宿主机 systemd --user 可以启动、检查、自动重启 OCR 与 PC 临时图片接收端；OCR 仅监听 loopback，接收端仅允许经认证的 RK 后端访问。
