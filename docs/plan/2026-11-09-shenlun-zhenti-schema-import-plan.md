@@ -7,14 +7,14 @@
 本批次仅完成以下设计对应的后续实施：
 
 1. 从 [ProfessorZhi/gwy-zhenti](https://github.com/ProfessorZhi/gwy-zhenti) 筛选 **2017—2026 年**国考、湖南省考的申论真题。
-2. 将试卷转换成现有 `hyz-paper/v1` 兼容格式，放入既有 `question_bank/papers/` 目录。
+2. 将本批申论试卷转换成新的 `hyz-paper/v2` 格式，放入既有 `question_bank/papers/` 目录；已有行测 `hyz-paper/v1` 文件原样保留。
 3. 为原始题库增加最低限度的科目、作答类型、题型、判分模式和分值字段，以及主观题参考答案的独立存储位；增加相应 SQLite migration 和解析/同步适配。
 4. 保留原卷给定材料、作答要求、参考答案与解析，并做可重复的结构和图片校验。
 5. 扩展**现有真题 AI 解析**的图片上传和视觉追问输入，新增项目内 PaddleOCR Skill、宿主机本地 OCR 服务管理方案，并按用户要求将这类 Codex 解析线程改成 danger-full-access。
 
 **不做：** 不新增第三种 `kind`；不加入职测、综应；不增加 `source_url`、`bank_id`、`exam_series`、字数结构化字段等非必要元数据；不新增申论业务页面或阅卷功能；本次图片试点仅扩展现有 AI 解析输入与临时附件传输；图片仅放临时目录，不修改题库共享、设备挂载和现有永久题库数据。
 
-原有行测真题与 UUID、练习历史、收藏、错题不作重置或迁移改写。提交代码前必须先审计测试现有兼容行为。
+**版本原则：**已有 `hyz-paper/v1` 是历史只读格式（允许现有 UUID 补写），缺省字段在解析及 SQLite migration 中补齐，不批量回写旧 Markdown；本批新申论真题与此后新建的所有试卷均使用 `hyz-paper/v2`，不再新建 v1 文件。一次 migration + 一次同步即可完成既有数据兼容（正式同步需待解析器升级后执行）。原有行测真题与 UUID、练习历史、收藏、错题不作重置或迁移改写。提交代码前必须先审计测试现有兼容行为。
 
 ## 二、来源范围与固定版本
 
@@ -50,17 +50,17 @@ question_bank/
 
 **权利边界：** 上游 README 将内容限定为学习研究用途，试题、参考答案、解析和图片还涉及第三方权利，不能把仓库可见当作允许整库再分发。实施时先导入**本地私有工作区**并审计授权；未确认分发许可前，公开仓库只提交转换器、必要源码/迁移和不含第三方全文的清单，不提交完整申论卷及图片。
 
-## 四、`hyz-paper/v1` 向后兼容扩展
+## 四、引入 `hyz-paper/v2`，同时向后兼容 v1
 
-**继续使用 `hyz-paper/v1`**，本批只增加可选字段并补充解析校验；不引入破坏性 v2。现有 `Header` 解析器已支持 `schema`、`title`、`year`、`region`、`variant`、`role`、`kind` 等；现有 `Metadata` 支持 `module`、`category`、`topics`、`materials`。
+**新写入统一使用 `hyz-paper/v2`，旧 v1 保持可读。** 解析器须同时支持 v1、v2：v1 缺失 `subject`、`answer_type`、`grading_mode` 时分别默认 `xingce`、`objective`、`exact`，不自动回写这些新字段；v2 则强制声明试卷级 `subject`，以及每题的 `answer_type`、`grading_mode`，缺失或未知值应拒绝导入。`question_type`、`max_score` 仍按来源可选。现有 `Header` 解析器支持 `title`、`year`、`region`、`variant`、`role`、`kind` 等；题级元数据已有 `module`、`category`、`topics`、`materials`。
 
 ### 4.1 试卷级
 
-**仅新增 `subject`**，当前允许 `xingce` / `shenlun`；旧文件未声明时视为 `xingce`。
+**v2 必须声明 `subject`**，本批允许 `xingce` / `shenlun`。v1 缺失时解析默认 `xingce`，不修改旧文件。
 
 ```yaml
 ---
-schema: hyz-paper/v1
+schema: hyz-paper/v2
 kind: exam
 subject: shenlun
 title: 2026年国考申论（副省级）
@@ -80,9 +80,9 @@ status: unverified
 
 | 字段 | 取值 | 兼容逻辑 |
 | --- | --- | --- |
-| `answer_type` | `objective` / `subjective` | 旧题缺省 `objective` |
+| `answer_type` | `objective` / `subjective` | v2 必填；仅 v1 缺省 `objective` |
 | `question_type` | 非空字符串或缺省；申论可用 `summary`、`analysis`、`measures`、`document_writing`、`essay`、`other` | 不明确则 `other` 或留空；不凭题号猜作文 |
-| `grading_mode` | `exact` / `ai` / `manual` | 旧题缺省 `exact`，本批申论题标记 `ai`，不意味着已实现 AI 评分 |
+| `grading_mode` | `exact` / `ai` / `manual` | v2 必填；仅 v1 缺省 `exact`，本批申论题标记 `ai`，不意味着已实现 AI 评分 |
 | `max_score` | 正数或缺省 | 仅源题明确给出分值时写入 |
 
 原有 `module`、`category`、`topics`、`materials` 保留。申论材料关联必须准确：明确关联的按来源对应材料编号映射；全卷适用的给定材料保持全卷可访问；无法核实时报告而不是编造引用。
@@ -156,7 +156,7 @@ CREATE INDEX IF NOT EXISTS idx_bank_papers_subject
   ON papers(subject);
 ```
 
-- 旧 `papers` 行的 `subject` 自动为 `xingce`，旧 `questions` 行的 `answer_type` 自动为 `objective`。
+- Migration 为已有 v1 行补齐默认值：旧 `papers.subject = xingce`、`questions.answer_type = objective`、`questions.grading_mode = exact`；旧文件不需要逐份补写 YAML。一次同步后 SQLite 保持统一结构。**v2 不依赖这些数据库默认值，文件中必须明确填写必填字段。**
 - `grading_mode` 是题目声明的**目标评分方式**，不代表当前具备相应的执行能力。`exact` 表示按标准选项精确判分，`ai` 表示预留 AI 主观评判方式，`manual` 表示人工评阅；与 `answer_type` 独立，不能只靠主客观类型推断评分模式。当前版本不新增 AI 评卷或人工评卷业务逻辑。
 - `correct_answer` 仍用于客观选项，`reference_answer` 是单独的主观题参考内容；不得向客观判分字段写入范文。
 - 现有 `gradable` 保持“有可用选择题结构与答案”的含义，**不能根据 `grading_mode: ai` 将其设置为 1 或接入现有选择题判分**。申论题不具备客观选项结构时为 `0`，不能由此推断题目无法保存/阅读。
@@ -185,7 +185,7 @@ CREATE INDEX IF NOT EXISTS idx_bank_papers_subject
 
 ### 6.2 现有代码的必要适配点
 
-- `apps/rust/things/src/application/question_bank/document.rs`：Header/题级 metadata 扩展、`Reference Answer` 解析、兼容旧卷、唯一编号与 UUID 校验。
+- `apps/rust/things/src/application/question_bank/document.rs`：版本分支解析、v2 必填字段校验、v1 缺省兼容、`Reference Answer` 解析、唯一编号与 UUID 校验。
 - `apps/rust/things/src/domain/question_bank.rs`：需要展示/传递的 `subject` 和题目属性 DTO。
 - `apps/rust/things/src/application/question_bank/mod.rs`：`StoredQuestion` / `PaperContent` / `IndexedPaper` 元数据投影更新。
 - `apps/rust/things/src/adapters/outbound/question_bank_sqlite.rs`：同步插入/更新、读取和 metadata 一致性，避免旧字段被覆盖。
@@ -198,12 +198,12 @@ CREATE INDEX IF NOT EXISTS idx_bank_papers_subject
 **必须通过：**
 
 - [ ] 2017—2026 国考 25、湖南 23 份申论源文件全部逐份进入导入审计清单；每份标记成功/缺项/失败，不用总数掩盖缺损。
-- [ ] 旧 `hyz-paper/v1` 行测解析、UUID 写回、内容指纹/同步和重复导入回归通过。
-- [ ] 新 `subject` 默认值不影响旧行测数据；新迁移能升级旧数据库且不重建个人历史表。
+- [ ] 解析器同时接受 v1、v2；旧 `hyz-paper/v1` 行测解析、UUID 写回、内容指纹/同步和重复导入回归通过；旧 Markdown 不因新增字段发生批量改写。
+- [ ] v1 缺省的三个字段由 migration / 解析兼容补齐；新迁移能升级旧数据库且不重建个人历史表；v2 缺少 `subject`、`answer_type`、`grading_mode` 必须拒绝导入。
 - [ ] 申论材料序号与题号完整对应，题干要求、参考答案、解析不混淆、不丢失。
 - [ ] 所有保留的图像引用经 SHA-256 文件与引用路径校验。
 - [ ] 主观题 `Answer` 不被当作选择题选项解析；`Reference Answer` 不进入作答前题目 DTO。
-- [ ] `grading_mode` 完整经过 Markdown 解析、SQLite migration、同步和读取；旧题默认为 `exact`，申论保存为 `ai`，不触发任何未实现的评分任务。
+- [ ] `grading_mode` 完整经过 v2 Markdown 解析、SQLite migration、同步和读取；v1 旧题默认为 `exact`，新申论 v2 显式保存 `ai`，不触发任何未实现的评分任务。
 - [ ] 现有 `exam / drill` 语义、行测客观判分和练习统计保持不变。
 - [ ] 未确认再分发许可前不将第三方完整原文/图片加入公开仓库。
 
