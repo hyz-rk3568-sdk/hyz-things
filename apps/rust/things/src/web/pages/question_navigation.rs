@@ -579,6 +579,27 @@ pub(super) struct CompactQuestionNavigationProps {
 #[function_component(CompactQuestionNavigation)]
 pub(super) fn compact_question_navigation(props: &CompactQuestionNavigationProps) -> Html {
     let open = use_state(|| false);
+    let sheet_ref = use_node_ref();
+    let sheet_scroll_top = use_mut_ref(|| 0i32);
+    {
+        let sheet_ref = sheet_ref.clone();
+        let sheet_scroll_top = sheet_scroll_top.clone();
+        use_effect_with(*open, move |is_open| {
+            if *is_open {
+                if let Some(sheet) = sheet_ref.cast::<HtmlElement>() {
+                    sheet.set_scroll_top(*sheet_scroll_top.borrow());
+                }
+            }
+            || ()
+        });
+    }
+    let on_sheet_scroll = {
+        let sheet_scroll_top = sheet_scroll_top.clone();
+        Callback::from(move |event: Event| {
+            let sheet = event.target_unchecked_into::<HtmlElement>();
+            *sheet_scroll_top.borrow_mut() = sheet.scroll_top();
+        })
+    };
     let total = props.numbers.len();
     let index = (*props.current).min(total.saturating_sub(1));
     let previous = {
@@ -619,6 +640,7 @@ pub(super) fn compact_question_navigation(props: &CompactQuestionNavigationProps
             <button type="button" class="btn btn-primary btn-sm" disabled={index+1>=total} onclick={next}>{"下一题"}</button>
             if *open {
                 <nav id="training-question-sheet" aria-label="答题卡" data-testid="training-answer-sheet"
+                    ref={sheet_ref} onscroll={on_sheet_scroll}
                     class="absolute bottom-full left-0 right-0 max-h-[min(55dvh,28rem)] overflow-y-auto overscroll-contain rounded-t-box border border-base-content/15 bg-base-100 p-3 shadow-xl">
                     <div class="mb-3 flex items-center justify-between">
                         <strong>{"答题卡"}</strong>

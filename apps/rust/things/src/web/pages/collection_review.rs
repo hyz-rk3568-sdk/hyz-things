@@ -1,10 +1,7 @@
 //! Review of a saved wrong or favorite question. The timed training
 //! sessions stay separate; this view only reads one question at a time and
 //! lets the reader swipe through the filtered collection.
-use super::favorite_flashcard::{
-    favorite_can_create, FavoriteExistingCard, FavoriteExistingCards, FavoriteFlashcardEditor,
-    FavoriteFlashcardPanel, FavoritePreview,
-};
+use super::favorite_flashcard::{favorite_can_create, FavoriteFlashcardWorkspace, FavoritePreview};
 use super::material_scroll::{scroll_edges, ScrollEdges};
 use super::question_bank_practice::{
     answer_options, use_practice_favorite, use_question_ai_tab, QuestionAiReview,
@@ -46,7 +43,6 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
     let preview_error = use_state(|| None::<String>);
     let preview_retry = use_state(|| 0u32);
     let creating = use_state(|| false);
-    let editing = use_state(|| None::<FavoriteExistingCard>);
     let flashcard_changed = Callback::from({
         let preview_retry = preview_retry.clone();
         move |_| preview_retry.set((*preview_retry).wrapping_add(1))
@@ -140,10 +136,8 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
         let material_scroll = material_scroll.clone();
         let question_scroll = question_scroll.clone();
         let creating = creating.clone();
-        let editing = editing.clone();
         use_effect_with(*index, move |_| {
             creating.set(false);
-            editing.set(None);
             for target in [&material_scroll, &question_scroll] {
                 if let Some(element) = target.cast::<HtmlElement>() {
                     element.set_scroll_top(0);
@@ -237,28 +231,10 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
         let total = props.items.len();
         Callback::from(move |_| index.set((*index + 1).min(total.saturating_sub(1))))
     };
-    let main = if let Some(existing) = &*editing {
+    let main = if *creating {
         if let Some(value) = &*preview {
             html! {
-                <FavoriteFlashcardEditor key={existing.card_id.clone()}
-                    question_id={item.question_id.clone()} preview={value.clone()}
-                    existing={existing.clone()} csrf={props.csrf.clone()}
-                    on_changed={flashcard_changed.clone()}
-                    on_close={Callback::from({
-                        let editing=editing.clone(); move |_|editing.set(None)
-                    })}/>
-            }
-        } else {
-            html! {
-                <div class="flex h-full items-center justify-center rounded-box bg-base-100" data-testid="collection-review-loading">
-                    <p class="opacity-60" role="status">{"正在准备闪卡…"}</p>
-                </div>
-            }
-        }
-    } else if *creating {
-        if let Some(value) = &*preview {
-            html! {
-                <FavoriteFlashcardPanel question_id={item.question_id.clone()} preview={value.clone()}
+                <FavoriteFlashcardWorkspace question_id={item.question_id.clone()} preview={value.clone()}
                     csrf={props.csrf.clone()} on_changed={flashcard_changed.clone()}
                     on_close={Callback::from({
                         let creating=creating.clone(); move |_|creating.set(false)
@@ -379,23 +355,20 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                         }
                     </section>
                     if let Some(value) = &*preview {
-                            if !value.existing.is_empty() {
-                                <FavoriteExistingCards cards={value.existing.clone()} on_edit={Callback::from({
-                                    let editing=editing.clone(); move |card| editing.set(Some(card))
-                                })}/>
-                            }
                             if favorite_can_create(value) {
                                 <button type="button" class="btn btn-primary" data-testid="collection-review-create-flashcard"
-                                    onclick={Callback::from({let creating=creating.clone();let editing=editing.clone();move |_|{editing.set(None);creating.set(true);}})}>
+                                    onclick={Callback::from({let creating=creating.clone();move |_|creating.set(true)})}>
                                     {"创建 Flashcard"}
                                 </button>
-                            } else if value.existing.is_empty() {
-                                <p class="text-xs opacity-60" role="status" data-testid="collection-review-flashcard-unavailable">
-                                    {value.reason.as_deref().unwrap_or("此题暂不支持创建闪卡")}
-                                </p>
+                            } else if !value.existing.is_empty() {
+                                <button type="button" class="btn btn-outline btn-sm"
+                                    data-testid="collection-review-manage-flashcard"
+                                    onclick={Callback::from({let creating=creating.clone();move |_|creating.set(true)})}>
+                                    {"修改或删除 Flashcard"}
+                                </button>
                             } else {
                                 <p class="text-xs opacity-60" role="status" data-testid="collection-review-flashcard-unavailable">
-                                    {"这题已在可用的存放位置创建过闪卡。"}
+                                    {value.reason.as_deref().unwrap_or("此题暂不支持创建闪卡")}
                                 </p>
                             }
                         } else if let Some(message) = &*preview_error {

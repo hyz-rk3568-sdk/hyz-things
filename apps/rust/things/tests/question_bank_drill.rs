@@ -229,6 +229,21 @@ fn lecture_collection_parses_with_all_522_questions_and_images() {
 }
 
 #[test]
+fn solution_lecture_is_separate_from_travel_lecture_without_renumbering() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../question_bank/collections/xiaop-2026-shuliang");
+    let travel = std::fs::read_to_string(root.join("06-行程问题（二）.md")).unwrap();
+    let solution = std::fs::read_to_string(root.join("07-溶液问题.md")).unwrap();
+    assert!(travel.contains("## Question 161"));
+    assert!(!travel.contains("## Question 162"));
+    assert!(solution.contains("## Question 162"));
+    assert!(solution.contains("## Question 188"));
+    assert!(!solution.contains("## Question 161"));
+    assert!(solution.contains("category: \"蒸发加水问题\""));
+    assert!(solution.contains("01a1af25-cffb-79e3-b257-1c8029e1b514") == false);
+}
+
+#[test]
 fn prepared_sync_stores_canonical_asset_tokens() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../question_bank/collections/xiaop-2026-shuliang");
