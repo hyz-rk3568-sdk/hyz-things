@@ -89,22 +89,27 @@ async function mockExistingPreview(page: Page, cards: unknown[] = [existingCard]
   }));
 }
 
-test('existing flashcard is listed with a preview and blocks creating another', async ({ page }) => {
+test('existing Flashcard preview and editing live in the shared management page', async ({ page }) => {
   await install(page);
   await mockExistingPreview(page);
   const review = await openReview(page);
-  await expect(review.getByTestId('favorite-existing-card')).toHaveCount(1);
-  await expect(review.getByTestId('favorite-existing-card-deck')).toHaveText(existingCard.deck_path);
-  await expect(review.getByTestId('favorite-existing-card-path')).toHaveText(existingCard.source_file);
-  await review.getByTestId('favorite-existing-card-preview').click();
-  const previewContent = review.getByTestId('favorite-existing-card-preview-content');
+  await expect(review.getByTestId('collection-review-manage-flashcard')).toBeVisible();
+  await expect(review.getByTestId('favorite-existing-card')).toHaveCount(0);
+  await review.getByTestId('collection-review-manage-flashcard').click();
+  await expect(page.getByTestId('favorite-existing-card')).toHaveCount(1);
+  await expect(page.getByTestId('favorite-existing-card-deck')).toHaveText(existingCard.deck_path);
+  await expect(page.getByTestId('favorite-existing-card-path')).toHaveText(existingCard.source_file);
+  await page.getByTestId('favorite-existing-card-preview').click();
+  const previewContent = page.getByTestId('favorite-existing-card-preview-content');
   await expect(previewContent).toBeVisible();
   await expect(previewContent).toContainText('完整材料');
   await expect(previewContent).toContainText('原来的背面');
-  await review.getByTestId('favorite-existing-card-preview').click();
+  await page.getByTestId('favorite-existing-card-preview').click();
   await expect(previewContent).toHaveCount(0);
+  await page.getByRole('button', { name: '返回复盘' }).click();
+  await expect(review.getByTestId('collection-review-manage-flashcard')).toBeVisible();
   await expect(review.getByTestId('collection-review-create-flashcard')).toHaveCount(0);
-  await expect(review.getByTestId('collection-review-flashcard-unavailable')).toContainText('这题已在可用的存放位置创建过闪卡。');
+  await expect(review.getByTestId('collection-review-flashcard-unavailable')).toHaveCount(0);
 });
 
 test('editing an existing flashcard saves and syncs in one request', async ({ page }) => {
@@ -126,14 +131,15 @@ test('editing an existing flashcard saves and syncs in one request', async ({ pa
     } });
   });
   const review = await openReview(page);
-  await review.getByTestId('favorite-existing-card-edit').click();
+  await review.getByTestId('collection-review-manage-flashcard').click();
+  await page.getByTestId('favorite-existing-card-edit').click();
   const editor = page.getByTestId('favorite-flashcard-editor');
   await expect(editor).toBeVisible();
   await expect(editor.getByTestId('favorite-flashcard-editor-back')).toHaveValue('原来的背面');
   await editor.getByTestId('favorite-flashcard-editor-back').fill('更新后的背面');
   await editor.getByTestId('favorite-flashcard-save').click();
   await expect(editor).toHaveCount(0);
-  await expect(review.getByTestId('favorite-existing-card')).toHaveCount(1);
+  await expect(review.getByTestId('collection-review-manage-flashcard')).toBeVisible();
   expect(method).toBe('PUT');
   expect(body).toEqual({ back: '更新后的背面' });
   expect(csrf).toBeTruthy();
@@ -158,7 +164,8 @@ test('deleting an existing flashcard requires confirmation and syncs in one requ
     } });
   });
   const review = await openReview(page);
-  await review.getByTestId('favorite-existing-card-edit').click();
+  await review.getByTestId('collection-review-manage-flashcard').click();
+  await page.getByTestId('favorite-existing-card-edit').click();
   const editor = page.getByTestId('favorite-flashcard-editor');
   await editor.getByTestId('favorite-flashcard-delete').click();
   await expect(editor.getByTestId('favorite-flashcard-confirm-delete')).toBeVisible();
@@ -188,7 +195,8 @@ test('pending edit retries the same Back without changing the source again', asy
     } });
   });
   const review = await openReview(page);
-  await review.getByTestId('favorite-existing-card-edit').click();
+  await review.getByTestId('collection-review-manage-flashcard').click();
+  await page.getByTestId('favorite-existing-card-edit').click();
   const editor = page.getByTestId('favorite-flashcard-editor');
   await editor.getByTestId('favorite-flashcard-editor-back').fill('待同步的背面');
   await editor.getByTestId('favorite-flashcard-save').click();
@@ -283,8 +291,11 @@ for (const width of [1180, 390]) {
     expect(body).toEqual({ creation_mode: 'user_organized', target_deck: '用户整理/数量关系/数学运算/错题', back: '先列方程，再代入。', source_revision: 'source-v1', type_confirmed: true });
     expect(csrf).toBeTruthy();
     await expect(review.getByTestId('collection-review-split')).toBeVisible();
-    await expect(review.getByTestId('favorite-existing-card')).toHaveCount(1);
-    await expect(review.getByTestId('favorite-existing-card-path')).toHaveText('用户整理/数量关系/数学运算/错题/cards.md');
+    await expect(review.getByTestId('collection-review-manage-flashcard')).toBeVisible();
+    await expect(review.getByTestId('favorite-existing-card')).toHaveCount(0);
+    await review.getByTestId('collection-review-manage-flashcard').click();
+    await expect(page.getByTestId('favorite-existing-card-path')).toHaveText('用户整理/数量关系/数学运算/错题/cards.md');
+    await page.getByRole('button', { name:'返回复盘' }).click();
     await expect(review.getByTestId('collection-review-create-flashcard')).toHaveCount(0);
     await review.getByTestId('collection-review-back').click();
     await expect(page.getByTestId('question-bank-collection-item')).toHaveCount(1);
@@ -472,7 +483,7 @@ test('favorite flashcard sync recovery retries the identical request and blocks 
   await expect(modal).toHaveCount(0);
   expect(requests).toHaveLength(2);
   expect(requests[1]).toEqual(requests[0]);
-  await expect(page.getByTestId('favorite-existing-card')).toHaveCount(1);
+  await expect(page.getByTestId('collection-review-manage-flashcard')).toBeVisible();
   await expect(page.getByTestId('collection-review-create-flashcard')).toHaveCount(0);
 });
 
@@ -500,7 +511,7 @@ for (const width of [1180, 390]) {
     await submit.click();
     await expect(modal).toHaveCount(0);
     expect(body).toEqual({ creation_mode: 'user_organized', target_deck: '用户整理/数量关系/数学运算/错题', back: '', source_revision: 'source-v1', type_confirmed: true });
-    await expect(page.getByTestId('favorite-existing-card')).toHaveCount(1);
+    await expect(page.getByTestId('collection-review-manage-flashcard')).toBeVisible();
     await expect(page.getByTestId('collection-review-create-flashcard')).toHaveCount(0);
     await expectNoHorizontalOverflow(page);
   });

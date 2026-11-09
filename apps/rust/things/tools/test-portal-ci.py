@@ -87,7 +87,17 @@ if [[ "${0##*/}" == make || "${1:-}" == fmt ]]; then exit 1; fi
         steps = named_blocks(self.jobs["e2e"], r"^      - name: ([^\n]+)\n")
         self.assertIn("Install Playwright WebKit", steps)
         self.assertIn("npx playwright install --with-deps webkit", steps["Install Playwright WebKit"])
-        self.assertIn("run: npm run test:e2e", steps["Run Playwright E2E"])
+        e2e = steps["Run Playwright E2E"]
+        # The PR command is selected by changed file scope, while pushes to
+        # main still run the full browser suite on the default WebKit browser.
+        self.assertIn("run: |", e2e)
+        self.assertIn('if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]; then', e2e)
+        self.assertIn("npm run test:e2e", e2e)
+        self.assertIn("git -c core.quotepath=false diff --name-only", e2e)
+        for spec in ("question-bank.spec.ts", "favorite-flashcard.spec.ts",
+                     "question-bank-drill.spec.ts", "flashcards.spec.ts"):
+            self.assertIn(f"e2e/{spec}", e2e)
+        self.assertNotIn("HYZ_THINGS_E2E_BROWSER=", e2e)
 
     def test_verified_cache_hit_skips_dependency_target_and_bundle_build(self):
         steps = named_blocks(self.jobs["frontend"], r"^      - name: ([^\n]+)\n")

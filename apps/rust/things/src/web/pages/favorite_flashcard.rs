@@ -371,6 +371,57 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
 }
 
 #[derive(Clone, Properties, PartialEq)]
+pub(crate) struct FavoriteFlashcardWorkspaceProps {
+    pub(crate) question_id: String,
+    pub(crate) preview: FavoritePreview,
+    pub(crate) csrf: String,
+    pub(crate) on_close: Callback<()>,
+    pub(crate) on_changed: Callback<()>,
+}
+
+#[function_component(FavoriteFlashcardWorkspace)]
+pub(crate) fn favorite_flashcard_workspace(props: &FavoriteFlashcardWorkspaceProps) -> Html {
+    let editing = use_state(|| None::<FavoriteExistingCard>);
+    if let Some(existing) = &*editing {
+        html! {
+            <FavoriteFlashcardEditor key={existing.card_id.clone()}
+                question_id={props.question_id.clone()} preview={props.preview.clone()}
+                existing={existing.clone()} csrf={props.csrf.clone()}
+                on_changed={props.on_changed.clone()} on_close={props.on_close.clone()}/>
+        }
+    } else if !props.preview.existing.is_empty() {
+        let on_close = props.on_close.clone();
+        html! {
+            <div class="h-full w-full overflow-y-auto bg-base-100" data-testid="favorite-flashcard-workspace">
+                <section class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-4 pb-5 sm:px-6"
+                    role="region" aria-label="管理 Flashcard">
+                    <header class="flex shrink-0 items-center gap-3 border-b border-base-content/10 py-3">
+                        <button type="button" class="btn btn-ghost btn-sm -ml-2" aria-label="返回复盘"
+                            onclick={Callback::from(move |_| on_close.emit(()))}>
+                            <span aria-hidden="true">{"←"}</span>{"返回复盘"}
+                        </button>
+                        <h2 class="text-base font-semibold">{"修改或删除 Flashcard"}</h2>
+                    </header>
+                    <div class="mx-auto my-5 w-full max-w-xl">
+                        <FavoriteExistingCards cards={props.preview.existing.clone()}
+                            on_edit={Callback::from({
+                                let editing = editing.clone();
+                                move |card| editing.set(Some(card))
+                            })}/>
+                    </div>
+                </section>
+            </div>
+        }
+    } else {
+        html! {
+            <FavoriteFlashcardPanel question_id={props.question_id.clone()}
+                preview={props.preview.clone()} csrf={props.csrf.clone()}
+                on_changed={props.on_changed.clone()} on_close={props.on_close.clone()}/>
+        }
+    }
+}
+
+#[derive(Clone, Properties, PartialEq)]
 pub(crate) struct FavoriteExistingCardsProps {
     pub(crate) cards: Vec<FavoriteExistingCard>,
     pub(crate) on_edit: Callback<FavoriteExistingCard>,

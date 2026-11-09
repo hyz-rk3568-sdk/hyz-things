@@ -1,8 +1,5 @@
 //! Browse original papers and categories; share one workspace for practice and review.
-use super::favorite_flashcard::{
-    favorite_can_create, FavoriteExistingCard, FavoriteExistingCards, FavoriteFlashcardEditor,
-    FavoriteFlashcardPanel, FavoritePreview,
-};
+use super::favorite_flashcard::{favorite_can_create, FavoriteFlashcardWorkspace, FavoritePreview};
 use super::material_scroll::{scroll_edges, MaterialScrollButton, ScrollEdges};
 use super::*;
 use hyz_things::domain::question_bank::{
@@ -1158,7 +1155,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let flashcard_error = use_state(|| None::<String>);
     let flashcard_retry = use_state(|| 0u32);
     let flashcard_open = use_state(|| false);
-    let flashcard_editing = use_state(|| None::<FavoriteExistingCard>);
     let flashcard_changed = Callback::from({
         let flashcard_retry = flashcard_retry.clone();
         move |_| flashcard_retry.set((*flashcard_retry).wrapping_add(1))
@@ -1495,7 +1491,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let flashcard_preview = flashcard_preview.clone();
         let flashcard_error = flashcard_error.clone();
         let flashcard_open = flashcard_open.clone();
-        let flashcard_editing = flashcard_editing.clone();
         use_effect_with(
             (
                 current_favorite_source.clone(),
@@ -1508,7 +1503,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 flashcard_preview.set(None);
                 flashcard_error.set(None);
                 flashcard_open.set(false);
-                flashcard_editing.set(None);
                 if *is_review {
                     if let Some(id) = question_id.clone() {
                         spawn_local(async move {
@@ -2179,24 +2173,21 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             </div>
                             if !item.content_changed {
                                 if let Some(preview) = &card_preview {
-                                    if !preview.existing.is_empty() {
-                                        <FavoriteExistingCards cards={preview.existing.clone()} on_edit={Callback::from({
-                                            let flashcard_editing=flashcard_editing.clone();let flashcard_open=flashcard_open.clone();move |card|{flashcard_editing.set(Some(card));flashcard_open.set(true);}
-                                        })}/>
-                                    }
                                     if favorite_can_create(preview) {
                                         <button type="button" class="btn btn-primary btn-sm"
                                             data-testid="question-bank-practice-create-flashcard"
-                                            onclick={Callback::from({let flashcard_open=flashcard_open.clone();let flashcard_editing=flashcard_editing.clone();move |_|{flashcard_editing.set(None);flashcard_open.set(true);}})}>
+                                            onclick={Callback::from({let flashcard_open=flashcard_open.clone();move |_|flashcard_open.set(true)})}>
                                             {"创建 Flashcard"}
                                         </button>
-                                    } else if preview.existing.is_empty() {
+                                    } else if !preview.existing.is_empty() {
+                                        <button type="button" class="btn btn-outline btn-sm"
+                                            data-testid="question-bank-practice-manage-flashcard"
+                                            onclick={Callback::from({let flashcard_open=flashcard_open.clone();move |_|flashcard_open.set(true)})}>
+                                            {"修改或删除 Flashcard"}
+                                        </button>
+                                    } else {
                                         <p class="text-xs opacity-60" role="status">
                                             {preview.reason.as_deref().unwrap_or("此题暂不支持创建闪卡")}
-                                        </p>
-                                    } else {
-                                        <p class="text-xs opacity-60" role="status" data-testid="question-bank-practice-flashcard-exists">
-                                            {"这题已在可用的存放位置创建过闪卡。"}
                                         </p>
                                     }
                                 } else if let Some(message) = &*flashcard_error {
@@ -2373,23 +2364,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             if *flashcard_open {
                                 if let Some(preview) = &card_preview {
                                     <div class="h-full" data-testid="question-bank-practice-flashcard-dialog">
-                                        if let Some(existing) = &*flashcard_editing {
-                                            <FavoriteFlashcardEditor key={existing.card_id.clone()}
-                                                question_id={item.item.question_id.clone()}
-                                                preview={preview.clone()} existing={existing.clone()}
-                                                csrf={props.csrf.clone()}
-                                                on_changed={flashcard_changed.clone()}
-                                                on_close={Callback::from({
-                                                    let flashcard_open=flashcard_open.clone();let flashcard_editing=flashcard_editing.clone();
-                                                    move |_|{flashcard_open.set(false);flashcard_editing.set(None);}
-                                                })}/>
-                                        } else {
-                                            <FavoriteFlashcardPanel key={item.item.question_id.clone()}
-                                                question_id={item.item.question_id.clone()}
-                                                preview={preview.clone()} csrf={props.csrf.clone()}
-                                                on_changed={flashcard_changed.clone()}
-                                                on_close={Callback::from({let flashcard_open=flashcard_open.clone();move |_|flashcard_open.set(false)})}/>
-                                        }
+                                        <FavoriteFlashcardWorkspace key={item.item.question_id.clone()}
+                                            question_id={item.item.question_id.clone()}
+                                            preview={preview.clone()} csrf={props.csrf.clone()}
+                                            on_changed={flashcard_changed.clone()}
+                                            on_close={Callback::from({let flashcard_open=flashcard_open.clone();move |_|flashcard_open.set(false)})}/>
                                     </div>
                                 }
                             } else if paused {

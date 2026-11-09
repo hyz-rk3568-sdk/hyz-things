@@ -31,6 +31,31 @@ async function openFixtureReview(page:Page) {
   await page.getByRole('button',{name:'确认交卷'}).click();
 }
 
+test('answer sheet keeps its scroll position when reopened',async({page})=>{
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await chooseFixturePaper(page);
+  await page.getByTestId('question-bank-practice-start').click();
+  // Constructable stylesheets work under the portal's strict CSP and persist
+  // when the conditional answer-sheet element is unmounted/recreated.
+  await page.evaluate(() => {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync('[data-testid="training-answer-sheet"] { max-height: 100px !important; }');
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+  });
+  await openSheet(page);
+  const sheet=page.getByTestId('training-answer-sheet');
+  await expect(sheet).toHaveCSS('max-height', '100px');
+  await expect.poll(()=>sheet.evaluate(node=>node.scrollHeight-node.clientHeight)).toBeGreaterThan(75);
+  await sheet.evaluate(node=>{node.scrollTop=60});
+  await expect.poll(()=>sheet.evaluate(node=>node.scrollTop)).toBe(60);
+  await page.getByTestId('training-answer-sheet-toggle').click();
+  await expect(sheet).toHaveCount(0);
+  await page.getByTestId('training-answer-sheet-toggle').click();
+  await expect.poll(()=>sheet.evaluate(node=>node.scrollTop)).toBe(60);
+});
+
 test('paper practice hides numbering and scroll tools until they are needed',async({page,request})=>{
   await loginAsAdmin(page);
   await page.goto('/#/study/training');
@@ -949,10 +974,13 @@ test('any original-paper review can create a category flashcard without first fa
   await card.getByRole('button',{name:'创建并同步'}).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByTestId('question-bank-practice-create-flashcard')).toHaveCount(0);
-  await expect(page.getByTestId('favorite-existing-card')).toHaveCount(1);
+  await expect(page.getByTestId('question-bank-practice-manage-flashcard')).toBeVisible();
+  await expect(page.getByTestId('favorite-existing-card')).toHaveCount(0);
+  await page.getByTestId('question-bank-practice-manage-flashcard').click();
   await expect(page.getByTestId('favorite-existing-card-path')).toHaveText('真题练习/资料分析/比重/错题/cards.md');
   await page.getByTestId('favorite-existing-card-preview').click();
   await expect(page.getByTestId('favorite-existing-card-preview-content')).toBeVisible();
+  await page.getByRole('button',{name:'返回复盘'}).click();
   await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第');
 });
 
