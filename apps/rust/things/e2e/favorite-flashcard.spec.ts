@@ -550,6 +550,8 @@ test('question AI image picker uploads validated attachments and sends IDs', asy
   });
   const review = await openReview(page);
   await review.getByTestId('question-bank-ai-tab').click();
+  const composer = review.getByTestId('question-bank-ai-requirements-compose');
+  await expect(composer.getByTestId('question-bank-ai-start-images')).toBeVisible();
   const picker = review.getByTestId('question-bank-ai-start-images');
   const input = picker.locator('input[type=file]');
   await input.setInputFiles({ name: 'note.png', mimeType: 'image/png', buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]) });

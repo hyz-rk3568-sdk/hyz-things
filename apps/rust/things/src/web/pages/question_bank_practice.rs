@@ -114,14 +114,27 @@ fn ai_image_picker(props: &AiImagePickerProps) -> Html {
     };
     html! {
         <div class="space-y-2" data-testid={props.testid}>
-            <div class="flex flex-wrap items-center gap-2">
-                <input type="file" class="file-input file-input-bordered file-input-sm"
-                    accept="image/png,image/jpeg" multiple=true
-                    disabled={props.disabled || *props.uploading}
-                    onchange={onchange}/>
-                <span class="text-xs text-base-content/60">
-                    {if *props.uploading {"正在上传…".into()} else {format!("最多 3 张 JPG/PNG，每张 ≤ 8 MiB（已选 {} 张）", props.attachments.len())}}
-                </span>
+            <div class="flex flex-wrap items-center gap-1">
+                <label class="btn btn-ghost btn-sm btn-circle text-base-content/60 hover:text-base-content"
+                    title="添加图片（JPG/PNG，最多 3 张，每张 ≤ 8 MiB）" aria-label="添加图片">
+                    <input type="file" class="hidden"
+                        accept="image/png,image/jpeg" multiple=true
+                        disabled={props.disabled || *props.uploading}
+                        onchange={onchange}/>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" aria-hidden="true">
+                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                    </svg>
+                </label>
+                if *props.uploading {
+                    <span class="loading loading-spinner loading-xs text-base-content/60"
+                        aria-label="正在上传图片"></span>
+                } else if !props.attachments.is_empty() {
+                    <span class="text-xs text-base-content/60">
+                        {format!("已选 {}/3 张", props.attachments.len())}
+                    </span>
+                }
             </div>
             if !props.attachments.is_empty() {
                 <div class="flex flex-wrap gap-2">
@@ -790,6 +803,7 @@ struct AiComposer<'a> {
     placeholder: &'a str,
     button_label: &'a str,
     disabled: bool,
+    attachments: Html,
     oninput: Callback<InputEvent>,
     onkeydown: Callback<KeyboardEvent>,
     onclick: Callback<MouseEvent>,
@@ -800,8 +814,9 @@ fn ai_composer(props: AiComposer<'_>) -> Html {
     html! {
         <div class="relative rounded-2xl border border-base-content/15 bg-base-100 transition focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15"
             data-testid={props.compose_testid.to_owned()}>
+            <div class="px-2 pt-2">{props.attachments.clone()}</div>
             <textarea id={props.id.to_owned()}
-                class="block min-h-24 w-full resize-none border-0 bg-transparent px-3 pb-12 pt-3 text-sm leading-6 focus:outline-none focus:ring-0"
+                class="block min-h-24 w-full resize-none border-0 bg-transparent px-3 pb-12 pt-1 text-sm leading-6 focus:outline-none focus:ring-0"
                 data-testid={props.input_testid.to_owned()} maxlength="2000"
                 value={props.value.to_owned()}
                 placeholder={props.placeholder.to_owned()}
@@ -1184,10 +1199,6 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             if can_start || can_restart {
                 <div class="space-y-1">
                     <label class="text-sm font-semibold" for="question-ai-instruction">{"可选要求"}</label>
-                    <AiImagePicker endpoint={format!("{endpoint}/attachments")}
-                        csrf={props.csrf.clone()} attachments={start_images.clone()}
-                        uploading={uploading_start.clone()} disabled={*submitting}
-                        testid="question-bank-ai-start-images"/>
                     {ai_composer(AiComposer {
                         id: "question-ai-instruction",
                         compose_testid: "question-bank-ai-requirements-compose",
@@ -1197,6 +1208,12 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         placeholder: "例如：用线段图讲清数量关系；只讲速算，不要列方程。（Ctrl/⌘ + Enter 开始）",
                         button_label: if can_start { "开始 AI 解析" } else { "重新分析" },
                         disabled: *submitting || *uploading_start,
+                        attachments: html! {
+                            <AiImagePicker endpoint={format!("{endpoint}/attachments")}
+                                csrf={props.csrf.clone()} attachments={start_images.clone()}
+                                uploading={uploading_start.clone()} disabled={*submitting}
+                                testid="question-bank-ai-start-images"/>
+                        },
                         oninput: Callback::from({
                             let start_instruction=start_instruction.clone();
                             move |event: InputEvent| {
@@ -1223,10 +1240,6 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             if has_answer && !running {
                 <div class="space-y-2">
                     <label class="text-sm font-semibold" for="question-ai-follow-up">{"继续追问"}</label>
-                    <AiImagePicker endpoint={format!("{endpoint}/attachments")}
-                        csrf={props.csrf.clone()} attachments={follow_images.clone()}
-                        uploading={uploading_follow.clone()} disabled={*submitting}
-                        testid="question-bank-ai-follow-up-images"/>
                     {ai_composer(AiComposer {
                         id: "question-ai-follow-up",
                         compose_testid: "question-bank-ai-compose",
@@ -1236,6 +1249,12 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         placeholder: "例如：为什么不能选 B？有没有更快的解法？（Ctrl/⌘ + Enter 发送）",
                         button_label: "发送追问",
                         disabled: *submitting || *uploading_follow || follow_up.trim().is_empty(),
+                        attachments: html! {
+                            <AiImagePicker endpoint={format!("{endpoint}/attachments")}
+                                csrf={props.csrf.clone()} attachments={follow_images.clone()}
+                                uploading={uploading_follow.clone()} disabled={*submitting}
+                                testid="question-bank-ai-follow-up-images"/>
+                        },
                         oninput: Callback::from({
                             let follow_up=follow_up.clone();
                             move |event: InputEvent| {
