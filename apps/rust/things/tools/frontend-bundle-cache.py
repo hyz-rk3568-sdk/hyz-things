@@ -72,7 +72,8 @@ def input_paths() -> list[Path]:
     files.update(source_files(PACKAGE / "src", {PACKAGE / "src" / "e2e"}))
     # Tailwind scans browser test sources too, so changes to those classes
     # must invalidate cached CSS even when Rust and frontend files are stable.
-    files.update(source_files(PACKAGE / "e2e"))
+    if (WORKSPACE / PACKAGE / "e2e").is_dir():
+        files.update(source_files(PACKAGE / "e2e"))
     files.update(source_files(PACKAGE / "frontend"))
     files.update(source_files(Path("apps/rust/contract/src")))
     for directory in (Path("."), Path("apps"), Path("apps/rust"), PACKAGE):
