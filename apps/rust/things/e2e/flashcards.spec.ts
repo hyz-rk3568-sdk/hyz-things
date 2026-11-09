@@ -33,6 +33,57 @@ test("filters the card library by Deck, Tag, and their combination", async ({ pa
   await expect(page).toHaveURL(/#\/study\/cards\?deck=.*tag=/);
 });
 
+test("study card Markdown stays inside the card and scrolls wide blocks locally", async ({ page }) => {
+  const hash = "b".repeat(64);
+  const inline = "A".repeat(180);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/v1/study/cards**", route => route.fulfill({ json: { cards: [{
+    id: "019a31b7-8c42-7c16-a6d1-0c1f0f34c8aa",
+    source_file: "e2e/cards.md",
+    source_order: 1,
+    deck_path: "判断推理/逻辑判断",
+    front_markdown: [
+      `行内：\\(\\text{${inline}}\\)`,
+      "```",
+      "B".repeat(220),
+      "```",
+      `![图](assets/${hash}.png)`,
+    ].join("\n\n"),
+    back_markdown: "把原因和结果的方向混淆。",
+    tags: ["高频"],
+    active: true,
+    due_at_ms: null,
+    last_reviewed_at_ms: null,
+    state: "new",
+    review_count: 0,
+    lapse_count: 0,
+    is_new: true,
+  }] } }));
+  await page.route("**/api/v1/study/assets/**", route => route.fulfill({
+    contentType: "image/svg+xml",
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900"><rect width="1200" height="900" fill="#eee"/></svg>',
+  }));
+  await page.goto("/#/study/cards");
+  const card = page.getByTestId("study-card-item").first();
+  await expect(card).toBeVisible();
+  const front = card.getByLabel("卡片正面");
+  const inlineMath = front.locator(".math-inline");
+  const code = front.locator("pre");
+  const media = front.locator(".markdown-media");
+  await expect(inlineMath.locator(".katex")).toBeVisible();
+  await expect.poll(() => media.locator("img").evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+  await expect.poll(() => front.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1);
+  for (const target of [inlineMath, code, media]) {
+    await expect.poll(() => target.evaluate(node => node.scrollWidth - node.clientWidth)).toBeGreaterThan(10);
+    await target.evaluate(node => { node.scrollLeft = node.scrollWidth; });
+    await expect.poll(() => target.evaluate(node => node.scrollLeft)).toBeGreaterThan(10);
+  }
+  await expect.poll(() => media.evaluate(node => node.scrollHeight - node.clientHeight)).toBeGreaterThan(10);
+  await media.evaluate(node => { node.scrollTop = node.scrollHeight; });
+  await expect.poll(() => media.evaluate(node => node.scrollTop)).toBeGreaterThan(10);
+});
+
 test("legacy review route redirects into specialized training", async ({ page }) => {
   await page.goto("/#/study/review?deck=%E5%88%A4%E6%96%AD%E6%8E%A8%E7%90%86");
   await expect(page).toHaveURL(/#\/study\/training/);

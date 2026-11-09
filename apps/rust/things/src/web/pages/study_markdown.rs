@@ -1,5 +1,7 @@
 use super::*;
-use pulldown_cmark::{html::push_html, CowStr, Event as MarkdownEvent, Options, Parser, Tag};
+use pulldown_cmark::{
+    html::push_html, CowStr, Event as MarkdownEvent, Options, Parser, Tag, TagEnd,
+};
 
 pub(crate) fn hydrate_math() {
     let Some(window) = web_sys::window() else {
@@ -171,24 +173,33 @@ fn markdown_with_assets(markdown: &str, mut resolve: impl FnMut(&str) -> Option<
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_MATH);
-    let events = Parser::new_ext(&markdown, options).map(|event| match event {
+    let events = Parser::new_ext(&markdown, options).flat_map(|event| match event {
         MarkdownEvent::Start(Tag::Image {
             link_type,
             dest_url,
             title,
             id,
-        }) => MarkdownEvent::Start(Tag::Image {
-            link_type,
-            dest_url: CowStr::Boxed(
-                resolve(dest_url.as_ref())
-                    .unwrap_or_default()
-                    .into_boxed_str(),
-            ),
-            title,
-            id,
-        }),
-        MarkdownEvent::Html(raw) | MarkdownEvent::InlineHtml(raw) => MarkdownEvent::Text(raw),
-        event => event,
+        }) => vec![
+            MarkdownEvent::InlineHtml(CowStr::Borrowed("<span class=\"markdown-media\">")),
+            MarkdownEvent::Start(Tag::Image {
+                link_type,
+                dest_url: CowStr::Boxed(
+                    resolve(dest_url.as_ref())
+                        .unwrap_or_default()
+                        .into_boxed_str(),
+                ),
+                title,
+                id,
+            }),
+        ],
+        MarkdownEvent::End(TagEnd::Image) => vec![
+            MarkdownEvent::End(TagEnd::Image),
+            MarkdownEvent::InlineHtml(CowStr::Borrowed("</span>")),
+        ],
+        MarkdownEvent::Html(raw) | MarkdownEvent::InlineHtml(raw) => {
+            vec![MarkdownEvent::Text(raw)]
+        }
+        event => vec![event],
     });
     let mut html = String::new();
     push_html(&mut html, events);
@@ -240,6 +251,8 @@ mod question_bank_markdown_tests {
         let hash = "a".repeat(64);
         let html=question_bank_markdown_html(&format!("![题图](hyz-bank-asset:{hash}.png)\n\n<script>alert(1)</script>\n\n![外链](https://example.com/x.png)"));
         assert!(html.contains(&format!("/api/v1/question-bank/assets/{hash}.png")));
+        assert!(html.contains("<span class=\"markdown-media\">"));
+        assert_eq!(html.matches("class=\"markdown-media\"").count(), 2);
         assert!(!html.contains("<script>"));
         assert!(!html.contains("src=\"https://"));
         assert!(

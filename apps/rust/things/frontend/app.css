@@ -143,8 +143,18 @@ nav.tabs > button.tab:not(.tab-active) {
     @apply mt-1 pt-3;
   }
 
+  .study-markdown {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
   .study-markdown :where(p, ul, ol, blockquote, pre, table) {
     @apply my-3 first:mt-0 last:mb-0;
+  }
+
+  .study-markdown :where(p, li, blockquote, th, td, h1, h2, h3, h4, h5, h6) {
+    overflow-wrap: anywhere;
   }
 
   .study-markdown :where(ul, ol) {
@@ -164,7 +174,7 @@ nav.tabs > button.tab:not(.tab-active) {
   }
 
   .study-markdown :where(pre) {
-    @apply overflow-x-auto rounded-box bg-base-300 p-3 text-base;
+    @apply max-h-[60vh] overflow-auto rounded-box bg-base-300 p-3 text-base;
   }
 
   .study-markdown :where(code) {
@@ -213,8 +223,36 @@ nav.tabs > button.tab:not(.tab-active) {
     @apply font-serif text-secondary;
   }
 
+  .study-markdown .math-inline {
+    display: inline-block;
+    max-width: 100%;
+    overflow-x: auto;
+    vertical-align: middle;
+  }
+
   .study-markdown .math-display {
     @apply block overflow-x-auto whitespace-pre-wrap py-2 text-center;
+    max-width: 100%;
+  }
+
+  .study-markdown .math-display > .katex-display {
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .study-markdown .markdown-media {
+    display: inline-block;
+    max-width: 100%;
+    max-height: 60vh;
+    overflow: auto;
+    vertical-align: middle;
+    overscroll-behavior: contain;
+  }
+
+  .study-markdown .markdown-media img {
+    max-width: none;
+    max-height: none;
+    margin: 0;
   }
 }
 
@@ -250,22 +288,6 @@ nav.tabs > button.tab:not(.tab-active) {
     min-height: 0;
     overscroll-behavior: none;
     padding-bottom: max(.5rem, env(safe-area-inset-bottom));
-  }
-  .training-swipe-surface .study-markdown {
-    overflow-wrap: anywhere;
-  }
-  .training-swipe-surface .study-markdown .math-inline {
-    display: inline-block;
-    max-width: 100%;
-    overflow-x: auto;
-    vertical-align: middle;
-  }
-  .training-swipe-surface .study-markdown .math-display {
-    max-width: 100%;
-  }
-  .training-swipe-surface .study-markdown .math-display > .katex-display {
-    width: max-content;
-    min-width: 100%;
   }
   .training-swipe-surface {
     touch-action: pan-y;

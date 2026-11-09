@@ -606,6 +606,92 @@ for (const action of ['stop', 'delete'] as const) {
   });
 }
 
+test('create and edit share one form with a live Back preview', async ({ page }) => {
+  await install(page);
+  const card = (await openCreate(page)).getByTestId('favorite-flashcard-card');
+  const preview = card.getByTestId('favorite-flashcard-back-preview');
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText('背面预览');
+  await card.getByLabel('背面').fill('设 $x^2$ 为 **最终答案**');
+  await expect(preview).toContainText('最终答案');
+  await expect(preview.locator('.katex').first()).toBeVisible();
+});
+
+test('editing an existing card uses the same form and previews Back while typing', async ({ page }) => {
+  await install(page);
+  await mockExistingPreview(page);
+  const review = await openReview(page);
+  await review.getByTestId('collection-review-manage-flashcard').click();
+  await page.getByTestId('favorite-existing-card-edit').click();
+  const editor = page.getByTestId('favorite-flashcard-editor');
+  const preview = editor.getByTestId('favorite-flashcard-back-preview');
+  await expect(preview).toContainText('原来的背面');
+  await editor.getByTestId('favorite-flashcard-editor-back').fill('改为 **新的背面**');
+  await expect(preview).toContainText('新的背面');
+  await expect(preview.locator('strong').first()).toHaveText('新的背面');
+});
+
+test('creating a flashcard can also favorite the question explicitly', async ({ page }) => {
+  await install(page);
+  let favoriteBody: unknown = null;
+  await page.route(`**${root}/practice/favorites/supported`, async route => {
+    favoriteBody = route.request().postDataJSON();
+    await route.fulfill({ json: { question_id: 'supported', favorite: true } });
+  });
+  await page.route(`**${root}/practice/questions/supported/flashcard`, route => route.fulfill({ json: {
+    status: 'created_synced',
+    target_deck: '真题练习/数量关系/数学运算/错题',
+    source_file: '真题练习/数量关系/数学运算/错题/cards.md',
+    card_id: '019a31b7-8c42-7c16-a6d1-0c1f0f34c822',
+    retryable: false,
+  } }));
+  const card = (await openCreate(page)).getByTestId('favorite-flashcard-card');
+  const alsoFavorite = card.getByLabel('同时收藏本题');
+  await expect(alsoFavorite).not.toBeChecked();
+  await card.getByLabel('确认写入所选目录').check();
+  await alsoFavorite.check();
+  await card.getByRole('button', { name: '创建并同步', exact: true }).click();
+  await expect.poll(() => favoriteBody).toEqual({ favorite: true });
+});
+
+test('wide Markdown stays inside the favorite form and scrolls locally', async ({ page }) => {
+  const longInline = 'A'.repeat(180);
+  const hash = 'a'.repeat(64);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await install(page);
+  await page.route(`**${root}/practice/questions/supported/flashcard-preview`, route => route.fulfill({
+    json: { ...preview(), front: [
+      `行内：\\(\\text{${longInline}}\\)`,
+      '```',
+      'B'.repeat(220),
+      '```',
+      `![图](hyz-bank-asset:${hash}.png)`,
+    ].join('\n\n') },
+  }));
+  await page.route('**/api/v1/question-bank/assets/**', route => route.fulfill({
+    contentType: 'image/svg+xml',
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900"><rect width="1200" height="900" fill="#eee"/></svg>',
+  }));
+  const card = (await openCreate(page)).getByTestId('favorite-flashcard-card');
+  const front = card.getByTestId('favorite-flashcard-front-preview');
+  const inlineMath = front.locator('.math-inline');
+  const code = front.locator('pre');
+  const media = front.locator('.markdown-media');
+  await expect(inlineMath.locator('.katex')).toBeVisible();
+  await expect(code).toContainText('B'.repeat(220));
+  await expect.poll(() => media.locator('img').evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+  await expect.poll(() => front.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1);
+  for (const target of [inlineMath, code, media]) {
+    await expect.poll(() => target.evaluate(node => node.scrollWidth - node.clientWidth)).toBeGreaterThan(10);
+    await target.evaluate(node => { node.scrollLeft = node.scrollWidth; });
+    await expect.poll(() => target.evaluate(node => node.scrollLeft)).toBeGreaterThan(10);
+  }
+  await expect.poll(() => media.evaluate(node => node.scrollHeight - node.clientHeight)).toBeGreaterThan(10);
+  await media.evaluate(node => { node.scrollTop = node.scrollHeight; });
+  await expect.poll(() => media.evaluate(node => node.scrollTop)).toBeGreaterThan(10);
+});
+
 test('collection review displays a safe AI SVG diagram', async ({ page }) => {
   await install(page);
   await page.route(`**${root}/practice/questions/*/ai`, async route => {
