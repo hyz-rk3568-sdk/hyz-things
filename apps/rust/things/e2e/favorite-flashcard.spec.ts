@@ -89,23 +89,26 @@ async function mockExistingPreview(page: Page, cards: unknown[] = [existingCard]
   }));
 }
 
-test('existing Flashcard preview and editing live in the shared management page', async ({ page }) => {
+test('existing Flashcard opens its editor directly with a collapsed preview', async ({ page }) => {
   await install(page);
   await mockExistingPreview(page);
   const review = await openReview(page);
   await expect(review.getByTestId('collection-review-manage-flashcard')).toBeVisible();
   await expect(review.getByTestId('favorite-existing-card')).toHaveCount(0);
   await review.getByTestId('collection-review-manage-flashcard').click();
-  await expect(page.getByTestId('favorite-existing-card')).toHaveCount(1);
-  await expect(page.getByTestId('favorite-existing-card-deck')).toHaveText(existingCard.deck_path);
-  await expect(page.getByTestId('favorite-existing-card-path')).toHaveText(existingCard.source_file);
-  await page.getByTestId('favorite-existing-card-preview').click();
-  const previewContent = page.getByTestId('favorite-existing-card-preview-content');
-  await expect(previewContent).toBeVisible();
-  await expect(previewContent).toContainText('完整材料');
-  await expect(previewContent).toContainText('原来的背面');
-  await page.getByTestId('favorite-existing-card-preview').click();
-  await expect(previewContent).toHaveCount(0);
+  const editor = page.getByTestId('favorite-flashcard-editor');
+  await expect(editor).toBeVisible();
+  await expect(page.getByTestId('favorite-existing-cards')).toHaveCount(0);
+  await expect(editor.getByTestId('favorite-flashcard-path')).toContainText(existingCard.source_file);
+  const toggle = editor.getByTestId('favorite-flashcard-preview-toggle');
+  const front = editor.getByTestId('favorite-flashcard-front-preview');
+  await expect(front).toBeHidden();
+  await toggle.click();
+  await expect(front).toBeVisible();
+  await expect(front).toContainText('完整材料');
+  await expect(editor.getByTestId('favorite-flashcard-back-preview')).toContainText('原来的背面');
+  await toggle.click();
+  await expect(front).toBeHidden();
   await page.getByRole('button', { name: '返回复盘' }).click();
   await expect(review.getByTestId('collection-review-manage-flashcard')).toBeVisible();
   await expect(review.getByTestId('collection-review-create-flashcard')).toHaveCount(0);
@@ -132,7 +135,6 @@ test('editing an existing flashcard saves and syncs in one request', async ({ pa
   });
   const review = await openReview(page);
   await review.getByTestId('collection-review-manage-flashcard').click();
-  await page.getByTestId('favorite-existing-card-edit').click();
   const editor = page.getByTestId('favorite-flashcard-editor');
   await expect(editor).toBeVisible();
   await expect(editor.getByTestId('favorite-flashcard-editor-back')).toHaveValue('原来的背面');
@@ -165,7 +167,6 @@ test('deleting an existing flashcard requires confirmation and syncs in one requ
   });
   const review = await openReview(page);
   await review.getByTestId('collection-review-manage-flashcard').click();
-  await page.getByTestId('favorite-existing-card-edit').click();
   const editor = page.getByTestId('favorite-flashcard-editor');
   await editor.getByTestId('favorite-flashcard-delete').click();
   await expect(editor.getByTestId('favorite-flashcard-confirm-delete')).toBeVisible();
@@ -196,7 +197,6 @@ test('pending edit retries the same Back without changing the source again', asy
   });
   const review = await openReview(page);
   await review.getByTestId('collection-review-manage-flashcard').click();
-  await page.getByTestId('favorite-existing-card-edit').click();
   const editor = page.getByTestId('favorite-flashcard-editor');
   await editor.getByTestId('favorite-flashcard-editor-back').fill('待同步的背面');
   await editor.getByTestId('favorite-flashcard-save').click();
@@ -294,7 +294,7 @@ for (const width of [1180, 390]) {
     await expect(review.getByTestId('collection-review-manage-flashcard')).toBeVisible();
     await expect(review.getByTestId('favorite-existing-card')).toHaveCount(0);
     await review.getByTestId('collection-review-manage-flashcard').click();
-    await expect(page.getByTestId('favorite-existing-card-path')).toHaveText('用户整理/数量关系/数学运算/错题/cards.md');
+    await expect(page.getByTestId('favorite-flashcard-editor')).toContainText('用户整理/数量关系/数学运算/错题/cards.md');
     await page.getByRole('button', { name:'返回复盘' }).click();
     await expect(review.getByTestId('collection-review-create-flashcard')).toHaveCount(0);
     await review.getByTestId('collection-review-back').click();
@@ -610,6 +610,8 @@ test('create and edit share one form with a live Back preview', async ({ page })
   await install(page);
   const card = (await openCreate(page)).getByTestId('favorite-flashcard-card');
   const preview = card.getByTestId('favorite-flashcard-back-preview');
+  await expect(preview).toBeHidden();
+  await card.getByTestId('favorite-flashcard-preview-toggle').click();
   await expect(preview).toBeVisible();
   await expect(preview).toContainText('背面预览');
   await card.getByLabel('背面').fill('设 $x^2$ 为 **最终答案**');
@@ -622,8 +624,8 @@ test('editing an existing card uses the same form and previews Back while typing
   await mockExistingPreview(page);
   const review = await openReview(page);
   await review.getByTestId('collection-review-manage-flashcard').click();
-  await page.getByTestId('favorite-existing-card-edit').click();
   const editor = page.getByTestId('favorite-flashcard-editor');
+  await editor.getByTestId('favorite-flashcard-preview-toggle').click();
   const preview = editor.getByTestId('favorite-flashcard-back-preview');
   await expect(preview).toContainText('原来的背面');
   await editor.getByTestId('favorite-flashcard-editor-back').fill('改为 **新的背面**');
@@ -673,6 +675,7 @@ test('wide Markdown stays inside the favorite form and scrolls locally', async (
     body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900"><rect width="1200" height="900" fill="#eee"/></svg>',
   }));
   const card = (await openCreate(page)).getByTestId('favorite-flashcard-card');
+  await card.getByTestId('favorite-flashcard-preview-toggle').click();
   const front = card.getByTestId('favorite-flashcard-front-preview');
   const inlineMath = front.locator('.math-inline');
   const code = front.locator('pre');

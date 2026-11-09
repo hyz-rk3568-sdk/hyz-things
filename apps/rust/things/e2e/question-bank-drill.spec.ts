@@ -50,9 +50,10 @@ test('drill collection practice keeps ungradable questions and reports separate 
   await expect(page.getByTestId('question-bank-practice-flashcard-dialog')).toHaveCount(0);
   await expect(create).toHaveCount(0);
   await expect(page.getByTestId('question-bank-practice-manage-flashcard')).toBeVisible();
-  await expect(page.getByTestId('favorite-existing-card')).toHaveCount(0);
   await page.getByTestId('question-bank-practice-manage-flashcard').click();
-  await expect(page.getByTestId('favorite-existing-card')).toHaveCount(1);
+  const editor=page.getByTestId('favorite-flashcard-editor');
+  await expect(editor).toBeVisible();
+  await expect(editor.getByTestId('favorite-flashcard-editor-back')).toHaveValue('自行整理的答案');
   await page.getByRole('button',{name:'返回复盘'}).click();
   const image=page.getByTestId('question-bank-practice-stem').locator('img');
   await expect(image).toHaveAttribute('src','/api/v1/question-bank/assets/431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460.png');

@@ -124,6 +124,10 @@ struct FavoriteCardFormProps {
     preview: FavoritePreview,
     csrf: String,
     mode: FavoriteCardFormMode,
+    #[prop_or_default]
+    existing_cards: Vec<FavoriteExistingCard>,
+    #[prop_or_default]
+    on_select_card: Callback<String>,
     on_close: Callback<()>,
     on_changed: Callback<()>,
 }
@@ -477,40 +481,82 @@ fn favorite_card_form(props: &FavoriteCardFormProps) -> Html {
     } else {
         "favorite-flashcard-back-input"
     };
+    let current_card_id = existing
+        .as_ref()
+        .map(|card| card.card_id.clone())
+        .unwrap_or_default();
     html! {
-        <div class="h-full w-full overflow-y-auto bg-base-100" data-testid={outer_test_id}>
+        <div class="h-full w-full overflow-y-auto bg-gradient-to-b from-primary/5 via-base-100 to-base-100" data-testid={outer_test_id}>
         <section class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-4 pb-5 sm:px-6" role="region" aria-label={title} tabindex="-1" ref={dialog}
             data-testid={section_test_id}
             onkeydown={Callback::from({let on_close=props.on_close.clone();move |event:KeyboardEvent| {
                 if event.key()=="Escape" {event.stop_propagation();on_close.emit(());}
             }})}>
-            <header class="flex shrink-0 items-center gap-3 border-b border-base-content/10 py-3">
+            <header class="flex shrink-0 flex-wrap items-center gap-3 border-b border-base-content/10 py-3">
                 <button type="button" class="btn btn-ghost btn-sm -ml-2" aria-label="返回复盘" onclick={close.clone()}>
                     <span aria-hidden="true">{"←"}</span>{"返回复盘"}
                 </button>
-                <div class="min-w-0">
-                    <h2 class="truncate text-base font-semibold">{title}</h2>
-                    <p class="break-all text-xs text-base-content/55">{subtitle}</p>
+                <div class="flex min-w-0 flex-1 items-center gap-3">
+                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary via-primary to-secondary text-lg text-primary-content shadow-sm" aria-hidden="true">
+                        {if editing {"✎"} else {"✦"}}
+                    </span>
+                    <div class="min-w-0">
+                        <h2 class="truncate text-base font-semibold">{title}</h2>
+                        <p class="break-all text-xs text-base-content/55">{subtitle}</p>
+                    </div>
                 </div>
+                if !editing {
+                    <div class="hidden shrink-0 items-center gap-1 md:flex" aria-hidden="true">
+                        <span class="badge badge-primary badge-outline badge-sm">{"Markdown"}</span>
+                        <span class="badge badge-secondary badge-outline badge-sm">{"LaTeX"}</span>
+                        <span class="badge badge-accent badge-outline badge-sm">{"图片"}</span>
+                    </div>
+                }
+                if editing && props.existing_cards.len() > 1 {
+                    <label class="flex items-center gap-2 text-xs text-base-content/60">
+                        <span class="shrink-0">{"切换卡片"}</span>
+                        <select class="select select-bordered select-sm max-w-56" value={current_card_id.clone()}
+                            data-testid="favorite-flashcard-card-select"
+                            onchange={Callback::from({let on_select=props.on_select_card.clone();move |event:Event| {
+                                on_select.emit(event.target_unchecked_into::<HtmlSelectElement>().value());
+                            }})}>
+                            {for props.existing_cards.iter().map(|card| html! {
+                                <option value={card.card_id.clone()} selected={card.card_id == current_card_id}>
+                                    {card.deck_path.clone()}
+                                </option>
+                            })}
+                        </select>
+                    </label>
+                }
             </header>
-            <div class="mx-auto my-5 grid w-full min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" data-testid={form_test_id}>
-                <div class="min-w-0 space-y-5 break-words rounded-2xl border border-base-content/15 bg-base-100 p-4 transition focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15 sm:p-5">
+            <div class="mx-auto my-5 w-full min-w-0 space-y-5">
+                <div class="relative min-w-0 space-y-5 overflow-hidden break-words rounded-2xl border border-base-content/15 bg-gradient-to-br from-base-100 via-base-100 to-primary/5 p-4 shadow-sm transition focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15 sm:p-5" data-testid={form_test_id}>
+                    <span aria-hidden="true" class="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary via-secondary to-accent"></span>
                     if !editing {
                         <div class="space-y-2">
-                            <span class="font-semibold">{"存放位置"}</span>
+                            <span class="flex items-center gap-2 font-semibold">
+                                <span class="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-primary to-secondary text-xs font-semibold text-primary-content shadow-sm" aria-hidden="true">{"1"}</span>
+                                {"存放位置"}
+                            </span>
                             <div class="grid grid-cols-2 gap-1 rounded-xl bg-base-200/70 p-1" role="group" aria-label="存放位置" data-testid="favorite-flashcard-mode">
-                                <button type="button" class={classes!("rounded-lg", "px-3", "py-2", "text-sm", "font-medium", if !*user_mode {"bg-base-100 shadow-sm"} else {"text-base-content/60"})}
+                                <button type="button" class={classes!("flex", "flex-col", "items-start", "rounded-lg", "px-3", "py-2", "text-left", "text-sm", "font-medium", "transition", if !*user_mode {"bg-gradient-to-br from-primary/20 via-secondary/10 to-accent/10 shadow-sm ring-1 ring-primary/30"} else {"text-base-content/60 hover:bg-base-100/70"})}
                                     aria-pressed={(!*user_mode).to_string()} disabled={*locked || practice_occupied}
                                     data-testid="favorite-flashcard-practice-mode"
                                     onclick={Callback::from({let user_mode=user_mode.clone();let target=target.clone();let confirmed=confirmed.clone();let practice=props.preview.allowed_targets.iter().find(|value| target_mode(value)==Some(FavoriteCardMode::Practice) && !mode_occupied(&props.preview, FavoriteCardMode::Practice)).cloned();move |_| {
                                         if *user_mode {user_mode.set(false);target.set(practice.clone().unwrap_or_default());confirmed.set(false);}
-                                    }})}>{"真题练习（默认）"}</button>
-                                <button type="button" class={classes!("rounded-lg", "px-3", "py-2", "text-sm", "font-medium", if *user_mode {"bg-base-100 shadow-sm"} else {"text-base-content/60"})}
+                                    }})}>
+                                    <span class="flex items-center gap-1.5"><span aria-hidden="true">{"▤"}</span>{"真题练习"}</span>
+                                    <span class="text-[11px] font-normal opacity-70">{"按原题分类"}</span>
+                                </button>
+                                <button type="button" class={classes!("flex", "flex-col", "items-start", "rounded-lg", "px-3", "py-2", "text-left", "text-sm", "font-medium", "transition", if *user_mode {"bg-gradient-to-br from-secondary/20 via-accent/10 to-primary/10 shadow-sm ring-1 ring-secondary/30"} else {"text-base-content/60 hover:bg-base-100/70"})}
                                     aria-pressed={(*user_mode).to_string()} disabled={*locked || user_occupied}
                                     data-testid="favorite-flashcard-user-mode"
                                     onclick={Callback::from({let user_mode=user_mode.clone();let target=target.clone();let confirmed=confirmed.clone();move |_| {
                                         if !*user_mode {user_mode.set(true);target.set(String::new());confirmed.set(false);}
-                                    }})}>{"用户整理"}</button>
+                                    }})}>
+                                    <span class="flex items-center gap-1.5"><span aria-hidden="true">{"▥"}</span>{"用户整理"}</span>
+                                    <span class="text-[11px] font-normal opacity-70">{"按自定义目录"}</span>
+                                </button>
                             </div>
                             <p class="text-xs text-base-content/60">
                                 {if *user_mode {
@@ -546,36 +592,46 @@ fn favorite_card_form(props: &FavoriteCardFormProps) -> Html {
                                 {format!("将追加或创建：flashcards/{}/cards.md",*target)}
                             </p>
                         }
+                        <div class="flex items-start gap-2 rounded-xl border border-info/25 bg-gradient-to-r from-info/10 via-info/5 to-primary/5 p-3 text-xs text-base-content/70">
+                            <span aria-hidden="true" class="text-base text-info">{"ⓘ"}</span>
+                            <span>{"背面支持 Markdown、LaTeX 公式和图片；保存后会同步到卡片库。"}</span>
+                        </div>
                     } else if let Some(card) = existing.as_ref() {
                         <div class="rounded-xl bg-base-200/60 px-4 py-3 text-xs text-base-content/65" data-testid="favorite-flashcard-path">
                             <p class="break-all">{format!("{} · {}", card.deck_path, card.source_file)}</p>
                             <p class="mt-1">{"存放位置在创建后保持不变。"}</p>
                         </div>
                     }
-                    <label class="block space-y-2">
-                        <span class="font-semibold">{"背面"}<span class="ml-2 text-xs font-normal text-base-content/50">{if !editing && props.preview.correct_answer.is_empty() {"必填"} else {"可选"}}</span></span>
-                        <textarea class="block min-h-28 w-full resize-none border-0 bg-transparent px-3 py-2 text-sm leading-6 focus:outline-none focus:ring-0" placeholder="写下解题思路或复习提示" value={(*back).clone()} disabled={*locked}
+                    <label class="block space-y-2 rounded-xl border border-secondary/20 bg-gradient-to-br from-base-100 to-secondary/5 p-3">
+                        <span class="flex items-center gap-2 font-semibold">
+                            <span class="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-secondary to-accent text-xs font-semibold text-secondary-content shadow-sm" aria-hidden="true">{"2"}</span>
+                            {"背面"}
+                            <span class="ml-auto text-xs font-normal text-base-content/50">{if !editing && props.preview.correct_answer.is_empty() {"必填"} else {"可选"}}</span>
+                        </span>
+                        <textarea class="block min-h-32 w-full resize-y rounded-lg border-0 bg-base-100/80 px-3 py-2 text-sm leading-6 focus:outline-none focus:ring-2 focus:ring-primary/20" placeholder="写下解题思路或复习提示，支持 Markdown、公式和图片" value={(*back).clone()} disabled={*locked}
                             data-testid={back_test_id}
                             oninput={Callback::from({let back=back.clone();move |event:InputEvent| {
                                 back.set(event.target_unchecked_into::<web_sys::HtmlTextAreaElement>().value());
                             }})}/>
                     </label>
                     if !editing {
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" class="checkbox checkbox-sm" checked={*also_favorite} disabled={*locked}
-                                data-testid="favorite-flashcard-also-favorite"
-                                onchange={Callback::from({let also_favorite=also_favorite.clone();move |event:Event| {
-                                    also_favorite.set(event.target_unchecked_into::<HtmlInputElement>().checked());
-                                }})}/>
-                            <span>{"同时收藏本题"}</span>
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" class="checkbox checkbox-sm" checked={*confirmed} disabled={*locked}
-                                onchange={Callback::from({let confirmed=confirmed.clone();move |event:Event| {
-                                    confirmed.set(event.target_unchecked_into::<HtmlInputElement>().checked());
-                                }})}/>
-                            <span>{"确认写入所选目录"}</span>
-                        </label>
+                        <div class="grid gap-2 rounded-xl border border-base-content/10 bg-gradient-to-r from-base-100 to-primary/5 p-3 sm:grid-cols-2">
+                            <label class="flex items-center gap-2">
+                                <input type="checkbox" class="checkbox checkbox-sm checkbox-primary" checked={*also_favorite} disabled={*locked}
+                                    data-testid="favorite-flashcard-also-favorite"
+                                    onchange={Callback::from({let also_favorite=also_favorite.clone();move |event:Event| {
+                                        also_favorite.set(event.target_unchecked_into::<HtmlInputElement>().checked());
+                                    }})}/>
+                                <span>{"同时收藏本题"}</span>
+                            </label>
+                            <label class="flex items-center gap-2">
+                                <input type="checkbox" class="checkbox checkbox-sm checkbox-primary" checked={*confirmed} disabled={*locked}
+                                    onchange={Callback::from({let confirmed=confirmed.clone();move |event:Event| {
+                                        confirmed.set(event.target_unchecked_into::<HtmlInputElement>().checked());
+                                    }})}/>
+                                <span>{"确认写入所选目录"}</span>
+                            </label>
+                        </div>
                     }
                     if let Some(message) = &*error {
                         <p role="alert" class="text-sm text-error">{message}{if editing {""} else {"。重试会使用同一份请求，不会重复创建。"}}</p>
@@ -608,40 +664,54 @@ fn favorite_card_form(props: &FavoriteCardFormProps) -> Html {
                         if editing {
                             if *confirming_delete {
                                 <span class="self-center text-sm text-error">{"确认删除这张闪卡？"}</span>
-                                <button type="button" class="btn btn-error btn-sm" data-testid="favorite-flashcard-confirm-delete"
+                                <button type="button" class="btn btn-primary w-full sm:w-40" data-testid="favorite-flashcard-confirm-delete"
                                     disabled={*busy} onclick={delete.clone()}>{if *busy {"正在删除…"} else {"确认删除并同步"}}</button>
-                                <button type="button" class="btn btn-ghost btn-sm" data-testid="favorite-flashcard-cancel-delete"
+                                <button type="button" class="btn btn-ghost w-full sm:w-40" data-testid="favorite-flashcard-cancel-delete"
                                     disabled={*busy} onclick={Callback::from({let confirming_delete=confirming_delete.clone();move |_|confirming_delete.set(false)})}>{"取消"}</button>
                             } else {
-                                <button type="button" class="btn btn-outline btn-error btn-sm" data-testid="favorite-flashcard-delete"
-                                    disabled={*busy || *locked} onclick={Callback::from({let confirming_delete=confirming_delete.clone();move |_|confirming_delete.set(true)})}>{"删除 Flashcard"}</button>
+                                <button type="button" class="btn btn-primary w-full sm:w-40" data-testid="favorite-flashcard-delete"
+                                    disabled={*busy || *locked} onclick={Callback::from({let confirming_delete=confirming_delete.clone();move |_|confirming_delete.set(true)})}>
+                                    <span aria-hidden="true">{"🗑"}</span>{"删除 Flashcard"}
+                                </button>
                             }
-                            <button type="button" class="btn btn-primary w-full sm:w-auto" data-testid="favorite-flashcard-save"
+                            <button type="button" class="btn btn-primary w-full sm:w-40" data-testid="favorite-flashcard-save"
                                 disabled={*busy || (*locked && retry_label.is_none())}
                                 onclick={if *delete_mode {delete.clone()} else {submit_edit.clone()}}>
                                 {if *busy {"正在保存…"} else if retry_label.is_some() {"重试同步"} else {"保存并同步"}}
                             </button>
                         } else if create_result.as_ref().as_ref().is_none_or(|value|value.retryable) {
-                            <button type="button" class="btn btn-primary w-full sm:w-auto" disabled={!can_create} onclick={submit_create}>
+                            <button type="button" class="btn btn-primary w-full sm:w-40" disabled={!can_create} onclick={submit_create}>
                                 {if *busy {"正在保存…"} else if create_result.is_some() {"重试同步"} else {"创建并同步"}}
                             </button>
                         }
                     </div>
                 </div>
-                <aside class="min-w-0 space-y-3 rounded-2xl border border-base-content/15 bg-base-200/40 p-4" aria-label="卡片预览" data-testid="favorite-flashcard-preview">
-                    <h3 class="font-semibold">{"卡片预览"}</h3>
-                    <div class="min-w-0" data-testid="favorite-flashcard-front-preview">{favorite_content(&props.preview)}</div>
-                    <section class="min-w-0">
-                        <h4 class="mb-1 text-xs font-semibold text-base-content/60">{"背面"}</h4>
-                        <div key={(*back).clone()} class="study-markdown min-w-0" data-testid="favorite-flashcard-back-preview">
-                            if back.trim().is_empty() {
-                                <p class="text-sm text-base-content/50">{"背面预览"}</p>
-                            } else {
-                                {render_question_bank_markdown(&back)}
-                            }
-                        </div>
-                    </section>
-                </aside>
+                <details class="group min-w-0 overflow-hidden rounded-2xl border border-base-content/15 bg-gradient-to-r from-base-200/60 via-base-100 to-secondary/10" data-testid="favorite-flashcard-preview"
+                    ontoggle={Callback::from(|_: Event| hydrate_math())}>
+                    <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 font-semibold" data-testid="favorite-flashcard-preview-toggle">
+                        <span class="flex items-center gap-2">
+                            <span class="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-accent to-secondary text-xs font-semibold text-accent-content shadow-sm" aria-hidden="true">{"3"}</span>
+                            {"预览卡片"}
+                        </span>
+                        <span class="flex items-center gap-2 text-xs font-normal text-base-content/55">
+                            <span>{"点按展开或收起"}</span>
+                            <span aria-hidden="true" class="text-sm transition-transform group-open:rotate-180">{"▾"}</span>
+                        </span>
+                    </summary>
+                    <div class="space-y-3 border-t border-base-content/10 p-4">
+                        <div class="min-w-0" data-testid="favorite-flashcard-front-preview">{favorite_content(&props.preview)}</div>
+                        <section class="min-w-0">
+                            <h4 class="mb-1 text-xs font-semibold text-base-content/60">{"背面"}</h4>
+                            <div key={(*back).clone()} class="study-markdown min-w-0" data-testid="favorite-flashcard-back-preview">
+                                if back.trim().is_empty() {
+                                    <p class="text-sm text-base-content/50">{"背面预览"}</p>
+                                } else {
+                                    {render_question_bank_markdown(&back)}
+                                }
+                            </div>
+                        </section>
+                    </div>
+                </details>
             </div>
         </section>
         </div>
@@ -659,37 +729,32 @@ pub(crate) struct FavoriteFlashcardWorkspaceProps {
 
 #[function_component(FavoriteFlashcardWorkspace)]
 pub(crate) fn favorite_flashcard_workspace(props: &FavoriteFlashcardWorkspaceProps) -> Html {
-    let editing = use_state(|| None::<FavoriteExistingCard>);
-    if let Some(existing) = &*editing {
+    let selected = use_state(|| {
+        props
+            .preview
+            .existing
+            .first()
+            .map(|card| card.card_id.clone())
+    });
+    let current = props
+        .preview
+        .existing
+        .iter()
+        .find(|card| Some(card.card_id.as_str()) == (*selected).as_deref())
+        .or_else(|| props.preview.existing.first());
+    if let Some(existing) = current {
+        let on_select_card = Callback::from({
+            let selected = selected.clone();
+            move |card_id: String| selected.set(Some(card_id))
+        });
         html! {
             <FavoriteCardForm key={existing.card_id.clone()}
                 question_id={props.question_id.clone()} preview={props.preview.clone()}
                 mode={FavoriteCardFormMode::Edit(existing.clone())}
+                existing_cards={props.preview.existing.clone()}
+                on_select_card={on_select_card}
                 csrf={props.csrf.clone()}
                 on_changed={props.on_changed.clone()} on_close={props.on_close.clone()}/>
-        }
-    } else if !props.preview.existing.is_empty() {
-        let on_close = props.on_close.clone();
-        html! {
-            <div class="h-full w-full overflow-y-auto bg-base-100" data-testid="favorite-flashcard-workspace">
-                <section class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-4 pb-5 sm:px-6"
-                    role="region" aria-label="管理 Flashcard">
-                    <header class="flex shrink-0 items-center gap-3 border-b border-base-content/10 py-3">
-                        <button type="button" class="btn btn-ghost btn-sm -ml-2" aria-label="返回复盘"
-                            onclick={Callback::from(move |_| on_close.emit(()))}>
-                            <span aria-hidden="true">{"←"}</span>{"返回复盘"}
-                        </button>
-                        <h2 class="text-base font-semibold">{"修改或删除 Flashcard"}</h2>
-                    </header>
-                    <div class="mx-auto my-5 w-full max-w-xl">
-                        <FavoriteExistingCards cards={props.preview.existing.clone()}
-                            on_edit={Callback::from({
-                                let editing = editing.clone();
-                                move |card| editing.set(Some(card))
-                            })}/>
-                    </div>
-                </section>
-            </div>
         }
     } else {
         html! {
@@ -698,72 +763,5 @@ pub(crate) fn favorite_flashcard_workspace(props: &FavoriteFlashcardWorkspacePro
                 csrf={props.csrf.clone()}
                 on_changed={props.on_changed.clone()} on_close={props.on_close.clone()}/>
         }
-    }
-}
-
-#[derive(Clone, Properties, PartialEq)]
-pub(crate) struct FavoriteExistingCardsProps {
-    pub(crate) cards: Vec<FavoriteExistingCard>,
-    pub(crate) on_edit: Callback<FavoriteExistingCard>,
-}
-
-#[function_component(FavoriteExistingCards)]
-pub(crate) fn favorite_existing_cards(props: &FavoriteExistingCardsProps) -> Html {
-    let expanded = use_state(|| None::<String>);
-    {
-        let expanded = expanded.clone();
-        use_effect_with((*expanded).clone(), move |_| {
-            hydrate_math();
-            || ()
-        });
-    }
-    html! {
-        <section class="space-y-2 rounded-box border border-success/30 bg-success/5 p-3"
-            data-testid="favorite-existing-cards" aria-label="已创建 Flashcard">
-            <h3 class="font-semibold text-success">{"已创建 Flashcard"}</h3>
-            {for props.cards.iter().map(|card| {
-                let card_value = card.clone();
-                let on_edit = props.on_edit.clone();
-                let expanded = expanded.clone();
-                let is_expanded = (*expanded).as_deref() == Some(card.card_id.as_str());
-                html! {
-                    <div class="space-y-2 rounded-lg bg-base-100/70 px-3 py-2" data-testid="favorite-existing-card">
-                        <div class="flex flex-wrap items-center justify-between gap-2">
-                            <div class="min-w-0">
-                                <p class="truncate text-sm font-medium" data-testid="favorite-existing-card-deck">{card.deck_path.clone()}</p>
-                                <p class="break-all text-xs text-base-content/55" data-testid="favorite-existing-card-path">{card.source_file.clone()}</p>
-                            </div>
-                            <div class="flex shrink-0 gap-2">
-                                <button type="button" class="btn btn-ghost btn-sm"
-                                    aria-expanded={is_expanded.to_string()}
-                                    data-testid="favorite-existing-card-preview"
-                                    onclick={Callback::from({let expanded=expanded.clone();let card_id=card.card_id.clone();move |_| {
-                                        expanded.set(if is_expanded {None} else {Some(card_id.clone())});
-                                    }})}>
-                                    {if is_expanded {"收起预览"} else {"预览"}}
-                                </button>
-                                <button type="button" class="btn btn-outline btn-sm"
-                                    data-testid="favorite-existing-card-edit"
-                                    onclick={Callback::from(move |_| on_edit.emit(card_value.clone()))}>
-                                    {"修改或删除"}
-                                </button>
-                            </div>
-                        </div>
-                        if is_expanded {
-                            <div class="space-y-3 border-t border-base-content/10 pt-3" data-testid="favorite-existing-card-preview-content">
-                                <section aria-label="正面">
-                                    <h4 class="mb-1 text-xs font-semibold text-base-content/60">{"正面"}</h4>
-                                    <div class="study-markdown">{render_question_bank_markdown(&card.front)}</div>
-                                </section>
-                                <section aria-label="背面">
-                                    <h4 class="mb-1 text-xs font-semibold text-base-content/60">{"背面"}</h4>
-                                    <div class="study-markdown">{render_question_bank_markdown(&card.back)}</div>
-                                </section>
-                            </div>
-                        }
-                    </div>
-                }
-            })}
-        </section>
     }
 }
