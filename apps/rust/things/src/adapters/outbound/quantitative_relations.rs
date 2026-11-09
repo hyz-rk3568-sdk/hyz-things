@@ -892,7 +892,7 @@ Codex 自行验算每题数值、边界、单位、正确选项唯一性、解�
             _=cancelled.wait_for(|value|*value)=>return Err("服务正在停止".into()),
         };
         let output = session
-            .turn_cancellable_with_schema(&prompt, cancellation, output_schema())
+            .turn_cancellable_with_schema(&prompt, &[], cancellation, output_schema())
             .await?;
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]

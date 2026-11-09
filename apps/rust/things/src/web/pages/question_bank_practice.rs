@@ -24,6 +24,128 @@ extern "C" {
 #[derive(serde::Serialize)]
 struct AiReviewStartRequest {
     instruction: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    attachments: Vec<String>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct PendingImage {
+    id: String,
+    name: String,
+}
+
+#[derive(Properties, PartialEq)]
+struct AiImagePickerProps {
+    endpoint: String,
+    csrf: String,
+    attachments: UseStateHandle<Vec<PendingImage>>,
+    uploading: UseStateHandle<bool>,
+    disabled: bool,
+    testid: &'static str,
+}
+
+#[function_component(AiImagePicker)]
+fn ai_image_picker(props: &AiImagePickerProps) -> Html {
+    let failure = use_state(|| None::<String>);
+    let onchange = {
+        let endpoint = props.endpoint.clone();
+        let csrf = props.csrf.clone();
+        let attachments = props.attachments.clone();
+        let uploading = props.uploading.clone();
+        let failure = failure.clone();
+        Callback::from(move |event: Event| {
+            if *uploading {
+                return;
+            }
+            let input: web_sys::HtmlInputElement = event.target_unchecked_into();
+            let Some(files) = input.files() else {
+                return;
+            };
+            let remaining = 3usize.saturating_sub(attachments.len());
+            let mut selected = Vec::new();
+            for index in 0..files.length() {
+                if selected.len() >= remaining {
+                    break;
+                }
+                let Some(file) = files.get(index) else {
+                    continue;
+                };
+                if !matches!(file.type_().as_str(), "image/png" | "image/jpeg") {
+                    failure.set(Some("仅支持 JPG 或 PNG 图片".into()));
+                    continue;
+                }
+                if file.size() > (8 * 1024 * 1024) as f64 {
+                    failure.set(Some("每张图片不能超过 8 MiB".into()));
+                    continue;
+                }
+                selected.push(file);
+            }
+            // Clearing the input also clears its live FileList, so do it after
+            // cloning the selected files.
+            input.set_value("");
+            if selected.is_empty() {
+                return;
+            }
+            failure.set(None);
+            uploading.set(true);
+            let attachments = attachments.clone();
+            let uploading = uploading.clone();
+            let failure = failure.clone();
+            let endpoint = endpoint.clone();
+            let csrf = csrf.clone();
+            spawn_local(async move {
+                let mut next = (*attachments).clone();
+                for file in selected {
+                    match upload_question_ai_image(&endpoint, &csrf, file.clone()).await {
+                        Ok(id) => next.push(PendingImage {
+                            id,
+                            name: file.name(),
+                        }),
+                        Err(error) => {
+                            failure.set(Some(error));
+                            break;
+                        }
+                    }
+                }
+                attachments.set(next);
+                uploading.set(false);
+            });
+        })
+    };
+    html! {
+        <div class="space-y-2" data-testid={props.testid}>
+            <div class="flex flex-wrap items-center gap-2">
+                <input type="file" class="file-input file-input-bordered file-input-sm"
+                    accept="image/png,image/jpeg" multiple=true
+                    disabled={props.disabled || *props.uploading}
+                    onchange={onchange}/>
+                <span class="text-xs text-base-content/60">
+                    {if *props.uploading {"正在上传…".into()} else {format!("最多 3 张 JPG/PNG，每张 ≤ 8 MiB（已选 {} 张）", props.attachments.len())}}
+                </span>
+            </div>
+            if !props.attachments.is_empty() {
+                <div class="flex flex-wrap gap-2">
+                    {for props.attachments.iter().map(|image| {
+                        let attachments = props.attachments.clone();
+                        let id = image.id.clone();
+                        html! {
+                            <span key={id.clone()} class="badge badge-outline gap-2 py-3">
+                                {image.name.clone()}
+                                <button type="button" class="text-base-content/60 hover:text-error"
+                                    disabled={props.disabled || *props.uploading}
+                                    onclick={Callback::from(move |_| {
+                                        attachments.set(attachments.iter().filter(|value| value.id != id).cloned().collect());
+                                    })}>{"×"}</button>
+                            </span>
+                        }
+                    })}
+                </div>
+            }
+            if let Some(error) = failure.as_ref() {
+                <p class="text-xs text-error" role="alert">{error.clone()}</p>
+            }
+        </div>
+    }
 }
 
 const ROOT: &str = "/api/v1/question-bank";
@@ -710,6 +832,10 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     let submitting = use_state(|| false);
     let follow_up = use_state(String::new);
     let start_instruction = use_state(String::new);
+    let start_images = use_state(Vec::<PendingImage>::new);
+    let follow_images = use_state(Vec::<PendingImage>::new);
+    let uploading_start = use_state(|| false);
+    let uploading_follow = use_state(|| false);
     let deleting = use_state(|| false);
     let revision = use_mut_ref(|| 0u64);
     let endpoint = format!("{ROOT}/practice/questions/{}/ai", props.question_id);
@@ -788,6 +914,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let endpoint = endpoint.clone();
         let csrf = props.csrf.clone();
         let start_instruction = start_instruction.clone();
+        let start_images = start_images.clone();
         Callback::from(move |_: ()| {
             if *submitting {
                 return;
@@ -802,11 +929,16 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             let csrf = csrf.clone();
             let instruction = start_instruction.trim().to_owned();
             let start_instruction = start_instruction.clone();
+            let start_images = start_images.clone();
+            let attachments = start_images.iter().map(|image| image.id.clone()).collect();
             spawn_local(async move {
                 let result = post_json_response::<_, AiReviewState>(
                     &endpoint,
                     &csrf,
-                    &AiReviewStartRequest { instruction },
+                    &AiReviewStartRequest {
+                        instruction,
+                        attachments,
+                    },
                     "开始 AI 解析",
                 )
                 .await;
@@ -815,6 +947,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                     Ok(result) => {
                         state.set(Some(result));
                         start_instruction.set(String::new());
+                        start_images.set(Vec::new());
                     }
                     Err(error) => failure.set(Some(error)),
                 }
@@ -876,6 +1009,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let failure = failure.clone();
         let submitting = submitting.clone();
         let follow_up = follow_up.clone();
+        let follow_images = follow_images.clone();
         let endpoint = format!("{endpoint}/messages");
         let csrf = props.csrf.clone();
         Callback::from(move |_: ()| {
@@ -893,10 +1027,15 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             let failure = failure.clone();
             let submitting = submitting.clone();
             let follow_up = follow_up.clone();
+            let follow_images = follow_images.clone();
             let endpoint = endpoint.clone();
             let csrf = csrf.clone();
+            let attachments = follow_images.iter().map(|image| image.id.clone()).collect();
             spawn_local(async move {
-                let payload = AiReviewFollowUp { message };
+                let payload = AiReviewFollowUp {
+                    message,
+                    attachments,
+                };
                 let result =
                     post_json_response::<_, AiReviewState>(&endpoint, &csrf, &payload, "AI 追问")
                         .await;
@@ -905,6 +1044,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                     Ok(result) => {
                         state.set(Some(result));
                         follow_up.set(String::new());
+                        follow_images.set(Vec::new());
                     }
                     Err(error) => failure.set(Some(error)),
                 }
@@ -1044,6 +1184,10 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             if can_start || can_restart {
                 <div class="space-y-1">
                     <label class="text-sm font-semibold" for="question-ai-instruction">{"可选要求"}</label>
+                    <AiImagePicker endpoint={format!("{endpoint}/attachments")}
+                        csrf={props.csrf.clone()} attachments={start_images.clone()}
+                        uploading={uploading_start.clone()} disabled={*submitting}
+                        testid="question-bank-ai-start-images"/>
                     {ai_composer(AiComposer {
                         id: "question-ai-instruction",
                         compose_testid: "question-bank-ai-requirements-compose",
@@ -1052,7 +1196,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         value: start_instruction.as_str(),
                         placeholder: "例如：用线段图讲清数量关系；只讲速算，不要列方程。（Ctrl/⌘ + Enter 开始）",
                         button_label: if can_start { "开始 AI 解析" } else { "重新分析" },
-                        disabled: *submitting,
+                        disabled: *submitting || *uploading_start,
                         oninput: Callback::from({
                             let start_instruction=start_instruction.clone();
                             move |event: InputEvent| {
@@ -1079,6 +1223,10 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             if has_answer && !running {
                 <div class="space-y-2">
                     <label class="text-sm font-semibold" for="question-ai-follow-up">{"继续追问"}</label>
+                    <AiImagePicker endpoint={format!("{endpoint}/attachments")}
+                        csrf={props.csrf.clone()} attachments={follow_images.clone()}
+                        uploading={uploading_follow.clone()} disabled={*submitting}
+                        testid="question-bank-ai-follow-up-images"/>
                     {ai_composer(AiComposer {
                         id: "question-ai-follow-up",
                         compose_testid: "question-bank-ai-compose",
@@ -1087,7 +1235,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         value: follow_up.as_str(),
                         placeholder: "例如：为什么不能选 B？有没有更快的解法？（Ctrl/⌘ + Enter 发送）",
                         button_label: "发送追问",
-                        disabled: *submitting || follow_up.trim().is_empty(),
+                        disabled: *submitting || *uploading_follow || follow_up.trim().is_empty(),
                         oninput: Callback::from({
                             let follow_up=follow_up.clone();
                             move |event: InputEvent| {

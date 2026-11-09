@@ -25,8 +25,16 @@ pub trait AiReviewTurn: Send {
     async fn turn(
         &mut self,
         prompt: &str,
+        images: &[String],
         cancellation: tokio::sync::watch::Sender<bool>,
     ) -> Result<String, String>;
+}
+
+/// Forwards validated temporary images to the PC-side receiver. The returned
+/// path is an absolute path on the Codex host, never a browser-supplied value.
+#[async_trait::async_trait]
+pub trait AiAttachmentRelay: Send + Sync {
+    async fn upload(&self, media_type: &str, bytes: &[u8]) -> Result<String, String>;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1161,6 +1169,7 @@ mod tests {
                 year: 2020,
                 region: "国考".into(),
                 variant: "统考".into(),
+                subject: "xingce".into(),
                 role: "primary".into(),
                 kind: "exam".into(),
                 collection_id: None,

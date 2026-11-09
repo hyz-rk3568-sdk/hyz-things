@@ -195,6 +195,41 @@ pub(crate) async fn post_json_response<T: serde::Serialize, R: serde::de::Deseri
         .map_err(|error| error.to_string())
 }
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UploadedAttachment {
+    id: String,
+}
+
+/// Upload one browser-selected JPG/PNG. The backend validates and forwards
+/// it; the browser never sees the host path used by Codex.
+pub(crate) async fn upload_question_ai_image(
+    endpoint: &str,
+    csrf: &str,
+    file: web_sys::File,
+) -> Result<String, String> {
+    let media_type = file.type_();
+    let request = Request::post(endpoint)
+        .credentials(RequestCredentials::SameOrigin)
+        .header("Accept", "application/json")
+        .header("X-HYZ-CSRF", csrf)
+        .header("Content-Type", &media_type)
+        .body(JsValue::from(file))
+        .map_err(|error| format!("无法编码图片上传：{error}"))?;
+    let response = request
+        .send()
+        .await
+        .map_err(|error| format!("无法连接图片上传接口：{error}"))?;
+    if !response.ok() {
+        return Err(response_error(response, "上传图片").await.to_string());
+    }
+    response
+        .json::<UploadedAttachment>()
+        .await
+        .map(|value| value.id)
+        .map_err(|error| format!("图片上传响应无效：{error}"))
+}
+
 pub(crate) async fn put_json_response_typed<T: serde::Serialize, R: serde::de::DeserializeOwned>(
     endpoint: &str,
     csrf: &str,

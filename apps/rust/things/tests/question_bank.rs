@@ -48,7 +48,8 @@ fn whole_paper_load_preserves_number_and_material_without_answers() {
     assert_eq!(view.materials[0].markdown, "共享材料。");
     let json = serde_json::to_string(&view).unwrap();
     assert!(!json.contains("秘密解析"));
-    assert!(!json.contains("answer"));
+    assert!(!json.contains("correct_answer"));
+    assert!(!json.contains("reference_answer"));
     assert_eq!(view.year, 2001);
 }
 
@@ -430,6 +431,21 @@ async fn bank_server_fixture_with_ai(
     Arc<QuestionBankApplication>,
     sqlx::SqlitePool,
 ) {
+    bank_server_fixture_with_ai_and_relay(sqlite, generator, None).await
+}
+
+async fn bank_server_fixture_with_ai_and_relay(
+    sqlite: bool,
+    generator: Option<Arc<dyn hyz_things::application::question_bank::practice::AiReviewBackend>>,
+    relay: Option<Arc<dyn hyz_things::application::question_bank::practice::AiAttachmentRelay>>,
+) -> (
+    tokio::task::JoinHandle<()>,
+    String,
+    String,
+    Arc<MemoryBank>,
+    Arc<QuestionBankApplication>,
+    sqlx::SqlitePool,
+) {
     use hyz_things::{
         adapters::inbound::http::{
             app_with_admin_control_at_address, with_question_bank, with_question_bank_ai,
@@ -468,11 +484,13 @@ async fn bank_server_fixture_with_ai(
         ports.clone()
     };
     let app = Arc::new(QuestionBankApplication::new(ports.clone(), repository));
-    let ai = Arc::new(QuestionBankAiService::with_backend(
-        app.clone(),
-        ai_repository.pool().clone(),
-        generator,
-    ));
+    let ai = Arc::new(
+        QuestionBankAiService::with_backend(app.clone(), ai_repository.pool().clone(), generator)
+            .with_attachment_relay(
+                relay,
+                Some("/home/hyz/hyz_things/tmp/hyz-ai-uploads".into()),
+            ),
+    );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let router = with_question_bank(
@@ -658,7 +676,8 @@ async fn sync_and_whole_paper_routes_preserve_typed_security_boundaries() {
     let text = response.text().await.unwrap();
     assert!(text.contains("共享材料"));
     assert!(!text.contains("秘密解析"));
-    assert!(!text.contains("answer"));
+    assert!(!text.contains("correct_answer"));
+    assert!(!text.contains("reference_answer"));
     assert_eq!(
         client
             .get(&endpoint)
@@ -1753,6 +1772,7 @@ impl hyz_things::application::question_bank::practice::AiReviewTurn for Blocking
     async fn turn(
         &mut self,
         _prompt: &str,
+        _images: &[String],
         _cancel: tokio::sync::watch::Sender<bool>,
     ) -> Result<String, String> {
         let (release, result) = tokio::sync::oneshot::channel();
@@ -1850,6 +1870,7 @@ impl hyz_things::application::question_bank::practice::AiReviewTurn for Cancella
     async fn turn(
         &mut self,
         _prompt: &str,
+        _images: &[String],
         cancellation: tokio::sync::watch::Sender<bool>,
     ) -> Result<String, String> {
         self.started
@@ -2104,6 +2125,7 @@ impl hyz_things::application::question_bank::practice::AiReviewTurn for CaptureS
     async fn turn(
         &mut self,
         prompt: &str,
+        _images: &[String],
         _cancel: tokio::sync::watch::Sender<bool>,
     ) -> Result<String, String> {
         self.prompts
@@ -2184,5 +2206,265 @@ async fn ai_follow_up_resumes_the_thread_with_only_the_user_message() {
     .await
     .unwrap();
     assert_eq!(messages, ["请画一张线段图"]);
+    server.abort();
+}
+
+struct ImageCaptureAi {
+    turns: tokio::sync::mpsc::UnboundedSender<(Option<String>, String, Vec<String>)>,
+}
+
+#[async_trait]
+impl hyz_things::application::question_bank::practice::AiReviewBackend for ImageCaptureAi {
+    async fn connect(
+        &self,
+        previous: Option<&str>,
+    ) -> Result<Box<dyn hyz_things::application::question_bank::practice::AiReviewTurn>, String>
+    {
+        Ok(Box::new(ImageCaptureTurn {
+            turns: self.turns.clone(),
+            previous: previous.map(str::to_owned),
+        }))
+    }
+}
+
+struct ImageCaptureTurn {
+    turns: tokio::sync::mpsc::UnboundedSender<(Option<String>, String, Vec<String>)>,
+    previous: Option<String>,
+}
+
+#[async_trait]
+impl hyz_things::application::question_bank::practice::AiReviewTurn for ImageCaptureTurn {
+    fn thread_id(&self) -> &str {
+        "test-image-thread"
+    }
+
+    async fn turn(
+        &mut self,
+        prompt: &str,
+        images: &[String],
+        _cancel: tokio::sync::watch::Sender<bool>,
+    ) -> Result<String, String> {
+        self.turns
+            .send((self.previous.clone(), prompt.to_owned(), images.to_vec()))
+            .map_err(|_| "test closed".to_owned())?;
+        Ok("解析完成".into())
+    }
+}
+
+struct CaptureRelay {
+    path: String,
+    uploads: Arc<std::sync::Mutex<Vec<(String, usize)>>>,
+}
+
+#[async_trait]
+impl hyz_things::application::question_bank::practice::AiAttachmentRelay for CaptureRelay {
+    async fn upload(&self, media_type: &str, bytes: &[u8]) -> Result<String, String> {
+        self.uploads
+            .lock()
+            .unwrap()
+            .push((media_type.to_owned(), bytes.len()));
+        Ok(self.path.clone())
+    }
+}
+
+fn test_png() -> Vec<u8> {
+    let mut bytes = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+    bytes.extend_from_slice(&13u32.to_be_bytes());
+    bytes.extend_from_slice(b"IHDR");
+    bytes.extend_from_slice(&1u32.to_be_bytes());
+    bytes.extend_from_slice(&1u32.to_be_bytes());
+    bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
+    bytes.extend_from_slice(&[0; 4]);
+    bytes
+}
+
+#[tokio::test]
+async fn ai_attachment_upload_requires_admin_origin_csrf_and_strict_typed_body() {
+    let (server, base, cookie, _, bank, _) = bank_server_fixture(true).await;
+    bank.sync().await.unwrap();
+    let question = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
+    let endpoint =
+        format!("{base}/api/v1/question-bank/practice/questions/{question}/ai/attachments");
+    let client = reqwest::Client::new();
+    let png = test_png();
+
+    for (cookie, origin, csrf, expected) in [
+        (None, Some(base.as_str()), Some("qb-csrf"), 401),
+        (
+            Some(cookie.as_str()),
+            Some("https://other.example"),
+            Some("qb-csrf"),
+            403,
+        ),
+        (Some(cookie.as_str()), Some(base.as_str()), None, 403),
+    ] {
+        let mut request = client
+            .post(&endpoint)
+            .header("content-type", "image/png")
+            .body(png.clone());
+        if let Some(cookie) = cookie {
+            request = request.header("cookie", cookie);
+        }
+        if let Some(origin) = origin {
+            request = request.header("origin", origin);
+        }
+        if let Some(csrf) = csrf {
+            request = request.header("x-hyz-csrf", csrf);
+        }
+        assert_eq!(request.send().await.unwrap().status(), expected);
+    }
+
+    let send = |content_type: &str, body: Vec<u8>| {
+        client
+            .post(&endpoint)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .header("content-type", content_type)
+            .body(body)
+            .send()
+    };
+    assert_eq!(send("image/gif", png.clone()).await.unwrap().status(), 400);
+    assert_eq!(
+        send("image/png", b"not png".to_vec())
+            .await
+            .unwrap()
+            .status(),
+        400
+    );
+    assert_eq!(
+        send("image/png", vec![0u8; 8 * 1024 * 1024 + 1])
+            .await
+            .unwrap()
+            .status(),
+        413
+    );
+    // Without a configured PC receiver, a valid image is unavailable rather than stored on-device.
+    assert_eq!(send("image/png", png).await.unwrap().status(), 503);
+    server.abort();
+}
+
+#[tokio::test]
+async fn ai_start_and_follow_up_forward_uploaded_images_as_local_paths() {
+    let (turns, mut received) = tokio::sync::mpsc::unbounded_channel();
+    let uploads = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let upload_path =
+        "/home/hyz/hyz_things/tmp/hyz-ai-uploads/019a3d8e-1b32-7a60-9c83-f34217a6e210.png";
+    let relay = Arc::new(CaptureRelay {
+        path: upload_path.into(),
+        uploads: uploads.clone(),
+    });
+    let (server, base, cookie, _, bank, pool) = bank_server_fixture_with_ai_and_relay(
+        true,
+        Some(Arc::new(ImageCaptureAi { turns })),
+        Some(relay),
+    )
+    .await;
+    bank.sync().await.unwrap();
+    let question = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
+    let endpoint = format!("{base}/api/v1/question-bank/practice/questions/{question}/ai");
+    let client = reqwest::Client::new();
+    let upload = |body: Vec<u8>| {
+        client
+            .post(format!("{endpoint}/attachments"))
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .header("content-type", "image/png")
+            .body(body)
+            .send()
+    };
+    let first: serde_json::Value = upload(test_png()).await.unwrap().json().await.unwrap();
+    let second: serde_json::Value = upload(test_png()).await.unwrap().json().await.unwrap();
+    assert!(first["id"].as_str().is_some());
+    assert_ne!(first["id"], second["id"]);
+    let uploads = uploads.lock().unwrap().clone();
+    assert_eq!(uploads.len(), 2);
+    assert_eq!(uploads[0].0, "image/png");
+    assert_eq!(uploads[0].1, test_png().len());
+
+    // More than three images, unknown IDs and expired IDs are rejected.
+    let too_many = serde_json::json!({"attachments": ["a", "b", "c", "d"]});
+    assert_eq!(
+        client
+            .post(&endpoint)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .json(&too_many)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        400
+    );
+    assert_eq!(
+        client
+            .post(&endpoint)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .json(&serde_json::json!({"attachments": ["unknown"]}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        400
+    );
+
+    let id = first["id"].as_str().unwrap();
+    let response = client
+        .post(&endpoint)
+        .header("cookie", &cookie)
+        .header("origin", &base)
+        .header("x-hyz-csrf", "qb-csrf")
+        .json(&serde_json::json!({"instruction": "看图讲题", "attachments": [id]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 202);
+    let (previous, prompt, images) =
+        tokio::time::timeout(std::time::Duration::from_secs(5), received.recv())
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(previous, None);
+    assert!(prompt.contains("看图讲题"), "{prompt}");
+    assert_eq!(images, [upload_path.to_owned()]);
+    let messages: Vec<String> = sqlx::query_scalar(
+        "SELECT content FROM question_ai_messages WHERE question_id=? AND role='user'",
+    )
+    .bind(question)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert!(messages[0].contains("临时图片"), "{messages:?}");
+    assert!(!messages[0].contains(upload_path));
+
+    // A follow-up resumes the same thread with its own image.
+    sqlx::query("UPDATE question_ai_reviews SET status='complete',thread_id='test-image-thread' WHERE question_id=?")
+        .bind(question)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let id = second["id"].as_str().unwrap();
+    let response = client
+        .post(format!("{endpoint}/messages"))
+        .header("cookie", &cookie)
+        .header("origin", &base)
+        .header("x-hyz-csrf", "qb-csrf")
+        .json(&serde_json::json!({"message": "再解释一下", "attachments": [id]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 202);
+    let (previous, prompt, images) =
+        tokio::time::timeout(std::time::Duration::from_secs(5), received.recv())
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(previous.as_deref(), Some("test-image-thread"));
+    assert_eq!(prompt, "再解释一下");
+    assert_eq!(images, [upload_path.to_owned()]);
     server.abort();
 }

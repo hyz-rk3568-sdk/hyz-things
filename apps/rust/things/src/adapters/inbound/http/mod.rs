@@ -840,6 +840,11 @@ fn app_with_assets(
             on(MethodFilter::POST, question_bank::ai_stop).layer(DefaultBodyLimit::max(8 * 1024)),
         )
         .route(
+            "/api/v1/question-bank/practice/questions/{id}/ai/attachments",
+            on(MethodFilter::POST, question_bank::ai_attachment)
+                .layer(DefaultBodyLimit::max(8 * 1024 * 1024)),
+        )
+        .route(
             "/api/v1/question-bank/assets/{name}",
             on(MethodFilter::GET, question_bank::asset),
         )
@@ -2293,6 +2298,18 @@ async fn authorize_sensitive_control_admin(
     require_admin(state, headers, AdminRequirement::Normal).await
 }
 
+/// The binary image endpoint carries `image/png` or `image/jpeg` instead of
+/// JSON, but keeps the same same-origin, CSRF and administrator checks.
+async fn authorize_sensitive_image_admin(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(SecretString, AdminAuthorization), Response> {
+    if !authorize_upload_origin_csrf(state, headers) {
+        return Err(forbidden_json());
+    }
+    require_admin(state, headers, AdminRequirement::Normal).await
+}
+
 async fn invoke_sensitive_control_authorized(
     state: &AppState,
     operation: ControlOperation,
@@ -2500,13 +2517,22 @@ fn authorize_control(state: &AppState, headers: &HeaderMap) -> bool {
     authorize_same_origin_csrf(state, headers)
 }
 
-fn authorize_same_origin_csrf(state: &AppState, headers: &HeaderMap) -> bool {
+fn csrf_token_matches(state: &AppState, headers: &HeaderMap) -> bool {
     let token = headers
         .get("x-hyz-csrf")
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default();
-    authorize_json_origin(state, headers)
-        && constant_time_equal(token.as_bytes(), state.csrf_token.as_bytes())
+    constant_time_equal(token.as_bytes(), state.csrf_token.as_bytes())
+}
+
+fn authorize_same_origin_csrf(state: &AppState, headers: &HeaderMap) -> bool {
+    authorize_json_origin(state, headers) && csrf_token_matches(state, headers)
+}
+
+fn authorize_upload_origin_csrf(state: &AppState, headers: &HeaderMap) -> bool {
+    // The caller validates the media type after authentication. The custom
+    // CSRF header still forces a preflight for every cross-origin write.
+    authorize_control_origin(state, headers, |_| true) && csrf_token_matches(state, headers)
 }
 
 fn ipv6_origin(address: Ipv6Addr, base_origin: &str) -> Option<String> {
@@ -2530,6 +2556,14 @@ fn origin_is_allowed(
 }
 
 fn authorize_json_origin(state: &AppState, headers: &HeaderMap) -> bool {
+    authorize_control_origin(state, headers, |value| value == "application/json")
+}
+
+fn authorize_control_origin(
+    state: &AppState,
+    headers: &HeaderMap,
+    content_type_allowed: impl Fn(&str) -> bool,
+) -> bool {
     let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
@@ -2554,7 +2588,7 @@ fn authorize_json_origin(state: &AppState, headers: &HeaderMap) -> bool {
     content_type
         .split(';')
         .next()
-        .is_some_and(|value| value.trim() == "application/json")
+        .is_some_and(|value| content_type_allowed(value.trim()))
         && origin_is_allowed(
             origin,
             state.allowed_origin.as_ref(),
@@ -2997,7 +3031,9 @@ fn is_question_bank_flashcard_card_path(path: &str) -> bool {
 fn is_question_bank_ai_path(path: &str, allow_action: bool) -> bool {
     let parts: Vec<&str> = path.split('/').collect();
     (parts.len() == 8
-        || allow_action && parts.len() == 9 && matches!(parts[8], "messages" | "stop"))
+        || allow_action
+            && parts.len() == 9
+            && matches!(parts[8], "messages" | "stop" | "attachments"))
         && parts[..6] == ["", "api", "v1", "question-bank", "practice", "questions"]
         && crate::application::question_bank::document::valid_id(parts[6])
         && parts[7] == "ai"

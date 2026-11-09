@@ -124,7 +124,7 @@ async fn idle_state_is_accessible_for_a_question() {
 async fn start_without_codex_configuration_never_writes_or_consumes_quota() {
     let (service, _fingerprint, _pool) = submitted_practice().await;
     assert!(matches!(
-        service.start(QUESTION_ID, None).await,
+        service.start(QUESTION_ID, None, Vec::new()).await,
         Err(AiReviewError::Unavailable)
     ));
     let state = service.state(QUESTION_ID).await.unwrap();
@@ -143,13 +143,15 @@ async fn follow_up_rejects_blank_control_and_oversized_messages_before_any_task(
         "好".repeat(2001),
     ] {
         assert!(matches!(
-            service.follow_up(QUESTION_ID, message).await,
+            service.follow_up(QUESTION_ID, message, Vec::new()).await,
             Err(AiReviewError::Invalid)
         ));
     }
     // 700 Chinese characters exceed 2000 bytes but remain within the character limit.
     assert!(matches!(
-        service.follow_up(QUESTION_ID, "好".repeat(700)).await,
+        service
+            .follow_up(QUESTION_ID, "好".repeat(700), Vec::new())
+            .await,
         Err(AiReviewError::Unavailable)
     ));
     let state = service.state(QUESTION_ID).await.unwrap();

@@ -1,0 +1,23 @@
+[Unit]
+Description=hyz PaddleOCR local serving (loopback only)
+After=network.target
+
+[Service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+# PP-OCRv6 detection crashes in oneDNN on available CPU wheels; use the
+# paddle run mode. ModelScope avoids unreachable Hugging Face downloads.
+Environment=PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT=False
+Environment=PADDLE_PDX_MODEL_SOURCE=modelscope
+Environment=PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
+ExecStart=%h/.local/share/hyz-ocr/venv/bin/paddlex --serve --pipeline OCR --device cpu --host 127.0.0.1 --port 8080
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.paddlex %h/.cache -%h/.paddleocr
+
+[Install]
+WantedBy=default.target

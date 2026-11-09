@@ -1,3 +1,4 @@
+pub mod attachments;
 pub mod document;
 mod favorite_flashcards;
 pub mod images;
@@ -79,7 +80,7 @@ impl std::error::Error for BankError {}
 /// Parsed question content cached by the SQLite index so practice does not
 /// rescan Markdown. Answer keys stay on the server and are never serialized
 /// into the browser-facing workspace DTOs.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct StoredQuestion {
     pub id: String,
     pub number: u32,
@@ -89,9 +90,19 @@ pub struct StoredQuestion {
     pub materials: Vec<String>,
     pub stem: String,
     pub options_markdown: String,
+    #[serde(default = "crate::domain::question_bank::default_answer_type")]
+    pub answer_type: String,
+    #[serde(default)]
+    pub question_type: Option<String>,
+    #[serde(default = "crate::domain::question_bank::default_grading_mode")]
+    pub grading_mode: String,
+    #[serde(default)]
+    pub max_score: Option<f64>,
     pub gradable: bool,
     pub correct_answer: Vec<String>,
     pub explanation: String,
+    #[serde(default)]
+    pub reference_answer: String,
 }
 
 impl StoredQuestion {
@@ -105,11 +116,15 @@ impl StoredQuestion {
             module: self.module.clone(),
             category: self.category.clone(),
             topics: self.topics.clone(),
+            answer_type: self.answer_type.clone(),
+            question_type: self.question_type.clone(),
+            grading_mode: self.grading_mode.clone(),
+            max_score: self.max_score,
         }
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PaperContent {
     pub paper_id: String,
     pub hash: String,
@@ -134,9 +149,16 @@ impl PaperContent {
                     materials: question.materials,
                     stem: question.stem,
                     options_markdown: question.options_markdown,
+                    answer_type: question.answer_type,
+                    question_type: question.question_type,
+                    grading_mode: question.grading_mode,
+                    max_score: question.max_score,
                     gradable: key.is_some_and(|key| key.gradable),
                     correct_answer: key.map(|key| key.choices.clone()).unwrap_or_default(),
                     explanation: key.map(|key| key.explanation.clone()).unwrap_or_default(),
+                    reference_answer: key
+                        .map(|key| key.reference_answer.clone())
+                        .unwrap_or_default(),
                 }
             })
             .collect();
@@ -153,7 +175,7 @@ impl PaperContent {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PracticeContent {
     pub paper_id: String,
     pub paper_title: String,
@@ -616,6 +638,7 @@ impl QuestionBankApplication {
             year: summary.year,
             region: summary.region,
             variant: summary.variant,
+            subject: summary.subject,
             role: summary.role,
             kind: summary.kind,
             collection_id: summary.collection_id,

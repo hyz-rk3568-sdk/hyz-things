@@ -529,6 +529,41 @@ test('collection review prefers existing question AI analysis', async ({ page })
   await expect(review.getByTestId('question-bank-ai-message')).toContainText('收藏题已有 AI 解析');
 });
 
+test('question AI image picker uploads validated attachments and sends IDs', async ({ page }) => {
+  await install(page);
+  const starts: Array<{ instruction: string; attachments: string[] }> = [];
+  let uploads = 0;
+  await page.route(`**${root}/practice/questions/*/ai/attachments`, async route => {
+    uploads += 1;
+    expect(route.request().headers()['x-hyz-csrf']).toBeTruthy();
+    expect(route.request().headers()['content-type']).toBe('image/png');
+    await route.fulfill({ json: { id: `attachment-${uploads}` } });
+  });
+  await page.route(`**${root}/practice/questions/*/ai`, async route => {
+    const question_id = new URL(route.request().url()).pathname.split('/').at(-2)!;
+    if (route.request().method() === 'POST') {
+      starts.push(route.request().postDataJSON());
+      await route.fulfill({ status: 202, json: { question_id, status: 'running', error: null, messages: [] } });
+    } else {
+      await route.fulfill({ json: { question_id, status: 'idle', error: null, messages: [] } });
+    }
+  });
+  const review = await openReview(page);
+  await review.getByTestId('question-bank-ai-tab').click();
+  const picker = review.getByTestId('question-bank-ai-start-images');
+  const input = picker.locator('input[type=file]');
+  await input.setInputFiles({ name: 'note.png', mimeType: 'image/png', buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]) });
+  await expect(picker.getByText('note.png')).toBeVisible();
+  await input.setInputFiles({ name: 'note.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') });
+  await expect(picker.getByRole('alert')).toContainText('仅支持 JPG 或 PNG');
+  expect(uploads).toBe(1);
+  await review.getByTestId('question-bank-ai-instruction').fill('看图讲题');
+  await review.getByTestId('question-bank-ai-start').click();
+  await expect.poll(() => starts.length).toBe(1);
+  expect(starts[0]).toEqual({ instruction: '看图讲题', attachments: ['attachment-1'] });
+  await expect(picker.getByText('note.png')).toHaveCount(0);
+});
+
 test('wrong review can delete saved question AI only after confirmation', async ({ page }) => {
   await install(page, 'wrong');
   let deleted = false;

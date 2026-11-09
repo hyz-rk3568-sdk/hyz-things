@@ -879,7 +879,7 @@ correct_answer 是原卡片的正确答案；back 为空表示未提供个人解
             _=cancelled.wait_for(|value|*value)=>return Err("服务正在停止".into()),
         };
         let output = session
-            .turn_cancellable_with_schema(&prompt, cancellation, output_schema())
+            .turn_cancellable_with_schema(&prompt, &[], cancellation, output_schema())
             .await?;
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]

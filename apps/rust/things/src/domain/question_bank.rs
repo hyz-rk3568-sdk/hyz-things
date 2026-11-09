@@ -18,9 +18,20 @@ pub fn primary_module(name: Option<&str>) -> Option<&'static str> {
 
 pub const PAPER_KIND_EXAM: &str = "exam";
 pub const PAPER_KIND_DRILL: &str = "drill";
+pub const SUBJECT_XINGCE: &str = "xingce";
+pub const SUBJECT_SHENLUN: &str = "shenlun";
 
 pub fn exam_kind() -> String {
     PAPER_KIND_EXAM.into()
+}
+pub fn default_subject() -> String {
+    SUBJECT_XINGCE.into()
+}
+pub fn default_answer_type() -> String {
+    "objective".into()
+}
+pub fn default_grading_mode() -> String {
+    "exact".into()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,6 +41,8 @@ pub struct PaperSummary {
     pub year: i32,
     pub region: String,
     pub variant: String,
+    #[serde(default = "default_subject")]
+    pub subject: String,
     pub role: String,
     #[serde(default = "exam_kind")]
     pub kind: String,
@@ -40,7 +53,7 @@ pub struct PaperSummary {
     pub questions: usize,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct QuestionView {
     pub id: String,
     pub number: u32,
@@ -50,6 +63,14 @@ pub struct QuestionView {
     pub module: Option<String>,
     pub category: Option<String>,
     pub topics: Vec<String>,
+    #[serde(default = "default_answer_type")]
+    pub answer_type: String,
+    #[serde(default)]
+    pub question_type: Option<String>,
+    #[serde(default = "default_grading_mode")]
+    pub grading_mode: String,
+    #[serde(default)]
+    pub max_score: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,13 +80,15 @@ pub struct MaterialView {
     pub markdown: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PaperView {
     pub id: String,
     pub title: String,
     pub year: i32,
     pub region: String,
     pub variant: String,
+    #[serde(default = "default_subject")]
+    pub subject: String,
     pub role: String,
     #[serde(default = "exam_kind")]
     pub kind: String,
@@ -307,7 +330,7 @@ pub struct PracticeSession {
     pub score: Option<PracticeScore>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PracticeQuestion {
     pub item: PracticeItem,
     pub paper_title: String,
@@ -316,7 +339,7 @@ pub struct PracticeQuestion {
     pub content_changed: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PracticeWorkspace {
     pub session: PracticeSession,
     pub questions: Vec<PracticeQuestion>,
@@ -324,7 +347,7 @@ pub struct PracticeWorkspace {
 
 /// Read-only review of one saved question. It never depends on a practice
 /// session, so wrong and favorite items can be reviewed without re-answering.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PracticeQuestionDetail {
     pub item: PracticeBrowseItem,
     pub question: QuestionView,
@@ -338,7 +361,7 @@ pub struct PracticeQuestionDetail {
     pub wrong_count: usize,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ReviewQuestion {
     pub question: PracticeQuestion,
     pub correct_answer: Vec<String>,
@@ -350,7 +373,7 @@ pub struct ReviewQuestion {
     pub wrong_count: usize,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PracticeReview {
     pub session: PracticeSession,
     pub questions: Vec<ReviewQuestion>,
@@ -401,4 +424,7 @@ pub struct AiReviewState {
 #[serde(deny_unknown_fields)]
 pub struct AiReviewFollowUp {
     pub message: String,
+    /// Opaque IDs returned by the temporary image upload endpoint.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<String>,
 }

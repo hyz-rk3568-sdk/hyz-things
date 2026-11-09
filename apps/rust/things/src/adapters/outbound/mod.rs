@@ -9,6 +9,7 @@ pub mod router;
 pub mod storage;
 pub mod tailscale;
 
+pub mod ai_attachment_receiver;
 pub mod data_analysis;
 pub mod logic_judgment;
 

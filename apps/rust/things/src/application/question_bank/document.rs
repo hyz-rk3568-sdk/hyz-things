@@ -12,6 +12,8 @@ struct Header {
     year: i32,
     region: String,
     variant: String,
+    #[serde(default)]
+    subject: Option<String>,
     #[serde(default = "primary")]
     role: String,
     #[serde(default = "exam_kind")]
@@ -44,6 +46,14 @@ struct Metadata {
     topics: Vec<String>,
     #[serde(default)]
     materials: Vec<String>,
+    #[serde(default)]
+    answer_type: Option<String>,
+    #[serde(default)]
+    question_type: Option<String>,
+    #[serde(default)]
+    grading_mode: Option<String>,
+    #[serde(default)]
+    max_score: Option<f64>,
 }
 
 #[derive(Clone, Debug)]
@@ -55,6 +65,7 @@ pub struct Document {
 pub struct AnswerKey {
     pub choices: Vec<String>,
     pub explanation: String,
+    pub reference_answer: String,
     /// The key is structurally usable for local practice scoring.
     pub gradable: bool,
 }
@@ -101,6 +112,26 @@ pub(crate) fn structural_gradable(stem: &str, options_markdown: &str, answer: &[
         && answer.iter().all(|choice| labels.contains(choice))
 }
 
+fn valid_subject(value: &str) -> bool {
+    matches!(
+        value,
+        crate::domain::question_bank::SUBJECT_XINGCE
+            | crate::domain::question_bank::SUBJECT_SHENLUN
+    )
+}
+fn valid_answer_type(value: &str) -> bool {
+    matches!(value, "objective" | "subjective")
+}
+fn valid_grading_mode(value: &str) -> bool {
+    matches!(value, "exact" | "ai" | "manual")
+}
+fn valid_question_type(value: &str) -> bool {
+    matches!(
+        value,
+        "summary" | "analysis" | "measures" | "document_writing" | "essay" | "other"
+    )
+}
+
 impl Document {
     pub fn view(&self) -> PaperView {
         self.view.clone()
@@ -117,6 +148,7 @@ impl Document {
             year: v.year,
             region: v.region.clone(),
             variant: v.variant.clone(),
+            subject: v.subject.clone(),
             role: v.role.clone(),
             kind: v.kind.clone(),
             collection_id: v.collection_id.clone(),
@@ -183,8 +215,19 @@ fn parse_inner(text: &str, required: bool) -> Result<Document> {
         .split_once("\n---\n")
         .ok_or("unterminated frontmatter")?;
     let header: Header = serde_yaml::from_str(header).map_err(|_| "invalid paper YAML")?;
-    if header.schema != "hyz-paper/v1" || !["primary", "evidence"].contains(&header.role.as_str()) {
+    let is_v2 = header.schema == "hyz-paper/v2";
+    if !(header.schema == "hyz-paper/v1" || is_v2)
+        || !["primary", "evidence"].contains(&header.role.as_str())
+    {
         return Err("unsupported paper schema/role".into());
+    }
+    let subject = match (is_v2, header.subject.as_deref()) {
+        (true, None) => return Err("missing subject".into()),
+        (_, Some(value)) => value.to_owned(),
+        (false, None) => crate::domain::question_bank::SUBJECT_XINGCE.to_owned(),
+    };
+    if !valid_subject(&subject) {
+        return Err("unsupported subject".into());
     }
     match header.kind.as_str() {
         crate::domain::question_bank::PAPER_KIND_EXAM => {
@@ -266,9 +309,45 @@ fn parse_inner(text: &str, required: bool) -> Result<Document> {
                 .ok_or("unterminated question metadata")?;
             let meta: Metadata = serde_yaml::from_str(yaml).map_err(|_| "invalid question YAML")?;
             let fields = question_fields(sections)?;
+            let answer_type = match (is_v2, meta.answer_type.as_deref()) {
+                (true, None) => return Err("missing answer_type".into()),
+                (_, Some(value)) => value.to_owned(),
+                (false, None) => "objective".to_owned(),
+            };
+            if !valid_answer_type(&answer_type) {
+                return Err("unsupported answer_type".into());
+            }
+            let grading_mode = match (is_v2, meta.grading_mode.as_deref()) {
+                (true, None) => return Err("missing grading_mode".into()),
+                (_, Some(value)) => value.to_owned(),
+                (false, None) => "exact".to_owned(),
+            };
+            if !valid_grading_mode(&grading_mode) {
+                return Err("unsupported grading_mode".into());
+            }
+            if let Some(value) = meta.question_type.as_deref() {
+                if !valid_question_type(value) {
+                    return Err("unsupported question_type".into());
+                }
+            }
+            if meta
+                .max_score
+                .is_some_and(|value| !value.is_finite() || value <= 0.0 || value > 1000.0)
+            {
+                return Err("invalid max_score".into());
+            }
+            if answer_type == "subjective" && !fields.contains_key("Reference Answer") {
+                return Err("missing Reference Answer".into());
+            }
             let answer = choices(fields["Answer"].trim());
             let gradable =
                 structural_gradable(fields["Stem"].trim(), fields["Options"].trim(), &answer);
+            let reference_answer = fields
+                .get("Reference Answer")
+                .cloned()
+                .unwrap_or_default()
+                .trim()
+                .to_owned();
             answers.insert(
                 qid.clone(),
                 AnswerKey {
@@ -279,6 +358,7 @@ fn parse_inner(text: &str, required: bool) -> Result<Document> {
                         .unwrap_or_default()
                         .trim()
                         .into(),
+                    reference_answer,
                     gradable,
                 },
             );
@@ -292,6 +372,10 @@ fn parse_inner(text: &str, required: bool) -> Result<Document> {
                 module: meta.module,
                 category: meta.category,
                 topics: meta.topics,
+                answer_type,
+                question_type: meta.question_type,
+                grading_mode,
+                max_score: meta.max_score,
             });
         }
     }
@@ -325,6 +409,7 @@ fn parse_inner(text: &str, required: bool) -> Result<Document> {
             year: header.year,
             region: header.region,
             variant: header.variant,
+            subject,
             role: header.role,
             kind: header.kind,
             collection_id: header.collection_id,
@@ -394,10 +479,17 @@ fn question_fields(sections: &str) -> Result<BTreeMap<String, String>> {
     let mut fields = BTreeMap::new();
     let mut current = String::new();
     for line in sections.lines() {
-        if let Some(key) = line
-            .strip_prefix("### ")
-            .filter(|key| ["Stem", "Options", "Answer", "Explanation", "Notes"].contains(key))
-        {
+        if let Some(key) = line.strip_prefix("### ").filter(|key| {
+            [
+                "Stem",
+                "Options",
+                "Answer",
+                "Reference Answer",
+                "Explanation",
+                "Notes",
+            ]
+            .contains(key)
+        }) {
             current = key.to_string();
             if fields.insert(current.clone(), String::new()).is_some() {
                 return Err("duplicate question section".into());

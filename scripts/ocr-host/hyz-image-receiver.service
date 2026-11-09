@@ -1,0 +1,19 @@
+[Unit]
+Description=hyz-things temporary AI image receiver
+After=network.target
+
+[Service]
+Type=simple
+# 这台电脑的 LAN 地址；IP 变化时只改这一行。
+Environment=HYZ_IMAGE_RECEIVER_BIND=192.168.8.202:8099
+ExecStart=%h/Code/hyz_things/scripts/ocr-host/hyz-image-receiver.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/Code/hyz_things/tmp
+
+[Install]
+WantedBy=default.target

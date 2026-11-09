@@ -56,6 +56,10 @@ pub struct CodexConfig {
 }
 
 impl CodexConfig {
+    pub fn cwd(&self) -> &str {
+        &self.cwd
+    }
+
     #[cfg(test)]
     pub(crate) fn for_test_server(address: std::net::SocketAddr) -> Self {
         Self {
@@ -103,7 +107,7 @@ impl CodexConfig {
 
 /// Root-only .env file. Ignore unrelated configuration rather than accepting
 /// user-supplied URLs, model IDs, or legacy OpenAI-compatible credentials.
-pub fn load_codex_env() -> Result<Option<CodexConfig>, &'static str> {
+pub(crate) fn read_root_env() -> Result<Option<String>, &'static str> {
     let meta = match fs::symlink_metadata(ENV_PATH) {
         Ok(meta) => meta,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -117,8 +121,16 @@ pub fn load_codex_env() -> Result<Option<CodexConfig>, &'static str> {
     {
         return Err("Codex .env must be a root-owned 0600 regular file");
     }
-    let input = fs::read_to_string(ENV_PATH).map_err(|_| "Codex .env cannot be read")?;
-    parse_env(&input)
+    fs::read_to_string(ENV_PATH)
+        .map(Some)
+        .map_err(|_| "Codex .env cannot be read")
+}
+
+pub fn load_codex_env() -> Result<Option<CodexConfig>, &'static str> {
+    match read_root_env()? {
+        Some(input) => parse_env(&input),
+        None => Ok(None),
+    }
 }
 
 fn valid_remote_repo_path(value: &str) -> bool {

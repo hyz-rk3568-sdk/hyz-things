@@ -29,6 +29,13 @@ type AiService = Option<Extension<Arc<QuestionBankAiService>>>;
 pub(super) struct AiStartRequest {
     #[serde(default)]
     instruction: Option<String>,
+    #[serde(default)]
+    attachments: Vec<String>,
+}
+
+#[derive(serde::Serialize)]
+struct AiAttachmentResponse {
+    id: String,
 }
 
 #[expect(
@@ -106,8 +113,49 @@ pub(super) async fn ai_start(
         Ok(service) => service,
         Err(e) => return e,
     };
-    match service.start(&question_id, request.instruction).await {
+    match service
+        .start(&question_id, request.instruction, request.attachments)
+        .await
+    {
         Ok(value) => (StatusCode::ACCEPTED, Json(value)).into_response(),
+        Err(error) => ai_error(error),
+    }
+}
+
+pub(super) async fn ai_attachment(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: AiService,
+    payload: Result<axum::body::Bytes, axum::extract::rejection::BytesRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_image_admin(&state, &headers).await {
+        return response;
+    }
+    let media_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .unwrap_or_default();
+    if !matches!(media_type, "image/png" | "image/jpeg") {
+        return error_json(
+            StatusCode::BAD_REQUEST,
+            "question_bank_ai_attachment_type",
+            "仅支持 JPG 或 PNG 图片",
+        );
+    }
+    let bytes = match payload {
+        Ok(bytes) => bytes,
+        Err(error) if error.status() == StatusCode::PAYLOAD_TOO_LARGE => {
+            return payload_too_large_json();
+        }
+        Err(_) => return invalid_request_json(),
+    };
+    let service = match ai_service(service) {
+        Ok(service) => service,
+        Err(error) => return error,
+    };
+    match service.attach(media_type, &bytes).await {
+        Ok(id) => Json(AiAttachmentResponse { id }).into_response(),
         Err(error) => ai_error(error),
     }
 }
@@ -129,7 +177,10 @@ pub(super) async fn ai_follow_up(
         Ok(service) => service,
         Err(e) => return e,
     };
-    match service.follow_up(&question_id, payload.message).await {
+    match service
+        .follow_up(&question_id, payload.message, payload.attachments)
+        .await
+    {
         Ok(value) => (StatusCode::ACCEPTED, Json(value)).into_response(),
         Err(error) => ai_error(error),
     }

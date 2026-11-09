@@ -8,6 +8,7 @@ use hyz_things::{
         },
         outbound::{
             admin::AdminFileAdapter,
+            ai_attachment_receiver::load_attachment_relay,
             camera::CameraUnixAdapter,
             data_analysis::{load_codex_env, DataAnalysisService},
             favorite_flashcard_source::FilesystemFavoriteFlashcardWriter,
@@ -33,7 +34,7 @@ use hyz_things::{
         logic_judgment::LogicJudgmentPort,
         ports::{ClockPort, PlatformError, PortalControlHandler},
         quantitative_relations::QuantitativeRelationsPort,
-        question_bank::QuestionBankApplication,
+        question_bank::{practice::AiAttachmentRelay, QuestionBankApplication},
         status::PortalStatus,
         training_time::TrainingTimePort,
     },
@@ -227,11 +228,17 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                 Arc::new(FilesystemQuestionBankSource::default()),
                 Arc::new(repository),
             ));
-            let ai = Arc::new(QuestionBankAiService::new(
-                bank.clone(),
-                pool,
-                load_codex_env().unwrap_or(None),
-            ));
+            let codex = load_codex_env().unwrap_or(None);
+            let relay = load_attachment_relay()
+                .unwrap_or(None)
+                .map(|relay| Arc::new(relay) as Arc<dyn AiAttachmentRelay>);
+            let upload_root = codex
+                .as_ref()
+                .map(|config| format!("{}/tmp/hyz-ai-uploads", config.cwd()));
+            let ai = Arc::new(
+                QuestionBankAiService::new(bank.clone(), pool, codex)
+                    .with_attachment_relay(relay, upload_root),
+            );
             if let Err(error) = ai.recover_interrupted().await {
                 tracing::warn!(?error, "question bank AI recovery failed");
             }

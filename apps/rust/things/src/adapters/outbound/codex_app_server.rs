@@ -36,6 +36,9 @@ pub struct CodexSession {
     writer: SharedWriter,
     thread_id: String,
     request_id: i64,
+    /// Resumed threads already exist with an older sandbox policy; the next
+    /// turn must request full access explicitly.
+    resumed: bool,
 }
 
 fn accept_key(key: &str) -> String {
@@ -330,7 +333,8 @@ impl CodexSession {
         Self::connect_at(&address.to_string(), token, cwd).await
     }
 
-    /// Persistent, read-only study threads are separate from ephemeral generation threads.
+    /// Persistent study threads are separate from ephemeral generation threads;
+    /// both run with the maximum sandbox access requested by the product owner.
     pub async fn connect_review(
         token: &str,
         cwd: &str,
@@ -375,6 +379,7 @@ impl CodexSession {
             writer: Arc::new(Mutex::new(writer)),
             thread_id: String::new(),
             request_id: 0,
+            resumed: previous_thread.is_some(),
         };
         client
             .request(
@@ -400,7 +405,7 @@ impl CodexSession {
                         "ephemeral":!persistent,
                         "cwd":cwd,
                         "approvalPolicy":"never",
-                        "sandbox":if persistent {"read-only"} else {"danger-full-access"},
+                        "sandbox":"danger-full-access",
                         "config":{"shell_environment_policy.set":{
                             "TMPDIR":"/tmp","TMP":"/tmp","TEMP":"/tmp"
                         }}
@@ -455,6 +460,7 @@ impl CodexSession {
     pub async fn turn_review(
         &mut self,
         prompt: &str,
+        images: &[String],
         cancellation: watch::Sender<bool>,
     ) -> Result<String, String> {
         let schema = json!({
@@ -464,7 +470,7 @@ impl CodexSession {
             "additionalProperties":false
         });
         let raw = self
-            .turn_cancellable_with_schema(prompt, cancellation, schema)
+            .turn_cancellable_with_schema(prompt, images, cancellation, schema)
             .await?;
         review_answer(&raw).ok_or_else(|| "Codex AI 解析内容为空或过长".to_owned())
     }
@@ -479,7 +485,7 @@ impl CodexSession {
         prompt: &str,
         cancellation: watch::Sender<bool>,
     ) -> Result<String, String> {
-        self.turn_cancellable_with_schema(prompt, cancellation, output_schema())
+        self.turn_cancellable_with_schema(prompt, &[], cancellation, output_schema())
             .await
     }
 
@@ -488,13 +494,14 @@ impl CodexSession {
         prompt: &str,
         schema: Value,
     ) -> Result<String, String> {
-        self.turn_cancellable_with_schema(prompt, watch::channel(false).0, schema)
+        self.turn_cancellable_with_schema(prompt, &[], watch::channel(false).0, schema)
             .await
     }
 
     pub async fn turn_cancellable_with_schema(
         &mut self,
         prompt: &str,
+        images: &[String],
         cancellation: watch::Sender<bool>,
         schema: Value,
     ) -> Result<String, String> {
@@ -506,7 +513,7 @@ impl CodexSession {
         let thread = self.thread_id.clone();
         let interrupt_id = self.next_request_id();
         let (state_tx, mut state) = watch::channel(TurnState::NotStarted);
-        let generation = self.run_turn(prompt, state_tx, schema);
+        let generation = self.run_turn(prompt, images, state_tx, schema);
         tokio::pin!(generation);
         let error = tokio::select! {
             result = &mut generation => return result,
@@ -556,21 +563,29 @@ impl CodexSession {
     async fn run_turn(
         &mut self,
         prompt: &str,
+        images: &[String],
         state: watch::Sender<TurnState>,
         schema: Value,
     ) -> Result<String, String> {
         state.send_replace(TurnState::Starting);
         let thread = self.thread_id.clone();
-        let result = self
-            .request(
-                "turn/start",
-                json!({
-                    "threadId":thread,
-                    "input":[{"type":"text","text":prompt}],
-                    "outputSchema":schema
-                }),
-            )
-            .await?;
+        let mut input = vec![json!({"type":"text","text":prompt})];
+        input.extend(
+            images
+                .iter()
+                .map(|path| json!({"type":"localImage","path":path})),
+        );
+        let mut params = json!({
+            "threadId":thread,
+            "input":input,
+            "outputSchema":schema
+        });
+        // Resumed threads may still carry the old read-only policy; request the
+        // maximum sandbox explicitly for every turn in that thread.
+        if self.resumed {
+            params["sandboxPolicy"] = json!({"type":"dangerFullAccess"});
+        }
+        let result = self.request("turn/start", params).await?;
         let turn_id = result
             .pointer("/turn/id")
             .and_then(Value::as_str)
@@ -833,12 +848,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn review_thread_is_persistent_read_only_and_reports_its_id() {
+    async fn review_thread_is_persistent_full_access_and_reports_its_id() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let (session, _socket, thread) = accept_review(&listener, None).await;
         assert_eq!(thread["method"], "thread/start");
         assert_eq!(thread["params"]["ephemeral"], false);
-        assert_eq!(thread["params"]["sandbox"], "read-only");
+        assert_eq!(thread["params"]["sandbox"], "danger-full-access");
         assert_eq!(thread["params"]["approvalPolicy"], "never");
         assert_eq!(thread["params"]["cwd"], "/home/hyz/hyz_things");
         assert_eq!(session.thread_id(), "test-thread");
@@ -856,12 +871,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn resumed_thread_requests_full_access_for_the_next_turn() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let (mut session, mut socket, _thread) =
+            accept_review(&listener, Some("previous-thread")).await;
+        let task = tokio::spawn(async move {
+            session
+                .turn_review("review", &[], watch::channel(false).0)
+                .await
+        });
+        let request = client_message(&mut socket).await;
+        assert_eq!(request["method"], "turn/start");
+        assert_eq!(
+            request["params"]["sandboxPolicy"],
+            json!({"type":"dangerFullAccess"})
+        );
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn review_turn_sends_uploaded_images_as_local_image_inputs() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let (mut session, mut socket, _thread) = accept_review(&listener, None).await;
+        let images = vec![
+            "/home/hyz/hyz_things/tmp/hyz-ai-uploads/one.png".to_owned(),
+            "/home/hyz/hyz_things/tmp/hyz-ai-uploads/two.jpg".to_owned(),
+        ];
+        let task = tokio::spawn(async move {
+            session
+                .turn_review("check the handwriting", &images, watch::channel(false).0)
+                .await
+        });
+        let request = client_message(&mut socket).await;
+        assert_eq!(request["method"], "turn/start");
+        assert_eq!(
+            request["params"]["input"],
+            json!([
+                {"type":"text","text":"check the handwriting"},
+                {"type":"localImage","path":"/home/hyz/hyz_things/tmp/hyz-ai-uploads/one.png"},
+                {"type":"localImage","path":"/home/hyz/hyz_things/tmp/hyz-ai-uploads/two.jpg"}
+            ])
+        );
+        assert!(request["params"].get("sandboxPolicy").is_none());
+        task.abort();
+    }
+
+    #[tokio::test]
     async fn review_accepts_an_answer_wrapped_in_a_json_code_fence() {
         let (mut session, mut socket) = test_connection().await;
-        let task =
-            tokio::spawn(
-                async move { session.turn_review("review", watch::channel(false).0).await },
-            );
+        let task = tokio::spawn(async move {
+            session
+                .turn_review("review", &[], watch::channel(false).0)
+                .await
+        });
         let request = client_message(&mut socket).await;
         server_message(
             &mut socket,
@@ -881,10 +943,11 @@ mod tests {
     #[tokio::test]
     async fn review_accepts_plain_markdown_when_the_model_skips_the_envelope() {
         let (mut session, mut socket) = test_connection().await;
-        let task =
-            tokio::spawn(
-                async move { session.turn_review("review", watch::channel(false).0).await },
-            );
+        let task = tokio::spawn(async move {
+            session
+                .turn_review("review", &[], watch::channel(false).0)
+                .await
+        });
         let request = client_message(&mut socket).await;
         server_message(
             &mut socket,
