@@ -2387,6 +2387,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                             <FavoriteFlashcardPanel key={item.item.question_id.clone()}
                                                 question_id={item.item.question_id.clone()}
                                                 preview={preview.clone()} csrf={props.csrf.clone()}
+                                                on_changed={flashcard_changed.clone()}
                                                 on_close={Callback::from({let flashcard_open=flashcard_open.clone();move |_|flashcard_open.set(false)})}/>
                                         }
                                     </div>

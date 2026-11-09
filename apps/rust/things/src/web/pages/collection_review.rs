@@ -259,7 +259,8 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
         if let Some(value) = &*preview {
             html! {
                 <FavoriteFlashcardPanel question_id={item.question_id.clone()} preview={value.clone()}
-                    csrf={props.csrf.clone()} on_close={Callback::from({
+                    csrf={props.csrf.clone()} on_changed={flashcard_changed.clone()}
+                    on_close={Callback::from({
                         let creating=creating.clone(); move |_|creating.set(false)
                     })}/>
             }
