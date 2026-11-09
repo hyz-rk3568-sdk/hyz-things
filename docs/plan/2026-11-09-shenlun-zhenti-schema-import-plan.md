@@ -8,11 +8,11 @@
 
 1. 从 [ProfessorZhi/gwy-zhenti](https://github.com/ProfessorZhi/gwy-zhenti) 筛选 **2017—2026 年**国考、湖南省考的申论真题。
 2. 将试卷转换成现有 `hyz-paper/v1` 兼容格式，放入既有 `question_bank/papers/` 目录。
-3. 为原始题库增加最低限度的科目、作答类型、题型和分值字段，以及主观题参考答案的独立存储位；增加相应 SQLite migration 和解析/同步适配。
+3. 为原始题库增加最低限度的科目、作答类型、题型、判分模式和分值字段，以及主观题参考答案的独立存储位；增加相应 SQLite migration 和解析/同步适配。
 4. 保留原卷给定材料、作答要求、参考答案与解析，并做可重复的结构和图片校验。
 5. 扩展**现有真题 AI 解析**的图片上传和视觉追问输入，新增项目内 PaddleOCR Skill、宿主机本地 OCR 服务管理方案，并按用户要求将这类 Codex 解析线程改成 danger-full-access。
 
-**不做：** 不新增第三种 `kind`；不加入职测、综应；不增加 `source_url`、`bank_id`、`exam_series`、`grading_mode`、字数结构化字段等非必要元数据；不新增申论业务页面或阅卷功能；本次图片试点仅扩展现有 AI 解析输入与临时附件传输；图片仅放临时目录，不修改题库共享、设备挂载和现有永久题库数据。
+**不做：** 不新增第三种 `kind`；不加入职测、综应；不增加 `source_url`、`bank_id`、`exam_series`、字数结构化字段等非必要元数据；不新增申论业务页面或阅卷功能；本次图片试点仅扩展现有 AI 解析输入与临时附件传输；图片仅放临时目录，不修改题库共享、设备挂载和现有永久题库数据。
 
 原有行测真题与 UUID、练习历史、收藏、错题不作重置或迁移改写。提交代码前必须先审计测试现有兼容行为。
 
@@ -82,6 +82,7 @@ status: unverified
 | --- | --- | --- |
 | `answer_type` | `objective` / `subjective` | 旧题缺省 `objective` |
 | `question_type` | 非空字符串或缺省；申论可用 `summary`、`analysis`、`measures`、`document_writing`、`essay`、`other` | 不明确则 `other` 或留空；不凭题号猜作文 |
+| `grading_mode` | `exact` / `ai` / `manual` | 旧题缺省 `exact`，本批申论题标记 `ai`，不意味着已实现 AI 评分 |
 | `max_score` | 正数或缺省 | 仅源题明确给出分值时写入 |
 
 原有 `module`、`category`、`topics`、`materials` 保留。申论材料关联必须准确：明确关联的按来源对应材料编号映射；全卷适用的给定材料保持全卷可访问；无法核实时报告而不是编造引用。
@@ -104,6 +105,7 @@ module: 申论
 category: 概括归纳
 answer_type: subjective
 question_type: summary
+grading_mode: ai
 max_score: 10
 materials: [M1]
 ```
@@ -142,6 +144,9 @@ ALTER TABLE questions
   ADD COLUMN question_type TEXT;
 
 ALTER TABLE questions
+  ADD COLUMN grading_mode TEXT NOT NULL DEFAULT 'exact';
+
+ALTER TABLE questions
   ADD COLUMN max_score REAL;
 
 ALTER TABLE questions
@@ -152,8 +157,9 @@ CREATE INDEX IF NOT EXISTS idx_bank_papers_subject
 ```
 
 - 旧 `papers` 行的 `subject` 自动为 `xingce`，旧 `questions` 行的 `answer_type` 自动为 `objective`。
+- `grading_mode` 是题目声明的**目标评分方式**，不代表当前具备相应的执行能力。`exact` 表示按标准选项精确判分，`ai` 表示预留 AI 主观评判方式，`manual` 表示人工评阅；与 `answer_type` 独立，不能只靠主客观类型推断评分模式。当前版本不新增 AI 评卷或人工评卷业务逻辑。
 - `correct_answer` 仍用于客观选项，`reference_answer` 是单独的主观题参考内容；不得向客观判分字段写入范文。
-- 现有 `gradable` 保持“有可用选择题结构与答案”的含义。申论题不具备客观选项结构时为 `0`，不能由此推断题目无法保存/阅读。
+- 现有 `gradable` 保持“有可用选择题结构与答案”的含义，**不能根据 `grading_mode: ai` 将其设置为 1 或接入现有选择题判分**。申论题不具备客观选项结构时为 `0`，不能由此推断题目无法保存/阅读。
 - 同步层必须把 Markdown `subject` 写入 `papers.subject`，题级新增字段写入 `questions`；读接口/DTO 需保证一致性。当前 `papers.metadata` 仍保存部分索引信息，读写 SQL 必须检查，避免数据库字段与 JSON 快照产生不同值。
 - 现有 `practice_sessions`、`practice_items`、`practice_attempts`、`question_progress`、`favorites` 保持原样；本批不新增作答或阅卷表。
 - 迁移前备份 `question-bank.db`，验证旧数据库增量升级和新数据库初始化；不要通过删除数据库重建来“升级”。
@@ -197,6 +203,7 @@ CREATE INDEX IF NOT EXISTS idx_bank_papers_subject
 - [ ] 申论材料序号与题号完整对应，题干要求、参考答案、解析不混淆、不丢失。
 - [ ] 所有保留的图像引用经 SHA-256 文件与引用路径校验。
 - [ ] 主观题 `Answer` 不被当作选择题选项解析；`Reference Answer` 不进入作答前题目 DTO。
+- [ ] `grading_mode` 完整经过 Markdown 解析、SQLite migration、同步和读取；旧题默认为 `exact`，申论保存为 `ai`，不触发任何未实现的评分任务。
 - [ ] 现有 `exam / drill` 语义、行测客观判分和练习统计保持不变。
 - [ ] 未确认再分发许可前不将第三方完整原文/图片加入公开仓库。
 
