@@ -48,6 +48,8 @@ Buildroot overlay 新增 `/etc/init.d/S83hyz-question-bank`，固定挂载：
 
 同步在同一个 application 实例内串行，LAN 与 Tailscale 共用它。CIFS 不提供跨编辑器的原子比较后交换；同步期间应暂停电脑端保存/导入，也不要让多个设备同时补写同一题库的 UUID。部分文件写回成功但整批失败时，索引不提交；重试会复用已写回 ID。之后在电脑端审查 Git diff 并保存 ID 变更。
 
+同步允许题目在试卷之间迁移：拆分或合并源文件时，稳定 question ID 可被同一快照中的另一份试卷唯一认领，`identities` 归属在索引事务内一并更新，练习历史与收藏仍按 question ID 关联。paper ID 与 material ID 不允许迁移，且原试卷必须仍在本次快照中。question ID 从所有试卷消失或在快照中重复出现时，仍返回 `question_bank_conflict`。
+
 当前设备读取的图片是导入器生成的 `assets/<SHA-256>.<png|jpg|jpeg|webp|gif|bmp>`；手工添加图片也需按这个规则存放和引用。文件路径经过逐级禁止符号链接的目录句柄解析；API 只接收 UUID 或图片哈希名，不接收服务器、路径、命令或 URL。
 
 ## 接口与验证
