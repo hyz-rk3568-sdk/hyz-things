@@ -16,7 +16,7 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
     Row, SqlitePool,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
 
 // This migrator is intentionally separate from the portal and Flashcard databases.
@@ -251,6 +251,21 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
             .collect()
     }
     async fn apply(&self, papers: Vec<IndexedPaper>) -> Result<(), BankError> {
+        let snapshot_papers: BTreeSet<String> = papers
+            .iter()
+            .map(|paper| paper.summary.id.clone())
+            .collect();
+        let mut question_owners: BTreeMap<String, String> = BTreeMap::new();
+        for paper in &papers {
+            for id in &paper.question_ids {
+                if question_owners
+                    .insert(id.clone(), paper.summary.id.clone())
+                    .is_some()
+                {
+                    return Err(BankError::Conflict);
+                }
+            }
+        }
         let mut tx = self.pool.begin().await.map_err(|_| BankError::Storage)?;
         sqlx::query("UPDATE papers SET active=0")
             .execute(&mut *tx)
@@ -364,11 +379,26 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                         .fetch_optional(&mut *tx)
                         .await
                         .map_err(|_| BankError::Storage)?;
-                if owner
-                    .as_ref()
-                    .is_some_and(|owner| owner != &paper.summary.id)
-                {
-                    return Err(BankError::Conflict);
+                if let Some(owner) = owner {
+                    if owner != paper.summary.id {
+                        // Only a question may move, and only while its previous
+                        // paper is still part of this snapshot and has already
+                        // dropped it. Materials and paper identities stay fixed.
+                        let movable = question_owners
+                            .get(&id)
+                            .is_some_and(|new_owner| new_owner == &paper.summary.id)
+                            && snapshot_papers.contains(&owner);
+                        if !movable {
+                            return Err(BankError::Conflict);
+                        }
+                        sqlx::query("UPDATE identities SET paper_id=? WHERE id=? AND paper_id=?")
+                            .bind(&paper.summary.id)
+                            .bind(&id)
+                            .bind(&owner)
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|_| BankError::Storage)?;
+                    }
                 }
                 sqlx::query("INSERT OR IGNORE INTO identities(id,paper_id) VALUES(?,?)")
                     .bind(id)

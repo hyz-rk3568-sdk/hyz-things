@@ -220,6 +220,135 @@ fn lost_recorded_uuid_rejects_entire_write_plan() {
     ));
 }
 
+const SPLIT_A: &str = "019a3d8c-7f23-7b6e-927d-3c951851d3b0";
+const SPLIT_B: &str = "019a3d8c-7f23-7b6e-927d-3c951851d3b1";
+const SPLIT_C: &str = "019a3d8c-7f23-7b6e-927d-3c951851d3b2";
+const SPLIT_Q1: &str = "019a3d8e-1b32-7a60-9c83-f34217a6e230";
+const SPLIT_Q2: &str = "019a3d8e-1b32-7a60-9c83-f34217a6e231";
+
+fn split_paper(paper_id: &str, title: &str, questions: &str) -> String {
+    format!(
+        r#"---
+schema: hyz-paper/v1
+title: {title}
+year: 2026
+region: 专项
+variant: 数量关系
+role: primary
+kind: drill
+collection_id: test-split
+collection_title: 测试拆分
+---
+<!-- hyz-paper-id: {paper_id} -->
+# {title}
+{questions}"#
+    )
+}
+
+fn split_question(number: u32, id: &str, stem: &str) -> String {
+    format!(
+        r#"## Question {number}
+<!-- hyz-question-id: {id} -->
+```yaml
+module: 数量关系
+category: 方程关系
+```
+### Stem
+{stem}
+### Options
+- A. 甲
+- B. 乙
+- C. 丙
+- D. 丁
+### Answer
+B
+### Explanation
+解析。
+"#
+    )
+}
+
+#[test]
+fn moved_question_is_accepted_when_another_paper_claims_it() {
+    use hyz_things::application::question_bank::{prepare_sync, SourceFile};
+    let a_after = split_paper(SPLIT_A, "行程卷", &split_question(1, SPLIT_Q1, "第一题。"));
+    let old = format!("{a_after}{}", split_question(2, SPLIT_Q2, "第二题。"));
+    let b = split_paper(SPLIT_B, "溶液卷", &split_question(2, SPLIT_Q2, "第二题。"));
+    let indexed = IndexedPaper::new(
+        "collections/test-split/a.md".into(),
+        "hash".into(),
+        parse(&old).unwrap(),
+    );
+    let plan = prepare_sync(
+        vec![
+            SourceFile {
+                path: "collections/test-split/a.md".into(),
+                text: a_after,
+            },
+            SourceFile {
+                path: "collections/test-split/b.md".into(),
+                text: b,
+            },
+        ],
+        vec![indexed],
+        || panic!("all ids exist"),
+    )
+    .unwrap();
+    assert_eq!(plan.snapshot.papers.len(), 2);
+    let moved = plan
+        .snapshot
+        .papers
+        .iter()
+        .find(|paper| paper.summary.id == SPLIT_B)
+        .unwrap();
+    assert_eq!(moved.question_ids, vec![SPLIT_Q2.to_string()]);
+    assert!(plan.writes.is_empty());
+}
+
+#[tokio::test]
+async fn apply_reassigns_identity_when_a_question_moves_between_papers() {
+    use hyz_things::adapters::outbound::question_bank_sqlite::SqliteQuestionBankRepository;
+    use hyz_things::application::question_bank::QuestionBankRepositoryPort;
+
+    let repository = SqliteQuestionBankRepository::connect("sqlite::memory:")
+        .await
+        .unwrap();
+    let a_after_text = split_paper(SPLIT_A, "行程卷", &split_question(1, SPLIT_Q1, "第一题。"));
+    let old_text = format!("{a_after_text}{}", split_question(2, SPLIT_Q2, "第二题。"));
+    let a_before = IndexedPaper::new(
+        "collections/test-split/a.md".into(),
+        "h1".into(),
+        parse(&old_text).unwrap(),
+    );
+    repository.apply(vec![a_before]).await.unwrap();
+
+    let a_after = IndexedPaper::new(
+        "collections/test-split/a.md".into(),
+        "h2".into(),
+        parse(&a_after_text).unwrap(),
+    );
+    let b_text = split_paper(SPLIT_B, "溶液卷", &split_question(2, SPLIT_Q2, "第二题。"));
+    let b = IndexedPaper::new(
+        "collections/test-split/b.md".into(),
+        "h2".into(),
+        parse(&b_text).unwrap(),
+    );
+    repository.apply(vec![a_after.clone(), b]).await.unwrap();
+
+    // The moved question now belongs to the second paper. A third paper may not
+    // take it over while that owner is absent from the snapshot.
+    let c_text = split_paper(SPLIT_C, "新卷", &split_question(2, SPLIT_Q2, "第二题。"));
+    let c = IndexedPaper::new(
+        "collections/test-split/c.md".into(),
+        "h2".into(),
+        parse(&c_text).unwrap(),
+    );
+    assert!(matches!(
+        repository.apply(vec![a_after, c]).await,
+        Err(BankError::Conflict)
+    ));
+}
+
 use hyz_things::application::ports::{
     AdminCredentialStorePort, AdminRandomPort, ClockPort, PlatformError, PortalControlError,
     PortalControlHandler,

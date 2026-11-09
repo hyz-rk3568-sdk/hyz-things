@@ -684,14 +684,6 @@ pub fn prepare_sync(
         let doc = document::parse(&after).map_err(|_| BankError::Invalid)?;
         let mut indexed = IndexedPaper::new(file.path.clone(), source_hash(after.as_bytes()), doc);
         rewrite_content_assets(&mut indexed)?;
-        if let Some(old) = known
-            .iter()
-            .find(|old| old.path == file.path || old.summary.id == indexed.summary.id)
-        {
-            if !preserves_identity(old, &indexed) {
-                return Err(BankError::Conflict);
-            }
-        }
         if indexed.ids.iter().any(|id| !all.insert(id.clone())) {
             return Err(BankError::Conflict);
         }
@@ -707,6 +699,25 @@ pub fn prepare_sync(
     }
     if papers.is_empty() {
         return Err(BankError::Unavailable);
+    }
+    // A question may move to another paper while keeping its stable ID and
+    // practice history. The old paper may drop it only when this snapshot
+    // assigns it to exactly one different paper.
+    let mut question_owners: BTreeMap<&str, &str> = BTreeMap::new();
+    for paper in &papers {
+        for id in &paper.question_ids {
+            question_owners.insert(id.as_str(), paper.summary.id.as_str());
+        }
+    }
+    for indexed in &papers {
+        if let Some(old) = known
+            .iter()
+            .find(|old| old.path == indexed.path || old.summary.id == indexed.summary.id)
+        {
+            if !preserves_identity(old, indexed, &question_owners) {
+                return Err(BankError::Conflict);
+            }
+        }
     }
     Ok(SyncPlan {
         writes,
@@ -866,15 +877,20 @@ pub fn source_hash(bytes: &[u8]) -> String {
         .collect()
 }
 
-fn preserves_identity(old: &IndexedPaper, new: &IndexedPaper) -> bool {
+fn preserves_identity(
+    old: &IndexedPaper,
+    new: &IndexedPaper,
+    question_owners: &BTreeMap<&str, &str>,
+) -> bool {
     old.summary.id == new.summary.id
-        && old.ids.iter().all(|id| new.ids.contains(id))
-        && old
-            .question_ids
-            .iter()
-            .all(|id| new.question_ids.contains(id))
         && old
             .material_ids
             .iter()
             .all(|id| new.material_ids.contains(id))
+        && old.question_ids.iter().all(|id| {
+            new.question_ids.contains(id)
+                || question_owners
+                    .get(id.as_str())
+                    .is_some_and(|owner| *owner != old.summary.id.as_str())
+        })
 }
