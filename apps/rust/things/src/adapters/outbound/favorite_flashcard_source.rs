@@ -2,7 +2,8 @@
 use crate::adapters::outbound::flashcard_source::parse_markdown_text;
 use crate::application::{
     favorite_flashcard_ports::{
-        FavoriteCardAsset, FavoriteFlashcardWriterPort, FavoriteWriteResult, NewFavoriteCard,
+        DeleteFavoriteCard, FavoriteCardAsset, FavoriteFlashcardWriterPort, FavoriteMutationResult,
+        FavoriteWriteResult, NewFavoriteCard, UpdateFavoriteCard,
     },
     flashcards::FlashcardError,
 };
@@ -295,6 +296,156 @@ impl FilesystemFavoriteFlashcardWriter {
         })
     }
 
+    fn update_back_blocking(
+        &self,
+        card: UpdateFavoriteCard,
+    ) -> Result<FavoriteMutationResult, FlashcardError> {
+        self.mutate_blocking(
+            card.question_id,
+            card.card_id,
+            card.source_file,
+            Some(card.back),
+        )
+    }
+
+    fn delete_blocking(
+        &self,
+        card: DeleteFavoriteCard,
+    ) -> Result<FavoriteMutationResult, FlashcardError> {
+        self.mutate_blocking(card.question_id, card.card_id, card.source_file, None)
+    }
+
+    fn mutate_blocking(
+        &self,
+        question_id: String,
+        card_id: crate::domain::flashcards::FlashcardId,
+        source_file: String,
+        back: Option<String>,
+    ) -> Result<FavoriteMutationResult, FlashcardError> {
+        validate_question_id(&question_id)?;
+        validate_source_file_path(&source_file)?;
+        if let Some(back) = &back {
+            validate_back(back)?;
+        }
+        let identity = self.observer.observe(&self.root)?;
+        let root = open_root(&self.root)?;
+        self.verify_root(&root, &identity)?;
+        let target_path = Path::new(&source_file);
+        let parent_path = target_path
+            .parent()
+            .ok_or_else(|| invalid("invalid source file path"))?;
+        let name = target_path
+            .file_name()
+            .ok_or_else(|| invalid("invalid source file path"))?;
+        let Some(parent) = walk_directory_optional(&root, parent_path)? else {
+            return if back.is_none() {
+                Ok(FavoriteMutationResult {
+                    relative_path: source_file,
+                    card_id,
+                    changed: false,
+                })
+            } else {
+                Err(FlashcardError::NotFound)
+            };
+        };
+        let Some(original) = read_source_optional(&parent, name, MAX_MARKDOWN)? else {
+            return if back.is_none() {
+                Ok(FavoriteMutationResult {
+                    relative_path: source_file,
+                    card_id,
+                    changed: false,
+                })
+            } else {
+                Err(FlashcardError::NotFound)
+            };
+        };
+        self.verify_root(&root, &identity)?;
+        let text = String::from_utf8(original.bytes.clone())
+            .map_err(|_| unavailable("target is not UTF-8"))?;
+        let lines = text
+            .split_inclusive('\n')
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let parsed = parse_markdown_text(&text, &source_file)
+            .map_err(|error| unavailable(format!("{source_file}: {}", error.message)))?;
+        let Some(current) = parsed.cards.iter().find(|card| {
+            card.id == card_id && card.source_question_id.as_deref() == Some(question_id.as_str())
+        }) else {
+            return if back.is_none() {
+                Ok(FavoriteMutationResult {
+                    relative_path: source_file,
+                    card_id,
+                    changed: false,
+                })
+            } else {
+                Err(FlashcardError::NotFound)
+            };
+        };
+        if let Some(back) = &back {
+            if current.back_markdown.trim() == back.trim() {
+                return Ok(FavoriteMutationResult {
+                    relative_path: source_file,
+                    card_id,
+                    changed: false,
+                });
+            }
+        }
+        let Some(block) = locate_card_block(&lines, card_id.as_str(), &question_id)? else {
+            return if back.is_none() {
+                Ok(FavoriteMutationResult {
+                    relative_path: source_file,
+                    card_id,
+                    changed: false,
+                })
+            } else {
+                Err(FlashcardError::NotFound)
+            };
+        };
+        let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
+        let (output, remove_file) = match back {
+            Some(back) => {
+                let output = replace_back(&lines, &block, &back, newline);
+                parse_markdown_text(&output, &source_file)
+                    .map_err(|error| unavailable(format!("{source_file}: {}", error.message)))?;
+                (output, false)
+            }
+            None => {
+                let mut remaining = lines.clone();
+                remaining.drain(block.start..block.end);
+                let output = remaining.concat();
+                if remaining.iter().any(|line| line.trim() == "## Card") {
+                    parse_markdown_text(&output, &source_file).map_err(|error| {
+                        unavailable(format!("{source_file}: {}", error.message))
+                    })?;
+                    (output, false)
+                } else {
+                    (output, true)
+                }
+            }
+        };
+        let backup = TemporaryFile::write(&parent, "favorite-backup", &original.bytes)?;
+        backup.keep();
+        parent.sync_all().map_err(source_io)?;
+        self.verify_root(&root, &identity)?;
+        if read_source_optional(&parent, name, MAX_MARKDOWN)? != Some(original) {
+            return Err(unavailable("target changed before commit"));
+        }
+        if remove_file {
+            unlink(&parent, name).map_err(source_io)?;
+        } else {
+            let temp = TemporaryFile::write(&parent, "favorite-edit", output.as_bytes())?;
+            rename(&parent, &temp.name, name, false)?;
+            temp.keep();
+        }
+        parent.sync_all().map_err(source_io)?;
+        self.verify_root(&root, &identity)?;
+        Ok(FavoriteMutationResult {
+            relative_path: source_file,
+            card_id,
+            changed: true,
+        })
+    }
+
     fn write_asset(
         &self,
         root: &File,
@@ -331,6 +482,26 @@ impl FavoriteFlashcardWriterPort for FilesystemFavoriteFlashcardWriter {
     async fn append(&self, card: NewFavoriteCard) -> Result<FavoriteWriteResult, FlashcardError> {
         let writer = self.clone();
         tokio::task::spawn_blocking(move || writer.append_blocking(card))
+            .await
+            .map_err(|_| unavailable("favorite writer task failed"))?
+    }
+
+    async fn update_back(
+        &self,
+        card: UpdateFavoriteCard,
+    ) -> Result<FavoriteMutationResult, FlashcardError> {
+        let writer = self.clone();
+        tokio::task::spawn_blocking(move || writer.update_back_blocking(card))
+            .await
+            .map_err(|_| unavailable("favorite writer task failed"))?
+    }
+
+    async fn delete(
+        &self,
+        card: DeleteFavoriteCard,
+    ) -> Result<FavoriteMutationResult, FlashcardError> {
+        let writer = self.clone();
+        tokio::task::spawn_blocking(move || writer.delete_blocking(card))
             .await
             .map_err(|_| unavailable("favorite writer task failed"))?
     }
@@ -478,6 +649,146 @@ fn walk_directory(root: &File, path: &Path, create: bool) -> Result<File, Flashc
     }
     Ok(directory)
 }
+
+fn walk_directory_optional(root: &File, path: &Path) -> Result<Option<File>, FlashcardError> {
+    let mut directory = root.try_clone().map_err(source_io)?;
+    for component in path.components() {
+        let Component::Normal(name) = component else {
+            return Err(invalid("unsafe relative directory"));
+        };
+        match open_child(&directory, name, libc::O_RDONLY | libc::O_DIRECTORY) {
+            Ok(child) => directory = child,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(source_io(error)),
+        }
+    }
+    Ok(Some(directory))
+}
+
+fn unlink(directory: &File, name: &OsStr) -> io::Result<()> {
+    let name =
+        CString::new(name.as_bytes()).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    if unsafe { libc::unlinkat(directory.as_raw_fd(), name.as_ptr(), 0) } != 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_question_id(value: &str) -> Result<(), FlashcardError> {
+    let id = uuid::Uuid::parse_str(value).map_err(|_| invalid("invalid source question UUID"))?;
+    if id.to_string() != value {
+        return Err(invalid("source question UUID must be canonical"));
+    }
+    Ok(())
+}
+
+fn validate_source_file_path(value: &str) -> Result<(), FlashcardError> {
+    let path = Path::new(value);
+    if value.is_empty()
+        || path.is_absolute()
+        || path.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+        || value.contains('\\')
+        || path.extension().and_then(OsStr::to_str) != Some("md")
+    {
+        return Err(invalid("invalid source file path"));
+    }
+    Ok(())
+}
+
+fn validate_back(value: &str) -> Result<(), FlashcardError> {
+    if value.len() > 32 * 1024
+        || value.contains('\0')
+        || value.contains("<!-- hyz-")
+        || value.contains("<!-- tags:")
+        || value.lines().any(|line| {
+            matches!(
+                line.trim(),
+                "## Card" | "### Front" | "### Back" | "---" | "+++"
+            )
+        })
+    {
+        return Err(invalid("favorite content contains reserved structure"));
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug)]
+struct CardBlock {
+    start: usize,
+    end: usize,
+    back_heading: usize,
+}
+
+fn locate_card_block(
+    lines: &[String],
+    card_id: &str,
+    question_id: &str,
+) -> Result<Option<CardBlock>, FlashcardError> {
+    let starts = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(index, line)| (line.trim() == "## Card").then_some(index))
+        .collect::<Vec<_>>();
+    for (order, start) in starts.iter().copied().enumerate() {
+        let end = starts.get(order + 1).copied().unwrap_or(lines.len());
+        let section = &lines[start..end];
+        let Some(back_heading) = section.iter().position(|line| line.trim() == "### Back") else {
+            return Err(unavailable("card block is missing `### Back`"));
+        };
+        let id = card_marker(section, "hyz-card-id");
+        let question = card_marker(section, "hyz-source-question-id");
+        if id == Some(card_id) && question == Some(question_id) {
+            return Ok(Some(CardBlock {
+                start,
+                end,
+                back_heading: start + back_heading,
+            }));
+        }
+    }
+    Ok(None)
+}
+
+fn card_marker<'a>(section: &'a [String], name: &str) -> Option<&'a str> {
+    let prefix = format!("<!-- {name}:");
+    section.iter().find_map(|line| {
+        line.trim()
+            .strip_prefix(&prefix)
+            .and_then(|value| value.strip_suffix("-->"))
+            .map(str::trim)
+    })
+}
+
+fn replace_back(lines: &[String], block: &CardBlock, back: &str, newline: &str) -> String {
+    let mut output = String::new();
+    for line in &lines[..block.back_heading + 1] {
+        output.push_str(line);
+    }
+    if !output.ends_with('\n') {
+        output.push_str(newline);
+    }
+    output.push_str(newline);
+    for line in back.trim_end_matches(['\n', '\r']).split('\n') {
+        output.push_str(line.trim_end_matches('\r'));
+        output.push_str(newline);
+    }
+    output.push_str(newline);
+    output.push_str("---");
+    output.push_str(newline);
+    if block.end < lines.len() {
+        output.push_str(newline);
+    }
+    for line in &lines[block.end..] {
+        output.push_str(line);
+    }
+    output
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct SourceMetadata {
     device: u64,
@@ -707,8 +1018,11 @@ fn rename(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::favorite_flashcard_ports::{
-        FavoriteFlashcardWriterPort, NewFavoriteCard,
+    use crate::{
+        application::favorite_flashcard_ports::{
+            DeleteFavoriteCard, FavoriteFlashcardWriterPort, NewFavoriteCard, UpdateFavoriteCard,
+        },
+        domain::flashcards::FlashcardId,
     };
     use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -769,6 +1083,156 @@ mod tests {
             .map(|id| format!("<!-- hyz-card-id: {id} -->\n"))
             .unwrap_or_default();
         format!("## Card\n{id}<!-- hyz-source-question-id: {question} -->\n<!-- hyz-correct-answer: [\"A\"] -->\n### Front\nOriginal question\n### Back\nOriginal answer\n")
+    }
+
+    fn two_card_source() -> (String, String, String, String, String) {
+        let first_question = "0194f4e0-1234-7000-8000-000000000011".to_owned();
+        let second_question = "0194f4e0-1234-7000-8000-000000000012".to_owned();
+        let first_id = "0194f4e0-1234-7000-8000-000000000021".to_owned();
+        let second_id = "0194f4e0-1234-7000-8000-000000000022".to_owned();
+        let text = format!(
+            "---\ntags:\n  - custom\n---\n{}\n---\n{}",
+            existing_card(&first_question, Some(&first_id)),
+            existing_card(&second_question, Some(&second_id))
+        );
+        (text, first_question, second_question, first_id, second_id)
+    }
+
+    #[tokio::test]
+    async fn update_back_changes_only_the_target_block_and_keeps_a_backup() {
+        let fixture = Fixture::new();
+        let (original, first_question, second_question, first_id, second_id) = two_card_source();
+        let source = "真题练习/数量关系/工程效率/错题/cards.md";
+        put(&fixture.root, source, &original);
+        let writer: Arc<dyn FavoriteFlashcardWriterPort> = Arc::new(fixture.writer());
+        let result = writer
+            .update_back(UpdateFavoriteCard {
+                question_id: first_question.clone(),
+                card_id: FlashcardId::new(first_id).unwrap(),
+                source_file: source.into(),
+                back: "## 新思路\n\n先统一单位。".into(),
+            })
+            .await
+            .unwrap();
+        assert!(result.changed);
+        let path = fixture.root.join(source);
+        let text = fs::read_to_string(&path).unwrap();
+        let parsed = parse_markdown_text(&text, source).unwrap();
+        assert_eq!(parsed.cards.len(), 2);
+        assert_eq!(parsed.cards[0].back_markdown, "## 新思路\n\n先统一单位。");
+        assert_eq!(parsed.cards[0].front_markdown, "Original question");
+        assert_eq!(parsed.cards[1].back_markdown, "Original answer");
+        assert!(text.contains("tags:\n  - custom"));
+        let backups: Vec<_> = fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .map(Result::unwrap)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".favorite-backup-")
+            })
+            .collect();
+        assert_eq!(backups.len(), 1);
+        assert_eq!(fs::read(backups[0].path()).unwrap(), original.as_bytes());
+        assert_eq!(
+            parsed.cards[1].source_question_id.as_deref(),
+            Some(second_question.as_str())
+        );
+        assert_eq!(parsed.cards[1].id.as_str(), second_id);
+
+        let unchanged = writer
+            .update_back(UpdateFavoriteCard {
+                question_id: first_question,
+                card_id: FlashcardId::new("0194f4e0-1234-7000-8000-000000000021").unwrap(),
+                source_file: source.into(),
+                back: "## 新思路\n\n先统一单位。".into(),
+            })
+            .await
+            .unwrap();
+        assert!(!unchanged.changed);
+        assert_eq!(fs::read_to_string(&path).unwrap(), text);
+    }
+
+    #[tokio::test]
+    async fn delete_removes_one_exact_block_then_the_empty_file() {
+        let fixture = Fixture::new();
+        let (original, first_question, second_question, first_id, second_id) = two_card_source();
+        let source = "真题练习/数量关系/工程效率/错题/cards.md";
+        put(&fixture.root, source, &original);
+        let writer: Arc<dyn FavoriteFlashcardWriterPort> = Arc::new(fixture.writer());
+        let first = writer
+            .delete(DeleteFavoriteCard {
+                question_id: first_question,
+                card_id: FlashcardId::new(first_id).unwrap(),
+                source_file: source.into(),
+            })
+            .await
+            .unwrap();
+        assert!(first.changed);
+        let text = fs::read_to_string(fixture.root.join(source)).unwrap();
+        let parsed = parse_markdown_text(&text, source).unwrap();
+        assert_eq!(parsed.cards.len(), 1);
+        assert_eq!(parsed.cards[0].id.as_str(), second_id);
+        assert_eq!(
+            parsed.cards[0].source_question_id.as_deref(),
+            Some(second_question.as_str())
+        );
+
+        let second = writer
+            .delete(DeleteFavoriteCard {
+                question_id: second_question,
+                card_id: FlashcardId::new("0194f4e0-1234-7000-8000-000000000022").unwrap(),
+                source_file: source.into(),
+            })
+            .await
+            .unwrap();
+        assert!(second.changed);
+        assert!(!fixture.root.join(source).exists());
+        let retry = writer
+            .delete(DeleteFavoriteCard {
+                question_id: "0194f4e0-1234-7000-8000-000000000012".into(),
+                card_id: FlashcardId::new("0194f4e0-1234-7000-8000-000000000022").unwrap(),
+                source_file: source.into(),
+            })
+            .await
+            .unwrap();
+        assert!(!retry.changed);
+    }
+
+    #[tokio::test]
+    async fn update_and_delete_reject_a_mismatched_question_or_reserved_back() {
+        let fixture = Fixture::new();
+        let (original, first_question, _second_question, first_id, _second_id) = two_card_source();
+        let source = "真题练习/数量关系/工程效率/错题/cards.md";
+        put(&fixture.root, source, &original);
+        let writer: Arc<dyn FavoriteFlashcardWriterPort> = Arc::new(fixture.writer());
+        assert!(matches!(
+            writer
+                .update_back(UpdateFavoriteCard {
+                    question_id: "0194f4e0-1234-7000-8000-000000000099".into(),
+                    card_id: FlashcardId::new(first_id.clone()).unwrap(),
+                    source_file: source.into(),
+                    back: "different".into(),
+                })
+                .await,
+            Err(FlashcardError::NotFound)
+        ));
+        assert!(matches!(
+            writer
+                .update_back(UpdateFavoriteCard {
+                    question_id: first_question,
+                    card_id: FlashcardId::new(first_id).unwrap(),
+                    source_file: source.into(),
+                    back: "text\n---\nmore".into(),
+                })
+                .await,
+            Err(FlashcardError::InvalidRequest(_))
+        ));
+        assert_eq!(
+            fs::read_to_string(fixture.root.join(source)).unwrap(),
+            original
+        );
     }
 
     #[tokio::test]

@@ -1,6 +1,7 @@
 use super::*;
 use crate::application::favorite_flashcards::{
     CreateFavoriteFlashcard, FavoriteFlashcardApplication, FavoriteFlashcardError,
+    UpdateFavoriteFlashcard,
 };
 use axum::Extension;
 
@@ -75,6 +76,49 @@ pub(super) async fn create(
         Err(response) => return response,
     };
     match app.create(&id, request).await {
+        Ok(result) => Json(result).into_response(),
+        Err(error) => failure(error),
+    }
+}
+
+pub(super) async fn update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    application: Service,
+    Path((id, card_id)): Path<(String, String)>,
+    payload: Result<Json<UpdateFavoriteFlashcard>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
+        return response;
+    }
+    let request = match decode_control_json(payload) {
+        Ok(request) => request,
+        Err(error) => return error.response(),
+    };
+    let app = match service(application) {
+        Ok(app) => app,
+        Err(response) => return response,
+    };
+    match app.update(&id, &card_id, request).await {
+        Ok(result) => Json(result).into_response(),
+        Err(error) => failure(error),
+    }
+}
+
+pub(super) async fn delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    application: Service,
+    Path((id, card_id)): Path<(String, String)>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
+        return response;
+    }
+    let app = match service(application) {
+        Ok(app) => app,
+        Err(response) => return response,
+    };
+    match app.delete(&id, &card_id).await {
         Ok(result) => Json(result).into_response(),
         Err(error) => failure(error),
     }

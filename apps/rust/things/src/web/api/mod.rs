@@ -195,6 +195,74 @@ pub(crate) async fn post_json_response<T: serde::Serialize, R: serde::de::Deseri
         .map_err(|error| error.to_string())
 }
 
+pub(crate) async fn put_json_response_typed<T: serde::Serialize, R: serde::de::DeserializeOwned>(
+    endpoint: &str,
+    csrf: &str,
+    body: &T,
+    label: &str,
+) -> Result<R, ApiError> {
+    let request = Request::put(endpoint)
+        .credentials(RequestCredentials::SameOrigin)
+        .header("Accept", "application/json")
+        .header("X-HYZ-CSRF", csrf)
+        .json(body)
+        .map_err(|error| ApiError::local(format!("无法编码{label}请求：{error}")))?;
+    let response = request
+        .send()
+        .await
+        .map_err(|error| ApiError::local(format!("无法连接{label}接口：{error}")))?;
+    if !response.ok() {
+        return Err(response_error(response, label).await);
+    }
+    response
+        .json::<R>()
+        .await
+        .map_err(|error| ApiError::local(format!("{label}响应格式无效：{error}")))
+}
+
+pub(crate) async fn put_json_response<T: serde::Serialize, R: serde::de::DeserializeOwned>(
+    endpoint: &str,
+    csrf: &str,
+    body: &T,
+    label: &str,
+) -> Result<R, String> {
+    put_json_response_typed(endpoint, csrf, body, label)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+pub(crate) async fn delete_json_response_typed<R: serde::de::DeserializeOwned>(
+    endpoint: &str,
+    csrf: &str,
+    label: &str,
+) -> Result<R, ApiError> {
+    let response = Request::delete(endpoint)
+        .credentials(RequestCredentials::SameOrigin)
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .header("X-HYZ-CSRF", csrf)
+        .send()
+        .await
+        .map_err(|error| ApiError::local(format!("无法连接{label}接口：{error}")))?;
+    if !response.ok() {
+        return Err(response_error(response, label).await);
+    }
+    response
+        .json::<R>()
+        .await
+        .map_err(|error| ApiError::local(format!("{label}响应格式无效：{error}")))
+}
+
+pub(crate) async fn delete_json_response<R: serde::de::DeserializeOwned>(
+    endpoint: &str,
+    csrf: &str,
+    label: &str,
+) -> Result<R, String> {
+    delete_json_response_typed(endpoint, csrf, label)
+        .await
+        .map_err(|error| error.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

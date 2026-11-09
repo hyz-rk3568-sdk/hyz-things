@@ -259,6 +259,24 @@ impl FlashcardRepositoryPort for SqliteFlashcardRepository {
             .collect()
     }
 
+    async fn list_cards_by_source_question(
+        &self,
+        question_id: &str,
+    ) -> Result<Vec<FlashcardSummary>, FlashcardError> {
+        let rows = sqlx::query(
+            "SELECT f.id, f.source_file, f.source_order, f.deck_path, f.front_markdown, f.back_markdown,\n                    f.active, s.due_at_ms, s.last_reviewed_at_ms, s.state, s.review_count, s.lapse_count\n             FROM flashcards f\n             LEFT JOIN flashcard_review_state s ON s.card_id = f.id\n             WHERE f.active = 1 AND f.source_question_id = ?\n             ORDER BY f.source_file, f.source_order, f.id",
+        )
+        .bind(question_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(storage_error)?;
+        let mut cards = Vec::with_capacity(rows.len());
+        for row in rows {
+            cards.push(self.card_from_row(&row).await?);
+        }
+        Ok(cards)
+    }
+
     async fn summary(&self, now_ms: u64) -> Result<StudySummary, FlashcardError> {
         let row = sqlx::query(
             "SELECT\n               COUNT(*) AS active_cards,\n               SUM(CASE WHEN s.card_id IS NULL THEN 1 ELSE 0 END) AS new_cards,\n               SUM(CASE WHEN s.card_id IS NULL OR s.due_at_ms <= ? THEN 1 ELSE 0 END) AS due_cards,\n               COUNT(DISTINCT f.deck_path) AS deck_count\n             FROM flashcards f\n             LEFT JOIN flashcard_review_state s ON s.card_id = f.id\n             WHERE f.active = 1",

@@ -74,6 +74,125 @@ async function openCreate(page: Page) {
   return panel;
 }
 
+const existingCard = {
+  card_id: '019a31b7-8c42-7c16-a6d1-0c1f0f34c821',
+  deck_path: '真题练习/数量关系/数学运算/错题',
+  source_file: '真题练习/数量关系/数学运算/错题/cards.md',
+  front: `${material}\n\n- A. 100\n- B. 200`,
+  back: '原来的背面',
+  mode: 'practice',
+};
+
+async function mockExistingPreview(page: Page, cards: unknown[] = [existingCard]) {
+  await page.route(`**${root}/practice/questions/supported/flashcard-preview`, route => route.fulfill({
+    json: { ...preview(), allowed_targets: ['真题练习/数量关系/数学运算/错题'], existing: cards },
+  }));
+}
+
+test('existing flashcard is listed and blocks recreating in an occupied destination', async ({ page }) => {
+  await install(page);
+  await mockExistingPreview(page);
+  const review = await openReview(page);
+  await expect(review.getByTestId('favorite-existing-card')).toHaveCount(1);
+  await expect(review.getByTestId('favorite-existing-card-deck')).toHaveText(existingCard.deck_path);
+  await expect(review.getByTestId('favorite-existing-card-path')).toHaveText(existingCard.source_file);
+  await expect(review.getByTestId('collection-review-create-flashcard')).toHaveCount(0);
+  await expect(review.getByTestId('collection-review-flashcard-unavailable')).toContainText('这题已在可用的存放位置创建过闪卡。');
+});
+
+test('editing an existing flashcard saves and syncs in one request', async ({ page }) => {
+  await install(page);
+  let current = { ...existingCard };
+  await page.route(`**${root}/practice/questions/supported/flashcard-preview`, route => route.fulfill({
+    json: { ...preview(), allowed_targets: ['真题练习/数量关系/数学运算/错题'], existing: [current] },
+  }));
+  let method = '';
+  let body: unknown;
+  let csrf = '';
+  await page.route(`**${root}/practice/questions/supported/flashcard/${existingCard.card_id}`, async route => {
+    method = route.request().method();
+    body = route.request().postDataJSON();
+    csrf = route.request().headers()['x-hyz-csrf'];
+    current = { ...current, back: (body as { back: string }).back };
+    await route.fulfill({ json: {
+      status: 'updated_synced', card_id: current.card_id, source_file: current.source_file, retryable: false,
+    } });
+  });
+  const review = await openReview(page);
+  await review.getByTestId('favorite-existing-card-edit').click();
+  const editor = page.getByTestId('favorite-flashcard-editor');
+  await expect(editor).toBeVisible();
+  await expect(editor.getByTestId('favorite-flashcard-editor-back')).toHaveValue('原来的背面');
+  await editor.getByTestId('favorite-flashcard-editor-back').fill('更新后的背面');
+  await editor.getByTestId('favorite-flashcard-save').click();
+  await expect(editor).toHaveCount(0);
+  await expect(review.getByTestId('favorite-existing-card')).toHaveCount(1);
+  expect(method).toBe('PUT');
+  expect(body).toEqual({ back: '更新后的背面' });
+  expect(csrf).toBeTruthy();
+});
+
+test('deleting an existing flashcard requires confirmation and syncs in one request', async ({ page }) => {
+  await install(page);
+  let current: typeof existingCard | null = { ...existingCard };
+  await page.route(`**${root}/practice/questions/supported/flashcard-preview`, route => route.fulfill({
+    json: { ...preview(), allowed_targets: ['真题练习/数量关系/数学运算/错题'], existing: current ? [current] : [] },
+  }));
+  let deletes = 0;
+  let method = '';
+  let csrf = '';
+  await page.route(`**${root}/practice/questions/supported/flashcard/${existingCard.card_id}`, async route => {
+    method = route.request().method();
+    deletes += 1;
+    csrf = route.request().headers()['x-hyz-csrf'];
+    current = null;
+    await route.fulfill({ json: {
+      status: 'deleted_synced', card_id: existingCard.card_id, source_file: existingCard.source_file, retryable: false,
+    } });
+  });
+  const review = await openReview(page);
+  await review.getByTestId('favorite-existing-card-edit').click();
+  const editor = page.getByTestId('favorite-flashcard-editor');
+  await editor.getByTestId('favorite-flashcard-delete').click();
+  await expect(editor.getByTestId('favorite-flashcard-confirm-delete')).toBeVisible();
+  await editor.getByTestId('favorite-flashcard-cancel-delete').click();
+  expect(deletes).toBe(0);
+  await editor.getByTestId('favorite-flashcard-delete').click();
+  await editor.getByTestId('favorite-flashcard-confirm-delete').click();
+  await expect(editor).toHaveCount(0);
+  expect(method).toBe('DELETE');
+  expect(deletes).toBe(1);
+  expect(csrf).toBeTruthy();
+  await expect(page.getByTestId('favorite-existing-card')).toHaveCount(0);
+  await expect(page.getByTestId('collection-review-create-flashcard')).toBeVisible();
+});
+
+test('pending edit retries the same Back without changing the source again', async ({ page }) => {
+  await install(page);
+  await mockExistingPreview(page);
+  const bodies: unknown[] = [];
+  await page.route(`**${root}/practice/questions/supported/flashcard/${existingCard.card_id}`, async route => {
+    bodies.push(route.request().postDataJSON());
+    await route.fulfill({ json: {
+      status: bodies.length === 1 ? 'updated_sync_pending' : 'updated_synced',
+      card_id: existingCard.card_id,
+      source_file: existingCard.source_file,
+      retryable: bodies.length === 1,
+    } });
+  });
+  const review = await openReview(page);
+  await review.getByTestId('favorite-existing-card-edit').click();
+  const editor = page.getByTestId('favorite-flashcard-editor');
+  await editor.getByTestId('favorite-flashcard-editor-back').fill('待同步的背面');
+  await editor.getByTestId('favorite-flashcard-save').click();
+  await expect(editor).toContainText('等待同步');
+  await expect(editor.getByTestId('favorite-flashcard-save')).toHaveText('重试同步');
+  await editor.getByTestId('favorite-flashcard-save').click();
+  await expect(editor).toHaveCount(0);
+  expect(bodies).toHaveLength(2);
+  expect(bodies[1]).toEqual(bodies[0]);
+});
+
 test.beforeEach(async ({ request }) => { await resetHarness(request); });
 
 test('user-organized destination requires an explicit choice', async ({ page }) => {

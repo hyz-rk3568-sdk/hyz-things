@@ -809,6 +809,12 @@ fn app_with_assets(
                 .layer(DefaultBodyLimit::max(40 * 1024)),
         )
         .route(
+            "/api/v1/question-bank/practice/questions/{id}/flashcard/{card_id}",
+            on(MethodFilter::PUT, favorite_flashcards::update)
+                .on(MethodFilter::DELETE, favorite_flashcards::delete)
+                .layer(DefaultBodyLimit::max(40 * 1024)),
+        )
+        .route(
             "/api/v1/question-bank/practice/favorites/{id}/flashcard-preview",
             on(MethodFilter::GET, favorite_flashcards::preview),
         )
@@ -2979,6 +2985,15 @@ fn is_question_bank_practice_post_path(path: &str) -> bool {
         && crate::application::question_bank::document::valid_id(parts[6])
 }
 
+fn is_question_bank_flashcard_card_path(path: &str) -> bool {
+    let parts: Vec<&str> = path.split('/').collect();
+    parts.len() == 9
+        && parts[..6] == ["", "api", "v1", "question-bank", "practice", "questions"]
+        && crate::application::question_bank::document::valid_id(parts[6])
+        && parts[7] == "flashcard"
+        && crate::application::question_bank::document::valid_id(parts[8])
+}
+
 fn is_question_bank_ai_path(path: &str, allow_action: bool) -> bool {
     let parts: Vec<&str> = path.split('/').collect();
     (parts.len() == 8
@@ -3049,7 +3064,10 @@ async fn security_headers(request: Request, next: Next) -> Response {
     let path = request.uri().path();
     let allowed = request.method() == Method::GET
         || request.method() == Method::POST && is_post_path(path)
-        || request.method() == Method::DELETE && is_question_bank_ai_path(path, false);
+        || request.method() == Method::DELETE
+            && (is_question_bank_ai_path(path, false)
+                || is_question_bank_flashcard_card_path(path))
+        || request.method() == Method::PUT && is_question_bank_flashcard_card_path(path);
     let reject_api_method = !allowed && path.starts_with("/api/");
     let mut response = if reject_api_method {
         method_not_allowed_json()
