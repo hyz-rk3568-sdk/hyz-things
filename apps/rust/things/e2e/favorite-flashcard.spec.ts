@@ -89,7 +89,7 @@ async function mockExistingPreview(page: Page, cards: unknown[] = [existingCard]
   }));
 }
 
-test('existing flashcard is listed with a preview and blocks creating another', async ({ page }) => {
+test('existing Flashcard preview and editing live in the shared management page', async ({ page }) => {
   await install(page);
   await mockExistingPreview(page);
   const review = await openReview(page);
@@ -106,8 +106,10 @@ test('existing flashcard is listed with a preview and blocks creating another', 
   await expect(previewContent).toContainText('原来的背面');
   await page.getByTestId('favorite-existing-card-preview').click();
   await expect(previewContent).toHaveCount(0);
+  await page.getByRole('button', { name: '返回复盘' }).click();
+  await expect(review.getByTestId('collection-review-manage-flashcard')).toBeVisible();
   await expect(review.getByTestId('collection-review-create-flashcard')).toHaveCount(0);
-  await expect(review.getByTestId('collection-review-flashcard-unavailable')).toContainText('这题已在可用的存放位置创建过闪卡。');
+  await expect(review.getByTestId('collection-review-flashcard-unavailable')).toHaveCount(0);
 });
 
 test('editing an existing flashcard saves and syncs in one request', async ({ page }) => {
