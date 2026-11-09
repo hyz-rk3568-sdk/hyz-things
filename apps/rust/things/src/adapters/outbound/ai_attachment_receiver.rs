@@ -14,7 +14,6 @@ pub struct HttpAttachmentRelay {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct UploadResponse {
     path: String,
 }
@@ -58,6 +57,16 @@ impl AiAttachmentRelay for HttpAttachmentRelay {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn accepts_the_receiver_response_shape() {
+        let body = r#"{"id":"897e47a6-1224-4c8b-91d9-7b33a9bd26f8","path":"/home/hyz/Code/hyz_things/tmp/hyz-ai-uploads/897e47a6.png","expires_at":1794266848}"#;
+        let response: UploadResponse = serde_json::from_str(body).unwrap();
+        assert_eq!(
+            response.path,
+            "/home/hyz/Code/hyz_things/tmp/hyz-ai-uploads/897e47a6.png"
+        );
+    }
 
     #[test]
     fn uses_the_fixed_receiver_address() {
