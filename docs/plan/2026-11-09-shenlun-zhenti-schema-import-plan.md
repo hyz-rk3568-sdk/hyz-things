@@ -1,4 +1,4 @@
-# 国考与湖南省考近十年申论真题导入、Schema 扩展与 Migration 计划
+# 申论真题导入、Schema 扩展与图片 AI 解析试点计划
 
 日期：2026-11-09。**状态：仅设计评审，尚未实施。**
 
@@ -7,31 +7,32 @@
 本批次仅完成以下设计对应的后续实施：
 
 1. 从 [ProfessorZhi/gwy-zhenti](https://github.com/ProfessorZhi/gwy-zhenti) 筛选 **2017—2026 年**国考、湖南省考的申论真题。
-2. 将试卷转换成现有 \`hyz-paper/v1\` 兼容格式，放入既有 \`question_bank/papers/\` 目录。
+2. 将试卷转换成现有 `hyz-paper/v1` 兼容格式，放入既有 `question_bank/papers/` 目录。
 3. 为原始题库增加最低限度的科目、作答类型、题型和分值字段，以及主观题参考答案的独立存储位；增加相应 SQLite migration 和解析/同步适配。
 4. 保留原卷给定材料、作答要求、参考答案与解析，并做可重复的结构和图片校验。
+5. 扩展**现有真题 AI 解析**的图片上传和视觉追问输入，新增项目内 PaddleOCR Skill、宿主机本地 OCR 服务管理方案，并按用户要求将这类 Codex 解析线程改成 danger-full-access。
 
-**不做：** 不新增第三种 \`kind\`；不加入职测、综应；不增加 \`source_url\`、\`bank_id\`、\`exam_series\`、\`grading_mode\`、字数结构化字段等非必要元数据；不新增训练页面、作答表或任何申论业务功能；不修改设备、挂载或部署配置。
+**不做：** 不新增第三种 `kind`；不加入职测、综应；不增加 `source_url`、`bank_id`、`exam_series`、`grading_mode`、字数结构化字段等非必要元数据；不新增申论业务页面或阅卷功能；本次图片试点仅扩展现有 AI 解析输入及必要的附件存储，不变更设备挂载和部署配置。
 
 原有行测真题与 UUID、练习历史、收藏、错题不作重置或迁移改写。提交代码前必须先审计测试现有兼容行为。
 
 ## 二、来源范围与固定版本
 
-上游：\`ProfessorZhi/gwy-zhenti\`，正式实施时先固定 Git commit，保存到本地导入清单，避免重复导入时源数据无提示改变。来源仓库一卷一个 Markdown，图片位于年份下的 \`图片/\` 目录，文件中包含给定材料、题目、折叠参考答案/解析；其内容不等同于经官方认证的原卷或官方答案。
+上游：`ProfessorZhi/gwy-zhenti`，正式实施时先固定 Git commit，保存到本地导入清单，避免重复导入时源数据无提示改变。来源仓库一卷一个 Markdown，图片位于年份下的 `图片/` 目录，文件中包含给定材料、题目、折叠参考答案/解析；其内容不等同于经官方认证的原卷或官方答案。
 
 | 地区 | 上游路径 | 年份 | 已核对的申论文件 |
 | --- | --- | --- | ---: |
-| 国考 | \`国考/<年>/申论-*.md\` | 2017—2026 | 25 |
-| 湖南省考 | \`省考/湖南/<年>/申论-*.md\` | 2017—2026 | 23 |
+| 国考 | `国考/<年>/申论-*.md` | 2017—2026 | 25 |
+| 湖南省考 | `省考/湖南/<年>/申论-*.md` | 2017—2026 | 23 |
 | **合计** | | | **48** |
 
 逐年扫描实际文件名，不假定每年卷型固定。国考含副省级、地市级，以及有来源文件的行政执法卷；湖南保留实际出现的统考、通用卷、乡镇卷、县乡卷、省市卷、行政执法、选调生等。**湖南 2026 年在当前来源中仅有县乡卷**，不能虚构其他卷型。既存文件可能存在缺题、缺材料、缺图或人工核验未完成状态；逐卷报告。
 
 ## 三、落盘目录与来源边界
 
-不新增 \`question_bank/shenlun/\`，沿用原有年份路径：
+不新增 `question_bank/shenlun/`，沿用原有年份路径：
 
-\`\`\`text
+```text
 question_bank/
 ├── papers/
 │   ├── 国考/
@@ -43,21 +44,21 @@ question_bank/
 │           └── 2026/申论-县乡卷.md
 ├── assets/                  # 仅原卷实际引用的图片，按 SHA-256 命名
 └── collections/             # 原有 kind: drill 专项合集，保持不变
-\`\`\`
+```
 
-国考、湖南只是 \`region\`/路径分组；申论真题仍为 \`kind: exam\`。不把整卷导入 \`collections/\`，不影响现有 \`kind: drill\` 语义。
+国考、湖南只是 `region`/路径分组；申论真题仍为 `kind: exam`。不把整卷导入 `collections/`，不影响现有 `kind: drill` 语义。
 
 **权利边界：** 上游 README 将内容限定为学习研究用途，试题、参考答案、解析和图片还涉及第三方权利，不能把仓库可见当作允许整库再分发。实施时先导入**本地私有工作区**并审计授权；未确认分发许可前，公开仓库只提交转换器、必要源码/迁移和不含第三方全文的清单，不提交完整申论卷及图片。
 
-## 四、\`hyz-paper/v1\` 向后兼容扩展
+## 四、`hyz-paper/v1` 向后兼容扩展
 
-**继续使用 \`hyz-paper/v1\`**，本批只增加可选字段并补充解析校验；不引入破坏性 v2。现有 \`Header\` 解析器已支持 \`schema\`、\`title\`、\`year\`、\`region\`、\`variant\`、\`role\`、\`kind\` 等；现有 \`Metadata\` 支持 \`module\`、\`category\`、\`topics\`、\`materials\`。
+**继续使用 `hyz-paper/v1`**，本批只增加可选字段并补充解析校验；不引入破坏性 v2。现有 `Header` 解析器已支持 `schema`、`title`、`year`、`region`、`variant`、`role`、`kind` 等；现有 `Metadata` 支持 `module`、`category`、`topics`、`materials`。
 
 ### 4.1 试卷级
 
-**仅新增 \`subject\`**，当前允许 \`xingce\` / \`shenlun\`；旧文件未声明时视为 \`xingce\`。
+**仅新增 `subject`**，当前允许 `xingce` / `shenlun`；旧文件未声明时视为 `xingce`。
 
-\`\`\`yaml
+```yaml
 ---
 schema: hyz-paper/v1
 kind: exam
@@ -69,43 +70,43 @@ variant: 副省级
 role: primary
 status: unverified
 ---
-\`\`\`
+```
 
-\`status\` 沿用现有真题文档中的状态信息，本次不新建来源 URL 等元数据。该示例仅演示结构。
+`status` 沿用现有真题文档中的状态信息，本次不新建来源 URL 等元数据。该示例仅演示结构。
 
 ### 4.2 题目级
 
-在每道题现有 \`yaml\` 块中增加：
+在每道题现有 `yaml` 块中增加：
 
 | 字段 | 取值 | 兼容逻辑 |
 | --- | --- | --- |
-| \`answer_type\` | \`objective\` / \`subjective\` | 旧题缺省 \`objective\` |
-| \`question_type\` | 非空字符串或缺省；申论可用 \`summary\`、\`analysis\`、\`measures\`、\`document_writing\`、\`essay\`、\`other\` | 不明确则 \`other\` 或留空；不凭题号猜作文 |
-| \`max_score\` | 正数或缺省 | 仅源题明确给出分值时写入 |
+| `answer_type` | `objective` / `subjective` | 旧题缺省 `objective` |
+| `question_type` | 非空字符串或缺省；申论可用 `summary`、`analysis`、`measures`、`document_writing`、`essay`、`other` | 不明确则 `other` 或留空；不凭题号猜作文 |
+| `max_score` | 正数或缺省 | 仅源题明确给出分值时写入 |
 
-原有 \`module\`、\`category\`、\`topics\`、\`materials\` 保留。申论材料关联必须准确：明确关联的按来源对应材料编号映射；全卷适用的给定材料保持全卷可访问；无法核实时报告而不是编造引用。
+原有 `module`、`category`、`topics`、`materials` 保留。申论材料关联必须准确：明确关联的按来源对应材料编号映射；全卷适用的给定材料保持全卷可访问；无法核实时报告而不是编造引用。
 
 ### 4.3 原题与参考答案分离
 
-当前 \`question_fields()\` 识别 \`Stem / Options / Answer / Explanation / Notes\`；\`Answer\` 当前按选择题字母解析。**本批新增 \`Reference Answer\` 区段**，只用于保存主观题原始参考答案/范文；\`Explanation\` 保留原始解析，\`Answer\` 对申论留空。
+当前 `question_fields()` 识别 `Stem / Options / Answer / Explanation / Notes`；`Answer` 当前按选择题字母解析。**本批新增 `Reference Answer` 区段**，只用于保存主观题原始参考答案/范文；`Explanation` 保留原始解析，`Answer` 对申论留空。
 
 转换后的结构示意（不代表真实题目或分值）：
 
-\`\`\`markdown
+~~~~markdown
 ## Material M1
 
 （给定材料 1 原文）
 
 ## Question 1
 
-\`\`\`yaml
+```yaml
 module: 申论
 category: 概括归纳
 answer_type: subjective
 question_type: summary
 max_score: 10
 materials: [M1]
-\`\`\`
+```
 
 ### Stem
 
@@ -122,15 +123,15 @@ materials: [M1]
 ### Explanation
 
 （来源提供的解析；没有则保留缺失状态）
-\`\`\`
+~~~~
 
-原来的 \`hyz-paper-id\`、\`hyz-question-id\`、\`hyz-material-id\` UUIDv7 注释机制不变。转换器应输出可被现有补写机制补齐身份标记的 Markdown；重复导入不得更换已存在的 ID。**\`question_fields()\` 必须先显式支持 \`Reference Answer\`，否则新章节可能被错误拼进上一字段。**
+原来的 `hyz-paper-id`、`hyz-question-id`、`hyz-material-id` UUIDv7 注释机制不变。转换器应输出可被现有补写机制补齐身份标记的 Markdown；重复导入不得更换已存在的 ID。**`question_fields()` 必须先显式支持 `Reference Answer`，否则新章节可能被错误拼进上一字段。**
 
 ## 五、SQLite migration（独立 question-bank 数据库）
 
-位置：\`apps/rust/things/migrations/question_bank/\`。新增**一个** migration，不修改任何已执行的 migration。以下是拟议 SQL，实际提交前需检查现有索引、metadata JSON 与 SQL 查询兼容性。
+位置：`apps/rust/things/migrations/question_bank/`。新增**一个** migration，不修改任何已执行的 migration。以下是拟议 SQL，实际提交前需检查现有索引、metadata JSON 与 SQL 查询兼容性。
 
-\`\`\`sql
+```sql
 ALTER TABLE papers
   ADD COLUMN subject TEXT NOT NULL DEFAULT 'xingce';
 
@@ -148,29 +149,29 @@ ALTER TABLE questions
 
 CREATE INDEX IF NOT EXISTS idx_bank_papers_subject
   ON papers(subject);
-\`\`\`
+```
 
-- 旧 \`papers\` 行的 \`subject\` 自动为 \`xingce\`，旧 \`questions\` 行的 \`answer_type\` 自动为 \`objective\`。
-- \`correct_answer\` 仍用于客观选项，\`reference_answer\` 是单独的主观题参考内容；不得向客观判分字段写入范文。
-- 现有 \`gradable\` 保持“有可用选择题结构与答案”的含义。申论题不具备客观选项结构时为 \`0\`，不能由此推断题目无法保存/阅读。
-- 同步层必须把 Markdown \`subject\` 写入 \`papers.subject\`，题级新增字段写入 \`questions\`；读接口/DTO 需保证一致性。当前 \`papers.metadata\` 仍保存部分索引信息，读写 SQL 必须检查，避免数据库字段与 JSON 快照产生不同值。
-- 现有 \`practice_sessions\`、\`practice_items\`、\`practice_attempts\`、\`question_progress\`、\`favorites\` 保持原样；本批不新增作答或阅卷表。
-- 迁移前备份 \`question-bank.db\`，验证旧数据库增量升级和新数据库初始化；不要通过删除数据库重建来“升级”。
+- 旧 `papers` 行的 `subject` 自动为 `xingce`，旧 `questions` 行的 `answer_type` 自动为 `objective`。
+- `correct_answer` 仍用于客观选项，`reference_answer` 是单独的主观题参考内容；不得向客观判分字段写入范文。
+- 现有 `gradable` 保持“有可用选择题结构与答案”的含义。申论题不具备客观选项结构时为 `0`，不能由此推断题目无法保存/阅读。
+- 同步层必须把 Markdown `subject` 写入 `papers.subject`，题级新增字段写入 `questions`；读接口/DTO 需保证一致性。当前 `papers.metadata` 仍保存部分索引信息，读写 SQL 必须检查，避免数据库字段与 JSON 快照产生不同值。
+- 现有 `practice_sessions`、`practice_items`、`practice_attempts`、`question_progress`、`favorites` 保持原样；本批不新增作答或阅卷表。
+- 迁移前备份 `question-bank.db`，验证旧数据库增量升级和新数据库初始化；不要通过删除数据库重建来“升级”。
 
 ## 六、转换器与同步适配
 
 ### 6.1 转换器放置
 
-建议在现有题库导入工具位置 \`scripts/question_bank/\` 内增加申论转换入口（实际实施前确认与主分支工具结构一致），与设备端的 Rust 解析器分离。
+建议在现有题库导入工具位置 `scripts/question_bank/` 内增加申论转换入口（实际实施前确认与主分支工具结构一致），与设备端的 Rust 解析器分离。
 
 处理步骤：
 
-1. 固定上游 commit，并只扫描国考、湖南省考 2017—2026 年 \`申论-*.md\`。
+1. 固定上游 commit，并只扫描国考、湖南省考 2017—2026 年 `申论-*.md`。
 2. 读取上游中文 frontmatter，核对年份、地区、科目、卷型；同名目标文件冲突拒绝静默覆盖。
-3. 转换 \`## 给定材料 / ### 材料 N\` 为 \`## Material MN\`，保持材料编号、原文和次序。
-4. 转换 \`## 题目 / ### 第 N 题\` 为 \`## Question N\`，保留题号、题干、字数要求和明确分值。
-5. 将折叠答案块拆成 \`Reference Answer\` 与 \`Explanation\`；允许一题有多个来源参考答案，忠实保存，禁止 AI 改写。
-6. 图片复制到现有 \`question_bank/assets/<sha256>.<ext>\`，重写正文相对路径；验证每一个实际引用图片存在且哈希匹配。
+3. 转换 `## 给定材料 / ### 材料 N` 为 `## Material MN`，保持材料编号、原文和次序。
+4. 转换 `## 题目 / ### 第 N 题` 为 `## Question N`，保留题号、题干、字数要求和明确分值。
+5. 将折叠答案块拆成 `Reference Answer` 与 `Explanation`；允许一题有多个来源参考答案，忠实保存，禁止 AI 改写。
+6. 图片复制到现有 `question_bank/assets/<sha256>.<ext>`，重写正文相对路径；验证每一个实际引用图片存在且哈希匹配。
 7. 做完整性审计：材料数量和编号、题目数量、缺题占位、答案缺失、图片引用、UTF-8 和解析器可读性。
 8. 输出 dry-run 差异、冲突和缺项报告；经确认后执行增量导入。保留已存在 UUID，不覆盖人工编辑；再次执行应幂等。
 
@@ -178,27 +179,126 @@ CREATE INDEX IF NOT EXISTS idx_bank_papers_subject
 
 ### 6.2 现有代码的必要适配点
 
-- \`apps/rust/things/src/application/question_bank/document.rs\`：Header/题级 metadata 扩展、\`Reference Answer\` 解析、兼容旧卷、唯一编号与 UUID 校验。
-- \`apps/rust/things/src/domain/question_bank.rs\`：需要展示/传递的 \`subject\` 和题目属性 DTO。
-- \`apps/rust/things/src/application/question_bank/mod.rs\`：\`StoredQuestion\` / \`PaperContent\` / \`IndexedPaper\` 元数据投影更新。
-- \`apps/rust/things/src/adapters/outbound/question_bank_sqlite.rs\`：同步插入/更新、读取和 metadata 一致性，避免旧字段被覆盖。
-- \`apps/rust/things/src/adapters/outbound/question_bank_source.rs\`：保持现有目录扫描、文件大小、图片哈希及 UUID 写回规则，不为第三方源增加运行时网络访问。
+- `apps/rust/things/src/application/question_bank/document.rs`：Header/题级 metadata 扩展、`Reference Answer` 解析、兼容旧卷、唯一编号与 UUID 校验。
+- `apps/rust/things/src/domain/question_bank.rs`：需要展示/传递的 `subject` 和题目属性 DTO。
+- `apps/rust/things/src/application/question_bank/mod.rs`：`StoredQuestion` / `PaperContent` / `IndexedPaper` 元数据投影更新。
+- `apps/rust/things/src/adapters/outbound/question_bank_sqlite.rs`：同步插入/更新、读取和 metadata 一致性，避免旧字段被覆盖。
+- `apps/rust/things/src/adapters/outbound/question_bank_source.rs`：保持现有目录扫描、文件大小、图片哈希及 UUID 写回规则，不为第三方源增加运行时网络访问。
 
-不修改现有训练页面与答题逻辑；如现有客观题查询会混入申论题，应在**现有查询范围**加 \`subject = 'xingce'\` 约束，以确保原行为不变，而不是增加新训练入口。
+不修改现有训练页面与答题逻辑；如现有客观题查询会混入申论题，应在**现有查询范围**加 `subject = 'xingce'` 约束，以确保原行为不变，而不是增加新训练入口。
 
-## 七、验证与交付判定
+## 七、申论真题与 Schema 验证
 
 **必须通过：**
 
 - [ ] 2017—2026 国考 25、湖南 23 份申论源文件全部逐份进入导入审计清单；每份标记成功/缺项/失败，不用总数掩盖缺损。
-- [ ] 旧 \`hyz-paper/v1\` 行测解析、UUID 写回、内容指纹/同步和重复导入回归通过。
-- [ ] 新 \`subject\` 默认值不影响旧行测数据；新迁移能升级旧数据库且不重建个人历史表。
+- [ ] 旧 `hyz-paper/v1` 行测解析、UUID 写回、内容指纹/同步和重复导入回归通过。
+- [ ] 新 `subject` 默认值不影响旧行测数据；新迁移能升级旧数据库且不重建个人历史表。
 - [ ] 申论材料序号与题号完整对应，题干要求、参考答案、解析不混淆、不丢失。
 - [ ] 所有保留的图像引用经 SHA-256 文件与引用路径校验。
-- [ ] 主观题 \`Answer\` 不被当作选择题选项解析；\`Reference Answer\` 不进入作答前题目 DTO。
-- [ ] 现有 \`exam / drill\` 语义、行测客观判分和练习统计保持不变。
+- [ ] 主观题 `Answer` 不被当作选择题选项解析；`Reference Answer` 不进入作答前题目 DTO。
+- [ ] 现有 `exam / drill` 语义、行测客观判分和练习统计保持不变。
 - [ ] 未确认再分发许可前不将第三方完整原文/图片加入公开仓库。
 
-## 八、本 PR 的边界
 
-**本 PR 只增加这份计划文档。** 不含 SQLite migration、Rust 修改、导入器实现、申论真题正文或任何部署操作。计划经审阅后，实施工作另行提交。
+## 八、现有真题 AI 解析图片试点
+
+**范围只限已有真题 AI 解析入口**：允许在首次解析指令及后续追问添加 JPG/PNG 图片（初定每次至多 3 张、每张不超过 8 MiB，最终以设备测试确定）；文字和图片随同一条消息发送 Codex。暂不支持 PDF、不增加申论作答或阅卷页面。
+
+### 8.1 传输和本地暂存
+
+采用现有 Samba 共享而不是新增图片上传中转服务：
+
+~~~text
+浏览器 JPG/PNG + 文字
+  → RK3568 things API（管理员鉴权 / CSRF / MIME 与文件头校验 / 大小限制）
+  → /mnt/hyz-question-bank/.hyz-ai-uploads/<server-generated-uuid>.png
+  → Samba 共享对应的 PC 真实绝对路径
+  → Codex App Server turn/start 的 text + localImage 输入数组
+  → 必要时由 Skill 请求 PC 本地 PaddleOCR 服务
+~~~
+
+- 项目已通过 scripts/share-question-bank.sh 把 PC 上的题库共享为 hyz-question-bank，RK3568 挂载在 /mnt/hyz-question-bank。PC 源路径以实际 Samba 配置为准，不得将设备路径直接传给 localImage。
+- 临时上传目录选共享根的 .hyz-ai-uploads/，**不在 papers/、collections/ 或 assets/ 里**；加入 Git 忽略项，避免用户手写原稿被提交到公开仓库。现有题库源扫描仅看 papers 与 collections。
+- 后端只接受图片二进制，不信任客户端文件名、路径和 MIME 声明；检测实际格式、尺寸、文件大小，生成随机文件名并原子写入，防止路径穿越/符号链接攻击。对文件数量、总空间和并发设置限制与清理周期。
+- Base64 可用于 Codex image Data URL 传输，但不能代替本地文件暂存：OCR Skill 要读取同一张原图，故主路径用 Codex localImage（服务器已核实的 PC 绝对路径）。不将大段 Base64 写入消息正文或数据库。
+- 新增 question_ai_attachments 表：附件 UUID、所属 question_ai_messages.id、存储相对路径、SHA-256、MIME、字节数、创建时间；图片原件存文件系统。消息提交、文件写入、失败回收与删除清理要一致，旧文本消息保持兼容。不得将浏览器提供的路径传进 Codex。
+- Codex 的现有输出 schema、线程持久化、停止和追问逻辑保持不变；扩展类型化的文字+附件 ID 输入。在未就绪、共享无写权限或文件映射不一致时明确报错，不读取任意宿主机文件。
+
+### 8.2 Codex 沙箱改为 danger-full-access
+
+目前 apps/rust/things/src/adapters/outbound/codex_app_server.rs 为持久 AI 解析线程设置 read-only，生成线程原本已经使用 danger-full-access。按本次明确要求，只修改**真题 AI 解析线程**：
+
+- 新线程的 thread/start.sandbox 设为 "danger-full-access"。
+- 旧线程通过 thread/resume 继续时，在 turn/start 显式指定 sandboxPolicy.type = "dangerFullAccess"（核对部署版本的协议支持），避免保留旧的只读权限。
+- 此修改必须有新建/恢复线程协议回归测试，并确认不影响其他线程。
+- **风险承认**：danger-full-access 意味着 Codex 不再受到内建文件和网络沙箱限制；上传图片、OCR 输出和试题文本都可能触发提示注入，Skill 说明本身不能限制真实权限。宿主机必须以非 root 专用低权限账户运行 Codex，不暴露私密凭据或高价值目录；适用时在操作系统层再隔离进程。不得因为启用 full access 就关闭管理员认证、CSRF 或附件校验。
+
+## 九、项目 PaddleOCR Skill 与宿主机服务生命周期
+
+### 9.1 Skill 位置及调用
+
+~~~text
+.agents/skills/
+├── 行测做题/SKILL.md           # 保留
+└── hyz-image-ocr/
+    ├── SKILL.md                # Codex 调用契约
+    └── scripts/ocr_client.py   # 固定本机 OCR API 客户端
+scripts/ocr-host/
+├── README.md                   # 安装、版本检查、诊断、卸载
+└── hyz-paddleocr.service       # systemd --user 单元模板
+~~~
+
+- Codex 默认直接查看用户手写原图；遇到数字、符号、分数线、上下标或中文手写歧义时才按需调用 hyz-image-ocr。
+- Skill 只能处理本次请求由后端验证的本地附件；调用脚本固定请求 127.0.0.1:8080，不得访问任意用户提供 URL。
+- OCR 输出只是辅助证据，必须和原图核对。用户速算过程、合理近似和不确定符号不擅自改写。
+- OCR 不可用时返回明确状态，AI 仍可按原图尝试解读；Skill 不负责安装、启动服务或执行 sudo。
+- 普通 OCR 产线不等同于数学公式专用识别。公式识别如需 PP-FormulaNet，应单独验证并配置专用产线，不假定通用 OCR 已能准确生成 LaTeX。
+
+### 9.2 谁启动 PaddleOCR？
+
+**由运行 Codex App Server 的 PC 宿主机上的 systemd --user 托管；不是 RK3568，也不是 Codex Skill。** 服务按宿主机用户启用后，在登录会话启动并在故障时自动重启。若必须无人登录就可用，管理员明确执行一次 loginctl enable-linger。
+
+推荐流程：在 PC 上创建 ~/.local/share/hyz-ocr/venv/，安装兼容当前 Python/CPU 或 GPU 的 PaddlePaddle、PaddleOCR，以及一次性执行 paddlex --install serving；将仓库提供的 systemd 单元模板复制到 ~/.config/systemd/user/ 下，经核对实际虚拟环境路径后启用。
+
+单元模板要点：
+
+~~~ini
+[Unit]
+Description=hyz PaddleOCR local serving
+
+[Service]
+Type=simple
+ExecStart=%h/.local/share/hyz-ocr/venv/bin/paddlex --serve --pipeline OCR --device cpu --host 127.0.0.1 --port 8080
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+~~~
+
+管理员在 PC 上执行（**当前 PR 不执行**）：
+
+~~~bash
+systemctl --user daemon-reload
+systemctl --user enable --now hyz-paddleocr.service
+systemctl --user status hyz-paddleocr.service
+curl -fsS http://127.0.0.1:8080/health
+~~~
+
+需要注销后仍自动启动时，管理员可选择执行 sudo loginctl enable-linger <PC-username>。切勿把 PaddleOCR 默认监听 0.0.0.0 的无鉴权服务直接暴露到 LAN。OCR 仅对本机 Codex/Skill 开放，固定 127.0.0.1:8080；第一次模型下载或加载时未就绪不能导致纯视觉追问失败。
+
+## 十、图片试点验收
+
+- [ ] 上传 JPG/PNG，原有文本追问、历史消息与答案结构保持兼容。
+- [ ] 文件校验、管理员权限、CSRF、数量/大小限制、目录隔离、Git 忽略及到期清理通过。
+- [ ] RK CIFS 上传的文件在 PC 的真实路径能读取，并通过 localImage 发送 Codex。
+- [ ] 记录附件索引；重试、取消、删除和断电恢复没有永远悬挂的文件或引用。
+- [ ] 新建与恢复的真题 AI 解析 Thread 均正确使用 danger-full-access；其他 Thread 权限不变。
+- [ ] 宿主机 systemd --user 可以启动、检查、自动重启 OCR；仅监听 loopback。
+- [ ] 手写公式识别先看原图，OCR 可选且故障可降级；对照原图报告歧义，不凭 OCR 擅自修改速算步骤。
+
+## 十一、本 PR 的边界
+
+**该 PR 仍只有这一份 Plan Markdown 文档。** 不包含新代码、SQLite migration、Skill 文件、OCR 安装、systemd 服务启用、设备部署或第三方申论题目正文。后续实施需另行审阅。
+
