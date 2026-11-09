@@ -86,6 +86,11 @@ pub trait FlashcardRepositoryPort: Send + Sync {
 
     async fn list_tags(&self) -> Result<Vec<TagSummary>, FlashcardError>;
 
+    async fn list_cards_by_source_question(
+        &self,
+        question_id: &str,
+    ) -> Result<Vec<FlashcardSummary>, FlashcardError>;
+
     async fn summary(&self, now_ms: u64) -> Result<StudySummary, FlashcardError>;
 
     async fn review_target(
@@ -212,6 +217,24 @@ impl FlashcardApplication {
 
     pub async fn summary(&self) -> Result<StudySummary, FlashcardError> {
         self.repository.summary(self.clock.unix_time_millis()).await
+    }
+
+    pub async fn cards_by_source_question(
+        &self,
+        question_id: &str,
+    ) -> Result<Vec<FlashcardSummary>, FlashcardError> {
+        self.repository
+            .list_cards_by_source_question(question_id)
+            .await
+    }
+
+    pub async fn review_target(
+        &self,
+        card_id: &FlashcardId,
+    ) -> Result<Option<ReviewTarget>, FlashcardError> {
+        self.repository
+            .review_target(card_id, self.clock.unix_time_millis())
+            .await
     }
 
     pub async fn review(
@@ -382,6 +405,13 @@ mod tests {
         }
 
         async fn list_tags(&self) -> Result<Vec<TagSummary>, FlashcardError> {
+            Ok(Vec::new())
+        }
+
+        async fn list_cards_by_source_question(
+            &self,
+            _question_id: &str,
+        ) -> Result<Vec<FlashcardSummary>, FlashcardError> {
             Ok(Vec::new())
         }
 

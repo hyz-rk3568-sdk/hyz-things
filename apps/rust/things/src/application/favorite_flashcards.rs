@@ -1,10 +1,15 @@
 use crate::{
     application::{
-        favorite_flashcard_ports::FavoriteFlashcardWriterPort,
+        favorite_flashcard_ports::{
+            DeleteFavoriteCard, FavoriteFlashcardWriterPort, UpdateFavoriteCard,
+        },
         flashcards::{FlashcardApplication, FlashcardError},
         question_bank::BankError,
     },
-    domain::favorite_flashcard::{FavoriteEligibility, FlashcardCreationMode},
+    domain::{
+        favorite_flashcard::{FavoriteEligibility, FlashcardCreationMode},
+        flashcards::FlashcardId,
+    },
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -28,6 +33,16 @@ pub trait FavoriteQuestionPort: Send + Sync {
     async fn asset(&self, name: String) -> Result<Vec<u8>, BankError>;
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FavoriteExistingCard {
+    pub card_id: String,
+    pub deck_path: String,
+    pub source_file: String,
+    pub front: String,
+    pub back: String,
+    pub mode: Option<FlashcardCreationMode>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FavoriteFlashcardPreview {
     #[serde(flatten)]
@@ -35,6 +50,8 @@ pub struct FavoriteFlashcardPreview {
     pub front: String,
     pub correct_answer: Vec<String>,
     pub source_revision: String,
+    #[serde(default)]
+    pub existing: Vec<FavoriteExistingCard>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -56,6 +73,20 @@ pub struct FavoriteFlashcardResult {
     pub target_deck: String,
     pub source_file: String,
     pub card_id: Option<String>,
+    pub retryable: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateFavoriteFlashcard {
+    pub back: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FavoriteMutationResult {
+    pub status: String,
+    pub card_id: String,
+    pub source_file: String,
     pub retryable: bool,
 }
 
@@ -107,6 +138,7 @@ impl FavoriteFlashcardApplication {
         &self,
         question: FavoriteQuestion,
     ) -> Result<FavoriteFlashcardPreview, FavoriteFlashcardError> {
+        let question_id = question.question_id.clone();
         let mut preview = make_preview(question);
         if let Some(practice) = preview.eligibility.recommended_target.clone() {
             let module = crate::domain::favorite_flashcard::resolve_web_target(&practice)
@@ -123,6 +155,22 @@ impl FavoriteFlashcardApplication {
             preview.eligibility.allowed_targets =
                 std::iter::once(practice).chain(existing).collect();
         }
+        preview.existing = self
+            .flashcards
+            .cards_by_source_question(&question_id)
+            .await?
+            .into_iter()
+            .map(|card| FavoriteExistingCard {
+                card_id: card.id.to_string(),
+                mode: crate::domain::favorite_flashcard::resolve_web_target(&card.deck_path)
+                    .or_else(|| crate::domain::favorite_flashcard::resolve_target(&card.deck_path))
+                    .map(|target| target.mode),
+                deck_path: card.deck_path,
+                source_file: card.source_file,
+                front: card.front_markdown,
+                back: card.back_markdown,
+            })
+            .collect();
         Ok(preview)
     }
 
@@ -220,6 +268,133 @@ impl FavoriteFlashcardApplication {
         Ok(result)
     }
 
+    pub async fn update(
+        &self,
+        question_id: &str,
+        card_id: &str,
+        request: UpdateFavoriteFlashcard,
+    ) -> Result<FavoriteMutationResult, FavoriteFlashcardError> {
+        let card_id = FlashcardId::new(card_id).map_err(|_| BankError::Invalid)?;
+        let permit = self.flashcards.exclusive_write()?;
+        let application = self.clone();
+        let question_id = question_id.to_owned();
+        tokio::spawn(async move {
+            let _permit = permit;
+            application
+                .update_locked(&question_id, card_id, request)
+                .await
+        })
+        .await
+        .map_err(|_| FlashcardError::Storage("favorite edit worker failed".into()))?
+    }
+
+    async fn update_locked(
+        &self,
+        question_id: &str,
+        card_id: FlashcardId,
+        request: UpdateFavoriteFlashcard,
+    ) -> Result<FavoriteMutationResult, FavoriteFlashcardError> {
+        let target = self
+            .flashcards
+            .review_target(&card_id)
+            .await?
+            .ok_or(FlashcardError::NotFound)?;
+        if !target.card.active {
+            return Err(FlashcardError::NotFound.into());
+        }
+        let written = self
+            .writer
+            .update_back(UpdateFavoriteCard {
+                question_id: question_id.to_owned(),
+                card_id: card_id.clone(),
+                source_file: target.card.source_file,
+                back: normalize_back(&request.back),
+            })
+            .await?;
+        let mut result = FavoriteMutationResult {
+            status: "updated_sync_pending".into(),
+            card_id: card_id.to_string(),
+            source_file: written.relative_path.clone(),
+            retryable: true,
+        };
+        if let Ok((_, snapshot)) = self.flashcards.sync_locked().await {
+            let card = snapshot.cards.iter().find(|card| {
+                card.id == card_id && card.source_question_id.as_deref() == Some(question_id)
+            });
+            if let Some(card) = card {
+                if snapshot
+                    .successful_markdown_files
+                    .contains(&card.source_file)
+                    && self
+                        .flashcards
+                        .confirms_synced_card(card)
+                        .await
+                        .unwrap_or(false)
+                {
+                    result.status = "updated_synced".into();
+                    result.source_file = card.source_file.clone();
+                    result.retryable = false;
+                }
+            }
+        }
+        Ok(result)
+    }
+
+    pub async fn delete(
+        &self,
+        question_id: &str,
+        card_id: &str,
+    ) -> Result<FavoriteMutationResult, FavoriteFlashcardError> {
+        let card_id = FlashcardId::new(card_id).map_err(|_| BankError::Invalid)?;
+        let permit = self.flashcards.exclusive_write()?;
+        let application = self.clone();
+        let question_id = question_id.to_owned();
+        tokio::spawn(async move {
+            let _permit = permit;
+            application.delete_locked(&question_id, card_id).await
+        })
+        .await
+        .map_err(|_| FlashcardError::Storage("favorite delete worker failed".into()))?
+    }
+
+    async fn delete_locked(
+        &self,
+        question_id: &str,
+        card_id: FlashcardId,
+    ) -> Result<FavoriteMutationResult, FavoriteFlashcardError> {
+        let target = self.flashcards.review_target(&card_id).await?;
+        let mut source_file = target
+            .as_ref()
+            .map(|target| target.card.source_file.clone())
+            .unwrap_or_default();
+        let mut result = FavoriteMutationResult {
+            status: "deleted_sync_pending".into(),
+            card_id: card_id.to_string(),
+            source_file: source_file.clone(),
+            retryable: true,
+        };
+        if target.as_ref().is_some_and(|target| target.card.active) {
+            let written = self
+                .writer
+                .delete(DeleteFavoriteCard {
+                    question_id: question_id.to_owned(),
+                    card_id: card_id.clone(),
+                    source_file,
+                })
+                .await?;
+            source_file = written.relative_path;
+            result.source_file = source_file.clone();
+        }
+        if let Ok((_, _)) = self.flashcards.sync_locked().await {
+            let after = self.flashcards.review_target(&card_id).await?;
+            if after.as_ref().is_none_or(|target| !target.card.active) {
+                result.status = "deleted_synced".into();
+                result.retryable = false;
+            }
+        }
+        Ok(result)
+    }
+
     async fn prepare_assets(
         &self,
         front: &str,
@@ -297,6 +472,14 @@ fn validate_create_request(
     Ok(())
 }
 
+fn normalize_back(value: &str) -> String {
+    if value.trim().is_empty() {
+        "-".into()
+    } else {
+        value.trim().into()
+    }
+}
+
 fn make_preview(question: FavoriteQuestion) -> FavoriteFlashcardPreview {
     let mut eligibility = crate::domain::favorite_flashcard::eligibility(
         question.module.as_deref(),
@@ -313,6 +496,7 @@ fn make_preview(question: FavoriteQuestion) -> FavoriteFlashcardPreview {
         front: question.front,
         correct_answer: question.correct_answer,
         source_revision: question.source_revision,
+        existing: Vec::new(),
     }
 }
 

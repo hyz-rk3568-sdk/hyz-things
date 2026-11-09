@@ -26,12 +26,48 @@ pub struct FavoriteWriteResult {
     pub appended: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UpdateFavoriteCard {
+    pub question_id: String,
+    pub card_id: FlashcardId,
+    pub source_file: String,
+    pub back: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeleteFavoriteCard {
+    pub question_id: String,
+    pub card_id: FlashcardId,
+    pub source_file: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FavoriteMutationResult {
+    pub relative_path: String,
+    pub card_id: FlashcardId,
+    pub changed: bool,
+}
+
 #[async_trait]
 pub trait FavoriteFlashcardWriterPort: Send + Sync {
     async fn existing_user_targets(&self, module: &str) -> Result<Vec<String>, FlashcardError>;
 
     /// Checks the complete source for question identity before changing any files.
     async fn append(&self, card: NewFavoriteCard) -> Result<FavoriteWriteResult, FlashcardError>;
+
+    /// Replaces the Back section of one exact card block. Repeating the same
+    /// back is a no-op so a retry after a failed sync cannot duplicate a card.
+    async fn update_back(
+        &self,
+        card: UpdateFavoriteCard,
+    ) -> Result<FavoriteMutationResult, FlashcardError>;
+
+    /// Removes one exact card block. A missing block is treated as already
+    /// deleted so the follow-up sync can still make progress.
+    async fn delete(
+        &self,
+        card: DeleteFavoriteCard,
+    ) -> Result<FavoriteMutationResult, FlashcardError>;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

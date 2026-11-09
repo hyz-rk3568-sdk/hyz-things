@@ -3,11 +3,12 @@ use async_trait::async_trait;
 use hyz_things::{
     application::{
         favorite_flashcard_ports::{
-            FavoriteFlashcardWriterPort, FavoriteWriteResult, NewFavoriteCard,
+            DeleteFavoriteCard, FavoriteFlashcardWriterPort, FavoriteMutationResult,
+            FavoriteWriteResult, NewFavoriteCard, UpdateFavoriteCard,
         },
         favorite_flashcards::{
             CreateFavoriteFlashcard, FavoriteFlashcardApplication, FavoriteQuestion,
-            FavoriteQuestionPort,
+            FavoriteQuestionPort, UpdateFavoriteFlashcard,
         },
         flashcards::{
             FlashcardApplication, FlashcardError, FlashcardRepositoryPort, FlashcardSourcePort,
@@ -89,6 +90,48 @@ impl FavoriteFlashcardWriterPort for Fake {
             appended,
         })
     }
+
+    async fn update_back(
+        &self,
+        card: UpdateFavoriteCard,
+    ) -> Result<FavoriteMutationResult, FlashcardError> {
+        let deck = card
+            .source_file
+            .strip_suffix("/cards.md")
+            .unwrap_or(&card.source_file);
+        let mut cards = self.written.lock().unwrap();
+        let Some(existing) = cards.iter_mut().find(|existing| {
+            existing.question_id == card.question_id && existing.target_deck == deck
+        }) else {
+            return Err(FlashcardError::NotFound);
+        };
+        existing.back = card.back;
+        Ok(FavoriteMutationResult {
+            relative_path: card.source_file,
+            card_id: card.card_id,
+            changed: true,
+        })
+    }
+
+    async fn delete(
+        &self,
+        card: DeleteFavoriteCard,
+    ) -> Result<FavoriteMutationResult, FlashcardError> {
+        let deck = card
+            .source_file
+            .strip_suffix("/cards.md")
+            .unwrap_or(&card.source_file);
+        let mut cards = self.written.lock().unwrap();
+        let before = cards.len();
+        cards.retain(|existing| {
+            !(existing.question_id == card.question_id && existing.target_deck == deck)
+        });
+        Ok(FavoriteMutationResult {
+            relative_path: card.source_file,
+            card_id: card.card_id,
+            changed: cards.len() != before,
+        })
+    }
 }
 #[async_trait]
 impl FlashcardSourcePort for Fake {
@@ -162,6 +205,34 @@ impl FlashcardRepositoryPort for Fake {
     }
     async fn list_tags(&self) -> Result<Vec<TagSummary>, FlashcardError> {
         Ok(vec![])
+    }
+    async fn list_cards_by_source_question(
+        &self,
+        question_id: &str,
+    ) -> Result<Vec<FlashcardSummary>, FlashcardError> {
+        Ok(self
+            .indexed
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|card| card.source_question_id.as_deref() == Some(question_id))
+            .map(|card| FlashcardSummary {
+                id: card.id.clone(),
+                source_file: card.source_file.clone(),
+                source_order: card.source_order,
+                deck_path: card.deck_path.clone(),
+                front_markdown: card.front_markdown.clone(),
+                back_markdown: card.back_markdown.clone(),
+                tags: card.tags.clone(),
+                active: true,
+                due_at_ms: None,
+                last_reviewed_at_ms: None,
+                state: ReviewStateKind::New,
+                review_count: 0,
+                lapse_count: 0,
+                is_new: true,
+            })
+            .collect())
     }
     async fn summary(&self, _: u64) -> Result<StudySummary, FlashcardError> {
         Ok(StudySummary::default())
@@ -307,6 +378,83 @@ async fn creates_blank_back_as_dash_and_syncs_source_generated_id() {
     assert_eq!(written.len(), 1);
     assert_eq!(written[0].back, "-");
     assert_eq!(written[0].correct_answer, vec!["B"]);
+}
+
+#[tokio::test]
+async fn preview_reports_existing_card_and_edit_delete_sync_directly() {
+    let (app, fake, _) = setup();
+    app.create(QUESTION, request()).await.unwrap();
+    let preview = app.preview(QUESTION).await.unwrap();
+    assert_eq!(preview.existing.len(), 1);
+    assert_eq!(preview.existing[0].card_id, CARD);
+    assert_eq!(preview.existing[0].back, "-");
+    assert_eq!(
+        preview.existing[0].mode,
+        Some(FlashcardCreationMode::Practice)
+    );
+
+    let updated = app
+        .update(
+            QUESTION,
+            CARD,
+            UpdateFavoriteFlashcard {
+                back: "新的复盘".into(),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(updated.status, "updated_synced");
+    assert!(!updated.retryable);
+    assert_eq!(fake.written.lock().unwrap()[0].back, "新的复盘");
+    let preview = app.preview(QUESTION).await.unwrap();
+    assert_eq!(preview.existing[0].back, "新的复盘");
+
+    let deleted = app.delete(QUESTION, CARD).await.unwrap();
+    assert_eq!(deleted.status, "deleted_synced");
+    assert!(!deleted.retryable);
+    assert!(fake.written.lock().unwrap().is_empty());
+    assert!(app.preview(QUESTION).await.unwrap().existing.is_empty());
+}
+
+#[tokio::test]
+async fn failed_edit_or_delete_sync_retries_without_mutating_twice() {
+    let (app, fake, _) = setup();
+    app.create(QUESTION, request()).await.unwrap();
+    fake.fail_sync.store(true, Ordering::SeqCst);
+    let pending = app
+        .update(
+            QUESTION,
+            CARD,
+            UpdateFavoriteFlashcard {
+                back: "待同步".into(),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(pending.status, "updated_sync_pending");
+    assert!(pending.retryable);
+    fake.fail_sync.store(false, Ordering::SeqCst);
+    let retried = app
+        .update(
+            QUESTION,
+            CARD,
+            UpdateFavoriteFlashcard {
+                back: "待同步".into(),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(retried.status, "updated_synced");
+    assert_eq!(fake.written.lock().unwrap().len(), 1);
+
+    fake.fail_sync.store(true, Ordering::SeqCst);
+    let pending = app.delete(QUESTION, CARD).await.unwrap();
+    assert_eq!(pending.status, "deleted_sync_pending");
+    assert!(pending.retryable);
+    fake.fail_sync.store(false, Ordering::SeqCst);
+    let retried = app.delete(QUESTION, CARD).await.unwrap();
+    assert_eq!(retried.status, "deleted_synced");
+    assert!(fake.written.lock().unwrap().is_empty());
 }
 
 use hyz_things::application::ports::{
@@ -460,6 +608,88 @@ async fn favorite_flashcard_http_requires_admin_origin_csrf_and_typed_body() {
         assert_eq!(call.send().await.unwrap().status(), expected);
     }
     assert_eq!(fake.written.lock().unwrap().len(), 1);
+    task.abort();
+}
+
+#[tokio::test]
+async fn existing_flashcard_http_updates_and_deletes_with_direct_sync() {
+    let (task, base, cookie, fake) = server().await;
+    let client = reqwest::Client::new();
+    let root = format!("{base}/api/v1/question-bank/practice/questions/{QUESTION}");
+    let create = client
+        .post(format!("{root}/flashcard"))
+        .header("cookie", &cookie)
+        .header("origin", &base)
+        .header("x-hyz-csrf", "fc-csrf")
+        .json(&request())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(create.status(), 200);
+    let preview: serde_json::Value = client
+        .get(format!("{root}/flashcard-preview"))
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(preview["existing"][0]["card_id"], CARD);
+    assert_eq!(preview["existing"][0]["mode"], "practice");
+
+    let unauthorized = client
+        .put(format!("{root}/flashcard/{CARD}"))
+        .header("cookie", &cookie)
+        .header("origin", "https://foreign.example")
+        .header("x-hyz-csrf", "fc-csrf")
+        .json(&serde_json::json!({ "back": "blocked" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unauthorized.status(), 403);
+    let malformed = client
+        .put(format!("{root}/flashcard/{CARD}"))
+        .header("cookie", &cookie)
+        .header("origin", &base)
+        .header("x-hyz-csrf", "fc-csrf")
+        .json(&serde_json::json!({ "back": "ok", "path": "/tmp/escape" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(malformed.status(), 400);
+
+    let updated: serde_json::Value = client
+        .put(format!("{root}/flashcard/{CARD}"))
+        .header("cookie", &cookie)
+        .header("origin", &base)
+        .header("x-hyz-csrf", "fc-csrf")
+        .json(&serde_json::json!({ "back": "更新后的背面" }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(updated["status"], "updated_synced");
+    assert_eq!(updated["retryable"], false);
+    assert_eq!(fake.written.lock().unwrap()[0].back, "更新后的背面");
+
+    let deleted: serde_json::Value = client
+        .delete(format!("{root}/flashcard/{CARD}"))
+        .header("content-type", "application/json")
+        .header("cookie", &cookie)
+        .header("origin", &base)
+        .header("x-hyz-csrf", "fc-csrf")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(deleted["status"], "deleted_synced");
+    assert_eq!(deleted["retryable"], false);
+    assert!(fake.written.lock().unwrap().is_empty());
     task.abort();
 }
 
