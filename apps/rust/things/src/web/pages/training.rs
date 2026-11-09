@@ -1146,10 +1146,15 @@ fn flashcard_practice(props: &FlashcardPracticeProps) -> Html {
     html! {
         <div class={if is_training_immersive { format!("calculation-layout {}",FIXED_TRAINING_LAYOUT) } else { "calculation-layout flex h-full min-h-0 flex-col overflow-hidden".to_owned() }} data-testid="practice-layout" oncontextmenu={Callback::from(|event: web_sys::MouseEvent| event.prevent_default())}>
             if is_training_immersive {
-            <div class="mx-auto flex w-full shrink-0 justify-end pb-2">
-                <button type="button" class="btn btn-ghost btn-sm" data-testid="practice-back-to-study" onclick={go_back}>{"← 返回专项训练"}</button>
-                <StudyGoalBars />
-            </div>
+            <header class="flex w-full shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2" data-testid="practice-review-header">
+                <div class="flex min-w-0 items-center gap-2" data-testid="practice-review-header-start">
+                    <button type="button" class="btn btn-ghost btn-sm shrink-0" data-testid="practice-back-to-study" onclick={go_back}>{"← 返回专项训练"}</button>
+                    <h1 class="truncate text-sm font-semibold" data-testid="practice-review-title">{"闪卡回顾"}</h1>
+                </div>
+                <div class="ml-auto flex shrink-0 items-center justify-end" data-testid="practice-review-header-actions">
+                    <StudyGoalBars />
+                </div>
+            </header>
             }
             if is_training_immersive {
                 <div class="min-h-0 flex-1 overflow-hidden">{content}</div>

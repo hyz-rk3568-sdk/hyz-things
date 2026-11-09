@@ -335,6 +335,39 @@ test("flashcard review selects card directories as three nested levels instead o
   await expect(page.getByTestId("practice-candidates")).toContainText("共 2 张");
 });
 
+for (const width of [390, 1180]) {
+  test(`flashcard review keeps back and title left with study controls right at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/#/study/training");
+    await page.getByTestId("training-mode-flashcards").click();
+    await expect(page.getByTestId("practice-candidates")).toContainText("共 3 张");
+    await page.getByTestId("practice-start").click();
+
+    const header = page.getByTestId("practice-review-header");
+    const start = page.getByTestId("practice-review-header-start");
+    const actions = page.getByTestId("practice-review-header-actions");
+    await expect(header).toBeVisible();
+    await expect(start.getByTestId("practice-back-to-study")).toBeVisible();
+    await expect(start.getByTestId("practice-review-title")).toHaveText("闪卡回顾");
+    await expect(actions.getByTestId("study-goal-bars")).toBeVisible();
+
+    const [headerBox, startBox, actionsBox] = await Promise.all([
+      header.boundingBox(), start.boundingBox(), actions.boundingBox(),
+    ]);
+    expect(headerBox).not.toBeNull();
+    expect(startBox).not.toBeNull();
+    expect(actionsBox).not.toBeNull();
+    expect(Math.abs(startBox!.x - headerBox!.x)).toBeLessThanOrEqual(2);
+    expect(Math.abs(actionsBox!.x + actionsBox!.width - headerBox!.x - headerBox!.width)).toBeLessThanOrEqual(2);
+    expect(startBox!.x + startBox!.width).toBeLessThanOrEqual(headerBox!.x + headerBox!.width + 2);
+    expect(actionsBox!.x).toBeGreaterThanOrEqual(headerBox!.x - 2);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+
+    await start.getByTestId("practice-back-to-study").click();
+    await expect(page.getByTestId("practice-setup")).toBeVisible();
+  });
+}
+
 test("flashcard review loads every card and records FSRS ratings", async ({ page }) => {
   const reviews: Array<{card_id: string; rating: string}> = [];
   page.on("request", (request) => {
