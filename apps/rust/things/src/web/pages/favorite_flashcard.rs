@@ -87,11 +87,7 @@ fn mode_occupied(preview: &FavoritePreview, mode: FavoriteCardMode) -> bool {
 }
 
 pub(crate) fn favorite_can_create(preview: &FavoritePreview) -> bool {
-    preview.eligible
-        && preview
-            .allowed_targets
-            .iter()
-            .any(|target| target_mode(target).is_some_and(|mode| !mode_occupied(preview, mode)))
+    preview.eligible && preview.existing.is_empty() && !preview.allowed_targets.is_empty()
 }
 
 fn favorite_default_target(preview: &FavoritePreview) -> String {
@@ -121,6 +117,7 @@ pub(crate) struct FavoriteFlashcardPanelProps {
     pub(crate) preview: FavoritePreview,
     pub(crate) csrf: String,
     pub(crate) on_close: Callback<()>,
+    pub(crate) on_changed: Callback<()>,
 }
 
 #[function_component(FavoriteFlashcardPanel)]
@@ -206,6 +203,8 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
             let result = result.clone();
             let in_flight = in_flight.clone();
             let mounted = mounted.clone();
+            let on_changed = props.on_changed.clone();
+            let on_close = props.on_close.clone();
             let csrf = props.csrf.clone();
             let endpoint = favorite_endpoint(&props.question_id, "flashcard");
             spawn_local(async move {
@@ -222,7 +221,14 @@ pub(crate) fn favorite_flashcard_panel(props: &FavoriteFlashcardPanelProps) -> H
                 *in_flight.borrow_mut() = false;
                 busy.set(false);
                 match response {
-                    Ok(value) => result.set(Some(value)),
+                    Ok(value) => {
+                        let synced = !value.retryable;
+                        result.set(Some(value));
+                        if synced {
+                            on_changed.emit(());
+                            on_close.emit(());
+                        }
+                    }
                     Err(message) => error.set(Some(message)),
                 }
             });
@@ -372,6 +378,14 @@ pub(crate) struct FavoriteExistingCardsProps {
 
 #[function_component(FavoriteExistingCards)]
 pub(crate) fn favorite_existing_cards(props: &FavoriteExistingCardsProps) -> Html {
+    let expanded = use_state(|| None::<String>);
+    {
+        let expanded = expanded.clone();
+        use_effect_with((*expanded).clone(), move |_| {
+            hydrate_math();
+            || ()
+        });
+    }
     html! {
         <section class="space-y-2 rounded-box border border-success/30 bg-success/5 p-3"
             data-testid="favorite-existing-cards" aria-label="已创建 Flashcard">
@@ -379,18 +393,43 @@ pub(crate) fn favorite_existing_cards(props: &FavoriteExistingCardsProps) -> Htm
             {for props.cards.iter().map(|card| {
                 let card_value = card.clone();
                 let on_edit = props.on_edit.clone();
+                let expanded = expanded.clone();
+                let is_expanded = (*expanded).as_deref() == Some(card.card_id.as_str());
                 html! {
-                    <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-base-100/70 px-3 py-2"
-                        data-testid="favorite-existing-card">
-                        <div class="min-w-0">
-                            <p class="truncate text-sm font-medium" data-testid="favorite-existing-card-deck">{card.deck_path.clone()}</p>
-                            <p class="break-all text-xs text-base-content/55" data-testid="favorite-existing-card-path">{card.source_file.clone()}</p>
+                    <div class="space-y-2 rounded-lg bg-base-100/70 px-3 py-2" data-testid="favorite-existing-card">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="min-w-0">
+                                <p class="truncate text-sm font-medium" data-testid="favorite-existing-card-deck">{card.deck_path.clone()}</p>
+                                <p class="break-all text-xs text-base-content/55" data-testid="favorite-existing-card-path">{card.source_file.clone()}</p>
+                            </div>
+                            <div class="flex shrink-0 gap-2">
+                                <button type="button" class="btn btn-ghost btn-sm"
+                                    aria-expanded={is_expanded.to_string()}
+                                    data-testid="favorite-existing-card-preview"
+                                    onclick={Callback::from({let expanded=expanded.clone();let card_id=card.card_id.clone();move |_| {
+                                        expanded.set(if is_expanded {None} else {Some(card_id.clone())});
+                                    }})}>
+                                    {if is_expanded {"收起预览"} else {"预览"}}
+                                </button>
+                                <button type="button" class="btn btn-outline btn-sm"
+                                    data-testid="favorite-existing-card-edit"
+                                    onclick={Callback::from(move |_| on_edit.emit(card_value.clone()))}>
+                                    {"修改或删除"}
+                                </button>
+                            </div>
                         </div>
-                        <button type="button" class="btn btn-outline btn-sm shrink-0"
-                            data-testid="favorite-existing-card-edit"
-                            onclick={Callback::from(move |_| on_edit.emit(card_value.clone()))}>
-                            {"修改或删除"}
-                        </button>
+                        if is_expanded {
+                            <div class="space-y-3 border-t border-base-content/10 pt-3" data-testid="favorite-existing-card-preview-content">
+                                <section aria-label="正面">
+                                    <h4 class="mb-1 text-xs font-semibold text-base-content/60">{"正面"}</h4>
+                                    <div class="study-markdown">{render_question_bank_markdown(&card.front)}</div>
+                                </section>
+                                <section aria-label="背面">
+                                    <h4 class="mb-1 text-xs font-semibold text-base-content/60">{"背面"}</h4>
+                                    <div class="study-markdown">{render_question_bank_markdown(&card.back)}</div>
+                                </section>
+                            </div>
+                        }
                     </div>
                 }
             })}

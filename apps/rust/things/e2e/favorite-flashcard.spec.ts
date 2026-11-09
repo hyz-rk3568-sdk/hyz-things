@@ -85,17 +85,24 @@ const existingCard = {
 
 async function mockExistingPreview(page: Page, cards: unknown[] = [existingCard]) {
   await page.route(`**${root}/practice/questions/supported/flashcard-preview`, route => route.fulfill({
-    json: { ...preview(), allowed_targets: ['真题练习/数量关系/数学运算/错题'], existing: cards },
+    json: { ...preview(), existing: cards },
   }));
 }
 
-test('existing flashcard is listed and blocks recreating in an occupied destination', async ({ page }) => {
+test('existing flashcard is listed with a preview and blocks creating another', async ({ page }) => {
   await install(page);
   await mockExistingPreview(page);
   const review = await openReview(page);
   await expect(review.getByTestId('favorite-existing-card')).toHaveCount(1);
   await expect(review.getByTestId('favorite-existing-card-deck')).toHaveText(existingCard.deck_path);
   await expect(review.getByTestId('favorite-existing-card-path')).toHaveText(existingCard.source_file);
+  await review.getByTestId('favorite-existing-card-preview').click();
+  const previewContent = review.getByTestId('favorite-existing-card-preview-content');
+  await expect(previewContent).toBeVisible();
+  await expect(previewContent).toContainText('完整材料');
+  await expect(previewContent).toContainText('原来的背面');
+  await review.getByTestId('favorite-existing-card-preview').click();
+  await expect(previewContent).toHaveCount(0);
   await expect(review.getByTestId('collection-review-create-flashcard')).toHaveCount(0);
   await expect(review.getByTestId('collection-review-flashcard-unavailable')).toContainText('这题已在可用的存放位置创建过闪卡。');
 });
@@ -231,6 +238,10 @@ for (const width of [1180, 390]) {
   test(`favorite review creates a flashcard in a centered card and preserves filters at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     await install(page);
+    let created = false;
+    await page.route(`**${root}/practice/questions/supported/flashcard-preview`, route => route.fulfill({
+      json: { ...preview(), existing: created ? [{ ...existingCard, deck_path: '用户整理/数量关系/数学运算/错题', source_file: '用户整理/数量关系/数学运算/错题/cards.md', back: '先列方程，再代入。', mode: 'user_organized' }] : [] },
+    }));
     await expect(page.getByTestId('collection-review-create-flashcard')).toHaveCount(0);
     await page.getByTestId('question-bank-collection-module').filter({ hasText: '数量关系' }).click();
     await page.getByTestId('question-bank-collection-category').filter({ hasText: '数学运算' }).click();
@@ -264,14 +275,17 @@ for (const width of [1180, 390]) {
     await page.route(`**${root}/practice/questions/supported/flashcard`, async route => {
       body = route.request().postDataJSON();
       csrf = route.request().headers()['x-hyz-csrf'];
+      created = true;
       await route.fulfill({ json: { status: 'created_synced', target_deck: '用户整理/数量关系/数学运算/错题', source_file: '用户整理/数量关系/数学运算/错题/cards.md', card_id: 'new-card', retryable: false } });
     });
     await card.getByRole('button', { name: '创建并同步', exact: true }).click();
-    await expect(card).toContainText('已创建');
+    await expect(panel).toHaveCount(0);
     expect(body).toEqual({ creation_mode: 'user_organized', target_deck: '用户整理/数量关系/数学运算/错题', back: '先列方程，再代入。', source_revision: 'source-v1', type_confirmed: true });
     expect(csrf).toBeTruthy();
-    await panel.getByRole('button', { name: '返回复盘', exact: true }).first().click();
     await expect(review.getByTestId('collection-review-split')).toBeVisible();
+    await expect(review.getByTestId('favorite-existing-card')).toHaveCount(1);
+    await expect(review.getByTestId('favorite-existing-card-path')).toHaveText('用户整理/数量关系/数学运算/错题/cards.md');
+    await expect(review.getByTestId('collection-review-create-flashcard')).toHaveCount(0);
     await review.getByTestId('collection-review-back').click();
     await expect(page.getByTestId('question-bank-collection-item')).toHaveCount(1);
     await expect(page.getByTestId('question-bank-collection-category').filter({ hasText: '数学运算' })).toHaveAttribute('aria-pressed', 'true');
@@ -439,6 +453,9 @@ test('favorite flashcard sync recovery retries the identical request and blocks 
   const requests: unknown[] = [];
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route(`**${root}/practice/questions/supported/flashcard-preview`, route => route.fulfill({
+    json: { ...preview(), existing: requests.length >= 2 ? [{ ...existingCard, deck_path: '用户整理/数量关系/数学运算/错题', source_file: '用户整理/数量关系/数学运算/错题/cards.md', back: '恢复同步的背面', mode: 'user_organized' }] : [] },
+  }));
   await page.route(`**${root}/practice/questions/supported/flashcard`, async route => {
     requests.push(route.request().postDataJSON());
     if (requests.length === 1) await gate;
@@ -452,15 +469,21 @@ test('favorite flashcard sync recovery retries the identical request and blocks 
   await expect(modal).toContainText('待同步');
   await expect(modal.getByLabel('背面')).toBeDisabled();
   await modal.getByRole('button', { name: '重试同步', exact: true }).click();
-  await expect(modal).toContainText('已存在');
+  await expect(modal).toHaveCount(0);
   expect(requests).toHaveLength(2);
   expect(requests[1]).toEqual(requests[0]);
+  await expect(page.getByTestId('favorite-existing-card')).toHaveCount(1);
+  await expect(page.getByTestId('collection-review-create-flashcard')).toHaveCount(0);
 });
 
 for (const width of [1180, 390]) {
   test(`favorite flashcard permits a blank Back at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     await install(page);
+    let created = false;
+    await page.route(`**${root}/practice/questions/supported/flashcard-preview`, route => route.fulfill({
+      json: { ...preview(), existing: created ? [{ ...existingCard, deck_path: '用户整理/数量关系/数学运算/错题', source_file: '用户整理/数量关系/数学运算/错题/cards.md', back: '-', mode: 'user_organized' }] : [] },
+    }));
     const modal = await openCreate(page);
     await expect(modal.getByLabel('背面')).toHaveValue('');
     await modal.getByTestId('favorite-flashcard-user-mode').click();
@@ -471,11 +494,14 @@ for (const width of [1180, 390]) {
     let body: unknown;
     await page.route(`**${root}/practice/questions/supported/flashcard`, async route => {
       body = route.request().postDataJSON();
+      created = true;
       await route.fulfill({ json: { status: 'created_synced', target_deck: '用户整理/数量关系/数学运算/错题', source_file: '用户整理/数量关系/数学运算/错题/cards.md', card_id: 'blank-back', retryable: false } });
     });
     await submit.click();
-    await expect(modal).toContainText('已创建并同步');
+    await expect(modal).toHaveCount(0);
     expect(body).toEqual({ creation_mode: 'user_organized', target_deck: '用户整理/数量关系/数学运算/错题', back: '', source_revision: 'source-v1', type_confirmed: true });
+    await expect(page.getByTestId('favorite-existing-card')).toHaveCount(1);
+    await expect(page.getByTestId('collection-review-create-flashcard')).toHaveCount(0);
     await expectNoHorizontalOverflow(page);
   });
 }
