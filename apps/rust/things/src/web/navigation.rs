@@ -371,7 +371,9 @@ pub(crate) fn swipe_start_allowed(event: &PointerEvent) -> bool {
     };
     loop {
         if element
-            .matches(".math-inline, .math-display, .study-markdown table, .study-markdown pre")
+            .matches(
+                ".math-inline, .math-display, .study-markdown table, .study-markdown pre, .markdown-media",
+            )
             .unwrap_or(false)
             && element.scroll_width() > element.client_width()
         {
