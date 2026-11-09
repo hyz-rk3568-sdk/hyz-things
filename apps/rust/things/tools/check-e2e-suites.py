@@ -14,6 +14,7 @@ PLAYWRIGHT_CONFIG = ROOT / "apps/rust/things/playwright.config.ts"
 # These suites have their own browser lifecycle, nested describe blocks, or an
 # in-test reset, so they are not counted in the shared harness baseline.
 AUXILIARY_SPECS = (
+    "question-bank-drill.spec.ts",
     "pwa.spec.ts",
     "related-method-card.spec.ts",
     "training-subjects.spec.ts",

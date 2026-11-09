@@ -37,9 +37,16 @@ test('answer sheet keeps its scroll position when reopened',async({page})=>{
   await page.getByTestId('training-mode-question-bank-paper').click();
   await chooseFixturePaper(page);
   await page.getByTestId('question-bank-practice-start').click();
-  await page.addStyleTag({content:'[data-testid="training-answer-sheet"] { max-height: 100px !important; }'});
+  // Constructable stylesheets work under the portal's strict CSP and persist
+  // when the conditional answer-sheet element is unmounted/recreated.
+  await page.evaluate(() => {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync('[data-testid="training-answer-sheet"] { max-height: 100px !important; }');
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+  });
   await openSheet(page);
   const sheet=page.getByTestId('training-answer-sheet');
+  await expect(sheet).toHaveCSS('max-height', '100px');
   await expect.poll(()=>sheet.evaluate(node=>node.scrollHeight-node.clientHeight)).toBeGreaterThan(75);
   await sheet.evaluate(node=>{node.scrollTop=60});
   await expect.poll(()=>sheet.evaluate(node=>node.scrollTop)).toBe(60);

@@ -1,7 +1,5 @@
 //! Browse original papers and categories; share one workspace for practice and review.
-use super::favorite_flashcard::{
-    favorite_can_create, FavoriteFlashcardWorkspace, FavoritePreview,
-};
+use super::favorite_flashcard::{favorite_can_create, FavoriteFlashcardWorkspace, FavoritePreview};
 use super::material_scroll::{scroll_edges, MaterialScrollButton, ScrollEdges};
 use super::*;
 use hyz_things::domain::question_bank::{

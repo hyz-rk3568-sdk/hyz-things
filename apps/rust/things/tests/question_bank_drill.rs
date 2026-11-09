@@ -282,11 +282,9 @@ fn lecture_image_references_rewrite_from_the_nested_collection_path() {
     )
     .unwrap();
     assert_eq!(references.len(), 1);
-    assert!(
-        [".jpg", ".jpeg", ".png"]
-            .iter()
-            .any(|extension| references[0].ends_with(extension))
-    );
+    assert!([".jpg", ".jpeg", ".png"]
+        .iter()
+        .any(|extension| references[0].ends_with(extension)));
     assert!(rewritten.contains(&format!("hyz-bank-asset:{}", references[0])));
 }
 
