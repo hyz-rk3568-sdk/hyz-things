@@ -12,7 +12,7 @@
 4. 保留原卷给定材料、作答要求、参考答案与解析，并做可重复的结构和图片校验。
 5. 扩展**现有真题 AI 解析**的图片上传和视觉追问输入，新增项目内 PaddleOCR Skill、宿主机本地 OCR 服务管理方案，并按用户要求将这类 Codex 解析线程改成 danger-full-access。
 
-**不做：** 不新增第三种 `kind`；不加入职测、综应；不增加 `source_url`、`bank_id`、`exam_series`、`grading_mode`、字数结构化字段等非必要元数据；不新增申论业务页面或阅卷功能；本次图片试点仅扩展现有 AI 解析输入及必要的附件存储，不变更设备挂载和部署配置。
+**不做：** 不新增第三种 `kind`；不加入职测、综应；不增加 `source_url`、`bank_id`、`exam_series`、`grading_mode`、字数结构化字段等非必要元数据；不新增申论业务页面或阅卷功能；本次图片试点仅扩展现有 AI 解析输入与临时附件传输；图片仅放临时目录，不修改题库共享、设备挂载和现有永久题库数据。
 
 原有行测真题与 UUID、练习历史、收藏、错题不作重置或迁移改写。提交代码前必须先审计测试现有兼容行为。
 
@@ -205,25 +205,27 @@ CREATE INDEX IF NOT EXISTS idx_bank_papers_subject
 
 **范围只限已有真题 AI 解析入口**：允许在首次解析指令及后续追问添加 JPG/PNG 图片（初定每次至多 3 张、每张不超过 8 MiB，最终以设备测试确定）；文字和图片随同一条消息发送 Codex。暂不支持 PDF、不增加申论作答或阅卷页面。
 
-### 8.1 传输和本地暂存
+### 8.1 使用 `/tmp`，不经过 SMB
 
-采用现有 Samba 共享而不是新增图片上传中转服务：
+**图片是临时 AI 消息附件，不属于题库原始资料；SMB 只是此前复用现有共享的设想，实际没有必要。** 本试点采用独立于题库的临时上传：
 
 ~~~text
 浏览器 JPG/PNG + 文字
-  → RK3568 things API（管理员鉴权 / CSRF / MIME 与文件头校验 / 大小限制）
-  → /mnt/hyz-question-bank/.hyz-ai-uploads/<server-generated-uuid>.png
-  → Samba 共享对应的 PC 真实绝对路径
-  → Codex App Server turn/start 的 text + localImage 输入数组
-  → 必要时由 Skill 请求 PC 本地 PaddleOCR 服务
+  → RK3568 things API（管理员认证 / CSRF / 文件头、尺寸、大小、数量校验）
+  → PC 上的受控临时图片接收端（RK → PC 的授权 HTTP 请求）
+  → PC /tmp/hyz-ai-uploads-<uid>/<server-generated-uuid>.png
+         ├─ Codex App Server turn/start: text + localImage
+         └─ 按需由 hyz-image-ocr Skill 读取原图并请求 127.0.0.1:8080 PaddleOCR
+  → 生成完成或超时后清理临时文件
 ~~~
 
-- 项目已通过 scripts/share-question-bank.sh 把 PC 上的题库共享为 hyz-question-bank，RK3568 挂载在 /mnt/hyz-question-bank。PC 源路径以实际 Samba 配置为准，不得将设备路径直接传给 localImage。
-- 临时上传目录选共享根的 .hyz-ai-uploads/，**不在 papers/、collections/ 或 assets/ 里**；加入 Git 忽略项，避免用户手写原稿被提交到公开仓库。现有题库源扫描仅看 papers 与 collections。
-- 后端只接受图片二进制，不信任客户端文件名、路径和 MIME 声明；检测实际格式、尺寸、文件大小，生成随机文件名并原子写入，防止路径穿越/符号链接攻击。对文件数量、总空间和并发设置限制与清理周期。
-- Base64 可用于 Codex image Data URL 传输，但不能代替本地文件暂存：OCR Skill 要读取同一张原图，故主路径用 Codex localImage（服务器已核实的 PC 绝对路径）。不将大段 Base64 写入消息正文或数据库。
-- 新增 question_ai_attachments 表：附件 UUID、所属 question_ai_messages.id、存储相对路径、SHA-256、MIME、字节数、创建时间；图片原件存文件系统。消息提交、文件写入、失败回收与删除清理要一致，旧文本消息保持兼容。不得将浏览器提供的路径传进 Codex。
-- Codex 的现有输出 schema、线程持久化、停止和追问逻辑保持不变；扩展类型化的文字+附件 ID 输入。在未就绪、共享无写权限或文件映射不一致时明确报错，不读取任意宿主机文件。
+- **不使用** `/mnt/hyz-question-bank`、Samba、`question_bank/assets/`、`papers/` 或 `collections/` 保存用户图片；不修改现有题库共享配置、UUID 或同步规则。RK3568 可直接按流转发图片，无需永久落盘；如 HTTP 层必须缓冲，只在设备 `/tmp` 使用受限临时文件并及时删除。
+- 由于 RK3568 和 Codex App Server 位于两台设备，**只在 RK3568 的 `/tmp` 保存文件，PC 上的 `localImage` 与 PaddleOCR Skill 仍无法直接读取**。因此需要一个轻量的 **PC 临时附件接收端**：通过独立认证令牌、LAN 防火墙白名单、严格请求体和速率限制，仅接受 RK 的已认证后端上传；接收端生成文件 ID 并写入 PC 的私有临时目录，不接受客户端指定路径。此端口不同于只监听 `127.0.0.1:8080` 的 PaddleOCR 本身。
+- PC 接收端使用 `systemd --user` 托管，和 PaddleOCR 服务独立；`/tmp/hyz-ai-uploads-<uid>/` 权限 `0700`，文件权限 `0600`，执行用户与 Codex 一致且非 root。临时文件均有 UUID、最大占用和生命周期限制；以运行任务引用计数保护在用图片，任务完成后删除，另设开机/周期性过期清理处理崩溃或断线。**`/tmp` 会被系统清理，不保证重启后的持久性。**
+- 由后端通过类型化附件 ID 记录当前请求中的图片，PC 端返回经过验证的本机绝对路径，后端再生成 `localImage` 项。前端不得传入路径或自定义 Codex 输入类型；需要确保输入图片在 Codex 消费完数据且任何按需 OCR 完成前不会被删除。
+- **本试点不增加永久的 `question_ai_attachments` 数据表，也不将图片 Base64 或原文件保存到 SQLite。** 文本聊天历史仍按原有机制持久保存；重新打开历史时，已过期图片仅显示“本次临时图片已清理”，需要重新上传，不能承诺历史附件可再次下载或重新 OCR。
+- 单次限制建议 1–3 张 JPG/PNG、每张不超过 8 MiB，执行文件头/MIME 一致性、解码可读性、尺寸上限、目录安全、超时/并发/总磁盘配额校验。PC 接收端不执行文件内容，不让提示词控制文件路径。
+- 如果后续决定**不需要 OCR 访问同一张原图**，可以简化为 RK 后端直接向 Codex `turn/start` 发送 `image` Data URL（Base64），省掉 PC 临时接收端；但**当前既要 Codex 看图、又要宿主机 Skill 在需要时 OCR 原图**，因此采用 PC `/tmp` + `localImage` 的一致路径。
 
 ### 8.2 Codex 沙箱改为 danger-full-access
 
@@ -246,18 +248,19 @@ CREATE INDEX IF NOT EXISTS idx_bank_papers_subject
     └── scripts/ocr_client.py   # 固定本机 OCR API 客户端
 scripts/ocr-host/
 ├── README.md                   # 安装、版本检查、诊断、卸载
-└── hyz-paddleocr.service       # systemd --user 单元模板
+├── hyz-paddleocr.service       # PaddleOCR systemd --user 单元模板
+└── hyz-image-receiver.service  # PC 临时图片接收端 systemd --user 模板
 ~~~
 
 - Codex 默认直接查看用户手写原图；遇到数字、符号、分数线、上下标或中文手写歧义时才按需调用 hyz-image-ocr。
-- Skill 只能处理本次请求由后端验证的本地附件；调用脚本固定请求 127.0.0.1:8080，不得访问任意用户提供 URL。
+- Skill 只能处理本次请求由后端验证的本地附件；调用脚本固定请求 127.0.0.1:8080；输入图片必须来自 PC 受控的 /tmp 临时附件目录，不得访问任意用户提供的文件路径或 URL。
 - OCR 输出只是辅助证据，必须和原图核对。用户速算过程、合理近似和不确定符号不擅自改写。
 - OCR 不可用时返回明确状态，AI 仍可按原图尝试解读；Skill 不负责安装、启动服务或执行 sudo。
 - 普通 OCR 产线不等同于数学公式专用识别。公式识别如需 PP-FormulaNet，应单独验证并配置专用产线，不假定通用 OCR 已能准确生成 LaTeX。
 
 ### 9.2 谁启动 PaddleOCR？
 
-**由运行 Codex App Server 的 PC 宿主机上的 systemd --user 托管；不是 RK3568，也不是 Codex Skill。** 服务按宿主机用户启用后，在登录会话启动并在故障时自动重启。若必须无人登录就可用，管理员明确执行一次 loginctl enable-linger。
+**由运行 Codex App Server 的 PC 宿主机上的 systemd --user 托管 PaddleOCR 和独立的临时图片接收端；不是 RK3568，也不是 Codex Skill。** 服务按宿主机用户启用后，在登录会话启动并在故障时自动重启。若必须无人登录就可用，管理员明确执行一次 loginctl enable-linger。
 
 推荐流程：在 PC 上创建 ~/.local/share/hyz-ocr/venv/，安装兼容当前 Python/CPU 或 GPU 的 PaddlePaddle、PaddleOCR，以及一次性执行 paddlex --install serving；将仓库提供的 systemd 单元模板复制到 ~/.config/systemd/user/ 下，经核对实际虚拟环境路径后启用。
 
@@ -277,7 +280,7 @@ RestartSec=5
 WantedBy=default.target
 ~~~
 
-管理员在 PC 上执行（**当前 PR 不执行**）：
+管理员在 PC 上执行（**当前 PR 不执行**；图片接收端另用独立用户服务和专用上传令牌管理）：
 
 ~~~bash
 systemctl --user daemon-reload
@@ -291,11 +294,11 @@ curl -fsS http://127.0.0.1:8080/health
 ## 十、图片试点验收
 
 - [ ] 上传 JPG/PNG，原有文本追问、历史消息与答案结构保持兼容。
-- [ ] 文件校验、管理员权限、CSRF、数量/大小限制、目录隔离、Git 忽略及到期清理通过。
-- [ ] RK CIFS 上传的文件在 PC 的真实路径能读取，并通过 localImage 发送 Codex。
-- [ ] 记录附件索引；重试、取消、删除和断电恢复没有永远悬挂的文件或引用。
+- [ ] 文件校验、管理员权限、CSRF、数量/大小限制、PC /tmp 文件权限及到期清理通过；任何用户图片都不进入 SMB/题库。
+- [ ] RK 经受控 PC 临时接收端上传文件，PC `/tmp` 中的原图可同时供 Codex `localImage` 和 OCR Skill 读取；不依赖 CIFS/SMB。
+- [ ] 在用临时文件不提前删除；重试、取消、超时和进程重启后按 TTL 清理，无孤儿临时文件和数据库 Base64 膨胀；旧文本历史不受影响。
 - [ ] 新建与恢复的真题 AI 解析 Thread 均正确使用 danger-full-access；其他 Thread 权限不变。
-- [ ] 宿主机 systemd --user 可以启动、检查、自动重启 OCR；仅监听 loopback。
+- [ ] 宿主机 systemd --user 可以启动、检查、自动重启 OCR 与 PC 临时图片接收端；OCR 仅监听 loopback，接收端仅允许经认证的 RK 后端访问。
 - [ ] 手写公式识别先看原图，OCR 可选且故障可降级；对照原图报告歧义，不凭 OCR 擅自修改速算步骤。
 
 ## 十一、本 PR 的边界
