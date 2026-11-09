@@ -246,6 +246,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download verified frontend bundle
         uses: actions/download-artifact@v4
@@ -292,9 +294,34 @@ jobs:
 
       - name: Run Playwright E2E
         working-directory: apps/rust/things
+        shell: bash
         env:
           HYZ_THINGS_E2E_REUSE_FRONTEND_BUNDLE: "1"
-        run: npm run test:e2e -- ${{ github.event_name == 'pull_request' && 'e2e/question-bank.spec.ts e2e/comprehensive.spec.ts e2e/logic-judgment.spec.ts e2e/training-subjects.spec.ts e2e/training-time.spec.ts' || '' }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
+            npm run test:e2e
+            exit 0
+          fi
+          # Use the focused suite for the question-bank / Flashcard change family.
+          # An unrelated changed file falls back to the established PR suite.
+          changed="$(git diff --name-only "origin/$GITHUB_BASE_REF...HEAD")"
+          unrelated="$(printf '%s\n' "$changed" | grep -vE '^((apps/rust/things/src/web/pages/(question_navigation|favorite_flashcard|question_bank_practice|collection_review)\.rs)|(apps/rust/things/e2e/(question-bank|favorite-flashcard|question-bank-drill)\.spec\.ts)|(apps/rust/things/tests/question_bank_drill\.rs)|(question_bank/collections/xiaop-2026-shuliang/(06-行程问题（二）|07-溶液问题)\.md)|(\.github/workflows/portal-ci\.yml))
+      - name: Upload Playwright failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyz-things-playwright-failure-${{ github.run_id }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            apps/rust/things/playwright-report/
+            apps/rust/things/test-results/
+ || true)"
+          if [[ -z "$unrelated" ]]; then
+            npm run test:e2e -- e2e/question-bank.spec.ts e2e/favorite-flashcard.spec.ts e2e/question-bank-drill.spec.ts
+          else
+            npm run test:e2e -- e2e/question-bank.spec.ts e2e/comprehensive.spec.ts e2e/logic-judgment.spec.ts e2e/training-subjects.spec.ts e2e/training-time.spec.ts
+          fi
 
       - name: Upload Playwright failure artifacts
         if: failure()

@@ -167,7 +167,7 @@ fn lecture_collection_parses_with_all_522_questions_and_images() {
         .filter(|path| path.extension().is_some_and(|ext| ext == "md"))
         .collect::<Vec<_>>();
     files.sort();
-    assert_eq!(files.len(), 18);
+    assert_eq!(files.len(), 19);
     let mut total = 0;
     for path in files {
         let text = std::fs::read_to_string(&path).unwrap();
@@ -240,7 +240,8 @@ fn solution_lecture_is_separate_from_travel_lecture_without_renumbering() {
     assert!(solution.contains("## Question 188"));
     assert!(!solution.contains("## Question 161"));
     assert!(solution.contains("category: \"蒸发加水问题\""));
-    assert!(solution.contains("01a1af25-cffb-79e3-b257-1c8029e1b514") == false);
+    assert_eq!(travel.matches("## Question ").count(), 24);
+    assert_eq!(solution.matches("## Question ").count(), 27);
 }
 
 #[test]
