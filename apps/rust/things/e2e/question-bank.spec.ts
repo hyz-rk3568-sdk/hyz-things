@@ -975,11 +975,11 @@ test('any original-paper review can create a category flashcard without first fa
   await expect(dialog).toHaveCount(0);
   await expect(page.getByTestId('question-bank-practice-create-flashcard')).toHaveCount(0);
   await expect(page.getByTestId('question-bank-practice-manage-flashcard')).toBeVisible();
-  await expect(page.getByTestId('favorite-existing-card')).toHaveCount(0);
   await page.getByTestId('question-bank-practice-manage-flashcard').click();
-  await expect(page.getByTestId('favorite-existing-card-path')).toHaveText('真题练习/资料分析/比重/错题/cards.md');
-  await page.getByTestId('favorite-existing-card-preview').click();
-  await expect(page.getByTestId('favorite-existing-card-preview-content')).toBeVisible();
+  const editor=page.getByTestId('favorite-flashcard-editor');
+  await expect(editor.getByTestId('favorite-flashcard-path')).toContainText('真题练习/资料分析/比重/错题/cards.md');
+  await editor.getByTestId('favorite-flashcard-preview-toggle').click();
+  await expect(editor.getByTestId('favorite-flashcard-front-preview')).toBeVisible();
   await page.getByRole('button',{name:'返回复盘'}).click();
   await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第');
 });
