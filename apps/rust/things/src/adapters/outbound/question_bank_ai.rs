@@ -100,7 +100,10 @@ fn initial_prompt(locator: &QuestionAiLocator, instruction: Option<&str>) -> Str
          【用户上传图片】\n\
          若本次消息附带 localImage，先直接查看原图；遇到数字、符号、分数线、上下标或中文手写歧义时，\
          再按需读取 .agents/skills/hyz-image-ocr/SKILL.md 并调用本地 OCR 辅助核对。\
-         OCR 只是辅助证据，必须回到原图核对，不要凭 OCR 改写用户的速算过程。\n\n\
+         遇到多栏或双栏排版、多题混排、题干与选项交错、阅读顺序异常时，也调用 OCR 获取 blocks；\
+         结合原图、坐标和文字语义判断阅读顺序，不要只按全局 Y 坐标排序，不要根据语义补全或改写题干、选项。\
+         OCR 只是辅助证据，必须回到原图核对；OCR 与原图冲突时以原图为准，无法确认处明确标注不确定；\
+         不要凭 OCR 改写用户的速算过程。\n\n\
          【先判型，再取法】\n\
          定位后先判断题型、考点和适用方法，再读取 .agents/skills/行测做题/SKILL.md，\
          以及其中引用的 references 和 flashcards/ 下与该题型有关的做题套路。\
@@ -577,6 +580,28 @@ mod tests {
         assert!(prompt.contains("viewBox"), "{prompt}");
         assert!(prompt.contains("foreignObject"), "{prompt}");
         assert!(prompt.contains("outputSchema"), "{prompt}");
+    }
+
+    #[test]
+    fn initial_prompt_guides_structured_ocr_for_complex_layouts() {
+        let locator = QuestionAiLocator {
+            question_id: "question-id".into(),
+            paper_id: "paper-id".into(),
+            paper_path: "papers/example.md".into(),
+            material_ids: Vec::new(),
+            stem_fingerprint: "fingerprint".into(),
+        };
+
+        let prompt = initial_prompt(&locator, None);
+
+        assert!(prompt.contains("多栏或双栏排版"), "{prompt}");
+        assert!(prompt.contains("blocks"), "{prompt}");
+        assert!(prompt.contains("全局 Y 坐标"), "{prompt}");
+        assert!(prompt.contains("明确标注不确定"), "{prompt}");
+        assert!(
+            prompt.contains("不要根据语义补全或改写题干、选项"),
+            "{prompt}"
+        );
     }
 
     #[test]

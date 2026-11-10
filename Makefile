@@ -230,6 +230,7 @@ check-static:
 	bash -n "$(THINGS_APP)/tools/start-e2e-server.sh"
 	python3 "$(THINGS_APP)/tools/test-frontend-bundle.py"
 	python3 "$(THINGS_APP)/tools/test-portal-ci.py"
+	python3 "$(CURDIR)/.agents/skills/hyz-image-ocr/scripts/test_ocr_client.py"
 	bash -n "$(THINGS_APP)/tools/deploy-app.sh"
 	bash -n "$(THINGS_APP)/tools/test-deploy-app.sh"
 	bash -n "$(CURDIR)/tools/stage-mihomo-geodata.sh"
