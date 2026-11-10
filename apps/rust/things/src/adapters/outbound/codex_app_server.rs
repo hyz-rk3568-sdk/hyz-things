@@ -368,28 +368,8 @@ impl CodexSession {
         previous_thread: Option<&str>,
         persistent: bool,
     ) -> Result<Self, String> {
-        validate_token(token)?;
-        let mut socket = TcpStream::connect(address)
-            .await
-            .map_err(|_| "无法连接 192.168.8.202:1457；请检查电脑 Codex App Server")?;
-        handshake(&mut socket, address, token).await?;
-        let (reader, writer) = socket.into_split();
-        let mut client = Self {
-            reader,
-            writer: Arc::new(Mutex::new(writer)),
-            thread_id: String::new(),
-            request_id: 0,
-            resumed: previous_thread.is_some(),
-        };
-        client
-            .request(
-                "initialize",
-                json!({
-                    "clientInfo":{"name":"hyz_things","title":"hyz-things Study","version":"0.1.0"}
-                }),
-            )
-            .await?;
-        client.notify("initialized", json!({})).await?;
+        let mut client = Self::initialize_at(address, token).await?;
+        client.resumed = previous_thread.is_some();
         let thread = if let Some(thread_id) = previous_thread {
             client
                 .request(
@@ -419,6 +399,37 @@ impl CodexSession {
             .ok_or("Codex 未返回有效 Thread ID")?
             .to_owned();
         Ok(client)
+    }
+
+    async fn initialize_at(address: &str, token: &str) -> Result<Self, String> {
+        validate_token(token)?;
+        let mut socket = TcpStream::connect(address)
+            .await
+            .map_err(|_| "无法连接 192.168.8.202:1457；请检查电脑 Codex App Server")?;
+        handshake(&mut socket, address, token).await?;
+        let (reader, writer) = socket.into_split();
+        let mut client = Self {
+            reader,
+            writer: Arc::new(Mutex::new(writer)),
+            thread_id: String::new(),
+            request_id: 0,
+            resumed: false,
+        };
+        client
+            .request(
+                "initialize",
+                json!({
+                    "clientInfo":{"name":"hyz_things","title":"hyz-things Study","version":"0.1.0"}
+                }),
+            )
+            .await?;
+        client.notify("initialized", json!({})).await?;
+        Ok(client)
+    }
+
+    pub async fn rate_limits(token: &str) -> Result<Value, String> {
+        let mut client = Self::initialize_at(SERVER, token).await?;
+        client.request("account/rateLimits/read", json!({})).await
     }
 
     async fn send(&mut self, message: &Value) -> Result<(), String> {

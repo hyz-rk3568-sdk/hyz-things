@@ -18,6 +18,71 @@ pub(super) fn scroll_edges(element: &web_sys::HtmlElement) -> ScrollEdges {
     }
 }
 
+pub(super) struct TrainingScrollPair {
+    pub(super) first: NodeRef,
+    pub(super) second: NodeRef,
+    pub(super) first_edges: UseStateHandle<ScrollEdges>,
+    pub(super) second_edges: UseStateHandle<ScrollEdges>,
+    pub(super) refresh: Callback<()>,
+    pub(super) on_scroll: Callback<Event>,
+}
+
+#[hook]
+pub(super) fn use_training_scroll_pair() -> TrainingScrollPair {
+    let first = use_node_ref();
+    let second = use_node_ref();
+    let first_edges = use_state_eq(ScrollEdges::default);
+    let second_edges = use_state_eq(ScrollEdges::default);
+    let refresh = {
+        let first = first.clone();
+        let second = second.clone();
+        let first_edges = first_edges.clone();
+        let second_edges = second_edges.clone();
+        Callback::from(move |()| {
+            if let Some(element) = first.cast::<web_sys::HtmlElement>() {
+                first_edges.set(scroll_edges(&element));
+            }
+            if let Some(element) = second.cast::<web_sys::HtmlElement>() {
+                second_edges.set(scroll_edges(&element));
+            }
+        })
+    };
+    let on_scroll = {
+        let refresh = refresh.clone();
+        Callback::from(move |_: Event| refresh.emit(()))
+    };
+    {
+        let refresh = refresh.clone();
+        use_effect_with((), move |_| {
+            let window = web_sys::window();
+            let handler = Closure::<dyn FnMut(Event)>::new(move |_| refresh.emit(()));
+            let attached = window.as_ref().is_some_and(|window| {
+                window
+                    .add_event_listener_with_callback("resize", handler.as_ref().unchecked_ref())
+                    .is_ok()
+            });
+            move || {
+                if attached {
+                    if let Some(window) = window {
+                        let _ = window.remove_event_listener_with_callback(
+                            "resize",
+                            handler.as_ref().unchecked_ref(),
+                        );
+                    }
+                }
+            }
+        });
+    }
+    TrainingScrollPair {
+        first,
+        second,
+        first_edges,
+        second_edges,
+        refresh,
+        on_scroll,
+    }
+}
+
 const MATERIAL_HOLD_DELAY_MS: u32 = 300;
 const MATERIAL_REPEAT_MS: u32 = 80;
 

@@ -331,6 +331,7 @@ test("comprehensive headers and navigation stay inside PWA safe areas at every v
   await page.getByRole("button",{name:"继续计时",exact:true}).click();
   await page.getByRole("button",{name:"交卷",exact:true}).click();
   await expect(page.getByTestId("analysis-result")).toBeVisible();
+  await expect(page.getByTestId("analysis-result").getByTestId("training-workspace-header")).toBeVisible();
   for(const viewport of [{width:1180,height:820},{width:820,height:1180},{width:360,height:800}]){
     await page.setViewportSize(viewport);
     const header=page.getByTestId("analysis-result").locator("header");
@@ -713,7 +714,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   // The retired number-locating mode must not reappear in the workspace.
   await expect(page.getByTestId("training-mode-locating")).toHaveCount(0);
   await expect(page.getByRole("group", { name: "训练模式" }).getByRole("button")).toHaveText([
-    "速算训练", "闪卡回顾", "套卷训练", "模块训练", "资料分析", "判断推理", "数量关系", "学习统计",
+    "速算训练", "闪卡回顾", "套卷训练", "模块训练", "专项练习", "资料分析", "判断推理", "数量关系", "学习统计",
   ]);
   await expect(page.getByTestId("training-mode-logic-judgment")).toBeVisible();
   await page.getByTestId("training-mode-comprehensive").click();
@@ -729,6 +730,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(page.getByTestId("analysis-clock")).toHaveCount(0);
   await page.getByTestId("analysis-enter").click();
   await expect(page.getByTestId("analysis-run")).toBeVisible();
+  await expect(page.getByTestId("analysis-run").getByTestId("training-workspace-header")).toBeVisible();
   // Starting a comprehensive paper removes the parent mode navigation,
   // fixes the paper to the visible viewport and keeps document scroll locked.
   await expect(page.getByRole("group",{name:"训练模式"})).toHaveCount(0);

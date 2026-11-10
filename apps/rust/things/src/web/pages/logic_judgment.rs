@@ -1,5 +1,5 @@
 //! Independent logic drills use server-owned answers and deadlines.
-use super::material_scroll::{scroll_edges, MaterialScrollButton, ScrollEdges};
+use super::material_scroll::{use_training_scroll_pair, MaterialScrollButton};
 use super::*;
 use gloo_timers::callback::Interval;
 use hyz_things::domain::data_analysis::RelatedCardSnapshot;
@@ -46,29 +46,14 @@ struct LogicScrollPaneProps {
 #[function_component(LogicScrollPane)]
 fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
     let prefix = props.prefix;
-    let question_scroll = use_node_ref();
-    let answer_scroll = use_node_ref();
+    let scroll = use_training_scroll_pair();
+    let question_scroll = scroll.first;
+    let answer_scroll = scroll.second;
+    let question_edges = scroll.first_edges;
+    let answer_edges = scroll.second_edges;
+    let refresh_edges = scroll.refresh;
+    let on_scroll = scroll.on_scroll;
     let scratchpad_open = use_context::<bool>().unwrap_or(false);
-    let question_edges = use_state_eq(ScrollEdges::default);
-    let answer_edges = use_state_eq(ScrollEdges::default);
-    let refresh_edges = {
-        let question_scroll = question_scroll.clone();
-        let answer_scroll = answer_scroll.clone();
-        let question_edges = question_edges.clone();
-        let answer_edges = answer_edges.clone();
-        Callback::from(move |_: ()| {
-            if let Some(element) = question_scroll.cast::<web_sys::HtmlElement>() {
-                question_edges.set(scroll_edges(&element));
-            }
-            if let Some(element) = answer_scroll.cast::<web_sys::HtmlElement>() {
-                answer_edges.set(scroll_edges(&element));
-            }
-        })
-    };
-    let on_scroll = {
-        let refresh_edges = refresh_edges.clone();
-        Callback::from(move |_: web_sys::Event| refresh_edges.emit(()))
-    };
     {
         let question_scroll = question_scroll.clone();
         let answer_scroll = answer_scroll.clone();
@@ -89,31 +74,6 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
         use_effect_with(scratchpad_open, move |_| {
             refresh_edges.emit(());
             || ()
-        });
-    }
-    {
-        let refresh_edges = refresh_edges.clone();
-        use_effect_with((), move |_| {
-            let window = web_sys::window();
-            let handler =
-                wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::Event)>::new(move |_| {
-                    refresh_edges.emit(());
-                });
-            let attached = window.as_ref().is_some_and(|window| {
-                window
-                    .add_event_listener_with_callback("resize", handler.as_ref().unchecked_ref())
-                    .is_ok()
-            });
-            move || {
-                if attached {
-                    if let Some(window) = window {
-                        let _ = window.remove_event_listener_with_callback(
-                            "resize",
-                            handler.as_ref().unchecked_ref(),
-                        );
-                    }
-                }
-            }
         });
     }
     html! {
@@ -611,7 +571,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
         let question = &active.questions[index];
         return html! {
             <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" data-testid={format!("{prefix}-run")}>
-                <header class="analysis-header flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2">
+                <TrainingHeader class="analysis-header flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2">
                     <div class="flex min-w-0 flex-1 items-center gap-2">
                         <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={invoke(LogicAction::PauseAndExit)}>{"← 暂停并退出"}</button>
                         <strong class="truncate text-sm">{title}</strong>
@@ -622,7 +582,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         <button type="button" role="timer" class={if remaining<=60 {"btn btn-ghost font-mono text-xl text-error"} else {"btn btn-ghost font-mono text-xl"}} data-testid={format!("{prefix}-clock")} title={if paused {"点击继续计时"} else {"点击暂停计时"}} disabled={*busy || (remaining==0 && !paused)} onclick={invoke(LogicAction::Pause)}>{format!("{:02}:{:02}",remaining/60,remaining%60)}</button>
                         <button class="btn btn-sm btn-error btn-outline" data-testid={format!("{prefix}-submit")} disabled={*busy || paused} onclick={invoke(LogicAction::Submit)}>{"交卷"}</button>
                     </div>
-                </header>
+                </TrainingHeader>
                 {alert}
                 <div class="relative min-h-0 flex-1 overflow-hidden">
                     if paused {
@@ -690,7 +650,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
         };
         return html! {
             <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" data-testid={format!("{prefix}-result")}>
-                <header class="analysis-header flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2">
+                <TrainingHeader class="analysis-header flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2">
                     <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={invoke(LogicAction::Back)}>{"← 返回训练"}</button>
                     <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
                         <StudyGoalBars />
@@ -698,7 +658,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         <button class="btn btn-outline btn-sm" data-testid={format!("{prefix}-records")} onclick={show_records}>{"查看练习记录"}</button>
                         <button class="btn btn-primary btn-sm" data-testid={format!("{prefix}-retry")} disabled={*busy} onclick={invoke(LogicAction::Retry(score.id.clone()))}>{"重做原题"}</button>
                     </div>
-                </header>
+                </TrainingHeader>
                 {alert}
                 <div class="relative min-h-0 flex-1 overflow-hidden">
                     <TrainingSwipeSurface current={current.clone()} total={score.questions.len()}><InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("{prefix}-{}-{index}",score.id)}>
@@ -711,13 +671,15 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                             answers={html! {
                                 <div data-testid={format!("{prefix}-review-content")}>
                                     <div class="grid gap-2">{for q.options.iter().enumerate().map(|(i,option)| {
-                        let style = if i==q.correct_index {"flex items-center justify-between rounded-box border border-success bg-success/10 p-3 text-success"}
-                            else if q.chosen==Some(i) {"flex items-center justify-between rounded-box border border-error bg-error/10 p-3 text-error"}
-                            else {"flex items-center justify-between rounded-box border border-base-content/20 p-3"};
-                        let hint = if i==q.correct_index {"✓ 正确答案"} else if q.chosen==Some(i) {"✕ 你的错选"} else {""};
-                        html! {<div class={style} data-testid={format!("{prefix}-review-choice")}>
+                        let state = ReviewChoiceState::for_single_choice(i, q.correct_index, q.chosen);
+                        let hint = match state {
+                            ReviewChoiceState::Correct => "✓ 正确答案",
+                            ReviewChoiceState::Wrong => "✕ 你的错选",
+                            ReviewChoiceState::Neutral => "",
+                        };
+                        html! {<TrainingReviewChoice class="flex items-center justify-between rounded-box border p-3" state={state} test_id={format!("{prefix}-review-choice")}>
                             <span class="flex min-w-0 items-start gap-2"><span class="shrink-0">{format!("{}.",(b'A'+i as u8) as char)}</span><span class="study-markdown min-w-0">{render_markdown(option, "")}</span></span><span class="shrink-0 text-xs">{hint}</span>
-                        </div>}
+                        </TrainingReviewChoice>}
                     })}</div>
                     <div class="mt-5 border-t border-base-content/10 pt-4">
                         <p class="text-base font-semibold">{format!("你的答案：{}",q.chosen.map(|i|((b'A'+i as u8) as char).to_string()).unwrap_or("未答".into()))}</p>

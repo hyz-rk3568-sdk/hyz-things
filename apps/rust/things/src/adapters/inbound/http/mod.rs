@@ -824,6 +824,10 @@ fn app_with_assets(
                 .layer(DefaultBodyLimit::max(40 * 1024)),
         )
         .route(
+            "/api/v1/question-bank/ai/rate-limits",
+            on(MethodFilter::GET, question_bank::ai_rate_limits),
+        )
+        .route(
             "/api/v1/question-bank/practice/questions/{id}/ai",
             on(MethodFilter::GET, question_bank::ai_read)
                 .on(MethodFilter::POST, question_bank::ai_start)

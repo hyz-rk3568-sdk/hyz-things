@@ -4,6 +4,10 @@ import {loginAsAdmin,resetHarness} from './fixtures';
 test.beforeEach(async ({request})=>{await resetHarness(request)});
 
 test('drill collection practice keeps ungradable questions and reports separate progress',async({page})=>{
+  await page.route('**/api/v1/question-bank/ai/rate-limits', route => route.fulfill({json: {
+    five_hour: {remaining_percent: 72, resets_at: 1900000000},
+    week: {remaining_percent: 38, resets_at: 1900400000},
+  }}));
   await loginAsAdmin(page);
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-question-bank-drill').click();
@@ -18,6 +22,12 @@ test('drill collection practice keeps ungradable questions and reports separate 
   await page.getByTestId('question-bank-practice-start').click();
 
   await expect(page.getByTestId('question-bank-practice-workspace')).toBeVisible();
+  await expect(page.getByTestId('training-workspace-header')).toBeVisible();
+  await expect(page.getByTestId('codex-limit-five-hour')).toContainText('72%');
+  await expect(page.getByTestId('codex-limit-week')).toContainText('38%');
+  await page.getByRole('button', {name: 'Codex 限额详情'}).click();
+  await expect(page.getByTestId('codex-limit-details')).toContainText('重置');
+  await page.getByRole('button', {name: 'Codex 限额详情'}).click();
   await expect(page.getByTestId('question-bank-practice-heading')).toContainText('第 1/2 题');
   await page.getByTestId('training-answer-sheet-toggle').click();
   const group=page.getByTestId('question-bank-practice-group');
@@ -30,8 +40,18 @@ test('drill collection practice keeps ungradable questions and reports separate 
   await page.getByTestId('question-bank-practice-submit').click();
   await page.getByRole('button',{name:'确认交卷'}).click();
 
-  await expect(page.getByTestId('question-bank-practice-score')).toContainText('1 / 1 正确');
-  await expect(page.getByTestId('question-bank-practice-score')).toContainText('1 题暂不可判分');
+  await expect(page.getByTestId('question-bank-practice-choice').nth(1)).toHaveAttribute('data-state', 'correct');
+  const score = page.getByTestId('question-bank-practice-score');
+  await expect(score.getByLabel('正确 1')).toBeVisible();
+  await expect(score.getByLabel('错误 0')).toBeVisible();
+  await expect(score.getByLabel('不可判分 1')).toBeVisible();
+  await expect(score.getByLabel(/未答/)).toHaveCount(0);
+  await expect(score.getByLabel('正确 1')).toHaveCSS('flex-direction', 'column');
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.getByTestId('codex-limit-five-hour')).toBeVisible();
+  await expect(score.getByLabel('正确 1')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.setViewportSize({width:1280,height:720});
 
   if (!(await page.getByTestId('training-answer-sheet').isVisible())) {
     await page.getByTestId('training-answer-sheet-toggle').click();
@@ -165,4 +185,18 @@ test('drill review displays a safe AI SVG diagram',async({page})=>{
   const image=page.getByTestId('question-bank-ai-diagram');
   await expect(image).toBeVisible();
   await expect.poll(()=>image.evaluate((node:HTMLImageElement)=>node.complete&&node.naturalWidth>0)).toBe(true);
+});
+
+
+test('Codex limits show unavailable windows without blocking practice', async ({page}) => {
+  await page.route('**/api/v1/question-bank/ai/rate-limits', route => route.fulfill({status: 503}));
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-drill').click();
+  await page.getByTestId('question-bank-drill-collection').filter({hasText:'小P 2026 数量关系讲义'}).click();
+  await page.getByTestId('question-bank-drill-paper').filter({hasText:'方程关系'}).click();
+  await page.getByTestId('question-bank-practice-start').click();
+  await expect(page.getByTestId('codex-limit-five-hour')).toContainText('—');
+  await expect(page.getByTestId('codex-limit-week')).toContainText('—');
+  await expect(page.getByTestId('question-bank-practice-submit')).toBeEnabled();
 });

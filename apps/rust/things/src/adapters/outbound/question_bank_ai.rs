@@ -152,6 +152,10 @@ fn image_path_section(images: &[String]) -> String {
 
 #[async_trait::async_trait]
 impl AiReviewBackend for CodexConfig {
+    async fn rate_limits(&self) -> Result<crate::domain::question_bank::CodexLimits, String> {
+        CodexConfig::rate_limits(self).await
+    }
+
     async fn connect(
         &self,
         previous_thread: Option<&str>,
@@ -176,6 +180,16 @@ impl AiReviewTurn for super::codex_app_server::CodexSession {
 }
 
 impl QuestionBankAiService {
+    pub async fn rate_limits(
+        &self,
+    ) -> Result<crate::domain::question_bank::CodexLimits, AiReviewError> {
+        let backend = self.backend.as_ref().ok_or(AiReviewError::Unavailable)?;
+        backend
+            .rate_limits()
+            .await
+            .map_err(|_| AiReviewError::Unavailable)
+    }
+
     pub fn new(
         bank: Arc<QuestionBankApplication>,
         pool: SqlitePool,

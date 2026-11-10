@@ -300,6 +300,18 @@ pub struct PracticeItem {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodexLimitWindow {
+    pub remaining_percent: u8,
+    pub resets_at: Option<i64>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodexLimits {
+    pub five_hour: Option<CodexLimitWindow>,
+    pub week: Option<CodexLimitWindow>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PracticeScore {
     pub total: usize,
     pub correct: usize,
