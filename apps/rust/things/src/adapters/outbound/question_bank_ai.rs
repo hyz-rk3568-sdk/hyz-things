@@ -100,8 +100,8 @@ fn initial_prompt(locator: &QuestionAiLocator, instruction: Option<&str>) -> Str
          【用户上传图片】\n\
          若本次消息附带 localImage，先直接查看原图；遇到数字、符号、分数线、上下标或中文手写歧义时，\
          再按需读取 .agents/skills/hyz-image-ocr/SKILL.md 并调用本地 OCR 辅助核对。\
-         遇到多栏或双栏排版、多题混排、题干与选项交错、阅读顺序异常时，也调用 OCR 获取 blocks；\
-         结合原图、坐标和文字语义判断阅读顺序，不要只按全局 Y 坐标排序，不要根据语义补全或改写题干、选项。\
+         遇到多栏或双栏排版、多题混排、题干与选项交错、阅读顺序异常时，必须先调用 OCR 获取 blocks，\
+         再结合原图、坐标和文字语义判断阅读顺序，不要只按全局 Y 坐标排序，不要根据语义补全或改写题干、选项。\
          OCR 只是辅助证据，必须回到原图核对；OCR 与原图冲突时以原图为准，无法确认处明确标注不确定；\
          不要凭 OCR 改写用户的速算过程。\n\n\
          【先判型，再取法】\n\
@@ -132,6 +132,22 @@ fn initial_prompt(locator: &QuestionAiLocator, instruction: Option<&str>) -> Str
             "【用户要求】\n{value}\n在不违反事实与格式要求的前提下优先满足。\n\n"
         ))
     )
+}
+
+/// Give the agent the server-generated temporary paths so the OCR script can
+/// be invoked without guessing a filename. The paths are already validated.
+fn image_path_section(images: &[String]) -> String {
+    if images.is_empty() {
+        return String::new();
+    }
+    let mut section = String::from("\n【本次临时图片路径（仅用于 hyz-image-ocr）】\n");
+    for path in images {
+        section.push_str("- ");
+        section.push_str(path);
+        section.push('\n');
+    }
+    section.push_str("需要 OCR 时把对应路径直接传给固定脚本；不要读取其他目录。\n");
+    section
 }
 
 #[async_trait::async_trait]
@@ -370,7 +386,11 @@ impl QuestionBankAiService {
                 .await
                 .map_err(|_| AiReviewError::Storage)?;
         }
-        let prompt = initial_prompt(&locator, instruction.as_deref());
+        let prompt = format!(
+            "{}{}",
+            initial_prompt(&locator, instruction.as_deref()),
+            image_path_section(&images)
+        );
         self.spawn_task(&mut active, key.clone(), thread, prompt, images);
         self.state_for_key(&key).await
     }
@@ -420,7 +440,8 @@ impl QuestionBankAiService {
         sqlx::query("UPDATE question_ai_reviews SET status='running',error=NULL,updated_at=? WHERE question_id=? AND stem_fingerprint=?")
             .bind(now()).bind(&key.0).bind(&key.1).execute(&mut *tx).await.map_err(|_| AiReviewError::Storage)?;
         tx.commit().await.map_err(|_| AiReviewError::Storage)?;
-        self.spawn_task(&mut active, key.clone(), thread, message, images);
+        let prompt = format!("{message}{}", image_path_section(&images));
+        self.spawn_task(&mut active, key.clone(), thread, prompt, images);
         self.state_for_key(&key).await
     }
 
@@ -602,6 +623,21 @@ mod tests {
             prompt.contains("不要根据语义补全或改写题干、选项"),
             "{prompt}"
         );
+    }
+
+    #[test]
+    fn image_path_section_lists_each_temporary_image() {
+        let images = vec![
+            "/home/hyz/Code/hyz_things/tmp/hyz-ai-uploads/one.png".to_owned(),
+            "/home/hyz/Code/hyz_things/tmp/hyz-ai-uploads/two.jpg".to_owned(),
+        ];
+
+        let section = image_path_section(&images);
+
+        assert!(section.contains("one.png"), "{section}");
+        assert!(section.contains("two.jpg"), "{section}");
+        assert!(section.contains("hyz-image-ocr"), "{section}");
+        assert_eq!(image_path_section(&[]), "");
     }
 
     #[test]
