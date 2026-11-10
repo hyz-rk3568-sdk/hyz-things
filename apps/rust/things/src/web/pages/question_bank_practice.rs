@@ -42,34 +42,29 @@ struct AiImagePickerProps {
     uploading: UseStateHandle<bool>,
     disabled: bool,
     testid: &'static str,
+    children: Children,
 }
 
 #[function_component(AiImagePicker)]
 fn ai_image_picker(props: &AiImagePickerProps) -> Html {
     let failure = use_state(|| None::<String>);
-    let onchange = {
+    let upload = {
         let endpoint = props.endpoint.clone();
         let csrf = props.csrf.clone();
         let attachments = props.attachments.clone();
         let uploading = props.uploading.clone();
         let failure = failure.clone();
-        Callback::from(move |event: Event| {
-            if *uploading {
+        let disabled = props.disabled;
+        Callback::from(move |files: Vec<web_sys::File>| {
+            if disabled || *uploading {
                 return;
             }
-            let input: web_sys::HtmlInputElement = event.target_unchecked_into();
-            let Some(files) = input.files() else {
-                return;
-            };
             let remaining = 3usize.saturating_sub(attachments.len());
             let mut selected = Vec::new();
-            for index in 0..files.length() {
+            for file in files {
                 if selected.len() >= remaining {
                     break;
                 }
-                let Some(file) = files.get(index) else {
-                    continue;
-                };
                 if !matches!(file.type_().as_str(), "image/png" | "image/jpeg") {
                     failure.set(Some("仅支持 JPG 或 PNG 图片".into()));
                     continue;
@@ -80,9 +75,6 @@ fn ai_image_picker(props: &AiImagePickerProps) -> Html {
                 }
                 selected.push(file);
             }
-            // Clearing the input also clears its live FileList, so do it after
-            // cloning the selected files.
-            input.set_value("");
             if selected.is_empty() {
                 return;
             }
@@ -112,8 +104,38 @@ fn ai_image_picker(props: &AiImagePickerProps) -> Html {
             });
         })
     };
+    let onchange = {
+        let upload = upload.clone();
+        Callback::from(move |event: Event| {
+            let input: web_sys::HtmlInputElement = event.target_unchecked_into();
+            let files = input
+                .files()
+                .map(|files| (0..files.length()).filter_map(|i| files.get(i)).collect())
+                .unwrap_or_default();
+            input.set_value("");
+            upload.emit(files);
+        })
+    };
+    let onpaste = Callback::from(move |event: Event| {
+        let event: web_sys::ClipboardEvent = wasm_bindgen::JsCast::unchecked_into(event);
+        let Some(data) = event.clipboard_data() else {
+            return;
+        };
+        let Some(files) = data.files() else {
+            return;
+        };
+        let images: Vec<_> = (0..files.length())
+            .filter_map(|i| files.get(i))
+            .filter(|file| file.type_().starts_with("image/"))
+            .collect();
+        if !images.is_empty() {
+            event.prevent_default();
+            upload.emit(images);
+        }
+    });
     html! {
-        <div class="space-y-2" data-testid={props.testid}>
+        <div class="space-y-2 pb-2 px-2" data-testid={props.testid} {onpaste}>
+            {for props.children.iter()}
             <div class="flex flex-wrap items-center gap-1">
                 <label class="btn btn-ghost btn-sm btn-circle text-base-content/60 hover:text-base-content"
                     title="添加图片（JPG/PNG，最多 3 张，每张 ≤ 8 MiB）" aria-label="添加图片">
@@ -124,7 +146,7 @@ fn ai_image_picker(props: &AiImagePickerProps) -> Html {
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
                         stroke="currentColor" stroke-width="2" stroke-linecap="round"
                         stroke-linejoin="round" aria-hidden="true">
-                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                        <path d="M12 5v14M5 12h14"/>
                     </svg>
                 </label>
                 if *props.uploading {
@@ -803,7 +825,12 @@ struct AiComposer<'a> {
     placeholder: &'a str,
     button_label: &'a str,
     disabled: bool,
-    attachments: Html,
+    endpoint: String,
+    csrf: String,
+    attachments: UseStateHandle<Vec<PendingImage>>,
+    uploading: UseStateHandle<bool>,
+    picker_disabled: bool,
+    picker_testid: &'static str,
     oninput: Callback<InputEvent>,
     onkeydown: Callback<KeyboardEvent>,
     onclick: Callback<MouseEvent>,
@@ -814,7 +841,8 @@ fn ai_composer(props: AiComposer<'_>) -> Html {
     html! {
         <div class="relative rounded-2xl border border-base-content/15 bg-base-100 transition focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15"
             data-testid={props.compose_testid.to_owned()}>
-            <div class="px-2 pt-2">{props.attachments.clone()}</div>
+            <AiImagePicker endpoint={props.endpoint} csrf={props.csrf} attachments={props.attachments}
+                uploading={props.uploading} disabled={props.picker_disabled} testid={props.picker_testid}>
             <textarea id={props.id.to_owned()}
                 class="block min-h-24 w-full resize-none border-0 bg-transparent px-3 pb-12 pt-1 text-sm leading-6 focus:outline-none focus:ring-0"
                 data-testid={props.input_testid.to_owned()} maxlength="2000"
@@ -822,7 +850,8 @@ fn ai_composer(props: AiComposer<'_>) -> Html {
                 placeholder={props.placeholder.to_owned()}
                 onkeydown={props.onkeydown}
                 oninput={props.oninput}/>
-            <div class="absolute inset-x-2 bottom-2 flex items-center justify-end">
+            </AiImagePicker>
+            <div class="absolute right-2 bottom-2 flex items-center justify-end">
                 <button type="button" class="btn btn-primary btn-sm rounded-full px-4"
                     data-testid={props.button_testid.to_owned()} disabled={props.disabled}
                     onclick={props.onclick}>{props.button_label.to_owned()}</button>
@@ -1208,12 +1237,9 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         placeholder: "例如：用线段图讲清数量关系；只讲速算，不要列方程。（Ctrl/⌘ + Enter 开始）",
                         button_label: if can_start { "开始 AI 解析" } else { "重新分析" },
                         disabled: *submitting || *uploading_start,
-                        attachments: html! {
-                            <AiImagePicker endpoint={format!("{endpoint}/attachments")}
-                                csrf={props.csrf.clone()} attachments={start_images.clone()}
-                                uploading={uploading_start.clone()} disabled={*submitting}
-                                testid="question-bank-ai-start-images"/>
-                        },
+                        endpoint: format!("{endpoint}/attachments"), csrf: props.csrf.clone(),
+                        attachments: start_images.clone(), uploading: uploading_start.clone(),
+                        picker_disabled: *submitting, picker_testid: "question-bank-ai-start-images",
                         oninput: Callback::from({
                             let start_instruction=start_instruction.clone();
                             move |event: InputEvent| {
@@ -1249,12 +1275,9 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         placeholder: "例如：为什么不能选 B？有没有更快的解法？（Ctrl/⌘ + Enter 发送）",
                         button_label: "发送追问",
                         disabled: *submitting || *uploading_follow || follow_up.trim().is_empty(),
-                        attachments: html! {
-                            <AiImagePicker endpoint={format!("{endpoint}/attachments")}
-                                csrf={props.csrf.clone()} attachments={follow_images.clone()}
-                                uploading={uploading_follow.clone()} disabled={*submitting}
-                                testid="question-bank-ai-follow-up-images"/>
-                        },
+                        endpoint: format!("{endpoint}/attachments"), csrf: props.csrf.clone(),
+                        attachments: follow_images.clone(), uploading: uploading_follow.clone(),
+                        picker_disabled: *submitting, picker_testid: "question-bank-ai-follow-up-images",
                         oninput: Callback::from({
                             let follow_up=follow_up.clone();
                             move |event: InputEvent| {

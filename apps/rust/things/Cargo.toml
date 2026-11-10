@@ -92,6 +92,8 @@ web-sys = { version = "0.3", features = [
   "AudioContext",
   "CanvasRenderingContext2d",
   "Clipboard",
+  "ClipboardEvent",
+  "DataTransfer",
   "CssStyleDeclaration",
   "Document",
   "DomRect",

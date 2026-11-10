@@ -745,3 +745,18 @@ test('collection review displays a safe AI SVG diagram', async ({ page }) => {
   await expect(image).toBeVisible();
   await expect.poll(()=>image.evaluate((node:HTMLImageElement)=>node.complete && node.naturalWidth>0)).toBe(true);
 });
+
+test('question AI pastes an image into the composer', async ({ page }) => {
+  await install(page);
+  await page.route(`**${root}/practice/questions/*/ai/attachments`, route => route.fulfill({ json: { id: 'pasted-image' } }));
+  await page.route(`**${root}/practice/questions/*/ai`, route => route.fulfill({ json: { question_id: 'supported', status: 'idle', error: null, messages: [] } }));
+  const review = await openReview(page);
+  await review.getByTestId('question-bank-ai-tab').click();
+  const input = review.getByTestId('question-bank-ai-instruction');
+  await input.evaluate(element => {
+    const data = new DataTransfer();
+    data.items.add(new File(['image'], 'screenshot.png', { type: 'image/png' }));
+    element.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }));
+  });
+  await expect(review.getByTestId('question-bank-ai-start-images').getByText('screenshot.png')).toBeVisible();
+});
