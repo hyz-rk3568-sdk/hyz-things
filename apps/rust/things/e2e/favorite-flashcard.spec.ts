@@ -744,6 +744,14 @@ test('collection review displays a safe AI SVG diagram', async ({ page }) => {
   const image = review.getByTestId('question-bank-ai-diagram');
   await expect(image).toBeVisible();
   await expect.poll(()=>image.evaluate((node:HTMLImageElement)=>node.complete && node.naturalWidth>0)).toBe(true);
+  const message = review.getByTestId('question-bank-ai-message').first();
+  await message.getByRole('button', { name: '回复操作' }).click();
+  await message.getByRole('button', { name: '查看源码' }).click();
+  await expect(message.getByTestId('question-bank-ai-source')).toContainText('<svg');
+  await expect(message.getByRole('button', { name: '回复操作' })).toHaveAttribute('aria-expanded', 'false');
+  await message.getByRole('button', { name: '回复操作' }).click();
+  await message.getByRole('button', { name: '查看解析' }).click();
+  await expect(image).toBeVisible();
 });
 
 test('question AI pastes an image into the composer', async ({ page }) => {
@@ -759,4 +767,42 @@ test('question AI pastes an image into the composer', async ({ page }) => {
     element.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }));
   });
   await expect(review.getByTestId('question-bank-ai-start-images').getByText('screenshot.png')).toBeVisible();
+});
+
+test('question AI exposes and copies each reply markdown source', async ({ page }) => {
+  await install(page);
+  const source = '**解题**\n\n$S=\\frac{1}{2}vT$\n\n```svg\n<svg></svg>\n```';
+  await page.route(`**${root}/practice/questions/*/ai`, route => route.fulfill({ json: {
+    question_id: 'supported', status: 'complete', error: null,
+    messages: [{ role: 'assistant', content: source, created_at: 1 }, { role: 'user', content: '追问', created_at: 2 }, { role: 'assistant', content: '第二条 $x$', created_at: 3 }],
+  } }));
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: (text: string) => { (window as any).__copied = text; return Promise.resolve(); } } });
+  });
+  const review = await openReview(page);
+  await review.getByTestId('question-bank-ai-tab').click();
+  const messages = review.getByTestId('question-bank-ai-message');
+  const first = messages.nth(0);
+  await first.getByRole('button', { name: '回复操作' }).click();
+  await first.getByRole('button', { name: '查看源码' }).click();
+  await expect(first.getByTestId('question-bank-ai-source')).toHaveText(source);
+  await first.getByRole('button', { name: '回复操作' }).click();
+  await first.getByRole('button', { name: '复制源码' }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).__copied)).toBe(source);
+  await expect(messages.nth(1).getByRole('button', { name: '查看源码' })).toHaveCount(0);
+  await messages.nth(2).getByRole('button', { name: '回复操作' }).click();
+  await messages.nth(2).getByRole('button', { name: '查看源码' }).click();
+  await expect(messages.nth(2).getByTestId('question-bank-ai-source')).toHaveText('第二条 $x$');
+  await first.getByRole('button', { name: '回复操作' }).click();
+  await first.getByRole('button', { name: '查看解析' }).click();
+  await expect(first.getByTestId('question-bank-ai-source')).toHaveCount(0);
+});
+
+
+test('flashcard creation previews pasted SVG Markdown', async ({ page }) => {
+  await install(page);
+  const card = (await openCreate(page)).getByTestId('favorite-flashcard-card');
+  await card.getByTestId('favorite-flashcard-preview-toggle').click();
+  await card.getByLabel('背面').fill('```svg\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"><text x="5" y="25">图示</text></svg>\n```');
+  await expect(card.getByTestId('favorite-flashcard-back-preview').getByTestId('question-bank-ai-diagram')).toBeVisible();
 });

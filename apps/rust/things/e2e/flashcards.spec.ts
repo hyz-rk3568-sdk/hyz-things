@@ -628,3 +628,18 @@ test("syncs the question bank and loads one whole paper with shared material", a
   await expect(page.getByTestId("question-bank-paper")).toContainText("原卷第 26 题");
   await expect(page.getByTestId("question-bank-paper")).toContainText("原卷第 27 题");
 });
+
+test('flashcard Markdown renders safe SVG and retains unsafe SVG as source', async ({ page }) => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"><text x="5" y="25">图示</text></svg>';
+  const unsafe = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"><script>alert(1)</script></svg>';
+  await page.route('**/api/v1/study/cards**', route => route.fulfill({ json: { cards: [{
+    id: '019a31b7-8c42-7c16-a6d1-0c1f0f34c8aa', source_file: 'e2e/cards.md', source_order: 1,
+    deck_path: '测试', front_markdown: '```svg\n' + svg + '\n```', back_markdown: '```svg\n' + unsafe + '\n```',
+    tags: [], active: true, due_at_ms: null, last_reviewed_at_ms: null, state: 'new', review_count: 0, lapse_count: 0, is_new: true,
+  }] } }));
+  await page.goto('/#/study/cards');
+  const card = page.getByTestId('study-card-item').first();
+  await expect(card.getByLabel('卡片正面').getByTestId('question-bank-ai-diagram')).toBeVisible();
+  await expect(card.getByLabel('卡片背面').getByTestId('question-bank-ai-diagram-error')).toBeVisible();
+  await expect(card.getByLabel('卡片背面').locator('code.language-svg')).toContainText('<script>');
+});

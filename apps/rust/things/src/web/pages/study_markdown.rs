@@ -3,6 +3,36 @@ use pulldown_cmark::{
     html::push_html, CowStr, Event as MarkdownEvent, Options, Parser, Tag, TagEnd,
 };
 
+#[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/ai_diagram.js")]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = renderAiDiagrams)]
+    fn render_markdown_diagrams(root: &HtmlElement);
+}
+
+#[derive(Properties, PartialEq)]
+struct MarkdownViewProps {
+    html: String,
+}
+
+#[function_component(MarkdownView)]
+fn markdown_view(props: &MarkdownViewProps) -> Html {
+    let root = use_node_ref();
+    {
+        let root = root.clone();
+        use_effect_with(props.html.clone(), move |_| {
+            if let Some(element) = root.cast::<HtmlElement>() {
+                render_markdown_diagrams(&element);
+            }
+            || ()
+        });
+    }
+    html! {
+        <div ref={root}>
+            <div data-ai-diagram-source="true">{Html::from_html_unchecked(AttrValue::from(props.html.clone()))}</div>
+        </div>
+    }
+}
+
 pub(crate) fn hydrate_math() {
     let Some(window) = web_sys::window() else {
         return;
@@ -20,7 +50,7 @@ pub(crate) fn hydrate_math() {
 }
 
 pub(crate) fn render_markdown(markdown: &str, source_file: &str) -> Html {
-    Html::from_html_unchecked(AttrValue::from(markdown_html(markdown, source_file)))
+    html! { <MarkdownView html={markdown_html(markdown, source_file)}/> }
 }
 
 pub(crate) fn markdown_html(markdown: &str, source_file: &str) -> String {
@@ -30,7 +60,7 @@ pub(crate) fn markdown_html(markdown: &str, source_file: &str) -> String {
 }
 
 pub(crate) fn render_question_bank_markdown(markdown: &str) -> Html {
-    Html::from_html_unchecked(AttrValue::from(question_bank_markdown_html(markdown)))
+    html! { <MarkdownView html={question_bank_markdown_html(markdown)}/> }
 }
 
 fn bank_asset_name(name: &str) -> Option<&str> {
