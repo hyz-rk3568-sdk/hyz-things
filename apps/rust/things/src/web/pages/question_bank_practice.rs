@@ -232,20 +232,6 @@ fn paper_catalog_label(papers: &[PaperSummary]) -> String {
     format!("{min}—{max} · {count} 份原卷")
 }
 
-fn score_summary(score: &hyz_things::domain::question_bank::PracticeScore) -> String {
-    let gradable = score.total.saturating_sub(score.ungradable);
-    if gradable == 0 {
-        format!("共 {} 题 · 暂不判分", score.total)
-    } else if score.ungradable > 0 {
-        format!(
-            "{} / {} 正确 · {} 题暂不可判分",
-            score.correct, gradable, score.ungradable
-        )
-    } else {
-        format!("{} / {} 正确", score.correct, score.total)
-    }
-}
-
 fn history_mode_label(mode: &PracticeMode) -> &'static str {
     match mode {
         PracticeMode::Paper | PracticeMode::PaperModule => "套卷训练",
@@ -2353,19 +2339,17 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 let correct = selected_review.is_some_and(|r|r.correct_answer.contains(label));
                                 let grade = item.item.grade.as_deref();
                                 if completed {
-                                    let style = if correct && grade != Some("ungradable") {
-                                        "flex items-start gap-2.5 rounded-xl border border-success bg-success/10 p-3 text-base leading-7 text-success"
+                                    let state = if correct && grade != Some("ungradable") || chosen && grade == Some("correct") {
+                                        ReviewChoiceState::Correct
                                     } else if chosen && grade == Some("wrong") {
-                                        "flex items-start gap-2.5 rounded-xl border border-error bg-error/10 p-3 text-base leading-7 text-error"
-                                    } else if chosen && grade == Some("correct") {
-                                        "flex items-start gap-2.5 rounded-xl border border-success bg-success/10 p-3 text-base leading-7 text-success"
+                                        ReviewChoiceState::Wrong
                                     } else {
-                                        "flex items-start gap-2.5 rounded-xl border border-base-content/20 p-3 text-base leading-7"
+                                        ReviewChoiceState::Neutral
                                     };
-                                    html! {<div class={style} data-testid="question-bank-practice-choice">
+                                    html! {<TrainingReviewChoice class="flex items-start gap-2.5 rounded-xl border p-3 text-base leading-7" test_id="question-bank-practice-choice" {state}>
                                         <span class="shrink-0 font-bold">{format!("{label}.")}</span>
                                         <span class="study-markdown min-w-0">{render_question_bank_markdown(markdown)}</span>
-                                    </div>}
+                                    </TrainingReviewChoice>}
                                 } else {
                                     let style = if chosen {
                                         "border-primary bg-primary text-primary-content"
@@ -2561,7 +2545,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             if !*history_forced {
                 return html! {
                     <section class={WORKSPACE} data-testid="question-bank-practice-workspace">
-                        <header class="flex shrink-0 flex-col gap-1 border-b border-base-content/10 pb-2 sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-2">
+                        <TrainingHeader class="flex shrink-0 flex-col gap-1 border-b border-base-content/10 pb-2 sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-2">
                             <div class="flex min-w-0 flex-1 items-center gap-3">
                                 <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Exit)})}>
                                     {if completed {"← 返回训练"} else {"← 暂停并退出"}}
@@ -2584,6 +2568,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             </div>
                             <div class="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap sm:justify-end">
                                 <StudyGoalBars />
+                                <CodexLimitBars />
                                 <button type="button" class="btn btn-ghost px-2 font-mono text-xl font-semibold tabular-nums"
                                     role="timer" data-testid="question-bank-practice-timer"
                                     title={if completed {"训练已结束"} else if paused {"点击继续计时"} else {"点击暂停计时"}}
@@ -2596,7 +2581,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                         disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Submit)})}>{"交卷"}</button>
                                 } else if let Some(score) = &current.session.score {
                                     <span class="flex min-w-0 flex-wrap items-center gap-2" data-testid="question-bank-practice-score">
-                                        <span class="font-semibold">{score_summary(score)}</span>
+                                        {score_summary(score)}
                                         <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-practice-records"
                                             onclick={Callback::from({
                                                 let history_forced=history_forced.clone(); move |_|history_forced.set(true)
@@ -2609,7 +2594,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     </span>
                                 }
                             </div>
-                        </header>
+                        </TrainingHeader>
                         {alert}
                         if *submit_confirm && !completed {
                             <div class="mb-2 flex flex-wrap items-center justify-center gap-2 rounded-box bg-warning/20 p-2" role="alert" data-testid="question-bank-submit-confirm">

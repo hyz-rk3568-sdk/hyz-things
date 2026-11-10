@@ -69,6 +69,18 @@ impl CodexConfig {
         }
     }
 
+    pub(crate) async fn rate_limits(
+        &self,
+    ) -> Result<crate::domain::question_bank::CodexLimits, String> {
+        let response = tokio::time::timeout(
+            Duration::from_secs(8),
+            CodexSession::rate_limits(&self.token),
+        )
+        .await
+        .map_err(|_| "连接 Codex App Server 超时".to_owned())??;
+        Ok(crate::application::question_bank::practice::codex_limits_from_response(&response))
+    }
+
     pub(crate) async fn connect_review(
         &self,
         previous_thread: Option<&str>,

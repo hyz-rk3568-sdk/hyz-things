@@ -4,19 +4,87 @@ use super::{
     QuestionBankApplication, StudyAnswerDay,
 };
 use crate::domain::question_bank::{
-    primary_module, CreatePracticeRequest, DrillCollection, DrillPaper, FavoriteState,
-    ModulePracticeFilters, PaperModule, PaperModules, PracticeBrowseItem, PracticeCatalog,
-    PracticeItem, PracticeMode, PracticeQuestion, PracticeQuestionDetail, PracticeReview,
-    PracticeScore, PracticeSession, PracticeWorkspace, ReviewQuestion, StudyPlan,
-    StudyPlanForecast, StudyPlanForecastItem,
+    primary_module, CodexLimitWindow, CodexLimits, CreatePracticeRequest, DrillCollection,
+    DrillPaper, FavoriteState, ModulePracticeFilters, PaperModule, PaperModules,
+    PracticeBrowseItem, PracticeCatalog, PracticeItem, PracticeMode, PracticeQuestion,
+    PracticeQuestionDetail, PracticeReview, PracticeScore, PracticeSession, PracticeWorkspace,
+    ReviewQuestion, StudyPlan, StudyPlanForecast, StudyPlanForecastItem,
 };
 use chrono::{Datelike, Duration, NaiveDate};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[async_trait::async_trait]
 pub trait AiReviewBackend: Send + Sync {
+    async fn rate_limits(&self) -> Result<CodexLimits, String> {
+        Err("Codex 限额不可用".into())
+    }
+
     async fn connect(&self, previous_thread: Option<&str>)
         -> Result<Box<dyn AiReviewTurn>, String>;
+}
+
+/// Extract only the standard Codex bucket; unknown windows stay unavailable.
+pub fn codex_limits_from_response(value: &serde_json::Value) -> CodexLimits {
+    let bucket = value
+        .pointer("/rateLimitsByLimitId/codex")
+        .or_else(|| value.get("rateLimits"));
+    let mut limits = CodexLimits::default();
+    if let Some(bucket) = bucket {
+        for name in ["primary", "secondary"] {
+            let Some(window) = bucket.get(name) else {
+                continue;
+            };
+            let Some(duration) = window.get("windowDurationMins").and_then(|v| v.as_u64()) else {
+                continue;
+            };
+            let Some(used) = window
+                .get("usedPercent")
+                .and_then(|v| v.as_f64())
+                .filter(|v| v.is_finite() && (0.0..=100.0).contains(v))
+            else {
+                continue;
+            };
+            let limit = CodexLimitWindow {
+                remaining_percent: (100.0 - used).floor() as u8,
+                resets_at: window
+                    .get("resetsAt")
+                    .and_then(|v| v.as_i64())
+                    .filter(|v| *v > 0),
+            };
+            match duration {
+                300 => limits.five_hour = Some(limit),
+                10080 => limits.week = Some(limit),
+                _ => {}
+            }
+        }
+    }
+    limits
+}
+
+#[cfg(test)]
+mod codex_limits_tests {
+    use super::*;
+    #[test]
+    fn reads_standard_bucket_by_window_duration() {
+        let response = serde_json::json!({"rateLimitsByLimitId":{"codex":{
+            "primary":{"usedPercent":62,"windowDurationMins":10080,"resetsAt":2000},
+            "secondary":{"usedPercent":28,"windowDurationMins":300,"resetsAt":1000}
+        }}});
+        let result = codex_limits_from_response(&response);
+        assert_eq!(result.five_hour.unwrap().remaining_percent, 72);
+        assert_eq!(result.week.unwrap().remaining_percent, 38);
+    }
+    #[test]
+    fn rejects_unknown_and_invalid_windows() {
+        let response = serde_json::json!({"rateLimits":{
+            "primary":{"usedPercent":101,"windowDurationMins":300},
+            "secondary":{"usedPercent":10,"windowDurationMins":15}
+        }});
+        assert_eq!(
+            codex_limits_from_response(&response),
+            CodexLimits::default()
+        );
+    }
 }
 
 #[async_trait::async_trait]

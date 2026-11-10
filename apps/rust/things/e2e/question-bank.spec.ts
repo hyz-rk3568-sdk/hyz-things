@@ -164,7 +164,7 @@ test('paper practice hides numbering and scroll tools until they are needed',asy
   await expect(page.getByTestId('question-bank-practice-workspace')).not.toContainText('未核验');
   await expect(page.getByTestId('question-bank-practice-choice').first()).toHaveClass(/border-success/);
   await openSheet(page);
-  await expect(page.getByTestId('question-bank-practice-score')).toContainText('1 / 3 正确');
+  await expect(page.getByTestId('question-bank-practice-score').getByLabel('正确 1')).toBeVisible();
   await expect(page.getByTestId('question-bank-practice-records')).toBeVisible();
   await expect(page.getByTestId('question-bank-practice-repeat')).toBeVisible();
   await expect(page.getByTestId('question-bank-practice-ungradable')).toHaveCount(0);

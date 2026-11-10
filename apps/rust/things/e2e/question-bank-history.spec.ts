@@ -35,7 +35,7 @@ async function completeFixturePaper(page: Page) {
   await expect(page.getByTestId('question-bank-practice-choice').first()).toHaveAttribute('aria-pressed', 'true');
   await page.getByTestId('question-bank-practice-submit').click();
   await page.getByRole('button', { name: '确认交卷', exact: true }).click();
-  await expect(page.getByTestId('question-bank-practice-score')).toContainText('/ 3 正确');
+  await expect(page.getByTestId('question-bank-practice-score').getByLabel(/正确/)).toBeVisible();
   await expect(page.getByTestId('question-bank-practice-records')).toBeVisible();
   await expect(page.getByTestId('question-bank-practice-repeat')).toBeVisible();
   await page.getByRole('button', { name: '← 返回训练', exact: true }).click();
@@ -46,7 +46,7 @@ test('completed practice opens its records and redoes the same questions in plac
   await page.getByTestId('question-bank-practice-choice').first().click();
   await page.getByTestId('question-bank-practice-submit').click();
   await page.getByRole('button', { name: '确认交卷', exact: true }).click();
-  await expect(page.getByTestId('question-bank-practice-score')).toContainText('/ 3 正确');
+  await expect(page.getByTestId('question-bank-practice-score').getByLabel(/正确/)).toBeVisible();
   await page.getByTestId('question-bank-practice-records').click();
   await expect(page.getByTestId('question-bank-practice-history')).toBeVisible();
   await page.getByRole('button', { name: '返回套卷', exact: true }).click();

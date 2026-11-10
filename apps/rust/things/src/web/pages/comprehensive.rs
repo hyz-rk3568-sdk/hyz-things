@@ -1,10 +1,9 @@
 //! 20 questions / 20 minutes. Immersive iPad workspace with 60:40 material/question panes.
-use super::material_scroll::{scroll_edges, MaterialScrollButton, ScrollEdges};
+use super::material_scroll::{use_training_scroll_pair, MaterialScrollButton};
 use super::*;
 use gloo_timers::{callback::Interval, future::TimeoutFuture};
 use js_sys::Date;
 use serde::Serialize;
-use wasm_bindgen::JsCast;
 
 #[derive(Properties, PartialEq)]
 pub(crate) struct ComprehensiveProps {
@@ -34,35 +33,14 @@ struct AnalysisPanesProps {
 // advances exactly one rendered text line. Keep controls outside scrollable content.
 #[function_component(AnalysisPanes)]
 fn analysis_panes(props: &AnalysisPanesProps) -> Html {
-    let passage = use_node_ref();
-    let question_scroll = use_node_ref();
-    let question_edges = use_state(ScrollEdges::default);
+    let scroll = use_training_scroll_pair();
+    let passage = scroll.first;
+    let question_scroll = scroll.second;
+    let scroll_state = scroll.first_edges;
+    let question_edges = scroll.second_edges;
+    let refresh_scroll_edges = scroll.refresh;
+    let on_scroll = scroll.on_scroll;
     let scratchpad_open = use_context::<bool>().unwrap_or(false);
-    let scroll_state = use_state(ScrollEdges::default);
-    let refresh_scroll_edges = {
-        let passage = passage.clone();
-        let scroll_state = scroll_state.clone();
-        let question_scroll = question_scroll.clone();
-        let question_edges = question_edges.clone();
-        Callback::from(move |_: ()| {
-            if let Some(element) = passage.cast::<web_sys::HtmlElement>() {
-                let next = scroll_edges(&element);
-                if *scroll_state != next {
-                    scroll_state.set(next);
-                }
-            }
-            if let Some(element) = question_scroll.cast::<web_sys::HtmlElement>() {
-                let next = scroll_edges(&element);
-                if *question_edges != next {
-                    question_edges.set(next);
-                }
-            }
-        })
-    };
-    let on_scroll = {
-        let refresh_scroll_edges = refresh_scroll_edges.clone();
-        Callback::from(move |_: web_sys::Event| refresh_scroll_edges.emit(()))
-    };
     {
         let refresh_scroll_edges = refresh_scroll_edges.clone();
         use_effect_with(
@@ -77,32 +55,6 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
             },
         );
     }
-    {
-        let refresh_scroll_edges = refresh_scroll_edges.clone();
-        use_effect_with((), move |_| {
-            let window = web_sys::window();
-            let handler =
-                wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::Event)>::new(move |_| {
-                    refresh_scroll_edges.emit(())
-                });
-            let attached = window.as_ref().is_some_and(|window| {
-                window
-                    .add_event_listener_with_callback("resize", handler.as_ref().unchecked_ref())
-                    .is_ok()
-            });
-            move || {
-                if attached {
-                    if let Some(window) = window {
-                        let _ = window.remove_event_listener_with_callback(
-                            "resize",
-                            handler.as_ref().unchecked_ref(),
-                        );
-                    }
-                }
-            }
-        });
-    }
-
     html! {
         <TrainingSplitWorkspace test_id="analysis-shared-workspace"
             left={html! {
@@ -1016,28 +968,17 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             None => "未答",
         };
         let review_options = q.options.iter().enumerate().map(|(i, option)| {
-            let grade = if i == q.correct_index {
-                "correct"
-            } else if q.chosen == Some(i) {
-                "wrong"
-            } else {
-                "neutral"
-            };
-            let style = match grade {
-                "correct" => "flex items-center justify-between gap-3 rounded-box border border-success bg-success/10 p-3 font-medium text-success",
-                "wrong" => "flex items-center justify-between gap-3 rounded-box border border-error bg-error/10 p-3 font-medium text-error",
-                _ => "flex items-center justify-between gap-3 rounded-box border border-base-content/20 p-3",
-            };
-            let hint = match grade {
-                "correct" => "✓ 正确答案",
-                "wrong" => "✕ 你的错选",
-                _ => "",
+            let state = ReviewChoiceState::for_single_choice(i, q.correct_index, q.chosen);
+            let hint = match state {
+                ReviewChoiceState::Correct => "✓ 正确答案",
+                ReviewChoiceState::Wrong => "✕ 你的错选",
+                ReviewChoiceState::Neutral => "",
             };
             html! {
-                <div class={style} data-testid="analysis-review-choice" data-state={grade}>
+                <TrainingReviewChoice class={classes!("flex", "items-center", "justify-between", "gap-3", "rounded-box", "border", "p-3", (state != ReviewChoiceState::Neutral).then_some("font-medium"))} test_id="analysis-review-choice" {state}>
                     <span>{format!("{}. {}",["A", "B", "C", "D"][i],option)}</span>
                     <span class="shrink-0 text-xs">{hint}</span>
-                </div>
+                </TrainingReviewChoice>
             }
         });
         let review_question = html! {
@@ -1116,7 +1057,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         return html! {
             <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200"
                 data-testid="analysis-result" data-view="review">
-                <header class="analysis-header flex shrink-0 flex-col gap-1 border-b border-base-content/10 pb-2 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+                <TrainingHeader class="analysis-header flex shrink-0 flex-col gap-1 border-b border-base-content/10 pb-2 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
                     <div class="flex min-w-0 items-center gap-2">
                         <button type="button" class="btn btn-ghost btn-sm" data-testid="analysis-exit"
                             onclick={back_from_review}>{if *reviewing_history {"← 返回记录"} else {"← 返回专项"}}</button>
@@ -1130,7 +1071,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-retry-result" disabled={*busy} onclick={redo_from_result}>{"重做原题"}</button>
                         <button type="button" class="btn btn-primary btn-sm" onclick={again}>{"再出一套"}</button>
                     </div>
-                </header>
+                </TrainingHeader>
                 <div class="min-h-0 flex-1">
                     <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",review_id,index)} responsive={true} scroll_linked={true}><TrainingSwipeSurface current={current.clone()} total={score.questions.len()}>
                         <AnalysisPanes material={score.materials[group_index].clone()} question={review_question} question_index={index} right_title="答案与解析" />
@@ -1286,7 +1227,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         return html! {
             <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200"
                 data-testid="analysis-run" data-view="answer">
-                <header class="analysis-header flex shrink-0 items-center justify-between gap-2 border-b border-base-content/10 pb-2">
+                <TrainingHeader class="analysis-header flex shrink-0 items-center justify-between gap-2 border-b border-base-content/10 pb-2">
                     <div class="flex min-w-0 items-center gap-2">
                         <button type="button" class="btn btn-ghost btn-sm" data-testid="analysis-exit"
                             onclick={pause_and_exit.clone()}>{"← 暂停并退出"}</button>
@@ -1301,7 +1242,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         <button type="button" class="btn btn-sm btn-error btn-outline" disabled={*busy || paused}
                             onclick={{let submit=submit.clone();Callback::from(move |_|submit.emit(()))}}>{"交卷"}</button>
                     </div>
-                </header>
+                </TrainingHeader>
                 <div class="relative min-h-0 flex-1 overflow-hidden">
                     if paused {
                         <div class="flex h-full items-center justify-center overflow-y-auto p-4" data-testid="analysis-paused">

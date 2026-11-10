@@ -77,6 +77,24 @@ fn ai_error(error: AiReviewError) -> Response {
     }
 }
 
+pub(super) async fn ai_rate_limits(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: AiService,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let service = match ai_service(service) {
+        Ok(service) => service,
+        Err(error) => return error,
+    };
+    match service.rate_limits().await {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => ai_error(error),
+    }
+}
+
 pub(super) async fn ai_read(
     State(state): State<AppState>,
     headers: HeaderMap,

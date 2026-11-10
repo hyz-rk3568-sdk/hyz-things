@@ -2468,3 +2468,63 @@ async fn ai_start_and_follow_up_forward_uploaded_images_as_local_paths() {
     assert_eq!(images, [upload_path.to_owned()]);
     server.abort();
 }
+
+#[tokio::test]
+async fn codex_rate_limits_require_admin_and_same_origin() {
+    use hyz_things::application::question_bank::practice::{AiReviewBackend, AiReviewTurn};
+    use hyz_things::domain::question_bank::{CodexLimitWindow, CodexLimits};
+    struct LimitsBackend;
+    #[async_trait::async_trait]
+    impl AiReviewBackend for LimitsBackend {
+        async fn connect(&self, _: Option<&str>) -> Result<Box<dyn AiReviewTurn>, String> {
+            Err("unexpected thread creation".into())
+        }
+        async fn rate_limits(&self) -> Result<CodexLimits, String> {
+            Ok(CodexLimits {
+                five_hour: Some(CodexLimitWindow {
+                    remaining_percent: 72,
+                    resets_at: Some(1234),
+                }),
+                week: None,
+            })
+        }
+    }
+    let (server, base, cookie, _, _, _) =
+        bank_server_fixture_with_ai(false, Some(Arc::new(LimitsBackend))).await;
+    let client = reqwest::Client::new();
+    let url = format!("{base}/api/v1/question-bank/ai/rate-limits");
+    assert_eq!(client.get(&url).send().await.unwrap().status(), 401);
+    assert_eq!(
+        client
+            .get(&url)
+            .header("cookie", &cookie)
+            .header("sec-fetch-site", "cross-site")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    let response = client
+        .get(&url)
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["five_hour"]["remaining_percent"], 72);
+    assert!(body["week"].is_null());
+    assert_eq!(
+        client
+            .post(&url)
+            .header("cookie", &cookie)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        405
+    );
+    server.abort();
+}
