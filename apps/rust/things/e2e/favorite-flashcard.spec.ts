@@ -543,7 +543,7 @@ test('question AI image picker uploads validated attachments and sends IDs', asy
     const question_id = new URL(route.request().url()).pathname.split('/').at(-2)!;
     if (route.request().method() === 'POST') {
       starts.push(route.request().postDataJSON());
-      await route.fulfill({ status: 202, json: { question_id, status: 'running', error: null, messages: [] } });
+      await route.fulfill({ status: 202, json: { question_id, status: 'running', error: null, messages: [], request: { request_id: route.request().postDataJSON().request_id, run_id: 'run-1', intent: 'initial', status: 'running', error: null, remote_uncertain: false, new_thread_requested: false, user_message_id: null, retry_of: null } } });
     } else {
       await route.fulfill({ json: { question_id, status: 'idle', error: null, messages: [] } });
     }
@@ -562,7 +562,7 @@ test('question AI image picker uploads validated attachments and sends IDs', asy
   await review.getByTestId('question-bank-ai-instruction').fill('看图讲题');
   await review.getByTestId('question-bank-ai-start').click();
   await expect.poll(() => starts.length).toBe(1);
-  expect(starts[0]).toEqual({ instruction: '看图讲题', attachments: ['attachment-1'] });
+  expect(starts[0]).toMatchObject({ instruction: '看图讲题', attachments: ['attachment-1'], request_id: expect.any(String) });
   await expect(picker.getByText('note.png')).toHaveCount(0);
 });
 
@@ -635,9 +635,8 @@ for (const action of ['stop', 'delete'] as const) {
       await review.getByTestId('question-bank-ai-delete-confirm').click();
     }
     await expectFinalState();
-    const oldResponse = page.waitForResponse(response => response.url().endsWith('/ai') && response.request().method() === 'GET');
+    // The SSE refresh may be aborted when the stream is replaced after the mutation.
     release();
-    await oldResponse;
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     await expectFinalState();
   });

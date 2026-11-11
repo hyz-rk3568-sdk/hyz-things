@@ -60,11 +60,13 @@ trap cleanup EXIT INT TERM HUP
 readonly DIST_DIR="${TEMP_DIR}/dist"
 (
     cd -- "${PACKAGE_DIR}"
+    NO_COLOR=true npm run build:ts
+    [[ -s "${FRONTEND_DIR}/ts-dist/browser-bridge.js" ]] || { printf 'error: missing browser bridge output\n' >&2; exit 1; }
     NO_COLOR=true npm run build:css
     NO_COLOR=true RUSTFLAGS="${RUSTFLAGS:+${RUSTFLAGS} }-D warnings" trunk build --locked --release --dist "${DIST_DIR}" frontend/index.html
 )
 python3 "${EXTERNALIZER}" "${DIST_DIR}"
-if [[ ! -s "${DIST_DIR}/index.html" || ! -s "${DIST_DIR}/router-bootstrap.js" ]]; then
+if [[ ! -s "${DIST_DIR}/index.html" || ! -s "${DIST_DIR}/router-bootstrap.js" || ! -s "${DIST_DIR}/ts-dist/browser-bridge.js" ]]; then
     printf 'error: Trunk completed without producing CSP-compatible frontend assets\n' >&2
     exit 1
 fi

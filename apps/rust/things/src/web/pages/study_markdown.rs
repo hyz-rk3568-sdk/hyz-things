@@ -1,6 +1,6 @@
 use super::*;
 use pulldown_cmark::{
-    html::push_html, CowStr, Event as MarkdownEvent, Options, Parser, Tag, TagEnd,
+    CowStr, Event as MarkdownEvent, Options, Parser, Tag, TagEnd, html::push_html,
 };
 
 #[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/ai_diagram.js")]
@@ -12,6 +12,8 @@ extern "C" {
 #[derive(Properties, PartialEq)]
 struct MarkdownViewProps {
     html: String,
+    #[prop_or(true)]
+    diagrams: bool,
 }
 
 #[function_component(MarkdownView)]
@@ -19,16 +21,21 @@ fn markdown_view(props: &MarkdownViewProps) -> Html {
     let root = use_node_ref();
     {
         let root = root.clone();
-        use_effect_with(props.html.clone(), move |_| {
-            if let Some(element) = root.cast::<HtmlElement>() {
-                render_markdown_diagrams(&element);
-            }
-            || ()
-        });
+        use_effect_with(
+            (props.html.clone(), props.diagrams),
+            move |(_, diagrams)| {
+                if *diagrams {
+                    if let Some(element) = root.cast::<HtmlElement>() {
+                        render_markdown_diagrams(&element);
+                    }
+                }
+                || ()
+            },
+        );
     }
     html! {
         <div ref={root}>
-            <div data-ai-diagram-source="true">{Html::from_html_unchecked(AttrValue::from(props.html.clone()))}</div>
+            <div data-ai-diagram-source={props.diagrams.to_string()}>{Html::from_html_unchecked(AttrValue::from(props.html.clone()))}</div>
         </div>
     }
 }
@@ -61,6 +68,10 @@ pub(crate) fn markdown_html(markdown: &str, source_file: &str) -> String {
 
 pub(crate) fn render_question_bank_markdown(markdown: &str) -> Html {
     html! { <MarkdownView html={question_bank_markdown_html(markdown)}/> }
+}
+
+pub(crate) fn render_question_bank_user_markdown(markdown: &str) -> Html {
+    html! { <MarkdownView html={question_bank_markdown_html(markdown)} diagrams={false}/> }
 }
 
 fn bank_asset_name(name: &str) -> Option<&str> {
@@ -279,7 +290,9 @@ mod question_bank_markdown_tests {
     #[test]
     fn bank_images_are_local_and_source_html_is_escaped() {
         let hash = "a".repeat(64);
-        let html=question_bank_markdown_html(&format!("![题图](hyz-bank-asset:{hash}.png)\n\n<script>alert(1)</script>\n\n![外链](https://example.com/x.png)"));
+        let html = question_bank_markdown_html(&format!(
+            "![题图](hyz-bank-asset:{hash}.png)\n\n<script>alert(1)</script>\n\n![外链](https://example.com/x.png)"
+        ));
         assert!(html.contains(&format!("/api/v1/question-bank/assets/{hash}.png")));
         assert!(html.contains("<span class=\"markdown-media\">"));
         assert_eq!(html.matches("class=\"markdown-media\"").count(), 2);
@@ -295,10 +308,10 @@ mod question_bank_markdown_tests {
         let nested = question_bank_markdown_html(&format!("![](../../assets/{hash}.jpg)"));
         assert!(nested.contains(&format!("/api/v1/question-bank/assets/{hash}.jpg")));
         assert!(!nested.contains("../../assets"));
-        assert!(!question_bank_markdown_html(&format!(
-            "![](https://example.com/assets/{hash}.png)"
-        ))
-        .contains("/api/v1/question-bank/assets/"));
+        assert!(
+            !question_bank_markdown_html(&format!("![](https://example.com/assets/{hash}.png)"))
+                .contains("/api/v1/question-bank/assets/")
+        );
     }
 
     #[test]

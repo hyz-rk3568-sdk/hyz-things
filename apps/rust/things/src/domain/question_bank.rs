@@ -418,6 +418,8 @@ pub struct FavoriteState {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AiReviewMessage {
+    #[serde(default)]
+    pub id: i64,
     pub role: String,
     pub content: String,
     pub created_at: i64,

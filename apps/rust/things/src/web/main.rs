@@ -1,6 +1,7 @@
 #![cfg(feature = "web")]
 
 mod api;
+pub mod bindings;
 mod app;
 mod components;
 mod media;

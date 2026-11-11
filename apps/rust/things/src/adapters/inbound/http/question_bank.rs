@@ -2,8 +2,8 @@ use super::*;
 use crate::adapters::outbound::question_bank_ai::{AiReviewError, QuestionBankAiService};
 use crate::application::question_bank::{BankError, QuestionBankApplication};
 use crate::domain::question_bank::{
-    AiReviewFollowUp, CreatePracticeRequest, ModulePracticeFilters, PracticeMode,
-    SavePracticeAnswer, SetFavorite, SetPracticePaused, StudyPlan,
+    CreatePracticeRequest, ModulePracticeFilters, PracticeMode, SavePracticeAnswer, SetFavorite,
+    SetPracticePaused, StudyPlan,
 };
 use axum::Extension;
 
@@ -28,9 +28,40 @@ type AiService = Option<Extension<Arc<QuestionBankAiService>>>;
 #[serde(deny_unknown_fields)]
 pub(super) struct AiStartRequest {
     #[serde(default)]
+    request_id: Option<String>,
+    #[serde(default)]
     instruction: Option<String>,
     #[serde(default)]
     attachments: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct AiFollowUpRequest {
+    message: String,
+    #[serde(default)]
+    attachments: Vec<String>,
+    #[serde(default)]
+    request_id: Option<String>,
+}
+
+#[derive(Default, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct AiDeleteRequest {
+    #[serde(default)]
+    confirm_uncertain: bool,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct AiRetryRequest {
+    request_id: String,
+    #[serde(default)]
+    confirm_uncertain: bool,
+    #[serde(default)]
+    confirm_new_thread: bool,
+    #[serde(default)]
+    replacement_attachments: Option<Vec<String>>,
 }
 
 #[derive(serde::Serialize)]
@@ -68,6 +99,26 @@ fn ai_error(error: AiReviewError) -> Response {
             StatusCode::CONFLICT,
             "question_bank_ai_busy",
             "当前题目正在生成或无法追问",
+        ),
+        AiReviewError::RequestConflict => error_json(
+            StatusCode::CONFLICT,
+            "question_bank_ai_request_conflict",
+            "请求 ID 已用于不同内容",
+        ),
+        AiReviewError::RequestNotFound => error_json(
+            StatusCode::NOT_FOUND,
+            "question_bank_ai_request_not_found",
+            "AI 请求不存在",
+        ),
+        AiReviewError::AttachmentExpired => error_json(
+            StatusCode::BAD_REQUEST,
+            "question_bank_ai_attachment_expired",
+            "临时图片已失效，请重新上传后确认重试",
+        ),
+        AiReviewError::ConfirmationRequired => error_json(
+            StatusCode::CONFLICT,
+            "question_bank_ai_confirmation_required",
+            "远端运行状态不确定，请确认后重试",
         ),
         AiReviewError::Storage => error_json(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -113,6 +164,172 @@ pub(super) async fn ai_read(
         Err(error) => ai_error(error),
     }
 }
+struct AiEventConnection {
+    state: AppState,
+    headers: HeaderMap,
+    service: Arc<QuestionBankAiService>,
+    identity: (String, String),
+    receiver: tokio::sync::broadcast::Receiver<
+        crate::adapters::outbound::question_bank_ai::StreamMessage,
+    >,
+    snapshot: Option<crate::adapters::outbound::question_bank_ai::AiReviewStreamSnapshot>,
+    run_id: Option<String>,
+    seq: u64,
+    next_authorization: tokio::time::Instant,
+    next_heartbeat: tokio::time::Instant,
+    _permit: tokio::sync::OwnedSemaphorePermit,
+}
+
+impl AiEventConnection {
+    async fn reauthorize_if_due(&mut self) -> bool {
+        if tokio::time::Instant::now() < self.next_authorization {
+            return true;
+        }
+        if authorize_sensitive_read(&self.state, &self.headers).await.is_err()
+            || self.service.stream_identity(&self.identity.0).await.ok().as_ref() != Some(&self.identity)
+        {
+            return false;
+        }
+        self.next_authorization = tokio::time::Instant::now() + Duration::from_secs(2);
+        true
+    }
+}
+
+pub(super) async fn ai_events(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: AiService,
+    Path(question_id): Path<String>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let service = match ai_service(service) {
+        Ok(service) => service,
+        Err(error) => return error,
+    };
+    let permit = match service.stream_permit() {
+        Ok(permit) => permit,
+        Err(error) => return ai_error(error),
+    };
+    let identity = match service.stream_identity(&question_id).await {
+        Ok(identity) => identity,
+        Err(error) => return ai_error(error),
+    };
+    let review = match service.state(&question_id).await {
+        Ok(review) => review,
+        Err(error) => return ai_error(error),
+    };
+    let (snapshot, receiver) = service.stream_subscribe(&identity, &review.status);
+    let connection = AiEventConnection {
+        state,
+        headers,
+        service,
+        identity,
+        receiver,
+        snapshot: Some(snapshot),
+        run_id: None,
+        seq: 0,
+        next_authorization: tokio::time::Instant::now(),
+        next_heartbeat: tokio::time::Instant::now() + Duration::from_secs(15),
+        _permit: permit,
+    };
+    let stream = futures_util::stream::unfold(connection, |mut connection| async move {
+        loop {
+            if !connection.reauthorize_if_due().await {
+                return None;
+            }
+            if let Some(snapshot) = connection.snapshot.take() {
+                connection.run_id = snapshot.run_id.clone();
+                connection.seq = snapshot.seq;
+                let id = snapshot
+                    .run_id
+                    .as_ref()
+                    .map(|id| format!("{id}:{}", snapshot.seq))
+                    .unwrap_or_default();
+                let data = serde_json::to_string(&snapshot).ok()?;
+                let event = axum::response::sse::Event::default()
+                    .event("snapshot")
+                    .id(id)
+                    .data(data);
+                return Some((Ok::<_, std::convert::Infallible>(event), connection));
+            }
+            let received = tokio::select! {
+                value = connection.receiver.recv() => Some(value),
+                _ = tokio::time::sleep_until(connection.next_authorization) => continue,
+                _ = tokio::time::sleep_until(connection.next_heartbeat) => None,
+            };
+            if !connection.reauthorize_if_due().await {
+                return None;
+            }
+            match received {
+                None => {
+                    connection.next_heartbeat = tokio::time::Instant::now() + Duration::from_secs(15);
+                    return Some((
+                        Ok(axum::response::sse::Event::default().comment("keepalive")),
+                        connection,
+                    ));
+                }
+                Some(Err(tokio::sync::broadcast::error::RecvError::Closed)) => return None,
+                Some(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => {
+                    let review = connection
+                        .service
+                        .state(&connection.identity.0)
+                        .await
+                        .ok()?;
+                    connection.snapshot = Some(
+                        connection
+                            .service
+                            .stream_snapshot(&connection.identity, &review.status),
+                    );
+                }
+                Some(Ok(message)) => {
+                    if !QuestionBankAiService::stream_matches(&message, &connection.identity) {
+                        continue;
+                    }
+                    let event = message.event;
+                    if connection.run_id.as_deref() == Some(event.run_id.as_str())
+                        && event.seq <= connection.seq
+                    {
+                        continue;
+                    }
+                    if event.kind == "reset"
+                        || connection.run_id.as_deref() != Some(event.run_id.as_str())
+                        || event.seq != connection.seq + 1
+                    {
+                        let review = connection
+                            .service
+                            .state(&connection.identity.0)
+                            .await
+                            .ok()?;
+                        connection.snapshot = Some(
+                            connection
+                                .service
+                                .stream_snapshot(&connection.identity, &review.status),
+                        );
+                        continue;
+                    }
+                    connection.seq = event.seq;
+                    let id = format!("{}:{}", event.run_id, event.seq);
+                    let data = serde_json::to_string(&event).ok()?;
+                    return Some((
+                        Ok(axum::response::sse::Event::default().id(id).data(data)),
+                        connection,
+                    ));
+                }
+            }
+        }
+    });
+    let mut response = axum::response::sse::Sse::new(stream).into_response();
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+        .headers_mut()
+        .insert("x-accel-buffering", HeaderValue::from_static("no"));
+    response
+}
+
 pub(super) async fn ai_start(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -131,12 +348,27 @@ pub(super) async fn ai_start(
         Ok(service) => service,
         Err(e) => return e,
     };
-    match service
-        .start(&question_id, request.instruction, request.attachments)
-        .await
-    {
-        Ok(value) => (StatusCode::ACCEPTED, Json(value)).into_response(),
-        Err(error) => ai_error(error),
+    if let Some(request_id) = request.request_id {
+        match service
+            .start_request(
+                &question_id,
+                &request_id,
+                request.instruction,
+                request.attachments,
+            )
+            .await
+        {
+            Ok(value) => (StatusCode::ACCEPTED, Json(value)).into_response(),
+            Err(error) => ai_error(error),
+        }
+    } else {
+        match service
+            .start(&question_id, request.instruction, request.attachments)
+            .await
+        {
+            Ok(value) => (StatusCode::ACCEPTED, Json(value)).into_response(),
+            Err(error) => ai_error(error),
+        }
     }
 }
 
@@ -182,7 +414,7 @@ pub(super) async fn ai_follow_up(
     headers: HeaderMap,
     service: AiService,
     Path(question_id): Path<String>,
-    payload: Result<Json<AiReviewFollowUp>, JsonRejection>,
+    payload: Result<Json<AiFollowUpRequest>, JsonRejection>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
         return response;
@@ -195,8 +427,76 @@ pub(super) async fn ai_follow_up(
         Ok(service) => service,
         Err(e) => return e,
     };
+    if let Some(request_id) = payload.request_id {
+        match service
+            .follow_up_request(
+                &question_id,
+                &request_id,
+                payload.message,
+                payload.attachments,
+            )
+            .await
+        {
+            Ok(value) => (StatusCode::ACCEPTED, Json(value)).into_response(),
+            Err(error) => ai_error(error),
+        }
+    } else {
+        match service
+            .follow_up(&question_id, payload.message, payload.attachments)
+            .await
+        {
+            Ok(value) => (StatusCode::ACCEPTED, Json(value)).into_response(),
+            Err(error) => ai_error(error),
+        }
+    }
+}
+
+pub(super) async fn ai_request_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: AiService,
+    Path((question_id, request_id)): Path<(String, String)>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let service = match ai_service(service) {
+        Ok(service) => service,
+        Err(error) => return error,
+    };
+    match service.request_status(&question_id, &request_id).await {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => ai_error(error),
+    }
+}
+
+pub(super) async fn ai_retry(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: AiService,
+    Path((question_id, source_request_id)): Path<(String, String)>,
+    payload: Result<Json<AiRetryRequest>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
+        return response;
+    }
+    let payload = match decode_control_json(payload) {
+        Ok(value) => value,
+        Err(error) => return error.response(),
+    };
+    let service = match ai_service(service) {
+        Ok(service) => service,
+        Err(error) => return error,
+    };
     match service
-        .follow_up(&question_id, payload.message, payload.attachments)
+        .retry_request(
+            &question_id,
+            &source_request_id,
+            &payload.request_id,
+            payload.confirm_uncertain,
+            payload.confirm_new_thread,
+            payload.replacement_attachments,
+        )
         .await
     {
         Ok(value) => (StatusCode::ACCEPTED, Json(value)).into_response(),
@@ -249,14 +549,22 @@ pub(super) async fn ai_delete(
         }
         Err(_) => return ControlJsonError::InvalidRequest.response(),
     };
-    if !body.is_empty() && serde_json::from_slice::<EmptyJsonRequest>(&body).is_err() {
-        return ControlJsonError::InvalidRequest.response();
-    }
+    let request = if body.is_empty() {
+        AiDeleteRequest::default()
+    } else {
+        match serde_json::from_slice::<AiDeleteRequest>(&body) {
+            Ok(request) => request,
+            Err(_) => return ControlJsonError::InvalidRequest.response(),
+        }
+    };
     let service = match ai_service(service) {
         Ok(service) => service,
         Err(error) => return error,
     };
-    match service.delete(&question_id).await {
+    match service
+        .delete_with_confirmation(&question_id, request.confirm_uncertain)
+        .await
+    {
         Ok(value) => Json(value).into_response(),
         Err(error) => ai_error(error),
     }

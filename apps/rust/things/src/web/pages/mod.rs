@@ -1,5 +1,7 @@
 use super::*;
 
+mod ai_reply;
+mod ai_review_stream;
 mod calculation;
 mod camera;
 mod collection_review;
@@ -41,6 +43,7 @@ pub(crate) use devices::*;
 pub(crate) use logic_judgment::*;
 pub(crate) use network::*;
 pub(crate) use overview::*;
+use ai_reply::AiReply;
 use practice_status::*;
 pub(crate) use proxy::*;
 use question_bank_setup::*;

@@ -108,6 +108,41 @@ async fn submitted_practice() -> (Arc<QuestionBankAiService>, String, sqlx::Sqli
 }
 
 #[tokio::test]
+async fn unrelated_active_practice_does_not_block_question_scoped_ai_review() {
+    let repository = Arc::new(
+        SqliteQuestionBankRepository::connect("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    let pool = repository.pool().clone();
+    let bank = Arc::new(QuestionBankApplication::new(
+        Arc::new(FixtureBank),
+        repository,
+    ));
+    bank.sync().await.unwrap();
+    let session = bank
+        .create_practice(CreatePracticeRequest {
+            mode: PracticeMode::PaperModule,
+            paper_id: Some(PAPER_ID.into()),
+            module: Some("资料分析".into()),
+            category: None,
+            collection_id: None,
+            filters: Default::default(),
+        })
+        .await
+        .unwrap();
+    let service = QuestionBankAiService::new(bank.clone(), pool, None);
+    assert_eq!(service.state(QUESTION_ID).await.unwrap().status, "idle");
+    assert!(service.stream_identity(QUESTION_ID).await.is_ok());
+    assert!(matches!(
+        bank.practice_review(&session.id).await,
+        Err(BankError::Conflict)
+    ));
+    bank.submit_practice(&session.id).await.unwrap();
+    assert_eq!(service.state(QUESTION_ID).await.unwrap().status, "idle");
+}
+
+#[tokio::test]
 async fn idle_state_is_accessible_for_a_question() {
     let (service, _fingerprint, _pool) = submitted_practice().await;
     let state = service.state(QUESTION_ID).await.unwrap();
@@ -184,6 +219,42 @@ async fn restart_marks_running_review_failed_and_keeps_history() {
         .is_some_and(|error| error.contains("设备服务重启")));
     assert_eq!(state.messages.len(), 1);
     assert_eq!(state.messages[0].content, "已有解析");
+}
+
+#[tokio::test]
+async fn request_identity_survives_recovery_and_replay_does_not_start_a_new_turn() {
+    use sha2::{Digest, Sha256};
+    let (service, fingerprint, pool) = submitted_practice().await;
+    let request_id = "019a3d8e-1b32-7a60-9c83-f34217a6e211";
+    let run_id = "019a3d8e-1b32-7a60-9c83-f34217a6e212";
+    let hash: String = Sha256::digest(br#"{"kind":"initial","instruction":null,"attachments":[]}"#)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    sqlx::query("INSERT INTO question_ai_reviews(question_id,stem_fingerprint,status,updated_at) VALUES(?,?,'running',1)")
+        .bind(QUESTION_ID).bind(&fingerprint).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO question_ai_requests(question_id,stem_fingerprint,request_id,payload_hash,run_id,intent,attachments,status,created_at,updated_at) VALUES(?,?,?,?,?,'initial','[]','running',1,1)")
+        .bind(QUESTION_ID).bind(&fingerprint).bind(request_id).bind(hash).bind(run_id).execute(&pool).await.unwrap();
+    service.recover_interrupted().await.unwrap();
+    let info = service
+        .request_status(QUESTION_ID, request_id)
+        .await
+        .unwrap();
+    assert_eq!(info.run_id, run_id);
+    assert_eq!(info.status, "unknown");
+    assert!(info.remote_uncertain);
+    let replay = service
+        .start_request(QUESTION_ID, request_id, None, Vec::new())
+        .await
+        .unwrap();
+    assert_eq!(replay.request.run_id, run_id);
+    assert_eq!(replay.request.status, "unknown");
+    assert!(matches!(
+        service
+            .start_request(QUESTION_ID, request_id, Some("不同".into()), Vec::new())
+            .await,
+        Err(AiReviewError::RequestConflict)
+    ));
 }
 
 #[tokio::test]

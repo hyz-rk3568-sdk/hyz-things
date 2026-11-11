@@ -42,7 +42,7 @@ def source_files(relative: Path, excluded: frozenset[Path] = frozenset()):
         directories[:] = sorted(
             name for name in directories
             if name not in {
-                "target", "node_modules", "playwright-report", "test-results", "__pycache__", ".git",
+                "target", "node_modules", "ts-dist", "playwright-report", "test-results", "__pycache__", ".git",
             } and (directory / name).relative_to(WORKSPACE) not in excluded
         )
         for name in directories:

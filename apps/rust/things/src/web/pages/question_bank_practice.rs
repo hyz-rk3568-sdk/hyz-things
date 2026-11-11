@@ -1,12 +1,12 @@
 //! Browse original papers and categories; share one workspace for practice and review.
-use super::favorite_flashcard::{favorite_can_create, FavoriteFlashcardWorkspace, FavoritePreview};
-use super::material_scroll::{scroll_edges, MaterialScrollButton, ScrollEdges};
+use super::favorite_flashcard::{FavoriteFlashcardWorkspace, FavoritePreview, favorite_can_create};
+use super::material_scroll::{MaterialScrollButton, ScrollEdges, scroll_edges};
 use super::*;
 use hyz_things::domain::question_bank::{
-    primary_module, AiReviewFollowUp, AiReviewState, CreatePracticeRequest, DrillCollection,
-    FavoriteState, ModulePracticeFilters, PaperSummary, PracticeBrowseItem, PracticeCatalog,
-    PracticeMode, PracticeQuestion, PracticeReview, PracticeSession, PracticeWorkspace,
-    SavePracticeAnswer, SetFavorite, SetPracticePaused,
+    AiReviewState, CreatePracticeRequest, DrillCollection, FavoriteState, ModulePracticeFilters,
+    PaperSummary, PracticeBrowseItem, PracticeCatalog, PracticeMode, PracticeQuestion,
+    PracticeReview, PracticeSession, PracticeWorkspace, SavePracticeAnswer, SetFavorite,
+    SetPracticePaused, primary_module,
 };
 
 #[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/review_scroll.js")]
@@ -23,9 +23,97 @@ extern "C" {
 
 #[derive(serde::Serialize)]
 struct AiReviewStartRequest {
+    request_id: String,
     instruction: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     attachments: Vec<String>,
+}
+
+#[derive(serde::Serialize)]
+struct AiReviewFollowUpRequest {
+    request_id: String,
+    message: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    attachments: Vec<String>,
+}
+
+#[derive(Clone, PartialEq, serde::Deserialize)]
+struct AiRequestInfo {
+    request_id: String,
+    intent: String,
+    status: String,
+    error: Option<String>,
+    remote_uncertain: bool,
+}
+
+#[derive(serde::Deserialize)]
+struct AiRequestReceipt {
+    #[serde(flatten)]
+    state: AiReviewState,
+    request: AiRequestInfo,
+}
+
+#[derive(serde::Serialize)]
+struct AiRetryRequest {
+    request_id: String,
+    confirm_uncertain: bool,
+    confirm_new_thread: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    replacement_attachments: Option<Vec<String>>,
+}
+
+fn definite_ai_rejection(error: &ApiError) -> bool {
+    matches!(
+        error.code(),
+        Some(
+            "question_bank_ai_invalid"
+                | "question_bank_ai_busy"
+                | "question_bank_ai_request_conflict"
+                | "question_bank_ai_request_not_found"
+                | "question_bank_ai_attachment_expired"
+                | "question_bank_ai_confirmation_required"
+        )
+    )
+}
+
+fn remember_ai_request(key: &str, id: &str) -> Result<(), String> {
+    let storage = web_sys::window()
+        .and_then(|window| window.session_storage().ok().flatten())
+        .ok_or("浏览器会话存储不可用，无法安全记录请求；未发送。")?;
+    storage
+        .set_item(key, id)
+        .map_err(|_| "无法保存请求标识；未发送。".to_owned())
+}
+
+fn new_ai_request_id() -> Result<String, String> {
+    let mut bytes = [0u8; 16];
+    web_sys::window()
+        .ok_or("浏览器不可用")?
+        .crypto()
+        .map_err(|_| "无法获取安全随机数")?
+        .get_random_values_with_u8_array(&mut bytes)
+        .map_err(|_| "无法获取安全随机数")?;
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    Ok(format!(
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        bytes[0],
+        bytes[1],
+        bytes[2],
+        bytes[3],
+        bytes[4],
+        bytes[5],
+        bytes[6],
+        bytes[7],
+        bytes[8],
+        bytes[9],
+        bytes[10],
+        bytes[11],
+        bytes[12],
+        bytes[13],
+        bytes[14],
+        bytes[15]
+    ))
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -683,6 +771,36 @@ pub(super) fn question_bank_question_header(props: &QuestionBankQuestionHeaderPr
     }
 }
 
+pub(super) fn flashcard_header_action(
+    preview: &FavoritePreview,
+    create_test_id: &'static str,
+    manage_test_id: &'static str,
+    onclick: Callback<MouseEvent>,
+) -> Html {
+    let count = preview.existing.len();
+    if count == 0 && !favorite_can_create(preview) {
+        return Html::default();
+    }
+    let label = if count == 0 {
+        "为当前题目创建 Flashcard".to_owned()
+    } else {
+        format!("管理当前题目的 {count} 张 Flashcard")
+    };
+    html! {
+        <button type="button" class="btn btn-ghost btn-sm relative h-10 w-10 shrink-0 p-2"
+            data-testid={if count == 0 { create_test_id } else { manage_test_id }}
+            aria-label={label.clone()} title={label} {onclick}>
+            <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="5" y="3" width="15" height="15" rx="2" />
+                <path d="M3 7v12a2 2 0 0 0 2 2h12" />
+            </svg>
+            <span class="absolute right-0 top-0 rounded-full bg-primary px-1 text-[10px] leading-4 text-primary-content">
+                {if count == 0 { "+".to_owned() } else if count > 9 { "9+".to_owned() } else { count.to_string() }}
+            </span>
+        </button>
+    }
+}
+
 #[derive(Clone, PartialEq)]
 struct CollectionModule {
     name: String,
@@ -846,73 +964,42 @@ fn ai_composer(props: AiComposer<'_>) -> Html {
     }
 }
 
-#[derive(Properties, PartialEq)]
-struct AiReplyProps {
-    content: String,
+fn streaming_markdown_complete(text: &str) -> bool {
+    let fences = text
+        .lines()
+        .filter(|line| {
+            let line = line.trim_start();
+            line.starts_with("```") || line.starts_with("~~~")
+        })
+        .count();
+    let dollar_count = text.chars().filter(|ch| *ch == '$').count();
+    fences % 2 == 0
+        && dollar_count % 2 == 0
+        && (!text.contains("<svg") || text.contains("</svg>"))
+        && text.matches("\\(").count() == text.matches("\\)").count()
+        && text.matches("\\[").count() == text.matches("\\]").count()
 }
 
-#[function_component(AiReply)]
-fn ai_reply(props: &AiReplyProps) -> Html {
-    let showing_source = use_state(|| false);
-    let menu_open = use_state(|| false);
-    let notice = use_state(|| None::<String>);
-    let toggle = {
-        let showing_source = showing_source.clone();
-        let menu_open = menu_open.clone();
-        Callback::from(move |_| {
-            showing_source.set(!*showing_source);
-            menu_open.set(false);
-        })
-    };
-    let copy = {
-        let content = props.content.clone();
-        let menu_open = menu_open.clone();
-        let notice = notice.clone();
-        Callback::from(move |_| {
-            menu_open.set(false);
-            let Some(window) = web_sys::window() else {
-                notice.set(Some("复制失败：浏览器不可用".into()));
-                return;
-            };
-            let promise = window.navigator().clipboard().write_text(&content);
-            let notice = notice.clone();
-            spawn_local(async move {
-                let message = if wasm_bindgen_futures::JsFuture::from(promise).await.is_ok() {
-                    "源码已复制"
-                } else {
-                    "复制失败，请检查浏览器剪贴板权限"
-                };
-                notice.set(Some(message.into()));
-            });
-        })
-    };
-    html! {
-        <div>
-            if *showing_source {
-                <pre class="whitespace-pre-wrap break-words text-sm" data-testid="question-bank-ai-source">{props.content.clone()}</pre>
-            }
-            <div hidden={*showing_source} class="study-markdown text-base leading-7" data-ai-diagram-source="true">
-                {render_question_bank_markdown(&props.content)}
-            </div>
-            <div class="relative flex justify-end items-center gap-2">
-                if let Some(message) = notice.as_ref() {
-                    <span class="text-xs text-base-content/60" role="status">{message.clone()}</span>
-                }
-                <button type="button" class="btn btn-ghost btn-sm btn-circle" aria-label="回复操作"
-                    aria-expanded={menu_open.to_string()}
-                    onclick={Callback::from({ let menu_open = menu_open.clone(); move |_| menu_open.set(!*menu_open) })}>
-                    {"⋮"}
-                </button>
-                if *menu_open {
-                    <div class="absolute right-0 bottom-full z-10 min-w-32 rounded-box bg-base-100 p-1 shadow-lg border border-base-content/10">
-                        <button type="button" class="btn btn-ghost btn-sm w-full justify-start" onclick={toggle}>
-                            {if *showing_source { "查看解析" } else { "查看源码" }}
-                        </button>
-                        <button type="button" class="btn btn-ghost btn-sm w-full justify-start" onclick={copy}>{"复制源码"}</button>
-                    </div>
-                }
-            </div>
-        </div>
+fn ai_draft_key(question_id: &str, kind: &str) -> String {
+    format!("hyz.ai-review.draft.{question_id}.{kind}")
+}
+
+fn ai_draft_read(key: &str) -> String {
+    web_sys::window()
+        .and_then(|window| window.session_storage().ok().flatten())
+        .and_then(|storage| storage.get_item(key).ok().flatten())
+        .unwrap_or_default()
+}
+
+fn ai_draft_write(key: &str, value: &str) {
+    if let Some(storage) =
+        web_sys::window().and_then(|window| window.session_storage().ok().flatten())
+    {
+        if value.is_empty() {
+            let _ = storage.remove_item(key);
+        } else {
+            let _ = storage.set_item(key, value);
+        }
     }
 }
 
@@ -930,8 +1017,29 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     let diagram_root = use_node_ref();
     let failure = use_state(|| None::<String>);
     let submitting = use_state(|| false);
-    let follow_up = use_state(String::new);
-    let start_instruction = use_state(String::new);
+    let follow_key = ai_draft_key(&props.question_id, "follow-up");
+    let start_key = ai_draft_key(&props.question_id, "start");
+    let follow_up = use_state(|| ai_draft_read(&follow_key));
+    let start_instruction = use_state(|| ai_draft_read(&start_key));
+    let request_key = ai_draft_key(&props.question_id, "request-id");
+    let request_id = use_state(|| {
+        let value = ai_draft_read(&request_key);
+        if value.is_empty() { None } else { Some(value) }
+    });
+    let request_info = use_state(|| None::<AiRequestInfo>);
+    let request_check = use_state(|| 0u64);
+    let request_busy = use_mut_ref(|| false);
+    let request_error = use_state(|| None::<String>);
+    let retry_open = use_state(|| false);
+    let confirm_uncertain = use_state(|| false);
+    let confirm_new_thread = use_state(|| false);
+    let retry_expired = use_state(|| false);
+    let retry_images = use_state(Vec::<PendingImage>::new);
+    let retry_uploading = use_state(|| false);
+    let pending_message = use_state(|| None::<String>);
+    let messages_ref = use_node_ref();
+    let follow_bottom = use_mut_ref(|| true);
+    let new_content = use_state(|| false);
     let start_images = use_state(Vec::<PendingImage>::new);
     let follow_images = use_state(Vec::<PendingImage>::new);
     let uploading_start = use_state(|| false);
@@ -943,15 +1051,17 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let state = state.clone();
         let failure = failure.clone();
         let endpoint = endpoint.clone();
+        let revision = revision.clone();
         let key = props.question_id.clone();
         use_effect_with(key, move |_| {
             state.set(None);
             failure.set(None);
             let alive = std::rc::Rc::new(std::cell::Cell::new(true));
             let request_alive = alive.clone();
+            let request_revision = *revision.borrow();
             spawn_local(async move {
                 let response = fetch_json::<AiReviewState>(&endpoint, "AI 复盘记录").await;
-                if request_alive.get() {
+                if request_alive.get() && *revision.borrow() == request_revision {
                     match response {
                         Ok(value) => state.set(Some(value)),
                         Err(error) => failure.set(Some(error)),
@@ -961,43 +1071,59 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             move || alive.set(false)
         });
     }
+    let (stream, disconnected, reconnect_stream) = super::ai_review_stream::use_ai_review_stream(
+        props.question_id.clone(),
+        endpoint.clone(),
+        state.clone(),
+        revision.clone(),
+    );
     {
-        let state = state.clone();
-        let revision = revision.clone();
+        let request_info = request_info.clone();
+        let request_error = request_error.clone();
+        let endpoint = endpoint.clone();
         let key = (
-            props.question_id.clone(),
-            state
-                .as_ref()
-                .as_ref()
-                .is_some_and(|v| v.status == "running"),
+            (*request_id).clone(),
+            (*stream).as_ref().map(|value| value.status.clone()),
+            *request_check,
+            *submitting,
         );
-        use_effect_with(key, move |(question_id, running)| {
-            let timer = if *running {
-                let endpoint = format!("{ROOT}/practice/questions/{question_id}/ai");
-                Some(gloo_timers::callback::Interval::new(1500, move || {
-                    let state = state.clone();
-                    let endpoint = endpoint.clone();
-                    let revision = revision.clone();
-                    let request_revision = *revision.borrow();
-                    spawn_local(async move {
-                        if let Ok(value) =
-                            fetch_json::<AiReviewState>(&endpoint, "AI 复盘进度").await
-                        {
-                            if *revision.borrow() == request_revision {
-                                state.set(Some(value));
-                            }
+        use_effect_with(key, move |(id, _, _, busy)| {
+            let alive = Rc::new(Cell::new(true));
+            if let Some(id) = id.clone().filter(|_| !*busy) {
+                let alive = alive.clone();
+                let request_info = request_info.clone();
+                let request_error = request_error.clone();
+                spawn_local(async move {
+                    match fetch_json_typed::<AiRequestInfo>(
+                        &format!("{endpoint}/requests/{id}"),
+                        "AI 请求状态",
+                    )
+                    .await
+                    {
+                        Ok(info) if alive.get() => {
+                            request_error.set(None);
+                            request_info.set(Some(info));
                         }
-                    });
-                }))
-            } else {
-                None
-            };
-            move || drop(timer)
+                        Err(error) if alive.get() => {
+                            request_info.set(None);
+                            request_error.set(Some(format!(
+                                "请求结果尚未确认：{error}。可再次查询，不会自动重发。"
+                            )));
+                        }
+                        _ => (),
+                    }
+                });
+            }
+            move || alive.set(false)
         });
     }
     {
         let diagram_root = diagram_root.clone();
-        let key = (props.question_id.clone(), (*state).clone());
+        let key = (
+            props.question_id.clone(),
+            (*state).clone(),
+            (*stream).clone(),
+        );
         use_effect_with(key, move |_| {
             hydrate_math();
             if let Some(root) = diagram_root.cast::<HtmlElement>() {
@@ -1006,8 +1132,62 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             || ()
         });
     }
+    {
+        let messages_ref = messages_ref.clone();
+        let follow_bottom = follow_bottom.clone();
+        let new_content = new_content.clone();
+        let key = (
+            (*state).clone(),
+            (*pending_message).clone(),
+            (*stream).clone(),
+        );
+        use_effect_with(key, move |_| {
+            if let Some(element) = messages_ref.cast::<HtmlElement>() {
+                if *follow_bottom.borrow() {
+                    element.set_scroll_top(element.scroll_height());
+                    new_content.set(false);
+                } else {
+                    new_content.set(true);
+                }
+            }
+            || ()
+        });
+    }
+    let on_messages_scroll = {
+        let messages_ref = messages_ref.clone();
+        let follow_bottom = follow_bottom.clone();
+        let new_content = new_content.clone();
+        Callback::from(move |_: Event| {
+            if let Some(element) = messages_ref.cast::<HtmlElement>() {
+                let near_bottom =
+                    element.scroll_height() - element.client_height() - element.scroll_top() <= 48;
+                *follow_bottom.borrow_mut() = near_bottom;
+                if near_bottom {
+                    new_content.set(false);
+                }
+            }
+        })
+    };
+    let scroll_to_bottom = {
+        let messages_ref = messages_ref.clone();
+        let follow_bottom = follow_bottom.clone();
+        let new_content = new_content.clone();
+        Callback::from(move |_: MouseEvent| {
+            *follow_bottom.borrow_mut() = true;
+            if let Some(element) = messages_ref.cast::<HtmlElement>() {
+                element.set_scroll_top(element.scroll_height());
+            }
+            new_content.set(false);
+        })
+    };
     let start_review = {
         let state = state.clone();
+        let request_id = request_id.clone();
+        let request_busy = request_busy.clone();
+        let request_info = request_info.clone();
+        let request_error = request_error.clone();
+        let request_key = request_key.clone();
+        let reconnect_stream = reconnect_stream.clone();
         let revision = revision.clone();
         let failure = failure.clone();
         let submitting = submitting.clone();
@@ -1015,27 +1195,66 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let csrf = props.csrf.clone();
         let start_instruction = start_instruction.clone();
         let start_images = start_images.clone();
+        let uploading_start = uploading_start.clone();
+        let start_key = start_key.clone();
         Callback::from(move |_: ()| {
-            if *submitting {
+            if *submitting || *uploading_start {
                 return;
             }
+            if request_id.is_some()
+                && request_info.as_ref().as_ref().is_none_or(|info| {
+                    Some(&info.request_id) != (*request_id).as_ref()
+                        || info.remote_uncertain
+                        || matches!(info.status.as_str(), "unknown" | "running")
+                })
+            {
+                return;
+            }
+            if *request_busy.borrow() {
+                return;
+            }
+            let next_id = match new_ai_request_id() {
+                Ok(id) => id,
+                Err(error) => {
+                    failure.set(Some(error));
+                    return;
+                }
+            };
+            let previous_id = (*request_id).clone();
+            let previous_info = (*request_info).clone();
+            if let Err(error) = remember_ai_request(&request_key, &next_id) {
+                failure.set(Some(error));
+                return;
+            }
+            *request_busy.borrow_mut() = true;
+            let request_busy = request_busy.clone();
+            request_id.set(Some(next_id.clone()));
+            request_info.set(None);
+            request_error.set(None);
             submitting.set(true);
             failure.set(None);
             let state = state.clone();
+            let request_id = request_id.clone();
+            let request_info = request_info.clone();
+            let request_key = request_key.clone();
+            let reconnect_stream = reconnect_stream.clone();
             let revision = revision.clone();
             let failure = failure.clone();
             let submitting = submitting.clone();
             let endpoint = endpoint.clone();
             let csrf = csrf.clone();
-            let instruction = start_instruction.trim().to_owned();
+            let draft = (*start_instruction).clone();
+            let instruction = draft.trim().to_owned();
+            let start_key = start_key.clone();
             let start_instruction = start_instruction.clone();
             let start_images = start_images.clone();
             let attachments = start_images.iter().map(|image| image.id.clone()).collect();
             spawn_local(async move {
-                let result = post_json_response::<_, AiReviewState>(
+                let result = post_json_response_typed::<_, AiRequestReceipt>(
                     &endpoint,
                     &csrf,
                     &AiReviewStartRequest {
+                        request_id: next_id,
                         instruction,
                         attachments,
                     },
@@ -1045,12 +1264,28 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 *revision.borrow_mut() += 1;
                 match result {
                     Ok(result) => {
-                        state.set(Some(result));
-                        start_instruction.set(String::new());
+                        request_info.set(Some(result.request));
+                        state.set(Some(result.state));
+                        if ai_draft_read(&start_key) == draft {
+                            ai_draft_write(&start_key, "");
+                            start_instruction.set(String::new());
+                        }
                         start_images.set(Vec::new());
                     }
-                    Err(error) => failure.set(Some(error)),
+                    Err(error) => {
+                        if definite_ai_rejection(&error) {
+                            ai_draft_write(&request_key, previous_id.as_deref().unwrap_or(""));
+                            request_id.set(previous_id);
+                            request_info.set(previous_info);
+                            if error.is_code("question_bank_ai_attachment_expired") {
+                                start_images.set(Vec::new());
+                            }
+                        }
+                        failure.set(Some(error.to_string()));
+                    }
                 }
+                reconnect_stream.emit(());
+                *request_busy.borrow_mut() = false;
                 submitting.set(false);
             });
         })
@@ -1062,7 +1297,10 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     let on_start_key = {
         let start = start_review.clone();
         Callback::from(move |event: KeyboardEvent| {
-            if event.key() == "Enter" && (event.ctrl_key() || event.meta_key()) {
+            if !event.is_composing()
+                && event.key() == "Enter"
+                && (event.ctrl_key() || event.meta_key())
+            {
                 event.prevent_default();
                 start.emit(());
             }
@@ -1070,6 +1308,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     };
     let on_stop = {
         let state = state.clone();
+        let reconnect_stream = reconnect_stream.clone();
         let revision = revision.clone();
         let failure = failure.clone();
         let submitting = submitting.clone();
@@ -1081,6 +1320,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             }
             submitting.set(true);
             let state = state.clone();
+            let reconnect_stream = reconnect_stream.clone();
             let revision = revision.clone();
             let failure = failure.clone();
             let submitting = submitting.clone();
@@ -1099,30 +1339,96 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                     Ok(result) => state.set(Some(result)),
                     Err(error) => failure.set(Some(error)),
                 }
+                reconnect_stream.emit(());
                 submitting.set(false);
             });
         })
     };
     let send_follow_up = {
         let state = state.clone();
+        let request_id = request_id.clone();
+        let request_busy = request_busy.clone();
+        let request_info = request_info.clone();
+        let request_error = request_error.clone();
+        let request_key = request_key.clone();
+        let reconnect_stream = reconnect_stream.clone();
         let revision = revision.clone();
         let failure = failure.clone();
         let submitting = submitting.clone();
         let follow_up = follow_up.clone();
         let follow_images = follow_images.clone();
+        let uploading_follow = uploading_follow.clone();
+        let current_state = state.clone();
+        let stream = stream.clone();
+        let pending_message = pending_message.clone();
+        let follow_bottom = follow_bottom.clone();
+        let follow_key = follow_key.clone();
         let endpoint = format!("{endpoint}/messages");
         let csrf = props.csrf.clone();
         Callback::from(move |_: ()| {
-            if *submitting {
+            if *submitting
+                || *uploading_follow
+                || current_state
+                    .as_ref()
+                    .as_ref()
+                    .is_some_and(|value| value.status == "running")
+                || stream
+                    .as_ref()
+                    .as_ref()
+                    .is_some_and(|value| value.status == "running")
+            {
                 return;
             }
-            let message = follow_up.trim().to_owned();
-            if message.is_empty() || message.chars().count() > 2000 {
+            let draft = (*follow_up).clone();
+            let message = draft.trim().to_owned();
+            if (message.is_empty() && follow_images.is_empty()) || message.chars().count() > 2000 {
                 return;
             }
+            if request_id.is_some()
+                && request_info.as_ref().as_ref().is_none_or(|info| {
+                    Some(&info.request_id) != (*request_id).as_ref()
+                        || info.remote_uncertain
+                        || matches!(info.status.as_str(), "unknown" | "running")
+                })
+            {
+                return;
+            }
+            if *request_busy.borrow() {
+                return;
+            }
+            let next_id = match new_ai_request_id() {
+                Ok(id) => id,
+                Err(error) => {
+                    failure.set(Some(error));
+                    return;
+                }
+            };
+            let previous_id = (*request_id).clone();
+            let previous_info = (*request_info).clone();
+            if let Err(error) = remember_ai_request(&request_key, &next_id) {
+                failure.set(Some(error));
+                return;
+            }
+            *request_busy.borrow_mut() = true;
+            let request_busy = request_busy.clone();
+            request_id.set(Some(next_id.clone()));
+            request_info.set(None);
+            request_error.set(None);
             submitting.set(true);
             failure.set(None);
+            *follow_bottom.borrow_mut() = true;
+            pending_message.set(Some(if message.is_empty() {
+                "图片追问".into()
+            } else {
+                message.clone()
+            }));
+            let pending_message = pending_message.clone();
+            let follow_key = follow_key.clone();
             let state = state.clone();
+            let request_id = request_id.clone();
+            let request_info = request_info.clone();
+            let request_key = request_key.clone();
+            let reconnect_stream = reconnect_stream.clone();
             let revision = revision.clone();
             let failure = failure.clone();
             let submitting = submitting.clone();
@@ -1132,22 +1438,44 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             let csrf = csrf.clone();
             let attachments = follow_images.iter().map(|image| image.id.clone()).collect();
             spawn_local(async move {
-                let payload = AiReviewFollowUp {
+                let payload = AiReviewFollowUpRequest {
+                    request_id: next_id,
                     message,
                     attachments,
                 };
-                let result =
-                    post_json_response::<_, AiReviewState>(&endpoint, &csrf, &payload, "AI 追问")
-                        .await;
+                let result = post_json_response_typed::<_, AiRequestReceipt>(
+                    &endpoint,
+                    &csrf,
+                    &payload,
+                    "AI 追问",
+                )
+                .await;
                 *revision.borrow_mut() += 1;
                 match result {
                     Ok(result) => {
-                        state.set(Some(result));
-                        follow_up.set(String::new());
+                        request_info.set(Some(result.request));
+                        state.set(Some(result.state));
+                        if ai_draft_read(&follow_key) == draft {
+                            ai_draft_write(&follow_key, "");
+                            follow_up.set(String::new());
+                        }
                         follow_images.set(Vec::new());
                     }
-                    Err(error) => failure.set(Some(error)),
+                    Err(error) => {
+                        if definite_ai_rejection(&error) {
+                            ai_draft_write(&request_key, previous_id.as_deref().unwrap_or(""));
+                            request_id.set(previous_id);
+                            request_info.set(previous_info);
+                            if error.is_code("question_bank_ai_attachment_expired") {
+                                follow_images.set(Vec::new());
+                            }
+                        }
+                        failure.set(Some(format!("{error}。请先查询请求状态。")));
+                    }
                 }
+                pending_message.set(None);
+                reconnect_stream.emit(());
+                *request_busy.borrow_mut() = false;
                 submitting.set(false);
             });
         })
@@ -1159,7 +1487,10 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     let on_follow_up_key = {
         let send = send_follow_up.clone();
         Callback::from(move |event: KeyboardEvent| {
-            if event.key() == "Enter" && (event.ctrl_key() || event.meta_key()) {
+            if !event.is_composing()
+                && event.key() == "Enter"
+                && (event.ctrl_key() || event.meta_key())
+            {
                 event.prevent_default();
                 send.emit(());
             }
@@ -1167,6 +1498,10 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     };
     let on_delete = {
         let state = state.clone();
+        let request_id = request_id.clone();
+        let request_info = request_info.clone();
+        let request_key = request_key.clone();
+        let reconnect_stream = reconnect_stream.clone();
         let revision = revision.clone();
         let failure = failure.clone();
         let submitting = submitting.clone();
@@ -1180,6 +1515,10 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             submitting.set(true);
             failure.set(None);
             let state = state.clone();
+            let request_id = request_id.clone();
+            let request_info = request_info.clone();
+            let request_key = request_key.clone();
+            let reconnect_stream = reconnect_stream.clone();
             let revision = revision.clone();
             let failure = failure.clone();
             let submitting = submitting.clone();
@@ -1209,45 +1548,239 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 match result {
                     Ok(value) => {
                         state.set(Some(value));
+                        ai_draft_write(&request_key, "");
+                        request_id.set(None);
+                        request_info.set(None);
                         deleting.set(false);
                     }
                     Err(error) => failure.set(Some(error)),
                 }
+                reconnect_stream.emit(());
+                submitting.set(false);
+            });
+        })
+    };
+    let on_retry = {
+        let state = state.clone();
+        let request_id = request_id.clone();
+        let request_busy = request_busy.clone();
+        let request_info = request_info.clone();
+        let request_key = request_key.clone();
+        let request_error = request_error.clone();
+        let failure = failure.clone();
+        let submitting = submitting.clone();
+        let retry_open = retry_open.clone();
+        let retry_expired = retry_expired.clone();
+        let retry_images = retry_images.clone();
+        let retry_uploading = retry_uploading.clone();
+        let confirm_uncertain = confirm_uncertain.clone();
+        let confirm_new_thread = confirm_new_thread.clone();
+        let endpoint = endpoint.clone();
+        let csrf = props.csrf.clone();
+        let reconnect_stream = reconnect_stream.clone();
+        let revision = revision.clone();
+        Callback::from(move |_: MouseEvent| {
+            let Some(source) = (*request_info).clone() else {
+                return;
+            };
+            if *submitting
+                || *retry_uploading
+                || Some(&source.request_id) != (*request_id).as_ref()
+                || !matches!(source.status.as_str(), "failed" | "stopped" | "unknown")
+                || (source.remote_uncertain && !*confirm_uncertain)
+                || (source
+                    .error
+                    .as_deref()
+                    .is_some_and(|error| error.starts_with("无法恢复原 Codex Thread"))
+                    && !*confirm_new_thread)
+                || (*retry_expired && retry_images.is_empty())
+            {
+                return;
+            }
+            if *request_busy.borrow() {
+                return;
+            }
+            let next_id = match new_ai_request_id() {
+                Ok(id) => id,
+                Err(error) => {
+                    failure.set(Some(error));
+                    return;
+                }
+            };
+            let payload = AiRetryRequest {
+                request_id: next_id.clone(),
+                confirm_uncertain: *confirm_uncertain,
+                confirm_new_thread: *confirm_new_thread,
+                replacement_attachments: if *retry_expired {
+                    Some(retry_images.iter().map(|image| image.id.clone()).collect())
+                } else {
+                    None
+                },
+            };
+            if let Err(error) = remember_ai_request(&request_key, &next_id) {
+                failure.set(Some(error));
+                return;
+            }
+            *request_busy.borrow_mut() = true;
+            let request_busy = request_busy.clone();
+            request_id.set(Some(next_id));
+            request_info.set(None);
+            request_error.set(None);
+            failure.set(None);
+            submitting.set(true);
+            let state = state.clone();
+            let request_id = request_id.clone();
+            let request_info = request_info.clone();
+            let request_key = request_key.clone();
+            let failure = failure.clone();
+            let submitting = submitting.clone();
+            let retry_open = retry_open.clone();
+            let retry_expired = retry_expired.clone();
+            let retry_images = retry_images.clone();
+            let reconnect_stream = reconnect_stream.clone();
+            let revision = revision.clone();
+            let endpoint = format!("{endpoint}/requests/{}/retry", source.request_id);
+            let csrf = csrf.clone();
+            spawn_local(async move {
+                let result = post_json_response_typed::<_, AiRequestReceipt>(
+                    &endpoint,
+                    &csrf,
+                    &payload,
+                    "重试 AI 解析",
+                )
+                .await;
+                *revision.borrow_mut() += 1;
+                match result {
+                    Ok(receipt) => {
+                        request_info.set(Some(receipt.request));
+                        state.set(Some(receipt.state));
+                        retry_open.set(false);
+                        retry_expired.set(false);
+                        retry_images.set(Vec::new());
+                    }
+                    Err(error) => {
+                        if definite_ai_rejection(&error) {
+                            ai_draft_write(&request_key, &source.request_id);
+                            request_id.set(Some(source.request_id.clone()));
+                            request_info.set(Some(source));
+                            if error.is_code("question_bank_ai_attachment_expired") {
+                                retry_expired.set(true);
+                            }
+                        }
+                        failure.set(Some(error.to_string()));
+                    }
+                }
+                reconnect_stream.emit(());
+                *request_busy.borrow_mut() = false;
                 submitting.set(false);
             });
         })
     };
     let current: Option<AiReviewState> = (*state).clone();
-    let running = current
+    let running = stream
         .as_ref()
-        .is_some_and(|value| value.status == "running");
+        .as_ref()
+        .is_some_and(|value| value.status == "running")
+        || current
+            .as_ref()
+            .is_some_and(|value| value.status == "running")
+        || request_info
+            .as_ref()
+            .as_ref()
+            .is_some_and(|info| info.status == "running");
     let has_answer = current
         .as_ref()
         .is_some_and(|value| value.messages.iter().any(|msg| msg.role == "assistant"));
-    let can_start = current
+    let request_unresolved = request_id.is_some()
+        && request_info
+            .as_ref()
+            .as_ref()
+            .is_none_or(|info| Some(&info.request_id) != (*request_id).as_ref());
+    let request_uncertain = request_info
         .as_ref()
-        .is_some_and(|value| value.messages.is_empty() && value.status != "running");
-    let can_restart = current.as_ref().is_some_and(|value| {
-        !value.messages.is_empty() && matches!(value.status.as_str(), "failed" | "stopped")
-    });
+        .as_ref()
+        .is_some_and(|info| info.remote_uncertain || info.status == "unknown");
+    let can_start = !running
+        && current
+            .as_ref()
+            .is_some_and(|value| value.messages.is_empty() && value.status == "idle");
+    let can_retry = !running
+        && request_info.as_ref().as_ref().is_some_and(|info| {
+            Some(&info.request_id) == (*request_id).as_ref()
+                && matches!(info.status.as_str(), "failed" | "stopped" | "unknown")
+        });
     html! {
         <section class="space-y-3" data-testid="question-bank-ai-review" ref={diagram_root}>
             <div class="flex items-center justify-between gap-2">
                 <strong>{"AI 解析与追问"}</strong>
                 <span class="text-xs text-base-content/60" data-testid="question-bank-ai-status">
-                    {match current.as_ref().map(|v| v.status.as_str()) {
-                        Some("running") => "正在生成",
+                    {if running { "正在生成" } else { match stream.as_ref().as_ref().map(|v| v.status.as_str()).or_else(|| current.as_ref().map(|v| v.status.as_str())) {
                         Some("complete") => "已完成",
                         Some("stopped") => "已停止",
                         Some("failed") => "生成失败",
                         Some(_) => "未生成",
                         None => "正在加载",
-                    }}
+                    } }}
                 </span>
             </div>
+            if *disconnected {
+                <p class="text-xs text-warning" role="status" data-testid="question-bank-ai-disconnected">{"连接中断，正在重新连接…"}</p>
+            }
             if let Some(error) = failure.as_ref() {
                 <p class="text-sm text-error" role="alert">{error.clone()}</p>
             }
+            if request_id.is_some() && (request_unresolved || request_error.is_some()) {
+                <div class="space-y-2 rounded-xl border border-warning/40 p-3" role="status" data-testid="question-bank-ai-request-unknown">
+                    <p>{request_error.as_deref().unwrap_or("正在查询此前请求；结果确认前不会再次发送。")}</p>
+                    <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-ai-request-check"
+                        disabled={*submitting} onclick={Callback::from({let request_check=request_check.clone(); move |_| request_check.set(*request_check + 1)})}>{"查询请求状态"}</button>
+                </div>
+            }
+            if *disconnected && request_id.is_some() && !request_unresolved {
+                <button type="button" class="btn btn-ghost btn-sm" data-testid="question-bank-ai-request-refresh"
+                    disabled={*submitting} onclick={Callback::from({let request_check=request_check.clone(); move |_| request_check.set(*request_check + 1)})}>{"查询本次请求状态"}</button>
+            }
+            if can_retry {
+                if !*retry_open {
+                    <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-ai-restart"
+                        disabled={*submitting} onclick={Callback::from({let retry_open=retry_open.clone(); let confirm_uncertain=confirm_uncertain.clone(); let confirm_new_thread=confirm_new_thread.clone(); move |_| { confirm_uncertain.set(false); confirm_new_thread.set(false); retry_open.set(true); }})}>
+                        {if request_info.as_ref().as_ref().is_some_and(|info| info.intent == "follow_up") {"重试本次追问"} else {"重试首次解析"}}
+                    </button>
+                } else if let Some(info) = request_info.as_ref().as_ref() {
+                    <div class="space-y-2 rounded-xl border border-warning/40 p-3" data-testid="question-bank-ai-retry-confirmation">
+                        <p>{if info.intent == "follow_up" {"将使用原追问和原有上下文重试，不重复插入追问。"} else {"将使用原要求重试首次解析。"}}</p>
+                        if info.remote_uncertain {
+                            <label class="flex items-start gap-2 text-sm">
+                                <input type="checkbox" class="checkbox checkbox-sm" checked={*confirm_uncertain} data-testid="question-bank-ai-confirm-uncertain"
+                                    onchange={Callback::from({let confirm_uncertain=confirm_uncertain.clone(); move |event: Event| {let input: HtmlInputElement=event.target_unchecked_into(); confirm_uncertain.set(input.checked());}})}/>
+                                <span>{"远端执行结果不确定，可能重复消耗额度；我确认仍要重试。"}</span>
+                            </label>
+                        }
+                        if info.error.as_deref().is_some_and(|error| error.starts_with("无法恢复原 Codex Thread")) {
+                            <label class="flex items-start gap-2 text-sm">
+                                <input type="checkbox" class="checkbox checkbox-sm" checked={*confirm_new_thread} data-testid="question-bank-ai-confirm-new-thread"
+                                    onchange={Callback::from({let confirm_new_thread=confirm_new_thread.clone(); move |event: Event| {let input: HtmlInputElement=event.target_unchecked_into(); confirm_new_thread.set(input.checked());}})}/>
+                                <span>{"原对话上下文无法恢复；我确认创建新对话后重试。"}</span>
+                            </label>
+                        }
+                        if *retry_expired {
+                            <p class="text-sm text-warning" role="alert">{"原临时图片已失效，请重新上传与原请求相同数量的图片，然后确认重试。"}</p>
+                            <AiImagePicker endpoint={format!("{endpoint}/attachments")} csrf={props.csrf.clone()}
+                                attachments={retry_images.clone()} uploading={retry_uploading.clone()} disabled={*submitting}
+                                testid="question-bank-ai-retry-images">
+                                <span class="text-sm">{"重新上传原请求的图片"}</span>
+                            </AiImagePicker>
+                        }
+                        <button type="button" class="btn btn-primary btn-sm" data-testid="question-bank-ai-retry-confirm"
+                            disabled={*submitting || *retry_uploading || (info.remote_uncertain && !*confirm_uncertain)
+                                || (info.error.as_deref().is_some_and(|error| error.starts_with("无法恢复原 Codex Thread")) && !*confirm_new_thread)
+                                || (*retry_expired && retry_images.is_empty())} onclick={on_retry}>{"确认重试"}</button>
+                        <button type="button" class="btn btn-ghost btn-sm" disabled={*submitting}
+                            onclick={Callback::from({let retry_open=retry_open.clone(); move |_| retry_open.set(false)})}>{"取消"}</button>
+                    </div>
+                }
+            }
+            <div class="max-h-[40vh] min-h-0 space-y-3 overflow-y-auto overscroll-contain rounded-xl" ref={messages_ref} onscroll={on_messages_scroll} data-testid="question-bank-ai-messages" role="log" aria-label="AI 对话记录" aria-live="polite">
             if let Some(value) = current.as_ref() {
                 if let Some(error) = &value.error {
                     <p class="text-sm text-error" role="alert">{error.clone()}</p>
@@ -1264,10 +1797,49 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         if msg.role == "assistant" {
                             <AiReply content={msg.content.clone()}/>
                         } else {
-                            <div class="study-markdown text-base leading-7">{render_question_bank_markdown(&msg.content)}</div>
+                            <div class="study-markdown text-base leading-7">{super::study_markdown::render_question_bank_user_markdown(&msg.content)}</div>
                         }
                     </div>
                 })}
+            }
+            if let Some(active) = stream.as_ref().as_ref() {
+                if !active.progress.is_empty() {
+                    <details class="rounded-xl bg-base-200 p-3 text-sm" data-testid="question-bank-ai-progress">
+                        <summary>{"执行过程"}</summary>
+                        <ol class="mt-2 space-y-1">
+                            {for active.progress.iter().map(|event| {
+                                let text = match event.kind.as_str() {
+                                    "tool_started" => format!("{} · 开始", event.payload.get("tool").and_then(|v| v.as_str()).unwrap_or("工具")),
+                                    "tool_finished" => format!("{} · {}", event.payload.get("tool").and_then(|v| v.as_str()).unwrap_or("工具"), event.payload.get("status").and_then(|v| v.as_str()).unwrap_or("完成")),
+                                    "phase_changed" => format!("阶段：{}", event.payload.get("phase").and_then(|v| v.as_str()).unwrap_or("执行中")),
+                                    "reasoning_summary_delta" => event.payload.get("text").and_then(|v| v.as_str()).unwrap_or("").to_owned(),
+                                    _ => String::new(),
+                                };
+                                html! { <li>{text}</li> }
+                            })}
+                        </ol>
+                    </details>
+                }
+                if active.status == "running" && !active.text.is_empty() {
+                    <div class="rounded-xl bg-base-200 p-3" data-testid="question-bank-ai-stream-text">
+                        <div class="mb-2 text-xs font-semibold text-base-content/60">{"AI 正在回复"}</div>
+                        if streaming_markdown_complete(&active.text) {
+                            <div class="study-markdown text-base leading-7" data-ai-diagram-source="true">{render_question_bank_markdown(&active.text)}</div>
+                        } else {
+                            <div class="whitespace-pre-wrap break-words text-base leading-7">{active.text.clone()}</div>
+                        }
+                    </div>
+                }
+            }
+            if let Some(message) = pending_message.as_ref() {
+                <div class="rounded-xl bg-primary/10 p-3" data-testid="question-bank-ai-pending">
+                    <div class="mb-2 text-xs font-semibold text-base-content/60">{"你的追问 · 发送中"}</div>
+                    <div class="study-markdown text-base leading-7">{render_question_bank_markdown(message)}</div>
+                </div>
+            }
+            </div>
+            if *new_content {
+                <button type="button" class="btn btn-ghost btn-sm" data-testid="question-bank-ai-scroll-bottom" onclick={scroll_to_bottom}>{"有新内容 · 回到底部"}</button>
             }
             if current.as_ref().is_some_and(|value| !value.messages.is_empty() || value.status == "running") {
                 if *deleting {
@@ -1283,25 +1855,27 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         disabled={*submitting} onclick={Callback::from({let deleting=deleting.clone(); move |_|deleting.set(true)})}>{"删除 AI 解析"}</button>
                 }
             }
-            if can_start || can_restart {
+            if can_start {
                 <div class="space-y-1">
                     <label class="text-sm font-semibold" for="question-ai-instruction">{"可选要求"}</label>
                     {ai_composer(AiComposer {
                         id: "question-ai-instruction",
                         compose_testid: "question-bank-ai-requirements-compose",
                         input_testid: "question-bank-ai-instruction",
-                        button_testid: if can_start { "question-bank-ai-start" } else { "question-bank-ai-restart" },
+                        button_testid: "question-bank-ai-start",
                         value: start_instruction.as_str(),
                         placeholder: "例如：用线段图讲清数量关系；只讲速算，不要列方程。（Ctrl/⌘ + Enter 开始）",
-                        button_label: if can_start { "开始 AI 解析" } else { "重新分析" },
-                        disabled: *submitting || *uploading_start,
+                        button_label: "开始 AI 解析",
+                        disabled: *submitting || *uploading_start || request_unresolved || request_uncertain,
                         endpoint: format!("{endpoint}/attachments"), csrf: props.csrf.clone(),
                         attachments: start_images.clone(), uploading: uploading_start.clone(),
                         picker_disabled: *submitting, picker_testid: "question-bank-ai-start-images",
                         oninput: Callback::from({
                             let start_instruction=start_instruction.clone();
+                            let start_key=start_key.clone();
                             move |event: InputEvent| {
                                 let input: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
+                                ai_draft_write(&start_key, &input.value());
                                 start_instruction.set(input.value());
                             }
                         }),
@@ -1321,7 +1895,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         disabled={*submitting} onclick={on_stop}>{"停止生成"}</button>
                 </div>
             }
-            if has_answer && !running {
+            if has_answer || running {
                 <div class="space-y-2">
                     <label class="text-sm font-semibold" for="question-ai-follow-up">{"继续追问"}</label>
                     {ai_composer(AiComposer {
@@ -1332,14 +1906,16 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         value: follow_up.as_str(),
                         placeholder: "例如：为什么不能选 B？有没有更快的解法？（Ctrl/⌘ + Enter 发送）",
                         button_label: "发送追问",
-                        disabled: *submitting || *uploading_follow || follow_up.trim().is_empty(),
+                        disabled: *submitting || *uploading_follow || running || request_unresolved || request_uncertain || (follow_up.trim().is_empty() && follow_images.is_empty()),
                         endpoint: format!("{endpoint}/attachments"), csrf: props.csrf.clone(),
                         attachments: follow_images.clone(), uploading: uploading_follow.clone(),
                         picker_disabled: *submitting, picker_testid: "question-bank-ai-follow-up-images",
                         oninput: Callback::from({
                             let follow_up=follow_up.clone();
+                            let follow_key=follow_key.clone();
                             move |event: InputEvent| {
                                 let input: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
+                                ai_draft_write(&follow_key, &input.value());
                                 follow_up.set(input.value());
                             }
                         }),
@@ -2305,6 +2881,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         format!("第 {}/{} 题", item_index + 1, current.questions.len())
                     }}
                     leading={html!{
+                        <>
                         <button type="button" class="btn btn-ghost btn-sm shrink-0" data-testid="question-bank-favorite"
                             onclick={Callback::from(move |_| on_favorite.emit(Action::Favorite(qid.clone())))}
                             disabled={favorite_value.is_none() || *busy}
@@ -2312,6 +2889,13 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             aria-label={if favorite_pending {"正在加载收藏状态"} else if favorite_failure.is_some() {"收藏状态加载失败"} else if starred {"取消收藏"} else {"收藏题目"}}>
                             {if favorite_pending {"…"} else if starred {"★"} else {"☆"}}
                         </button>
+                        if completed && !item.content_changed {
+                            if let Some(preview) = &card_preview {
+                                {flashcard_header_action(preview, "question-bank-practice-create-flashcard", "question-bank-practice-manage-flashcard",
+                                    Callback::from({let flashcard_open=flashcard_open.clone(); move |_| flashcard_open.set(true)}))}
+                            }
+                        }
+                        </>
                     }}
                     passage={Some(question_scroll.clone())}
                     can_scroll_up={question_edges.can_scroll_up}
@@ -2419,19 +3003,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             </div>
                             if !item.content_changed {
                                 if let Some(preview) = &card_preview {
-                                    if favorite_can_create(preview) {
-                                        <button type="button" class="btn btn-primary btn-sm"
-                                            data-testid="question-bank-practice-create-flashcard"
-                                            onclick={Callback::from({let flashcard_open=flashcard_open.clone();move |_|flashcard_open.set(true)})}>
-                                            {"创建 Flashcard"}
-                                        </button>
-                                    } else if !preview.existing.is_empty() {
-                                        <button type="button" class="btn btn-outline btn-sm"
-                                            data-testid="question-bank-practice-manage-flashcard"
-                                            onclick={Callback::from({let flashcard_open=flashcard_open.clone();move |_|flashcard_open.set(true)})}>
-                                            {"修改或删除 Flashcard"}
-                                        </button>
-                                    } else {
+                                    if preview.existing.is_empty() && !favorite_can_create(preview) {
                                         <p class="text-xs opacity-60" role="status">
                                             {preview.reason.as_deref().unwrap_or("此题暂不支持创建闪卡")}
                                         </p>

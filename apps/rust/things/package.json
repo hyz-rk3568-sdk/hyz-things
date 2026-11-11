@@ -5,6 +5,8 @@
     "node": ">=20"
   },
   "scripts": {
+    "build:ts": "vite build --config frontend/ts/vite.config.ts",
+    "typecheck:ts": "tsc -p frontend/ts/tsconfig.json",
     "build:css": "tailwindcss -i ./frontend/app.css -o ./frontend/router.css --minify",
     "test:e2e": "npm run test:e2e:startup && playwright test",
     "test:e2e:startup": "python3 tools/test-e2e-startup.py",
@@ -18,6 +20,11 @@
     "@tailwindcss/cli": "4.3.3",
     "daisyui": "5.7.16",
     "katex": "0.16.22",
-    "tailwindcss": "4.3.3"
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vite": "6.4.1"
+  },
+  "dependencies": {
+    "@floating-ui/dom": "1.7.4"
   }
 }

@@ -31,6 +31,16 @@ async function openFixtureReview(page:Page) {
   await page.getByRole('button',{name:'确认交卷'}).click();
 }
 
+function aiRequestInfo(request_id:string,intent='follow_up',status='complete',error:string|null=null,remote_uncertain=false) {
+  return {request_id,run_id:'run-1',intent,status,error,remote_uncertain,new_thread_requested:false,user_message_id:null,retry_of:null};
+}
+async function mockAiRequestStatus(page:import('@playwright/test').Page) {
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/requests/*',async route=>{
+    const request_id=new URL(route.request().url()).pathname.split('/').at(-1)!;
+    await route.fulfill({json:aiRequestInfo(request_id)});
+  });
+}
+
 test('answer sheet keeps its scroll position when reopened',async({page})=>{
   await loginAsAdmin(page);
   await page.goto('/#/study/training');
@@ -231,7 +241,14 @@ test('saved collections are classified by module and category before practicing'
   const collectionCounts=page.getByTestId('collection-review-attempt-counts');
   await expect(collectionCounts).toContainText('本题累计');
   await expect(collectionCounts).toHaveAttribute('data-wrong',/^[1-9]\d*$/);
-  await expect(page.getByTestId('collection-review-create-flashcard')).toBeVisible();
+  const collectionCreate=page.getByTestId('collection-review-create-flashcard');
+  await expect(collectionCreate).toBeVisible();
+  await expect(collectionCreate).toHaveAttribute('aria-label','为当前题目创建 Flashcard');
+  await expect(collectionCreate).toContainText('+');
+  await expect(page.locator('.question-bank-pane-header').getByTestId('collection-review-create-flashcard')).toBeVisible();
+  await collectionCreate.click();
+  await expect(page.getByTestId('favorite-flashcard-card')).toBeVisible();
+  await page.getByRole('button',{name:'返回复盘'}).click();
   await page.getByTestId('collection-review-back').click();
   await expect(page.getByTestId('question-bank-collection-item')).toBeVisible();
   await page.getByTestId('question-bank-practice-start').click();
@@ -854,15 +871,23 @@ test('AI review keeps running across navigation and restores follow-ups', async 
   type State = {question_id: string; status: string; error: null; messages: Msg[]};
   const records = new Map<string,State>();
   const actions: string[] = [];
+  const requests=new Map<string,{question_id:string,intent:string}>();
   await page.route('**/api/v1/question-bank/practice/questions/*/ai**',async route => {
     const path = new URL(route.request().url()).pathname;
     const parts = path.split('/');
     const offset = parts.indexOf('questions');
     const question_id = parts[offset+1];
-    const suffix = path.endsWith('/messages') ? '/messages' : path.endsWith('/stop') ? '/stop' : '';
+    const suffix = path.endsWith('/messages') ? '/messages' : path.endsWith('/stop') ? '/stop' : path.endsWith('/retry') ? '/retry' : '';
+    const requestOffset=parts.indexOf('requests');
     const key = question_id;
     const record = records.get(key) ?? {question_id,status:'idle',error:null,messages:[]};
     records.set(key,record);
+    if(requestOffset>=0 && route.request().method()==='GET') {
+      const request_id=parts[requestOffset+1];
+      const saved=requests.get(request_id)!;
+      await route.fulfill({json:aiRequestInfo(request_id,saved.intent,record.status)});
+      return;
+    }
     if(route.request().method()==='POST'){
       actions.push(suffix || 'start');
       if(suffix==='/stop') record.status='stopped';
@@ -871,6 +896,13 @@ test('AI review keeps running across navigation and restores follow-ups', async 
         record.messages.push({role:'user',content:body.message,created_at:1});
         record.status='running';
       } else record.status='running';
+      if(suffix!=='/stop') {
+        const request_id=route.request().postDataJSON().request_id as string;
+        const intent=suffix==='/messages' || suffix==='/retry' ? 'follow_up' : 'initial';
+        requests.set(request_id,{question_id,intent});
+        await route.fulfill({json:{...record,request:aiRequestInfo(request_id,intent,record.status)}});
+        return;
+      }
     }
     await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(record)});
   });
@@ -939,8 +971,9 @@ test('AI review keeps running across navigation and restores follow-ups', async 
   await expect(page.getByTestId('question-bank-ai-message')).toHaveCount(2);
   await expect(page.getByTestId('question-bank-ai-restart')).toBeVisible();
   await page.getByTestId('question-bank-ai-restart').click();
+  await page.getByTestId('question-bank-ai-retry-confirm').click();
   await expect(page.getByTestId('question-bank-ai-status')).toHaveText('正在生成');
-  expect(actions).toEqual(['start','/messages','/stop','start']);
+  expect(actions).toEqual(['start','/messages','/stop','/retry']);
 });
 
 
@@ -955,6 +988,9 @@ test('any original-paper review can create a category flashcard without first fa
   await page.getByRole('button',{name:'确认交卷'}).click();
   const create=page.getByTestId('question-bank-practice-create-flashcard');
   await expect(create).toBeVisible();
+  await expect(create).toHaveAttribute('aria-label','为当前题目创建 Flashcard');
+  await expect(create).toContainText('+');
+  await expect(page.locator('.question-bank-pane-header').getByTestId('question-bank-practice-create-flashcard')).toBeVisible();
   await create.click();
   const dialog=page.getByTestId('question-bank-practice-flashcard-dialog');
   await expect(dialog).toBeVisible();
@@ -975,6 +1011,8 @@ test('any original-paper review can create a category flashcard without first fa
   await expect(dialog).toHaveCount(0);
   await expect(page.getByTestId('question-bank-practice-create-flashcard')).toHaveCount(0);
   await expect(page.getByTestId('question-bank-practice-manage-flashcard')).toBeVisible();
+  await expect(page.getByTestId('question-bank-practice-manage-flashcard')).toHaveAttribute('aria-label','管理当前题目的 1 张 Flashcard');
+  await expect(page.getByTestId('question-bank-practice-manage-flashcard')).toContainText('1');
   await page.getByTestId('question-bank-practice-manage-flashcard').click();
   const editor=page.getByTestId('favorite-flashcard-editor');
   await expect(editor.getByTestId('favorite-flashcard-path')).toContainText('真题练习/资料分析/比重/错题/cards.md');
@@ -1174,6 +1212,7 @@ test('AI SVG diagrams reject unsafe or oversized markup and preserve its source'
 });
 
 test('an existing AI review can draw a diagram in response to a follow-up',async({page})=>{
+  await mockAiRequestStatus(page);
   const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 90"><line x1="20" y1="45" x2="220" y2="45" stroke="#333"/><text x="40" y="70">线段图</text></svg>';
   const messages=[{role:'assistant',content:'已有文字解析',created_at:1}];
   let received='';
@@ -1187,7 +1226,7 @@ test('an existing AI review can draw a diagram in response to a follow-up',async
     received=route.request().postDataJSON().message;
     messages.push({role:'user',content:received,created_at:2},
       {role:'assistant',content:'线段图如下：\n\n```svg\n'+svg+'\n```',created_at:3});
-    await route.fulfill({status:202,json:state(question_id)});
+    await route.fulfill({status:202,json:{...state(question_id),request:aiRequestInfo(route.request().postDataJSON().request_id)}});
   });
   await openFixtureReview(page);
   await expect(page.getByTestId('question-bank-ai-message')).toContainText('已有文字解析');
@@ -1198,7 +1237,53 @@ test('an existing AI review can draw a diagram in response to a follow-up',async
   expect(received).toBe('请画一张线段图');
 });
 
+test('keeps question drafts and shows pending follow-up without blocking the editor',async({page})=>{
+  let running=false;
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/requests/*',async route=>{
+    const id=new URL(route.request().url()).pathname.split('/').at(-1)!;
+    await route.fulfill({json:aiRequestInfo(id,'follow_up',running?'running':'complete')});
+  });
+  const messages=[{role:'assistant',content:'已有文字解析',created_at:1}];
+  let release!:()=>void;
+  const gate=new Promise<void>(resolve=>{release=resolve});
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:running?'running':'complete',error:null,messages}});
+  });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/messages',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-3)!;
+    const message=route.request().postDataJSON().message;
+    await gate;
+    running=true;
+    messages.push({role:'user',content:message,created_at:2});
+    await route.fulfill({json:{question_id,status:'running',error:null,messages,request:aiRequestInfo(route.request().postDataJSON().request_id,'follow_up','running')}});
+  });
+  await openFixtureReview(page);
+  const input=page.getByTestId('question-bank-ai-input');
+  await input.fill('第一题的草稿');
+  await page.getByTestId('question-bank-original-tab').click();
+  await page.getByTestId('question-bank-ai-tab').click();
+  await expect(input).toHaveValue('第一题的草稿');
+  await openSheet(page);
+  await page.getByTestId('question-bank-practice-number').nth(1).click();
+  await page.getByTestId('question-bank-ai-tab').click();
+  await expect(input).toHaveValue('');
+  await input.fill('第二题的草稿');
+  await openSheet(page);
+  await page.getByTestId('question-bank-practice-number').first().click();
+  await expect(input).toHaveValue('第一题的草稿');
+  await page.getByTestId('question-bank-ai-send').click();
+  await expect(page.getByTestId('question-bank-ai-pending')).toContainText('第一题的草稿');
+  await expect(page.getByTestId('question-bank-ai-send')).toBeDisabled();
+  await input.fill('下一条草稿');
+  release();
+  await expect(page.getByTestId('question-bank-ai-pending')).toHaveCount(0);
+  await expect(input).toHaveValue('下一条草稿');
+  await expect(page.getByTestId('question-bank-ai-send')).toBeDisabled();
+});
+
 test('sends an AI follow-up with Ctrl+Enter but not plain Enter',async({page})=>{
+  await mockAiRequestStatus(page);
   const messages=[{role:'assistant',content:'已有文字解析',created_at:1}];
   const received:string[]=[];
   const state=(question_id:string)=>({question_id,status:'complete',error:null,messages});
@@ -1211,7 +1296,7 @@ test('sends an AI follow-up with Ctrl+Enter but not plain Enter',async({page})=>
     const message=route.request().postDataJSON().message;
     received.push(message);
     messages.push({role:'user',content:message,created_at:2});
-    await route.fulfill({status:202,json:state(question_id)});
+    await route.fulfill({status:202,json:{...state(question_id),request:aiRequestInfo(route.request().postDataJSON().request_id)}});
   });
   await openFixtureReview(page);
   const input=page.getByTestId('question-bank-ai-input');
@@ -1228,13 +1313,14 @@ test('sends an AI follow-up with Ctrl+Enter but not plain Enter',async({page})=>
 
 for (const viewport of [{width:1280,height:720},{width:390,height:844}]) {
 test(`starts an AI review with the optional requirements text at ${viewport.width}px`,async({page})=>{
+  await mockAiRequestStatus(page);
   await page.setViewportSize(viewport);
   let startBody:unknown=null;
   await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
     const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
     if(route.request().method()==='POST') {
       startBody=route.request().postDataJSON();
-      await route.fulfill({status:202,json:{question_id,status:'running',error:null,messages:[]}});
+      await route.fulfill({status:202,json:{question_id,status:'running',error:null,messages:[],request:aiRequestInfo(route.request().postDataJSON().request_id,'initial','running')}});
     } else {
       await route.fulfill({json:{question_id,status:'idle',error:null,messages:[]}});
     }
@@ -1245,19 +1331,20 @@ test(`starts an AI review with the optional requirements text at ${viewport.widt
   await expect(box).toBeVisible();
   await box.fill('用线段图讲解，只讲速算');
   await page.getByTestId('question-bank-ai-start').click();
-  await expect.poll(()=>startBody).toEqual({instruction:'用线段图讲解，只讲速算'});
+  await expect.poll(()=>startBody).toEqual(expect.objectContaining({instruction:'用线段图讲解，只讲速算',request_id:expect.stringMatching(/^[0-9a-f-]{36}$/)}));
   await expect(page.getByTestId('question-bank-ai-status')).toContainText('正在生成');
   await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth)).toBeLessThanOrEqual(0);
 });
 }
 
 test('starts an AI review with Ctrl+Enter but not plain Enter',async({page})=>{
+  await mockAiRequestStatus(page);
   const starts:unknown[]=[];
   await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
     const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
     if(route.request().method()==='POST') {
       starts.push(route.request().postDataJSON());
-      await route.fulfill({status:202,json:{question_id,status:'running',error:null,messages:[]}});
+      await route.fulfill({status:202,json:{question_id,status:'running',error:null,messages:[],request:aiRequestInfo(route.request().postDataJSON().request_id,'initial','running')}});
     } else {
       await route.fulfill({json:{question_id,status:'idle',error:null,messages:[]}});
     }
@@ -1269,6 +1356,214 @@ test('starts an AI review with Ctrl+Enter but not plain Enter',async({page})=>{
   await box.press('Enter');
   await expect.poll(()=>starts.length).toBe(0);
   await box.press('Control+Enter');
-  await expect.poll(()=>starts).toEqual([{instruction:'用线段图讲解'}]);
+  await expect.poll(()=>starts).toEqual([expect.objectContaining({instruction:'用线段图讲解',request_id:expect.stringMatching(/^[0-9a-f-]{36}$/)})]);
   await expect(page.getByTestId('question-bank-ai-status')).toContainText('正在生成');
+});
+
+test('AI SSE replaces snapshots, ignores duplicates, reconnects on gaps and refreshes terminal history',async({page})=>{
+  await page.addInitScript(()=>{
+    const streams: any[]=[];
+    (window as any).__aiStreams=streams;
+    class FakeEventSource extends EventTarget {
+      onmessage: ((event: MessageEvent)=>void) | null=null;
+      onerror: ((event: Event)=>void) | null=null;
+      closed=false;
+      constructor(public url:string) { super(); streams.push(this); }
+      close() { this.closed=true; }
+      emit(type:string,data:unknown) {
+        if (this.closed) return;
+        const event=new MessageEvent(type,{data:JSON.stringify(data)});
+        if (type==='message') this.onmessage?.(event);
+        else this.dispatchEvent(event);
+      }
+    }
+    (window as any).EventSource=FakeEventSource;
+  });
+  let final=false;
+  let reads=0;
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    reads++;
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:final?'complete':'running',error:null,messages:final?
+      [{id:1,role:'assistant',content:'持久化最终答案',created_at:1}]:[]}});
+  });
+  await openFixtureReview(page);
+  await page.getByTestId('question-bank-ai-tab').click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).__aiStreams.length)).toBeGreaterThan(0);
+  const emit=async(type:string, data:Record<string,unknown>)=>page.evaluate(({type,data})=>{
+    const streams=(window as any).__aiStreams;
+    streams[streams.length-1].emit(type,data);
+  },{type,data});
+  const question_id=await page.evaluate(()=>{
+    const streams=(window as any).__aiStreams;
+    return new URL(streams[streams.length-1].url,location.origin).pathname.split('/').at(-3);
+  });
+  await emit('snapshot',{version:1,question_id,stem_fingerprint:'fingerprint',run_id:'run-1',seq:1,status:'running',text:'第一段',progress:[]});
+  await expect(page.getByTestId('question-bank-ai-stream-text')).toContainText('第一段');
+  const event=(seq:number,kind:string,payload:Record<string,unknown>)=>({version:1,run_id:'run-1',seq,kind,timestamp_ms:1,payload});
+  await emit('message',event(2,'tool_started',{item_id:'tool-1',tool:'读取资料'}));
+  await emit('message',event(3,'text_delta',{text:' **重点**'}));
+  await emit('message',event(3,'text_delta',{text:'重复'}));
+  await expect(page.getByTestId('question-bank-ai-stream-text')).toContainText('重点');
+  await expect(page.getByTestId('question-bank-ai-stream-text')).not.toContainText('重复');
+  await page.getByTestId('question-bank-ai-progress').locator('summary').click();
+  await expect(page.getByTestId('question-bank-ai-progress')).toContainText('读取资料');
+  await emit('message',event(4,'tool_finished',{item_id:'tool-1',tool:'读取资料',status:'completed'}));
+  await expect(page.getByTestId('question-bank-ai-progress')).toContainText('completed');
+  await emit('message',event(6,'text_delta',{text:'缺口'}));
+  await expect.poll(()=>page.evaluate(()=>(window as any).__aiStreams.length)).toBeGreaterThan(1);
+  await emit('snapshot',{version:1,question_id,stem_fingerprint:'fingerprint',run_id:'run-1',seq:6,status:'running',text:'快照恢复',progress:[]});
+  await expect(page.getByTestId('question-bank-ai-stream-text')).toContainText('快照恢复');
+  const before=reads;
+  final=true;
+  await emit('message',event(7,'run_finished',{}));
+  await expect.poll(()=>reads).toBeGreaterThan(before);
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('持久化最终答案');
+  await expect(page.getByTestId('question-bank-ai-stream-text')).toHaveCount(0);
+});
+
+test('AI follow-up accepts an image without text',async({page})=>{
+  await mockAiRequestStatus(page);
+  let sent:unknown=null;
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:'complete',error:null,messages:[{id:1,role:'assistant',content:'已有解析',created_at:1}]}});
+  });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/attachments',route=>route.fulfill({json:{id:'image-1'}}));
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/messages',async route=>{
+    sent=route.request().postDataJSON();
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-3)!;
+    await route.fulfill({json:{question_id,status:'running',error:null,messages:[],request:aiRequestInfo(route.request().postDataJSON().request_id,'follow_up','running')}});
+  });
+  await openFixtureReview(page);
+  const picker=page.getByTestId('question-bank-ai-follow-up-images');
+  await picker.locator('input[type=file]').setInputFiles({name:'example.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71])});
+  await expect(picker).toContainText('example.png');
+  await page.getByTestId('question-bank-ai-send').click();
+  await expect.poll(()=>sent).toEqual(expect.objectContaining({message:'',attachments:['image-1'],request_id:expect.stringMatching(/^[0-9a-f-]{36}$/)}));
+});
+
+test('AI unknown send keeps the same request ID for status lookup across tab changes',async({page})=>{
+  let sentId='';
+  let allowLookup=false;
+  const lookups:string[]=[];
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:'complete',error:null,messages:[{id:1,role:'assistant',content:'已有解析',created_at:1}]}});
+  });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/events',route=>route.fulfill({status:503}));
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/messages',async route=>{
+    sentId=route.request().postDataJSON().request_id;
+    await route.abort('connectionreset');
+  });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/requests/*',async route=>{
+    const id=new URL(route.request().url()).pathname.split('/').at(-1)!;
+    lookups.push(id);
+    if (!allowLookup) await route.fulfill({status:404,json:{error:{code:'question_bank_ai_request_not_found',message:'请求不存在'}}});
+    else await route.fulfill({json:aiRequestInfo(id,'follow_up','running')});
+  });
+  await openFixtureReview(page);
+  await page.getByTestId('question-bank-ai-input').fill('保留这次追问');
+  await page.getByTestId('question-bank-ai-send').click();
+  await expect(page.getByTestId('question-bank-ai-request-unknown')).toContainText('尚未确认');
+  expect(sentId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  await expect(page.getByTestId('question-bank-ai-send')).toBeDisabled();
+  await page.getByTestId('question-bank-original-tab').click();
+  await page.getByTestId('question-bank-ai-tab').click();
+  await expect(page.getByTestId('question-bank-ai-request-unknown')).toBeVisible();
+  allowLookup=true;
+  await page.getByTestId('question-bank-ai-request-check').click();
+  await expect(page.getByTestId('question-bank-ai-request-unknown')).toHaveCount(0);
+  expect(lookups.length).toBeGreaterThan(1);
+  expect(lookups.every(id=>id===sentId)).toBe(true);
+});
+
+test('AI retry requires uncertainty and new-thread confirmation and replaces expired images',async({page})=>{
+  let sourceId='';
+  let failed=false;
+  const retries:Array<{source:string; body:any}>=[];
+  const info=(id:string)=>aiRequestInfo(id,'follow_up','failed','无法恢复原 Codex Thread，原有上下文不可用',true);
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:failed?'failed':'complete',error:null,messages:[{id:1,role:'assistant',content:'已有解析',created_at:1}]}});
+  });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/events',route=>route.fulfill({status:503}));
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/messages',async route=>{
+    sourceId=route.request().postDataJSON().request_id;
+    failed=true;
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-3)!;
+    await route.fulfill({json:{question_id,status:'failed',error:null,messages:[{id:1,role:'assistant',content:'已有解析',created_at:1}],request:info(sourceId)}});
+  });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/requests/*',async route=>{
+    const id=new URL(route.request().url()).pathname.split('/').at(-1)!;
+    await route.fulfill({json:info(id)});
+  });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/requests/*/retry',async route=>{
+    const parts=new URL(route.request().url()).pathname.split('/');
+    const body=route.request().postDataJSON();
+    retries.push({source:parts.at(-2)!,body});
+    if (retries.length===1) {
+      await route.fulfill({status:400,json:{error:{code:'question_bank_ai_attachment_expired',message:'临时图片已失效'}}});
+    } else {
+      const question_id=parts[parts.indexOf('questions')+1];
+      await route.fulfill({json:{question_id,status:'running',error:null,messages:[],request:aiRequestInfo(body.request_id,'follow_up','running')}});
+    }
+  });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/attachments',route=>route.fulfill({json:{id:'replacement'}}));
+  await openFixtureReview(page);
+  await page.getByTestId('question-bank-ai-input').fill('继续分析');
+  await page.getByTestId('question-bank-ai-send').click();
+  await page.getByTestId('question-bank-ai-restart').click();
+  const confirm=page.getByTestId('question-bank-ai-retry-confirm');
+  await expect(confirm).toBeDisabled();
+  await page.getByTestId('question-bank-ai-confirm-uncertain').check();
+  await expect(confirm).toBeDisabled();
+  await page.getByTestId('question-bank-ai-confirm-new-thread').check();
+  await confirm.click();
+  await expect(page.getByTestId('question-bank-ai-retry-images')).toBeVisible();
+  await page.getByTestId('question-bank-ai-retry-images').locator('input[type=file]').setInputFiles({name:'replacement.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71])});
+  await expect(page.getByTestId('question-bank-ai-retry-images')).toContainText('replacement.png');
+  await confirm.click();
+  await expect.poll(()=>retries.length).toBe(2);
+  expect(retries.map(value=>value.source)).toEqual([sourceId,sourceId]);
+  expect(retries[0].body).toEqual(expect.objectContaining({confirm_uncertain:true,confirm_new_thread:true}));
+  expect(retries[1].body.replacement_attachments).toEqual(['replacement']);
+  expect(retries[1].body.request_id).not.toBe(sourceId);
+  expect(retries[1].body.request_id).not.toBe(retries[0].body.request_id);
+});
+
+test('AI retries the failed initial intent through the request retry endpoint',async({page})=>{
+  let sourceId='';
+  let retryBody:any;
+  let failed=false;
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    if (route.request().method()==='POST') {
+      sourceId=route.request().postDataJSON().request_id;
+      failed=true;
+      await route.fulfill({json:{question_id,status:'failed',error:'失败',messages:[],request:aiRequestInfo(sourceId,'initial','failed')}});
+    } else await route.fulfill({json:{question_id,status:failed?'failed':'idle',error:failed?'失败':null,messages:[]}});
+  });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/events',route=>route.fulfill({status:503}));
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/requests/*',async route=>{
+    const id=new URL(route.request().url()).pathname.split('/').at(-1)!;
+    await route.fulfill({json:aiRequestInfo(id,'initial','failed')});
+  });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/requests/*/retry',async route=>{
+    const parts=new URL(route.request().url()).pathname.split('/');
+    expect(parts.at(-2)).toBe(sourceId);
+    retryBody=route.request().postDataJSON();
+    const question_id=parts[parts.indexOf('questions')+1];
+    await route.fulfill({json:{question_id,status:'running',error:null,messages:[],request:aiRequestInfo(retryBody.request_id,'initial','running')}});
+  });
+  await openFixtureReview(page);
+  await page.getByTestId('question-bank-ai-tab').click();
+  await page.getByTestId('question-bank-ai-instruction').fill('原要求');
+  await page.getByTestId('question-bank-ai-start').click();
+  await expect(page.getByTestId('question-bank-ai-restart')).toHaveText('重试首次解析');
+  await page.getByTestId('question-bank-ai-restart').click();
+  await page.getByTestId('question-bank-ai-retry-confirm').click();
+  await expect.poll(()=>retryBody).not.toBeUndefined();
+  expect(retryBody.request_id).not.toBe(sourceId);
+  expect(retryBody).toEqual(expect.objectContaining({confirm_uncertain:false,confirm_new_thread:false}));
 });
