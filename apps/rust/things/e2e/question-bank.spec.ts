@@ -77,6 +77,11 @@ test('paper practice hides numbering and scroll tools until they are needed',asy
   await page.getByTestId('question-bank-practice-start').click();
   await expect(page.getByTestId('question-bank-practice-workspace')).toBeVisible();
   await expect(page.getByTestId('question-bank-practice-heading')).toContainText('第 1/3 题');
+  const emptyMenu=page.getByTestId('question-bank-practice-question-pane').getByRole('button',{name:'更多解析操作'});
+  await expect(emptyMenu).toBeVisible();
+  await emptyMenu.click();
+  await expect(page.getByText('暂无可用操作')).toBeVisible();
+  await emptyMenu.click();
   await expect(page.getByTestId('question-bank-practice-heading')).not.toContainText('原卷第');
   await expect(page.getByTestId('question-bank-practice-stem')).toContainText('材料中的正确选项');
   await expect(page.getByTestId('question-bank-practice-stem')).toHaveCSS('font-size','16px');
@@ -187,7 +192,8 @@ test('paper practice hides numbering and scroll tools until they are needed',asy
   await page.getByTestId('training-answer-sheet-toggle').click();
   const star=await page.getByTestId('question-bank-favorite').boundingBox();
   const title=await page.getByTestId('question-bank-practice-heading').boundingBox();
-  expect(star!.x).toBeLessThan(title!.x);
+  expect(star!.x).toBeGreaterThanOrEqual(title!.x + title!.width);
+  expect((await page.getByTestId('calculation-scratchpad-toggle').boundingBox())!.x).toBeGreaterThan(star!.x);
   await page.getByTestId('question-bank-favorite').click();
   await expect(page.getByTestId('question-bank-favorite')).toHaveAttribute('aria-label','取消收藏');
   // Restore the fixture state so the following test starts with an empty favorite set.
@@ -964,7 +970,11 @@ test('AI review keeps running across navigation and restores follow-ups', async 
   await page.getByTestId('question-bank-ai-send').click();
   await expect(page.getByTestId('question-bank-ai-status')).toHaveText('正在生成');
   await expect(page.getByTestId('question-bank-ai-message').last()).toContainText('为什么不选 A？');
-  await page.getByTestId('question-bank-ai-stop').click();
+  const stop=page.getByTestId('question-bank-ai-compose').getByRole('button',{name:'停止生成'});
+  await expect(stop).toBeVisible();
+  await expect(stop.locator('svg rect')).toHaveCount(1);
+  await expect(page.getByText('后台生成中，切换题目或退出复盘不会中断。')).toHaveCount(0);
+  await stop.click();
   await expect(page.getByTestId('question-bank-ai-status')).toHaveText('已停止');
   expect(actions).toEqual(['start','/messages','/stop']);
   await page.getByTestId('question-bank-original-tab').click();
@@ -1327,13 +1337,27 @@ test(`starts an AI review with the optional requirements text at ${viewport.widt
     }
   });
   await openFixtureReview(page);
+  const pane=page.getByTestId('question-bank-practice-question-pane');
+  const menu=pane.getByRole('button',{name:'更多解析操作'});
+  await expect(menu).toBeVisible();
+  await menu.click();
+  await expect(pane.getByText('暂无可用操作')).toBeVisible();
   await page.getByTestId('question-bank-ai-tab').click();
+  await expect(menu).toBeVisible();
+  await menu.click();
+  await expect(pane.getByText('暂无可用操作')).toBeVisible();
   const box=page.getByTestId('question-bank-ai-instruction');
   await expect(box).toBeVisible();
+  await expect(pane.getByText('这些要求会随本次解析一起发给 Codex。')).toHaveCount(0);
+  const paneBox=await pane.boundingBox();
+  const composerBox=await pane.getByTestId('question-bank-ai-requirements-compose').boundingBox();
+  expect(paneBox!.width-composerBox!.width).toBeLessThanOrEqual(20);
   await box.fill('用线段图讲解，只讲速算');
   await page.getByTestId('question-bank-ai-start').click();
   await expect.poll(()=>startBody).toEqual(expect.objectContaining({instruction:'用线段图讲解，只讲速算',request_id:expect.stringMatching(/^[0-9a-f-]{36}$/)}));
   await expect(page.getByTestId('question-bank-ai-status')).toContainText('正在生成');
+  await expect(page.getByTestId('question-bank-ai-compose').getByRole('button',{name:'停止生成'})).toBeVisible();
+  await expect(page.getByTestId('question-bank-ai-send')).toHaveCount(0);
   await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth)).toBeLessThanOrEqual(0);
 });
 }
@@ -1381,7 +1405,13 @@ test('AI SSE replaces snapshots, ignores duplicates, reconnects on gaps and refr
     (window as any).EventSource=FakeEventSource;
   });
   let final=false;
-  let reads=0;
+  let reads=0, historyReads=0;
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/runs**',async route=>{
+    historyReads++;
+    const url=new URL(route.request().url());
+    const items=url.pathname.endsWith('/runs') ? [{run_id:'run-1',status:final?'complete':'running',assistant_message_id:final?1:null}] : [];
+    await route.fulfill({json:{items,next_after:null,has_more:false}});
+  });
   await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
     reads++;
     const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
@@ -1415,12 +1445,16 @@ test('AI SSE replaces snapshots, ignores duplicates, reconnects on gaps and refr
   await expect.poll(()=>page.evaluate(()=>(window as any).__aiStreams.length)).toBeGreaterThan(1);
   await emit('snapshot',{version:1,question_id,stem_fingerprint:'fingerprint',run_id:'run-1',seq:6,status:'running',text:'快照恢复',progress:[]});
   await expect(page.getByTestId('question-bank-ai-stream-text')).toContainText('快照恢复');
-  const before=reads;
+  const before=reads, historyBefore=historyReads;
   final=true;
   await emit('message',event(7,'run_finished',{}));
   await expect.poll(()=>reads).toBeGreaterThan(before);
   await expect(page.getByTestId('question-bank-ai-message')).toContainText('持久化最终答案');
   await expect(page.getByTestId('question-bank-ai-stream-text')).toHaveCount(0);
+  await expect.poll(()=>historyReads).toBeGreaterThan(historyBefore);
+  const message=page.getByTestId('question-bank-ai-message');
+  await expect.poll(()=>message.evaluate(node=>node.previousElementSibling?.getAttribute('data-testid'))).toBe('question-bank-ai-progress');
+  await expect(page.getByTestId('question-bank-ai-progress').locator(':scope > button')).toHaveAttribute('aria-expanded','true');
 });
 
 test('AI follow-up accepts an image without text',async({page})=>{
@@ -1680,20 +1714,25 @@ test('AI activity loads every history page and expands full command output',asyn
   });
   await openFixtureReview(page);
   const rounds=page.getByTestId('question-bank-ai-progress');
-  await expect(rounds).toHaveCount(1);
+  await expect(rounds).toHaveCount(2);
   await expect(page.getByTestId('question-bank-ai-message')).toContainText('已保存的回答');
   expect(await rounds.first().evaluate(node => !!(node.compareDocumentPosition(document.querySelector('[data-testid=question-bank-ai-message]')!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
   expect(requests.some(url=>url.includes('/events?'))).toBe(false);
   await rounds.first().locator(':scope > button').click();
   const tool=rounds.first().getByTestId('question-bank-ai-tool');
   await expect(tool.getByTestId('question-bank-ai-command')).toHaveText('printf full-output');
-  await rounds.first().getByRole('button',{name:'加载更多输出'}).click();
+  await expect(rounds.first().getByRole('button',{name:'加载更多输出'})).toHaveCount(0);
   await expect.poll(()=>requests.some(url=>url.includes('/run-a/events?after=2&limit=50'))).toBe(true);
   await expect(tool).toContainText('completed');
-  await page.getByRole('button',{name:'加载更多执行记录'}).click();
-  await expect(rounds).toHaveCount(2);
+  await expect(page.getByRole('button',{name:'加载更多执行记录'})).toHaveCount(0);
   await expect(tool.getByTestId('question-bank-ai-command')).toHaveText('printf full-output');
   await expect(tool.getByTestId('question-bank-ai-output')).toHaveText('第一部分第二部分');
+  await page.getByRole('button',{name:'下一题',exact:true}).click();
+  await page.getByRole('button',{name:'上一题',exact:true}).click();
+  const restored=page.getByTestId('question-bank-ai-progress').first();
+  await restored.getByRole('button').first().click();
+  await expect(restored.getByTestId('question-bank-ai-output')).toHaveText('第一部分第二部分');
+  await expect(restored.getByRole('button',{name:'加载更多输出'})).toHaveCount(0);
 });
 
 for (const width of [1280, 390]) {
@@ -1716,6 +1755,8 @@ test(`compact review composer grows and header controls preserve scratchpad anch
   await expect.poll(async()=>(await input.boundingBox())!.height).toBeLessThanOrEqual(initial.height+1);
   const pen=pane.getByTestId('calculation-scratchpad-toggle');
   const before=await pen.boundingBox();
+  const paneBox=await pane.boundingBox();
+  expect(before!.x+before!.width).toBeGreaterThanOrEqual(paneBox!.x+paneBox!.width-16);
   await pen.click();
   await expect(pen).toHaveAttribute('aria-label','关闭草稿');
   await expect(pane.getByTestId('calculation-scratchpad-toolbar')).toBeVisible();
@@ -1728,3 +1769,126 @@ test(`compact review composer grows and header controls preserve scratchpad anch
   await pane.getByTestId('question-bank-ai-delete-cancel').click();
 });
 }
+
+test('AI tool history retries a failed page and keeps already loaded output', async ({page}) => {
+  let secondPageRequests=0;
+  let firstPageRequests=0;
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/runs**',async route=>{
+    const url=new URL(route.request().url());
+    if (url.pathname.endsWith('/runs')) {
+      await route.fulfill({json:{items:[{run_id:'retry-run',status:'complete',assistant_message_id:1}],next_after:1,has_more:false}});
+      return;
+    }
+    const event=(seq:number,kind:string,payload:unknown)=>({version:1,run_id:'retry-run',seq,kind,payload});
+    if (url.searchParams.get('after')==='0') {
+      firstPageRequests++;
+      await route.fulfill({json:{items:[event(1,'tool_started',{item_id:'cmd',tool:'命令',details:{command:'printf'}}),event(2,'command_output_delta',{item_id:'cmd',text:'第一部分'})],next_after:2,has_more:true}});
+    } else if (++secondPageRequests===1) {
+      await route.fulfill({status:500,json:{error:'暂时不可用'}});
+    } else {
+      await route.fulfill({json:{items:[event(3,'command_output_delta',{item_id:'cmd',text:'第二部分'})],next_after:3,has_more:false}});
+    }
+  });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:'complete',error:null,messages:[{id:1,role:'assistant',content:'解析',created_at:1}]}});
+  });
+  await openFixtureReview(page);
+  const round=page.getByTestId('question-bank-ai-progress').first();
+  await round.getByRole('button').first().click();
+  await expect(round.getByTestId('question-bank-ai-output')).toHaveText('第一部分');
+  await expect(round.getByRole('alert')).toBeVisible();
+  await round.getByRole('button',{name:'重试加载输出'}).click();
+  await expect(round.getByTestId('question-bank-ai-output')).toHaveText('第一部分第二部分');
+  await expect(round.getByRole('alert')).toHaveCount(0);
+  expect(firstPageRequests).toBe(1);
+  expect(secondPageRequests).toBe(2);
+});
+
+for (const viewport of [{width:1366,height:900},{width:1133,height:744},{width:1024,height:768},{width:390,height:844}]) {
+  test(`AI composer and split pane headers align at ${viewport.width}px`,async({page})=>{
+    await page.setViewportSize(viewport);
+    await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+      const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+      await route.fulfill({json:{question_id,status:'complete',error:null,messages:[{id:11,role:'assistant',content:'解析',created_at:1}]}});
+    });
+    await openFixtureReview(page);
+    const pane=page.getByTestId('question-bank-practice-question-pane');
+    const input=pane.getByTestId('question-bank-ai-input');
+    await expect(input).toBeVisible();
+    const composer=pane.getByTestId('question-bank-ai-compose');
+    const send=pane.getByTestId('question-bank-ai-send');
+    for (const text of ['', '第一行\n第二行\n第三行']) {
+      await input.fill(text);
+      const outer=await composer.boundingBox();
+      const button=await send.boundingBox();
+      expect(button!.x).toBeGreaterThanOrEqual(outer!.x);
+      expect(button!.x+button!.width).toBeLessThanOrEqual(outer!.x+outer!.width);
+      expect(button!.y).toBeGreaterThanOrEqual(outer!.y);
+      expect(button!.y+button!.height).toBeLessThanOrEqual(outer!.y+outer!.height);
+      expect(Math.abs((button!.y+button!.height/2)-(outer!.y+outer!.height/2))).toBeLessThanOrEqual(1);
+    }
+    const left=page.getByTestId('question-bank-practice-material-pane').locator('.question-bank-pane-header');
+    const right=pane.locator('.question-bank-pane-header');
+    const leftBox=await left.boundingBox(), rightBox=await right.boundingBox();
+    expect(Math.abs(leftBox!.height-rightBox!.height)).toBeLessThanOrEqual(1);
+    if (viewport.width>=768) expect(Math.abs((leftBox!.y+leftBox!.height)-(rightBox!.y+rightBox!.height))).toBeLessThanOrEqual(1);
+    const controls=[pane.getByTestId('question-bank-favorite'),pane.getByTestId('question-bank-ai-tab'),pane.getByRole('button',{name:'更多解析操作'}),pane.getByTestId('calculation-scratchpad-toggle')];
+    const flashcard=pane.locator('[data-testid="question-bank-practice-create-flashcard"], [data-testid="question-bank-practice-manage-flashcard"]');
+    if (await flashcard.count()) controls.push(flashcard);
+    const sizes=await Promise.all(controls.map(control=>control.boundingBox()));
+    for (const size of sizes) {
+      expect(Math.abs(size!.width-sizes[0]!.width)).toBeLessThanOrEqual(1);
+      expect(Math.abs(size!.height-sizes[0]!.height)).toBeLessThanOrEqual(1);
+    }
+  });
+}
+
+test('deleting an AI review clears its tool history immediately and after revisiting',async({page})=>{
+  let deleted=false, historyReads=0;
+  await page.addInitScript(()=>{ (window as any).EventSource=class extends EventTarget { onmessage=null; onerror=null; close() {} }; });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/runs**',async route=>{
+    historyReads++;
+    const url=new URL(route.request().url());
+    const items=url.pathname.endsWith('/runs') && !deleted ? [{run_id:'old-run',status:'complete',assistant_message_id:11}] : [];
+    await route.fulfill({json:{items,next_after:null,has_more:false}});
+  });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    if (route.request().method()==='DELETE') deleted=true;
+    await route.fulfill({json:{question_id,status:deleted?'idle':'complete',error:null,messages:deleted?[]:[{id:11,role:'assistant',content:'旧解析',created_at:1}]}});
+  });
+  await openFixtureReview(page);
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('旧解析');
+  await expect(page.getByTestId('question-bank-ai-progress')).toHaveCount(1);
+  const before=historyReads;
+  await page.getByRole('button',{name:'更多解析操作'}).click();
+  await page.getByTestId('question-bank-ai-delete').click();
+  await page.getByTestId('question-bank-ai-delete-confirm').click();
+  await expect(page.getByTestId('question-bank-ai-message')).toHaveCount(0);
+  await expect(page.getByTestId('question-bank-ai-progress')).toHaveCount(0);
+  await expect.poll(()=>historyReads).toBeGreaterThan(before);
+  await page.getByTestId('question-bank-original-tab').click();
+  await page.getByTestId('question-bank-ai-tab').click();
+  await expect(page.getByTestId('question-bank-ai-progress')).toHaveCount(0);
+});
+
+test('review pane headers and all header buttons have equal sizes',async({page})=>{
+  await page.setViewportSize({width:1366,height:900});
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:'complete',error:null,messages:[{id:11,role:'assistant',content:'解析',created_at:1}]}});
+  });
+  await openFixtureReview(page);
+  const pane=page.getByTestId('question-bank-practice-question-pane');
+  const left=page.getByTestId('question-bank-practice-material-pane').locator('.question-bank-pane-header');
+  const right=pane.locator('.question-bank-pane-header');
+  const leftBox=await left.boundingBox(), rightBox=await right.boundingBox();
+  expect(Math.abs(leftBox!.height-rightBox!.height)).toBeLessThanOrEqual(1);
+  const buttons=[pane.getByTestId('question-bank-favorite'),pane.getByTestId('question-bank-ai-tab'),pane.getByRole('button',{name:'更多解析操作'}),pane.getByTestId('calculation-scratchpad-toggle')];
+  const sizes=await Promise.all(buttons.map(button=>button.boundingBox()));
+  for (const size of sizes) {
+    expect(Math.abs(size!.width-sizes[0]!.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(size!.height-sizes[0]!.height)).toBeLessThanOrEqual(1);
+  }
+});

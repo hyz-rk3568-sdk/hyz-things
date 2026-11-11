@@ -33,6 +33,7 @@ fn run_activity(props: &RunActivityProps) -> Html {
     let has_more = use_state(|| true);
     let loading = use_state(|| false);
     let error = use_state(|| None::<String>);
+    let in_flight = use_mut_ref(|| false);
     let load = {
         let endpoint = props.endpoint.clone();
         let run_id = props.run.run_id.clone();
@@ -41,36 +42,52 @@ fn run_activity(props: &RunActivityProps) -> Html {
         let has_more = has_more.clone();
         let loading = loading.clone();
         let error = error.clone();
+        let in_flight = in_flight.clone();
         Callback::from(move |_| {
-            if *loading || !*has_more {
+            if *in_flight.borrow() || !*has_more {
                 return;
             }
+            *in_flight.borrow_mut() = true;
             loading.set(true);
-            let url = format!("{endpoint}/runs/{run_id}/events?after={}&limit=50", *after);
+            error.set(None);
+            let mut cursor = *after;
+            let mut all = (*events).clone();
+            let endpoint = endpoint.clone();
+            let run_id = run_id.clone();
             let events = events.clone();
             let after = after.clone();
             let has_more = has_more.clone();
             let loading = loading.clone();
             let error = error.clone();
+            let in_flight = in_flight.clone();
             spawn_local(async move {
-                match fetch_json::<HistoryPage<StreamEvent>>(&url, "AI 执行历史").await {
-                    Ok(page) => {
-                        if page.has_more && page.next_after.is_none_or(|next| next <= *after) {
-                            error.set(Some("AI 执行历史分页游标无效".into()));
-                        } else {
-                            let mut all = (*events).clone();
+                loop {
+                    let url = format!("{endpoint}/runs/{run_id}/events?after={cursor}&limit=50");
+                    match fetch_json::<HistoryPage<StreamEvent>>(&url, "AI 执行历史").await {
+                        Ok(page) => {
+                            if page.has_more && page.next_after.is_none_or(|next| next <= cursor) {
+                                error.set(Some("AI 执行历史分页游标无效".into()));
+                                break;
+                            }
                             all.extend(page.items);
-                            events.set(all);
+                            events.set(all.clone());
                             if let Some(next) = page.next_after {
+                                cursor = next;
                                 after.set(next);
                             }
                             has_more.set(page.has_more);
-                            error.set(None);
+                            if !page.has_more {
+                                break;
+                            }
+                        }
+                        Err(message) => {
+                            error.set(Some(message));
+                            break;
                         }
                     }
-                    Err(message) => error.set(Some(message)),
                 }
                 loading.set(false);
+                *in_flight.borrow_mut() = false;
             });
         })
     };
@@ -183,9 +200,10 @@ fn run_activity(props: &RunActivityProps) -> Html {
                             if !output.is_empty() { <pre class="mt-1 whitespace-pre-wrap break-all" data-testid="question-bank-ai-output">{output.clone()}</pre> }
                         </section>
                     })}
-                    if let Some(message) = error.as_ref() { <p role="alert" class="text-error">{message.clone()}</p> }
-                    if *has_more {
-                        <button type="button" class="btn btn-ghost btn-xs" disabled={*loading} onclick={Callback::from({let load=load.clone(); move |_| load.emit(())})}>{if *loading {"加载中…"} else if error.is_some() {"重试"} else {"加载更多输出"}}</button>
+                    if *loading { <p role="status">{"正在加载工具输出…"}</p> }
+                    if let Some(message) = error.as_ref() {
+                        <p role="alert" class="text-error">{message.clone()}</p>
+                        <button type="button" class="btn btn-ghost btn-xs" onclick={Callback::from({let load=load.clone(); move |_| load.emit(())})}>{"重试加载输出"}</button>
                     }
                 </div>
             }
@@ -196,6 +214,7 @@ fn run_activity(props: &RunActivityProps) -> Html {
 #[derive(Properties, PartialEq)]
 pub(super) struct AiReviewActivityProps {
     pub endpoint: String,
+    pub refresh_key: String,
     pub stream: Option<StreamSnapshot>,
     pub messages: Vec<AiReviewMessage>,
 }
@@ -203,56 +222,59 @@ pub(super) struct AiReviewActivityProps {
 #[function_component(AiReviewActivity)]
 pub(super) fn ai_review_activity(props: &AiReviewActivityProps) -> Html {
     let runs = use_state(Vec::<HistoryRun>::new);
-    let after = use_state(|| 0i64);
-    let has_more = use_state(|| true);
     let loading = use_state(|| false);
     let error = use_state(|| None::<String>);
-    let load = {
-        let endpoint = props.endpoint.clone();
+    let retry = use_state(|| 0u64);
+    {
         let runs = runs.clone();
-        let after = after.clone();
-        let has_more = has_more.clone();
         let loading = loading.clone();
         let error = error.clone();
-        Callback::from(move |_| {
-            if *loading || !*has_more {
-                return;
-            }
-            loading.set(true);
-            let url = format!("{endpoint}/runs?after={}&limit=50", *after);
-            let runs = runs.clone();
-            let after = after.clone();
-            let has_more = has_more.clone();
-            let loading = loading.clone();
-            let error = error.clone();
-            spawn_local(async move {
-                match fetch_json::<HistoryPage<HistoryRun>>(&url, "AI 执行历史").await {
-                    Ok(page) => {
-                        if page.has_more && page.next_after.is_none_or(|next| next <= *after) {
-                            error.set(Some("AI 执行历史分页游标无效".into()));
-                        } else {
-                            let mut all = (*runs).clone();
-                            all.extend(page.items);
-                            runs.set(all);
-                            if let Some(next) = page.next_after {
-                                after.set(next);
+        use_effect_with(
+            (props.endpoint.clone(), props.refresh_key.clone(), *retry),
+            move |(endpoint, _, _)| {
+                let alive = Rc::new(Cell::new(true));
+                let request_alive = alive.clone();
+                let endpoint = endpoint.clone();
+                loading.set(true);
+                error.set(None);
+                spawn_local(async move {
+                    let mut cursor = 0i64;
+                    let mut all = Vec::new();
+                    loop {
+                        let url = format!("{endpoint}/runs?after={cursor}&limit=50");
+                        let response =
+                            fetch_json::<HistoryPage<HistoryRun>>(&url, "AI 执行历史").await;
+                        if !request_alive.get() {
+                            return;
+                        }
+                        match response {
+                            Ok(page) => {
+                                if page.has_more
+                                    && page.next_after.is_none_or(|next| next <= cursor)
+                                {
+                                    error.set(Some("AI 执行历史分页游标无效".into()));
+                                    break;
+                                }
+                                all.extend(page.items);
+                                if let Some(next) = page.next_after {
+                                    cursor = next;
+                                }
+                                if !page.has_more {
+                                    runs.set(all);
+                                    break;
+                                }
                             }
-                            has_more.set(page.has_more);
-                            error.set(None);
+                            Err(message) => {
+                                error.set(Some(message));
+                                break;
+                            }
                         }
                     }
-                    Err(message) => error.set(Some(message)),
-                }
-                loading.set(false);
-            });
-        })
-    };
-    {
-        let load = load.clone();
-        use_effect_with(props.endpoint.clone(), move |_| {
-            load.emit(());
-            || ()
-        });
+                    loading.set(false);
+                });
+                move || alive.set(false)
+            },
+        );
     }
     let mut all = (*runs).clone();
     if let Some(stream) = &props.stream {
@@ -268,27 +290,40 @@ pub(super) fn ai_review_activity(props: &AiReviewActivityProps) -> Html {
             }
         }
     }
+    let mut rows = Vec::new();
+    for (message_index, message) in props.messages.iter().enumerate() {
+        for (index, run) in all
+            .iter()
+            .enumerate()
+            .filter(|(_, run)| run.assistant_message_id == Some(message.id) && message.id != 0)
+        {
+            rows.push(html! { <RunActivity key={format!("run-{}", run.run_id)} endpoint={props.endpoint.clone()} run={run.clone()} {index} stream={props.stream.clone()}/> });
+        }
+        rows.push(html! {
+            <div key={format!("message-{}-{message_index}", message.id)} class={if message.role == "user" {"rounded-xl bg-primary/10 p-3"} else {"py-2"}} data-testid="question-bank-ai-message">
+                <div class="mb-2 text-xs font-semibold text-base-content/60">{if message.role == "user" {"你的追问"} else {"AI 解析"}}</div>
+                if message.role == "assistant" { <AiReply content={message.content.clone()}/> }
+                else { <div class="study-markdown text-base leading-7">{super::study_markdown::render_question_bank_user_markdown(&message.content)}</div> }
+            </div>
+        });
+    }
+    for (index, run) in all.iter().enumerate().filter(|(_, run)| {
+        run.assistant_message_id.is_none()
+            || !props
+                .messages
+                .iter()
+                .any(|message| message.id != 0 && Some(message.id) == run.assistant_message_id)
+    }) {
+        rows.push(html! { <RunActivity key={format!("run-{}", run.run_id)} endpoint={props.endpoint.clone()} run={run.clone()} {index} stream={props.stream.clone()}/> });
+    }
     html! {
         <div data-testid="question-bank-ai-activity" aria-label="执行活动" class="space-y-2 text-xs text-base-content/60">
-            <div class="space-y-3">
-                {for props.messages.iter().enumerate().map(|(message_index, message)| html! {
-                    <div key={format!("message-{message_index}")}>
-                        {for all.iter().enumerate().filter(|(_, run)| run.assistant_message_id == Some(message.id) && message.id != 0).map(|(index, run)| html! {
-                            <RunActivity key={run.run_id.clone()} endpoint={props.endpoint.clone()} run={run.clone()} {index} stream={props.stream.clone()}/>
-                        })}
-                        <div class={if message.role == "user" {"rounded-xl bg-primary/10 p-3"} else {"py-2"}} data-testid="question-bank-ai-message">
-                            <div class="mb-2 text-xs font-semibold text-base-content/60">{if message.role == "user" {"你的追问"} else {"AI 解析"}}</div>
-                            if message.role == "assistant" { <AiReply content={message.content.clone()}/> }
-                            else { <div class="study-markdown text-base leading-7">{super::study_markdown::render_question_bank_user_markdown(&message.content)}</div> }
-                        </div>
-                    </div>
-                })}
-                {for all.iter().enumerate().filter(|(_, run)| run.assistant_message_id.is_none() || !props.messages.iter().any(|message| message.id != 0 && Some(message.id) == run.assistant_message_id)).map(|(index, run)| html! {
-                    <RunActivity key={run.run_id.clone()} endpoint={props.endpoint.clone()} run={run.clone()} {index} stream={props.stream.clone()}/>
-                })}
-            </div>
-            if let Some(message) = error.as_ref() { <p role="alert" class="text-error">{message.clone()}</p> }
-            if *has_more && !*loading { <button type="button" class="btn btn-ghost btn-xs" onclick={Callback::from({let load=load.clone(); move |_| load.emit(())})}>{if error.is_some() {"重试"} else {"加载更多执行记录"}}</button> }
+            <div class="space-y-3">{for rows}</div>
+            if *loading { <p role="status">{"正在加载执行记录…"}</p> }
+            if let Some(message) = error.as_ref() {
+                <p role="alert" class="text-error">{message.clone()}</p>
+                <button type="button" class="btn btn-ghost btn-xs" onclick={Callback::from({let retry=retry.clone(); move |_| retry.set(retry.wrapping_add(1))})}>{"重试加载执行记录"}</button>
+            }
         </div>
     }
 }

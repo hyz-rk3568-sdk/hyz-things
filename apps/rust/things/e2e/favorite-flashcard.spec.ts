@@ -376,7 +376,7 @@ test('review cancels a saved favorite and refreshes the collection', async ({ pa
   await expect(page.getByTestId('question-bank-collection-item')).toContainText('第 2 题');
 });
 
-test('review keeps the scratchpad pen fixed on the left and favorite on the right', async ({ page }) => {
+test('review keeps the scratchpad pen fixed at the far right', async ({ page }) => {
   await page.setViewportSize({ width: 1180, height: 844 });
   await install(page);
   const review = await openReview(page);
@@ -387,10 +387,13 @@ test('review keeps the scratchpad pen fixed on the left and favorite on the righ
   const starBox = await star.boundingBox();
   const headingBox = await heading.boundingBox();
   const penBox = await toggle.boundingBox();
-  expect(penBox!.x).toBeLessThan(headingBox!.x);
   expect(starBox!.x).toBeGreaterThanOrEqual(headingBox!.x + headingBox!.width);
+  expect(penBox!.x).toBeGreaterThan(starBox!.x);
+  const paneBox = await review.getByTestId('collection-review-question-pane').boundingBox();
+  expect(penBox!.x + penBox!.width).toBeGreaterThanOrEqual(paneBox!.x + paneBox!.width - 16);
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-label', '关闭草稿');
+  expect(Math.abs((await toggle.boundingBox())!.x - penBox!.x)).toBeLessThanOrEqual(1);
   await expect(review.getByRole('group', { name: '题目与解析滚动' })).toBeVisible();
   const canvas = review.getByTestId('calculation-scratchpad-canvas');
   await expect(canvas).toBeVisible();
@@ -837,3 +840,36 @@ test('flashcard creation previews pasted SVG Markdown', async ({ page }) => {
   await card.getByLabel('背面').fill('```svg\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"><text x="5" y="25">图示</text></svg>\n```');
   await expect(card.getByTestId('favorite-flashcard-back-preview').getByTestId('question-bank-ai-diagram')).toBeVisible();
 });
+
+for (const viewport of [{width:1366,height:900},{width:1133,height:744},{width:390,height:844}]) {
+  test(`collection review stem and action headers align at ${viewport.width}px`,async({page})=>{
+    await page.setViewportSize(viewport);
+    await install(page);
+    await page.route(`**${root}/practice/questions/supported`,route=>{
+      const value=detail(rows[0]);
+      value.materials=[];
+      value.question.materials=[];
+      return route.fulfill({json:value});
+    });
+    await page.route(`**${root}/practice/questions/supported/ai`,route=>route.fulfill({json:{question_id:'supported',status:'complete',error:null,messages:[{id:1,role:'assistant',content:'解析',created_at:1}]}}));
+    const review=await openReview(page);
+    await expect(review.getByTestId('question-bank-ai-input')).toBeVisible();
+    const left=review.getByTestId('collection-review-stem-pane').locator('.question-bank-pane-header');
+    const pane=review.getByTestId('collection-review-question-pane');
+    const right=pane.locator('.question-bank-pane-header');
+    const leftBox=await left.boundingBox(),rightBox=await right.boundingBox();
+    expect(Math.abs(leftBox!.height-rightBox!.height)).toBeLessThanOrEqual(1);
+    if(viewport.width>=768) expect(Math.abs((leftBox!.y+leftBox!.height)-(rightBox!.y+rightBox!.height))).toBeLessThanOrEqual(1);
+    const buttons=[pane.getByTestId('collection-review-favorite'),pane.getByTestId('question-bank-ai-tab'),pane.getByRole('button',{name:'更多解析操作'}),pane.getByTestId('calculation-scratchpad-toggle')];
+    const sizes=await Promise.all(buttons.map(button=>button.boundingBox()));
+    for(const size of sizes) {
+      expect(Math.abs(size!.width-sizes[0]!.width)).toBeLessThanOrEqual(1);
+      expect(Math.abs(size!.height-sizes[0]!.height)).toBeLessThanOrEqual(1);
+    }
+    const composer=await pane.getByTestId('question-bank-ai-compose').boundingBox();
+    const send=await pane.getByTestId('question-bank-ai-send').boundingBox();
+    expect(Math.abs((send!.y+send!.height/2)-(composer!.y+composer!.height/2))).toBeLessThanOrEqual(1);
+    expect(send!.y).toBeGreaterThanOrEqual(composer!.y);
+    expect(send!.y+send!.height).toBeLessThanOrEqual(composer!.y+composer!.height);
+  });
+}
