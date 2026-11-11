@@ -594,6 +594,17 @@ test('wrong review can delete saved question AI only after confirmation', async 
 for (const action of ['stop', 'delete'] as const) {
   test(`a delayed AI poll cannot overwrite ${action} result`, async ({ page }) => {
     await install(page);
+    await page.evaluate(() => {
+      const streams: any[] = [];
+      (window as any).__delayedStreams = streams;
+      class FakeEventSource extends EventTarget {
+        onmessage: ((event: MessageEvent) => void) | null = null;
+        onerror: ((event: Event) => void) | null = null;
+        constructor(public url: string) { super(); streams.push(this); }
+        close() {}
+      }
+      (window as any).EventSource = FakeEventSource;
+    });
     let gets = 0;
     let pollPending = false;
     let release!: () => void;
@@ -601,6 +612,7 @@ for (const action of ['stop', 'delete'] as const) {
     const runningMessage = { role: 'assistant', content: '旧的生成内容', created_at: 1 };
     await page.route(`**${root}/practice/questions/*/ai**`, async route => {
       const path = new URL(route.request().url()).pathname;
+      if (!path.endsWith('/ai') && !path.endsWith('/ai/stop')) return route.fallback();
       const question_id = path.split('/').at(path.endsWith('/stop') ? -3 : -2)!;
       const method = route.request().method();
       if (method === 'GET') {
@@ -618,6 +630,16 @@ for (const action of ['stop', 'delete'] as const) {
     });
     const review = await openReview(page);
     await expect(review.getByTestId('question-bank-ai-status')).toHaveText('正在生成');
+    await expect.poll(() => page.evaluate(() => (window as any).__delayedStreams.length)).toBeGreaterThan(0);
+    await page.evaluate(() => {
+      const streams = (window as any).__delayedStreams;
+      const stream = streams[streams.length - 1];
+      const question_id = new URL(stream.url, location.origin).pathname.split('/').at(-3);
+      stream.dispatchEvent(new MessageEvent('snapshot', { data: JSON.stringify({
+        version: 1, question_id, stem_fingerprint: 'fingerprint', run_id: 'old-run',
+        seq: 1, status: 'running', text: '', progress: []
+      }) }));
+    });
     await expect.poll(() => pollPending).toBe(true);
     const expectFinalState = async () => {
       if (action === 'stop') {

@@ -1081,7 +1081,7 @@ test('long unbroken AI explanation wraps inside the review pane',async({page})=>
   await page.setViewportSize({width:1280,height:720});
   await openFixtureReview(page);
   await expect(page.getByTestId('question-bank-ai-message')).toContainText('A'.repeat(400));
-  const pane=page.getByTestId('question-bank-practice-question-scroll');
+  const pane=page.getByTestId('question-bank-ai-messages');
   await expect.poll(()=>pane.evaluate(node=>node.scrollWidth-node.clientWidth)).toBeLessThanOrEqual(1);
 });
 
@@ -1099,7 +1099,7 @@ test('long inline and display equations stay readable within the review pane',as
   const displayMath=message.locator('.math-display');
   await expect(inlineMath.locator('.katex')).toBeVisible();
   await expect(displayMath.locator('.katex')).toBeVisible();
-  const pane=page.getByTestId('question-bank-practice-question-scroll');
+  const pane=page.getByTestId('question-bank-ai-messages');
   await expect.poll(()=>pane.evaluate(node=>node.scrollWidth-node.clientWidth)).toBeLessThanOrEqual(1);
   for(const formula of [inlineMath,displayMath]) {
     await expect.poll(()=>formula.evaluate(node=>node.scrollWidth-node.clientWidth)).toBeGreaterThan(10);
@@ -1133,7 +1133,7 @@ test('wide explanation tables scroll locally without turning the page',async({pa
   });
   await page.setViewportSize({width:390,height:844});
   await openFixtureReview(page);
-  const pane=page.getByTestId('question-bank-practice-question-scroll');
+  const pane=page.getByTestId('question-bank-ai-messages');
   const table=page.getByTestId('question-bank-ai-message').locator('table');
   await expect(table).toBeVisible();
   await expect.poll(()=>pane.evaluate(node=>node.scrollWidth-node.clientWidth)).toBeLessThanOrEqual(1);
@@ -1406,7 +1406,7 @@ test('AI SSE replaces snapshots, ignores duplicates, reconnects on gaps and refr
   await emit('message',event(3,'text_delta',{text:'重复'}));
   await expect(page.getByTestId('question-bank-ai-stream-text')).toContainText('重点');
   await expect(page.getByTestId('question-bank-ai-stream-text')).not.toContainText('重复');
-  await page.getByTestId('question-bank-ai-progress').locator('summary').click();
+  await page.getByTestId('question-bank-ai-progress').locator(':scope > button').click();
   await expect(page.getByTestId('question-bank-ai-progress')).toContainText('读取资料');
   await emit('message',event(4,'tool_finished',{item_id:'tool-1',tool:'读取资料',status:'completed'}));
   await expect(page.getByTestId('question-bank-ai-progress')).toContainText('completed');
@@ -1566,4 +1566,131 @@ test('AI retries the failed initial intent through the request retry endpoint',a
   await expect.poll(()=>retryBody).not.toBeUndefined();
   expect(retryBody.request_id).not.toBe(sourceId);
   expect(retryBody).toEqual(expect.objectContaining({confirm_uncertain:false,confirm_new_thread:false}));
+});
+
+for (const viewport of [{width:1280,height:800},{width:390,height:720}]) {
+  test(`AI review keeps its composer at the panel bottom in both routes at ${viewport.width}px`,async({page})=>{
+    await page.setViewportSize(viewport);
+    await page.addInitScript(()=>{
+      const streams:any[]=[];
+      (window as any).__layoutAiStreams=streams;
+      class FakeEventSource extends EventTarget {
+        onmessage:((event:MessageEvent)=>void)|null=null;
+        onerror:((event:Event)=>void)|null=null;
+        closed=false;
+        constructor(public url:string) { super(); streams.push(this); }
+        close() { this.closed=true; }
+        emit(type:string,data:unknown) {
+          if (this.closed) return;
+          const event=new MessageEvent(type,{data:JSON.stringify(data)});
+          if (type==='message') this.onmessage?.(event); else this.dispatchEvent(event);
+        }
+      }
+      (window as any).EventSource=FakeEventSource;
+    });
+    await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+      const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+      await route.fulfill({json:{question_id,status:'complete',error:null,messages:[
+        {role:'assistant',content:Array.from({length:80},(_,i)=>`解析段落 ${i}：详细说明。`).join('\n\n'),created_at:1},
+      ]}});
+    });
+    await openFixtureReview(page);
+    const checkLayout=async(panelId:string)=>{
+      const panel=page.getByTestId(panelId);
+      const messages=page.getByTestId('question-bank-ai-messages');
+      const composer=page.getByTestId('question-bank-ai-composer-area');
+      await expect(page.getByTestId('question-bank-ai-input')).toBeVisible();
+      const bounds=await panel.boundingBox();
+      const inputBounds=await composer.boundingBox();
+      expect(bounds && inputBounds && Math.abs(bounds.y+bounds.height-inputBounds.y-inputBounds.height)).toBeLessThan(3);
+      await expect.poll(()=>messages.evaluate(node=>node.scrollHeight-node.clientHeight)).toBeGreaterThan(100);
+      await expect(messages).toHaveCSS('max-height','none');
+      await messages.evaluate(node=>{node.scrollTop=0; node.dispatchEvent(new Event('scroll'));});
+      await expect.poll(()=>messages.evaluate(node=>node.scrollTop)).toBe(0);
+      await expect(messages.getByTestId('question-bank-ai-question-content')).toContainText('正确答案');
+      const choices=messages.locator('[data-testid$="-choice"]');
+      await expect(choices.first()).toBeVisible();
+      const stream=await page.evaluate(()=>{
+        const streams=(window as any).__layoutAiStreams;
+        return streams[streams.length-1].url;
+      });
+      const question_id=new URL(stream,webOrigin).pathname.split('/').at(-3);
+      await page.evaluate(({question_id})=>{
+        const streams=(window as any).__layoutAiStreams;
+        streams[streams.length-1].emit('snapshot',{version:1,question_id,stem_fingerprint:'fingerprint',run_id:'layout',seq:1,status:'running',text:'新的回复',progress:[{version:1,run_id:'layout',seq:1,kind:'tool_started',payload:{tool:'读取资料'}}]});
+      },{question_id});
+      const arrow=page.getByTestId('question-bank-ai-scroll-bottom');
+      await expect(arrow).toBeVisible();
+      await expect.poll(()=>messages.evaluate(node=>node.scrollTop)).toBe(0);
+      const arrowBounds=await arrow.boundingBox();
+      expect(arrowBounds && inputBounds && arrowBounds.y+arrowBounds.height).toBeLessThanOrEqual(inputBounds!.y+2);
+      await arrow.click();
+      await expect(arrow).toHaveCount(0);
+      await expect.poll(()=>messages.evaluate(node=>node.scrollHeight-node.clientHeight-node.scrollTop)).toBeLessThanOrEqual(2);
+      const progress=page.getByTestId('question-bank-ai-progress');
+      await expect(progress.locator(':scope > button')).toContainText('读取资料');
+      await progress.locator(':scope > button').click();
+      await expect(progress).toContainText('读取资料');
+      await page.getByTestId('question-bank-ai-input').focus();
+      await expect(page.getByTestId('question-bank-ai-input')).toBeFocused();
+      if (viewport.width < 768) {
+        await page.setViewportSize({width:viewport.width,height:480});
+        const box=await page.getByTestId('question-bank-ai-input').boundingBox();
+        expect(box && box.y+box.height).toBeLessThanOrEqual(480);
+        await page.getByTestId('question-bank-ai-input').blur();
+        await page.setViewportSize(viewport);
+      }
+    };
+    await checkLayout('question-bank-practice-question-pane');
+    const favorite=page.getByTestId('question-bank-favorite');
+    if (await favorite.getAttribute('aria-label') === '收藏题目') {
+      await favorite.click();
+      await expect(favorite).toHaveAttribute('aria-label','取消收藏');
+    }
+    await page.getByRole('button',{name:/返回训练/}).click();
+    await page.getByTestId('question-bank-collection-favorite').click();
+    await page.getByTestId('question-bank-collection-item').first().click();
+    await checkLayout('collection-review-question-pane');
+  });
+}
+
+test('AI activity loads every history page and expands full command output',async({page})=>{
+  const requests:string[]=[];
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/runs**',async route=>{
+    const url=new URL(route.request().url());
+    requests.push(url.pathname+url.search);
+    const after=url.searchParams.get('after');
+    if (url.pathname.endsWith('/runs')) {
+      await route.fulfill({json:after==='0'
+        ? {items:[{run_id:'run-a',status:'complete',assistant_message_id:1}],next_after:1,has_more:true}
+        : {items:[{run_id:'run-b',status:'complete'}],next_after:2,has_more:false}});
+    } else if (url.pathname.includes('/run-a/')) {
+      const event=(seq:number,kind:string,payload:unknown)=>({version:1,run_id:'run-a',seq,kind,payload});
+      await route.fulfill({json:after==='0'
+        ? {items:[event(1,'tool_started',{item_id:'cmd',tool:'命令',details:{command:'printf full-output'}}),event(2,'command_output_delta',{item_id:'cmd',text:'第一部分'})],next_after:2,has_more:true}
+        : {items:[event(3,'command_output_delta',{item_id:'cmd',text:'第二部分'}),event(4,'tool_finished',{item_id:'cmd',tool:'命令',status:'completed'})],next_after:4,has_more:false}});
+    } else {
+      await route.fulfill({json:{items:[],next_after:null,has_more:false}});
+    }
+  });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:'complete',error:null,messages:[{id:1,role:'assistant',content:'已保存的回答',created_at:1}]}});
+  });
+  await openFixtureReview(page);
+  const rounds=page.getByTestId('question-bank-ai-progress');
+  await expect(rounds).toHaveCount(1);
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('已保存的回答');
+  expect(await rounds.first().evaluate(node => !!(node.compareDocumentPosition(document.querySelector('[data-testid=question-bank-ai-message]')!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  expect(requests.some(url=>url.includes('/events?'))).toBe(false);
+  await rounds.first().locator(':scope > button').click();
+  const tool=rounds.first().getByTestId('question-bank-ai-tool');
+  await expect(tool.getByTestId('question-bank-ai-command')).toHaveText('printf full-output');
+  await rounds.first().getByRole('button',{name:'加载更多输出'}).click();
+  await expect.poll(()=>requests.some(url=>url.includes('/run-a/events?after=2&limit=50'))).toBe(true);
+  await expect(tool).toContainText('completed');
+  await page.getByRole('button',{name:'加载更多执行记录'}).click();
+  await expect(rounds).toHaveCount(2);
+  await expect(tool.getByTestId('question-bank-ai-command')).toHaveText('printf full-output');
+  await expect(tool.getByTestId('question-bank-ai-output')).toHaveText('第一部分第二部分');
 });

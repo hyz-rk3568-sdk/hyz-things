@@ -164,6 +164,65 @@ pub(super) async fn ai_read(
         Err(error) => ai_error(error),
     }
 }
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct AiHistoryQuery {
+    #[serde(default)]
+    after: i64,
+    #[serde(default = "history_limit")]
+    limit: i64,
+}
+
+fn history_limit() -> i64 {
+    50
+}
+
+pub(super) async fn ai_history_runs(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: AiService,
+    Path(question_id): Path<String>,
+    axum::extract::Query(query): axum::extract::Query<AiHistoryQuery>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let service = match ai_service(service) {
+        Ok(service) => service,
+        Err(error) => return error,
+    };
+    match service
+        .history_runs(&question_id, query.after, query.limit)
+        .await
+    {
+        Ok(page) => Json(page).into_response(),
+        Err(error) => ai_error(error),
+    }
+}
+
+pub(super) async fn ai_history_events(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: AiService,
+    Path((question_id, run_id)): Path<(String, String)>,
+    axum::extract::Query(query): axum::extract::Query<AiHistoryQuery>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let service = match ai_service(service) {
+        Ok(service) => service,
+        Err(error) => return error,
+    };
+    match service
+        .history_events(&question_id, &run_id, query.after, query.limit)
+        .await
+    {
+        Ok(page) => Json(page).into_response(),
+        Err(error) => ai_error(error),
+    }
+}
+
 struct AiEventConnection {
     state: AppState,
     headers: HeaderMap,
@@ -185,8 +244,16 @@ impl AiEventConnection {
         if tokio::time::Instant::now() < self.next_authorization {
             return true;
         }
-        if authorize_sensitive_read(&self.state, &self.headers).await.is_err()
-            || self.service.stream_identity(&self.identity.0).await.ok().as_ref() != Some(&self.identity)
+        if authorize_sensitive_read(&self.state, &self.headers)
+            .await
+            .is_err()
+            || self
+                .service
+                .stream_identity(&self.identity.0)
+                .await
+                .ok()
+                .as_ref()
+                != Some(&self.identity)
         {
             return false;
         }
@@ -264,7 +331,8 @@ pub(super) async fn ai_events(
             }
             match received {
                 None => {
-                    connection.next_heartbeat = tokio::time::Instant::now() + Duration::from_secs(15);
+                    connection.next_heartbeat =
+                        tokio::time::Instant::now() + Duration::from_secs(15);
                     return Some((
                         Ok(axum::response::sse::Event::default().comment("keepalive")),
                         connection,

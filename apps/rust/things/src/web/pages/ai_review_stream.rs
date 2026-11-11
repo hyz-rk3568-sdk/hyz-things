@@ -5,8 +5,8 @@ use serde::Deserialize;
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 pub(super) struct StreamEvent {
     version: u8,
-    run_id: String,
-    seq: u64,
+    pub run_id: String,
+    pub seq: u64,
     pub kind: String,
     pub payload: serde_json::Value,
 }
@@ -41,7 +41,9 @@ pub(super) fn use_ai_review_stream(
     let reconnect_now = {
         let reconnect = reconnect.clone();
         let reconnect_count = reconnect_count.clone();
+        let snapshot = snapshot.clone();
         Callback::from(move |()| {
+            snapshot.set(None);
             *reconnect_count.borrow_mut() += 1;
             reconnect.set(*reconnect_count.borrow());
         })
@@ -159,6 +161,9 @@ pub(super) fn use_ai_review_stream(
                                 }
                                 "tool_started"
                                 | "tool_finished"
+                                | "command_output_delta"
+                                | "tool_output_delta"
+                                | "tool_progress"
                                 | "reasoning_summary_delta"
                                 | "phase_changed" => value.progress.push(event.clone()),
                                 "run_finished" => value.status = "complete".into(),

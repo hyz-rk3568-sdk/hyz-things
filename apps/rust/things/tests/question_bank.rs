@@ -1787,17 +1787,49 @@ impl hyz_things::application::question_bank::practice::AiReviewTurn for Streamin
         sink: hyz_things::application::question_bank::practice::AiReviewEventSink,
     ) -> Result<String, String> {
         use hyz_things::application::question_bank::practice::AiReviewProgress;
+        sink(AiReviewProgress::ToolStarted {
+            item_id: "command-1".into(),
+            tool: "commandExecution".into(),
+            details: serde_json::json!({"command":"pwd"}),
+        })
+        .await?;
+        sink(AiReviewProgress::CommandOutputDelta {
+            item_id: "command-1".into(),
+            text: "actual output".into(),
+        })
+        .await?;
+        sink(AiReviewProgress::ToolFinished {
+            item_id: "command-1".into(),
+            tool: "commandExecution".into(),
+            status: "completed".into(),
+            details: serde_json::json!({"exitCode":0}),
+        })
+        .await?;
+        sink(AiReviewProgress::ToolOutputDelta {
+            item_id: "file-1".into(),
+            tool: "fileChange".into(),
+            text: "patch output".into(),
+        })
+        .await?;
+        sink(AiReviewProgress::ToolProgress {
+            item_id: "mcp-1".into(),
+            tool: "mcpToolCall".into(),
+            message: "working".into(),
+        })
+        .await?;
         sink(AiReviewProgress::TextDelta {
             item_id: "item-1".into(),
             text: "部分正文".into(),
-        })?;
+        })
+        .await?;
         let (release, wait) = tokio::sync::oneshot::channel();
         self.started.send(release).map_err(|_| "test closed")?;
         wait.await.map_err(|_| "test closed")?;
         sink(AiReviewProgress::TextDelta {
             item_id: "item-1".into(),
             text: "后续正文".into(),
-        })?;
+        })
+        .await?;
         Ok("完整正文".into())
     }
 }
@@ -1896,6 +1928,170 @@ async fn ai_events_authorize_and_recover_stream_snapshot() {
     assert_eq!(state["status"], "complete");
     assert_eq!(state["messages"][0]["content"], "完整正文");
     assert!(state["messages"][0]["id"].as_i64().is_some());
+    server.abort();
+}
+
+#[tokio::test]
+async fn ai_tool_history_is_authorized_paginated_and_deleted() {
+    let (started, mut turns) = tokio::sync::mpsc::unbounded_channel();
+    let (server, base, cookie, _, bank, pool) =
+        bank_server_fixture_with_ai(true, Some(Arc::new(StreamingAi { started }))).await;
+    bank.sync().await.unwrap();
+    let endpoint = format!(
+        "{base}/api/v1/question-bank/practice/questions/019a3d8e-1b32-7a60-9c83-f34217a6e210/ai"
+    );
+    let client = reqwest::Client::new();
+    assert_eq!(
+        client
+            .get(format!("{endpoint}/runs"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    assert_eq!(
+        client
+            .post(&endpoint)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .json(&serde_json::json!({}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        202
+    );
+    let release = turns.recv().await.unwrap();
+    let runs: serde_json::Value = client
+        .get(format!("{endpoint}/runs?limit=1"))
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let run = runs["items"][0]["run_id"].as_str().unwrap();
+    let url = format!("{endpoint}/runs/{run}/events");
+    let first: serde_json::Value = client
+        .get(format!("{url}?limit=1"))
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(first["items"][0]["payload"]["details"]["command"], "pwd");
+    assert_eq!(first["has_more"], true);
+    let cursor = first["next_after"].as_i64().unwrap();
+    let second: serde_json::Value = client
+        .get(format!("{url}?limit=1&after={cursor}"))
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(second["items"][0]["kind"], "command_output_delta");
+    assert_eq!(second["items"][0]["payload"]["text"], "actual output");
+    let all: serde_json::Value = client
+        .get(format!("{url}?limit=100"))
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(all["items"].as_array().unwrap().len(), 6);
+    assert_eq!(all["items"][3]["kind"], "tool_output_delta");
+    assert_eq!(all["items"][3]["payload"]["text"], "patch output");
+    assert_eq!(all["items"][4]["kind"], "tool_progress");
+    assert_eq!(all["items"][4]["payload"]["message"], "working");
+    release.send(()).unwrap();
+    for _ in 0..100 {
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM question_ai_requests WHERE run_id=?")
+                .bind(run)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        if status != "running" {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(
+        client
+            .delete(&endpoint)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    let remaining: i64 = sqlx::query_scalar("SELECT count(*) FROM question_ai_events")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(remaining, 0);
+    server.abort();
+}
+
+#[tokio::test]
+async fn ai_event_storage_failure_marks_the_run_failed() {
+    let (started, mut turns) = tokio::sync::mpsc::unbounded_channel();
+    let (server, base, cookie, _, bank, pool) =
+        bank_server_fixture_with_ai(true, Some(Arc::new(StreamingAi { started }))).await;
+    bank.sync().await.unwrap();
+    sqlx::raw_sql("CREATE TRIGGER reject_ai_event BEFORE INSERT ON question_ai_events BEGIN SELECT RAISE(ABORT, 'disk full'); END;")
+        .execute(&pool).await.unwrap();
+    let endpoint = format!(
+        "{base}/api/v1/question-bank/practice/questions/019a3d8e-1b32-7a60-9c83-f34217a6e210/ai"
+    );
+    let client = reqwest::Client::new();
+    assert_eq!(
+        client
+            .post(&endpoint)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .json(&serde_json::json!({}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        202
+    );
+    turns.recv().await.unwrap().send(()).unwrap();
+    let state: serde_json::Value = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let state: serde_json::Value = client
+                .get(&endpoint)
+                .header("cookie", &cookie)
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            if state["status"] != "running" {
+                break state;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(state["status"], "failed");
+    assert!(state["error"].as_str().unwrap().contains("存储失败"));
     server.abort();
 }
 

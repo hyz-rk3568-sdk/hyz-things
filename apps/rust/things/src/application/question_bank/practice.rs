@@ -99,19 +99,41 @@ pub enum AiReviewProgress {
         item_id: String,
         text: String,
     },
+    CommandOutputDelta {
+        item_id: String,
+        text: String,
+    },
+    ToolOutputDelta {
+        item_id: String,
+        tool: String,
+        text: String,
+    },
+    ToolProgress {
+        item_id: String,
+        tool: String,
+        message: String,
+    },
     ToolStarted {
         item_id: String,
         tool: String,
+        details: serde_json::Value,
     },
     ToolFinished {
         item_id: String,
         tool: String,
         status: String,
+        details: serde_json::Value,
     },
 }
 
-pub type AiReviewEventSink =
-    std::sync::Arc<dyn Fn(AiReviewProgress) -> Result<(), String> + Send + Sync>;
+pub type AiReviewEventSink = std::sync::Arc<
+    dyn Fn(
+            AiReviewProgress,
+        )
+            -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>
+        + Send
+        + Sync,
+>;
 
 #[async_trait::async_trait]
 pub trait AiReviewTurn: Send {
