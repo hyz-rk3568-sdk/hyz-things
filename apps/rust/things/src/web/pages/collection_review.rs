@@ -307,6 +307,23 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                                 disabled={*favorite_busy || favorite_state.is_none()}
                                 onclick={toggle_favorite}>{if *favorite_busy {"…"} else {favorite_symbol}}</button>
                         }
+                        if let Some(value) = &*preview {
+                            if favorite_can_create(value) {
+                                <button type="button" class="btn btn-ghost btn-xs shrink-0"
+                                    title="为当前题目创建 Flashcard"
+                                    data-testid="collection-review-create-flashcard"
+                                    onclick={Callback::from({let creating=creating.clone();move |_|creating.set(true)})}>
+                                    {"闪卡 +"}
+                                </button>
+                            } else if !value.existing.is_empty() {
+                                <button type="button" class="btn btn-ghost btn-xs shrink-0"
+                                    title="管理当前题目的 Flashcard"
+                                    data-testid="collection-review-manage-flashcard"
+                                    onclick={Callback::from({let creating=creating.clone();move |_|creating.set(true)})}>
+                                    {"闪卡"}
+                                </button>
+                            }
+                        }
                     }}
                     passage={Some(question_scroll.clone())}
                     can_scroll_up={question_edges.can_scroll_up}
@@ -355,18 +372,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                         }
                     </section>
                     if let Some(value) = &*preview {
-                            if favorite_can_create(value) {
-                                <button type="button" class="btn btn-primary" data-testid="collection-review-create-flashcard"
-                                    onclick={Callback::from({let creating=creating.clone();move |_|creating.set(true)})}>
-                                    {"创建 Flashcard"}
-                                </button>
-                            } else if !value.existing.is_empty() {
-                                <button type="button" class="btn btn-outline btn-sm"
-                                    data-testid="collection-review-manage-flashcard"
-                                    onclick={Callback::from({let creating=creating.clone();move |_|creating.set(true)})}>
-                                    {"修改或删除 Flashcard"}
-                                </button>
-                            } else {
+                            if !favorite_can_create(value) && value.existing.is_empty() {
                                 <p class="text-xs opacity-60" role="status" data-testid="collection-review-flashcard-unavailable">
                                     {value.reason.as_deref().unwrap_or("此题暂不支持创建闪卡")}
                                 </p>
