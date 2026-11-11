@@ -771,36 +771,6 @@ pub(super) fn question_bank_question_header(props: &QuestionBankQuestionHeaderPr
     }
 }
 
-pub(super) fn flashcard_header_action(
-    preview: &FavoritePreview,
-    create_test_id: &'static str,
-    manage_test_id: &'static str,
-    onclick: Callback<MouseEvent>,
-) -> Html {
-    let count = preview.existing.len();
-    if count == 0 && !favorite_can_create(preview) {
-        return Html::default();
-    }
-    let label = if count == 0 {
-        "为当前题目创建 Flashcard".to_owned()
-    } else {
-        format!("管理当前题目的 {count} 张 Flashcard")
-    };
-    html! {
-        <button type="button" class="btn btn-ghost btn-sm relative h-10 w-10 shrink-0 p-2"
-            data-testid={if count == 0 { create_test_id } else { manage_test_id }}
-            aria-label={label.clone()} title={label} {onclick}>
-            <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="5" y="3" width="15" height="15" rx="2" />
-                <path d="M3 7v12a2 2 0 0 0 2 2h12" />
-            </svg>
-            <span class="absolute right-0 top-0 rounded-full bg-primary px-1 text-[10px] leading-4 text-primary-content">
-                {if count == 0 { "+".to_owned() } else if count > 9 { "9+".to_owned() } else { count.to_string() }}
-            </span>
-        </button>
-    }
-}
-
 #[derive(Clone, PartialEq)]
 struct CollectionModule {
     name: String,
@@ -948,7 +918,7 @@ fn ai_composer(props: AiComposer<'_>) -> Html {
             <AiImagePicker endpoint={props.endpoint} csrf={props.csrf} attachments={props.attachments}
                 uploading={props.uploading} disabled={props.picker_disabled} testid={props.picker_testid}>
             <textarea id={props.id.to_owned()}
-                class="block min-h-24 w-full resize-none border-0 bg-transparent px-3 pb-12 pt-1 text-sm leading-6 focus:outline-none focus:ring-0"
+                class="block min-h-16 sm:min-h-24 w-full resize-none border-0 bg-transparent px-3 pb-12 pt-1 text-sm leading-6 focus:outline-none focus:ring-0"
                 data-testid={props.input_testid.to_owned()} maxlength="2000"
                 value={props.value.to_owned()}
                 placeholder={props.placeholder.to_owned()}
@@ -1007,6 +977,9 @@ fn ai_draft_write(key: &str, value: &str) {
 pub(crate) struct QuestionAiReviewProps {
     pub csrf: String,
     pub question_id: String,
+    pub question_content: Html,
+    pub question_scroll: NodeRef,
+    pub on_question_scroll: Callback<Event>,
 }
 
 /// The component is mounted only while the AI tab is visible; the native
@@ -1037,7 +1010,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     let retry_images = use_state(Vec::<PendingImage>::new);
     let retry_uploading = use_state(|| false);
     let pending_message = use_state(|| None::<String>);
-    let messages_ref = use_node_ref();
+    let messages_ref = props.question_scroll.clone();
     let follow_bottom = use_mut_ref(|| true);
     let new_content = use_state(|| false);
     let start_images = use_state(Vec::<PendingImage>::new);
@@ -1157,7 +1130,9 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let messages_ref = messages_ref.clone();
         let follow_bottom = follow_bottom.clone();
         let new_content = new_content.clone();
-        Callback::from(move |_: Event| {
+        let on_question_scroll = props.on_question_scroll.clone();
+        Callback::from(move |event: Event| {
+            on_question_scroll.emit(event);
             if let Some(element) = messages_ref.cast::<HtmlElement>() {
                 let near_bottom =
                     element.scroll_height() - element.client_height() - element.scroll_top() <= 48;
@@ -1308,6 +1283,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     };
     let on_stop = {
         let state = state.clone();
+        let request_check = request_check.clone();
         let reconnect_stream = reconnect_stream.clone();
         let revision = revision.clone();
         let failure = failure.clone();
@@ -1320,6 +1296,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             }
             submitting.set(true);
             let state = state.clone();
+            let request_check = request_check.clone();
             let reconnect_stream = reconnect_stream.clone();
             let revision = revision.clone();
             let failure = failure.clone();
@@ -1339,6 +1316,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                     Ok(result) => state.set(Some(result)),
                     Err(error) => failure.set(Some(error)),
                 }
+                request_check.set(*request_check + 1);
                 reconnect_stream.emit(());
                 submitting.set(false);
             });
@@ -1710,7 +1688,9 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 && matches!(info.status.as_str(), "failed" | "stopped" | "unknown")
         });
     html! {
-        <section class="space-y-3" data-testid="question-bank-ai-review" ref={diagram_root}>
+        <section class="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="question-bank-ai-review" ref={diagram_root}>
+            <div class="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain touch-pan-y px-4 py-3" ref={messages_ref} onscroll={on_messages_scroll} data-testid="question-bank-ai-messages" role="log" aria-label="AI 对话记录" aria-live="polite">
+            <div class="space-y-4" data-testid="question-bank-ai-question-content">{props.question_content.clone()}</div>
             <div class="flex items-center justify-between gap-2">
                 <strong>{"AI 解析与追问"}</strong>
                 <span class="text-xs text-base-content/60" data-testid="question-bank-ai-status">
@@ -1780,48 +1760,14 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                     </div>
                 }
             }
-            <div class="max-h-[40vh] min-h-0 space-y-3 overflow-y-auto overscroll-contain rounded-xl" ref={messages_ref} onscroll={on_messages_scroll} data-testid="question-bank-ai-messages" role="log" aria-label="AI 对话记录" aria-live="polite">
             if let Some(value) = current.as_ref() {
-                if let Some(error) = &value.error {
-                    <p class="text-sm text-error" role="alert">{error.clone()}</p>
-                }
-                {for value.messages.iter().enumerate().map(|(i, msg)| html! {
-                    <div key={i} class={if msg.role == "user" {
-                        "rounded-xl bg-primary/10 p-3"
-                    } else {
-                        "rounded-xl bg-base-200 p-3"
-                    }} data-testid="question-bank-ai-message">
-                        <div class="mb-2 text-xs font-semibold text-base-content/60">
-                            {if msg.role == "user" { "你的追问" } else { "AI 解析" }}
-                        </div>
-                        if msg.role == "assistant" {
-                            <AiReply content={msg.content.clone()}/>
-                        } else {
-                            <div class="study-markdown text-base leading-7">{super::study_markdown::render_question_bank_user_markdown(&msg.content)}</div>
-                        }
-                    </div>
-                })}
+                if let Some(error) = &value.error { <p class="text-sm text-error" role="alert">{error.clone()}</p> }
             }
+            <super::ai_review_activity::AiReviewActivity endpoint={endpoint.clone()} stream={(*stream).clone()}
+                messages={current.as_ref().map(|value| value.messages.clone()).unwrap_or_default()}/>
             if let Some(active) = stream.as_ref().as_ref() {
-                if !active.progress.is_empty() {
-                    <details class="rounded-xl bg-base-200 p-3 text-sm" data-testid="question-bank-ai-progress">
-                        <summary>{"执行过程"}</summary>
-                        <ol class="mt-2 space-y-1">
-                            {for active.progress.iter().map(|event| {
-                                let text = match event.kind.as_str() {
-                                    "tool_started" => format!("{} · 开始", event.payload.get("tool").and_then(|v| v.as_str()).unwrap_or("工具")),
-                                    "tool_finished" => format!("{} · {}", event.payload.get("tool").and_then(|v| v.as_str()).unwrap_or("工具"), event.payload.get("status").and_then(|v| v.as_str()).unwrap_or("完成")),
-                                    "phase_changed" => format!("阶段：{}", event.payload.get("phase").and_then(|v| v.as_str()).unwrap_or("执行中")),
-                                    "reasoning_summary_delta" => event.payload.get("text").and_then(|v| v.as_str()).unwrap_or("").to_owned(),
-                                    _ => String::new(),
-                                };
-                                html! { <li>{text}</li> }
-                            })}
-                        </ol>
-                    </details>
-                }
                 if active.status == "running" && !active.text.is_empty() {
-                    <div class="rounded-xl bg-base-200 p-3" data-testid="question-bank-ai-stream-text">
+                    <div class="py-2" data-testid="question-bank-ai-stream-text">
                         <div class="mb-2 text-xs font-semibold text-base-content/60">{"AI 正在回复"}</div>
                         if streaming_markdown_complete(&active.text) {
                             <div class="study-markdown text-base leading-7" data-ai-diagram-source="true">{render_question_bank_markdown(&active.text)}</div>
@@ -1837,10 +1783,6 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                     <div class="study-markdown text-base leading-7">{render_question_bank_markdown(message)}</div>
                 </div>
             }
-            </div>
-            if *new_content {
-                <button type="button" class="btn btn-ghost btn-sm" data-testid="question-bank-ai-scroll-bottom" onclick={scroll_to_bottom}>{"有新内容 · 回到底部"}</button>
-            }
             if current.as_ref().is_some_and(|value| !value.messages.is_empty() || value.status == "running") {
                 if *deleting {
                     <div class="space-y-2" role="alert">
@@ -1854,6 +1796,21 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                     <button type="button" class="btn btn-ghost btn-sm text-error" data-testid="question-bank-ai-delete"
                         disabled={*submitting} onclick={Callback::from({let deleting=deleting.clone(); move |_|deleting.set(true)})}>{"删除 AI 解析"}</button>
                 }
+            }
+            if can_start {
+                <p class="text-sm text-base-content/60">{"Codex 将根据题目 UUID 从电脑本地题库读取原题、共用材料及图片，独立解析；参考答案仅供参考。"}</p>
+            }
+            if running {
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <span class="text-sm text-base-content/60">{"后台生成中，切换题目或退出复盘不会中断。"}</span>
+                    <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-ai-stop"
+                        disabled={*submitting} onclick={on_stop}>{"停止生成"}</button>
+                </div>
+            }
+            </div>
+            <div class="relative shrink-0 bg-base-100 px-4 pb-3 pt-2" data-testid="question-bank-ai-composer-area">
+            if *new_content {
+                <button type="button" class="btn btn-circle btn-sm absolute bottom-full left-1/2 z-10 -translate-x-1/2 border border-base-content/15 bg-base-100 shadow-md" aria-label="有新内容，回到底部" data-testid="question-bank-ai-scroll-bottom" onclick={scroll_to_bottom}>{"↓"}</button>
             }
             if can_start {
                 <div class="space-y-1">
@@ -1885,16 +1842,6 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                     <p class="text-xs text-base-content/60">{"这些要求会随本次解析一起发给 Codex。"}</p>
                 </div>
             }
-            if can_start {
-                <p class="text-sm text-base-content/60">{"Codex 将根据题目 UUID 从电脑本地题库读取原题、共用材料及图片，独立解析；参考答案仅供参考。"}</p>
-            }
-            if running {
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                    <span class="text-sm text-base-content/60">{"后台生成中，切换题目或退出复盘不会中断。"}</span>
-                    <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-ai-stop"
-                        disabled={*submitting} onclick={on_stop}>{"停止生成"}</button>
-                </div>
-            }
             if has_answer || running {
                 <div class="space-y-2">
                     <label class="text-sm font-semibold" for="question-ai-follow-up">{"继续追问"}</label>
@@ -1924,6 +1871,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                     })}
                 </div>
             }
+            </div>
         </section>
     }
 }
@@ -2871,39 +2819,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 </section>
             };
             let shared = !item.materials.is_empty();
-            let body = html! {
-                <section class="flex h-full min-h-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100" data-testid="question-bank-practice-question-pane">
-                <QuestionBankQuestionHeader
-                    title_test_id="question-bank-practice-heading"
-                    title={if completed {
-                        format!("原卷第 {} 题 · {}/{}", item.item.number, item_index + 1, current.questions.len())
-                    } else {
-                        format!("第 {}/{} 题", item_index + 1, current.questions.len())
-                    }}
-                    leading={html!{
-                        <>
-                        <button type="button" class="btn btn-ghost btn-sm shrink-0" data-testid="question-bank-favorite"
-                            onclick={Callback::from(move |_| on_favorite.emit(Action::Favorite(qid.clone())))}
-                            disabled={favorite_value.is_none() || *busy}
-                            aria-busy={favorite_pending.to_string()}
-                            aria-label={if favorite_pending {"正在加载收藏状态"} else if favorite_failure.is_some() {"收藏状态加载失败"} else if starred {"取消收藏"} else {"收藏题目"}}>
-                            {if favorite_pending {"…"} else if starred {"★"} else {"☆"}}
-                        </button>
-                        if completed && !item.content_changed {
-                            if let Some(preview) = &card_preview {
-                                {flashcard_header_action(preview, "question-bank-practice-create-flashcard", "question-bank-practice-manage-flashcard",
-                                    Callback::from({let flashcard_open=flashcard_open.clone(); move |_| flashcard_open.set(true)}))}
-                            }
-                        }
-                        </>
-                    }}
-                    passage={Some(question_scroll.clone())}
-                    can_scroll_up={question_edges.can_scroll_up}
-                    can_scroll_down={question_edges.can_scroll_down}
-                    question_index={item_index} target="题目" label="题目与解析滚动" />
-                    <div ref={question_scroll.clone()} onscroll={on_question_scrolling.clone()}
-                        class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4 space-y-4"
-                        data-testid="question-bank-practice-question-scroll">
+            let question_content = html! { <div class="space-y-4">
                     if let Some((_, message)) = favorite_failure {
                         <div class="space-y-2 text-sm text-error" role="alert" data-testid="question-bank-favorite-error">
                             <p>{message.clone()}</p>
@@ -2971,26 +2887,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 correct_count={r.correct_count} wrong_count={r.wrong_count}
                                 answer_test_id="question-bank-practice-review-answer" counts_test_id="question-bank-practice-attempt-counts"/>
                             <div class="border-t border-base-content/10 pt-3 space-y-3">
-                                <div class="join grid grid-cols-2" data-testid="question-bank-review-tabs">
-                                    <button type="button" class={classes!("join-item","btn","btn-sm",if !*ai_tab {"btn-active"} else {"btn-ghost"})}
-                                        data-testid="question-bank-original-tab"
-                                        aria-pressed={(!*ai_tab).to_string()}
-                                        onclick={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(false);}})}>
-                                        {"原始解析"}
-                                    </button>
-                                    <button type="button" class={classes!("join-item","btn","btn-sm",if *ai_tab {"btn-active"} else {"btn-ghost"})}
-                                        data-testid="question-bank-ai-tab"
-                                        aria-pressed={(*ai_tab).to_string()}
-                                        onclick={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(true);}})}>
-                                        {"AI 解析"}
-                                    </button>
-                                </div>
-                                if *ai_tab {
-                                    <QuestionAiReview
-                                        key={format!("{}:{}", current.session.id, item.item.question_id)}
-                                        csrf={props.csrf.clone()}
-                                        question_id={item.item.question_id.clone()}/>
-                                } else {
+                                if !*ai_tab {
                                     <h3 class="font-bold">{"原始解析"}</h3>
                                     <div class="study-markdown mt-2 text-base leading-7 text-base-content/75">
                                         {if r.explanation.is_empty() {html!{"暂无解析"}} else {render_question_bank_markdown(&r.explanation)}}
@@ -3019,7 +2916,59 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             }
                         }
                     }
-                    </div>
+            </div> };
+            let body = html! {
+                <section class="flex h-full min-h-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100" data-testid="question-bank-practice-question-pane">
+                <QuestionBankQuestionHeader
+                    title_test_id="question-bank-practice-heading"
+                    title={if completed {
+                        format!("原卷第 {} 题 · {}/{}", item.item.number, item_index + 1, current.questions.len())
+                    } else {
+                        format!("第 {}/{} 题", item_index + 1, current.questions.len())
+                    }}
+                    leading={html!{
+                        <>
+                        <super::question_header_actions::QuestionHeaderActions
+                            favorite={favorite_value.map(|value| value.favorite)} favorite_busy={*busy || favorite_pending}
+                            favorite_label={if favorite_pending {"正在加载收藏状态"} else if favorite_failure.is_some() {"收藏状态加载失败"} else if starred {"取消收藏"} else {"收藏题目"}}
+                            favorite_test_id="question-bank-favorite"
+                            on_favorite={Callback::from(move |_| on_favorite.emit(Action::Favorite(qid.clone())))}
+                            flashcard_count={if completed && !item.content_changed {card_preview.as_ref().map(|p| p.existing.len())} else {None}}
+                            flashcard_can_create={card_preview.as_ref().is_some_and(favorite_can_create)}
+                            flashcard_create_test_id="question-bank-practice-create-flashcard" flashcard_manage_test_id="question-bank-practice-manage-flashcard"
+                            on_flashcard={Callback::from({let flashcard_open=flashcard_open.clone(); move |_| flashcard_open.set(true)})}/>
+                        </>
+                    }}
+                    passage={Some(question_scroll.clone())}
+                    can_scroll_up={question_edges.can_scroll_up}
+                    can_scroll_down={question_edges.can_scroll_down}
+                    question_index={item_index} target="题目" label="题目与解析滚动" />
+                    if selected_review.is_some() {
+                        <div class="shrink-0 px-4 pt-3">
+                                <div class="join grid grid-cols-2" data-testid="question-bank-review-tabs">
+                                    <button type="button" class={classes!("join-item","btn","btn-sm",if !*ai_tab {"btn-active"} else {"btn-ghost"})}
+                                        data-testid="question-bank-original-tab"
+                                        aria-pressed={(!*ai_tab).to_string()}
+                                        onclick={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(false);}})}>
+                                        {"原始解析"}
+                                    </button>
+                                    <button type="button" class={classes!("join-item","btn","btn-sm",if *ai_tab {"btn-active"} else {"btn-ghost"})}
+                                        data-testid="question-bank-ai-tab"
+                                        aria-pressed={(*ai_tab).to_string()}
+                                        onclick={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(true);}})}>
+                                        {"AI 解析"}
+                                    </button>
+                                </div>
+                        </div>
+                        if *ai_tab {
+                            <QuestionAiReview key={format!("{}:{}", current.session.id, item.item.question_id)} csrf={props.csrf.clone()} question_id={item.item.question_id.clone()} question_content={question_content.clone()} question_scroll={question_scroll.clone()} on_question_scroll={on_question_scrolling.clone()}/>
+                        }
+                    }
+                    if !*ai_tab || selected_review.is_none() {
+                        <div ref={question_scroll.clone()} onscroll={on_question_scrolling.clone()}
+                            class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4"
+                            data-testid="question-bank-practice-question-scroll">{question_content.clone()}</div>
+                    }
                 </section>
             };
             let left_pane = if shared {

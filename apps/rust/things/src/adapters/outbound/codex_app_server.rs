@@ -1,17 +1,17 @@
 //! Fixed-LAN Codex App Server adapter for the single-user study site.
 //! Codex signs in once on the PC; this device only holds a capability token.
 use crate::application::question_bank::practice::{AiReviewEventSink, AiReviewProgress};
-use base64::{engine::general_purpose::STANDARD, Engine as _};
-use serde_json::{json, Value};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use serde_json::{Value, json};
 use sha1::{Digest, Sha1};
 use std::{sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::{
-        tcp::{OwnedReadHalf, OwnedWriteHalf},
         TcpStream,
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
     },
-    sync::{watch, Mutex},
+    sync::{Mutex, watch},
 };
 
 pub const SERVER: &str = "192.168.8.202:1457";
@@ -114,6 +114,7 @@ impl ReviewEventMapper {
                 return Some(AiReviewProgress::ToolStarted {
                     item_id: id.to_owned(),
                     tool: kind.to_owned(),
+                    details: tool_details(item, false),
                 });
             }
         } else if method == "item/completed" {
@@ -135,6 +136,45 @@ impl ReviewEventMapper {
                     item_id: id.to_owned(),
                     tool: kind,
                     status: status.to_owned(),
+                    details: tool_details(item, true),
+                });
+            }
+        } else if method == "item/commandExecution/outputDelta" {
+            let id = params.get("itemId")?.as_str()?;
+            if self.items.get(id)?.as_str() != "commandExecution" {
+                return None;
+            }
+            let text = params.get("delta")?.as_str()?;
+            if !text.is_empty() {
+                return Some(AiReviewProgress::CommandOutputDelta {
+                    item_id: id.to_owned(),
+                    text: text.to_owned(),
+                });
+            }
+        } else if method == "item/fileChange/outputDelta" {
+            let id = params.get("itemId")?.as_str()?;
+            if self.items.get(id)?.as_str() != "fileChange" {
+                return None;
+            }
+            let text = params.get("delta")?.as_str()?;
+            if !text.is_empty() {
+                return Some(AiReviewProgress::ToolOutputDelta {
+                    item_id: id.to_owned(),
+                    tool: "fileChange".to_owned(),
+                    text: text.to_owned(),
+                });
+            }
+        } else if method == "item/mcpToolCall/progress" {
+            let id = params.get("itemId")?.as_str()?;
+            if self.items.get(id)?.as_str() != "mcpToolCall" {
+                return None;
+            }
+            let message = params.get("message")?.as_str()?;
+            if !message.is_empty() {
+                return Some(AiReviewProgress::ToolProgress {
+                    item_id: id.to_owned(),
+                    tool: "mcpToolCall".to_owned(),
+                    message: message.to_owned(),
                 });
             }
         } else if matches!(
@@ -162,6 +202,89 @@ impl ReviewEventMapper {
         }
         None
     }
+}
+
+const OUTPUT_CHUNK_BYTES: usize = 16 * 1024;
+
+async fn send_review_progress(
+    sink: &AiReviewEventSink,
+    event: AiReviewProgress,
+) -> Result<(), String> {
+    match event {
+        AiReviewProgress::CommandOutputDelta { item_id, text } => {
+            send_output_chunks(sink, &text, |text| AiReviewProgress::CommandOutputDelta {
+                item_id: item_id.clone(),
+                text,
+            })
+            .await
+        }
+        AiReviewProgress::ToolOutputDelta {
+            item_id,
+            tool,
+            text,
+        } => {
+            send_output_chunks(sink, &text, |text| AiReviewProgress::ToolOutputDelta {
+                item_id: item_id.clone(),
+                tool: tool.clone(),
+                text,
+            })
+            .await
+        }
+        other => sink(other).await,
+    }
+}
+
+async fn send_output_chunks(
+    sink: &AiReviewEventSink,
+    text: &str,
+    make_event: impl Fn(String) -> AiReviewProgress,
+) -> Result<(), String> {
+    let mut start = 0;
+    while start < text.len() {
+        let mut end = (start + OUTPUT_CHUNK_BYTES).min(text.len());
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        sink(make_event(text[start..end].to_owned())).await?;
+        start = end;
+    }
+    Ok(())
+}
+
+fn tool_details(item: &Value, completed: bool) -> Value {
+    let mut details = serde_json::Map::new();
+    let fields: &[&str] = if completed {
+        &[
+            "command",
+            "cwd",
+            "exitCode",
+            "durationMs",
+            "aggregatedOutput",
+            "server",
+            "tool",
+            "arguments",
+            "result",
+            "error",
+            "changes",
+            "query",
+        ]
+    } else {
+        &[
+            "command",
+            "cwd",
+            "server",
+            "tool",
+            "arguments",
+            "changes",
+            "query",
+        ]
+    };
+    for field in fields {
+        if let Some(value) = item.get(*field) {
+            details.insert((*field).to_owned(), value.clone());
+        }
+    }
+    Value::Object(details)
 }
 
 fn output_schema() -> Value {
@@ -306,6 +429,27 @@ async fn discard_payload(socket: &mut OwnedReadHalf, mut length: usize) -> Resul
     Ok(())
 }
 
+async fn append_payload(
+    socket: &mut OwnedReadHalf,
+    message: &mut Vec<u8>,
+    mut length: usize,
+) -> Result<(), String> {
+    let mut chunk = [0u8; 16 * 1024];
+    while length > 0 {
+        let count = length.min(chunk.len());
+        socket
+            .read_exact(&mut chunk[..count])
+            .await
+            .map_err(|_| "Codex 帧读取失败")?;
+        message
+            .try_reserve(count)
+            .map_err(|_| "设备内存不足，无法接收 Codex 输出")?;
+        message.extend_from_slice(&chunk[..count]);
+        length -= count;
+    }
+    Ok(())
+}
+
 async fn read_text(socket: &mut OwnedReadHalf, writer: &SharedWriter) -> Result<String, String> {
     read_text_bounded(socket, writer, false).await
 }
@@ -361,14 +505,11 @@ async fn read_text_bounded(
         }
         match opcode {
             0x1 if !fragmented && !discarding => {
-                if length > MAX_PACKET {
-                    if strict {
-                        return Err(format!("Codex 通知超过大小限制；{UNCONFIRMED_MESSAGE}"));
-                    }
+                if !strict && length > MAX_PACKET {
                     discard_payload(socket, length).await?;
                     discarding = !final_frame;
                 } else {
-                    message = read_payload(socket, length).await?;
+                    append_payload(socket, &mut message, length).await?;
                     if final_frame {
                         return String::from_utf8(message)
                             .map_err(|_| "Codex 响应不是 UTF-8".into());
@@ -382,16 +523,13 @@ async fn read_text_bounded(
                     if final_frame {
                         discarding = false;
                     }
-                } else if message.len().saturating_add(length) > MAX_PACKET {
-                    if strict {
-                        return Err(format!("Codex 通知超过大小限制；{UNCONFIRMED_MESSAGE}"));
-                    }
+                } else if !strict && message.len().saturating_add(length) > MAX_PACKET {
                     message.clear();
                     fragmented = false;
                     discard_payload(socket, length).await?;
                     discarding = !final_frame;
                 } else {
-                    message.extend_from_slice(&read_payload(socket, length).await?);
+                    append_payload(socket, &mut message, length).await?;
                     if final_frame {
                         return String::from_utf8(message)
                             .map_err(|_| "Codex 响应不是 UTF-8".into());
@@ -766,7 +904,7 @@ impl CodexSession {
             let method = packet.get("method").and_then(Value::as_str);
             if let Some(sink) = &sink {
                 if let Some(event) = mapper.map(&packet, &thread, &turn_id) {
-                    sink(event)?;
+                    send_review_progress(sink, event).await?;
                 }
             }
             if packet.pointer("/params/turnId").and_then(Value::as_str) == Some(turn_id.as_str())
@@ -813,18 +951,24 @@ mod tests {
                 "threadId":thread,"turnId":turn,"itemId":"item-1","delta":"正文"
             }})
         };
-        assert!(mapper
-            .map(&delta("thread", "turn"), "thread", "turn")
-            .is_none());
+        assert!(
+            mapper
+                .map(&delta("thread", "turn"), "thread", "turn")
+                .is_none()
+        );
         let started = json!({"method":"item/started","params":{"threadId":"thread","turnId":"turn",
             "item":{"id":"item-1","type":"agentMessage"}}});
         assert!(mapper.map(&started, "thread", "turn").is_none());
-        assert!(mapper
-            .map(&delta("other", "turn"), "thread", "turn")
-            .is_none());
-        assert!(mapper
-            .map(&delta("thread", "other"), "thread", "turn")
-            .is_none());
+        assert!(
+            mapper
+                .map(&delta("other", "turn"), "thread", "turn")
+                .is_none()
+        );
+        assert!(
+            mapper
+                .map(&delta("thread", "other"), "thread", "turn")
+                .is_none()
+        );
         assert!(matches!(
             mapper.map(&delta("thread", "turn"), "thread", "turn"),
             Some(AiReviewProgress::TextDelta { .. })
@@ -850,6 +994,100 @@ mod tests {
     }
 
     #[test]
+    fn command_output_is_scoped_to_active_command_and_turn() {
+        let mut mapper = ReviewEventMapper::default();
+        let started = json!({"method":"item/started","params":{"threadId":"t","turnId":"r",
+            "item":{"id":"cmd","type":"commandExecution"}}});
+        let delta = json!({"method":"item/commandExecution/outputDelta","params":{
+            "threadId":"t","turnId":"r","itemId":"cmd","delta":"hello"}});
+        assert!(mapper.map(&delta, "t", "r").is_none());
+        mapper.map(&started, "t", "r");
+        assert!(mapper.map(&delta, "t", "other").is_none());
+        assert!(matches!(mapper.map(&delta, "t", "r"),
+            Some(AiReviewProgress::CommandOutputDelta { item_id, text })
+                if item_id == "cmd" && text == "hello"));
+        let completed = json!({"method":"item/completed","params":{"threadId":"t","turnId":"r",
+            "item":{"id":"cmd","type":"commandExecution"}}});
+        mapper.map(&completed, "t", "r");
+        assert!(mapper.map(&delta, "t", "r").is_none());
+    }
+
+    #[test]
+    fn command_lifecycle_preserves_command_and_exit_details() {
+        let mut mapper = ReviewEventMapper::default();
+        let started = json!({"method":"item/started","params":{"threadId":"t","turnId":"r",
+            "item":{"id":"cmd","type":"commandExecution","command":"pwd","cwd":"/work"}}});
+        let completed = json!({"method":"item/completed","params":{"threadId":"t","turnId":"r",
+            "item":{"id":"cmd","type":"commandExecution","status":"completed","exitCode":0}}});
+        assert!(matches!(mapper.map(&started, "t", "r"),
+            Some(AiReviewProgress::ToolStarted { details, .. }) if details["command"] == "pwd"));
+        assert!(matches!(mapper.map(&completed, "t", "r"),
+            Some(AiReviewProgress::ToolFinished { details, .. }) if details["exitCode"] == 0));
+    }
+
+    #[test]
+    fn file_and_mcp_progress_require_the_matching_live_item() {
+        let mut mapper = ReviewEventMapper::default();
+        let started = |id: &str, kind: &str| {
+            json!({"method":"item/started","params":{
+            "threadId":"t","turnId":"r","item":{"id":id,"type":kind}}})
+        };
+        let file = json!({"method":"item/fileChange/outputDelta","params":{
+            "threadId":"t","turnId":"r","itemId":"f","delta":"patch output"}});
+        let mcp = json!({"method":"item/mcpToolCall/progress","params":{
+            "threadId":"t","turnId":"r","itemId":"m","message":"working"}});
+        assert!(mapper.map(&file, "t", "r").is_none());
+        mapper.map(&started("f", "fileChange"), "t", "r");
+        mapper.map(&started("m", "mcpToolCall"), "t", "r");
+        assert!(mapper.map(&file, "other", "r").is_none());
+        assert!(mapper.map(&mcp, "t", "other").is_none());
+        assert!(matches!(mapper.map(&file, "t", "r"),
+            Some(AiReviewProgress::ToolOutputDelta { tool, text, .. })
+                if tool == "fileChange" && text == "patch output"));
+        assert!(matches!(mapper.map(&mcp, "t", "r"),
+            Some(AiReviewProgress::ToolProgress { tool, message, .. })
+                if tool == "mcpToolCall" && message == "working"));
+        let wrong = json!({"method":"item/fileChange/outputDelta","params":{
+            "threadId":"t","turnId":"r","itemId":"m","delta":"wrong"}});
+        assert!(mapper.map(&wrong, "t", "r").is_none());
+        let complete = json!({"method":"item/completed","params":{"threadId":"t","turnId":"r",
+            "item":{"id":"m","type":"mcpToolCall","status":"completed"}}});
+        mapper.map(&complete, "t", "r");
+        assert!(mapper.map(&mcp, "t", "r").is_none());
+    }
+
+    #[tokio::test]
+    async fn tool_output_chunks_preserve_utf8_and_order() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let sink: AiReviewEventSink = Arc::new(move |event| {
+            let tx = tx.clone();
+            Box::pin(async move { tx.send(event).map_err(|_| "closed".to_owned()) })
+        });
+        let text = "题".repeat(OUTPUT_CHUNK_BYTES);
+        send_review_progress(
+            &sink,
+            AiReviewProgress::CommandOutputDelta {
+                item_id: "cmd".into(),
+                text: text.clone(),
+            },
+        )
+        .await
+        .unwrap();
+        let mut reconstructed = String::new();
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                AiReviewProgress::CommandOutputDelta { item_id, text } => {
+                    assert_eq!(item_id, "cmd");
+                    assert!(text.len() <= OUTPUT_CHUNK_BYTES);
+                    reconstructed.push_str(&text);
+                }
+                _ => panic!("unexpected event"),
+            }
+        }
+        assert_eq!(reconstructed, text);
+    }
+
+    #[test]
     fn generation_turn_deadline_is_ten_minutes() {
         assert_eq!(TURN_TIMEOUT, Duration::from_secs(600));
     }
@@ -870,11 +1108,13 @@ mod tests {
             schema["properties"]["questions"]["items"]["properties"]["source_kind"]["enum"],
             json!(["wrong", "knowledge"])
         );
-        assert!(schema["properties"]["questions"]["items"]["required"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|name| name == "source_kind"));
+        assert!(
+            schema["properties"]["questions"]["items"]["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|name| name == "source_kind")
+        );
         assert_eq!(
             schema["properties"]["questions"]["items"]["additionalProperties"],
             false
@@ -1004,7 +1244,10 @@ mod tests {
             .find_map(|line| line.strip_prefix("Sec-WebSocket-Key: "))
             .unwrap()
             .trim();
-        let reply = format!("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {}\r\n\r\n",accept_key(key));
+        let reply = format!(
+            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {}\r\n\r\n",
+            accept_key(key)
+        );
         socket.write_all(reply.as_bytes()).await.unwrap();
         let init = client_message(&mut socket).await;
         assert_eq!(init["method"], "initialize");
@@ -1124,8 +1367,10 @@ mod tests {
     async fn review_stream_preserves_matching_notifications_before_start_response() {
         let (mut session, mut socket) = test_connection().await;
         let (tx, mut events) = tokio::sync::mpsc::unbounded_channel();
-        let sink: AiReviewEventSink =
-            Arc::new(move |event| tx.send(event).map_err(|_| "closed".to_owned()));
+        let sink: AiReviewEventSink = Arc::new(move |event| {
+            let tx = tx.clone();
+            Box::pin(async move { tx.send(event).map_err(|_| "closed".to_owned()) })
+        });
         let task = tokio::spawn(async move {
             session
                 .turn_review_stream("review", &[], watch::channel(false).0, sink)
@@ -1348,11 +1593,13 @@ mod tests {
             server_message(socket, json!({"id":interrupt["id"],"result":{}})).await;
             complete_test_turn(socket, "interrupted").await;
         }
-        assert!(first_task
-            .await
-            .unwrap()
-            .unwrap_err()
-            .starts_with("Codex 出题超时"));
+        assert!(
+            first_task
+                .await
+                .unwrap()
+                .unwrap_err()
+                .starts_with("Codex 出题超时")
+        );
         assert_eq!(peer_task.await.unwrap().unwrap_err(), CANCELLED_MESSAGE);
     }
 
@@ -1515,21 +1762,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn oversized_review_notification_reports_an_unconfirmed_turn() {
+    async fn review_accepts_large_tool_output_and_completes() {
         let (mut session, mut socket) = test_connection().await;
-        let sink: AiReviewEventSink = Arc::new(|_| Ok(()));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let sink: AiReviewEventSink = Arc::new(move |event| {
+            let tx = tx.clone();
+            Box::pin(async move {
+                tx.send(event)
+                    .map_err(|_| "event receiver closed".to_owned())
+            })
+        });
         let worker = tokio::spawn(async move {
             session
                 .turn_review_stream("review", &[], watch::channel(false).0, sink)
                 .await
         });
         start_test_turn(&mut socket).await;
-        let mut header = vec![0x81, 127];
-        header.extend_from_slice(&((MAX_PACKET + 1) as u64).to_be_bytes());
-        socket.write_all(&header).await.unwrap();
-        let error = worker.await.unwrap().unwrap_err();
-        assert!(error.contains("超过大小限制"));
-        assert!(error.contains(UNCONFIRMED_MESSAGE));
+        server_message(&mut socket, json!({"method":"item/started","params":{
+            "threadId":"test-thread","turnId":"turn-1","item":{"id":"cmd","type":"commandExecution"}
+        }})).await;
+        server_large_message(&mut socket, &json!({"method":"item/commandExecution/outputDelta","params":{
+            "threadId":"test-thread","turnId":"turn-1","itemId":"cmd","delta":"x".repeat(600 * 1024)
+        }})).await;
+        server_large_message(&mut socket, &json!({"method":"item/completed","params":{
+            "threadId":"test-thread","turnId":"turn-1","item":{"id":"cmd","type":"commandExecution","aggregatedOutput":"x".repeat(600 * 1024)}
+        }})).await;
+        server_message(&mut socket, json!({"method":"item/completed","params":{
+            "threadId":"test-thread","turnId":"turn-1","item":{"type":"agentMessage","text":"完成"}
+        }})).await;
+        complete_test_turn(&mut socket, "completed").await;
+        assert_eq!(worker.await.unwrap().unwrap(), "完成");
+        let mut output = String::new();
+        while let Ok(event) = rx.try_recv() {
+            if let AiReviewProgress::CommandOutputDelta { text, .. } = event {
+                output.push_str(&text);
+            }
+        }
+        assert_eq!(output.len(), 600 * 1024);
     }
 
     #[tokio::test]

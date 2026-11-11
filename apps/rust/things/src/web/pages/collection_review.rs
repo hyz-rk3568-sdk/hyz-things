@@ -4,7 +4,7 @@
 use super::favorite_flashcard::{favorite_can_create, FavoriteFlashcardWorkspace, FavoritePreview};
 use super::material_scroll::{scroll_edges, ScrollEdges};
 use super::question_bank_practice::{
-    answer_options, flashcard_header_action, use_practice_favorite, use_question_ai_tab, QuestionAiReview,
+    answer_options, use_practice_favorite, use_question_ai_tab, QuestionAiReview,
     QuestionBankQuestionHeader,
 };
 use super::*;
@@ -156,13 +156,6 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
     };
     let favorite_state = (*favorite.value).as_ref();
     let favorite_active = favorite_state.is_some_and(|state| state.favorite);
-    let favorite_symbol = if favorite_state.is_none() {
-        "…"
-    } else if favorite_active {
-        "★"
-    } else {
-        "☆"
-    };
     let favorite_label = if favorite_active {
         "取消收藏"
     } else {
@@ -286,42 +279,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
             </section>
         };
         let left = if shared { material_pane } else { stem_pane };
-        let right = html! {
-            <section class="flex h-full min-h-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100"
-                data-testid="collection-review-question-pane">
-                <QuestionBankQuestionHeader
-                    title_test_id="collection-review-heading"
-                    title={format!("第 {} 题", current.item.number)}
-                    subtitle={Some([current.item.module.as_deref(),current.item.category.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" · "))}
-                    leading={html!{
-                        <>
-                        if let Some((_, message)) = (*favorite.failure).as_ref() {
-                            <button type="button" class="btn btn-ghost btn-sm shrink-0 text-error" data-testid="collection-review-favorite-retry"
-                                title={message.clone()} onclick={Callback::from({
-                                    let retry=favorite.retry.clone(); move |_|retry.emit(())
-                                })}>
-                                {"重试收藏"}
-                            </button>
-                        } else {
-                            <button type="button" class="btn btn-ghost btn-sm shrink-0 text-lg" data-testid="collection-review-favorite"
-                                aria-label={if *favorite_busy {"正在更新收藏"} else {favorite_label}}
-                                disabled={*favorite_busy || favorite_state.is_none()}
-                                onclick={toggle_favorite}>{if *favorite_busy {"…"} else {favorite_symbol}}</button>
-                        }
-                        if let Some(value) = &*preview {
-                            {flashcard_header_action(value, "collection-review-create-flashcard", "collection-review-manage-flashcard",
-                                Callback::from({let creating=creating.clone(); move |_| creating.set(true)}))}
-                        }
-                        </>
-                    }}
-                    passage={Some(question_scroll.clone())}
-                    can_scroll_up={question_edges.can_scroll_up}
-                    can_scroll_down={question_edges.can_scroll_down}
-                    question_index={*index} target="题目" label="题目与解析滚动" />
-                <div ref={question_scroll.clone()}
-                    onscroll={Callback::from({let refresh=refresh_question_edges.clone();move |_|refresh.emit(())})}
-                    class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4 space-y-4"
-                    data-testid="collection-review-question-scroll">
+        let question_content = html! { <div class="space-y-4">
                     if shared {
                         <div class="study-markdown question-bank-passage" data-testid="collection-review-stem">
                             {render_question_bank_markdown(&current.question.stem)}
@@ -341,17 +299,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                         correct_count={current.correct_count} wrong_count={current.wrong_count}
                         answer_test_id="collection-review-answer" counts_test_id="collection-review-attempt-counts"/>
                     <section class="border-t border-base-content/10 pt-3 space-y-3">
-                        <div class="join grid grid-cols-2" data-testid="question-bank-review-tabs">
-                            <button type="button" class={classes!("join-item", "btn", "btn-sm", if !*ai_tab {"btn-active"} else {"btn-ghost"})}
-                                data-testid="question-bank-original-tab" aria-pressed={(!*ai_tab).to_string()}
-                                onclick={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(false);}})}>{"原始解析"}</button>
-                            <button type="button" class={classes!("join-item", "btn", "btn-sm", if *ai_tab {"btn-active"} else {"btn-ghost"})}
-                                data-testid="question-bank-ai-tab" aria-pressed={(*ai_tab).to_string()}
-                                onclick={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(true);}})}>{"AI 解析"}</button>
-                        </div>
-                        if *ai_tab {
-                            <QuestionAiReview key={item.question_id.clone()} question_id={item.question_id.clone()} csrf={props.csrf.clone()}/>
-                        } else {
+                        if !*ai_tab {
                             <h3 class="font-bold">{"原始解析"}</h3>
                             <div class="study-markdown mt-2 text-base leading-7 text-base-content/75" data-testid="collection-review-explanation">
                                 {if current.explanation.is_empty() {html!{"暂无解析"}} else {render_question_bank_markdown(&current.explanation)}}
@@ -375,7 +323,56 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                         } else {
                             <p class="text-xs opacity-60" role="status">{"正在检查闪卡资格…"}</p>
                         }
+        </div> };
+        let right = html! {
+            <section class="flex h-full min-h-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100"
+                data-testid="collection-review-question-pane">
+                <QuestionBankQuestionHeader
+                    title_test_id="collection-review-heading"
+                    title={format!("第 {} 题", current.item.number)}
+                    subtitle={Some([current.item.module.as_deref(),current.item.category.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" · "))}
+                    leading={html!{
+                        <>
+                        if let Some((_, message)) = (*favorite.failure).as_ref() {
+                            <button type="button" class="btn btn-ghost btn-sm shrink-0 text-error" data-testid="collection-review-favorite-retry"
+                                title={message.clone()} onclick={Callback::from({
+                                    let retry=favorite.retry.clone(); move |_|retry.emit(())
+                                })}>
+                                {"重试收藏"}
+                            </button>
+                        }
+                            <super::question_header_actions::QuestionHeaderActions
+                                favorite={favorite_state.map(|value| value.favorite)} favorite_busy={*favorite_busy}
+                                favorite_label={if *favorite_busy {"正在更新收藏"} else {favorite_label}}
+                                favorite_test_id="collection-review-favorite" on_favorite={toggle_favorite}
+                                flashcard_count={preview.as_ref().as_ref().map(|p| p.existing.len())}
+                                flashcard_can_create={preview.as_ref().as_ref().is_some_and(|value| favorite_can_create(value))}
+                                flashcard_create_test_id="collection-review-create-flashcard" flashcard_manage_test_id="collection-review-manage-flashcard"
+                                on_flashcard={Callback::from({let creating=creating.clone(); move |_| creating.set(true)})}/>
+                        </>
+                    }}
+                    passage={Some(question_scroll.clone())}
+                    can_scroll_up={question_edges.can_scroll_up}
+                    can_scroll_down={question_edges.can_scroll_down}
+                    question_index={*index} target="题目" label="题目与解析滚动" />
+                <div class="shrink-0 px-4 pt-3">
+                        <div class="join grid grid-cols-2" data-testid="question-bank-review-tabs">
+                            <button type="button" class={classes!("join-item", "btn", "btn-sm", if !*ai_tab {"btn-active"} else {"btn-ghost"})}
+                                data-testid="question-bank-original-tab" aria-pressed={(!*ai_tab).to_string()}
+                                onclick={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(false);}})}>{"原始解析"}</button>
+                            <button type="button" class={classes!("join-item", "btn", "btn-sm", if *ai_tab {"btn-active"} else {"btn-ghost"})}
+                                data-testid="question-bank-ai-tab" aria-pressed={(*ai_tab).to_string()}
+                                onclick={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(true);}})}>{"AI 解析"}</button>
+                        </div>
                 </div>
+                if *ai_tab {
+                    <QuestionAiReview key={item.question_id.clone()} question_id={item.question_id.clone()} csrf={props.csrf.clone()} question_content={question_content.clone()} question_scroll={question_scroll.clone()} on_question_scroll={Callback::from({let refresh=refresh_question_edges.clone();move |_|refresh.emit(())})}/>
+                } else {
+                    <div ref={question_scroll.clone()}
+                        onscroll={Callback::from({let refresh=refresh_question_edges.clone();move |_|refresh.emit(())})}
+                        class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4"
+                        data-testid="collection-review-question-scroll">{question_content.clone()}</div>
+                }
             </section>
         };
         html! {

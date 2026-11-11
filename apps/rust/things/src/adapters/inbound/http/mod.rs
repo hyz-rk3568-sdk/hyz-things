@@ -839,6 +839,14 @@ fn app_with_assets(
             on(MethodFilter::GET, question_bank::ai_events),
         )
         .route(
+            "/api/v1/question-bank/practice/questions/{id}/ai/runs",
+            on(MethodFilter::GET, question_bank::ai_history_runs),
+        )
+        .route(
+            "/api/v1/question-bank/practice/questions/{id}/ai/runs/{run_id}/events",
+            on(MethodFilter::GET, question_bank::ai_history_events),
+        )
+        .route(
             "/api/v1/question-bank/practice/questions/{id}/ai/messages",
             on(MethodFilter::POST, question_bank::ai_follow_up)
                 .layer(DefaultBodyLimit::max(8 * 1024)),

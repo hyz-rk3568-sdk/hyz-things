@@ -1,6 +1,7 @@
 use super::*;
 
 mod ai_reply;
+mod ai_review_activity;
 mod ai_review_stream;
 mod calculation;
 mod camera;
@@ -18,6 +19,7 @@ mod proxy;
 mod question_bank;
 mod question_bank_practice;
 mod question_bank_setup;
+mod question_header_actions;
 mod question_navigation;
 mod related_method_card;
 mod scratchpad;

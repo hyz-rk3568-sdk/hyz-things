@@ -1,12 +1,12 @@
 //! Persistent question-and-stem-scoped AI review.
 use super::data_analysis::CodexConfig;
 use crate::application::question_bank::{
-    attachments::{validate_image, MAX_IMAGES_PER_MESSAGE},
+    BankError, QuestionBankApplication,
+    attachments::{MAX_IMAGES_PER_MESSAGE, validate_image},
     practice::{
         AiAttachmentRelay, AiReviewBackend, AiReviewEventSink, AiReviewProgress, AiReviewTurn,
         QuestionAiLocator,
     },
-    BankError, QuestionBankApplication,
 };
 use crate::domain::question_bank::{AiReviewMessage, AiReviewState};
 use sha2::{Digest, Sha256};
@@ -16,7 +16,7 @@ use std::{
     sync::{Arc, Mutex as StdMutex},
     time::{Duration, Instant},
 };
-use tokio::sync::{broadcast, watch, Mutex, Semaphore};
+use tokio::sync::{Mutex, Semaphore, broadcast, watch};
 
 const MAX_FOLLOW_UP: usize = 2000;
 const MAX_ACTIVE: usize = 2;
@@ -71,14 +71,6 @@ impl StreamStore {
         kind: &str,
         payload: serde_json::Value,
     ) -> Result<(), String> {
-        if matches!(kind, "text_delta" | "reasoning_summary_delta")
-            && payload
-                .get("text")
-                .and_then(serde_json::Value::as_str)
-                .is_some_and(|text| text.len() > 32 * 1024)
-        {
-            return Err("AI 解析单条事件超过大小限制".into());
-        }
         let run = self
             .runs
             .get_mut(key)
@@ -89,24 +81,14 @@ impl StreamStore {
                 .get("text")
                 .and_then(serde_json::Value::as_str)
                 .ok_or("AI 解析增量无效")?;
-            if run.text.len().saturating_add(text.len()) > MAX_STREAM_TEXT {
-                return Err("AI 解析流超过大小限制".into());
-            }
             run.text.push_str(text);
-        }
-        if matches!(
-            kind,
-            "tool_started" | "tool_finished" | "reasoning_summary_delta" | "phase_changed"
-        ) && (run.progress.len() >= MAX_STREAM_PROGRESS
-            || run
-                .progress
-                .iter()
-                .map(|entry| entry.payload.to_string().len())
-                .sum::<usize>()
-                .saturating_add(payload.to_string().len())
-                > MAX_STREAM_TEXT)
-        {
-            return Err("AI 解析进度超过大小限制".into());
+            if run.text.len() > MAX_STREAM_TEXT {
+                let mut start = run.text.len() - MAX_STREAM_TEXT;
+                while !run.text.is_char_boundary(start) {
+                    start += 1;
+                }
+                run.text.drain(..start);
+            }
         }
         run.seq += 1;
         let event = AiReviewStreamEventV1 {
@@ -119,9 +101,25 @@ impl StreamStore {
         };
         if matches!(
             kind,
-            "tool_started" | "tool_finished" | "reasoning_summary_delta" | "phase_changed"
+            "tool_started"
+                | "tool_finished"
+                | "reasoning_summary_delta"
+                | "command_output_delta"
+                | "tool_output_delta"
+                | "tool_progress"
+                | "phase_changed"
         ) {
             run.progress.push(event.clone());
+            while run.progress.len() > MAX_STREAM_PROGRESS
+                || run
+                    .progress
+                    .iter()
+                    .map(|entry| entry.payload.to_string().len())
+                    .sum::<usize>()
+                    > MAX_STREAM_TEXT
+            {
+                run.progress.remove(0);
+            }
         }
         match kind {
             "answer_final" => {
@@ -144,6 +142,23 @@ impl StreamStore {
         });
         Ok(())
     }
+}
+
+#[derive(serde::Serialize)]
+pub struct AiHistoryRun {
+    pub cursor: i64,
+    pub request_id: String,
+    pub run_id: String,
+    pub status: String,
+    pub assistant_message_id: Option<i64>,
+    pub created_at: i64,
+}
+
+#[derive(serde::Serialize)]
+pub struct AiHistoryPage<T> {
+    pub items: Vec<T>,
+    pub next_after: Option<i64>,
+    pub has_more: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -431,6 +446,81 @@ impl QuestionBankAiService {
         question_id: &str,
     ) -> Result<(String, String), AiReviewError> {
         Ok(key(&self.bank.question_ai_locator(question_id).await?))
+    }
+
+    pub async fn history_runs(
+        &self,
+        question_id: &str,
+        after: i64,
+        limit: i64,
+    ) -> Result<AiHistoryPage<AiHistoryRun>, AiReviewError> {
+        if after < 0 || !(1..=100).contains(&limit) {
+            return Err(AiReviewError::Invalid);
+        }
+        let key = self.stream_identity(question_id).await?;
+        let rows = sqlx::query("SELECT rowid,request_id,run_id,status,assistant_message_id,created_at FROM question_ai_requests WHERE question_id=? AND stem_fingerprint=? AND rowid>? ORDER BY rowid LIMIT ?")
+            .bind(&key.0).bind(&key.1).bind(after).bind(limit + 1)
+            .fetch_all(&self.pool).await.map_err(|_| AiReviewError::Storage)?;
+        let has_more = rows.len() > limit as usize;
+        let items: Vec<AiHistoryRun> = rows
+            .into_iter()
+            .take(limit as usize)
+            .map(|row| AiHistoryRun {
+                cursor: row.get("rowid"),
+                request_id: row.get("request_id"),
+                run_id: row.get("run_id"),
+                status: row.get("status"),
+                assistant_message_id: row.get("assistant_message_id"),
+                created_at: row.get("created_at"),
+            })
+            .collect();
+        let next_after = items.last().map(|item| item.cursor);
+        Ok(AiHistoryPage {
+            items,
+            next_after,
+            has_more,
+        })
+    }
+
+    pub async fn history_events(
+        &self,
+        question_id: &str,
+        run_id: &str,
+        after: i64,
+        limit: i64,
+    ) -> Result<AiHistoryPage<AiReviewStreamEventV1>, AiReviewError> {
+        if after < 0 || !(1..=100).contains(&limit) {
+            return Err(AiReviewError::Invalid);
+        }
+        let run_id = request_uuid(run_id)?;
+        let key = self.stream_identity(question_id).await?;
+        let exists: i64 = sqlx::query_scalar("SELECT count(*) FROM question_ai_requests WHERE question_id=? AND stem_fingerprint=? AND run_id=?")
+            .bind(&key.0).bind(&key.1).bind(&run_id).fetch_one(&self.pool).await.map_err(|_| AiReviewError::Storage)?;
+        if exists == 0 {
+            return Err(AiReviewError::RequestNotFound);
+        }
+        let rows = sqlx::query("SELECT seq,kind,timestamp_ms,payload FROM question_ai_events WHERE question_id=? AND stem_fingerprint=? AND run_id=? AND seq>? ORDER BY seq LIMIT ?")
+            .bind(&key.0).bind(&key.1).bind(&run_id).bind(after).bind(limit + 1)
+            .fetch_all(&self.pool).await.map_err(|_| AiReviewError::Storage)?;
+        let has_more = rows.len() > limit as usize;
+        let mut items = Vec::new();
+        for row in rows.into_iter().take(limit as usize) {
+            let payload: String = row.get("payload");
+            items.push(AiReviewStreamEventV1 {
+                version: 1,
+                run_id: run_id.clone(),
+                seq: row.get::<i64, _>("seq") as u64,
+                kind: row.get("kind"),
+                timestamp_ms: row.get("timestamp_ms"),
+                payload: serde_json::from_str(&payload).map_err(|_| AiReviewError::Storage)?,
+            });
+        }
+        let next_after = items.last().map(|event| event.seq as i64);
+        Ok(AiHistoryPage {
+            items,
+            next_after,
+            has_more,
+        })
     }
 
     pub fn stream_permit(&self) -> Result<tokio::sync::OwnedSemaphorePermit, AiReviewError> {
@@ -801,7 +891,7 @@ impl QuestionBankAiService {
             } if value.chars().count() > MAX_FOLLOW_UP
                 || value.chars().any(|c| c.is_control() && c != '\n') =>
             {
-                return Err(AiReviewError::Invalid)
+                return Err(AiReviewError::Invalid);
             }
             RequestIntent::FollowUp {
                 message,
@@ -811,7 +901,7 @@ impl QuestionBankAiService {
                 || message.chars().count() > MAX_FOLLOW_UP
                 || message.chars().any(|c| c.is_control() && c != '\n') =>
             {
-                return Err(AiReviewError::Invalid)
+                return Err(AiReviewError::Invalid);
             }
             _ => {}
         }
@@ -1152,6 +1242,12 @@ impl QuestionBankAiService {
         if uncertain == Some(1) && !confirm_uncertain {
             return Err(AiReviewError::ConfirmationRequired);
         }
+        sqlx::query("DELETE FROM question_ai_events WHERE question_id=? AND stem_fingerprint=?")
+            .bind(&key.0)
+            .bind(&key.1)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| AiReviewError::Storage)?;
         sqlx::query("DELETE FROM question_ai_requests WHERE question_id=? AND stem_fingerprint=?")
             .bind(&key.0)
             .bind(&key.1)
@@ -1246,25 +1342,45 @@ impl QuestionBankAiService {
                 let _ = streams.emit(&key, id, "phase_changed", serde_json::json!({"phase":"executing"}));
             }
             let streams = Arc::clone(&self.streams);
+            let pool = self.pool.clone();
             let stream_key = key.clone();
             let stream_cancellation = cancellation.clone();
             let stream_overflow = Arc::clone(&overflow);
+            let write_lock = Arc::new(Mutex::new(()));
             let sink: AiReviewEventSink = Arc::new(move |progress: AiReviewProgress| {
-                if *stream_cancellation.borrow() { return Ok(()); }
-                if matches!(&progress, AiReviewProgress::LimitExceeded) {
-                    stream_overflow.store(true, std::sync::atomic::Ordering::Relaxed);
-                    stream_cancellation.send_replace(true);
-                    return Ok(());
-                }
-                let value = serde_json::to_value(progress).map_err(|_| "AI 解析事件编码失败")?;
-                let kind = value.get("kind").and_then(serde_json::Value::as_str).ok_or("AI 解析事件无效")?;
-                let payload = value.get("payload").cloned().ok_or("AI 解析事件无效")?;
-                let result = streams.lock().unwrap_or_else(|error| error.into_inner()).emit(&stream_key, id, kind, payload);
-                if result.is_err() {
-                    stream_overflow.store(true, std::sync::atomic::Ordering::Relaxed);
-                    stream_cancellation.send_replace(true);
-                }
-                Ok(())
+                let streams = Arc::clone(&streams);
+                let pool = pool.clone();
+                let key = stream_key.clone();
+                let cancellation = stream_cancellation.clone();
+                let failure = Arc::clone(&stream_overflow);
+                let write_lock = Arc::clone(&write_lock);
+                Box::pin(async move {
+                    let _guard = write_lock.lock().await;
+                    if *cancellation.borrow() { return Ok(()); }
+                    if matches!(&progress, AiReviewProgress::LimitExceeded) {
+                        failure.store(true, std::sync::atomic::Ordering::Relaxed);
+                        cancellation.send_replace(true);
+                        return Ok(());
+                    }
+                    let value = serde_json::to_value(progress).map_err(|_| "AI 解析事件编码失败")?;
+                    let kind = value.get("kind").and_then(serde_json::Value::as_str).ok_or("AI 解析事件无效")?;
+                    let payload = value.get("payload").cloned().ok_or("AI 解析事件无效")?;
+                    let seq = {
+                        let streams = streams.lock().unwrap_or_else(|error| error.into_inner());
+                        streams.runs.get(&key).filter(|run| run.run_id.as_deref() == Some(id.to_string().as_str()))
+                            .map(|run| run.seq + 1).ok_or("AI 解析已失效")?
+                    };
+                    let result = sqlx::query("INSERT INTO question_ai_events(question_id,stem_fingerprint,run_id,seq,kind,timestamp_ms,payload) VALUES(?,?,?,?,?,?,?)")
+                        .bind(&key.0).bind(&key.1).bind(id.to_string()).bind(seq as i64)
+                        .bind(kind).bind(now()).bind(payload.to_string()).execute(&pool).await;
+                    if result.is_err() {
+                        failure.store(true, std::sync::atomic::Ordering::Relaxed);
+                        cancellation.send_replace(true);
+                        return Ok(());
+                    }
+                    streams.lock().unwrap_or_else(|error| error.into_inner()).emit(&key, id, kind, payload)?;
+                    Ok(())
+                })
             });
             remote_started.store(true, std::sync::atomic::Ordering::Relaxed);
             codex
@@ -1281,8 +1397,8 @@ impl QuestionBankAiService {
                     .err()
                     .filter(|error| error.contains(super::codex_app_server::UNCONFIRMED_MESSAGE));
                 Err(match uncertainty {
-                    Some(error) => format!("AI 解析流超过大小限制；{error}"),
-                    None => "AI 解析流超过大小限制；请重试".to_owned(),
+                    Some(error) => format!("AI 解析事件存储失败或事件超限；{error}"),
+                    None => "AI 解析事件存储失败或事件超限；请重试".to_owned(),
                 })
             } else {
                 result
@@ -1300,15 +1416,15 @@ impl QuestionBankAiService {
                 && remote_started.load(std::sync::atomic::Ordering::Relaxed);
             let persisted = async {
                 let mut tx = self.pool.begin().await?;
-                if let Some(answer) = &answer {
-                    sqlx::query("INSERT INTO question_ai_messages(question_id,stem_fingerprint,role,content,created_at) VALUES(?,?,'assistant',?,?)")
-                        .bind(&key.0).bind(&key.1).bind(answer).bind(now()).execute(&mut *tx).await?;
-                }
+                let assistant_message_id = if let Some(answer) = &answer {
+                    Some(sqlx::query("INSERT INTO question_ai_messages(question_id,stem_fingerprint,role,content,created_at) VALUES(?,?,'assistant',?,?)")
+                        .bind(&key.0).bind(&key.1).bind(answer).bind(now()).execute(&mut *tx).await?.last_insert_rowid())
+                } else { None };
                 let review_updated = sqlx::query("UPDATE question_ai_reviews SET status=?,error=?,updated_at=? WHERE question_id=? AND stem_fingerprint=? AND EXISTS(SELECT 1 FROM question_ai_requests WHERE question_id=? AND stem_fingerprint=? AND run_id=? AND status='running')")
                     .bind(status).bind(&error).bind(now()).bind(&key.0).bind(&key.1).bind(&key.0).bind(&key.1).bind(id.to_string()).execute(&mut *tx).await?;
                 if review_updated.rows_affected() != 1 { return Err(sqlx::Error::RowNotFound); }
-                let updated = sqlx::query("UPDATE question_ai_requests SET status=?,error=?,remote_uncertain=?,updated_at=? WHERE question_id=? AND stem_fingerprint=? AND run_id=? AND status='running'")
-                    .bind(status).bind(&error).bind(i64::from(remote_uncertain)).bind(now()).bind(&key.0).bind(&key.1).bind(id.to_string()).execute(&mut *tx).await?;
+                let updated = sqlx::query("UPDATE question_ai_requests SET status=?,error=?,remote_uncertain=?,updated_at=?,assistant_message_id=? WHERE question_id=? AND stem_fingerprint=? AND run_id=? AND status='running'")
+                    .bind(status).bind(&error).bind(i64::from(remote_uncertain)).bind(now()).bind(assistant_message_id).bind(&key.0).bind(&key.1).bind(id.to_string()).execute(&mut *tx).await?;
                 if updated.rows_affected() != 1 { return Err(sqlx::Error::RowNotFound); }
                 tx.commit().await
             }.await;

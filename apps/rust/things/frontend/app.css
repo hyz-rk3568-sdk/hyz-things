@@ -608,3 +608,12 @@ nav.tabs > button.tab:not(.tab-active) {
     height: 0.375rem;
     min-height: 0;
   }
+
+@media (max-width: 767px) {
+  :is([data-testid="question-bank-practice-split"], [data-testid="collection-review-split"]):has([data-testid="question-bank-ai-review"]) {
+    grid-template-rows: minmax(0, 1fr) minmax(0, 3fr);
+  }
+  :is([data-testid="question-bank-practice-split"], [data-testid="collection-review-split"]):has([data-testid="question-bank-ai-composer-area"] textarea:focus) {
+    grid-template-rows: minmax(0, 0fr) minmax(0, 1fr);
+  }
+}
