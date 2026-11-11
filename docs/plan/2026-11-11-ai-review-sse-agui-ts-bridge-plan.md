@@ -4,12 +4,12 @@
 
 ## 0. 决策摘要
 
-**推荐方案：继续使用 Rust Axum + Yew/WASM；PC 侧 Codex App Server 仍通过 WebSocket/JSON-RPC 接入；RK3568 侧补充受控的 Agent 事件映射 + SSE；前端按需引入经 Vite 打包的 TypeScript/npm 生态。**
+**推荐方案：继续使用 Rust Axum + Yew/WASM；PC 侧 Codex App Server 仍通过 WebSocket/JSON-RPC 接入；RK3568 侧补充受控的 Agent 事件映射 + SSE；**将 Vite + TypeScript Bridge 纳入标准浏览器构建链**，在真正需要时导入 npm 库。**
 
 - **不**替换 Yew，不引入 React/Vue，不让 Node.js/Bun 常驻 RK3568，不重写 Codex Agent。
 - **不**直接把 Codex 原始 JSON-RPC、内部推理文本、原始工具参数或执行日志透传给浏览器。
 - **参考 AG-UI 协议、按实际需求实现可互操作的子集**，先完成内部有版本号的事件契约及端到端行为；只有确需 TS SDK 时才增加 `@ag-ui/core`，不以“全量兼容 AG-UI”作为未经验证的承诺。
-- **优先完成服务端事件流与 Yew 原生 SSE 接收**；把 TypeScript Bridge 标准化与第三方 npm 生态接入作为独立、可验收的阶段，而非 SSE 的强制依赖。
+- **将 Vite/TS Bridge 标准化为前端基础设施，可作为阶段 0 先行实施**；但 SSE、消息队列、后端任务状态不强制依赖 TS SDK。第三方 npm 库通过产品收益、包体积、浏览器兼容和维护成本逐项准入。
 - 保留现有“用户主动发起、后台继续执行、手动停止、按题追问、持久 Codex Thread、历史消息可读”的行为。
 
 ## 1. 已核实的仓库现状（制定本计划时）
@@ -152,13 +152,13 @@ data: {"version":1,"run_id":"run-opaque-1","seq":3,"kind":"text_delta","payload"
 - 持久化：第一阶段继续用 `question_ai_reviews` + `question_ai_messages` 保存**最终内容**；过程事件只存在活动任务的有界内存缓存。若后续明确要永久回放过程，再单独设计带保留期、脱敏、空间配额的事件表，不在本阶段无边界保存命令输出。
 - 埋点：记录事件投递数量、丢弃/重同步次数、首个事件耗时、流持续时间、异常类别；**不**把敏感正文和工具输出写到 telemetry。
 
-## 7. TypeScript Bridge 方案（参考 Device Hub，渐进式）
+## 7. TypeScript Bridge 方案（参考 Device Hub，确定引入标准构建链，库按需增加）
 
 ### 引入时机与职责
 
 SSE + 基础过程 UI 先使用 `web_sys::EventSource` 和 Yew 实现，不必为了调用标准浏览器 API 创建 JS Bridge。
 
-确有需要时增加独立的、由 Vite 产出的 **browser-only TS bundle**，首个适配模块可选 AG-UI 事件验证器或流式 Markdown 增强功能。职责边界：
+确定增加独立的、由 Vite 产出的 **browser-only TS bundle** 作为标准接入点；最初可仅暴露一个轻量可测的 JS API。后续适配模块可选 AG-UI 事件验证器、图片预览、输入框增强或流式 Markdown 增强功能，**不要为了使用 npm 库而将消息状态从 Yew/Rust 迁到 TS**。职责边界：
 
 - **Rust**：后端 AI 任务、数据模型、授权、Agent 事件筛选、SQLite、Yew 组件状态与生命周期。
 - **TypeScript**：npm 专用库、浏览器复杂组件、必要的事件解码/视图插件；不复制 Rust 题库状态机，不持有 Codex Token。
@@ -188,6 +188,15 @@ Vite 产物必须由 Trunk 作为**本地静态 module** 引入，并由现有 t
 
 ## 8. 分阶段实施（建议拆为后续功能 PR）
 
+### 阶段 0：Vite + TypeScript 标准接入工程（独立前置 PR）
+
+- 在 `apps/rust/things/` 建立锁定版本的 TS/npm + Vite 单入口 bundle，沿用 Device Hub 的 browser-only ES Module 模式，先用简单类型化 Bridge API 验证 Rust/WASM 双向调用、异常返回和组件释放。
+- 将 Vite 编译整合进当前 Trunk/前端 tar/embed 产物；处理本地 JS/CSS、CSP、绝对/相对资源路径和产物缓存指纹，禁止 CDN、内联脚本和设备端 Node 运行时。
+- 验证 iOS Safari、浏览器返回前台、旧前端缓存与更新后的 module 资源一致；记录 bundle 体积预算和失败后回退。
+- 可先于阶段 A 实施，也可与 A 并行；它的存在不要求基础 SSE 必须改用 TypeScript。
+
+**验收：** `npm ci` + Vite + Trunk release + 静态资源嵌入/CSP + browser E2E 通过，最小 Bridge 在真实 Yew 组件 mount/unmount 后不遗留监听器。
+
 ### 阶段 A：事件契约与 Codex Adapter（后端 PR 1）
 
 - 明确 `AiStreamEventV1`、Run/Item 关联、允许暴露字段和字段最大长度。
@@ -210,16 +219,16 @@ Vite 产物必须由 Trunk 作为**本地静态 module** 引入，并由现有 t
 
 **验收：** 第一段有效正文到达即出现（不等待 `turn/completed`）；完成时最终全文与 SQLite 一致；断线、切题、停止、追问均无重复内容与额外 Turn。
 
-### 阶段 C：TS/npm Bridge 工程化（独立 PR 3，可选前置小实验）
+### 阶段 C：TS/npm 生态按需扩展（后续独立 PR）
 
-- 以 Device Hub Vite+Trunk 模式新增 TS 工程和构建钩子/缓存指纹，先接入一个最小可测 JS 模块。
+- 复用阶段 0 已完成的 Vite+Trunk 工程与基础 Bridge；选择确有收益的浏览器库（例如流式 Markdown/代码高亮/编辑器），不重复增加第二套 TS 构建系统。
 - 评估并按需接入 `@ag-ui/core`；若引入，则做 TS 事件校验并保留 Rust DTO 的等价测试。
 - 保障生产本地静态资源、无外部运行时依赖、CSP、双端构建缓存和更新资源可用。
 - 严格限制 Bridge 只负责 JS 生态能力，不让其承担题目业务逻辑。
 
 **验收：** `npm ci`、TS build、Trunk release、前端 bundle 归档/内容指纹、CSP Playwright 全部通过；没有 Node 运行时依赖。
 
-### 阶段 D：回归与上线验收
+### 阶段 D：聊天交互回归与上线验收
 
 - Rust 单元/集成：事件适配、身份隔离、广播积压、断线、停止、任务重试、服务重启、旧表兼容、无 Codex 配置/配额错误。
 - E2E（沿用/扩展 `apps/rust/things/e2e/question-bank.spec.ts`）：模拟后端 SSE 多片段、工具生命周期、可折叠 UI、跨题切换、重新进入、完成后数据一致、无权限拒绝与防 XSS。
@@ -249,7 +258,7 @@ Vite 产物必须由 Trunk 作为**本地静态 module** 引入，并由现有 t
 - [ ] 订阅断连/切页不停止 AI；重连可同步最新状态；用户停止仍能可靠发出 `turn/interrupt`。
 - [ ] 模拟的失败、停止、乱序、重复、积压、重启都不跨题串内容或泄漏未提交答案。
 - [ ] 过程事件按最小权限暴露，不显示内部原始推理、秘密和非必要工具输出。
-- [ ] TS Bridge（如最终需要）沿用 Device Hub 的构建经验，不破坏 CSP、静态资源嵌入和缓存完整性。
+- [ ] Vite/TS Bridge 作为标准浏览器依赖构建链已接入，且不破坏 CSP、静态资源嵌入和缓存完整性；具体 npm 库维持按需选择。
 - [ ] Rust 测试、Playwright E2E、前端构建与 CI 通过；无不相关的设备功能/题库数据改动。
 
 ## 11. 本 PR 范围
@@ -263,3 +272,63 @@ Vite 产物必须由 Trunk 作为**本地静态 module** 引入，并由现有 t
 - Codex App Server 协议（参考）：https://learn.chatgpt.com/docs/app-server
 - AG-UI 事件协议（参考）：https://github.com/ag-ui-protocol/ag-ui/blob/main/docs/concepts/events.mdx
 - Axum SSE（参考）：https://docs.rs/axum/latest/axum/response/sse/
+
+## 12. AI 聊天/追问交互专项审计与重构（跟进审计：2026-11-11）
+
+本节基于 `main` 当前的 `question_bank_practice.rs`、`collection_review.rs`、`question_bank_ai.rs` 与 Playwright 测试补充。**这是静态源码确认的交互风险与设计建议，尚非用户环境中已复现的端到端故障。**
+
+### 12.1 当前事实与风险
+
+| 源码确认的行为 | 用户影响 | 优先级 |
+| --- | --- | --- |
+| `ai_composer` 渲染在全部历史消息之后；并未见聊天专属自动跟随/“返回最新消息”逻辑 | 初次解析或多轮追问正文很长时需要反复滚动寻找输入框；题目阅读区与聊天阅读区共享行为 | P0 |
+| 仅 `has_answer && !running` 时渲染追问框 | 生成阶段看不到输入框，无法准备下一轮问题，难以建立聊天连续感 | P0 |
+| `send_follow_up` 在 HTTP 成功返回前不在消息列表中呈现草稿/待发送消息，状态只有 `submitting` | 发送反馈滞后，网络慢时不容易判断是否已发送 | P0 |
+| 当前运行状态依赖 1500ms 轮询；服务端只在最终完成时写 assistant 消息 | 用户看不到实时正文和执行步骤；UI 无独立的“等待/运行中/首 token/工具”时间线 | P0 |
+| 父组件在 `ai_tab` 切换时条件卸载 `QuestionAiReview`，追问草稿在组件本地 `use_state` | 切换“原始解析”回来尚未发送的文字与已选未发图片会消失 | P0 |
+| `on_start_key` / `on_follow_up_key` 直接调用发送回调；回调只看 `submitting`，没有检查 `uploading_start` / `uploading_follow` | 虽然按钮禁用，Ctrl/⌘+Enter 仍可能在图片上传中提前发送，丢失本次附件 | P0（明确代码缺陷） |
+| `send_follow_up` 要求非空文字，UI 发送按钮也按 `follow_up.trim().is_empty()` 禁用 | 虽有附件选择与图像上传能力，但不支持“仅发送图片进行追问” | P1（产品能力） |
+| 停止/失败后显示“重新分析”，其按钮调用 `start`，不是重试刚才那条失败的追问 | “重试上次回答”和“重新解析整题”语义混淆，可能产生非预期的再次生成 | P1 |
+| `use_question_ai_tab` 在发现已保存 AI 回复后自动切到 AI 标签 | 与“始终默认原始解析”的旧产品文档存在差异；是否保持自动恢复需确认产品意图，不直接判定为 bug | P1（体验决策） |
+| E2E 目前主要覆盖消息结果、操作顺序、输入与按钮的边框/相对位置 | 尚未充分覆盖长记录滚动、草稿恢复、上传快捷键竞态、IME、iOS 软键盘与流重连 | P0（测试缺口） |
+
+### 12.2 推荐的聊天交互目标
+
+- **消息区与输入区分离**：题目/材料与 AI 对话分别有明确滚动上下文；AI 对话有独立滚动容器，输入框贴底（受 safe-area、iOS 软件键盘影响），而不是排在整个 Markdown 历史之后。移动端不能让 composer 遮挡原题正文，也不能制造嵌套滚动陷阱。
+- **发送即时反馈**：点击后立即出现用户消息的本地 `sending` 状态；服务端确认后 `sent`，失败 `failed` 并保留可编辑/重试草稿。并发仍遵守后端**单题单 Turn**约束；不能通过前端 optimistic UI 触发重复调用。
+- **生成中允许编辑下一条草稿，但禁止同时提交第二个 Turn**：发送按钮随 `running` 禁用或显示“等待本轮完成”；停止操作独立可见；生成中可上传并准备附件，最终发送仍由后端忙碌校验守护。
+- **草稿按题/版本隔离**：按 `question_id + stem_fingerprint`（或不暴露指纹的安全等价稳定键）保存未发送文字和附件选择状态，切换 AI/原解析、切题、返回时恢复；不要把 A 题草稿错放到 B 题。过期附件需要重新确认，而不是静默沿用失效的临时 ID。
+- **滚动策略**：靠近底部（阈值可配置）才自动追随增量；用户主动上滚后暂停自动滚动并显示“有新内容，回到底部”；消息历史重载后恢复合理位置；新问题发出时滚动到最新一轮，不能每个 token `scrollIntoView` 干扰阅读。
+- **输入法与附件**：保留 Ctrl/⌘+Enter 的稳定发送动作，跳过 IME 组合输入；点击与快捷键统一通过校验层，上传未完成时**一律禁止发送**。支持图片-only 追问需要明确空文本的后端规则、隐式提示词、大小限制及 E2E。
+- **对话语义**：把“首次解析”“继续追问”“停止当前生成”“重试失败的最后一轮”“从头重新解析”分成不同操作及确认语义；保留旧消息、Thread 与附件上下文，不把停止后的追问意外改成初始解析。
+- **消息归属与状态**：给客户端显示状态使用稳定 `message_id` / `run_id`（可以不改旧消息表时先做前端适配），明确区分 user、assistant、tool（工具事件不伪装成 assistant 正文）。可折叠工具执行过程不能导致正在读正文的滚动位置跳跃。
+- **不要用 React UI 框架替代 Yew**：如 `assistant-ui` 等提供优秀的参考交互设计，但其 React 组件若作为 React Island 接入会带来第二套 DOM/状态生命周期。首期优先使用 Yew 组件和 browser-only TS 库；确需框架组件再做独立包体积/可访问性/生命周期评估。
+
+### 12.3 实施切分建议与验收
+
+将阶段 B 明确拆为两条并行工作流：
+
+**B1：聊天 UI 状态机与交互（不依赖流式协议）**
+
+- 抽离 `QuestionAiReview` 中的 `ConversationMessageList`、`AiComposer`、`AiRunControls` 组件；集中处理提交、上传、失败重试、切题/切标签、草稿保留与滚动。
+- 消息 pending/failed 状态的归并以服务端回包为准，解决请求完成、UI 卸载、题目身份变化时的旧响应竞态。
+- 修复 Ctrl/⌘+Enter 上传竞态；补 E2E：发送中态、长对话输入框可达、滚动不抢焦点、附件在途、图片-only 行为、草稿恢复、IME 组合输入。
+
+**B2：SSE 和 Agent 过程视图（依赖阶段 A）**
+
+- 将 `run_started`、`tool_started`/`tool_finished`、`text_delta`、`run_finished` 映射到 B1 的消息状态机，而不是另外叠加一个独立聊天状态机。
+- 完成时用服务端最终 `answer` 纠正增量、去重、落盘；切题重连时先同步消息快照再继续更新。
+- E2E 在 iOS 竖屏/桌面、短答/超长 Markdown、多工具事件、断线、Stop/Retry 和图片上传组合下验收布局与状态。
+
+**更新后的推荐落地顺序：阶段 0（Vite/TS 标准入口）→ B1（独立聊天交互整治，可与阶段 A 并行）＋ A（后端事件/SSE）→ B2（流式聊天）→ C（按需引入更多 npm 库）→ D（全量验收）。**
+
+### 12.4 新增 DoD
+
+- [ ] 长回答或多轮聊天时输入框无需滚到历史末尾才能使用，且不遮挡题目材料。
+- [ ] 生成中可编写下一条草稿；不能并发发出第二个 Turn。
+- [ ] 切换解析标签/题目不丢失草稿且不会跨题错配；历史消息和正在运行任务保持不变。
+- [ ] 发送有即时 pending/failed 反馈，不能因 HTTP 响应延迟导致重复发送或假成功。
+- [ ] 点击、键盘快捷键与上传禁用态一致；IME 不会意外提交。
+- [ ] 用户上滚时不会被流式 delta 抢走阅读位置，新内容可一键跳到最新。
+- [ ] 图片-only 产品决策明确，失败追问与重新解析语义不同。
+- [ ] Playwright 补齐移动端软键盘、附件竞态、长对话、切题、断线重连等交互回归。
