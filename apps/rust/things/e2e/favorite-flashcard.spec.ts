@@ -376,7 +376,7 @@ test('review cancels a saved favorite and refreshes the collection', async ({ pa
   await expect(page.getByTestId('question-bank-collection-item')).toContainText('第 2 题');
 });
 
-test('review reuses the training header with the favorite on the left and the scratchpad pen on the right', async ({ page }) => {
+test('review keeps the scratchpad pen fixed on the left and favorite on the right', async ({ page }) => {
   await page.setViewportSize({ width: 1180, height: 844 });
   await install(page);
   const review = await openReview(page);
@@ -387,8 +387,8 @@ test('review reuses the training header with the favorite on the left and the sc
   const starBox = await star.boundingBox();
   const headingBox = await heading.boundingBox();
   const penBox = await toggle.boundingBox();
-  expect(starBox!.x).toBeLessThan(headingBox!.x);
-  expect(penBox!.x).toBeGreaterThanOrEqual(headingBox!.x + headingBox!.width);
+  expect(penBox!.x).toBeLessThan(headingBox!.x);
+  expect(starBox!.x).toBeGreaterThanOrEqual(headingBox!.x + headingBox!.width);
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-label', '关闭草稿');
   await expect(review.getByRole('group', { name: '题目与解析滚动' })).toBeVisible();
@@ -554,8 +554,15 @@ test('question AI image picker uploads validated attachments and sends IDs', asy
   await expect(composer.getByTestId('question-bank-ai-start-images')).toBeVisible();
   const picker = review.getByTestId('question-bank-ai-start-images');
   const input = picker.locator('input[type=file]');
-  await input.setInputFiles({ name: 'note.png', mimeType: 'image/png', buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]) });
-  await expect(picker.getByText('note.png')).toBeVisible();
+  await input.setInputFiles({ name: 'note.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAFElEQVR4nGP8r9DHAANMDEgANwcAVT8BtalpBPoAAAAASUVORK5CYII=', 'base64') });
+  await expect(picker.getByAltText('note.png')).toBeVisible();
+  await expect.poll(() => picker.getByAltText('note.png').evaluate((node: HTMLImageElement) => node.naturalWidth)).toBe(4);
+  const imageBox = await picker.getByAltText('note.png').boundingBox();
+  const plusBox = await picker.getByLabel('添加图片').boundingBox();
+  const textBox = await review.getByTestId('question-bank-ai-instruction').boundingBox();
+  expect(imageBox!.x).toBeGreaterThan(plusBox!.x);
+  expect(textBox!.x).toBeGreaterThan(imageBox!.x);
+  expect(Math.abs(textBox!.y + textBox!.height / 2 - imageBox!.y - imageBox!.height / 2)).toBeLessThan(3);
   await input.setInputFiles({ name: 'note.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') });
   await expect(picker.getByRole('alert')).toContainText('仅支持 JPG 或 PNG');
   expect(uploads).toBe(1);
@@ -563,7 +570,7 @@ test('question AI image picker uploads validated attachments and sends IDs', asy
   await review.getByTestId('question-bank-ai-start').click();
   await expect.poll(() => starts.length).toBe(1);
   expect(starts[0]).toMatchObject({ instruction: '看图讲题', attachments: ['attachment-1'], request_id: expect.any(String) });
-  await expect(picker.getByText('note.png')).toHaveCount(0);
+  await expect(picker.getByAltText('note.png')).toHaveCount(0);
 });
 
 test('wrong review can delete saved question AI only after confirmation', async ({ page }) => {
@@ -581,9 +588,11 @@ test('wrong review can delete saved question AI only after confirmation', async 
   });
   const review = await openReview(page);
   await expect(review.getByTestId('question-bank-ai-message')).toContainText('错题已有解析');
+  await review.getByRole('button',{name:'更多解析操作'}).click();
   await review.getByTestId('question-bank-ai-delete').click();
   await review.getByTestId('question-bank-ai-delete-cancel').click();
   expect(deleted).toBe(false);
+  await review.getByRole('button',{name:'更多解析操作'}).click();
   await review.getByTestId('question-bank-ai-delete').click();
   await review.getByTestId('question-bank-ai-delete-confirm').click();
   await expect(review.getByTestId('question-bank-ai-start')).toBeVisible();
@@ -653,6 +662,7 @@ for (const action of ['stop', 'delete'] as const) {
     if (action === 'stop') {
       await review.getByTestId('question-bank-ai-stop').click();
     } else {
+      await review.getByRole('button',{name:'更多解析操作'}).click();
       await review.getByTestId('question-bank-ai-delete').click();
       await review.getByTestId('question-bank-ai-delete-confirm').click();
     }
@@ -787,7 +797,7 @@ test('question AI pastes an image into the composer', async ({ page }) => {
     data.items.add(new File(['image'], 'screenshot.png', { type: 'image/png' }));
     element.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }));
   });
-  await expect(review.getByTestId('question-bank-ai-start-images').getByText('screenshot.png')).toBeVisible();
+  await expect(review.getByTestId('question-bank-ai-start-images').getByAltText('screenshot.png')).toBeVisible();
 });
 
 test('question AI exposes and copies each reply markdown source', async ({ page }) => {

@@ -1,11 +1,11 @@
 //! Review of a saved wrong or favorite question. The timed training
 //! sessions stay separate; this view only reads one question at a time and
 //! lets the reader swipe through the filtered collection.
-use super::favorite_flashcard::{favorite_can_create, FavoriteFlashcardWorkspace, FavoritePreview};
-use super::material_scroll::{scroll_edges, ScrollEdges};
+use super::favorite_flashcard::{FavoriteFlashcardWorkspace, FavoritePreview, favorite_can_create};
+use super::material_scroll::{ScrollEdges, scroll_edges};
 use super::question_bank_practice::{
-    answer_options, use_practice_favorite, use_question_ai_tab, QuestionAiReview,
-    QuestionBankQuestionHeader,
+    QuestionAiHeaderActions, QuestionAiReview, QuestionBankQuestionHeader, answer_options,
+    use_practice_favorite, use_question_ai_tab,
 };
 use super::*;
 use hyz_things::domain::question_bank::{
@@ -36,6 +36,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
     let current_item = props.items.get(*index).cloned();
     let question_id = current_item.as_ref().map(|item| item.question_id.clone());
     let (ai_tab, ai_tab_chosen) = use_question_ai_tab(question_id.clone());
+    let ai_delete_signal = use_state(|| 0u32);
     let favorite = use_practice_favorite(question_id.clone());
     let favorite_busy = use_state(|| false);
     let favorite_error = use_state(|| None::<String>);
@@ -331,6 +332,10 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                     title_test_id="collection-review-heading"
                     title={format!("第 {} 题", current.item.number)}
                     subtitle={Some([current.item.module.as_deref(),current.item.category.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" · "))}
+                    tabs={html! {<QuestionAiHeaderActions active={*ai_tab}
+                        original={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(false);}})}
+                        ai={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(true);}})}
+                        delete={Callback::from({let signal=ai_delete_signal.clone();move |_|signal.set(signal.wrapping_add(1))})}/>}}
                     leading={html!{
                         <>
                         if let Some((_, message)) = (*favorite.failure).as_ref() {
@@ -355,18 +360,8 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                     can_scroll_up={question_edges.can_scroll_up}
                     can_scroll_down={question_edges.can_scroll_down}
                     question_index={*index} target="题目" label="题目与解析滚动" />
-                <div class="shrink-0 px-4 pt-3">
-                        <div class="join grid grid-cols-2" data-testid="question-bank-review-tabs">
-                            <button type="button" class={classes!("join-item", "btn", "btn-sm", if !*ai_tab {"btn-active"} else {"btn-ghost"})}
-                                data-testid="question-bank-original-tab" aria-pressed={(!*ai_tab).to_string()}
-                                onclick={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(false);}})}>{"原始解析"}</button>
-                            <button type="button" class={classes!("join-item", "btn", "btn-sm", if *ai_tab {"btn-active"} else {"btn-ghost"})}
-                                data-testid="question-bank-ai-tab" aria-pressed={(*ai_tab).to_string()}
-                                onclick={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(true);}})}>{"AI 解析"}</button>
-                        </div>
-                </div>
                 if *ai_tab {
-                    <QuestionAiReview key={item.question_id.clone()} question_id={item.question_id.clone()} csrf={props.csrf.clone()} question_content={question_content.clone()} question_scroll={question_scroll.clone()} on_question_scroll={Callback::from({let refresh=refresh_question_edges.clone();move |_|refresh.emit(())})}/>
+                    <QuestionAiReview delete_signal={*ai_delete_signal} key={item.question_id.clone()} question_id={item.question_id.clone()} csrf={props.csrf.clone()} question_content={question_content.clone()} question_scroll={question_scroll.clone()} on_question_scroll={Callback::from({let refresh=refresh_question_edges.clone();move |_|refresh.emit(())})}/>
                 } else {
                     <div ref={question_scroll.clone()}
                         onscroll={Callback::from({let refresh=refresh_question_edges.clone();move |_|refresh.emit(())})}

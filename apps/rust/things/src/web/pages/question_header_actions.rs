@@ -24,9 +24,11 @@ fn flashcard_badge(count: usize) -> String {
 
 #[function_component(QuestionHeaderActions)]
 pub(super) fn question_header_actions(props: &QuestionHeaderActionsProps) -> Html {
-    let flashcard = props.flashcard_count.filter(|count| *count > 0 || props.flashcard_can_create);
+    let flashcard = props
+        .flashcard_count
+        .filter(|count| *count > 0 || props.flashcard_can_create);
     html! {
-        <div class="flex shrink-0 items-center gap-1">
+        <div class="flex shrink-0 items-center gap-0">
             <button type="button" class="btn btn-ghost btn-sm relative h-10 w-10 min-h-0 shrink-0 p-2"
                 data-testid={props.favorite_test_id.clone()} aria-label={props.favorite_label.clone()}
                 title={props.favorite_label.clone()} aria-busy={props.favorite_busy.to_string()}
@@ -34,7 +36,7 @@ pub(super) fn question_header_actions(props: &QuestionHeaderActionsProps) -> Htm
                 if props.favorite_busy {
                     <span aria-hidden="true">{"…"}</span>
                 } else {
-                    <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24"
+                    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"
                         fill={if props.favorite == Some(true) { "currentColor" } else { "none" }}
                         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="m12 3 2.78 5.63 6.22.9-4.5 4.39 1.06 6.2L12 17.19l-5.56 2.93 1.06-6.2L3 9.53l6.22-.9L12 3z" />
@@ -47,7 +49,7 @@ pub(super) fn question_header_actions(props: &QuestionHeaderActionsProps) -> Htm
                     aria-label={if count == 0 { "为当前题目创建 Flashcard".to_owned() } else { format!("管理当前题目的 {count} 张 Flashcard") }}
                     title={if count == 0 { "为当前题目创建 Flashcard".to_owned() } else { format!("管理当前题目的 {count} 张 Flashcard") }}
                     onclick={props.on_flashcard.clone()}>
-                    <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none"
                         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="5" y="3" width="15" height="15" rx="2" />
                         <path d="M3 7v12a2 2 0 0 0 2 2h12" />
