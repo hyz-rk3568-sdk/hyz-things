@@ -470,6 +470,55 @@ pub(crate) fn ink_toolbar_slot() -> Html {
     }
 }
 
+#[function_component(QuestionInkToggle)]
+pub(crate) fn question_ink_toggle() -> Html {
+    let Some(tools) = use_context::<InkToolbarContext>() else {
+        return Html::default();
+    };
+    let toggle = {
+        let callback = tools.toggle.clone();
+        Callback::from(move |event: MouseEvent| {
+            callback.emit(event);
+            if let Some(active) = web_sys::window()
+                .and_then(|window| window.document())
+                .and_then(|document| document.active_element())
+                .and_then(|element| element.dyn_into::<HtmlElement>().ok())
+            {
+                let _ = active.blur();
+            }
+        })
+    };
+    html! {
+        <button type="button" class={if tools.enabled {"btn btn-primary btn-sm btn-square"} else {INK_ICON_BUTTON}}
+            data-testid="calculation-scratchpad-toggle" aria-label={if tools.enabled {"关闭草稿"} else {"开启草稿"}}
+            aria-expanded={tools.enabled.to_string()} disabled={!tools.ready}
+            onpointerdown={Callback::from(|event: PointerEvent| event.prevent_default())} onclick={toggle}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 20 4-.8L19 8l-3-3L5 16zM14.5 6.5l3 3"/></svg>
+        </button>
+    }
+}
+
+#[function_component(QuestionInkControls)]
+pub(crate) fn question_ink_controls() -> Html {
+    let Some(tools) = use_context::<InkToolbarContext>() else {
+        return Html::default();
+    };
+    if !tools.enabled {
+        return Html::default();
+    }
+    html! {
+        <div class="relative z-30 flex shrink-0 items-center gap-1" data-testid="calculation-scratchpad-controls">
+            <div class="flex items-center gap-1" data-testid="calculation-scratchpad-toolbar">
+                <button type="button" class={INK_ICON_BUTTON} data-testid="calculation-scratchpad-undo" aria-label="撤销" disabled={!tools.has_undo} onclick={tools.undo}>{"↶"}</button>
+                <button type="button" class={INK_ICON_BUTTON} data-testid="calculation-scratchpad-redo" aria-label="重做" disabled={!tools.has_redo} onclick={tools.redo}>{"↷"}</button>
+                <button type="button" class={INK_ICON_BUTTON} data-testid="calculation-scratchpad-clear" aria-label="清空草稿" disabled={!tools.has_ink} onclick={tools.clear}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18M9 7V4h6v3M5 7l1 13h12l1-13M10 11v5m4-5v5"/></svg>
+                </button>
+            </div>
+        </div>
+    }
+}
+
 #[function_component(InkOverlay)]
 pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
     let enabled = use_state(|| false);

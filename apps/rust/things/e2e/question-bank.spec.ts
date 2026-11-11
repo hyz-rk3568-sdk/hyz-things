@@ -856,6 +856,7 @@ test('deleting saved AI analysis sends a same-origin JSON request', async ({page
   await page.getByTestId('question-bank-practice-submit').click();
   await page.getByRole('button',{name:'确认交卷'}).click();
   await expect(page.getByTestId('question-bank-ai-message')).toContainText('待删除的 AI 解析');
+  await page.getByRole('button',{name:'更多解析操作'}).click();
   await page.getByTestId('question-bank-ai-delete').click();
   const deleted = page.waitForResponse(response =>
     response.request().method() === 'DELETE' &&
@@ -955,9 +956,9 @@ test('AI review keeps running across navigation and restores follow-ups', async 
   const inputBox = await page.getByTestId('question-bank-ai-input').boundingBox();
   const sendBox = await page.getByTestId('question-bank-ai-send').boundingBox();
   const composeBox = await compose.boundingBox();
-  expect(inputBox!.width).toBeGreaterThan(composeBox!.width * 0.9);
-  expect(sendBox!.x).toBeGreaterThan(inputBox!.x + inputBox!.width / 2);
-  expect(sendBox!.y).toBeGreaterThan(inputBox!.y + inputBox!.height / 2);
+  expect(inputBox!.width).toBeGreaterThan(composeBox!.width * 0.5);
+  expect(sendBox!.x).toBeGreaterThanOrEqual(inputBox!.x + inputBox!.width);
+  expect(Math.abs((sendBox!.y + sendBox!.height / 2) - (inputBox!.y + inputBox!.height / 2))).toBeLessThan(5);
   expect(sendBox!.x + sendBox!.width).toBeLessThanOrEqual(composeBox!.x + composeBox!.width);
   expect(sendBox!.y + sendBox!.height).toBeLessThanOrEqual(composeBox!.y + composeBox!.height);
   await page.getByTestId('question-bank-ai-send').click();
@@ -1438,7 +1439,7 @@ test('AI follow-up accepts an image without text',async({page})=>{
   await openFixtureReview(page);
   const picker=page.getByTestId('question-bank-ai-follow-up-images');
   await picker.locator('input[type=file]').setInputFiles({name:'example.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71])});
-  await expect(picker).toContainText('example.png');
+  await expect(picker.getByAltText('example.png')).toBeVisible();
   await page.getByTestId('question-bank-ai-send').click();
   await expect.poll(()=>sent).toEqual(expect.objectContaining({message:'',attachments:['image-1'],request_id:expect.stringMatching(/^[0-9a-f-]{36}$/)}));
 });
@@ -1522,7 +1523,7 @@ test('AI retry requires uncertainty and new-thread confirmation and replaces exp
   await confirm.click();
   await expect(page.getByTestId('question-bank-ai-retry-images')).toBeVisible();
   await page.getByTestId('question-bank-ai-retry-images').locator('input[type=file]').setInputFiles({name:'replacement.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71])});
-  await expect(page.getByTestId('question-bank-ai-retry-images')).toContainText('replacement.png');
+  await expect(page.getByTestId('question-bank-ai-retry-images').getByAltText('replacement.png')).toBeVisible();
   await confirm.click();
   await expect.poll(()=>retries.length).toBe(2);
   expect(retries.map(value=>value.source)).toEqual([sourceId,sourceId]);
@@ -1694,3 +1695,36 @@ test('AI activity loads every history page and expands full command output',asyn
   await expect(tool.getByTestId('question-bank-ai-command')).toHaveText('printf full-output');
   await expect(tool.getByTestId('question-bank-ai-output')).toHaveText('第一部分第二部分');
 });
+
+for (const width of [1280, 390]) {
+test(`compact review composer grows and header controls preserve scratchpad anchor at ${width}px`, async ({page}) => {
+  await page.setViewportSize({width,height:844});
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai', async route => {
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:'complete',error:null,messages:[{id:1,role:'assistant',content:'解析正文',created_at:1}]}});
+  });
+  await openFixtureReview(page);
+  const pane=page.getByTestId('question-bank-practice-question-pane');
+  const input=pane.getByTestId('question-bank-ai-input');
+  await expect(input).toBeVisible();
+  const initial=await input.boundingBox();
+  if (!initial) throw new Error('input missing');
+  expect(initial.height).toBeLessThan(45);
+  await input.fill('第一行\n第二行\n第三行');
+  await expect.poll(async()=>(await input.boundingBox())!.height).toBeGreaterThan(initial.height);
+  await input.fill('');
+  await expect.poll(async()=>(await input.boundingBox())!.height).toBeLessThanOrEqual(initial.height+1);
+  const pen=pane.getByTestId('calculation-scratchpad-toggle');
+  const before=await pen.boundingBox();
+  await pen.click();
+  await expect(pen).toHaveAttribute('aria-label','关闭草稿');
+  await expect(pane.getByTestId('calculation-scratchpad-toolbar')).toBeVisible();
+  expect(Math.abs((await pen.boundingBox())!.x-before!.x)).toBeLessThanOrEqual(1);
+  await pen.click();
+  await expect(pane.getByTestId('question-bank-ai-tab')).toBeVisible();
+  await pane.getByRole('button',{name:'更多解析操作'}).click();
+  await pane.getByTestId('question-bank-ai-delete').click();
+  await expect(pane.getByTestId('question-bank-ai-delete-confirm')).toBeVisible();
+  await pane.getByTestId('question-bank-ai-delete-cancel').click();
+});
+}

@@ -120,6 +120,20 @@ fn new_ai_request_id() -> Result<String, String> {
 struct PendingImage {
     id: String,
     name: String,
+    preview: Option<Rc<String>>,
+}
+
+async fn image_preview_data(file: &web_sys::File) -> Option<String> {
+    use base64::Engine as _;
+    let value = wasm_bindgen_futures::JsFuture::from(file.array_buffer())
+        .await
+        .ok()?;
+    let bytes = js_sys::Uint8Array::new(&value).to_vec();
+    Some(format!(
+        "data:{};base64,{}",
+        file.type_(),
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
 }
 
 #[derive(Properties, PartialEq)]
@@ -130,6 +144,8 @@ struct AiImagePickerProps {
     uploading: UseStateHandle<bool>,
     disabled: bool,
     testid: &'static str,
+    #[prop_or(false)]
+    compact: bool,
     children: Children,
 }
 
@@ -180,6 +196,7 @@ fn ai_image_picker(props: &AiImagePickerProps) -> Html {
                         Ok(id) => next.push(PendingImage {
                             id,
                             name: file.name(),
+                            preview: image_preview_data(&file).await.map(Rc::new),
                         }),
                         Err(error) => {
                             failure.set(Some(error));
@@ -221,52 +238,42 @@ fn ai_image_picker(props: &AiImagePickerProps) -> Html {
             upload.emit(images);
         }
     });
+    let picker = html! {
+        <label class="btn btn-ghost btn-sm btn-circle shrink-0 text-base-content/60 hover:text-base-content"
+            title="添加图片（JPG/PNG，最多 3 张，每张 ≤ 8 MiB）" aria-label="添加图片">
+            <input type="file" class="hidden" accept="image/png,image/jpeg" multiple=true
+                disabled={props.disabled || *props.uploading} onchange={onchange}/>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </label>
+    };
+    let thumbnails = html! { for props.attachments.iter().map(|image| {
+        let attachments = props.attachments.clone();
+        let id = image.id.clone();
+        html! {
+            <span key={id.clone()} class="relative h-9 w-9 shrink-0 rounded-md border border-base-content/20" title={image.name.clone()}>
+                if let Some(preview) = &image.preview {
+                    <img class="h-full w-full rounded-md object-cover" src={(**preview).clone()} alt={image.name.clone()}/>
+                } else { <span class="text-xs">{"图"}</span> }
+                <button type="button" class="absolute -right-1 -top-1 rounded-full bg-base-300 px-1 text-xs leading-4"
+                    aria-label={format!("移除图片 {}",image.name)} disabled={props.disabled || *props.uploading}
+                    onclick={Callback::from(move |_| attachments.set(attachments.iter().filter(|value| value.id != id).cloned().collect()))}>{"×"}</button>
+            </span>
+        }
+    }) };
     html! {
-        <div class="space-y-2 pb-2 px-2" data-testid={props.testid} {onpaste}>
-            {for props.children.iter()}
-            <div class="flex flex-wrap items-center gap-1">
-                <label class="btn btn-ghost btn-sm btn-circle text-base-content/60 hover:text-base-content"
-                    title="添加图片（JPG/PNG，最多 3 张，每张 ≤ 8 MiB）" aria-label="添加图片">
-                    <input type="file" class="hidden"
-                        accept="image/png,image/jpeg" multiple=true
-                        disabled={props.disabled || *props.uploading}
-                        onchange={onchange}/>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                        stroke-linejoin="round" aria-hidden="true">
-                        <path d="M12 5v14M5 12h14"/>
-                    </svg>
-                </label>
-                if *props.uploading {
-                    <span class="loading loading-spinner loading-xs text-base-content/60"
-                        aria-label="正在上传图片"></span>
-                } else if !props.attachments.is_empty() {
-                    <span class="text-xs text-base-content/60">
-                        {format!("已选 {}/3 张", props.attachments.len())}
-                    </span>
-                }
-            </div>
-            if !props.attachments.is_empty() {
-                <div class="flex flex-wrap gap-2">
-                    {for props.attachments.iter().map(|image| {
-                        let attachments = props.attachments.clone();
-                        let id = image.id.clone();
-                        html! {
-                            <span key={id.clone()} class="badge badge-outline gap-2 py-3">
-                                {image.name.clone()}
-                                <button type="button" class="text-base-content/60 hover:text-error"
-                                    disabled={props.disabled || *props.uploading}
-                                    onclick={Callback::from(move |_| {
-                                        attachments.set(attachments.iter().filter(|value| value.id != id).cloned().collect());
-                                    })}>{"×"}</button>
-                            </span>
-                        }
-                    })}
+        <div class={if props.compact {"px-1 py-1"} else {"space-y-2 pb-2 px-2"}} data-testid={props.testid} {onpaste}>
+            if props.compact {
+                <div class="flex flex-wrap items-center gap-1 pr-11">{picker}{thumbnails}
+                    if *props.uploading { <span class="loading loading-spinner loading-xs" aria-label="正在上传图片"></span> }
+                    {for props.children.iter()}
+                </div>
+            } else {
+                {for props.children.iter()}
+                <div class="flex flex-wrap items-center gap-2">{picker}{thumbnails}
+                    if *props.uploading { <span class="loading loading-spinner loading-xs" aria-label="正在上传图片"></span> }
                 </div>
             }
-            if let Some(error) = failure.as_ref() {
-                <p class="text-xs text-error" role="alert">{error.clone()}</p>
-            }
+            if let Some(error) = failure.as_ref() { <p class="text-xs text-error" role="alert">{error.clone()}</p> }
         </div>
     }
 }
@@ -728,6 +735,8 @@ pub(super) struct QuestionBankQuestionHeaderProps {
     /// Left-side action such as the favorite star.
     #[prop_or_default]
     pub(super) leading: Html,
+    #[prop_or_default]
+    pub(super) tabs: Html,
     pub(super) title: String,
     #[prop_or_default]
     pub(super) subtitle: Option<String>,
@@ -743,30 +752,72 @@ pub(super) struct QuestionBankQuestionHeaderProps {
     pub(super) label: &'static str,
 }
 
-/// Shared question-pane header: the favorite star leads, the title follows,
-/// and the scroll arrows and scratchpad pen stay anchored on the right.
 #[function_component(QuestionBankQuestionHeader)]
 pub(super) fn question_bank_question_header(props: &QuestionBankQuestionHeaderProps) -> Html {
+    let scratch_open = use_context::<bool>().unwrap_or(false);
     html! {
         <div class={classes!(TRAINING_PANE_HEADER,"question-bank-pane-header")}>
-            {props.leading.clone()}
+            <QuestionInkToggle />
             <div class="min-w-0 flex-1">
-                <strong class="block truncate text-sm" data-testid={props.title_test_id}>
-                    {props.title.clone()}
-                </strong>
+                <strong class="block truncate text-sm" data-testid={props.title_test_id}>{props.title.clone()}</strong>
                 if let Some(subtitle) = props.subtitle.as_ref().filter(|value| !value.is_empty()) {
                     <span class="block truncate text-[11px] text-base-content/45">{subtitle.clone()}</span>
                 }
             </div>
-            <div class="ml-auto flex shrink-0 items-center gap-1">
-                if let Some(passage) = &props.passage {
-                    <QuestionBankScrollButtons passage={passage.clone()}
-                        can_scroll_up={props.can_scroll_up}
-                        can_scroll_down={props.can_scroll_down}
-                        question_index={props.question_index} target={props.target} label={props.label} />
+            <div class="ml-auto flex shrink-0 items-center gap-0">
+                if scratch_open {
+                    if let Some(passage) = &props.passage {
+                        <QuestionBankScrollButtons passage={passage.clone()} can_scroll_up={props.can_scroll_up}
+                            can_scroll_down={props.can_scroll_down} question_index={props.question_index} target={props.target} label={props.label}/>
+                    }
+                    <QuestionInkControls />
+                } else {
+                    {props.leading.clone()}{props.tabs.clone()}
                 }
-                <InkToolbarSlot />
             </div>
+        </div>
+    }
+}
+
+#[derive(Properties, PartialEq)]
+pub(super) struct QuestionAiHeaderActionsProps {
+    pub active: bool,
+    pub original: Callback<MouseEvent>,
+    pub ai: Callback<MouseEvent>,
+    pub delete: Callback<MouseEvent>,
+}
+
+#[function_component(QuestionAiHeaderActions)]
+pub(super) fn question_ai_header_actions(props: &QuestionAiHeaderActionsProps) -> Html {
+    let open = use_state(|| false);
+    let delete = {
+        let open = open.clone();
+        let callback = props.delete.clone();
+        Callback::from(move |event: MouseEvent| {
+            open.set(false);
+            callback.emit(event);
+        })
+    };
+    html! {
+        <div class="flex shrink-0 items-center gap-0" data-testid="question-bank-review-tabs">
+            <button type="button" class={classes!("btn","btn-ghost","btn-sm","btn-square",if !props.active {"btn-active"} else {""})} aria-label="原始解析" title="原始解析"
+                data-testid="question-bank-original-tab" aria-pressed={(!props.active).to_string()} onclick={props.original.clone()}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7"/></svg>
+            </button>
+            <button type="button" class={classes!("btn","btn-ghost","btn-sm","btn-square",if props.active {"btn-active"} else {""},if props.active {"text-primary"} else {""})} aria-label="AI 解析" title="AI 解析"
+                data-testid="question-bank-ai-tab" aria-pressed={props.active.to_string()} onclick={props.ai.clone()}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5zM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z"/></svg>
+            </button>
+            if props.active {
+                <div class="relative">
+                    <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="更多解析操作" title="更多解析操作" aria-expanded={open.to_string()} onclick={Callback::from({let open=open.clone();move |_|open.set(!*open)})}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+                    </button>
+                    if *open { <div class="absolute right-0 top-full z-40 min-w-36 rounded-box border border-base-content/10 bg-base-100 p-1 shadow-lg">
+                        <button type="button" class="btn btn-ghost btn-sm w-full justify-start text-error" data-testid="question-bank-ai-delete" onclick={delete}>{"删除 AI 解析"}</button>
+                    </div> }
+                </div>
+            }
         </div>
     }
 }
@@ -892,6 +943,7 @@ pub(crate) fn use_question_ai_tab(
 
 struct AiComposer<'a> {
     id: &'a str,
+    input_ref: NodeRef,
     compose_testid: &'a str,
     input_testid: &'a str,
     button_testid: &'a str,
@@ -912,23 +964,36 @@ struct AiComposer<'a> {
 
 /// One shape for both asking Codex to start a review and sending a follow-up.
 fn ai_composer(props: AiComposer<'_>) -> Html {
+    let oninput = {
+        let callback = props.oninput.clone();
+        Callback::from(move |event: InputEvent| {
+            let input: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
+            let _ = input.style().set_property("height", "auto");
+            let _ = input.style().set_property(
+                "height",
+                &format!("{}px", input.scroll_height().clamp(24, 160)),
+            );
+            callback.emit(event);
+        })
+    };
     html! {
         <div class="relative rounded-2xl border border-base-content/15 bg-base-100 transition focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15"
             data-testid={props.compose_testid.to_owned()}>
             <AiImagePicker endpoint={props.endpoint} csrf={props.csrf} attachments={props.attachments}
-                uploading={props.uploading} disabled={props.picker_disabled} testid={props.picker_testid}>
-            <textarea id={props.id.to_owned()}
-                class="block min-h-16 sm:min-h-24 w-full resize-none border-0 bg-transparent px-3 pb-12 pt-1 text-sm leading-6 focus:outline-none focus:ring-0"
+                uploading={props.uploading} disabled={props.picker_disabled} testid={props.picker_testid} compact={true}>
+            <textarea ref={props.input_ref} id={props.id.to_owned()} rows="1"
+                class="block h-6 min-w-16 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-1 py-0 text-sm leading-6 focus:outline-none focus:ring-0"
                 data-testid={props.input_testid.to_owned()} maxlength="2000"
                 value={props.value.to_owned()}
                 placeholder={props.placeholder.to_owned()}
                 onkeydown={props.onkeydown}
-                oninput={props.oninput}/>
+                {oninput}/>
             </AiImagePicker>
             <div class="absolute right-2 bottom-2 flex items-center justify-end">
-                <button type="button" class="btn btn-primary btn-sm rounded-full px-4"
-                    data-testid={props.button_testid.to_owned()} disabled={props.disabled}
-                    onclick={props.onclick}>{props.button_label.to_owned()}</button>
+                <button type="button" class="btn btn-primary btn-sm btn-circle" aria-label={props.button_label.to_owned()} title={props.button_label.to_owned()}
+                    data-testid={props.button_testid.to_owned()} disabled={props.disabled} onclick={props.onclick}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                </button>
             </div>
         </div>
     }
@@ -980,6 +1045,8 @@ pub(crate) struct QuestionAiReviewProps {
     pub question_content: Html,
     pub question_scroll: NodeRef,
     pub on_question_scroll: Callback<Event>,
+    #[prop_or_default]
+    pub delete_signal: u32,
 }
 
 /// The component is mounted only while the AI tab is visible; the native
@@ -1017,7 +1084,43 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     let follow_images = use_state(Vec::<PendingImage>::new);
     let uploading_start = use_state(|| false);
     let uploading_follow = use_state(|| false);
+    let start_input_ref = use_node_ref();
+    let follow_input_ref = use_node_ref();
+    {
+        let start_ref = start_input_ref.clone();
+        let follow_ref = follow_input_ref.clone();
+        let key = (
+            (*start_instruction).clone(),
+            (*follow_up).clone(),
+            start_images.len(),
+            follow_images.len(),
+            state.as_ref().as_ref().map(|value| value.status.clone()),
+        );
+        use_effect_with(key, move |_| {
+            for node in [&start_ref, &follow_ref] {
+                if let Some(input) = node.cast::<web_sys::HtmlTextAreaElement>() {
+                    let _ = input.style().set_property("height", "auto");
+                    let _ = input.style().set_property(
+                        "height",
+                        &format!("{}px", input.scroll_height().clamp(24, 160)),
+                    );
+                }
+            }
+            || ()
+        });
+    }
     let deleting = use_state(|| false);
+    {
+        let previous = use_mut_ref(|| props.delete_signal);
+        let deleting = deleting.clone();
+        use_effect_with(props.delete_signal, move |signal| {
+            if *signal != *previous.borrow() {
+                deleting.set(true);
+            }
+            *previous.borrow_mut() = *signal;
+            || ()
+        });
+    }
     let revision = use_mut_ref(|| 0u64);
     let endpoint = format!("{ROOT}/practice/questions/{}/ai", props.question_id);
     {
@@ -1783,19 +1886,17 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                     <div class="study-markdown text-base leading-7">{render_question_bank_markdown(message)}</div>
                 </div>
             }
-            if current.as_ref().is_some_and(|value| !value.messages.is_empty() || value.status == "running") {
-                if *deleting {
-                    <div class="space-y-2" role="alert">
+            if *deleting && current.is_some() {
+                <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="确认删除 AI 解析">
+                    <div class="w-full max-w-sm space-y-4 rounded-box bg-base-100 p-5 shadow-xl">
                         <p>{"确定删除这道题的 AI 解析和全部追问吗？"}</p>
-                        <button type="button" class="btn btn-error btn-sm" data-testid="question-bank-ai-delete-confirm"
-                            disabled={*submitting} onclick={on_delete}>{"确认删除"}</button>
-                        <button type="button" class="btn btn-ghost btn-sm" data-testid="question-bank-ai-delete-cancel"
-                            disabled={*submitting} onclick={Callback::from({let deleting=deleting.clone(); move |_|deleting.set(false)})}>{"取消"}</button>
+                        <div class="flex justify-end gap-2">
+                            <button type="button" class="btn btn-ghost btn-sm" data-testid="question-bank-ai-delete-cancel" disabled={*submitting}
+                                onclick={Callback::from({let deleting=deleting.clone(); move |_|deleting.set(false)})}>{"取消"}</button>
+                            <button type="button" class="btn btn-error btn-sm" data-testid="question-bank-ai-delete-confirm" disabled={*submitting} onclick={on_delete}>{"确认删除"}</button>
+                        </div>
                     </div>
-                } else {
-                    <button type="button" class="btn btn-ghost btn-sm text-error" data-testid="question-bank-ai-delete"
-                        disabled={*submitting} onclick={Callback::from({let deleting=deleting.clone(); move |_|deleting.set(true)})}>{"删除 AI 解析"}</button>
-                }
+                </div>
             }
             if can_start {
                 <p class="text-sm text-base-content/60">{"Codex 将根据题目 UUID 从电脑本地题库读取原题、共用材料及图片，独立解析；参考答案仅供参考。"}</p>
@@ -1814,14 +1915,14 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             }
             if can_start {
                 <div class="space-y-1">
-                    <label class="text-sm font-semibold" for="question-ai-instruction">{"可选要求"}</label>
+                    <label class="sr-only" for="question-ai-instruction">{"可选要求"}</label>
                     {ai_composer(AiComposer {
-                        id: "question-ai-instruction",
+                        id: "question-ai-instruction", input_ref: start_input_ref.clone(),
                         compose_testid: "question-bank-ai-requirements-compose",
                         input_testid: "question-bank-ai-instruction",
                         button_testid: "question-bank-ai-start",
                         value: start_instruction.as_str(),
-                        placeholder: "例如：用线段图讲清数量关系；只讲速算，不要列方程。（Ctrl/⌘ + Enter 开始）",
+                        placeholder: "输入解析要求（可选）…",
                         button_label: "开始 AI 解析",
                         disabled: *submitting || *uploading_start || request_unresolved || request_uncertain,
                         endpoint: format!("{endpoint}/attachments"), csrf: props.csrf.clone(),
@@ -1844,14 +1945,14 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             }
             if has_answer || running {
                 <div class="space-y-2">
-                    <label class="text-sm font-semibold" for="question-ai-follow-up">{"继续追问"}</label>
+                    <label class="sr-only" for="question-ai-follow-up">{"继续追问"}</label>
                     {ai_composer(AiComposer {
-                        id: "question-ai-follow-up",
+                        id: "question-ai-follow-up", input_ref: follow_input_ref.clone(),
                         compose_testid: "question-bank-ai-compose",
                         input_testid: "question-bank-ai-input",
                         button_testid: "question-bank-ai-send",
                         value: follow_up.as_str(),
-                        placeholder: "例如：为什么不能选 B？有没有更快的解法？（Ctrl/⌘ + Enter 发送）",
+                        placeholder: "输入消息…",
                         button_label: "发送追问",
                         disabled: *submitting || *uploading_follow || running || request_unresolved || request_uncertain || (follow_up.trim().is_empty() && follow_images.is_empty()),
                         endpoint: format!("{endpoint}/attachments"), csrf: props.csrf.clone(),
@@ -1916,6 +2017,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             .then(|| question.item.question_id.clone())
     });
     let (ai_tab, ai_tab_chosen) = use_question_ai_tab(selected_ai_question);
+    let ai_delete_signal = use_state(|| 0u32);
     let multi_select = use_state(|| false);
     let current_favorite_source = workspace
         .as_ref()
@@ -2926,6 +3028,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     } else {
                         format!("第 {}/{} 题", item_index + 1, current.questions.len())
                     }}
+                    tabs={if selected_review.is_some() {html! {<QuestionAiHeaderActions active={*ai_tab}
+                        original={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(false);}})}
+                        ai={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(true);}})}
+                        delete={Callback::from({let signal=ai_delete_signal.clone();move |_|signal.set(signal.wrapping_add(1))})}/>}} else {Html::default()}}
                     leading={html!{
                         <>
                         <super::question_header_actions::QuestionHeaderActions
@@ -2944,24 +3050,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     can_scroll_down={question_edges.can_scroll_down}
                     question_index={item_index} target="题目" label="题目与解析滚动" />
                     if selected_review.is_some() {
-                        <div class="shrink-0 px-4 pt-3">
-                                <div class="join grid grid-cols-2" data-testid="question-bank-review-tabs">
-                                    <button type="button" class={classes!("join-item","btn","btn-sm",if !*ai_tab {"btn-active"} else {"btn-ghost"})}
-                                        data-testid="question-bank-original-tab"
-                                        aria-pressed={(!*ai_tab).to_string()}
-                                        onclick={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(false);}})}>
-                                        {"原始解析"}
-                                    </button>
-                                    <button type="button" class={classes!("join-item","btn","btn-sm",if *ai_tab {"btn-active"} else {"btn-ghost"})}
-                                        data-testid="question-bank-ai-tab"
-                                        aria-pressed={(*ai_tab).to_string()}
-                                        onclick={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(true);}})}>
-                                        {"AI 解析"}
-                                    </button>
-                                </div>
-                        </div>
                         if *ai_tab {
-                            <QuestionAiReview key={format!("{}:{}", current.session.id, item.item.question_id)} csrf={props.csrf.clone()} question_id={item.item.question_id.clone()} question_content={question_content.clone()} question_scroll={question_scroll.clone()} on_question_scroll={on_question_scrolling.clone()}/>
+                            <QuestionAiReview delete_signal={*ai_delete_signal} key={format!("{}:{}", current.session.id, item.item.question_id)} csrf={props.csrf.clone()} question_id={item.item.question_id.clone()} question_content={question_content.clone()} question_scroll={question_scroll.clone()} on_question_scroll={on_question_scrolling.clone()}/>
                         }
                     }
                     if !*ai_tab || selected_review.is_none() {
