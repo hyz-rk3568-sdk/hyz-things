@@ -2312,6 +2312,25 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             aria-label={if favorite_pending {"正在加载收藏状态"} else if favorite_failure.is_some() {"收藏状态加载失败"} else if starred {"取消收藏"} else {"收藏题目"}}>
                             {if favorite_pending {"…"} else if starred {"★"} else {"☆"}}
                         </button>
+                        if selected_review.is_some() && !item.content_changed {
+                            if let Some(preview) = &card_preview {
+                                if favorite_can_create(preview) {
+                                    <button type="button" class="btn btn-ghost btn-xs shrink-0"
+                                        title="为当前题目创建 Flashcard"
+                                        data-testid="question-bank-practice-create-flashcard"
+                                        onclick={Callback::from({let flashcard_open=flashcard_open.clone();move |_|flashcard_open.set(true)})}>
+                                        {"闪卡 +"}
+                                    </button>
+                                } else if !preview.existing.is_empty() {
+                                    <button type="button" class="btn btn-ghost btn-xs shrink-0"
+                                        title="管理当前题目的 Flashcard"
+                                        data-testid="question-bank-practice-manage-flashcard"
+                                        onclick={Callback::from({let flashcard_open=flashcard_open.clone();move |_|flashcard_open.set(true)})}>
+                                        {"闪卡"}
+                                    </button>
+                                }
+                            }
+                        }
                     }}
                     passage={Some(question_scroll.clone())}
                     can_scroll_up={question_edges.can_scroll_up}
@@ -2419,19 +2438,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             </div>
                             if !item.content_changed {
                                 if let Some(preview) = &card_preview {
-                                    if favorite_can_create(preview) {
-                                        <button type="button" class="btn btn-primary btn-sm"
-                                            data-testid="question-bank-practice-create-flashcard"
-                                            onclick={Callback::from({let flashcard_open=flashcard_open.clone();move |_|flashcard_open.set(true)})}>
-                                            {"创建 Flashcard"}
-                                        </button>
-                                    } else if !preview.existing.is_empty() {
-                                        <button type="button" class="btn btn-outline btn-sm"
-                                            data-testid="question-bank-practice-manage-flashcard"
-                                            onclick={Callback::from({let flashcard_open=flashcard_open.clone();move |_|flashcard_open.set(true)})}>
-                                            {"修改或删除 Flashcard"}
-                                        </button>
-                                    } else {
+                                    if !favorite_can_create(preview) && preview.existing.is_empty() {
                                         <p class="text-xs opacity-60" role="status">
                                             {preview.reason.as_deref().unwrap_or("此题暂不支持创建闪卡")}
                                         </p>
