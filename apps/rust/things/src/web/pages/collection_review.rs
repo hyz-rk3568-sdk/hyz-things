@@ -4,8 +4,8 @@
 use super::favorite_flashcard::{FavoriteFlashcardWorkspace, FavoritePreview, favorite_can_create};
 use super::material_scroll::{ScrollEdges, scroll_edges};
 use super::question_bank_practice::{
-    QuestionAiHeaderActions, QuestionAiReview, QuestionBankQuestionHeader, answer_options,
-    use_practice_favorite, use_question_ai_tab,
+    QUESTION_BANK_PANE_HEADER, QuestionAiHeaderActions, QuestionAiReview,
+    QuestionBankQuestionHeader, answer_options, use_practice_favorite, use_question_ai_tab,
 };
 use super::*;
 use hyz_things::domain::question_bank::{
@@ -37,6 +37,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
     let question_id = current_item.as_ref().map(|item| item.question_id.clone());
     let (ai_tab, ai_tab_chosen) = use_question_ai_tab(question_id.clone());
     let ai_delete_signal = use_state(|| 0u32);
+    let ai_can_delete = use_state(|| false);
     let favorite = use_practice_favorite(question_id.clone());
     let favorite_busy = use_state(|| false);
     let favorite_error = use_state(|| None::<String>);
@@ -247,7 +248,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
         let material_pane = html! {
             <section class="flex min-h-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100"
                 data-testid="collection-review-material-pane">
-                <div class={classes!(TRAINING_PANE_HEADER,"question-bank-pane-header")}>
+                <div class={classes!(QUESTION_BANK_PANE_HEADER,"question-bank-pane-header")}>
                     <strong>{"原卷材料"}</strong>
                     <span class="text-[11px] text-base-content/45">{"复盘"}</span>
                 </div>
@@ -266,7 +267,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
         let stem_pane = html! {
             <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100"
                 data-testid="collection-review-stem-pane">
-                <div class={classes!(TRAINING_PANE_HEADER,"question-bank-pane-header")}>
+                <div class={classes!(QUESTION_BANK_PANE_HEADER,"question-bank-pane-header")}>
                     <strong>{"题干"}</strong>
                     <span class="text-[11px] text-base-content/45">{"复盘"}</span>
                 </div>
@@ -332,7 +333,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                     title_test_id="collection-review-heading"
                     title={format!("第 {} 题", current.item.number)}
                     subtitle={Some([current.item.module.as_deref(),current.item.category.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" · "))}
-                    tabs={html! {<QuestionAiHeaderActions active={*ai_tab}
+                    tabs={html! {<QuestionAiHeaderActions active={*ai_tab} can_delete={*ai_can_delete}
                         original={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(false);}})}
                         ai={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(true);}})}
                         delete={Callback::from({let signal=ai_delete_signal.clone();move |_|signal.set(signal.wrapping_add(1))})}/>}}
@@ -361,7 +362,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                     can_scroll_down={question_edges.can_scroll_down}
                     question_index={*index} target="题目" label="题目与解析滚动" />
                 if *ai_tab {
-                    <QuestionAiReview delete_signal={*ai_delete_signal} key={item.question_id.clone()} question_id={item.question_id.clone()} csrf={props.csrf.clone()} question_content={question_content.clone()} question_scroll={question_scroll.clone()} on_question_scroll={Callback::from({let refresh=refresh_question_edges.clone();move |_|refresh.emit(())})}/>
+                    <QuestionAiReview delete_signal={*ai_delete_signal} on_delete_availability={Callback::from({let value=ai_can_delete.clone();move |available|value.set(available)})} key={item.question_id.clone()} question_id={item.question_id.clone()} csrf={props.csrf.clone()} question_content={question_content.clone()} question_scroll={question_scroll.clone()} on_question_scroll={Callback::from({let refresh=refresh_question_edges.clone();move |_|refresh.emit(())})}/>
                 } else {
                     <div ref={question_scroll.clone()}
                         onscroll={Callback::from({let refresh=refresh_question_edges.clone();move |_|refresh.emit(())})}

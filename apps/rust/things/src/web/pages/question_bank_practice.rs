@@ -730,6 +730,9 @@ fn question_bank_scroll_buttons(props: &QuestionBankScrollButtonsProps) -> Html 
     }
 }
 
+pub(super) const QUESTION_BANK_PANE_HEADER: &str =
+    "relative z-30 flex min-h-14 shrink-0 items-center justify-between gap-2 px-3 py-2";
+
 #[derive(Properties, PartialEq)]
 pub(super) struct QuestionBankQuestionHeaderProps {
     /// Left-side action such as the favorite star.
@@ -756,8 +759,7 @@ pub(super) struct QuestionBankQuestionHeaderProps {
 pub(super) fn question_bank_question_header(props: &QuestionBankQuestionHeaderProps) -> Html {
     let scratch_open = use_context::<bool>().unwrap_or(false);
     html! {
-        <div class={classes!(TRAINING_PANE_HEADER,"question-bank-pane-header")}>
-            <QuestionInkToggle />
+        <div class={classes!(QUESTION_BANK_PANE_HEADER,"question-bank-pane-header")}>
             <div class="min-w-0 flex-1">
                 <strong class="block truncate text-sm" data-testid={props.title_test_id}>{props.title.clone()}</strong>
                 if let Some(subtitle) = props.subtitle.as_ref().filter(|value| !value.is_empty()) {
@@ -774,6 +776,7 @@ pub(super) fn question_bank_question_header(props: &QuestionBankQuestionHeaderPr
                 } else {
                     {props.leading.clone()}{props.tabs.clone()}
                 }
+                <QuestionInkToggle />
             </div>
         </div>
     }
@@ -781,7 +784,10 @@ pub(super) fn question_bank_question_header(props: &QuestionBankQuestionHeaderPr
 
 #[derive(Properties, PartialEq)]
 pub(super) struct QuestionAiHeaderActionsProps {
+    #[prop_or(true)]
+    pub available: bool,
     pub active: bool,
+    pub can_delete: bool,
     pub original: Callback<MouseEvent>,
     pub ai: Callback<MouseEvent>,
     pub delete: Callback<MouseEvent>,
@@ -790,6 +796,13 @@ pub(super) struct QuestionAiHeaderActionsProps {
 #[function_component(QuestionAiHeaderActions)]
 pub(super) fn question_ai_header_actions(props: &QuestionAiHeaderActionsProps) -> Html {
     let open = use_state(|| false);
+    {
+        let open = open.clone();
+        use_effect_with(props.active, move |_| {
+            open.set(false);
+            || ()
+        });
+    }
     let delete = {
         let open = open.clone();
         let callback = props.delete.clone();
@@ -800,24 +813,28 @@ pub(super) fn question_ai_header_actions(props: &QuestionAiHeaderActionsProps) -
     };
     html! {
         <div class="flex shrink-0 items-center gap-0" data-testid="question-bank-review-tabs">
-            <button type="button" class={classes!("btn","btn-ghost","btn-sm","btn-square",if !props.active {"btn-active"} else {""})} aria-label="原始解析" title="原始解析"
+            if props.available {
+            <button type="button" class={classes!(super::question_header_actions::QUESTION_HEADER_ICON_BUTTON,if !props.active {"btn-active"} else {""})} aria-label="原始解析" title="原始解析"
                 data-testid="question-bank-original-tab" aria-pressed={(!props.active).to_string()} onclick={props.original.clone()}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7"/></svg>
             </button>
-            <button type="button" class={classes!("btn","btn-ghost","btn-sm","btn-square",if props.active {"btn-active"} else {""},if props.active {"text-primary"} else {""})} aria-label="AI 解析" title="AI 解析"
+            <button type="button" class={classes!(super::question_header_actions::QUESTION_HEADER_ICON_BUTTON,if props.active {"btn-active"} else {""},if props.active {"text-primary"} else {""})} aria-label="AI 解析" title="AI 解析"
                 data-testid="question-bank-ai-tab" aria-pressed={props.active.to_string()} onclick={props.ai.clone()}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5zM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z"/></svg>
             </button>
-            if props.active {
+            }
                 <div class="relative">
-                    <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="更多解析操作" title="更多解析操作" aria-expanded={open.to_string()} onclick={Callback::from({let open=open.clone();move |_|open.set(!*open)})}>
+                    <button type="button" class={super::question_header_actions::QUESTION_HEADER_ICON_BUTTON} aria-label="更多解析操作" title="更多解析操作" aria-expanded={open.to_string()} onclick={Callback::from({let open=open.clone();move |_|open.set(!*open)})}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
                     </button>
                     if *open { <div class="absolute right-0 top-full z-40 min-w-36 rounded-box border border-base-content/10 bg-base-100 p-1 shadow-lg">
-                        <button type="button" class="btn btn-ghost btn-sm w-full justify-start text-error" data-testid="question-bank-ai-delete" onclick={delete}>{"删除 AI 解析"}</button>
+                        if props.available && props.active && props.can_delete {
+                            <button type="button" class="btn btn-ghost btn-sm w-full justify-start text-error" data-testid="question-bank-ai-delete" onclick={delete}>{"删除 AI 解析"}</button>
+                        } else {
+                            <span class="block px-3 py-2 text-xs text-base-content/60">{"暂无可用操作"}</span>
+                        }
                     </div> }
                 </div>
-            }
         </div>
     }
 }
@@ -950,6 +967,7 @@ struct AiComposer<'a> {
     value: &'a str,
     placeholder: &'a str,
     button_label: &'a str,
+    is_stop: bool,
     disabled: bool,
     endpoint: String,
     csrf: String,
@@ -989,10 +1007,13 @@ fn ai_composer(props: AiComposer<'_>) -> Html {
                 onkeydown={props.onkeydown}
                 {oninput}/>
             </AiImagePicker>
-            <div class="absolute right-2 bottom-2 flex items-center justify-end">
+            <div class="absolute right-2 top-1/2 flex -translate-y-1/2 items-center justify-end">
                 <button type="button" class="btn btn-primary btn-sm btn-circle" aria-label={props.button_label.to_owned()} title={props.button_label.to_owned()}
                     data-testid={props.button_testid.to_owned()} disabled={props.disabled} onclick={props.onclick}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        if props.is_stop { <rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor" stroke="none"/> }
+                        else { <path d="M12 19V5M5 12l7-7 7 7"/> }
+                    </svg>
                 </button>
             </div>
         </div>
@@ -1047,6 +1068,8 @@ pub(crate) struct QuestionAiReviewProps {
     pub on_question_scroll: Callback<Event>,
     #[prop_or_default]
     pub delete_signal: u32,
+    #[prop_or_default]
+    pub on_delete_availability: Callback<bool>,
 }
 
 /// The component is mounted only while the AI tab is visible; the native
@@ -1054,6 +1077,18 @@ pub(crate) struct QuestionAiReviewProps {
 #[function_component(QuestionAiReview)]
 pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     let state = use_state(|| None::<AiReviewState>);
+    let history_generation = use_state(|| 0u64);
+    {
+        let can_delete = state
+            .as_ref()
+            .as_ref()
+            .is_some_and(|value| value.status != "idle" || !value.messages.is_empty());
+        let notify = props.on_delete_availability.clone();
+        use_effect_with(can_delete, move |available| {
+            notify.emit(*available);
+            || ()
+        });
+    }
     let diagram_root = use_node_ref();
     let failure = use_state(|| None::<String>);
     let submitting = use_state(|| false);
@@ -1579,6 +1614,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     };
     let on_delete = {
         let state = state.clone();
+        let history_generation = history_generation.clone();
         let request_id = request_id.clone();
         let request_info = request_info.clone();
         let request_key = request_key.clone();
@@ -1596,6 +1632,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             submitting.set(true);
             failure.set(None);
             let state = state.clone();
+            let history_generation = history_generation.clone();
             let request_id = request_id.clone();
             let request_info = request_info.clone();
             let request_key = request_key.clone();
@@ -1629,6 +1666,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 match result {
                     Ok(value) => {
                         state.set(Some(value));
+                        history_generation.set(history_generation.wrapping_add(1));
                         ai_draft_write(&request_key, "");
                         request_id.set(None);
                         request_info.set(None);
@@ -1866,7 +1904,13 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             if let Some(value) = current.as_ref() {
                 if let Some(error) = &value.error { <p class="text-sm text-error" role="alert">{error.clone()}</p> }
             }
-            <super::ai_review_activity::AiReviewActivity endpoint={endpoint.clone()} stream={(*stream).clone()}
+            <super::ai_review_activity::AiReviewActivity
+                key={format!("{}:{}", props.question_id, *history_generation)}
+                refresh_key={format!("{:?}", current.as_ref().map(|value| {
+                    (&value.status, value.messages.iter().rev().find(|message| message.role == "assistant").map(|message| message.id))
+                }))}
+                endpoint={endpoint.clone()}
+                stream={if current.as_ref().is_some_and(|value| value.status == "idle") {None} else {(*stream).clone()}}
                 messages={current.as_ref().map(|value| value.messages.clone()).unwrap_or_default()}/>
             if let Some(active) = stream.as_ref().as_ref() {
                 if active.status == "running" && !active.text.is_empty() {
@@ -1901,15 +1945,8 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             if can_start {
                 <p class="text-sm text-base-content/60">{"Codex 将根据题目 UUID 从电脑本地题库读取原题、共用材料及图片，独立解析；参考答案仅供参考。"}</p>
             }
-            if running {
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                    <span class="text-sm text-base-content/60">{"后台生成中，切换题目或退出复盘不会中断。"}</span>
-                    <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-ai-stop"
-                        disabled={*submitting} onclick={on_stop}>{"停止生成"}</button>
-                </div>
-            }
             </div>
-            <div class="relative shrink-0 bg-base-100 px-4 pb-3 pt-2" data-testid="question-bank-ai-composer-area">
+            <div class="relative shrink-0 bg-base-100 px-2 pb-3 pt-2" data-testid="question-bank-ai-composer-area">
             if *new_content {
                 <button type="button" class="btn btn-circle btn-sm absolute bottom-full left-1/2 z-10 -translate-x-1/2 border border-base-content/15 bg-base-100 shadow-md" aria-label="有新内容，回到底部" data-testid="question-bank-ai-scroll-bottom" onclick={scroll_to_bottom}>{"↓"}</button>
             }
@@ -1923,7 +1960,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         button_testid: "question-bank-ai-start",
                         value: start_instruction.as_str(),
                         placeholder: "输入解析要求（可选）…",
-                        button_label: "开始 AI 解析",
+                        button_label: "开始 AI 解析", is_stop: false,
                         disabled: *submitting || *uploading_start || request_unresolved || request_uncertain,
                         endpoint: format!("{endpoint}/attachments"), csrf: props.csrf.clone(),
                         attachments: start_images.clone(), uploading: uploading_start.clone(),
@@ -1940,7 +1977,6 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         onkeydown: on_start_key.clone(),
                         onclick: on_start.clone(),
                     })}
-                    <p class="text-xs text-base-content/60">{"这些要求会随本次解析一起发给 Codex。"}</p>
                 </div>
             }
             if has_answer || running {
@@ -1950,11 +1986,11 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         id: "question-ai-follow-up", input_ref: follow_input_ref.clone(),
                         compose_testid: "question-bank-ai-compose",
                         input_testid: "question-bank-ai-input",
-                        button_testid: "question-bank-ai-send",
+                        button_testid: if running {"question-bank-ai-stop"} else {"question-bank-ai-send"},
                         value: follow_up.as_str(),
                         placeholder: "输入消息…",
-                        button_label: "发送追问",
-                        disabled: *submitting || *uploading_follow || running || request_unresolved || request_uncertain || (follow_up.trim().is_empty() && follow_images.is_empty()),
+                        button_label: if running {"停止生成"} else {"发送追问"}, is_stop: running,
+                        disabled: *submitting || (!running && (*uploading_follow || request_unresolved || request_uncertain || (follow_up.trim().is_empty() && follow_images.is_empty()))),
                         endpoint: format!("{endpoint}/attachments"), csrf: props.csrf.clone(),
                         attachments: follow_images.clone(), uploading: uploading_follow.clone(),
                         picker_disabled: *submitting, picker_testid: "question-bank-ai-follow-up-images",
@@ -1968,7 +2004,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                             }
                         }),
                         onkeydown: on_follow_up_key.clone(),
-                        onclick: on_follow_up.clone(),
+                        onclick: if running {on_stop.clone()} else {on_follow_up.clone()},
                     })}
                 </div>
             }
@@ -2018,6 +2054,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     });
     let (ai_tab, ai_tab_chosen) = use_question_ai_tab(selected_ai_question);
     let ai_delete_signal = use_state(|| 0u32);
+    let ai_can_delete = use_state(|| false);
     let multi_select = use_state(|| false);
     let current_favorite_source = workspace
         .as_ref()
@@ -2898,7 +2935,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             };
             let material_pane = html! {
                 <section class="flex min-h-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100" data-testid="question-bank-practice-material-pane">
-                    <div class={classes!(TRAINING_PANE_HEADER,"question-bank-pane-header")}>
+                    <div class={classes!(QUESTION_BANK_PANE_HEADER,"question-bank-pane-header")}>
                         <strong>{"原卷材料"}</strong>
                         <div class="ml-auto flex shrink-0 items-center gap-2">
                             <span class="hidden max-w-40 truncate text-[11px] text-base-content/45 sm:inline">{material_meta.clone()}</span>
@@ -3028,10 +3065,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     } else {
                         format!("第 {}/{} 题", item_index + 1, current.questions.len())
                     }}
-                    tabs={if selected_review.is_some() {html! {<QuestionAiHeaderActions active={*ai_tab}
+                    tabs={html! {<QuestionAiHeaderActions available={selected_review.is_some()} active={*ai_tab} can_delete={*ai_can_delete}
                         original={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(false);}})}
                         ai={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(true);}})}
-                        delete={Callback::from({let signal=ai_delete_signal.clone();move |_|signal.set(signal.wrapping_add(1))})}/>}} else {Html::default()}}
+                        delete={Callback::from({let signal=ai_delete_signal.clone();move |_|signal.set(signal.wrapping_add(1))})}/>}}
                     leading={html!{
                         <>
                         <super::question_header_actions::QuestionHeaderActions
@@ -3051,7 +3088,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     question_index={item_index} target="题目" label="题目与解析滚动" />
                     if selected_review.is_some() {
                         if *ai_tab {
-                            <QuestionAiReview delete_signal={*ai_delete_signal} key={format!("{}:{}", current.session.id, item.item.question_id)} csrf={props.csrf.clone()} question_id={item.item.question_id.clone()} question_content={question_content.clone()} question_scroll={question_scroll.clone()} on_question_scroll={on_question_scrolling.clone()}/>
+                            <QuestionAiReview delete_signal={*ai_delete_signal} on_delete_availability={Callback::from({let value=ai_can_delete.clone();move |available|value.set(available)})} key={format!("{}:{}", current.session.id, item.item.question_id)} csrf={props.csrf.clone()} question_id={item.item.question_id.clone()} question_content={question_content.clone()} question_scroll={question_scroll.clone()} on_question_scroll={on_question_scrolling.clone()}/>
                         }
                     }
                     if !*ai_tab || selected_review.is_none() {
@@ -3067,7 +3104,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 html! {
                     <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100"
                         data-testid="question-bank-practice-stem-pane">
-                        <div class={classes!(TRAINING_PANE_HEADER,"question-bank-pane-header")}>
+                        <div class={classes!(QUESTION_BANK_PANE_HEADER,"question-bank-pane-header")}>
                             <strong>{"题干"}</strong>
                             <div class="ml-auto">
                                 <QuestionBankScrollButtons passage={material_scroll.clone()}

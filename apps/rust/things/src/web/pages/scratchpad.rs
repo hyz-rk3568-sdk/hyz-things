@@ -489,7 +489,7 @@ pub(crate) fn question_ink_toggle() -> Html {
         })
     };
     html! {
-        <button type="button" class={if tools.enabled {"btn btn-primary btn-sm btn-square"} else {INK_ICON_BUTTON}}
+        <button type="button" class={classes!("btn", "btn-sm", "btn-square", "h-8", "w-8", "min-h-0", "shrink-0", "p-0", if tools.enabled {"btn-primary"} else {"btn-ghost"})}
             data-testid="calculation-scratchpad-toggle" aria-label={if tools.enabled {"关闭草稿"} else {"开启草稿"}}
             aria-expanded={tools.enabled.to_string()} disabled={!tools.ready}
             onpointerdown={Callback::from(|event: PointerEvent| event.prevent_default())} onclick={toggle}>
@@ -509,9 +509,9 @@ pub(crate) fn question_ink_controls() -> Html {
     html! {
         <div class="relative z-30 flex shrink-0 items-center gap-1" data-testid="calculation-scratchpad-controls">
             <div class="flex items-center gap-1" data-testid="calculation-scratchpad-toolbar">
-                <button type="button" class={INK_ICON_BUTTON} data-testid="calculation-scratchpad-undo" aria-label="撤销" disabled={!tools.has_undo} onclick={tools.undo}>{"↶"}</button>
-                <button type="button" class={INK_ICON_BUTTON} data-testid="calculation-scratchpad-redo" aria-label="重做" disabled={!tools.has_redo} onclick={tools.redo}>{"↷"}</button>
-                <button type="button" class={INK_ICON_BUTTON} data-testid="calculation-scratchpad-clear" aria-label="清空草稿" disabled={!tools.has_ink} onclick={tools.clear}>
+                <button type="button" class={super::question_header_actions::QUESTION_HEADER_ICON_BUTTON} data-testid="calculation-scratchpad-undo" aria-label="撤销" disabled={!tools.has_undo} onclick={tools.undo}>{"↶"}</button>
+                <button type="button" class={super::question_header_actions::QUESTION_HEADER_ICON_BUTTON} data-testid="calculation-scratchpad-redo" aria-label="重做" disabled={!tools.has_redo} onclick={tools.redo}>{"↷"}</button>
+                <button type="button" class={super::question_header_actions::QUESTION_HEADER_ICON_BUTTON} data-testid="calculation-scratchpad-clear" aria-label="清空草稿" disabled={!tools.has_ink} onclick={tools.clear}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18M9 7V4h6v3M5 7l1 13h12l1-13M10 11v5m4-5v5"/></svg>
                 </button>
             </div>

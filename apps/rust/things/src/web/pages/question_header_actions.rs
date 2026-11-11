@@ -1,5 +1,8 @@
 use yew::prelude::*;
 
+pub(super) const QUESTION_HEADER_ICON_BUTTON: &str =
+    "btn btn-ghost btn-sm btn-square h-8 w-8 min-h-0 shrink-0 p-0";
+
 #[derive(Clone, PartialEq, Properties)]
 pub(super) struct QuestionHeaderActionsProps {
     pub favorite: Option<bool>,
@@ -29,7 +32,7 @@ pub(super) fn question_header_actions(props: &QuestionHeaderActionsProps) -> Htm
         .filter(|count| *count > 0 || props.flashcard_can_create);
     html! {
         <div class="flex shrink-0 items-center gap-0">
-            <button type="button" class="btn btn-ghost btn-sm relative h-10 w-10 min-h-0 shrink-0 p-2"
+            <button type="button" class={classes!(QUESTION_HEADER_ICON_BUTTON, "relative")}
                 data-testid={props.favorite_test_id.clone()} aria-label={props.favorite_label.clone()}
                 title={props.favorite_label.clone()} aria-busy={props.favorite_busy.to_string()}
                 disabled={props.favorite_busy || props.favorite.is_none()} onclick={props.on_favorite.clone()}>
@@ -44,7 +47,7 @@ pub(super) fn question_header_actions(props: &QuestionHeaderActionsProps) -> Htm
                 }
             </button>
             if let Some(count) = flashcard {
-                <button type="button" class="btn btn-ghost btn-sm relative h-10 w-10 min-h-0 shrink-0 p-2"
+                <button type="button" class={classes!(QUESTION_HEADER_ICON_BUTTON, "relative")}
                     data-testid={if count == 0 { props.flashcard_create_test_id.clone() } else { props.flashcard_manage_test_id.clone() }}
                     aria-label={if count == 0 { "为当前题目创建 Flashcard".to_owned() } else { format!("管理当前题目的 {count} 张 Flashcard") }}
                     title={if count == 0 { "为当前题目创建 Flashcard".to_owned() } else { format!("管理当前题目的 {count} 张 Flashcard") }}
